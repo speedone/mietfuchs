@@ -10,8 +10,9 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { connect } from './db/client.ts'
-import { DB_FILE_NAME } from './db/open.ts'
+import { connect, loadMigrations } from './db/client.ts'
+import { DB_FILE_NAME, unknownSteps } from './db/open.ts'
+import { PRIOR_DIR } from './db/priorVersions.ts'
 import { hasStock } from './dataLocations.ts'
 import { ciSet } from './ci.ts'
 
@@ -198,7 +199,7 @@ function countOf(rows: (sql: string) => unknown[][], table: string): number | nu
   }
 }
 
-type DatabaseLook = { stock: boolean, properties: number | null, tenancies: number | null, costItems: number | null }
+type DatabaseLook = { stock: boolean, properties: number | null, tenancies: number | null, costItems: number | null, names: string[], newer: boolean }
 
 // Liest eine Datenbank einer früheren Fassung **nur lesend** (`readOnly`): nichts daran ändert sich, auch keine
 // Dateizeit. Die Tabellen gibt es seit dem ersten Schritt (0000), Objekte seit 0001; davor ist es ein Objekt.
@@ -233,19 +234,36 @@ async function readLook(file: string, readOnly: boolean): Promise<DatabaseLook |
     if (tenancies === null || costItems === null) return null
     const stock = [countOf(connection.rows, 'units'), tenancies, countOf(connection.rows, 'meters'), costItems].some((n) => (n ?? 0) > 0)
     const properties = countOf(connection.rows, 'properties') ?? (stock ? 1 : 0)
-    return { stock, properties, tenancies, costItems }
+    // Praxistest J und I: Namen der Objekte für die Karte, und ob eine neuere Fassung den Aufbau geändert hat (dann
+    // lehnt die Übernahme ab; die Karte sagt es vorher)
+    let newer = false
+    try {
+      newer = unknownSteps(connection, await loadMigrations()) !== null
+    } catch { /* ohne Buchführung der Schritte: eine ganz alte Fassung */ }
+    return { stock, properties, tenancies, costItems, names: namesIn(connection.rows), newer }
   } finally {
     connection.close()
   }
 }
 
-type JsonLook = { tenancies: number, costItems: number }
+// Die Namen der Objekte; vor den Objekten (0001) hieß das eine Haus in den Einstellungen.
+function namesIn(rows: (sql: string) => unknown[][]): string[] {
+  for (const sql of ['SELECT name FROM "properties" ORDER BY rowid', 'SELECT house_name FROM "settings" LIMIT 1']) {
+    try {
+      return rows(sql).map((r) => (typeof r[0] === 'string' ? r[0].trim() : '')).filter((n) => n !== '')
+    } catch { /* die Tabelle gibt es in dieser Fassung nicht */ }
+  }
+  return []
+}
+
+type JsonLook = { tenancies: number, costItems: number, names: string[] }
 function lookIntoJson(file: string): JsonLook | null {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
     if (!isObject(parsed)) return null
     const length = (v: unknown) => (Array.isArray(v) ? v.length : 0)
-    return { tenancies: length(parsed.tenancies), costItems: length(parsed.costItems) }
+    const house = isObject(parsed.settings) && typeof parsed.settings.houseName === 'string' ? parsed.settings.houseName.trim() : ''
+    return { tenancies: length(parsed.tenancies), costItems: length(parsed.costItems), names: house ? [house] : [] }
   } catch {
     return null
   }
@@ -272,6 +290,13 @@ export type CandidateInfo = {
   modifiedAt: string | null
   properties: number | null
   tenancies: number | null
+  // Die Namen der Objekte, für die Karte
+  names: string[]
+  // Schon vor dem Klick bekannt (Praxistest J, I): beschädigt (lässt sich nicht lesen) oder aus einer neueren Fassung
+  problem: 'damaged' | 'newer' | null
+  // Automatische Vorversionen im alten Ordner (`vorversionen/`); bei einer beschädigten Datenbank ein Rat
+  priorVersions: number
+  place: PlaceInWords
 }
 
 const mtimeOf = (file: string): number | null => {
@@ -288,17 +313,61 @@ export async function describeCandidate(dataDir: string): Promise<CandidateInfo>
   const modifiedAt = times.length > 0 ? new Date(Math.max(...times)).toISOString() : null
   let properties: number | null = null
   let tenancies: number | null = null
+  let names: string[] = []
+  let problem: CandidateInfo['problem'] = null
   if (kind === 'database') {
     const look = await lookIntoDatabase(path.join(dataDir, DB_FILE_NAME))
     properties = look?.properties ?? null
     tenancies = look?.tenancies ?? null
+    names = look?.names ?? []
+    problem = !look || look.tenancies === null ? 'damaged' : look.newer ? 'newer' : null
   } else if (kind === 'json') {
     const look = lookIntoJson(path.join(dataDir, 'db.json'))
     // Die db.json kannte nur ein Haus
     properties = look ? 1 : null
     tenancies = look?.tenancies ?? null
+    names = look?.names ?? []
+    if (!look) problem = 'damaged'
   }
-  return { dataDir, kind, modifiedAt, properties, tenancies }
+  return { dataDir, kind, modifiedAt, properties, tenancies, names, problem, priorVersions: priorVersionsIn(dataDir), place: placeOf(dataDir, process.platform) }
+}
+
+function priorVersionsIn(dataDir: string): number {
+  try {
+    return fs.readdirSync(path.join(dataDir, PRIOR_DIR)).filter((n) => /\.sqlite$/i.test(n)).length
+  } catch {
+    return 0
+  }
+}
+
+// ---------- Ort in Worten (Praxistest B-01, D, M) ----------
+//
+// Ein voller Pfad ist für Laien kaum zu lesen und am Handy abgeschnitten. Die Karte nennt deshalb den Ordner der
+// Programmdatei (`data` ist der darin) und den nächsten bekannten Ort darüber: „Ordner „mietfuchs-0.14.1“ in
+// Downloads“. Die Namen auf der Platte sind unter Windows und macOS englisch, auch auf einem deutschen Rechner; OneDrive
+// heißt oft „OneDrive - Firma“. Den vollen Pfad zeigt die Oberfläche klein dahinter.
+export type KnownPlace = 'Downloads' | 'Schreibtisch' | 'Dokumente' | 'OneDrive'
+export type PlaceInWords = { folder: string, within: KnownPlace | null }
+const KNOWN_PLACES: [string[], KnownPlace][] = [
+  [['Downloads'], 'Downloads'],
+  [['Desktop', 'Schreibtisch'], 'Schreibtisch'],
+  [['Documents', 'Dokumente'], 'Dokumente'],
+  [['OneDrive'], 'OneDrive'],
+]
+export function placeOf(dataDir: string, platform: NodeJS.Platform): PlaceInWords {
+  const p = platform === 'win32' ? path.win32 : path.posix
+  // Unter Windows und macOS ohne Groß und Klein (wie `samePath`), unter Linux genau
+  const norm = (name: string) => (platform === 'linux' ? name : name.toLowerCase())
+  const dirs: string[] = []
+  for (let d = p.resolve(dataDir); p.dirname(d) !== d; d = p.dirname(d)) dirs.push(p.basename(d))
+  const folderAt = dirs.length > 1 && norm(dirs[0] ?? '') === norm('data') ? 1 : 0
+  const folder = dirs[folderAt] ?? dataDir
+  for (const name of dirs.slice(folderAt + 1)) {
+    // „OneDrive - Firma“ zählt als OneDrive
+    const found = KNOWN_PLACES.find(([names]) => names.some((n) => norm(name) === norm(n) || norm(name).startsWith(`${norm(n)} - `)))
+    if (found) return { folder, within: found[1] }
+  }
+  return { folder, within: null }
 }
 
 // Mietverhältnisse und Kostenpositionen des Originals, für den Vergleich nach dem Kopieren.
@@ -436,6 +505,17 @@ export function runningFor(dataDir: string, live: { running: boolean, dataDir: s
 
 // Was beim Kopieren schiefging, in Worten für die Oberfläche (Durchsicht D12). Endet immer mit der Zusage, dass im alten
 // Ordner nichts verändert ist, und nur einmal.
+// Eine beschädigte Datei im alten Ordner (Praxistest J): Das alte Mietfuchs öffnet sie ebenso wenig, ein Backup von dort
+// gibt es also nicht. Der Rat führt deshalb zu einem vorhandenen Backup und nennt die Vorversionen im alten Ordner.
+export function damagedStockText(kind: StockKind, priorVersions: number): string {
+  const what = kind === 'json' ? 'Die Datei db.json' : 'Die Datenbank'
+  const prior = priorVersions > 0
+    ? ` Im alten Ordner liegen außerdem ${priorVersions === 1 ? 'eine automatische Vorversion' : `${priorVersions} automatische Vorversionen`} (Ordner „${PRIOR_DIR}“), ältere Kopien Ihrer Daten; löschen Sie den alten Ordner deshalb nicht.`
+    : ''
+  return `${what} im alten Ordner ist beschädigt und lässt sich nicht lesen. Es wurde nichts übernommen, und die Datei bleibt unverändert. ` +
+    `Haben Sie ein Backup (eine ZIP-Datei), spielen Sie es hier ein: „Andere Daten wählen …“, dann „Backup einspielen“.${prior}`
+}
+
 export const ADOPT_UNCHANGED = 'Es wurde nichts übernommen; Ihre bisherigen Daten im alten Ordner sind unverändert, und Sie können dort weiterarbeiten.'
 export function copyErrorText(err: unknown): string {
   const code = isObject(err) && typeof err.code === 'string' ? err.code : null

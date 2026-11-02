@@ -181,9 +181,12 @@ test('Durchsicht K9: der Papierkorb zieht mit, damit ein Rücksprung im neuen Mi
     assert.ok(fs.existsSync(path.join(old.data, 'papierkorb', 'uploads', 'geloescht.pdf')), 'kopiert, nicht verschoben')
     // Ob er auf Dauer bleibt, entscheidet wie immer das Aufräumen mit dem Journal; mitgekommen ist er
     assert.ok(fs.existsSync(path.join(s.dataDir, 'papierkorb', 'uploads', 'geloescht.pdf')), fs.readdirSync(s.dataDir).join(', '))
-    // Vorversionen bleiben im alten Ordner; der Erfolg sagt es
+    // Vorversionen bleiben im alten Ordner; der Erfolg sagt es. Geänderte Erwartung (Praxistest B-03): ohne Pfad und
+    // ohne Fachwort, mit dem Rat, den Ordner zu behalten
     assert.equal(fs.existsSync(path.join(s.dataDir, 'vorversionen', 'mietfuchs-2026-10-01.sqlite')), false)
-    assert.match(JSON.stringify(adopted.body.notes), /Vorversionen.*bleiben im bisherigen Ordner/)
+    const notes = JSON.stringify(adopted.body.notes)
+    assert.match(notes, /Ältere Sicherungen bleiben im alten Ordner\. Behalten Sie diesen Ordner deshalb noch eine Weile/)
+    assert.ok(!notes.includes(old.data), 'kein langer Pfad')
   } finally {
     s.stop()
     fs.rmSync(old.home, { recursive: true, force: true })

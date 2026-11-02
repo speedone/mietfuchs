@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
-import { api, ApiError } from '../api'
+import { useEffect, useState, type ReactNode } from 'react'
+import { api, ApiError, errorText } from '../api'
+import { MOBILE_QUERY, useMediaQuery } from './MobileNav'
+import { NoticeBox } from './Notice'
 import { databaseHint, DISMISS_KEY, UPDATE_DISMISS_KEY, updateHint, type HealthReport } from '../database'
 import type { DatabaseState } from '../types'
 
@@ -35,8 +37,68 @@ function remember(key: string, value: string): void {
   }
 }
 
-export default function DatabaseNotice() {
+// Ein Backup einspielen, wenn sich die Datenbank nicht öffnen lässt (Durchsicht vor 0.15.0, Daten 6): Ohne Datenbank
+// laden die Einstellungen nicht, und die Meldung rät genau dazu. Die Datei, die sich nicht öffnen ließ, legt der Server
+// vorher als mietfuchs.sqlite.vor-restore beiseite (restoreDatabase in server/src/index.ts); verloren geht nichts.
+function ClosedRestore({ reloadPage }: { reloadPage: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notes, setNotes] = useState<string[]>([])
+  async function restore(file: File) {
+    setBusy(true)
+    setError('')
+    setNotes([])
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const answer = await api<{ notes?: string[] }>('/api/restore', { method: 'POST', body: fd })
+      const notes = answer?.notes ?? []
+      if (notes.length > 0) {
+        setNotes(notes)
+        setBusy(false)
+        return
+      }
+      reloadPage()
+    } catch (e) {
+      setError(errorText(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <p className="mt-3">
+        Haben Sie ein Backup (eine ZIP-Datei)? Dann können Sie es hier einspielen. Die Datei, die sich gerade nicht öffnen
+        lässt, bleibt daneben erhalten.
+      </p>
+      <div className="row mt-2">
+        <label className="btn secondary">
+          Backup einspielen …
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            className="sr-only"
+            disabled={busy}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void restore(f) }}
+          />
+        </label>
+      </div>
+      {error && <NoticeBox className="mt-2" level="error" title="Das Backup ließ sich nicht einspielen" action={error} />}
+      {notes.length > 0 && <NoticeBox className="mt-2" level="info" title="Backup eingespielt" action={notes.join(' ')} fix={{ label: 'Mietfuchs neu laden', onClick: reloadPage }} />}
+    </>
+  )
+}
+
+export default function DatabaseNotice({ onClosed, quit, reloadPage = () => window.location.reload() }: {
+  // Ob die Datenbank geschlossen ist (Praxistest O): Dann blendet App.tsx die Seite aus, deren Fehlerkasten sonst
+  // denselben Grund ein zweites Mal rot zeigte
+  onClosed?: (closed: boolean) => void
+  // „Mietfuchs beenden“, wo es das gibt (App.tsx, `canQuit`); steht im Hinweis, wenn die Datenbank geschlossen ist
+  quit?: ReactNode
+  reloadPage?: () => void
+} = {}) {
   const [report, setReport] = useState<HealthReport | null>(null)
+  // Am Handy steht „Verstanden“ unter dem Text statt daneben (Praxistest N-01-390)
+  const mobile = useMediaQuery(MOBILE_QUERY)
   const [dismissed, setDismissed] = useState<string | null>(() => remembered(DISMISS_KEY))
   const [updateDismissed, setUpdateDismissed] = useState<string | null>(() => remembered(UPDATE_DISMISS_KEY))
 
@@ -51,12 +113,32 @@ export default function DatabaseNotice() {
 
   const database: DatabaseState | null = report?.database ?? null
   const hint = databaseHint(database, dismissed)
+  const closed = hint?.kind === 'closed'
+  useEffect(() => {
+    if (report) onClosed?.(closed)
+  }, [report, closed, onClosed])
   // Nach einem Update (#154). Neben einem gelungenen Umstieg steht er nie: Der Umstieg schreibt
   // in eine neue Datei, und der Server nennt dann keine Sicherung.
   const update = updateHint(database, report?.version, updateDismissed)
   // Umgezogen (#517): auf jeder Seite und ohne „Verstanden“, denn jede Änderung wird hier abgelehnt
   const moved = report?.moved ?? null
   if (!hint && !update && !moved) return null
+
+  const hintButton = hint && hint.kind !== 'closed' ? (
+    <button className="btn" onClick={() => {
+      remember(DISMISS_KEY, hint.message)
+      setDismissed(hint.message)
+    }}>Verstanden</button>
+  ) : null
+  const updateButton = update ? (
+    <button className="btn" onClick={() => {
+      remember(UPDATE_DISMISS_KEY, update.dismissKey)
+      setUpdateDismissed(update.dismissKey)
+      // Der Server nennt die Sicherung auch nach einem Neustart, bis sie weggeklickt ist
+      // (#180). Scheitert das, bleibt der Hinweis in diesem Browser trotzdem zu.
+      api('/api/database/migrated/seen', { method: 'POST', body: JSON.stringify({ key: update.dismissKey }) }).catch(() => {})
+    }}>Verstanden</button>
+  ) : null
 
   // Beide Hinweise nur am Bildschirm: Gedruckt stand „Sicherung vor dem Update angelegt“ als eigene Seite vor der
   // Abrechnung (Druck, #415).
@@ -78,11 +160,11 @@ export default function DatabaseNotice() {
             <h2>{hint.kind === 'closed' ? 'Mietfuchs kann Ihre Daten gerade nicht öffnen' : hint.kind === 'done' ? 'Ihre Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
             <p>{hint.message}</p>
             {hint.notes.map((note) => <p key={note} className="muted">{note}</p>)}
+            {closed && <ClosedRestore reloadPage={reloadPage} />}
+            {closed && quit && <div className="row mt-3">{quit}</div>}
+            {mobile && hintButton && <div className="row mt-3">{hintButton}</div>}
           </div>
-          {hint.kind !== 'closed' && <button className="btn" onClick={() => {
-            remember(DISMISS_KEY, hint.message)
-            setDismissed(hint.message)
-          }}>Verstanden</button>}
+          {!mobile && hintButton}
         </section>
       )}
       {update && (
@@ -92,14 +174,9 @@ export default function DatabaseNotice() {
             <h2>Sicherung vor dem Update angelegt</h2>
             <p>{update.message}</p>
             <p><a href={update.guideUrl} target="_blank" rel="noreferrer">Zur Anleitung: Zurück zu einer älteren Version</a></p>
+            {mobile && <div className="row mt-3">{updateButton}</div>}
           </div>
-          <button className="btn" onClick={() => {
-            remember(UPDATE_DISMISS_KEY, update.dismissKey)
-            setUpdateDismissed(update.dismissKey)
-            // Der Server nennt die Sicherung auch nach einem Neustart, bis sie weggeklickt ist
-            // (#180). Scheitert das, bleibt der Hinweis in diesem Browser trotzdem zu.
-            api('/api/database/migrated/seen', { method: 'POST', body: JSON.stringify({ key: update.dismissKey }) }).catch(() => {})
-          }}>Verstanden</button>
+          {!mobile && updateButton}
         </section>
       )}
     </>

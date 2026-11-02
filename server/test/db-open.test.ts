@@ -219,6 +219,20 @@ test('eine Datei aus einer neueren Mietfuchs-Version wird erklärt, nicht migrie
         assert.match(text, /stammt aus einer neueren Mietfuchs-Version/, 'die Meldung sagt, was los ist')
         assert.match(text, /neuere Fassung/, 'die Meldung sagt, was zu tun ist')
         assert.match(text, /01\.01\.2100/, 'sie nennt den Stand, den sie nicht kennt')
+        // Praxistest vor 0.15.0 (O): Die Meldung steht oben in Mietfuchs, für Laien. Kein Pfad, kein „Aufbau“
+        assert.ok(!text.includes(file), 'kein Pfad in der Meldung')
+        assert.doesNotMatch(text, /Aufbau/)
+        return true
+      },
+    )
+
+    // Praxistest O: Aus dem Microsoft Store wählt niemand die Fassung; dort hilft nur das Update im Store
+    await assert.rejects(
+      () => openDatabase({ dataDir, fromStore: true }),
+      (err: unknown) => {
+        const text = String(err)
+        assert.match(text, /Aktualisieren Sie Mietfuchs im Microsoft Store\./)
+        assert.doesNotMatch(text, /neuere Fassung/)
         return true
       },
     )
@@ -231,8 +245,10 @@ test('eine Datei aus einer neueren Mietfuchs-Version wird erklärt, nicht migrie
     await assert.rejects(
       () => openDatabase({ dataDir }),
       (err: unknown) => {
-        assert.match(String(err), /2 Änderungen/)
-        assert.match(String(err), /unbekannt/)
+        // Geänderte Erwartung (Praxistest vor 0.15.0, O): ohne Zahl der Änderungen; ein unbrauchbarer Zeitpunkt lässt den
+        // Stand weg, statt „Stand vom unbekannt“ zu schreiben
+        assert.match(String(err), /stammt aus einer neueren Mietfuchs-Version\. Diese Version/)
+        assert.doesNotMatch(String(err), /unbekannt/)
         return true
       },
     )

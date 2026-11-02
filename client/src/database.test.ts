@@ -61,12 +61,13 @@ describe('Sicherung vor dem Update (#154)', () => {
     expect(updateHint(state(none), '0.9.0', null)).toBeNull()
   })
 
-  test('nach dem Update steht die Version, die Sicherung mit Namen und der Weg zurück da', () => {
+  // Praxistest N-01: ohne Dateinamen; die Sicherung steht im Verlauf (snapshots.ts, „Vor dem Update auf Version …“)
+  test('nach dem Update steht die Version, wo die Sicherung zu finden ist, und der Weg zurück da', () => {
     const hint = updateHint(migrated('mietfuchs.sqlite.vor-0003_heizung'), '0.9.0', null)
     expect(hint).toEqual({
       dismissKey: 'mietfuchs.sqlite.vor-0003_heizung@2026-10-01T10:00:00.000Z',
       message: 'Mietfuchs wurde auf Version 0.9.0 aktualisiert. Vorher wurde eine Sicherung Ihrer Daten ' +
-        'angelegt (mietfuchs.sqlite.vor-0003_heizung im Datenordner). Wie Sie zur vorigen Version ' +
+        'angelegt; Sie finden sie unter Verlauf. Wie Sie zur vorigen Version ' +
         'zurückkommen, steht in der Anleitung.',
       guideUrl: MIGRATION_GUIDE_URL,
     })
