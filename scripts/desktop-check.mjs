@@ -166,7 +166,8 @@ if (await until(() => fs.existsSync(path.join(moving.selftest, 'fenster.json')),
   const list = /** @type {any} */ (await (await fetch(`${base}/api/relocation/candidates`)).json())
   const found = (list.candidates ?? []).find((/** @type {any} */ c) => String(c.dataDir).toLowerCase() === oldData.toLowerCase())
   check(Boolean(found), `Umzug: Die Suche findet ${oldData} (${JSON.stringify(list).slice(0, 300)})`)
-  const adopt = await fetch(`${base}/api/relocation/adopt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataDir: found?.dataDir ?? oldData }) })
+  // Mit der Kennung des Fundes wie die Oberfläche; einen Pfad nimmt die Route nicht (server/src/CLAUDE.md, K11)
+  const adopt = await fetch(`${base}/api/relocation/adopt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: found?.id }) })
   const adopted = /** @type {any} */ (await adopt.json())
   check(adopt.status === 200, `Umzug: übernommen (${adopt.status} ${JSON.stringify(adopted).slice(0, 300)})`)
   // Der Bestand aus 1. hat mehrere Objekte; ohne `?property=` antwortet /api/tenancies dann mit 400. Gezählt wird je Objekt.

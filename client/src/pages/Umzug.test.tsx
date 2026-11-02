@@ -14,6 +14,7 @@ afterEach(() => {
 })
 
 const FOUND: RelocationCandidate = {
+  id: '3f2c8a50-0000-4000-8000-000000000001',
   dataDir: 'C:\\Users\\Anna\\Downloads\\mietfuchs\\data', kind: 'database', modifiedAt: '2026-10-12T09:30:00.000Z',
   properties: 1, tenancies: 5, running: false, source: 'search', appVersion: null,
 }
@@ -55,7 +56,8 @@ test('Fund: Ort, zuletzt geändert, Bestand; „Daten übernehmen“ kopiert und
   expect(within(card).getByText('1 Objekt, 5 Mietverhältnisse')).toBeTruthy()
   fireEvent.click(within(card).getByRole('button', { name: 'Daten übernehmen' }))
   expect(await screen.findByText('Übernommen: 1 Objekt, 5 Mietverhältnisse, 12 Kostenpositionen und 3 Belege.')).toBeTruthy()
-  expect(calls.find((c) => c.url === '/api/relocation/adopt')?.body).toEqual({ dataDir: FOUND.dataDir })
+  // Mit der Kennung des Fundes, nie mit dem Pfad (K11)
+  expect(calls.find((c) => c.url === '/api/relocation/adopt')?.body).toEqual({ id: FOUND.id })
   // Durchsicht D11: was mit dem alten Mietfuchs zu tun ist
   expect(screen.getByText(/Starten Sie das alte Mietfuchs nicht mehr/)).toBeTruthy()
   // Ergänzung 3: Wer vom Handy zugriff, findet den Weg dorthin
@@ -128,16 +130,19 @@ test('Nichts gefunden: genau ein empfohlener Weg, das Backup', async () => {
 })
 
 test('Ordner wählen: über den Dialog des Fensters, dann wie ein Fund', async () => {
-  fakeServer({
+  const calls = fakeServer({
     'GET /api/relocation/candidates': () => ({ json: offer([]) }),
-    'POST /api/relocation/inspect': (body) => ({ json: { candidate: { ...FOUND, dataDir: `${(body as { folder: string }).folder}\\data`, source: 'chosen' } } }),
+    'POST /api/relocation/inspect': (body) => ({ json: { candidate: { ...FOUND, id: 'gewaehlt-1', dataDir: `${(body as { folder: string }).folder}\\data`, source: 'chosen' } } }),
+    'POST /api/relocation/adopt': () => ({ json: { ok: true, notes: [], counts: { properties: 1, tenancies: 5, costItems: 12, receipts: 3 } } }),
   })
   const chooseFolder = vi.fn(async () => 'D:\\Vermietung')
   renderScreen({ chooseFolder })
   fireEvent.click(await screen.findByRole('button', { name: 'Ja, Daten übernehmen' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Ordner der alten Programmdatei wählen …' }))
   expect(await screen.findByText('D:\\Vermietung\\data')).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Daten übernehmen' })).toBeTruthy()
+  // Der Pfad des Dialogs geht nur an `/inspect`; übernommen wird mit der Kennung, die der Server dafür nennt (K11)
+  fireEvent.click(screen.getByRole('button', { name: 'Daten übernehmen' }))
+  await vi.waitFor(() => expect(calls.find((c) => c.url === '/api/relocation/adopt')?.body).toEqual({ id: 'gewaehlt-1' }))
 })
 
 test('Gefunden: „Nicht übernehmen, neu beginnen“ erst nach Rückfrage', async () => {
@@ -185,7 +190,7 @@ test('Von Hand mit eigenem Bestand: erst deutlich fragen, dann mit replace über
   expect(calls.some((c) => c.url === '/api/relocation/adopt')).toBe(false)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Ersetzen' }))
   await screen.findByText(/Übernommen:/)
-  expect(calls.find((c) => c.url === '/api/relocation/adopt')?.body).toEqual({ dataDir: FOUND.dataDir, replace: true })
+  expect(calls.find((c) => c.url === '/api/relocation/adopt')?.body).toEqual({ id: FOUND.id, replace: true })
   fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
 })
 
@@ -226,14 +231,14 @@ test('Großer Bestand: Fortschritt in Dateien und MB, Abbrechen', async () => {
 test('Ordner wählen: ein gewähltes Backup wird eingespielt', async () => {
   const calls = fakeServer({
     'GET /api/relocation/candidates': () => ({ json: offer([]) }),
-    'POST /api/relocation/inspect': () => ({ json: { backup: 'D:\\Sicherung\\mietfuchs-backup.zip' } }),
+    'POST /api/relocation/inspect': () => ({ json: { backup: { id: 'b-1', name: 'mietfuchs-backup.zip' } } }),
     'POST /api/relocation/restore-backup': () => ({ json: { ok: true, notes: [] } }),
   })
   const { reloadPage } = renderScreen({ chooseFolder: async () => 'D:\\Sicherung\\mietfuchs-backup.zip' })
   fireEvent.click(await screen.findByRole('button', { name: 'Ja, Daten übernehmen' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Ordner der alten Programmdatei wählen …' }))
   await vi.waitFor(() => expect(reloadPage).toHaveBeenCalled())
-  expect(calls.find((c) => c.url === '/api/relocation/restore-backup')?.body).toEqual({ file: 'D:\\Sicherung\\mietfuchs-backup.zip' })
+  expect(calls.find((c) => c.url === '/api/relocation/restore-backup')?.body).toEqual({ id: 'b-1' })
 })
 
 // Ergänzung: Die Anleitung nennt den Knopf, wie er in jeder Fassung hieß. Von 0.1.0 bis 0.14.1 stand in den

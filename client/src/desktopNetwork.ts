@@ -51,3 +51,32 @@ export function networkView(saved: NetworkState, checked: boolean): NetworkView 
     firewall: restart && checked,
   }
 }
+
+// Der Hinweis „Im Heimnetz erreichbar“ in der Seitenleiste (#517, Durchsicht vor 0.15.0 K5, components/NetworkHint.tsx):
+// Er liest den Stand einmal von der Brücke und folgt danach der Karte, die nach dem Speichern den neuen Stand meldet.
+// Sonst stünde er nach dem Ausschalten noch da, bis das Fenster die Seite neu lädt.
+const networkListeners = new Set<(state: NetworkState) => void>()
+export function announceNetwork(state: NetworkState): void {
+  for (const listener of networkListeners) listener(state)
+}
+export function onNetworkChange(listener: (state: NetworkState) => void): () => void {
+  networkListeners.add(listener)
+  return () => { networkListeners.delete(listener) }
+}
+
+// Der Sprung vom Hinweis zur Karte: Ist sie schon da (Seite Einstellungen), kommt sie gleich ins Bild, sonst einmal,
+// sobald sie erscheint. Gemerkt bis dahin, nicht länger.
+let cardWanted = false
+const cardListeners = new Set<() => void>()
+export function requestNetworkCard(): void {
+  cardWanted = cardListeners.size === 0
+  for (const listener of cardListeners) listener()
+}
+export function onNetworkCardRequest(listener: () => void): () => void {
+  cardListeners.add(listener)
+  if (cardWanted) {
+    cardWanted = false
+    listener()
+  }
+  return () => { cardListeners.delete(listener) }
+}

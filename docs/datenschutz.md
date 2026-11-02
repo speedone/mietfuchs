@@ -41,7 +41,9 @@ zugestimmt haben:
 1. **Nach neuen Versionen sehen** (nicht in der App aus dem Microsoft Store; dort aktualisiert der
    Store, und Mietfuchs fragt GitHub auch dann nicht, wenn ein eingespieltes Backup die Zustimmung
    mitbringt). Mit Ihrer Zustimmung fragt Mietfuchs höchstens einmal am Tag bei GitHub nach der neuesten
-   Version und lädt die Liste empfohlener KI-Modelle. GitHub sieht dabei Ihre IP-Adresse und die
+   Version und lädt die Liste empfohlener KI-Modelle. Im eigenen Programmfenster unter Windows lädt
+   Mietfuchs eine neue Version dann auch gleich von GitHub herunter; installiert wird sie erst, wenn Sie
+   das bestätigen („Jetzt neu starten“ oder „Beim nächsten Start“). GitHub sieht dabei Ihre IP-Adresse und die
    installierte Versionsnummer. Es gilt die
    [Datenschutzerklärung von GitHub](https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement).
 2. **KI-Belegauswertung über einen Dienst im Internet.** Wenn Sie in den Einstellungen einen Dienst

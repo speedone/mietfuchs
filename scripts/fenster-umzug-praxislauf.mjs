@@ -399,7 +399,8 @@ async function runVersion(version, binary) {
     gleich(found?.tenancies, 2, `${version}: der Fund nennt zwei Mietverhältnisse`)
     gleich(found?.kind, version.startsWith('0.3.') || version.startsWith('0.7.') ? 'json' : 'database', `${version}: der Fund ist ${found?.kind}`)
     gleich(found?.running, true, `${version}: die alte Fassung läuft noch und ist erkannt`)
-    const refused = await send(desk.base, '/api/relocation/adopt', 'POST', { dataDir: oldData })
+    // Mit der Kennung des Fundes wie die Oberfläche; einen Pfad nimmt die Route nicht (K11)
+    const refused = await send(desk.base, '/api/relocation/adopt', 'POST', { id: found?.id })
     gleich(refused.status, 409, `${version}: solange sie läuft, wird nicht kopiert`)
     const quit = await send(desk.base, '/api/relocation/quit-old', 'POST')
     if (knowsQuit) {
@@ -413,7 +414,7 @@ async function runVersion(version, binary) {
     }
     await new Promise((resolve) => setTimeout(resolve, 500))
     const print = fingerprint(oldData)
-    const adopted = await send(desk.base, '/api/relocation/adopt', 'POST', { dataDir: oldData })
+    const adopted = await send(desk.base, '/api/relocation/adopt', 'POST', { id: found?.id })
     gleich(adopted.status, 200, `${version}: übernommen ${adopted.status === 200 ? JSON.stringify(adopted.body.counts) : JSON.stringify(adopted.body).slice(0, 400)}`)
     const moved = settlementCore(await get(desk.base, '/api/settlement/2024'))
     gleich(moved, before.settlement, `${version}: Abrechnung 2024 centgenau wie vorher in der alten Fassung`)

@@ -62,6 +62,19 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   Fortschritt) lässt nur Loopback durch (`fromThisComputer`), sonst 403 „Daten übernehmen geht nur am Rechner, auf dem
   Mietfuchs läuft.“; sonst wären sie mit „Zugriff aus dem Heimnetz“ vom Handy aus erreichbar und nähmen beliebige Pfade an
   (CodeQL `js/path-injection`). Die Oberfläche zeigt den Umzug ohnehin nur im Fenster (`inWindow`).
+- **Nur bekannte Orte** (`knownPlaces`, Durchsicht vor 0.15.0 K11): `adopt` und `restore-backup` nehmen keinen Pfad,
+  nur `{ id }`, die Kennung eines Ortes, den der Server selbst kennt. Jeder Fund aus `/candidates` (Ortsdatei, fester
+  Ausweichort, Suche) trägt `id`, ebenso die Antwort von `/inspect` (`candidate.id`, bei einem Backup `backup: { id,
+  name }`); derselbe Ort behält seine Kennung, solange der Server läuft, ein Ordner gilt nicht als Backup und umgekehrt.
+  Ein Pfad allein oder eine unbekannte Kennung ist eine 400 „Diesen Ort kennt Mietfuchs nicht (mehr) …“. `/inspect`
+  nimmt `{ id }` (neu beschreiben, etwa ob das alte Mietfuchs inzwischen läuft) oder `{ folder }`, den Pfad aus dem
+  Ordner-Dialog. **Dass `/inspect` einen beliebigen absoluten Pfad annimmt, ist hingenommen**: Der Dialog läuft im
+  Hauptprozess (desktop/src/main.js, `mietfuchs:choose-folder`) und gibt den Pfad an die Oberfläche; die Route antwortet
+  nur auf Loopback, Host und Origin prüft die Vorschaltung (fremde Seiten im Browser kommen nicht durch), sie liest nur
+  (Datenbank `readOnly`, keine Dateizeit ändert sich) und nennt nur Ort, Datum und zwei Zahlen. Wer auf diesem Rechner
+  127.0.0.1 erreicht, liest die Dateien auch selbst. Eine Schranke im Hauptprozess wäre die Ergänzung: Er meldet die
+  Wahl des Dialogs selbst an den Server und reicht der Oberfläche nur die Kennung. `readopt` nimmt ohnehin keinen Pfad
+  (der Ort steht in `umzug.json`).
 - **Gewählt** (`classifyChoice`, `POST /api/relocation/inspect`): Ordner der Programmdatei, `data`, die Programmdatei
   selbst, `mietfuchs.sqlite` oder `db.json` (dann deren Ordner; nur `db.json` ist ein gültiger alter Bestand), oder ein
   Backup (`{ backup }`, dann `POST /api/relocation/restore-backup`: wie `/api/restore`, von der Platte gelesen). Der
@@ -358,6 +371,14 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   `isItemCovered`); einmal je Gruppe, kein Betrag ändert sich.
 
 ## API
+
+**Im Fenster nur vom eigenen Rechner** (Durchsicht vor 0.15.0, K6; `AT_THIS_COMPUTER` in index.ts, Muster
+`fromThisComputer`): Mit „Zugriff aus dem Heimnetz“ erreicht das Handy den Server des Fensters. `POST /api/quit` (aus dem
+Heimnetz beendete es das Fenster mit), jede schreibende Anfrage an `/api/ai/key` und `/api/ai/consent` und das Ändern von
+`updateCheck` in `PUT /api/settings` (unter Windows lädt das Fenster danach auch herunter) bekommen von dort 403 mit
+gesiezter Meldung: Zustimmen soll, wer vor dem Rechner sitzt. Ein PUT mit unverändertem `updateCheck` geht durch, das
+übrige Speichern der Einstellungen bleibt aus dem Heimnetz möglich. Nur bei `IN_WINDOW` (desktop, store); im Container
+und im npm-Betrieb kommt jede Anfrage von außen. Geprüft in api-fenster.test.ts.
 
 [index.ts](index.ts): generische CRUD-Routen in einer Schleife für `units, tenancies, costItems,
 meters, readings, payments`, durch [db/repository.ts](db/repository.ts); Kaskaden erledigen die
@@ -1156,7 +1177,10 @@ Anfrage hinaus. Nach Fehler eine Stunde Pause, bei Rate-Limit bis `retry-after`/
 (höchstens ein Tag). „Jetzt prüfen“ höchstens einmal pro Minute, gleichzeitige Aufrufe teilen eine
 Anfrage; Links nur ins eigene Repo. Kein Selbst-Update des Servers (#20), sondern eine Anleitung je Betriebsart
 ([client/src/update.ts](../../client/src/update.ts)); im Programmfenster unter Windows aktualisiert das Fenster selbst
-(electron-updater, scripts/CLAUDE.md „Automatische Updates“), auf dem Mac nennt `downloadUrl` das passende `.dmg`. Version aus `server/package.json`
+(electron-updater, scripts/CLAUDE.md „Automatische Updates“), auf dem Mac nennt `downloadUrl` das passende `.dmg`. Dort
+lädt die Zustimmung neue Versionen also auch herunter; die Frage im Cockpit und „Über Mietfuchs“ sagen es, wenn das
+Fenster zuständig ist (`owner === 'window'`, `DOWNLOADS_TOO` in client/src/components/Update.tsx, K8), ebenso
+docs/datenschutz.md. Ändern lässt sich `updateCheck` im Fenster nur vom Rechner selbst (unter „API“). Version aus `server/package.json`
 ([version.ts](version.ts)); Betriebsart aus `globalThis.Bun` (`binary`, an Systemort `package`, im Paketordner
 des Microsoft Store `store`), `NKA_RUNTIME=docker`, sonst `npm`. Bei `store` (#500) fragt der Server nie bei
 GitHub, auch nicht mit Zustimmung, und die Oberfläche fragt nicht danach: Updates bringt der Store, und ein

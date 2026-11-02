@@ -188,7 +188,9 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   ist „Daten übernehmen“ gesperrt (`aria-describedby`) und „Altes Mietfuchs beenden“ steht daneben. Beim Kopieren
   Fortschritt mit „Abbrechen“. Dauerhaft in den Einstellungen (Karte „Daten & Sicherung“, nur im Fenster) „Daten aus
   bisherigem Mietfuchs übernehmen …“: derselbe Bildschirm mit `manual` und „Zurück“; mit eigenem Bestand fragt jede
-  Übernahme „Ihre jetzigen Daten ersetzen?“ (`danger`) und schickt `replace`. Ein umgezogener Ordner zeigt oben „Nur noch
+  Übernahme „Ihre jetzigen Daten ersetzen?“ (`danger`) und schickt `replace`. Übernommen und eingespielt wird nur mit der
+  Kennung des Fundes (`id`, `backup.id`), nie mit dem Pfad; der Pfad des Ordner-Dialogs geht nur an `/inspect`
+  (server/src/CLAUDE.md, „Nur bekannte Orte“). Ein umgezogener Ordner zeigt oben „Nur noch
   zum Ansehen“ (Database.tsx), nach dem Umzug geänderte alte Daten [NewerStock.tsx](src/components/NewerStock.tsx).
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen

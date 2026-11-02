@@ -9,6 +9,8 @@ import { NewPropertyProvider, useOpenNewProperty } from './components/NewPropert
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
 import { UpdaterReadyHint } from './components/DesktopUpdater'
+import NetworkHint from './components/NetworkHint'
+import { networkBridge } from './desktopNetwork'
 import { serverHintAllowed } from './desktopUpdater'
 import DatabaseNotice from './components/Database'
 import PropertyNotice from './components/PropertyNotice'
@@ -167,6 +169,8 @@ function Shell() {
   // bisherigen Daten übernehmen“ erscheint. Bis die Antwort da ist, bleibt der Platz des Cockpits leer, damit es nicht
   // kurz aufblitzt; im Browser wird gar nicht gefragt.
   const [relocation, setRelocation] = useState<'checking' | 'offered' | 'none'>(() => (inWindow() ? 'checking' : 'none'))
+  // Die Brücke des Fensters für den Zugriff aus dem Heimnetz (#517); im Browser und auf dem Handy fehlt sie
+  const [network] = useState(() => networkBridge())
   // Nach dem Umzug im bisherigen Mietfuchs noch etwas geändert (Ergänzung 2)
   const [newerStock, setNewerStock] = useState<NewerStockInfo | null>(null)
   // Von Hand aus den Einstellungen geöffnet („Daten aus bisherigem Mietfuchs übernehmen …“)
@@ -466,6 +470,8 @@ function Shell() {
       ))}
 
       <div className="foot">
+        {/* Im Programmfenster, solange der Zugriff aus dem Heimnetz an ist (#517, K5); führt zur Karte in den Einstellungen */}
+        {network && <NetworkHint bridge={network} onOpen={() => { void navigateFromNav('einstellungen').then((done) => { if (done) close?.() }) }} />}
         {/* Der Name steht am Knopf selbst (#142). Er beginnt mit dem sichtbaren Text, damit
             Sprachsteuerung den Knopf am Rechner findet. */}
         <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
@@ -512,7 +518,7 @@ function Shell() {
         {relocation === 'none' && relocationManual && <Umzug manual onClose={() => setRelocationManual(false)} />}
         {relocation === 'none' && !relocationManual && <>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} updateDownloads={update.updater?.owner === 'window'} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
         )}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t)} />}
         {tab === 'stammdaten' && (
