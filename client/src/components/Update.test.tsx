@@ -6,7 +6,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import type { Settings, UpdateStatus } from '../types'
 import { UIProvider } from './feedback'
-import { UpdateConsent, UpdateHint, UpdateSettings, useUpdateStatus } from './Update'
+import { DesktopHint, UpdateConsent, UpdateHint, UpdateSettings, useUpdateStatus } from './Update'
+import { RELEASES_URL, STORE_URL } from '../update'
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
   houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30,
@@ -16,7 +17,7 @@ const settings = (patch: Partial<Settings> = {}): Settings => ({
 const download = (fileName: string) => `https://github.com/speedone/mietfuchs/releases/download/v0.5.0/${fileName}`
 
 const status = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({
-  enabled: true, current: '0.4.0', mode: 'binary', latest: '0.5.0', available: true,
+  enabled: true, current: '0.4.0', mode: 'binary', desktopOffer: null, latest: '0.5.0', available: true,
   releaseUrl: 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0',
   downloadUrl: download('mietfuchs-win.exe'),
   checkedAt: '2026-09-19T08:00:00.000Z', error: null, ...patch,
@@ -133,6 +134,95 @@ test('„Später" merkt sich genau diese Version', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Später' }))
   await waitFor(() => expect(dismissed).toHaveBeenCalled())
   expect(requests).toEqual([{ url: '/api/settings', method: 'PUT', body: { updateDismissed: '0.5.0' } }])
+})
+
+// ---------- Umstieg auf das Programmfenster (#517) ----------
+
+// Links, die eine Antwort von GitHub vorschlüge: Der Hinweis darf keinen davon übernehmen.
+const foreign = { releaseUrl: 'https://github.com/speedone/mietfuchs/releases/tag/v9.9.9', downloadUrl: download('mietfuchs-win.exe') }
+
+test('Umstieg unter Windows: Store und Installer aus festen Adressen, die Schritte und das Handy', () => {
+  render(<DesktopHint status={status({ desktopOffer: 'windows', ...foreign })} onDismissed={vi.fn()} />)
+  const card = screen.getByRole('region', { name: 'Mietfuchs gibt es jetzt als eigenes Programm' })
+  expect(card.textContent).toMatch(/Ihre Daten übernimmt es beim ersten Start/)
+  // Ohne Satz zum Drucken: zu viel für die Karte (Wunsch des Nutzers).
+  expect(card.textContent).toMatch(/^Mietfuchs gibt es jetzt als eigenes ProgrammMit eigenem Fenster statt Browser-Tab\. Ihre Daten/)
+  expect(card.textContent).not.toMatch(/gedruckt|Briefpapier|Seitenzahl/)
+  const store = screen.getByRole('link', { name: 'Aus dem Microsoft Store laden' })
+  expect(store.getAttribute('href')).toBe(STORE_URL)
+  expect(store.className).toBe('btn')
+  const installer = screen.getByRole('link', { name: 'Installer herunterladen' })
+  expect(installer.getAttribute('href')).toBe(RELEASES_URL)
+  expect(installer.className).toBe('btn secondary')
+  for (const link of [store, installer]) {
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noreferrer')
+  }
+  const steps = screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
+  expect(steps).toHaveLength(4)
+  expect(steps[0]).toMatch(/Microsoft Store/)
+  expect(steps[0]).toMatch(/Mietfuchs-Setup-/)
+  expect(steps[1]).toMatch(/„Mietfuchs beenden“/)
+  expect(steps[2]).toMatch(/Startmenü/)
+  expect(steps[3]).toMatch(/„Daten übernehmen“/)
+  // Wie die umgezogene Fassung es selbst sagt (database.ts): nur noch zum Ansehen.
+  expect(steps[3]).toMatch(/nur noch zum Ansehen/)
+  expect(card.textContent).toMatch(/Zugriff aus dem Heimnetz/)
+  expect(card.textContent).toMatch(/Adresse ändert sich/)
+  expect(card.textContent).not.toMatch(/\.dmg/)
+})
+
+test('Umstieg auf dem Mac: ein Knopf zur Release-Seite, das Abbild für Apple Silicon oder Intel', () => {
+  render(<DesktopHint status={status({ desktopOffer: 'macos', ...foreign })} onDismissed={vi.fn()} />)
+  expect(screen.getByRole('link', { name: 'Neues Mietfuchs herunterladen' }).getAttribute('href')).toBe(RELEASES_URL)
+  expect(screen.queryByRole('link', { name: 'Aus dem Microsoft Store laden' })).toBeNull()
+  const steps = screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
+  expect(steps).toHaveLength(4)
+  expect(steps[0]).toMatch(/apple-silicon\.dmg/)
+  expect(steps[0]).toMatch(/intel\.dmg/)
+  expect(steps[0]).toMatch(/„Programme“/)
+  expect(steps[1]).toMatch(/„Mietfuchs beenden“/)
+  expect(steps[3]).toMatch(/„Daten übernehmen“/)
+  expect(document.body.textContent).not.toMatch(/Microsoft Store|Setup/)
+})
+
+test('Umstieg: „Später“ merkt sich die installierte Version', async () => {
+  const dismissed = vi.fn()
+  render(<UIProvider><DesktopHint status={status({ desktopOffer: 'windows' })} onDismissed={dismissed} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Später' }))
+  await waitFor(() => expect(dismissed).toHaveBeenCalled())
+  expect(requests).toEqual([{ url: '/api/settings', method: 'PUT', body: { desktopHintDismissed: '0.4.0' } }])
+})
+
+test('Umstieg: scheitert „Später“, sagt Mietfuchs es, und der Hinweis bleibt', async () => {
+  failing = ['/api/settings']
+  const dismissed = vi.fn()
+  render(<UIProvider><DesktopHint status={status({ desktopOffer: 'macos' })} onDismissed={dismissed} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Später' }))
+  await waitFor(() => expect(screen.getByText(/Ausblenden ging nicht/)).toBeTruthy())
+  expect(dismissed).not.toHaveBeenCalled()
+})
+
+test('Update-Anleitung der Programmdatei: Datei ersetzen bleibt, dazu der Weg zum Umstieg', async () => {
+  response = status({ desktopOffer: 'windows' })
+  render(<Card s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText(/im selben Ordner wie bisher/)).toBeTruthy())
+  const store = screen.getByRole('link', { name: 'Microsoft Store' })
+  expect(store.getAttribute('href')).toBe(STORE_URL)
+  expect(screen.getByText(/übernimmt Ihre Daten beim ersten Start/)).toBeTruthy()
+  cleanup()
+
+  response = status({ desktopOffer: 'macos', downloadUrl: download('mietfuchs-macos-apple-silicon.zip') })
+  render(<Card s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText(/Zip-Datei/)).toBeTruthy())
+  expect(screen.getByRole('link', { name: 'neue Mietfuchs für den Mac' }).getAttribute('href')).toBe(RELEASES_URL)
+  cleanup()
+
+  // Unter Linux (kein Angebot) bleibt die Anleitung, wie sie war.
+  response = status({ downloadUrl: download('mietfuchs-linux.tar.gz') })
+  render(<Card s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText('tar -xzf mietfuchs-linux.tar.gz')).toBeTruthy())
+  expect(screen.queryByText(/übernimmt Ihre Daten beim ersten Start/)).toBeNull()
 })
 
 // ---------- Karte in den Einstellungen ----------

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Settings, UpdateStatus } from './types'
-import { canQuit, consentPending, hintVisible, isPrerelease, statusText, updatedByStore, updateGuide } from './update'
+import { canQuit, consentPending, desktopHintVisible, desktopLinks, hintVisible, isPrerelease, RELEASES_URL, STORE_URL, statusText, updatedByStore, updateGuide } from './update'
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
   houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30,
@@ -8,7 +8,7 @@ const settings = (patch: Partial<Settings> = {}): Settings => ({
 })
 
 const status = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({
-  enabled: true, current: '0.4.0', mode: 'binary', latest: '0.5.0', available: true,
+  enabled: true, current: '0.4.0', mode: 'binary', desktopOffer: null, latest: '0.5.0', available: true,
   releaseUrl: 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0',
   downloadUrl: 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/mietfuchs-win.exe',
   checkedAt: '2026-09-19T08:00:00.000Z', error: null, ...patch,
@@ -48,6 +48,51 @@ describe('Hinweis in der Seitenleiste', () => {
     const dismissed = settings({ updateCheck: 'on', updateDismissed: '0.5.0' })
     expect(hintVisible(status(), dismissed)).toBe(false)
     expect(hintVisible(status({ latest: '0.6.0' }), dismissed)).toBe(true)
+  })
+})
+
+describe('Umstieg auf das Programmfenster (#517)', () => {
+  test('erscheint, sobald der Server ihn anbietet, auch ohne Zustimmung zur Update-Prüfung', () => {
+    expect(desktopHintVisible(status({ desktopOffer: 'windows', enabled: false, available: false }), settings())).toBe(true)
+    expect(desktopHintVisible(status({ desktopOffer: 'macos' }), settings({ updateCheck: 'off' }))).toBe(true)
+  })
+
+  test('bleibt aus ohne Angebot, vor dem Laden der Einstellungen und ohne Antwort vom Server', () => {
+    expect(desktopHintVisible(status({ desktopOffer: null }), settings())).toBe(false)
+    expect(desktopHintVisible(status({ desktopOffer: 'windows' }), null)).toBe(false)
+    expect(desktopHintVisible(null, settings())).toBe(false)
+  })
+
+  test('„Später" gilt für die installierte Version, nach einem Update der Programmdatei kommt er wieder', () => {
+    const dismissed = settings({ desktopHintDismissed: '0.4.0' })
+    expect(desktopHintVisible(status({ desktopOffer: 'windows' }), dismissed)).toBe(false)
+    expect(desktopHintVisible(status({ desktopOffer: 'windows', current: '0.4.1' }), dismissed)).toBe(true)
+  })
+
+  test('Links aus festen Adressen: unter Windows Store und Installer, auf dem Mac das Abbild', () => {
+    expect(desktopLinks('windows', '0.15.0')).toEqual([
+      { label: 'Aus dem Microsoft Store laden', href: STORE_URL, primary: true },
+      { label: 'Installer herunterladen', href: RELEASES_URL, primary: false },
+    ])
+    expect(desktopLinks('macos', '0.15.0')).toEqual([{ label: 'Neues Mietfuchs herunterladen', href: RELEASES_URL, primary: true }])
+    expect(RELEASES_URL).toBe('https://github.com/speedone/mietfuchs/releases/latest')
+  })
+
+  test('Vorabversion: die Seite genau dieses Releases, aus der eigenen Version gebildet, und kein Store', () => {
+    // releases/latest überspringt Vorabversionen, und der Store hat sie nie.
+    const tag = 'https://github.com/speedone/mietfuchs/releases/tag/v0.15.0-rc.1'
+    expect(desktopLinks('windows', '0.15.0-rc.1')).toEqual([{ label: 'Installer herunterladen', href: tag, primary: true }])
+    expect(desktopLinks('macos', '0.15.0-rc.1')).toEqual([{ label: 'Neues Mietfuchs herunterladen', href: tag, primary: true }])
+  })
+
+  test('Der Store-Link trägt die Store-ID, mit der auch das Release einreicht', async () => {
+    // Gelesen mit node:fs wie in printCss.test.ts: Der Client hat keine Node-Typen, deshalb der Name als Ausdruck.
+    const fsModule = 'node:fs'
+    const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync: (path: URL, encoding: 'utf8') => string }
+    const submit = fs.readFileSync(new URL('../../scripts/store-submit.mjs', import.meta.url), 'utf8')
+    const appId = /export const APP_ID = '([0-9A-Z]+)'/.exec(submit)?.[1]
+    if (!appId) throw new Error('APP_ID fehlt in scripts/store-submit.mjs')
+    expect(STORE_URL).toBe(`https://apps.microsoft.com/detail/${appId}?mode=direct`)
   })
 })
 

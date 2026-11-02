@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Settings, UpdateStatus } from '../types'
 import { api } from '../api'
-import { statusText, updatedByStore, updateGuide, type UpdateGuide } from '../update'
+import { desktopLinks, RELEASES_URL, STORE_URL, statusText, updatedByStore, updateGuide, type UpdateGuide } from '../update'
 import { useToast } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import FoxLogo from './Logo'
 
 // Update-Hinweis in drei Teilen: die einmalige Frage im Cockpit, der Hinweis oben in der
-// Seitenleiste und der Abschnitt in der Karte „Über Mietfuchs“ der Einstellungen. Nach GitHub
+// Seitenleiste und der Abschnitt in der Karte „Über Mietfuchs“ der Einstellungen. Dazu im Cockpit der
+// Hinweis auf das eigene Programmfenster (#517) für die Programmdatei unter Windows und macOS. Nach GitHub
 // fragt nur der Server, und nur mit Zustimmung (server/src/update.ts). /api/update selbst ist
 // lokal und liefert ohne Zustimmung nur die installierte Version.
 
@@ -89,6 +90,57 @@ export function UpdateConsent({ onAnswered }: { onAnswered: () => unknown }) {
           <button className="btn secondary" disabled={busy} onClick={() => void answer('off')}>Nein, danke</button>
         </div>
         <p className="muted">Sie können das jederzeit in den Einstellungen ändern.</p>
+      </div>
+    </section>
+  )
+}
+
+// ---------- Umstieg auf das Programmfenster (#517), im Cockpit ----------
+
+// Gestaltet wie die Frage darüber: eine ruhige Karte mit dem Fuchs, kein Hinweis einer Stufe. Die Links kommen aus
+// festen Adressen (desktopLinks), nie aus einer Antwort von GitHub. „Später“ gilt für die installierte Version.
+export function DesktopHint({ status, onDismissed }: { status: UpdateStatus; onDismissed: () => unknown }) {
+  const toast = useToast()
+  const offer = status.desktopOffer
+  if (!offer) return null
+  const dismiss = async () => {
+    try {
+      await saveSettings({ desktopHintDismissed: status.current })
+      await onDismissed()
+    } catch (e) {
+      toast(`Ausblenden ging nicht: ${messageOf(e)}`, 'error')
+    }
+  }
+  return (
+    <section className="card update-consent no-print" aria-labelledby="desktop-hint-title">
+      <FoxLogo size={40} />
+      <div className="update-consent-body">
+        <h2 id="desktop-hint-title">Mietfuchs gibt es jetzt als eigenes Programm</h2>
+        <p>
+          Mit eigenem Fenster statt Browser-Tab. Ihre Daten übernimmt es beim ersten Start.
+          {offer === 'windows' && ' Aus dem Microsoft Store kommen Updates von selbst, und Windows warnt beim Start nicht.'}
+        </p>
+        <div className="row">
+          {desktopLinks(offer, status.current).map((link) => (
+            <a key={link.label} className={link.primary ? 'btn' : 'btn secondary'} href={link.href} target="_blank" rel="noreferrer">{link.label}</a>
+          ))}
+          <button className="btn ghost" onClick={() => void dismiss()}>Später</button>
+        </div>
+        <ol className="update-steps mt-4">
+          {offer === 'windows'
+            ? <li>Mietfuchs aus dem Microsoft Store installieren, oder den Installer <code>Mietfuchs-Setup-….exe</code> von der Release-Seite laden und starten.</li>
+            // In einem span: Den letzten Code eines Schritts setzt .update-steps als Befehlszeile darunter (Linux).
+            : <li><span>Auf der Release-Seite das Abbild für Ihren Mac laden, <code>…-apple-silicon.dmg</code> für Apple M1 und neuer oder <code>…-intel.dmg</code> für Intel. Öffnen und Mietfuchs in „Programme“ ziehen.</span></li>}
+          <li>Dieses Mietfuchs beenden, mit „Mietfuchs beenden“ in der Seitenleiste.</li>
+          {offer === 'windows'
+            ? <li>Das neue Mietfuchs starten, etwa aus dem Startmenü.</li>
+            : <li>Mietfuchs aus „Programme“ starten. Blockiert macOS den ersten Start, geben Sie es frei wie beim ersten Mal (<a href={README} target="_blank" rel="noreferrer">README</a>).</li>}
+          <li>Fragt das neue Mietfuchs nach Ihren bisherigen Daten, „Daten übernehmen“ bestätigen. Es kopiert sie, das bisherige zeigt sie danach nur noch zum Ansehen.</li>
+        </ol>
+        <p className="muted">
+          Mit dem Handy oder einem zweiten Rechner? Den Zugriff aus dem Heimnetz schalten Sie im neuen Mietfuchs in den
+          Einstellungen ein; die Adresse ändert sich dabei.
+        </p>
       </div>
     </section>
   )
@@ -263,6 +315,20 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
           {quitStep}
           <li>Installieren wie beim ersten Mal. Das ersetzt die bisherige Fassung, Ihre Daten bleiben, wo sie sind.</li>
         </ol>
+      )}
+      {/* Die Programmdatei gibt es weiter, ersetzt wird sie wie bisher; daneben der Weg ins Programmfenster (#517). */}
+      {status.desktopOffer === 'windows' && (
+        <p>
+          Statt die Datei zu ersetzen, können Sie auch auf das neue Mietfuchs mit eigenem Fenster umsteigen, am besten aus
+          dem <a href={STORE_URL} target="_blank" rel="noreferrer">Microsoft Store</a>. Es übernimmt Ihre Daten beim ersten Start.
+        </p>
+      )}
+      {status.desktopOffer === 'macos' && (
+        <p>
+          Statt die Datei zu ersetzen, können Sie auch auf das{' '}
+          <a href={RELEASES_URL} target="_blank" rel="noreferrer">neue Mietfuchs für den Mac</a> mit eigenem Fenster
+          umsteigen. Es übernimmt Ihre Daten beim ersten Start.
+        </p>
       )}
       {guide.system === null && (
         <p>

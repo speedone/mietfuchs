@@ -1662,6 +1662,8 @@ export const settings = sqliteTable(
     // Ohne Wert wurde noch nicht gefragt; 'on' erlaubt die Abfrage bei GitHub.
     updateCheck: text('update_check', { enum: UPDATE_CHECK }),
     updateDismissed: text('update_dismissed'),
+    // Der Hinweis auf das Programmfenster (#517) mit „Später“ weggeklickt: die installierte Version, bei der das geschah.
+    desktopHintDismissed: text('desktop_hint_dismissed'),
     // Die Einstellungen der KI für Fortgeschrittene. Sie sind einzelne Werte mit einem
     // Wertebereich und gehören deshalb hierher; was es je Platz zweimal gibt, steht in
     // `ai_slots`.

@@ -725,6 +725,7 @@ export type Settings = {
   // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
   updateCheck?: 'on' | 'off'
   updateDismissed?: string // Version, deren Hinweis mit „Später“ ausgeblendet wurde
+  desktopHintDismissed?: string // installierte Version, bei der der Hinweis auf das Programmfenster (#517) „Später“ bekam
   // KI-Belegauswertung (#18), siehe server/src/ai/settings.ts. ollamaUrl und ollamaModel oben
   // spiegeln Adresse und Modell, solange Ollama der Standard-Anbieter ist.
   ai?: AiSettings
@@ -864,6 +865,8 @@ export type UpdateStatus = {
   current: string
   // 'package': aus einem Linux-Paket installiert, 'store': aus dem Microsoft Store (#500)
   mode: 'binary' | 'package' | 'store' | 'desktop' | 'docker' | 'npm'
+  // Hinweis auf das eigene Programmfenster (#517): nur bei der Programmdatei unter Windows bzw. macOS, sonst null.
+  desktopOffer: 'windows' | 'macos' | null
   latest: string | null
   available: boolean
   releaseUrl: string | null

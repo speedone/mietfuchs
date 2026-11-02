@@ -152,6 +152,9 @@ type CreateUpdateCheckerOptions = {
   mode: UpdateStatus['mode']
   platform?: string
   arch?: string
+  // Liegt im Datenordner der Vermerk des Umzugs (#517, relocation.ts)? Je Anfrage gefragt, denn das Fenster kann die
+  // Daten umziehen, während diese Fassung läuft.
+  movedAway?: () => boolean
   now?: () => number
   ttlMs?: number
   errorPauseMs?: number
@@ -171,6 +174,18 @@ type CheckOptions = { consent?: unknown, force?: boolean }
 // dem sie sich wieder abschalten ließe.
 export const mayAskGitHub = (mode: UpdateStatus['mode'], consent: unknown): boolean => mode !== 'store' && consent === 'on'
 
+// Umstieg auf das eigene Programmfenster (#517): Die Programmdatei gibt es ab 0.15 noch einige Releases weiter, unter
+// Windows und macOS weist sie aber auf das neue Programm hin (Store oder Installer, auf dem Mac das Abbild). Unter Linux
+// gibt es kein Fenster; wer im Fenster oder aus dem Store arbeitet, ist schon umgestiegen, und Container und npm laufen
+// ohne. Die Plattform kommt herein (Projektregel), der Stand steht ohne Zustimmung in /api/update, denn er braucht
+// keine Anfrage bei GitHub: Die Oberfläche bildet die Links aus festen Adressen.
+export function desktopOfferFor(mode: UpdateStatus['mode'], platform: string): UpdateStatus['desktopOffer'] {
+  if (mode !== 'binary' && mode !== 'package') return null
+  if (platform === 'win32') return 'windows'
+  if (platform === 'darwin') return 'macos'
+  return null
+}
+
 // `mode` ist 'binary' (Programmdatei), 'package' (aus einem Installationspaket), 'docker' oder
 // 'npm' und bestimmt, ob es einen direkten Download gibt. Aus einem Paket gibt es keinen: Welche
 // der drei Paketdateien passt, weiß nur die Distribution des Nutzers, deshalb führt der Hinweis
@@ -181,6 +196,7 @@ export function createUpdateChecker({
   mode,
   platform = process.platform,
   arch = process.arch,
+  movedAway = () => false,
   now = Date.now,
   ttlMs = ONE_DAY,
   errorPauseMs = ONE_HOUR,
@@ -197,6 +213,7 @@ export function createUpdateChecker({
     enabled,
     current: currentVersion,
     mode,
+    desktopOffer: desktopOfferFor(mode, platform),
     latest: null,
     available: false,
     releaseUrl: null,
@@ -255,7 +272,14 @@ export function createUpdateChecker({
     }
   }
 
-  async function check({ consent, force = false }: CheckOptions = {}): Promise<UpdateStatus> {
+  // Der Hinweis auf das Programmfenster gilt je Anfrage neu: Nach dem Umzug zeigt diese Fassung die Daten nur noch zum
+  // Ansehen und lehnte auch „Später“ ab, die Karte entfällt dort.
+  async function check(options: CheckOptions = {}): Promise<UpdateStatus> {
+    const result = await checkRelease(options)
+    return { ...result, desktopOffer: movedAway() ? null : desktopOfferFor(mode, platform) }
+  }
+
+  async function checkRelease({ consent, force = false }: CheckOptions = {}): Promise<UpdateStatus> {
     if (!mayAskGitHub(mode, consent)) return emptyResult(false)
     if (pending) return pending
     if (backoff && (now() < backoff.blockedUntil || (!force && now() < backoff.until))) return backoff.result

@@ -1115,3 +1115,9 @@ GitHub, auch nicht mit Zustimmung, und die Oberfläche fragt nicht danach: Updat
 GitHub-Release erscheint Tage vor der Zertifizierung. `NKA_UPDATE_URL` lenkt die Abfrage um. SemVer mit Vorabversionen
 (#166): ein Tag mit Vorabversion wird nie angeboten; läuft selbst ein Kandidat, ist die fertige
 Version gleicher Nummer ein Update.
+**Umstieg aufs Programmfenster** (#517): `desktopOffer` im Stand (`desktopOfferFor(mode, platform)`, Plattform
+hineingereicht) ist `windows` bzw. `macos` nur bei `binary`/`package` unter Windows und macOS, sonst `null`, und `null`, sobald
+der Datenordner den Vermerk des Umzugs trägt (`movedAway`, je Anfrage `readMovedMarker`: dort ist alles nur zum Ansehen); er steht
+auch ohne Zustimmung da, denn er braucht keine Anfrage. Die Karte im Cockpit (`DesktopHint`, Logik in client/src/update.ts)
+bildet ihre Links aus festen Adressen (Store-Seite mit der ID aus scripts/store-submit.mjs, `releases/latest`), nie
+aus der Antwort von GitHub; „Später“ speichert die installierte Version in `settings.desktopHintDismissed`.

@@ -18,6 +18,40 @@ export const hintVisible = (st: UpdateStatus | null, s: Settings | null): boolea
 
 export const RELEASES_URL = 'https://github.com/speedone/mietfuchs/releases/latest'
 
+// ---------- Umstieg auf das eigene Programmfenster (#517) ----------
+// Die Programmdatei gibt es ab 0.15 noch einige Releases weiter; unter Windows und macOS weist sie auf das neue
+// Programm hin. Ob, sagt der Server (`desktopOffer`, server/src/update.ts), ohne Anfrage bei GitHub. Die Links stehen
+// hier fest und kommen nie aus einer Antwort von GitHub: Die Release-Seite führt zu Installer und Abbild.
+
+// Die Seite der App im Microsoft Store, mit der Store-ID aus scripts/store-submit.mjs (update.test.ts hält beide
+// zusammen). `mode=direct` öffnet die Store-App statt der Webseite, wie das Abzeichen im README.
+export const STORE_URL = 'https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?mode=direct'
+
+// „Später“ gilt für die installierte Version: Wer die Programmdatei aktualisiert, sieht den Hinweis wieder. Vor dem
+// Laden der Einstellungen bleibt er aus, sonst blitzte er nach „Später“ bei jedem Start kurz auf.
+export const desktopHintVisible = (st: UpdateStatus | null, s: Settings | null): boolean =>
+  !!st?.desktopOffer && s !== null && s.desktopHintDismissed !== st.current
+
+export type DesktopLink = { label: string; href: string; primary: boolean }
+
+// Windows: empfohlen der Store (Updates von selbst, keine Warnung beim Start, eigene ARM-Fassung), daneben der
+// Installer für x64 und ARM64. Mac: das Abbild für Apple Silicon oder Intel, beides auf der Release-Seite.
+// Läuft eine Vorabversion, führt der Link auf die Seite genau dieses Releases (gebildet aus der eigenen Version, nicht
+// aus einer Antwort): releases/latest überspringt Vorabversionen, und der Store hat keine.
+export function desktopLinks(offer: 'windows' | 'macos', current: string): DesktopLink[] {
+  if (isPrerelease(current)) {
+    const href = `https://github.com/speedone/mietfuchs/releases/tag/v${current}`
+    return [{ label: offer === 'windows' ? 'Installer herunterladen' : 'Neues Mietfuchs herunterladen', href, primary: true }]
+  }
+  if (offer === 'windows') {
+    return [
+      { label: 'Aus dem Microsoft Store laden', href: STORE_URL, primary: true },
+      { label: 'Installer herunterladen', href: RELEASES_URL, primary: false },
+    ]
+  }
+  return [{ label: 'Neues Mietfuchs herunterladen', href: RELEASES_URL, primary: true }]
+}
+
 // Beenden aus der Oberfläche gibt es nur bei der Programmdatei (#45): Aus einem Linux-Paket
 // startet Mietfuchs ohne Konsolenfenster, deren Schließen sonst der Weg zum Beenden ist. Im
 // Container und im npm-Betrieb beendet die Umgebung den Dienst, und ein Neustart käme dort von

@@ -904,7 +904,7 @@ test('Einstellungen landen in der Datenbank und überleben einen Neustart', asyn
   let dataDir: string
   try {
     dataDir = erster.dataDir
-    await erster.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Erika am Park', paymentDeadlineDays: 45 }) })
+    await erster.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Erika am Park', paymentDeadlineDays: 45, desktopHintDismissed: '0.15.0' }) })
     assert.equal((await erster.api<ClientSettings>('/api/settings')).landlordName, 'Erika am Park')
 
     const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
@@ -924,6 +924,8 @@ test('Einstellungen landen in der Datenbank und überleben einen Neustart', asyn
     const nachNeustart = await zweiter.api<ClientSettings>('/api/settings')
     assert.equal(nachNeustart.landlordName, 'Erika am Park', 'nach dem Neustart ist der Vermietername weg')
     assert.equal(nachNeustart.paymentDeadlineDays, 45)
+    // „Später“ am Hinweis auf das Programmfenster (#517) gilt weiter für diese Version.
+    assert.equal(nachNeustart.desktopHintDismissed, '0.15.0')
   } finally {
     zweiter.stop()
   }

@@ -4105,6 +4105,7 @@ const updateChecker = createUpdateChecker({
   url: process.env.NKA_UPDATE_URL || UPDATE_URL,
   currentVersion: APP_VERSION,
   mode: RUNTIME,
+  movedAway: () => (MOVED_AWAY ?? readMovedMarker(DATA_DIR)) !== null,
 })
 
 app.get('/api/update', async (req, res) => {

@@ -934,6 +934,32 @@ test('Update-Hinweis: im Docker-Container lautet die Betriebsart docker', async 
   })
 })
 
+test('Umstieg auf das Programmfenster (#517): /api/update nennt ihn je Betriebsart, ohne bei GitHub zu fragen', async () => {
+  // Die Plattform ist die dieses Rechners; welche Plattform was ergibt, prüft update.test.ts mit hineingereichter.
+  const expected = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : null
+  await withUpdateServer({ NKA_RUNTIME: 'binary' }, async (s, github) => {
+    assert.equal((await s.api<UpdateStatus>('/api/update')).desktopOffer, expected)
+    assert.equal(github.requests.length, 0)
+  })
+  // Umgezogen (Vermerk im Datenordner): nur noch zum Ansehen, also keine Karte. Unter Linux ist der Wert ohnehin null;
+  // die Bedingung selbst prüft update.test.ts, hier geht es um die Verbindung zum Vermerk auf Windows und macOS.
+  const github = await fakeGitHub()
+  const movedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-umgezogen-'))
+  fs.writeFileSync(path.join(movedDir, 'umgezogen.json'), JSON.stringify({ version: 1, movedTo: path.join(os.tmpdir(), 'neu'), at: '2026-11-02T08:00:00.000Z', appVersion: '0.15.0' }))
+  const moved = await startServerBeside(github, movedDir, { NKA_UPDATE_URL: github.url, NKA_RUNTIME: 'binary' })
+  try {
+    assert.equal((await moved.api<UpdateStatus>('/api/update')).desktopOffer, null)
+  } finally {
+    moved.stop()
+    github.stop()
+  }
+  for (const runtime of ['docker', 'desktop']) {
+    await withUpdateServer({ NKA_RUNTIME: runtime }, async (s) => {
+      assert.equal((await s.api<UpdateStatus>('/api/update')).desktopOffer, null, runtime)
+    })
+  }
+})
+
 test('Version: /healthz und der Update-Hinweis nennen die Version aus package.json', async () => {
   const report = await srv.api<HealthReport>('/healthz')
   const status = await srv.api<UpdateStatus>('/api/update')

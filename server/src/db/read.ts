@@ -675,6 +675,7 @@ export async function readSettings(db: Executor): Promise<MigratedSettings> {
     ...(row.landlordContact == null ? {} : { landlordContact: row.landlordContact }),
     ...(row.updateCheck == null ? {} : { updateCheck: row.updateCheck }),
     ...(row.updateDismissed == null ? {} : { updateDismissed: row.updateDismissed }),
+    ...(row.desktopHintDismissed == null ? {} : { desktopHintDismissed: row.desktopHintDismissed }),
     ai,
   }
   return { ...stored, ai }
