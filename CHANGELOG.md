@@ -81,7 +81,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Ausschalten der Update-Prüfung gehen nur am Rechner selbst, nicht vom Handy.
 - **Hinweis auf das neue Programm** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Wer die
   Programmdatei unter Windows oder macOS nutzt, sieht im Cockpit eine Karte zum Umstieg: unter Windows mit „Aus dem
-  Microsoft Store laden“ (empfohlen) und „Installer herunterladen“, auf dem Mac mit „Neues Mietfuchs herunterladen“,
+  Microsoft Store laden“ (empfohlen) und „Oder den Installer herunterladen“, auf dem Mac mit „Neues Mietfuchs herunterladen“,
   dazu die vier Schritte bis „Daten übernehmen“. „Später“ blendet sie bis zum nächsten Update der Programmdatei aus.
   Die Anleitung zum Aktualisieren der Programmdatei bleibt und nennt den Umstieg mit. Mietfuchs fragt dafür nirgends
   nach, die Links sind fest.

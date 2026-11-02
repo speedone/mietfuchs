@@ -150,21 +150,22 @@ test('Umstieg unter Windows: Store und Installer aus festen Adressen, die Schrit
   // Ohne Satz zum Drucken: zu viel für die Karte (Wunsch des Nutzers).
   expect(card.textContent).toMatch(/^Mietfuchs gibt es jetzt als eigenes ProgrammMit eigenem Fenster statt Browser-Tab\. Ihre Daten/)
   expect(card.textContent).not.toMatch(/gedruckt|Briefpapier|Seitenzahl/)
-  // Geänderte Erwartung: Installer zuerst, Store als zweite Wahl (bis zur Zertifizierung liefert der Store die alte Fassung)
-  const store = screen.getByRole('link', { name: 'Oder aus dem Microsoft Store, mit automatischen Updates' })
+  // Geänderte Erwartung: Store zuerst (wird mit jedem Release zugleich eingereicht), Installer als zweite Wahl
+  const store = screen.getByRole('link', { name: 'Aus dem Microsoft Store laden' })
   expect(store.getAttribute('href')).toBe(STORE_URL)
-  expect(store.className).toBe('btn secondary')
-  const installer = screen.getByRole('link', { name: 'Installer herunterladen' })
+  expect(store.className).toBe('btn')
+  const installer = screen.getByRole('link', { name: 'Oder den Installer herunterladen' })
   expect(installer.getAttribute('href')).toBe(RELEASES_URL)
-  expect(installer.className).toBe('btn')
+  expect(installer.className).toBe('btn secondary')
+  // Der Store auch im ersten Schritt zuerst
+  expect(card.textContent).toMatch(/Mietfuchs aus dem Microsoft Store installieren oder den Installer/)
   for (const link of [store, installer]) {
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toBe('noreferrer')
   }
   const steps = screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
   expect(steps).toHaveLength(4)
-  expect(steps[0]).toMatch(/^Den Installer Mietfuchs-Setup-/)
-  expect(steps[0]).toMatch(/Microsoft Store/)
+  expect(steps[0]).toMatch(/^Mietfuchs aus dem Microsoft Store installieren oder den Installer Mietfuchs-Setup-/)
   expect(steps[1]).toMatch(/„Mietfuchs beenden“/)
   expect(steps[2]).toMatch(/Startmenü/)
   expect(steps[3]).toMatch(/„Daten übernehmen“/)
