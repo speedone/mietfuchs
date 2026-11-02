@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, HeatingPlant, NoticeSubject, Settings, Tenancy, Unit } from './types'
+import type { CostItem, HeatingPlant, Settings, Tenancy, Unit } from './types'
+import type { JumpTarget } from './focus'
+import { AI_SETTINGS_TARGET, NEW_UNIT_TARGET, UPDATE_GUIDE_TARGET } from './jumpTargets'
 import { api } from './api'
 import { PeriodProvider, usePeriod, useSwitchTo } from './period'
 import { PeriodSelect } from './components/PeriodSelect'
@@ -148,9 +150,10 @@ function writeDismissedNotices(ids: string[]): void {
 
 function Shell() {
   const [tab, setTabState] = useState<Tab>('cockpit')
-  // Der Eintrag, den „Hier beheben →“ auf der Zielseite öffnen soll (#142). Jeder andere
-  // Seitenwechsel löscht ihn, und die Seite meldet, wenn sie ihn geöffnet hat.
-  const [focus, setFocus] = useState<NoticeSubject | null>(null)
+  // Der Eintrag, den „Hier beheben →“ auf der Zielseite öffnen soll (#142), seit #554 auch das Formular eines
+  // „Anlegen“ oder die Karte eines „Prüfen“ (focus.ts). Jeder andere Seitenwechsel löscht ihn, und die Seite meldet,
+  // wenn sie ihn geöffnet hat.
+  const [focus, setFocus] = useState<JumpTarget | null>(null)
   // Der Faden einer Anleitung (#488, PR 2): Anleitung und Schritt, denen man gerade folgt. Gesetzt vom Sprung aus der
   // Anleitung und von „Nächster Schritt“, in einem Zug mit der Seite, damit die Leiste zwischen zwei Schritten nicht
   // kurz verschwindet und den Fokus verliert. Beendet nur von der Navigation (Seitenleiste, Menüblatt, untere Leiste),
@@ -158,7 +161,7 @@ function Shell() {
   // Begriffe‘ →“) behalten ihn, ebenso der Wechsel von Objekt und Zeitraum: Die Anleitung gilt fürs Vorgehen, nicht für
   // ein Objekt oder Jahr (Durchsicht von PR 2, K1 und K2). `undefined` heißt beim Seitenwechsel: Faden behalten.
   const [thread, setThread] = useState<GuideThreadState | null>(null)
-  const setTab = useCallback((t: Tab, f: NoticeSubject | null = null, th?: GuideThreadState | null) => {
+  const setTab = useCallback((t: Tab, f: JumpTarget | null = null, th?: GuideThreadState | null) => {
     setFocus(f)
     setTabState(t)
     if (th !== undefined) setThread(th)
@@ -229,7 +232,7 @@ function Shell() {
   // Startfokus auf „Abbrechen“. Ergibt, ob gewechselt wurde.
   // Ein Ziel kann eine Ansicht der Seite Belege nennen (`belege:eingang`, nav.ts); der Wechsel der Ansicht allein fragt
   // nicht, denn beide Ansichten bleiben eingehängt.
-  const navigate = useCallback(async (target: NavTarget, f: NoticeSubject | null = null, th?: GuideThreadState | null): Promise<boolean> => {
+  const navigate = useCallback(async (target: NavTarget, f: JumpTarget | null = null, th?: GuideThreadState | null): Promise<boolean> => {
     const { tab: t, view } = splitTarget(target)
     if (t !== tab && hasOpenForm()) {
       const ok = await confirmLeave({
@@ -299,7 +302,7 @@ function Shell() {
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
   // Wechselt dabei das Objekt, hat dessen Rückfrage schon gefragt (die Seite wird ohnehin neu aufgestellt);
   // sonst fragt der Seitenwechsel.
-  const goViaProperty = async (target: string | null | undefined, t: Tab, f: NoticeSubject | null = null): Promise<boolean> => {
+  const goViaProperty = async (target: string | null | undefined, t: Tab, f: JumpTarget | null = null): Promise<boolean> => {
     if (target && target !== property?.id) {
       if (!(await switchProperty(target))) return false
       setTab(t, f)
@@ -308,11 +311,11 @@ function Shell() {
     return navigate(t, f)
   }
   // Fehler mit Ausweg (#487): ein gespeicherter Beleg auf der Seite Belege (ohne Position im Eingang, sonst im
-  // Ordner), bzw. die KI-Einstellungen
+  // Ordner), bzw. die Karte „KI-Belegauswertung“ der Einstellungen (#554)
   const openReceipt = (file: string) => {
     void navigate('belege').then((done) => { if (done) setReceiptFocus(file) })
   }
-  const openAiSettings = () => { void navigate('einstellungen') }
+  const openAiSettings = () => { void navigate('einstellungen', AI_SETTINGS_TARGET) }
   // Ein Zählerfoto, dessen Ablesen gescheitert ist: die Ablesung von Hand auf der Seite Zähler
   const openMeters = () => { void navigate('zaehler') }
   // „Position öffnen“ von der Seite Belege: Die zeigt alle Objekte, die Seite Kosten nur das
@@ -448,7 +451,7 @@ function Shell() {
       {/* Im Programmfenster unter Windows der Hinweis des Fensters (#517), sonst der des Servers; nie beide */}
       {!close && update.updater?.owner === 'window' && <UpdaterReadyHint updates={update.updater} />}
       {!close && serverHintAllowed(update.updater?.owner ?? 'server', update.updater?.state ?? null) && update.status && hintVisible(update.status, settings) && (
-        <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen')} />
+        <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen', UPDATE_GUIDE_TARGET)} />
       )}
 
       {/* Das „+“ öffnet dasselbe Fenster wie die Karte „Weitere Objekte“; am Handy schließt erst das Menüblatt. */}
@@ -505,7 +508,7 @@ function Shell() {
             focus={focusNoticeFor === propertyId}
             onFocused={clearNoticeFocus}
             onBack={() => void switchProperty(emptyNotice.previous.id)}
-            onSetUp={tab === 'stammdaten' ? undefined : () => void navigate('stammdaten')}
+            onSetUp={tab === 'stammdaten' ? undefined : () => void navigate('stammdaten', NEW_UNIT_TARGET)}
             onDismiss={() => propertyId && dismissNotice(propertyId)}
           />
         )}
@@ -535,12 +538,12 @@ function Shell() {
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />}
-        {tab === 'steuer' && <Steuer settings={settings} onNavigate={(t) => void navigate(t, null)} />}
+        {tab === 'steuer' && <Steuer settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)} />}
         {tab === 'hilfe' && <Hilfe onFollow={(g, step) => void followStep(g, step, true)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)}
           openGuide={helpGuide} onOpenGuideDone={() => setHelpGuide(null)} stock={helpStock} />}
         {tab === 'verlauf' && <Verlauf />}
         {tab === 'einstellungen' && settings && (
-          <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} onOpenRelocation={() => { setRelocationManual(true); window.scrollTo(0, 0) }} />
+          <Einstellungen settings={settings} reload={reload} update={update} focus={focus} onFocusDone={clearFocus} onNavigate={(t) => void navigate(t)} onOpenRelocation={() => { setRelocationManual(true); window.scrollTo(0, 0) }} />
         )}
         </>}
         </Fragment>

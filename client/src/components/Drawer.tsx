@@ -139,7 +139,9 @@ export default function Drawer({ open, title, subtitle, onClose, value, changedF
     // und, falls der Inhalt erst nachlädt, nach 60 ms noch einmal, aber nur, wenn er inzwischen nicht
     // woanders hingesetzt wurde (#346, Schritt 9).
     const auto = document.activeElement
-    const focusFirst = () => bodyRef.current?.querySelector<HTMLElement>('input, select, textarea')?.focus()
+    // Ein Teil mit `data-autofocus` geht vor (#554): Ein Sprung zu den Steuerangaben des Objekts beginnt dort.
+    const focusFirst = () => (bodyRef.current?.querySelector<HTMLElement>('[data-autofocus] input, [data-autofocus] select, [data-autofocus] textarea')
+      ?? bodyRef.current?.querySelector<HTMLElement>('input, select, textarea'))?.focus()
     focusFirst()
     const t = setTimeout(() => {
       const now = document.activeElement

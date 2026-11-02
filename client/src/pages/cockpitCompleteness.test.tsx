@@ -123,7 +123,7 @@ test('Cockpit: ein leerer Zeitraum mit Mietverhältnis führt mit „Belege erfa
     </PeriodProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: 'Belege erfassen' }, SLOW))
-  expect(navigate).toHaveBeenCalledWith('belege:eingang')
+  expect(navigate).toHaveBeenCalledWith('belege:eingang', undefined)
 })
 
 test('Cockpit: „Belege vollständig“ mit Positionen ohne Beleg führt in den Ordner („Belege nachreichen“)', async () => {
@@ -131,7 +131,7 @@ test('Cockpit: „Belege vollständig“ mit Positionen ohne Beleg führt in den
   const navigate = vi.fn()
   pageWith(navigate)
   fireEvent.click(await rowOf('Belege vollständig'))
-  expect(navigate).toHaveBeenCalledWith('belege:ordner')
+  expect(navigate).toHaveBeenCalledWith('belege:ordner', undefined)
 })
 
 test('Cockpit: die Zeile „Hausgeldabrechnung“ führt in den Eingang', async () => {
@@ -139,5 +139,5 @@ test('Cockpit: die Zeile „Hausgeldabrechnung“ führt in den Eingang', async 
   const navigate = vi.fn()
   pageWith(navigate)
   fireEvent.click(await rowOf('Hausgeldabrechnung'))
-  expect(navigate).toHaveBeenCalledWith('belege:eingang')
+  expect(navigate).toHaveBeenCalledWith('belege:eingang', undefined)
 })

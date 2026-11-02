@@ -95,7 +95,7 @@ import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
 import { openBadgeClass } from '../assessment'
 import { SKIPPED_FILES } from '../belegeView'
-import { useFocusTarget, type FocusProps } from '../focus'
+import { useFocusTarget, useNewTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
 import { TakenOff } from '../components/TakenOff'
@@ -335,6 +335,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }, [param, propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Position zum Bearbeiten öffnen.
   useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
+  // „Kosten erfassen“ aus dem Cockpit (#554): das Formular „Neue Kostenposition“ wie „+ Kostenposition anlegen“, sobald
+  // Positionen und Zähler da sind (sonst fehlte der gemerkte Schlüssel, wie beim Formular aus dem Beleg).
+  useNewTarget(focus, 'costItem', itemsLoaded && meterData !== 'loading', () => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }, onFocusDone)
 
   // Von Hand erfassen aus dem Beleg (#490 PR 3, #487 Teil 2): das Formular „Neue Kostenposition“ mit dem Beleg und der
   // Kostenart aus seinem Namen. Gewartet wird auf Positionen, Zähler und Ablage, sonst fehlte der gemerkte Schlüssel.

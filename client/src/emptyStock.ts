@@ -3,21 +3,25 @@
 // Stammdaten prüfen“ ohne Weg dorthin und schickt nicht in den Eingang der Belege, solange es keine
 // Wohnung gibt, auf die ein Beleg verteilt werden könnte. Ohne DOM prüfbar (emptyStock.test.ts).
 import type { Tenancy, Unit } from './types'
+import type { JumpTarget } from './focus'
+import { NEW_TENANCY_TARGET, NEW_UNIT_TARGET } from './jumpTargets'
 
-export type StartStep = { text: string, label: string, tab: 'stammdaten' | 'belege:eingang' }
+// `focus`: das Formular, das der Knopf auf der Zielseite öffnet (#554); die Belege haben dort keine eigene Stelle.
+export type StartStep = { text: string, label: string, tab: 'stammdaten' | 'belege:eingang', focus: JumpTarget | null }
 
 // Der erste Schritt, der für den Zeitraum `label` fehlt. `calendar` wählt „Jahr“ oder „Zeitraum“.
 export function startStep(units: readonly Unit[], tenancies: readonly Tenancy[], label: string, calendar: boolean): StartStep {
   if (units.length === 0) {
-    return { text: 'Legen Sie zuerst eine Wohnung an. Danach folgen die Mietverhältnisse und die Belege.', label: 'Wohnung anlegen', tab: 'stammdaten' }
+    return { text: 'Legen Sie zuerst eine Wohnung an. Danach folgen die Mietverhältnisse und die Belege.', label: 'Wohnung anlegen', tab: 'stammdaten', focus: NEW_UNIT_TARGET }
   }
   if (tenancies.length === 0) {
-    return { text: 'Legen Sie zuerst ein Mietverhältnis an: Wer wohnt seit wann in welcher Wohnung?', label: 'Mietverhältnis anlegen', tab: 'stammdaten' }
+    return { text: 'Legen Sie zuerst ein Mietverhältnis an: Wer wohnt seit wann in welcher Wohnung?', label: 'Mietverhältnis anlegen', tab: 'stammdaten', focus: NEW_TENANCY_TARGET }
   }
   return {
     text: `Für ${calendar ? 'das Jahr' : 'den Zeitraum'} ${label} gibt es noch keine Kosten und kein abzurechnendes Mietverhältnis. Erfassen Sie die Belege des ${calendar ? 'Jahres' : 'Zeitraums'}, oder prüfen Sie Beginn und Ende der Mietverhältnisse.`,
     label: 'Belege erfassen',
     tab: 'belege:eingang',
+    focus: null,
   }
 }
 

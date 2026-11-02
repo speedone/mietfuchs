@@ -19,6 +19,7 @@ import LetterTemplateCard from '../components/LetterTemplateCard'
 import LetterDesignCard from '../components/LetterDesignCard'
 import NetworkCard from '../components/NetworkCard'
 import { networkBridge } from '../desktopNetwork'
+import { useSectionJump, type FocusProps } from '../focus'
 
 const SOURCE_URL = 'https://github.com/speedone/mietfuchs'
 const WEBSITE_URL = 'https://mietfuchs-app.de'
@@ -26,9 +27,13 @@ const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`
 
 // `onNavigate`: Sprung auf eine andere Seite (der Link auf den Verlauf, #318).
 // `onOpenRelocation`: „Daten aus bisherigem Mietfuchs übernehmen …“ (#517), nur im Programmfenster
-type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void; onOpenRelocation?: () => void }
+// `focus`: die Karte, zu der ein Sprung führt (#554): Vermieter und IBAN, KI-Belegauswertung, Anleitung zum Update.
+type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void; onOpenRelocation?: () => void } & FocusProps
 
-export default function Einstellungen({ settings, reload, update, onNavigate, onOpenRelocation }: Props) {
+const SETTINGS_SECTIONS = ['landlord', 'ai', 'about'] as const
+
+export default function Einstellungen({ settings, reload, update, onNavigate, onOpenRelocation, focus, onFocusDone }: Props) {
+  const jumpAt = useSectionJump(focus, SETTINGS_SECTIONS, true, onFocusDone)
   const { properties } = useProperty()
   const toast = useToast()
   const confirm = useConfirm()
@@ -128,7 +133,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
     <>
       <PageHeader context="none" title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung und Updates." />
 
-      <Card title={<>Vermieter &amp; Zahlung</>}>
+      <Card title={<>Vermieter &amp; Zahlung</>} {...jumpAt('landlord')}>
         <ErrorSummary errors={saveErrors} />
         <p className="muted">
           Erscheint im Kopf und in der Zahlungsaufforderung der gedruckten Abrechnung.
@@ -162,7 +167,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
       <LetterTemplateCard reload={reload} />
       <LetterDesignCard />
 
-      <AiSettings settings={settings} reload={reload} />
+      <AiSettings settings={settings} reload={reload} jump={jumpAt('ai')} />
 
       <LawOverridesCard />
 
@@ -225,7 +230,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
       {/* Am Ende wie der Abschnitt „Info“ einer Windows-App: Version und Updates, dann Urheber und Lizenz. Wer aus dem
           Microsoft Store installiert, sieht README und LICENSE nie; die AGPL sieht Urheber, fehlende Gewähr und den Weg
           zur Lizenz in einer Oberfläche vor („Appropriate Legal Notices“). */}
-      <Card title="Über Mietfuchs">
+      <Card title="Über Mietfuchs" {...jumpAt('about')}>
         <UpdateSettings settings={settings} update={update} reload={reload} />
         <p>
           Mietfuchs unterstützt Sie bei der Nebenkostenabrechnung, ersetzt aber keine Rechts- oder Steuerberatung.

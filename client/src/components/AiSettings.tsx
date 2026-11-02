@@ -6,6 +6,7 @@
 // Vorlagen belegen nur vor: Adresse, Modell und Schlüssel bleiben frei änderbar, und „Eigener
 // OpenAI-kompatibler Dienst“ nimmt jede Adresse.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { JumpProps } from '../focus'
 import type { AiPreset, AiRecommendations, AiSettings as AiSettingsValues, AiSlot, AiSlotName, AiStatus, Settings } from '../types'
 import { api, fmtDate } from '../api'
 import { pullModel, type PullProgress } from '../aiRequest'
@@ -39,7 +40,8 @@ function EnvHint({ path }: { path: string }) {
   return <p className="muted">Über die Umgebungsvariable <code>{ENV_NAMES[path] ?? path}</code> festgelegt.</p>
 }
 
-type Props = { settings: Settings; reload: () => Promise<void> }
+// `jump`: Kennung und Hervorhebung der Karte für den Sprung aus einem Fehler der Auswertung (#554, focus.ts)
+type Props = { settings: Settings; reload: () => Promise<void>; jump?: JumpProps }
 
 const advancedFrom = (settings: Settings) => ({
   timeoutSeconds: String(settings.ai?.timeoutSeconds ?? ''),
@@ -49,7 +51,7 @@ const advancedFrom = (settings: Settings) => ({
   reasoningEffort: settings.ai?.reasoningEffort ?? '',
 })
 
-export function AiSettings({ settings, reload }: Props) {
+export function AiSettings({ settings, reload, jump }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const [presets, setPresets] = useState<AiPreset[]>([])
@@ -205,7 +207,7 @@ export function AiSettings({ settings, reload }: Props) {
   const usesOpenAi = [form.text, form.images].some((s) => s?.provider === 'openai')
 
   return (
-    <Card title="KI-Belegauswertung">
+    <Card title="KI-Belegauswertung" {...jump}>
       <p className="muted">
         Optional. Ein Sprachmodell liest hochgeladene Belege und schlägt Beträge und Kostenarten
         vor. Übernommen wird erst, was Sie geprüft haben. Am einfachsten läuft das mit Ollama auf

@@ -7,7 +7,8 @@ import {
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
-import { useFocusTarget } from '../focus'
+import { useFocusTarget, useSectionJump, type JumpTarget } from '../focus'
+import { NEW_TENANCY_TARGET, senderFix } from '../jumpTargets'
 import { itemsOfFile, settledInvoiceFiles, statementInvoiceFiles, type BookedFiles, type PlantPeriods } from '../costPeriods'
 import { filesByItem } from '../receipts'
 import { useOpenForm, useProperty, withProperty } from '../property'
@@ -68,10 +69,11 @@ type Props = {
   units: Unit[]
   tenancies: Tenancy[]
   reload: () => Promise<void>
-  // Für „Hier beheben →“ an einem Hinweis (#112), mit dem betroffenen Eintrag (#142)
-  onNavigate?: (tab: NoticeTab, focus?: NoticeSubject) => void
-  // Sichtprüfung E45: aus dem Cockpit eine Heizkostenabrechnung („Anlage|Heizperiode“) vorwählen.
-  focus?: NoticeSubject | null
+  // Für „Hier beheben →“ an einem Hinweis (#112), mit dem betroffenen Eintrag (#142) oder Formular und Karte (#554)
+  onNavigate?: (tab: NoticeTab, focus?: JumpTarget) => void
+  // Sichtprüfung E45: aus dem Cockpit eine Heizkostenabrechnung („Anlage|Heizperiode“) vorwählen; seit #554 auch die
+  // Karte „Zu prüfen“ oder das Feld „versendet am“.
+  focus?: JumpTarget | null
   onFocusDone?: () => void
 }
 
@@ -87,6 +89,9 @@ const LETTER_LONG_TEXT = 'Das Anschreiben ist voraussichtlich länger als eine S
 const returnLineText = (line: string) => `Die Rücksendeangabe über der Anschrift hat ${line.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`
 // Eine Liste für „keine gebuchten Belege“, damit die Memos daran nicht bei jedem Rendern neu rechnen (#470).
 const NO_BOOKED_FILES: BookedFiles = new Map()
+
+// Die Karten der Seite, zu denen ein Sprung führen kann (#554)
+const ABRECHNUNG_SECTIONS = ['checks', 'sentAt'] as const
 
 export default function Abrechnung({ settings, units, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period, rules } = usePeriod()
@@ -143,6 +148,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   useEffect(() => { setTarget(null); setPreviewId(null) }, [param, propertyId])
   // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).
   useFocusTarget(focus, 'heatingSettlement', heatingList, (h) => `${h.plantId}|${h.period.key}`, (h) => setTarget({ plantId: h.plantId, period: h.period.key }), onFocusDone)
+  // „Abrechnung ansehen“, „Versanddatum eintragen“ aus dem Cockpit (#554): zur Karte, sobald die Abrechnung geladen ist.
+  const jumpAt = useSectionJump(focus, ABRECHNUNG_SECTIONS, !!data, onFocusDone)
 
   // Export der Abrechnung als Daten (#415, Teil 3): Der Server baut die Datei, hier wird sie nur gespeichert.
   async function exportData(format: 'json' | 'csv') {
@@ -698,8 +705,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     // Knopf: Der Absender ist eingefroren, der Text nennt „wieder öffnen“.
     if (n.code === 'page.sender') {
       if (data?.closed || !onNavigate) return null
-      const own = property?.landlordName != null
-      return { label: own ? 'Hier beheben → Stammdaten' : 'Hier beheben → Einstellungen', onClick: () => onNavigate(own ? 'stammdaten' : 'einstellungen') }
+      const fix = senderFix(property?.landlordName != null)
+      return { label: fix.label, onClick: () => onNavigate(fix.tab, fix.focus) }
     }
     const t = noticeTarget(n.subject)
     return t && onNavigate ? { label: t.label, onClick: () => onNavigate(t.tab, t.focus) } : null
@@ -742,7 +749,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           „Drucken“ und „Mehr“. Im leeren Zeitraum gibt es nichts zu drucken (N12); den Umschalter zur
           Heizkostenabrechnung gibt es trotzdem. In der Vorschau eines Mieters steht statt ihrer die Leiste der Vorschau. */}
       {!preview && data && (!empty || choices.length > 0) && (
-      <div className="card no-print">
+      <div {...jumpAt('sentAt', 'card no-print')}>
         {choices.length > 0 && (
           // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist
           <div className="segmented no-print" role="group" aria-label="Welche Abrechnung?">
@@ -783,6 +790,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                     versendet am
                     <input
                       type="date"
+                      data-jump-focus
                       value={sentAt.value}
                       disabled={sentAt.saving}
                       onChange={(e) => sentAt.set(e.target.value)}
@@ -875,7 +883,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           Baustein Notice (eingeklappt nur „Mehr dazu“), „Hier beheben →“ ohne Aufklappen; nur stille Hinweise sind in einer
           Zeile zusammengefasst (Durchsicht M1, K3). Der Wortlaut der Hinweise bleibt unverändert. */}
       {!preview && data && (checks.errors.length + checks.warnings.length + checks.hints.length + checks.quiet.length > 0 || deviation) && (
-        <Card id={checksId} tabIndex={-1} title="Zu prüfen" className="no-print">
+        <Card id={checksId} tabIndex={-1} title="Zu prüfen" {...jumpAt('checks', 'no-print')}>
           {deviation && (
             // Abgeschlossenes Jahr gegen die heutige Berechnung (#56): erklären, nicht drängen.
             <NoticeBox level="warning" title={deviation.title}>
@@ -927,9 +935,9 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           {!preview && data.statements.length === 0 && (data.notSettled ?? []).length === 0 && (
             <div className="card no-print">
               {empty ? (
-                <EmptyState action={onNavigate ? { label: start.label, onClick: () => onNavigate(start.tab) } : null}>{start.text}</EmptyState>
+                <EmptyState action={onNavigate ? { label: start.label, onClick: () => onNavigate(start.tab, start.focus ?? undefined) } : null}>{start.text}</EmptyState>
               ) : (
-                <EmptyState action={onNavigate ? { label: 'Mietverhältnis anlegen', onClick: () => onNavigate('stammdaten') } : null}>
+                <EmptyState action={onNavigate ? { label: 'Mietverhältnis anlegen', onClick: () => onNavigate('stammdaten', NEW_TENANCY_TARGET) } : null}>
                   {`Für ${calendar ? 'das Jahr' : 'den Zeitraum'} ${label} sind Kosten erfasst, aber es gibt kein Mietverhältnis, auf das sie verteilt werden. Legen Sie eines an, oder prüfen Sie Beginn und Ende der Mietverhältnisse.`}
                 </EmptyState>
               )}

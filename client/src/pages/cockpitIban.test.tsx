@@ -70,7 +70,7 @@ test('ungültige IBANs: ein Hinweis nennt Ort und Grund und springt zur Stelle',
   fireEvent.click(screen.getByText('Hier beheben → Mietverhältnis'))
   expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't2' })
   fireEvent.click(screen.getByText('Hier beheben → Einstellungen'))
-  expect(navigate).toHaveBeenLastCalledWith('einstellungen', undefined)
+  expect(navigate).toHaveBeenLastCalledWith('einstellungen', { kind: 'section', section: 'landlord' })
 })
 
 test('hat das Objekt eine eigene IBAN, zählt die der Einstellungen nicht', async () => {

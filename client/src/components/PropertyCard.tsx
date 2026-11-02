@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CostItem } from '../types'
 import { propertyBody, propertySummary, propertyToForm, spreadRestChange, type PropertyField, type PropertyForm } from '../propertyForm'
 import { api, ApiError, errorText } from '../api'
@@ -9,13 +9,16 @@ import Card from './Card'
 import PropertyFields from './PropertyFields'
 import { useFormError } from './ErrorSummary'
 import { useSaving } from '../useSaving'
+import type { FocusProps, PropertyPart } from '../focus'
 
 // Die Karte „Objekt“ in den Stammdaten (#92). Sie zeigt die Angaben des gewählten Objekts nur an; „Bearbeiten“
 // oben rechts öffnet ein Seitenfenster mit allen Feldern, wie bei Wohnungen und Mietverhältnissen. Vorher stand
 // hier als einzige Karte der Seite ein offenes Formular mit eigenem „Speichern“. Ein weiteres Objekt legt die
 // Seitenleiste unter dem Umschalter an (NewPropertyDrawer, mit denselben Feldern aus PropertyFields); im Fuß steht
 // nur „Objekt löschen …“.
-export default function PropertyCard() {
+// `focus` (#554): „Hier eintragen“ der Steuer und „Hier beheben“ an Vermieter oder IBAN des Objekts öffnen das Fenster
+// mit dem betroffenen Teil aufgeklappt und dem Fokus in dessen erstem Feld.
+export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
   const { properties, property, reload } = useProperty()
   const toast = useToast()
   const confirm = useConfirm()
@@ -26,12 +29,23 @@ export default function PropertyCard() {
   // Die Kosten des Objekts, geladen beim Öffnen: Das Feld zum Ende der Verteilung (§ 82b Abs. 2 EStDV, #262 PR 4) steht nur
   // mit einer verteilten Position da, und die Rückfrage nennt deren Jahre. Ohne geladene Kosten fragt der Server (409).
   const [items, setItems] = useState<CostItem[]>([])
+  // Der Teil, den ein Sprung aufgeklappt haben will; `null` beim Öffnen über „Bearbeiten“
+  const [part, setPart] = useState<PropertyPart | null>(null)
+  const jumpRef = useRef({ open, onFocusDone })
+  jumpRef.current = { open, onFocusDone }
+  const hasProperty = !!property
+  useEffect(() => {
+    if (!hasProperty || focus?.kind !== 'property') return
+    jumpRef.current.open(focus.part)
+    jumpRef.current.onFocusDone?.()
+  }, [focus, hasProperty])
 
   if (!property) return null
 
-  function open() {
+  function open(jumpPart: PropertyPart | null = null) {
     if (!property) return
     errors.clear()
+    setPart(jumpPart)
     setForm(propertyToForm(property))
     setItems([])
     // Scheitert das Laden, sagt das Fenster es (K5); der Server fragt beim Speichern trotzdem nach.
@@ -91,7 +105,7 @@ export default function PropertyCard() {
   }
 
   return (
-    <Card title="Objekt" aside={<button className="btn secondary" onClick={open}>Bearbeiten{' '}<span className="sr-only">(Objekt)</span></button>}>
+    <Card title="Objekt" aside={<button className="btn secondary" onClick={() => open()}>Bearbeiten{' '}<span className="sr-only">(Objekt)</span></button>}>
       <dl className="m-0 grid gap-x-8 gap-y-3 sm:grid-cols-2">
         {propertySummary(property).map((r) => (
           <div key={r.label}>
@@ -118,7 +132,7 @@ export default function PropertyCard() {
           errors={errors}
           actions={<button className="btn" onClick={() => void save()}>Speichern</button>}
         >
-          <PropertyFields form={form} setForm={setForm} errors={errors} storedIban={property.iban} spreadItems={items} />
+          <PropertyFields form={form} setForm={setForm} errors={errors} storedIban={property.iban} spreadItems={items} part={part} />
         </Drawer>
       )}
     </Card>

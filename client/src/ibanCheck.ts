@@ -1,4 +1,6 @@
-import type { NoticeSubject, Property, Settings, Tenancy } from './types'
+import type { Property, Settings, Tenancy } from './types'
+import type { JumpTarget } from './focus'
+import { LANDLORD_SETTINGS_TARGET, PROPERTY_LANDLORD_TARGET } from './jumpTargets'
 import { checkIban } from '../../shared/iban.ts'
 
 // Der Hinweis im Cockpit auf vermutlich falsch eingetragene IBANs (#279). Seit der Prüfung beim
@@ -22,8 +24,8 @@ export type IbanFinding = {
   // Was nicht stimmt, aus shared/iban.ts
   problem: string
   tab: 'einstellungen' | 'stammdaten'
-  // Das Mietverhältnis, das die Stammdaten öffnen sollen
-  focus: NoticeSubject | null
+  // Die Stelle: das Mietverhältnis, die Bankverbindung des Objekts oder die Karte der Einstellungen (#554)
+  focus: JumpTarget
   label: string
 }
 
@@ -43,12 +45,12 @@ export function invalidIbans(
   const vorgabeGilt = property === null || property.iban === null
   const vermieter = vorgabeGilt ? problemOf(settings?.iban) : null
   if (vermieter) {
-    befunde.push({ where: 'Einstellungen, Bankverbindung des Vermieters', problem: vermieter, tab: 'einstellungen', focus: null, label: 'Hier beheben → Einstellungen' })
+    befunde.push({ where: 'Einstellungen, Bankverbindung des Vermieters', problem: vermieter, tab: 'einstellungen', focus: LANDLORD_SETTINGS_TARGET, label: 'Hier beheben → Einstellungen' })
   }
   const objekt = problemOf(property?.iban)
   if (objekt) {
     const name = property?.name ? `„${property.name}“` : 'ohne Namen'
-    befunde.push({ where: `Objekt ${name}, abweichende Bankverbindung`, problem: objekt, tab: 'stammdaten', focus: null, label: 'Hier beheben → Stammdaten' })
+    befunde.push({ where: `Objekt ${name}, abweichende Bankverbindung`, problem: objekt, tab: 'stammdaten', focus: PROPERTY_LANDLORD_TARGET, label: 'Hier beheben → Stammdaten' })
   }
   const ab = `${year - 1}-01-01`
   for (const t of tenancies) {

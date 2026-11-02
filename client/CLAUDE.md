@@ -196,6 +196,13 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene
   Punkte (`cockpitSubtitle`).
+- **Sprungziele** (#554, [focus.ts](src/focus.ts), Ziele je Knopf in [jumpTargets.ts](src/jumpTargets.ts)): `navigate(tab,
+  focus)` nimmt ein `JumpTarget`, nicht nur einen Eintrag des Servers (`NoticeSubject`, bleibt in shared/types.ts).
+  `new` öffnet das Formular des eigenen Knopfs der Seite (`useNewTarget`, den Fokus ins erste Feld setzt das
+  Seitenfenster, ein Teil mit `data-autofocus` geht vor), `section` hebt eine Karte mit `data-jump` hervor
+  (`useSectionJump`, `.focus-target`) und setzt den Fokus auf ihr `data-jump-focus` oder ihre Überschrift, `property`
+  öffnet „Objekt bearbeiten“ mit dem Teil. Genau ein betroffener Eintrag öffnet sich selbst; ohne eindeutige Stelle
+  (Eingang, Kostenvergleich, „Zur Abrechnung“) bleibt es bei der Seite.
 - **Anschreiben als Seite 1** (#415, [Letter.tsx](src/components/Letter.tsx), Logik in
   [letterView.ts](src/letterView.ts)): ein Brief nach DIN 5008 Form B vor jeder Aufstellung. Die Druckmaße stehen in
   [letter.css](src/letter.css) (Schicht `components` wie fields.css, weil index.css nur kleiner wird; S4, S17 und S20
