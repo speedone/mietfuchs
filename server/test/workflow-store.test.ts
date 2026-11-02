@@ -116,3 +116,23 @@ test('Release: erst Entwurf mit allen Dateien, Nachweis, dann veröffentlichen',
   assert.match(publishStep, /if \[ "\$PRERELEASE" = true \]; then flags=\(--prerelease\); else flags=\(--latest\); fi/)
   assert.equal(job.slice(publish).match(/action-gh-release|gh release upload/), null, 'nach dem Veröffentlichen nimmt GitHub nichts mehr an')
 })
+
+// Download-Zähler (02.11.2026): Ohne Speicher auf main lud jeder Pull Request mit full-check die alten Linux-Archive neu
+// von den Releases. alte-fassungen.yml füllt ihn; Schlüssel und Pfad müssen mit release.yml übereinstimmen, und der
+// Schlüssel nennt dieselben Fassungen wie das Skript.
+test('Alte Fassungen: Speicher auf main mit demselben Schlüssel wie der Praxislauf', () => {
+  const cacheOf = (yml: string) => {
+    const at = yml.indexOf('- name: Alte Programmdateien aus dem Zwischenspeicher')
+    if (at < 0) return assert.fail('Schritt „Alte Programmdateien aus dem Zwischenspeicher“ fehlt')
+    const step = yml.slice(at, yml.indexOf('\n      - ', at + 1))
+    return { path: /path: (.+)/.exec(step)?.[1], key: /key: (.+)/.exec(step)?.[1] }
+  }
+  const warm = read('alte-fassungen.yml')
+  assert.deepEqual(cacheOf(warm), cacheOf(read('release.yml')))
+  assert.match(warm, /branches: \[main\]/)
+  assert.match(warm, /--nur-laden/)
+  const script = fs.readFileSync(path.join(workflows, '../../scripts/fenster-umzug-praxislauf.mjs'), 'utf8')
+  const versions = /const VERSIONS = \[([^\]]+)\]/.exec(script)?.[1]?.match(/[\d.]+/g) ?? []
+  assert.equal(cacheOf(warm).key, `mietfuchs-alte-fassungen-v1-${versions.join('-')}`)
+})
+
