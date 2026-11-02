@@ -23,6 +23,7 @@ on:
       - '**/package.json'
       - '**/package-lock.json'
       - scripts/smoke-test.mjs
+      - 'deploy/**'
       - .github/workflows/docker.yml
   workflow_dispatch:
 
@@ -36,6 +37,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+
+      # Die Compose-Dateien zum Kopieren (deploy/, docs/docker.md) bleiben gültig
+      - name: Compose-Dateien prüfen
+        run: |
+          for f in deploy/compose.yml deploy/compose.caddy.yml deploy/compose.ollama.yml; do
+            docker compose -f "$f" config -q
+          done
 
       # QEMU für den arm64-Build (Apple Silicon, Raspberry Pi, ARM-NAS) auf einem x64-Runner.
       - uses: docker/setup-qemu-action@v4

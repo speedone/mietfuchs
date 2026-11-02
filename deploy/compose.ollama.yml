@@ -1,0 +1,48 @@
+# Mietfuchs mit Ollama für die KI-Belegauswertung, beides als Container. Erklärung: docs/docker.md
+#
+# Start:          docker compose -f compose.ollama.yml up -d      App: http://<rechner>:3001
+#                 Beim ersten Start lädt ollama-pull das Modell einmalig (mehrere GB). Fortschritt:
+#                 docker compose -f compose.ollama.yml logs -f ollama-pull
+# Aktualisieren:  docker compose -f compose.ollama.yml pull && docker compose -f compose.ollama.yml up -d
+#
+# Mietfuchs spricht Ollama über den Dienstnamen an (NKA_OLLAMA_URL), Ollama selbst ist von außen nicht
+# erreichbar. Gerechnet wird auf dem Prozessor. Mietfuchs hat kein Login: Port 3001 nie ins Internet freigeben.
+services:
+  mietfuchs:
+    image: ghcr.io/speedone/mietfuchs:latest
+    ports:
+      - "3001:3001"
+    volumes:
+      - mietfuchs-data:/app/server/data
+    environment:
+      # Gilt, solange in den Einstellungen Ollama der Anbieter ist (Voreinstellung); das Feld ist dann gesperrt
+      NKA_OLLAMA_URL: http://ollama:11434
+      # Leer bleibt das Modell in den Einstellungen wählbar
+      NKA_OLLAMA_MODEL: ${NKA_OLLAMA_MODEL:-}
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Lädt das Modell einmalig (später prüft es nur, ob es aktuell ist) und beendet sich dann
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    command: ["pull", "${NKA_OLLAMA_MODEL:-qwen3.5:4b}"]
+    restart: "no"
+
+volumes:
+  mietfuchs-data:
+  ollama-models:

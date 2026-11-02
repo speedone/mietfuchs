@@ -163,8 +163,9 @@ der empfohlene Weg.
 ### Mit Docker
 
 Ein Image für `linux/amd64` und `linux/arm64` liefert App und API auf Port 3001; die Daten liegen
-im Volume `mietfuchs-data` und überleben Updates des Containers. Compose-Datei, Aktualisieren und
-Selbstbauen: [Docker](docs/docker.md).
+im Volume `mietfuchs-data` und überleben Updates des Containers. Fertige Compose-Dateien (nur
+Mietfuchs, mit HTTPS über Caddy, mit Ollama) liegen in [deploy/](deploy), erklärt unter
+[Docker](docs/docker.md).
 
 ```bash
 docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs ghcr.io/speedone/mietfuchs:latest
@@ -180,8 +181,11 @@ beenden, neues starten, **Daten übernehmen**. Einzelheiten und der Weg über ei
 ### Zugriff vom Handy oder einem zweiten Rechner
 
 Das Programm ist zunächst nur auf diesem Rechner erreichbar. Für Handy, Tablet oder einen zweiten
-Rechner im selben WLAN setzt du in den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen.
-Mietfuchs hat kein Passwort: Erlaube den Zugriff nur in einem Netz, dem du vertraust.
+Rechner im selben WLAN setzt du in den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen;
+dann muss der PC laufen. Soll Mietfuchs jederzeit erreichbar sein, läuft es auf einem Gerät, das
+immer an ist ([Docker](docs/docker.md) auf NAS oder Heimserver, Linux-Paket auf dem Raspberry Pi).
+Mietfuchs hat kein Passwort: Erlaube den Zugriff nur in einem Netz, dem du vertraust, und stelle es
+nie per Portfreigabe ins Internet.
 [Mehr dazu](docs/installation.md#zugriff-vom-handy-oder-einem-zweiten-rechner)
 
 ### Download prüfen (für Fortgeschrittene)

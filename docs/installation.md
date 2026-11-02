@@ -178,9 +178,20 @@ hebst du am besten noch eine Weile als Sicherung auf.
 
 ### Zugriff vom Handy oder einem zweiten Rechner
 
-Das neue Programm ist zunächst nur auf diesem Rechner erreichbar (Port 17517), deshalb fragt auch
-keine Firewall. Willst du Mietfuchs auf dem Handy, Tablet oder einem zweiten Rechner im selben
-WLAN öffnen:
+Es gibt zwei Wege:
+
+| | Programm auf dem PC | Gerät, das immer läuft |
+| --- | --- | --- |
+| Was | Häkchen „Zugriff aus dem Heimnetz“ im Programm für Windows und macOS | [Docker](docker.md) auf einem NAS oder Heimserver, oder das [Linux-Paket](#linux-installationspaket-mit-startmenü-eintrag) auf einem Raspberry Pi |
+| Erreichbar | nur, solange der PC läuft und Mietfuchs geöffnet ist | jederzeit im Heimnetz |
+| Adresse | `http://<pc>:17517` | `http://<gerät>:3001`, mit [Caddy](docker.md#mit-https-im-heimnetz-composecaddyyml) auch über HTTPS |
+
+Von unterwegs kommst du nur über ein VPN an Mietfuchs, nie über eine Portfreigabe am Router; siehe
+[Von unterwegs und mit HTTPS: über ein VPN](docker.md#von-unterwegs-und-mit-https-über-ein-vpn).
+
+**Im Programm auf dem PC:** Das neue Programm ist zunächst nur auf diesem Rechner erreichbar (Port
+17517), deshalb fragt auch keine Firewall. Willst du Mietfuchs auf dem Handy, Tablet oder einem
+zweiten Rechner im selben WLAN öffnen:
 
 1. In den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen setzen und speichern.
    Mietfuchs startet dabei kurz neu.
@@ -194,6 +205,20 @@ Die Adresse ist eine andere als bei der bisherigen Programmdatei und der Store-F
 (dort Port 3001); ein Lesezeichen auf dem Handy legst du also neu an. Mietfuchs hat kein Passwort: Solange der Zugriff
 erlaubt ist, kann jeder in deinem Heimnetz deine Daten öffnen und ändern. Erlaube ihn nur in
 einem Netz, dem du vertraust.
+
+**Tipp: Mietfuchs auf den Startbildschirm legen.**
+
+- **iPhone und iPad:** die Adresse in Safari öffnen, *Teilen* → *Zum Home-Bildschirm*. Ob Mietfuchs
+  vom Symbol aus mit oder ohne die Leisten von Safari öffnet, hängt von der iOS-Version und davon ab,
+  ob die Adresse HTTPS nutzt.
+- **Android:** Über `http://` legt der Browser nur eine Verknüpfung an, Mietfuchs öffnet dann mit
+  Browserleiste. Als App installieren lässt es sich erst über HTTPS, etwa mit dem
+  [Caddy-Beispiel](docker.md#mit-https-im-heimnetz-composecaddyyml) oder
+  [über ein VPN](docker.md#von-unterwegs-und-mit-https-über-ein-vpn).
+- Das Symbol ist nur ein Weg zur Adresse: Ohne Verbindung zum Rechner oder Gerät mit Mietfuchs geht
+  nichts.
+- Das Programm ab Version 0.15 nutzt Port 17517, die bisherige Programmdatei und die Store-Fassung
+  bis 0.14 nutzten 3001. Eine ältere Verknüpfung auf dem Startbildschirm legst du deshalb neu an.
 
 ### Download prüfen (für Fortgeschrittene)
 

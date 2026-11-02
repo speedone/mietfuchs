@@ -1,0 +1,34 @@
+# Caddy vor Mietfuchs (compose.caddy.yml). Erklärung: docs/docker.md
+#
+# Vor der Klammer stehen die Adressen, unter denen du Mietfuchs aufrufst, mit Komma getrennt: der Name
+# und die IP-Adresse deines NAS oder Heimservers, etwa
+#   localhost, 192.168.178.23, nas.fritz.box {
+# Für jede stellt Caddy ein Zertifikat aus, unterschrieben mit seinem eigenen Stammzertifikat
+# (tls internal). Das Stammzertifikat installierst du einmal auf jedem Gerät, siehe docs/docker.md.
+localhost {
+	tls internal
+	reverse_proxy mietfuchs:3001
+
+	# Optional ein Passwort vor Mietfuchs. Den Hash erzeugt
+	#   docker compose -f compose.caddy.yml exec caddy caddy hash-password
+	# dann die Zeilen unten einkommentieren, Namen und Hash eintragen und Caddy neu starten.
+	# basic_auth {
+	# 	vermieter <hier der Hash>
+	# }
+}
+
+# Andere Variante: eine eigene Domain mit einem öffentlich gültigen Zertifikat, das kein Gerät erst
+# installieren muss. Das Zertifikat kommt über die DNS-Challenge, dafür muss Mietfuchs nicht aus dem
+# Internet erreichbar sein. Voraussetzungen:
+# - Der Name (etwa mietfuchs.example.org) zeigt im Heimnetz auf die Adresse des NAS.
+# - Caddy braucht das Modul für deinen DNS-Anbieter. Im Image caddy:2 ist keines enthalten; du baust
+#   dir ein eigenes Image mit dem passenden Modul (siehe die Caddy-Dokumentation zur DNS-Challenge).
+# - Ein API-Schlüssel des DNS-Anbieters, hier als Umgebungsvariable DNS_API_TOKEN des Caddy-Containers.
+# Dann statt des Blocks oben:
+#
+# mietfuchs.example.org {
+# 	tls {
+# 		dns <anbieter> {env.DNS_API_TOKEN}
+# 	}
+# 	reverse_proxy mietfuchs:3001
+# }
