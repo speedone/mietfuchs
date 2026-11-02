@@ -197,7 +197,7 @@ for ($i = 1; $i -le $Runs; $i++) {
 # Installieren, während Mietfuchs läuft: Der Installer muss es schließen und durchlaufen
 Invoke-Measured 'Installation' 0 $Setup @('/S')
 $data = Join-Path $env:RUNNER_TEMP 'mietfuchs-daten-messung'
-$env:CI = '1'; $env:NKA_DATA_DIR = $data; $env:NKA_UPDATE_URL = 'http://127.0.0.1:9/kein-internet-im-test'
+$env:CI = '1'; $env:MIETFUCHS_TESTGRIFFE = '1'; $env:NKA_DATA_DIR = $data; $env:NKA_UPDATE_URL = 'http://127.0.0.1:9/kein-internet-im-test'
 Start-Process $exe | Out-Null
 # Das Fenster startet Hilfsprozesse und den Server (utilityProcess), alle als Mietfuchs.exe
 for ($i = 0; $i -lt 60 -and @(Get-Process Mietfuchs -ErrorAction SilentlyContinue).Count -lt 3; $i++) { Start-Sleep -Milliseconds 500 }
@@ -210,6 +210,11 @@ Note "Bei laufendem Mietfuchs: vorher $before Prozesse, nachher $after"
 Get-Process Mietfuchs -ErrorAction SilentlyContinue | Stop-Process -Force
 if ($before -eq 0) { throw 'Mietfuchs lief vor der Aktualisierung nicht' }
 if ($after -ne 0) { throw 'Mietfuchs läuft nach der Aktualisierung weiter' }
+# Sanft geschlossen (installer.nsh, Durchsicht Daten K1): Das Zeitprotokoll nennt es, und der Server hat beim Beenden
+# seine Lauf-Datei entfernt (server/src/instanceGuard.ts); hart beendet bliebe sie liegen
+$protokoll = Get-Content -Raw $log
+if ($protokoll -notmatch 'Mietfuchs sanft geschlossen nach') { throw 'Der Installer hat Mietfuchs nicht sanft geschlossen' }
+if (Test-Path (Join-Path $data 'mietfuchs.laeuft.json')) { throw 'Der Server wurde hart beendet (Lauf-Datei liegt noch da)' }
 Invoke-Measured 'Deinstallation' 0 $uninst @('/S')
 
 # --- Ergebnisse ----------------------------------------------------------------------------------------------------

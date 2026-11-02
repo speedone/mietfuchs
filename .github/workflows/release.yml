@@ -1099,6 +1099,9 @@ jobs:
       FENSTER_PORT: '17517'
       NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
       CI: 'true'
+      # Ohne diese Schranke gibt das ausgelieferte Fenster CI, NKA_UPDATE_URL und NKA_TEST_* nicht an den Server
+      # weiter (desktop/src/testGrips.js)
+      MIETFUCHS_TESTGRIFFE: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -1149,7 +1152,7 @@ jobs:
           $url = "http://127.0.0.1:$env:FENSTER_PORT"
 
           try {
-            # Über den Befehlsalias starten: Nur so erbt das Fenster CI und NKA_UPDATE_URL und reicht
+            # Über den Befehlsalias starten: Nur so erbt das Fenster CI, MIETFUCHS_TESTGRIFFE und NKA_UPDATE_URL und reicht
             # sie an den Server weiter (serverEnv in desktop/src/server.js). Beide laufen trotzdem als
             # Store-App, im Paket und mit dessen Umlenkungen.
             $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\mietfuchs.exe'

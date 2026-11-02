@@ -9,6 +9,7 @@
 // - Vorabversionen bekommt niemand, auch nicht, wer selbst eine Vorabversion installiert hat.
 // - Nie ungefragt neu starten: „Jetzt neu starten“ beendet erst den Server, dann installiert der Installer still und
 //   startet Mietfuchs wieder. „Beim nächsten Start“ installiert beim Beenden, nach dem Ende des Servers.
+import { loopbackUrl, testGripsAllowed } from './testGrips.js'
 
 export const UPDATE_REPO = Object.freeze({ provider: 'github', owner: 'speedone', repo: 'mietfuchs', releaseType: 'release' })
 
@@ -38,7 +39,8 @@ export const NO_INSTALLATION_ID = '00000000-0000-0000-0000-000000000000'
  * Installer zu ersetzen.
  *
  * `MIETFUCHS_UPDATE_FEED` lenkt die Updates auf einen anderen Server, für die echte Probe in release.yml (ein zweiter
- * Bau mit höherer Version über einen lokalen HTTP-Server). Nur mit `CI` und nur auf 127.0.0.1: Im ausgelieferten
+ * Bau mit höherer Version über einen lokalen HTTP-Server). Nur mit beiden Schranken der Testgriffe (testGrips.js) und nur
+ * auf 127.0.0.1 oder ::1: Im ausgelieferten
  * Betrieb ließe eine untergeschobene Variable (Verknüpfung, Startskript, Benutzerumgebung) sonst die Updates von einem
  * fremden Server laden, und die SHA-512, die electron-updater prüft, käme von demselben Server. Eine Signatur, die das
  * abfinge, gibt es ohne bezahltes Zertifikat nicht (main.js, `verifyUpdateCodeSignature`). Wie MIETFUCHS_SERVER_URL in
@@ -48,23 +50,12 @@ export const NO_INSTALLATION_ID = '00000000-0000-0000-0000-000000000000'
  */
 export function updaterSource({ platform, packaged, windowsStore, env }) {
   if (windowsStore) return { kind: 'off', reason: 'store' }
-  const feed = env.CI ? localFeed(env.MIETFUCHS_UPDATE_FEED) : null
+  const feed = testGripsAllowed(env) ? loopbackUrl(env.MIETFUCHS_UPDATE_FEED) : null
   if (feed) return { kind: 'feed', url: feed }
   if (platform === 'darwin') return { kind: 'off', reason: 'mac' }
   if (platform !== 'win32') return { kind: 'off', reason: 'platform' }
   if (!packaged) return { kind: 'off', reason: 'dev' }
   return { kind: 'github' }
-}
-
-/** @param {string | undefined} value @returns {string | null} */
-function localFeed(value) {
-  if (!value) return null
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' && url.hostname === '127.0.0.1' ? value : null
-  } catch {
-    return null
-  }
 }
 
 /**
@@ -141,12 +132,12 @@ export function describeUpdaterError(err) {
 
 /**
  * Mac: Läuft Mietfuchs nicht aus „Programme“ (etwa aus dem Abbild oder aus Downloads), bietet das Fenster einmal an,
- * es dorthin zu verschieben (`app.moveToApplicationsFolder`). „Nein“ merkt es sich. Nicht in Prüfungen: Dort läuft das
- * Programm absichtlich aus einem eigenen Ordner, und eine Rückfrage hielte die Prüfung an.
- * @param {{ platform: NodeJS.Platform, packaged: boolean, inApplications: boolean, declined: boolean, ci: boolean }} input
+ * es dorthin zu verschieben (`app.moveToApplicationsFolder`). „Nein“ merkt es sich. Nicht in Prüfungen (beide Schranken der Testgriffe,
+ * testGrips.js; ein beliebig gesetztes CI allein zählt nicht): Dort läuft das Programm absichtlich aus einem eigenen Ordner, und eine Rückfrage hielte die Prüfung an.
+ * @param {{ platform: NodeJS.Platform, packaged: boolean, inApplications: boolean, declined: boolean, env: NodeJS.ProcessEnv }} input
  */
-export function shouldOfferMove({ platform, packaged, inApplications, declined, ci }) {
-  return platform === 'darwin' && packaged && !inApplications && !declined && !ci
+export function shouldOfferMove({ platform, packaged, inApplications, declined, env }) {
+  return platform === 'darwin' && packaged && !inApplications && !declined && !testGripsAllowed(env)
 }
 
 /**

@@ -4,7 +4,7 @@
 //   1. Die gebaute Fassung (v1) still installieren wie ein Nutzer. app-update.yml nennt speedone/mietfuchs auf GitHub
 //      und keinen Herausgeber (keine Prüfung der Signatur), die Kopie des Installers für Teil-Downloads liegt da.
 //   2. Eine zweite Fassung (v2, höhere Version und ein Migrationsschritt mehr, scripts/updater-probe.mjs) bietet ein
-//      lokaler HTTP-Server als Quelle an (MIETFUCHS_UPDATE_FEED, gilt nur mit CI und nur auf 127.0.0.1). Er schreibt
+//      lokaler HTTP-Server als Quelle an (MIETFUCHS_UPDATE_FEED, gilt nur mit CI und MIETFUCHS_TESTGRIFFE=1 und nur auf 127.0.0.1). Er schreibt
 //      jede Anfrage ins Protokoll.
 //   3. Ohne Zustimmung: Fenster starten, Daten anlegen (smoke-test.mjs), über die Brücke „Jetzt prüfen“ auslösen; es
 //      darf keine einzige Anfrage beim lokalen Server ankommen.
@@ -141,7 +141,7 @@ function installV1() {
 /** @param {string} name @param {string} dataDir @param {boolean} [debug] */
 function launch(name, dataDir, debug = true) {
   const child = spawn(exe, debug ? [`--remote-debugging-port=${DEVTOOLS}`] : [], {
-    env: { ...process.env, CI: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_UPDATE_FEED: feedUrl, MIETFUCHS_SELFTEST_OUT: path.join(out, name) },
+    env: { ...process.env, CI: '1', MIETFUCHS_TESTGRIFFE: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_UPDATE_FEED: feedUrl, MIETFUCHS_SELFTEST_OUT: path.join(out, name) },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''

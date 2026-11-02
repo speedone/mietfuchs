@@ -14,7 +14,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, updaterSource } from './updater.js'
-import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
+import { loopbackUrl, testGripsAllowed } from './testGrips.js'
+import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, rememberDataDir, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -38,6 +39,9 @@ const QUIT_TIMEOUT_MS = 8000
 // danach (Durchsicht M2). Hart beendet wird er dann erst nach zehn Minuten, sonst bräche gerade das ab, was die Regel
 // schützt. Das Fenster ist dann schon zu, nur der Prozess wartet.
 const START_QUIT_TIMEOUT_MS = 10 * 60_000
+// Läuft beim Beenden ein Wiederherstellen oder eine Übernahme, wartet der Server bis zwei Minuten darauf
+// (QUIT_RESTORE_WAIT_MS); das Fenster etwas länger
+const BUSY_QUIT_TIMEOUT_MS = 150_000
 
 /** @typedef {{ port?: number, network?: boolean, moveDeclined?: boolean }} WindowSettings */
 
@@ -65,6 +69,9 @@ let server = null
 /** @type {WeakSet<Electron.UtilityProcess>} */
 const exited = new WeakSet()
 let serverOutput = ''
+// Der Datenordner, einmal je Start des Servers aus der Zeile „Daten: …“ gemerkt (rememberDataDir)
+/** @type {string | null} */
+let serverDataDir = null
 /** @type {string | null} */
 let origin = null
 /** @type {BrowserWindow | null} */
@@ -140,11 +147,13 @@ async function startServer(settings, fixedPort) {
   })
   server = child
   serverOutput = ''
+  serverDataDir = null
   // Als Text, mit Umlauten auch über die Grenze zweier Blöcke hinweg („läuft auf“ in der Startzeile)
   child.stdout?.setEncoding('utf8')
   child.stderr?.setEncoding('utf8')
   const collect = (/** @type {string} */ text) => {
     serverOutput = (serverOutput + text).slice(-OUTPUT_LIMIT)
+    serverDataDir = rememberDataDir(serverDataDir, serverOutput)
     log.write(text)
   }
   child.stdout?.on('data', collect)
@@ -209,8 +218,8 @@ function showStartFailure(title, err) {
   const technical = `${err instanceof Error ? err.message : String(err)}\n\n${lastLines(serverOutput)}`
   const where = { packaged: app.isPackaged, platform: process.platform, resourcesPath: process.resourcesPath, repoRoot: path.resolve(here, '..', '..') }
   const found = findBlockedFile(programFiles(where)) ?? blockedFileIn(technical, path.dirname(process.resourcesPath), process.platform)
-  const { message, detail } = startFailure({ found, technical, logDir: path.join(app.getPath('userData'), 'protokoll'), platform: process.platform })
-  dialog.showMessageBoxSync({ type: 'error', title, message, detail, buttons: ['OK'] })
+  const failure = startFailure({ found, technical, logDir: path.join(app.getPath('userData'), 'protokoll'), platform: process.platform })
+  dialog.showMessageBoxSync({ type: failure.title ? 'warning' : 'error', title: failure.title ?? title, message: failure.message, detail: failure.detail, buttons: ['OK'] })
 }
 
 // Erst über die Oberfläche beenden, damit der Server seine Schreibvorgänge abschließt; unter Windows kennt ein
@@ -222,9 +231,14 @@ async function stopServer() {
   retired.add(child)
   const gone = new Promise((resolve) => child.once('exit', resolve))
   const started = origin !== null
-  if (origin) await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) }).catch(() => {})
-  else child.postMessage('quit')
-  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), started ? QUIT_TIMEOUT_MS : START_QUIT_TIMEOUT_MS))
+  let busy = false
+  if (origin) {
+    const answer = await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) }).then((res) => res.json()).catch(() => null)
+    busy = /** @type {any} */ (answer)?.busy === true
+  } else child.postMessage('quit')
+  // `busy`: Der Server wartet auf ein laufendes Wiederherstellen oder eine Übernahme (QUIT_RESTORE_WAIT_MS in
+  // server/src/index.ts, Durchsicht Daten K2); so lange wird er nicht hart beendet
+  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), !started ? START_QUIT_TIMEOUT_MS : busy ? BUSY_QUIT_TIMEOUT_MS : QUIT_TIMEOUT_MS))
   if ((await Promise.race([gone, timeout])) !== 'timeout') return
   child.kill()
   // Beim Neustart muss der Port frei sein, bevor der nächste Server ihn bindet
@@ -338,7 +352,7 @@ function buildMenu() {
       submenu: [
         ...(mac ? [{ role: /** @type {const} */ ('about'), label: 'Über Mietfuchs' }, { type: /** @type {const} */ ('separator') }] : []),
         { label: 'Im Browser öffnen', click: () => { if (origin) void shell.openExternal(origin) } },
-        { label: 'Datenordner zeigen', click: () => { const dir = dataDirIn(serverOutput); if (dir) void shell.openPath(dir) } },
+        { label: 'Datenordner zeigen', click: () => { if (serverDataDir) void shell.openPath(serverDataDir) } },
         { type: 'separator' },
         { label: 'Drucken …', accelerator: 'CmdOrCtrl+P', click: (_item, win) => { if (win instanceof BrowserWindow) printPage(win.webContents) } },
         { type: 'separator' },
@@ -388,7 +402,7 @@ function printPage(contents) {
 /** @param {BrowserWindow} win */
 async function selfTest(win) {
   const out = process.env.MIETFUCHS_SELFTEST_OUT
-  if (!out || !process.env.CI) return
+  if (!out || !testGripsAllowed(process.env)) return
   fs.mkdirSync(out, { recursive: true })
   // Der Server ist ein Prozess des Fensters und steht mit in den Metriken; getrennt gezählt, damit der Speicher des
   // Fensters mit dem früherer Läufe vergleichbar bleibt
@@ -470,7 +484,8 @@ async function start() {
   // ihren Beispielbestand selbst); später der Weg zu einem Mietfuchs im Heimnetz (#528).
   // Nur beim Entwickeln und in Prüfungen: Im ausgelieferten Fenster ließe eine untergeschobene Variable sonst eine
   // fremde Seite mit der Druckbrücke laden (Durchsicht K8).
-  const remote = !app.isPackaged || process.env.CI ? process.env.MIETFUCHS_SERVER_URL : undefined
+  // Ausgeliefert nur mit beiden Schranken der Testgriffe und nur auf diesen Rechner (testGrips.js)
+  const remote = (!app.isPackaged || testGripsAllowed(process.env)) ? loopbackUrl(process.env.MIETFUCHS_SERVER_URL) : null
   if (remote) origin = new URL(remote).origin
   else try {
     origin = new URL(await startServer(readSettings())).origin
@@ -573,7 +588,7 @@ function offerMoveToApplications() {
     packaged: app.isPackaged,
     inApplications: process.platform === 'darwin' && app.isInApplicationsFolder(),
     declined: settings.moveDeclined === true,
-    ci: Boolean(process.env.CI),
+    env: process.env,
   })
   if (!offer) return false
   const answer = dialog.showMessageBoxSync({
