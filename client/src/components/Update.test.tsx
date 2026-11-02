@@ -302,8 +302,10 @@ test('Einstellungen: Windows-Programmdatei wird im bisherigen Ordner ersetzt', a
   expect(link.getAttribute('href')).toBe(download('mietfuchs-win.exe'))
   expect(link.getAttribute('target')).toBeNull() // ein Download verlässt die Seite nicht
   expect(screen.getByText(/im selben Ordner wie bisher/)).toBeTruthy() // dort liegt der Ordner data
-  // Wer nicht weiß, was „data“ ist, liest, dass darin die Daten stehen und der Ordner bleibt, wo er ist
-  expect(screen.getByText(/enthält Ihre Daten: Lassen Sie ihn, wo er ist\./)).toBeTruthy()
+  // Wer nicht weiß, was „data“ ist, liest, dass darin die Daten stehen und der Ordner bleibt, wo er ist. Nur „liegt
+  // daneben“: Am Systemort oder ohne Schreibrecht liegen die Daten im Benutzerordner (chooseDataDir). Der Name steht
+  // in <code>, getByText sieht nur den Text drumherum.
+  expect(screen.getByText(/Liegt daneben ein Ordner , enthält er Ihre Daten: Lassen Sie ihn, wo er ist\./)).toBeTruthy()
 })
 
 test('Einstellungen auf einem anderen Gerät: kein Download, sondern der Weg an den Rechner', async () => {
@@ -319,7 +321,7 @@ test('Einstellungen: macOS und Linux müssen erst entpacken', async () => {
   render(<Card s={settings({ updateCheck: 'on' })} />)
   await waitFor(() => expect(screen.getByText(/Zip-Datei/)).toBeTruthy())
   expect(screen.getByText(/blockiert macOS/)).toBeTruthy()
-  expect(screen.getByText(/enthält Ihre Daten: Lassen Sie ihn, wo er ist\./)).toBeTruthy()
+  expect(screen.getByText(/Liegt daneben ein Ordner , enthält er Ihre Daten: Lassen Sie ihn, wo er ist\./)).toBeTruthy()
   cleanup()
 
   response = status({ downloadUrl: download('mietfuchs-linux.tar.gz') })

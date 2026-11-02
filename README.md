@@ -158,7 +158,9 @@ dabei liegen.
 
 Das neue Programm braucht **macOS 13 (Ventura) oder neuer**, so verlangt es Electron, auf dem es aufbaut. Die
 [bisherige Programmdatei](#herunterladen--starten-ohne-installation) ist kein Ausweg für ältere Macs: Sie ist mit
-Bun gebaut, und Bun läuft ebenfalls erst ab macOS 13.
+Bun gebaut, und Bun läuft ebenfalls erst ab macOS 13. Auf einem älteren Mac lässt du Mietfuchs deshalb auf
+einem anderen Gerät laufen und öffnest es im Browser des Macs, siehe
+[Zugriff vom Handy oder einem zweiten Rechner](#zugriff-vom-handy-oder-einem-zweiten-rechner).
 
 1. Auf der [Release-Seite](https://github.com/speedone/mietfuchs/releases/latest) unter *Assets*
    das Abbild für deinen Mac laden: `Mietfuchs-<Version>-apple-silicon.dmg` für Apple M1 und
@@ -229,8 +231,9 @@ Papierkorb gelöschter Belege zieht mit, damit „Rückgängig“ im Verlauf wei
 
 Lag deine alte Mac-Programmdatei im Ordner *Programme*, nutzt das neue Programm ihre Daten in
 `~/Library/Application Support/Mietfuchs` direkt, ohne Umzug; starte die alte danach nicht mehr.
-Startest du sie doch, während das neue läuft, startet das zweite nicht, sondern sagt, dass Mietfuchs
-schon mit denselben Daten läuft (die Programmdatei öffnet dann das laufende im Browser).
+Startest du das neue, solange die alte läuft, startet es nicht, sondern sagt, dass Mietfuchs schon
+mit denselben Daten läuft. Umgekehrt öffnet eine Programmdatei ab 0.15 dann das laufende im
+Browser; ältere Programmdateien prüfen das nicht.
 
 Läuft alles im neuen Programm, kannst du die alte Programmdatei löschen. Den alten Ordner `data/`
 hebst du am besten noch eine Weile als Sicherung auf.
@@ -261,9 +264,8 @@ einem Netz, dem du vertraust.
 Die einzelne Programmdatei gibt es weiter. Unter Linux und auf dem Raspberry Pi ist sie neben dem
 [Installationspaket](#linux-installationspaket-mit-startmenü-eintrag) der übliche Weg. Unter
 Windows und macOS ist das [neue Programm](#installation-unter-windows-und-macos) einfacher; wer
-dort die Programmdatei startet, sieht im Cockpit einen Hinweis zum Umstieg. Für Windows und macOS
-erscheint sie nur noch als Brücke ins neue Programm, geplant bis Version 0.17; steig dort also am
-besten bald um. Unter Linux und auf dem Raspberry Pi bleibt sie. Sie braucht **keine
+dort die Programmdatei startet, sieht im Cockpit einen Hinweis zum Umstieg. Unter Windows und
+macOS ist das neue Programm der empfohlene Weg; die Programmdatei gibt es dort vorerst weiter. Sie braucht **keine
 Installation und kein Node** und öffnet Mietfuchs im Browser. Ein Klick lädt immer die neueste
 Fassung:
 

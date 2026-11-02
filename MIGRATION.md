@@ -36,8 +36,8 @@ das neue Programm selbst**, auch das aus dem Microsoft Store:
    Mietverhältnisse. Klicken Sie auf **Daten übernehmen**.
 
 Gesucht wird zuerst dort, wo die Programmdatei zuletzt lief (ab Version 0.14.1 merkt sie sich den
-Ort), unter Windows auch in `%LOCALAPPDATA%\Mietfuchs`, dann in Downloads, Schreibtisch und
-Dokumente, auch in OneDrive. Auf dem Mac fragt macOS dabei, ob Mietfuchs auf diese Ordner zugreifen
+Ort), unter Windows auch in `%LOCALAPPDATA%\Mietfuchs`. Nur wenn dort nichts liegt, sucht es in
+Downloads, Schreibtisch und Dokumente, auch in OneDrive. Auf dem Mac fragt macOS dabei, ob Mietfuchs auf diese Ordner zugreifen
 darf. Findet Mietfuchs nichts, fragt es „Haben Sie Mietfuchs schon einmal benutzt?“. Nach
 *Ja, Daten übernehmen* haben Sie zwei Wege:
 
@@ -66,8 +66,8 @@ und legt sie vorher als `mietfuchs.sqlite.vor-restore` beiseite.
 
 Lag Ihre Mac-Programmdatei im Ordner *Programme*, nutzt das neue Programm deren Daten in
 `~/Library/Application Support/Mietfuchs` direkt, ohne Umzug. Starten Sie die alte dann nicht mehr.
-Laufen beide auf denselben Daten, startet das zweite nicht, sondern sagt „Mietfuchs läuft bereits
-mit denselben Daten …“.
+Solange die alte läuft, startet das neue nicht, sondern sagt „Mietfuchs läuft bereits mit denselben
+Daten …“. Programmdateien vor 0.15 prüfen das umgekehrt nicht.
 
 Läuft alles im neuen Programm, können Sie die alte Programmdatei löschen. Den alten Ordner `data`
 heben Sie am besten noch eine Weile als Sicherung auf.
@@ -155,7 +155,8 @@ Daten: C:\Users\Beispiel\AppData\Local\Mietfuchs
 
 Sehen Sie kein Fenster mit Text, weil Sie Mietfuchs über das Startmenü geöffnet haben, dann
 rufen Sie im Browser `http://127.0.0.1:3001/healthz` auf, beim Programm mit eigenem Fenster (ab 0.15)
-`http://127.0.0.1:17517/healthz`. Dort steht unter `database` bei `file` der vollständige Pfad zur
+`http://127.0.0.1:17517/healthz` (war der Port 17517 beim ersten Start belegt, nimmt das Programm
+einen anderen und merkt ihn sich; die Adresse steht dann in der Adresszeile von *Im Browser öffnen*). Dort steht unter `database` bei `file` der vollständige Pfad zur
 Datenbank; der Ordner darüber ist Ihr Datenordner.
 
 Falls Sie doch selbst suchen wollen, hängt der Ort davon ab, wie Sie Mietfuchs starten:

@@ -16,12 +16,13 @@ einem Ordner auf Ihrem Rechner:
 - Programm für Windows (Microsoft Store oder Installer): `%USERPROFILE%\Mietfuchs`
 - Programm für macOS: `~/Library/Application Support/Mietfuchs`
 - Programmdatei: im Ordner `data` neben der Datei, oder im Benutzerordner (Windows
-  `%LOCALAPPDATA%\Mietfuchs`, macOS `~/Library/Application Support/Mietfuchs`), wenn Mietfuchs dort nicht
-  schreiben darf
+  `%LOCALAPPDATA%\Mietfuchs`, macOS `~/Library/Application Support/Mietfuchs`), wenn sie an einem
+  Systemort wie `Program Files` oder `/Applications` liegt oder Mietfuchs neben ihr nicht schreiben darf
 - Linux-Pakete: `~/.local/share/mietfuchs`
 
 Das Programm für Windows und macOS legt daneben einen Ordner `mietfuchs-fenster` an (Windows
-`%LOCALAPPDATA%\mietfuchs-fenster`, aus dem Microsoft Store im Paketordner der App, macOS `~/Library/Application Support/mietfuchs-fenster`) mit seinen
+`%LOCALAPPDATA%\mietfuchs-fenster`, aus dem Microsoft Store im Paketordner der App, macOS
+`~/Library/Application Support/mietfuchs-fenster`) mit seinen
 Einstellungen (gemerkter Port, Zugriff aus dem Heimnetz) und Protokollen. Der Installer für Windows
 legt eine Kopie von sich unter `%LOCALAPPDATA%\mietfuchs-updater` ab, damit Updates nur die geänderten
 Teile laden, und schreibt beim Installieren ein Zeitprotokoll nach `%TEMP%\mietfuchs-installation.log`.

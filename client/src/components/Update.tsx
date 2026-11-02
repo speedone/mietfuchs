@@ -306,7 +306,7 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
         <ol className="update-steps">
           <li>Die neue <code>{fileName}</code> mit dem Knopf oben herunterladen.</li>
           {quitStep}
-          <li>Die neue Datei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Der Ordner <code>data</code> daneben enthält Ihre Daten: Lassen Sie ihn, wo er ist.</li>
+          <li>Die neue Datei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Liegt daneben ein Ordner <code>data</code>, enthält er Ihre Daten: Lassen Sie ihn, wo er ist.</li>
           <li>Mietfuchs wie gewohnt starten. Meldet sich Windows wie beim ersten Mal, hilft <em>Weitere Informationen</em> und dann <em>Trotzdem ausführen</em>.</li>
         </ol>
       )}
@@ -314,7 +314,7 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
         <ol className="update-steps">
           <li>Die Zip-Datei mit dem Knopf oben herunterladen und mit einem Doppelklick entpacken.</li>
           {quitStep}
-          <li>Die entpackte Programmdatei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Der Ordner <code>data</code> daneben enthält Ihre Daten: Lassen Sie ihn, wo er ist.</li>
+          <li>Die entpackte Programmdatei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Liegt daneben ein Ordner <code>data</code>, enthält er Ihre Daten: Lassen Sie ihn, wo er ist.</li>
           <li>Mietfuchs starten. Beim ersten Start blockiert macOS die neue Datei wie bei der Erstinstallation. Wie Sie sie freigeben, steht im <a href={README} target="_blank" rel="noreferrer">README</a>.</li>
         </ol>
       )}
