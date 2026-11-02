@@ -377,7 +377,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   in der Zusammenfassung. **Kein eigener Workflow mehr**: Das frühere desktop.yml ist in release.yml
   aufgegangen, weil ein PR dort so lange läuft wie desktop.yml allein (rund sechs Minuten), weil eine Änderung am
   Fenster jetzt auch das Store-Paket ändert, das nur release.yml prüft, und damit Bau und Prüfung an einer Stelle
-  stehen. Deshalb steht `desktop/**` in der Pfadliste von release.yml.
+  stehen. Deshalb steht `desktop/**` in der Pfadliste von release.yml. Ob das Bündel rechnet wie die Quellen,
+  prüft daneben „Server-Bündel gegen Quellen“ mit den Server-Ordnern aus dem Bau ([bundle-vergleich.mjs](bundle-vergleich.mjs), unten).
 
 ## Microsoft Store
 
@@ -498,8 +499,34 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Fassung, die den Vermerk nicht kennt, noch eine Zahlung an; das Fenster meldet `newer` und übernimmt den neueren Stand
   erst auf Wunsch. Ebenso über das Backup.
   Beide Mietverhältnisse laufen das ganze Jahr, weil Mietfuchs Leerstand seit 0.3 anders rechnet. Job „Umzug ins
-  Programmfenster mit alten Fassungen“ in release.yml im vollen Umfang; `--nur 0.3.1` für eine Fassung, `--out` für den
-  Bericht. Nur unter Linux.
+  Programmfenster mit alten Fassungen“ in release.yml im vollen Umfang, zweimal: aus den Quellen und mit
+  `--bundle <Server-Ordner>` (der Server von heute als `server/server.mjs` aus dem Windows-Bau, Artefakt
+  `fenster-server-win`, mit dem Node des Runners gestartet; Altformate und Migrationen kommen dann aus dem Bündel).
+  `--nur 0.3.1` für eine Fassung, `--out` für den Bericht. Lokal rund dreieinhalb Minuten je Durchgang, die
+  Programmdateien belegen im Cache rund 500 MB. Nur unter Linux.
+- **[bundle-vergleich.mjs](bundle-vergleich.mjs)** (#517): Rechnet das Bündel des Fensters wie die Quellen? Die Tests
+  laufen alle auf den Quellen; was das Bündeln ändern kann (Auflösung einer Abhängigkeit, umgeschriebenes
+  `import.meta.url`, eingebettete Migrationen, ein Fehler von rolldown), sähen sie nicht. Das Skript kopiert einen
+  Bestand aus perf-stock.mjs (Stufe s, ohne `--stock` legt es ihn an) zweimal, startet `node server/src/index.ts` und
+  `node <Server-Ordner>/server/server.mjs` (Arbeitsordner der Server-Ordner) je mit eigenem Wegwerf-Datenordner unter
+  `os.tmpdir()`, `CI=1`, `NKA_UPDATE_URL` ins Leere, `NKA_PORT=0`, demselben `NKA_TEST_TODAY` und `NKA_TEST_IDS=seq`
+  (ohne NKA_*-Angaben der Shell) und vergleicht für jedes Objekt und jedes Jahr vom Jahr vor der ersten Position bis
+  heute Abrechnung, Export als CSV und JSON, Anschreiben, Verbrauch, Mietkonto, Steuer, je Jahr `tax/overview`, die
+  Liste der Heizkostenabrechnungen und jede samt Anschreiben: Status, Inhaltstyp und Antwort byteweise, gemeldet mit
+  Route, Byte und erstem abweichenden JSON-Pfad. Dann spielen beide dasselbe alte Backup mit db.json ein (`stockZip`
+  aus dem Praxislauf, Format 0.2/0.3), Vergleich noch einmal, dann eine getrennte Heizkostenabrechnung (Weg d) über die
+  API auf beiden (der Bestand rechnet seine Heizung in der Betriebskostenabrechnung), dritter Vergleich. Je Runde
+  eine Mindestzahl von Antworten, und jede muss aus den Quellen mit 200 kommen, sonst rot: Zwei gleiche Fehlerseiten
+  sind kein Befund. Ohne `--bundle` bündelt es selbst mit `bundleServer` (Frontend als Attrappe, client/dist nicht
+  nötig). Lokal rund 20 Sekunden plus Bestand. **Rot nachgewiesen**: Ein um einen Cent verschobener Saldo im Bündel
+  (`st.balanceCents` in einer Kopie von server.mjs) ergab 11 Befunde. Eine geänderte Reihenfolge der Rest-Cents in
+  `largestRemainder` blieb grün, die Funktion entscheidet in diesem Bestand nirgends; der Bestand deckt nicht jeden
+  Rechenweg ab. Job „Server-Bündel gegen Quellen“ in release.yml **in jedem Prüfumfang**, auf den Server-Ordnern aus
+  dem Windows- und dem macOS-Bau (Artefakte `fenster-server-win`, `-mac`): Das Bündel wird mit jedem Release
+  ausgeliefert und ändert sich mit jeder Änderung an Server, shared/ oder Abhängigkeiten, eine Abweichung wäre eine
+  falsche Zahl in der Abrechnung, und der Job kostet einen Linux-Runner für rund zwei Minuten neben „Programmfenster
+  prüfen auf …“, das länger läuft. Im vollen Umfang allein hieße: Ein PR, der eine Abhängigkeit hebt, merkte es erst
+  am Mittwoch oder beim Tag.
 - **Prüfumfang je Anlass** (#52), entschieden im Job „Prüfumfang festlegen“ in release.yml: **Ein PR
   ohne Label** prüft Tests und Build ([ci.yml](../.github/workflows/ci.yml)), Bauen und Signieren,
   die sechs Programmdateien ohne lange KI-Antwort, `centos:7` und `ubuntu:26.04`, das `.deb` auf
@@ -507,8 +534,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   lange KI-Antwort, Browserlauf) läuft beim Tag, mittwochs 4:23 UTC auf `main` (das Netz gegen eine
   fehlerhafte Bun-Fassung; nach 60 Tagen ohne Bewegung schaltet GitHub Zeitpläne ab), von Hand und
   mit dem Label `full-check`. Die Bedingung ist als Ausnahme geschrieben (vollständig außer am PR
-  ohne Label), damit ein neuer Auslöser im Zweifel zu breit läuft. Das Programmfenster und das
-  Store-Paket laufen in jedem Umfang. Am PR läuft release.yml nur,
+  ohne Label), damit ein neuer Auslöser im Zweifel zu breit läuft. Das Programmfenster, der Vergleich
+  seines Server-Bündels mit den Quellen und das Store-Paket laufen in jedem Umfang. Am PR läuft release.yml nur,
   wenn er Server, Oberfläche, Programmfenster, Skripte, Paketierung oder die Datei selbst anfasst. **Eine leere
   Matrix erzeugt keinen Job und keinen Fehler**, deshalb bricht „Prüfumfang festlegen“ bei einer
   leeren Liste ab. „Ans Release anhängen“ wartet auf alles, auch auf den Browserlauf.
