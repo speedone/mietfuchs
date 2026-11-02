@@ -145,7 +145,7 @@ export function DesktopHint({ status, onDismissed }: { status: UpdateStatus; onD
         </div>
         <ol className="update-steps mt-4">
           {offer === 'windows'
-            ? <li>Den Installer <code>Mietfuchs-Setup-….exe</code> von der Release-Seite laden und starten, oder Mietfuchs aus dem Microsoft Store installieren.</li>
+            ? <li>Mietfuchs aus dem Microsoft Store installieren oder den Installer <code>Mietfuchs-Setup-….exe</code> von der Release-Seite laden und starten.</li>
             // In einem span: Den letzten Code eines Schritts setzt .update-steps als Befehlszeile darunter (Linux).
             : <li><span>Auf der Release-Seite das Abbild für Ihren Mac laden, <code>…-apple-silicon.dmg</code> für Apple M1 und neuer oder <code>…-intel.dmg</code> für Intel. Öffnen und Mietfuchs in „Programme“ ziehen.</span></li>}
           <li>Dieses Mietfuchs beenden, mit „Mietfuchs beenden“ in der Seitenleiste.</li>
