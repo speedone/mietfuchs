@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Manifest des MSIX-Pakets für den Microsoft Store (#500). Vorlage: scripts/package-msix.mjs
      setzt Version, Architektur und Programmdatei ein. Gestartet wird das Programmfenster (#517,
-     Mietfuchs.exe), das den Server aus resources\server\mietfuchs.exe startet. Identität aus dem Partner Center
+     Mietfuchs.exe), das den Server als utilityProcess mit Electrons eigenem Node aus der app.asar startet
+     (#535, mietfuchs/server/server.mjs darin; eine Programmdatei des Servers gibt es nicht). Identität aus dem Partner Center
      (Produktverwaltung, Produktidentität); ändert sie sich dort, hier nachziehen und
      STORE_PACKAGE_NAME in server/src/paths.ts mit.
 
