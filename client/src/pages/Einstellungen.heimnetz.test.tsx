@@ -14,6 +14,8 @@ const SLOW = { timeout: 5000 }
 const STATUS: UpdateStatus = { enabled: false, current: '0.14.1', mode: 'desktop', desktopOffer: null, latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null, error: null }
 const SETTINGS: Settings = { houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30, ollamaUrl: '', ollamaModel: '' }
 const ADDRESS = 'http://192.168.178.23:17517'
+// Fragt die Windows-Firewall nach dem Einschalten, soll nur das Heimnetz frei werden, nie ein öffentliches WLAN
+const PRIVATE_ONLY = 'Wenn Windows fragt, lassen Sie nur „Private Netzwerke“ zu.'
 
 afterEach(() => {
   cleanup()
@@ -71,9 +73,11 @@ test('Heimnetz im Fenster: Warnung, Einschalten erst mit Speichern, danach die A
   // Nur ein Entwurf: nichts geschaltet, aber angekündigt, was beim Speichern geschieht
   expect(calls).toEqual([])
   expect(card.textContent).toMatch(/startet Mietfuchs neu/)
-  expect(card.textContent).toMatch(/Windows-Firewall/)
+  expect(card.textContent).toContain(PRIVATE_ONLY)
   fireEvent.click(within(card).getByRole('button', { name: /^Speichern/ }))
   expect(await within(card).findByText(ADDRESS, {}, SLOW)).toBeTruthy()
+  // Die Frage der Firewall kommt erst nach dem Neustart, wenn die Karte die Adressen zeigt: Der Satz steht dann noch da
+  expect(card.textContent).toContain(PRIVATE_ONLY)
   expect(calls).toEqual([true])
   expect((within(card).getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
   expect(within(card).queryByRole('button', { name: /^Speichern/ })).toBeNull()
@@ -86,6 +90,7 @@ test('Heimnetz an: Adressen, Ausschalten mit Speichern; ohne Netzwerk ein Satz s
   const card = await findCard()
   expect(await within(card).findByText(ADDRESS, {}, SLOW)).toBeTruthy()
   expect(within(card).getByText('http://10.0.0.5:17517')).toBeTruthy()
+  expect(card.textContent).toContain(PRIVATE_ONLY)
   fireEvent.click(within(card).getByRole('checkbox', { name: 'Zugriff aus dem Heimnetz erlauben' }))
   expect(card.textContent).not.toMatch(/Windows-Firewall/)
   fireEvent.click(within(card).getByRole('button', { name: /^Speichern/ }))

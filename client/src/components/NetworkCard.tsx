@@ -9,6 +9,10 @@ import Card from './Card'
 import DraftActions from './DraftActions'
 import { NoticeBox } from './Notice'
 
+// Fragt die Windows-Firewall nach dem Einschalten, soll nur das Heimnetz frei werden, nie ein öffentliches WLAN. Die
+// Frage kommt erst nach dem Neustart, wenn die Karte schon die Adressen zeigt; deshalb steht der Satz auch dort.
+const PRIVATE_ONLY = 'Wenn Windows fragt, lassen Sie nur „Private Netzwerke“ zu.'
+
 export default function NetworkCard({ bridge }: { bridge: NetworkBridge }) {
   const [saved, setSaved] = useState<NetworkState | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -38,9 +42,11 @@ export default function NetworkCard({ bridge }: { bridge: NetworkBridge }) {
               <ul className="mt-0">
                 {view.addresses.map((a) => <li key={a}><code className="break-all">{a}</code></li>)}
               </ul>
+              <p className="muted mb-1">{PRIVATE_ONLY}</p>
               <p className="muted">
-                Öffnet sich die Adresse nicht, prüfen Sie, ob Handy und Rechner im selben WLAN sind und unter Windows die
-                Firewall Mietfuchs für private Netzwerke zulässt.
+                Öffnet sich die Adresse nicht, prüfen Sie, ob Handy und Rechner im selben WLAN sind und ob
+                Windows dieses WLAN als privates Netzwerk führt (Einstellungen → Netzwerk und Internet → WLAN → Ihr Netz →
+                Netzwerkprofiltyp „Privates Netzwerk“).
               </p>
             </>
           )}
@@ -48,7 +54,7 @@ export default function NetworkCard({ bridge }: { bridge: NetworkBridge }) {
           {view.restart && !draft.saving && (
             <p className="muted">
               Beim Speichern startet Mietfuchs neu und lädt die Seite neu.
-              {view.firewall && ' Unter Windows fragt danach die Windows-Firewall: Erlauben Sie den Zugriff in privaten Netzwerken.'}
+              {view.firewall && ` ${PRIVATE_ONLY}`}
             </p>
           )}
           {draft.saving && <p role="status"><span className="spinner" />Mietfuchs startet neu …</p>}

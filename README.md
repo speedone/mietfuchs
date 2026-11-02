@@ -24,7 +24,8 @@ System und Ratgeber zur Nebenkostenabrechnung (Frist, Vorlage, umlagefähige Kos
   <a href="https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct"><img src="https://get.microsoft.com/images/de%20dark.svg" width="240" alt="Mietfuchs im Microsoft Store herunterladen"></a>
 </p>
 <p align="center"><b>Unter Windows am einfachsten aus dem Microsoft Store:</b> ein Klick zum Installieren,<br>
-Updates kommen von selbst. Für macOS und Linux siehe <a href="#herunterladen--starten-ohne-installation">Herunterladen &amp; starten</a>.</p>
+Updates kommen von selbst. Für macOS siehe <a href="#installation-unter-windows-und-macos">Installation unter Windows und macOS</a>,
+für Linux <a href="#bisherige-programmdatei-ohne-installation">Programmdatei und Pakete</a>.</p>
 
 ### Highlights
 
@@ -42,6 +43,7 @@ Updates kommen von selbst. Für macOS und Linux siehe <a href="#herunterladen--s
 - 🧷 **Eine Rechnung landet genau einmal in den Kosten:** jede Zeile eines ausgewerteten Belegs wird neu angelegt, mit einer vorhandenen Position verknüpft oder verworfen, und die Vorschau zeigt vor dem Buchen, was geschieht
 - 🤖 **Optionale KI-Belegauswertung** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
 - 🧭 **Anleitungen je Vermietungsart:** vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand, je mit Schritten, Beispiel und Rechtslage
+- 🪟 **Eigenes Programm für Windows und macOS** mit eigenem Fenster, aus dem Microsoft Store, per Installer oder als `.dmg`; unter Linux, auf dem Raspberry Pi und in Docker läuft Mietfuchs im Browser
 - 🐳 **In Minuten startklar:** `npm run dev` oder `docker compose up`
 
 ## Screenshots
@@ -71,39 +73,179 @@ Updates kommen von selbst. Für macOS und Linux siehe <a href="#herunterladen--s
 
 <sub>Weitere Ansichten: [Stammdaten](docs/screenshots/stammdaten.png), [Hilfe mit Anleitungen je Vermietungsart](docs/screenshots/hilfe.png).</sub>
 
-## Windows: aus dem Microsoft Store (empfohlen)
+## Installation unter Windows und macOS
+
+Seit Version 0.15 ist Mietfuchs unter Windows und macOS ein eigenes Programm mit eigenem Fenster,
+wie jedes andere auch: Symbol in Taskleiste bzw. Dock, Fenster schließen beendet Mietfuchs, und
+die Abrechnung druckt überall gleich, mit Briefpapier und „Seite x von y“. Einen Browser brauchst
+du dafür nicht.
+
+| Dein Rechner | Was du lädst |
+| --- | --- |
+| Windows 10 oder 11 (auch ARM, z. B. Snapdragon) | [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen) (empfohlen) oder der [Installer](#windows-mit-dem-installer) `Mietfuchs-Setup-<Version>.exe` |
+| Mac mit Apple-Chip (M1 und neuer) | [`Mietfuchs-<Version>-apple-silicon.dmg`](#macos) |
+| Mac mit Intel-Prozessor | [`Mietfuchs-<Version>-intel.dmg`](#macos) |
+| Linux, Raspberry Pi, Server ohne Bildschirm | [Programmdatei oder Paket](#bisherige-programmdatei-ohne-installation), [Docker](#mit-docker) |
+
+Installer und Abbilder für den Mac liegen auf der
+**[Release-Seite](https://github.com/speedone/mietfuchs/releases/latest)** unter *Assets*.
+Welchen Mac du hast, steht im Apple-Menü unter *Über diesen Mac*: „Chip Apple M…“ oder
+„Prozessor … Intel …“.
+
+Hast du Mietfuchs schon als einzelne Programmdatei (`mietfuchs-win.exe` oder
+`mietfuchs-macos-…`) benutzt, übernimmt das neue Programm deine Daten beim ersten Start, siehe
+[Umzug von der bisherigen Programmdatei](#umzug-von-der-bisherigen-programmdatei).
+
+### Windows: aus dem Microsoft Store (empfohlen)
 
 [![Mietfuchs im Microsoft Store herunterladen](https://get.microsoft.com/images/de%20dark.svg)](https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct)
 
 Unter Windows 10 (1809) und 11 ist der Microsoft Store der bequemste Weg, für Intel/AMD wie
-für ARM-Rechner (z. B. Snapdragon):
+für ARM-Rechner (z. B. Snapdragon), dort in einer eigenen ARM-Fassung:
 
 - **Keine Sicherheitswarnung:** Microsoft prüft und signiert das Paket, der Hinweis „Der
   Computer wurde durch Windows geschützt“ entfällt.
 - **Updates kommen von selbst:** Der Store installiert jede neue Version im Hintergrund, sobald
   Mietfuchs beendet ist (solange es läuft, ersetzt Windows es nicht). Sofort geht es im Store unter
-  *Bibliothek* mit *Updates abrufen*.
-- **Wie jedes andere Programm:** Eintrag im Startmenü, kein schwarzes Konsolenfenster, Start
-  auch über `mietfuchs` in der Eingabeaufforderung. Beenden über *Mietfuchs beenden* unten in
-  der Seitenleiste.
+  *Bibliothek* mit *Updates abrufen*. Eine neue Version erscheint im Store erst, wenn Microsoft
+  sie geprüft hat, meist einige Tage nach dem Release hier. Zeigt der Store also noch eine Version
+  vor 0.15, nimm den Installer oder arbeite bis dahin mit der bisherigen Programmdatei weiter.
+- **Wie jedes andere Programm:** Eintrag im Startmenü, eigenes Fenster, Start auch über
+  `mietfuchs` in der Eingabeaufforderung. Fenster schließen beendet Mietfuchs.
 - **Deine Daten liegen in `%USERPROFILE%\Mietfuchs`** (z. B. `C:\Users\Name\Mietfuchs`) und
   bleiben auch beim Deinstallieren erhalten. Backup = diesen Ordner kopieren.
 
-Kommst du von der heruntergeladenen `mietfuchs-win.exe`, nimmst du deinen Bestand per Backup
-mit: in der alten Fassung unter *Einstellungen* auf *Backup herunterladen (ZIP)*, in der
-Store-Fassung dort auf *Backup wiederherstellen …*.
+### Windows: mit dem Installer
 
-## Herunterladen & starten (ohne Installation)
+Ohne Store geht es mit dem Installer, einer Datei für Intel/AMD und ARM:
 
-Der einfachste Weg, **keine Installation und kein Node nötig**. Ein Klick lädt immer die
-neueste Fassung:
+1. Auf der [Release-Seite](https://github.com/speedone/mietfuchs/releases/latest) unter *Assets*
+   `Mietfuchs-Setup-<Version>.exe` laden.
+   Hält dein Browser die Datei zurück, weil sie selten heruntergeladen wird, wähle in seiner
+   Download-Liste, dass du sie behalten willst.
+2. Die Datei per Doppelklick starten. Beim ersten Mal warnt Windows, weil die Datei nicht
+   kostenpflichtig signiert ist: „Der Computer wurde durch Windows geschützt“ → *Weitere
+   Informationen* → *Trotzdem ausführen*.
+3. Der Installer fragt nichts weiter und braucht keine Administratorrechte. Er installiert
+   Mietfuchs für dich, legt Einträge im Startmenü und auf dem Desktop an und startet es.
+
+Deine Daten liegen wie bei der Store-Fassung in `%USERPROFILE%\Mietfuchs`. Nimm deshalb nur eine
+der beiden Fassungen, Store oder Installer: Beide dürfen nicht gleichzeitig laufen. Willst du
+später zum Store wechseln, deinstalliere vorher die Fassung aus dem Installer; der Datenordner
+bleibt dabei liegen.
+
+**Updates:** Erlaubst du in den Einstellungen unter „Über Mietfuchs“ die Update-Prüfung, lädt
+Mietfuchs eine neue Version selbst von GitHub (GitHub sieht dabei deine IP-Adresse und die
+Versionsnummer). Ist sie geladen, meldet Mietfuchs „Version … ist bereit“, und du wählst *Beim
+nächsten Start* oder *Jetzt neu starten*; ungefragt startet es nie neu. Vor dem Update sichert
+Mietfuchs die Datenbank wie bei jedem Update. Ohne Update-Prüfung lädst du den neuen Installer
+von der Release-Seite und startest ihn, er ersetzt die alte Version, deine Daten bleiben.
+
+Deinstallieren geht wie bei jedem Programm unter *Einstellungen → Apps*. Der Datenordner bleibt
+dabei liegen.
+
+### macOS
+
+1. Auf der [Release-Seite](https://github.com/speedone/mietfuchs/releases/latest) unter *Assets*
+   das Abbild für deinen Mac laden: `Mietfuchs-<Version>-apple-silicon.dmg` für Apple M1 und
+   neuer, `Mietfuchs-<Version>-intel.dmg` für einen Mac mit Intel-Prozessor.
+2. Das Abbild per Doppelklick öffnen und **Mietfuchs** auf den Ordner **Programme** ziehen.
+3. Mietfuchs aus *Programme* starten. Beim ersten Mal blockiert macOS den Start, weil Mietfuchs
+   nicht kostenpflichtig bei Apple signiert ist. So gibst du es einmalig frei:
+   - Den Dialog mit *Fertig* schließen.
+   - *Systemeinstellungen → Datenschutz & Sicherheit* öffnen, nach unten scrollen und bei der
+     Meldung zu Mietfuchs auf *Dennoch öffnen* klicken, mit deinem Passwort bestätigen.
+   - Fragt macOS danach noch einmal nach, auch dort *Dennoch öffnen* wählen.
+
+   Seit macOS 15 geht das nur noch so; der frühere Weg mit Ctrl-Klick → *Öffnen* klappt dort
+   nicht mehr. Wer das Terminal mag, nimmt stattdessen
+   `xattr -dr com.apple.quarantine /Applications/Mietfuchs.app`.
+4. Sucht Mietfuchs beim ersten Start deine bisherigen Daten, fragt macOS, ob es auf Downloads,
+   Schreibtisch und Dokumente zugreifen darf. Erlaube es; die Daten verlassen deinen Mac nicht.
+
+Deine Daten liegen in `~/Library/Application Support/Mietfuchs`. Backup = diesen Ordner kopieren;
+im Menü *Mietfuchs → Datenordner zeigen* öffnet ihn der Finder.
+
+**Updates:** Auf dem Mac aktualisiert sich Mietfuchs nicht von selbst, das ginge nur mit einer
+kostenpflichtigen Signatur. Erlaubst du die Update-Prüfung, sagt Mietfuchs Bescheid, wenn es eine
+neue Version gibt. Dann Mietfuchs beenden, das neue Abbild laden, Mietfuchs wieder auf
+*Programme* ziehen und *Ersetzen* wählen. Den ersten Start gibst du wie oben noch einmal frei.
+Deine Daten bleiben, wo sie sind.
+
+### Umzug von der bisherigen Programmdatei
+
+Bis Version 0.14 lief Mietfuchs unter Windows und macOS im Browser, als einzelne Programmdatei
+oder aus dem Microsoft Store. Die Daten der Programmdatei liegen im Ordner `data/` neben der
+Datei. Das neue Programm holt sie von selbst, auch das aus dem Microsoft Store:
+
+1. Das neue Programm installieren, wie oben beschrieben.
+2. Das alte Mietfuchs beenden, mit *Mietfuchs beenden* unten in der Seitenleiste oder indem du
+   sein Konsolenfenster (auf dem Mac das Terminal) schließt. Vergisst du es, bietet das neue
+   *Altes Mietfuchs beenden* an.
+3. Das neue Mietfuchs starten. Findet es deine Daten, zeigt es „Wir haben Ihre bisherigen
+   Mietfuchs-Daten gefunden“ mit Ort und letzter Änderung. Auf **Daten übernehmen** klicken.
+
+Gesucht wird dort, wo die Programmdatei zuletzt lief (ab Version 0.14.1 merkt sie sich den Ort),
+sonst in Downloads, Schreibtisch und Dokumente (auch in OneDrive). Findet Mietfuchs nichts, fragt es „Haben Sie
+Mietfuchs schon einmal benutzt?“. Mit *Ja, Daten übernehmen* geht es auf einem von zwei Wegen
+weiter:
+
+- *Ordner der alten Programmdatei wählen …*, wenn du weißt, wo sie liegt.
+- Über ein Backup: das alte Mietfuchs noch einmal starten, unter *Einstellungen* auf
+  **Backup herunterladen (ZIP)** klicken (mit Haken bei „Verlauf der Änderungen mitsichern“,
+  wenn du den Verlauf mitnehmen willst), dann im neuen auf **Backup einspielen** und die
+  ZIP-Datei wählen. Schlüssel für einen KI-Dienst trägst du danach neu ein, und das alte
+  Mietfuchs startest du nicht mehr, sonst entstehen zwei Bestände.
+
+Übernommen wird als **Kopie**: Datenbank, Belege und Briefpapier. Mietfuchs vergleicht die Kopie
+mit dem Original und schaltet erst dann um. Dein alter Ordner bleibt unverändert liegen. Beim Weg
+über den Ordner zeigt die alte Programmdatei ihn danach nur noch zum Ansehen, damit es keine zwei
+Bestände gibt. Später
+geht die Übernahme jederzeit in den Einstellungen unter „Daten aus bisherigem Mietfuchs
+übernehmen …“. Ändert jemand nach dem Umzug noch etwas im alten Mietfuchs, sagt das neue es dir
+und bietet an, den neueren Stand zu übernehmen.
+
+Lag deine alte Mac-Programmdatei im Ordner *Programme*, nutzt das neue Programm ihre Daten in
+`~/Library/Application Support/Mietfuchs` direkt, ohne Umzug; starte die alte danach nicht mehr.
+
+Läuft alles im neuen Programm, kannst du die alte Programmdatei löschen. Den alten Ordner `data/`
+hebst du am besten noch eine Weile als Sicherung auf.
+
+### Zugriff vom Handy oder einem zweiten Rechner
+
+Das neue Programm ist zunächst nur auf diesem Rechner erreichbar (Port 17517), deshalb fragt auch
+keine Firewall. Willst du Mietfuchs auf dem Handy, Tablet oder einem zweiten Rechner im selben
+WLAN öffnen:
+
+1. In den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen setzen und speichern.
+   Mietfuchs startet dabei kurz neu.
+2. Fragt Windows danach, ob Mietfuchs ins Netz darf, lass nur **Private Netzwerke** zu, nicht
+   öffentliche. Kommt das Handy dann nicht durch, führt Windows dein WLAN vermutlich als
+   öffentliches Netz: unter *Einstellungen → Netzwerk und Internet → WLAN →* dein Netz den
+   *Netzwerkprofiltyp* auf *Privates Netzwerk* stellen.
+3. Die Karte nennt die Adresse fürs Handy, etwa `http://192.168.178.23:17517`.
+
+Die Adresse ist eine andere als bei der bisherigen Programmdatei und der Store-Fassung bis 0.14
+(dort Port 3001); ein Lesezeichen auf dem Handy legst du also neu an. Mietfuchs hat kein Passwort: Solange der Zugriff
+erlaubt ist, kann jeder in deinem Heimnetz deine Daten öffnen und ändern. Erlaube ihn nur in
+einem Netz, dem du vertraust.
+
+<a id="herunterladen--starten-ohne-installation"></a>
+
+## Bisherige Programmdatei (ohne Installation)
+
+Die einzelne Programmdatei gibt es weiter. Unter Linux und auf dem Raspberry Pi ist sie neben dem
+[Installationspaket](#linux-installationspaket-mit-startmenü-eintrag) der übliche Weg. Unter
+Windows und macOS ist das [neue Programm](#installation-unter-windows-und-macos) einfacher; wer
+dort die Programmdatei startet, sieht im Cockpit einen Hinweis zum Umstieg. Sie braucht **keine
+Installation und kein Node** und öffnet Mietfuchs im Browser. Ein Klick lädt immer die neueste
+Fassung:
 
 [![Windows herunterladen](https://img.shields.io/badge/Windows-herunterladen-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-win.exe)
 [![macOS herunterladen](https://img.shields.io/badge/macOS-herunterladen-111111?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-apple-silicon.zip)
 [![Linux herunterladen](https://img.shields.io/badge/Linux-herunterladen-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz)
 
-Unter Windows ist der [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen) bequemer,
-die Programmdatei bleibt für alle, die ohne Store arbeiten. Der macOS-Knopf gilt für Macs mit Apple-Chip (M1 bis M4). Für einen älteren Mac mit
+Der macOS-Knopf gilt für Macs mit Apple-Chip (M1 und neuer). Für einen älteren Mac mit
 Intel-Prozessor, für ARM-Rechner wie den Raspberry Pi oder für ein Linux-Installationspaket
 steht alles in den beiden Tabellen. Jeder Dateiname führt direkt zur neuesten Fassung:
 
@@ -123,8 +265,9 @@ openSUSE, Arch und CentOS 7. Für Alpine und andere musl-Systeme gibt es das Doc
 
 Archiv entpacken (unter macOS genügt ein Doppelklick), dann die Programmdatei per
 **Doppelklick** starten; es öffnet sich automatisch dein Browser mit Mietfuchs.
-Das Programmfenster (die schwarze Konsole) offen lassen, solange du arbeitest; zum Beenden
-einfach schließen.
+Daneben öffnet sich ein Konsolenfenster mit Text (unter Windows schwarz, auf dem Mac das
+Terminal). Lass es offen, solange du arbeitest; zum Beenden einfach schließen oder in Mietfuchs
+unten in der Seitenleiste auf *Mietfuchs beenden* klicken.
 
 Beim ersten Start meldet sich das Betriebssystem, weil die Datei nicht kostenpflichtig
 signiert ist:
@@ -134,14 +277,18 @@ signiert ist:
   [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen).
 - **macOS:** der erste Start wird blockiert: Dialog schließen, dann in
   *Systemeinstellungen → Datenschutz & Sicherheit* unten bei der Mietfuchs-Meldung auf
-  *Dennoch öffnen* klicken und den Start wiederholen. Bis macOS 14 geht stattdessen
-  Rechtsklick auf die Datei → *Öffnen* → im Dialog nochmals *Öffnen*. Wer das Terminal mag,
-  nimmt den Einzeiler `xattr -d com.apple.quarantine mietfuchs-macos-*`.
+  *Dennoch öffnen* klicken und den Start wiederholen. Das gilt genauso für das
+  [neue Programm](#macos). Bis macOS 14 geht stattdessen Rechtsklick auf die Datei → *Öffnen* →
+  im Dialog nochmals *Öffnen*. Wer das Terminal mag, nimmt im Ordner der Programmdatei den
+  Einzeiler `xattr -d com.apple.quarantine mietfuchs-macos-*` (für das neue Programm steht der
+  passende Befehl [dort](#macos)).
 - **Linux:** im Terminal: `tar -xzf mietfuchs-linux.tar.gz && ./mietfuchs-linux`
   (das Archiv erhält die Ausführungsrechte, `chmod` ist nicht nötig).
 
 Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`mietfuchs.sqlite` +
-Belege). Backup = diesen Ordner kopieren. Kommst du von einer älteren Version und hast nur noch
+Belege). Backup = diesen Ordner kopieren. Wechselst du unter Windows oder macOS zum neuen
+Programm, nimmt es diesen Ordner mit, siehe
+[Umzug von der bisherigen Programmdatei](#umzug-von-der-bisherigen-programmdatei). Kommst du von einer älteren Version und hast nur noch
 ein Backup-Archiv oder eine lose `db.json`, steht der Weg dafür in
 [MIGRATION.md](MIGRATION.md). Die optionale [KI-Belegauswertung](#ki-belegauswertung)
 braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) oder den Zugang zu
@@ -190,8 +337,8 @@ vom Archiv auf das Paket den alten Ordner also einmal mitnehmen:
 mkdir -p ~/.local/share/mietfuchs && cp -r data/. ~/.local/share/mietfuchs/
 ```
 
-Wo die Daten liegen, sagt Mietfuchs beim Start selbst: Die zweite Zeile im Programmfenster
-nennt den Ordner.
+Wo die Daten liegen, sagt Mietfuchs beim Start selbst: Die zweite Zeile der Ausgabe im
+Terminal nennt den Ordner.
 
 Ein Update holt sich das Paket nicht von selbst: Neue Fassung von der Releases-Seite laden und
 denselben Befehl noch einmal ausführen, er ersetzt die installierte Fassung. Der Update-Hinweis
@@ -202,8 +349,8 @@ in Mietfuchs sagt Bescheid, wenn es eine neue Fassung gibt, sofern du die Prüfu
 Dafür braucht es **Node 24.15 oder neuer**. Server und Oberfläche sind in TypeScript
 geschrieben, und der Server wird nicht gebaut: Node führt die Dateien unmittelbar aus und
 streift die Typen dabei ab. Das gilt erst ab dieser Version als stabil. Wer Mietfuchs als
-Programmdatei, als Linux-Paket oder im Docker-Image nutzt, braucht kein Node, dort ist die
-Laufzeit schon dabei.
+Programm für Windows und macOS, als Programmdatei, als Linux-Paket oder im Docker-Image nutzt,
+braucht kein Node, dort ist die Laufzeit schon dabei.
 
 ```powershell
 npm install        # einmalig: installiert Server + Client
@@ -528,19 +675,26 @@ secrets:
 
 ## Daten & Backup
 
-Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite`, hochgeladene Belege in `uploads/`, Logo
+Alles liegt in einem Datenordner (`mietfuchs.sqlite`, hochgeladene Belege in `uploads/`, Logo
 und Briefpapier für den Druck in `briefpapier/`; Angaben zu den Belegen und gespeicherte
 KI-Auswertungen stehen in der Datenbank und kommen mit ins Backup).
 Der Verlauf der Änderungen (Seite „Verlauf“) kommt nur mit, wenn du beim Backup „Verlauf der
 Änderungen mitsichern“ anhakst: Er enthält bis zu zwölf Monate lang auch gelöschte Angaben
 früherer Mieter.
-Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
-Quellcode unter `server/data/`. Aus einem Linux-Paket installiert, liegen die Daten in
-`~/.local/share/mietfuchs` (unter macOS in `~/Library/Application Support/Mietfuchs`, unter
-Windows in `%LOCALAPPDATA%\Mietfuchs`), weil das Programm dann an einem Ort liegt, an dem es
-nicht schreiben darf. Aus dem Microsoft Store installiert, liegen sie in `%USERPROFILE%\Mietfuchs`,
-außerhalb des Pakets, damit sie eine Deinstallation überstehen. Backup = diesen Ordner kopieren.
-`NKA_DATA_DIR` legt ihn frei fest.
+
+Wo der Datenordner liegt, hängt davon ab, wie du Mietfuchs nutzt:
+
+- **Programm für Windows** (Store oder Installer): `%USERPROFILE%\Mietfuchs`, z. B.
+  `C:\Users\Name\Mietfuchs`, außerhalb des Programms, damit er eine Deinstallation übersteht.
+- **Programm für macOS**: `~/Library/Application Support/Mietfuchs`.
+- **Bisherige Programmdatei**: **neben der Datei**. Liegt sie an einem Ort, an dem sie nicht
+  schreiben darf (etwa `Program Files` oder `/Applications`), unter Windows in
+  `%LOCALAPPDATA%\Mietfuchs`, unter macOS in `~/Library/Application Support/Mietfuchs`.
+- **Linux-Paket**: `~/.local/share/mietfuchs`.
+- **Aus dem Quellcode**: `server/data/`.
+
+Im Programm für Windows und macOS öffnet das Menü *Mietfuchs → Datenordner zeigen* den Ordner.
+Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
 
 Bis einschließlich Version 0.7.1 lag alles in einer Datei `db.json`. Kommst du von dort, ziehen
 deine Daten beim ersten Start von selbst in
