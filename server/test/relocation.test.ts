@@ -558,3 +558,18 @@ test('Fingerabdruck: eine ausgetauschte Datei mit niedrigerer oder gleicher Kenn
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Gefunden in der CI an #548: Der Store-Job in release.yml übernahm noch mit `dataDir`, seit K11 (Durchsicht Sicherheit)
+// nehmen die Umzugsrouten nur die Kennung eines Fundes. Kein Prüfskript und kein Workflow schickt dort einen Pfad.
+test('Wächter: Workflows und Prüfskripte übernehmen mit der Kennung eines Fundes, nicht mit einem Pfad', () => {
+  const root = path.resolve(import.meta.dirname, '..', '..')
+  const files = [
+    ...fs.readdirSync(path.join(root, '.github', 'workflows')).map((n) => path.join(root, '.github', 'workflows', n)),
+    ...fs.readdirSync(path.join(root, 'scripts')).filter((n) => n.endsWith('.mjs')).map((n) => path.join(root, 'scripts', n)),
+    ...fs.readdirSync(path.join(root, 'desktop', 'build')).filter((n) => n.endsWith('.ps1')).map((n) => path.join(root, 'desktop', 'build', n)),
+  ]
+  const offending = files.flatMap((file) => fs.readFileSync(file, 'utf8').split('\n')
+    .filter((line) => /relocation\/(adopt|restore-backup)/.test(line) && /\b(dataDir|file)\b\s*[:=]/.test(line))
+    .map((line) => `${path.relative(root, file)}: ${line.trim()}`))
+  assert.deepEqual(offending, [])
+})

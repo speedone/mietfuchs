@@ -1298,7 +1298,7 @@ jobs:
             $funde = Invoke-RestMethod -Uri "$url/api/relocation/candidates"
             $fund = $funde.candidates | Where-Object { $_.dataDir -eq $altDaten }
             if (-not $fund) { throw "Der Ordner aus der Ortsdatei fehlt: $($funde | ConvertTo-Json -Compress -Depth 4)" }
-            $ergebnis = Invoke-RestMethod -Method Post -Uri "$url/api/relocation/adopt" -ContentType 'application/json' -Body (@{ dataDir = $altDaten } | ConvertTo-Json)
+            $ergebnis = Invoke-RestMethod -Method Post -Uri "$url/api/relocation/adopt" -ContentType 'application/json' -Body (@{ id = $fund.id } | ConvertTo-Json)
             "Umzug in die Store-Fassung: $($ergebnis.counts | ConvertTo-Json -Compress)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
             # Mehrere Objekte: Mietverhältnisse je Objekt zählen (ohne ?property= antwortet die Route mit 400)
             $anzahl = 0

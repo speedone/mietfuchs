@@ -354,10 +354,12 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   [../desktop/build/installer-messung.ps1](../desktop/build/installer-messung.ps1)): dreimal installieren, darüber installieren und deinstallieren, einmal bei laufendem Mietfuchs, auf windows-11-arm
   und windows-2025; Phasen aus dem Zeitprotokoll, Schreibzugriffe aus einem FileSystemWatcher, Stand und
   Ereignisprotokoll von Defender. Bei laufendem Mietfuchs **erst sanft**, dann hart (Durchsicht Daten K1): `taskkill`
-  ohne `/F` schickt dem Fenster `WM_CLOSE`, Electron schließt es, `before-quit` beendet den Server über `/api/quit`,
+  ohne `/F` **nur mit Filter auf den Fenstertitel** `Mietfuchs*` schickt dem Hauptprozess `WM_CLOSE` (ohne Filter
+  erreichte es auch den Server als utilityProcess, dessen verstecktes Chromium-Fenster ihn sofort beendete, ohne
+  Leerlaufen und Aufräumen; in der CI an #548 an der liegengebliebenen Lauf-Datei gesehen), Electron schließt es, `before-quit` beendet den Server über `/api/quit`,
   der seine Schlange leerlaufen lässt und auf ein laufendes Wiederherstellen wartet; der Installer wartet bis 15
-  Sekunden (das Fenster selbst wartet bis 8 Sekunden, bei `busy` bis 150), erst dann `/F`. Die Hilfsprozesse ohne
-  Fenster lehnen ein Beenden ohne `/F` ab und gehen mit dem Hauptprozess. Die Messung verlangt die Marke „sanft
+  Sekunden (das Fenster selbst wartet bis 8 Sekunden, bei `busy` bis 150), erst dann `/F`. Server und Hilfsprozesse
+  gehen mit dem Hauptprozess. Die Messung verlangt die Marke „sanft
   geschlossen“ im Zeitprotokoll und dass die Lauf-Datei des Servers weg ist (hart beendet bliebe sie liegen). **Defender auf den Runnern ist kein Nutzerrechner:** Auf beiden sind `C:\` und
   `D:\` ausgenommen, der Cloud-Schutz ist aus (MAPSReporting 0), auf windows-2025 auch der Echtzeitschutz (lässt
   sich nicht einschalten). Was das Prüfen der Dateien kostet, zeigt nur das Protokoll vom Rechner eines Nutzers. Der

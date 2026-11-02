@@ -284,6 +284,15 @@ FunctionEnd
   Pop $R0
 !macroend
 
+; Sanft nur das Fenster (Durchsicht Daten K1, in der CI an #548 gefunden): taskkill ohne /F schickt WM_CLOSE an jedes
+; Mietfuchs.exe, auch an den Server (utilityProcess). Dessen verstecktes Fenster von Chromium beendet ihn dann sofort,
+; ohne Leerlaufen der Schlange und ohne Aufräumen; die Lauf-Datei blieb liegen. Der Filter auf den Titel trifft nur den
+; Hauptprozess mit dem Programmfenster („Mietfuchs …“), der dann über before-quit den Server ordentlich beendet.
+!macro mfCloseWindow
+  nsExec::Exec `"$CmdPath" /C taskkill /IM "${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%" /FI "WINDOWTITLE eq Mietfuchs*"`
+  Pop $R0
+!macroend
+
 !macro customCheckAppRunning
   !insertmacro mfLog "[pruefung-beginn] Prüfung auf laufendes Mietfuchs beginnt"
   ; Heißt der Installer selbst wie das Programm (Aktualisierung aus dem Programm heraus), prüft die Vorlage nicht
@@ -306,12 +315,12 @@ FunctionEnd
       ${EndIf}
       mfStopApp:
       DetailPrint "$(appClosing)"
-      ; Erst sanft (Durchsicht Daten K1): taskkill ohne /F schickt dem Fenster WM_CLOSE, Electron schließt es,
+      ; Erst sanft (Durchsicht Daten K1): taskkill ohne /F schickt nur dem Fenster WM_CLOSE (mfCloseWindow), Electron schließt es,
       ; window-all-closed ruft app.quit, before-quit beendet den Server über /api/quit, und der lässt seine
       ; Schreibschlange leerlaufen (bis 5 s, QUIT_DRAIN_MS) und wartet auf ein laufendes Wiederherstellen; das Fenster
-      ; wartet darauf bis 8 s (QUIT_TIMEOUT_MS in desktop/src/main.js). Die Hilfsprozesse ohne Fenster lehnen ein
-      ; Beenden ohne /F ab und gehen mit dem Hauptprozess. Deshalb bis 15 Sekunden warten, erst dann hart.
-      !insertmacro mfKillApp ""
+      ; wartet darauf bis 8 s (QUIT_TIMEOUT_MS in desktop/src/main.js). Server und Hilfsprozesse gehen mit dem
+      ; Hauptprozess. Deshalb bis 15 Sekunden warten, erst dann hart.
+      !insertmacro mfCloseWindow
       StrCpy $R2 0
       mfWaitSoft:
         Sleep 1000

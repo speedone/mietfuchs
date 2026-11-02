@@ -3617,7 +3617,13 @@ async function runAdopt(res: Response, folder: string, mode: AdoptMode): Promise
     restoreRunning = false
     adoptCancel = false
     adoptProgress = { phase: 'idle', files: 0, totalFiles: 0, bytes: 0, totalBytes: 0 }
-    fs.rmSync(staging, { recursive: true, force: true })
+    // Mit Wiederholungen: Schreibt SQLite in der Kopie der db.json noch eine Beidatei, während der Ordner geleert wird,
+    // scheiterte das mit ENOTEMPTY, und der Ordner blieb bis zum nächsten Start liegen (in der CI an #548 gesehen)
+    try {
+      fs.rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    } catch (err) {
+      console.error(`Die Zwischenablage der Übernahme ließ sich nicht entfernen; der nächste Start räumt sie weg: ${messageOf(err)}`)
+    }
     // Vor dem Umschalten bleibt die Kopie nicht liegen; danach hat applyBackup sie an ihren Platz bewegt
     if (!switched) for (const suffix of ['', '-journal']) fs.rmSync(`${stagedDatabase}${suffix}`, { force: true })
   }
@@ -3776,6 +3782,11 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     const opened = await openDatabase({ dataDir: jsonDir })
     const result = await runChangeover({ dataDir: jsonDir, opened, reopen: () => openDatabase({ dataDir: jsonDir }) })
     result.database?.close()
+    if (result.database !== opened) {
+      try {
+        opened.close()
+      } catch { /* schon geschlossen */ }
+    }
     // Der Grund steht nach dem ersten Absatz; der erste spricht vom nächsten Start, und den gibt es hier nicht
     const reason = result.message.split('\n\n').slice(1).join(' ').trim()
     if (result.state !== 'done') throw new AdoptRefusal(`Die Datei db.json im alten Ordner ließ sich nicht übernehmen.${reason ? ` ${reason}` : ''} ${ADOPT_UNCHANGED}`)

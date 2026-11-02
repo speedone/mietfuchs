@@ -214,7 +214,11 @@ if ($after -ne 0) { throw 'Mietfuchs läuft nach der Aktualisierung weiter' }
 # seine Lauf-Datei entfernt (server/src/instanceGuard.ts); hart beendet bliebe sie liegen
 $protokoll = Get-Content -Raw $log
 if ($protokoll -notmatch 'Mietfuchs sanft geschlossen nach') { throw 'Der Installer hat Mietfuchs nicht sanft geschlossen' }
-if (Test-Path (Join-Path $data 'mietfuchs.laeuft.json')) { throw 'Der Server wurde hart beendet (Lauf-Datei liegt noch da)' }
+if (Test-Path (Join-Path $data 'mietfuchs.laeuft.json')) {
+  $serverLog = Join-Path $env:LOCALAPPDATA 'mietfuchs-fenster\protokoll\server.log'
+  if (Test-Path $serverLog) { Write-Host "--- $serverLog"; Get-Content $serverLog | Select-Object -Last 30 | Out-Host }
+  throw 'Der Server wurde hart beendet (Lauf-Datei liegt noch da)'
+}
 Invoke-Measured 'Deinstallation' 0 $uninst @('/S')
 
 # --- Ergebnisse ----------------------------------------------------------------------------------------------------
