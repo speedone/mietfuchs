@@ -1166,8 +1166,13 @@ jobs:
           sha256sum "${files[@]}" | sed -E 's#^([0-9a-f]{64})  .*/#\1  #' > pruefsummen/SHA256SUMS.txt
           if [ "$(awk '{print $2}' pruefsummen/SHA256SUMS.txt | sort | uniq -d)" != "" ]; then echo "Zwei Dateien mit demselben Namen"; exit 1; fi
           cat pruefsummen/SHA256SUMS.txt
+      # Erst als Entwurf (v0.15.0): Im Repo sind Releases unveränderlich, nach dem Veröffentlichen nimmt GitHub keine
+      # Datei mehr an. 0.15.0 erschien deshalb ohne latest.yml und ohne Herkunftsnachweis. Alles kommt jetzt an den
+      # Entwurf, den niemand sieht, auch latest.yml (die Reihenfolge aus K5 ergibt sich damit von selbst: Kein Fenster
+      # sieht die neue Version, bevor alles daliegt), dann der Nachweis, zuletzt „Release veröffentlichen“.
       - uses: softprops/action-gh-release@v3
         with:
+          draft: true
           files: |
             pruefsummen/SHA256SUMS.txt
             dist-bin/*.zip
@@ -1180,6 +1185,7 @@ jobs:
             dist-desktop/Mietfuchs-Setup-*.exe.blockmap
             dist-desktop/Mietfuchs-*-apple-silicon.dmg
             dist-desktop/Mietfuchs-*-intel.dmg
+            dist-desktop/latest.yml
           fail_on_unmatched_files: true
           generate_release_notes: true
           # Ein Tag mit Bindestrich ist nach SemVer eine Vorabversion (v0.8.0-rc.1), und genau so
@@ -1196,24 +1202,26 @@ jobs:
           # Das Docker-Image braucht nichts dergleichen: `docker/metadata-action` mit
           # `latest=auto` vergibt `latest` bei einer Vorabversion von sich aus nicht.
           prerelease: ${{ contains(github.ref_name, '-') }}
-      # latest.yml zuletzt (#517, Durchsicht K5): Erst damit sehen die Fenster unter Windows die neue Version, und dann
-      # liegen Installer und .blockmap schon am Release. Derselbe Tag, softprops hängt an.
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: dist-desktop/latest.yml
-          fail_on_unmatched_files: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
       # Herkunftsnachweis: belegt mit einer Sigstore-Signatur, dass jede Datei aus SHA256SUMS.txt in diesem Workflow aus
       # diesem Repo gebaut wurde. Prüfen mit `gh attestation verify <Datei> -R speedone/mietfuchs` (README, „Download
-      # prüfen“). Zuletzt, damit ein Fehler hier kein halbes Release hinterlässt. Scheitert er, ist der Job rot und die
-      # Einreichung im Store (needs: veroeffentlichen) unterbleibt; ein erneuter Lauf des Jobs hängt dieselben Dateien
-      # wieder an, holt den Nachweis nach und gibt den Store frei. Bewusst ohne continue-on-error: Ein Release ohne
-      # Nachweis soll auffallen.
+      # prüfen“). Vor dem Veröffentlichen: Scheitert er, bleibt das Release ein Entwurf, die Einreichung im Store
+      # (needs: veroeffentlichen) unterbleibt, und „Re-run failed jobs“ ersetzt die Dateien am Entwurf und holt alles nach.
+      # Nach dem Veröffentlichen nimmt GitHub keinen Upload mehr an; „Re-run all jobs“ scheitert dann am Anhängen. Bewusst ohne continue-on-error: Ein Release ohne Nachweis soll nicht erscheinen.
       - uses: actions/attest@v4
         with:
           subject-checksums: pruefsummen/SHA256SUMS.txt
           # Ein Speichereintrag gilt nur für Pakete in einer Registry
           create-storage-record: false
+      # Zuletzt: Erst jetzt sehen Nutzer, `releases/latest` und die Fenster unter Windows das Release, und ab hier ist es
+      # unveränderlich. Eine Vorabversion (Tag mit Bindestrich) bleibt als solche gekennzeichnet und wird nie `latest`.
+      - name: Release veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          if [ "$PRERELEASE" = true ]; then flags=(--prerelease); else flags=(--latest); fi
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false "${flags[@]}"
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft,assets --jq '"Entwurf: \(.isDraft), Dateien: \(.assets | length)"'
 
   # Das Paket für den Microsoft Store (#500): aus dem Programmfenster (#517) je Architektur ein
   # .msix, zusammen ein .msixbundle (scripts/package-msix.mjs). Hinein kommt der entpackte Ordner
