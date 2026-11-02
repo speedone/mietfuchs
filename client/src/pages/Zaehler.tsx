@@ -329,7 +329,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             >
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
                 {/* Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung (Durchsicht von #241, Minor 11). */}
-                <option value="">{meterForm.type === 'hkv' ? '- bitte Wohnung wählen -' : 'Haus (Hauptzähler)'}</option>
+                <option value="">{meterForm.type === 'hkv' ? 'Bitte Wohnung wählen' : 'Haus (Hauptzähler)'}</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>

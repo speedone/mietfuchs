@@ -1137,12 +1137,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     )}
                     {notAgreedText(i.notAgreedTenancyIds, tenancies) && <div className="muted">{notAgreedText(i.notAgreedTenancyIds, tenancies)}</div>}
                     {i.key === 'direct' && <div className="muted">{units.find((u) => u.id === i.directUnitId)?.name}</div>}
-                    {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '- kein Zählertyp'}</div>}
+                    {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : 'kein Zählertyp'}</div>}
                     {i.key === 'custom' && (
                       <div className="muted">
                         {Object.entries(i.customShares ?? {})
                           .map(([unitId, pct]) => `${units.find((u) => u.id === unitId)?.name ?? '?'}: ${pct.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`)
-                          .join(' · ') || '- keine Anteile'}
+                          .join(' · ') || 'keine Anteile'}
                       </div>
                     )}
                     </>}

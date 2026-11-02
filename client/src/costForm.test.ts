@@ -548,7 +548,7 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     expect(showsKeyFields('Zuführung Erhaltungsrücklage')).toBe(false)
     expect(showsKeyFields('Grundsteuer')).toBe(true)
     const base = { id: 'c', propertyId: 'p', year: 2025, description: 'X', amountCents: 100 } as const
-    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'persons' })).toBe('- trägt der Vermieter')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'persons' })).toBe('trägt der Vermieter')
     expect(keyListText({ ...base, category: 'Grundsteuer', key: 'persons' })).toBe('nach Personenzahl')
   })
 
@@ -582,8 +582,8 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     expect(buildCostItemBody(g, UNITS, 2025)).toMatchObject({ body: { key: 'area', directUnitId: null } })
     // In der Liste steht, wen die Position betrifft.
     const base = { id: 'c', propertyId: 'p', year: 2025, description: 'X', amountCents: 100 } as const
-    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' }, UNITS)).toBe('- trägt der Vermieter · betrifft U1')
-    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'area' }, UNITS)).toBe('- trägt der Vermieter')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' }, UNITS)).toBe('trägt der Vermieter · betrifft U1')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'area' }, UNITS)).toBe('trägt der Vermieter')
   })
 
   test('Nicht umlagefähig: nur bestimmte Einheiten betroffen, etwa das Dach des Hinterhauses (#163, Durchsicht)', () => {
@@ -603,7 +603,7 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     // Gespeicherte Teilnehmer kommen als „bestimmte Einheiten“ zurück, und die Liste nennt sie.
     const stored = { id: 'c', propertyId: 'p', period: calendarPeriod(2025), description: 'Dach', amountCents: 300000, category: 'Nicht umlagefähig', key: 'area', participantUnitIds: ['u2'] } as const
     expect(taxScopeOf(itemToForm({ ...stored, participantUnitIds: ['u2'] }))).toBe(TAX_SCOPE_SOME)
-    expect(keyListText({ ...stored, participantUnitIds: ['u2'] }, UNITS)).toBe('- trägt der Vermieter · betrifft U2')
+    expect(keyListText({ ...stored, participantUnitIds: ['u2'] }, UNITS)).toBe('trägt der Vermieter · betrifft U2')
     // Wer von einer umlagefähigen Kostenart wechselt, nimmt keine alten Teilnehmer mit.
     const vorher = form({ category: 'Grundsteuer', key: 'area', participants: ['u1'] })
     expect(withCategory(vorher, 'Nicht umlagefähig', UNITS, [])).toMatchObject({ key: 'area', participants: null, directUnitId: '' })

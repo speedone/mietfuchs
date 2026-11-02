@@ -205,7 +205,7 @@ test('Nicht umlagefähig mit Einheit für die Steuer: die Übernahme nennt die E
   await openCarry()
   const row = screen.getByLabelText(`Betrag ${YEAR} für Therme OG`).closest('tr')
   if (!row) return expect.fail('Zeile der Übernahme nicht gefunden')
-  expect(within(row as HTMLElement).getByText('- trägt der Vermieter · betrifft OG')).toBeTruthy()
+  expect(within(row as HTMLElement).getByText('trägt der Vermieter · betrifft OG')).toBeTruthy()
 })
 
 test('Mieterwechsel (#258): die Zeile fragt nach dem neuen Mieter, die Antwort „Nein“ kommt in den Rumpf', async () => {

@@ -445,7 +445,7 @@ export function keyListText(item: Pick<CostItem, 'category' | 'key' | 'directUni
   const nameOf = (id: string) => units.find((u) => u.id === id)?.name ?? '?'
   const direct = taxUnitOf(item)
   const ids = direct ? [direct] : showsTaxUnitField(item.category) && item.key === 'area' && item.participantUnitIds ? item.participantUnitIds : []
-  return ids.length > 0 ? `- trägt der Vermieter · betrifft ${ids.map(nameOf).join(', ')}` : '- trägt der Vermieter'
+  return ids.length > 0 ? `trägt der Vermieter · betrifft ${ids.map(nameOf).join(', ')}` : 'trägt der Vermieter'
 }
 
 // Nicht umlagefähig, aber für die Steuer einer Einheit zugeordnet (#163): Regel und Begründung
