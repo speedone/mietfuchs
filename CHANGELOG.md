@@ -6,43 +6,50 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
-### Behoben
-
-- **Programmfenster: Virenschutz blockierte den Server** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
-  Auf einem Rechner mit HP Wolf Security hielt die Malware-Prävention die Datei des Servers für Schadcode, und
-  Mietfuchs zeigte beim Start nur einen Stacktrace. Der Server liegt jetzt im Programmarchiv des Fensters, dessen
-  Echtheit Mietfuchs beim Lesen prüft, statt als offene Skriptdatei im Installationsordner. Sperrt ein Virenschutz
-  trotzdem eine Datei von Mietfuchs oder entfernt sie, sagt die Meldung das, nennt die Datei und rät, sie dort
-  freizugeben oder Mietfuchs neu zu installieren.
-- **Programmfenster unter Windows: Installieren, Aktualisieren und Deinstallieren gehen schneller**
-  ([#517](https://github.com/speedone/mietfuchs/issues/517)): Vor dem Installieren und beim Deinstallieren prüft
-  Mietfuchs, ob es noch läuft. Dafür startete der Installer bis zu dreimal PowerShell, beim Aktualisieren zusammen mit
-  dem alten Deinstallationsprogramm bis zu sechsmal, und das kostet mit dem Virenschutz von Windows jedes Mal
-  Sekunden. Jetzt genügt ein kurzer Blick in die Prozessliste. Außerdem legt der Installer keine 230 MB große Kopie
-  von sich selbst mehr unter `%LOCALAPPDATA%\mietfuchs-updater` ab; eine Kopie früherer Fassungen räumt er weg.
-  Hält Windows gleich nach dem Installieren noch eine Datei offen, versucht es das Deinstallationsprogramm noch
-  einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
-  Installer und Deinstallationsprogramm schreiben, wie lange jeder Schritt dauert, nach
-  `%TEMP%\mietfuchs-installation.log`.
-- **Programmfenster unter Windows:** Beim ersten Start fragte die Windows-Firewall, ob Mietfuchs ins Netz darf, obwohl
-  es nur auf diesem Rechner lauscht. Ins Netz geht Mietfuchs nur mit dem Schalter „Zugriff aus dem Heimnetz“.
-
 ### Hinzugefügt
 
-- **Umzug der Daten ins Programmfenster** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Beim ersten Start
-  des Programmfensters unter Windows oder macOS (auch aus dem Microsoft Store) ohne Daten fragt Mietfuchs genau einmal.
+- **Eigenes Programm für Windows und macOS** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Mietfuchs
+  öffnet sich in einem eigenen Fenster statt im Browser, mit Symbol in Taskleiste und Dock. Fenster zu heißt Mietfuchs
+  zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Zum Herunterladen als
+  `Mietfuchs-Setup-<Version>.exe` für Windows (eine Datei für x64 und ARM64, Installation ohne Adminrechte) und als
+  `Mietfuchs-<Version>-apple-silicon.dmg` bzw. `-intel.dmg` für den Mac. Der Mac verlangt beim ersten Start eine
+  Freigabe unter „Systemeinstellungen → Datenschutz & Sicherheit“ und aktualisiert Mietfuchs nicht von selbst, weil
+  es nicht kostenpflichtig bei Apple signiert ist; unter Windows warnt der Installer beim ersten Start, ohne Warnung
+  geht es über den Microsoft Store. Die Daten liegen im Benutzerordner (Windows `%USERPROFILE%\Mietfuchs` wie im Store,
+  macOS `~/Library/Application Support/Mietfuchs`); im Menü öffnet „Datenordner zeigen“ ihn, „Im Browser öffnen“
+  zeigt Mietfuchs zusätzlich im Browser. Das Programm ist nur auf diesem Rechner erreichbar
+  (`http://127.0.0.1:17517`), deshalb fragt beim Start keine Firewall. Die bisherigen Programmdateien gibt es weiter;
+  unter Linux, auf dem Raspberry Pi und in Docker bleibt alles, wie es war. Dazu, gefunden beim Test auf echten
+  Rechnern:
+  - Der Server liegt als eine einzige Datei im Programmarchiv, dessen Echtheit Mietfuchs beim Lesen prüft, statt als
+    Tausende einzelner Dateien. Das spart beim Download und beim Installieren (Windows rund 230 MB, Mac rund 130 MB), und
+    Installation und Start gehen schneller. Sperrt ein Virenschutz trotzdem eine Datei von Mietfuchs oder entfernt sie, sagt die
+    Meldung beim Start das, nennt die Datei und rät, sie dort freizugeben oder Mietfuchs neu zu installieren.
+  - Der Installer prüft mit einem kurzen Blick in die Prozessliste, ob Mietfuchs noch läuft, statt mehrmals
+    PowerShell zu starten; das kostete mit dem Virenschutz von Windows jedes Mal Sekunden. Installieren,
+    Aktualisieren und Deinstallieren gehen so deutlich schneller. Er legt keine 230 MB große Kopie von sich selbst
+    unter `%LOCALAPPDATA%\mietfuchs-updater` ab, und hält Windows gleich nach dem Installieren noch eine Datei offen,
+    versucht es das Deinstallationsprogramm noch einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
+    Wie lange jeder Schritt dauert, steht in `%TEMP%\mietfuchs-installation.log`.
+- **Umzug der Daten ins neue Programm** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Beim ersten Start
+  des Programms unter Windows oder macOS (auch aus dem Microsoft Store) ohne Daten fragt Mietfuchs genau einmal.
   Findet es Daten der bisherigen Programmdatei (über den gemerkten Ort oder in Downloads, Schreibtisch und Dokumente,
   auch in OneDrive), nennt es Ort, letzte Änderung und Zahl der Objekte und Mietverhältnisse und bietet „Daten
   übernehmen“ an; sonst fragt es „Haben Sie Mietfuchs schon einmal benutzt?“ und führt bei „Ja“ zum Backup aus dem
-  alten Mietfuchs oder zur Wahl des Ordners, bei „Nein“ gleich los. Übernommen wird als Kopie: Datenbank, Belege und
-  Briefpapier, auch eine alte `db.json` aus den ersten Fassungen; die Kopie wird mit dem Original verglichen, erst dann
-  wird umgeschaltet. Läuft das alte Mietfuchs noch, beendet es ein Knopf zuerst; bei großen Beständen zeigt Mietfuchs den
-  Fortschritt und lässt sich abbrechen. Der alte Ordner bleibt unverändert liegen und bekommt nur einen Vermerk; eine
-  aktuelle Programmdatei zeigt ihn danach nur noch an. Wird im alten Mietfuchs trotzdem noch etwas geändert, sagt es das
-  neue und bietet an, den neueren Stand noch einmal zu übernehmen. Später geht das jederzeit in den Einstellungen unter
-  „Daten aus bisherigem Mietfuchs übernehmen …“; vorhandene Daten werden dabei nur nach Rückfrage ersetzt und vorher
-  gesichert.
-- **Hinweis auf das neue Programmfenster** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Wer die
+  alten Mietfuchs („Backup herunterladen (ZIP)“ dort, „Backup einspielen“ hier) oder zur Wahl des Ordners, bei „Nein“
+  gleich los. Übernommen wird als Kopie: Datenbank, Belege und Briefpapier, auch eine alte `db.json` aus den ersten
+  Fassungen; die Kopie wird mit dem Original verglichen, erst dann wird umgeschaltet. Läuft das alte Mietfuchs noch,
+  beendet es ein Knopf zuerst; bei großen Beständen zeigt Mietfuchs den Fortschritt und lässt sich abbrechen. Der alte
+  Ordner bleibt unverändert liegen und bekommt beim Weg über den Ordner nur einen Vermerk; eine aktuelle Programmdatei zeigt ihn danach nur
+  noch an. Wird im alten Mietfuchs trotzdem noch etwas geändert, sagt es das neue und bietet an, den neueren Stand
+  noch einmal zu übernehmen. Später geht das jederzeit in den Einstellungen unter „Daten aus bisherigem Mietfuchs
+  übernehmen …“; vorhandene Daten werden dabei nur nach Rückfrage ersetzt und vorher gesichert.
+- **Zugriff aus dem Heimnetz** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Im neuen Programm lässt
+  sich in den Einstellungen erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu
+  öffnen; die Karte nennt dann die Adressen dafür (Port 17517, also eine andere als bei der Programmdatei). Fragt
+  Windows danach, ob Mietfuchs ins Netz darf, rät die Karte, nur „Private Netzwerke“ zuzulassen. Mietfuchs hat kein
+  Passwort, deshalb gilt die Erlaubnis für jeden im Heimnetz.
+- **Hinweis auf das neue Programm** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Wer die
   Programmdatei unter Windows oder macOS nutzt, sieht im Cockpit eine Karte zum Umstieg: unter Windows mit „Aus dem
   Microsoft Store laden“ (empfohlen) und „Installer herunterladen“, auf dem Mac mit „Neues Mietfuchs herunterladen“,
   dazu die vier Schritte bis „Daten übernehmen“. „Später“ blendet sie bis zum nächsten Update der Programmdatei aus.
@@ -50,39 +57,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nach, die Links sind fest.
 - **Website:** Mietfuchs hat eine eigene Website, [mietfuchs-app.de](https://mietfuchs-app.de), mit Download für jedes
   System und Ratgebern zur Nebenkostenabrechnung. Der Link steht in den Einstellungen unter „Über Mietfuchs“.
+- **`NKA_HOST`** legt fest, auf welcher Adresse Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner; ohne
+  Angabe wie bisher auf allen.
 
 ### Geändert
 
+- **Microsoft Store: Mietfuchs öffnet sich im eigenen Fenster** ([#517](https://github.com/speedone/mietfuchs/issues/517))
+  statt im Browser, wie das neue Programm oben. Die Daten bleiben, wo sie sind (`%USERPROFILE%\Mietfuchs`). Die
+  Adresse ist jetzt `http://127.0.0.1:17517` statt `localhost:3001`; wer Mietfuchs zusätzlich im Browser aufruft,
+  nimmt die neue Adresse (Menü „Im Browser öffnen“). Vom Handy oder einem zweiten Rechner aus geht es erst mit dem
+  Häkchen „Zugriff aus dem Heimnetz“ in den Einstellungen, dann unter neuer Adresse.
 - **Microsoft Store:** Der Store-Eintrag zeigt die Website mietfuchs-app.de; Website, Datenschutzrichtlinie und
   Supportkontakt gehen jetzt bei jedem Release mit, und die Beschreibung sagt zusätzlich, dass Mietfuchs ohne
   Gewähr bereitgestellt wird.
-- **Eigenes Programmfenster für Windows und macOS** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
-  Mietfuchs in einem eigenen Fenster statt im Browser, mit Symbol in Taskleiste und Dock. Fenster zu heißt Mietfuchs
-  zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Zum Herunterladen als
-  `Mietfuchs-Setup-<Version>.exe` für Windows (x64 und ARM64, Installation ohne Adminrechte) und als
-  `Mietfuchs-<Version>-apple-silicon.dmg` bzw. `-intel.dmg` für den Mac. Die bisherigen Programmdateien bleiben
-  vorerst zum Herunterladen. Das Fenster legt seine Daten im Benutzerordner an; wer schon mit der Programmdatei
-  arbeitet, übernimmt sie beim ersten Start des Fensters (Umzug der Daten, oben).
-- **Programmfenster: kleiner und schneller installiert** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
-  Der Server läuft im Fenster jetzt mit dem Node, das das Fenster ohnehin mitbringt, statt als eigene Programmdatei.
-  Der Download ist für Windows 70 MB kleiner (237 statt 307 MB), für den Mac 30 bis 50 MB, installiert sind es 70 bis
-  100 MB weniger. Neben dem Fenster gibt es keine zweite ausführbare Datei mehr, die der Virenscanner prüfen muss.
-- **Programmfenster: startet und installiert schneller** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
-  Der Server liegt im Fenster als eine gebündelte Datei, daneben nur das Frontend als eine Datei und die Lizenzen,
-  statt über 2000 einzelner Dateien. Der Virenscanner prüft beim Installieren so viel weniger Dateien, und der Server
-  muss beim Start nicht mehr Hunderte Quelldateien einzeln laden.
-- **Programmfenster: Zugriff aus dem Heimnetz** ([#517](https://github.com/speedone/mietfuchs/issues/517)): In den
-  Einstellungen lässt sich erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu öffnen;
-  die Karte nennt dann die Adressen dafür. Ohne dieses Häkchen ist Mietfuchs im Fenster nur auf dem eigenen Rechner
-  erreichbar. Mietfuchs hat kein Passwort, deshalb gilt die Erlaubnis für jeden im Heimnetz.
-- **Microsoft Store: Mietfuchs öffnet sich im eigenen Fenster** ([#517](https://github.com/speedone/mietfuchs/issues/517))
-  statt im Browser. Die Daten bleiben, wo sie sind (`%USERPROFILE%\Mietfuchs`). Die Adresse ist jetzt
-  `http://127.0.0.1:17517` statt `localhost:3001`; wer Mietfuchs zusätzlich im Browser aufruft, nimmt die neue
-  Adresse (Menü „Im Browser öffnen“).
-- **`NKA_HOST`** legt fest, auf welcher Adresse Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner.
-
-### Geändert
-
 - **Mietfuchs antwortet nur noch unter seiner IP-Adresse, `localhost` und Namen im Heimnetz** (etwa `raspberrypi`,
   `nas.local`, `pi.fritz.box`), und Änderungen nimmt es nur von seiner eigenen Seite an. Das schützt davor, dass eine
   fremde Webseite im Browser Mietfuchs erreicht oder darin speichert. Wer Mietfuchs unter einem anderen Namen aufruft,

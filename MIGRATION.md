@@ -87,8 +87,9 @@ KI-Einstellungen werden beim Übernehmen mitgezogen.
 
 ## Wo der Datenordner liegt
 
-**Am einfachsten lassen Sie sich das von Mietfuchs sagen.** Beim Start steht der Ordner in der
-zweiten Zeile:
+**Am einfachsten lassen Sie sich das von Mietfuchs sagen.** Im Programm für Windows und macOS
+(ab Version 0.15) öffnet das Menü *Mietfuchs → Datenordner zeigen* den Ordner. Die
+Programmdatei nennt ihn beim Start in der zweiten Zeile:
 
 ```text
 Mietfuchs-Server läuft auf http://127.0.0.1:3001
@@ -103,6 +104,8 @@ Falls Sie doch selbst suchen wollen, hängt der Ort davon ab, wie Sie Mietfuchs 
 
 | So starten Sie Mietfuchs | Dort liegen die Daten |
 | --- | --- |
+| Programm für Windows (Microsoft Store oder Installer) | `%USERPROFILE%\Mietfuchs` |
+| Programm für macOS (aus dem `.dmg`) | `~/Library/Application Support/Mietfuchs` |
 | Programmdatei per Doppelklick | Ordner `data` **neben** der Programmdatei |
 | Aus einem Linux-Paket (deb, rpm, Arch) | `~/.local/share/mietfuchs` |
 | Programmdatei unter Windows aus `Program Files` | `%LOCALAPPDATA%\Mietfuchs` |
