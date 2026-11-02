@@ -144,13 +144,23 @@ nächsten Start* oder *Jetzt neu starten*; ungefragt startet es nie neu. Vor dem
 Mietfuchs die Datenbank wie bei jedem Update. Ohne Update-Prüfung lädst du den neuen Installer
 von der Release-Seite und startest ihn, er ersetzt die alte Version, deine Daten bleiben.
 
+Ein Update lädt Mietfuchs nur, wenn dessen Beschreibung (`latest.yml` im Release) mit dem Schlüssel
+von Mietfuchs unterschrieben ist (Ed25519); der passende Prüfschlüssel steckt im Programm. Fehlt die
+Unterschrift oder passt sie nicht, lädt es nichts, und „Über Mietfuchs“ sagt, warum. Die Prüfsumme
+der geladenen Datei prüft es danach zusätzlich. Damit bei einem Update nur die geänderten Teile
+kommen, legt der Installer eine Kopie von sich unter `%LOCALAPPDATA%\mietfuchs-updater` ab (rund
+230 MB); das Deinstallieren entfernt sie.
+
 Deinstallieren geht wie bei jedem Programm unter *Einstellungen → Apps*. Der Datenordner bleibt
 dabei liegen.
 
 ### macOS
 
-Das neue Programm braucht **macOS 13 (Ventura) oder neuer**, so verlangt es Electron, auf dem es aufbaut. Auf einem
-älteren Mac nimmst du weiter die [bisherige Programmdatei](#herunterladen--starten-ohne-installation).
+Das neue Programm braucht **macOS 13 (Ventura) oder neuer**, so verlangt es Electron, auf dem es aufbaut. Die
+[bisherige Programmdatei](#herunterladen--starten-ohne-installation) ist kein Ausweg für ältere Macs: Sie ist mit
+Bun gebaut, und Bun läuft ebenfalls erst ab macOS 13. Auf einem älteren Mac lässt du Mietfuchs deshalb auf
+einem anderen Gerät laufen und öffnest es im Browser des Macs, siehe
+[Zugriff vom Handy oder einem zweiten Rechner](#zugriff-vom-handy-oder-einem-zweiten-rechner).
 
 1. Auf der [Release-Seite](https://github.com/speedone/mietfuchs/releases/latest) unter *Assets*
    das Abbild für deinen Mac laden: `Mietfuchs-<Version>-apple-silicon.dmg` für Apple M1 und
@@ -195,7 +205,8 @@ Datei. Das neue Programm holt sie von selbst, auch das aus dem Microsoft Store:
    Mietfuchs-Daten gefunden“ mit Ort und letzter Änderung. Auf **Daten übernehmen** klicken.
 
 Gesucht wird dort, wo die Programmdatei zuletzt lief (ab Version 0.14.1 merkt sie sich den Ort),
-sonst in Downloads, Schreibtisch und Dokumente (auch in OneDrive). Findet Mietfuchs nichts, fragt es „Haben Sie
+unter Windows auch in `%LOCALAPPDATA%\Mietfuchs` (dorthin legte die Programmdatei ihre Daten, wenn sie
+neben sich nicht schreiben durfte), sonst in Downloads, Schreibtisch und Dokumente (auch in OneDrive). Findet Mietfuchs nichts, fragt es „Haben Sie
 Mietfuchs schon einmal benutzt?“. Mit *Ja, Daten übernehmen* geht es auf einem von zwei Wegen
 weiter:
 
@@ -220,8 +231,9 @@ Papierkorb gelöschter Belege zieht mit, damit „Rückgängig“ im Verlauf wei
 
 Lag deine alte Mac-Programmdatei im Ordner *Programme*, nutzt das neue Programm ihre Daten in
 `~/Library/Application Support/Mietfuchs` direkt, ohne Umzug; starte die alte danach nicht mehr.
-Startest du sie doch, während das neue läuft, startet das zweite nicht, sondern sagt, dass Mietfuchs
-schon mit denselben Daten läuft (die Programmdatei öffnet dann das laufende im Browser).
+Startest du das neue, solange die alte läuft, startet es nicht, sondern sagt, dass Mietfuchs schon
+mit denselben Daten läuft. Umgekehrt öffnet eine Programmdatei ab 0.15 dann das laufende im
+Browser; ältere Programmdateien prüfen das nicht.
 
 Läuft alles im neuen Programm, kannst du die alte Programmdatei löschen. Den alten Ordner `data/`
 hebst du am besten noch eine Weile als Sicherung auf.
@@ -287,7 +299,8 @@ Es lädt nur eine Update-Beschreibung, die mit dem Schlüssel von Mietfuchs sign
 Die einzelne Programmdatei gibt es weiter. Unter Linux und auf dem Raspberry Pi ist sie neben dem
 [Installationspaket](#linux-installationspaket-mit-startmenü-eintrag) der übliche Weg. Unter
 Windows und macOS ist das [neue Programm](#installation-unter-windows-und-macos) einfacher; wer
-dort die Programmdatei startet, sieht im Cockpit einen Hinweis zum Umstieg. Sie braucht **keine
+dort die Programmdatei startet, sieht im Cockpit einen Hinweis zum Umstieg. Unter Windows und
+macOS ist das neue Programm der empfohlene Weg; die Programmdatei gibt es dort vorerst weiter. Sie braucht **keine
 Installation und kein Node** und öffnet Mietfuchs im Browser. Ein Klick lädt immer die neueste
 Fassung:
 
@@ -308,9 +321,9 @@ steht alles in den beiden Tabellen. Jeder Dateiname führt direkt zur neuesten F
 | Linux | [`mietfuchs-linux.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz) |
 | Linux auf ARM (z. B. Raspberry Pi 4/5 mit 64-Bit-System) | [`mietfuchs-linux-arm64.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux-arm64.tar.gz) |
 
-Voraussetzungen: Windows 10 (1809) oder neuer, macOS 13 oder neuer, Linux mit glibc 2.17 oder
-neuer. Das sind praktisch alle gängigen Distributionen; vor jedem Release startet jede Datei
-testweise auf ihrem System und Linux zusätzlich auf Debian, Ubuntu, Fedora, AlmaLinux, Rocky,
+Voraussetzungen: Windows 10 (1809) oder neuer, macOS 13 oder neuer (wie beim neuen Programm; das
+verlangt Bun, mit dem die Datei gebaut ist), Linux mit glibc 2.17 oder neuer. Das sind praktisch
+alle gängigen Distributionen; vor jedem Release startet jede Datei testweise auf ihrem System und Linux zusätzlich auf Debian, Ubuntu, Fedora, AlmaLinux, Rocky,
 openSUSE, Arch und CentOS 7. Für Alpine und andere musl-Systeme gibt es das Docker-Image.
 
 Archiv entpacken (unter macOS genügt ein Doppelklick), dann die Programmdatei per
@@ -410,6 +423,17 @@ npm run dev        # startet Server (Port 3001) und Oberfläche (http://localhos
 Tests der Berechnungs-Engine: `npm test`. Typen prüfen: `npm run typecheck`.
 Die Bildschirmfotos oben erzeugt `npm run screenshots` neu (einmalig vorher
 `npx playwright install chromium`).
+
+Das Programmfenster für Windows und macOS (Electron) liegt in `desktop/`, einem eigenen Paket, das
+`npm install` nicht mitinstalliert:
+
+```powershell
+npm --prefix desktop install   # einmalig
+npm run build                  # die Oberfläche, die das Fenster zeigt (client/dist)
+npm run desktop                # Fenster mit dem Server aus dem Quellcode, Daten in server/data
+```
+
+Electron lädt seine Programmdatei beim ersten `npm run desktop`.
 
 Eigenständige Binaries selbst bauen (benötigt [Bun](https://bun.com)): `npm run package` →
 legt die Dateien für alle Plattformen in `dist-bin/` ab.
@@ -745,6 +769,12 @@ Wo der Datenordner liegt, hängt davon ab, wie du Mietfuchs nutzt:
 
 Im Programm für Windows und macOS öffnet das Menü *Mietfuchs → Datenordner zeigen* den Ordner.
 Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
+
+Daneben legt das Programm für Windows und macOS einen eigenen kleinen Ordner `mietfuchs-fenster` an
+(unter Windows in `%LOCALAPPDATA%`, bei der Store-Fassung von Windows in deren Paketordner umgelenkt,
+auf dem Mac in `~/Library/Application Support`): gemerkter Port,
+der Schalter für den Zugriff aus dem Heimnetz und Protokolle. Deine Abrechnungsdaten stehen dort nicht,
+fürs Backup brauchst du ihn nicht.
 
 Bis einschließlich Version 0.7.1 lag alles in einer Datei `db.json`. Kommst du von dort, ziehen
 deine Daten beim ersten Start von selbst in

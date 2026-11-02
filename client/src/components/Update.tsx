@@ -306,7 +306,7 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
         <ol className="update-steps">
           <li>Die neue <code>{fileName}</code> mit dem Knopf oben herunterladen.</li>
           {quitStep}
-          <li>Die neue Datei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit Ihren Daten.</li>
+          <li>Die neue Datei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Liegt daneben ein Ordner <code>data</code>, enthält er Ihre Daten: Lassen Sie ihn, wo er ist.</li>
           <li>Mietfuchs wie gewohnt starten. Meldet sich Windows wie beim ersten Mal, hilft <em>Weitere Informationen</em> und dann <em>Trotzdem ausführen</em>.</li>
         </ol>
       )}
@@ -314,7 +314,7 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
         <ol className="update-steps">
           <li>Die Zip-Datei mit dem Knopf oben herunterladen und mit einem Doppelklick entpacken.</li>
           {quitStep}
-          <li>Die entpackte Programmdatei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit Ihren Daten.</li>
+          <li>Die entpackte Programmdatei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Liegt daneben ein Ordner <code>data</code>, enthält er Ihre Daten: Lassen Sie ihn, wo er ist.</li>
           <li>Mietfuchs starten. Beim ersten Start blockiert macOS die neue Datei wie bei der Erstinstallation. Wie Sie sie freigeben, steht im <a href={README} target="_blank" rel="noreferrer">README</a>.</li>
         </ol>
       )}
@@ -398,8 +398,8 @@ function Commands({ lines, status }: { lines: string[]; status: UpdateStatus }) 
       </div>
       {status.mode === 'docker' && (
         <p className="muted">
-          Steht in der docker-compose.yml eine feste Version wie <code>:0.4.0</code>, trage vorher
-          die neue ein. Mit <code>docker run</code> gestartet oder das Image selbst gebaut? Die
+          Steht in der docker-compose.yml eine feste Version wie <code>:0.4.0</code>, tragen Sie
+          vorher die neue ein. Mit <code>docker run</code> gestartet oder das Image selbst gebaut? Die
           passenden Befehle stehen im{' '}
           <a href="https://github.com/speedone/mietfuchs#mit-docker" target="_blank" rel="noreferrer">README</a>.
         </p>

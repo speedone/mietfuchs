@@ -17,6 +17,63 @@ Suchen Sie sich unten heraus, was auf Sie zutrifft.
 
 ---
 
+## Sie wechseln von der Programmdatei zum Programm mit eigenem Fenster
+
+Seit Version 0.15 gibt es Mietfuchs unter Windows und macOS als eigenes Programm mit eigenem Fenster:
+aus dem Microsoft Store, mit dem Installer `Mietfuchs-Setup-<Version>.exe` oder als `.dmg` für den
+Mac. Die bisherige Programmdatei (`mietfuchs-win.exe`, `mietfuchs-macos-…`) hatte ihre Daten im
+Ordner `data` neben sich, das neue Programm hat sie in Ihrem Benutzerordner (Windows
+`%USERPROFILE%\Mietfuchs`, macOS `~/Library/Application Support/Mietfuchs`). **Den Umzug erledigt
+das neue Programm selbst**, auch das aus dem Microsoft Store:
+
+1. Installieren Sie das neue Programm, wie im
+   [README](README.md#installation-unter-windows-und-macos) beschrieben.
+2. Beenden Sie das alte Mietfuchs, mit *Mietfuchs beenden* unten in der Seitenleiste oder indem Sie
+   sein Konsolenfenster (auf dem Mac das Terminal) schließen. Läuft es noch, bietet das neue
+   *Altes Mietfuchs beenden* an.
+3. Starten Sie das neue Mietfuchs. Findet es Ihre Daten, zeigt es „Wir haben Ihre bisherigen
+   Mietfuchs-Daten gefunden“ mit Ort, letzter Änderung und der Zahl der Objekte und
+   Mietverhältnisse. Klicken Sie auf **Daten übernehmen**.
+
+Gesucht wird zuerst dort, wo die Programmdatei zuletzt lief (ab Version 0.14.1 merkt sie sich den
+Ort), unter Windows auch in `%LOCALAPPDATA%\Mietfuchs`. Nur wenn dort nichts liegt, sucht es in
+Downloads, Schreibtisch und Dokumente, auch in OneDrive. Auf dem Mac fragt macOS dabei, ob Mietfuchs auf diese Ordner zugreifen
+darf. Findet Mietfuchs nichts, fragt es „Haben Sie Mietfuchs schon einmal benutzt?“. Nach
+*Ja, Daten übernehmen* haben Sie zwei Wege:
+
+- *Ordner der alten Programmdatei wählen …*, wenn Sie wissen, wo sie liegt.
+- Über ein Backup: Starten Sie das alte Mietfuchs noch einmal, klicken Sie dort unter
+  *Einstellungen* auf **Backup herunterladen (ZIP)** und im neuen auf **Backup einspielen**.
+  Schlüssel für einen KI-Dienst sind nicht im Backup; tragen Sie sie danach neu ein.
+
+**Übernommen wird als Kopie**: Datenbank, Belege und Briefpapier, auch eine alte `db.json` aus den
+ersten Fassungen. Mietfuchs vergleicht die Kopie mit dem Original und schaltet erst dann um. Bei
+großen Beständen zeigt es den Fortschritt, und Sie können abbrechen; dann bleibt alles, wie es war.
+Der Papierkorb gelöschter Belege zieht mit. Die automatischen Vorversionen (`vorversionen/`) und die
+Sicherungen vor Updates (`mietfuchs.sqlite.vor-…`) bleiben im alten Ordner; das neue Programm legt
+ab dann eigene an.
+
+**Ihr alter Ordner bleibt liegen.** Beim Weg über den Ordner bekommt er nur einen Vermerk, die
+Dateien `umgezogen.json` und `UMGEZOGEN.txt` mit dem neuen Ort. Eine aktuelle Programmdatei zeigt
+ihn danach nur noch zum Ansehen („Nur noch zum Ansehen“), damit es keine zwei Bestände gibt. Ältere
+Programmdateien kennen den Vermerk nicht: Was Sie dort noch ändern, fehlt im neuen Mietfuchs. Ändert
+jemand trotzdem noch etwas im alten Mietfuchs, sagt Ihnen das neue es und bietet
+„Neueren Stand übernehmen …“ an.
+
+Später geht die Übernahme jederzeit in den Einstellungen unter „Daten aus bisherigem Mietfuchs
+übernehmen …“. Haben Sie im neuen Programm schon Daten, ersetzt Mietfuchs sie nur nach Rückfrage
+und legt sie vorher als `mietfuchs.sqlite.vor-restore` beiseite.
+
+Lag Ihre Mac-Programmdatei im Ordner *Programme*, nutzt das neue Programm deren Daten in
+`~/Library/Application Support/Mietfuchs` direkt, ohne Umzug. Starten Sie die alte dann nicht mehr.
+Solange die alte läuft, startet das neue nicht, sondern sagt „Mietfuchs läuft bereits mit denselben
+Daten …“. Programmdateien vor 0.15 prüfen das umgekehrt nicht.
+
+Läuft alles im neuen Programm, können Sie die alte Programmdatei löschen. Den alten Ordner `data`
+heben Sie am besten noch eine Weile als Sicherung auf.
+
+---
+
 ## Sie haben noch den ganzen Datenordner
 
 Das ist der Normalfall, und er ist der einfachste: **Sie tun nichts.**
@@ -39,7 +96,7 @@ gearbeitet haben.
 
 ## Sie haben nur ein Backup-Archiv
 
-Also die ZIP-Datei, die beim Klick auf „Backup herunterladen" entsteht.
+Also die ZIP-Datei, die beim Klick auf „Backup herunterladen (ZIP)“ entsteht.
 
 1. Installieren und starten Sie die neue Version.
 2. Gehen Sie auf **Einstellungen** und wählen Sie **Backup wiederherstellen**.
@@ -98,9 +155,9 @@ Daten: C:\Users\Beispiel\AppData\Local\Mietfuchs
 
 Sehen Sie kein Fenster mit Text, weil Sie Mietfuchs über das Startmenü geöffnet haben, dann
 rufen Sie im Browser `http://127.0.0.1:3001/healthz` auf, beim Programm mit eigenem Fenster (ab 0.15)
-`http://127.0.0.1:17517/healthz`. Dort steht unter `database` bei `file` der vollständige Pfad zur
-Datenbank; der Ordner darüber ist Ihr Datenordner. Im Programm mit eigenem Fenster geht es einfacher:
-Menü *Mietfuchs* → *Datenordner zeigen*.
+`http://127.0.0.1:17517/healthz` (war der Port 17517 beim ersten Start belegt, nimmt das Programm
+einen anderen und merkt ihn sich; die Adresse steht dann in der Adresszeile von *Im Browser öffnen*). Dort steht unter `database` bei `file` der vollständige Pfad zur
+Datenbank; der Ordner darüber ist Ihr Datenordner.
 
 Falls Sie doch selbst suchen wollen, hängt der Ort davon ab, wie Sie Mietfuchs starten:
 
@@ -164,6 +221,38 @@ Version; Ihre aktuellen Daten bleiben vorher als `mietfuchs.sqlite.vor-restore` 
 behält die Sicherungen vor einem Update aus den letzten zwölf Monaten, mindestens aber die drei
 jüngsten, und räumt ältere selbst weg.
 
+### Woher die ältere Version kommt
+
+Die Schritte oben gelten im Datenordner der Fassung, die Sie nutzen (siehe
+[Wo der Datenordner liegt](#wo-der-datenordner-liegt)). Die ältere Version selbst bekommen Sie so:
+
+- **Aus dem Microsoft Store:** Der Store bietet nur die neueste Version an. Deinstallieren Sie die
+  Store-Fassung (Ihr Datenordner `%USERPROFILE%\Mietfuchs` bleibt dabei liegen) und installieren Sie
+  den Installer `Mietfuchs-Setup-<Version>.exe` der gewünschten Version von der
+  [Release-Seite](https://github.com/speedone/mietfuchs/releases). Er nutzt denselben Datenordner.
+- **Mit dem Installer:** Deinstallieren Sie Mietfuchs unter *Einstellungen → Apps* (der Datenordner
+  bleibt liegen) und starten Sie den Installer der älteren Version. Schalten Sie danach unter „Über
+  Mietfuchs“ die Update-Prüfung aus, sonst lädt Mietfuchs die neuere Version wieder und bietet sie an.
+- **Auf dem Mac:** das Abbild (`.dmg`) der älteren Version laden, Mietfuchs in *Programme* ziehen und
+  *Ersetzen* wählen.
+
+Den Installer und die Abbilder gibt es ab Version 0.15. Wollen Sie zu einer Version davor zurück,
+also zur Programmdatei, und sind Ihre Daten umgezogen, liegt im alten Ordner `data` noch der Stand
+vom Tag des Umzugs, samt den Sicherungen vor Updates von damals. Eine Programmdatei bis 0.14 arbeitet
+damit wie früher; was Sie seit dem Umzug im neuen Programm eingetragen haben, fehlt dort.
+
+### Der Ordner `vorversionen/`
+
+Unabhängig von Updates legt Mietfuchs höchstens einmal in der Woche eine ganze Kopie der Datenbank
+an, im Datenordner unter `vorversionen/` (Name mit Datum und Uhrzeit in UTC), und behält die vier
+jüngsten. Sie hilft bei einem Bedienfehler, etwa einer versehentlich gelöschten Wohnung: Auf der Seite
+„Verlauf“ steht sie als „Wöchentliche Sicherung“, und „Zu diesem Stand zurückkehren …“ spielt sie ein.
+Für den Weg zurück zu einer älteren Version taugt sie nicht, denn sie hat schon den Stand der Version,
+die sie angelegt hat. Die Kopien sind nicht im Backup-ZIP und ziehen beim Umzug ins neue Programm
+nicht mit.
+
+### Vor der Datenbank (v0.7.x)
+
 Zurück zu einer Version vor der Datenbank (v0.7.x) geht es anders: Dort benennen Sie
 `db.json.abgeloest` wieder in `db.json` um und legen `mietfuchs.sqlite` beiseite. Was Sie seit dem
 Umstieg eingegeben haben, fehlt dann.
@@ -173,4 +262,4 @@ Umstieg eingegeben haben, fehlt dann.
 ## Backup
 
 Am Backup ändert sich nichts: **diesen Ordner kopieren.** Wer lieber auf den Knopf drückt, bekommt
-unter „Einstellungen" weiterhin eine ZIP-Datei, in der jetzt auch die Datenbank liegt.
+unter „Einstellungen“ weiterhin eine ZIP-Datei, in der jetzt auch die Datenbank liegt.
