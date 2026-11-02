@@ -169,7 +169,7 @@ Wurzel trägt `"type": "module"`, sonst gälte der Ordner als CommonJS.
 Claude Code lädt eine `CLAUDE.md` in einem Unterordner, sobald dort Dateien gelesen werden;
 `docs/heizung.md` muss man selbst öffnen. Die Nutzerdoku (Installation, Docker, KI-Belegauswertung,
 Funktionsweise, Daten & Backup, Entwickeln) steht in `docs/*.md`, das README ist die Kurzfassung davon;
-seine Sprungmarken verlinken App und Release-Notes, Wächter: [readme-anker.test.ts](server/test/readme-anker.test.ts).
+seine Sprungmarken verlinken App und Release-Notes, sie bleiben beim Umbau erhalten.
 
 - [scripts/CLAUDE.md](scripts/CLAUDE.md): Bildschirmfotos, Browserlauf, Programmdateien, Programmfenster,
   Linux-Pakete, Startmenü, Docker-Image, Node-Versionen, Release-Automatik, Artefakt-Tests,
