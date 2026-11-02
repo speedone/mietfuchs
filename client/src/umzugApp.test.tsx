@@ -27,9 +27,13 @@ afterEach(() => {
   delete window.mietfuchsDesktop
 })
 
-test('Umzug angeboten: auch nach einem Klick in die Seitenleiste bleibt der Bildschirm', async () => {
+// Geänderte Erwartung (Praxistest A): Die Seitenleiste fehlt jetzt ganz, solange der Umzug angeboten ist; ein Klick
+// dorthin bewirkte ohnehin nichts. Der Bildschirm bleibt, auch wenn die Seite intern wechselt.
+test('Umzug angeboten: keine Navigation, der Bildschirm bleibt', async () => {
   render(<App />)
   await screen.findByRole('heading', { level: 1, name: 'Willkommen bei Mietfuchs' }, { timeout: 5000 })
-  fireEvent.click(screen.getByRole('button', { name: /Stammdaten/ }))
-  expect(await screen.findByRole('heading', { level: 1, name: 'Willkommen bei Mietfuchs' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Stammdaten/ })).toBeNull()
+  expect(screen.queryByRole('navigation', { name: 'Hauptnavigation' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Ja, Daten übernehmen' }))
+  expect(await screen.findByRole('heading', { level: 1, name: 'Ihre bisherigen Daten übernehmen' })).toBeTruthy()
 })

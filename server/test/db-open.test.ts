@@ -223,6 +223,17 @@ test('eine Datei aus einer neueren Mietfuchs-Version wird erklärt, nicht migrie
       },
     )
 
+    // Praxistest O: Aus dem Microsoft Store wählt niemand die Fassung; dort hilft nur das Update im Store
+    await assert.rejects(
+      () => openDatabase({ dataDir, fromStore: true }),
+      (err: unknown) => {
+        const text = String(err)
+        assert.match(text, /Aktualisieren Sie Mietfuchs im Microsoft Store\./)
+        assert.doesNotMatch(text, /neuere Fassung/)
+        return true
+      },
+    )
+
     // Ein Zeitpunkt, den es als Datum gar nicht gibt. Der Wert kommt aus einer Datei, für die
     // wir nichts können, und darf die Meldung nicht mitten im Satz zum Absturz bringen.
     const zweiter = await connect(file)

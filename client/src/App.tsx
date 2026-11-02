@@ -20,8 +20,9 @@ import { emptyPropertyNotice, propertyName } from './propertyView'
 import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Umzug from './pages/Umzug'
-import { inWindow, type NewerStockInfo } from './relocation'
+import { arrivalFrom, inWindow, withoutArrival, type Arrival as ArrivalKind, type NewerStockInfo } from './relocation'
 import NewerStock from './components/NewerStock'
+import Arrival from './components/Arrival'
 import Uebersicht from './pages/Uebersicht'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
@@ -84,7 +85,7 @@ function useTheme() {
 
 // Beenden aus der Oberfläche (#45). Nur sichtbar, wenn Mietfuchs als Programmdatei läuft: Aus
 // einem Linux-Paket gibt es kein Konsolenfenster, dessen Schließen sonst der Weg dorthin ist.
-function QuitButton({ onQuit }: { onQuit: () => void }) {
+function QuitButton({ onQuit, className = 'theme-toggle' }: { onQuit: () => void, className?: string }) {
   const confirm = useConfirm()
   const toast = useToast()
   const [stopping, setStopping] = useState(false)
@@ -108,7 +109,7 @@ function QuitButton({ onQuit }: { onQuit: () => void }) {
   }
 
   return (
-    <button className="theme-toggle" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
+    <button type="button" className={className} onClick={stop} disabled={stopping} title="Mietfuchs beenden">
       ⏻ {stopping ? 'Wird beendet …' : 'Mietfuchs beenden'}
     </button>
   )
@@ -176,6 +177,16 @@ function Shell() {
   const [network] = useState(() => networkBridge())
   // Nach dem Umzug im bisherigen Mietfuchs noch etwas geändert (Ergänzung 2)
   const [newerStock, setNewerStock] = useState<NewerStockInfo | null>(null)
+  // Nach Umzug, Backup oder neuerem Stand einmal „Ihre Daten sind da“ (Praxistest B-04): Der Anlass kommt in der Adresse
+  // und wird gleich aus ihr entfernt, damit ein späteres Neuladen ihn nicht wieder zeigt. Solange er steht, wartet die
+  // Frage zu Updates (Praxistest, Punkt 13).
+  const [arrival, setArrival] = useState<ArrivalKind | null>(() => arrivalFrom(window.location.search))
+  useEffect(() => {
+    if (arrivalFrom(window.location.search)) window.history.replaceState(window.history.state, '', withoutArrival(window.location.href))
+  }, [])
+  // Ohne geöffnete Datenbank steht der Grund oben (Database.tsx); die Seite zeigte ihn sonst ein zweites Mal als roten
+  // Kasten und bliebe bei „Lade …“ stehen (Praxistest O)
+  const [databaseClosed, setDatabaseClosed] = useState(false)
   // Von Hand aus den Einstellungen geöffnet („Daten aus bisherigem Mietfuchs übernehmen …“)
   const [relocationManual, setRelocationManual] = useState(false)
   // Ein Seitenwechsel schließt ihn
@@ -425,6 +436,14 @@ function Shell() {
     return next
   })
 
+  // Der Name steht am Knopf selbst (#142). Er beginnt mit dem sichtbaren Text, damit Sprachsteuerung den Knopf am Rechner
+  // findet.
+  const themeButton = (
+    <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
+      🌗 <span>Design: {THEME_LABELS[choice]}</span>
+    </button>
+  )
+
   // Der Inhalt der Seitenleiste, am Rechner als Leiste, am Handy im Menüblatt (#346, Schritt 9):
   // dieselbe Navigation aus nav.ts, dieselbe Auswahl von Objekt und Zeitraum. Im Blatt (`close`
   // gesetzt) schließt die Wahl einer Seite es; der Hinweis auf ein Update fehlt dort, aktualisiert wird
@@ -475,20 +494,40 @@ function Shell() {
       <div className="foot">
         {/* Im Programmfenster, solange der Zugriff aus dem Heimnetz an ist (#517, K5); führt zur Karte in den Einstellungen */}
         {network && <NetworkHint bridge={network} onOpen={() => { void navigateFromNav('einstellungen').then((done) => { if (done) close?.() }) }} />}
-        {/* Der Name steht am Knopf selbst (#142). Er beginnt mit dem sichtbaren Text, damit
-            Sprachsteuerung den Knopf am Rechner findet. */}
-        <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
-          🌗 <span>Design: {THEME_LABELS[choice]}</span>
-        </button>
+        {themeButton}
         {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
       </div>
     </>
     )
   }
 
+  // Beim ersten Start im Fenster, solange der Umzug angeboten ist (Praxistest A): keine Navigation, die nichts bewirkt,
+  // und kein „Cockpit · Ohne Namen“; nur das Logo mit „Mietfuchs einrichten“, Design und Beenden
+  const setup = relocation === 'offered'
+  const quit = canQuit(update.status) ? <QuitButton onQuit={() => setStopped(true)} /> : null
+
   return (
     <TermHelp.Provider value={openHelp}>
-      {mobile ? (
+      {setup ? (mobile ? (
+        <header className="mobile-head no-print pl-4 sticky top-0 z-30 flex items-center gap-2 border-b border-line bg-sidebar">
+          <FoxLogo size={26} />
+          <div className="text-base font-strong text-text">Mietfuchs einrichten</div>
+        </header>
+      ) : (
+        <aside className="sidebar">
+          <div className="logo">
+            <FoxLogo size={30} />
+            <div className="logo-text">
+              Mietfuchs
+              <small>Mietfuchs einrichten</small>
+            </div>
+          </div>
+          <div className="foot">
+            {themeButton}
+            {quit}
+          </div>
+        </aside>
+      )) : mobile ? (
         <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigateFromNav(t === 'belege' ? 'belege:eingang' : t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
       ) : (
         <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(null)}</nav>
@@ -496,8 +535,9 @@ function Shell() {
       <main>
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
             nicht davon abhängt, wo der Nutzer gerade ist. */}
-        <DatabaseNotice />
+        <DatabaseNotice onClosed={setDatabaseClosed} quit={canQuit(update.status) ? <QuitButton className="btn secondary" onQuit={() => setStopped(true)} /> : null} />
         {newerStock && <NewerStock newer={newerStock} onDismissed={() => setNewerStock(null)} />}
+        {arrival && relocation === 'none' && !databaseClosed && <Arrival arrival={arrival} onClose={() => setArrival(null)} />}
         {/* Nach dem Wechsel in ein leeres Objekt (#157), ebenfalls auf jeder Seite: Leere Seiten
             sähen sonst aus, als wären die Daten weg. */}
         {emptyNotice && (
@@ -519,9 +559,9 @@ function Shell() {
         {/* Solange der Umzug angeboten ist, auf jeder Seite (Durchsicht D4): Eine Eingabe dazwischen machte ihn unmöglich */}
         {relocation === 'offered' && <Umzug onFresh={() => setRelocation('none')} />}
         {relocation === 'none' && relocationManual && <Umzug manual onClose={() => setRelocationManual(false)} />}
-        {relocation === 'none' && !relocationManual && <>
+        {relocation === 'none' && !relocationManual && (!databaseClosed || tab === 'hilfe') && <>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} updateDownloads={update.updater?.owner === 'window'} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} updateDownloads={update.updater?.owner === 'window'} consentHeld={arrival !== null} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
         )}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t)} />}
         {tab === 'stammdaten' && (

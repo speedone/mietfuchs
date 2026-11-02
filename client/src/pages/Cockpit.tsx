@@ -36,6 +36,8 @@ type Props = {
   settings: Settings | null
   // Für die Frage nach Update-Hinweisen: Aus dem Microsoft Store entfällt sie (#500).
   updateStatus: UpdateStatus | null
+  // Die Frage zu Updates wartet, solange nach einem Umzug „Ihre Daten sind da“ steht (Praxistest, Punkt 13)
+  consentHeld?: boolean
   // Im Fenster unter Windows lädt Mietfuchs neue Versionen auch herunter (K8); das sagt die Frage dann
   updateDownloads?: boolean
   reload: () => Promise<void>
@@ -70,7 +72,7 @@ type Check = {
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
 const NOTABLE_CHANGE_PCT = 25
 
-export default function Cockpit({ units, tenancies, settings, updateStatus, updateDownloads = false, reload, onNavigate }: Props) {
+export default function Cockpit({ units, tenancies, settings, updateStatus, updateDownloads = false, consentHeld = false, reload, onNavigate }: Props) {
   const { key, label, param, at, period, calendar, rules, year } = usePeriod()
   const switchPeriod = useSwitchPeriod()
   const { property } = useProperty()
@@ -385,7 +387,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
 
       {error && <NoticeBox level="error" action={error} />}
 
-      {consentPending(settings, updateStatus) && <UpdateConsent onAnswered={reload} downloads={updateDownloads} />}
+      {!consentHeld && consentPending(settings, updateStatus) && <UpdateConsent onAnswered={reload} downloads={updateDownloads} />}
       {updateStatus && desktopHintVisible(updateStatus, settings) && <DesktopHint status={updateStatus} onDismissed={reload} />}
 
       {fresh ? (

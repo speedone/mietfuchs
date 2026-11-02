@@ -4,7 +4,11 @@ import PageHeader from '../components/PageHeader'
 import Card from '../components/Card'
 import { NoticeBox } from '../components/Notice'
 import { useConfirm } from '../components/feedback'
-import { adoptedText, candidateFacts, folderBridge, progressText, type AdoptProgress, type AdoptResult, type RelocationCandidate, type RelocationCandidates } from '../relocation'
+import { MOBILE_QUERY, useMediaQuery } from '../components/MobileNav'
+import {
+  adoptedText, candidateFacts, candidateProblem, folderBridge, progressText, rankCandidates, reloadWithArrival,
+  type AdoptProgress, type AdoptResult, type Arrival, type RankedCandidate, type RelocationCandidate, type RelocationCandidates,
+} from '../relocation'
 
 // Erster Start im Programmfenster (#517), genau einmal bei leerem Bestand: gefunden („Wir haben Ihre bisherigen
 // Mietfuchs-Daten gefunden“, Hauptknopf „Daten übernehmen“, klein „Nicht übernehmen, neu beginnen“ mit Rückfrage) oder
@@ -16,11 +20,16 @@ import { adoptedText, candidateFacts, folderBridge, progressText, type AdoptProg
 type Phase =
   | { kind: 'idle' }
   | { kind: 'busy', what: 'copy' | 'backup' | 'quit' | 'folder' | 'search' }
-  | { kind: 'done', text: string, notes: string[] }
+  | { kind: 'done', arrival: Arrival, text: string, notes: string[] }
 
 const post = <T,>(url: string, body: unknown = {}) => api<T>(url, { method: 'POST', body: JSON.stringify(body) })
 
-export default function Umzug({ manual = false, onFresh, onClose, reloadPage = () => window.location.reload(), chooseFolder = folderBridge() }: {
+// Ein Abbruch ist kein Fehler (Praxistest K-05)
+const CANCELLED_TEXT = 'Abgebrochen. Es wurde nichts übernommen; im alten Ordner ist alles unverändert.'
+// Mit eigenem Bestand (von Hand) sagt das Ergebnis, dass der Stand vorher gesichert ist (Praxistest P)
+const REPLACED_NOTE = 'Ihr bisheriger Stand hier ist gesichert; er steht im Verlauf als „Vor dem Einspielen eines Backups“.'
+
+export default function Umzug({ manual = false, onFresh, onClose, reloadPage = reloadWithArrival, chooseFolder = folderBridge() }: {
   // Von Hand aus den Einstellungen geöffnet statt beim ersten Start; dann „Zurück“ statt „neu beginnen“, und mit eigenem
   // Bestand fragt jede Übernahme vorher, ob sie ihn ersetzen darf
   manual?: boolean
@@ -28,14 +37,18 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
   onFresh?: () => void
   // Von Hand: zurück zur vorigen Seite
   onClose?: () => void
-  reloadPage?: () => void
+  // Neu laden, mit dem Anlass für die Bestätigung danach (relocation.ts, „Ankunft“)
+  reloadPage?: (arrival: Arrival) => void
   chooseFolder?: (() => Promise<string | null>) | null
 }) {
   const confirm = useConfirm()
+  const mobile = useMediaQuery(MOBILE_QUERY)
   const [list, setList] = useState<RelocationCandidates | null>(null)
   const [loadError, setLoadError] = useState('')
   const [chosen, setChosen] = useState<RelocationCandidate | null>(null)
   const [error, setError] = useState('')
+  // Neutral statt rot: Abbruch, beendetes altes Mietfuchs, Ergebnis einer neuen Suche
+  const [info, setInfo] = useState('')
   const [quitFailed, setQuitFailed] = useState(false)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   // Die Wege ohne Fund (Backup, Ordner wählen); beim ersten Start nach „Ja, Daten übernehmen“
@@ -62,12 +75,16 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
     }
   }, [copying])
 
-  const load = useCallback(async () => {
+  // `fresh`: „Erneut suchen“ sucht wirklich neu, statt der eine Minute gemerkten Funde (Praxistest G)
+  const load = useCallback(async (fresh = false): Promise<RelocationCandidates | null> => {
     try {
-      setList(await api<RelocationCandidates>('/api/relocation/candidates'))
+      const answer = await api<RelocationCandidates>(`/api/relocation/candidates${fresh ? '?fresh=1' : ''}`)
+      setList(answer)
       setLoadError('')
+      return answer
     } catch (e) {
       setLoadError(errorText(e))
+      return null
     }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -98,28 +115,37 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
     })
   }
 
+  const clearMessages = () => {
+    setError('')
+    setInfo('')
+  }
+
   async function adopt(c: RelocationCandidate) {
     if (!(await mayReplace())) return
-    setError('')
+    clearMessages()
     setPhase({ kind: 'busy', what: 'copy' })
     try {
       // Nur mit der Kennung, die der Server dem Fund gegeben hat, nie mit dem Pfad (server/src/CLAUDE.md, K11)
       const result = await post<AdoptResult>('/api/relocation/adopt', { id: c.id, ...(ownStock ? { replace: true } : {}) })
-      setPhase({ kind: 'done', text: result.counts ? adoptedText(result.counts) : 'Ihre Daten sind übernommen.', notes: result.notes })
+      const notes = [...result.notes, ...(ownStock ? [REPLACED_NOTE] : [])]
+      setPhase({ kind: 'done', arrival: 'moved', text: result.counts ? adoptedText(result.counts) : 'Ihre Daten sind übernommen.', notes })
     } catch (e) {
       setPhase({ kind: 'idle' })
-      setError(errorText(e))
+      if (e instanceof ApiError && e.data.cancelled === true) setInfo(CANCELLED_TEXT)
+      else setError(errorText(e))
       if (e instanceof ApiError && e.data.running === true) await refresh()
     }
   }
 
   async function quitOld() {
-    setError('')
+    clearMessages()
     setQuitFailed(false)
     setPhase({ kind: 'busy', what: 'quit' })
     try {
       const { stopped } = await post<{ stopped: boolean }>('/api/relocation/quit-old')
       if (!stopped) setQuitFailed(true)
+      // Praxistest C: Die Warnung verschwand nur; jetzt steht da, dass es beendet ist
+      else setInfo('Das alte Mietfuchs ist beendet. Sie können die Daten jetzt übernehmen.')
       await refresh()
     } catch (e) {
       setError(errorText(e))
@@ -128,18 +154,22 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
     }
   }
 
+  // Eingespielt: ohne Hinweise gleich weiter (danach die Bestätigung oben, Praxistest E-04); mit Hinweisen bleiben sie
+  // stehen, bis „Weiter“ geklickt ist
+  const backupDone = (notes: string[]) => {
+    if (notes.length === 0 && !ownStock) return reloadPage('backup')
+    setPhase({ kind: 'done', arrival: 'backup', text: 'Ihr Backup ist eingespielt.', notes: [...notes, ...(ownStock ? [REPLACED_NOTE] : [])] })
+  }
+
   async function restoreBackup(file: File) {
     if (!(await mayReplace())) return
-    setError('')
+    clearMessages()
     setPhase({ kind: 'busy', what: 'backup' })
     try {
       const fd = new FormData()
       fd.append('file', file)
       const answer = await api<{ notes?: string[] }>('/api/restore', { method: 'POST', body: fd })
-      const notes = answer?.notes ?? []
-      // Ohne Hinweise gleich weiter; mit Hinweisen bleiben sie stehen, bis „Weiter“ geklickt ist
-      if (notes.length === 0) return reloadPage()
-      setPhase({ kind: 'done', text: 'Ihr Backup ist eingespielt.', notes })
+      backupDone(answer?.notes ?? [])
     } catch (e) {
       setPhase({ kind: 'idle' })
       setError(errorText(e))
@@ -148,7 +178,7 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
 
   async function pickFolder() {
     if (!chooseFolder) return
-    setError('')
+    clearMessages()
     let folder: string | null
     try {
       folder = await chooseFolder()
@@ -168,9 +198,7 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
           return
         }
         const restored = await post<{ notes?: string[] }>('/api/relocation/restore-backup', { id: answer.backup.id, ...(ownStock ? { replace: true } : {}) })
-        const notes = restored?.notes ?? []
-        if (notes.length === 0) return reloadPage()
-        setPhase({ kind: 'done', text: 'Ihr Backup ist eingespielt.', notes })
+        backupDone(restored?.notes ?? [])
         return
       }
       if (answer.candidate) setChosen(answer.candidate)
@@ -183,10 +211,13 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
   }
 
   async function searchAgain() {
-    setError('')
+    clearMessages()
     setPhase({ kind: 'busy', what: 'search' })
-    await load()
+    const answer = await load(true)
     setPhase({ kind: 'idle' })
+    // Praxistest G: Sonst sah man nur kurz das Drehsymbol und denselben Text
+    if (answer && (answer.candidates ?? []).length === 0) setInfo('Mietfuchs hat eben noch einmal gesucht und wieder keine Daten gefunden.')
+    else if (answer) setImportWays(false)
   }
 
   async function startFresh(ask: boolean) {
@@ -207,23 +238,22 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
   }
 
   if (phase.kind === 'done') {
+    const moved = phase.arrival === 'moved'
+    const doneArrival = phase.arrival
     return (
       <>
-        <PageHeader title="Ihre bisherigen Daten übernehmen" context="none" />
+        <PageHeader title={moved ? 'Ihre Daten sind umgezogen' : 'Ihr Backup ist eingespielt'} context="none" />
         <div className="ok" role="status">
           <p>{phase.text}</p>
           {phase.notes.map((note) => <p key={note}>{note}</p>)}
         </div>
+        {moved && <p>Ab jetzt arbeiten Sie nur noch hier. Öffnen Sie die alte Programmdatei nicht mehr. Was Sie dort ändern, fehlt hier.</p>}
         <p>
-          Ab jetzt arbeiten Sie nur noch hier. Starten Sie das alte Mietfuchs nicht mehr: Was Sie dort ändern, fehlt hier.
-          Die alte Programmdatei und ihre Verknüpfung können Sie löschen, sobald hier alles da ist.
-        </p>
-        <p>
-          Haben Sie Mietfuchs auch vom Handy oder einem zweiten Rechner aus benutzt? Den Zugriff schalten Sie jetzt in den
-          Einstellungen unter „Zugriff aus dem Heimnetz“ ein; dort steht auch die neue Adresse.
+          Haben Sie Mietfuchs auch vom Handy oder einem zweiten Rechner aus benutzt? Schalten Sie dazu in den Einstellungen
+          „Zugriff aus dem Heimnetz“ ein. Dort steht auch die neue Adresse.
         </p>
         <div className="row">
-          <button type="button" className="btn" onClick={reloadPage}>Weiter</button>
+          <button type="button" className="btn" onClick={() => reloadPage(doneArrival)}>Weiter</button>
         </div>
       </>
     )
@@ -235,11 +265,13 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
   const title = welcome ? 'Willkommen bei Mietfuchs'
     : showFound && !manual ? 'Wir haben Ihre bisherigen Mietfuchs-Daten gefunden'
       : manual ? 'Daten aus bisherigem Mietfuchs übernehmen' : 'Ihre bisherigen Daten übernehmen'
+  const ranked = rankCandidates(candidates)
   return (
     <>
       <PageHeader title={title} context="none" />
       {loadError && <NoticeBox level="error" title="Die Suche ließ sich nicht starten" action={loadError} />}
       {error && <NoticeBox level="error" title="Nicht übernommen" action={error} />}
+      {info && <p className="info" role="status">{info}</p>}
       {phase.kind === 'busy' && <p role="status"><span className="spinner" />{BUSY_TEXT[phase.what]}</p>}
       {copying && progress && progressText(progress) && (
         <div className="row">
@@ -261,12 +293,14 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
       )}
       {list && showFound && (
         <>
-          <p>Mietfuchs kopiert sie hierher; im alten Ordner bleibt alles, wie es ist.</p>
-          {candidates.map((c) => (
-            <CandidateCard key={c.dataDir} candidate={c} busy={busy} quitFailed={quitFailed} onAdopt={() => void adopt(c)} onQuit={() => void quitOld()} onCheck={() => void refresh()} />
+          <p>Mietfuchs kopiert sie in das neue Programm; im alten Ordner bleibt alles, wie es ist.</p>
+          {ranked.length > 1 && <p>Meist ist der neueste Stand der richtige.</p>}
+          {ranked.map((r) => (
+            <CandidateCard key={r.candidate.id} ranked={r} store={list.store === true} busy={busy} quitFailed={quitFailed}
+              onAdopt={() => void adopt(r.candidate)} onQuit={() => void quitOld()} onCheck={() => void refresh()} onBackup={() => { clearMessages(); setImportWays(true) }} />
           ))}
           <div className="row">
-            <button type="button" className="btn ghost small" disabled={busy} onClick={() => setImportWays(true)}>Andere Daten wählen …</button>
+            <button type="button" className="btn ghost small" disabled={busy} onClick={() => { clearMessages(); setImportWays(true) }}>Andere Daten wählen …</button>
             {manual
               ? <button type="button" className="btn ghost small" disabled={busy} onClick={onClose}>Zurück</button>
               : <button type="button" className="btn ghost small" disabled={busy} onClick={() => void startFresh(true)}>Nicht übernehmen, neu beginnen</button>}
@@ -275,17 +309,19 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
       )}
       {(list || loadError) && !showFound && !welcome && (
         <>
-          {candidates.length === 0 && (
+          {/* Steht eine Absage oder das Ergebnis der neuen Suche da, nicht noch eine zweite (Praxistest G) */}
+          {candidates.length === 0 && !error && !info && (
             <p>
               Mietfuchs hat auf diesem Rechner keine Daten Ihres bisherigen Mietfuchs gefunden.
               {list?.complete === false && ' Die Suche hat nicht alle Ordner durchgesehen.'}
             </p>
           )}
           <Card title="Mit einem Backup übernehmen">
+            {/* Am Handy zieht niemand eine Datei herüber (Praxistest E-02-390) */}
             <p>
               Öffnen Sie Ihr bisheriges Mietfuchs noch einmal und klicken Sie in den Einstellungen auf{' '}
-              <strong>Backup herunterladen (ZIP)</strong>. Ziehen Sie die Datei dann hierher oder klicken Sie auf{' '}
-              <strong>Backup einspielen</strong>.
+              <strong>Backup herunterladen (ZIP)</strong>.{' '}
+              {mobile ? <>Klicken Sie dann hier auf <strong>Backup einspielen</strong>.</> : <>Ziehen Sie die Datei dann hierher oder klicken Sie auf <strong>Backup einspielen</strong>.</>}
             </p>
             <div
               className={`dropzone ${dragOver ? 'over' : ''}`}
@@ -298,7 +334,7 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
                 if (file && !busy) void restoreBackup(file)
               }}
             >
-              <p><strong>Backup hierher ziehen</strong> (eine ZIP-Datei)</p>
+              {!mobile && <p><strong>Backup hierher ziehen</strong> (eine ZIP-Datei)</p>}
               <label className="btn">
                 Backup einspielen
                 <input
@@ -311,20 +347,19 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
               </label>
             </div>
           </Card>
-          {/* Klein darunter: die Wahl des Ordners (nur im Fenster mit Dialog) und eine neue Suche */}
+          {/* Klein darunter, in einer Reihe mit Abstand (Praxistest E-02-390): die Wahl des Ordners (nur im Fenster mit
+              Dialog), eine neue Suche und zurück */}
           <div className="row">
             {chooseFolder && (
               <button type="button" className="btn ghost small" disabled={busy} onClick={() => void pickFolder()}>Ordner der alten Programmdatei wählen …</button>
             )}
             <button type="button" className="btn ghost small" disabled={busy} onClick={() => void searchAgain()}>Erneut suchen</button>
-          </div>
-          <div className="row">
             {candidates.length > 0 && (
-              <button type="button" className="btn ghost small" disabled={busy} onClick={() => setImportWays(false)}>Zurück zu den gefundenen Daten</button>
+              <button type="button" className="btn ghost small" disabled={busy} onClick={() => { clearMessages(); setImportWays(false) }}>Zurück zu den gefundenen Daten</button>
             )}
             {manual
               ? <button type="button" className="btn ghost small" disabled={busy} onClick={onClose}>Zurück</button>
-              : candidates.length === 0 && <button type="button" className="btn ghost small" disabled={busy} onClick={() => setImportWays(false)}>Zurück</button>}
+              : candidates.length === 0 && <button type="button" className="btn ghost small" disabled={busy} onClick={() => { clearMessages(); setImportWays(false) }}>Zurück</button>}
           </div>
         </>
       )}
@@ -332,31 +367,50 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
   )
 }
 
+
 const BUSY_TEXT: Record<'copy' | 'backup' | 'quit' | 'folder' | 'search', string> = {
   search: 'Mietfuchs sucht Ihre bisherigen Daten …',
-  copy: 'Mietfuchs übernimmt Ihre Daten … Bei vielen Belegen dauert das einige Minuten.',
-  backup: 'Mietfuchs spielt Ihr Backup ein … Bei vielen Belegen dauert das einige Minuten.',
+  copy: 'Mietfuchs übernimmt Ihre Daten … Bei vielen Belegen dauert das einige Minuten. Bitte schließen Sie Mietfuchs währenddessen nicht. Ihre Daten im alten Ordner bleiben unberührt.',
+  backup: 'Mietfuchs spielt Ihr Backup ein … Bei vielen Belegen dauert das einige Minuten. Bitte schließen Sie Mietfuchs währenddessen nicht.',
   quit: 'Das alte Mietfuchs wird beendet …',
   folder: 'Mietfuchs sieht im gewählten Ordner nach …',
 }
 
-function CandidateCard({ candidate, busy, quitFailed, onAdopt, onQuit, onCheck }: {
-  candidate: RelocationCandidate
+const CARD_TITLES: Record<RankedCandidate['role'], string> = { only: 'Gefundene Daten', newest: 'Neuester Stand', older: 'Älterer Stand' }
+
+function CandidateCard({ ranked, store, busy, quitFailed, onAdopt, onQuit, onCheck, onBackup }: {
+  ranked: RankedCandidate
+  store: boolean
   busy: boolean
   quitFailed: boolean
   onAdopt: () => void
   onQuit: () => void
   onCheck: () => void
+  onBackup: () => void
 }) {
+  const { candidate, role } = ranked
   const facts = candidateFacts(candidate)
-  const runningId = useId()
+  const problem = candidateProblem(candidate, store)
+  const reasonId = useId()
+  const blocked = candidate.running || problem !== null
   return (
-    <Card title="Gefundene Daten">
-      <p className="m-0">Ort: <span className="break-all">{facts.place}</span></p>
+    <Card title={CARD_TITLES[role]} className={role === 'newest' ? 'border-2 border-accent' : undefined}>
+      <p className="m-0">{facts.place}</p>
+      {facts.names && <p className="m-0"><strong>{facts.names}</strong></p>}
       {facts.modified && <p className="m-0">{facts.modified}</p>}
       {facts.stock && <p className="m-0">{facts.stock}</p>}
-      {candidate.running && (
-        <div id={runningId}>
+      <details className="mt-2 text-xs text-muted wrap-anywhere">
+        <summary className="cursor-pointer">Genauer Ort</summary>
+        <span>{facts.path}</span>
+      </details>
+      {problem && (
+        <div id={reasonId}>
+          <NoticeBox level={problem.link ? 'warning' : 'error'} title={problem.title} action={problem.text} />
+          {problem.link && <p><a href={problem.link.href} target="_blank" rel="noreferrer">{problem.link.label}</a></p>}
+        </div>
+      )}
+      {!problem && candidate.running && (
+        <div id={reasonId}>
           <NoticeBox
             level="warning"
             title="Das alte Mietfuchs ist noch geöffnet"
@@ -367,8 +421,11 @@ function CandidateCard({ candidate, busy, quitFailed, onAdopt, onQuit, onCheck }
         </div>
       )}
       <div className="row">
-        <button type="button" className="btn" disabled={busy || candidate.running} aria-describedby={candidate.running ? runningId : undefined} onClick={onAdopt}>Daten übernehmen</button>
-        {candidate.running && (quitFailed
+        <button type="button" className={role === 'older' ? 'btn secondary' : 'btn'} disabled={busy || blocked} aria-describedby={blocked ? reasonId : undefined} onClick={onAdopt}>
+          {role === 'older' ? 'Diesen älteren Stand übernehmen' : 'Daten übernehmen'}
+        </button>
+        {candidate.problem === 'damaged' && <button type="button" className="btn secondary" disabled={busy} onClick={onBackup}>Backup einspielen …</button>}
+        {!problem && candidate.running && (quitFailed
           ? <button type="button" className="btn secondary" disabled={busy} onClick={onCheck}>Erneut prüfen</button>
           : <button type="button" className="btn secondary" disabled={busy} onClick={onQuit}>Altes Mietfuchs beenden</button>)}
       </div>

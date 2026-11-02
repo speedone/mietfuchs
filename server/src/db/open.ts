@@ -281,15 +281,18 @@ export function germanDate(millis: number): string {
 // Mietfuchs-Version darauf gearbeitet. Dann wird sie weder geöffnet noch migriert: Unsere
 // Schritte auf einen neueren Aufbau anzuwenden hieße, gegen einen Stand zu arbeiten, den wir
 // nicht kennen, und am Ende stünde ein Bestand, den keine der beiden Versionen mehr lesen kann.
-function newerVersionProblem(file: string, fremd: UnknownSteps | null): string | null {
+// Aus dem Microsoft Store (`fromStore`, Praxistest O) wählt niemand die Fassung selbst; dort hilft das Update im Store.
+function newerVersionProblem(file: string, fremd: UnknownSteps | null, fromStore = false): string | null {
   if (fremd === null) return null
+  const advice = fromStore
+    ? 'Aktualisieren Sie Mietfuchs im Microsoft Store.'
+    : 'Bitte benutzen Sie wieder die neuere Fassung; sie kann diesen Datenbestand lesen. Wollen Sie ' +
+      'bewusst bei dieser Version bleiben, spielen Sie ein Backup von vor dem Wechsel zurück.'
   return (
     `Die Datenbank ${file} stammt aus einer neueren Mietfuchs-Version. Sie enthält ` +
     `${fremd.count === 1 ? 'eine Änderung' : `${fremd.count} Änderungen`} am Aufbau, die diese ` +
     `Version (${APP_VERSION}) nicht kennt, die jüngste vom ${germanDate(fremd.newestMillis)}. Mietfuchs ` +
-    `öffnet sie deshalb nicht und verändert nichts daran, damit nichts verlorengeht. Bitte ` +
-    `benutzen Sie wieder die neuere Fassung; sie kann diesen Datenbestand lesen. Wollen Sie ` +
-    `bewusst bei dieser Version bleiben, spielen Sie ein Backup von vor dem Wechsel zurück.`
+    `öffnet sie deshalb nicht und verändert nichts daran, damit nichts verlorengeht. ${advice}`
   )
 }
 
@@ -495,10 +498,12 @@ export type OpenOptions = {
   // Hineingereicht für den Test: ein wirklich gesperrter Ordner lässt sich unter Windows nicht
   // herstellen.
   canWrite?: (dir: string) => boolean
+  // Aus dem Microsoft Store: dann rät die Meldung zu einer Datei aus einer neueren Version zum Update im Store
+  fromStore?: boolean
 } & NetworkOptions
 
 export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase> {
-  const { dataDir, canWrite = writable } = options
+  const { dataDir, canWrite = writable, fromStore = false } = options
   const file = databaseFile(dataDir)
 
   // Schritt 5 zuerst, denn die Antwort hängt nur am Pfad, und sie gehört auch an jede Meldung,
@@ -583,7 +588,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
 
     // Schritt 4: eine Datei aus einer neueren Version wird erklärt, nicht migriert.
     const migrations = await loadMigrations()
-    const problem = newerVersionProblem(file, unknownSteps(connection, migrations))
+    const problem = newerVersionProblem(file, unknownSteps(connection, migrations), fromStore)
     if (problem) fail(problem)
 
     // Vor einem Update eine Sicherung des bisherigen Stands (#92). Scheitert sie, wird nicht

@@ -110,7 +110,7 @@ test('nach einem Update steht die Sicherung da, mit Link zur Anleitung, und blei
   }
   const { unmount } = render(<DatabaseNotice />)
   await screen.findByText(/Mietfuchs wurde auf Version 0\.9\.0 aktualisiert/)
-  screen.getByText(/mietfuchs\.sqlite\.vor-0001_objekte im Datenordner/)
+  screen.getByText(/Sie finden sie unter Verlauf/)
   const link = screen.getByRole('link', { name: /Anleitung/ })
   expect(link.getAttribute('href')).toBe(MIGRATION_GUIDE_URL)
   // Nur dieser eine Hinweis: Neben einem Umstieg, den es nicht gab, steht nichts.
@@ -177,4 +177,39 @@ test('ohne Datenbank steht der Grund da, obwohl der Zustandsbericht mit 503 antw
   await screen.findByText(detail)
   screen.getByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' })
   expect(screen.queryByRole('button', { name: 'Verstanden' })).toBeNull()
+})
+
+// Praxistest O: Der Grund stand doppelt (oben und als roter Kasten der Seite); App.tsx blendet die Seite aus, solange
+// dieser Hinweis steht, und „Mietfuchs beenden“ steht hier statt nur in der Seitenleiste
+test('ohne Datenbank: sagt es der App und trägt „Mietfuchs beenden“', async () => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({
+    status: 'error',
+    database: { open: false, file: 'C:\\x\\mietfuchs.sqlite', migrations: 0, detail: 'Die Datenbank stammt aus einer neueren Mietfuchs-Version.', changeover: { state: 'none', message: '', notes: [] }, migrated: null },
+  }), { status: 503, headers: { 'content-type': 'application/json' } }))
+  const onClosed = vi.fn()
+  render(<DatabaseNotice onClosed={onClosed} quit={<button type="button">Mietfuchs beenden</button>} />)
+  await screen.findByText('Die Datenbank stammt aus einer neueren Mietfuchs-Version.')
+  const box = screen.getByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' }).closest('section') as HTMLElement
+  expect(box.querySelector('button')?.textContent).toBe('Mietfuchs beenden')
+  await waitFor(() => expect(onClosed).toHaveBeenCalledWith(true))
+})
+
+test('mit Datenbank: kein „Mietfuchs beenden“ im Hinweis, und die App erfährt, dass alles offen ist', async () => {
+  const onClosed = vi.fn()
+  render(<DatabaseNotice onClosed={onClosed} quit={<button type="button">Mietfuchs beenden</button>} />)
+  await screen.findByText('Ihre Daten liegen jetzt in einer Datenbank.')
+  expect(screen.queryByRole('button', { name: 'Mietfuchs beenden' })).toBeNull()
+  await waitFor(() => expect(onClosed).toHaveBeenCalledWith(false))
+})
+
+// Praxistest N-01-390: Am Handy steht „Verstanden“ unter dem Text, nicht daneben
+test('am Handy steht „Verstanden“ unter dem Text', async () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 899px)', addEventListener: () => {}, removeEventListener: () => {} }))
+  report = {
+    version: '0.15.0',
+    database: { ...state({ state: 'none', message: '', notes: [] }), migrated: { steps: 2, backup: 'mietfuchs.sqlite.vor-0001_objekte', at: '2026-10-01T10:00:00.000Z' } },
+  }
+  render(<DatabaseNotice />)
+  await screen.findByText(/Sie finden sie unter Verlauf/)
+  expect(screen.getByRole('button', { name: 'Verstanden' }).closest('.db-notice-body')).toBeTruthy()
 })

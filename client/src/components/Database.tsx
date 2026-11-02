@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { api, ApiError } from '../api'
+import { MOBILE_QUERY, useMediaQuery } from './MobileNav'
 import { databaseHint, DISMISS_KEY, UPDATE_DISMISS_KEY, updateHint, type HealthReport } from '../database'
 import type { DatabaseState } from '../types'
 
@@ -35,8 +36,16 @@ function remember(key: string, value: string): void {
   }
 }
 
-export default function DatabaseNotice() {
+export default function DatabaseNotice({ onClosed, quit }: {
+  // Ob die Datenbank geschlossen ist (Praxistest O): Dann blendet App.tsx die Seite aus, deren Fehlerkasten sonst
+  // denselben Grund ein zweites Mal rot zeigte
+  onClosed?: (closed: boolean) => void
+  // „Mietfuchs beenden“, wo es das gibt (App.tsx, `canQuit`); steht im Hinweis, wenn die Datenbank geschlossen ist
+  quit?: ReactNode
+} = {}) {
   const [report, setReport] = useState<HealthReport | null>(null)
+  // Am Handy steht „Verstanden“ unter dem Text statt daneben (Praxistest N-01-390)
+  const mobile = useMediaQuery(MOBILE_QUERY)
   const [dismissed, setDismissed] = useState<string | null>(() => remembered(DISMISS_KEY))
   const [updateDismissed, setUpdateDismissed] = useState<string | null>(() => remembered(UPDATE_DISMISS_KEY))
 
@@ -51,12 +60,32 @@ export default function DatabaseNotice() {
 
   const database: DatabaseState | null = report?.database ?? null
   const hint = databaseHint(database, dismissed)
+  const closed = hint?.kind === 'closed'
+  useEffect(() => {
+    if (report) onClosed?.(closed)
+  }, [report, closed, onClosed])
   // Nach einem Update (#154). Neben einem gelungenen Umstieg steht er nie: Der Umstieg schreibt
   // in eine neue Datei, und der Server nennt dann keine Sicherung.
   const update = updateHint(database, report?.version, updateDismissed)
   // Umgezogen (#517): auf jeder Seite und ohne „Verstanden“, denn jede Änderung wird hier abgelehnt
   const moved = report?.moved ?? null
   if (!hint && !update && !moved) return null
+
+  const hintButton = hint && hint.kind !== 'closed' ? (
+    <button className="btn" onClick={() => {
+      remember(DISMISS_KEY, hint.message)
+      setDismissed(hint.message)
+    }}>Verstanden</button>
+  ) : null
+  const updateButton = update ? (
+    <button className="btn" onClick={() => {
+      remember(UPDATE_DISMISS_KEY, update.dismissKey)
+      setUpdateDismissed(update.dismissKey)
+      // Der Server nennt die Sicherung auch nach einem Neustart, bis sie weggeklickt ist
+      // (#180). Scheitert das, bleibt der Hinweis in diesem Browser trotzdem zu.
+      api('/api/database/migrated/seen', { method: 'POST', body: JSON.stringify({ key: update.dismissKey }) }).catch(() => {})
+    }}>Verstanden</button>
+  ) : null
 
   // Beide Hinweise nur am Bildschirm: Gedruckt stand „Sicherung vor dem Update angelegt“ als eigene Seite vor der
   // Abrechnung (Druck, #415).
@@ -78,11 +107,10 @@ export default function DatabaseNotice() {
             <h2>{hint.kind === 'closed' ? 'Mietfuchs kann Ihre Daten gerade nicht öffnen' : hint.kind === 'done' ? 'Ihre Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
             <p>{hint.message}</p>
             {hint.notes.map((note) => <p key={note} className="muted">{note}</p>)}
+            {closed && quit && <div className="row mt-3">{quit}</div>}
+            {mobile && hintButton && <div className="row mt-3">{hintButton}</div>}
           </div>
-          {hint.kind !== 'closed' && <button className="btn" onClick={() => {
-            remember(DISMISS_KEY, hint.message)
-            setDismissed(hint.message)
-          }}>Verstanden</button>}
+          {!mobile && hintButton}
         </section>
       )}
       {update && (
@@ -92,14 +120,9 @@ export default function DatabaseNotice() {
             <h2>Sicherung vor dem Update angelegt</h2>
             <p>{update.message}</p>
             <p><a href={update.guideUrl} target="_blank" rel="noreferrer">Zur Anleitung: Zurück zu einer älteren Version</a></p>
+            {mobile && <div className="row mt-3">{updateButton}</div>}
           </div>
-          <button className="btn" onClick={() => {
-            remember(UPDATE_DISMISS_KEY, update.dismissKey)
-            setUpdateDismissed(update.dismissKey)
-            // Der Server nennt die Sicherung auch nach einem Neustart, bis sie weggeklickt ist
-            // (#180). Scheitert das, bleibt der Hinweis in diesem Browser trotzdem zu.
-            api('/api/database/migrated/seen', { method: 'POST', body: JSON.stringify({ key: update.dismissKey }) }).catch(() => {})
-          }}>Verstanden</button>
+          {!mobile && updateButton}
         </section>
       )}
     </>
