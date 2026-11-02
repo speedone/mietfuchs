@@ -288,11 +288,13 @@ function newerVersionProblem(file: string, fremd: UnknownSteps | null, fromStore
     ? 'Aktualisieren Sie Mietfuchs im Microsoft Store.'
     : 'Bitte benutzen Sie wieder die neuere Fassung; sie kann diesen Datenbestand lesen. Wollen Sie ' +
       'bewusst bei dieser Version bleiben, spielen Sie ein Backup von vor dem Wechsel zurück.'
+  // Für Laien (Praxistest vor 0.15.0, O): Die Meldung steht oben in Mietfuchs, deshalb ohne Pfad und ohne „Aufbau“.
+  // Wo die Datei liegt, nennt der Zustandsbericht (`database.file`); `file` bleibt für die Aufrufer im Kopf der Funktion.
+  void file
+  const stand = germanDate(fremd.newestMillis)
   return (
-    `Die Datenbank ${file} stammt aus einer neueren Mietfuchs-Version. Sie enthält ` +
-    `${fremd.count === 1 ? 'eine Änderung' : `${fremd.count} Änderungen`} am Aufbau, die diese ` +
-    `Version (${APP_VERSION}) nicht kennt, die jüngste vom ${germanDate(fremd.newestMillis)}. Mietfuchs ` +
-    `öffnet sie deshalb nicht und verändert nichts daran, damit nichts verlorengeht. ${advice}`
+    `Die Datenbank stammt aus einer neueren Mietfuchs-Version${stand === 'unbekannt' ? '' : ` (Stand vom ${stand})`}. ` +
+    `Diese Version (${APP_VERSION}) öffnet sie deshalb nicht und verändert nichts daran, damit nichts verloren geht. ${advice}`
   )
 }
 
