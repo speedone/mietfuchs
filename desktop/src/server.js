@@ -151,6 +151,111 @@ export function linkTarget(target, origin) {
 }
 
 /**
+ * Liegt das Ziel unter /uploads, ist es also ein Beleg (#517)? Belege kommen vom selben Ursprung wie die Oberfläche, sind
+ * aber nicht von ihr: Ihr Fenster bekommt keine Brücke (`childWebPreferences`), und Anfragen aus ihnen lehnt das Fenster
+ * ab (`trustedSender`). Der Pfad wird wie beim Server verglichen: ohne Rücksicht auf Groß und Klein (Express) und
+ * dekodiert. Lieber einmal zu viel ein Beleg als einmal zu wenig.
+ * @param {string} target
+ * @param {string} origin
+ * @returns {boolean}
+ */
+export function isReceipt(target, origin) {
+  let url
+  try {
+    url = new URL(target, origin)
+  } catch {
+    return false
+  }
+  if (url.origin !== origin) return false
+  let pathname = url.pathname
+  try {
+    pathname = decodeURIComponent(pathname)
+  } catch {
+    // Ein kaputtes %-Zeichen: so vergleichen, wie es dasteht
+  }
+  pathname = pathname.toLowerCase()
+  return pathname === '/uploads' || pathname.startsWith('/uploads/')
+}
+
+/**
+ * Eine Seite der Oberfläche: eigene Adresse und kein Beleg. Nur sie spricht mit dem Fenster.
+ * @param {string} target
+ * @param {string} origin
+ */
+export function isAppPage(target, origin) {
+  return linkTarget(target, origin) === 'window' && !isReceipt(target, origin)
+}
+
+/**
+ * Darf dieser Rahmen die Brücke benutzen (Drucken, Heimnetz, Ordnerwahl, Updates)? Nur der Hauptrahmen einer Seite der
+ * Oberfläche. Die Prüfung allein genügt nicht: Ein Skript in einem gleich-ursprünglichen Rahmen erreicht die Brücke der
+ * Oberfläche über `window.parent`, und die Anfrage kommt dann vom Hauptrahmen (nachgemessen mit Electron 45). Davor
+ * schützt, dass ein Beleg nie gleich-ursprünglich ist: Der Server liefert ihn mit `Content-Security-Policy: sandbox`.
+ * @param {{ url: string, parent: unknown } | null | undefined} frame `event.senderFrame`
+ * @param {string | null} origin
+ * @returns {boolean}
+ */
+export function trustedSender(frame, origin) {
+  if (!origin || !frame || frame.parent !== null) return false
+  return isAppPage(frame.url, origin)
+}
+
+/**
+ * Die Einstellungen eines Fensters, das die Seite öffnet (Belege, ein Link mit Strg-Klick): wie das Hauptfenster
+ * abgeschottet, ein Beleg aber ohne Preload und damit ohne Brücke. Electron erbt das Preload nicht, wenn es hier fehlt
+ * (nachgemessen mit Electron 45). Was ein Fenster ohne Brücke öffnet (etwa ein Link im PDF eines Belegfensters), bleibt
+ * ebenso ohne (Durchsicht).
+ * @param {string} url
+ * @param {string} origin
+ * @param {string} preload
+ * @param {boolean} [openerBridge] hat das öffnende Fenster die Brücke?
+ * @returns {Electron.WebPreferences}
+ */
+export function childWebPreferences(url, origin, preload, openerBridge = true) {
+  const isolated = { contextIsolation: true, sandbox: true, nodeIntegration: false }
+  return !openerBridge || isReceipt(url, origin) ? isolated : { preload, ...isolated }
+}
+
+/**
+ * Wohin eine Navigation im Fenster führt (`will-navigate`, `will-redirect`): Es bleibt auf der eigenen Seite (`stay`),
+ * der Link geht an das Standardprogramm (`external`) oder nirgends hin (`deny`). Ein Beleg kommt aus einem Fenster mit
+ * Brücke nie in dieses Fenster, sondern in ein eigenes ohne Preload (`receipt`, #517); das Fenster selbst bleibt stehen.
+ * @param {string} target
+ * @param {string | null} origin
+ * @param {boolean} bridge hat das Fenster die Brücke (Preload)?
+ * @returns {'stay' | 'receipt' | 'external' | 'deny'}
+ */
+export function navigationTarget(target, origin, bridge) {
+  if (!origin) return 'deny'
+  const where = linkTarget(target, origin)
+  if (where !== 'window') return where
+  return bridge && isReceipt(target, origin) ? 'receipt' : 'stay'
+}
+
+// Der eingebaute PDF-Betrachter von Chromium und Electron, eine feste Erweiterung (extension_misc::kPdfExtensionId)
+const PDF_VIEWER = 'mhjfbmdgcfjbbpaeojofohoefgiehjai'
+
+/**
+ * Wohin darf ein eingebetteter Rahmen gehen (`will-frame-navigate`)? Auf die eigene Adresse und in den PDF-Betrachter:
+ * Den lädt Electron als Rahmen unter dem PDF-Dokument, und ohne ihn bliebe jedes PDF im Fenster grau, in der
+ * Belegvorschau wie im eigenen Fenster (nachgemessen mit Electron 45, #517). Andere Erweiterungen gibt es im Fenster
+ * nicht und dürfen auch nicht.
+ * @param {string} target
+ * @param {string | null} origin
+ * @returns {boolean}
+ */
+export function frameTarget(target, origin) {
+  if (!origin) return false
+  if (linkTarget(target, origin) === 'window') return true
+  try {
+    const url = new URL(target)
+    return url.protocol === 'chrome-extension:' && url.hostname === PDF_VIEWER
+  } catch {
+    return false
+  }
+}
+
+/**
  * Die Adressen fürs Handy bei Zugriff aus dem Heimnetz: je IPv4 einer äußeren Netzwerkkarte `http://<IP>:<port>`.
  * Ohne Loopback, ohne IPv6 (Adressen wie fe80::… tippt niemand ab) und ohne link-local 169.254.x.x: Die vergibt sich
  * eine Karte selbst, wenn kein Router antwortet, und unter ihr erreicht das Handy nichts.

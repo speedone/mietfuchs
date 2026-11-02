@@ -1090,6 +1090,23 @@ test('Eingang: „Beleg daneben zeigen“ zeigt den Beleg neben der Auswertung, 
   expect(document.querySelector('iframe')).toBeNull()
 })
 
+// #517: Die Vorschau eines Bildes läuft in einem abgeschotteten Rahmen (kein Skript, eigener Ursprung). Ein PDF nicht,
+// denn die Betrachter von Chromium (auch im Programmfenster) und Firefox zeigen in einem Rahmen mit `sandbox` nichts an
+// (nachgemessen); ein PDF schützt dort der Header `Content-Security-Policy: sandbox` des Servers.
+test('Eingang: die Vorschau eines Fotos steht in einem Rahmen mit sandbox, die eines PDFs ohne', async () => {
+  extraUploads = [
+    { ...up('6_foto.jpg'), bookedItemIds: [], assessment: { id: 'a6', propertyId: 'p1', open: true } },
+    { ...up('7_scan.PDF'), bookedItemIds: [], assessment: { id: 'a7', propertyId: 'p1', open: true } },
+  ]
+  openAssessments = () => [assessmentOf('a6', '6_foto.jpg'), assessmentOf('a7', '7_scan.PDF')]
+  renderInbox()
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Beleg daneben zeigen' })).toHaveLength(2))
+  for (const b of screen.getAllByRole('button', { name: 'Beleg daneben zeigen' })) fireEvent.click(b)
+  const frameOf = (file: string) => document.querySelector(`iframe[src="/uploads/${file}"]`) ?? expect.fail(`${file} fehlt`)
+  expect(frameOf('6_foto.jpg').getAttribute('sandbox')).toBe('')
+  expect(frameOf('7_scan.PDF').hasAttribute('sandbox')).toBe(false)
+})
+
 // Durchsicht M2: Ein Beleg mit offener Auswertung steht nur unter „Zu prüfen“. Löschen, Objekt und Jahr und Zuordnen gehen
 // dort an der Karte der Auswertung, wie vorher im Posteingang.
 test('Eingang: an der Auswertung lässt sich der Beleg löschen, einordnen und zuordnen', async () => {

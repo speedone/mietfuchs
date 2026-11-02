@@ -2,7 +2,7 @@
 // Jedes Bild kostet Eingabe-Token, und auf einem Rechner ohne Grafikkarte macht das Minuten aus.
 // Deshalb rendert die Auswertung kleiner als der Druck.
 import { describe, expect, test } from 'vitest'
-import { INTAKE_EDGE, MAX_EDGE, pageScale } from './pdf'
+import { INTAKE_EDGE, MAX_EDGE, documentOptions, pageScale } from './pdf'
 
 // Seitengrößen, wie pdf.js sie bei Faktor 1 liefert: in Punkten (1/72 Zoll)
 const a4 = { width: 595, height: 842 }
@@ -34,4 +34,11 @@ describe('Maßstab der Seitenbilder', () => {
     expect(pageScale(a6, 2, INTAKE_EDGE)).toBe(2)
     expect(edge(a6, INTAKE_EDGE)).toBe(840)
   })
+})
+
+// #517: Belege kommen von außen. pdf.js übersetzt Schriften sonst mit `new Function` in Skript; aus ist sicherer und
+// kostet nur etwas Geschwindigkeit beim Zeichnen.
+test('pdf.js öffnet ein fremdes PDF ohne eval', () => {
+  expect(documentOptions({ url: '/uploads/a.pdf' }).isEvalSupported).toBe(false)
+  expect(documentOptions({ data: new ArrayBuffer(4) }).isEvalSupported).toBe(false)
 })

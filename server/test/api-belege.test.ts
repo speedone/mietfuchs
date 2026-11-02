@@ -730,3 +730,148 @@ test('Belege für die Steuer: Einnahmen.csv je Mietverhältnis, Übersicht unver
     assert.ok(!csv.toString('utf8').includes('Fremder'))
   })
 })
+
+// ---------- Belege ohne Skript (#517) ----------
+//
+// Belege kommen vom selben Ursprung wie die App. Ein Skript in einem Beleg (SVG, HTML) liefe beim Öffnen mit den
+// Rechten der Seite: API aufrufen, im Programmfenster die Brücke `window.mietfuchsDesktop`. Deshalb trägt jede
+// Antwort unter /uploads `nosniff` und `Content-Security-Policy: sandbox` (eigener, undurchsichtiger Ursprung, kein
+// Skript), und der Typ kommt aus der festen Liste in uploads.ts, nie aus dem Inhalt.
+
+const fetchUpload = (s: Server, file: string) => fetch(`${s.base}/uploads/${encodeURIComponent(file)}`)
+const SVG_MIT_SKRIPT = '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/uploads")</script></svg>'
+
+test('Belege ohne Skript (#517): PDF, JPEG und PNG kommen mit nosniff, sandbox und ihrem Typ', async () => {
+  const s = await startServer()
+  try {
+    const pdf = await uploadBelegFile(s, '%PDF-1.4 Beleg', 'Rechnung.pdf')
+    const jpeg = await uploadBelegFile(s, Buffer.from([0xff, 0xd8, 0xff, 0xe0]), 'Foto.jpg')
+    const png = await uploadBelegFile(s, Buffer.from([0x89, 0x50, 0x4e, 0x47]), 'Zähler.png')
+    for (const [file, type] of [[pdf, 'application/pdf'], [jpeg, 'image/jpeg'], [png, 'image/png']] as const) {
+      const res = await fetchUpload(s, file)
+      assert.equal(res.status, 200, file)
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff', file)
+      assert.equal(res.headers.get('content-security-policy'), 'sandbox', file)
+      assert.equal(res.headers.get('content-type')?.split(';')[0], type, file)
+      assert.equal(res.headers.get('content-disposition'), null, `${file} zeigt der Browser an`)
+    }
+  } finally {
+    s.stop()
+  }
+})
+
+test('Belege ohne Skript (#517): eine SVG- oder HTML-Datei im Belegordner (etwa aus einem Backup) kommt nur als Download', async () => {
+  const s = await startServer()
+  try {
+    // Am Hochladen vorbei, wie ein Wiederherstellen oder ein übernommener Ordner sie ablegen könnte
+    fs.writeFileSync(path.join(s.dataDir, 'uploads', '1700000000000_Grundriss.svg'), SVG_MIT_SKRIPT)
+    fs.writeFileSync(path.join(s.dataDir, 'uploads', '1700000000001_Seite.html'), '<script>fetch("/api/uploads")</script>')
+    fs.writeFileSync(path.join(s.dataDir, 'uploads', '1700000000002_Notiz.xhtml'), '<html xmlns="http://www.w3.org/1999/xhtml"><script>1</script></html>')
+    for (const file of ['1700000000000_Grundriss.svg', '1700000000001_Seite.html', '1700000000002_Notiz.xhtml']) {
+      const res = await fetchUpload(s, file)
+      assert.equal(res.status, 200, file)
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff', file)
+      assert.equal(res.headers.get('content-security-policy'), 'sandbox', file)
+      assert.equal(res.headers.get('content-type'), 'application/octet-stream', file)
+      assert.match(res.headers.get('content-disposition') ?? '', /^attachment/, file)
+    }
+    // Groß geschrieben findet Express denselben Ordner; die Header gelten auch dort
+    const upper = await fetch(`${s.base}/UPLOADS/1700000000000_Grundriss.svg`)
+    assert.equal(upper.headers.get('content-security-policy'), 'sandbox')
+    assert.equal(upper.headers.get('content-type'), 'application/octet-stream')
+    // Ohne Datei antwortet die Fehlerseite von Express, ebenso ohne Skript
+    const missing = await fetchUpload(s, 'gibt-es-nicht.svg')
+    assert.equal(missing.status, 404)
+    assert.match(missing.headers.get('content-security-policy') ?? '', /sandbox|default-src 'none'/)
+    assert.equal(missing.headers.get('x-content-type-options'), 'nosniff')
+  } finally {
+    s.stop()
+  }
+})
+
+test('Belege ohne Skript (#517): SVG, HTML und XML lehnt das Hochladen ab, nach Endung und nach angegebenem Typ', async () => {
+  const s = await startServer()
+  try {
+    const before = fs.readdirSync(path.join(s.dataDir, 'uploads')).length
+    const cases: Array<[string, string]> = [
+      ['Grundriss.svg', 'image/svg+xml'],
+      ['Grundriss.SVG', 'application/octet-stream'],
+      ['Seite.html', 'text/html'],
+      ['Seite.htm', 'text/plain'],
+      ['Seite.xhtml', 'application/xhtml+xml'],
+      ['Daten.xml', 'text/xml'],
+      ['Tarnung.png', 'image/svg+xml'],
+    ]
+    for (const route of ['/api/upload', '/api/intake']) {
+      for (const [name, type] of cases) {
+        const fd = new FormData()
+        fd.append('file', new Blob([SVG_MIT_SKRIPT], { type }), name)
+        const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd })
+        assert.equal(res.status, 400, `${route} ${name} (${type})`)
+        const body = await jsonOf<{ error: string }>(res)
+        assert.match(body.error, /PDF oder Bild/, `${route} ${name}`)
+      }
+    }
+    assert.equal(fs.readdirSync(path.join(s.dataDir, 'uploads')).length, before, 'nichts davon liegt im Belegordner')
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).length, 0)
+  } finally {
+    s.stop()
+  }
+})
+
+// Die Oberfläche selbst (#517, Durchsicht): nur eigene Skripte, keine Plugins, keine fremde Basis, nicht in fremden
+// Rahmen. Geprüft an Antworten, die es auch ohne gebaute Oberfläche gibt (CI testet vor dem Build): der API und, je
+// nachdem ob client/dist liegt, der index.html oder dem 404 von Express (dann `default-src 'none'`, ebenso ohne Skript).
+// /API/… lief an der Ausnahme für /api vorbei in die Auslieferung der Seite, ohne Policy (Durchsicht).
+test('Belege ohne Skript (#517): die Oberfläche und die API tragen eine Content-Security-Policy, Belege ihre eigene', async () => {
+  const s = await startServer()
+  try {
+    const appCsp = (csp: string, where: string) => {
+      assert.match(csp, /script-src 'self' 'wasm-unsafe-eval'(;|$)/, where)
+      assert.match(csp, /object-src 'none'/, where)
+      assert.match(csp, /base-uri 'none'/, where)
+      assert.match(csp, /frame-ancestors 'self'/, where)
+      assert.doesNotMatch(csp, /unsafe-inline|'unsafe-eval'/, where)
+    }
+    appCsp((await fetch(`${s.base}/api/uploads`)).headers.get('content-security-policy') ?? '', '/api/uploads')
+    for (const p of ['/', '/belege', '/einstellungen?x=1', '/API/gibt-es-nicht', '/Api/uploads/x']) {
+      const res = await fetch(`${s.base}${p}`)
+      const csp = res.headers.get('content-security-policy') ?? ''
+      if (res.status === 404 && csp === "default-src 'none'") continue // ohne client/dist: die Fehlerseite von Express
+      appCsp(csp, p)
+    }
+    const pdf = await uploadBelegFile(s, '%PDF-1.4 Beleg', 'Rechnung.pdf')
+    assert.equal((await fetchUpload(s, pdf)).headers.get('content-security-policy'), 'sandbox')
+  } finally {
+    s.stop()
+  }
+})
+
+// Fremde Belege kommen auch über ein Backup herein (Durchsicht): Was es mitbringt, liefert der Server ebenso aus.
+test('Belege ohne Skript (#517): Belege aus einem eingespielten Backup kommen mit sandbox, SVG und HTML nur als Download', async () => {
+  const s = await startServer()
+  try {
+    const r = await restore(s, archive({
+      'uploads/1700000000000_Plan.svg': SVG_MIT_SKRIPT,
+      'uploads/1700000000001_Seite.html': '<script>fetch("/api/uploads")</script>',
+      'uploads/1700000000002_Scan.pdf': '%PDF-1.4 Beleg',
+      'uploads/1700000000003_Foto.png': Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    }))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    for (const [file, type, download] of [
+      ['1700000000000_Plan.svg', 'application/octet-stream', true],
+      ['1700000000001_Seite.html', 'application/octet-stream', true],
+      ['1700000000002_Scan.pdf', 'application/pdf', false],
+      ['1700000000003_Foto.png', 'image/png', false],
+    ] as const) {
+      const res = await fetchUpload(s, file)
+      assert.equal(res.status, 200, file)
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff', file)
+      assert.equal(res.headers.get('content-security-policy'), 'sandbox', file)
+      assert.equal(res.headers.get('content-type')?.split(';')[0], type, file)
+      assert.equal(/^attachment/.test(res.headers.get('content-disposition') ?? ''), download, file)
+    }
+  } finally {
+    s.stop()
+  }
+})

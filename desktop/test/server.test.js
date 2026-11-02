@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import fs from 'node:fs'
-import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties } from '../src/server.js'
+import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties, isReceipt, isAppPage, trustedSender, childWebPreferences, frameTarget, navigationTarget } from '../src/server.js'
 
 // Geänderte Erwartung: Bisher lief ausgeliefert die Programmdatei des Servers (Bun) unter resources\server bzw. in
 // Contents/MacOS, danach der Quellcode unter resources/mietfuchs/server/src, dann das Bündel offen unter
@@ -107,6 +107,76 @@ test('Links: eigene Seiten im Fenster, http, https und mailto im Standardprogram
   assert.equal(linkTarget('file:///C:/Windows/system32/calc.exe', origin), 'deny')
   assert.equal(linkTarget('javascript:alert(1)', origin), 'deny')
   assert.equal(linkTarget('ms-settings:', origin), 'deny')
+})
+
+// Belege ohne Brücke (#517): Ein Beleg kommt vom selben Ursprung wie die Oberfläche. Sein Fenster bekommt kein Preload,
+// und keine Anfrage an das Fenster gilt, die aus einem Beleg oder einem eingebetteten Rahmen kommt.
+test('Belege: erkannt unter /uploads, auch groß geschrieben, kodiert oder über Umwege im Pfad, nur auf der eigenen Adresse', () => {
+  const origin = 'http://127.0.0.1:17517'
+  assert.equal(isReceipt('/uploads/1700000000000_Rechnung.pdf', origin), true)
+  assert.equal(isReceipt('http://127.0.0.1:17517/uploads/a.svg?x=1#y', origin), true)
+  assert.equal(isReceipt('http://127.0.0.1:17517/UPLOADS/a.svg', origin), true, 'Express unterscheidet Groß und Klein nicht')
+  assert.equal(isReceipt('http://127.0.0.1:17517/%75ploads/a.svg', origin), true)
+  assert.equal(isReceipt('http://127.0.0.1:17517/belege/../uploads/a.svg', origin), true)
+  assert.equal(isReceipt('http://127.0.0.1:17517/uploads', origin), true)
+  assert.equal(isReceipt('http://127.0.0.1:17517/belege', origin), false)
+  assert.equal(isReceipt('http://127.0.0.1:17517/uploadsliste', origin), false)
+  assert.equal(isReceipt('http://127.0.0.1:17517/api/uploads', origin), false)
+  assert.equal(isReceipt('https://example.org/uploads/a.svg', origin), false)
+  assert.equal(isReceipt('kein url', 'kaputt'), false)
+  assert.equal(isAppPage('http://127.0.0.1:17517/belege', origin), true)
+  assert.equal(isAppPage('http://127.0.0.1:17517/uploads/a.pdf', origin), false)
+  assert.equal(isAppPage('https://example.org/', origin), false)
+})
+
+test('Belege: Anfragen an das Fenster nur vom Hauptrahmen der Oberfläche, nicht aus einem Beleg oder Rahmen', () => {
+  const origin = 'http://127.0.0.1:17517'
+  assert.equal(trustedSender({ url: 'http://127.0.0.1:17517/einstellungen', parent: null }, origin), true)
+  assert.equal(trustedSender({ url: 'http://127.0.0.1:17517/uploads/a.svg', parent: null }, origin), false, 'Beleg im Hauptrahmen')
+  assert.equal(trustedSender({ url: 'http://127.0.0.1:17517/einstellungen', parent: {} }, origin), false, 'eingebetteter Rahmen')
+  assert.equal(trustedSender({ url: 'https://example.org/', parent: null }, origin), false)
+  assert.equal(trustedSender(null, origin), false)
+  assert.equal(trustedSender({ url: 'http://127.0.0.1:17517/', parent: null }, null), false, 'ohne Server keine Oberfläche')
+})
+
+test('Belege: ein neues Fenster für einen Beleg ohne Preload, für die Oberfläche mit; immer abgeschottet', () => {
+  const origin = 'http://127.0.0.1:17517'
+  const preload = '/app/src/preload.cjs'
+  const receipt = childWebPreferences('http://127.0.0.1:17517/uploads/a.pdf', origin, preload)
+  assert.equal('preload' in receipt, false)
+  assert.deepEqual(receipt, { contextIsolation: true, sandbox: true, nodeIntegration: false })
+  assert.deepEqual(childWebPreferences('http://127.0.0.1:17517/belege', origin, preload), { preload, contextIsolation: true, sandbox: true, nodeIntegration: false })
+  assert.equal('preload' in childWebPreferences('http://127.0.0.1:17517/Uploads/a.svg', origin, preload), false)
+  // Was ein Fenster ohne Brücke öffnet (ein Link im PDF eines Belegfensters), bleibt ohne Brücke (Durchsicht)
+  assert.equal('preload' in childWebPreferences('http://127.0.0.1:17517/einstellungen', origin, preload, false), false)
+  assert.equal(childWebPreferences('http://127.0.0.1:17517/einstellungen', origin, preload, true).preload, preload)
+})
+
+// Ein Beleg öffnet nie in einem Fenster mit Brücke, auch nicht über einen Link ohne neues Fenster oder eine Weiterleitung:
+// Dann bleibt das Fenster, wo es ist, und der Beleg kommt in ein eigenes ohne Preload (#517, Durchsicht).
+test('Navigation: ein Beleg aus einem Fenster mit Brücke in ein eigenes Fenster, sonst wie bei Links', () => {
+  const origin = 'http://127.0.0.1:17517'
+  assert.equal(navigationTarget('http://127.0.0.1:17517/belege', origin, true), 'stay')
+  assert.equal(navigationTarget('http://127.0.0.1:17517/uploads/a.pdf', origin, true), 'receipt')
+  assert.equal(navigationTarget('http://127.0.0.1:17517/Uploads/a.svg', origin, true), 'receipt')
+  assert.equal(navigationTarget('http://127.0.0.1:17517/uploads/b.pdf', origin, false), 'stay', 'im Belegfenster ohne Brücke')
+  assert.equal(navigationTarget('https://example.org/', origin, true), 'external')
+  assert.equal(navigationTarget('file:///etc/passwd', origin, true), 'deny')
+  assert.equal(navigationTarget('http://127.0.0.1:17517/', null, true), 'deny')
+})
+
+// Ein PDF zeigt Electron mit dem eingebauten Betrachter, einer Erweiterung in einem Rahmen unter dem Dokument. Ließ die
+// Wache nur die eigene Adresse zu, blieb jedes PDF im Fenster grau, in der Vorschau wie im eigenen Fenster (nachgemessen
+// mit Electron 45 für #517). Zugelassen ist genau dieser Betrachter, keine andere Erweiterung.
+test('Rahmen: eigene Adresse und der eingebaute PDF-Betrachter, sonst nichts', () => {
+  const origin = 'http://127.0.0.1:17517'
+  assert.equal(frameTarget('http://127.0.0.1:17517/uploads/a.pdf', origin), true)
+  assert.equal(frameTarget('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/3cdd4370-071c-4188-a4f2-2c5d7c8336bf', origin), true)
+  assert.equal(frameTarget('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html', origin), true)
+  assert.equal(frameTarget('chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/index.html', origin), false)
+  assert.equal(frameTarget('https://example.org/', origin), false)
+  assert.equal(frameTarget('data:text/html,<script>1</script>', origin), false)
+  assert.equal(frameTarget('http://127.0.0.1:17517/', null), false)
 })
 
 // Zugriff aus dem Heimnetz: die Adressen fürs Handy, aus den Netzwerkkarten des Rechners

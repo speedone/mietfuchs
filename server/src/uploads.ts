@@ -55,6 +55,40 @@ export function mimeTypeOf(file: string): string {
   return MIME_BY_EXTENSION[path.extname(file).toLowerCase()] ?? 'application/octet-stream'
 }
 
+// ---------- Belege ohne Skript (#517) ----------
+//
+// Belege kommen unter /uploads vom selben Ursprung wie die App. Ein Skript in einem Beleg liefe beim Öffnen mit den
+// Rechten der Seite: Es könnte die API aufrufen und im Programmfenster die Brücke `window.mietfuchsDesktop`. Zwei
+// Schichten verhindern das:
+//
+// 1. **Beim Hochladen** lehnt der Server Dateien ab, die Skript tragen können (SVG, HTML, XHTML, XML und Verwandte).
+//    Fachlich braucht sie niemand: Ein Beleg ist ein PDF oder ein Foto, und die KI-Auswertung liest auch nur diese
+//    (extract.ts). Geprüft werden Endung **und** angegebener Typ; der Inhalt nicht, denn ausgeliefert wird nach der
+//    Endung (Schicht 2), und eine getarnte Datei („rechnung.png“ mit SVG darin) zeigt der Browser dank `nosniff`
+//    höchstens als kaputtes Bild an.
+// 2. **Beim Ausliefern** (index.ts) trägt jede Antwort `X-Content-Type-Options: nosniff` und
+//    `Content-Security-Policy: sandbox`: eigener, undurchsichtiger Ursprung, kein Skript. Das gilt auch für PDF, denn
+//    die Betrachter von Chromium (also auch des Programmfensters) und Firefox zeigen ein PDF unter diesem Header
+//    weiter an (nachgemessen mit Chromium 1248, Electron 45 und Firefox 1555 für #517). Chromium wendet ihn auf ein
+//    PDF allerdings nicht an, das Dokument bleibt gleich-ursprünglich; das schadet nicht, weil darin nur der
+//    Betrachter läuft: Das JavaScript eines PDFs hat keinen Zugriff auf die Seite, und `submitForm` und `launchURL`
+//    aus einem PDF kamen beim Server nicht an (nachgemessen in Electron 45 und Chromium 1248). Der Typ kommt nur aus der
+//    Liste oben (`servedTypeOf`); alles andere, auch eine SVG-Datei aus einem alten Backup, geht als Download hinaus.
+const SCRIPT_EXTENSIONS = new Set(['.svg', '.svgz', '.html', '.htm', '.shtml', '.xhtml', '.xht', '.xml', '.xsl', '.xslt', '.mht', '.mhtml'])
+
+export function carriesScript(name: string, declaredType: string): boolean {
+  if (SCRIPT_EXTENSIONS.has(path.extname(name).toLowerCase())) return true
+  const type = declaredType.split(';')[0].trim().toLowerCase()
+  return type === 'text/html' || type.endsWith('/xml') || type.endsWith('+xml') || type === 'multipart/related' || type === 'message/rfc822'
+}
+
+export const SCRIPT_REFUSAL = 'Belege nimmt Mietfuchs als PDF oder Bild an (etwa JPG oder PNG). SVG-, HTML- und XML-Dateien können Programmcode enthalten und werden deshalb nicht gespeichert.'
+
+// Der Typ, unter dem ein Beleg ausgeliefert wird: einer aus der Liste oben oder `null`, dann nur als Download.
+export function servedTypeOf(file: string): string | null {
+  return MIME_BY_EXTENSION[path.extname(file).toLowerCase()] ?? null
+}
+
 // Die Prüfsumme einer Datei, **gestreamt und asynchron**: Ein Beleg kann 25 MB groß sein, und
 // eine Altablage hat Hunderte davon. Synchron gelesen hielte das den ganzen Server an, auch
 // /healthz (Durchsicht). Gerechnet wird je Beleg nur einmal; danach steht sie in der Tabelle

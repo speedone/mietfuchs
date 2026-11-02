@@ -85,6 +85,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   trägt ihn in `NKA_ALLOWED_HOSTS` ein. Im Docker-Image und beim Start aus dem Quellcode bleibt alles wie bisher,
   solange `NKA_ALLOWED_HOSTS` nicht gesetzt ist.
 
+### Behoben
+
+- **Belege laufen abgeschottet von der Oberfläche** ([#517](https://github.com/speedone/mietfuchs/issues/517)).
+  Mietfuchs liefert Belege so aus, dass der Browser darin kein Programm ausführt, und nimmt SVG-, HTML- und
+  XML-Dateien nicht mehr als Beleg an; Belege sind PDFs und Bilder. Eine solche Datei, die schon im Belegordner liegt
+  (etwa aus einem Backup), lädt der Browser nur noch herunter. Im eigenen Programmfenster öffnet ein Beleg in einem
+  Fenster ohne Zugriff auf Drucken, Heimnetz und Updates. Die Oberfläche selbst führt nur noch Skripte von Mietfuchs
+  aus.
+
 ## [0.14.1] – 2026-11-01
 
 ### Hinzugefügt
