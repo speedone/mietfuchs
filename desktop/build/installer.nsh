@@ -289,8 +289,11 @@ FunctionEnd
 ; ohne Leerlaufen der Schlange und ohne Aufräumen; die Lauf-Datei blieb liegen. Der Filter auf den Titel trifft nur den
 ; Hauptprozess mit dem Programmfenster („Mietfuchs …“), der dann über before-quit den Server ordentlich beendet.
 !macro mfCloseWindow
-  nsExec::Exec `"$CmdPath" /C taskkill /IM "${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%" /FI "WINDOWTITLE eq Mietfuchs*"`
+  nsExec::ExecToStack `"$CmdPath" /C taskkill /IM "${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%" /FI "WINDOWTITLE eq Mietfuchs*"`
   Pop $R0
+  Pop $R3
+  ; Welche Prozesse taskkill getroffen hat, steht im Zeitprotokoll (#549)
+  !insertmacro mfLog "[pruefung] taskkill (Code $R0): $R3"
 !macroend
 
 !macro customCheckAppRunning

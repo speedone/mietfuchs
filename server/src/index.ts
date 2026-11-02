@@ -91,7 +91,7 @@ import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, mayAskGitHub, UPDATE_URL } from './update.ts'
 import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './version.ts'
 import { ciSet } from './ci.ts'
-import { DEFAULT_PORTS, findTwin, removeRunFile, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
+import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
@@ -4325,6 +4325,8 @@ let shuttingDown = false
 function shutDown(): void {
   if (shuttingDown) return
   shuttingDown = true
+  // Im Protokoll des Fensters sichtbar, ob und wann das Beenden ankam (Installer bei laufendem Mietfuchs, #549)
+  console.log('Mietfuchs wird beendet.')
   // Mitten im Start (Migration, Sicherung, Umstieg) erst zu Ende starten: Schließt jemand das Fenster in dieser Zeit,
   // bräche der Server sonst den Umstieg ab, und der nächste Start begänne von vorn (Durchsicht M2). Anfragen gibt es
   // vorher keine, nur die Nachricht „quit“ des Fensters kommt so früh.
@@ -4369,6 +4371,7 @@ function drainQueueAndExit(): void {
     const beenden = () => {
       if (schonBeendet) return
       schonBeendet = true
+      console.log('Mietfuchs ist beendet.')
       setTimeout(() => process.exit(0), 100)
     }
     if (!database) return beenden()
@@ -4804,7 +4807,13 @@ if (STANDALONE && !MOVED_AWAY) {
     process.exit(0)
   }
   if (writeRunFile(DATA_DIR, { version: 1, port: self.port, pid: process.pid, startedAt: new Date().toISOString(), appVersion: APP_VERSION })) {
-    process.on('exit', () => removeRunFile(DATA_DIR, process.pid))
+    process.on('exit', () => {
+      removeRunFile(DATA_DIR, process.pid)
+      // Synchron, damit die Zeile auch beim Ende noch im Protokoll des Fensters ankommt (#549)
+      try {
+        fs.writeSync(1, `Lauf-Datei entfernt: ${!fs.existsSync(path.join(DATA_DIR, RUN_FILE))}\n`)
+      } catch { /* nur Auskunft */ }
+    })
     // Ohne Handler beendete ein Signal den Prozess, ohne dass `exit` liefe
     // Geordnet über shutDown wie /api/quit (Durchsicht vor dem PR, K4): Schlange leerlaufen, laufendes Wiederherstellen
     // abwarten, dann `exit`

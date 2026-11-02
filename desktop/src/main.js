@@ -167,6 +167,7 @@ async function startServer(settings, fixedPort) {
     // (Durchsicht K6). Vor dem Start scheitert der Start, danach geht das Fenster mit, aus der Oberfläche beendet
     // (Code 0) ohne Meldung.
     child.once('exit', (code) => {
+      windowLog(`Server zu Ende (Code ${code})`)
       exited.add(child)
       clearTimeout(slow)
       // Nach einem Neustart läuft schon der nächste; den nicht vergessen
@@ -207,6 +208,18 @@ function knownFolders() {
   return dirs
 }
 
+// Ablauf des Fensters mit Zeitstempeln nach userData\protokoll\fenster.log: Schließen, Beenden, Antwort auf /api/quit,
+// Ende des Servers. Synchron angehängt, damit auch ein jähes Ende die Zeilen davor nicht verliert (gefunden beim
+// Installer, der Mietfuchs bei laufendem Fenster schließt, #548/#549).
+/** @param {string} line */
+function windowLog(line) {
+  try {
+    const dir = path.join(app.getPath('userData'), 'protokoll')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, 'fenster.log'), `${new Date().toISOString()} [${process.pid}] ${line}\n`)
+  } catch { /* nur Auskunft */ }
+}
+
 /** @param {string} text */
 const lastLines = (text) => text.trim().split('\n').slice(-12).join('\n')
 
@@ -232,14 +245,21 @@ async function stopServer() {
   const gone = new Promise((resolve) => child.once('exit', resolve))
   const started = origin !== null
   let busy = false
+  windowLog(`Server beenden (pid ${child.pid ?? '?'}, ${origin ? `über ${origin}/api/quit` : 'über parentPort'})`)
   if (origin) {
-    const answer = await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) }).then((res) => res.json()).catch(() => null)
+    const answer = await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) })
+      .then(async (res) => { windowLog(`/api/quit: ${res.status}`); return res.json() })
+      .catch((err) => { windowLog(`/api/quit gescheitert: ${err}`); return null })
     busy = /** @type {any} */ (answer)?.busy === true
   } else child.postMessage('quit')
   // `busy`: Der Server wartet auf ein laufendes Wiederherstellen oder eine Übernahme (QUIT_RESTORE_WAIT_MS in
   // server/src/index.ts, Durchsicht Daten K2); so lange wird er nicht hart beendet
   const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), !started ? START_QUIT_TIMEOUT_MS : busy ? BUSY_QUIT_TIMEOUT_MS : QUIT_TIMEOUT_MS))
-  if ((await Promise.race([gone, timeout])) !== 'timeout') return
+  if ((await Promise.race([gone, timeout])) !== 'timeout') {
+    windowLog('Server beendet')
+    return
+  }
+  windowLog('Server antwortet nicht, wird hart beendet')
   child.kill()
   // Beim Neustart muss der Port frei sein, bevor der nächste Server ihn bindet
   await Promise.race([gone, new Promise((resolve) => setTimeout(resolve, 2000))])
@@ -308,6 +328,7 @@ function createWindow() {
     },
   })
   win.once('ready-to-show', () => win.show())
+  win.on('close', () => windowLog('Fenster: close'))
   win.on('closed', () => {
     mainWindow = null
     app.quit()
@@ -433,6 +454,7 @@ async function selfTest(win) {
 }
 
 async function start() {
+  windowLog(`Start, Electron ${process.versions.electron}`)
   buildMenu()
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'))
   session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === 'clipboard-sanitized-write')
@@ -649,6 +671,7 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus()
   })
   app.on('before-quit', (event) => {
+    windowLog(`before-quit${quitting ? ' (schon beim Beenden)' : ''}`)
     if (quitting) return
     quitting = true
     event.preventDefault()
@@ -661,8 +684,14 @@ if (!app.requestSingleInstanceLock()) {
       } catch (err) {
         console.error(`Update beim Beenden: ${err}`)
       }
-    }).finally(() => app.exit(0))
+    }).finally(() => {
+      windowLog('app.exit(0)')
+      app.exit(0)
+    })
   })
+  app.on('will-quit', () => windowLog('will-quit'))
+  app.on('quit', (_event, code) => windowLog(`quit (Code ${code})`))
+  process.on('exit', (code) => windowLog(`Prozess endet (Code ${code})`))
   // Fenster zu heißt Mietfuchs zu, auch auf dem Mac
   app.on('window-all-closed', () => app.quit())
   void app.whenReady().then(start)
