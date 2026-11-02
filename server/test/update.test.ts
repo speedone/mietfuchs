@@ -10,7 +10,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseVersion, isNewer, assetFor, createUpdateChecker, mayAskGitHub, desktopOfferFor } from '../src/update.ts'
+import { parseVersion, isNewer, assetFor, createUpdateChecker, mayAskGitHub, desktopOfferFor, forOtherDevice } from '../src/update.ts'
 import type { UpdateStatus } from '../../shared/types.ts'
 
 // Die Gestalt der abgespeicherten Antwort, so weit die Tests sie anfassen. update.ts beschreibt
@@ -564,4 +564,17 @@ test('Programmfenster auf dem Mac: das .dmg für Apple Silicon oder Intel, sonst
   respond = serve(releaseWith('v0.5.0'))
   const missing = await makeChecker({ mode: 'desktop', platform: 'darwin', arch: 'arm64' }).check({ consent: 'on' })
   assert.equal(missing.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0')
+})
+
+// Läuft die Oberfläche auf einem anderen Gerät (Handy, Tablet, zweiter Rechner im Heimnetz), gilt die Datei des
+// Rechners mit Mietfuchs dort nicht: Der Knopf lüde die Windows-Datei aufs Handy. Gesagt wird, dass es eine neue Version
+// gibt; aktualisiert wird am Rechner.
+test('forOtherDevice: ohne Download und ohne Umstiegshinweis, mit Vermerk', () => {
+  const status: UpdateStatus = {
+    enabled: true, current: '0.14.1', mode: 'binary', desktopOffer: 'windows', latest: '0.15.0', available: true,
+    releaseUrl: 'https://github.com/speedone/mietfuchs/releases/tag/v0.15.0',
+    downloadUrl: 'https://github.com/speedone/mietfuchs/releases/download/v0.15.0/mietfuchs-win.exe',
+    checkedAt: '2026-11-02T08:00:00.000Z', error: null,
+  }
+  assert.deepEqual(forOtherDevice(status), { ...status, downloadUrl: null, desktopOffer: null, otherDevice: true })
 })

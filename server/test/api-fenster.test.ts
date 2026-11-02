@@ -211,3 +211,26 @@ test('Heimnetz im Browserbetrieb (Docker, npm): Beenden und Zustimmungen bleiben
     s.stop()
   }
 })
+
+// Der Update-Hinweis richtet sich nach dem Rechner, auf dem Mietfuchs läuft. Auf einem anderen Gerät im Heimnetz lüde
+// sein Knopf die Datei dieses Rechners aufs falsche Gerät; dort also ohne Download und ohne Umstiegshinweis.
+test('Update-Stand: auf einem anderen Gerät ohne Download, vom eigenen Rechner wie bisher', async (t) => {
+  const lan = someLanAddress()
+  if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback; ohne sie lässt sich keine Anfrage aus dem Heimnetz nachstellen.')
+  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0' })
+  try {
+    const fromLan = `http://${lan}:${new URL(s.base).port}`
+    for (const [method, urlPath] of [['GET', '/api/update'], ['POST', '/api/update/check']]) {
+      const res = await fetch(`${fromLan}${urlPath}`, { method })
+      assert.equal(res.status, 200, `${method} ${urlPath}`)
+      const body = await res.json() as Record<string, unknown>
+      assert.equal(body.otherDevice, true, `${method} ${urlPath}`)
+      assert.equal(body.downloadUrl, null)
+      assert.equal(body.desktopOffer, null)
+    }
+    const own = await s.api<Record<string, unknown>>('/api/update')
+    assert.equal('otherDevice' in own, false)
+  } finally {
+    s.stop()
+  }
+})

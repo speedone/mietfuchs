@@ -273,7 +273,9 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
         <div className="update-guide">
           {guide.kind === 'download'
             ? <Download guide={guide} status={status} />
-            : <Commands lines={guide.lines} status={status} />}
+            : guide.kind === 'elsewhere'
+              ? <p>Aktualisieren Sie Mietfuchs an dem Rechner, auf dem es läuft. Dort steht an dieser Stelle, wie es geht.</p>
+              : <Commands lines={guide.lines} status={status} />}
           <p className="muted">Vorher ein Backup herunterzuladen (weiter oben unter „Daten &amp; Sicherung“) schadet nie.</p>
         </div>
       )}
