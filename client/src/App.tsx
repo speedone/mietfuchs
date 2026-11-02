@@ -522,6 +522,9 @@ function Shell() {
               <small>Mietfuchs einrichten</small>
             </div>
           </div>
+          {/* Ein bereitliegendes Update auch vor der Willkommensfrage (Update-Probe an #563): Das Fenster aktualisiert
+              sich, ehe Daten da sind. Der Hinweis des Servers führt in die Einstellungen und fehlt hier deshalb. */}
+          {update.updater?.owner === 'window' && <UpdaterReadyHint updates={update.updater} />}
           <div className="foot">
             {themeButton}
             {quit}
