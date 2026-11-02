@@ -3678,11 +3678,14 @@ function filesIn(dir: string, accept: (name: string) => boolean = () => true): F
 }
 
 // Kopie mit derselben Dateizeit (#142: ein alter Beleg soll im Belegordner nicht aussehen wie eben hochgeladen).
-function copyWithTime(from: string, to: string): number {
-  fs.copyFileSync(from, to)
-  const st = fs.statSync(from)
-  fs.utimesSync(to, st.atime, st.mtime)
-  return fs.statSync(to).size
+// **Asynchron** (Praxistest vor 0.15.0, K): Mit copyFileSync gab die Schleife den Server bis zum Ende nicht frei,
+// Fortschritt und „Abbrechen“ kamen erst nach der letzten Datei an. copyFile läuft im Thread-Pool von Node, und
+// zwischen zwei Dateien beantwortet der Server wieder Anfragen.
+async function copyWithTime(from: string, to: string): Promise<number> {
+  await fs.promises.copyFile(from, to)
+  const st = await fs.promises.stat(from)
+  await fs.promises.utimes(to, st.atime, st.mtime)
+  return (await fs.promises.stat(to)).size
 }
 
 const sha256Of = async (file: string): Promise<string> => {
@@ -3746,7 +3749,7 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   const files = receipts.map(({ name }, i) => ({ fileName: name, staged: path.join(staging, `beleg-${i}`) }))
   const copiedSizes: FileSize[] = []
   for (const { fileName, staged } of files) {
-    const size = copyWithTime(path.join(folder, 'uploads', fileName), staged)
+    const size = await copyWithTime(path.join(folder, 'uploads', fileName), staged)
     copiedSizes.push({ name: fileName, size })
     await copied(size)
   }
@@ -3754,7 +3757,7 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   const skippedDesigns: string[] = []
   for (const [i, { name }] of designs.entries()) {
     const staged = path.join(staging, `briefpapier-${i}`)
-    await copied(copyWithTime(path.join(designDir(folder), name), staged))
+    await copied(await copyWithTime(path.join(designDir(folder), name), staged))
     const head = Buffer.alloc(16)
     const fd = fs.openSync(staged, 'r')
     try {
@@ -3772,7 +3775,7 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   const trashFiles: { store: (typeof FILE_STORES)[number], fileName: string, staged: string }[] = []
   for (const [i, { store, name }] of trashed.entries()) {
     const staged = path.join(staging, `papierkorb-${i}`)
-    await copied(copyWithTime(path.join(trashDir(folder, store), name), staged))
+    await copied(await copyWithTime(path.join(trashDir(folder, store), name), staged))
     trashFiles.push({ store, fileName: name, staged })
   }
   let sourceHash: string | null = null
@@ -3789,7 +3792,7 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     const jsonDir = path.join(staging, 'umstieg')
     fs.mkdirSync(jsonDir)
     // Der Hash der Kopie, nicht des Originals nach dem Kopieren (Durchsicht Daten K4)
-    sourceHash = await copyAndHash(sourceDb, path.join(jsonDir, 'db.json'), (a, b) => void copyWithTime(a, b))
+    sourceHash = await copyAndHash(sourceDb, path.join(jsonDir, 'db.json'), (a, b) => copyWithTime(a, b))
     const opened = await openDatabase({ dataDir: jsonDir })
     const result = await runChangeover({ dataDir: jsonDir, opened, reopen: () => openDatabase({ dataDir: jsonDir }) })
     result.database?.close()
