@@ -36,7 +36,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     der Updates. Auch bei der Programmdatei zählt `CI` nur noch mit `1` oder `true`.
 - **Automatische Updates unter Windows** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Mit dem Häkchen
   „Beim Öffnen nach neuen Versionen schauen“ lädt das Programm aus dem Installer eine neue Version im Hintergrund von
-  GitHub und meldet dann „Version x ist bereit“. „Jetzt neu starten“ beendet Mietfuchs sauber, installiert und startet
+  GitHub und meldet dann „Version x ist bereit“; die Frage nach der Zustimmung sagt das dort auch. „Jetzt neu starten“ beendet Mietfuchs sauber, installiert und startet
   die neue Version; „Beim nächsten Start“ installiert, wenn Sie Mietfuchs beenden. Ungefragt startet Mietfuchs nie
   neu, und ohne das Häkchen fragt es nicht bei GitHub nach; dann lädt man den neuen Installer selbst von der
   Release-Seite. Vor dem Umstellen der Datenbank legt Mietfuchs wie bei jedem Update eine Sicherung an. Vorabversionen
@@ -72,7 +72,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   sich in den Einstellungen erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu
   öffnen; die Karte nennt dann die Adressen dafür (Port 17517, also eine andere als bei der Programmdatei). Fragt
   Windows danach, ob Mietfuchs ins Netz darf, rät die Karte, nur „Private Netzwerke“ zuzulassen. Mietfuchs hat kein
-  Passwort, deshalb gilt die Erlaubnis für jeden im Heimnetz.
+  Passwort, deshalb gilt die Erlaubnis für jeden im Heimnetz. Solange sie an ist, steht in der Seitenleiste „Im Heimnetz
+  erreichbar“ und führt zur Karte. Beenden, KI-Schlüssel, die Bestätigung eines KI-Dienstes im Internet und das Ein- und
+  Ausschalten der Update-Prüfung gehen nur am Rechner selbst, nicht vom Handy.
 - **Hinweis auf das neue Programm** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Wer die
   Programmdatei unter Windows oder macOS nutzt, sieht im Cockpit eine Karte zum Umstieg: unter Windows mit „Aus dem
   Microsoft Store laden“ (empfohlen) und „Installer herunterladen“, auf dem Mac mit „Neues Mietfuchs herunterladen“,

@@ -234,6 +234,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   das Fenster die Seite neu. Ein absichtlich beendeter Server steht in `retired` und löst weder „unerwartet beendet“
   noch `app.quit` aus. Scheitert der Start mit der neuen Adresse, gilt wieder die alte. Beim ersten Einschalten fragt
   unter Windows die Firewall nach Mietfuchs.exe (der Server ist ein Prozess des Fensters); die Karte sagt das. Das Häkchen ist ein Entwurf (#309).
+  Solange der Zugriff an ist, steht im Fuß der Seitenleiste ruhig „📶 Im Heimnetz erreichbar“ und führt zur Karte
+  ([NetworkHint.tsx](../client/src/components/NetworkHint.tsx), K5; nach dem Speichern meldet die Karte den neuen Stand
+  mit `announceNetwork`). Beenden, KI-Schlüssel, Zustimmungen und die Update-Prüfung nimmt der Server dann nur vom
+  Rechner selbst an (server/src/CLAUDE.md, „API“).
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
@@ -362,7 +366,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   (Ordner-Dialog, Absenderprüfung wie Drucken und Netzwerk, `chosenFolder` in server.js gibt nur den Pfad weiter).
   desktop-check.mjs prüft ihn in Schritt 6 unter Windows und macOS: der Bestand aus Schritt 1 in `Downloads/…/data`
   neben einer Datei `mietfuchs-win.exe` bzw. `mietfuchs-macos-apple-silicon` unter `NKA_TEST_HOME`, das Fenster mit
-  leerem Datenordner findet und übernimmt ihn. Mit echten alten Fassungen läuft
+  leerem Datenordner findet und übernimmt ihn (mit der Kennung des Fundes, `{ id }`; einen Pfad nimmt `adopt` nicht,
+  K11). Mit echten alten Fassungen läuft
   [fenster-umzug-praxislauf.mjs](fenster-umzug-praxislauf.mjs) (unten).
 - **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
   „Programmfenster prüfen auf …“, in jedem Prüfumfang): Der Bau hängt an keinem Bun-Artefakt und beginnt sofort; er

@@ -354,9 +354,29 @@ function settingsForClient() {
   return { ...settings, fixedByEnv: fixedByEnv(), aiKeys: keyInfo(), aiExternal }
 }
 
+// Im Fenster gehört einiges an den Rechner selbst, nicht ans Handy im Heimnetz (Durchsicht vor 0.15.0, K6): Beenden
+// (aus dem Heimnetz beendete es das Fenster mit), KI-Schlüssel und die Bestätigung externer Dienste, und die Zustimmung
+// zur Update-Prüfung (unter Windows lädt das Fenster danach auch herunter). Zustimmen soll, wer vor dem Rechner sitzt.
+// Nur im Fenster: Im Container und im npm-Betrieb kommt jede Anfrage von außen, auch die vom eigenen Rechner.
+const AT_THIS_COMPUTER: [RegExp, string][] = [
+  [/^\/api\/quit$/, 'Beenden geht nur am Rechner, auf dem Mietfuchs läuft.'],
+  [/^\/api\/ai\/(key|consent)(\/|$)/, 'KI-Schlüssel und Zustimmungen ändern Sie nur am Rechner, auf dem Mietfuchs läuft.'],
+]
+const UPDATE_CHECK_HERE = 'Die Update-Prüfung schalten Sie nur am Rechner ein oder aus, auf dem Mietfuchs läuft.'
+app.use((req, res, next) => {
+  if (!IN_WINDOW || req.method === 'GET' || req.method === 'HEAD' || fromThisComputer(req)) return next()
+  const refusal = AT_THIS_COMPUTER.find(([route]) => route.test(req.path))?.[1]
+  if (refusal) return void res.status(403).json({ error: refusal })
+  next()
+})
+
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', async (req, res) => {
   const body = bodyObject(req)
+  // Mitgeschickt, aber unverändert, geht durch: Ein Tab schickt die Einstellungen vielleicht ganz (K6, oben)
+  if (IN_WINDOW && !fromThisComputer(req) && Object.hasOwn(body, 'updateCheck') && body.updateCheck !== storedSettings.updateCheck) {
+    return res.status(403).json({ error: UPDATE_CHECK_HERE })
+  }
   // `houseName` und `address` schickt nur ein Tab von vor #92; sie gehören jetzt zum Objekt und
   // werden hier verworfen, statt eine Spalte zu beschreiben, die niemand mehr liest.
   const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, houseName, address, ...changes } = body
@@ -3301,10 +3321,30 @@ async function oldInstance(): Promise<{ running: boolean, dataDir: string | null
   }
 }
 
-type RelocationCandidate = CandidateInfo & { running: boolean, source: 'remembered' | 'fixed' | 'search' | 'chosen', appVersion: string | null }
+type RelocationCandidate = CandidateInfo & { id: string, running: boolean, source: 'remembered' | 'fixed' | 'search' | 'chosen', appVersion: string | null }
+
+// Bekannte Fundorte (Durchsicht vor 0.15.0, K11): Übernehmen und Einspielen nehmen keinen Pfad, nur die Kennung eines
+// Ortes, den der Server selbst kennt, aus der Suche, der Ortsdatei oder dem festen Ausweichort (`/candidates`) oder aus
+// dem Ordner-Dialog des Fensters, dessen Wahl `/inspect` prüft. Derselbe Ort behält seine Kennung, solange der Server
+// läuft; ein Ordner gilt nicht als Backup und umgekehrt. Vergessen wird nichts, es sind eine Handvoll Einträge.
+type KnownPlace = { path: string, kind: 'folder' | 'backup' }
+const knownPlaces = new Map<string, KnownPlace>()
+function placeId(place: string, kind: KnownPlace['kind']): string {
+  for (const [id, known] of knownPlaces) {
+    if (known.kind === kind && samePath(known.path, place, process.platform)) return id
+  }
+  const id = crypto.randomUUID()
+  knownPlaces.set(id, { path: place, kind })
+  return id
+}
+const knownPlace = (id: unknown, kind: KnownPlace['kind']): string | null => {
+  const known = typeof id === 'string' ? knownPlaces.get(id) : undefined
+  return known?.kind === kind ? known.path : null
+}
+const UNKNOWN_PLACE = 'Diesen Ort kennt Mietfuchs nicht (mehr). Bitte suchen Sie erneut oder wählen Sie ihn noch einmal.'
 
 async function candidateOf(dataDir: string, source: RelocationCandidate['source'], appVersion: string | null, live: { running: boolean, dataDir: string | null }): Promise<RelocationCandidate> {
-  return { ...await describeCandidate(dataDir), running: runningFor(dataDir, live, process.platform), source, appVersion }
+  return { ...await describeCandidate(dataDir), id: placeId(dataDir, 'folder'), running: runningFor(dataDir, live, process.platform), source, appVersion }
 }
 
 const usableFolder = (dir: string): boolean => hasStock(dir) && !readMovedMarker(dir) && !samePath(dir, DATA_DIR, process.platform)
@@ -3366,15 +3406,27 @@ async function replaceRefusal(req: Request): Promise<string | null> {
 }
 
 // „Ordner der alten Programmdatei wählen …“: Den Ordner wählt der Dialog des Fensters (preload.cjs), hier wird er
-// geprüft und beschrieben.
+// geprüft, beschrieben und mit Kennung bekannt gemacht (K11, `knownPlaces`); weiter geht es nur mit der Kennung. Mit
+// `{ id }` statt `{ folder }` wird ein bekannter Ort neu beschrieben (läuft das alte Mietfuchs inzwischen?).
+// Einen beliebigen Pfad nimmt diese Route weiter an, denn der Dialog läuft im Hauptprozess des Fensters und reicht den
+// Pfad über die Oberfläche herein. Das ist hingenommen: nur von diesem Rechner (`fromThisComputer`, die Prüfung von
+// Host und Origin hält fremde Seiten im Browser ab), nur lesend (die Datenbank `readOnly`, keine Dateizeit ändert
+// sich), und die Antwort nennt nur Ort, Datum und zwei Zahlen. Wer auf diesem Rechner Anfragen an 127.0.0.1 schicken
+// kann, liest dieselben Dateien auch selbst. Ergänzend ginge eine Schranke im Hauptprozess: Er meldet die Wahl des
+// Dialogs selbst an den Server und gibt der Oberfläche nur die Kennung (desktop/src/main.js, `mietfuchs:choose-folder`).
 app.post('/api/relocation/inspect', async (req, res) => {
   if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   if (!relocationAvailable()) return res.status(409).json({ error: 'Die Übernahme gibt es nur im Programmfenster.' })
+  if (req.body?.id !== undefined) {
+    const known = knownPlace(req.body.id, 'folder')
+    if (!known) return res.status(400).json({ error: UNKNOWN_PLACE })
+    return res.json({ candidate: await candidateOf(known, 'chosen', null, await oldInstance()) })
+  }
   const folder = typeof req.body?.folder === 'string' ? req.body.folder : ''
   if (!folder || !path.isAbsolute(folder)) return res.status(400).json({ error: 'Es fehlt, welcher Ordner gewählt wurde.' })
   const choice = classifyChoice(path.resolve(folder), process.platform)
-  // Ein Backup statt eines Ordners: die Oberfläche spielt es ein (/api/relocation/restore-backup)
-  if (choice && 'backup' in choice) return res.json({ backup: choice.backup })
+  // Ein Backup statt eines Ordners: die Oberfläche spielt es ein (/api/relocation/restore-backup, mit der Kennung)
+  if (choice && 'backup' in choice) return res.json({ backup: { id: placeId(choice.backup, 'backup'), name: path.basename(choice.backup) } })
   const dataDir = choice?.dataDir ?? null
   if (!dataDir || samePath(dataDir, DATA_DIR, process.platform)) {
     return res.status(404).json({ error: 'Dort hat Mietfuchs keine Daten gefunden. Wählen Sie die bisherige Programmdatei, den Ordner, in dem sie liegt (darin liegt ein Ordner „data“), oder ein Backup.' })
@@ -3404,8 +3456,10 @@ app.post('/api/relocation/restore-backup', async (req, res) => {
   if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   const refusal = await replaceRefusal(req)
   if (refusal) return res.status(409).json({ error: refusal, replace: true })
-  const file = typeof req.body?.file === 'string' ? req.body.file : ''
-  const choice = file && path.isAbsolute(file) ? classifyChoice(path.resolve(file), process.platform) : null
+  // Nur ein Backup, das `/inspect` geprüft hat, über seine Kennung (K11); geprüft wird es hier noch einmal
+  const file = knownPlace(req.body?.id, 'backup')
+  if (!file) return res.status(400).json({ error: UNKNOWN_PLACE })
+  const choice = classifyChoice(file, process.platform)
   if (!choice || !('backup' in choice)) return res.status(400).json({ error: 'Das ist kein Backup.' })
   if (shuttingDown) return res.status(503).json({ error: SHUTTING_DOWN })
   if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Übernahme oder Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
@@ -3440,9 +3494,9 @@ app.post('/api/relocation/adopt', async (req, res) => {
   if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   const refusal = await replaceRefusal(req)
   if (refusal) return res.status(409).json({ error: refusal, replace: true })
-  const raw = typeof req.body?.dataDir === 'string' ? req.body.dataDir : ''
-  if (!raw || !path.isAbsolute(raw)) return res.status(400).json({ error: 'Es fehlt, welcher Ordner übernommen werden soll.' })
-  const folder = path.resolve(raw)
+  // Nur ein Ort, den der Server kennt, über seine Kennung (K11, `knownPlaces`); geprüft wird er trotzdem wie bisher
+  const folder = knownPlace(req.body?.id, 'folder')
+  if (!folder) return res.status(400).json({ error: UNKNOWN_PLACE })
   // Nur der Ordner selbst; `data` darunter ist der einer Programmdatei im Ordner „Mietfuchs“ (Durchsicht D6)
   if (samePath(folder, DATA_DIR, process.platform)) {
     return res.status(400).json({ error: 'Das ist der Datenordner dieses Mietfuchs selbst.' })

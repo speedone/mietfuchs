@@ -4,6 +4,8 @@
 import type { DesktopBridge } from './desktopNetwork'
 
 export type RelocationCandidate = {
+  // Kennung des Fundes beim Server; übernommen wird nur mit ihr, nie mit dem Pfad (K11)
+  id: string
   dataDir: string
   kind: 'database' | 'json' | null
   modifiedAt: string | null

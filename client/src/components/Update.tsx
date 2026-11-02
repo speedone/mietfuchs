@@ -68,7 +68,13 @@ export function useUpdateStatus(settings: Settings | null): UpdateState {
 
 // ---------- Einmalige Frage im Cockpit ----------
 
-export function UpdateConsent({ onAnswered }: { onAnswered: () => unknown }) {
+// Im Fenster unter Windows lädt Mietfuchs nach der Zustimmung neue Versionen auch herunter (electron-updater,
+// desktop/src/updater.js); installiert wird erst nach „Jetzt neu starten“ oder „Beim nächsten Start“ (Durchsicht vor
+// 0.15.0, K8). Steht in der Frage im Cockpit und in „Über Mietfuchs“, und so auch in docs/datenschutz.md.
+const DOWNLOADS_TOO = 'Gibt es eine neue Version, lädt Mietfuchs sie auch gleich herunter. Installiert wird sie erst, wenn Sie das bestätigen.'
+
+// `downloads`: Das Fenster aktualisiert hier selbst (`owner === 'window'`, desktopUpdater.ts)
+export function UpdateConsent({ onAnswered, downloads = false }: { onAnswered: () => unknown; downloads?: boolean }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const answer = async (updateCheck: 'on' | 'off') => {
@@ -90,7 +96,7 @@ export function UpdateConsent({ onAnswered }: { onAnswered: () => unknown }) {
         <p>
           Mietfuchs kann beim Öffnen bei GitHub nachsehen, ob eine neue Version erschienen ist.
           GitHub sieht dabei nur Ihre IP-Adresse und die installierte Versionsnummer. Ihre
-          Daten werden dabei nicht gesendet.
+          Daten werden dabei nicht gesendet.{downloads && ` ${DOWNLOADS_TOO}`}
         </p>
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void answer('on')}>Ja, Bescheid geben</button>
@@ -246,7 +252,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
       </div>
       <p className="muted">
         Dafür fragt Mietfuchs bei GitHub nach. GitHub sieht dabei nur Ihre IP-Adresse und die
-        installierte Versionsnummer.
+        installierte Versionsnummer.{inWindow && ` ${DOWNLOADS_TOO}`}
       </p>
 
       <div className="row">
