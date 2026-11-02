@@ -164,3 +164,17 @@ test('beide Hinweise werden nicht gedruckt', async () => {
   await screen.findByText(/Mietfuchs wurde auf Version 0\.9\.0 aktualisiert/)
   expect(screen.getByRole('status').classList.contains('no-print')).toBe(true)
 })
+
+test('ohne Datenbank steht der Grund da, obwohl der Zustandsbericht mit 503 antwortet', async () => {
+  // /healthz antwortet dann zu Recht mit 503 (Container sollen den Fehler sehen); die Oberfläche las den Bericht
+  // deshalb gar nicht und versprach in jeder Fehlermeldung einen Grund „im Cockpit“, der dort nie stand.
+  const detail = 'Die Datenbank C:\\Users\\x\\Mietfuchs\\mietfuchs.sqlite stammt aus einer neueren Mietfuchs-Version.'
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({
+    status: 'error',
+    database: { open: false, file: 'C:\\Users\\x\\Mietfuchs\\mietfuchs.sqlite', migrations: 0, detail, changeover: { state: 'none', message: 'Ohne geöffnete Datenbank ist nichts zu übernehmen.', notes: [] }, migrated: null },
+  }), { status: 503, headers: { 'content-type': 'application/json' } }))
+  render(<DatabaseNotice />)
+  await screen.findByText(detail)
+  screen.getByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' })
+  expect(screen.queryByRole('button', { name: 'Verstanden' })).toBeNull()
+})

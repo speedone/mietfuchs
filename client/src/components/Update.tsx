@@ -44,8 +44,12 @@ export function useUpdateStatus(settings: Settings | null): UpdateState {
   const consent = settings?.updateCheck
   const updater = useDesktopUpdater(consent)
 
+  // **Auch ohne geladene Einstellungen gefragt**: Die Antwort trägt die Betriebsart, und an ihr hängt „Mietfuchs
+  // beenden“ (canQuit). Die Einstellungen kommen aus der Datenbank; ließ die sich nicht öffnen, fehlte der Knopf, und
+  // aus Store oder Programmdatei ging Mietfuchs nur noch über den Task-Manager zu beenden. Ob GitHub gefragt wird,
+  // entscheidet der Server mit der gespeicherten Zustimmung, und er merkt sich die Antwort einen Tag. Sind die
+  // Einstellungen da, wird noch einmal gefragt, weil sich die Zustimmung geändert haben kann.
   useEffect(() => {
-    if (!loaded) return
     const seq = ++requestCounter.current
     api<UpdateStatus>('/api/update')
       .then((s) => { if (seq === requestCounter.current) setStatus(s) })

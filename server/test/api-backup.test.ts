@@ -944,7 +944,8 @@ test('Ohne Datenbank antwortet die Route, statt Daten vorzutäuschen', async () 
   try {
     const res = await fetch(`${s.base}/api/units`)
     assert.equal(res.status, 503, `erwartet 503, bekommen ${res.status}`)
-    assert.match(errorOf(await jsonOf<{ error?: string }>(res)), /Datenbank/)
+    const meldung = errorOf(await jsonOf<{ error?: string }>(res))
+    assert.match(meldung, /Datenbank/)
 
     // **Und auf jeder anderen Datenroute ebenso, nicht nur beim Lesen.** Geprüft war bisher nur
     // dieses eine GET, dabei ist das Schreiben der Ausgang, dessentwegen es die Sperre gibt:
@@ -983,6 +984,10 @@ test('Ohne Datenbank antwortet die Route, statt Daten vorzutäuschen', async () 
     assert.equal(bericht.database.open, false)
     // Ab jetzt ist das ein Fehler und kein Hinweis: Ein Container soll ihn sehen.
     assert.equal(bericht.status, 'error', `der Bericht meldet „${bericht.status}"`)
+    // **Der Grund steht in der Meldung jeder Route** und nicht nur auf der Konsole: Die sieht niemand, der Mietfuchs aus
+    // dem Store, dem Startmenü oder dem Programmfenster startet. Sonst blieb der Vermieter mit „keine Verbindung“ allein.
+    assert.ok(meldung.includes(bericht.database.detail), `der Grund „${bericht.database.detail}“ fehlt in „${meldung}“`)
+    assert.doesNotMatch(meldung, /Meldung beim Start/)
   } finally {
     s.stop()
   }

@@ -109,3 +109,20 @@ test('dataFolder: Ordner der Datenbankdatei, mit beiden Trennzeichen', () => {
   expect(dataFolder('mietfuchs.sqlite')).toBeNull()
   expect(dataFolder(undefined)).toBeNull()
 })
+
+describe('Datenbank nicht geöffnet', () => {
+  const closed: DatabaseState = {
+    open: false, file: 'C:\\daten\\mietfuchs.sqlite', migrations: 0,
+    detail: 'Die Datenbank stammt aus einer neueren Mietfuchs-Version.',
+    changeover: { state: 'none', message: 'Ohne geöffnete Datenbank ist nichts zu übernehmen.', notes: [] }, migrated: null,
+  }
+
+  test('der Grund steht da, auch ohne Umstieg', () => {
+    // Ohne Konsole (Store, Startmenü, Programmfenster) ist das die einzige Stelle, an der der Grund zu lesen ist
+    expect(databaseHint(closed, null)).toEqual({ kind: 'closed', message: closed.detail, notes: [] })
+  })
+
+  test('weggeklickt wird er nicht, denn ohne Datenbank geht nichts', () => {
+    expect(databaseHint(closed, closed.detail)?.kind).toBe('closed')
+  })
+})
