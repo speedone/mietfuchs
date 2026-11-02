@@ -850,7 +850,7 @@ Refs #211"
 - Produces:
   - `FuelDelivery.fuelGrade: FuelGrade | null`, `HeatingPlant.heatGeneration: HeatGeneration | null`
   - schema.ts: `FUEL_GRADE_VALUES = exactly<FuelGrade>()([...])`, `HEAT_GENERATIONS = exactly<HeatGeneration>()(['single', 'mixed'] as const)`, Spalten `fuelDeliveries.fuelGrade` (`fuel_grade`), `heatingPlants.heatGeneration` (`heat_generation`)
-  - `SnapshotHeatingPlant` pickt zusätzlich `'heatGeneration'` (optional); `SnapshotFuelDelivery` zusätzlich `'invoiceDate' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'`; `SnapshotHeatingPeriodRow` zusätzlich `'dhwVolumeM3' | 'dhwTempC'` (optional) — alles, was dhw.ts liest (Prüfbericht B.1, Zeile B6)
+  - `SnapshotHeatingPlant` pickt zusätzlich `'heatGeneration'` (optional); `SnapshotFuelDelivery` zusätzlich `'invoiceDate' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'`; `SnapshotHeatingPeriodRow` zusätzlich `'dhwVolumeM3' | 'dhwTempC'` (optional) - alles, was dhw.ts liest (Prüfbericht B.1, Zeile B6)
 
 `createDelivery`, `updateDelivery` und `guardDelivery` (db/fuel.ts) sind die Namen von PR 7 (PR 10 ruft
 `createDelivery(db, 'd1', 'hp', …)` so auf); `updateHeatingPlant` (db/heating.ts) der von PR 4.

@@ -32,6 +32,6 @@ export const METER_TYPE_LABELS: Record<MeterType, string> = {
 
 // Beschriftung einer gespeicherten Zählerart; was keine bekannte ist, bleibt, wie es dasteht.
 export function meterTypeLabel(type: string | null | undefined): string {
-  if (!type) return '—'
+  if (!type) return '-'
   return (METER_TYPE_LABELS as Record<string, string>)[type] ?? type
 }

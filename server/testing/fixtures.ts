@@ -39,14 +39,14 @@ export function loadFixtures(): Fixture[] {
         expected,
         year: expected.year,
         // Frisch aus der Datei geparst: jeder Testfall bekommt seine eigene, unberührte
-        // Kopie — die Engine darf die Eingabe nicht mutieren, aber verlassen wollen wir
+        // Kopie - die Engine darf die Eingabe nicht mutieren, aber verlassen wollen wir
         // uns darauf im Test nicht.
         db: () => JSON.parse(fs.readFileSync(path.join(dir, 'db.json'), 'utf8')),
       }
     })
 }
 
-// Die vollständige, normalisierte Momentaufnahme eines Abrechnungsjahres —
+// Die vollständige, normalisierte Momentaufnahme eines Abrechnungsjahres -
 // der Umfang, der cent-genau verglichen wird.
 export function actualOf(db: Db, year: number) {
   // Die Fixtures stehen im Dateiformat, weil genau das der Eingang ist, den ein Nutzer hat.

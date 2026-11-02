@@ -1,4 +1,4 @@
-# F11 — Eigennutzung: der Anteil der selbstgenutzten Wohnung bleibt beim Vermieter
+# F11 - Eigennutzung: der Anteil der selbstgenutzten Wohnung bleibt beim Vermieter
 
 **Geprüfte Regel:** Eine selbstgenutzte Wohnung (Nutzungsart *Eigennutzung*, `selfUsed`) gehört
 zur Abrechnungseinheit. Sie zählt in die Verteilbasis von Wohnfläche, Personen und Einheiten.
@@ -19,7 +19,7 @@ Abrechnungsjahr 2025 (365 Tage), alle Mietverhältnisse ganzjährig.
 
 | Einheit | Fläche | Nutzungsart | Mietverhältnis | Personen | Vorauszahlung |
 |---|---|---|---|---|---|
-| u1 EG | 80 m² | **Eigennutzung** | — | 2 (eigener Haushalt) | — |
+| u1 EG | 80 m² | **Eigennutzung** | - | 2 (eigener Haushalt) | - |
 | u2 OG links | 90 m² | vermietet | t2 | 4 | 150,00 €/Monat |
 | u3 OG rechts | 60 m² | vermietet | t3 | 3 | 100,00 €/Monat |
 
@@ -42,7 +42,7 @@ Abrechnungsjahr 2025 (365 Tage), alle Mietverhältnisse ganzjährig.
 
 ## Handrechnung
 
-**c1 — Fläche** (Basis 80 + 90 + 60 = 230 m²):
+**c1 - Fläche** (Basis 80 + 90 + 60 = 230 m²):
 
 ```
 t2          = 90.000 × 90/230 = 35.217,39 ct
@@ -52,7 +52,7 @@ abgerundet 35.217 + 23.478 + 31.304 = 89.999 ct, 1 Restcent an den größten Res
 t2 = 35.218 ct    t3 = 23.478 ct    Vermieter = Eigenanteil = 31.304 ct
 ```
 
-**c2 — Personentage** (EG 2 × 365 = 730, t2 4 × 365 = 1.460, t3 3 × 365 = 1.095, Basis 3.285):
+**c2 - Personentage** (EG 2 × 365 = 730, t2 4 × 365 = 1.460, t3 3 × 365 = 1.095, Basis 3.285):
 
 ```
 t2          = 46.000 × 1.460/3.285 = 20.444,44 ct
@@ -62,7 +62,7 @@ abgerundet 20.444 + 15.333 + 10.222 = 45.999 ct, 1 Restcent an den größten Res
 t2 = 20.445 ct    t3 = 15.333 ct    Vermieter = Eigenanteil = 10.222 ct
 ```
 
-**c3 — Einheiten** (EG, OG links, OG rechts = 3):
+**c3 - Einheiten** (EG, OG links, OG rechts = 3):
 
 ```
 t2 = t3 = 30.000 / 3 = 10.000 ct
@@ -98,7 +98,7 @@ t3 = 48.811 / 12 = 4.067,58 ct → 40,68 € → 41,00 €
 
 Keine Warnungen: Die selbstgenutzte Wohnung hat Fläche und Personenzahl.
 
-Diese Erwartung wurde von Hand hergeleitet und traf die Engine beim ersten Lauf cent-genau —
+Diese Erwartung wurde von Hand hergeleitet und traf die Engine beim ersten Lauf cent-genau -
 eine unabhängige Bestätigung der Eigennutzung aus v0.3.0.
 
 ## Geänderte Sollwerte (#202)

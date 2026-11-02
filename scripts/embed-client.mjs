@@ -1,7 +1,7 @@
 // Generiert server/src/embedded-client.js aus client/dist.
 // Jede Frontend-Datei wird per Bun-Importattribut `with { type: "file" }` roh ins
 // Binary eingebettet (kein Base64-Bloat). Das erzeugte Modul wird NUR in der
-// gepackten Bun-Binary geladen (siehe index.ts) — im Dev-Betrieb nie importiert,
+// gepackten Bun-Binary geladen (siehe index.ts) - im Dev-Betrieb nie importiert,
 // weil `type: "file"` ein Bun-spezifisches Feature ist.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -46,12 +46,12 @@ function walk(dir) {
 }
 
 if (!fs.existsSync(distDir)) {
-  console.error(`client/dist fehlt (${distDir}) — erst das Frontend bauen.`)
+  console.error(`client/dist fehlt (${distDir}) - erst das Frontend bauen.`)
   process.exit(1)
 }
 
 const files = walk(distDir)
-const lines = ['// AUTO-GENERIERT von scripts/embed-client.mjs — nicht von Hand bearbeiten.']
+const lines = ['// AUTO-GENERIERT von scripts/embed-client.mjs - nicht von Hand bearbeiten.']
 const mapEntries = []
 files.forEach((full, i) => {
   const urlPath = '/' + path.relative(distDir, full).split(path.sep).join('/')

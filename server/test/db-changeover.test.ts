@@ -195,7 +195,7 @@ test('Eine Migration, die eine Spalte hinzufügt, bricht den Umstieg nicht ab', 
   // Durchsichten dieses Zweiges haben ihn gefunden. Der Import zielt auf den Stand nach 0000;
   // gelesen wurde danach mit dem heutigen Leser, und der erzeugt seine Spaltenliste aus dem
   // heutigen Schema. Die erste Migration, die eine Spalte hinzufügt, ließ ihn deshalb mit
-  // `no such column` scheitern — nicht als geordneten Abbruch, sondern als „Unerwarteter
+  // `no such column` scheitern - nicht als geordneten Abbruch, sondern als „Unerwarteter
   // Fehler". Und weil ein gescheiterter Umstieg die Datenrouten sperrt, stünde danach **jeder**
   // Nutzer mit einer alten db.json vor einem Programm ohne Daten, bei jedem Start erneut.
   //
@@ -454,7 +454,7 @@ test('Zwei Staffeleinträge zum selben Stichtag: übernommen wird der letzte, wi
   // Stichtag ist Teil des Primärschlüssels. Träfe `lastPerFrom` die falsche Wahl, bekäme die
   // Datenbank den ersten statt des letzten Eintrags, und die Regression läse aus der
   // unveränderten Datei weiterhin richtig den letzten (siehe `computePrepaymentCents` in
-  // calc.ts) — die beiden Stände wichen voneinander ab, und der Umstieg bräche ab, statt eine
+  // calc.ts) - die beiden Stände wichen voneinander ab, und der Umstieg bräche ab, statt eine
   // falsche Vorauszahlung zu aktivieren.
   const dataDir = tempDir()
   try {
@@ -596,7 +596,7 @@ test('Abbruch: ein Fehler beim Einfügen lässt nichts halb Geschriebenes zurüc
 
 test('Abbruch: weicht ein einziger Cent ab, wird nicht aktiviert', async () => {
   // Der eigentliche Prüfstein. Nachgestellt wird er, indem nach dem Einfügen ein Betrag in der
-  // Datei für den Umstieg verändert wird — genau das, was ein Fehler beim Übernehmen anrichten
+  // Datei für den Umstieg verändert wird - genau das, was ein Fehler beim Übernehmen anrichten
   // würde, nur absichtlich.
   const dataDir = tempDir()
   try {
@@ -719,8 +719,8 @@ test('Nach einem Fehler wird es beim nächsten Start erneut versucht', async () 
 
 test('Der Prüfkatalog kommt durch den Umstieg und rechnet danach aus der Datenbank dasselbe', async () => {
   // Elf durchgerechnete Beispielbestände mit Handrechnung (server/test/fixtures/settlement).
-  // Sie laufen sonst gegen die Datei; hier laufen sie durch den ganzen Weg — Validator,
-  // Geraderücken, Schreiben, Lesen — und werden danach gegen dieselbe Handrechnung gehalten.
+  // Sie laufen sonst gegen die Datei; hier laufen sie durch den ganzen Weg - Validator,
+  // Geraderücken, Schreiben, Lesen - und werden danach gegen dieselbe Handrechnung gehalten.
   // Der Umstieg selbst rechnet zwar auch nach, aber er vergleicht mit sich selbst; hier steht
   // eine Erwartung daneben, die niemand aus dem Code abgelesen hat.
   const fixtures = loadFixtures()
@@ -744,7 +744,7 @@ test('Abbruch: eine Datenbank, die nicht mehr antwortet, beendet nicht den Start
   // `runChangeover` verspricht, dass **jeder** Schritt eine Meldung ergibt und keinen Abbruch.
   // Daran hängt mehr als die Höflichkeit: index.ts ruft die Funktion mit `await` auf oberster
   // Ebene auf, ohne `try`. Käme von hier eine Ausnahme heraus, endete der Start mit einem
-  // Stapelauszug, statt Mietfuchs weiterlaufen zu lassen — und der Nutzer stünde vor einem
+  // Stapelauszug, statt Mietfuchs weiterlaufen zu lassen - und der Nutzer stünde vor einem
   // Programm, das sich gar nicht mehr öffnen lässt, samt der Meldung, die darin stünde.
   //
   // Geprüft wird es am zweiten Schritt, der Frage nach schon gefüllten Tabellen: Er ist der
@@ -835,7 +835,7 @@ test('Eine unsinnige Jahreszahl sprengt den Vergleich nicht', () => {
 test('Ein krummes Datum nimmt der Prüfung nicht die Jahre dazwischen', () => {
   // Der gefährliche Teil der vorigen Regel. `yearOfDate` liest die ersten vier Zeichen als Zahl,
   // aus „12" wird also das Jahr 12. Reißt das den Bereich auf, fällt Mietfuchs darauf zurück,
-  // nur noch die Jahre zu prüfen, in denen ein Datensatz steht — und das sind ausgerechnet nicht
+  // nur noch die Jahre zu prüfen, in denen ein Datensatz steht - und das sind ausgerechnet nicht
   // die Jahre, für die die Berechnung am meisten herleitet. Ein Mietverhältnis von 2020 bis 2024
   // hat auch 2022 ein Mietsoll.
   //

@@ -234,7 +234,7 @@ test('„nachreichen“: ein vorhandener, nicht zugeordneter Beleg lässt sich a
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   const auswahl = screen.getByLabelText('Vorhandenen Beleg für Abwasser zuordnen') as HTMLSelectElement
-  // Das Feld zeigt „— wählen —“ und speichert nichts, bis jemand wählt.
+  // Das Feld zeigt „Bitte wählen“ und speichert nichts, bis jemand wählt.
   expect(auswahl.value).toBe('')
   fireEvent.change(auswahl, { target: { value: '4_lose.pdf' } })
   // #309: Die Wahl allein sendet nichts; erst „Speichern“ hängt den Beleg an, genau einmal.

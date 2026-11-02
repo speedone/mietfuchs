@@ -1310,7 +1310,7 @@ export async function placeAssessment(db: Database, id: string, change: { year?:
 ```
 
 ```ts
-    reasons.push(`Beleg aus ${a.year}, gewählt war ${requestedYear} — gebucht wird in ${a.year}; sonst das Jahr der Buchung ändern`)
+    reasons.push(`Beleg aus ${a.year}, gewählt war ${requestedYear} - gebucht wird in ${a.year}; sonst das Jahr der Buchung ändern`)
 ```
 
 `server/src/index.ts` in `rememberAssessment` (Import `calendarPeriod, startYearOf` aus
@@ -2825,7 +2825,7 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
 
 ```ts
 // Vorauszahlungen eines Abrechnungszeitraums (#208): pro Monat des Zeitraums zählt der
-// Staffelbetrag, der am Monatsersten gilt — sofern das Mietverhältnis am Monatsersten besteht. Eine
+// Staffelbetrag, der am Monatsersten gilt - sofern das Mietverhältnis am Monatsersten besteht. Eine
 // Korrektur für den Zeitraum (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich sind
 // die tatsächlich geleisteten Vorauszahlungen anzusetzen.
 export function computePrepaymentCents(tenancy: SnapshotTenancy, period: Pick<BillingPeriod, 'key' | 'from' | 'to'>): { cents: number, overridden: boolean } {
@@ -2909,7 +2909,7 @@ export function ledgerRows(
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
-        unitName: unitById.get(t.unitId)?.name ?? '—',
+        unitName: unitById.get(t.unitId)?.name ?? '-',
         months: rowMonths,
         sollYearCents,
         baseRentYearCents: rowMonths.reduce((a, mo) => a + mo.baseRentCents, 0),
@@ -2986,7 +2986,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const vorher = new Date(toUTC(yFrom) - MS_DAY).toISOString().slice(0, 10)
           const kalender = calendarYearPeriod(year)
           const ende = yFrom === kalender.from && yTo === kalender.to ? 'zum Jahresende' : 'zum Ende des Zeitraums'
-          warn('meter.main-partial', `„${item.description}“: der Hauptzähler deckt ${label} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum ${fmtDay(vorher)} und ${ende} (${fmtDay(yTo)}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
+          warn('meter.main-partial', `„${item.description}“: der Hauptzähler deckt ${label} nur ${data.mainPartial.days} von ${diy} Tagen ab - bitte Ablesungen zum ${fmtDay(vorher)} und ${ende} (${fmtDay(yTo)}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
   ```
   (`fmtDay` steht schon in calc.ts und macht aus `2025-12-31` `31.12.2025`);
 - in `clause` der Überschneidung viermal `${year}` → `${label}`, in der Meldung `` ` in ${year}` `` → `` ` in ${label}` ``;
@@ -3194,7 +3194,7 @@ In `client/src/settlementHistory.test.ts` anhängen:
 ```ts
   test('Mai bis April: Bezeichnung und Frist kommen von der Abrechnung (#208)', () => {
     expect(deadlineView('2025/2026', '2027-04-30', null, [], heute).text)
-      .toBe('Abrechnungsfrist (§556 BGB): Die Abrechnung 2025/2026 muss dem Mieter bis zum 30.04.2027 zugehen — noch 211 Tage.')
+      .toBe('Abrechnungsfrist (§556 BGB): Die Abrechnung 2025/2026 muss dem Mieter bis zum 30.04.2027 zugehen - noch 211 Tage.')
   })
 ```
 
@@ -3239,7 +3239,7 @@ async function requireCalendarObject(db: Database, propertyId: string): Promise<
 Die Abrechnungsrouten ersetzen (`sentAtOf`, `SENT_AT_INVALID`, `isDateOnly` bleiben):
 
 ```ts
-// Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
+// Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden - sonst live berechnet.
 app.get('/api/settlement/:period', async (req, res) => {
   const { closed, stock, property, period } = await readData(async (db) => {
     const property = await propertyOf(db, req)

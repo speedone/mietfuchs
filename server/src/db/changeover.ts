@@ -180,7 +180,7 @@ function removeTemp(tempFile: string): void {
   // bekäme sie beim Start um die Ohren, obwohl er gerade weiterlaufen soll. Gelingt es nicht,
   // liegt eine Datei zu viel im Ordner, und der nächste Versuch räumt sie weg.
   // Bewusst **ohne** `recursive`: Was hier liegt, soll eine Datei sein. Steht dort ein Ordner,
-  // wird er nicht weggeräumt, sondern der Umstieg bricht gleich danach mit einer Meldung ab —
+  // wird er nicht weggeräumt, sondern der Umstieg bricht gleich danach mit einer Meldung ab -
   // eine Regel, die einen ganzen Ordner löscht, weil sie ihn für wertlos hält, darf es an
   // dieser Stelle nicht geben.
   for (const suffix of ['', ...SIDECARS]) {
@@ -486,7 +486,7 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     //
     // **Die Reihenfolge zur Regression ist Absicht.** Verglichen wird der v0-Bestand mit der
     // v0-Datenbank, also Gleiches mit Gleichem. Lägen die Schritte davor, meldete jede Migration,
-    // die die Fachlichkeit ändert, eine Abweichung und verhinderte den Umstieg — obwohl sie
+    // die die Fachlichkeit ändert, eine Abweichung und verhinderte den Umstieg - obwohl sie
     // genau das tun soll.
     try {
       applyMigrations(connection, migrations)

@@ -1396,7 +1396,7 @@ plant.switchAnnouncedOn ?? ''`. Anhängen:
 
 ```ts
 export const PREVIOUS_SUPPLY_OPTIONS: { value: '' | PreviousSupply; label: string }[] = [
-  { value: '', label: '— bitte wählen —' },
+  { value: '', label: 'Bitte wählen' },
   { value: 'landlord', label: 'Ich, mit einer eigenen Heizung; die Mieter zahlten Heizkosten' },
   { value: 'tenant', label: 'Die Mieter selbst, etwa mit Einzelöfen oder Gasthermen' },
 ]

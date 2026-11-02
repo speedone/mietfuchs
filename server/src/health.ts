@@ -3,7 +3,7 @@
 // Mehr als „der Prozess läuft“: Die Anwendung muss ihren Datenbestand lesen und in den
 // Datenordner schreiben können. Erkannt werden eine Datenbank, die nicht trägt (siehe unten),
 // eine beschädigte db.json aus der Zeit davor und ein schreibgeschützter oder falsch
-// berechtigter Datenordner. Ein nicht eingehängtes Volume erkennt die Prüfung nicht — Docker
+// berechtigter Datenordner. Ein nicht eingehängtes Volume erkennt die Prüfung nicht - Docker
 // legt dann ein anonymes, beschreibbares an.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -56,7 +56,7 @@ function checkUploadsReadable(dataDir: string): Check {
 // Was beim Start mit der Datenbank geschehen ist (#55). Der Bericht nennt es aus zwei Gründen.
 // Erstens sehen es die Prüfläufe von außen: Sie laufen auf jeder Programmdatei und in den
 // Containern von 22 Distributionen, und nur dort zeigt sich, ob das eingebaute SQLite überall
-// trägt. Zweitens liest die Oberfläche daraus, was beim Umstieg der Daten geschehen ist — beim
+// trägt. Zweitens liest die Oberfläche daraus, was beim Umstieg der Daten geschehen ist - beim
 // Start aus einem Linux-Paket gibt es keine Konsole, auf der die Meldung sonst stünde.
 //
 // Der Typ steht in shared/types.ts, weil beide Seiten dasselbe brauchen.

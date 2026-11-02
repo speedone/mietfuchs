@@ -14,9 +14,9 @@ export const PROPERTY_KIND_LABELS: Record<PropertyKind, string> = {
 }
 
 export const UNIT_USAGE_LABELS: Record<UnitUsage, string> = {
-  vermietet: 'vermietet — Anteil trägt der Mieter',
-  eigen: 'Eigennutzung — Anteil trägt der Vermieter',
-  ausgenommen: 'nicht beteiligt — bleibt außen vor',
+  vermietet: 'vermietet - Anteil trägt der Mieter',
+  eigen: 'Eigennutzung - Anteil trägt der Vermieter',
+  ausgenommen: 'nicht beteiligt - bleibt außen vor',
 }
 
 export function usageOf(u: Pick<Unit, 'participates' | 'selfUsed'>): UnitUsage {

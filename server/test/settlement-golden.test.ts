@@ -2,7 +2,7 @@
 //
 // Jedes Fixture unter fixtures/settlement/ besteht aus:
 //   db.json       Eingangsdaten im aktuellen Mietfuchs-Datenformat
-//   expected.json erwartetes Ergebnis — von Hand hergeleitet, nicht aus dem Code abgelesen
+//   expected.json erwartetes Ergebnis - von Hand hergeleitet, nicht aus dem Code abgelesen
 //   README.md     die Handrechnung mit fachlicher Begründung
 //
 // Verglichen wird cent-genau ohne Toleranz. Eine Abweichung ist immer eine fachliche
@@ -23,7 +23,7 @@ import { loadFixtures, actualOf } from '../testing/fixtures.ts'
 
 const fixtures = loadFixtures()
 
-assert.ok(fixtures.length > 0, 'keine Fixtures gefunden — der Golden Master wäre wirkungslos')
+assert.ok(fixtures.length > 0, 'keine Fixtures gefunden - der Golden Master wäre wirkungslos')
 
 for (const fx of fixtures) {
   test(`Prüfkatalog ${fx.name}`, () => {

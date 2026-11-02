@@ -193,7 +193,7 @@ jobs:
 
   build:
     name: Programmdateien bauen
-    # Runner bewusst anpinnen (nicht ubuntu-latest) — reproduzierbare Release-Builds.
+    # Runner bewusst anpinnen (nicht ubuntu-latest) - reproduzierbare Release-Builds.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -254,7 +254,7 @@ jobs:
         run: npm run package:linux
 
       # Nur Archive, Pakete + .exe verteilen, nicht die rohen macOS/Linux-Binaries: bei einem
-      # rohen Download geht das Ausführungs-Bit verloren (#1) — die Archive konservieren es.
+      # rohen Download geht das Ausführungs-Bit verloren (#1) - die Archive konservieren es.
       - name: Binaries hochladen (Artefakt)
         uses: actions/upload-artifact@v7
         with:

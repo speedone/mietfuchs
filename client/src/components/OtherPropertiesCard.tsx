@@ -61,7 +61,7 @@ export function OtherPropertiesView({ current, others, onCreate, onSwitch }: {
               <tr key={p.id}>
                 <td data-label="Bezeichnung">{propertyName(p)}</td>
                 <td data-label="Art">{PROPERTY_KIND_LABELS[p.kind]}</td>
-                <td data-label="Adresse">{p.address.trim() || '—'}</td>
+                <td data-label="Adresse">{p.address.trim() || '-'}</td>
                 <td className="actions no-print">
                   {/* Der Name beginnt mit dem sichtbaren Wort (WCAG 2.5.3). */}
                   <button className="btn secondary small" onClick={() => onSwitch(p)}>

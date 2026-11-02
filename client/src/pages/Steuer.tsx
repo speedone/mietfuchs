@@ -81,7 +81,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
   return (
     <>
       <div className="no-print">
-        <PageHeader context="calendar" title="Steuer (Anlage V)" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
+        <PageHeader context="calendar" title="Steuer (Anlage V)" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung - Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
       </div>
       {error && <NoticeBox level="error" action={error} />}
 
@@ -92,7 +92,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
             Einnahmen ansetzen als
             <select value={basis} onChange={(e) => setBasis(e.target.value as Basis)}>
               <option value="ist">tatsächlich gezahlt (Zuflussprinzip)</option>
-              <option value="soll">vereinbart (Soll) — nur zum Abgleich</option>
+              <option value="soll">vereinbart (Soll) - nur zum Abgleich</option>
             </select>
           </label>
           <div className="field" />
@@ -137,7 +137,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
               <span>{letterhead(landlord?.landlordName, property)}</span>
               <span>Stand {fmtDate(localToday())}</span>
             </div>
-            <h2>Steuerübersicht {year} — Einkünfte aus Vermietung und Verpachtung</h2>
+            <h2>Steuerübersicht {year} - Einkünfte aus Vermietung und Verpachtung</h2>
             <div className="muted">
               Einnahmen angesetzt als {basis === 'soll' ? 'vereinbartes Soll' : 'tatsächlich gezahlt (Zuflussprinzip)'}.
               Werbungskosten im Jahr der Zahlung (§ 11 Abs. 2 EStG), wenn an der Kostenposition „Bezahlt am“
@@ -154,7 +154,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 title="Diese Ansicht rechnet mit dem vereinbarten Soll."
                 action={<>Für die Steuererklärung bitte auf <em>tatsächlich gezahlt</em> umschalten.</>}
                 more={<>
-                  Für die Anlage V zählt, was tatsächlich zugeflossen ist (§ 11 Abs. 1 Satz 1 EStG) — eine vereinbarte,
+                  Für die Anlage V zählt, was tatsächlich zugeflossen ist (§ 11 Abs. 1 Satz 1 EStG) - eine vereinbarte,
                   aber nicht gezahlte Miete ist keine Einnahme. Das Soll ist zum Abgleich gedacht, etwa um Rückstände zu sehen.
                 </>}
               />
@@ -854,7 +854,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 keine eigene Aussage; sie gehört deshalb nicht nach taxView.ts.
                 **Und sie verlangt zusätzlich den Kasten darüber.** Der Absatz verweist auf „den
                 Flächenanteil hier", und den zeigt nur jener Kasten. Ohne ihn zeigte er ins Leere
-                und behauptete von zwei nirgends angezeigten Zahlen, dass sie auseinandergehen —
+                und behauptete von zwei nirgends angezeigten Zahlen, dass sie auseinandergehen -
                 ausgerechnet auf der Seite des Vermieters mit altem Bestand, den diese Behebung
                 schützen soll. „Können“ statt „gehen“, weil eine ausgenommene Wohnung ohne
                 erfasste Fläche beide Grundmengen gleich lässt. */}

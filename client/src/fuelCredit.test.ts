@@ -24,7 +24,7 @@ test('Gutschrift ohne Rechnung: nur echte Lieferungen, deren Positionen zusammen
 
 test('Ziele: Rechnungen derselben Anlage über mehr als 0 €, ohne Schätzung und ohne die Gutschrift selbst', () => {
   expect(creditTargetOptions(d1, [d0, d1, storno, schaetzung, fremd], items)).toEqual([
-    { value: '', label: '— bitte wählen —' },
+    { value: '', label: 'Bitte wählen' },
     { value: 'd0', label: 'Rechnung d0 (01.05.2025–30.04.2026)' },
   ])
 })

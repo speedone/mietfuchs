@@ -36,7 +36,7 @@ COPY --from=build /app/shared ./shared
 COPY --from=build /app/package.json ./package.json
 
 EXPOSE 3001
-# Persistente Daten (mietfuchs.sqlite + uploads/) als Volume — beim Start anhängen:
+# Persistente Daten (mietfuchs.sqlite + uploads/) als Volume - beim Start anhängen:
 #   docker run -p 3001:3001 -v mietfuchs-data:/app/server/data <image>
 VOLUME ["/app/server/data"]
 

@@ -15,7 +15,7 @@
 //
 // **Bleibt ein Risiko, und es ist begrenzt.** In den eingefrorenen Tabellen gibt es genau vier
 // Aufzählungsbedingungen. Lieferte lebender Code eines Tages einen Wert, den der Wortschatz von
-// damals nicht kennt, scheiterte der Umstieg an einer dieser Bedingungen — zur Laufzeit beim
+// damals nicht kennt, scheiterte der Umstieg an einer dieser Bedingungen - zur Laufzeit beim
 // Vermieter und nicht beim Übersetzen. Deshalb klemmt der Schreiber diese vier, und zwar mit
 // eingefrorenen Listen.
 //

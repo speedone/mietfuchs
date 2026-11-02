@@ -1154,7 +1154,7 @@ export const costItems = sqliteTable(
     //
     // Heute räumt das Löschen einer Wohnung in index.ts die vereinbarten Anteile weg, lässt
     // `directUnitId` aber stehen; calc.ts fängt den ins Leere zeigenden Verweis mit der Warnung
-    // „die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter“ ab.
+    // „die direkt zugeordnete Wohnung gibt es nicht mehr - Betrag geht an den Vermieter“ ab.
     // `SET NULL` erhält genau dieses Verhalten, denn `null` trifft in der Nachschlagetabelle
     // ebenso ins Leere wie eine unbekannte Kennung.
     directUnitId: text('direct_unit_id').references(() => units.id, { onDelete: 'set null' }),

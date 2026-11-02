@@ -152,7 +152,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const list: Check[] = []
 
     // 1. Mietverhältnisse & Flächen
-    // Auch die selbstgenutzte Wohnung braucht eine Fläche — ohne sie fällt ihr Eigenanteil
+    // Auch die selbstgenutzte Wohnung braucht eine Fläche - ohne sie fällt ihr Eigenanteil
     // beim Flächenschlüssel stillschweigend weg.
     // 0 m² ohne Bewohner ist seit #135 eine Angabe (Garage, Stellplatz, Lager) und wird nur
     // genannt; 0 m² bei einer bewohnten Wohnung ist eine vergessene Fläche.
@@ -163,7 +163,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const mietverhaeltnisse = settlement.statements.length + ohneAbrechnung.length
     if (mietverhaeltnisse === 0) {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', focus: TENANCIES_TARGET, cta: 'Stammdaten prüfen',
-        detail: `Keine Mietverhältnisse im ${calendar ? 'Jahr' : 'Zeitraum'} ${label} — ohne sie lässt sich nichts verteilen.` })
+        detail: `Keine Mietverhältnisse im ${calendar ? 'Jahr' : 'Zeitraum'} ${label} - ohne sie lässt sich nichts verteilen.` })
     } else if (noArea.length > 0) {
       // Bei einer leeren Einheit eine Frage statt eines Befehls (Endprüfung rc.4, missingAreaCheck).
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', focus: unitsTarget(noArea.map((u) => u.id)), ...missingAreaCheck(noArea, tenancies, period, yearItems) })
@@ -193,7 +193,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
         detail: `Erfasst ist nur die Grundsteuer. Die übrigen umlagefähigen Kosten stehen in der Hausgeldabrechnung der Gemeinschaft; übernehmen Sie sie, sobald sie vorliegt. Die Frist nach § 556 Abs. 3 BGB läuft auch, solange sie fehlt.` })
     }
 
-    // 3. Zählerstände — nur relevant, wenn verbrauchsabhängig umgelegt wird
+    // 3. Zählerstände - nur relevant, wenn verbrauchsabhängig umgelegt wird
     // Nicht umlagefähige Positionen zählen nicht mit (#142, cockpitChecks.ts).
     const meterTypes = meterTypesInUse(yearItems)
     const heatingIds = new Set(heatingWithoutConsumption(settlement))
@@ -204,7 +204,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
         detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
     } else if (meterTypes.size === 0) {
       list.push({ title: 'Zählerstände', level: 'leer',
-        detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
+        detail: 'Keine verbrauchsabhängige Umlage - Ablesungen nicht erforderlich.' })
     } else {
       const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
       if (incomplete.length > 0) {
@@ -223,10 +223,10 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     }
 
     // 4. Verteilbasis: ausgenommene Wohnungen mit Wohnfläche sind fast immer ein Versehen.
-    // Kosten für das ganze Haus dürfen nur anteilig auf die Mieter umgelegt werden — eine
+    // Kosten für das ganze Haus dürfen nur anteilig auf die Mieter umgelegt werden - eine
     // selbstgenutzte Wohnung gehört deshalb als „Eigennutzung“ in die Basis.
     // Nur relevant, wenn im Jahr überhaupt ein Schlüssel vorkommt, dessen Basis die Wohnungen
-    // bilden — bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
+    // bilden - bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
     // Auch die Gemeinschaftsabrechnung (#105): Sie verteilt über die Wohnungen der Einheit.
     const basisKeys = usesUnitBasis(yearItems)
     // Wohnungen, die an einer Position „laut Gemeinschaftsabrechnung“ nach MEA teilnehmen, und
@@ -240,7 +240,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const excluded = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
     if (excluded.length > 0 && basisKeys) {
       list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', focus: unitsTarget(excluded.map((u) => u.id)), cta: 'Nutzung prüfen',
-        detail: `Nicht beteiligt und damit ganz außen vor: ${andList(excluded.map((u) => u.name))} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung“ stellen.` })
+        detail: `Nicht beteiligt und damit ganz außen vor: ${andList(excluded.map((u) => u.name))} - die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung“ stellen.` })
     } else if (meaMissing.length > 0) {
       // Ohne Miteigentumsanteile verteilt der Schlüssel der Gemeinschaft nicht (#105).
       const ohne = meaMissing
@@ -249,7 +249,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     } else if (units.some((u) => usageOf(u) === 'eigen')) {
       const selfUsedUnits = units.filter((u) => usageOf(u) === 'eigen')
       list.push({ title: 'Verteilbasis', level: 'gruen',
-        detail: `Eigennutzung in der Basis: ${andList(selfUsedUnits.map((u) => u.name))} — der Eigenanteil bleibt beim Vermieter.` })
+        detail: `Eigennutzung in der Basis: ${andList(selfUsedUnits.map((u) => u.name))} - der Eigenanteil bleibt beim Vermieter.` })
     }
 
     // 5. Plausibilität zum Vorjahr
@@ -264,8 +264,8 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
       // Eine Kostenart fällt auch zu Recht weg (Kabel nach dem Nebenkostenprivileg, eine Prüfung alle paar
       // Jahre); allein ist die Frage deshalb eine Hilfe (Durchsicht zu #409, Befund 1).
       const parts = [
-        ...(notable.missing.length > 0 ? [`In ${at.previousLabel} erfasst, jetzt noch nicht: ${andList(notable.missing)} — fehlt noch eine Rechnung? Fällt eine Kostenart weg, darf sie fehlen.`] : []),
-        ...(notable.list.length > 0 ? [`Auffällige Abweichung: ${txt} — Beleg prüfen, Mieter ggf. erklären.`] : []),
+        ...(notable.missing.length > 0 ? [`In ${at.previousLabel} erfasst, jetzt noch nicht: ${andList(notable.missing)} - fehlt noch eine Rechnung? Fällt eine Kostenart weg, darf sie fehlen.`] : []),
+        ...(notable.list.length > 0 ? [`Auffällige Abweichung: ${txt} - Beleg prüfen, Mieter ggf. erklären.`] : []),
       ]
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: notable.missing.length > 0 ? 'kosten' : 'uebersicht',
         ...(notable.missing.length > 0 ? { focus: NEW_COST_ITEM_TARGET } : {}),
@@ -307,14 +307,14 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     } else if (closed?.sentAt) {
       const ok = closed.sentAt <= settlement.deadline
       list.push({ title: 'Abgeschlossen & versendet', level: ok ? 'gruen' : 'rot',
-        detail: `Versendet am ${fmtDate(closed.sentAt)} — Frist nach § 556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })
+        detail: `Versendet am ${fmtDate(closed.sentAt)} - Frist nach § 556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })
     } else if (closed) {
       // Die Frist läuft weiter, bis die Abrechnung zugegangen ist (Durchsicht S2).
       const deadlineText = daysLeft >= 0
         ? `Frist am ${fmtDate(settlement.deadline)} (noch ${daysLeft} Tage).`
         : `Frist am ${fmtDate(settlement.deadline)} abgelaufen.`
       list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', focus: SENT_AT_TARGET, cta: 'Versanddatum eintragen',
-        detail: `Abgeschlossen, aber Versanddatum fehlt — für die §556-Frist nachtragen. ${deadlineText}` })
+        detail: `Abgeschlossen, aber Versanddatum fehlt - für die §556-Frist nachtragen. ${deadlineText}` })
     } else {
       const deadlineText = daysLeft >= 0
         ? `Noch ${daysLeft} Tage bis zur Frist (${fmtDate(settlement.deadline)}).`
@@ -432,7 +432,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
               {next ? (
                 <button className="btn" onClick={() => (next.go ? next.go() : onNavigate(next.tab!, next.focus))}>→ Nächster Schritt: {next.cta}</button>
               ) : (
-                <button className="btn" onClick={() => onNavigate('abrechnung')}>✓ Zur Abrechnung — abschließen & versenden</button>
+                <button className="btn" onClick={() => onNavigate('abrechnung')}>✓ Zur Abrechnung - abschließen & versenden</button>
               )}
               <button className="btn ghost" onClick={() => onNavigate('uebersicht')}>Kostenvergleich</button>
             </div>
@@ -461,7 +461,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
               {/* Ohne Kosten im Jahr erstattete die Berechnung jedem die volle Vorauszahlung (#142);
                   das ist kein voraussichtliches Guthaben, sondern ein noch leeres Jahr. */}
               {yearItems.length === 0 ? (
-                <div className="empty">Noch keine Kosten für {label} erfasst — ein voraussichtliches Ergebnis gibt es, sobald Kosten da sind.</div>
+                <div className="empty">Noch keine Kosten für {label} erfasst - ein voraussichtliches Ergebnis gibt es, sobald Kosten da sind.</div>
               ) : (
               <div className="tenant-cards">
                 {settlement.statements.map((st) => {
@@ -480,7 +480,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
                 {units.filter((u) => !rentedWithin(u, period.from, period.to)).map((u) => (
                   <div key={u.id} className="tenant-card muted-card">
                     <div className="muted">{u.name}</div>
-                    <div className="tenant-bal" style={{ color: 'var(--muted)' }}>—</div>
+                    <div className="tenant-bal" style={{ color: 'var(--muted)' }}>-</div>
                     <div className="muted">{usageAt(u, period.to) === 'eigen' ? 'selbst bewohnt' : 'nicht beteiligt'}</div>
                   </div>
                 ))}

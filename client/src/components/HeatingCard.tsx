@@ -365,7 +365,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             <label className="field">
               {editingId ? 'Steht diese Heizanlage im selben Gebäude wie eine andere?' : 'Steht die neue Heizanlage im selben Gebäude wie eine bisherige?'}
               <select value={form.building} onChange={(e) => setForm({ ...form, building: e.target.value })}>
-                {!editingId && <option value="">— bitte wählen —</option>}
+                {!editingId && <option value="">Bitte wählen</option>}
                 {buildingOptions(plants.filter((p) => p.id !== editingId), form.otherNames, form.building).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <small className="muted">Im selben Gebäude stuft Mietfuchs die Anlagen für die CO₂-Aufteilung gemeinsam ein, über den Ausstoß aller Anlagen und die Wohnfläche aller versorgten Wohnungen (§ 5 Abs. 1 CO2KostAufG); das ist eine Auslegung.</small>
@@ -383,7 +383,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           <label className="field">
             Womit wird geheizt?
             <select value={form.energy} onChange={(e) => setForm({ ...form, energy: e.target.value as EnergyAnswer | '' })}>
-              <option value="">— bitte wählen —</option>
+              <option value="">Bitte wählen</option>
               {ENERGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
@@ -405,7 +405,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               <label className="field">
                 Wer hat den Vertrag für die Heizung in der Wohnung?
                 <select value={form.contract} onChange={(e) => setForm({ ...form, contract: e.target.value as PerUnitContract })}>
-                  <option value="">— bitte wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
@@ -415,7 +415,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                   <label className="field">
                     Womit heizen die Etagenheizungen?
                     <select value={form.perUnitEnergy} onChange={(e) => setForm({ ...form, perUnitEnergy: e.target.value as HeatingEnergy | '' })}>
-                      <option value="">— bitte wählen —</option>
+                      <option value="">Bitte wählen</option>
                       {PER_UNIT_ENERGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </label>
@@ -459,7 +459,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               <label className="field">
                 Wer erstellt Ihre Heizkostenabrechnung?
                 <select value={shownWho} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
-                  <option value="">— bitte wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {whoOptions(kind, form, editingId).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
@@ -600,7 +600,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           <label className="field">
             Womit heizt die neue Heizung?
             <select value={swap.form.energy} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, energy: e.target.value as HeatingEnergy | '' } })}>
-              <option value="">— bitte wählen —</option>
+              <option value="">Bitte wählen</option>
               {ENERGY_OPTIONS.flatMap((o) => (o.value === 'perUnit' ? [] : [<option key={o.value} value={o.value}>{o.label}</option>]))}
             </select>
           </label>

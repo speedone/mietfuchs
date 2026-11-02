@@ -2876,7 +2876,7 @@ Refs #99, #180"
 ### Task 10: Oberfläche: Einrichtung „Heizung“
 
 Die Karte „Heizung“ in den Stammdaten mit den Schritten 1, 2, 4, 5 und 6 aus Entwurf 11.2. Jede
-Frage hat eine Vorgabe oder eine leere erste Wahl („— bitte wählen —“); was später kommt, sagt ein
+Frage hat eine Vorgabe oder eine leere erste Wahl („Bitte wählen“); was später kommt, sagt ein
 Satz, statt eine Anlage anzulegen, die der Server ablehnen würde. Die Logik liegt in
 `heatingForm.ts`, ohne DOM prüfbar; der jsdom-Test prüft, dass jedes Auswahlfeld den gespeicherten
 Wert zeigt (CLAUDE.md, Tests Ebene 3).
@@ -3420,7 +3420,7 @@ export default function HeatingCard({ units }: { units: Unit[] }) {
           <label className="field grow">
             Womit wird geheizt?
             <select value={form.energy} onChange={(e) => setForm({ ...form, energy: e.target.value as EnergyAnswer | '' })}>
-              <option value="">— bitte wählen —</option>
+              <option value="">Bitte wählen</option>
               {ENERGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
@@ -3428,7 +3428,7 @@ export default function HeatingCard({ units }: { units: Unit[] }) {
             <label className="field grow">
               Wer hat den Vertrag für die Heizung in der Wohnung?
               <select value={form.contract} onChange={(e) => setForm({ ...form, contract: e.target.value as PerUnitContract })}>
-                <option value="">— bitte wählen —</option>
+                <option value="">Bitte wählen</option>
                 {CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
@@ -3437,7 +3437,7 @@ export default function HeatingCard({ units }: { units: Unit[] }) {
               <label className="field grow">
                 Wer erstellt Ihre Heizkostenabrechnung?
                 <select value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
-                  <option value="">— bitte wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {whoOptions(kind).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>

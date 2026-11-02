@@ -180,7 +180,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     <>
       <PageHeader
         title="Zähler & Stände"
-        subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch“.'}
+        subtitle={'Zählerstände dokumentieren - Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch“.'}
         // Die Seitenaktion steht im Seitenkopf wie „+ Kostenposition anlegen“ (#346 Schritt 7b); vorher unten in der Karte.
         actions={<>
           <button className="btn secondary" onClick={() => setSheetChoice(true)}>Ableseformular drucken</button>
@@ -193,7 +193,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
         {meters.length === 0 && (
           <div className="empty">
             Noch keine Zähler angelegt. Legen Sie z. B. den Hauptwasserzähler an, um die Jahresstände zu
-            dokumentieren — oder Wohnungszähler, um nach Verbrauch abzurechnen.
+            dokumentieren - oder Wohnungszähler, um nach Verbrauch abzurechnen.
           </div>
         )}
         {meters.length > 0 && (
@@ -297,7 +297,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             <input value={readingForm.note} onChange={(e) => setReadingForm({ ...readingForm, note: e.target.value })} placeholder="z. B. Zwischenablesung Auszug Müller" />
           </Field>
           <p className="muted">
-            Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
+            Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen - dann wird der
             Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.
           </p>
         </Drawer>
@@ -329,7 +329,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             >
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
                 {/* Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung (Durchsicht von #241, Minor 11). */}
-                <option value="">{meterForm.type === 'hkv' ? '— bitte Wohnung wählen —' : 'Haus (Hauptzähler)'}</option>
+                <option value="">{meterForm.type === 'hkv' ? 'Bitte Wohnung wählen' : 'Haus (Hauptzähler)'}</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
@@ -371,7 +371,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             {!meterForm.unitId && meterForm.heatingRole !== '' && plantOptions(plants).length > 0 && (
               <Field label="Heizanlage" required {...meterErrors.field('heatingPlantId')}>
                 <select value={meterForm.heatingPlantId} onChange={(e) => setMeterForm({ ...meterForm, heatingPlantId: e.target.value })}>
-                  <option value="">— bitte wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {plantOptions(plants).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </Field>

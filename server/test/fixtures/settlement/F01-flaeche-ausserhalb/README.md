@@ -1,7 +1,7 @@
-# F01 — Flächenschlüssel mit einer Einheit außerhalb der Abrechnungseinheit
+# F01 - Flächenschlüssel mit einer Einheit außerhalb der Abrechnungseinheit
 
 **Geprüfte Regel:** Eine Einheit, die nicht zur Abrechnungseinheit gehört (Nutzungsart *nicht
-beteiligt*, `participates: false` ohne `selfUsed`), zählt beim Flächenschlüssel nicht mit — sie
+beteiligt*, `participates: false` ohne `selfUsed`), zählt beim Flächenschlüssel nicht mit - sie
 verschwindet aus dem Nenner. Beispiel: ein Laden mit eigener Betriebskostenabrechnung. Die
 Mieter der Abrechnungseinheit schöpfen den Betrag aus, der Vermieter trägt nichts.
 
@@ -16,7 +16,7 @@ denselben Flächen.
 
 | Einheit | Fläche | beteiligt | Mietverhältnis | Personen | Vorauszahlung |
 |---|---|---|---|---|---|
-| u1 EG (Laden, eigene Abrechnung) | 80 m² | **nein** | — | — | — |
+| u1 EG (Laden, eigene Abrechnung) | 80 m² | **nein** | - | - | - |
 | u2 OG links | 90 m² | ja | t2, ganzjährig | 4 | 150,00 €/Monat |
 | u3 OG rechts | 60 m² | ja | t3, ganzjährig | 3 | 100,00 €/Monat |
 
@@ -46,7 +46,7 @@ t2 = 54.000 ct        t3 = 36.000 ct        Vermieter = 0 ct
 ```
 
 Gehörte u1 als selbstgenutzte Wohnung zur Abrechnungseinheit, wäre der Nenner 230 m²: Die
-Mieter trügen 35.217 und 23.478 ct, die übrigen 31.305 ct blieben beim Vermieter — siehe F11.
+Mieter trügen 35.217 und 23.478 ct, die übrigen 31.305 ct blieben beim Vermieter - siehe F11.
 
 Vorauszahlungen (12 Monate, Staffel gilt ab 2020-01):
 
@@ -68,5 +68,5 @@ t2 = 54.000 / 12 = 4.500 ct → 45,00 €
 t3 = 36.000 / 12 = 3.000 ct → 30,00 €
 ```
 
-Personentage: 4 × 365 = 1.460 bzw. 3 × 365 = 1.095 — hier ohne Wirkung auf die Verteilung,
+Personentage: 4 × 365 = 1.460 bzw. 3 × 365 = 1.095 - hier ohne Wirkung auf die Verteilung,
 aber Teil des verglichenen Ergebnisses.

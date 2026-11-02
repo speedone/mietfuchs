@@ -37,7 +37,7 @@ export default function ReadingSheet({ sheet, propertyName, subtitle }: { sheet:
                   <td>{r.meterNumber}</td>
                   <td>{r.typeLabel}</td>
                   <td>{r.unit}</td>
-                  <td>{r.last ? <>{r.last.value.toLocaleString('de-DE')}<br />{fmtDate(r.last.date)}</> : '—'}</td>
+                  <td>{r.last ? <>{r.last.value.toLocaleString('de-DE')}<br />{fmtDate(r.last.date)}</> : '-'}</td>
                   <td className="reading-fill" />
                   <td className="reading-fill" />
                   <td className="reading-fill" />

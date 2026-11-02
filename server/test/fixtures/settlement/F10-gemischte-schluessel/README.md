@@ -1,7 +1,7 @@
-# F10 — Gemischte Schlüssel bei Teilnahmequote unter 100 %
+# F10 - Gemischte Schlüssel bei Teilnahmequote unter 100 %
 
 **Geprüfte Regel:** Vier Positionen, drei verschiedene Schlüssel, eine Einheit außerhalb der
-Abrechnungseinheit — und am Ende muss trotzdem jede einzelne Position vollständig aufgehen.
+Abrechnungseinheit - und am Ende muss trotzdem jede einzelne Position vollständig aufgehen.
 Die Variante mit einer selbstgenutzten Wohnung prüft F11.
 
 **Grundlage:** Umlage nach Wohnfläche, Personen und Einheiten (§ 556a Abs. 1 BGB); nicht
@@ -11,7 +11,7 @@ umlagefähige Kosten wie eine Instandhaltungsrücklage trägt der Vermieter (§ 
 
 | Einheit | Fläche | beteiligt | Mietverhältnis | Personen | Vorauszahlung |
 |---|---|---|---|---|---|
-| u1 EG (Laden, eigene Abrechnung) | 80 m² | **nein** | — | — | — |
+| u1 EG (Laden, eigene Abrechnung) | 80 m² | **nein** | - | - | - |
 | u2 OG links | 90 m² | ja | t2, ganzjährig | 4 | 150,00 €/Monat |
 | u3 OG rechts | 60 m² | ja | t3, ganzjährig | 3 | 100,00 €/Monat |
 
@@ -26,14 +26,14 @@ Der krumme Betrag bei c2 ist Absicht: Er erzwingt eine Restverteilung.
 
 ## Handrechnung
 
-**c1 — Fläche** (Bezugsfläche 90 + 60 = 150 m², u1 zählt nicht mit):
+**c1 - Fläche** (Bezugsfläche 90 + 60 = 150 m², u1 zählt nicht mit):
 
 ```
 t2 = 90.000 × 90/150 = 54.000 ct
 t3 = 90.000 × 60/150 = 36.000 ct        Vermieter = 0
 ```
 
-**c2 — Personentage** (4 × 365 = 1.460 und 3 × 365 = 1.095, Basis 2.555):
+**c2 - Personentage** (4 × 365 = 1.460 und 3 × 365 = 1.095, Basis 2.555):
 
 ```
 t2 = 100.001 × 1.460/2.555 = 57.143,4285… ct
@@ -45,13 +45,13 @@ Nachkommaanteile: t2 = 0,4285   t3 = 0,5714  →  t3 erhält das Cent
 t2 = 57.143 ct        t3 = 42.858 ct        Summe = 100.001 ✓
 ```
 
-**c3 — Einheiten** (zwei beteiligte Einheiten, u1 zählt nicht mit):
+**c3 - Einheiten** (zwei beteiligte Einheiten, u1 zählt nicht mit):
 
 ```
 t2 = 60.000 / 2 = 30.000 ct        t3 = 30.000 ct        Vermieter = 0
 ```
 
-**c4 — nicht umlagefähig:**
+**c4 - nicht umlagefähig:**
 
 ```
 Mieteranteile = 0                   Vermieter = 25.000 ct

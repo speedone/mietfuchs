@@ -84,7 +84,7 @@ export function emptyUnitsText(kind: PropertyKind): string {
   if (kind === 'etw') {
     return 'Noch keine Wohnung angelegt. Legen Sie hier nur die eigene Wohnung an, nicht die übrigen Wohnungen des Hauses: Deren Anteil an den Kosten steht schon in der Hausgeldabrechnung.'
   }
-  return 'Noch keine Wohnungen angelegt. Legen Sie alle Wohnungen des Hauses an — auch die selbstgenutzte.'
+  return 'Noch keine Wohnungen angelegt. Legen Sie alle Wohnungen des Hauses an - auch die selbstgenutzte.'
 }
 
 // ---------- Der Abschlussdialog der Abrechnung ----------

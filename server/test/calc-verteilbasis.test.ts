@@ -325,7 +325,7 @@ test('Invariante (#94): Mieteranteile + Vermieteranteil ergeben die Gesamtkosten
 
 // Teilweise Eigennutzung (#163) mit Teilnehmern: Eine Gebäudeposition „Nicht umlagefähig“ teilt nach
 // der Fläche der Teilnehmer auf, eine umlagefähige übernimmt den Eigenanteil der Abrechnung.
-test('Invariante (#163): Steuer mit Teilnehmern — privat + abziehbar = Betrag, privat aus Abrechnung oder Fläche der Teilnehmer', () => {
+test('Invariante (#163): Steuer mit Teilnehmern - privat + abziehbar = Betrag, privat aus Abrechnung oder Fläche der Teilnehmer', () => {
   const rnd = makeRng(163094)
   for (let i = 0; i < 400; i++) {
     const src = randomSource(rnd)

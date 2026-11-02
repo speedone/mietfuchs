@@ -219,7 +219,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
     }
     const sum = Object.values(customShares).reduce((a, p) => a + p, 0)
     if (sum <= 0) return { error: 'Bitte mindestens einen Anteil größer 0 % angeben.' }
-    if (sum > 100.0001) return { error: `Die Anteile ergeben ${pct(sum)} % — mehr als 100 % sind nicht möglich.` }
+    if (sum > 100.0001) return { error: `Die Anteile ergeben ${pct(sum)} % - mehr als 100 % sind nicht möglich.` }
   }
 
   // Teilnehmer: alle angehakt heißt null, damit auch künftig angelegte Wohnungen dazugehören.

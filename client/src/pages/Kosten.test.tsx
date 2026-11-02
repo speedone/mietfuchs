@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Komponententest der Kosten-Seite. Er prüft die eine Eigenschaft, die reine Logiktests
 // nicht sehen können: dass der angezeigte Wert eines Auswahlfelds und der gespeicherte Wert
-// übereinstimmen. Genau diese Lücke war Issue #6 — das Feld zeigte „Sonstig", gespeichert
+// übereinstimmen. Genau diese Lücke war Issue #6 - das Feld zeigte „Sonstig", gespeichert
 // wurde „Kaltwasser".
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -21,7 +21,7 @@ const UNITS: Unit[] = [
   { id: 'u3', propertyId: 'objekt-1', name: 'OG rechts', areaM2: 60, participates: true },
 ]
 
-// Nur ein Zähler, und zwar „sonstig" — die Konstellation aus der Fehlermeldung.
+// Nur ein Zähler, und zwar „sonstig" - die Konstellation aus der Fehlermeldung.
 const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' }]
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
@@ -86,7 +86,7 @@ test('Zählertyp: angezeigter Wert und gespeicherter Wert stimmen überein', asy
   // vorgewählt (#142), und zwar im Zustand: gespeichert wird, was zu sehen ist.
   expect([...typeSelect.options].map((o) => o.value)).toEqual(['', 'sonstig'])
   // Beschriftet als Substantiv wie die Nachbarn (Kaltwasser, Wärme), nicht als Adjektiv (#138).
-  expect([...typeSelect.options].map((o) => o.text)).toEqual(['— wählen —', 'Sonstiges'])
+  expect([...typeSelect.options].map((o) => o.text)).toEqual(['Bitte wählen', 'Sonstiges'])
   expect(typeSelect.value).toBe('sonstig')
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
@@ -183,7 +183,7 @@ test('Vereinbarte Anteile: Eingabe, Hinweis auf den Vermieter-Rest und Speichern
 
 test('Umlageschlüssel-Auswahl zeigt den gespeicherten Schlüssel auch ohne Wohnungszähler', async () => {
   // Zähler nachträglich gelöscht: „Verbrauch" wird normalerweise nicht angeboten. Die
-  // bestehende Position steht aber auf „meter" — dann muss der Eintrag in der Liste bleiben.
+  // bestehende Position steht aber auf „meter" - dann muss der Eintrag in der Liste bleiben.
   METERS.length = 0
   try {
     await openForm()

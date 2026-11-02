@@ -122,13 +122,13 @@ test('aus dem Beleg: Vorschau oben, Kostenart aus dem Namen, Beleg angehängt; �
   expect(onOpenInbox).toHaveBeenCalled()
 })
 
-test('ohne Kostenart im Namen: die Auswahl zeigt „— bitte wählen —“, „Anlegen“ meldet sie am Feld', async () => {
+test('ohne Kostenart im Namen: die Auswahl zeigt „Bitte wählen“, „Anlegen“ meldet sie am Feld', async () => {
   const u = upload('8_scan0001.pdf')
   uploads = [u]
   renderPage(u)
   const box = await drawer()
   expect(select(/Kostenart/i).value).toBe('')
-  expect(select(/Kostenart/i).selectedOptions[0]?.textContent).toBe('— bitte wählen —')
+  expect(select(/Kostenart/i).selectedOptions[0]?.textContent).toBe('Bitte wählen')
   expect(select(/Kostenart/i).required).toBe(true)
   fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Rechnung' } })
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '12,00' } })

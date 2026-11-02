@@ -1,7 +1,7 @@
 // Mutationslauf über die Zusicherungen des Repositories (#55, Aufgabe 6).
 //
 // **Warum es das gibt.** db/repository.ts ist implementierungsgetrieben entstanden: erst der
-// Code, dann die Tests. Damit fehlt der Nachweis, den die rote Phase sonst liefert — dass ein
+// Code, dann die Tests. Damit fehlt der Nachweis, den die rote Phase sonst liefert - dass ein
 // Test den Fehler, gegen den er dasteht, wirklich fängt. Ein Test, der nie rot war, kann auch
 // eine Zusicherung prüfen, die gar nicht gilt.
 //
@@ -135,7 +135,7 @@ for (const mutation of MUTATIONS) {
     // Lauf selbst gemacht hat. Deshalb steht unten auch die Nachschau.
     write(file, before.split(find).join(replacement))
     // Nachsehen, dass die Mutation wirklich auf der Platte steht. Ohne diese Zeile meldet der
-    // Lauf einen Test als wirkungslos, obwohl in Wahrheit die Mutation nicht angekommen ist —
+    // Lauf einen Test als wirkungslos, obwohl in Wahrheit die Mutation nicht angekommen ist -
     // und das ist die gefährlichste Auskunft, die ein Mutationslauf geben kann.
     if (!read(file).includes(replacement)) {
       console.error(`Die Mutation „${mutation.what}" ist in ${file} nicht angekommen.`)

@@ -41,7 +41,7 @@ export function creditOnlyOf(deliveries: readonly FuelDelivery[], items: readonl
 // Die erste Zeile ist „bitte wählen“, damit die Auswahl nie eine Lieferung zeigt, die nicht gewählt ist.
 export function creditTargetOptions(source: FuelDelivery, deliveries: readonly FuelDelivery[], items: readonly LinkedItem[]): { value: string; label: string }[] {
   return [
-    { value: '', label: '— bitte wählen —' },
+    { value: '', label: 'Bitte wählen' },
     ...deliveries
       .filter((d) => d.id !== source.id && d.plantId === source.plantId && !d.estimated && sumOf(d.id, items).cents > 0)
       .map((d) => {

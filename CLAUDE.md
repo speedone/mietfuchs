@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was das ist
 
-**Mietfuchs** — lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter (Deutschland).
-Alles läuft auf dem eigenen Rechner — keine Cloud, kein Konto. Sprache von UI, Kommentaren und
+**Mietfuchs** - lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter (Deutschland).
+Alles läuft auf dem eigenen Rechner - keine Cloud, kein Konto. Sprache von UI, Kommentaren und
 Domänenbegriffen ist durchgängig **Deutsch**; bitte beibehalten. Bezeichner im Code sind dagegen
 **englisch** (siehe Konventionen).
 

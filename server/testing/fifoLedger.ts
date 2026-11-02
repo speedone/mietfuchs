@@ -77,7 +77,7 @@ export function fifoLedgerRows(
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
-        unitName: unitById.get(t.unitId)?.name ?? '—',
+        unitName: unitById.get(t.unitId)?.name ?? '-',
         months: rowMonths,
         sollYearCents,
         baseRentYearCents: rowMonths.reduce((a, mo) => a + mo.baseRentCents, 0),

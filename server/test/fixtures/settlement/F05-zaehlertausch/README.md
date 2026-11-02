@@ -1,8 +1,8 @@
-# F05 — Verbrauchsschlüssel mit Zählertausch
+# F05 - Verbrauchsschlüssel mit Zählertausch
 
 **Geprüfte Regel:** Ein Zählerwechsel mitten im Jahr darf keinen Verbrauch verschlucken und
 keinen erfinden. Der Endstand des alten Geräts und der Startstand des neuen ergeben zusammen
-den Jahresverbrauch — ohne den negativen Sprung, den ein naiver `neu − alt`-Vergleich
+den Jahresverbrauch - ohne den negativen Sprung, den ein naiver `neu − alt`-Vergleich
 erzeugen würde.
 
 **Grundlage:** Umlage nach erfasstem Verbrauch (§ 556a Abs. 1 Satz 2 BGB); bei einem
@@ -13,7 +13,7 @@ Zählerwechsel zählen Endstand des alten und Startstand des neuen Geräts.
 Zwei gleich große Wohnungen (je 50 m²), beide ganzjährig vermietet, je ein Kaltwasserzähler.
 Eine Kostenposition: Wasser **1.100,00 €**, Schlüssel `meter`, Zählertyp `kaltwasser`.
 
-Ablesungen — eine Ablesung gilt zum **Tagesende** ihres Datums:
+Ablesungen - eine Ablesung gilt zum **Tagesende** ihres Datums:
 
 | Zähler | Datum | Stand | Bemerkung |
 |---|---|---|---|
@@ -25,13 +25,13 @@ Ablesungen — eine Ablesung gilt zum **Tagesende** ihres Datums:
 
 ## Handrechnung
 
-**m1** — ein Segment über das ganze Jahr:
+**m1** - ein Segment über das ganze Jahr:
 
 ```
 160 − 100 = 60 Einheiten über 365 Tage → Jahresverbrauch 60
 ```
 
-**m2** — zwei Segmente, getrennt durch den Tausch:
+**m2** - zwei Segmente, getrennt durch den Tausch:
 
 ```
 Segment 1  31.12.2024 → 30.06.2025:  oldEndValue 230 − 200 =  30   (181 Tage)
@@ -39,7 +39,7 @@ Segment 2  30.06.2025 → 31.12.2025:  20 − 0             =  20   (184 Tage)
                                         Jahresverbrauch  =  50
 ```
 
-Ohne die `replacement`-Markierung wäre Segment 1 als `0 − 200 = −200` gerechnet worden — ein
+Ohne die `replacement`-Markierung wäre Segment 1 als `0 − 200 = −200` gerechnet worden - ein
 negativer Verbrauch, der eine Warnung ausgelöst und die Verteilung verfälscht hätte. Genau
 diese Fehlrechnung schließt das Fixture aus.
 

@@ -643,7 +643,7 @@ test('Durchsicht: Wortlaute „Vermieter & Zahlung“, Inklusivmiete und die neu
   assert.match(GUIDES.flatRate.steps.map((s) => s.text).join(' '), /Ist alles inklusive, /)
   const address = GUIDES.tenantChange.steps.find((s) => /Anschrift/.test(s.text))?.text ?? ''
   assert.match(address, /✎/)
-  assert.match(address, /„Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag \(optional\)“/)
+  assert.match(address, /„Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag \(optional\)“/)
   assert.match(address, /zur Hand/)
   assert.match(address, /auf den Ausdruck kommt sie nicht/)
 })

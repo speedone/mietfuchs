@@ -11,7 +11,7 @@ const body = (f: UnitForm) => (buildUnitBody(f) as { body: Record<string, unknow
 
 describe('Nutzungsart schreibt beide Kennzeichen', () => {
   // Widersprüchliche Kombinationen (vermietet und selbstgenutzt) kann die Engine nur
-  // abfangen, nicht auflösen — das Formular darf sie gar nicht erst erzeugen.
+  // abfangen, nicht auflösen - das Formular darf sie gar nicht erst erzeugen.
   test('vermietet', () => {
     expect(body(form({ usage: 'vermietet' }))).toMatchObject({ participates: true, selfUsed: false, selfPersons: null })
   })

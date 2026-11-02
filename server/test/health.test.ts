@@ -1,7 +1,7 @@
 // Betriebszustand für Container-Orchestratoren (/healthz).
 //
 // Ein Healthcheck soll mehr sagen als „der Prozess läuft": Er meldet einen Fehler, wenn die
-// db.json unlesbar ist oder der Datenordner nicht beschreibbar — etwa schreibgeschützt
+// db.json unlesbar ist oder der Datenordner nicht beschreibbar - etwa schreibgeschützt
 // eingehängt oder mit falschen Rechten. Ein nicht eingehängtes Volume erkennt er nicht:
 // Docker legt dann ein anonymes an, und das ist beschreibbar.
 //
@@ -42,7 +42,7 @@ test('Healthcheck: ohne db.json ist gesund', () => {
 })
 
 test('Healthcheck: unbrauchbarer Datenordner ist ein Fehler', () => {
-  // Der Pfad zeigt auf eine Datei statt auf einen Ordner — darin lässt sich nichts ablegen
+  // Der Pfad zeigt auf eine Datei statt auf einen Ordner - darin lässt sich nichts ablegen
   const file = path.join(makeDataDir(), 'keinOrdner')
   fs.writeFileSync(file, '')
   const report = healthReport({ dataDir: file, version: '0.3.1' })
@@ -149,7 +149,7 @@ test('Healthcheck: eine offene Datenbank mit erledigtem Umstieg ist in Ordnung',
 })
 
 test('Healthcheck: nicht beschreibbarer Belegordner ist ein Fehler', (t) => {
-  // Als root greifen Dateirechte nicht — dann lässt sich das nicht prüfen. Unter Windows
+  // Als root greifen Dateirechte nicht - dann lässt sich das nicht prüfen. Unter Windows
   // ebenso wenig: chmod setzt dort keine Schreibsperre, der Schreibversuch gelingt trotzdem.
   if (process.getuid?.() === 0) return t.skip('läuft als root')
   if (process.platform === 'win32') return t.skip('chmod sperrt unter Windows keinen Ordner')

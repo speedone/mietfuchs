@@ -185,7 +185,7 @@ test('Position ohne Betrag: Feld leer, rot, nicht vorab angehakt; nicht umlagef�
   const betrag = within(row ?? document.body).getByRole('textbox', { name: 'Betrag €' })
   if (!(betrag instanceof HTMLInputElement)) return assert.fail('das Feld „Betrag €“ ist kein Eingabefeld')
   expect(betrag.value).toBe('')
-  expect(screen.getByText('— trägt der Vermieter')).toBeTruthy()
+  expect(screen.getByText('trägt der Vermieter')).toBeTruthy()
 })
 
 test('„Alle grünen übernehmen“: dieselbe Kostenart aus zwei Belegen wird nicht still zweimal angelegt', async () => {

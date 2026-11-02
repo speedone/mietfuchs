@@ -1866,7 +1866,7 @@ dass bei `perUnit` auf die Vertragsfrage folgt:
                   <label className="field grow">
                     Womit heizen die Etagenheizungen?
                     <select value={form.perUnitEnergy} onChange={(e) => setForm({ ...form, perUnitEnergy: e.target.value as HeatingEnergy | '' })}>
-                      <option value="">— bitte wählen —</option>
+                      <option value="">Bitte wählen</option>
                       {PER_UNIT_ENERGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </label>
@@ -1911,7 +1911,7 @@ Im Formular direkt vor der Auswahl der Heizperiode (`{form.category === HEATING_
               <label className="field">
                 Heizanlage
                 <select value={heatingPlantId} onChange={(e) => setHeatingPlantId(e.target.value)}>
-                  <option value="">— nach den Wohnungen der Position —</option>
+                  <option value="">- nach den Wohnungen der Position -</option>
                   {plantChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
@@ -1975,7 +1975,7 @@ Im Formular hinter der Auswahl der Rolle an der Heizanlage (PR 4):
               <label className="field">
                 Heizanlage
                 <select value={meterForm.heatingPlantId} onChange={(e) => setMeterForm({ ...meterForm, heatingPlantId: e.target.value })}>
-                  <option value="">— bitte wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {plantOptions(plants).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
@@ -2058,7 +2058,7 @@ Im Formular steht bei `plant.supply === 'perUnit'` als erstes Feld:
             <label className="field grow">
               Wohnung
               <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>
-                <option value="">— bitte wählen —</option>
+                <option value="">Bitte wählen</option>
                 {units.filter((u) => plant.units === null || plant.units.some((x) => x.unitId === u.id)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </label>

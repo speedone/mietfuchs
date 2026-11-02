@@ -1,5 +1,5 @@
 // Rendert hochgeladene Belege (PDF oder Bild) als Bildseiten für den Druck.
-// Browser drucken eingebettete PDFs nicht mit — daher werden die Seiten per
+// Browser drucken eingebettete PDFs nicht mit - daher werden die Seiten per
 // pdf.js auf Canvas gerendert und als JPEG-Data-URLs in den Druck eingebettet.
 import { discardPdfWorker, openPdf, renderPage } from './pdf'
 import { createLimiter, createPreviewCache } from './previewQueue'

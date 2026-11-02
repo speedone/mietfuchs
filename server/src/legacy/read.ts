@@ -47,7 +47,7 @@ import {
 // `unknown`: Es ist ein Archivstück, das wortgleich erhalten bleiben soll, und ein Typ darüber
 // wäre eine Behauptung über etwas, das eine frühere Version geschrieben hat. Die Berechnung
 // liest daraus nur den Eigenanteil und die Vorauszahlungen, und die holt `frozenSettlementOf`
-// aus snapshot.ts heraus — dieselbe Funktion wie auf dem Weg über die Datei und wie im heutigen
+// aus snapshot.ts heraus - dieselbe Funktion wie auf dem Weg über die Datei und wie im heutigen
 // Leser. Sie steht bewusst nicht hier: Der Eingang beschreibt den **Aufbau der Tabellen** von
 // damals, und der eingefrorene Berechnungsstand liegt als JSON in einer Spalte, ist von diesem
 // Aufbau also gar nicht betroffen. Zwei Fassungen davon wären genau die Doppelung, die dieser
@@ -309,7 +309,7 @@ export async function readSettings(db: Database): Promise<MigratedSettings> {
     ollamaUrl: row.ollamaUrl,
     ollamaModel: row.ollamaModel,
     // Diese vier gibt es nur, wenn ein Wert dasteht. Ein Feld mit dem Wert `undefined` wäre
-    // etwas anderes als ein fehlendes Feld, sobald jemand zwei Stände vergleicht — und genau
+    // etwas anderes als ein fehlendes Feld, sobald jemand zwei Stände vergleicht - und genau
     // das tut der Umstieg.
     ...(row.printAdjustSuggestion == null ? {} : { printAdjustSuggestion: row.printAdjustSuggestion }),
     ...(row.printAttachments == null ? {} : { printAttachments: row.printAttachments }),

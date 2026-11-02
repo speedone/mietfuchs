@@ -12,7 +12,7 @@ test('Gemeinsamer Zeitraum: inklusive Grenzen, ein gemeinsamer Tag genügt', () 
   assert.deepEqual(commonPeriod({ start: '2025-01-01', end: '2025-09-30' }, { start: '2025-09-01', end: null }), { from: '2025-09-01', to: '2025-09-30' })
   // Auszug am 30.09., Einzug am 30.09.: ein gemeinsamer Tag
   assert.deepEqual(commonPeriod({ start: '2025-01-01', end: '2025-09-30' }, { start: '2025-09-30', end: null }), { from: '2025-09-30', to: '2025-09-30' })
-  // Lückenlos: Auszug am 30.09., Einzug am 01.10. — keine Überschneidung
+  // Lückenlos: Auszug am 30.09., Einzug am 01.10. - keine Überschneidung
   assert.equal(commonPeriod({ start: '2025-01-01', end: '2025-09-30' }, { start: '2025-10-01', end: null }), null)
   // Beide offen: gemeinsam ab dem späteren Einzug, offen
   assert.deepEqual(commonPeriod({ start: '2020-01-01', end: null }, { start: '2024-03-01', end: null }), { from: '2024-03-01', to: null })

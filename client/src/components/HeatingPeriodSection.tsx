@@ -295,7 +295,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               <label className="field">
                 <span>Rechnen Sie die Heizkosten <Term id="separateHeatingSettlement">getrennt ab</Term>, mit eigener Heizkostenvorauszahlung?</span>
                 <select value={form.separate} onChange={(e) => changeForm({ ...form, separate: e.target.value as SeparateChoice })}>
-                  <option value="">— bitte wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {SEPARATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>

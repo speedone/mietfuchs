@@ -51,7 +51,7 @@ const emptyDb = (): Db => ({
 })
 
 // Ein Mietverhältnis, wie es in der Datei steht: `prepaymentMonthlyCents` ist das Altformat der
-// Vorauszahlung (ein fester Monatsbetrag), das die Engine weiterhin liest — siehe
+// Vorauszahlung (ein fester Monatsbetrag), das die Engine weiterhin liest - siehe
 // computePrepaymentCents in calc.ts, das dieselbe Erweiterung benutzt.
 type StoredTenancy = Tenancy & { prepaymentMonthlyCents?: number }
 
@@ -63,7 +63,7 @@ const tenancy = (t: Partial<StoredTenancy> & Pick<Tenancy, 'id' | 'unitId'>): St
 // Eine Wohnung, bei der `areaM2` gar nicht in der Datei steht. Das Datenmodell verlangt das
 // Feld, weil das Formular es erzwingt; in einer db.json aus früheren Versionen oder von Hand
 // bearbeitet fehlt es. Die Engine rechnet ausdrücklich damit (`u.areaM2 || 0` in calc.ts) und
-// meldet es als Mangel — genau das prüfen die Tests weiter unten. Der weitere Parametertyp
+// meldet es als Mangel - genau das prüfen die Tests weiter unten. Der weitere Parametertyp
 // erlaubt das Entfernen, ohne dem Übersetzer etwas vorzumachen.
 type UnitWithoutArea = Omit<Unit, 'areaM2'> & { areaM2?: number }
 const dropArea = (unit: UnitWithoutArea): void => { delete unit.areaM2 }
@@ -89,7 +89,7 @@ const groupOf = (report: TaxReport, group: string): TaxExpenseGroup => {
 }
 
 // Beispielhaus für die Tests: 3 Wohnungen, davon eine selbstgenutzt und zwei vermietet.
-// Die selbstgenutzte Wohnung ist hier ohne Eigennutzungs-Kennzeichen angelegt (Altbestand) —
+// Die selbstgenutzte Wohnung ist hier ohne Eigennutzungs-Kennzeichen angelegt (Altbestand) -
 // die Tests unten decken beide Varianten ab.
 function makeDb(): Db {
   return {
@@ -281,7 +281,7 @@ test('Personenschlüssel: 4 vs 3 Personen, centgenau ohne Rest', () => {
 
 test('Restcent bei gleichen Anteilen: entscheidet die Kennung des Mietverhältnisses, nicht die Reihenfolge', () => {
   // 100,00 € auf drei gleich große Wohnungen: 33,33 € je Wohnung, ein Cent bleibt übrig.
-  // Wer ihn trägt, ist fachlich beliebig — aber dieselben Daten müssen immer dieselbe
+  // Wer ihn trägt, ist fachlich beliebig - aber dieselben Daten müssen immer dieselbe
   // Abrechnung ergeben, egal in welcher Reihenfolge sie in der Datei stehen.
   const make = (order: number[]): Db => ({
     ...emptyDb(),
@@ -569,7 +569,7 @@ test('Zwei Ablesungen am selben Tag: einen Mieter kostet es Geld (#69)', () => {
     ...beiB,
   ]
   assert.deepEqual(anteile(mitDoppelung), { A: 94737, B: 105263 }, 'die gemessene Verschiebung stimmt nicht mehr')
-  // Der Vermieter trägt in beiden Fällen nichts — die Annahme des Issues war falsch.
+  // Der Vermieter trägt in beiden Fällen nichts - die Annahme des Issues war falsch.
   assert.equal(computeSettlement(snapshotFromDb(db(mitDoppelung), 2025)).landlord.totalCents, 0)
   // Und genau darüber meldet sich der Zähler.
   assert.equal(consumptionOverview(snapshotFromDb(db(mitDoppelung), 2025)).find((z) => z.meterId === 'm1')?.warnings.length, 1)
@@ -701,7 +701,7 @@ test('Zählerwechsel ohne Endstand: auch das kostet einen Mieter Geld (#83)', ()
 test('Zählerwechsel ohne Endstand am selben Tag: diese Meldung gilt, nicht die über zwei Ablesungen (#83)', () => {
   // **Die Reihenfolge der beiden Prüfungen ist eine Entscheidung und muss gehalten werden.**
   // Gewänne die Prüfung auf den gleichen Tag (#69), entstünde aus dem fehlenden Feld ein
-  // `delta` von minus 950, und der Vermieter läse „Die Stände unterscheiden sich um 950“ — eine
+  // `delta` von minus 950, und der Vermieter läse „Die Stände unterscheiden sich um 950“ - eine
   // Zahl, die aus nichts errechnet ist. Genau davor soll die Behebung schützen, und ohne diesen
   // Test bleibt die Reihenfolge unbewacht: nachgemessen blieben bei umgedrehter Reihenfolge
   // alle Tests grün.
@@ -770,7 +770,7 @@ test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', () => {
 })
 
 // §35a-Lohnanteil mit Restverfahren. Die Mieter bekommen zusammen den Lohnanteil, der auf ihre
-// gebuchten Kostenanteile entfällt — kaufmännisch auf den Cent gerundet, nie mehr als der
+// gebuchten Kostenanteile entfällt - kaufmännisch auf den Cent gerundet, nie mehr als der
 // Lohnanteil der Rechnung. Gerechnet wird mit dem **ungerundeten** Kostenanteil (#180): Wer 70/220
 // der Rechnung trägt, trägt auch 70/220 des Lohnanteils, so wie man es von Hand nachrechnet. Diese
 // Summe wird wie die Kosten nach dem größten Rest verteilt, Gleichstand entscheidet die ID des
@@ -966,7 +966,7 @@ test('§35a: ungültiger Lohnanteil (negativ oder über dem Rechnungsbetrag) wir
     const s = computeSettlement(snapshotFromDb(db, 2025))
     assert.deepEqual(s.statements.map((x) => x.total35aCents), [0, 0], `Lohnanteil ${labor}`)
     assert.equal(statementOf(s, 't2').totalShareCents, 30000) // Kosten bleiben unberührt
-    assert.deepEqual(s.warnings, ['„Garten“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.'])
+    assert.deepEqual(s.warnings, ['„Garten“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen - es wird kein Lohnanteil bescheinigt.'])
   }
 })
 
@@ -983,7 +983,7 @@ test('§35a bei einer Gutschrift (#139): ein Lohnanteil wird nicht bescheinigt, 
   db.costItems.push({ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Gutschrift Garten', amountCents: -5400, key: 'units', labor35aCents: 1000 })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.deepEqual(s.statements.map((x) => x.total35aCents), [0, 0])
-  assert.deepEqual(s.warnings, ['„Gutschrift Garten“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.'])
+  assert.deepEqual(s.warnings, ['„Gutschrift Garten“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen - es wird kein Lohnanteil bescheinigt.'])
 })
 
 test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () => {
@@ -1069,7 +1069,7 @@ test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der 
   assert.equal(l.totals.openCents, 850000)
 })
 
-test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () => {
+test('Mietkonto: Teiljahr - vor Einzug kein Soll, Monat gilt als gedeckt', () => {
   const db: Db = {
     ...emptyDb(),
     units: [{ id: 'u1', name: 'OG', areaM2: 90, participates: true }],
@@ -1092,7 +1092,7 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
 
 // ---------- Eigennutzung in der Verteilbasis ----------
 // `selfUsed: true` heißt: die Wohnung zählt in die Verteilbasis (Fläche/Einheiten/Personen),
-// hat aber kein Mietverhältnis — ihr Anteil landet deshalb im Vermieteranteil (Eigenanteil).
+// hat aber kein Mietverhältnis - ihr Anteil landet deshalb im Vermieteranteil (Eigenanteil).
 
 test('Eigennutzung: Flächenschlüssel nimmt die eigene Wohnung in die Basis, der Anteil bleibt beim Vermieter', () => {
   const db = makeDb()
@@ -1158,7 +1158,7 @@ test('Ohne Eigennutzungs-Kennzeichen bleibt die Verteilung wie bisher (Bestandsd
 })
 
 test('Zählerschlüssel: Verbrauch einer nicht beteiligten Wohnung bleibt in der Basis', () => {
-  // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge — er zählt
+  // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge - er zählt
   // deshalb unabhängig vom Beteiligungs-Kennzeichen in die Basis (Anteil → Vermieter).
   const db = makeDb()
   db.meters = [
@@ -1277,7 +1277,7 @@ test('Prozentschlüssel über 100 %: Warnung, keine Verteilung', () => {
     amountCents: 100000, key: 'custom', customShares: { u2: 60, u3: 60 },
   })
   const s = computeSettlement(snapshotFromDb(db, 2025))
-  // Niemals mehr verteilen als die Rechnung hergibt — sonst wären auch die §35a-Anteile zu hoch
+  // Niemals mehr verteilen als die Rechnung hergibt - sonst wären auch die §35a-Anteile zu hoch
   assert.equal(s.statements.reduce((a, x) => a + x.totalShareCents, 0), 0)
   assert.equal(s.landlord.totalCents, 100000)
   assert.match(s.warnings[0], /100/)
@@ -1297,7 +1297,7 @@ test('Prozentschlüssel mit gelöschter Wohnung: Warnung, verfallener Anteil bei
 })
 
 test('Prozentschlüssel: Anteil einer nicht beteiligten Wohnung wird beim Namen genannt', () => {
-  // Die Wohnung existiert, gehört aber nicht zur Abrechnungseinheit — die Warnung darf sie
+  // Die Wohnung existiert, gehört aber nicht zur Abrechnungseinheit - die Warnung darf sie
   // nicht als gelöscht bezeichnen, sonst sucht man an der falschen Stelle.
   const db = makeDb()
   db.costItems.push({
@@ -1321,7 +1321,7 @@ test('Prozentschlüssel ohne Anteile: Warnung, Betrag an den Vermieter', () => {
 })
 
 // Fehlende Verteilbasis. Fehlt der Basiswert einer Wohnung (Fläche, Personen), verteilt der
-// Schlüssel deren Anteil still auf die übrigen Wohnungen — die anderen Mieter zahlen mit.
+// Schlüssel deren Anteil still auf die übrigen Wohnungen - die anderen Mieter zahlen mit.
 // Fehlt er überall, geht der Betrag an den Vermieter. Beides soll gemeldet werden, und zwar
 // nur dann, wenn sich etwas beheben lässt: Leerstand und Eigennutzung sind reguläre Fälle.
 // Das Formular erzwingt Fläche > 0 und mindestens eine Person; fehlende Werte stammen aus
@@ -1332,12 +1332,12 @@ test('Flächenschlüssel ohne jede Wohnfläche: eine Meldung je Position, Betrag
   db.units[0].selfUsed = true
   for (const u of db.units) dropArea(u)
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  // Nicht umlagefähige Kosten landen ohnehin beim Vermieter — dort ist das keine Meldung wert
+  // Nicht umlagefähige Kosten landen ohnehin beim Vermieter - dort ist das keine Meldung wert
   db.costItems.push({ id: 'c2', year: 2025, category: 'Nicht umlagefähig', description: 'Dachreparatur', amountCents: 50000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 140000)
-  // Keine zusätzliche Meldung zur Eigennutzung („verteilt nur auf die Mieter“) — verteilt wird nichts
-  assert.deepEqual(s.warnings, ['„Grundsteuer“: für keine Wohnung ist eine Wohnfläche hinterlegt — Betrag geht an den Vermieter.'])
+  // Keine zusätzliche Meldung zur Eigennutzung („verteilt nur auf die Mieter“) - verteilt wird nichts
+  assert.deepEqual(s.warnings, ['„Grundsteuer“: für keine Wohnung ist eine Wohnfläche hinterlegt - Betrag geht an den Vermieter.'])
 })
 
 test('Personenschlüssel ohne jede Personenzahl: eine Meldung je Position, Betrag beim Vermieter', () => {
@@ -1347,7 +1347,7 @@ test('Personenschlüssel ohne jede Personenzahl: eine Meldung je Position, Betra
   db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 30000)
-  assert.deepEqual(s.warnings, ['„Müll“: für die vermieteten Wohnungen sind keine Personen hinterlegt — Betrag geht an den Vermieter.'])
+  assert.deepEqual(s.warnings, ['„Müll“: für die vermieteten Wohnungen sind keine Personen hinterlegt - Betrag geht an den Vermieter.'])
 })
 
 test('Einheitenschlüssel ohne Wohnung in der Abrechnungseinheit: Meldung, Betrag beim Vermieter', () => {
@@ -1356,7 +1356,7 @@ test('Einheitenschlüssel ohne Wohnung in der Abrechnungseinheit: Meldung, Betra
   db.costItems.push({ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: 24000, key: 'units' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 24000)
-  assert.deepEqual(s.warnings, ['„Hauswart“: keine Wohnung gehört zur Abrechnungseinheit — Betrag geht an den Vermieter.'])
+  assert.deepEqual(s.warnings, ['„Hauswart“: keine Wohnung gehört zur Abrechnungseinheit - Betrag geht an den Vermieter.'])
 })
 
 test('Vermietete Wohnung ohne Wohnfläche: Meldung nennt die Wohnung, einmal im Jahr', () => {
@@ -1365,9 +1365,9 @@ test('Vermietete Wohnung ohne Wohnfläche: Meldung nennt die Wohnung, einmal im 
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   db.costItems.push({ id: 'c2', year: 2025, category: 'Versicherung', description: 'Gebäudeversicherung', amountCents: 60000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
-  // So rechnet es heute: OG links trägt alles — genau das muss auffallen
+  // So rechnet es heute: OG links trägt alles - genau das muss auffallen
   assert.equal(statementOf(s, 't2').totalShareCents, 150000)
-  assert.deepEqual(s.warnings, ['Für die Einheit OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für die Einheit OG rechts ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
   // Durchsicht zu #135: Wohnt dort jemand, ist 0 m² eine vergessene Fläche und keine Garage.
   assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-no-area', 'warning']])
 })
@@ -1380,7 +1380,7 @@ test('Vermietete Wohnungen ohne Fläche, Eigennutzung mit Fläche: Meldung nennt
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 90000)
-  assert.deepEqual(s.warnings, ['Für die Einheiten OG links und OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für die Einheiten OG links und OG rechts ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
 
 test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren Anteil mit', () => {
@@ -1394,7 +1394,7 @@ test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren 
   // Ohne jedes Mietverhältnis ist 0 m² keine Angabe, sonst wanderte der Anteil des Leerstands still
   // zu den Mietern; eine leere Garage warnt dann eben, das ist der billigere Irrtum (#135).
   assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-no-area', 'warning']])
-  assert.deepEqual(s.warnings, ['Für die Einheit DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für die Einheit DG ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
 
 test('Fehlt das Feld areaM2 bei einer vermieteten Wohnung ganz: keine Ausnahme, sondern eine Meldung', () => {
@@ -1403,7 +1403,7 @@ test('Fehlt das Feld areaM2 bei einer vermieteten Wohnung ganz: keine Ausnahme, 
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't3').totalShareCents, 0)
-  assert.deepEqual(s.warnings, ['Für die Einheit OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für die Einheit OG rechts ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
 
 test('Mietverhältnis ohne Personen: Meldung nennt Mieter und Wohnung', () => {
@@ -1412,7 +1412,7 @@ test('Mietverhältnis ohne Personen: Meldung nennt Mieter und Wohnung', () => {
   db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 30000)
-  assert.deepEqual(s.warnings, ['Für Familie B (OG rechts) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für Familie B (OG rechts) ist keine Personenzahl hinterlegt - der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.'])
   assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.tenancy-no-persons', 'warning']])
 })
 
@@ -1430,7 +1430,7 @@ test('Direktzuordnung auf eine Wohnung außerhalb der Abrechnungseinheit: Meldun
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Rauchmelder EG', amountCents: 8000, key: 'direct', directUnitId: 'u1' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 8000)
-  assert.deepEqual(s.warnings, ['„Rauchmelder EG“: die direkt zugeordnete Wohnung EG (Eigennutzung) gehört nicht zur Abrechnungseinheit — Betrag geht an den Vermieter.'])
+  assert.deepEqual(s.warnings, ['„Rauchmelder EG“: die direkt zugeordnete Wohnung EG (Eigennutzung) gehört nicht zur Abrechnungseinheit - Betrag geht an den Vermieter.'])
 })
 
 test('Direktzuordnung auf die selbstgenutzte Wohnung: Eigenanteil, keine Meldung', () => {
@@ -1446,7 +1446,7 @@ test('Direktzuordnung auf die selbstgenutzte Wohnung: Eigenanteil, keine Meldung
 test('Leerstand im ganzen Haus ist keine fehlende Verteilbasis: keine Meldung', () => {
   const db = makeDb()
   db.tenancies = []
-  // Ohne Mietverhältnis gibt es auch keine Personentage — das ist Leerstand, kein Datenmangel
+  // Ohne Mietverhältnis gibt es auch keine Personentage - das ist Leerstand, kein Datenmangel
   const keys: LegacyCostKey[] = ['area', 'units', 'persons']
   for (const key of keys) {
     db.costItems.push({ id: key, year: 2025, category: 'Grundsteuer', description: key, amountCents: 90000, key })
@@ -1461,7 +1461,7 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
     ...emptyDb(),
     units: [
       // Das Kennzeichen stand hier nicht, obwohl der Name es sagt. Solange die Übersicht
-      // zweiwertig fragte, fiel das nicht auf — genau der Befund aus #68.
+      // zweiwertig fragte, fiel das nicht auf - genau der Befund aus #68.
       { id: 'u1', name: 'EG (Eigennutzung)', areaM2: 100, participates: false, selfUsed: true, selfPersons: 2 },
       { id: 'u2', name: 'OG', areaM2: 100, participates: true },
     ],
@@ -1510,8 +1510,8 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
 test('Steuer (Anlage V): eine ausgenommene Wohnung ist keine Eigennutzung (#68)', () => {
   // **Die Steuerübersicht prüfte noch zweiwertig**, obwohl es drei Zustände gibt: vermietet,
   // selbstgenutzt und außerhalb der Abrechnungseinheit (`UnitUsage` in shared/types.ts). Gefragt
-  // wurde `!u.participates`, und damit schlug eine ausdrücklich ausgenommene Wohnung — etwa eine
-  // getrennt abgerechnete Gewerbeeinheit — als Eigennutzung durch. Der Vermieter bekam dann die
+  // wurde `!u.participates`, und damit schlug eine ausdrücklich ausgenommene Wohnung - etwa eine
+  // getrennt abgerechnete Gewerbeeinheit - als Eigennutzung durch. Der Vermieter bekam dann die
   // Aufforderung, den selbstgenutzten Anteil herauszurechnen, obwohl er gar nichts selbst nutzt.
   //
   // Gefragt wird jetzt nach derselben Regel, nach der auch die Abrechnung ihre selbstgenutzten
@@ -1570,7 +1570,7 @@ test('Steuer (Anlage V): ein Bestand von vor der dreiwertigen Unterscheidung (#6
   //
   // Der Hinweis muss diesen Vermieter weiterhin erreichen, sonst nimmt die Behebung ausgerechnet
   // dem die Hilfe weg, der sie braucht. Er darf nur nicht mehr behaupten, die Wohnung sei
-  // selbstgenutzt — er fordert auf, sie einzuordnen.
+  // selbstgenutzt - er fordert auf, sie einzuordnen.
   const db: Db = {
     ...emptyDb(),
     units: [
@@ -1624,7 +1624,7 @@ test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewi
   db.payments = []
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
   const r = taxReport(snapshotFromDb(db, 2025))
-  // 80 von 230 m² entfallen auf die eigene Wohnung — dieser Teil ist privat, nicht abziehbar
+  // 80 von 230 m² entfallen auf die eigene Wohnung - dieser Teil ist privat, nicht abziehbar
   assert.equal(r.selfUsedShareCents, 80000)
   assert.equal(r.expenses.totalCents, 230000) // die Werbungskosten selbst bleiben unangetastet
 })
@@ -1733,7 +1733,7 @@ test('Steuer (Anlage V): bei abgeschlossener Abrechnung gilt ihr eingefrorener S
   // **Dieselbe Regel wie beim Eigenanteil, und aus demselben Grund.** Der Satz in der Oberfläche
   // nennt die Zahl, die auf der Abrechnung steht. Ist die Abrechnung abgeschlossen, steht dort
   // der eingefrorene Stand, und zwar bei dem Mieter im Briefkasten. Nähme die Übersicht den
-  // lebenden, nennte sie eine Zahl, die auf keinem zugestellten Papier steht — genau der
+  // lebenden, nennte sie eine Zahl, die auf keinem zugestellten Papier steht - genau der
   // Widerspruch, gegen den #70 antritt.
   const db: Db = {
     ...emptyDb(),
@@ -1788,7 +1788,7 @@ test('Steuer (Anlage V): Mietverhältnisse ohne jede Zahlung werden gezählt (#7
   // **Gezählt wird „nichts erfasst“, nicht „Summe null“.** Eine Zahlung und eine Rücklastschrift
   // heben sich auf; erfasst ist dann sehr wohl etwas, und der Satz „für dieses Mietverhältnis ist
   // keine einzige Zahlung erfasst" wäre schlicht falsch. Ohne diesen Fall bliebe der Unterschied
-  // zwischen beiden Regeln ungeprüft — nachgemessen, der Test war vorher auch mit der Summe grün.
+  // zwischen beiden Regeln ungeprüft - nachgemessen, der Test war vorher auch mit der Summe grün.
   const t2 = db.tenancies[1]
   if (!t2) return assert.fail('das zweite Mietverhältnis fehlt')
   db.payments.push(
@@ -1822,7 +1822,7 @@ test('Steuer (Anlage V): ohne Jahreskorrektur nennen beide dieselbe Zahl (#70)',
   assert.equal(r.income.prepaymentSettlementCents, r.income.prepaymentSollCents)
 })
 
-test('Sortieren: Kennungen zeichenweise, Namen auf Deutsch — beides fest (#70)', () => {
+test('Sortieren: Kennungen zeichenweise, Namen auf Deutsch - beides fest (#70)', () => {
   // **Die Kleinigkeit aus #70, und sie ist eine Haltungsfrage.** `largestRemainder` vergleicht
   // seine Kennungen ausdrücklich Zeichen für Zeichen und begründet es: Sonst hinge das Ergebnis
   // von der Locale der Laufzeit ab, und dieselben Daten ergäben auf zwei Rechnern zwei
@@ -1858,7 +1858,7 @@ test('Sortieren: Kennungen zeichenweise, Namen auf Deutsch — beides fest (#70)
 test('Sortieren: in calc.ts gibt es kein blankes localeCompare (#70)', () => {
   // **Die Zusage, die sich auf einem einzelnen Rechner nicht messen lässt.** `localeCompare()`
   // ohne Sprache liest die Einstellung der Laufzeit. Hier entwickelt jemand auf Deutsch, und
-  // deshalb sagt jeder Vergleich dasselbe wie der deutsche Kollator — bis die Datei irgendwo
+  // deshalb sagt jeder Vergleich dasselbe wie der deutsche Kollator - bis die Datei irgendwo
   // anders läuft. Ein Verhaltenstest dafür bräuchte einen zweiten Prozess mit gesetzter Locale,
   // und den beachtet Windows nicht; das wäre ein Test, der nur auf einem System prüft, und
   // genau davor warnt CLAUDE.md.
@@ -1898,7 +1898,7 @@ test('Sortieren: in calc.ts gibt es kein blankes localeCompare (#70)', () => {
 // Eine Abrechnung ist ein Rechtsdokument: Mieteranteile plus Vermieteranteil müssen die
 // Gesamtkosten centgenau ergeben, und der ausgewiesene Eigenanteil darf nie größer sein als
 // der Vermieteranteil, in dem er steckt. Statt einzelne Fälle zu raten, prüft dieser Test
-// viele zufällige Konstellationen — mit festem Startwert, damit Fehlschläge reproduzierbar
+// viele zufällige Konstellationen - mit festem Startwert, damit Fehlschläge reproduzierbar
 // bleiben.
 type Rng = () => number
 
@@ -2120,7 +2120,7 @@ function randomLaborDb(rnd: Rng): Db {
   return db
 }
 
-test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge, Kosten unberührt', () => {
+test('Invariante: §35a-Lohnanteil der Mieter - Summe, Obergrenze, Reihenfolge, Kosten unberührt', () => {
   const rnd = makeRng(3552025)
   for (let i = 0; i < 1000; i++) {
     const db = i % 2 === 0 ? randomDb(rnd) : randomLaborDb(rnd)
@@ -2200,7 +2200,7 @@ test('Invariante: der Eigenanteil steckt je Position im Vermieteranteil, mit gle
   }
 })
 
-test('Invariante: Steuer — Werbungskosten + Rücklage = Kostensumme, §35a = gültige Lohnanteile ohne Rücklage', () => {
+test('Invariante: Steuer - Werbungskosten + Rücklage = Kostensumme, §35a = gültige Lohnanteile ohne Rücklage', () => {
   const rnd = makeRng(1432025)
   for (let i = 0; i < 300; i++) {
     const db = randomDb(rnd)
@@ -2215,7 +2215,7 @@ test('Invariante: Steuer — Werbungskosten + Rücklage = Kostensumme, §35a = g
 
 // ---------- Teilweise Eigennutzung (#163) ----------
 
-test('Invariante: Steuer — privat + abziehbar = Betrag je Position, Kostenart, Gruppe und gesamt; privat nie über dem Betrag', () => {
+test('Invariante: Steuer - privat + abziehbar = Betrag je Position, Kostenart, Gruppe und gesamt; privat nie über dem Betrag', () => {
   const rnd = makeRng(1632025)
   for (let i = 0; i < 400; i++) {
     const db = randomDb(rnd)
@@ -2239,7 +2239,7 @@ test('Invariante: Steuer — privat + abziehbar = Betrag je Position, Kostenart,
   }
 })
 
-test('Invariante: Steuer — ohne selbstgenutzte Wohnung ist nichts privat, und der Überschuss bleibt der bisherige', () => {
+test('Invariante: Steuer - ohne selbstgenutzte Wohnung ist nichts privat, und der Überschuss bleibt der bisherige', () => {
   const rnd = makeRng(163)
   let geprueft = 0
   for (let i = 0; i < 400; i++) {
@@ -2257,7 +2257,7 @@ test('Invariante: Steuer — ohne selbstgenutzte Wohnung ist nichts privat, und 
   assert.ok(geprueft > 400, 'der Generator erzeugt kaum Positionen')
 })
 
-test('Invariante: Steuer — bei umlagefähigen Kosten ist der private Teil der Eigenanteil der Abrechnung', () => {
+test('Invariante: Steuer - bei umlagefähigen Kosten ist der private Teil der Eigenanteil der Abrechnung', () => {
   // Summenprobe: Was die Steuer laut Abrechnung oder direkt zuordnet, ergibt zusammen genau den
   // Eigenanteil der Abrechnung. Positionen, die die Abrechnung nicht verteilt hat, gehen nach
   // Fläche und tragen dort keinen Eigenanteil.

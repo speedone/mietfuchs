@@ -42,7 +42,7 @@ const VERBS = word('kannst|musst|hast|bist|willst|solltest|brauchst|findest|sieh
 // ist die Fortschrittsanzeige „Lade Abrechnungsstand …“ und spricht niemanden an; als Anrede fällt
 // es erst mit „hoch“ auf (LOAD_UP).
 const IMPERATIVE_VERBS = 'Lege|Leg|Trage|Trag|Klicke|Wähle|Prüfe|Gib|Nimm|Wirf|Öffne|Starte|Speichere|Schau|Hinterlege|Ergänze|Erfasse|Lösche|Ändere|Füge|Richte|Installiere|Kopiere|Gehe|Geh|Mach|Mache|Setze|Schreibe|Melde|Ziehe|Zieh|Nutze|Verwende|Tippe|Schicke|Lies|Sieh|Lass'
-const IMPERATIVES = new RegExp(`(?:^|[.!?:;—–]\\s+|[>}]\\s*|^\\s+)(${IMPERATIVE_VERBS})(?![\\p{L}\\d_])`, 'gmu')
+const IMPERATIVES = new RegExp(`(?:^|[.!?:;\\-–]\\s+|[>}]\\s*|^\\s+)(${IMPERATIVE_VERBS})(?![\\p{L}\\d_])`, 'gmu')
 // „Bitte prüfe …“: hinter „Bitte“ steht der Imperativ klein. „Bitte den Betrag prüfen“ bleibt frei.
 const PLEASE = new RegExp(`(?<![\\p{L}\\d_])[Bb]itte\\s+(${IMPERATIVE_VERBS.toLowerCase()}|lade)(?![\\p{L}\\d_])`, 'gu')
 // „Lade den Beleg hoch“ – im selben Satz.

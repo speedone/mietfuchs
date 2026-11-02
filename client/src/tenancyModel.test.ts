@@ -263,7 +263,7 @@ test('Staffel: ein gespeicherter Wert, der kein Monat ist, wird gemeldet und nic
   ] })
 })
 
-// N15 aus #341: Bei einer Pauschale stand in der Spalte nur „—“, obwohl monatlich ein Betrag gezahlt wird.
+// N15 aus #341: Bei einer Pauschale stand in der Spalte nur „-“, obwohl monatlich ein Betrag gezahlt wird.
 test('die Spalte Vorauszahlung nennt eine Pauschale mit ihrem Betrag', () => {
   expect(prepaymentColumn({ prepayments: [], flatRates: [{ from: '2024-01', monthlyCents: 6000 }] })).toEqual([{ label: 'Pauschale:', amount: '60,00 €' }])
   expect(prepaymentColumn({ prepayments: [{ from: '2024-01', monthlyCents: 20000 }], flatRates: [{ from: '2024-01', monthlyCents: 5000 }, { from: '2025-07', monthlyCents: 5500 }] })).toEqual([

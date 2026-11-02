@@ -80,7 +80,7 @@ type TenancyForm = {
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
-// Leere erweiterte Mieter-Felder — bei „neu“ und (mit Werten) beim Bearbeiten verwendet
+// Leere erweiterte Mieter-Felder - bei „neu“ und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = {
   email: '', phone: '', correspondenceAddress: '', letterSalutation: '', iban: '', contractDate: '', relative: false, deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel, selfSupplyKind: '' as SelfSupplyKind | '',
@@ -440,7 +440,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           </div>
         )}
       </td>
-      <td data-label="Wohnung">{units.find((u) => u.id === t.unitId)?.name ?? '—'}</td>
+      <td data-label="Wohnung">{units.find((u) => u.id === t.unitId)?.name ?? '-'}</td>
       <td className="num" data-label="Personen">
         {(t.personHistory ?? []).map((p, i) => (
           <div key={i}>
@@ -453,7 +453,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         {fmtDate(t.start)} – {t.end ? fmtDate(t.end) : 'laufend'}
       </td>
       <td className="num" data-label="Kaltmiete je Monat">
-        {(t.baseRents?.length ?? 0) === 0 && '—'}
+        {(t.baseRents?.length ?? 0) === 0 && '-'}
         {(t.baseRents ?? []).map((p, i) => (
           <div key={i}>
             {(t.baseRents?.length ?? 0) > 1 && <><span className="muted nowrap">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}:</span>{' '}</>}
@@ -462,7 +462,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         ))}
       </td>
       <td className="num" data-label="Vorauszahlung je Monat">
-        {prepaymentColumn(t).length === 0 && '—'}
+        {prepaymentColumn(t).length === 0 && '-'}
         {prepaymentColumn(t).map((line, i) => (
           <div key={i}>
             {line.label !== null && <><span className="muted nowrap">{line.label}</span>{' '}</>}
@@ -519,7 +519,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       <PageHeader
         context="property"
         title="Stammdaten"
-        subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung."
+        subtitle="Objekt, Wohnungen und Mietverhältnisse - die Grundlage jeder Abrechnung."
       />
 
       {/* Fehler beim Löschen (#146); die der Formulare stehen in ihrem Dialog. */}
@@ -554,12 +554,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                   </td>
                   <td className="num" data-label="Wohnfläche">{u.areaM2.toLocaleString('de-DE')} m²</td>
-                  {showsMea && <td className="num" data-label="MEA">{u.mea != null ? u.mea.toLocaleString('de-DE') : '—'}</td>}
+                  {showsMea && <td className="num" data-label="MEA">{u.mea != null ? u.mea.toLocaleString('de-DE') : '-'}</td>}
                   <td data-label="Kostenverteilung">
                     {usageOf(u) === 'vermietet' && <span className="badge accent">beteiligt</span>}
                     {usageOf(u) === 'eigen' && (
                       <span className="badge gray" title="In der Verteilbasis, Anteil trägt der Vermieter">
-                        Eigennutzung — Eigenanteil
+                        Eigennutzung - Eigenanteil
                       </span>
                     )}
                     {usageOf(u) === 'ausgenommen' && (
@@ -586,7 +586,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           </Table>
         )}
         {units.length > 0 && participating.length === 0 && (
-          <NoticeBox level="warning" action={<>Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</>} />
+          <NoticeBox level="warning" action={<>Keine Wohnung ist an der Kostenverteilung beteiligt - die Abrechnung wäre leer.</>} />
         )}
       </Card>
 
@@ -616,7 +616,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           <div role="status"><NoticeBox level="warning" action="Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden." /></div>
         )}
         <p className="muted">
-          Personenzahl und Vorauszahlung werden als Staffel erfasst („ab X gilt Y“) — Änderungen
+          Personenzahl und Vorauszahlung werden als Staffel erfasst („ab X gilt Y“) - Änderungen
           wie Geburt, Auszug einzelner Personen oder Vorauszahlungs-Erhöhungen brauchen kein
           neues Mietverhältnis. Nur bei echtem Mieterwechsel das alte Mietverhältnis beenden
           und ein neues anlegen.
@@ -664,7 +664,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </Field>
             <Field label="Wohnung" required {...tenErrors.field('unitId')}>
               <select value={tenForm.unitId} onChange={(e) => setTenForm({ ...tenForm, unitId: e.target.value })}>
-                <option value="">— wählen —</option>
+                <option value="">Bitte wählen</option>
                 {units.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
@@ -678,7 +678,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </Field>
 
             <div className="field-group">
-              <div className="field-group-label">Personenzahl — Staffel</div>
+              <div className="field-group-label">Personenzahl - Staffel</div>
               {tenForm.personHistory.map((p, i) => (
                 <div className="staffel-row" key={i}>
                   <label className="field">
@@ -699,7 +699,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </div>
 
             <div className="field-group">
-              <div className="field-group-label">Kaltmiete je Monat — Staffel (leer = nur NK)</div>
+              <div className="field-group-label">Kaltmiete je Monat - Staffel (leer = nur NK)</div>
               {tenForm.baseRents.map((p, i) => (
                 <div className="staffel-row" key={i}>
                   <MonthField label={scheduleLabel('baseRent')} placeholder={startsSchedule(tenForm.baseRents, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('baseRent', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from } : x)) })} />
@@ -716,7 +716,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </div>
 
             <div className="field-group">
-              <div className="field-group-label">NK-<Term id="prepayment">Vorauszahlung</Term> je Monat — Staffel</div>
+              <div className="field-group-label">NK-<Term id="prepayment">Vorauszahlung</Term> je Monat - Staffel</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="staffel-row" key={i}>
                   <MonthField label={scheduleLabel('prepayment')} placeholder={startsSchedule(tenForm.prepayments, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('prepayment', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from } : x)) })} />
@@ -742,7 +742,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               const rows = tenForm.heatingPrepayments.length > 0 ? tenForm.heatingPrepayments : [{ from: '', amount: '' }]
               return (
                 <div className="field-group">
-                  <div className="field-group-label">Heizvorauszahlung je Monat (neben der übrigen Vorauszahlung) — Staffel</div>
+                  <div className="field-group-label">Heizvorauszahlung je Monat (neben der übrigen Vorauszahlung) - Staffel</div>
                   <p className="muted">
                     {plant
                       ? <>Erscheint, weil die Heizung „{plant.name || 'Heizanlage'}“ die Heizkosten getrennt abrechnet (<Term id="separateHeatingSettlement">getrennte Heizkostenabrechnung</Term> mit eigener Vorauszahlung). Ändern unter Stammdaten → Heizung.</>
@@ -768,7 +768,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
             {/* Aufgeklappt, wenn die gespeicherte IBAN vermutlich falsch ist (#279): Der Hinweis steht darin. */}
             <details className="extra-details" style={{ width: '100%' }} open={storedIbanInvalid(tenancies.find((t) => t.id === tenForm.id)?.iban) || undefined}>
-              <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
+              <summary>Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
               <div className="row">
                 <label className="field" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
                   <span>Nebenkosten (<Term id="flatRate">Pauschale</Term>, <Term id="inclusiveRent">Inklusivmiete</Term>)</span>
@@ -797,7 +797,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               )}
               {showsFlatRates(tenForm.costModel, tenForm.heatingModel) && (
                 <div className="field-group">
-                  <div className="field-group-label">Pauschale je Monat — Staffel</div>
+                  <div className="field-group-label">Pauschale je Monat - Staffel</div>
                   <div className="muted">
                     Die Pauschale steht im Mietkonto, wird aber nie abgerechnet. Eine Vorauszahlung für die
                     abgerechnete Art gehört in die Staffel „NK-Vorauszahlung“ oben.
@@ -912,8 +912,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               </select>
               <small className="muted">
                 {unitForm.usage === 'vermietet' && 'Die Wohnung nimmt an der Verteilung teil, ihren Anteil trägt der Mieter.'}
-                {unitForm.usage === 'eigen' && <>Zählt in die <Term id="distributionBasis">Verteilbasis</Term>, hat aber keinen Mieter — der Anteil ist Ihr <Term id="ownShare">Eigenanteil</Term>. Richtig für selbst bewohnte Wohnungen, etwa neben einer <Term id="granny">Einliegerwohnung</Term>, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.</>}
-                {unitForm.usage === 'ausgenommen' && <>Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur <Term id="billingUnit">Abrechnungseinheit</Term> gehört (z. B. separat abgerechnete Einheit) — sonst tragen die Mieter deren Anteil mit.</>}
+                {unitForm.usage === 'eigen' && <>Zählt in die <Term id="distributionBasis">Verteilbasis</Term>, hat aber keinen Mieter - der Anteil ist Ihr <Term id="ownShare">Eigenanteil</Term>. Richtig für selbst bewohnte Wohnungen, etwa neben einer <Term id="granny">Einliegerwohnung</Term>, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.</>}
+                {unitForm.usage === 'ausgenommen' && <>Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur <Term id="billingUnit">Abrechnungseinheit</Term> gehört (z. B. separat abgerechnete Einheit) - sonst tragen die Mieter deren Anteil mit.</>}
               </small>
             </label>
             {/* Nutzungswechsel (#259): eine Staffel „ab Tag“, die Nutzung oben gilt bis zum ersten Wechsel. */}
@@ -950,7 +950,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             {connectionTypes(objectMeters, unitForm.noConnection).length > 0 && (
               <details className="extra-details">
                 <summary>
-                  Weitere Angaben — Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
+                  Weitere Angaben - Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
                 </summary>
                 <fieldset className="field no-connection">
                   <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
@@ -1101,7 +1101,7 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
   return (
     <Drawer
       open
-      title={`Mieterwechsel: ${tenancy.tenantName} (${unit?.name ?? '—'})`}
+      title={`Mieterwechsel: ${tenancy.tenantName} (${unit?.name ?? '-'})`}
       subtitle="Auszug, Zwischenablesung und neuer Mieter; gespeichert wird alles auf einmal."
       width={560}
       onClose={onClose}
@@ -1140,11 +1140,11 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
         </div>
         {sheet && <SheetPrinter sheet={sheet} propertyName={property?.name ?? ''} subtitle={`${unit?.name ?? ''} · Zwischenablesung`} onDone={closeSheet} />}
         {meters.length === 0 ? (
-          <p className="muted">Keine Zähler erfasst — nichts abzulesen. (Wasser nach Personen braucht keine Ablesung.)</p>
+          <p className="muted">Keine Zähler erfasst - nichts abzulesen. (Wasser nach Personen braucht keine Ablesung.)</p>
         ) : (
           <>
             <p className="muted">
-              Stände zum {endText} erfassen — dann wird der Verbrauch nach den Ständen statt
+              Stände zum {endText} erfassen - dann wird der Verbrauch nach den Ständen statt
               tagesanteilig aufgeteilt.{heatMeters.length > 0 && ' Bei der Heizkostenabrechnung trägt jeder Mieter seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.'}
               {' '}{unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
               {' '}Leere Felder werden übersprungen.
@@ -1168,7 +1168,7 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
                   <div className="field-grid">
                     <Field label="Warum gibt es keine Zwischenablesung?" required {...errors.field('gapStatus')}>
                       <select value={gap.status} onChange={(e) => setGap({ ...gap, status: INTERIM_GAP_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
-                        <option value="">— bitte wählen —</option>
+                        <option value="">Bitte wählen</option>
                         {INTERIM_GAP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </Field>
@@ -1219,11 +1219,11 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
       </section>
 
       <NoticeBox level="hint">
-        Beim Speichern passiert: Mietverhältnis „{tenancy.tenantName}“ endet am {ISO_DAY.test(endDate) ? fmtDate(endDate) : '—'}
+        Beim Speichern passiert: Mietverhältnis „{tenancy.tenantName}“ endet am {ISO_DAY.test(endDate) ? fmtDate(endDate) : '-'}
         {readCount > 0 && <> · {readCount} Zwischenablesung{readCount > 1 ? 'en werden' : ' wird'} gespeichert</>}
         {vacancy
           ? ' · die Wohnung bleibt ohne Mieter (Leerstandskosten trägt der Vermieter).'
-          : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}“ ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
+          : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}“ ab {newTenant.start ? fmtDate(newTenant.start) : '-'}.</> : ' · neues Mietverhältnis wird angelegt.'}
         {!vacancy && successorHeatingNote(tenancy) && <> {successorHeatingNote(tenancy)}</>}
       </NoticeBox>
     </Drawer>

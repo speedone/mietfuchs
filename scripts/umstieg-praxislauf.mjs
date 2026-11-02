@@ -402,7 +402,7 @@ fall(7, 'Archive von vor der Datenbank: mit Belegen und mit nichts als der db.js
   // **Das ist das Archiv, das bei den heutigen Nutzern liegt**, und in einem Jahr ist es bei
   // manchem das Einzige, was noch da ist. Es führt keine `mietfuchs.sqlite`, denn die gab es
   // damals nicht. Fall 8 hat eine veraltete Datenbank dabei, Fall 9 nur die Datenbank; dieser
-  // hier ist der Fall davor, und er war bis zuletzt ungeprüft — ausgerechnet der, der am
+  // hier ist der Fall davor, und er war bis zuletzt ungeprüft - ausgerechnet der, der am
   // längsten vorkommen wird. MIGRATION.md verweist Nutzer ausdrücklich auf diesen Weg.
   const archiv = new AdmZip()
   archiv.addFile('db.json', Buffer.from(JSON.stringify(bestandHeute())))

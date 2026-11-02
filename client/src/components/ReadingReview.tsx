@@ -29,7 +29,7 @@ export function ReadingReview({ reading, serverFile, score: rs, meters, units, a
           <label className="field">
             Zähler
             <select value={reading.matchedMeterId} onChange={(e) => onChange({ matchedMeterId: e.target.value })}>
-              <option value="">— zuordnen —</option>
+              <option value="">Bitte zuordnen</option>
               {meters.map((m) => (
                 <option key={m.id} value={m.id}>{m.name} · {unitName(m.unitId)}{m.meterNumber ? ` · Nr. ${m.meterNumber}` : ''}</option>
               ))}

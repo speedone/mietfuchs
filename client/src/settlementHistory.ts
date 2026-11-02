@@ -23,7 +23,7 @@ function linesOf(settlement: unknown): string[] {
       const unit = Reflect.get(st, 'unitName')
       const balance = Reflect.get(st, 'balanceCents')
       if (typeof balance !== 'number') continue
-      lines.push(`${typeof name === 'string' ? name : '—'} (${typeof unit === 'string' ? unit : '—'}): ${saldo(balance)}`)
+      lines.push(`${typeof name === 'string' ? name : '-'} (${typeof unit === 'string' ? unit : '-'}): ${saldo(balance)}`)
     }
   }
   return lines.length > 0 ? lines : ['Den Inhalt dieses Standes kann diese Version nicht anzeigen.']
@@ -43,25 +43,25 @@ export function deadlineView(label: string, deadline: string, sentAt: string | n
   const endText = fmtDate(deadline)
   const daysLeft = Math.ceil((Date.parse(`${deadline}T00:00:00Z`) - today.getTime()) / 86400000)
   if (sentAt) {
-    return { level: 'ok', text: `Abrechnung ${label} am ${fmtDate(sentAt)} versendet — die Frist nach § 556 BGB (${endText}) ist ${sentAt <= end ? 'gewahrt' : 'überschritten'}.` }
+    return { level: 'ok', text: `Abrechnung ${label} am ${fmtDate(sentAt)} versendet - die Frist nach § 556 BGB (${endText}) ist ${sentAt <= end ? 'gewahrt' : 'überschritten'}.` }
   }
   const earlier = history.map((h) => h.sentAt).filter((d): d is string => typeof d === 'string' && d !== '').sort()[0]
   if (earlier && earlier > end) {
     // Schon die frühere Fassung ging erst nach Fristende zu: dann gilt, was ohne Versand gälte.
     const late = `Eine frühere Fassung der Abrechnung ${label} wurde am ${fmtDate(earlier)} versendet, nach dem Ende der Frist.`
-    return { level: 'error', text: `${late} Die Abrechnungsfrist für ${label} ist am ${endText} abgelaufen — Nachforderungen sind in der Regel ausgeschlossen (Guthaben des Mieters bleiben fällig).` }
+    return { level: 'error', text: `${late} Die Abrechnungsfrist für ${label} ist am ${endText} abgelaufen - Nachforderungen sind in der Regel ausgeschlossen (Guthaben des Mieters bleiben fällig).` }
   }
   if (earlier) {
     const head = `Eine frühere Fassung der Abrechnung ${label} wurde am ${fmtDate(earlier)} versendet (siehe „Frühere Abschlüsse dieses Jahres“); die Frist nach § 556 BGB (${endText}) ist für sie gewahrt.`
     if (daysLeft >= 0) {
-      return { level: daysLeft < 90 ? 'notice' : 'ok', text: `${head} Soll eine berichtigte Fassung mehr nachfordern, muss auch sie dem Mieter bis zum ${endText} zugehen — noch ${daysLeft} Tage.` }
+      return { level: daysLeft < 90 ? 'notice' : 'ok', text: `${head} Soll eine berichtigte Fassung mehr nachfordern, muss auch sie dem Mieter bis zum ${endText} zugehen - noch ${daysLeft} Tage.` }
     }
     return { level: 'notice', text: `${head} Die Frist ist abgelaufen; eine berichtigte Fassung kann in der Regel keine höhere Nachzahlung mehr fordern (Ausnahme nach § 556 Abs. 3 Satz 3 BGB: Der Vermieter hat die Verspätung nicht zu vertreten).` }
   }
   if (daysLeft >= 0) {
-    return { level: daysLeft < 90 ? 'notice' : 'ok', text: `Abrechnungsfrist (§ 556 BGB): Die Abrechnung ${label} muss dem Mieter bis zum ${endText} zugehen — noch ${daysLeft} Tage.` }
+    return { level: daysLeft < 90 ? 'notice' : 'ok', text: `Abrechnungsfrist (§ 556 BGB): Die Abrechnung ${label} muss dem Mieter bis zum ${endText} zugehen - noch ${daysLeft} Tage.` }
   }
-  return { level: 'error', text: `Die Abrechnungsfrist für ${label} ist am ${endText} abgelaufen — Nachforderungen sind in der Regel ausgeschlossen (Guthaben des Mieters bleiben fällig).` }
+  return { level: 'error', text: `Die Abrechnungsfrist für ${label} ist am ${endText} abgelaufen - Nachforderungen sind in der Regel ausgeschlossen (Guthaben des Mieters bleiben fällig).` }
 }
 
 export function historyView(entries: HistoryEntry[]): { id: string, head: string, lines: string[] }[] {

@@ -63,7 +63,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typ
 //
 // Zurück kommt genau das, was der Anbieter geliefert hat: ein Objekt mit Feldern vom Typ
 // `unknown`. Ein Modell hält sich nicht zwingend an sein Schema, und nichts prüft das zur
-// Laufzeit gegen das Schema — deshalb engt jeder Aufrufer unten selbst ein, was er braucht,
+// Laufzeit gegen das Schema - deshalb engt jeder Aufrufer unten selbst ein, was er braucht,
 // statt sich hier einen fertigen Typ zusichern zu lassen. Falsches fällt so beim Lesen auf und
 // nicht erst in der Oberfläche. Auch extractHeating.ts fragt darüber (Heizung PR 20).
 export async function ask(
@@ -331,7 +331,7 @@ export async function extractFromFile(
   const result = normalizeAmounts(rawFromAnswer(answer))
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
-  // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
+  // Kategorien aus der Extraktion erhalten - der Client mappt notfalls per Stichwort.
   if (Array.isArray(result.positions) && result.positions.length > 0) {
     try {
       const vendor = typeof result.vendor === 'string' ? result.vendor : undefined

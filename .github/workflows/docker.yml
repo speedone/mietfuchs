@@ -6,7 +6,7 @@ name: Docker-Image
 # das Image betreffen, wird nur zur Probe gebaut, ohne Anmeldung und ohne Veröffentlichung.
 # So fällt ein kaputter Build vor dem Merge auf und nicht erst auf main.
 #
-# Sichtbarkeit: Das Package übernimmt die des öffentlichen Repos — seit dem ersten Push
+# Sichtbarkeit: Das Package übernimmt die des öffentlichen Repos - seit dem ersten Push
 # (v0.3.0) ist es ohne Login abrufbar, ein manueller Freigabeschritt war nicht nötig.
 # Prüfen lässt sich das anonym über
 #   curl "https://ghcr.io/token?scope=repository:speedone/mietfuchs:pull"
@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   publish:
-    # Runner bewusst anpinnen (wie im Release-Workflow) — reproduzierbare Builds.
+    # Runner bewusst anpinnen (wie im Release-Workflow) - reproduzierbare Builds.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -61,7 +61,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ steps.image.outputs.name }}
-          # latest=auto ist der Standard, aber ausdrücklich gesetzt — sonst könnte ein
+          # latest=auto ist der Standard, aber ausdrücklich gesetzt - sonst könnte ein
           # Versionssprung der Action den dokumentierten Tag-Satz still verändern.
           flavor: latest=auto
           tags: |
