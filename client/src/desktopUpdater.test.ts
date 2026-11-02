@@ -1,7 +1,7 @@
 // Automatische Updates im Programmfenster (#517): wer zuständig ist, wann der Hinweis erscheint, was „Über Mietfuchs“
 // sagt. Die Komponenten prüft components/DesktopUpdater.test.tsx.
 import { expect, test } from 'vitest'
-import { readyHintVisible, releaseNotesUrl, updateOwner, updaterBridge, updaterText, type UpdaterState } from './desktopUpdater'
+import { readyHintVisible, releaseNotesUrl, serverHintAllowed, updateOwner, updaterBridge, updaterText, type UpdaterState } from './desktopUpdater'
 
 const state = (patch: Partial<UpdaterState> = {}): UpdaterState => ({
   phase: 'idle', current: '0.14.1', version: null, percent: null, choice: null, error: null, checkedAt: null, ...patch,
@@ -47,4 +47,14 @@ test('„Über Mietfuchs“: der Stand des Fensters in einem Satz', () => {
 test('„Was ist neu?“ zeigt fest ins eigene Repo', () => {
   expect(releaseNotesUrl('0.15.0')).toBe('https://github.com/speedone/mietfuchs/releases/tag/v0.15.0')
   expect(releaseNotesUrl('../x')).toBe('https://github.com/speedone/mietfuchs/releases/tag/v..%2Fx')
+})
+
+// Durchsicht K3: Scheitert das Fenster, bleibt der Hinweis des Servers als Weg zur neuen Version
+test('Durchsicht K3: Hinweis des Servers, wenn der Updater des Fensters nicht weiterkommt', () => {
+  expect(serverHintAllowed('server', null)).toBe(true)
+  expect(serverHintAllowed('pending', null)).toBe(false)
+  expect(serverHintAllowed('window', state({ phase: 'error', error: 'GitHub ist nicht erreichbar.' }))).toBe(true)
+  for (const phase of ['idle', 'checking', 'latest', 'downloading', 'ready'] as const) {
+    expect(serverHintAllowed('window', state({ phase }))).toBe(false)
+  }
 })

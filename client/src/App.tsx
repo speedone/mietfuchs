@@ -9,6 +9,7 @@ import { NewPropertyProvider, useOpenNewProperty } from './components/NewPropert
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
 import { UpdaterReadyHint } from './components/DesktopUpdater'
+import { serverHintAllowed } from './desktopUpdater'
 import DatabaseNotice from './components/Database'
 import PropertyNotice from './components/PropertyNotice'
 import { emptyPropertyNotice, propertyName } from './propertyView'
@@ -442,7 +443,7 @@ function Shell() {
           außer Sicht. */}
       {/* Im Programmfenster unter Windows der Hinweis des Fensters (#517), sonst der des Servers; nie beide */}
       {!close && update.updater?.owner === 'window' && <UpdaterReadyHint updates={update.updater} />}
-      {!close && (update.updater?.owner ?? 'server') === 'server' && update.status && hintVisible(update.status, settings) && (
+      {!close && serverHintAllowed(update.updater?.owner ?? 'server', update.updater?.state ?? null) && update.status && hintVisible(update.status, settings) && (
         <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen')} />
       )}
 

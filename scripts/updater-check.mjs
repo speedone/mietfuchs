@@ -29,6 +29,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { installedMatches, requestedFile } from './updater-probe.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -85,17 +86,23 @@ const json = async (/** @type {string} */ url, /** @type {RequestInit} */ init =
 const powershell = (/** @type {string} */ script) => execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' }).trim()
 // Läuft noch ein Mietfuchs oder ein Installer aus dem Ordner des Updaters?
 const running = () => powershell(`@(Get-Process | Where-Object { $_.ProcessName -eq 'Mietfuchs' -or ($_.Path -and $_.Path -like '*mietfuchs-updater*') -or $_.ProcessName -like 'Mietfuchs-Setup*' }).Count`) !== '0'
-const installedVersion = () => (fs.existsSync(exe) ? powershell(`(Get-Item '${exe}').VersionInfo.ProductVersion`) : '')
-// electron-builder schreibt die Version als ProductVersion, je nach Fassung mit einer vierten Stelle
-const isInstalled = (/** @type {string} */ version) => { const v = installedVersion(); return v === version || v === `${version}.0` }
+const versionInfo = () => {
+  if (!fs.existsSync(exe)) return { file: '', product: '' }
+  const [file = '', product = ''] = powershell(`$v = (Get-Item '${exe}').VersionInfo; "$($v.FileVersion)|$($v.ProductVersion)"`).split('|')
+  return { file, product }
+}
+const installedVersion = () => { const v = versionInfo(); return v.file || v.product }
+// FileVersion trägt die Version als Text, ProductVersion nur vierstellig ohne Vorabversion (Durchsicht S2)
+const isInstalled = (/** @type {string} */ version) => installedMatches(versionInfo(), version)
 
 // ---------- lokaler Server als Quelle, mit Protokoll ----------
-/** @type {{ method: string, url: string, range: string | null, status: number, bytes: number }[]} */
+/** @type {{ method: string, url: string, range: string | null, installationId: string | null, status: number, bytes: number }[]} */
 const requests = []
 const feed = http.createServer((req, res) => {
-  const name = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname).replace(/^\/+/, '')
+  const name = requestedFile(req.url ?? '/')
   const file = path.join(/** @type {string} */ (feedDir), path.basename(name))
-  const entry = { method: req.method ?? 'GET', url: req.url ?? '', range: req.headers.range ?? null, status: 404, bytes: 0 }
+  const id = req.headers['x-user-staging-id']
+  const entry = { method: req.method ?? 'GET', url: req.url ?? '', range: req.headers.range ?? null, installationId: typeof id === 'string' ? id : null, status: 404, bytes: 0 }
   requests.push(entry)
   if (!name || name !== path.basename(name) || !fs.existsSync(file)) return res.writeHead(404).end()
   const size = fs.statSync(file).size
@@ -219,7 +226,9 @@ async function waitReady(label) {
   const state = await updaterState().catch(() => null)
   check(ok, `${label}: v${v2} geladen, Stand ${JSON.stringify(state)}`)
   const got = requestsSince(from)
-  check(got.some((r) => r.url.endsWith('latest.yml')), `${label}: latest.yml vom lokalen Server gelesen`)
+  check(got.some((r) => requestedFile(r.url) === 'latest.yml'), `${label}: latest.yml vom lokalen Server gelesen`)
+  // Keine Kennung der Installation (Durchsicht M2)
+  check(got.every((r) => r.installationId === null || /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(r.installationId)), `${label}: keine Kennung der Installation in den Anfragen`)
   const bytes = got.reduce((sum, r) => sum + r.bytes, 0)
   report[`${label}-download`] = { requests: got.length, bytes, full: fs.statSync(path.join(/** @type {string} */ (feedDir), `Mietfuchs-Setup-${v2}.exe`)).size }
   const hint = `[...document.querySelectorAll('.update-hint')].some((h) => h.textContent.includes(${JSON.stringify(`Version ${v2} ist bereit`)}))`
@@ -234,6 +243,14 @@ async function verifyV2(label, dataDir, before) {
   check(JSON.stringify(after) === JSON.stringify(before), `${label}: alle Daten da (${JSON.stringify(after).length} Zeichen Fingerabdruck)`)
   const backup = path.join(dataDir, `mietfuchs.sqlite.vor-${step}`)
   check(fs.existsSync(backup), `${label}: Sicherung vor dem Migrieren liegt vor (${path.basename(backup)})`)
+}
+
+// Die Protokolle des Fensters drehen bei jedem Start weiter; nach jedem Durchgang sichern (Durchsicht K7)
+const saveLogs = (/** @type {string} */ prefix) => {
+  for (const name of ['updater.log', 'updater.vorher.log', 'server.log', 'server.vorher.log']) {
+    const file = path.join(windowLog, name)
+    if (fs.existsSync(file)) fs.copyFileSync(file, path.join(out, `${prefix}-${name}`))
+  }
 }
 
 const quit = async () => {
@@ -267,6 +284,7 @@ try {
   // ---------- 4. „Jetzt neu starten“ ----------
   await json('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ updateCheck: 'on' }) })
   await waitReady('Jetzt')
+  saveLogs('jetzt-v1-vorher')
   check(await click('Jetzt neu starten') === true, 'Jetzt: „Jetzt neu starten“ gedrückt')
   const oldGone = await until(async () => app.exitCode !== null, 60_000)
   check(oldGone, `Jetzt: v1 beendet sich (Code ${app.exitCode})`)
@@ -277,6 +295,7 @@ try {
   // Vom Installer gestartet, erbt Mietfuchs die Umgebung der Probe nicht unbedingt (Start über die Verknüpfung). Für die
   // Prüfung der Daten deshalb beenden und mit dem Datenordner der Probe starten; hat es ihn schon migriert, liegt die
   // Sicherung dort, sonst legt dieser Start sie an.
+  saveLogs('jetzt-v1')
   check(await quit(), 'Jetzt: vom Installer gestartetes Mietfuchs beendet')
   app = launch('jetzt-v2', dataNow, false)
   check(await ready(), 'Jetzt: v2 mit dem Datenordner der Probe gestartet')
@@ -297,6 +316,7 @@ try {
   // Mietfuchs normal beenden (wie „Mietfuchs beenden“)
   await fetch(`${BASE}/api/quit`, { method: 'POST' }).catch(() => {})
   check(await until(async () => app.exitCode !== null, 60_000), `Später: v1 beendet (Code ${app.exitCode})`)
+  saveLogs('spaeter-v1')
   check(await until(async () => isInstalled(v2) && !running(), 300_000), `Später: Der Installer hat v${v2} still installiert (installiert ${installedVersion()})`)
   check(await portFree(), 'Später: Danach startet nichts von selbst')
   app = launch('spaeter-v2', dataLater, false)
@@ -309,10 +329,7 @@ try {
   report.requests = requests
   report.failures = failures
   fs.writeFileSync(path.join(out, 'bericht.json'), `${JSON.stringify(report, null, 2)}\n`)
-  for (const name of ['updater.log', 'updater.vorher.log', 'server.log', 'server.vorher.log']) {
-    const file = path.join(windowLog, name)
-    if (fs.existsSync(file)) fs.copyFileSync(file, path.join(out, name))
-  }
+  saveLogs('ende')
   const installerLog = path.join(os.tmpdir(), 'mietfuchs-installation.log')
   if (fs.existsSync(installerLog)) fs.copyFileSync(installerLog, path.join(out, 'mietfuchs-installation.log'))
   feed.close()

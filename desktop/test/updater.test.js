@@ -127,7 +127,7 @@ function fakeUpdater() {
   return updater
 }
 
-/** @param {{ consent?: unknown, now?: () => number }} [options] */
+/** @param {{ consent?: unknown, now?: () => number, installerExists?: boolean }} [options] */
 function controller(options = {}) {
   // Ausdrücklich ohne Zustimmung (`consent: undefined`) ist etwas anderes als keine Angabe
   const consent = 'consent' in options ? options.consent : 'on'
@@ -142,6 +142,8 @@ function controller(options = {}) {
     source: 'github',
     current: '0.14.1',
     readConsent: async () => { order.push('zustimmung'); return consent },
+    installerExists: () => options.installerExists !== false,
+    installGraceMs: 20,
     stopServer: async () => { order.push('server beendet') },
     resumeServer: async () => { order.push('server wieder gestartet') },
     quit: () => { order.push('beenden') },
@@ -191,7 +193,8 @@ test('Steuerung: herunterladen, bereit, Stand an die Oberfläche', async () => {
   updater.emit('update-available', { version: '0.15.0' })
   updater.emit('download-progress', { percent: 50 })
   updater.emit('update-downloaded', { version: '0.15.0' })
-  assert.deepEqual(states.map((s) => s.phase), ['checking', 'downloading', 'downloading', 'ready'])
+  // Geänderte Erwartung (Durchsicht S1): zuerst der Anfangsstand
+  assert.deepEqual(states.map((s) => s.phase), ['idle', 'checking', 'downloading', 'downloading', 'ready'])
   assert.equal(c.state().version, '0.15.0')
   updater.emit('error', new Error('net::ERR_CONNECTION_RESET'))
   assert.equal(c.state().phase, 'ready')
@@ -236,4 +239,41 @@ test('„Beim nächsten Start“: installiert beim Beenden, still und ohne Start
   assert.equal(c.state().choice, 'later')
   assert.equal(c.installOnQuit(), true)
   assert.deepEqual(updater.installs, [[true, false]])
+})
+
+// Durchsicht M2: electron-updater schickt sonst bei jeder Prüfung eine dauerhafte Kennung der Installation
+// (x-user-staging-id aus userData/.updaterId). Zugesagt ist: GitHub sieht nur IP-Adresse und Versionsnummer.
+test('Durchsicht M2: keine Kennung der Installation an GitHub', () => {
+  const { updater } = controller()
+  assert.deepEqual(/** @type {any} */ (updater).requestHeaders, { 'x-user-staging-id': '00000000-0000-0000-0000-000000000000' })
+})
+
+// Durchsicht S1: Die Oberfläche bekommt den Anfangsstand, nicht erst den nächsten Wechsel
+test('Durchsicht S1: der Anfangsstand geht gleich an die Oberfläche', () => {
+  const { states } = controller()
+  assert.deepEqual(states.map((s) => s.phase), ['idle'])
+})
+
+// Durchsicht S4: install() meldet einen gescheiterten Start des Installers erst danach als Ereignis `error`
+test('Durchsicht S4: scheitert der Start des Installers danach, läuft der Server weiter und Mietfuchs bleibt offen', async () => {
+  const { c, updater, order } = controller()
+  await c.tick()
+  updater.emit('update-downloaded', { version: '0.15.0' })
+  updater.install = (silent = false, runAfter = false) => {
+    updater.installs.push([silent, runAfter])
+    setImmediate(() => updater.emit('error', Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })))
+    return true
+  }
+  order.length = 0
+  await assert.rejects(c.restartNow(), /ließ sich nicht starten/)
+  assert.deepEqual(order, ['server beendet', 'server wieder gestartet'])
+})
+
+test('Durchsicht S4: fehlt der geladene Installer, wird der Server gar nicht erst beendet', async () => {
+  const { c, updater, order } = controller({ installerExists: false })
+  await c.tick()
+  updater.emit('update-downloaded', { version: '0.15.0' })
+  order.length = 0
+  await assert.rejects(c.restartNow(), /nicht mehr da/)
+  assert.deepEqual(order, [])
 })

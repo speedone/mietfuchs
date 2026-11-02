@@ -38,6 +38,26 @@ export function probeStep(journal) {
   return { tag, entry: { idx, version: '6', when: last.when + 1000, tag, breakpoints: true }, sql: 'SELECT 1;\n' }
 }
 
+// Für updater-check.mjs: die abgerufene Datei ohne Abfrageteil; electron-updater hängt an die Kanaldatei
+// `?noCache=…` (GenericProvider.getLatestVersion, Durchsicht M1)
+/** @param {string} url @returns {string} */
+export function requestedFile(url) {
+  return decodeURIComponent(new URL(url, 'http://127.0.0.1').pathname).replace(/^\/+/, '')
+}
+
+/**
+ * Für updater-check.mjs: Ist diese Version installiert? electron-builder schreibt `version` als FileVersion, die
+ * ProductVersion vierstellig ohne Vorabversion (0.15.0-rc.1 wird 0.15.0.0, Durchsicht S2). Deshalb zählt die
+ * FileVersion; nur ohne sie die ProductVersion, und die nur, wenn die gesuchte Version keine Vorabversion ist.
+ * @param {{ file: string, product: string }} installed aus `(Get-Item …).VersionInfo`
+ * @param {string} wanted
+ */
+export function installedMatches({ file, product }, wanted) {
+  const same = (/** @type {string} */ v) => v === wanted || v === `${wanted}.0`
+  if (file) return same(file)
+  return !wanted.includes('-') && same(product)
+}
+
 async function main() {
   const args = process.argv.slice(2)
   const i = args.indexOf('--root')

@@ -44,6 +44,11 @@ export function updateOwner(bridge: boolean, state: UpdaterState | null): Update
   return state.phase === 'off' ? 'server' : 'window'
 }
 
+// Ob der Hinweis des Servers erscheinen darf: wo er zuständig ist, und als Rückfall, wenn der Updater des Fensters
+// nicht weiterkommt (Durchsicht K3). Dann führt er wie bisher zur Anleitung über die Release-Seite.
+export const serverHintAllowed = (owner: UpdateOwner, state: UpdaterState | null): boolean =>
+  owner === 'server' || (owner === 'window' && state?.phase === 'error')
+
 // Der Hinweis „Version x ist bereit“ oben in der Seitenleiste, bis gewählt ist
 export const readyHintVisible = (state: UpdaterState | null): boolean =>
   !!state && state.phase === 'ready' && state.choice !== 'later' && !!state.version

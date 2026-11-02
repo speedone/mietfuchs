@@ -80,6 +80,10 @@ let restarting = Promise.resolve()
 // Automatische Updates (updater.js), nur im installierten Fenster unter Windows
 /** @type {ReturnType<typeof createUpdaterController> | null} */
 let updates = null
+// Erfüllt, sobald feststeht, ob es Updates gibt (Durchsicht S1): Die Seite fragt beim Laden womöglich früher
+/** @type {() => void} */
+let updaterSettled = () => {}
+const updaterReady = new Promise((resolve) => { updaterSettled = () => resolve(null) })
 
 // Die Ausgabe des Servers in eine Datei, damit sich ein gescheiterter Start erklären lässt; die vorige bleibt daneben.
 // Ebenso das Protokoll der Updates (updater.log).
@@ -430,8 +434,9 @@ async function start() {
   // Automatische Updates (updater.js), ebenso nur für die eigene Seite: Eine fremde könnte sonst Mietfuchs neu starten.
   // Ohne Updater (Mac, Store, beim Entwickeln) ist der Stand `off`, und die Oberfläche zeigt den bisherigen Hinweis.
   const updaterState = () => updates?.state() ?? initialUpdaterState('off', app.getVersion())
-  ipcMain.handle('mietfuchs:updater-get', (event) => {
+  ipcMain.handle('mietfuchs:updater-get', async (event) => {
     if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    await Promise.race([updaterReady, new Promise((resolve) => setTimeout(resolve, 15_000))])
     return updaterState()
   })
   // „Jetzt prüfen“ und das gerade gesetzte Häkchen; geprüft wird nur mit Zustimmung, die das Fenster selbst liest
@@ -445,8 +450,13 @@ async function start() {
   })
   ipcMain.handle('mietfuchs:updater-restart', async (event) => {
     if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
-    if (!updates) throw new Error('Mietfuchs aktualisiert sich hier nicht selbst.')
-    await updates.restartNow()
+    const controller = updates
+    if (!controller) throw new Error('Mietfuchs aktualisiert sich hier nicht selbst.')
+    // In dieselbe Reihe wie der Neustart für den Heimnetz-Schalter: before-quit wartet darauf, ein Beenden mittendrin
+    // lässt den Server also erst leerlaufen (Durchsicht S3)
+    const next = restarting.then(() => controller.restartNow())
+    restarting = next.catch(() => {})
+    await next
     return updaterState()
   })
 
@@ -475,9 +485,10 @@ async function start() {
   }
   const win = mainWindow
   if (!win) return
+  // Vor dem Laden der Seite, damit sie den Stand gleich bekommt (Durchsicht S1)
+  void setupUpdater().catch((err) => console.error(`Updates: ${err}`)).finally(updaterSettled)
   await win.loadURL(origin)
   void selfTest(win).catch((err) => console.error(`Selbstprüfung: ${err}`))
-  void setupUpdater().catch((err) => console.error(`Updates: ${err}`))
 }
 
 // ---------- Automatische Updates (#517, updater.js) ----------
@@ -525,19 +536,22 @@ async function setupUpdater() {
       const res = await fetch(`${origin}/api/settings`, { signal: AbortSignal.timeout(5000) })
       return res.ok ? /** @type {any} */ (await res.json())?.updateCheck : undefined
     },
+    // Das Ende des Servers ist kein Absturz (stopServer setzt `retired`); `quitting` bleibt, wie es ist, damit
+    // before-quit danach wie immer erst den Server abwartet (Durchsicht S3)
     stopServer: async () => {
-      // Das Ende des Servers ist dann kein Absturz, und before-quit beendet nichts mehr
-      quitting = true
       port = origin ? Number(new URL(origin).port) : null
-      await restarting
       await stopServer()
     },
     resumeServer: async () => {
-      quitting = false
+      if (quitting) return
       origin = new URL(await startServer(readSettings(), port ?? undefined)).origin
       if (mainWindow) await mainWindow.loadURL(origin)
     },
     quit: () => app.quit(),
+    installerExists: () => {
+      const file = /** @type {any} */ (updater).installerPath
+      return typeof file === 'string' && fs.existsSync(file)
+    },
     onState: (state) => {
       line(`Stand: ${JSON.stringify(state)}`)
       for (const win of BrowserWindow.getAllWindows()) {

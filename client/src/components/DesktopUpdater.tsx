@@ -13,6 +13,8 @@ export type DesktopUpdates = { owner: UpdateOwner; state: UpdaterState | null; b
 
 const messageOf = (e: unknown) => String((e as Error)?.message ?? e)
 
+const OFF: UpdaterState = { phase: 'off', current: '', version: null, percent: null, choice: null, error: null, checkedAt: null }
+
 // Liest den Stand und folgt jeder Änderung. Wird das Häkchen gesetzt, prüft das Fenster gleich, wenn es heute noch
 // nicht geprüft hat (es liest die Zustimmung selbst beim Server nach); ohne Zustimmung fragt es nicht.
 export function useDesktopUpdater(consent: unknown): DesktopUpdates {
@@ -22,7 +24,8 @@ export function useDesktopUpdater(consent: unknown): DesktopUpdates {
     if (!bridge) return
     let live = true
     const off = bridge.onChange((s) => { if (live) setState(s) })
-    bridge.get().then((s) => { if (live) setState(s) }).catch(() => { if (live) setState(null) })
+    // Antwortet die Brücke nicht, gilt der Server (Durchsicht K4)
+    bridge.get().then((s) => { if (live) setState(s) }).catch(() => { if (live) setState((s) => s ?? OFF) })
     return () => { live = false; off() }
   }, [bridge])
   useEffect(() => {
