@@ -96,3 +96,23 @@ test('Release: Prüfsummen nach dem Signieren, Herkunftsnachweis über dieselbe 
   assert.match(job, /id-token: write/)
   assert.match(job, /attestations: write/)
 })
+
+// v0.15.0: Releases sind im Repo unveränderlich. Der erste Upload veröffentlichte das Release, der zweite (latest.yml)
+// wurde abgelehnt, der Nachweis und die Store-Einreichung fielen aus. Deshalb: alles an einen Entwurf, Nachweis, dann
+// veröffentlichen, und nach dem Veröffentlichen kein Upload mehr.
+test('Release: erst Entwurf mit allen Dateien, Nachweis, dann veröffentlichen', () => {
+  const job = publishJob()
+  const uploads = [...job.matchAll(/uses: softprops\/action-gh-release@/g)]
+  assert.equal(uploads.length, 1, 'genau ein Upload, an den Entwurf')
+  assert.match(stepOf(job, 'uses: softprops/action-gh-release@'), /\n\s+draft: true\n/)
+  assert.match(stepOf(job, 'uses: softprops/action-gh-release@'), /dist-desktop\/latest\.yml/)
+  const attest = job.indexOf('uses: actions/attest@')
+  const publish = job.indexOf('- name: Release veröffentlichen')
+  assert.ok(job.indexOf('uses: softprops/action-gh-release@') < attest && attest < publish, 'Upload, Nachweis, Veröffentlichen')
+  assert.match(stepOf(job, '- name: Release veröffentlichen'), /--draft=false/)
+  // Eine Vorabversion (Tag mit Bindestrich) darf nie `latest` werden, sonst böte update.ts sie jedem an
+  const publishStep = stepOf(job, '- name: Release veröffentlichen')
+  assert.match(publishStep, /PRERELEASE: \$\{\{ contains\(github\.ref_name, '-'\) \}\}/)
+  assert.match(publishStep, /if \[ "\$PRERELEASE" = true \]; then flags=\(--prerelease\); else flags=\(--latest\); fi/)
+  assert.equal(job.slice(publish).match(/action-gh-release|gh release upload/), null, 'nach dem Veröffentlichen nimmt GitHub nichts mehr an')
+})
