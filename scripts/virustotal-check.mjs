@@ -103,6 +103,8 @@ async function check(key, file) {
   for (;;) {
     await sleep(PAUSE_MS)
     const res = await vt(key, `${API}/analyses/${id}`)
+    // Direkt nach dem Hochladen kennt VirusTotal die Analyse manchmal noch nicht (v0.15.2: server.mjs, HTTP 404)
+    if (res.status === 404 && Date.now() < until) continue
     if (!res.ok) throw new Error(`Analyse HTTP ${res.status}`)
     const attrs = /** @type {any} */ (await res.json()).data?.attributes ?? {}
     if (attrs.status === 'completed') return { file, sha256, stats: attrs.stats ?? null, found: findings(attrs.results) }
@@ -124,6 +126,7 @@ async function recheck(key, sha256, name) {
   for (;;) {
     await sleep(PAUSE_MS)
     const a = await vt(key, `${API}/analyses/${id}`)
+    if (a.status === 404 && Date.now() < until) continue
     if (!a.ok) throw new Error(`Analyse HTTP ${a.status}`)
     const attrs = /** @type {any} */ (await a.json()).data?.attributes ?? {}
     if (attrs.status === 'completed') return { file: name, sha256, stats: attrs.stats ?? null, found: findings(attrs.results) }
