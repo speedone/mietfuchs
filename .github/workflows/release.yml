@@ -1204,7 +1204,7 @@ jobs:
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
       # Herkunftsnachweis: belegt mit einer Sigstore-Signatur, dass jede Datei aus SHA256SUMS.txt in diesem Workflow aus
-      # diesem Repo gebaut wurde. Prüfen mit `gh attestation verify <Datei> -R speedone/mietfuchs` (README, „Download
+      # diesem Repo gebaut wurde. Prüfen mit `gh attestation verify <Datei> -R speedone/mietfuchs` (docs/installation.md, „Download
       # prüfen“). Zuletzt, damit ein Fehler hier kein halbes Release hinterlässt. Scheitert er, ist der Job rot und die
       # Einreichung im Store (needs: veroeffentlichen) unterbleibt; ein erneuter Lauf des Jobs hängt dieselben Dateien
       # wieder an, holt den Nachweis nach und gibt den Store frei. Bewusst ohne continue-on-error: Ein Release ohne

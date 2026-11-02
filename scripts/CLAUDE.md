@@ -12,7 +12,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Bestand ist erfunden** („Lindenweg 12, 12345 Musterstadt“, Beispiel-IBAN
   `DE02 1203 0000 0000 2020 51`); echte Namen, Adressen oder Belege gehören nie hinein. Steht ein
   Fehler im Bild, bricht das Skript ab; die Bilder trotzdem vor dem Commit ansehen. Dateinamen
-  beibehalten, das README verlinkt sie. Browser einmalig: `npx playwright install chromium`. Dazu
+  beibehalten, README und docs/funktionsweise.md verlinken sie. Browser einmalig: `npx playwright install chromium`. Dazu
   `muster-hell.png` und `muster-dunkel.png` von der Musterseite (`?muster`, ganze Seite, vom README
   nicht verlinkt), und das Skript bricht ab, wenn die Tabelle „Auswertung prüfen“ bei 1440 px seitlich
   rollt. `startServer` (demo-stock.mjs) setzt `NKA_TEST_IDS=seq` (server/src/CLAUDE.md): dieselben
@@ -144,7 +144,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 ## Programmfenster (#517)
 
 - **Mindestversionen:** macOS 13 (Ventura) laut README von Electron 45 („macOS (Ventura and up)“); Electron 44 hat
-  macOS 12 verlassen. Wer Electron anhebt, prüft das dort und zieht README und Release-Notes nach. Die
+  macOS 12 verlassen. Wer Electron anhebt, prüft das dort und zieht README, docs/installation.md und Release-Notes nach. Die
   Bun-Programmdatei ist für ältere Macs kein Ausweg: Bun verlangt ebenfalls macOS 13 („Bun requires macOS 13.0 or later“,
   docs/installation.mdx im Bun-Repo).
 - **Electron nur als Fenster** ([../desktop/](../desktop/), eigenes Paket mit eigenem Lockfile; `npm install` installiert es

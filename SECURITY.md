@@ -35,5 +35,5 @@ ASAR-Integrität von Electron) und beendet sich bei einer Abweichung.
 
 Ab Version 0.15.0 hat jedes Release eine Datei `SHA256SUMS.txt` mit der SHA-256-Prüfsumme jeder Datei
 und einen signierten Herkunftsnachweis (Artifact Attestation), dass die Dateien in der Release-Automatik
-dieses Repos gebaut wurden. Wie du beides prüfst, steht im README unter
-[Download prüfen](README.md#download-prüfen-für-fortgeschrittene).
+dieses Repos gebaut wurden. Wie du beides prüfst, steht in der Installationsanleitung unter
+[Download prüfen](docs/installation.md#download-prüfen-für-fortgeschrittene).
