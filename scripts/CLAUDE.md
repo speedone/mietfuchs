@@ -480,7 +480,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   startet das zweite nicht (Lauf-Datei, server/src/CLAUDE.md, „Zwei Mietfuchs auf demselben Datenordner“).
 - **Prüfsummen und Herkunftsnachweis**: Der Job „Ans Release anhängen“ bildet nach dem Signieren von `latest.yml`
   `SHA256SUMS.txt` über genau die Dateien, die er anhängt (dieselben Muster, Test in workflow-store.test.ts), hängt sie
-  mit an und erzeugt zuletzt mit `actions/attest` den Herkunftsnachweis über dieselbe Liste. Wer eine Datei ans Release
+  mit an und erzeugt mit `actions/attest` den Herkunftsnachweis über dieselbe Liste. **Releases sind im Repo unveränderlich**:
+  Alles geht an einen Entwurf (auch `latest.yml`), dann der Nachweis, zuletzt „Release veröffentlichen“; danach nimmt
+  GitHub keine Datei mehr an (so fehlten an v0.15.0 `latest.yml` und der Nachweis). Wer eine Datei ans Release
   hinzufügt, trägt ihr Muster in beide Listen ein.
 - **Bei jeder Nebenversion kommt ein Eintrag in `RELEASE_STEPS`** ([server/src/db/releaseSteps.ts](../server/src/db/releaseSteps.ts),
   `{ version: 'x.y.0', steps: <Zahl der Dateien server/drizzle/*.sql> }`, #318): Daraus nennt der Verlauf die Sicherung

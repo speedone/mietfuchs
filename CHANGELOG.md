@@ -6,6 +6,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.15.1] – 2026-11-02
+
+### Behoben
+
+- **Release 0.15.0 unvollständig**: Am Release 0.15.0 fehlten die Update-Beschreibung für das Programm unter Windows,
+  der Herkunftsnachweis der Dateien und die Einreichung im Microsoft Store, weil GitHub an ein veröffentlichtes Release
+  keine Datei mehr anhängen lässt. 0.15.1 bringt alles nach und ist inhaltlich gleich mit 0.15.0. Wer 0.15.0 mit dem
+  Installer eingerichtet hat, bekommt 0.15.1 als Update angeboten, sobald die Update-Prüfung erlaubt ist.
+
 ## [0.15.0] – 2026-11-02
 
 ### Hinzugefügt
@@ -3431,7 +3440,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.15.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/speedone/mietfuchs/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/speedone/mietfuchs/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/speedone/mietfuchs/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/speedone/mietfuchs/compare/v0.13.1...v0.14.0

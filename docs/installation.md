@@ -252,7 +252,7 @@ Dass sie auch in der Release-Automatik dieses Repos gebaut wurde, belegt ein sig
 gh attestation verify Mietfuchs-Setup-0.15.0.exe -R speedone/mietfuchs
 ```
 
-Beides gibt es ab Version 0.15.0. Updates unter Windows (Installer) prüft das Programmfenster selbst:
+Die Prüfsummen gibt es ab Version 0.15.0, den Herkunftsnachweis ab 0.15.1. Updates unter Windows (Installer) prüft das Programmfenster selbst:
 Es lädt nur eine Update-Beschreibung, die mit dem Schlüssel von Mietfuchs signiert ist.
 
 
