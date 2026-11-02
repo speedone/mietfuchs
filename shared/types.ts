@@ -873,6 +873,9 @@ export type UpdateStatus = {
   downloadUrl: string | null // nur bei der Programmdatei
   checkedAt: string | null
   error: string | null
+  // Die Oberfläche läuft auf einem anderen Gerät als Mietfuchs (Handy, Tablet, zweiter Rechner im Heimnetz). Dann ohne
+  // Download und ohne Umstiegshinweis: Die Datei gehört auf den Rechner, nicht auf dieses Gerät.
+  otherDevice?: true
 }
 
 export type SettlementRow = {

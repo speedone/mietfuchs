@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
 import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
 import { cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
-import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
+import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UpdateStatus, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, parseDecisions } from './bookingPlan.ts'
 import { followInvoiceDate, forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
@@ -88,7 +88,7 @@ import {
   archiveDatabaseProblem, archiveInfoText, originText, stripJournal, writeDatabaseSnapshot,
 } from './db/backup.ts'
 import { findingsText, validateDb } from './legacy/validate.ts'
-import { createUpdateChecker, mayAskGitHub, UPDATE_URL } from './update.ts'
+import { createUpdateChecker, forOtherDevice, mayAskGitHub, UPDATE_URL } from './update.ts'
 import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './version.ts'
 import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
@@ -4275,12 +4275,16 @@ const updateChecker = createUpdateChecker({
   movedAway: () => (MOVED_AWAY ?? readMovedMarker(DATA_DIR)) !== null,
 })
 
+// Von einem anderen Gerät (Heimnetz) ohne Download und Umstiegshinweis: Sie gelten für den Rechner mit Mietfuchs
+// (forOtherDevice in update.ts). Erkannt wie bei den Umzugsrouten an der Adresse der Verbindung (`fromThisComputer`).
+const updateFor = (req: Request, status: UpdateStatus): UpdateStatus => fromThisComputer(req) ? status : forOtherDevice(status)
+
 app.get('/api/update', async (req, res) => {
-  res.json(await updateChecker.check({ consent: storedSettings.updateCheck }))
+  res.json(updateFor(req, await updateChecker.check({ consent: storedSettings.updateCheck })))
 })
 
 app.post('/api/update/check', async (req, res) => {
-  res.json(await updateChecker.check({ consent: storedSettings.updateCheck, force: true }))
+  res.json(updateFor(req, await updateChecker.check({ consent: storedSettings.updateCheck, force: true })))
 })
 
 // ---------- Betriebszustand ----------

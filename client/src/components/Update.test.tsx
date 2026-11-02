@@ -303,6 +303,14 @@ test('Einstellungen: Windows-Programmdatei wird im bisherigen Ordner ersetzt', a
   expect(screen.getByText(/im selben Ordner wie bisher/)).toBeTruthy() // dort liegt der Ordner data
 })
 
+test('Einstellungen auf einem anderen Gerät: kein Download, sondern der Weg an den Rechner', async () => {
+  // Der Server lässt Datei und Umstiegshinweis weg (forOtherDevice); der Knopf lüde sie sonst aufs Handy
+  response = status({ downloadUrl: null, otherDevice: true })
+  render(<Card s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText(/an dem Rechner, auf dem es läuft/)).toBeTruthy())
+  expect(screen.queryByRole('link', { name: /herunterladen|Release-Seite/ })).toBeNull()
+})
+
 test('Einstellungen: macOS und Linux müssen erst entpacken', async () => {
   response = status({ downloadUrl: download('mietfuchs-macos-apple-silicon.zip') })
   render(<Card s={settings({ updateCheck: 'on' })} />)
