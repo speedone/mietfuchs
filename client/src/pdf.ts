@@ -50,11 +50,12 @@ export function discardPdfWorker(): void {
 
 export type PdfSource = { url: string } | { data: ArrayBuffer }
 
-export async function openPdf(source: PdfSource): Promise<{ doc: PDFDocumentProxy; close: () => void }> {
-  const pdfjs = await loadPdfjs()
-  const task = pdfjs.getDocument({
+// Wie pdf.js ein Dokument öffnet, ohne den Worker. `isEvalSupported: false` (#517): Belege kommen von außen, und pdf.js
+// übersetzte Schriften sonst mit `new Function` in Skript. Aus kostet nur etwas Geschwindigkeit beim Zeichnen.
+export function documentOptions(source: PdfSource) {
+  return {
     ...source,
-    worker: workerOf(pdfjs),
+    isEvalSupported: false,
     // Dekoder/Ressourcen, die Vite nach /pdfjs/ kopiert (siehe vite.config.ts):
     // ohne sie bleiben JBIG2-/JPEG2000-Scans (Behörden-Bescheide) fast leer.
     wasmUrl: '/pdfjs/wasm/',
@@ -62,7 +63,12 @@ export async function openPdf(source: PdfSource): Promise<{ doc: PDFDocumentProx
     cMapUrl: '/pdfjs/cmaps/',
     cMapPacked: true,
     standardFontDataUrl: '/pdfjs/standard_fonts/',
-  })
+  }
+}
+
+export async function openPdf(source: PdfSource): Promise<{ doc: PDFDocumentProxy; close: () => void }> {
+  const pdfjs = await loadPdfjs()
+  const task = pdfjs.getDocument({ ...documentOptions(source), worker: workerOf(pdfjs) })
   try {
     return { doc: await task.promise, close: () => void task.destroy() }
   } catch (err) {
