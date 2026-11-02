@@ -204,7 +204,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
 - **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
-  kennt nur das Drucken, den Zugriff aus dem Heimnetz und den Ordner-Dialog des Umzugs; alles nimmt der Hauptprozess nur von der eigenen Seite an
+  kennt nur das Drucken, den Zugriff aus dem Heimnetz, den Ordner-Dialog des Umzugs und die Updates; alles nimmt der Hauptprozess nur von der eigenen Seite an
   (`linkTarget(event.senderFrame.url, origin) === 'window'`). Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
   Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`):
   `runAsNode`, `NODE_OPTIONS` und Inspect aus, Asar-Integrität und `onlyLoadAppFromAsar` an; sein Modul lädt der
@@ -257,14 +257,72 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Dateizuordnungen an; käme so etwas dazu, bricht der Bau laut ab. NSIS übernimmt beim Schreiben die Zeitstempel aus
   dem Bau, echt sind nur Anlagezeiten neuer Kopien. **Prüfung auf ein laufendes Mietfuchs mit tasklist** statt der
   Vorlage, die bis zu dreimal PowerShell startet (beim Aktualisieren samt altem Deinstallationsprogramm sechsmal):
-  gemessen auf windows-11-arm 7 bis 18 Sekunden je Prüfung, mit tasklist 0,2 bis 1. **Keine Kopie des Installers**
-  nach `%LOCALAPPDATA%\mietfuchs-updater\installer.exe` (230 MB, nur für electron-updater, den das Fenster nicht hat):
-  [installer-copyfile.nsh](../desktop/build/installer-copyfile.nsh) fasst `copyFile` der Vorlage neu, eingebunden aus
-  `customUnInstallCheck`, dem einzigen Haken zwischen der Definition und dem Einfügen von `installApplicationFiles`.
-  Die Deinstallation fasst nach, wenn `RMDir /r` eine gerade geöffnete Datei übergeht (in der CI blieb so
+  gemessen auf windows-11-arm 7 bis 18 Sekunden je Prüfung, mit tasklist 0,2 bis 1. **Die Kopie des Installers**
+  nach `%LOCALAPPDATA%\mietfuchs-updater\installer.exe` (rund 230 MB, `installApplicationFiles` der Vorlage) bleibt:
+  Sie ist die alte Datei der Teil-Downloads von electron-updater (unten, „Automatische Updates“). Von PR #541 bis
+  zum Updater unterdrückte der Installer sie; das Deinstallationsprogramm entfernt sie (`customUnInstall`, nicht beim
+  Aktualisieren). Die Deinstallation fasst nach, wenn `RMDir /r` eine gerade geöffnete Datei übergeht (in der CI blieb so
   Mietfuchs.exe liegen). Prüfen ohne Windows: makensis aus dem Cache von electron-builder läuft unter Linux;
   `electron-builder --win nsis --x64 --prepackaged <Ordner mit Attrappe>` mit einem `wine`, das nur das
   Deinstallationsprogramm kopiert, übersetzt beide Durchläufe.
+- **Automatische Updates** (nur Windows mit dem Installer; [updater.js](../desktop/src/updater.js), eingesetzt in
+  main.js, Oberfläche in client/src/desktopUpdater.ts und components/DesktopUpdater.tsx): **electron-updater 6.8.11**,
+  fest gepinnt, als einzige Abhängigkeit in der asar; erschienen am selben Tag wie electron-builder 26.18.0 und mit
+  demselben builder-util-runtime 9.7.0. Quelle sind die Releases von speedone/mietfuchs (`build.publish` in
+  desktop/package.json, `releaseType: release`). **Nicht** im Store (`process.windowsStore`), nicht auf dem Mac
+  (Squirrel.Mac verlangt eine bezahlte Developer-ID-Signatur), nicht beim Entwickeln (`updaterSource`).
+  - **Release-Dateien**: Mit `build.publish` legt electron-builder auch bei `--publish never` `latest.yml` und
+    `Mietfuchs-Setup-<Version>.exe.blockmap` neben den Installer (`artifactCreatedWithoutExplicitPublishConfig` in
+    app-builder-lib/out/publish/PublishManager.js schreibt die Update-Infos außerhalb von `if (this.isPublish)`;
+    `createBlockmap` in NsisTarget.js, weil `differentialPackage` an ist). Ohne Quelle entstand nur die .blockmap
+    (geprüft mit `--prepackaged` und dem wine-Ersatz oben). „Programmfenster bauen (Windows)“ prüft beide und lädt
+    sie hoch, „Ans Release anhängen“ hängt sie an. `latest.yml` kennt keine Architektur; der eine Installer für x64
+    und ARM64 passt dazu.
+  - **Keine Signatur**: `win.verifyUpdateCodeSignature: false`, also kein `publisherName` in app-update.yml, und ohne
+    ihn prüft NsisUpdater nicht (`verifySignature` in electron-updater/out/NsisUpdater.js). Ein Zertifikat für
+    Windows gibt es nicht. Die **SHA-512** aus latest.yml prüft electron-updater trotzdem: beim vollen Download
+    (`DigestTransform` in builder-util-runtime/out/httpExecutor.js, `executeDownload` reicht `sha512` weiter), beim
+    Teil-Download (`DigestTransform` in differentialDownloader/DifferentialDownloader.js) und bei einer schon
+    geladenen Datei (`validateDownloadedPath` in DownloadedUpdateHelper.js). Sie kommt aus demselben Release wie der
+    Installer: Sie fängt beschädigte und abgebrochene Downloads ab, nicht ein fremdes Release; das hält nur HTTPS zu
+    GitHub und das Konto, das veröffentlicht.
+  - **Zustimmung**: Das Fenster liest vor jeder Prüfung `updateCheck` aus `GET /api/settings` über 127.0.0.1; nur
+    `'on'` zählt. Geprüft wird beim Start, danach höchstens einmal am Tag (Takt eine Stunde), nach einem Fehler nach
+    einer Stunde, „Jetzt prüfen“ höchstens einmal pro Minute; das gerade gesetzte Häkchen löst eine Prüfung aus, wenn
+    heute noch keine lief. `allowPrerelease` und `allowDowngrade` aus, auch wenn die installierte Fassung eine
+    Vorabversion ist (electron-updater setzt `allowPrerelease` sonst danach), `disableWebInstaller` an.
+  - **Installieren**: `autoInstallOnAppQuit` bleibt aus. electron-updater hängt seinen Haken ans `quit`-Ereignis nur,
+    wenn der Schalter beim Ende des Downloads an ist (`addQuitHandler` in BaseUpdater.js), und er käme nach
+    `before-quit`, ohne Gewähr, dass der Server dann beendet ist. Stattdessen: **„Beim nächsten Start“** merkt die
+    Wahl, `before-quit` beendet erst den Server und ruft dann `installOnQuit` (still, ohne anschließenden Start); ohne
+    Wahl bleibt die Datei im Zwischenspeicher, und der Hinweis kommt beim nächsten Start ohne neuen Download wieder.
+    **„Jetzt neu starten“** beendet den Server über `/api/quit`, dann `install(true, true)` (still, `--force-run`),
+    dann `app.quit`; lässt sich der Installer nicht starten, startet der Server wieder. Der Installer prüft wie immer
+    auf ein laufendes Mietfuchs (`customCheckAppRunning`); der Server ist dann schon beendet. Die Sicherung vor dem
+    Migrieren legt der Server beim ersten Start der neuen Version an (`backupBeforeMigrating`), wie bei jedem
+    Update. Vom Installer gestartet, läuft Mietfuchs über die Verknüpfung im Startmenü (`ExecShellAsUser` in
+    templates/nsis/common.nsh), erbt also nicht unbedingt die Umgebung des alten.
+  - **Brücke** `updater`: `get`, `check({ force })`, `later`, `restart`, `onChange`; Absenderprüfung wie Drucken und
+    Netzwerk. Ohne Updater meldet sie `phase: 'off'`, dann gilt der Hinweis des Servers. Im Fenster unter Windows
+    zeigt die Seitenleiste nur „Version x ist bereit“ und „Über Mietfuchs“ den Stand des Fensters („wird
+    heruntergeladen“, „bereit“, Fehler mit Weg zur Release-Seite) statt der Anleitung; nie beide Hinweise. Protokoll
+    in `mietfuchs-fenster\protokoll\updater.log`.
+  - **Mac**: Der Update-Hinweis des Servers führt auf `Mietfuchs-<Version>-apple-silicon.dmg` bzw. `-intel.dmg`
+    (`desktopDmgName` in server/src/update.ts) mit Anleitung (Abbild öffnen, in „Programme“ ziehen, „Ersetzen“). Läuft
+    Mietfuchs nicht aus „Programme“, bietet es vor dem Start des Servers einmal `app.moveToApplicationsFolder()` an,
+    „Nicht verschieben“ steht als `moveDeclined` in fenster.json; nicht mit `CI`.
+  - **Andere Quelle nur mit `CI`**: `MIETFUCHS_UPDATE_FEED` (nur `http://127.0.0.1:…`) lenkt auf einen lokalen
+    Server, für die Probe unten und für Bildschirmfotos unter Linux (ungepackt mit `forceDevUpdateConfig`, dort heißt
+    die Kanaldatei `latest-linux.yml`). Im ausgelieferten Betrieb ließe eine untergeschobene Variable sonst die
+    Updates von einem fremden Server laden, samt passender Prüfsumme.
+  - **Echte Probe** (Jobs „Programmfenster bauen (Windows, zweite Fassung …)“ und „Automatisches Update prüfen auf
+    Windows x64/ARM64“ in release.yml, [updater-check.mjs](updater-check.mjs)): Die zweite Fassung baut
+    [updater-probe.mjs](updater-probe.mjs) mit der nächsten Patch-Version und einem Migrationsschritt ohne Wirkung
+    (sonst gäbe es keine Sicherung zu prüfen). Die Probe installiert v1, bietet v2 über einen lokalen HTTP-Server mit
+    Protokoll an (einzelne Bereiche, deshalb `useMultipleRangeRequest: false`), prüft ohne Zustimmung, dass keine
+    Anfrage ankommt, dann „Jetzt neu starten“ und, nach erneuter Installation von v1, „Beim nächsten Start“, beide
+    über die Knöpfe der Oberfläche (DevTools-Protokoll, `--remote-debugging-port`); danach v2 mit allen Daten und
+    `mietfuchs.sqlite.vor-<Schritt>`.
 - **Installer messen** (Job in release.yml, nur im vollen Prüfumfang,
   [../desktop/build/installer-messung.ps1](../desktop/build/installer-messung.ps1)): dreimal installieren, darüber installieren und deinstallieren, einmal bei laufendem Mietfuchs, auf windows-11-arm
   und windows-2025; Phasen aus dem Zeitprotokoll, Schreibzugriffe aus einem FileSystemWatcher, Stand und

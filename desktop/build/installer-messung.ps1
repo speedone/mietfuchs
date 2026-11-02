@@ -179,9 +179,11 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
   Write-Host ("{0}: {1} s (Code {2})" -f $name, $row.Gesamt, $p.ExitCode)
   if ($p.ExitCode -ne 0) { throw "${name} endete mit Code $($p.ExitCode)" }
   if ($kind -ne 'Deinstallation' -and -not (Test-Path $exe)) { throw "${name}: $exe fehlt" }
-  # Keine Kopie des Installers für electron-updater (mfSkipInstallerCopy in installer.nsh)
+  # Die Kopie des Installers für die Teil-Downloads der Updates (installer.nsh, customUnInstallCheck): nach dem
+  # Installieren da, nach dem Deinstallieren weg
   $copy = Join-Path $env:LOCALAPPDATA 'mietfuchs-updater\installer.exe'
-  if (Test-Path $copy) { throw "${name}: $copy angelegt" }
+  if ($kind -ne 'Deinstallation' -and -not (Test-Path $copy)) { throw "${name}: $copy fehlt" }
+  if ($kind -eq 'Deinstallation' -and (Test-Path $copy)) { throw "${name}: $copy noch da" }
   if ($leftover) { throw "${name}: $dir noch da" }
 }
 

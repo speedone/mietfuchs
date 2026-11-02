@@ -140,6 +140,13 @@ describe('Anleitung je Betriebsart', () => {
     })
   })
 
+  test('Programmfenster auf dem Mac (#517): das passende Abbild direkt, Anleitung für den Mac', () => {
+    const dmg = 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/Mietfuchs-0.5.0-apple-silicon.dmg'
+    expect(updateGuide(status({ mode: 'desktop', downloadUrl: dmg }))).toEqual({
+      kind: 'download', href: dmg, system: 'desktop-mac', newTab: false,
+    })
+  })
+
   test('Docker: Befehle zum Aktualisieren des Containers, einzeln statt mit &&', () => {
     // && kennt die Windows PowerShell 5.1 nicht. Einzelne Zeilen gehen in jeder Shell.
     expect(updateGuide(status({ mode: 'docker', downloadUrl: null }))).toEqual({

@@ -6,6 +6,7 @@ import { useToast } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import FoxLogo from './Logo'
+import { UpdaterStatus, useDesktopUpdater, type DesktopUpdates } from './DesktopUpdater'
 
 // Update-Hinweis in drei Teilen: die einmalige Frage im Cockpit, der Hinweis oben in der
 // Seitenleiste und der Abschnitt in der Karte „Über Mietfuchs“ der Einstellungen. Dazu im Cockpit der
@@ -24,6 +25,9 @@ export type UpdateState = {
   status: UpdateStatus | null
   checking: boolean
   checkNow: () => Promise<void> // wirft, wenn der Mietfuchs-Server nicht antwortet
+  // Im Programmfenster unter Windows aktualisiert das Fenster selbst (#517, DesktopUpdater.tsx); fehlt es, gilt der
+  // Hinweis des Servers
+  updater?: DesktopUpdates
 }
 
 // Holt den Stand, sobald die Einstellungen geladen sind, und erneut, wenn sich die Zustimmung
@@ -36,6 +40,7 @@ export function useUpdateStatus(settings: Settings | null): UpdateState {
   const requestCounter = useRef(0)
   const loaded = settings !== null
   const consent = settings?.updateCheck
+  const updater = useDesktopUpdater(consent)
 
   useEffect(() => {
     if (!loaded) return
@@ -56,7 +61,7 @@ export function useUpdateStatus(settings: Settings | null): UpdateState {
     }
   }, [])
 
-  return { status, checking, checkNow }
+  return { status, checking, checkNow, updater }
 }
 
 // ---------- Einmalige Frage im Cockpit ----------
@@ -196,7 +201,10 @@ type SettingsProps = {
 
 export function UpdateSettings({ settings, update, reload }: SettingsProps) {
   const toast = useToast()
-  const { status, checking, checkNow } = update
+  const { status, checking, checkNow, updater } = update
+  // Im Programmfenster unter Windows zeigt „Über Mietfuchs“ den Stand des Fensters statt der Anleitung (#517)
+  const inWindow = updater?.owner === 'window' && updater.bridge !== null
+  const windowBridge = inWindow ? updater.bridge : null
   // Das Häkchen ist ein Entwurf (#309): Erst „Speichern“ schickt es. Die Frage im Cockpit hat
   // eigene Knöpfe und speichert ihre Antwort sofort.
   const saved = settings.updateCheck === 'on'
@@ -209,15 +217,18 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
 
   const check = async () => {
     try {
-      await checkNow()
+      if (windowBridge) await windowBridge.check({ force: true })
+      else await checkNow()
     } catch (e) {
       toast(`Prüfen ging nicht: ${messageOf(e)}`, 'error')
     }
   }
 
-  const guide = status?.enabled && status.available ? updateGuide(status) : null
+  const guide = !inWindow && status?.enabled && status.available ? updateGuide(status) : null
 
-  const state = status && <p className="update-state">{statusText(status)}</p>
+  const state = inWindow && updater
+    ? <UpdaterStatus updates={updater} />
+    : status && <p className="update-state">{statusText(status)}</p>
   // Aus dem Microsoft Store (#500): kein Häkchen, kein Knopf, nur der Stand.
   if (updatedByStore(status)) return state
 
@@ -240,7 +251,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
         {/* Gesperrt ohne gespeicherte Zustimmung und solange sie gespeichert wird: Sonst fragte der
             Server noch ohne Zustimmung. Ein angehaktes, aber ungespeichertes Häkchen zählt nicht. */}
         <button className="btn secondary" disabled={!saved || draft.dirty || checking || draft.saving} onClick={() => void check()}>
-          {checking && <span className="spinner" />}Jetzt prüfen
+          {(checking || (inWindow && updater?.state?.phase === 'checking')) && <span className="spinner" />}Jetzt prüfen
         </button>
         {/* Sichtprüfung E53: sagen, warum der Knopf gesperrt ist */}
         {!saved && !draft.saving && <span className="muted">{draft.value ? 'Erst das Häkchen oben setzen und speichern.' : 'Erst das Häkchen oben setzen.'}</span>}
@@ -329,6 +340,14 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
           <a href={RELEASES_URL} target="_blank" rel="noreferrer">neue Mietfuchs für den Mac</a> mit eigenem Fenster
           umsteigen. Es übernimmt Ihre Daten beim ersten Start.
         </p>
+      )}
+      {guide.system === 'desktop-mac' && (
+        <ol className="update-steps">
+          <li>Das Abbild <code>{fileName}</code> mit dem Knopf oben herunterladen und mit einem Doppelklick öffnen.</li>
+          {quitStep}
+          <li>Mietfuchs aus dem Abbild in den Ordner „Programme“ ziehen und „Ersetzen“ wählen. Ihre Daten bleiben, wo sie sind.</li>
+          <li>Mietfuchs starten. Meldet sich macOS wie beim ersten Mal, geben Sie es wie damals frei; wie, steht im <a href={README} target="_blank" rel="noreferrer">README</a>.</li>
+        </ol>
       )}
       {guide.system === null && (
         <p>

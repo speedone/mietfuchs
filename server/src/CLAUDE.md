@@ -1107,8 +1107,9 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
 fragt der Server `releases/latest` bei GitHub, höchstens einmal am Tag; ohne Zustimmung geht keine
 Anfrage hinaus. Nach Fehler eine Stunde Pause, bei Rate-Limit bis `retry-after`/`x-ratelimit-reset`
 (höchstens ein Tag). „Jetzt prüfen“ höchstens einmal pro Minute, gleichzeitige Aufrufe teilen eine
-Anfrage; Links nur ins eigene Repo. Kein Selbst-Update (#20), sondern eine Anleitung je Betriebsart
-([client/src/update.ts](../../client/src/update.ts)). Version aus `server/package.json`
+Anfrage; Links nur ins eigene Repo. Kein Selbst-Update des Servers (#20), sondern eine Anleitung je Betriebsart
+([client/src/update.ts](../../client/src/update.ts)); im Programmfenster unter Windows aktualisiert das Fenster selbst
+(electron-updater, scripts/CLAUDE.md „Automatische Updates“), auf dem Mac nennt `downloadUrl` das passende `.dmg`. Version aus `server/package.json`
 ([version.ts](version.ts)); Betriebsart aus `globalThis.Bun` (`binary`, an Systemort `package`, im Paketordner
 des Microsoft Store `store`), `NKA_RUNTIME=docker`, sonst `npm`. Bei `store` (#500) fragt der Server nie bei
 GitHub, auch nicht mit Zustimmung, und die Oberfläche fragt nicht danach: Updates bringt der Store, und ein
