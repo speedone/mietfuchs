@@ -16,6 +16,7 @@ const sources: Record<string, string> = import.meta.glob<string>(['./components/
 })
 
 const EXCEPTIONS: Record<string, string> = {
+  './components/Database.tsx': 'Nur die Wahl der Backup-Datei im Hinweis bei geschlossener Datenbank, die sofort eingespielt wird; kein ungespeicherter Stand.',
   './components/ServiceImportReview.tsx': 'Teil von ServiceImportCard, die sich anmeldet, solange der Vorschlag offen ist.',
   './pages/BelegeOrdner.tsx': 'Suche und Umfang („Belege aller … zeigen“) sind keine gespeicherten Werte; „Aus dem Eingang …“ und „Betrag prüfen“ melden sich in ReceiptParts.tsx (`useDraft`, `useAttach`).',
   './pages/Steuer.tsx': 'Nur Auswahl des Jahres und der Ansicht, kein ungespeicherter Stand.',

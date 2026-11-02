@@ -240,3 +240,29 @@ test('ohne Datenbank: ein Backup lässt sich direkt im Hinweis einspielen', asyn
   expect(posted.map((p) => p.url)).toEqual(['/api/restore'])
   expect(posted[0]?.body).toBeInstanceOf(FormData)
 })
+
+test('ohne Datenbank: scheitert das Einspielen, steht der Grund im Hinweis; Hinweise des Servers vor dem Neuladen', async () => {
+  let answer: Response = new Response('{"error":"Die Datei ist kein Mietfuchs-Backup."}', { status: 400, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') return answer
+    return new Response(JSON.stringify({
+      status: 'error',
+      database: { open: false, file: 'C:\\x\\mietfuchs.sqlite', migrations: 0, detail: 'Die Datenbank ist beschädigt.', changeover: { state: 'none', message: '', notes: [] }, migrated: null },
+    }), { status: 503, headers: { 'content-type': 'application/json' } })
+  })
+  const reloadPage = vi.fn()
+  render(<DatabaseNotice reloadPage={reloadPage} />)
+  await screen.findByText('Die Datenbank ist beschädigt.')
+  const input = screen.getByLabelText('Backup einspielen …') as HTMLInputElement
+  fireEvent.change(input, { target: { files: [new File(['x'], 'falsch.zip', { type: 'application/zip' })] } })
+  expect((await screen.findByText('Das Backup ließ sich nicht einspielen')).closest('.notice-item')?.textContent).toContain('Die Datei ist kein Mietfuchs-Backup.')
+  expect(reloadPage).not.toHaveBeenCalled()
+
+  answer = new Response('{"notes":["Zwei Belege fehlten im Backup."]}', { status: 200, headers: { 'content-type': 'application/json' } })
+  fireEvent.change(input, { target: { files: [new File(['zip'], 'mietfuchs-backup.zip', { type: 'application/zip' })] } })
+  await screen.findByText('Zwei Belege fehlten im Backup.')
+  expect(screen.queryByText('Das Backup ließ sich nicht einspielen')).toBeNull()
+  expect(reloadPage).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Mietfuchs neu laden' }))
+  expect(reloadPage).toHaveBeenCalled()
+})

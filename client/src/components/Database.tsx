@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api, ApiError, errorText } from '../api'
 import { MOBILE_QUERY, useMediaQuery } from './MobileNav'
+import { NoticeBox } from './Notice'
 import { databaseHint, DISMISS_KEY, UPDATE_DISMISS_KEY, updateHint, type HealthReport } from '../database'
 import type { DatabaseState } from '../types'
 
@@ -41,23 +42,25 @@ function remember(key: string, value: string): void {
 // vorher als mietfuchs.sqlite.vor-restore beiseite (restoreDatabase in server/src/index.ts); verloren geht nichts.
 function ClosedRestore({ reloadPage }: { reloadPage: () => void }) {
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [notes, setNotes] = useState<string[]>([])
   async function restore(file: File) {
     setBusy(true)
-    setMessage('')
+    setError('')
+    setNotes([])
     try {
       const fd = new FormData()
       fd.append('file', file)
       const answer = await api<{ notes?: string[] }>('/api/restore', { method: 'POST', body: fd })
       const notes = answer?.notes ?? []
       if (notes.length > 0) {
-        setMessage(`Backup eingespielt. ${notes.join(' ')}`)
+        setNotes(notes)
         setBusy(false)
         return
       }
       reloadPage()
     } catch (e) {
-      setMessage(`Das Backup ließ sich nicht einspielen: ${errorText(e)}`)
+      setError(errorText(e))
       setBusy(false)
     }
   }
@@ -79,7 +82,8 @@ function ClosedRestore({ reloadPage }: { reloadPage: () => void }) {
           />
         </label>
       </div>
-      {message && <p className="mt-2" role="alert">{message}</p>}
+      {error && <NoticeBox className="mt-2" level="error" title="Das Backup ließ sich nicht einspielen" action={error} />}
+      {notes.length > 0 && <NoticeBox className="mt-2" level="info" title="Backup eingespielt" action={notes.join(' ')} fix={{ label: 'Mietfuchs neu laden', onClick: reloadPage }} />}
     </>
   )
 }
