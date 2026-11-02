@@ -108,6 +108,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Updates des Programmfensters sind signiert** ([#551](https://github.com/speedone/mietfuchs/issues/551)). Unter
+  Windows lädt Mietfuchs eine neue Version nur noch, wenn ihre Beschreibung mit dem Schlüssel von Mietfuchs
+  unterschrieben ist, der im Programm steht. Bisher schützte nur die Prüfsumme, die im selben Release lag wie das
+  Update selbst; ein untergeschobenes Release fing sie nicht ab. Ohne gültige Unterschrift lädt Mietfuchs nichts, und
+  „Über Mietfuchs“ sagt warum.
 - **Belege laufen abgeschottet von der Oberfläche** ([#517](https://github.com/speedone/mietfuchs/issues/517)).
   Mietfuchs liefert Belege so aus, dass der Browser darin kein Programm ausführt, und nimmt SVG-, HTML- und
   XML-Dateien nicht mehr als Beleg an; Belege sind PDFs und Bilder. Eine solche Datei, die schon im Belegordner liegt

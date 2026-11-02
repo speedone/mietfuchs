@@ -8,6 +8,10 @@
 //      jede Anfrage ins Protokoll.
 //   3. Ohne Zustimmung: Fenster starten, Daten anlegen (smoke-test.mjs), über die Brücke „Jetzt prüfen“ auslösen; es
 //      darf keine einzige Anfrage beim lokalen Server ankommen.
+//   3b. Signatur (#551): Mit Zustimmung liefert die Quelle zuerst latest.yml ohne Signatur. Das Fenster muss „keine
+//      gültige Unterschrift“ melden und darf den Installer gar nicht erst anfragen. Danach die signierte (release.yml
+//      signiert v2 mit einem Wegwerf-Schlüssel, scripts/sign-update-manifest.mjs --ephemeral; dessen öffentlicher Teil
+//      kommt mit --testkey als MIETFUCHS_UPDATE_TESTKEY ins Fenster und gilt dort nur mit der lokalen Quelle).
 //   4. „Jetzt neu starten“: Zustimmung speichern, über die Brücke prüfen, warten bis „Version x ist bereit“ in der
 //      Seitenleiste steht, den Knopf in der Oberfläche drücken. Danach muss v2 laufen (vom Installer gestartet).
 //   5. „Beim nächsten Start“: v1 neu installieren, wie oben bis „bereit“, den Knopf drücken, Mietfuchs beenden
@@ -19,7 +23,7 @@
 // Knöpfen und derselben Brücke wie ein Nutzer; einen eigenen Testgriff im Programm gibt es nicht.
 //
 //   node scripts/updater-check.mjs --setup <Installer v1> --feed <Ordner mit latest.yml, Installer und .blockmap von v2
-//     und der .blockmap von v1> --version <v2> --step <Migrationsschritt von v2> --out <Ordner>
+//     und der .blockmap von v1> --version <v2> --step <Migrationsschritt von v2> --testkey <öffentlicher Schlüssel> --out <Ordner>
 //
 // Bericht in <out>/bericht.json, Exit 0 nur, wenn alles bestanden ist.
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
@@ -41,9 +45,10 @@ const setup = option('--setup')
 const feedDir = option('--feed')
 const v2 = option('--version')
 const step = option('--step')
+const testKey = option('--testkey')
 const out = path.resolve(option('--out') ?? 'update-pruefung')
-if (process.platform !== 'win32' || !setup || !feedDir || !v2 || !step) {
-  console.error('Aufruf unter Windows: node scripts/updater-check.mjs --setup <exe> --feed <Ordner> --version <v2> --step <Schritt> --out <Ordner>')
+if (process.platform !== 'win32' || !setup || !feedDir || !v2 || !step || !testKey) {
+  console.error('Aufruf unter Windows: node scripts/updater-check.mjs --setup <exe> --feed <Ordner> --version <v2> --step <Schritt> --testkey <Schlüssel> --out <Ordner>')
   process.exit(2)
 }
 fs.mkdirSync(out, { recursive: true })
@@ -98,6 +103,8 @@ const isInstalled = (/** @type {string} */ version) => installedMatches(versionI
 // ---------- lokaler Server als Quelle, mit Protokoll ----------
 /** @type {{ method: string, url: string, range: string | null, installationId: string | null, status: number, bytes: number }[]} */
 const requests = []
+// 3b: latest.yml ohne den Block `signatures:` am Ende, den sign-update-manifest.mjs angehängt hat
+let serveUnsigned = false
 const feed = http.createServer((req, res) => {
   const name = requestedFile(req.url ?? '/')
   const file = path.join(/** @type {string} */ (feedDir), path.basename(name))
@@ -105,6 +112,13 @@ const feed = http.createServer((req, res) => {
   const entry = { method: req.method ?? 'GET', url: req.url ?? '', range: req.headers.range ?? null, installationId: typeof id === 'string' ? id : null, status: 404, bytes: 0 }
   requests.push(entry)
   if (!name || name !== path.basename(name) || !fs.existsSync(file)) return res.writeHead(404).end()
+  if (serveUnsigned && name === 'latest.yml') {
+    const text = fs.readFileSync(file, 'utf8')
+    const body = Buffer.from(text.slice(0, text.indexOf('\nsignatures:') + 1), 'utf8')
+    entry.status = 200
+    entry.bytes = body.length
+    return res.writeHead(200, { 'content-length': body.length }).end(body)
+  }
   const size = fs.statSync(file).size
   const range = /^bytes=(\d+)-(\d*)$/.exec(entry.range ?? '')
   if (range) {
@@ -141,7 +155,7 @@ function installV1() {
 /** @param {string} name @param {string} dataDir @param {boolean} [debug] */
 function launch(name, dataDir, debug = true) {
   const child = spawn(exe, debug ? [`--remote-debugging-port=${DEVTOOLS}`] : [], {
-    env: { ...process.env, CI: '1', MIETFUCHS_TESTGRIFFE: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_UPDATE_FEED: feedUrl, MIETFUCHS_SELFTEST_OUT: path.join(out, name) },
+    env: { ...process.env, CI: '1', MIETFUCHS_TESTGRIFFE: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_UPDATE_FEED: feedUrl, MIETFUCHS_UPDATE_TESTKEY: testKey, MIETFUCHS_SELFTEST_OUT: path.join(out, name) },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
@@ -260,6 +274,7 @@ const quit = async () => {
 
 try {
   check(fs.existsSync(path.join(/** @type {string} */ (feedDir), 'latest.yml')), 'Quelle: latest.yml von v2 liegt bereit')
+  check(fs.readFileSync(path.join(/** @type {string} */ (feedDir), 'latest.yml'), 'utf8').includes('\nsignatures:'), 'Quelle: latest.yml von v2 ist signiert')
 
   // ---------- 1. Installieren ----------
   installV1()
@@ -281,8 +296,21 @@ try {
   await sleep(15_000)
   check(requestsSince(silentFrom).length === 0 && requests.length === 0, `Ohne Zustimmung: keine Anfrage an die Quelle (${requests.length} im Protokoll)`)
 
-  // ---------- 4. „Jetzt neu starten“ ----------
+  // ---------- 3b. Ohne Signatur nichts laden (#551) ----------
   await json('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ updateCheck: 'on' }) })
+  serveUnsigned = true
+  const unsignedFrom = requests.length
+  await evaluate('window.mietfuchsDesktop.updater.check({ force: true })')
+  const refused = await until(async () => (await updaterState()).phase === 'error', 60_000)
+  const refusedState = await updaterState().catch(() => null)
+  check(refused && /keine gültige Unterschrift/.test(String(refusedState?.error)), `Ohne Signatur: abgelehnt, Stand ${JSON.stringify(refusedState)}`)
+  check(requestsSince(unsignedFrom).some((r) => requestedFile(r.url) === 'latest.yml'), 'Ohne Signatur: latest.yml gelesen')
+  check(!requestsSince(unsignedFrom).some((r) => requestedFile(r.url).endsWith('.exe') || requestedFile(r.url).endsWith('.blockmap')), 'Ohne Signatur: nichts heruntergeladen')
+  serveUnsigned = false
+  // „Jetzt prüfen“ geht höchstens einmal pro Minute (FORCE_PAUSE_MS in desktop/src/updater.js)
+  await sleep(61_000)
+
+  // ---------- 4. „Jetzt neu starten“ ----------
   await waitReady('Jetzt')
   saveLogs('jetzt-v1-vorher')
   check(await click('Jetzt neu starten') === true, 'Jetzt: „Jetzt neu starten“ gedrückt')

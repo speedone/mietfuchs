@@ -3,7 +3,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { CHECK_INTERVAL_MS, ERROR_PAUSE_MS, FORCE_PAUSE_MS, UPDATE_REPO, createUpdaterController, describeUpdaterError, initialUpdaterState, reduceUpdater, shouldCheck, shouldOfferMove, updaterSource } from '../src/updater.js'
+import crypto from 'node:crypto'
+import { UPDATE_MANIFEST_PUBLIC_KEYS, signManifest } from '../src/updateManifest.js'
+import { CHECK_INTERVAL_MS, ERROR_PAUSE_MS, FORCE_PAUSE_MS, UPDATE_REPO, createUpdaterController, describeUpdaterError, initialUpdaterState, reduceUpdater, shouldCheck, shouldOfferMove, trustedUpdateKeys, updaterSource } from '../src/updater.js'
 
 const win = { platform: /** @type {NodeJS.Platform} */ ('win32'), packaged: true, windowsStore: false, env: {} }
 
@@ -104,9 +106,23 @@ test('Mac: einmal anbieten, Mietfuchs nach „Programme“ zu verschieben, „Ne
 })
 
 // Ein nachgestelltes electron-updater: Ereignisse wie das echte, `install` merkt sich den Aufruf.
+// Ein Schlüsselpaar nur für diese Tests; signiert wie release.yml (scripts/sign-update-manifest.mjs, #551)
+const testKey = crypto.generateKeyPairSync('ed25519')
+const TRUSTED = [testKey.publicKey.export({ type: 'spki', format: 'der' }).toString('base64')]
+/** Die Beschreibung (latest.yml), wie electron-updater sie mit `update-available` weiterreicht @param {string} version */
+function unsigned(version) {
+  return { version, files: [{ url: `Mietfuchs-Setup-${version}.exe`, sha512: 'c2hhNTEy', size: 123 }], path: `Mietfuchs-Setup-${version}.exe`, sha512: 'c2hhNTEy', releaseDate: '2026-11-02T10:00:00.000Z' }
+}
+/** @param {string} version */
+function signed(version) {
+  const info = unsigned(version)
+  return { ...info, signatures: [signManifest(info, testKey.privateKey)] }
+}
+
 function fakeUpdater() {
   const updater = Object.assign(new EventEmitter(), {
     checks: 0,
+    downloads: 0,
     /** @type {Array<[boolean, boolean]>} */
     installs: [],
     installResult: true,
@@ -119,6 +135,10 @@ function fakeUpdater() {
       updater.checks++
       updater.emit('checking-for-update')
       return null
+    },
+    async downloadUpdate() {
+      updater.downloads++
+      return []
     },
     /** @param {boolean} [silent] @param {boolean} [runAfter] */
     install(silent = false, runAfter = false) {
@@ -144,6 +164,7 @@ function controller(options = {}) {
     source: 'github',
     current: '0.14.1',
     readConsent: async () => { order.push('zustimmung'); return consent },
+    trustedKeys: TRUSTED,
     installerExists: () => options.installerExists !== false,
     installGraceMs: 20,
     stopServer: async () => { order.push('server beendet') },
@@ -157,7 +178,8 @@ function controller(options = {}) {
 
 test('Steuerung: electron-updater fest eingestellt, nie Vorabversionen, nie von selbst installieren', () => {
   const { updater } = controller()
-  assert.equal(updater.autoDownload, true)
+  // Geänderte Erwartung (#551): geladen wird erst nach geprüfter Signatur, von der Steuerung selbst
+  assert.equal(updater.autoDownload, false)
   assert.equal(updater.disableWebInstaller, true)
   // „Beim nächsten Start“ installiert die Steuerung selbst, nach dem Beenden des Servers (installOnQuit)
   assert.equal(updater.autoInstallOnAppQuit, false)
@@ -192,7 +214,8 @@ test('Steuerung: mit Zustimmung beim Start, dann erst nach einem Tag wieder', as
 test('Steuerung: herunterladen, bereit, Stand an die Oberfläche', async () => {
   const { c, updater, states } = controller()
   await c.tick()
-  updater.emit('update-available', { version: '0.15.0' })
+  updater.emit('update-available', signed('0.15.0'))
+  assert.equal(updater.downloads, 1)
   updater.emit('download-progress', { percent: 50 })
   updater.emit('update-downloaded', { version: '0.15.0' })
   // Geänderte Erwartung (Durchsicht S1): zuerst der Anfangsstand
@@ -205,6 +228,7 @@ test('Steuerung: herunterladen, bereit, Stand an die Oberfläche', async () => {
 test('„Jetzt neu starten“: erst den Server beenden, dann still installieren und danach starten', async () => {
   const { c, updater, order } = controller()
   await c.tick()
+  updater.emit('update-available', signed('0.15.0'))
   updater.emit('update-downloaded', { version: '0.15.0' })
   order.length = 0
   await c.restartNow()
@@ -215,6 +239,7 @@ test('„Jetzt neu starten“: erst den Server beenden, dann still installieren 
 test('„Jetzt neu starten“: geht das Installieren nicht los, läuft der Server weiter', async () => {
   const { c, updater, order } = controller()
   await c.tick()
+  updater.emit('update-available', signed('0.15.0'))
   updater.emit('update-downloaded', { version: '0.15.0' })
   updater.installResult = false
   order.length = 0
@@ -233,6 +258,7 @@ test('„Jetzt neu starten“ ohne bereitliegende Version tut nichts', async () 
 test('„Beim nächsten Start“: installiert beim Beenden, still und ohne Start; ohne Wahl nicht', async () => {
   const { c, updater } = controller()
   await c.tick()
+  updater.emit('update-available', signed('0.15.0'))
   updater.emit('update-downloaded', { version: '0.15.0' })
   // Ohne Wahl bleibt die Version liegen; der Hinweis kommt beim nächsten Start wieder
   assert.equal(c.installOnQuit(), false)
@@ -260,6 +286,7 @@ test('Durchsicht S1: der Anfangsstand geht gleich an die Oberfläche', () => {
 test('Durchsicht S4: scheitert der Start des Installers danach, läuft der Server weiter und Mietfuchs bleibt offen', async () => {
   const { c, updater, order } = controller()
   await c.tick()
+  updater.emit('update-available', signed('0.15.0'))
   updater.emit('update-downloaded', { version: '0.15.0' })
   updater.install = (silent = false, runAfter = false) => {
     updater.installs.push([silent, runAfter])
@@ -274,8 +301,51 @@ test('Durchsicht S4: scheitert der Start des Installers danach, läuft der Serve
 test('Durchsicht S4: fehlt der geladene Installer, wird der Server gar nicht erst beendet', async () => {
   const { c, updater, order } = controller({ installerExists: false })
   await c.tick()
+  updater.emit('update-available', signed('0.15.0'))
   updater.emit('update-downloaded', { version: '0.15.0' })
   order.length = 0
   await assert.rejects(c.restartNow(), /nicht mehr da/)
   assert.deepEqual(order, [])
+})
+
+// #551: Die Beschreibung (latest.yml) liegt im selben Release wie der Installer; ihre SHA-512 schützt nur vor kaputten
+// Downloads. Erst die Signatur mit dem Schlüssel im Programm schützt vor einem untergeschobenen Release.
+test('#551: ohne gültige Signatur wird nichts geladen und „Über Mietfuchs“ sagt warum', async () => {
+  const fremd = crypto.generateKeyPairSync('ed25519')
+  const gefaelscht = { ...unsigned('0.15.0'), signatures: [signManifest(unsigned('0.15.0'), fremd.privateKey)] }
+  const veraendert = { ...signed('0.15.0'), files: [{ url: 'Mietfuchs-Setup-0.15.0.exe', sha512: 'YW5kZXJz', size: 123 }] }
+  for (const info of [unsigned('0.15.0'), gefaelscht, veraendert]) {
+    const { c, updater } = controller()
+    await c.tick()
+    updater.emit('update-available', info)
+    assert.equal(updater.downloads, 0)
+    assert.equal(c.state().phase, 'error')
+    assert.match(String(c.state().error), /keine gültige Unterschrift/)
+  }
+})
+
+test('#551: eine geladene Version, deren Beschreibung nicht geprüft ist, wird nicht installiert', async () => {
+  const { c, updater } = controller()
+  await c.tick()
+  // Ohne vorheriges geprüftes `update-available` (etwa eine andere Version als die geprüfte)
+  updater.emit('update-available', signed('0.15.0'))
+  updater.emit('update-downloaded', { version: '0.16.0' })
+  assert.notEqual(c.state().phase, 'ready')
+  await assert.rejects(c.restartNow(), /keine neue Version bereit/)
+  c.later()
+  assert.equal(c.installOnQuit(), false)
+  assert.deepEqual(updater.installs, [])
+})
+
+// #551: Die echte Update-Probe in release.yml signiert ihre zweite Fassung mit einem Wegwerf-Schlüssel. Den nimmt das
+// Fenster nur zusammen mit der lokalen Testquelle an (`feed`: beide Schranken der Testgriffe und 127.0.0.1); bei GitHub
+// als Quelle gelten allein die Schlüssel im Programm, sonst ließe eine untergeschobene Variable jedes Release zu.
+test('#551: ein Prüfschlüssel aus der Umgebung gilt nur mit der lokalen Testquelle', () => {
+  const probe = TRUSTED[0]
+  const env = { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_UPDATE_TESTKEY: probe }
+  assert.deepEqual(trustedUpdateKeys({ source: 'github', env }), [...UPDATE_MANIFEST_PUBLIC_KEYS])
+  assert.deepEqual(trustedUpdateKeys({ source: 'feed', env }), [...UPDATE_MANIFEST_PUBLIC_KEYS, probe])
+  assert.deepEqual(trustedUpdateKeys({ source: 'feed', env: { MIETFUCHS_UPDATE_TESTKEY: probe } }), [...UPDATE_MANIFEST_PUBLIC_KEYS])
+  // Kein brauchbarer Schlüssel: nichts dazu, kein Absturz
+  assert.deepEqual(trustedUpdateKeys({ source: 'feed', env: { ...env, MIETFUCHS_UPDATE_TESTKEY: 'kein Schlüssel' } }), [...UPDATE_MANIFEST_PUBLIC_KEYS])
 })
