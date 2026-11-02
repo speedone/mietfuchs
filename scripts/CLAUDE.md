@@ -204,6 +204,19 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   nach acht Sekunden hart, während des Starts erst nach zehn Minuten (eine Migration soll zu Ende laufen). Servertests
   stellen den utilityProcess mit [fakeUtilityProcess.ts](../server/testing/fakeUtilityProcess.ts) nach (`--import`). Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
   mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz) und das Protokoll des Servers.
+- **Testgriffe im ausgelieferten Fenster nur mit zwei Schranken** ([testGrips.js](../desktop/src/testGrips.js),
+  Durchsicht Daten und Sicherheit): `CI` gleich `1` oder `true` **und** `MIETFUCHS_TESTGRIFFE=1`. Nur dann gelten
+  `MIETFUCHS_SERVER_URL` und `MIETFUCHS_UPDATE_FEED` (beide nur über http auf 127.0.0.1 oder ::1), die Selbstprüfung
+  (`MIETFUCHS_SELFTEST_OUT`) und das Auslassen der Frage nach „Programme“ auf dem Mac, und nur dann reicht `serverEnv`
+  `CI`, `NKA_TEST_*`, `NKA_ALLOWED_HOSTS` und `NKA_UPDATE_URL` an den Server weiter. Bisher genügte `CI`, das manche
+  Entwicklungsumgebung für den ganzen Benutzer setzt, unter Windows auch als `CI=false`: Eine untergeschobene Variable
+  hätte Updates von einem fremden Server laden, eine fremde Seite mit der Druckbrücke öffnen, mit `NKA_ALLOWED_HOSTS=*`
+  aus einer Docker-Einrichtung die Prüfung von Host und Origin abschalten oder Umzug und Ortsdatei stilllegen können.
+  `NKA_DATA_DIR` geht immer weiter (eine Einstellung, kein Testgriff). Beim Entwickeln (`npm run desktop`) gilt alles wie
+  bisher. Die Prüfskripte (desktop-check, updater-check, safari-print-check, installer-messung.ps1, der Store-Job in
+  release.yml) setzen beide. Im Server zählt `CI` ebenfalls nur mit `1` oder `true` (`ciSet` in server/src/ci.ts):
+  Browser beim Start der Programmdatei, Ortsdatei, Suche beim Umzug, `notify-send`. Ein beliebiges `CI` ändert im
+  ausgelieferten Fenster damit nichts mehr; was bleibt, steht hinter beiden Schranken.
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
 - **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
@@ -321,7 +334,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
     (`desktopDmgName` in server/src/update.ts) mit Anleitung (Abbild öffnen, in „Programme“ ziehen, „Ersetzen“). Läuft
     Mietfuchs nicht aus „Programme“, bietet es vor dem Start des Servers einmal `app.moveToApplicationsFolder()` an,
     „Nicht verschieben“ steht als `moveDeclined` in fenster.json; nicht mit `CI`.
-  - **Andere Quelle nur mit `CI`**: `MIETFUCHS_UPDATE_FEED` (nur `http://127.0.0.1:…`) lenkt auf einen lokalen
+  - **Andere Quelle nur mit den Schranken der Testgriffe** (unten): `MIETFUCHS_UPDATE_FEED` (nur `http://127.0.0.1:…` oder `[::1]`) lenkt auf einen lokalen
     Server, für die Probe unten und für Bildschirmfotos unter Linux (ungepackt mit `forceDevUpdateConfig`, dort heißt
     die Kanaldatei `latest-linux.yml`). Im ausgelieferten Betrieb ließe eine untergeschobene Variable sonst die
     Updates von einem fremden Server laden, samt passender Prüfsumme.
@@ -336,7 +349,12 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **Installer messen** (Job in release.yml, nur im vollen Prüfumfang,
   [../desktop/build/installer-messung.ps1](../desktop/build/installer-messung.ps1)): dreimal installieren, darüber installieren und deinstallieren, einmal bei laufendem Mietfuchs, auf windows-11-arm
   und windows-2025; Phasen aus dem Zeitprotokoll, Schreibzugriffe aus einem FileSystemWatcher, Stand und
-  Ereignisprotokoll von Defender. **Defender auf den Runnern ist kein Nutzerrechner:** Auf beiden sind `C:\` und
+  Ereignisprotokoll von Defender. Bei laufendem Mietfuchs **erst sanft**, dann hart (Durchsicht Daten K1): `taskkill`
+  ohne `/F` schickt dem Fenster `WM_CLOSE`, Electron schließt es, `before-quit` beendet den Server über `/api/quit`,
+  der seine Schlange leerlaufen lässt und auf ein laufendes Wiederherstellen wartet; der Installer wartet bis 15
+  Sekunden (das Fenster selbst wartet bis 8 Sekunden, bei `busy` bis 150), erst dann `/F`. Die Hilfsprozesse ohne
+  Fenster lehnen ein Beenden ohne `/F` ab und gehen mit dem Hauptprozess. Die Messung verlangt die Marke „sanft
+  geschlossen“ im Zeitprotokoll und dass die Lauf-Datei des Servers weg ist (hart beendet bliebe sie liegen). **Defender auf den Runnern ist kein Nutzerrechner:** Auf beiden sind `C:\` und
   `D:\` ausgenommen, der Cloud-Schutz ist aus (MAPSReporting 0), auf windows-2025 auch der Echtzeitschutz (lässt
   sich nicht einschalten). Was das Prüfen der Dateien kostet, zeigt nur das Protokoll vom Rechner eines Nutzers. Der
   Vergleich mit der Prüfung der Vorlage steht in PR #537.
@@ -427,9 +445,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   macOS als Zip, Linux als tar.gz (Ausführungsbit), Windows roh. **Die Namen der x64-Dateien bleiben
   fest**, der Update-Hinweis älterer Versionen sucht sie. Dazu das Programmfenster (#517):
   `Mietfuchs-Setup-<Version>.exe`, `Mietfuchs-<Version>-apple-silicon.dmg` und `-intel.dmg`. Die
-  Programmdateien bleiben vorerst daneben, bis PR 3 von #517 die Daten aus dem Ordner neben der
-  Programmdatei von selbst in den Benutzerordner umzieht; ohne das fänden Nutzer ihre Daten im Fenster
-  nicht.
+  Programmdateien für Windows und macOS bleiben daneben: für Macs vor macOS 13, die das Fenster nicht mehr
+  starten, und für alle, die ohne Installation arbeiten. Die Daten neben einer Programmdatei holt das
+  Fenster beim ersten Start selbst (Umzug, server/src/CLAUDE.md); laufen beide auf demselben Ordner,
+  startet das zweite nicht (Lauf-Datei, server/src/CLAUDE.md, „Zwei Mietfuchs auf demselben Datenordner“).
 - **Bei jeder Nebenversion kommt ein Eintrag in `RELEASE_STEPS`** ([server/src/db/releaseSteps.ts](../server/src/db/releaseSteps.ts),
   `{ version: 'x.y.0', steps: <Zahl der Dateien server/drizzle/*.sql> }`, #318): Daraus nennt der Verlauf die Sicherung
   „Vor dem Update auf Version …“. Beim Tag prüft es der Schritt „Rechtsregister geprüft?“ in release.yml

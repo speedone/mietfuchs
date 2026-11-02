@@ -4,6 +4,7 @@
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
+import { testGripsAllowed } from './testGrips.js'
 
 // Fester Port, damit die Adresse gleich bleibt: Im Browser gespeicherte Entwürfe und Einstellungen hängen an Adresse
 // samt Port, und wer aus dem Heimnetz zugreift, setzt ein Lesezeichen. 17517 ist bei der IANA nicht vergeben, kein
@@ -68,6 +69,16 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
   delete env.NKA_STORE
   delete env.NKA_SEARCH_DIRS
   if (searchDirs.length > 0) env.NKA_SEARCH_DIRS = JSON.stringify(searchDirs)
+  // Ausgeliefert ohne die beiden Schranken der Testgriffe (testGrips.js) nichts davon an den Server: CI schaltete dort
+  // Ortsdatei und Suche beim Umzug ab, ein NKA_TEST_* stellte Uhr, Heimatordner oder Ports um, ein NKA_ALLOWED_HOSTS mit
+  // `*` aus einer Docker-Einrichtung schaltete die Prüfung von Host und Origin still ab, und NKA_UPDATE_URL lenkte den
+  // Update-Hinweis samt Download-Link auf einen fremden Server. NKA_DATA_DIR bleibt: Den Datenordner zu verlegen ist
+  // eine Einstellung, kein Testgriff.
+  if (packaged && !testGripsAllowed(base)) {
+    for (const name of Object.keys(env)) {
+      if (name === 'CI' || name === 'NKA_ALLOWED_HOSTS' || name === 'NKA_UPDATE_URL' || name.startsWith('NKA_TEST_')) delete env[name]
+    }
+  }
   if (windowsStore) env.NKA_STORE = '1'
   const p = platform === 'win32' ? path.win32 : path.posix
   if (!packaged && !env.NKA_DATA_DIR) env.NKA_DATA_DIR = p.join(repoRoot, 'server', 'data')
@@ -78,6 +89,23 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
 /** @param {string} output @returns {string | null} */
 export function startUrlIn(output) {
   return output.match(/läuft auf (http:\/\/\S+)/)?.[1] ?? null
+}
+
+/**
+ * Der Datenordner für „Datenordner zeigen“, einmal je Start des Servers gemerkt (Durchsicht Sicherheit K9): Die Ausgabe
+ * im Fenster ist ein rollender Puffer, nach vielen Meldungen fehlte die Zeile, und eine spätere Zeile „Daten: …“ (etwa
+ * aus einer Meldung) zeigte einen anderen Ordner.
+ * @param {string | null} current @param {string} output @returns {string | null}
+ */
+export function rememberDataDir(current, output) {
+  return current ?? dataDirIn(output)
+}
+
+// Die Meldung des Servers, wenn auf demselben Datenordner schon ein Mietfuchs läuft (server/src/instanceGuard.ts,
+// `twinMessage`)
+/** @param {string} output @returns {string | null} */
+export function twinIn(output) {
+  return output.match(/Mietfuchs läuft bereits mit denselben Daten \(.+?\)\. Bitte beenden Sie das andere Mietfuchs zuerst\./)?.[0] ?? null
 }
 
 // Wo die Daten liegen, aus der Zeile „Daten: …“, für „Datenordner zeigen“
@@ -381,11 +409,14 @@ const LINE_LIMIT = 300
  * Grund und was zu tun ist, mit der Datei, wie sie der Virenschutz nennt (die app.asar, nicht der Eintrag darin); die
  * technische Meldung steht klein darunter. Sonst die technische Meldung wie bisher.
  * @param {{ found: BlockedFile | null, technical: string, logDir: string, platform: NodeJS.Platform }} failure
- * @returns {{ message: string, detail: string }}
+ * @returns {{ title?: string, message: string, detail: string }}
  */
 export function startFailure({ found, technical, logDir, platform }) {
   const text = technical.split('\n').map((line) => (line.length > LINE_LIMIT ? `${line.slice(0, LINE_LIMIT)} …` : line)).join('\n').trim()
   const log = `Das Protokoll liegt unter ${logDir}.`
+  // Ein zweites Mietfuchs auf denselben Daten ist kein Fehler des Programms: nur der Satz, was zu tun ist (Durchsicht M2)
+  const twin = twinIn(technical)
+  if (twin) return { title: 'Mietfuchs läuft bereits', message: twin, detail: log }
   if (!found) return { message: text, detail: log }
   const file = fileOnDisk(found.path, platform)
   const reason = found.code === 'ENOENT'

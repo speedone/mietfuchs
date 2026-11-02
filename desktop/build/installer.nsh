@@ -306,16 +306,32 @@ FunctionEnd
       ${EndIf}
       mfStopApp:
       DetailPrint "$(appClosing)"
-      ; freundlich: schließt die Fenster, Mietfuchs beendet dabei seinen Server
+      ; Erst sanft (Durchsicht Daten K1): taskkill ohne /F schickt dem Fenster WM_CLOSE, Electron schließt es,
+      ; window-all-closed ruft app.quit, before-quit beendet den Server über /api/quit, und der lässt seine
+      ; Schreibschlange leerlaufen (bis 5 s, QUIT_DRAIN_MS) und wartet auf ein laufendes Wiederherstellen; das Fenster
+      ; wartet darauf bis 8 s (QUIT_TIMEOUT_MS in desktop/src/main.js). Die Hilfsprozesse ohne Fenster lehnen ein
+      ; Beenden ohne /F ab und gehen mit dem Hauptprozess. Deshalb bis 15 Sekunden warten, erst dann hart.
       !insertmacro mfKillApp ""
-      Sleep 300
+      StrCpy $R2 0
+      mfWaitSoft:
+        Sleep 1000
+        IntOp $R2 $R2 + 1
+        !insertmacro mfFindApp
+        ${If} $R0 != 0
+          !insertmacro mfLog "[pruefung] Mietfuchs sanft geschlossen nach $R2 s"
+          Goto mfClosed
+        ${EndIf}
+        ${If} $R2 < 15
+          Goto mfWaitSoft
+        ${EndIf}
+      !insertmacro mfLog "[pruefung] Mietfuchs nach 15 s nicht geschlossen, wird hart beendet"
       StrCpy $R1 0
       mfCheckAgain:
         IntOp $R1 $R1 + 1
         !insertmacro mfFindApp
         ${If} $R0 == 0
-          Sleep 1000
           !insertmacro mfKillApp "/F"
+          Sleep 1000
           !insertmacro mfFindApp
           ${If} $R0 == 0
             DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
@@ -332,6 +348,7 @@ FunctionEnd
             Goto mfCheckAgain
           ${EndIf}
         ${EndIf}
+      mfClosed:
       !insertmacro mfLog "[pruefung] Mietfuchs geschlossen"
     ${EndIf}
   ${EndIf}

@@ -29,7 +29,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     PowerShell zu starten; das kostete mit dem Virenschutz von Windows jedes Mal Sekunden. Installieren,
     Aktualisieren und Deinstallieren gehen so deutlich schneller. Hält Windows gleich nach dem Installieren noch eine
     Datei offen, versucht es das Deinstallationsprogramm noch einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
-    Wie lange jeder Schritt dauert, steht in `%TEMP%\mietfuchs-installation.log`.
+    Wie lange jeder Schritt dauert, steht in `%TEMP%\mietfuchs-installation.log`. Ein noch offenes Mietfuchs schließt der
+    Installer erst sanft und wartet bis 15 Sekunden, damit es seine Daten zu Ende schreibt; erst dann beendet er es hart.
+  - Ein beliebig gesetztes `CI` in der Umgebung (manche Entwicklungsumgebungen setzen es dauerhaft, unter Windows auch als
+    `CI=false`) schaltet im Programm nichts mehr ab und keine Prüfhilfe ein, etwa den Umzug der Daten oder die Quelle
+    der Updates. Auch bei der Programmdatei zählt `CI` nur noch mit `1` oder `true`.
 - **Automatische Updates unter Windows** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Mit dem Häkchen
   „Beim Öffnen nach neuen Versionen schauen“ lädt das Programm aus dem Installer eine neue Version im Hintergrund von
   GitHub und meldet dann „Version x ist bereit“. „Jetzt neu starten“ beendet Mietfuchs sauber, installiert und startet
@@ -51,8 +55,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   beendet es ein Knopf zuerst; bei großen Beständen zeigt Mietfuchs den Fortschritt und lässt sich abbrechen. Der alte
   Ordner bleibt unverändert liegen und bekommt beim Weg über den Ordner nur einen Vermerk; eine aktuelle Programmdatei zeigt ihn danach nur
   noch an. Wird im alten Mietfuchs trotzdem noch etwas geändert, sagt es das neue und bietet an, den neueren Stand
-  noch einmal zu übernehmen. Später geht das jederzeit in den Einstellungen unter „Daten aus bisherigem Mietfuchs
-  übernehmen …“; vorhandene Daten werden dabei nur nach Rückfrage ersetzt und vorher gesichert.
+  noch einmal zu übernehmen; dass eine ältere Programmdatei den alten Ordner nur auf ihren Stand bringt, zählt dabei
+  nicht. Der Papierkorb gelöschter Belege kommt mit, automatische Vorversionen und Sicherungen vor Updates bleiben im
+  alten Ordner, und Mietfuchs sagt das. Wird das Programm beim Umschalten beendet, wartet es, bis die Übernahme fertig ist;
+  endet es trotzdem mittendrin, holt der nächste Start den Vermerk im alten Ordner nach. Später geht das jederzeit in
+  den Einstellungen unter „Daten aus bisherigem Mietfuchs übernehmen …“; vorhandene Daten werden dabei nur nach
+  Rückfrage ersetzt und vorher gesichert.
+- **Zwei Mietfuchs auf denselben Daten werden erkannt** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
+  Laufen das neue Programm und eine Programmdatei oder die bisherige Store-Fassung auf demselben Datenordner (auf dem
+  Mac etwa eine Programmdatei unter „Programme“, unter Windows Store und Installer), startet das zweite nicht mehr
+  daneben. Das Programmfenster sagt „Mietfuchs läuft bereits mit denselben Daten … Bitte beenden Sie das andere
+  Mietfuchs zuerst.“, die Programmdatei öffnet stattdessen das laufende. Bisher konnte so ein eingespieltes Backup im
+  einen die Datenbank des anderen ins Leere laufen lassen. Dafür liegt während des Laufs die Datei
+  `mietfuchs.laeuft.json` im Datenordner; eine nach einem Absturz liegengebliebene stört nicht.
 - **Zugriff aus dem Heimnetz** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Im neuen Programm lässt
   sich in den Einstellungen erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu
   öffnen; die Karte nennt dann die Adressen dafür (Port 17517, also eine andere als bei der Programmdatei). Fragt
