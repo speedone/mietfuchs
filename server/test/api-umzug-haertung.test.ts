@@ -233,3 +233,52 @@ test('Durchsicht K8: entsteht der Vermerk während des Laufs, ruht die Hintergru
     removeDataDir(dataDir)
   }
 })
+
+// Durchsicht vor dem PR (Daten, M3): Scheitert der Austausch der Datenbank, ist nicht umgeschaltet. Dann keine
+// Entscheidung „moved“ und beim nächsten Start kein Vermerk im alten Ordner, in dem weitergearbeitet werden soll.
+test('Durchsicht M3: scheitert der Austausch, bleibt der Umzug offen und der alte Ordner ohne Vermerk', async () => {
+  const old = await oldFolder()
+  const dataDir = tempDir()
+  const first = await startServerIn(dataDir, desktopEnv(old.home, { NKA_TEST_FAIL_EXCHANGE: '1' }))
+  try {
+    const adopted = await adopt(first.base, old.data)
+    assert.equal(adopted.body.ok, false, JSON.stringify(adopted.body))
+    assert.equal(fs.existsSync(path.join(dataDir, 'umzug.json')), false)
+    assert.equal(fs.existsSync(path.join(dataDir, 'umzug.offen.json')), false)
+  } finally {
+    first.stop()
+  }
+  const again = await startServerIn(dataDir, desktopEnv(old.home))
+  try {
+    assert.equal(fs.existsSync(path.join(old.data, 'umgezogen.json')), false)
+    assert.deepEqual(await again.api('/api/relocation'), { offered: true })
+  } finally {
+    again.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+// Durchsicht vor dem PR (Daten, K1): Der Papierkorb liegt schon im neuen Ordner, bevor die Datenbank getauscht ist;
+// das Aufräumen im Takt darf ihn in dieser Zeit nicht gegen die alte Datenbank leeren.
+test('Durchsicht K1: während des Umschaltens räumt der Takt den übernommenen Papierkorb nicht weg', async () => {
+  const old = await oldFolder()
+  fs.mkdirSync(path.join(old.data, 'papierkorb', 'uploads'), { recursive: true })
+  fs.writeFileSync(path.join(old.data, 'papierkorb', 'uploads', 'geloescht.pdf'), PDF)
+  const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_SWITCH_DELAY_MS: '1500', NKA_TEST_PRIOR_INTERVAL_MS: '100' }))
+  try {
+    const adopting = adopt(s.base, old.data)
+    for (let i = 0; i < 200; i++) {
+      if ((await s.api<{ phase: string }>('/api/relocation/progress')).phase === 'switch') break
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    // Mitten im Umschalten, nach mehreren Takten: Die Datei liegt da. Danach entscheidet das Aufräumen mit dem
+    // übernommenen Journal (das diese ausgedachte Datei nicht nennt)
+    await new Promise((resolve) => setTimeout(resolve, 900))
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'papierkorb', 'uploads', 'geloescht.pdf')))
+    const adopted = await adopting
+    assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})

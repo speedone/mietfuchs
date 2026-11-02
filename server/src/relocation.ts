@@ -465,11 +465,13 @@ export function copyErrorText(err: unknown): string {
 // - db.json: die Datei selbst. Ohne `journal` und `columns` (vor dieser Durchsicht festgehalten) der ganze Inhalt wie
 //   bisher.
 // Die Dateizeit zählt nie: Schon ein Start schreibt eine Probe in die Datei.
-export type StockMark = { kind: StockKind, fingerprint: string, journal?: number, columns?: Record<string, string[]> }
+export type StockMark = { kind: StockKind, fingerprint: string, journal?: number, journalAt?: string, columns?: Record<string, string[]> }
 
 function markFrom(raw: Record<string, unknown>): StockMark | null {
   if ((raw.kind !== 'database' && raw.kind !== 'json') || typeof raw.fingerprint !== 'string') return null
-  const journal = typeof raw.journal === 'number' && Number.isFinite(raw.journal) ? { journal: raw.journal } : {}
+  const journal = typeof raw.journal === 'number' && Number.isFinite(raw.journal)
+    ? { journal: raw.journal, ...(typeof raw.journalAt === 'string' ? { journalAt: raw.journalAt } : {}) }
+    : {}
   const columns = isObject(raw.columns) && Object.values(raw.columns).every((c) => Array.isArray(c) && c.every((n) => typeof n === 'string'))
     ? { columns: raw.columns as Record<string, string[]> }
     : {}
@@ -512,6 +514,12 @@ function journalMark(rows: Rows): number | null {
   return Math.max(Number(seq ?? 0) || 0, Number(max ?? 0) || 0)
 }
 
+// Die Zeit der Gruppe mit dieser Kennung, `null` ohne sie
+function groupAt(rows: Rows, id: number): string | null {
+  const at = rows(`SELECT at FROM change_groups WHERE id = ${Math.trunc(id)}`)[0]?.[0]
+  return typeof at === 'string' ? at : null
+}
+
 function jsonFingerprint(dataDir: string): string | null {
   try {
     return crypto.createHash('sha256').update(fs.readFileSync(path.join(dataDir, 'db.json'))).digest('hex')
@@ -529,7 +537,8 @@ export async function markStock(dataDir: string, kind: StockKind): Promise<Stock
   return withDatabase(path.join(dataDir, DB_FILE_NAME), (rows) => {
     const columns = tablesAndColumns(rows)
     const journal = journalMark(rows)
-    return { kind, fingerprint: contentHash(rows, columns), ...(journal === null ? {} : { journal }), columns }
+    const at = journal === null ? null : groupAt(rows, journal)
+    return { kind, fingerprint: contentHash(rows, columns), ...(journal === null ? {} : { journal, ...(at ? { journalAt: at } : {}) }), columns }
   })
 }
 
@@ -541,8 +550,11 @@ export async function stockChanged(dataDir: string, mark: StockMark): Promise<St
   }
   const result = await withDatabase(path.join(dataDir, DB_FILE_NAME), (rows) => {
     const journal = journalMark(rows)
+    // Neuer, aber auch kleiner (ein im alten Mietfuchs eingespieltes Backup oder eine Vorversion setzt die Folge zurück)
+    // oder dieselbe Kennung mit einer anderen Gruppe darunter: ein anderer Bestand (Durchsicht vor dem PR, Daten M1)
     if (mark.journal !== undefined && journal !== null) {
-      return journal > mark.journal ? { changed: true, journal } : { changed: false, journal }
+      const same = journal === mark.journal && (mark.journalAt === undefined || groupAt(rows, journal) === mark.journalAt)
+      return { changed: !same, journal }
     }
     const fingerprint = mark.columns ? contentHash(rows, mark.columns) : legacyFingerprint(rows)
     return { changed: fingerprint !== mark.fingerprint, journal }

@@ -517,3 +517,44 @@ test('Kopie: der Hash ist der der Kopie, auch wenn sich das Original gleich dana
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Durchsicht vor dem PR (Daten, M1): Im alten Mietfuchs ein Backup oder eine Vorversion eingespielt setzt die Folge des
+// Journals zurück. Die Kennung allein sagte dann „unverändert“, obwohl ein ganz anderer Bestand dort liegt.
+test('Fingerabdruck: eine ausgetauschte Datei mit niedrigerer oder gleicher Kennung im Journal gilt als geändert', async () => {
+  const dir = tempDir()
+  try {
+    const filled = made(path.join(dir, 'gefuellt'))
+    ;(await openDatabaseWithStock(filled, straightenForDatabase(someDb()))).close()
+    const { DatabaseSync } = await import('node:sqlite')
+    const file = path.join(filled, 'mietfuchs.sqlite')
+    const group = (at: string) => `INSERT INTO change_groups (at, method, route, description, schema_steps) VALUES ('${at}', 'PUT', '/api/x', 'x', 1)`
+    const copyBefore = path.join(dir, 'frueher.sqlite')
+    {
+      const db = new DatabaseSync(file)
+      db.exec(group('2026-01-01T00:00:00.000Z'))
+      db.close()
+      fs.copyFileSync(file, copyBefore)
+      const later = new DatabaseSync(file)
+      for (let i = 0; i < 5; i++) later.exec(group(`2026-02-0${i + 1}T00:00:00.000Z`))
+      later.close()
+    }
+    const mark = await markStock(filled, 'database')
+    assert.ok(mark && mark.journal !== undefined)
+    // Ein früherer Stand eingespielt, danach die Schranke des Einspielens: kleinere Kennung als beim Umzug
+    fs.copyFileSync(copyBefore, file)
+    const restored = new DatabaseSync(file)
+    restored.exec(group('2026-11-02T09:00:00.000Z'))
+    restored.exec("UPDATE cost_items SET amount_cents = amount_cents + 5")
+    restored.close()
+    assert.ok(await stockChanged(filled, mark), 'kleinere Kennung')
+    // Gleiche Kennung, aber eine andere Gruppe darunter
+    const same = new DatabaseSync(file)
+    for (let i = 0; i < 4; i++) same.exec(group(`2026-11-0${i + 3}T00:00:00.000Z`))
+    same.close()
+    const now = await markStock(filled, 'database')
+    assert.equal(now?.journal, mark.journal)
+    assert.ok(await stockChanged(filled, mark), 'gleiche Kennung, andere Gruppe')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

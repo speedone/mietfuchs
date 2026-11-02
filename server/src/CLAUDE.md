@@ -30,7 +30,10 @@ bis 0.14 (3001) können denselben Ordner nehmen (Mac: Programmdatei unter /Appli
   umgezogener Ordner (`moved`) zählt nie, er liest nur. Vor 0.8 bleibt eine Fassung unerkannt (hingenommen).
 - **Gleichzeitige Starts**: Während des Startens antwortet `/healthz` mit `dataDir`, `pid` und `boundAt` (Zeitpunkt des
   Bindens). Wer später gebunden hat, weicht (`yieldsTo`); er sieht den anderen sicher, denn der war schon gebunden.
-  Zwei gleichzeitige Starts auf selbst gesetzten Ports ohne Lauf-Datei bleiben unerkannt (hingenommen).
+  Zwei gleichzeitige Starts auf selbst gesetzten Ports ohne Lauf-Datei bleiben unerkannt (hingenommen), ebenso ein
+  Mietfuchs, dessen Ereignisschleife gerade länger als 1,5 Sekunden in einer Migration steckt (hingenommen: länger zu
+  warten verzögerte jeden Start, wenn auf dem Port etwas schweigt). Die Lauf-Datei entsteht erst nach der Frage, sonst
+  überschriebe ein weichender Start die des laufenden.
 - **Nie den Start eines einzelnen verhindern**: keine Antwort, fremdes Programm, anderer Ordner, Lesefehler, nicht
   beschreibbarer Ordner (dann keine Lauf-Datei) zählen als frei.
 - **Läuft schon eines**: im Fenster eine Zeile auf der Fehlerausgabe und Exit 1, das Fenster zeigt sie als Meldung
@@ -121,7 +124,9 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   abgebrochen heißt 400 und beide Ordner wie vorher.
 - **Später im alten Mietfuchs geändert** (zwei Bestände vermeiden; alte Fassungen kennen den Vermerk nicht): `umzug.json`
   hält `source` (`StockMark` aus `markStock`): mit Journal die höchste je vergebene Kennung einer Gruppe (`journal`,
-  aus `sqlite_sequence`), sonst SHA-256 über genau die Tabellen und Spalten von damals (`columns`); db.json als Datei.
+  aus `sqlite_sequence`) samt Zeit dieser Gruppe (`journalAt`); geändert heißt jede andere Kennung, auch eine kleinere
+  (ein im alten Mietfuchs eingespieltes Backup oder eine Vorversion setzt die Folge zurück), oder dieselbe mit anderer
+  Gruppe (Durchsicht vor dem PR, M1), sonst SHA-256 über genau die Tabellen und Spalten von damals (`columns`); db.json als Datei.
   **Nur Nutzdaten zählen** (Durchsicht Daten K5): Migriert eine ältere Programmdatei den alten Ordner, kommen Spalten
   und Tabellen dazu und Datenschritte schreiben um, ohne Gruppe im Journal; das ist kein neuerer Stand. Jede Änderung
   eines Nutzers legt eine Gruppe an. Die Dateizeit zählt nicht, schon ein Start schreibt eine Probe in die Datei; sie
@@ -142,7 +147,11 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   ein laufendes Wiederherstellen oder eine Übernahme bis zwei Minuten, eine Übernahme, die noch kopiert, bricht dabei ab;
   `/api/quit` meldet dann `busy`, und das Fenster wartet länger; neue Vorgänge bekommen 503 (K2). Vor dem Umschalten
   steht `umzug.offen.json` mit Quelle und Name der Kopie; endet das Fenster danach, schreibt der nächste Start die
-  Entscheidung (der Vermerk folgt wie bei D1), sonst verwirft er die Datei (`switchedOver`, K3). Bei der db.json wird
+  Entscheidung (der Vermerk folgt wie bei D1), sonst verwirft er die Datei (`switchedOver`, K3). Auch der laufende
+  Umzug schreibt die Entscheidung nur, wenn `switchedOver` gilt: `applyBackup` fängt einen gescheiterten Austausch ab
+  (Durchsicht vor dem PR, M3; Testgriff `NKA_TEST_FAIL_EXCHANGE`). `exchangeName` benennt mit Wiederholungen um und
+  kopiert zur Not (M2). Während eines Wiederherstellens leert der Takt den Papierkorb nicht (K1). Signale beenden über
+  `shutDown` wie `/api/quit` (K4). Bei der db.json wird
   der Hash der Kopie verglichen (`copyAndHash`, K4). Der Papierkorb zieht mit, vor dem Einspielen, damit
   `reconcileAfterRestore` ihn sieht; Vorversionen und Sicherungen vor Updates bleiben, die Antwort sagt es in einem
   Satz (K9). Im umgezogenen Ordner prüft `/healthz` nur das Lesen der Belege, der Schnappschuss des Backups entsteht in
