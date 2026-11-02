@@ -3258,9 +3258,20 @@ async function findCandidates(fresh = false): Promise<{ candidates: RelocationCa
   return value
 }
 
-// Die Anfrage kommt von diesem Rechner. Mit Zugriff aus dem Heimnetz soll niemand vom Handy aus einen Ordner auf dem
-// Rechner suchen oder übernehmen lassen.
+// Die Anfrage kommt von diesem Rechner (Loopback). Die Umzugsrouten nehmen Pfade an, suchen im Benutzerordner und
+// kopieren. Mit „Zugriff aus dem Heimnetz“ (NKA_HOST=0.0.0.0) erreichten Handy und andere Rechner sie sonst und könnten
+// beliebige Pfade auf diesem Rechner lesen lassen (CodeQL js/path-injection). Deshalb antwortet jede dieser Routen nur
+// auf 127.0.0.1, ::1 und ::ffff:127.0.0.1, sonst 403 (`localOnly`). Die Oberfläche bietet den Umzug ohnehin nur im
+// Fenster an (`inWindow`), nie auf dem Handy.
 const fromThisComputer = (req: Request): boolean => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '')
+const NOT_HERE = 'Daten übernehmen geht nur am Rechner, auf dem Mietfuchs läuft.'
+// Vor jeder Umzugsroute außer der schnellen Frage `GET /api/relocation` (sie antwortet von außen nur `offered: false`)
+// und dem Fortschritt (ohne Pfade)
+app.use('/api/relocation', (req, res, next) => {
+  if (req.method === 'GET' && (req.path === '/' || req.path === '' || req.path === '/progress')) return next()
+  if (!fromThisComputer(req)) return void res.status(403).json({ error: NOT_HERE })
+  next()
+})
 
 // Antwortet auf Port 3001 ein Mietfuchs, und mit welchem Datenordner? Kurz gefragt: Ohne Antwort läuft keins.
 async function oldInstance(): Promise<{ running: boolean, dataDir: string | null }> {
@@ -3298,7 +3309,7 @@ app.get('/api/relocation', async (req, res) => {
 })
 
 app.get('/api/relocation/candidates', async (req, res) => {
-  if (!fromThisComputer(req) || !relocationAvailable()) return res.json({ offered: false })
+  if (!relocationAvailable()) return res.json({ offered: false })
   res.json({ offered: await relocationOffered(), ownStock: await hasOwnStock(), ...await findCandidates() })
 })
 
@@ -3345,7 +3356,7 @@ async function replaceRefusal(req: Request): Promise<string | null> {
 // „Ordner der alten Programmdatei wählen …“: Den Ordner wählt der Dialog des Fensters (preload.cjs), hier wird er
 // geprüft und beschrieben.
 app.post('/api/relocation/inspect', async (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   if (!relocationAvailable()) return res.status(409).json({ error: 'Die Übernahme gibt es nur im Programmfenster.' })
   const folder = typeof req.body?.folder === 'string' ? req.body.folder : ''
   if (!folder || !path.isAbsolute(folder)) return res.status(400).json({ error: 'Es fehlt, welcher Ordner gewählt wurde.' })
@@ -3363,7 +3374,7 @@ app.post('/api/relocation/inspect', async (req, res) => {
 
 // „Altes Mietfuchs beenden“: über /api/quit der alten Fassung (seit 0.7; davor schließt der Nutzer ihr Fenster), dann warten, bis sie nicht mehr antwortet.
 app.post('/api/relocation/quit-old', async (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   if (!(await oldInstance()).running) return res.json({ stopped: true })
   try {
     await fetch(`http://127.0.0.1:${OLD_PORT}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) })
@@ -3378,7 +3389,7 @@ app.post('/api/relocation/quit-old', async (req, res) => {
 // Ein Backup, das jemand bei „Ordner wählen …“ gewählt hat, einspielen wie über /api/restore, nur von der Platte statt
 // hochgeladen. Das Backup selbst wird nur gelesen.
 app.post('/api/relocation/restore-backup', async (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   const refusal = await replaceRefusal(req)
   if (refusal) return res.status(409).json({ error: refusal, replace: true })
   const file = typeof req.body?.file === 'string' ? req.body.file : ''
@@ -3403,7 +3414,7 @@ app.post('/api/relocation/restore-backup', async (req, res) => {
 })
 
 app.post('/api/relocation/decline', async (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   if (!(await relocationOffered())) return res.status(409).json({ error: 'Hier liegen schon Daten; es gibt nichts zu übernehmen.' })
   writeDecision(DATA_DIR, { version: 1, decision: 'fresh', at: new Date().toISOString() })
   res.json({ ok: true })
@@ -3413,7 +3424,7 @@ app.post('/api/relocation/decline', async (req, res) => {
 class AdoptRefusal extends Error {}
 
 app.post('/api/relocation/adopt', async (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   const refusal = await replaceRefusal(req)
   if (refusal) return res.status(409).json({ error: refusal, replace: true })
   const raw = typeof req.body?.dataDir === 'string' ? req.body.dataDir : ''
@@ -3436,7 +3447,7 @@ app.post('/api/relocation/adopt', async (req, res) => {
 // Den neueren Stand noch einmal übernehmen (#517): Im alten Mietfuchs wurde nach dem Umzug noch etwas geändert. Nie von
 // selbst, nur auf Klick; derselbe Weg, der Stand von jetzt wird vorher als `mietfuchs.sqlite.vor-restore` gesichert.
 app.post('/api/relocation/readopt', async (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   const newer = await newerInOldFolder()
   if (!newer) return res.status(409).json({ error: 'Im bisherigen Mietfuchs hat sich seit dem Umzug nichts geändert.' })
   if (runningFor(newer.from, await oldInstance(), process.platform)) {
@@ -3447,7 +3458,7 @@ app.post('/api/relocation/readopt', async (req, res) => {
 
 // „Nicht übernehmen“: Der Hinweis gilt für diesen Stand nicht mehr; ändert sich dort wieder etwas, kommt er wieder.
 app.post('/api/relocation/newer/dismiss', async (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   const newer = await newerInOldFolder()
   const decided = readDecision(DATA_DIR)
   if (newer && decided?.source) writeDecision(DATA_DIR, { ...decided, source: { ...decided.source, fingerprint: newer.fingerprint } })
@@ -3465,7 +3476,7 @@ app.get('/api/relocation/progress', (req, res) => {
 })
 
 app.post('/api/relocation/cancel', (req, res) => {
-  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   if (adoptProgress.phase !== 'copy' && adoptProgress.phase !== 'check') {
     return res.status(409).json({ error: adoptProgress.phase === 'switch' ? 'Die Daten werden gerade umgeschaltet; das lässt sich nicht mehr abbrechen.' : 'Es läuft keine Übernahme.' })
   }

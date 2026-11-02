@@ -28,7 +28,10 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   Minute gemerkt, ob die alte Fassung läuft, wird jedes Mal neu gefragt). **Von Hand** (Einstellungen) gehen Funde,
   Ordnerwahl, Übernahme und Backup auch mit eigenem Bestand, dann nur mit `replace: true` (sonst 409 mit `replace`); der
   Stand von jetzt wird als `vor-restore` gesichert, die Zustimmungen von jetzt gelten (`AdoptMode` `replace`). Alle
-  Routen nur von 127.0.0.1 (`fromThisComputer`).
+  Routen nur von diesem Rechner: eine Vorschaltung vor `/api/relocation/*` (außer der schnellen Frage und dem
+  Fortschritt) lässt nur Loopback durch (`fromThisComputer`), sonst 403 „Daten übernehmen geht nur am Rechner, auf dem
+  Mietfuchs läuft.“; sonst wären sie mit „Zugriff aus dem Heimnetz“ vom Handy aus erreichbar und nähmen beliebige Pfade an
+  (CodeQL `js/path-injection`). Die Oberfläche zeigt den Umzug ohnehin nur im Fenster (`inWindow`).
 - **Gewählt** (`classifyChoice`, `POST /api/relocation/inspect`): Ordner der Programmdatei, `data`, die Programmdatei
   selbst, `mietfuchs.sqlite` oder `db.json` (dann deren Ordner; nur `db.json` ist ein gültiger alter Bestand), oder ein
   Backup (`{ backup }`, dann `POST /api/relocation/restore-backup`: wie `/api/restore`, von der Platte gelesen). Der

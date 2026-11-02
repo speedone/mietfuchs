@@ -644,3 +644,38 @@ test('Ergänzung: mit eigenem Bestand nur mit replace, der Stand vorher ist gesi
     fs.rmSync(old.home, { recursive: true, force: true })
   }
 })
+
+// Absicherung: Mit „Zugriff aus dem Heimnetz“ (NKA_HOST=0.0.0.0) erreichen Handy und andere Rechner den Server. Die
+// Umzugsrouten nehmen Pfade an und kopieren; sie antworten deshalb nur Anfragen von diesem Rechner (Loopback).
+test('Absicherung: Umzugsrouten nur vom eigenen Rechner, aus dem Heimnetz 403', async (t) => {
+  const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address
+  if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback; ohne sie lässt sich keine Anfrage aus dem Heimnetz nachstellen.')
+  const old = await oldFolder()
+  const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_HOST: '0.0.0.0' }))
+  try {
+    const port = new URL(s.base).port
+    const fromLan = `http://${lan}:${port}`
+    const routes: [string, string, unknown][] = [
+      ['GET', '/api/relocation/candidates', null],
+      ['POST', '/api/relocation/inspect', { folder: old.program }],
+      ['POST', '/api/relocation/adopt', { dataDir: old.data }],
+      ['POST', '/api/relocation/restore-backup', { file: path.join(old.home, 'x.zip') }],
+      ['POST', '/api/relocation/quit-old', {}],
+      ['POST', '/api/relocation/readopt', {}],
+      ['POST', '/api/relocation/newer/dismiss', {}],
+      ['POST', '/api/relocation/decline', {}],
+      ['POST', '/api/relocation/cancel', {}],
+    ]
+    for (const [method, url, body] of routes) {
+      const res = await fetch(`${fromLan}${url}`, { method, ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) })
+      assert.equal(res.status, 403, `${method} ${url}`)
+      assert.equal(((await res.json()) as { error: string }).error, 'Daten übernehmen geht nur am Rechner, auf dem Mietfuchs läuft.', `${method} ${url}`)
+    }
+    assert.ok(!fs.existsSync(path.join(old.data, 'umgezogen.json')))
+    // Vom eigenen Rechner wie bisher
+    assert.equal((await s.api<Offer>('/api/relocation/candidates')).candidates?.[0]?.dataDir, old.data)
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
