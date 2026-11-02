@@ -31,7 +31,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import MonthField from '../components/MonthField'
 import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
-import { useFocusTarget, useNewTarget, useScrollToFocus, useSectionJump, type FocusProps } from '../focus'
+import { focusOpener, useFocusTarget, useNewTarget, useScrollToFocus, useSectionJump, type FocusProps } from '../focus'
 import { splitTenancies } from '../tenancyList'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import { salutationOf } from '../../../shared/letter.ts'
@@ -192,7 +192,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     await reload()
   }
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
-  useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { unitErrors.clear(); setUnitForm(unitToForm(u)) }, onFocusDone)
+  // Vorher der Fokus auf das ✎ der Wohnung, damit er beim Schließen dorthin zurückkehrt (Durchsicht zu #554).
+  useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => {
+    focusOpener([...document.querySelectorAll<HTMLElement>('[data-unit-edit]')].find((b) => b.dataset.unitEdit === u.id))
+    unitErrors.clear()
+    setUnitForm(unitToForm(u))
+  }, onFocusDone)
   // Laufende und künftige oben, beendete eingeklappt darunter (tenancyList.ts). Ein Sprung zu einem früheren
   // Mietverhältnis klappt den Abschnitt auf; die Zeile wird markiert und ihr ✎ bekommt den Fokus, bevor das Fenster
   // aufgeht, damit er beim Schließen dorthin zurückkehrt (`FocusTenancyRow`).
@@ -227,8 +232,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // der Knopf der Karte. Ohne Wohnung bleibt das Mietverhältnis gesperrt wie dort; die Karte nennt dann den Grund.
   const newUnit = () => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }
   const newTenancy = () => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }
-  useNewTarget(focus, 'unit', true, newUnit, onFocusDone)
-  useNewTarget(focus, 'tenancy', true, () => { if (units.length > 0) newTenancy() }, onFocusDone)
+  // Der Fokus vorher auf den Knopf der Karte, wie oben auf das ✎ der Wohnung
+  const newUnitButton = useRef<HTMLButtonElement>(null)
+  const newTenancyButton = useRef<HTMLButtonElement>(null)
+  useNewTarget(focus, 'unit', true, () => { focusOpener(newUnitButton.current); newUnit() }, onFocusDone)
+  useNewTarget(focus, 'tenancy', true, () => { if (units.length > 0) { focusOpener(newTenancyButton.current); newTenancy() } }, onFocusDone)
   // „Nutzung prüfen“, „Anteile eintragen“ (mehrere Wohnungen) und „Stammdaten prüfen“, „Anschrift eintragen“ (mehrere
   // Mietverhältnisse) aus dem Cockpit: zur Karte (#554).
   const jumpAt = useSectionJump(focus, STAMMDATEN_SECTIONS, true, onFocusDone)
@@ -521,7 +529,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       <PeriodCard onChanged={afterHeatingOrPeriodChange} />
 
       {/* Neues anlegen steht oben rechts im Kartenkopf (#346 Schritt 7b). */}
-      <Card title="Wohnungen" aside={<button className="btn secondary" onClick={newUnit}>+ Wohnung anlegen</button>} {...jumpAt('units')}>
+      <Card title="Wohnungen" aside={<button ref={newUnitButton} className="btn secondary" onClick={newUnit}>+ Wohnung anlegen</button>} {...jumpAt('units')}>
         {units.length === 0 && <div className="empty">{emptyUnitsText(property?.kind ?? 'mfh')}</div>}
         {units.length > 0 && (
           <Table className="stacked">
@@ -569,7 +577,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                   </td>
                   <td className="actions no-print">
-                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => { unitErrors.clear(); setUnitForm(unitToForm(u)) }}>✎</button>
+                    <button className="icon-btn" data-unit-edit={u.id} title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => { unitErrors.clear(); setUnitForm(unitToForm(u)) }}>✎</button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Wohnung löschen" onClick={() => deleteUnit(u)}>🗑</button>
                   </td>
                 </tr>
@@ -593,6 +601,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             {/* Ein gesperrter Knopf nennt seinen Grund (#346, Schritt 10, M14). */}
             {units.length === 0 && <span id="tenancy-needs-unit" className="muted">Legen Sie zuerst eine Wohnung an.</span>}
             <button
+              ref={newTenancyButton}
               className="btn secondary"
               onClick={newTenancy}
               disabled={units.length === 0}

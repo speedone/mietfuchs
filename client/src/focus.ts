@@ -74,6 +74,14 @@ export function useScrollToFocus(): () => void {
   }, [])
 }
 
+// Vor dem Öffnen eines Fensters aus einem Sprung den Fokus auf den Knopf setzen, der es auf der Seite selbst öffnet
+// (Durchsicht zu #554): Das Seitenfenster merkt sich beim Öffnen das fokussierte Element und gibt ihm beim Schließen
+// den Fokus zurück; der geklickte Knopf der anderen Seite ist dann schon ausgehängt, und der Fokus fiele auf body.
+// Wie `FocusTenancyRow` in Stammdaten.tsx. Ohne Rollen, das Fenster legt sich darüber.
+export function focusOpener(el: HTMLElement | null | undefined): void {
+  el?.focus({ preventScroll: true })
+}
+
 // „Anlegen“ aus einer anderen Seite (#554): das Formular öffnen, sobald die Seite es öffnen kann (`ready`: was ihr
 // eigener Knopf voraussetzt, ist geladen). Den Fokus ins erste Feld setzt das Seitenfenster selbst (Drawer.tsx).
 export function useNewTarget(

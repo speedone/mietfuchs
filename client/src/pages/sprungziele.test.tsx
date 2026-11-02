@@ -6,7 +6,7 @@
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { CostItem, Meter, Property, Settings, Settlement, Tenancy, Unit, UpdateStatus } from '../types'
 import type { JumpTarget } from '../focus'
 import { PeriodProvider } from '../period'
@@ -32,6 +32,7 @@ const TENANCIES: Tenancy[] = [
 ]
 const COSTS: CostItem[] = [
   { id: 'k1', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer A', amountCents: 50000, key: 'area' },
+  { id: 'k2', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Müllabfuhr', description: 'Müll B', amountCents: 30000, key: 'units' },
 ]
 const METERS: Meter[] = []
 const SETTLEMENT: Settlement = {
@@ -197,4 +198,125 @@ test('Cockpit: „Hinweise der Berechnung“ führt zu „Zu prüfen“ in der A
   const row = (await screen.findByText('Hinweise der Berechnung', {}, SLOW)).closest('.check-row') ?? assert.fail('Zeile fehlt')
   fireEvent.click(row)
   expect(navigate).toHaveBeenCalledWith('abrechnung', { kind: 'section', section: 'checks' })
+})
+
+// ---------- Durchsicht: Fokus nach dem Schließen, nur einmal, ohne Ziel nichts ----------
+
+// Die Seite mit einem Ziel, das `onFocusDone` wirklich löscht, wie App.tsx (`clearFocus`)
+// „neu zeichnen“ zeichnet die Seite noch einmal, wie es jedes Laden oder Speichern tut.
+function Once({ target, page }: { target: JumpTarget; page: (focus: JumpTarget | null, done: () => void) => ReactNode }) {
+  const [focus, setFocus] = useState<JumpTarget | null>(target)
+  const [, setTick] = useState(0)
+  return <><button type="button" onClick={() => setTick((n) => n + 1)}>neu zeichnen</button>{page(focus, () => setFocus(null))}</>
+}
+
+// Esc im offenen Fenster: Es schließt (nichts geändert) und geht nicht wieder auf; der Fokus steht auf `opener`.
+async function closeAndExpectFocus(title: string, opener: () => HTMLElement) {
+  const dialog = (await screen.findByText(title, {}, SLOW)).closest('dialog') ?? assert.fail(`Fenster „${title}“ fehlt`)
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  fireEvent.keyDown(dialog, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByText(title)).toBeNull())
+  await waitFor(() => expect(document.activeElement).toBe(opener()))
+  // Das Ziel ist erledigt: Nichts öffnet das Fenster ein zweites Mal
+  await new Promise((r) => setTimeout(r, 100))
+  expect(screen.queryByText(title)).toBeNull()
+}
+
+const stammdatenOnce = (target: JumpTarget) => wrap(<Once target={target} page={(focus, done) => (
+  <Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} focus={focus} onFocusDone={done} />
+)} />)
+
+test('Stammdaten: nach „Wohnung anlegen“ und Esc steht der Fokus auf „+ Wohnung anlegen“, das Fenster bleibt zu', async () => {
+  stammdatenOnce({ kind: 'new', what: 'unit' })
+  await closeAndExpectFocus('Neue Wohnung', () => screen.getByRole('button', { name: '+ Wohnung anlegen' }))
+})
+
+test('Stammdaten: nach „Mietverhältnis anlegen“ und Esc steht der Fokus auf „+ Mietverhältnis anlegen“', async () => {
+  stammdatenOnce({ kind: 'new', what: 'tenancy' })
+  await closeAndExpectFocus('Neues Mietverhältnis', () => screen.getByRole('button', { name: '+ Mietverhältnis anlegen' }))
+})
+
+test('Stammdaten: nach dem Sprung zu einer Wohnung und Esc steht der Fokus auf ihrem ✎', async () => {
+  stammdatenOnce({ kind: 'unit', id: 'u2' })
+  await closeAndExpectFocus('Wohnung bearbeiten', () => {
+    const row = screen.getByText('OG').closest('tr') ?? assert.fail('Zeile OG fehlt')
+    return within(row).getByRole('button', { name: 'Wohnung bearbeiten' })
+  })
+})
+
+for (const part of ['tax', 'landlord'] as const) {
+  test(`Stammdaten: nach dem Sprung ins Objekt (${part}) und Esc steht der Fokus auf „Bearbeiten“ des Objekts`, async () => {
+    stammdatenOnce({ kind: 'property', part })
+    await closeAndExpectFocus('Objekt bearbeiten', () => screen.getByRole('button', { name: /^Bearbeiten/ }))
+  })
+}
+
+test('Kosten: nach „Kosten erfassen“ und Esc steht der Fokus auf „+ Kostenposition anlegen“', async () => {
+  wrap(<Once target={{ kind: 'new', what: 'costItem' }} page={(focus, done) => (
+    <Kosten units={UNITS} settings={null} tenancies={TENANCIES} focus={focus} onFocusDone={done} />
+  )} />)
+  await closeAndExpectFocus('Neue Kostenposition', () => screen.getByRole('button', { name: '+ Kostenposition anlegen' }))
+})
+
+test('Kosten: nach dem Sprung zu einer Position und Esc steht der Fokus auf ihrem ✎', async () => {
+  wrap(<Once target={{ kind: 'costItem', id: 'k2' }} page={(focus, done) => (
+    <Kosten units={UNITS} settings={null} tenancies={TENANCIES} focus={focus} onFocusDone={done} />
+  )} />)
+  await closeAndExpectFocus('Kostenposition bearbeiten', () => {
+    const row = document.querySelector<HTMLElement>('tr[data-item="k2"]') ?? assert.fail('Zeile k2 fehlt')
+    return within(row).getByRole('button', { name: 'Kostenposition bearbeiten' })
+  })
+})
+
+test('Stammdaten: der Sprung zur Karte geschieht nur einmal, ein neues Zeichnen holt den Fokus nicht zurück', async () => {
+  wrap(<Once target={{ kind: 'section', section: 'units' }} page={(focus, done) => (
+    <Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} focus={focus} onFocusDone={done} />
+  )} />)
+  await expectSectionFocused('Wohnungen')
+  const redraw = screen.getByRole('button', { name: 'neu zeichnen' })
+  redraw.focus()
+  fireEvent.click(redraw)
+  await new Promise((r) => setTimeout(r, 100))
+  expect(document.activeElement).toBe(redraw)
+  expect(screen.queryByText('Neue Wohnung')).toBeNull()
+})
+
+test('ohne Ziel: Stammdaten, Einstellungen und Abrechnung heben nichts hervor und nehmen keinen Fokus', async () => {
+  stammdaten(null as unknown as JumpTarget)
+  await screen.findByRole('heading', { name: 'Wohnungen' }, SLOW)
+  await new Promise((r) => setTimeout(r, 100))
+  expect(document.querySelector('.focus-target')).toBeNull()
+  expect(document.activeElement).toBe(document.body)
+  cleanup()
+  render(
+    <PropertyProvider>
+      <UIProvider><Einstellungen settings={SETTINGS} reload={async () => {}} update={{ status: STATUS, checking: false, checkNow: async () => {} }} /></UIProvider>
+    </PropertyProvider>,
+  )
+  await screen.findByRole('heading', { name: 'Über Mietfuchs' }, SLOW)
+  await new Promise((r) => setTimeout(r, 100))
+  expect(document.querySelector('.focus-target')).toBeNull()
+  expect(document.activeElement).toBe(document.body)
+  cleanup()
+  wrap(<Abrechnung settings={null} units={UNITS} tenancies={TENANCIES} reload={async () => {}} />)
+  await screen.findByRole('heading', { name: 'Zu prüfen' }, SLOW)
+  await new Promise((r) => setTimeout(r, 100))
+  expect(document.querySelector('.focus-target')).toBeNull()
+  expect(document.activeElement).toBe(document.body)
+})
+
+// Browserblick bei 1280 px: Das Aktenzeichen stand ganz unten über der Fußleiste des Fensters. Der Teil, zu dem der
+// Sprung führt, rollt ins Bild (jsdom kennt scrollIntoView nicht, deshalb hier nachgebaut).
+test('Stammdaten: der Sprung zu den Steuerangaben holt das Feld im Fenster ins Bild', async () => {
+  const scrolled: { el: Element; opts: unknown }[] = []
+  const had = Object.prototype.hasOwnProperty.call(HTMLElement.prototype, 'scrollIntoView')
+  HTMLElement.prototype.scrollIntoView = function (this: HTMLElement, opts?: boolean | ScrollIntoViewOptions) { scrolled.push({ el: this, opts }) }
+  try {
+    stammdaten({ kind: 'property', part: 'tax' })
+    const dialog = (await screen.findByText('Objekt bearbeiten', {}, SLOW)).closest('dialog') ?? assert.fail('Fenster fehlt')
+    const field = within(dialog).getByLabelText(/Aktenzeichen/)
+    await waitFor(() => expect(scrolled.some((s) => s.el === field && (s.opts as ScrollIntoViewOptions | undefined)?.block === 'center')).toBe(true))
+  } finally {
+    if (!had) delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  }
 })

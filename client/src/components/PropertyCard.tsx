@@ -9,7 +9,7 @@ import Card from './Card'
 import PropertyFields from './PropertyFields'
 import { useFormError } from './ErrorSummary'
 import { useSaving } from '../useSaving'
-import type { FocusProps, PropertyPart } from '../focus'
+import { focusOpener, type FocusProps, type PropertyPart } from '../focus'
 
 // Die Karte „Objekt“ in den Stammdaten (#92). Sie zeigt die Angaben des gewählten Objekts nur an; „Bearbeiten“
 // oben rechts öffnet ein Seitenfenster mit allen Feldern, wie bei Wohnungen und Mietverhältnissen. Vorher stand
@@ -33,9 +33,12 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
   const [part, setPart] = useState<PropertyPart | null>(null)
   const jumpRef = useRef({ open, onFocusDone })
   jumpRef.current = { open, onFocusDone }
+  // Vorher der Fokus auf „Bearbeiten“, damit er beim Schließen dorthin zurückkehrt (Durchsicht zu #554)
+  const editButton = useRef<HTMLButtonElement>(null)
   const hasProperty = !!property
   useEffect(() => {
     if (!hasProperty || focus?.kind !== 'property') return
+    focusOpener(editButton.current)
     jumpRef.current.open(focus.part)
     jumpRef.current.onFocusDone?.()
   }, [focus, hasProperty])
@@ -105,7 +108,7 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
   }
 
   return (
-    <Card title="Objekt" aside={<button className="btn secondary" onClick={() => open()}>Bearbeiten{' '}<span className="sr-only">(Objekt)</span></button>}>
+    <Card title="Objekt" aside={<button ref={editButton} className="btn secondary" onClick={() => open()}>Bearbeiten{' '}<span className="sr-only">(Objekt)</span></button>}>
       <dl className="m-0 grid gap-x-8 gap-y-3 sm:grid-cols-2">
         {propertySummary(property).map((r) => (
           <div key={r.label}>
