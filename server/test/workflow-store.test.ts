@@ -136,3 +136,16 @@ test('Alte Fassungen: Speicher auf main mit demselben Schlüssel wie der Praxisl
   assert.equal(cacheOf(warm).key, `mietfuchs-alte-fassungen-v1-${versions.join('-')}`)
 })
 
+
+// Ein PR, der nur Markdown ändert, führt nur DOC_TESTS aus (ci.yml). Jeder Servertest, der eine .md-Datei liest, muss
+// dort stehen, sonst bliebe ein Fehler in der Doku bis zum Push auf main unbemerkt. Erkannt wird ein Dateiname auf .md
+// als Zeichenkette außerhalb eines Kommentars; anrede.test.ts liest ganze Ordner und steht ausdrücklich in der Liste.
+test('CI: Doku-PRs führen jeden Test aus, der Markdown liest', () => {
+  const docTests = /^\s+DOC_TESTS: (test\/.+)$/m.exec(read('ci.yml'))?.[1]?.trim().split(/\s+/) ?? []
+  assert.ok(docTests.includes('test/anrede.test.ts') && docTests.includes('test/geviertstrich.test.ts'))
+  const dir = path.join(workflows, '../../server/test')
+  const readsMarkdown = fs.readdirSync(dir).filter((f) => f.endsWith('.test.ts')).filter((f) =>
+    fs.readFileSync(path.join(dir, f), 'utf8').split('\n').some((line) => !/^\s*\/\//.test(line) && /['"`][\w./-]*\.md['"`]/.test(line.replace(/\/\/.*$/, ''))))
+  for (const f of readsMarkdown) assert.ok(docTests.includes(`test/${f}`), `${f} liest Markdown und fehlt in DOC_TESTS (ci.yml)`)
+  for (const f of docTests) assert.ok(fs.existsSync(path.join(dir, '..', f)), `${f} aus DOC_TESTS gibt es nicht`)
+})
