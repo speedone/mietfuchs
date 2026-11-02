@@ -110,7 +110,7 @@ test('nach einem Update steht die Sicherung da, mit Link zur Anleitung, und blei
   }
   const { unmount } = render(<DatabaseNotice />)
   await screen.findByText(/Mietfuchs wurde auf Version 0\.9\.0 aktualisiert/)
-  screen.getByText(/mietfuchs\.sqlite\.vor-0001_objekte im Datenordner/)
+  screen.getByText(/Sie finden sie unter Verlauf/)
   const link = screen.getByRole('link', { name: /Anleitung/ })
   expect(link.getAttribute('href')).toBe(MIGRATION_GUIDE_URL)
   // Nur dieser eine Hinweis: Neben einem Umstieg, den es nicht gab, steht nichts.
@@ -177,4 +177,92 @@ test('ohne Datenbank steht der Grund da, obwohl der Zustandsbericht mit 503 antw
   await screen.findByText(detail)
   screen.getByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' })
   expect(screen.queryByRole('button', { name: 'Verstanden' })).toBeNull()
+})
+
+// Praxistest O: Der Grund stand doppelt (oben und als roter Kasten der Seite); App.tsx blendet die Seite aus, solange
+// dieser Hinweis steht, und „Mietfuchs beenden“ steht hier statt nur in der Seitenleiste
+test('ohne Datenbank: sagt es der App und trägt „Mietfuchs beenden“', async () => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({
+    status: 'error',
+    database: { open: false, file: 'C:\\x\\mietfuchs.sqlite', migrations: 0, detail: 'Die Datenbank stammt aus einer neueren Mietfuchs-Version.', changeover: { state: 'none', message: '', notes: [] }, migrated: null },
+  }), { status: 503, headers: { 'content-type': 'application/json' } }))
+  const onClosed = vi.fn()
+  render(<DatabaseNotice onClosed={onClosed} quit={<button type="button">Mietfuchs beenden</button>} />)
+  await screen.findByText('Die Datenbank stammt aus einer neueren Mietfuchs-Version.')
+  const box = screen.getByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' }).closest('section') as HTMLElement
+  expect(box.querySelector('button')?.textContent).toBe('Mietfuchs beenden')
+  await waitFor(() => expect(onClosed).toHaveBeenCalledWith(true))
+})
+
+test('mit Datenbank: kein „Mietfuchs beenden“ im Hinweis, und die App erfährt, dass alles offen ist', async () => {
+  const onClosed = vi.fn()
+  render(<DatabaseNotice onClosed={onClosed} quit={<button type="button">Mietfuchs beenden</button>} />)
+  await screen.findByText('Ihre Daten liegen jetzt in einer Datenbank.')
+  expect(screen.queryByRole('button', { name: 'Mietfuchs beenden' })).toBeNull()
+  await waitFor(() => expect(onClosed).toHaveBeenCalledWith(false))
+})
+
+// Praxistest N-01-390: Am Handy steht „Verstanden“ unter dem Text, nicht daneben
+test('am Handy steht „Verstanden“ unter dem Text', async () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 899px)', addEventListener: () => {}, removeEventListener: () => {} }))
+  report = {
+    version: '0.15.0',
+    database: { ...state({ state: 'none', message: '', notes: [] }), migrated: { steps: 2, backup: 'mietfuchs.sqlite.vor-0001_objekte', at: '2026-10-01T10:00:00.000Z' } },
+  }
+  render(<DatabaseNotice />)
+  await screen.findByText(/Sie finden sie unter Verlauf/)
+  expect(screen.getByRole('button', { name: 'Verstanden' }).closest('.db-notice-body')).toBeTruthy()
+})
+
+// Durchsicht vor 0.15.0 (Daten, 6): Ohne Datenbank laden die Einstellungen nicht, und die Meldung rät zum Backup. Der
+// Weg dorthin steht deshalb im Hinweis selbst. Die Datei, die sich nicht öffnen ließ, legt der Server beim Einspielen
+// als mietfuchs.sqlite.vor-restore beiseite (restoreDatabase), es geht also nichts verloren.
+test('ohne Datenbank: ein Backup lässt sich direkt im Hinweis einspielen', async () => {
+  const posted: { url: string, body: unknown }[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      posted.push({ url: String(url), body: init.body })
+      return new Response('{"notes":[]}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({
+      status: 'error',
+      database: { open: false, file: 'C:\\x\\mietfuchs.sqlite', migrations: 0, detail: 'Die Datenbank ist beschädigt.', changeover: { state: 'none', message: '', notes: [] }, migrated: null },
+    }), { status: 503, headers: { 'content-type': 'application/json' } })
+  })
+  const reloadPage = vi.fn()
+  render(<DatabaseNotice reloadPage={reloadPage} />)
+  await screen.findByText('Die Datenbank ist beschädigt.')
+  const box = screen.getByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' }).closest('section') as HTMLElement
+  expect(box.textContent).toMatch(/bleibt daneben erhalten/)
+  const input = screen.getByLabelText('Backup einspielen …') as HTMLInputElement
+  fireEvent.change(input, { target: { files: [new File(['zip'], 'mietfuchs-backup.zip', { type: 'application/zip' })] } })
+  await waitFor(() => expect(reloadPage).toHaveBeenCalled())
+  expect(posted.map((p) => p.url)).toEqual(['/api/restore'])
+  expect(posted[0]?.body).toBeInstanceOf(FormData)
+})
+
+test('ohne Datenbank: scheitert das Einspielen, steht der Grund im Hinweis; Hinweise des Servers vor dem Neuladen', async () => {
+  let answer: Response = new Response('{"error":"Die Datei ist kein Mietfuchs-Backup."}', { status: 400, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') return answer
+    return new Response(JSON.stringify({
+      status: 'error',
+      database: { open: false, file: 'C:\\x\\mietfuchs.sqlite', migrations: 0, detail: 'Die Datenbank ist beschädigt.', changeover: { state: 'none', message: '', notes: [] }, migrated: null },
+    }), { status: 503, headers: { 'content-type': 'application/json' } })
+  })
+  const reloadPage = vi.fn()
+  render(<DatabaseNotice reloadPage={reloadPage} />)
+  await screen.findByText('Die Datenbank ist beschädigt.')
+  const input = screen.getByLabelText('Backup einspielen …') as HTMLInputElement
+  fireEvent.change(input, { target: { files: [new File(['x'], 'falsch.zip', { type: 'application/zip' })] } })
+  expect((await screen.findByText('Das Backup ließ sich nicht einspielen')).closest('.notice-item')?.textContent).toContain('Die Datei ist kein Mietfuchs-Backup.')
+  expect(reloadPage).not.toHaveBeenCalled()
+
+  answer = new Response('{"notes":["Zwei Belege fehlten im Backup."]}', { status: 200, headers: { 'content-type': 'application/json' } })
+  fireEvent.change(input, { target: { files: [new File(['zip'], 'mietfuchs-backup.zip', { type: 'application/zip' })] } })
+  await screen.findByText('Zwei Belege fehlten im Backup.')
+  expect(screen.queryByText('Das Backup ließ sich nicht einspielen')).toBeNull()
+  expect(reloadPage).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Mietfuchs neu laden' }))
+  expect(reloadPage).toHaveBeenCalled()
 })

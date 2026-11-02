@@ -143,6 +143,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **„Mietfuchs beenden“ fehlte, wenn sich die Datenbank nicht öffnen ließ.** Aus dem Store und als Programmdatei ging
   Mietfuchs dann nur noch über den Task-Manager zu beenden. Der Knopf steht jetzt auch in diesem Fall in der
   Seitenleiste.
+- **Umzug ins Programmfenster verständlicher** ([#517](https://github.com/speedone/mietfuchs/issues/517)). Funde
+  heißen etwa „Ordner „mietfuchs-0.14.1“ in Downloads“, der neueste ist hervorgehoben, beschädigte oder zu neue Daten
+  zeigt die Karte schon vor dem Klick. Danach steht „Ihre Daten sind da“, und Mietfuchs zeigt das Jahr mit den zuletzt
+  erfassten Kosten. Ein Abbruch ist kein Fehler mehr, und eine Datenbank, die sich nicht öffnen lässt, nennt ihren
+  Grund nur noch einmal, mit „Mietfuchs beenden“.
 
 ## [0.14.1] – 2026-11-01
 

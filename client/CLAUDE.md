@@ -179,8 +179,13 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
 - **Umzug ins Programmfenster** (#517, [pages/Umzug.tsx](src/pages/Umzug.tsx), Logik in [relocation.ts](src/relocation.ts)):
   Nur mit der Brücke des Fensters (`inWindow`, auch aus dem Store) fragt App.tsx einmal `GET /api/relocation`; bis zur
   Antwort bleibt der Platz der Seite leer. Mit `offered` (leerer Bestand, noch nichts entschieden) steht auf jeder Seite
-  genau eine Frage, danach gespeichert: **gefunden** „Wir haben Ihre bisherigen Mietfuchs-Daten gefunden“ mit Karte
-  „Gefundene Daten“ (Ort, „Zuletzt geändert am …“, Objekte und Mietverhältnisse), Primärknopf „Daten übernehmen“ (ein
+  genau eine Frage, danach gespeichert; Seitenleiste bzw. Kopf und untere Leiste weichen dann einem Rahmen „Mietfuchs
+  einrichten“ ohne Navigation (Praxistest A): **gefunden** „Wir haben Ihre bisherigen Mietfuchs-Daten gefunden“ mit Karte
+  „Gefundene Daten“ (Ort in Worten wie „Ordner „mietfuchs-0.14.1“ in Downloads“ aus `place`, Objektnamen, „Zuletzt
+  geändert am …“, Objekte und Mietverhältnisse, der volle Pfad nur unter „Genauer Ort“); bei mehreren Funden
+  „Neuester Stand“ hervorgehoben und „Älterer Stand“ zurückhaltend (`rankCandidates`). Ein Fund mit `problem`
+  (`damaged`, `newer`) sperrt „Daten übernehmen“ und sagt vorher warum (`candidateProblem`, fester Link aus update.ts).
+  Primärknopf „Daten übernehmen“ (ein
   nacktes „Übernehmen“ verbietet S16), klein „Andere Daten wählen …“ und „Nicht übernehmen, neu beginnen“ mit Rückfrage;
   **nichts gefunden** „Willkommen bei Mietfuchs“, „Haben Sie Mietfuchs schon einmal benutzt?“ mit zwei gleichen Knöpfen
   „Nein, neu beginnen“ (sofort, ohne Rückfrage) und „Ja, Daten übernehmen“ (Backup mit Ablage und „Backup einspielen“,
@@ -192,6 +197,11 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Kennung des Fundes (`id`, `backup.id`), nie mit dem Pfad; der Pfad des Ordner-Dialogs geht nur an `/inspect`
   (server/src/CLAUDE.md, „Nur bekannte Orte“). Ein umgezogener Ordner zeigt oben „Nur noch
   zum Ansehen“ (Database.tsx), nach dem Umzug geänderte alte Daten [NewerStock.tsx](src/components/NewerStock.tsx).
+  **Danach** (Umzug, Backup, neuerer Stand) lädt die Seite mit `?arrived=…` neu (`reloadWithArrival`); App.tsx nimmt
+  den Anlass aus der Adresse, zeigt einmal [Arrival.tsx](src/components/Arrival.tsx) („Ihre Daten sind da“, Zahl der
+  Mietverhältnisse) und springt in den Zeitraum mit den jüngsten Kosten (`arrivalSummary`); die Frage zu Updates im
+  Cockpit wartet, bis sie geschlossen ist. Ohne geöffnete Datenbank zeigt App.tsx statt der Seite nur den Hinweis oben
+  (mit „Mietfuchs beenden“), außer in der Hilfe.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene

@@ -522,8 +522,11 @@ test('Ergänzung: Änderungen im alten Mietfuchs nach dem Umzug werden erkannt u
     db.exec("UPDATE tenancies SET tenant_name = 'Schmidt-Lange' WHERE tenant_name = 'Schmidt'")
     db.exec(group)
     db.close()
-    const offer = await s.api<{ offered: boolean, newer?: { from: string, modifiedAt: string } }>('/api/relocation')
+    const offer = await s.api<{ offered: boolean, newer?: { from: string, modifiedAt: string, place: unknown, running: boolean } }>('/api/relocation')
     assert.equal(offer.newer?.from, old.data)
+    // Praxistest M: Ort in Worten und ob das alte Mietfuchs noch läuft (dann „Altes Mietfuchs beenden“)
+    assert.deepEqual(offer.newer?.place, { folder: 'mietfuchs-0.14', within: 'Downloads' })
+    assert.equal(offer.newer?.running, false)
     // Nie von selbst
     assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((t) => t.tenantName).sort(), ['Müller', 'Schmidt'])
     const again = await post(s.base, '/api/relocation/readopt')
@@ -581,6 +584,8 @@ test('Ergänzung: Fortschritt beim Kopieren, Abbrechen lässt beide Ordner, wie 
     const result = await adopting
     assert.equal(result.status, 400)
     assert.match(String(result.body.error), /abgebrochen/)
+    // Praxistest K-05: Die Oberfläche zeigt einen Abbruch neutral statt als Fehler
+    assert.equal(result.body.cancelled, true)
     assert.deepEqual(await s.api<Tenancy[]>('/api/tenancies'), [])
     assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [])
     assert.deepEqual(fingerprint(old.data), before)
@@ -796,5 +801,55 @@ test('Absicherung: Übernehmen und Einspielen nur mit der Kennung eines bekannte
   } finally {
     s.stop()
     fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+// Praxistest J: Dass ein Fund beschädigt ist, sagt schon seine Beschreibung, und der Rat führt nicht ins alte Mietfuchs (das öffnet die Datei ebenso wenig)
+test('Praxistest J: beschädigter Fund vorab erkannt, Rat ohne Sackgasse', async () => {
+  const home = tempDir()
+  const broken = path.join(home, 'Downloads', 'mietfuchs-0.14.1')
+  fs.mkdirSync(path.join(broken, 'data', 'vorversionen'), { recursive: true })
+  fs.writeFileSync(path.join(broken, programName), 'x')
+  fs.writeFileSync(path.join(broken, 'data', 'mietfuchs.sqlite'), 'SQLite format 3\0 aber kaputt')
+  fs.writeFileSync(path.join(broken, 'data', 'vorversionen', 'vorversion-2026-10-01-120000.sqlite'), 'alt')
+  const s = await startServerIn(tempDir(), desktopEnv(home))
+  try {
+    const offer = await s.api<{ candidates: (Candidate & { problem: string | null, priorVersions: number, place: unknown, names: string[] })[] }>('/api/relocation/candidates')
+    const [found] = offer.candidates
+    assert.equal(found?.problem, 'damaged')
+    assert.equal(found?.priorVersions, 1)
+    assert.deepEqual(found?.place, { folder: 'mietfuchs-0.14.1', within: 'Downloads' })
+    const refused = await post(s.base, '/api/relocation/adopt', { id: found?.id })
+    assert.equal(refused.status, 400)
+    const text = String(refused.body.error)
+    assert.match(text, /beschädigt/)
+    assert.match(text, /Datei bleibt unverändert/)
+    assert.match(text, /Backup/)
+    assert.match(text, /vorversionen/)
+    assert.doesNotMatch(text, /Öffnen Sie das alte Mietfuchs/)
+    assert.doesNotMatch(text, /weiterarbeiten/)
+  } finally {
+    s.stop()
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// Praxistest G: Die Absage passt zum Knopf „Ordner der alten Programmdatei wählen …“; „Erneut suchen“ sucht wirklich neu
+test('Praxistest G: falscher Ordner gewählt, verständliche Absage; erneut suchen ohne gemerkte Funde', async () => {
+  const home = tempDir()
+  fs.mkdirSync(path.join(home, 'Downloads'), { recursive: true })
+  const s = await startServerIn(tempDir(), desktopEnv(home))
+  try {
+    const empty = await post(s.base, '/api/relocation/inspect', { folder: path.join(home, 'Downloads') })
+    assert.equal(empty.status, 404)
+    assert.equal(empty.body.error, 'In diesem Ordner liegen keine Mietfuchs-Daten. Wählen Sie den Ordner, in dem Ihre alte Mietfuchs-Programmdatei liegt.')
+    assert.deepEqual((await s.api<Offer>('/api/relocation/candidates')).candidates, [])
+    // Inzwischen ist die alte Programmdatei da (etwa vom USB-Stick zurückkopiert)
+    await oldFolder('database', home)
+    assert.deepEqual((await s.api<Offer>('/api/relocation/candidates')).candidates, [], 'eine Minute gemerkt')
+    assert.equal((await s.api<Offer>('/api/relocation/candidates?fresh=1')).candidates?.length, 1, 'erneut suchen sucht neu')
+  } finally {
+    s.stop()
+    fs.rmSync(home, { recursive: true, force: true })
   }
 })

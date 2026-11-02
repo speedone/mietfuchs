@@ -992,3 +992,24 @@ test('Ohne Datenbank antwortet die Route, statt Daten vorzutäuschen', async () 
     s.stop()
   }
 })
+
+// Durchsicht vor 0.15.0 (Daten, 6): Lässt sich die Datenbank nicht öffnen, bietet der Hinweis oben „Backup einspielen“
+// an (components/Database.tsx). Das muss dann auch gehen, und die Datei, die sich nicht öffnen ließ, bleibt erhalten:
+// Sie kann aus einer neueren Fassung stammen und den jüngsten Stand tragen.
+test('Wiederherstellen: auch wenn sich die Datenbank nicht öffnen lässt; die alte Datei bleibt als vor-restore', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-zu-'))
+  const kaputt = 'Das ist ein Brief und keine Datenbank.'
+  fs.writeFileSync(path.join(dataDir, 'mietfuchs.sqlite'), kaputt, 'utf8')
+  const s = await startServerIn(dataDir)
+  try {
+    assert.equal((await fetch(`${s.base}/api/units`)).status, 503)
+    const daten = { settings: {}, units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }], tenancies: [], costItems: [], meters: [], readings: [], payments: [] }
+    const r = await restore(s, archive({}, daten))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.name), ['EG'])
+    assert.equal(fs.readFileSync(path.join(dataDir, 'mietfuchs.sqlite.vor-restore'), 'utf8'), kaputt)
+  } finally {
+    s.stop()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
