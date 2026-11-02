@@ -154,3 +154,60 @@ test('Fenster im utilityProcess: „quit“ mitten im Start beendet erst nach de
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+// Durchsicht vor 0.15.0 (K6): Mit „Zugriff aus dem Heimnetz“ (NKA_HOST=0.0.0.0) erreicht das Handy den Server des
+// Fensters. Beenden, KI-Schlüssel und -Zustimmung und die Zustimmung zur Update-Prüfung gehören an den Rechner: Ein
+// `/api/quit` aus dem Heimnetz beendete das Fenster mit, und eine Zustimmung gibt, wer vor dem Rechner sitzt. Das übrige
+// Speichern der Einstellungen bleibt aus dem Heimnetz möglich.
+test('Fenster: Beenden, KI-Schlüssel, Zustimmungen und Update-Prüfung nur vom eigenen Rechner', async (t) => {
+  const lan = someLanAddress()
+  if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback; ohne sie lässt sich keine Anfrage aus dem Heimnetz nachstellen.')
+  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0' })
+  try {
+    const fromLan = `http://${lan}:${new URL(s.base).port}`
+    const call = async (base: string, method: string, urlPath: string, body?: unknown) => {
+      const res = await fetch(`${base}${urlPath}`, { method, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) })
+      return { status: res.status, body: await res.json() as Record<string, unknown> }
+    }
+    const refused: [string, string, unknown, RegExp][] = [
+      ['POST', '/api/quit', {}, /^Beenden geht nur am Rechner, auf dem Mietfuchs läuft\.$/],
+      ['PUT', '/api/ai/key', { slot: 'text', key: 'sk-test' }, /^KI-Schlüssel und Zustimmungen ändern Sie nur am Rechner, auf dem Mietfuchs läuft\.$/],
+      ['DELETE', '/api/ai/key/text', undefined, /nur am Rechner/],
+      ['POST', '/api/ai/consent', { slot: 'text' }, /nur am Rechner/],
+      ['DELETE', '/api/ai/consent/text', undefined, /nur am Rechner/],
+      ['PUT', '/api/settings', { updateCheck: 'on' }, /^Die Update-Prüfung schalten Sie nur am Rechner ein oder aus, auf dem Mietfuchs läuft\.$/],
+    ]
+    for (const [method, urlPath, body, message] of refused) {
+      const res = await call(fromLan, method, urlPath, body)
+      assert.equal(res.status, 403, `${method} ${urlPath}`)
+      assert.match(String(res.body.error), message, `${method} ${urlPath}`)
+    }
+    assert.equal(s.child.exitCode, null, 'läuft noch')
+    // Das übrige Speichern geht aus dem Heimnetz, auch mit unverändert mitgeschicktem updateCheck (das Formular schickt
+    // ihn nicht, ein älterer Tab vielleicht)
+    const before = await s.api<{ updateCheck: string | null }>('/api/settings')
+    const landlord = await call(fromLan, 'PUT', '/api/settings', { landlordName: 'V. Vermieter', updateCheck: before.updateCheck })
+    assert.equal(landlord.status, 200, JSON.stringify(landlord.body))
+    assert.equal(landlord.body.landlordName, 'V. Vermieter')
+    assert.equal(landlord.body.updateCheck, before.updateCheck)
+    // Vom eigenen Rechner wie bisher
+    assert.equal((await call(s.base, 'PUT', '/api/settings', { updateCheck: 'on' })).body.updateCheck, 'on')
+    assert.equal((await call(s.base, 'DELETE', '/api/ai/consent/text')).status, 200)
+    assert.equal((await call(s.base, 'POST', '/api/quit', {})).status, 200)
+    assert.equal(await waitForExit(s.child), 0)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Heimnetz im Browserbetrieb (Docker, npm): Beenden und Zustimmungen bleiben, wie sie waren', async (t) => {
+  const lan = someLanAddress()
+  if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback.')
+  const s = await startServerIn(freshDir(), { NKA_HOST: '0.0.0.0' })
+  try {
+    const res = await fetch(`http://${lan}:${new URL(s.base).port}/api/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ updateCheck: 'on' }) })
+    assert.equal(res.status, 200)
+  } finally {
+    s.stop()
+  }
+})

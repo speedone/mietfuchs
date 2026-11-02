@@ -6,6 +6,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from './version.ts'
+import { ciSet } from './ci.ts'
 
 export type DataLocation = {
   /** Der Datenordner, wie die Programmdatei ihn benutzt. */
@@ -51,7 +52,7 @@ export function shouldRecord({ packaged, runtime, platform, env }: {
   platform: NodeJS.Platform
   env: NodeJS.ProcessEnv
 }): boolean {
-  if (!packaged || env.CI) return false
+  if (!packaged || ciSet(env)) return false
   if (platform !== 'win32' && platform !== 'darwin') return false
   return runtime === 'binary' || runtime === 'package'
 }

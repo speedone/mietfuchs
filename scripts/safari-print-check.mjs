@@ -422,7 +422,7 @@ async function startDesktop(base) {
   const app = await _electron.launch({
     executablePath,
     args: [path.join(root, 'desktop'), '--lang=de-DE'],
-    env: { ...process.env, MIETFUCHS_SERVER_URL: base, CI: '1', LANG: 'de_DE.UTF-8' },
+    env: { ...process.env, MIETFUCHS_SERVER_URL: base, CI: '1', MIETFUCHS_TESTGRIFFE: '1', LANG: 'de_DE.UTF-8' },
   })
   const win = await app.firstWindow()
   await win.waitForURL(`${base}/**`)

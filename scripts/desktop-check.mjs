@@ -78,7 +78,7 @@ function launch(name, extra = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-'))
   const selftest = path.join(out, name)
   const child = spawn(/** @type {string} */ (app), [], {
-    env: { ...process.env, ...extra, CI: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_SELFTEST_OUT: selftest },
+    env: { ...process.env, ...extra, CI: '1', MIETFUCHS_TESTGRIFFE: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_SELFTEST_OUT: selftest },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
@@ -166,7 +166,8 @@ if (await until(() => fs.existsSync(path.join(moving.selftest, 'fenster.json')),
   const list = /** @type {any} */ (await (await fetch(`${base}/api/relocation/candidates`)).json())
   const found = (list.candidates ?? []).find((/** @type {any} */ c) => String(c.dataDir).toLowerCase() === oldData.toLowerCase())
   check(Boolean(found), `Umzug: Die Suche findet ${oldData} (${JSON.stringify(list).slice(0, 300)})`)
-  const adopt = await fetch(`${base}/api/relocation/adopt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataDir: found?.dataDir ?? oldData }) })
+  // Mit der Kennung des Fundes wie die Oberfläche; einen Pfad nimmt die Route nicht (server/src/CLAUDE.md, K11)
+  const adopt = await fetch(`${base}/api/relocation/adopt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: found?.id }) })
   const adopted = /** @type {any} */ (await adopt.json())
   check(adopt.status === 200, `Umzug: übernommen (${adopt.status} ${JSON.stringify(adopted).slice(0, 300)})`)
   // Der Bestand aus 1. hat mehrere Objekte; ohne `?property=` antwortet /api/tenancies dann mit 400. Gezählt wird je Objekt.

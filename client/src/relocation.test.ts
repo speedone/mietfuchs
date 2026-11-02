@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { adoptedText, candidateFacts, folderBridge, inWindow, type RelocationCandidate } from './relocation'
 
 const candidate = (over: Partial<RelocationCandidate> = {}): RelocationCandidate => ({
+  id: 'f-1',
   dataDir: 'C:\\Users\\Anna\\Downloads\\mietfuchs\\data', kind: 'database', modifiedAt: '2026-10-12T09:30:00.000Z',
   properties: 1, tenancies: 5, running: false, source: 'search', appVersion: null, ...over,
 })

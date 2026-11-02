@@ -200,10 +200,27 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   endet der utilityProcess**, auch nach einem Absturz oder beim Abmelden unter Windows (kein SIGTERM); es bleibt keine
   Waise, die Port und Datenbank hält, geprüft unter Windows und macOS (desktop-check.mjs, Schritt 5, auch über die PID).
   Die Standardeingabe eines utilityProcess ist immer leer und endet sofort; an ihr hängt nichts mehr. Beenden aus dem
-  Fenster erst über `/api/quit` (die Schreibschlange läuft leer), ohne Adresse die Nachricht `quit` über `parentPort`,
-  nach acht Sekunden hart, während des Starts erst nach zehn Minuten (eine Migration soll zu Ende laufen). Servertests
+  Fenster erst über `/api/quit` (die Schreibschlange läuft leer), ohne Adresse die Nachricht `quit` über `parentPort`.
+  **Jedes weitere `before-quit` während des Beendens wird aufgehalten** (`quitDecision` in server.js, erst `app.exit`
+  beendet): Das Schließen des Fensters ruft `app.quit` zweimal (`closed`, `window-all-closed`), und der zweite ließ
+  Electron bisher sofort enden, mit ihm den Server mitten im Leerlaufen (gefunden an #549 mit `fenster.log` in
+  `mietfuchs-fenster\protokoll`, das Schließen, before-quit, `/api/quit` und das Ende des Servers mit Zeit festhält). Hart beendet
+  wird nach acht Sekunden, während des Starts erst nach zehn Minuten (eine Migration soll zu Ende laufen). Servertests
   stellen den utilityProcess mit [fakeUtilityProcess.ts](../server/testing/fakeUtilityProcess.ts) nach (`--import`). Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
   mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz) und das Protokoll des Servers.
+- **Testgriffe im ausgelieferten Fenster nur mit zwei Schranken** ([testGrips.js](../desktop/src/testGrips.js),
+  Durchsicht Daten und Sicherheit): `CI` gleich `1` oder `true` **und** `MIETFUCHS_TESTGRIFFE=1`. Nur dann gelten
+  `MIETFUCHS_SERVER_URL` und `MIETFUCHS_UPDATE_FEED` (beide nur über http auf 127.0.0.1 oder ::1), die Selbstprüfung
+  (`MIETFUCHS_SELFTEST_OUT`) und das Auslassen der Frage nach „Programme“ auf dem Mac, und nur dann reicht `serverEnv`
+  `CI`, `NKA_TEST_*`, `NKA_ALLOWED_HOSTS` und `NKA_UPDATE_URL` an den Server weiter. Bisher genügte `CI`, das manche
+  Entwicklungsumgebung für den ganzen Benutzer setzt, unter Windows auch als `CI=false`: Eine untergeschobene Variable
+  hätte Updates von einem fremden Server laden, eine fremde Seite mit der Druckbrücke öffnen, mit `NKA_ALLOWED_HOSTS=*`
+  aus einer Docker-Einrichtung die Prüfung von Host und Origin abschalten oder Umzug und Ortsdatei stilllegen können.
+  `NKA_DATA_DIR` geht immer weiter (eine Einstellung, kein Testgriff). Beim Entwickeln (`npm run desktop`) gilt alles wie
+  bisher. Die Prüfskripte (desktop-check, updater-check, safari-print-check, installer-messung.ps1, der Store-Job in
+  release.yml) setzen beide. Im Server zählt `CI` ebenfalls nur mit `1` oder `true` (`ciSet` in server/src/ci.ts):
+  Browser beim Start der Programmdatei, Ortsdatei, Suche beim Umzug, `notify-send`. Ein beliebiges `CI` ändert im
+  ausgelieferten Fenster damit nichts mehr; was bleibt, steht hinter beiden Schranken.
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
 - **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
@@ -221,6 +238,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   das Fenster die Seite neu. Ein absichtlich beendeter Server steht in `retired` und löst weder „unerwartet beendet“
   noch `app.quit` aus. Scheitert der Start mit der neuen Adresse, gilt wieder die alte. Beim ersten Einschalten fragt
   unter Windows die Firewall nach Mietfuchs.exe (der Server ist ein Prozess des Fensters); die Karte sagt das. Das Häkchen ist ein Entwurf (#309).
+  Solange der Zugriff an ist, steht im Fuß der Seitenleiste ruhig „📶 Im Heimnetz erreichbar“ und führt zur Karte
+  ([NetworkHint.tsx](../client/src/components/NetworkHint.tsx), K5; nach dem Speichern meldet die Karte den neuen Stand
+  mit `announceNetwork`). Beenden, KI-Schlüssel, Zustimmungen und die Update-Prüfung nimmt der Server dann nur vom
+  Rechner selbst an (server/src/CLAUDE.md, „API“).
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
@@ -321,7 +342,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
     (`desktopDmgName` in server/src/update.ts) mit Anleitung (Abbild öffnen, in „Programme“ ziehen, „Ersetzen“). Läuft
     Mietfuchs nicht aus „Programme“, bietet es vor dem Start des Servers einmal `app.moveToApplicationsFolder()` an,
     „Nicht verschieben“ steht als `moveDeclined` in fenster.json; nicht mit `CI`.
-  - **Andere Quelle nur mit `CI`**: `MIETFUCHS_UPDATE_FEED` (nur `http://127.0.0.1:…`) lenkt auf einen lokalen
+  - **Andere Quelle nur mit den Schranken der Testgriffe** (unten): `MIETFUCHS_UPDATE_FEED` (nur `http://127.0.0.1:…` oder `[::1]`) lenkt auf einen lokalen
     Server, für die Probe unten und für Bildschirmfotos unter Linux (ungepackt mit `forceDevUpdateConfig`, dort heißt
     die Kanaldatei `latest-linux.yml`). Im ausgelieferten Betrieb ließe eine untergeschobene Variable sonst die
     Updates von einem fremden Server laden, samt passender Prüfsumme.
@@ -336,7 +357,14 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **Installer messen** (Job in release.yml, nur im vollen Prüfumfang,
   [../desktop/build/installer-messung.ps1](../desktop/build/installer-messung.ps1)): dreimal installieren, darüber installieren und deinstallieren, einmal bei laufendem Mietfuchs, auf windows-11-arm
   und windows-2025; Phasen aus dem Zeitprotokoll, Schreibzugriffe aus einem FileSystemWatcher, Stand und
-  Ereignisprotokoll von Defender. **Defender auf den Runnern ist kein Nutzerrechner:** Auf beiden sind `C:\` und
+  Ereignisprotokoll von Defender. Bei laufendem Mietfuchs **erst sanft**, dann hart (Durchsicht Daten K1): `taskkill`
+  ohne `/F` **nur mit Filter auf den Fenstertitel** `Mietfuchs*` schickt dem Hauptprozess `WM_CLOSE` (ohne Filter
+  erreichte es auch den Server als utilityProcess, dessen verstecktes Chromium-Fenster ihn sofort beendete, ohne
+  Leerlaufen und Aufräumen; in der CI an #548 an der liegengebliebenen Lauf-Datei gesehen), Electron schließt es, `before-quit` beendet den Server über `/api/quit`,
+  der seine Schlange leerlaufen lässt und auf ein laufendes Wiederherstellen wartet; der Installer wartet bis 15
+  Sekunden (das Fenster selbst wartet bis 8 Sekunden, bei `busy` bis 150), erst dann `/F`. Server und Hilfsprozesse
+  gehen mit dem Hauptprozess. Die Messung verlangt die Marke „sanft
+  geschlossen“ im Zeitprotokoll und dass die Lauf-Datei des Servers weg ist (hart beendet bliebe sie liegen). **Defender auf den Runnern ist kein Nutzerrechner:** Auf beiden sind `C:\` und
   `D:\` ausgenommen, der Cloud-Schutz ist aus (MAPSReporting 0), auf windows-2025 auch der Echtzeitschutz (lässt
   sich nicht einschalten). Was das Prüfen der Dateien kostet, zeigt nur das Protokoll vom Rechner eines Nutzers. Der
   Vergleich mit der Prüfung der Vorlage steht in PR #537.
@@ -344,7 +372,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   (Ordner-Dialog, Absenderprüfung wie Drucken und Netzwerk, `chosenFolder` in server.js gibt nur den Pfad weiter).
   desktop-check.mjs prüft ihn in Schritt 6 unter Windows und macOS: der Bestand aus Schritt 1 in `Downloads/…/data`
   neben einer Datei `mietfuchs-win.exe` bzw. `mietfuchs-macos-apple-silicon` unter `NKA_TEST_HOME`, das Fenster mit
-  leerem Datenordner findet und übernimmt ihn. Mit echten alten Fassungen läuft
+  leerem Datenordner findet und übernimmt ihn (mit der Kennung des Fundes, `{ id }`; einen Pfad nimmt `adopt` nicht,
+  K11). Mit echten alten Fassungen läuft
   [fenster-umzug-praxislauf.mjs](fenster-umzug-praxislauf.mjs) (unten).
 - **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
   „Programmfenster prüfen auf …“, in jedem Prüfumfang): Der Bau hängt an keinem Bun-Artefakt und beginnt sofort; er
@@ -354,7 +383,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   in der Zusammenfassung. **Kein eigener Workflow mehr**: Das frühere desktop.yml ist in release.yml
   aufgegangen, weil ein PR dort so lange läuft wie desktop.yml allein (rund sechs Minuten), weil eine Änderung am
   Fenster jetzt auch das Store-Paket ändert, das nur release.yml prüft, und damit Bau und Prüfung an einer Stelle
-  stehen. Deshalb steht `desktop/**` in der Pfadliste von release.yml.
+  stehen. Deshalb steht `desktop/**` in der Pfadliste von release.yml. Ob das Bündel rechnet wie die Quellen,
+  prüft daneben „Server-Bündel gegen Quellen“ mit den Server-Ordnern aus dem Bau ([bundle-vergleich.mjs](bundle-vergleich.mjs), unten).
 
 ## Microsoft Store
 
@@ -427,9 +457,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   macOS als Zip, Linux als tar.gz (Ausführungsbit), Windows roh. **Die Namen der x64-Dateien bleiben
   fest**, der Update-Hinweis älterer Versionen sucht sie. Dazu das Programmfenster (#517):
   `Mietfuchs-Setup-<Version>.exe`, `Mietfuchs-<Version>-apple-silicon.dmg` und `-intel.dmg`. Die
-  Programmdateien bleiben vorerst daneben, bis PR 3 von #517 die Daten aus dem Ordner neben der
-  Programmdatei von selbst in den Benutzerordner umzieht; ohne das fänden Nutzer ihre Daten im Fenster
-  nicht.
+  Programmdateien für Windows und macOS bleiben daneben: für Macs vor macOS 13, die das Fenster nicht mehr
+  starten, und für alle, die ohne Installation arbeiten. Die Daten neben einer Programmdatei holt das
+  Fenster beim ersten Start selbst (Umzug, server/src/CLAUDE.md); laufen beide auf demselben Ordner,
+  startet das zweite nicht (Lauf-Datei, server/src/CLAUDE.md, „Zwei Mietfuchs auf demselben Datenordner“).
 - **Bei jeder Nebenversion kommt ein Eintrag in `RELEASE_STEPS`** ([server/src/db/releaseSteps.ts](../server/src/db/releaseSteps.ts),
   `{ version: 'x.y.0', steps: <Zahl der Dateien server/drizzle/*.sql> }`, #318): Daraus nennt der Verlauf die Sicherung
   „Vor dem Update auf Version …“. Beim Tag prüft es der Schritt „Rechtsregister geprüft?“ in release.yml
@@ -474,8 +505,34 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Fassung, die den Vermerk nicht kennt, noch eine Zahlung an; das Fenster meldet `newer` und übernimmt den neueren Stand
   erst auf Wunsch. Ebenso über das Backup.
   Beide Mietverhältnisse laufen das ganze Jahr, weil Mietfuchs Leerstand seit 0.3 anders rechnet. Job „Umzug ins
-  Programmfenster mit alten Fassungen“ in release.yml im vollen Umfang; `--nur 0.3.1` für eine Fassung, `--out` für den
-  Bericht. Nur unter Linux.
+  Programmfenster mit alten Fassungen“ in release.yml im vollen Umfang, zweimal: aus den Quellen und mit
+  `--bundle <Server-Ordner>` (der Server von heute als `server/server.mjs` aus dem Windows-Bau, Artefakt
+  `fenster-server-win`, mit dem Node des Runners gestartet; Altformate und Migrationen kommen dann aus dem Bündel).
+  `--nur 0.3.1` für eine Fassung, `--out` für den Bericht. Lokal rund dreieinhalb Minuten je Durchgang, die
+  Programmdateien belegen im Cache rund 500 MB. Nur unter Linux.
+- **[bundle-vergleich.mjs](bundle-vergleich.mjs)** (#517): Rechnet das Bündel des Fensters wie die Quellen? Die Tests
+  laufen alle auf den Quellen; was das Bündeln ändern kann (Auflösung einer Abhängigkeit, umgeschriebenes
+  `import.meta.url`, eingebettete Migrationen, ein Fehler von rolldown), sähen sie nicht. Das Skript kopiert einen
+  Bestand aus perf-stock.mjs (Stufe s, ohne `--stock` legt es ihn an) zweimal, startet `node server/src/index.ts` und
+  `node <Server-Ordner>/server/server.mjs` (Arbeitsordner der Server-Ordner) je mit eigenem Wegwerf-Datenordner unter
+  `os.tmpdir()`, `CI=1`, `NKA_UPDATE_URL` ins Leere, `NKA_PORT=0`, demselben `NKA_TEST_TODAY` und `NKA_TEST_IDS=seq`
+  (ohne NKA_*-Angaben der Shell) und vergleicht für jedes Objekt und jedes Jahr vom Jahr vor der ersten Position bis
+  heute Abrechnung, Export als CSV und JSON, Anschreiben, Verbrauch, Mietkonto, Steuer, je Jahr `tax/overview`, die
+  Liste der Heizkostenabrechnungen und jede samt Anschreiben: Status, Inhaltstyp und Antwort byteweise, gemeldet mit
+  Route, Byte und erstem abweichenden JSON-Pfad. Dann spielen beide dasselbe alte Backup mit db.json ein (`stockZip`
+  aus dem Praxislauf, Format 0.2/0.3), Vergleich noch einmal, dann eine getrennte Heizkostenabrechnung (Weg d) über die
+  API auf beiden (der Bestand rechnet seine Heizung in der Betriebskostenabrechnung), dritter Vergleich. Je Runde
+  eine Mindestzahl von Antworten, und jede muss aus den Quellen mit 200 kommen, sonst rot: Zwei gleiche Fehlerseiten
+  sind kein Befund. Ohne `--bundle` bündelt es selbst mit `bundleServer` (Frontend als Attrappe, client/dist nicht
+  nötig). Lokal rund 20 Sekunden plus Bestand. **Rot nachgewiesen**: Ein um einen Cent verschobener Saldo im Bündel
+  (`st.balanceCents` in einer Kopie von server.mjs) ergab 11 Befunde. Eine geänderte Reihenfolge der Rest-Cents in
+  `largestRemainder` blieb grün, die Funktion entscheidet in diesem Bestand nirgends; der Bestand deckt nicht jeden
+  Rechenweg ab. Job „Server-Bündel gegen Quellen“ in release.yml **in jedem Prüfumfang**, auf den Server-Ordnern aus
+  dem Windows- und dem macOS-Bau (Artefakte `fenster-server-win`, `-mac`): Das Bündel wird mit jedem Release
+  ausgeliefert und ändert sich mit jeder Änderung an Server, shared/ oder Abhängigkeiten, eine Abweichung wäre eine
+  falsche Zahl in der Abrechnung, und der Job kostet einen Linux-Runner für rund zwei Minuten neben „Programmfenster
+  prüfen auf …“, das länger läuft. Im vollen Umfang allein hieße: Ein PR, der eine Abhängigkeit hebt, merkte es erst
+  am Mittwoch oder beim Tag.
 - **Prüfumfang je Anlass** (#52), entschieden im Job „Prüfumfang festlegen“ in release.yml: **Ein PR
   ohne Label** prüft Tests und Build ([ci.yml](../.github/workflows/ci.yml)), Bauen und Signieren,
   die sechs Programmdateien ohne lange KI-Antwort, `centos:7` und `ubuntu:26.04`, das `.deb` auf
@@ -483,8 +540,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   lange KI-Antwort, Browserlauf) läuft beim Tag, mittwochs 4:23 UTC auf `main` (das Netz gegen eine
   fehlerhafte Bun-Fassung; nach 60 Tagen ohne Bewegung schaltet GitHub Zeitpläne ab), von Hand und
   mit dem Label `full-check`. Die Bedingung ist als Ausnahme geschrieben (vollständig außer am PR
-  ohne Label), damit ein neuer Auslöser im Zweifel zu breit läuft. Das Programmfenster und das
-  Store-Paket laufen in jedem Umfang. Am PR läuft release.yml nur,
+  ohne Label), damit ein neuer Auslöser im Zweifel zu breit läuft. Das Programmfenster, der Vergleich
+  seines Server-Bündels mit den Quellen und das Store-Paket laufen in jedem Umfang. Am PR läuft release.yml nur,
   wenn er Server, Oberfläche, Programmfenster, Skripte, Paketierung oder die Datei selbst anfasst. **Eine leere
   Matrix erzeugt keinen Job und keinen Fehler**, deshalb bricht „Prüfumfang festlegen“ bei einer
   leeren Liste ab. „Ans Release anhängen“ wartet auf alles, auch auf den Browserlauf.

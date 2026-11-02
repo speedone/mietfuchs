@@ -17,18 +17,19 @@ test('Quelle: nur das installierte Fenster unter Windows, aus den Releases von s
   assert.deepEqual(updaterSource({ ...win, packaged: false }), { kind: 'off', reason: 'dev' })
 })
 
-// Der Schalter für eine andere Quelle gilt nur in Prüfungen (CI) und nur für einen Server auf diesem Rechner. Im
+// Geänderte Erwartung: CI allein genügt nicht mehr, dazu MIETFUCHS_TESTGRIFFE=1 (testGrips.js, testGrips.test.js).
+// Der Schalter für eine andere Quelle gilt nur in Prüfungen und nur für einen Server auf diesem Rechner. Im
 // ausgelieferten Betrieb lenkte eine untergeschobene Variable sonst die Updates auf einen fremden Server, und die
 // Prüfsumme käme von demselben Server.
-test('Quelle: eine andere nur mit CI und nur auf 127.0.0.1', () => {
+test('Quelle: eine andere nur mit den Schranken der Testgriffe und nur auf diesem Rechner', () => {
   const feed = 'http://127.0.0.1:8123/'
   assert.deepEqual(updaterSource({ ...win, env: { MIETFUCHS_UPDATE_FEED: feed } }), { kind: 'github' })
-  assert.deepEqual(updaterSource({ ...win, env: { CI: '1', MIETFUCHS_UPDATE_FEED: feed } }), { kind: 'feed', url: feed })
-  assert.deepEqual(updaterSource({ ...win, env: { CI: '1', MIETFUCHS_UPDATE_FEED: 'https://example.org/' } }), { kind: 'github' })
-  assert.deepEqual(updaterSource({ ...win, env: { CI: '1', MIETFUCHS_UPDATE_FEED: 'kein Link' } }), { kind: 'github' })
+  assert.deepEqual(updaterSource({ ...win, env: { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_UPDATE_FEED: feed } }), { kind: 'feed', url: feed })
+  assert.deepEqual(updaterSource({ ...win, env: { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_UPDATE_FEED: 'https://example.org/' } }), { kind: 'github' })
+  assert.deepEqual(updaterSource({ ...win, env: { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_UPDATE_FEED: 'kein Link' } }), { kind: 'github' })
   // Auch beim Entwickeln und unter Linux, für Bildschirmfotos des Hinweises; aus dem Store nie
-  assert.deepEqual(updaterSource({ ...win, platform: 'linux', packaged: false, env: { CI: '1', MIETFUCHS_UPDATE_FEED: feed } }), { kind: 'feed', url: feed })
-  assert.deepEqual(updaterSource({ ...win, windowsStore: true, env: { CI: '1', MIETFUCHS_UPDATE_FEED: feed } }), { kind: 'off', reason: 'store' })
+  assert.deepEqual(updaterSource({ ...win, platform: 'linux', packaged: false, env: { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_UPDATE_FEED: feed } }), { kind: 'feed', url: feed })
+  assert.deepEqual(updaterSource({ ...win, windowsStore: true, env: { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_UPDATE_FEED: feed } }), { kind: 'off', reason: 'store' })
 })
 
 test('Wann geprüft wird: nur mit Zustimmung, beim Start und danach höchstens einmal am Tag', () => {
@@ -91,14 +92,15 @@ test('Fehler gesiezt und verständlich, ohne Stapel', () => {
 })
 
 test('Mac: einmal anbieten, Mietfuchs nach „Programme“ zu verschieben, „Nein“ gilt für immer', () => {
-  const mac = { platform: /** @type {NodeJS.Platform} */ ('darwin'), packaged: true, inApplications: false, declined: false, ci: false }
+  const mac = { platform: /** @type {NodeJS.Platform} */ ('darwin'), packaged: true, inApplications: false, declined: false, env: {} }
   assert.equal(shouldOfferMove(mac), true)
   assert.equal(shouldOfferMove({ ...mac, inApplications: true }), false)
   assert.equal(shouldOfferMove({ ...mac, declined: true }), false)
   assert.equal(shouldOfferMove({ ...mac, platform: 'win32' }), false)
   assert.equal(shouldOfferMove({ ...mac, packaged: false }), false)
-  // Eine Prüfung startet das Programm aus einem eigenen Ordner, eine Rückfrage hielte sie an
-  assert.equal(shouldOfferMove({ ...mac, ci: true }), false)
+  // Eine Prüfung startet das Programm aus einem eigenen Ordner, eine Rückfrage hielte sie an. Geänderte Erwartung: nur
+  // mit beiden Schranken der Testgriffe, CI allein zählt nicht mehr (testGrips.test.js)
+  assert.equal(shouldOfferMove({ ...mac, env: { CI: '1', MIETFUCHS_TESTGRIFFE: '1' } }), false)
 })
 
 // Ein nachgestelltes electron-updater: Ereignisse wie das echte, `install` merkt sich den Aufruf.

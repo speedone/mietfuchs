@@ -29,8 +29,9 @@ test('Server: ausgeliefert das Bündel in der app.asar, beim Entwickeln die Quel
   assert.equal(SERVER_FOLDER, 'mietfuchs')
 })
 
+// Geänderte Erwartung: Ausgeliefert gehen CI und NKA_UPDATE_URL nur noch mit MIETFUCHS_TESTGRIFFE=1 weiter (testGrips.test.js)
 test('Umgebung: Fenster, Port, nur 127.0.0.1 ohne Heimnetz, Prüfangaben des Fensters gehen weiter', () => {
-  const base = { CI: '1', NKA_DATA_DIR: '/tmp/probe', NKA_UPDATE_URL: 'http://127.0.0.1:9', ELECTRON_RUN_AS_NODE: '1', NKA_RUNTIME: 'docker' }
+  const base = { CI: '1', MIETFUCHS_TESTGRIFFE: '1', NKA_DATA_DIR: '/tmp/probe', NKA_UPDATE_URL: 'http://127.0.0.1:9', ELECTRON_RUN_AS_NODE: '1', NKA_RUNTIME: 'docker' }
   const env = serverEnv(base, { port: DEFAULT_PORT, network: false, packaged: true, windowsStore: false, repoRoot: '/repo', platform: 'linux' })
   assert.equal(env.NKA_DESKTOP, '1')
   assert.equal(env.NKA_STORE, undefined)

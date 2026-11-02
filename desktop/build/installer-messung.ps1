@@ -197,19 +197,73 @@ for ($i = 1; $i -le $Runs; $i++) {
 # Installieren, während Mietfuchs läuft: Der Installer muss es schließen und durchlaufen
 Invoke-Measured 'Installation' 0 $Setup @('/S')
 $data = Join-Path $env:RUNNER_TEMP 'mietfuchs-daten-messung'
-$env:CI = '1'; $env:NKA_DATA_DIR = $data; $env:NKA_UPDATE_URL = 'http://127.0.0.1:9/kein-internet-im-test'
+$env:CI = '1'; $env:MIETFUCHS_TESTGRIFFE = '1'; $env:NKA_DATA_DIR = $data; $env:NKA_UPDATE_URL = 'http://127.0.0.1:9/kein-internet-im-test'
+$fensterLogs = Join-Path $env:LOCALAPPDATA 'mietfuchs-fenster\protokoll'
+$runFile = Join-Path $data 'mietfuchs.laeuft.json'
+# Wartet, bis der Server antwortet (nicht nur, bis die Prozesse da sind): Erst dann hat er seine Lauf-Datei geschrieben
+function Wait-Ready {
+  for ($i = 0; $i -lt 120; $i++) {
+    try { $h = Invoke-RestMethod -Uri 'http://127.0.0.1:17517/healthz' -TimeoutSec 2; if ($h.status -ne 'starting') { return $true } } catch {}
+    Start-Sleep -Milliseconds 500
+  }
+  return $false
+}
+# Welche Prozesse laufen, mit Art des Prozesses aus der Befehlszeile, und ob die Lauf-Datei da ist
+function Show-State([string] $label) {
+  Write-Host "--- $label"
+  tasklist /V /FO CSV /FI "IMAGENAME eq Mietfuchs.exe" | Out-Host
+  Get-CimInstance Win32_Process -Filter "Name = 'Mietfuchs.exe'" | ForEach-Object {
+    $type = if ($_.CommandLine -match '--type=(\S+)') { $Matches[1] } else { 'Hauptprozess' }
+    $util = if ($_.CommandLine -match 'node\.mojom\.NodeService') { ' (Server)' } else { '' }
+    Write-Host ("  PID {0}: {1}{2}" -f $_.ProcessId, $type, $util)
+  }
+  Write-Host "  Lauf-Datei: $(Test-Path $runFile)"
+}
+function Show-Logs {
+  foreach ($name in 'fenster.log', 'server.log', 'server.vorher.log') {
+    $file = Join-Path $fensterLogs $name
+    if (Test-Path $file) { Write-Host "--- $file"; Get-Content $file | Select-Object -Last 25 | Out-Host }
+  }
+}
+
+# Vorprobe (#549): dieselbe Anfrage wie der Installer von Hand, um zu sehen, was WM_CLOSE beim Fenster auslöst
+Remove-Item (Join-Path $fensterLogs 'fenster.log') -ErrorAction SilentlyContinue
+Start-Process $exe | Out-Null
+if (-not (Wait-Ready)) { Show-Logs; throw 'Mietfuchs startet für die Vorprobe nicht' }
+Show-State 'Vorprobe: vor taskkill'
+$t0 = Get-Date
+taskkill /IM Mietfuchs.exe /FI "USERNAME eq $env:USERNAME" /FI "WINDOWTITLE eq Mietfuchs*" | Out-Host
+for ($i = 0; $i -lt 40 -and @(Get-Process Mietfuchs -ErrorAction SilentlyContinue).Count -gt 0; $i++) { Start-Sleep -Milliseconds 500 }
+Write-Host "Vorprobe: nach $([math]::Round(((Get-Date) - $t0).TotalSeconds, 1)) s noch $(@(Get-Process Mietfuchs -ErrorAction SilentlyContinue).Count) Prozesse"
+Show-State 'Vorprobe: nach taskkill'
+Show-Logs
+Note "Vorprobe WM_CLOSE: Lauf-Datei danach weg: $(-not (Test-Path $runFile))"
+Get-Process Mietfuchs -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 2
+Remove-Item $runFile -ErrorAction SilentlyContinue
+
+Remove-Item (Join-Path $fensterLogs 'fenster.log') -ErrorAction SilentlyContinue
 Start-Process $exe | Out-Null
 # Das Fenster startet Hilfsprozesse und den Server (utilityProcess), alle als Mietfuchs.exe
-for ($i = 0; $i -lt 60 -and @(Get-Process Mietfuchs -ErrorAction SilentlyContinue).Count -lt 3; $i++) { Start-Sleep -Milliseconds 500 }
-Start-Sleep -Seconds 3
+if (-not (Wait-Ready)) { Show-Logs; throw 'Mietfuchs startet vor der Aktualisierung nicht' }
+Show-State 'vor dem Installer'
 $before = @(Get-Process Mietfuchs -ErrorAction SilentlyContinue).Count
 Invoke-Measured 'Aktualisierung bei laufendem Mietfuchs' 0 $Setup @('/S')
 $after = @(Get-Process Mietfuchs -ErrorAction SilentlyContinue).Count
+Show-State 'nach dem Installer'
+Show-Logs
+Write-Host "--- Zeitprotokoll des Installers"
+Get-Content $log | Select-String 'pruefung' | Out-Host
 Note ''
 Note "Bei laufendem Mietfuchs: vorher $before Prozesse, nachher $after"
 Get-Process Mietfuchs -ErrorAction SilentlyContinue | Stop-Process -Force
 if ($before -eq 0) { throw 'Mietfuchs lief vor der Aktualisierung nicht' }
 if ($after -ne 0) { throw 'Mietfuchs läuft nach der Aktualisierung weiter' }
+# Sanft geschlossen (installer.nsh, Durchsicht Daten K1): Das Zeitprotokoll nennt es, und der Server hat beim Beenden
+# seine Lauf-Datei entfernt (server/src/instanceGuard.ts); hart beendet bliebe sie liegen
+$protokoll = Get-Content -Raw $log
+if ($protokoll -notmatch 'Mietfuchs sanft geschlossen nach') { throw 'Der Installer hat Mietfuchs nicht sanft geschlossen' }
+if (Test-Path $runFile) { throw 'Der Server wurde hart beendet (Lauf-Datei liegt noch da)' }
 Invoke-Measured 'Deinstallation' 0 $uninst @('/S')
 
 # --- Ergebnisse ----------------------------------------------------------------------------------------------------

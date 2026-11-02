@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@t
 import type { Settings, UpdateStatus } from '../types'
 import type { UpdaterBridge, UpdaterState } from '../desktopUpdater'
 import { UIProvider } from './feedback'
-import { UpdateSettings, useUpdateStatus } from './Update'
+import { UpdateConsent, UpdateSettings, useUpdateStatus } from './Update'
 import { UpdaterReadyHint, useDesktopUpdater } from './DesktopUpdater'
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
@@ -175,4 +175,34 @@ test('Durchsicht K4: Brücke antwortet nicht, dann gilt der Server', async () =>
   bridge.get = async () => { throw new Error('Nicht erlaubt.') }
   const { result } = renderHook(() => useDesktopUpdater('on'))
   await waitFor(() => expect(result.current.owner).toBe('server'))
+})
+
+// Durchsicht vor 0.15.0 (K8): Unter Windows lädt das Fenster nach der Zustimmung neue Versionen auch herunter
+// (electron-updater, `autoDownload`); installiert wird erst nach einem Klick. Das sagt die Zustimmung, im Cockpit wie
+// in „Über Mietfuchs“. Auf dem Mac und aus dem Store (Stand `off`) und im Browser bleibt es beim Nachsehen.
+const DOWNLOADS = /Gibt es eine neue Version, lädt Mietfuchs sie auch gleich herunter\. Installiert wird sie erst, wenn Sie das bestätigen\./
+
+test('Durchsicht K8: Zustimmung im Fenster unter Windows nennt das Herunterladen, sonst nicht', async () => {
+  for (const [phase, expected] of [['idle', true], ['off', false]] as const) {
+    fakeBridge(updaterState({ phase }))
+    const s = settings({ updateCheck: 'off' })
+    function Card() {
+      const update = useUpdateStatus(s)
+      return <UIProvider><UpdateSettings settings={s} update={update} reload={async () => {}} /></UIProvider>
+    }
+    render(<Card />)
+    await screen.findByLabelText(/nach neuen Versionen schauen/i)
+    if (expected) await waitFor(() => expect(document.body.textContent).toMatch(DOWNLOADS))
+    else {
+      await waitFor(() => expect(requests).toContain('GET /api/update'))
+      expect(document.body.textContent).not.toMatch(/lädt Mietfuchs sie auch gleich herunter/)
+    }
+    cleanup()
+    delete window.mietfuchsDesktop
+  }
+  render(<UIProvider><UpdateConsent onAnswered={() => {}} downloads /></UIProvider>)
+  expect(screen.getByRole('region', { name: 'Bei neuen Versionen Bescheid geben?' }).textContent).toMatch(DOWNLOADS)
+  cleanup()
+  render(<UIProvider><UpdateConsent onAnswered={() => {}} /></UIProvider>)
+  expect(screen.getByRole('region', { name: 'Bei neuen Versionen Bescheid geben?' }).textContent).not.toMatch(/herunter/)
 })

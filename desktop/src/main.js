@@ -14,7 +14,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, updaterSource } from './updater.js'
-import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, dataDirIn, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
+import { loopbackUrl, testGripsAllowed } from './testGrips.js'
+import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -38,6 +39,9 @@ const QUIT_TIMEOUT_MS = 8000
 // danach (Durchsicht M2). Hart beendet wird er dann erst nach zehn Minuten, sonst bräche gerade das ab, was die Regel
 // schützt. Das Fenster ist dann schon zu, nur der Prozess wartet.
 const START_QUIT_TIMEOUT_MS = 10 * 60_000
+// Läuft beim Beenden ein Wiederherstellen oder eine Übernahme, wartet der Server bis zwei Minuten darauf
+// (QUIT_RESTORE_WAIT_MS); das Fenster etwas länger
+const BUSY_QUIT_TIMEOUT_MS = 150_000
 
 /** @typedef {{ port?: number, network?: boolean, moveDeclined?: boolean }} WindowSettings */
 
@@ -65,11 +69,16 @@ let server = null
 /** @type {WeakSet<Electron.UtilityProcess>} */
 const exited = new WeakSet()
 let serverOutput = ''
+// Der Datenordner, einmal je Start des Servers aus der Zeile „Daten: …“ gemerkt (rememberDataDir)
+/** @type {string | null} */
+let serverDataDir = null
 /** @type {string | null} */
 let origin = null
 /** @type {BrowserWindow | null} */
 let mainWindow = null
 let quitting = false
+// Gesetzt unmittelbar vor app.exit am Ende des Beendens (quitDecision)
+let exiting = false
 // Server, die das Fenster absichtlich beendet (Beenden, Neustart für den Zugriff aus dem Heimnetz): Ihr Ende ist kein
 // Absturz, also weder die Meldung „unerwartet beendet“ noch das Ende des Fensters.
 /** @type {WeakSet<Electron.UtilityProcess>} */
@@ -140,11 +149,13 @@ async function startServer(settings, fixedPort) {
   })
   server = child
   serverOutput = ''
+  serverDataDir = null
   // Als Text, mit Umlauten auch über die Grenze zweier Blöcke hinweg („läuft auf“ in der Startzeile)
   child.stdout?.setEncoding('utf8')
   child.stderr?.setEncoding('utf8')
   const collect = (/** @type {string} */ text) => {
     serverOutput = (serverOutput + text).slice(-OUTPUT_LIMIT)
+    serverDataDir = rememberDataDir(serverDataDir, serverOutput)
     log.write(text)
   }
   child.stdout?.on('data', collect)
@@ -158,6 +169,7 @@ async function startServer(settings, fixedPort) {
     // (Durchsicht K6). Vor dem Start scheitert der Start, danach geht das Fenster mit, aus der Oberfläche beendet
     // (Code 0) ohne Meldung.
     child.once('exit', (code) => {
+      windowLog(`Server zu Ende (Code ${code})`)
       exited.add(child)
       clearTimeout(slow)
       // Nach einem Neustart läuft schon der nächste; den nicht vergessen
@@ -198,6 +210,18 @@ function knownFolders() {
   return dirs
 }
 
+// Ablauf des Fensters mit Zeitstempeln nach userData\protokoll\fenster.log: Schließen, Beenden, Antwort auf /api/quit,
+// Ende des Servers. Synchron angehängt, damit auch ein jähes Ende die Zeilen davor nicht verliert (gefunden beim
+// Installer, der Mietfuchs bei laufendem Fenster schließt, #548/#549).
+/** @param {string} line */
+function windowLog(line) {
+  try {
+    const dir = path.join(app.getPath('userData'), 'protokoll')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, 'fenster.log'), `${new Date().toISOString()} [${process.pid}] ${line}\n`)
+  } catch { /* nur Auskunft */ }
+}
+
 /** @param {string} text */
 const lastLines = (text) => text.trim().split('\n').slice(-12).join('\n')
 
@@ -209,8 +233,8 @@ function showStartFailure(title, err) {
   const technical = `${err instanceof Error ? err.message : String(err)}\n\n${lastLines(serverOutput)}`
   const where = { packaged: app.isPackaged, platform: process.platform, resourcesPath: process.resourcesPath, repoRoot: path.resolve(here, '..', '..') }
   const found = findBlockedFile(programFiles(where)) ?? blockedFileIn(technical, path.dirname(process.resourcesPath), process.platform)
-  const { message, detail } = startFailure({ found, technical, logDir: path.join(app.getPath('userData'), 'protokoll'), platform: process.platform })
-  dialog.showMessageBoxSync({ type: 'error', title, message, detail, buttons: ['OK'] })
+  const failure = startFailure({ found, technical, logDir: path.join(app.getPath('userData'), 'protokoll'), platform: process.platform })
+  dialog.showMessageBoxSync({ type: failure.title ? 'warning' : 'error', title: failure.title ?? title, message: failure.message, detail: failure.detail, buttons: ['OK'] })
 }
 
 // Erst über die Oberfläche beenden, damit der Server seine Schreibvorgänge abschließt; unter Windows kennt ein
@@ -222,10 +246,22 @@ async function stopServer() {
   retired.add(child)
   const gone = new Promise((resolve) => child.once('exit', resolve))
   const started = origin !== null
-  if (origin) await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) }).catch(() => {})
-  else child.postMessage('quit')
-  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), started ? QUIT_TIMEOUT_MS : START_QUIT_TIMEOUT_MS))
-  if ((await Promise.race([gone, timeout])) !== 'timeout') return
+  let busy = false
+  windowLog(`Server beenden (pid ${child.pid ?? '?'}, ${origin ? `über ${origin}/api/quit` : 'über parentPort'})`)
+  if (origin) {
+    const answer = await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) })
+      .then(async (res) => { windowLog(`/api/quit: ${res.status}`); return res.json() })
+      .catch((err) => { windowLog(`/api/quit gescheitert: ${err}`); return null })
+    busy = /** @type {any} */ (answer)?.busy === true
+  } else child.postMessage('quit')
+  // `busy`: Der Server wartet auf ein laufendes Wiederherstellen oder eine Übernahme (QUIT_RESTORE_WAIT_MS in
+  // server/src/index.ts, Durchsicht Daten K2); so lange wird er nicht hart beendet
+  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), !started ? START_QUIT_TIMEOUT_MS : busy ? BUSY_QUIT_TIMEOUT_MS : QUIT_TIMEOUT_MS))
+  if ((await Promise.race([gone, timeout])) !== 'timeout') {
+    windowLog('Server beendet')
+    return
+  }
+  windowLog('Server antwortet nicht, wird hart beendet')
   child.kill()
   // Beim Neustart muss der Port frei sein, bevor der nächste Server ihn bindet
   await Promise.race([gone, new Promise((resolve) => setTimeout(resolve, 2000))])
@@ -294,6 +330,7 @@ function createWindow() {
     },
   })
   win.once('ready-to-show', () => win.show())
+  win.on('close', () => windowLog('Fenster: close'))
   win.on('closed', () => {
     mainWindow = null
     app.quit()
@@ -355,7 +392,7 @@ function buildMenu() {
       submenu: [
         ...(mac ? [{ role: /** @type {const} */ ('about'), label: 'Über Mietfuchs' }, { type: /** @type {const} */ ('separator') }] : []),
         { label: 'Im Browser öffnen', click: () => { if (origin) void shell.openExternal(origin) } },
-        { label: 'Datenordner zeigen', click: () => { const dir = dataDirIn(serverOutput); if (dir) void shell.openPath(dir) } },
+        { label: 'Datenordner zeigen', click: () => { if (serverDataDir) void shell.openPath(serverDataDir) } },
         { type: 'separator' },
         { label: 'Drucken …', accelerator: 'CmdOrCtrl+P', click: (_item, win) => { if (win instanceof BrowserWindow) printPage(win.webContents) } },
         { type: 'separator' },
@@ -405,7 +442,7 @@ function printPage(contents) {
 /** @param {BrowserWindow} win */
 async function selfTest(win) {
   const out = process.env.MIETFUCHS_SELFTEST_OUT
-  if (!out || !process.env.CI) return
+  if (!out || !testGripsAllowed(process.env)) return
   fs.mkdirSync(out, { recursive: true })
   // Der Server ist ein Prozess des Fensters und steht mit in den Metriken; getrennt gezählt, damit der Speicher des
   // Fensters mit dem früherer Läufe vergleichbar bleibt
@@ -419,6 +456,7 @@ async function selfTest(win) {
 }
 
 async function start() {
+  windowLog(`Start, Electron ${process.versions.electron}`)
   buildMenu()
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'))
   session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === 'clipboard-sanitized-write')
@@ -487,7 +525,8 @@ async function start() {
   // ihren Beispielbestand selbst); später der Weg zu einem Mietfuchs im Heimnetz (#528).
   // Nur beim Entwickeln und in Prüfungen: Im ausgelieferten Fenster ließe eine untergeschobene Variable sonst eine
   // fremde Seite mit der Druckbrücke laden (Durchsicht K8).
-  const remote = !app.isPackaged || process.env.CI ? process.env.MIETFUCHS_SERVER_URL : undefined
+  // Ausgeliefert nur mit beiden Schranken der Testgriffe und nur auf diesen Rechner (testGrips.js)
+  const remote = (!app.isPackaged || testGripsAllowed(process.env)) ? loopbackUrl(process.env.MIETFUCHS_SERVER_URL) : null
   if (remote) origin = new URL(remote).origin
   else try {
     origin = new URL(await startServer(readSettings())).origin
@@ -590,7 +629,7 @@ function offerMoveToApplications() {
     packaged: app.isPackaged,
     inApplications: process.platform === 'darwin' && app.isInApplicationsFolder(),
     declined: settings.moveDeclined === true,
-    ci: Boolean(process.env.CI),
+    env: process.env,
   })
   if (!offer) return false
   const answer = dialog.showMessageBoxSync({
@@ -634,9 +673,13 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus()
   })
   app.on('before-quit', (event) => {
-    if (quitting) return
-    quitting = true
+    const decision = quitDecision({ quitting, exiting })
+    windowLog(`before-quit: ${decision}`)
+    if (decision === 'allow') return
+    // Auch ein zweites app.quit (Fenster `closed` und `window-all-closed`) hält an, bis der Server beendet ist
     event.preventDefault()
+    if (decision === 'wait') return
+    quitting = true
     // Erst einen laufenden Neustart abwarten (er startet nach `quitting` keinen Server mehr), dann den Server beenden.
     // Danach, mit „Beim nächsten Start“, den Installer der neuen Version still und ohne anschließenden Start; er läuft
     // weiter, wenn das Fenster zu ist (updater.js, installOnQuit).
@@ -646,8 +689,15 @@ if (!app.requestSingleInstanceLock()) {
       } catch (err) {
         console.error(`Update beim Beenden: ${err}`)
       }
-    }).finally(() => app.exit(0))
+    }).finally(() => {
+      windowLog('app.exit(0)')
+      exiting = true
+      app.exit(0)
+    })
   })
+  app.on('will-quit', () => windowLog('will-quit'))
+  app.on('quit', (_event, code) => windowLog(`quit (Code ${code})`))
+  process.on('exit', (code) => windowLog(`Prozess endet (Code ${code})`))
   // Fenster zu heißt Mietfuchs zu, auch auf dem Mac
   app.on('window-all-closed', () => app.quit())
   void app.whenReady().then(start)

@@ -284,6 +284,18 @@ FunctionEnd
   Pop $R0
 !macroend
 
+; Sanft nur das Fenster (Durchsicht Daten K1, in der CI an #548 gefunden): taskkill ohne /F schickt WM_CLOSE an jedes
+; Mietfuchs.exe, auch an den Server (utilityProcess). Dessen verstecktes Fenster von Chromium beendet ihn dann sofort,
+; ohne Leerlaufen der Schlange und ohne Aufräumen; die Lauf-Datei blieb liegen. Der Filter auf den Titel trifft nur den
+; Hauptprozess mit dem Programmfenster („Mietfuchs …“), der dann über before-quit den Server ordentlich beendet.
+!macro mfCloseWindow
+  nsExec::ExecToStack `"$CmdPath" /C taskkill /IM "${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%" /FI "WINDOWTITLE eq Mietfuchs*"`
+  Pop $R0
+  Pop $R3
+  ; Welche Prozesse taskkill getroffen hat, steht im Zeitprotokoll (#549)
+  !insertmacro mfLog "[pruefung] taskkill (Code $R0): $R3"
+!macroend
+
 !macro customCheckAppRunning
   !insertmacro mfLog "[pruefung-beginn] Prüfung auf laufendes Mietfuchs beginnt"
   ; Heißt der Installer selbst wie das Programm (Aktualisierung aus dem Programm heraus), prüft die Vorlage nicht
@@ -306,16 +318,32 @@ FunctionEnd
       ${EndIf}
       mfStopApp:
       DetailPrint "$(appClosing)"
-      ; freundlich: schließt die Fenster, Mietfuchs beendet dabei seinen Server
-      !insertmacro mfKillApp ""
-      Sleep 300
+      ; Erst sanft (Durchsicht Daten K1): taskkill ohne /F schickt nur dem Fenster WM_CLOSE (mfCloseWindow), Electron schließt es,
+      ; window-all-closed ruft app.quit, before-quit beendet den Server über /api/quit, und der lässt seine
+      ; Schreibschlange leerlaufen (bis 5 s, QUIT_DRAIN_MS) und wartet auf ein laufendes Wiederherstellen; das Fenster
+      ; wartet darauf bis 8 s (QUIT_TIMEOUT_MS in desktop/src/main.js). Server und Hilfsprozesse gehen mit dem
+      ; Hauptprozess. Deshalb bis 15 Sekunden warten, erst dann hart.
+      !insertmacro mfCloseWindow
+      StrCpy $R2 0
+      mfWaitSoft:
+        Sleep 1000
+        IntOp $R2 $R2 + 1
+        !insertmacro mfFindApp
+        ${If} $R0 != 0
+          !insertmacro mfLog "[pruefung] Mietfuchs sanft geschlossen nach $R2 s"
+          Goto mfClosed
+        ${EndIf}
+        ${If} $R2 < 15
+          Goto mfWaitSoft
+        ${EndIf}
+      !insertmacro mfLog "[pruefung] Mietfuchs nach 15 s nicht geschlossen, wird hart beendet"
       StrCpy $R1 0
       mfCheckAgain:
         IntOp $R1 $R1 + 1
         !insertmacro mfFindApp
         ${If} $R0 == 0
-          Sleep 1000
           !insertmacro mfKillApp "/F"
+          Sleep 1000
           !insertmacro mfFindApp
           ${If} $R0 == 0
             DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
@@ -332,6 +360,7 @@ FunctionEnd
             Goto mfCheckAgain
           ${EndIf}
         ${EndIf}
+      mfClosed:
       !insertmacro mfLog "[pruefung] Mietfuchs geschlossen"
     ${EndIf}
   ${EndIf}

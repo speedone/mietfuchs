@@ -20,6 +20,12 @@
 //   node scripts/fenster-umzug-praxislauf.mjs                       (alle Fassungen)
 //   node scripts/fenster-umzug-praxislauf.mjs --nur 0.3.1           (eine Fassung)
 //   node scripts/fenster-umzug-praxislauf.mjs --cache <Ordner> --out <Ordner>
+//   node scripts/fenster-umzug-praxislauf.mjs --bundle dist-desktop-server   (der Server von heute als Bündel des
+//                                                                           Fensters, aus package-desktop.mjs server)
+//
+// **Mit `--bundle`** läuft der Server von heute nicht aus den Quellen, sondern als `server/server.mjs` aus dem
+// Server-Ordner des Fensters, also so, wie er ausgeliefert wird: Migrationen und Altformate der db.json kommen dann
+// aus dem Bündel. Gestartet wird es mit dem Node des Aufrufers (im Fenster ist es Electrons eigenes, Node 24.22).
 //
 // Jeder Lauf bekommt Wegwerf-Ordner, CI=1 und NKA_UPDATE_URL ins Leere; HOME zeigt für alte wie neue Fassung in den
 // Wegwerf-Ordner. Rückgabewert 0, wenn alles hält, sonst 1. Nur unter Linux (die alten Programmdateien sind die für
@@ -53,12 +59,10 @@ const option = (name) => {
   return i >= 0 ? args[i + 1] : undefined
 }
 const only = option('--nur')
-if (only && !VERSIONS.includes(only)) {
-  console.error(`Unbekannte Fassung ${only}; bekannt sind ${VERSIONS.join(', ')}.`)
-  process.exit(2)
-}
 const CACHE = path.resolve(option('--cache') ?? path.join(os.tmpdir(), 'mietfuchs-alte-fassungen'))
 const OUT = option('--out') ? path.resolve(/** @type {string} */ (option('--out'))) : null
+// Der Server-Ordner des Fensters (dist-desktop-server); ohne Angabe läuft der Server von heute aus den Quellen
+const BUNDLE = option('--bundle') ? path.resolve(/** @type {string} */ (option('--bundle'))) : null
 
 // ---------- Ausgabe ----------
 
@@ -175,10 +179,13 @@ async function startOld(binary, dataDir, home, port) {
   return { child, base, log: () => output }
 }
 
-/** Der Server von heute; `desktop` stellt das Programmfenster nach. */
+/** Der Server von heute, aus den Quellen oder mit `--bundle` als Bündel des Fensters; `desktop` stellt das
+ * Programmfenster nach. */
 async function startNew(dataDir, home, env = {}) {
-  const child = spawn(process.execPath, [SERVER], {
-    cwd: path.join(ROOT, 'server'),
+  const child = spawn(process.execPath, [BUNDLE ? path.join(BUNDLE, 'server', 'server.mjs') : SERVER], {
+    // Das Fenster startet das Bündel mit `resources` als Arbeitsordner, nicht im Server-Ordner; hier genügt einer,
+    // der nicht server/ im Repo ist, damit nichts zufällig aus den Quellen gelesen wird
+    cwd: BUNDLE ?? path.join(ROOT, 'server'),
     env: { ...cleanEnv(home), NKA_DATA_DIR: dataDir, NKA_PORT: '0', NKA_HOST: '127.0.0.1', ...env, CI: '1', NKA_UPDATE_URL: UPDATE_URL },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -239,7 +246,7 @@ async function restore(base, zip) {
 // verglichen wird auch mit der Abrechnung der alten Fassung selbst.
 const RECEIPT = Buffer.from('%PDF-1.4\n% Abfallgebühren 2024, Praxislauf des Umzugs\n%%EOF\n')
 const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(2048)])
-const stock = () => ({
+export const stock = () => ({
   settings: { houseName: 'Haus am Weg', address: 'Weg 1, 12345 Stadt', landlordName: 'V. Vermieter', iban: 'DE02 1203 0000 0000 2020 51', paymentDeadlineDays: 30 },
   units: [
     { id: 'u1', name: 'EG', areaM2: 80, participates: true },
@@ -270,7 +277,7 @@ const stock = () => ({
   closedSettlements: [],
 })
 
-function stockZip() {
+export function stockZip() {
   const zip = new AdmZip()
   zip.addFile('db.json', Buffer.from(JSON.stringify(stock())))
   zip.addFile('uploads/abfall-2024.pdf', RECEIPT)
@@ -280,7 +287,7 @@ function stockZip() {
 
 // Was eine Abrechnung ausmacht, in jeder Fassung gleich benannt: je Mieter Anteil, Vorauszahlung, Saldo und jede
 // Zeile, dazu Vermieteranteil und Gesamtkosten. Anzeigetexte (Rechenweg, Hinweise) bleiben außen vor.
-function settlementCore(s) {
+export function settlementCore(s) {
   if (!s || !Array.isArray(s.statements)) return { _keineAbrechnung: s }
   return {
     totalCostsCents: s.totalCostsCents,
@@ -297,7 +304,7 @@ function settlementCore(s) {
   }
 }
 
-async function numbersOf(base) {
+export async function numbersOf(base) {
   const lengthOf = async (url) => {
     const list = await get(base, url)
     return Array.isArray(list) ? list.length : -1
@@ -399,7 +406,8 @@ async function runVersion(version, binary) {
     gleich(found?.tenancies, 2, `${version}: der Fund nennt zwei Mietverhältnisse`)
     gleich(found?.kind, version.startsWith('0.3.') || version.startsWith('0.7.') ? 'json' : 'database', `${version}: der Fund ist ${found?.kind}`)
     gleich(found?.running, true, `${version}: die alte Fassung läuft noch und ist erkannt`)
-    const refused = await send(desk.base, '/api/relocation/adopt', 'POST', { dataDir: oldData })
+    // Mit der Kennung des Fundes wie die Oberfläche; einen Pfad nimmt die Route nicht (K11)
+    const refused = await send(desk.base, '/api/relocation/adopt', 'POST', { id: found?.id })
     gleich(refused.status, 409, `${version}: solange sie läuft, wird nicht kopiert`)
     const quit = await send(desk.base, '/api/relocation/quit-old', 'POST')
     if (knowsQuit) {
@@ -413,7 +421,7 @@ async function runVersion(version, binary) {
     }
     await new Promise((resolve) => setTimeout(resolve, 500))
     const print = fingerprint(oldData)
-    const adopted = await send(desk.base, '/api/relocation/adopt', 'POST', { dataDir: oldData })
+    const adopted = await send(desk.base, '/api/relocation/adopt', 'POST', { id: found?.id })
     gleich(adopted.status, 200, `${version}: übernommen ${adopted.status === 200 ? JSON.stringify(adopted.body.counts) : JSON.stringify(adopted.body).slice(0, 400)}`)
     const moved = settlementCore(await get(desk.base, '/api/settlement/2024'))
     gleich(moved, before.settlement, `${version}: Abrechnung 2024 centgenau wie vorher in der alten Fassung`)
@@ -485,31 +493,45 @@ async function runVersion(version, binary) {
 
 // ---------- Ablauf ----------
 
-if (process.platform !== 'linux') {
-  console.error('Der Praxislauf braucht Linux: Er startet die alten Programmdateien für Linux x64.')
-  process.exit(2)
-}
-for (const version of only ? [only] : VERSIONS) {
-  let binary
-  try {
-    binary = await download(version)
-  } catch (err) {
-    laufend = { version, weg: 'Laden', ok: false, befunde: [] }
-    bericht.push(laufend)
-    fail(err instanceof Error ? err.message : String(err))
-    laufend = null
-    continue
+async function main() {
+  if (only && !VERSIONS.includes(only)) {
+    console.error(`Unbekannte Fassung ${only}; bekannt sind ${VERSIONS.join(', ')}.`)
+    process.exit(2)
   }
-  await runVersion(version, binary)
+  if (process.platform !== 'linux') {
+    console.error('Der Praxislauf braucht Linux: Er startet die alten Programmdateien für Linux x64.')
+    process.exit(2)
+  }
+  if (BUNDLE && !fs.existsSync(path.join(BUNDLE, 'server', 'server.mjs'))) {
+    console.error(`${path.join(BUNDLE, 'server', 'server.mjs')} fehlt. Zuerst: npm run build && node scripts/package-desktop.mjs server`)
+    process.exit(2)
+  }
+  console.log(BUNDLE ? `Server von heute: Bündel ${BUNDLE}` : 'Server von heute: aus den Quellen')
+  for (const version of only ? [only] : VERSIONS) {
+    let binary
+    try {
+      binary = await download(version)
+    } catch (err) {
+      laufend = { version, weg: 'Laden', ok: false, befunde: [] }
+      bericht.push(laufend)
+      fail(err instanceof Error ? err.message : String(err))
+      laufend = null
+      continue
+    }
+    await runVersion(version, binary)
+  }
+
+  console.log('\nErgebnis je Fassung:')
+  for (const r of bericht) console.log(`  ${r.ok ? '✓' : '✗'} ${r.version} über ${r.weg}${r.befunde.length ? `: ${r.befunde.length} Befund(e)` : ''}`)
+  if (OUT) {
+    fs.mkdirSync(OUT, { recursive: true })
+    fs.writeFileSync(path.join(OUT, 'fenster-umzug.json'), `${JSON.stringify(bericht, null, 2)}\n`)
+    const lines = ['| Fassung | Weg | Ergebnis |', '|---|---|---|', ...bericht.map((r) => `| ${r.version} | ${r.weg} | ${r.ok ? 'grün' : `rot: ${r.befunde[0]?.split('\n')[0] ?? ''}`} |`)]
+    fs.writeFileSync(path.join(OUT, 'fenster-umzug.md'), `${lines.join('\n')}\n`)
+  }
+  console.log(fehler === 0 ? '\nAlles hält.' : `\n${fehler} Befund(e).`)
+  process.exit(fehler === 0 ? 0 : 1)
 }
 
-console.log('\nErgebnis je Fassung:')
-for (const r of bericht) console.log(`  ${r.ok ? '✓' : '✗'} ${r.version} über ${r.weg}${r.befunde.length ? `: ${r.befunde.length} Befund(e)` : ''}`)
-if (OUT) {
-  fs.mkdirSync(OUT, { recursive: true })
-  fs.writeFileSync(path.join(OUT, 'fenster-umzug.json'), `${JSON.stringify(bericht, null, 2)}\n`)
-  const lines = ['| Fassung | Weg | Ergebnis |', '|---|---|---|', ...bericht.map((r) => `| ${r.version} | ${r.weg} | ${r.ok ? 'grün' : `rot: ${r.befunde[0]?.split('\n')[0] ?? ''}`} |`)]
-  fs.writeFileSync(path.join(OUT, 'fenster-umzug.md'), `${lines.join('\n')}\n`)
-}
-console.log(fehler === 0 ? '\nAlles hält.' : `\n${fehler} Befund(e).`)
-process.exit(fehler === 0 ? 0 : 1)
+// Nur beim Aufruf als Skript; bundle-vergleich.mjs nimmt den Bestand und die Vergleiche von hier
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()

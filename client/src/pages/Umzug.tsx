@@ -73,7 +73,7 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
   useEffect(() => { void load() }, [load])
 
   const found = list?.candidates ?? []
-  const candidates = chosen ? [chosen, ...found.filter((c) => c.dataDir !== chosen.dataDir)] : found
+  const candidates = chosen ? [chosen, ...found.filter((c) => c.id !== chosen.id)] : found
   const ownStock = list?.ownStock === true
 
   // Ob ein Fund noch vom alten Mietfuchs benutzt wird, fragt der Server bei jedem Laden neu
@@ -81,7 +81,7 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
     await load()
     if (chosen) {
       try {
-        setChosen((await post<{ candidate: RelocationCandidate }>('/api/relocation/inspect', { folder: chosen.dataDir })).candidate)
+        setChosen((await post<{ candidate: RelocationCandidate }>('/api/relocation/inspect', { id: chosen.id })).candidate)
       } catch { /* bleibt, wie er war */ }
     }
   }
@@ -103,7 +103,8 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
     setError('')
     setPhase({ kind: 'busy', what: 'copy' })
     try {
-      const result = await post<AdoptResult>('/api/relocation/adopt', { dataDir: c.dataDir, ...(ownStock ? { replace: true } : {}) })
+      // Nur mit der Kennung, die der Server dem Fund gegeben hat, nie mit dem Pfad (server/src/CLAUDE.md, K11)
+      const result = await post<AdoptResult>('/api/relocation/adopt', { id: c.id, ...(ownStock ? { replace: true } : {}) })
       setPhase({ kind: 'done', text: result.counts ? adoptedText(result.counts) : 'Ihre Daten sind übernommen.', notes: result.notes })
     } catch (e) {
       setPhase({ kind: 'idle' })
@@ -158,14 +159,15 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = (
     if (!folder) return
     setPhase({ kind: 'busy', what: 'folder' })
     try {
-      const answer = await post<{ candidate?: RelocationCandidate, backup?: string }>('/api/relocation/inspect', { folder })
+      // Der Pfad des Dialogs geht nur hierhin; weiter geht es mit der Kennung aus der Antwort
+      const answer = await post<{ candidate?: RelocationCandidate, backup?: { id: string, name: string } }>('/api/relocation/inspect', { folder })
       // Ein Backup statt eines Ordners gewählt: einspielen statt ablehnen
       if (answer.backup) {
         if (!(await mayReplace())) {
           setPhase({ kind: 'idle' })
           return
         }
-        const restored = await post<{ notes?: string[] }>('/api/relocation/restore-backup', { file: answer.backup, ...(ownStock ? { replace: true } : {}) })
+        const restored = await post<{ notes?: string[] }>('/api/relocation/restore-backup', { id: answer.backup.id, ...(ownStock ? { replace: true } : {}) })
         const notes = restored?.notes ?? []
         if (notes.length === 0) return reloadPage()
         setPhase({ kind: 'done', text: 'Ihr Backup ist eingespielt.', notes })

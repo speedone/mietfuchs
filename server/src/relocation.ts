@@ -13,6 +13,7 @@ import path from 'node:path'
 import { connect } from './db/client.ts'
 import { DB_FILE_NAME } from './db/open.ts'
 import { hasStock } from './dataLocations.ts'
+import { ciSet } from './ci.ts'
 
 export const MOVED_MARKER = 'umgezogen.json'
 export const MOVED_NOTE = 'UMGEZOGEN.txt'
@@ -24,7 +25,7 @@ const pathOf = (platform: NodeJS.Platform) => (platform === 'win32' ? path.win32
 // Prüfung setzt CI (CLAUDE.md), und eine Suche im echten Benutzerordner des Entwicklers fände dessen Bestand.
 export function relocationHome(env: NodeJS.ProcessEnv, home: () => string): string | null {
   if (env.NKA_TEST_HOME) return env.NKA_TEST_HOME
-  if (env.CI) return null
+  if (ciSet(env)) return null
   try {
     return home() || null
   } catch {
@@ -391,15 +392,14 @@ function writeAtomically(file: string, content: string): void {
 // ---------- Entscheidung im neuen Ordner ----------
 
 // `source`: Art und Fingerabdruck des übernommenen Bestands, um spätere Änderungen im alten Ordner zu erkennen
-export type RelocationDecision = { version: 1, decision: 'moved' | 'fresh', at: string, from?: string, source?: { kind: StockKind, fingerprint: string } }
+export type RelocationDecision = { version: 1, decision: 'moved' | 'fresh', at: string, from?: string, source?: StockMark }
 
 export function readDecision(dataDir: string): RelocationDecision | null {
   try {
     const raw: unknown = JSON.parse(fs.readFileSync(path.join(dataDir, DECISION_FILE), 'utf8'))
     if (!isObject(raw) || raw.version !== 1 || (raw.decision !== 'moved' && raw.decision !== 'fresh') || typeof raw.at !== 'string') return null
-    const source = isObject(raw.source) && (raw.source.kind === 'database' || raw.source.kind === 'json') && typeof raw.source.fingerprint === 'string'
-      ? { source: { kind: raw.source.kind as StockKind, fingerprint: raw.source.fingerprint } }
-      : {}
+    const mark = isObject(raw.source) ? markFrom(raw.source) : null
+    const source = mark ? { source: mark } : {}
     return { version: 1, decision: raw.decision, at: raw.at, ...(typeof raw.from === 'string' ? { from: raw.from } : {}), ...source }
   } catch {
     return null
@@ -449,30 +449,206 @@ export function copyErrorText(err: unknown): string {
 
 // ---------- Später im alten Mietfuchs geändert? ----------
 
-// Ein Fingerabdruck des Inhalts (#517): Alte Fassungen kennen den Vermerk nicht, und mancher startet die angeheftete
-// Programmdatei weiter. Verglichen wird der Inhalt, nicht die Dateizeit: Schon der Start einer Fassung schreibt eine
-// Probe in die Datei. Das Journal selbst zählt nur mit seiner jüngsten Gruppe, denn sein Aufräumen ändert nichts am
-// Bestand. `null`: nicht lesbar.
+// Was beim Umzug über den alten Bestand festgehalten wird, um später Änderungen im alten Mietfuchs zu erkennen (#517):
+// Alte Fassungen kennen den Vermerk nicht, und mancher startet die angeheftete Programmdatei weiter.
+//
+// **Nur Nutzdaten zählen** (Durchsicht Daten K5). Verglichen wurde bisher der Inhalt aller Tabellen. Startet aber eine
+// ältere Programmdatei den alten Ordner und migriert ihn auf ihren Stand, kommen Spalten und Tabellen dazu, und Schritte
+// mit Daten schreiben Werte um; der Hinweis „neuerer Stand“ kam dann, ohne dass jemand etwas geändert hatte. Deshalb:
+// - `journal`: Hat der Bestand ein Änderungsjournal (#318), zählt allein, ob danach eine neue Gruppe entstanden ist.
+//   Jede Änderung eines Nutzers legt eine an (Trigger auf jeder Tabelle, db/journal.ts); eine Migration, ihr
+//   Datenschritt, das Aufräumen des Journals und eine Schreibprobe legen keine an. Gemessen an der höchsten je
+//   vergebenen Kennung (`sqlite_sequence`), die das Aufräumen nicht senkt.
+// - `columns`: Ohne Journal (Fassungen davor) der Inhalt, aber nur der Tabellen und Spalten, die es beim Umzug gab. Neue
+//   Spalten und Tabellen einer Migration ändern ihn so nicht; ein Datenschritt einer solchen Fassung, der alte Werte
+//   umschreibt, schon (selten, dann kommt der Hinweis einmal zu viel, nie einmal zu wenig).
+// - db.json: die Datei selbst. Ohne `journal` und `columns` (vor dieser Durchsicht festgehalten) der ganze Inhalt wie
+//   bisher.
+// Die Dateizeit zählt nie: Schon ein Start schreibt eine Probe in die Datei.
+export type StockMark = { kind: StockKind, fingerprint: string, journal?: number, journalAt?: string, columns?: Record<string, string[]> }
+
+function markFrom(raw: Record<string, unknown>): StockMark | null {
+  if ((raw.kind !== 'database' && raw.kind !== 'json') || typeof raw.fingerprint !== 'string') return null
+  const journal = typeof raw.journal === 'number' && Number.isFinite(raw.journal)
+    ? { journal: raw.journal, ...(typeof raw.journalAt === 'string' ? { journalAt: raw.journalAt } : {}) }
+    : {}
+  const columns = isObject(raw.columns) && Object.values(raw.columns).every((c) => Array.isArray(c) && c.every((n) => typeof n === 'string'))
+    ? { columns: raw.columns as Record<string, string[]> }
+    : {}
+  return { kind: raw.kind, fingerprint: raw.fingerprint, ...journal, ...columns }
+}
+
 const SKIPPED_TABLES = new Set(['__drizzle_migrations', 'change_log', 'change_groups'])
-export async function stockFingerprint(dataDir: string, kind: StockKind): Promise<string | null> {
+type Rows = (sql: string) => unknown[][]
+const jsonValue = (_key: string, v: unknown) => (typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v)
+const quoted = (name: string) => `"${name.replaceAll('"', '""')}"`
+
+function tablesAndColumns(rows: Rows): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  const tables = rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").map((r) => String(r[0]))
+  for (const table of tables.filter((t) => !SKIPPED_TABLES.has(t))) out[table] = rows(`PRAGMA table_info(${quoted(table)})`).map((r) => String(r[1]))
+  return out
+}
+
+// Der Inhalt genau dieser Tabellen und Spalten; fehlt eine inzwischen, zählt sie als leer
+function contentHash(rows: Rows, columns: Record<string, string[]>): string {
+  const present = tablesAndColumns(rows)
+  const hash = crypto.createHash('sha256')
+  for (const table of Object.keys(columns).sort()) {
+    hash.update(`${table}\n`)
+    const have = present[table]
+    if (!have) continue
+    const select = (columns[table] ?? []).map((c) => (have.includes(c) ? quoted(c) : 'NULL')).join(', ') || 'NULL'
+    for (const row of rows(`SELECT ${select} FROM ${quoted(table)} ORDER BY rowid`)) hash.update(`${JSON.stringify(row, jsonValue)}\n`)
+  }
+  return hash.digest('hex')
+}
+
+// Die höchste je vergebene Kennung einer Gruppe im Journal, `null` ohne Journal
+function journalMark(rows: Rows): number | null {
+  if (rows("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'change_groups'").length === 0) return null
+  const seq = rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'").length > 0
+    ? rows("SELECT seq FROM sqlite_sequence WHERE name = 'change_groups'")[0]?.[0]
+    : undefined
+  const max = rows('SELECT max(id) FROM change_groups')[0]?.[0]
+  return Math.max(Number(seq ?? 0) || 0, Number(max ?? 0) || 0)
+}
+
+// Die Zeit der Gruppe mit dieser Kennung, `null` ohne sie
+function groupAt(rows: Rows, id: number): string | null {
+  const at = rows(`SELECT at FROM change_groups WHERE id = ${Math.trunc(id)}`)[0]?.[0]
+  return typeof at === 'string' ? at : null
+}
+
+function jsonFingerprint(dataDir: string): string | null {
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(path.join(dataDir, 'db.json'))).digest('hex')
+  } catch {
+    return null
+  }
+}
+
+// Der Stand jetzt; `null`: nicht lesbar.
+export async function markStock(dataDir: string, kind: StockKind): Promise<StockMark | null> {
   if (kind === 'json') {
-    try {
-      return crypto.createHash('sha256').update(fs.readFileSync(path.join(dataDir, 'db.json'))).digest('hex')
-    } catch {
-      return null
-    }
+    const fingerprint = jsonFingerprint(dataDir)
+    return fingerprint ? { kind, fingerprint } : null
   }
   return withDatabase(path.join(dataDir, DB_FILE_NAME), (rows) => {
-    const hash = crypto.createHash('sha256')
-    const value = (_key: string, v: unknown) => (typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v)
-    const tables = rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").map((r) => String(r[0]))
-    for (const table of tables.filter((t) => !SKIPPED_TABLES.has(t))) {
-      hash.update(`${table}\n`)
-      for (const row of rows(`SELECT * FROM "${table}" ORDER BY rowid`)) hash.update(`${JSON.stringify(row, value)}\n`)
-    }
-    if (tables.includes('change_groups')) hash.update(`journal:${JSON.stringify(rows('SELECT max(id) FROM change_groups'), value)}`)
-    return hash.digest('hex')
+    const columns = tablesAndColumns(rows)
+    const journal = journalMark(rows)
+    const at = journal === null ? null : groupAt(rows, journal)
+    return { kind, fingerprint: contentHash(rows, columns), ...(journal === null ? {} : { journal, ...(at ? { journalAt: at } : {}) }), columns }
   })
+}
+
+// Hat sich seit `mark` etwas geändert? Ergibt den Stand jetzt (zum Merken bei „Nicht übernehmen“) oder `null`.
+export async function stockChanged(dataDir: string, mark: StockMark): Promise<StockMark | null> {
+  if (mark.kind === 'json') {
+    const fingerprint = jsonFingerprint(dataDir)
+    return fingerprint && fingerprint !== mark.fingerprint ? { kind: 'json', fingerprint } : null
+  }
+  const result = await withDatabase(path.join(dataDir, DB_FILE_NAME), (rows) => {
+    const journal = journalMark(rows)
+    // Neuer, aber auch kleiner (ein im alten Mietfuchs eingespieltes Backup oder eine Vorversion setzt die Folge zurück)
+    // oder dieselbe Kennung mit einer anderen Gruppe darunter: ein anderer Bestand (Durchsicht vor dem PR, Daten M1)
+    if (mark.journal !== undefined && journal !== null) {
+      const same = journal === mark.journal && (mark.journalAt === undefined || groupAt(rows, journal) === mark.journalAt)
+      return { changed: !same, journal }
+    }
+    const fingerprint = mark.columns ? contentHash(rows, mark.columns) : legacyFingerprint(rows)
+    return { changed: fingerprint !== mark.fingerprint, journal }
+  })
+  if (!result?.changed) return null
+  return markStock(dataDir, 'database')
+}
+
+// Wie vor der Durchsicht: alle Tabellen samt jüngster Gruppe des Journals; nur für ein `umzug.json` ohne `columns`
+function legacyFingerprint(rows: Rows): string {
+  const hash = crypto.createHash('sha256')
+  const tables = rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").map((r) => String(r[0]))
+  for (const table of tables.filter((t) => !SKIPPED_TABLES.has(t))) {
+    hash.update(`${table}\n`)
+    for (const row of rows(`SELECT * FROM "${table}" ORDER BY rowid`)) hash.update(`${JSON.stringify(row, jsonValue)}\n`)
+  }
+  if (tables.includes('change_groups')) hash.update(`journal:${JSON.stringify(rows('SELECT max(id) FROM change_groups'), jsonValue)}`)
+  return hash.digest('hex')
+}
+
+// Nur der Fingerabdruck, für Aufrufer, die nichts weiter brauchen
+export async function stockFingerprint(dataDir: string, kind: StockKind): Promise<string | null> {
+  return (await markStock(dataDir, kind))?.fingerprint ?? null
+}
+
+// **Nur neu rechnen, wenn sich Dateizeit oder Größe geändert haben** (Durchsicht Daten K6): `GET /api/relocation` fragt
+// bei jedem Laden der Oberfläche, und das Lesen aller Tabellen eines großen Bestands läuft synchron. Die Zeit allein
+// entscheidet nicht über „geändert“ (siehe oben), sie sagt nur, ob es sich lohnt, nachzusehen.
+export function stockStamp(dataDir: string, kind: StockKind): string {
+  const names = kind === 'json' ? ['db.json'] : [DB_FILE_NAME, `${DB_FILE_NAME}-journal`]
+  return names.map((name) => {
+    try {
+      const st = fs.statSync(path.join(dataDir, name))
+      return `${name}:${st.mtimeMs}:${st.size}`
+    } catch {
+      return `${name}:-`
+    }
+  }).join('|')
+}
+
+export function memoByStamp<T>(compute: (dataDir: string, mark: StockMark) => Promise<T>, stamp: (dataDir: string, kind: StockKind) => string = stockStamp): (dataDir: string, mark: StockMark) => Promise<T> {
+  let last: { key: string, value: Promise<T> } | null = null
+  return (dataDir, mark) => {
+    const key = `${dataDir}\n${stamp(dataDir, mark.kind)}\n${JSON.stringify(mark)}`
+    if (last?.key !== key) last = { key, value: compute(dataDir, mark) }
+    return last.value
+  }
+}
+
+// Eine Datei kopieren und den Hash **der Kopie** ergeben (Durchsicht Daten K4): Der Hash des Originals nach dem Kopieren
+// gehörte zu einer Datei, die sich dazwischen geändert haben kann, und der spätere Vergleich mit dem Original fände dann
+// keinen Unterschied, obwohl die Kopie veraltet ist.
+export async function copyAndHash(from: string, to: string, copy: (from: string, to: string) => void = (a, b) => fs.copyFileSync(a, b)): Promise<string> {
+  copy(from, to)
+  const hash = crypto.createHash('sha256')
+  for await (const chunk of fs.createReadStream(to)) hash.update(chunk as Buffer)
+  return hash.digest('hex')
+}
+
+// ---------- Ein Umzug, der beim Umschalten endete (Durchsicht Daten K3) ----------
+
+// Vor dem Umschalten steht in `umzug.offen.json`, was übernommen wird und wie die geprüfte Kopie heißt. Endet das Fenster
+// zwischen Umschalten und Entscheidung, fehlten sonst Entscheidung und Vermerk: Der neue Ordner hätte den Bestand, ohne
+// zu wissen, woher, und das alte Mietfuchs arbeitete ohne Vermerk weiter. Der nächste Start sieht an der Kopie, ob
+// umgeschaltet wurde (`switchedOver`): Liegt sie nicht mehr da, trägt die Datenbank den übernommenen Bestand.
+export const PENDING_FILE = 'umzug.offen.json'
+export type PendingMove = { version: 1, at: string, from: string, staged: string, source?: StockMark }
+
+export function writePending(dataDir: string, pending: PendingMove): void {
+  writeAtomically(path.join(dataDir, PENDING_FILE), `${JSON.stringify(pending, null, 2)}\n`)
+}
+
+export function readPending(dataDir: string): PendingMove | null {
+  try {
+    const raw: unknown = JSON.parse(fs.readFileSync(path.join(dataDir, PENDING_FILE), 'utf8'))
+    if (!isObject(raw) || typeof raw.at !== 'string' || typeof raw.from !== 'string' || typeof raw.staged !== 'string') return null
+    const source = isObject(raw.source) ? markFrom(raw.source) : null
+    return { version: 1, at: raw.at, from: raw.from, staged: path.basename(raw.staged), ...(source ? { source } : {}) }
+  } catch {
+    return null
+  }
+}
+
+export function clearPending(dataDir: string): void {
+  try {
+    fs.rmSync(path.join(dataDir, PENDING_FILE), { force: true })
+  } catch { /* beim nächsten Start */ }
+}
+
+// Umgeschaltet, wenn die Kopie weder unter ihrem Namen vor dem Umschalten (`kopie-<id>`) noch unter dem des Austauschs
+// (`restore-<id>`, dann ist der Austausch mittendrin gescheitert) liegt
+export function switchedOver(dataDir: string, pending: PendingMove): boolean {
+  const exchange = pending.staged.replace(/\.kopie-([0-9a-f]{16})$/, '.restore-$1')
+  return !fs.existsSync(path.join(dataDir, pending.staged)) && !fs.existsSync(path.join(dataDir, exchange))
 }
 
 // Eine Datenbank einer früheren Fassung lesen, ohne sie zu ändern: nur lesend, mit liegengebliebenem Journal als Kopie.

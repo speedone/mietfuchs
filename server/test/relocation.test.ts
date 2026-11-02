@@ -14,6 +14,7 @@ import {
   classifyChoice, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, fixedPlaces, folderFromChoice, liveDataDir, movedNoteText, programFilePattern,
   readDecision, readMovedMarker, relocationHome, searchDirsFromEnv, stockFingerprint, rememberedFolders, runningFor, samePath, searchProgramFolders,
   searchRoots, stockKind, writeDecision, writeMovedMarker, type MovedMarker,
+  copyAndHash, markStock, memoByStamp, stockChanged, type StockMark,
 } from '../src/relocation.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-umzug-'))
@@ -420,4 +421,155 @@ test('Gewählt: Ordner, Programmdatei, Datenbank, db.json oder Backup', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// Durchsicht Daten K5: Startet eine ältere Programmdatei den alten Ordner und migriert ihn nur (neue Spalte, neue
+// Tabelle, ein Datenschritt schreibt Werte um), ist das keine Änderung durch den Nutzer. Eine neue Gruppe im Journal schon.
+test('Fingerabdruck: eine Migration im alten Ordner gilt nicht als neuerer Stand, eine Änderung des Nutzers schon', async () => {
+  const dir = tempDir()
+  try {
+    const filled = made(path.join(dir, 'gefuellt'))
+    ;(await openDatabaseWithStock(filled, straightenForDatabase(someDb()))).close()
+    const mark = await markStock(filled, 'database')
+    assert.ok(mark?.columns && mark.journal !== undefined)
+    const { DatabaseSync } = await import('node:sqlite')
+    const db = new DatabaseSync(path.join(filled, 'mietfuchs.sqlite'))
+    // Was eine Migration tut: Spalte und Tabelle dazu, ein Datenschritt ohne Gruppe im Journal
+    db.exec('ALTER TABLE cost_items ADD COLUMN neu_seit_spaeter TEXT DEFAULT \'x\'')
+    db.exec('CREATE TABLE neue_tabelle (id INTEGER PRIMARY KEY, wert TEXT)')
+    db.exec("INSERT INTO neue_tabelle (wert) VALUES ('a')")
+    db.exec("UPDATE cost_items SET description = description || ' (umgeschrieben)'")
+    db.close()
+    assert.equal(await stockChanged(filled, mark), null)
+    // Eine Änderung des Nutzers legt eine Gruppe im Journal an (Trigger der laufenden Fassung)
+    const edit = new DatabaseSync(path.join(filled, 'mietfuchs.sqlite'))
+    edit.exec("INSERT INTO change_groups (at, method, route, description, schema_steps) VALUES ('2026-11-02T10:00:00.000Z', 'PUT', '/api/tenancies/t1', 'Mietverhältnis geändert', 1)")
+    edit.close()
+    const changed = await stockChanged(filled, mark)
+    assert.ok(changed && changed.journal !== undefined && changed.journal > (mark.journal ?? 0))
+    // Mit dem gemerkten neuen Stand ist es wieder ruhig
+    assert.equal(await stockChanged(filled, changed), null)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Fingerabdruck: ohne Journal (Fassungen davor) zählen nur Tabellen und Spalten von damals', async () => {
+  const dir = tempDir()
+  try {
+    const filled = made(path.join(dir, 'gefuellt'))
+    ;(await openDatabaseWithStock(filled, straightenForDatabase(someDb()))).close()
+    const full = await markStock(filled, 'database')
+    assert.ok(full?.columns)
+    const mark: StockMark = { kind: 'database', fingerprint: full.fingerprint, columns: full.columns }
+    const { DatabaseSync } = await import('node:sqlite')
+    const db = new DatabaseSync(path.join(filled, 'mietfuchs.sqlite'))
+    db.exec('ALTER TABLE cost_items ADD COLUMN neu_seit_spaeter TEXT DEFAULT \'x\'')
+    db.close()
+    assert.equal(await stockChanged(filled, mark), null)
+    const edit = new DatabaseSync(path.join(filled, 'mietfuchs.sqlite'))
+    edit.exec('UPDATE cost_items SET amount_cents = amount_cents + 1')
+    edit.close()
+    assert.ok(await stockChanged(filled, mark))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Durchsicht Daten K6: Der Fingerabdruck wird nur neu gerechnet, wenn sich Dateizeit oder Größe geändert haben.
+test('Fingerabdruck: neu gerechnet nur bei geänderter Dateizeit oder Größe', async () => {
+  const dir = tempDir()
+  try {
+    const filled = made(path.join(dir, 'gefuellt'))
+    ;(await openDatabaseWithStock(filled, straightenForDatabase(someDb()))).close()
+    let calls = 0
+    const memo = memoByStamp(async () => { calls++; return null })
+    const mark: StockMark = { kind: 'database', fingerprint: 'x' }
+    await memo(filled, mark)
+    await memo(filled, mark)
+    assert.equal(calls, 1)
+    const later = new Date(Date.now() + 60_000)
+    fs.utimesSync(path.join(filled, 'mietfuchs.sqlite'), later, later)
+    await memo(filled, mark)
+    assert.equal(calls, 2)
+    await memo(filled, { ...mark, fingerprint: 'y' })
+    assert.equal(calls, 3)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Durchsicht Daten K4: Der Hash gehört zur Kopie. Ändert sich das Original zwischen Kopieren und Hashen, fiele sonst
+// der spätere Vergleich mit dem Original nicht auf.
+test('Kopie: der Hash ist der der Kopie, auch wenn sich das Original gleich danach ändert', async () => {
+  const dir = tempDir()
+  try {
+    const from = path.join(dir, 'db.json')
+    const to = path.join(dir, 'kopie.json')
+    fs.writeFileSync(from, '{"alt":true}')
+    const hash = await copyAndHash(from, to, (a, b) => {
+      fs.copyFileSync(a, b)
+      fs.writeFileSync(a, '{"neu":true}')
+    })
+    const crypto = await import('node:crypto')
+    assert.equal(hash, crypto.createHash('sha256').update('{"alt":true}').digest('hex'))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Durchsicht vor dem PR (Daten, M1): Im alten Mietfuchs ein Backup oder eine Vorversion eingespielt setzt die Folge des
+// Journals zurück. Die Kennung allein sagte dann „unverändert“, obwohl ein ganz anderer Bestand dort liegt.
+test('Fingerabdruck: eine ausgetauschte Datei mit niedrigerer oder gleicher Kennung im Journal gilt als geändert', async () => {
+  const dir = tempDir()
+  try {
+    const filled = made(path.join(dir, 'gefuellt'))
+    ;(await openDatabaseWithStock(filled, straightenForDatabase(someDb()))).close()
+    const { DatabaseSync } = await import('node:sqlite')
+    const file = path.join(filled, 'mietfuchs.sqlite')
+    const group = (at: string) => `INSERT INTO change_groups (at, method, route, description, schema_steps) VALUES ('${at}', 'PUT', '/api/x', 'x', 1)`
+    const copyBefore = path.join(dir, 'frueher.sqlite')
+    {
+      const db = new DatabaseSync(file)
+      db.exec(group('2026-01-01T00:00:00.000Z'))
+      db.close()
+      fs.copyFileSync(file, copyBefore)
+      const later = new DatabaseSync(file)
+      for (let i = 0; i < 5; i++) later.exec(group(`2026-02-0${i + 1}T00:00:00.000Z`))
+      later.close()
+    }
+    const mark = await markStock(filled, 'database')
+    assert.ok(mark && mark.journal !== undefined)
+    // Ein früherer Stand eingespielt, danach die Schranke des Einspielens: kleinere Kennung als beim Umzug
+    fs.copyFileSync(copyBefore, file)
+    const restored = new DatabaseSync(file)
+    restored.exec(group('2026-11-02T09:00:00.000Z'))
+    restored.exec("UPDATE cost_items SET amount_cents = amount_cents + 5")
+    restored.close()
+    assert.ok(await stockChanged(filled, mark), 'kleinere Kennung')
+    // Gleiche Kennung, aber eine andere Gruppe darunter
+    const same = new DatabaseSync(file)
+    for (let i = 0; i < 4; i++) same.exec(group(`2026-11-0${i + 3}T00:00:00.000Z`))
+    same.close()
+    const now = await markStock(filled, 'database')
+    assert.equal(now?.journal, mark.journal)
+    assert.ok(await stockChanged(filled, mark), 'gleiche Kennung, andere Gruppe')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Gefunden in der CI an #548: Der Store-Job in release.yml übernahm noch mit `dataDir`, seit K11 (Durchsicht Sicherheit)
+// nehmen die Umzugsrouten nur die Kennung eines Fundes. Kein Prüfskript und kein Workflow schickt dort einen Pfad.
+test('Wächter: Workflows und Prüfskripte übernehmen mit der Kennung eines Fundes, nicht mit einem Pfad', () => {
+  const root = path.resolve(import.meta.dirname, '..', '..')
+  const files = [
+    ...fs.readdirSync(path.join(root, '.github', 'workflows')).map((n) => path.join(root, '.github', 'workflows', n)),
+    ...fs.readdirSync(path.join(root, 'scripts')).filter((n) => n.endsWith('.mjs')).map((n) => path.join(root, 'scripts', n)),
+    ...fs.readdirSync(path.join(root, 'desktop', 'build')).filter((n) => n.endsWith('.ps1')).map((n) => path.join(root, 'desktop', 'build', n)),
+  ]
+  const offending = files.flatMap((file) => fs.readFileSync(file, 'utf8').split('\n')
+    .filter((line) => /relocation\/(adopt|restore-backup)/.test(line) && /\b(dataDir|file)\b\s*[:=]/.test(line))
+    .map((line) => `${path.relative(root, file)}: ${line.trim()}`))
+  assert.deepEqual(offending, [])
 })

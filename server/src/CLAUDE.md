@@ -11,8 +11,41 @@ Start, wenn im Ordner ein Bestand liegt (`mietfuchs.sqlite` oder `db.json`, auch
 20 Orte, der zuletzt benutzte zuerst, Pfade unter Windows und macOS ohne Groß/Klein verglichen, über Zwischendatei
 und Umbenennen). Eigener Ordner `mietfuchs-standorte`, weil `Mietfuchs` der Datenordner (Windows ohne Schreibrecht
 neben der Datei) bzw. der Ordner von Electron (macOS) sein kann. Das spätere Programm mit eigenem Fenster
-liest sie für den Umzug der Daten. **Nie mit `CI`**, nie unter Node (auch nicht mit `NKA_RUNTIME=binary`), nie aus
+liest sie für den Umzug der Daten. **Nie mit `CI`** (nur `1` oder `true` zählt, `ciSet` in ci.ts; ein `CI=false` schaltet nichts ab), nie unter Node (auch nicht mit `NKA_RUNTIME=binary`), nie aus
 dem Store; ein Fehler wird nur gemeldet. In docs/datenschutz.md genannt.
+
+## Zwei Mietfuchs auf demselben Datenordner (#517, Durchsicht M2)
+
+[instanceGuard.ts](instanceGuard.ts), eingesetzt in index.ts nach dem Binden und vor dem Öffnen der Datenbank. Der Port
+sperrt nur gegen einen zweiten Start auf demselben Port (#244); das Fenster (17517) und die Programmdatei oder der Store
+bis 0.14 (3001) können denselben Ordner nehmen (Mac: Programmdatei unter /Applications und Fenster in
+`~/Library/Application Support/Mietfuchs`; Windows: Store 0.14 und Installer-Fenster in `%USERPROFILE%\Mietfuchs`).
+
+- **Lauf-Datei** `mietfuchs.laeuft.json` im Datenordner (Port, PID, Startzeit, Version), über Zwischendatei; beim Beenden
+  entfernt (`exit`, dazu SIGTERM/SIGINT/SIGHUP, nur die eigene PID). Sie gilt nur, wenn auf ihrem Port `/healthz` mit
+  `app: 'mietfuchs'` und demselben Datenordner antwortet; eine Datei nach einem Absturz verhindert nichts.
+- **Gefragt** werden der Port aus der Lauf-Datei und die Standardports 3001 und 17517 (außer dem eigenen), parallel, je
+  1,5 Sekunden. `/healthz` nennt ab jetzt `dataDir`; ältere Fassungen ab 0.8 ihre Datenbank (`database.file`), deren
+  Ordner zählt. Startet eine ältere Fassung gerade (503 ohne Ordner), wird bis 15 Sekunden nachgefragt. Ein
+  umgezogener Ordner (`moved`) zählt nie, er liest nur. Vor 0.8 bleibt eine Fassung unerkannt (hingenommen).
+- **Gleichzeitige Starts**: Während des Startens antwortet `/healthz` mit `dataDir`, `pid` und `boundAt` (Zeitpunkt des
+  Bindens). Wer später gebunden hat, weicht (`yieldsTo`); er sieht den anderen sicher, denn der war schon gebunden.
+  Zwei gleichzeitige Starts auf selbst gesetzten Ports ohne Lauf-Datei bleiben unerkannt (hingenommen), ebenso ein
+  Mietfuchs, dessen Ereignisschleife gerade länger als 1,5 Sekunden in einer Migration steckt (hingenommen: länger zu
+  warten verzögerte jeden Start, wenn auf dem Port etwas schweigt). Die Lauf-Datei entsteht erst nach der Frage, sonst
+  überschriebe ein weichender Start die des laufenden.
+- **Nie den Start eines einzelnen verhindern**: keine Antwort, fremdes Programm, anderer Ordner, Lesefehler, nicht
+  beschreibbarer Ordner (dann keine Lauf-Datei) zählen als frei.
+- **Läuft schon eines**: im Fenster eine Zeile auf der Fehlerausgabe und Exit 1, das Fenster zeigt sie als Meldung
+  „Mietfuchs läuft bereits mit denselben Daten (Ordner, Adresse, Port …). Bitte beenden Sie das andere Mietfuchs
+  zuerst.“ (`twinIn`, `startFailure` in desktop/src/server.js); die Programmdatei öffnet die laufende Oberfläche und
+  endet mit 0, wie beim belegten Port.
+- **Nur `STANDALONE`** (Programmdatei, Paket, Fenster, Store): Im Container sieht die Frage über 127.0.0.1 nur den
+  eigenen Container, ein zweiter auf demselben Volume bliebe ohnehin unerkannt; im npm-Betrieb startet eine
+  Dienstverwaltung oder ein Entwickler genau einen Server. Beide nennen ihren Ordner in `/healthz`, so erkennt ein
+  Fenster beim Entwickeln einen npm-Server auf server/data.
+- Testgriff `NKA_TEST_TWIN_PORTS` (JSON-Liste statt der Standardports); `startServerIn`/`startServerRaw` setzen `[]`,
+  damit kein Test ein Mietfuchs des Entwicklers fragt. Geprüft in instanceGuard.test.ts, api-zweimal.test.ts.
 
 ## Umzug ins Programmfenster (#517)
 
@@ -32,6 +65,19 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   Fortschritt) lässt nur Loopback durch (`fromThisComputer`), sonst 403 „Daten übernehmen geht nur am Rechner, auf dem
   Mietfuchs läuft.“; sonst wären sie mit „Zugriff aus dem Heimnetz“ vom Handy aus erreichbar und nähmen beliebige Pfade an
   (CodeQL `js/path-injection`). Die Oberfläche zeigt den Umzug ohnehin nur im Fenster (`inWindow`).
+- **Nur bekannte Orte** (`knownPlaces`, Durchsicht vor 0.15.0 K11): `adopt` und `restore-backup` nehmen keinen Pfad,
+  nur `{ id }`, die Kennung eines Ortes, den der Server selbst kennt. Jeder Fund aus `/candidates` (Ortsdatei, fester
+  Ausweichort, Suche) trägt `id`, ebenso die Antwort von `/inspect` (`candidate.id`, bei einem Backup `backup: { id,
+  name }`); derselbe Ort behält seine Kennung, solange der Server läuft, ein Ordner gilt nicht als Backup und umgekehrt.
+  Ein Pfad allein oder eine unbekannte Kennung ist eine 400 „Diesen Ort kennt Mietfuchs nicht (mehr) …“. `/inspect`
+  nimmt `{ id }` (neu beschreiben, etwa ob das alte Mietfuchs inzwischen läuft) oder `{ folder }`, den Pfad aus dem
+  Ordner-Dialog. **Dass `/inspect` einen beliebigen absoluten Pfad annimmt, ist hingenommen**: Der Dialog läuft im
+  Hauptprozess (desktop/src/main.js, `mietfuchs:choose-folder`) und gibt den Pfad an die Oberfläche; die Route antwortet
+  nur auf Loopback, Host und Origin prüft die Vorschaltung (fremde Seiten im Browser kommen nicht durch), sie liest nur
+  (Datenbank `readOnly`, keine Dateizeit ändert sich) und nennt nur Ort, Datum und zwei Zahlen. Wer auf diesem Rechner
+  127.0.0.1 erreicht, liest die Dateien auch selbst. Eine Schranke im Hauptprozess wäre die Ergänzung: Er meldet die
+  Wahl des Dialogs selbst an den Server und reicht der Oberfläche nur die Kennung. `readopt` nimmt ohnehin keinen Pfad
+  (der Ort steht in `umzug.json`).
 - **Gewählt** (`classifyChoice`, `POST /api/relocation/inspect`): Ordner der Programmdatei, `data`, die Programmdatei
   selbst, `mietfuchs.sqlite` oder `db.json` (dann deren Ordner; nur `db.json` ist ein gültiger alter Bestand), oder ein
   Backup (`{ backup }`, dann `POST /api/relocation/restore-backup`: wie `/api/restore`, von der Platte gelesen). Der
@@ -77,8 +123,14 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   `GET /api/relocation/progress` (`copy`, `check`, `switch`), `POST /api/relocation/cancel` bis vor dem Umschalten;
   abgebrochen heißt 400 und beide Ordner wie vorher.
 - **Später im alten Mietfuchs geändert** (zwei Bestände vermeiden; alte Fassungen kennen den Vermerk nicht): `umzug.json`
-  hält `source` (Art und `stockFingerprint`: SHA-256 über alle Tabellen außer Journal und Migrationen, dazu die jüngste
-  Gruppe des Journals; db.json als Datei). Die Dateizeit zählt nicht, schon ein Start schreibt eine Probe in die Datei.
+  hält `source` (`StockMark` aus `markStock`): mit Journal die höchste je vergebene Kennung einer Gruppe (`journal`,
+  aus `sqlite_sequence`) samt Zeit dieser Gruppe (`journalAt`); geändert heißt jede andere Kennung, auch eine kleinere
+  (ein im alten Mietfuchs eingespieltes Backup oder eine Vorversion setzt die Folge zurück), oder dieselbe mit anderer
+  Gruppe (Durchsicht vor dem PR, M1), sonst SHA-256 über genau die Tabellen und Spalten von damals (`columns`); db.json als Datei.
+  **Nur Nutzdaten zählen** (Durchsicht Daten K5): Migriert eine ältere Programmdatei den alten Ordner, kommen Spalten
+  und Tabellen dazu und Datenschritte schreiben um, ohne Gruppe im Journal; das ist kein neuerer Stand. Jede Änderung
+  eines Nutzers legt eine Gruppe an. Die Dateizeit zählt nicht, schon ein Start schreibt eine Probe in die Datei; sie
+  entscheidet nur, ob neu gerechnet wird (`memoByStamp` über Zeit und Größe von Datenbank, `-journal`, db.json, K6).
   `GET /api/relocation` nennt dann `newer`; die Oberfläche zeigt einen Hinweis (NewerStock.tsx) mit „Neueren Stand
   übernehmen …“ (Rückfrage, `POST /api/relocation/readopt`: derselbe Weg, Stand von jetzt als `vor-restore`, Zustimmungen
   von jetzt) und „Nicht übernehmen“ (`/api/relocation/newer/dismiss` merkt sich den Fingerabdruck). Nie von selbst.
@@ -89,7 +141,24 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   `umzug.json` entsteht gleich nach dem Umschalten; fehlt danach der Vermerk (Fenster beendet), holt der nächste Start
   ihn nach. Der Vermerk sperrt je Anfrage, nicht nur ab dem Start. `data` unter dem eigenen Datenordner (Programmdatei
   im Ordner „Mietfuchs“) lässt sich übernehmen. Solange der Umzug angeboten ist, steht der Bildschirm auf jeder Seite.
-- Geprüft in relocation.test.ts, api-umzug.test.ts, client/src/pages/Umzug.test.tsx, mit echten alten Fassungen in
+- **Aus der Integrationsdurchsicht vor 0.15 (Daten)**: Die geprüfte Kopie heißt bis zum Umschalten
+  `mietfuchs.sqlite.kopie-<id>` und wird beim Start weggeräumt; erst unmittelbar vor dem Austausch heißt sie
+  `restore-<id>` (`exchangeName`, restoreFiles.ts), denn dann kann sie die einzige Kopie sein (K2). Beenden wartet auf
+  ein laufendes Wiederherstellen oder eine Übernahme bis zwei Minuten, eine Übernahme, die noch kopiert, bricht dabei ab;
+  `/api/quit` meldet dann `busy`, und das Fenster wartet länger; neue Vorgänge bekommen 503 (K2). Vor dem Umschalten
+  steht `umzug.offen.json` mit Quelle und Name der Kopie; endet das Fenster danach, schreibt der nächste Start die
+  Entscheidung (der Vermerk folgt wie bei D1), sonst verwirft er die Datei (`switchedOver`, K3). Auch der laufende
+  Umzug schreibt die Entscheidung nur, wenn `switchedOver` gilt: `applyBackup` fängt einen gescheiterten Austausch ab
+  (Durchsicht vor dem PR, M3; Testgriff `NKA_TEST_FAIL_EXCHANGE`). `exchangeName` benennt mit Wiederholungen um und
+  kopiert zur Not (M2). Während eines Wiederherstellens leert der Takt den Papierkorb nicht (K1). Signale beenden über
+  `shutDown` wie `/api/quit` (K4). Bei der db.json wird
+  der Hash der Kopie verglichen (`copyAndHash`, K4). Der Papierkorb zieht mit, vor dem Einspielen, damit
+  `reconcileAfterRestore` ihn sieht; Vorversionen und Sicherungen vor Updates bleiben, die Antwort sagt es in einem
+  Satz (K9). Im umgezogenen Ordner prüft `/healthz` nur das Lesen der Belege, der Schnappschuss des Backups entsteht in
+  `OPEN_DIR`, und die Hintergrundarbeit (`checkPriorVersion`: Journal, Papierkorb, Sicherungen, Vorversion) ruht, auch
+  wenn der Vermerk erst zur Laufzeit entsteht (`movedNow`, K7, K8). Testgriffe: `NKA_TEST_SWITCH_DELAY_MS`,
+  `NKA_TEST_EXIT_BEFORE_SWITCH`, `NKA_TEST_EXIT_AFTER_SWITCH`, `NKA_TEST_PRIOR_INTERVAL_MS`.
+- Geprüft in relocation.test.ts, api-umzug.test.ts, api-umzug-haertung.test.ts, client/src/pages/Umzug.test.tsx, mit echten alten Fassungen in
   scripts/fenster-umzug-praxislauf.mjs und auf Windows und macOS in desktop-check.mjs (Schritt 6).
 
 ## Objekte (#92)
@@ -311,6 +380,14 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   `isItemCovered`); einmal je Gruppe, kein Betrag ändert sich.
 
 ## API
+
+**Im Fenster nur vom eigenen Rechner** (Durchsicht vor 0.15.0, K6; `AT_THIS_COMPUTER` in index.ts, Muster
+`fromThisComputer`): Mit „Zugriff aus dem Heimnetz“ erreicht das Handy den Server des Fensters. `POST /api/quit` (aus dem
+Heimnetz beendete es das Fenster mit), jede schreibende Anfrage an `/api/ai/key` und `/api/ai/consent` und das Ändern von
+`updateCheck` in `PUT /api/settings` (unter Windows lädt das Fenster danach auch herunter) bekommen von dort 403 mit
+gesiezter Meldung: Zustimmen soll, wer vor dem Rechner sitzt. Ein PUT mit unverändertem `updateCheck` geht durch, das
+übrige Speichern der Einstellungen bleibt aus dem Heimnetz möglich. Nur bei `IN_WINDOW` (desktop, store); im Container
+und im npm-Betrieb kommt jede Anfrage von außen. Geprüft in api-fenster.test.ts.
 
 [index.ts](index.ts): generische CRUD-Routen in einer Schleife für `units, tenancies, costItems,
 meters, readings, payments`, durch [db/repository.ts](db/repository.ts); Kaskaden erledigen die
@@ -1109,7 +1186,10 @@ Anfrage hinaus. Nach Fehler eine Stunde Pause, bei Rate-Limit bis `retry-after`/
 (höchstens ein Tag). „Jetzt prüfen“ höchstens einmal pro Minute, gleichzeitige Aufrufe teilen eine
 Anfrage; Links nur ins eigene Repo. Kein Selbst-Update des Servers (#20), sondern eine Anleitung je Betriebsart
 ([client/src/update.ts](../../client/src/update.ts)); im Programmfenster unter Windows aktualisiert das Fenster selbst
-(electron-updater, scripts/CLAUDE.md „Automatische Updates“), auf dem Mac nennt `downloadUrl` das passende `.dmg`. Version aus `server/package.json`
+(electron-updater, scripts/CLAUDE.md „Automatische Updates“), auf dem Mac nennt `downloadUrl` das passende `.dmg`. Dort
+lädt die Zustimmung neue Versionen also auch herunter; die Frage im Cockpit und „Über Mietfuchs“ sagen es, wenn das
+Fenster zuständig ist (`owner === 'window'`, `DOWNLOADS_TOO` in client/src/components/Update.tsx, K8), ebenso
+docs/datenschutz.md. Ändern lässt sich `updateCheck` im Fenster nur vom Rechner selbst (unter „API“). Version aus `server/package.json`
 ([version.ts](version.ts)); Betriebsart aus `globalThis.Bun` (`binary`, an Systemort `package`, im Paketordner
 des Microsoft Store `store`), `NKA_RUNTIME=docker`, sonst `npm`. Bei `store` (#500) fragt der Server nie bei
 GitHub, auch nicht mit Zustimmung, und die Oberfläche fragt nicht danach: Updates bringt der Store, und ein

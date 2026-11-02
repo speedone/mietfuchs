@@ -1,9 +1,9 @@
 // Karte „Zugriff aus dem Heimnetz“ in den Einstellungen (#517), nur im Programmfenster. Das Häkchen ist ein Entwurf
 // (#309); „Speichern“ lässt das Fenster den Server mit der neuen Adresse neu starten, danach lädt die Seite neu.
 // Was die Karte zeigt, entscheidet desktopNetwork.ts.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { errorText } from '../api'
-import { networkView, type NetworkBridge, type NetworkState } from '../desktopNetwork'
+import { announceNetwork, networkView, onNetworkCardRequest, type NetworkBridge, type NetworkState } from '../desktopNetwork'
 import { useDraft } from '../useDraft'
 import Card from './Card'
 import DraftActions from './DraftActions'
@@ -21,9 +21,12 @@ export default function NetworkCard({ bridge }: { bridge: NetworkBridge }) {
   }, [bridge])
   const draft = useDraft(saved?.enabled ?? false)
   const view = saved && networkView(saved, draft.value)
+  // Der Sprung aus der Seitenleiste („Im Heimnetz erreichbar“, NetworkHint.tsx) holt die Karte ins Bild
+  const card = useRef<HTMLElement>(null)
+  useEffect(() => onNetworkCardRequest(() => card.current?.scrollIntoView({ block: 'start' })), [])
 
   return (
-    <Card title="Zugriff aus dem Heimnetz">
+    <Card title="Zugriff aus dem Heimnetz" ref={card}>
       <p className="muted">Öffnen Sie Mietfuchs auch auf dem Handy, Tablet oder einem anderen Rechner im selben WLAN.</p>
       {loadError && <NoticeBox level="error" action={`Der Stand ließ sich nicht abfragen: ${loadError}`} />}
       {view && (
@@ -62,7 +65,12 @@ export default function NetworkCard({ bridge }: { bridge: NetworkBridge }) {
             draft={draft}
             layout="card"
             what="Zugriff aus dem Heimnetz"
-            onSave={async (enabled) => setSaved(await bridge.set(enabled))}
+            onSave={async (enabled) => {
+              const next = await bridge.set(enabled)
+              setSaved(next)
+              // Der Hinweis in der Seitenleiste folgt, auch bevor das Fenster die Seite neu lädt
+              announceNetwork(next)
+            }}
           />
         </>
       )}

@@ -109,7 +109,8 @@ für ARM-Rechner (z. B. Snapdragon), dort in einer eigenen ARM-Fassung:
   Mietfuchs beendet ist (solange es läuft, ersetzt Windows es nicht). Sofort geht es im Store unter
   *Bibliothek* mit *Updates abrufen*. Eine neue Version erscheint im Store erst, wenn Microsoft
   sie geprüft hat, meist einige Tage nach dem Release hier. Zeigt der Store also noch eine Version
-  vor 0.15, nimm den Installer oder arbeite bis dahin mit der bisherigen Programmdatei weiter.
+  vor 0.15, nimm bis dahin den Installer (dann aber nur ihn, siehe unten) oder arbeite mit der bisherigen
+  Programmdatei weiter.
 - **Wie jedes andere Programm:** Eintrag im Startmenü, eigenes Fenster, Start auch über
   `mietfuchs` in der Eingabeaufforderung. Fenster schließen beendet Mietfuchs.
 - **Deine Daten liegen in `%USERPROFILE%\Mietfuchs`** (z. B. `C:\Users\Name\Mietfuchs`) und
@@ -130,7 +131,9 @@ Ohne Store geht es mit dem Installer, einer Datei für Intel/AMD und ARM:
    Mietfuchs für dich, legt Einträge im Startmenü und auf dem Desktop an und startet es.
 
 Deine Daten liegen wie bei der Store-Fassung in `%USERPROFILE%\Mietfuchs`. Nimm deshalb nur eine
-der beiden Fassungen, Store oder Installer: Beide dürfen nicht gleichzeitig laufen. Willst du
+der beiden Fassungen, Store oder Installer. Hast du beide installiert (etwa weil der Store noch eine
+Version vor 0.15 zeigte), starte immer nur eine: Läuft die andere schon, startet Mietfuchs nicht und
+sagt „Mietfuchs läuft bereits mit denselben Daten …“; beende dann zuerst die andere. Willst du
 später zum Store wechseln, deinstalliere vorher die Fassung aus dem Installer; der Datenordner
 bleibt dabei liegen.
 
@@ -211,8 +214,14 @@ geht die Übernahme jederzeit in den Einstellungen unter „Daten aus bisherigem
 übernehmen …“. Ändert jemand nach dem Umzug noch etwas im alten Mietfuchs, sagt das neue es dir
 und bietet an, den neueren Stand zu übernehmen.
 
+Automatische Vorversionen (`vorversionen/`) und die Sicherungen vor Updates
+(`mietfuchs.sqlite.vor-…`) bleiben im alten Ordner; das neue Programm legt ab dann eigene an. Der
+Papierkorb gelöschter Belege zieht mit, damit „Rückgängig“ im Verlauf weiter wirkt.
+
 Lag deine alte Mac-Programmdatei im Ordner *Programme*, nutzt das neue Programm ihre Daten in
 `~/Library/Application Support/Mietfuchs` direkt, ohne Umzug; starte die alte danach nicht mehr.
+Startest du sie doch, während das neue läuft, startet das zweite nicht, sondern sagt, dass Mietfuchs
+schon mit denselben Daten läuft (die Programmdatei öffnet dann das laufende im Browser).
 
 Läuft alles im neuen Programm, kannst du die alte Programmdatei löschen. Den alten Ordner `data/`
 hebst du am besten noch eine Weile als Sicherung auf.

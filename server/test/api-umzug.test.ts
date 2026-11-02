@@ -72,12 +72,21 @@ const desktopEnv = (home: string, extra: NodeJS.ProcessEnv = {}): NodeJS.Process
   NKA_RUNTIME: 'desktop', NKA_HOST: '127.0.0.1', NKA_TEST_HOME: home, NKA_TEST_OLD_PORT: '9', ...extra,
 })
 
-type Candidate = { dataDir: string, kind: string, modifiedAt: string | null, properties: number | null, tenancies: number | null, running: boolean, source: string }
+type Candidate = { id: string, dataDir: string, kind: string, modifiedAt: string | null, properties: number | null, tenancies: number | null, running: boolean, source: string }
 type Offer = { offered: boolean, candidates?: Candidate[], searched?: boolean, complete?: boolean }
 
 async function post(base: string, urlPath: string, body: unknown = {}): Promise<{ status: number, body: Record<string, unknown> }> {
   const res = await fetch(`${base}${urlPath}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   return { status: res.status, body: await res.json() as Record<string, unknown> }
+}
+
+// Übernehmen wie die Oberfläche (K11): erst den Ort über `/inspect` bekannt machen (wie nach dem Ordner-Dialog), dann
+// mit seiner Kennung übernehmen. Lehnt schon `/inspect` ab, ist das die Antwort.
+async function adopt(base: string, dataDir: string, extra: Record<string, unknown> = {}): Promise<{ status: number, body: Record<string, unknown> }> {
+  const known = await post(base, '/api/relocation/inspect', { folder: dataDir })
+  const id = (known.body.candidate as Candidate | undefined)?.id
+  if (!id) return known
+  return post(base, '/api/relocation/adopt', { id, ...extra })
 }
 
 test('Umzug: nur im Fenster, nicht im Browserbetrieb, nicht mit Bestand', async () => {
@@ -86,7 +95,7 @@ test('Umzug: nur im Fenster, nicht im Browserbetrieb, nicht mit Bestand', async 
   try {
     assert.deepEqual(await npm.api<Offer>('/api/relocation'), { offered: false })
     assert.deepEqual(await npm.api<Offer>('/api/relocation/candidates'), { offered: false })
-    assert.equal((await post(npm.base, '/api/relocation/adopt', { dataDir: old.data })).status, 409)
+    assert.equal((await adopt(npm.base, old.data)).status, 409)
   } finally {
     npm.stop()
   }
@@ -96,7 +105,7 @@ test('Umzug: nur im Fenster, nicht im Browserbetrieb, nicht mit Bestand', async 
     // Ein eigener Bestand: dann gibt es nichts umzuziehen
     await desk.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Neu', areaM2: 50, participates: true }) })
     assert.deepEqual(await desk.api<Offer>('/api/relocation'), { offered: false })
-    assert.equal((await post(desk.base, '/api/relocation/adopt', { dataDir: old.data })).status, 409)
+    assert.equal((await adopt(desk.base, old.data)).status, 409)
   } finally {
     desk.stop()
     fs.rmSync(old.home, { recursive: true, force: true })
@@ -123,7 +132,8 @@ test('Umzug: findet den Ordner neben der Programmdatei, kopiert, vergleicht, ver
     assert.equal(found?.source, 'search')
     assert.ok(found?.modifiedAt)
 
-    const adopted = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    // Mit der Kennung des Fundes, wie die Oberfläche (K11)
+    const adopted = await post(s.base, '/api/relocation/adopt', { id: found?.id })
     assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
     assert.deepEqual(adopted.body.counts, { properties: 1, tenancies: 2, costItems: 1, receipts: 1 })
 
@@ -165,7 +175,7 @@ test('Umzug: Briefpapier kommt mit, ein unlesbares bleibt mit Hinweis im alten O
   fs.writeFileSync(path.join(design, 'paper-fedcba9876543210.pdf'), 'kein PDF')
   const s = await startServerIn(tempDir(), desktopEnv(old.home))
   try {
-    const adopted = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopted = await adopt(s.base, old.data)
     assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
     assert.ok(fs.readFileSync(path.join(s.dataDir, 'briefpapier', 'logo-0123456789abcdef.png')).equals(png))
     assert.ok(!fs.existsSync(path.join(s.dataDir, 'briefpapier', 'paper-fedcba9876543210.pdf')))
@@ -183,7 +193,7 @@ test('Umzug: eine alte db.json wird in der Kopie umgestiegen, das Original bleib
   try {
     const [found] = (await s.api<Offer>('/api/relocation/candidates')).candidates ?? []
     assert.equal(found?.kind, 'json')
-    const adopted = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopted = await adopt(s.base, old.data)
     assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
     assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((t) => t.tenantName).sort(), ['Müller', 'Schmidt'])
     assert.ok(fs.existsSync(path.join(old.data, 'db.json')), 'die db.json heißt im alten Ordner weiter so')
@@ -241,7 +251,7 @@ test('Umzug: läuft das alte Mietfuchs noch, erst beenden, dann kopieren', async
   try {
     const [found] = (await s.api<Offer>('/api/relocation/candidates')).candidates ?? []
     assert.equal(found?.running, true)
-    const refused = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const refused = await adopt(s.base, old.data)
     assert.equal(refused.status, 409)
     assert.match(String(refused.body.error), /altes Mietfuchs.*beenden|beenden Sie/i)
     assert.equal(fs.existsSync(path.join(old.data, 'umgezogen.json')), false)
@@ -249,7 +259,7 @@ test('Umzug: läuft das alte Mietfuchs noch, erst beenden, dann kopieren', async
     assert.equal(quit.status, 200)
     assert.equal(quit.body.stopped, true)
     assert.equal(quitCalls, 1)
-    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: old.data })).status, 200)
+    assert.equal((await adopt(s.base, old.data)).status, 200)
   } finally {
     s.stop()
     fake.close()
@@ -280,7 +290,7 @@ test('Umzug: scheitert etwas, bleibt der neue Ordner leer und der alte unberühr
   const s = await startServerIn(tempDir(), desktopEnv(home))
   try {
     for (const dataDir of [path.join(broken, 'data'), path.join(wrongJson, 'data'), newer.data]) {
-      const refused = await post(s.base, '/api/relocation/adopt', { dataDir })
+      const refused = await adopt(s.base, dataDir)
       assert.equal(refused.status, 400, `${dataDir}: ${JSON.stringify(refused.body)}`)
       assert.match(String(refused.body.error), /unverändert/)
       // Nichts von einem nächsten Start: Der Umzug versucht es nicht von selbst erneut
@@ -289,14 +299,14 @@ test('Umzug: scheitert etwas, bleibt der neue Ordner leer und der alte unberühr
       assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [])
       assert.equal((await s.api<Offer>('/api/relocation')).offered, true, 'der Bildschirm bleibt')
     }
-    assert.match(String((await post(s.base, '/api/relocation/adopt', { dataDir: newer.data })).body.error), /neueren Mietfuchs-Version/)
+    assert.match(String((await adopt(s.base, newer.data)).body.error), /neueren Mietfuchs-Version/)
     assert.deepEqual([broken, wrongJson, newer.program].map((dir) => fingerprint(dir)), prints)
     // Reste der Kopie bleiben nicht liegen
     assert.deepEqual(fs.readdirSync(s.dataDir).filter((n) => n.startsWith('restore-') || n.includes('.restore-')), [])
-    // Ein Ordner ohne Bestand, der eigene Ordner und ein relativer Pfad werden abgelehnt
-    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: path.join(home, 'Downloads') })).status, 404)
-    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: s.dataDir })).status, 400)
-    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: 'data' })).status, 400)
+    // Ein Ordner ohne Bestand und der eigene Ordner werden schon bei der Wahl abgelehnt, ein relativer Pfad ebenso
+    assert.equal((await adopt(s.base, path.join(home, 'Downloads'))).status, 404)
+    assert.equal((await adopt(s.base, s.dataDir)).status, 404)
+    assert.equal((await adopt(s.base, 'data')).status, 400)
   } finally {
     s.stop()
     fs.rmSync(home, { recursive: true, force: true })
@@ -396,7 +406,7 @@ test('Durchsicht D1: ein Beleg, der schon im neuen Ordner lag, hält den Umzug n
   const s = await startServerIn(tempDir(), desktopEnv(old.home))
   try {
     fs.writeFileSync(path.join(s.dataDir, 'uploads', 'schon-da.pdf'), PDF)
-    const adopted = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopted = await adopt(s.base, old.data)
     assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
     assert.ok(fs.existsSync(path.join(old.data, 'umgezogen.json')))
   } finally {
@@ -414,7 +424,7 @@ test('Durchsicht D3: ein Beleg als Verweis kommt als Datei mit', async () => {
   fs.symlinkSync(elsewhere, path.join(old.data, 'uploads', 'verweis.pdf'))
   const s = await startServerIn(tempDir(), desktopEnv(old.home))
   try {
-    const adopted = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopted = await adopt(s.base, old.data)
     assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
     assert.equal((adopted.body.counts as { receipts: number }).receipts, 2)
     const copied = path.join(s.dataDir, 'uploads', 'verweis.pdf')
@@ -453,7 +463,7 @@ test('Durchsicht D6: Daten in „data“ unter dem eigenen Datenordner lassen si
   ;(await openDatabaseWithStock(data, straightenForDatabase(someDb()))).close()
   const s = await startServerIn(own, desktopEnv(home))
   try {
-    const adopted = await post(s.base, '/api/relocation/adopt', { dataDir: data })
+    const adopted = await adopt(s.base, data)
     assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
   } finally {
     s.child.kill()
@@ -502,12 +512,15 @@ test('Ergänzung: Änderungen im alten Mietfuchs nach dem Umzug werden erkannt u
   const old = await oldFolder()
   const s = await startServerIn(tempDir(), desktopEnv(old.home))
   try {
-    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: old.data })).status, 200)
+    assert.equal((await adopt(s.base, old.data)).status, 200)
     assert.deepEqual(await s.api<{ offered: boolean, newer?: unknown }>('/api/relocation'), { offered: false })
-    // Eine alte Fassung, die den Vermerk nicht kennt, ändert etwas
+    // Eine alte Fassung, die den Vermerk nicht kennt, ändert etwas. Geänderte Erwartung (Durchsicht Daten K5): Wie jede
+    // Änderung eines Nutzers legt sie eine Gruppe im Journal an; eine Migration allein gilt nicht mehr als neuerer Stand
     const { DatabaseSync } = await import('node:sqlite')
+    const group = "INSERT INTO change_groups (at, method, route, description, schema_steps) VALUES ('2026-11-02T10:00:00.000Z', 'PUT', '/api/tenancies', 'geändert', 1)"
     const db = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
     db.exec("UPDATE tenancies SET tenant_name = 'Schmidt-Lange' WHERE tenant_name = 'Schmidt'")
+    db.exec(group)
     db.close()
     const offer = await s.api<{ offered: boolean, newer?: { from: string, modifiedAt: string } }>('/api/relocation')
     assert.equal(offer.newer?.from, old.data)
@@ -521,6 +534,7 @@ test('Ergänzung: Änderungen im alten Mietfuchs nach dem Umzug werden erkannt u
     // Abwinken: danach kein Hinweis mehr für diesen Stand
     const db2 = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
     db2.exec("UPDATE tenancies SET tenant_name = 'Müller-Neu' WHERE tenant_name = 'Müller'")
+    db2.exec(group)
     db2.close()
     assert.ok((await s.api<{ newer?: unknown }>('/api/relocation')).newer)
     assert.equal((await post(s.base, '/api/relocation/newer/dismiss')).status, 200)
@@ -536,7 +550,7 @@ test('Ergänzung: zu wenig Platz wird vor dem Kopieren gesagt', async () => {
   const old = await oldFolder()
   const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_FREE_BYTES: '1000' }))
   try {
-    const refused = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const refused = await adopt(s.base, old.data)
     assert.equal(refused.status, 400)
     assert.match(String(refused.body.error), /nicht genug Platz.*MB/)
     assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [])
@@ -552,7 +566,7 @@ test('Ergänzung: Fortschritt beim Kopieren, Abbrechen lässt beide Ordner, wie 
   const before = fingerprint(old.data)
   const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_COPY_DELAY_MS: '250' }))
   try {
-    const adopting = post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopting = adopt(s.base, old.data)
     let progress: { phase: string, files: number, totalFiles: number, bytes: number, totalBytes: number } | null = null
     for (let i = 0; i < 100; i++) {
       progress = await s.api('/api/relocation/progress')
@@ -590,7 +604,7 @@ test('Ergänzung: Store-Fassung übernimmt, liest die Ortsdatei und schreibt sie
   try {
     const offer = await s.api<Offer>('/api/relocation/candidates')
     assert.deepEqual(offer.candidates?.map((c) => [c.dataDir, c.source]), [[old.data, 'remembered']])
-    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: old.data })).status, 200)
+    assert.equal((await adopt(s.base, old.data)).status, 200)
     assert.ok(fs.existsSync(path.join(old.data, 'umgezogen.json')))
     assert.equal(fs.readFileSync(locations, 'utf8'), content, 'die Ortsdatei bleibt, wie sie war')
   } finally {
@@ -619,8 +633,9 @@ test('Ergänzung: gewählt werden auch Programmdatei, db.json und Backup; ein Ba
       assert.equal((r.body.candidate as Candidate).dataDir, old.data)
     }
     const asBackup = await post(s.base, '/api/relocation/inspect', { folder: zip })
-    assert.deepEqual(asBackup.body, { backup: zip })
-    const restored = await post(s.base, '/api/relocation/restore-backup', { file: zip })
+    const backup = asBackup.body.backup as { id: string, name: string } | undefined
+    assert.equal(backup?.name, 'mietfuchs-backup.zip')
+    const restored = await post(s.base, '/api/relocation/restore-backup', { id: backup?.id })
     assert.equal(restored.status, 200, JSON.stringify(restored.body))
     assert.deepEqual((await s.api<{ name: string }[]>('/api/units')).map((u) => u.name), ['Aus dem Backup'])
     assert.ok(fs.existsSync(zip), 'das Backup selbst bleibt liegen')
@@ -641,10 +656,10 @@ test('Ergänzung: mit eigenem Bestand nur mit replace, der Stand vorher ist gesi
     assert.equal(list.offered, false)
     assert.equal(list.ownStock, true)
     assert.equal(list.candidates?.[0]?.dataDir, old.data)
-    const refused = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const refused = await adopt(s.base, old.data)
     assert.equal(refused.status, 409)
     assert.equal(refused.body.replace, true)
-    const replaced = await post(s.base, '/api/relocation/adopt', { dataDir: old.data, replace: true })
+    const replaced = await adopt(s.base, old.data, { replace: true })
     assert.equal(replaced.status, 200, JSON.stringify(replaced.body))
     assert.deepEqual((await s.api<{ name: string }[]>('/api/units')).map((u) => u.name).sort(), ['EG', 'OG'])
     assert.ok(fs.existsSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')))
@@ -667,8 +682,8 @@ test('Absicherung: Umzugsrouten nur vom eigenen Rechner, aus dem Heimnetz 403', 
     const routes: [string, string, unknown][] = [
       ['GET', '/api/relocation/candidates', null],
       ['POST', '/api/relocation/inspect', { folder: old.program }],
-      ['POST', '/api/relocation/adopt', { dataDir: old.data }],
-      ['POST', '/api/relocation/restore-backup', { file: path.join(old.home, 'x.zip') }],
+      ['POST', '/api/relocation/adopt', { id: 'erfunden' }],
+      ['POST', '/api/relocation/restore-backup', { id: 'erfunden' }],
       ['POST', '/api/relocation/quit-old', {}],
       ['POST', '/api/relocation/readopt', {}],
       ['POST', '/api/relocation/newer/dismiss', {}],
@@ -683,6 +698,67 @@ test('Absicherung: Umzugsrouten nur vom eigenen Rechner, aus dem Heimnetz 403', 
     assert.ok(!fs.existsSync(path.join(old.data, 'umgezogen.json')))
     // Vom eigenen Rechner wie bisher
     assert.equal((await s.api<Offer>('/api/relocation/candidates')).candidates?.[0]?.dataDir, old.data)
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+// Durchsicht vor 0.15.0 (K11): Übernehmen und Einspielen nehmen keinen Pfad mehr, nur die Kennung eines Fundes, den
+// der Server selbst kennt: aus der Suche oder der Ortsdatei (`/api/relocation/candidates`) oder aus dem Ordner-Dialog,
+// dessen Wahl `/api/relocation/inspect` prüft und mit Kennung zurückgibt. Ein Pfad allein, auch ein gültiger, und eine
+// unbekannte Kennung sind eine 400, und es wird nichts kopiert.
+test('Absicherung: Übernehmen und Einspielen nur mit der Kennung eines bekannten Fundes', async () => {
+  const old = await oldFolder()
+  const zip = path.join(old.home, 'mietfuchs-backup.zip')
+  const source = await startServerIn(tempDir(), {})
+  try {
+    await source.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Aus dem Backup', areaM2: 10, participates: true }) })
+    fs.writeFileSync(zip, Buffer.from(await (await fetch(`${source.base}/api/backup`)).arrayBuffer()))
+  } finally {
+    source.stop()
+  }
+  const s = await startServerIn(tempDir(), desktopEnv(old.home))
+  try {
+    const UNKNOWN = /kennt Mietfuchs nicht/
+    for (const body of [{ dataDir: old.data }, { id: 'erfunden' }, { id: old.data }, {}]) {
+      const refused = await post(s.base, '/api/relocation/adopt', body)
+      assert.equal(refused.status, 400, JSON.stringify(body))
+      assert.match(String(refused.body.error), UNKNOWN)
+    }
+    for (const body of [{ file: zip }, { id: 'erfunden' }]) {
+      const refused = await post(s.base, '/api/relocation/restore-backup', body)
+      assert.equal(refused.status, 400, JSON.stringify(body))
+      assert.match(String(refused.body.error), UNKNOWN)
+    }
+    assert.deepEqual(await s.api<Tenancy[]>('/api/tenancies'), [])
+    assert.ok(!fs.existsSync(path.join(old.data, 'umgezogen.json')))
+
+    // Die Kennung eines Fundes der Suche ist stabil, solange der Server läuft, und gilt nur für einen Ordner
+    const [found] = (await s.api<Offer>('/api/relocation/candidates')).candidates ?? []
+    if (!found) return assert.fail('Die Suche hat den alten Ordner nicht gefunden.')
+    assert.match(found.id, /^[0-9a-f-]{36}$/)
+    assert.equal((await s.api<Offer>('/api/relocation/candidates')).candidates?.[0]?.id, found.id)
+    // Der Ordner-Dialog: Die Wahl kommt als Pfad, die Antwort trägt die Kennung; derselbe Ordner, dieselbe Kennung
+    const chosen = await post(s.base, '/api/relocation/inspect', { folder: old.program })
+    assert.equal((chosen.body.candidate as Candidate).id, found.id)
+    // Eine Kennung lässt sich neu beschreiben (die Oberfläche fragt, ob das alte Mietfuchs inzwischen läuft)
+    const again = await post(s.base, '/api/relocation/inspect', { id: found.id })
+    assert.equal((again.body.candidate as Candidate).dataDir, old.data)
+    assert.equal((await post(s.base, '/api/relocation/inspect', { id: 'erfunden' })).status, 400)
+    // Ein Backup aus dem Dialog: eine eigene Kennung, die nicht als Ordner gilt (und umgekehrt)
+    const asBackup = await post(s.base, '/api/relocation/inspect', { folder: zip })
+    const backupId = (asBackup.body.backup as { id?: string } | undefined)?.id
+    if (!backupId) return assert.fail(`Keine Kennung für das Backup: ${JSON.stringify(asBackup.body)}`)
+    assert.equal((await post(s.base, '/api/relocation/adopt', { id: backupId })).status, 400)
+    assert.equal((await post(s.base, '/api/relocation/restore-backup', { id: found.id })).status, 400)
+
+    const adopted = await post(s.base, '/api/relocation/adopt', { id: found.id })
+    assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
+    assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((t) => t.tenantName).sort(), ['Müller', 'Schmidt'])
+    const restored = await post(s.base, '/api/relocation/restore-backup', { id: backupId, replace: true })
+    assert.equal(restored.status, 200, JSON.stringify(restored.body))
+    assert.deepEqual((await s.api<{ name: string }[]>('/api/units')).map((u) => u.name), ['Aus dem Backup'])
   } finally {
     s.stop()
     fs.rmSync(old.home, { recursive: true, force: true })

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { cleanRestoreLeftovers, diskFullMessage, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath } from '../src/restoreFiles.ts'
+import { cleanRestoreLeftovers, diskFullMessage, exchangeName, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath } from '../src/restoreFiles.ts'
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-restorefiles-'))
@@ -108,5 +108,27 @@ test('Hochgeladenes Archiv: der Pfad entsteht aus dem Datenordner und einem eige
   for (const name of ['../mietfuchs.sqlite', 'restore-upload-0123456789abcdef.zip/..', 'mietfuchs.sqlite',
     'restore-upload-alt.zip', `..${path.sep}restore-upload-0123456789abcdef.zip`, '', undefined]) {
     assert.equal(restoreUploadPath(dir, name), null, String(name))
+  }
+})
+
+// Durchsicht vor dem PR (Daten, M2): Unter Windows hält ein Virenscanner die eben migrierte Kopie gern kurz fest. Das
+// Umbenennen vor dem Austausch versucht es deshalb mehrmals und kopiert zur Not; es wirft nie, solange die Kopie lesbar ist.
+test('Austausch: der Name restore-<id> entsteht auch, wenn das Umbenennen zuerst oder immer scheitert', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-tausch-'))
+  try {
+    const staged = path.join(dir, 'mietfuchs.sqlite.kopie-0123456789abcdef')
+    fs.writeFileSync(staged, 'neu')
+    let calls = 0
+    const once = await exchangeName(staged, { pauseMs: 0, rename: (a, b) => { calls++; if (calls === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); fs.renameSync(a, b) } })
+    assert.equal(calls, 2, 'ein zweiter Versuch')
+    assert.equal(path.basename(once), 'mietfuchs.sqlite.restore-0123456789abcdef')
+    assert.equal(fs.readFileSync(once, 'utf8'), 'neu')
+    const again = path.join(dir, 'mietfuchs.sqlite.kopie-fedcba9876543210')
+    fs.writeFileSync(again, 'auch neu')
+    const copied = await exchangeName(again, { pauseMs: 0, rename: () => { throw Object.assign(new Error('perm'), { code: 'EPERM' }) } })
+    assert.equal(path.basename(copied), 'mietfuchs.sqlite.restore-fedcba9876543210')
+    assert.equal(fs.readFileSync(copied, 'utf8'), 'auch neu')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 })

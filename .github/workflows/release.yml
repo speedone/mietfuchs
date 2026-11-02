@@ -606,6 +606,15 @@ jobs:
             dist-desktop/latest.yml
             dist-desktop/*.dmg
           if-no-files-found: error
+      # Der Server-Ordner, wie er in die app.asar kam: Ihn vergleicht „Server-Bündel gegen Quellen“ mit dem Server aus
+      # den Quellen, und der Praxislauf des Umzugs startet ihn. Geprüft wird so das ausgelieferte Bündel, nicht ein
+      # eigener Bau unter Linux.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fenster-server-${{ matrix.ziel }}
+          path: dist-desktop-server
+          if-no-files-found: error
+          retention-days: 7
       - name: Dateien für die automatischen Updates (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -927,12 +936,15 @@ jobs:
   # Ordner und das Backup, Abrechnung und Belege werden verglichen. Im vollen Umfang wie die lange KI-Antwort (Tag,
   # Zeitplan, von Hand, Label „full-check“). Die Programmdateien liegen im Zwischenspeicher der Actions, nie im Repo;
   # Zeit- und Größengrenzen der Downloads setzt das Skript.
+  #
+  # Zweimal: mit dem Server aus den Quellen und mit dem Bündel aus dem Windows-Bau (`--bundle`), so wie es im Fenster
+  # läuft; dort kommen Altformate der db.json und Migrationen aus der einen Datei.
   fenster-umzug:
     name: Umzug ins Programmfenster mit alten Fassungen
-    needs: umfang
+    needs: [umfang, fenster-bauen]
     if: needs.umfang.outputs.vollstaendig == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -948,12 +960,71 @@ jobs:
           key: mietfuchs-alte-fassungen-v1-0.3.1-0.7.1-0.9.0-0.12.0-0.14.1
       - name: Praxislauf
         run: node scripts/fenster-umzug-praxislauf.mjs --cache "$RUNNER_TEMP/alte-fassungen" --out umzug-bericht
+      - uses: actions/download-artifact@v8
+        with:
+          name: fenster-server-win
+          path: buendel-win
+      - name: Praxislauf mit dem Bündel des Fensters
+        # Auch wenn der Lauf aus den Quellen rot war: Ein Befund nur im Bündel soll nicht dahinter verschwinden
+        if: success() || failure()
+        run: node scripts/fenster-umzug-praxislauf.mjs --cache "$RUNNER_TEMP/alte-fassungen" --bundle buendel-win --out umzug-bericht-buendel
       - name: Zusammenfassung
         if: always()
         run: |
           {
             echo "## Umzug ins Programmfenster mit alten Fassungen"
+            echo "### Server aus den Quellen"
             cat umzug-bericht/fenster-umzug.md 2>/dev/null || echo "Kein Bericht entstanden."
+            echo "### Server als Bündel des Fensters (Windows-Bau)"
+            cat umzug-bericht-buendel/fenster-umzug.md 2>/dev/null || echo "Kein Bericht entstanden."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Rechnet das ausgelieferte Bündel des Servers wie die Quellen? (#517, scripts/bundle-vergleich.mjs) Im Fenster
+  # läuft der Server als eine Datei aus rolldown; alle Tests laufen auf den Quellen. Der Job nimmt die Server-Ordner
+  # aus dem Windows- und dem macOS-Bau, startet je einen Server daraus und einen aus den Quellen auf demselben
+  # erfundenen Bestand (perf-stock.mjs, Stufe s) und vergleicht Abrechnung, Exporte, Anschreiben, Verbrauch,
+  # Mietkonto, Steuer und Heizkostenabrechnungen für jedes Jahr byteweise, danach dasselbe nach dem Einspielen eines
+  # alten Backups mit db.json. **In jedem Prüfumfang**, wie Bau und Prüfung des Fensters: Das Bündel ändert sich mit
+  # jeder Änderung an Server, shared/ oder Abhängigkeiten und wird mit jedem Release ausgeliefert, und eine
+  # Abweichung wäre eine falsche Zahl in der Abrechnung. Er kostet einen Linux-Runner für rund zwei Minuten und
+  # läuft neben „Programmfenster prüfen auf …“, das länger braucht; der Lauf wird dadurch nicht länger.
+  bundle-vergleich:
+    name: Server-Bündel gegen Quellen
+    needs: fenster-bauen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: npm install
+      - uses: actions/download-artifact@v8
+        with:
+          name: fenster-server-win
+          path: buendel-win
+      - uses: actions/download-artifact@v8
+        with:
+          name: fenster-server-mac
+          path: buendel-mac
+      - name: Bestand anlegen
+        run: node scripts/perf-stock.mjs --size s --out "$RUNNER_TEMP/bestand" > /dev/null
+      - name: Bündel aus dem Windows-Bau vergleichen
+        run: node scripts/bundle-vergleich.mjs --bundle buendel-win --stock "$RUNNER_TEMP/bestand" --out bericht-win
+      - name: Bündel aus dem macOS-Bau vergleichen
+        if: success() || failure()
+        run: node scripts/bundle-vergleich.mjs --bundle buendel-mac --stock "$RUNNER_TEMP/bestand" --out bericht-mac
+      - name: Zusammenfassung
+        if: always()
+        run: |
+          {
+            echo "## Server-Bündel gegen Quellen"
+            echo "### Windows-Bau"
+            cat bericht-win/bundle-vergleich.md 2>/dev/null || echo "Kein Bericht entstanden."
+            echo "### macOS-Bau"
+            cat bericht-mac/bundle-vergleich.md 2>/dev/null || echo "Kein Bericht entstanden."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Der Browserlauf (#340, Schritt 11 von #346): jede Seite der Navigation in Chromium, Firefox und
@@ -1025,7 +1096,7 @@ jobs:
   # entscheidet PR 4 mit Anleitung und Release-Notes.
   veroeffentlichen:
     name: Ans Release anhängen
-    needs: [pruefen, distributionen, pakete, slow-ai-answer, browserlauf, browserlauf-ausnahmen, fenster-pruefen, fenster-umzug, updater-pruefen]
+    needs: [pruefen, distributionen, pakete, slow-ai-answer, browserlauf, browserlauf-ausnahmen, fenster-pruefen, fenster-umzug, bundle-vergleich, updater-pruefen]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:
@@ -1099,6 +1170,9 @@ jobs:
       FENSTER_PORT: '17517'
       NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
       CI: 'true'
+      # Ohne diese Schranke gibt das ausgelieferte Fenster CI, NKA_UPDATE_URL und NKA_TEST_* nicht an den Server
+      # weiter (desktop/src/testGrips.js)
+      MIETFUCHS_TESTGRIFFE: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -1149,7 +1223,7 @@ jobs:
           $url = "http://127.0.0.1:$env:FENSTER_PORT"
 
           try {
-            # Über den Befehlsalias starten: Nur so erbt das Fenster CI und NKA_UPDATE_URL und reicht
+            # Über den Befehlsalias starten: Nur so erbt das Fenster CI, MIETFUCHS_TESTGRIFFE und NKA_UPDATE_URL und reicht
             # sie an den Server weiter (serverEnv in desktop/src/server.js). Beide laufen trotzdem als
             # Store-App, im Paket und mit dessen Umlenkungen.
             $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\mietfuchs.exe'
@@ -1224,7 +1298,7 @@ jobs:
             $funde = Invoke-RestMethod -Uri "$url/api/relocation/candidates"
             $fund = $funde.candidates | Where-Object { $_.dataDir -eq $altDaten }
             if (-not $fund) { throw "Der Ordner aus der Ortsdatei fehlt: $($funde | ConvertTo-Json -Compress -Depth 4)" }
-            $ergebnis = Invoke-RestMethod -Method Post -Uri "$url/api/relocation/adopt" -ContentType 'application/json' -Body (@{ dataDir = $altDaten } | ConvertTo-Json)
+            $ergebnis = Invoke-RestMethod -Method Post -Uri "$url/api/relocation/adopt" -ContentType 'application/json' -Body (@{ id = $fund.id } | ConvertTo-Json)
             "Umzug in die Store-Fassung: $($ergebnis.counts | ConvertTo-Json -Compress)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
             # Mehrere Objekte: Mietverhältnisse je Objekt zählen (ohne ?property= antwortet die Route mit 400)
             $anzahl = 0
