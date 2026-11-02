@@ -1132,6 +1132,11 @@ jobs:
         with:
           name: fenster-mac
           path: dist-desktop
+      # Der Server des Fensters einzeln (er steckt sonst gepackt in der app.asar), für die Prüfung bei VirusTotal
+      - uses: actions/download-artifact@v8
+        with:
+          name: fenster-server-win
+          path: dist-server
       # Die Update-Beschreibung signieren (#551, scripts/sign-update-manifest.mjs), bevor irgendetwas ans Release geht: Ohne
       # gültige Signatur lädt kein Programmfenster das Update. Fehlt das Secret oder gehört der Schlüssel zu keinem im
       # Programm (desktop/src/updateManifest.js), scheitert der Schritt, und es entsteht kein halbes Release. Das Secret
@@ -1166,6 +1171,20 @@ jobs:
           sha256sum "${files[@]}" | sed -E 's#^([0-9a-f]{64})  .*/#\1  #' > pruefsummen/SHA256SUMS.txt
           if [ "$(awk '{print $2}' pruefsummen/SHA256SUMS.txt | sort | uniq -d)" != "" ]; then echo "Zwei Dateien mit demselben Namen"; exit 1; fi
           cat pruefsummen/SHA256SUMS.txt
+      # Vor dem Anhängen bei VirusTotal (scripts/virustotal-check.mjs): v0.15.1 hielten Bitdefender und sieben Scanner mit
+      # dessen Engine für Schadsoftware, gemerkt hat es ein Nutzer. Meldet ein Scanner „malicious“, bricht der Job ab, und
+      # es entsteht nicht einmal ein Entwurf. Ohne Secret oder bei einem Ausfall des Dienstes nur eine Warnung.
+      - name: Bei VirusTotal prüfen
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+          # „warnen“ nur für einen gemeldeten und geprüften Fehlalarm, danach wieder entfernen
+          VT_PRUEFUNG: ${{ vars.VT_PRUEFUNG }}
+        run: >-
+          node scripts/virustotal-check.mjs
+          dist-server/server/server.mjs
+          dist-desktop/Mietfuchs-Setup-*.exe
+          dist-desktop/Mietfuchs-*-apple-silicon.dmg
+          dist-desktop/Mietfuchs-*-intel.dmg
       # Erst als Entwurf (v0.15.0): Im Repo sind Releases unveränderlich, nach dem Veröffentlichen nimmt GitHub keine
       # Datei mehr an. 0.15.0 erschien deshalb ohne latest.yml und ohne Herkunftsnachweis. Alles kommt jetzt an den
       # Entwurf, den niemand sieht, auch latest.yml (die Reihenfolge aus K5 ergibt sich damit von selbst: Kein Fenster

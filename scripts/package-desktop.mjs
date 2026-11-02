@@ -220,9 +220,23 @@ export async function bundleServer(stageDir) {
   // Ein eingebetteter dynamischer Import (die Migrationen) nennt das Bündel selbst
   const outside = [...chunk.imports, ...chunk.dynamicImports].filter((/** @type {string} */ id) => id !== chunk.fileName && !allowedExternal(id))
   if (outside.length) throw new Error(`Das Bündel des Servers lädt von außen: ${outside.join(', ')}`)
+  const loader = loaderLikeImports(fs.readFileSync(file, 'utf8'))
+  if (loader.length) throw new Error(`Das Bündel des Servers enthält ${loader.join(', ')}. Im Fenster wird es nie gebraucht (IN_BUNDLE in openBrowser und notifyDesktop, server/src/index.ts); Virenscanner halten das Bündel sonst für einen Loader (v0.15.1)`)
   const licenses = path.join(stageDir, SERVER_LICENSES)
   fs.writeFileSync(licenses, licenseText(Object.keys(chunk.modules)))
   return { file, licenses, modules: Object.keys(chunk.modules).length }
+}
+
+/**
+ * Module, die im Bündel des Fensters gar nicht vorkommen dürfen. Bei v0.15.1 hielten Bitdefender und sieben Scanner mit
+ * dessen Engine (GT:JS.PolinRider) sowie HP Wolf Security server.mjs für einen Loader, weil es gleich zu Beginn
+ * child_process importierte und losgelöste Prozesse startete. Gebraucht wurde es nur für Browser und Desktop-Meldung der
+ * Programmdatei; im Bündel fallen beide weg (IN_BUNDLE in openBrowser und notifyDesktop).
+ * @param {string} code
+ * @returns {string[]}
+ */
+export function loaderLikeImports(code) {
+  return ['child_process'].filter((name) => code.includes(name))
 }
 
 /**

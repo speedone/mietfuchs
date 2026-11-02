@@ -1,0 +1,36 @@
+# Wöchentlicher Nachscan des neuesten Release bei VirusTotal (Installer und Abbilder, dieselben wie beim Release) (scripts/virustotal-check.mjs --hash). Virenscanner ändern
+# ihre Erkennung laufend; ein Release, das beim Veröffentlichen sauber war, kann Wochen später als Schadsoftware gelten
+# (v0.15.1: GT:JS.PolinRider). Ohne Download: Die Prüfsummen stehen in SHA256SUMS.txt am Release, VirusTotal analysiert
+# die ihm bekannten Dateien neu. Ein Treffer macht den Lauf rot, und GitHub benachrichtigt.
+name: VirusTotal
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nachscan:
+    name: Neuestes Release bei VirusTotal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Prüfsummen des neuesten Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir pruefsummen
+          grep -E '  (Mietfuchs-Setup-.*\.exe|Mietfuchs-.*\.dmg)$' pruefsummen/SHA256SUMS.txt \
+            | awk '{print $1":"$2}' > pruefsummen/ziele.txt
+          cat pruefsummen/ziele.txt
+      - name: Bei VirusTotal neu prüfen
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: node scripts/virustotal-check.mjs --hash $(cat pruefsummen/ziele.txt)
