@@ -603,7 +603,11 @@ test('Praxistest K: Fortschritt und Abbrechen auch ohne Testgriff, der Server bl
   try {
     const adopting = adopt(s.base, old.data)
     let between: { files: number, totalFiles: number } | null = null
-    for (let i = 0; i < 2000 && !between; i++) {
+    // Nach Zeit begrenzt, nicht nach Anzahl: Vor der Kopie liest der Server die 600 Belege ein, und auf einer langsamen
+    // Maschine (Windows mit Virenscanner) dauert das länger als 2000 sofort beantwortete Abfragen (Durchsicht)
+    const deadline = Date.now() + 30_000
+    while (!between && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2))
       const p = await s.api<{ phase: string, files: number, totalFiles: number }>('/api/relocation/progress')
       // Mitten in den Belegen, nicht erst bei der Datenbank am Ende (deren Prüfsumme gab den Server schon vorher frei)
       if (p.phase === 'copy' && p.files >= 10 && p.files < p.totalFiles / 2) between = p
