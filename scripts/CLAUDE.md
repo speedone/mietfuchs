@@ -484,6 +484,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Alles geht an einen Entwurf (auch `latest.yml`), dann der Nachweis, zuletzt „Release veröffentlichen“; danach nimmt
   GitHub keine Datei mehr an (so fehlten an v0.15.0 `latest.yml` und der Nachweis). Wer eine Datei ans Release
   hinzufügt, trägt ihr Muster in beide Listen ein.
+- **Alte Fassungen für den Praxislauf** liegen im Zwischenspeicher von main ([alte-fassungen.yml](../.github/workflows/alte-fassungen.yml),
+  täglich, `--nur-laden`), denn Pull Requests teilen ihren Speicher nicht, und jeder Download von den Releases zählt
+  auf der Website mit. Kommt eine Fassung dazu, Schlüssel in beiden Workflows und `VERSIONS` im Skript zusammen ändern.
 - **Bei jeder Nebenversion kommt ein Eintrag in `RELEASE_STEPS`** ([server/src/db/releaseSteps.ts](../server/src/db/releaseSteps.ts),
   `{ version: 'x.y.0', steps: <Zahl der Dateien server/drizzle/*.sql> }`, #318): Daraus nennt der Verlauf die Sicherung
   „Vor dem Update auf Version …“. Beim Tag prüft es der Schritt „Rechtsregister geprüft?“ in release.yml

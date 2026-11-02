@@ -1,0 +1,46 @@
+# Die alten Programmdateien für den Praxislauf „Umzug ins Programmfenster mit alten Fassungen“ (release.yml,
+# Job fenster-umzug) im Zwischenspeicher von main. Pull Requests und Tags dürfen den Speicher von main lesen, ihre
+# eigenen aber nicht teilen: Ohne diesen Job lud jeder Pull Request mit full-check die fünf Linux-Archive neu von den
+# Releases, und jeder Lauf zählte als Download (bis 02.11.2026 rund 30 je Fassung). Der tägliche Lauf hält den
+# Speicher warm, GitHub verwirft ihn sonst nach sieben Tagen ohne Zugriff.
+#
+# Schlüssel und Pfad müssen genau denen in release.yml entsprechen (Test „Alte Fassungen: …“ in
+# workflow-store.test.ts).
+name: Alte Fassungen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/fenster-umzug-praxislauf.mjs
+      - .github/workflows/alte-fassungen.yml
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  laden:
+    name: Alte Fassungen im Zwischenspeicher
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Alte Programmdateien aus dem Zwischenspeicher
+        id: speicher
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/alte-fassungen
+          key: mietfuchs-alte-fassungen-v1-0.3.1-0.7.1-0.9.0-0.12.0-0.14.1
+      # Das Skript liest ZIP-Dateien mit adm-zip aus server/node_modules
+      - name: Abhängigkeiten des Servers
+        if: steps.speicher.outputs.cache-hit != 'true'
+        run: npm --prefix server ci --ignore-scripts
+      - name: Fehlende Fassungen laden
+        if: steps.speicher.outputs.cache-hit != 'true'
+        run: node scripts/fenster-umzug-praxislauf.mjs --cache "$RUNNER_TEMP/alte-fassungen" --nur-laden

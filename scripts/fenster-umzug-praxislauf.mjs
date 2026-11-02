@@ -20,6 +20,7 @@
 //   node scripts/fenster-umzug-praxislauf.mjs                       (alle Fassungen)
 //   node scripts/fenster-umzug-praxislauf.mjs --nur 0.3.1           (eine Fassung)
 //   node scripts/fenster-umzug-praxislauf.mjs --cache <Ordner> --out <Ordner>
+//   node scripts/fenster-umzug-praxislauf.mjs --cache <Ordner> --nur-laden     (nur die Fassungen in den Zwischenspeicher)
 //   node scripts/fenster-umzug-praxislauf.mjs --bundle dist-desktop-server   (der Server von heute als Bündel des
 //                                                                           Fensters, aus package-desktop.mjs server)
 //
@@ -59,6 +60,8 @@ const option = (name) => {
   return i >= 0 ? args[i + 1] : undefined
 }
 const only = option('--nur')
+// Nur laden (alte-fassungen.yml füllt damit den Zwischenspeicher auf main, den Pull Requests lesen dürfen)
+const onlyDownload = args.includes('--nur-laden')
 const CACHE = path.resolve(option('--cache') ?? path.join(os.tmpdir(), 'mietfuchs-alte-fassungen'))
 const OUT = option('--out') ? path.resolve(/** @type {string} */ (option('--out'))) : null
 // Der Server-Ordner des Fensters (dist-desktop-server); ohne Angabe läuft der Server von heute aus den Quellen
@@ -505,6 +508,10 @@ async function main() {
   if (BUNDLE && !fs.existsSync(path.join(BUNDLE, 'server', 'server.mjs'))) {
     console.error(`${path.join(BUNDLE, 'server', 'server.mjs')} fehlt. Zuerst: npm run build && node scripts/package-desktop.mjs server`)
     process.exit(2)
+  }
+  if (onlyDownload) {
+    for (const version of VERSIONS) console.log(`v${version}: ${await download(version)}`)
+    return
   }
   console.log(BUNDLE ? `Server von heute: Bündel ${BUNDLE}` : 'Server von heute: aus den Quellen')
   for (const version of only ? [only] : VERSIONS) {
