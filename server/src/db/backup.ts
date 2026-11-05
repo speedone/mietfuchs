@@ -22,6 +22,7 @@ import { sql } from 'drizzle-orm'
 import { APP_VERSION } from '../version.ts'
 import { applyMigrations, connect, loadMigrations } from './client.ts'
 import { crossPropertyViolations, orphanPeriodKeys } from './repository.ts'
+import { roomViolations } from './rooms.ts'
 import { heatingPlantViolations, straightenHeatingPlants } from './heating.ts'
 import { clearJournal } from './journal.ts'
 import { germanDate, integrityProblem, messageOf, unknownSteps, type OpenedDatabase } from './open.ts'
@@ -159,10 +160,17 @@ export async function archiveDatabaseProblem(file: string, source: DatabaseSourc
     }
     // Ein Verweis über die Grenze eines Objekts ginge in keiner Abrechnung auf. Über die
     // Oberfläche entsteht er nicht; in einem Archiv kann er stehen, etwa von Hand bearbeitet.
+    // Die Befunde zu Zimmern einer Wohnung (#573) gehören dazu, liegen aber meist in einem Objekt; die Einleitung nennt
+    // deshalb, was wirklich vorliegt (Gesamtdurchsicht D1).
     const kreuz = await crossPropertyViolations(connection.db)
     if (kreuz.length > 0) {
+      const rooms = new Set(await roomViolations(connection.db))
+      const roomCount = kreuz.filter((x) => rooms.has(x)).length
+      const what = roomCount === 0 ? 'Verweise zwischen verschiedenen Objekten'
+        : roomCount === kreuz.length ? 'Angaben zu Zimmern einer Wohnung'
+        : 'Verweise zwischen verschiedenen Objekten und Angaben zu Zimmern einer Wohnung'
       return (
-        `Die Datenbank ${w.inThis} enthält Verweise zwischen verschiedenen Objekten, die in ` +
+        `Die Datenbank ${w.inThis} enthält ${what}, die in ` +
         `keiner Abrechnung aufgingen, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten ` +
         `sind unverändert. ${kreuz.slice(0, 3).join(' ')}`
       )

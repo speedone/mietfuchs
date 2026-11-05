@@ -3,7 +3,7 @@
 import { calendarPeriod } from '../../shared/period.ts'
 import { expect, test } from 'vitest'
 import type { CostItem } from './types'
-import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from './cockpitChecks'
+import { participatingUnits, cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from './cockpitChecks'
 
 const item = (category: string, patch: Partial<CostItem>): CostItem => ({
   id: category, propertyId: 'p', period: calendarPeriod(2025), category, description: category, amountCents: 100, key: 'area', ...patch,
@@ -122,4 +122,10 @@ test('Unterzeile nach Abschluss und Versand nennt den Stand und die offenen Punk
   for (const text of [cockpitSubtitle({ loaded: true, fresh: false, open: ['x'], closed: true }), cockpitSubtitle({ loaded: true, fresh: false, open: ['x'], closed: true, sentAt: '2026-03-02' })]) {
     expect(text).not.toMatch(/versandfertig/)
   }
+})
+
+test('Beteiligte Wohnungen: eine Wohnung mit Zimmern zählt nicht neben ihren Zimmern (#573, Gesamtdurchsicht D4)', () => {
+  const u = (id: string, participates: boolean, parentUnitId?: string) => ({ id, participates, ...(parentUnitId ? { parentUnitId } : {}) })
+  const list = [u('a', true), u('wg', true), u('z1', true, 'wg'), u('z2', true, 'wg'), u('leer', false)]
+  expect(participatingUnits(list).map((x) => x.id)).toEqual(['a', 'z1', 'z2'])
 })

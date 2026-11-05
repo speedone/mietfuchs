@@ -25,6 +25,10 @@ function readRow(item: unknown, h: Span, propertyUnits: readonly Unit[], plant: 
   const unit = typeof unitId === 'string' ? propertyUnits.find((u) => u.id === unitId) : undefined
   if (!unit) throw new HeatingError(400, 'Diese Wohnung gibt es in diesem Objekt nicht (mehr). Bitte laden Sie die Seite neu; gespeichert wurde nichts.')
   if (!servesUnit(plant, unit)) throw new HeatingError(400, `Die Wohnung „${unit.name}“ hängt nicht an dieser Heizanlage. Gespeichert wurde nichts.`)
+  // Eine Wohnung mit Zimmern (#573) ist in keiner Verteilbasis; ihre Werte verwürfe die Rechnung (Gesamtdurchsicht D3).
+  if (propertyUnits.some((u) => u.parentUnitId === unit.id)) {
+    throw new HeatingError(400, `Die Wohnung „${unit.name}“ hat Zimmer: Die Werte des Ablesedienstes gehören an die Zimmer, nicht an die Wohnung. Gespeichert wurde nichts.`)
+  }
   const from = raw(item, 'from')
   const to = raw(item, 'to')
   if (typeof from !== 'string' || typeof to !== 'string' || !ISO_DATE.test(from) || !ISO_DATE.test(to) || from > to) {

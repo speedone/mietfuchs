@@ -284,6 +284,9 @@ test('Ein Backup mit Zimmer im Zimmer oder Mietverhältnis an der Wohnung mit Zi
     await db.insert(tenancies).values({ id: 't', unitId: 'w', tenantName: 'Eins', persons: 1, start: '2025-01-01', end: null })
   })
   assert.ok(befund)
-  assert.match(befund, /„Zimmer 2“ liegt in „Zimmer 1“, die selbst ein Zimmer ist/)
+  assert.match(befund, /„Zimmer 2“ liegt in „Zimmer 1“, das selbst ein Zimmer ist/)
   assert.match(befund, /Wohnung „Wohnung“ hat Zimmer, hat aber ein Mietverhältnis/)
+  // Gesamtdurchsicht D1: Die Befunde liegen in einem Objekt; die Einleitung spricht nicht von verschiedenen Objekten.
+  assert.doesNotMatch(befund, /verschiedenen Objekten/)
+  assert.match(befund, /Zimmer/)
 })

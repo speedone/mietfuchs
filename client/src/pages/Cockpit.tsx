@@ -6,7 +6,7 @@ import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
 import { rentedWithin, usageAt } from '../../../shared/unitUsage.ts'
-import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
+import { participatingUnits, cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
 import { coverageCheck, filesByItem, partsBySource } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
@@ -118,7 +118,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
   const sourceParts = useMemo(() => partsBySource(costItems), [costItems])
   const itemsSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
   const invoiceFileCount = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
-  const participating = useMemo(() => units.filter((u) => u.participates), [units])
+  const participating = useMemo(() => participatingUnits(units), [units])
 
   // Vorjahresvergleich je Kostenart (wie in der Übersicht)
   const notable = useMemo(() => {

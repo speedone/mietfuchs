@@ -370,3 +370,16 @@ test('Durchsicht #241 Runde 2: In einer begonnenen Heizperiode gilt eine neue Wa
       heatingError(400, /§ 6 Abs\. 4/))
   })
 })
+
+test('Ablesedienst: eine Wohnung mit Zimmern bekommt keine Zeile, die Zimmer schon (#573, Gesamtdurchsicht D3)', async () => {
+  await withDatabase(async (opened) => {
+    await ablesedienst(opened)
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'w', { propertyId: 'objekt-1', name: 'WG', areaM2: 80, participates: false })
+      await createEntity(db, 'units', 'z1', { propertyId: 'objekt-1', name: 'Zimmer 1', areaM2: 15, participates: true, parentUnitId: 'w' })
+    })
+    await assert.rejects(opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [zeile('w', '2025-01-01', '2025-12-31', 1)] })),
+      heatingError(400, /„WG“ hat Zimmer.*Gespeichert wurde nichts/))
+    assert.equal((await opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [zeile('z1', '2025-01-01', '2025-12-31', 1)] })))?.length, 1)
+  })
+})
