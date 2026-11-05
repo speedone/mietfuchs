@@ -5855,6 +5855,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // warum keine Basis da ist (der Aufrufer meldet ihn).
     // `outsideRooms` (#573, nur beim Einheiten-Schlüssel): Zimmer einer Wohnung, die mit einem anderen Zimmer in der Basis
     // liegt, selbst aber nicht; ihr Gewicht bleibt beim Vermieter (der Aufrufer bucht es als außerhalb und nennt es).
+    // Die übrigen Zimmer der Wohnungen, von denen ein Zimmer unter `members` ist, selbst aber nicht darunter (#573): Beim
+    // Schlüssel „Einheiten“ und bei der Gemeinschaft nach Wohneinheiten zählt die Wohnung einmal, ihr Teil wird auf alle
+    // Zimmer geteilt, und der Teil eines Zimmers außerhalb bleibt beim Vermieter.
+    const roomsBeside = (members: SnapshotUnit[]) => {
+      const ids = new Set(members.map((u) => u.id))
+      return [...new Set(members.flatMap((u) => flatIdOfRoom.get(u.id) ?? []))].flatMap((f) => (roomsOfFlat.get(f) ?? []).filter((r) => !ids.has(r.id)))
+    }
     const keyRaws = (key: 'area' | 'units' | 'persons', amountRaw: number, basis: typeof fullBasis):
       { targets: { t: TenancyWithUnit; raw: number; basisText: string }[]; selfRaw: number; outsideRooms: { unit: SnapshotUnit; raw: number }[] } | { noBasis: string } => {
       const targets: { t: TenancyWithUnit; raw: number; basisText: string }[] = []
@@ -5885,10 +5892,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : amountRaw * (basis.selfArea / basis.basisArea)
       } else if (key === 'units' && basis.basisUnits.length > 0 && unitSegs) {
         // Geteilt wird immer auf alle Zimmer der Wohnung (#573), auch im Abschnitt: Zimmer außerhalb zählen mit ihrem Gewicht.
-        const roomsBeside = (members: SnapshotUnit[]) => {
-          const ids = new Set(members.map((u) => u.id))
-          return [...new Set(members.flatMap((u) => flatIdOfRoom.get(u.id) ?? []))].flatMap((f) => (roomsOfFlat.get(f) ?? []).filter((r) => !ids.has(r.id)))
-        }
         const r = segmented(unitSegs, basis.basisUnits, unitWeight, true, amountRaw, basis.partTenancies, roomsOfFlat.size > 0 ? roomsBeside : undefined)
         for (const t of basis.partTenancies) {
           const e = r.tenants.get(t.id)
@@ -6030,11 +6033,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (!eb || !(eb.total > 0)) {
         noBasis('die Angaben aus der Abrechnung der Gemeinschaft fehlen (Maßstab, Summe in der Anlage, Gesamtkosten)')
       } else {
+        // Zimmer einer Wohnung (#573, Gesamtdurchsicht C1): MEA und Fläche tragen sie aus der Sicht der Rechnung (`roomView`),
+        // bei „Wohneinheiten“ ihr Gewicht, die Wohnung zählt einmal. Zimmer außerhalb der Basis neben einem darin zählen
+        // dort mit, ihr Teil bleibt beim Vermieter (`beside`). Ohne Zimmer ist `beside` leer und keine Zahl ändert sich.
         const valueOf = (u: SnapshotUnit): number =>
-          eb.measure === 'mea' ? Math.max(0, Number(u.mea) || 0) : eb.measure === 'area' ? Math.max(0, u.areaM2 || 0) : 1
-        const own = b.basisUnits.reduce((a, u) => a + valueOf(u), 0)
+          eb.measure === 'mea' ? Math.max(0, Number(u.mea) || 0) : eb.measure === 'area' ? Math.max(0, u.areaM2 || 0) : unitWeight(u)
+        const beside = eb.measure === 'units' && roomsOfFlat.size > 0 ? roomsBeside(b.basisUnits) : []
+        const own = b.basisUnits.reduce((a, u) => a + valueOf(u), 0) + beside.reduce((a, u) => a + valueOf(u), 0)
         // Verteilt wird nach dem Anteil der Tage in der Abrechnungseinheit (#259); ohne Wechsel genau `own`.
-        const ownIn = b.basisUnits.reduce((a, u) => a + valueOf(u) * inShare(u), 0)
+        const ownIn = b.basisUnits.reduce((a, u) => a + valueOf(u) * inShare(u), 0) + beside.reduce((a, u) => a + valueOf(u), 0)
         if (!(own > 0)) {
           noBasis(eb.measure === 'mea' ? 'für die Wohnungen sind keine Miteigentumsanteile hinterlegt' : 'für die Wohnungen ist keine Wohnfläche hinterlegt')
         } else {
@@ -6069,7 +6076,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const suffix = ` · Kosten der Gemeinschaft ${fmtCents(eb.totalCents)}${applied}`
           const label = MEASURE_LABELS[eb.measure]
           // Je Abschnitt, wenn eine Einheit zwischen drinnen und außerhalb wechselt (#259, S1).
-          const r = segs ? segmented(segs, b.basisUnits, valueOf, false, item.amountCents, b.partTenancies) : null
+          const r = segs ? segmented(segs, b.basisUnits, valueOf, false, item.amountCents, b.partTenancies, eb.measure === 'units' && roomsOfFlat.size > 0 ? roomsBeside : undefined) : null
+          if (r) for (const x of r.outside.values()) toRoomOutside(x.unit, x.raw)
+          else for (const u of beside) toRoomOutside(u, item.amountCents * (valueOf(u) / ownIn))
           for (const t of b.partTenancies) {
             const e = r ? r.tenants.get(t.id) : undefined
             if (r && !e) continue
@@ -6738,9 +6747,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (roundHalfAway(raw) === 0) continue
       const flat = unitById.get(flatIdOfRoom.get(unit.id) ?? '')
       const inHouse = basisUnits.some((u) => u.id === unit.id)
+      // Der Rat nach dem Grund (Gesamtdurchsicht M1): nicht unter den Teilnehmern, nur zeitweise in der Abrechnungseinheit
+      // (Nutzungswechsel) oder ganz außerhalb.
+      const notParticipant = inHouse && item.participantUnitIds != null && !item.participantUnitIds.includes(unit.id)
+      const partly = inHouse && !notParticipant
       warn('rooms.outside-basis',
-        `„${item.description}“: ${unit.name} gehört nicht zur Verteilbasis dieser Position. Geteilt wird trotzdem auf alle Zimmer der Wohnung${flat ? ` ${flat.name}` : ''}; der Teil dieses Zimmers von ${fmtCents(roundHalfAway(raw))} bleibt bei Ihnen und geht nicht an die übrigen Zimmer. ` +
-          (inHouse ? 'Soll der Mieter des Zimmers ihn tragen, nehmen Sie das Zimmer in die Teilnehmer der Position auf.' : 'Gehört das Zimmer zur Abrechnungseinheit, ändern Sie seine Nutzung in den Stammdaten.'),
+        `„${item.description}“: ${unit.name} gehört ${partly ? 'zeitweise ' : ''}nicht zur Verteilbasis dieser Position. Geteilt wird trotzdem auf alle Zimmer der Wohnung${flat ? ` ${flat.name}` : ''}; der Teil dieses Zimmers von ${fmtCents(roundHalfAway(raw))} bleibt bei Ihnen und geht nicht an die übrigen Zimmer. ` +
+          (notParticipant ? 'Soll der Mieter des Zimmers ihn tragen, nehmen Sie das Zimmer in die Teilnehmer der Position auf.'
+            : partly ? 'Das Zimmer ist laut seiner Nutzung in den Stammdaten nicht den ganzen Zeitraum in der Abrechnungseinheit; stimmt das nicht, ändern Sie dort den Nutzungswechsel.'
+            : 'Gehört das Zimmer zur Abrechnungseinheit, ändern Sie seine Nutzung in den Stammdaten.'),
         unitSubject([unit]))
     }
     const booked = targets.map((x) => bookable(x.t))

@@ -332,6 +332,23 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     expect(externalHint(form({ ...angaben, amount: '620,00' }), wohnungen)).not.toMatch(/weicht/)
   })
 
+  test('Gemeinschaft mit Zimmern (#573, Gesamtdurchsicht C1): die Wohnung zählt einmal, wie in der Rechnung', () => {
+    const wg = [
+      unit('a', { mea: 60, areaM2: 60 }),
+      unit('wg', { mea: 80, areaM2: 80 }),
+      unit('z1', { areaM2: 12, parentUnitId: 'wg' }),
+      unit('z2', { areaM2: 12, parentUnitId: 'wg' }),
+      unit('z3', { areaM2: 16, parentUnitId: 'wg' }),
+    ]
+    const mea = { key: 'external' as const, externalMeasure: 'mea' as const, externalTotal: '1000', externalTotalAmount: '1.000,00', amount: '140,00' }
+    expect(externalHint(form(mea), wg)).toBe('Rechnerischer Anteil: 140 von 1.000 MEA = 140,00 €')
+    const units = { key: 'external' as const, externalMeasure: 'units' as const, externalTotal: '20', externalTotalAmount: '1.400,00', amount: '140,00' }
+    expect(externalHint(form(units), wg)).toMatch(/^Rechnerischer Anteil: 2 von 20 .* = 140,00 €$/)
+    expect(externalHint(form({ ...units, participants: ['a', 'z1', 'z3'] }), wg)).toMatch(/^Rechnerischer Anteil: 2 von 20 .* = 140,00 €$/)
+    const area = { key: 'external' as const, externalMeasure: 'area' as const, externalTotal: '2000', externalTotalAmount: '2.000,00', amount: '140,00' }
+    expect(externalMismatch(form(area), wg)).toBe(false)
+  })
+
   test('Gemeinschaft: ein Teil einer aufgeteilten Rechnung wird am gekürzten Anteil gemessen (#454)', () => {
     // 2.000 € · 50/1.000 = 100 €, davon 184 von 214 Tagen im Zeitraum: 85,98 €.
     const wohnungen = [unit('u1', { mea: 50 })]

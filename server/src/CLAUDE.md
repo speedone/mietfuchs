@@ -842,7 +842,8 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Zimmerflächen, die ganze Wohnung mit Küche, Bad und Flur zählt so genau einmal) und den Namen „<Zimmer> in der Wohnung <Wohnung>“
   (`roomName`); die Wohnung selbst steht in keiner Verteilbasis (Fläche 0, `participates` und `selfUsed` false), nur ihre Kennung bleibt
   für die Zähler. Ohne `parentUnitId` ist die Sicht der Bestand selbst, keine Zahl wandert. **Der Schlüssel „Einheiten“ zählt die Wohnung
-  einmal**, nicht je Zimmer. **Der Zähler der Wohnung** (Kaltwasser, Strom, Sonstiges) misst den Verbrauch der Wohnung, nicht des
+  einmal**, nicht je Zimmer; ebenso „laut Gemeinschaftsabrechnung“ nach Wohneinheiten, und ihre MEA gehen nach dem Verhältnis
+  der Zimmerflächen auf die Zimmer (`roomShares`, die Wohnung trägt 0). **Der Zähler der Wohnung** (Kaltwasser, Strom, Sonstiges) misst den Verbrauch der Wohnung, nicht des
   Zimmers (§ 556a Abs. 1 Satz 2 BGB): Er geht beim Schlüssel `meter` zuerst auf die Wohnung und innerhalb auf **alle** Zimmer nach
   `CostItem.roomSplit` (`area`, Voreinstellung: wirksame Fläche mal Tage; `persons`: Personentage mit Leerstand nach #177), in Mengen,
   das Geld entsteht danach einmal gerundet (#202). Der Teil leerer Tage, ausgenommener Zimmer und Zimmer außerhalb der Basis steht beim

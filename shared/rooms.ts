@@ -8,11 +8,13 @@
 //   die ganze Wohnung mit Küche, Bad und Flur genau einmal) und ihren vollen Namen („Zimmer 1 in der Wohnung …“).
 // - Die Wohnung selbst ist in keiner Verteilbasis: `participates` und `selfUsed` false, Fläche 0, keine Nutzungswechsel.
 //   Ihre Kennung bleibt, denn an ihr hängen die Zähler der Wohnung.
+// - Ihre Miteigentumsanteile (`mea`, Schlüssel „laut Gemeinschaftsabrechnung“) gehen nach derselben Teilung auf die
+//   Zimmer, die Wohnung trägt 0 (Gesamtdurchsicht C1); hat die Wohnung keine, bleibt jedes Zimmer bei seiner Angabe.
 //
 // Ohne `parentUnitId` ist die Sicht der Bestand selbst (dasselbe Feld, kein neues Objekt), damit keine Zahl wandert.
 import type { Unit } from './types.ts'
 
-export type RoomUnit = Pick<Unit, 'id' | 'name' | 'areaM2' | 'participates' | 'selfUsed' | 'usageChanges' | 'parentUnitId'>
+export type RoomUnit = Pick<Unit, 'id' | 'name' | 'areaM2' | 'participates' | 'selfUsed' | 'usageChanges' | 'parentUnitId' | 'mea'>
 
 export function roomName(room: { name: string }, flat: { name: string }): string {
   return `${room.name} in der Wohnung ${flat.name}`
@@ -28,6 +30,13 @@ export function effectiveRoomAreas(flat: Pick<Unit, 'areaM2'>, rooms: readonly P
   if (!(total > 0)) return new Map(rooms.map((r) => [r.id, areaOf(r)]))
   const sum = rooms.reduce((a, r) => a + areaOf(r), 0)
   return new Map(rooms.map((r) => [r.id, sum > 0 ? (total * areaOf(r)) / sum : total / rooms.length]))
+}
+
+// Anteil jedes Zimmers an seiner Wohnung: das Verhältnis der eingetragenen Zimmerflächen (alle 0: zu gleichen Teilen).
+// Dieselbe Teilung wie die wirksame Fläche, und das Gewicht eines Zimmers im Schlüssel „Einheiten“ (calc.ts `unitWeight`).
+export function roomShares(rooms: readonly Pick<Unit, 'id' | 'areaM2'>[]): Map<string, number> {
+  const sum = rooms.reduce((a, r) => a + areaOf(r), 0)
+  return new Map(rooms.map((r) => [r.id, sum > 0 ? areaOf(r) / sum : 1 / rooms.length]))
 }
 
 // Die Sicht der Rechnung. `flatOf` nennt je Zimmer seine Wohnung, **wie sie gespeichert ist** (mit ihrer Fläche und
@@ -62,14 +71,19 @@ export function roomView<U extends RoomUnit>(units: U[]): RoomView<U> {
     const flat = byId.get(flatId)
     if (!flat) continue
     const areas = effectiveRoomAreas(flat, rooms)
-    const shown = rooms.map((r): U => ({ ...r, name: roomName(r, flat), areaM2: areaOf(flat) > 0 ? areas.get(r.id) ?? 0 : r.areaM2 }))
+    const flatMea = typeof flat.mea === 'number' && flat.mea > 0 ? flat.mea : null
+    const shares = roomShares(rooms)
+    const shown = rooms.map((r): U => ({
+      ...r, name: roomName(r, flat), areaM2: areaOf(flat) > 0 ? areas.get(r.id) ?? 0 : r.areaM2,
+      ...(flatMea !== null ? { mea: flatMea * (shares.get(r.id) ?? 0) } : {}),
+    }))
     for (const r of shown) viewed.set(r.id, r)
     for (const r of rooms) {
       flatOf.set(r.id, flat)
       rawArea.set(r.id, areaOf(r))
     }
     roomsOf.set(flatId, shown)
-    viewed.set(flatId, { ...flat, participates: false, selfUsed: false, areaM2: 0, usageChanges: [] })
+    viewed.set(flatId, { ...flat, participates: false, selfUsed: false, areaM2: 0, usageChanges: [], ...(flatMea !== null ? { mea: 0 } : {}) })
   }
   return { units: units.map((u) => viewed.get(u.id) ?? u), flatOf, roomsOf, rawArea }
 }

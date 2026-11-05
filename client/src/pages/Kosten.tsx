@@ -1398,7 +1398,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             )}
             {/* #98: Bezugszähler und verteilter Rest; ohne Wahl wie bisher („tragen Sie“). */}
             {showsMeterRest(form) && (
-              <MeterRestFields form={form} meters={meters} units={units} onChange={setForm} field={formErrors.field('meterRest')} />
+              <MeterRestFields form={form} meters={meters} units={units} allUnits={allUnits} onChange={setForm} field={formErrors.field('meterRest')} />
             )}
             {/* #573: Der Zähler einer Wohnung mit Zimmern geht erst auf die Wohnung, dann nach Fläche oder Personentagen auf die Zimmer. */}
             {showsRoomSplit(form, allUnits, meters) && (

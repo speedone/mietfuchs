@@ -121,3 +121,20 @@ test('Kostenposition: eine gespeicherte Direktzuordnung an die Wohnung bleibt si
   expect(direct.value).toBe('wg')
   expect([...direct.options].map((o) => o.value)).toContain('wg')
 })
+
+// Gesamtdurchsicht I1: Ein Bezugszähler für einen Teil des Hauses belegt die Zähler dahinter vor. Der Zähler der Wohnung
+// steht dort mit ihrem Namen und ist vorbelegt, wenn eines ihrer Zimmer beteiligt ist (sonst `meter.rest-mixed`).
+test('Kostenposition: Bezugszähler für einen Teil des Hauses, der Zähler der Wohnung steht mit Namen dahinter und ist vorbelegt', async () => {
+  meters = [
+    { id: 'm1', propertyId: 'objekt-1', name: 'Wasser WG', unitId: 'wg', type: 'kaltwasser', unit: 'm³' },
+    { id: 'm2', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'eg', type: 'kaltwasser', unit: 'm³' },
+    { id: 'hof', propertyId: 'objekt-1', name: 'Hofzähler', unitId: null, type: 'kaltwasser', unit: 'm³', scope: 'common' },
+  ]
+  await openCostForm()
+  fireEvent.click(await screen.findByRole('radio', { name: /Fläche/ }, SLOW))
+  fireEvent.change(labelled(/Bezugszähler/), { target: { value: 'hof' } })
+  const flatMeter = screen.getByRole('checkbox', { name: 'Wasser WG (WG)' }) as HTMLInputElement
+  expect(flatMeter.checked).toBe(true)
+  expect((screen.getByRole('checkbox', { name: 'Wasser EG (EG)' }) as HTMLInputElement).checked).toBe(true)
+  expect(screen.queryByText(/\(\?\)/)).toBeNull()
+})

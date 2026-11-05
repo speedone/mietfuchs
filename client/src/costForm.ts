@@ -27,6 +27,7 @@ import { allowsSpread, isSpreadYears, spreadOptions, spreadQuestions, spreadRate
 import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
 import { flatIdsWithRooms } from './unitForm'
+import { roomView } from '../../shared/rooms.ts'
 import { allowsContractAnswer, contractTenancies, openWhy } from './contractAgreement'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
@@ -274,9 +275,15 @@ function externalShare(form: ItemForm, units: Unit[], part: PartShare): { own: n
   const total = parseAmountNumber(form.externalTotal)
   const totalCents = parseEuro(form.externalTotalAmount)
   if (total === null || !(total > 0) || totalCents === null) return null
-  const valueOf = (u: Unit) => (form.externalMeasure === 'mea' ? u.mea ?? 0 : form.externalMeasure === 'area' ? u.areaM2 : 1)
+  // Zimmer einer Wohnung (#573, Gesamtdurchsicht C1) wie in der Rechnung: MEA und Fläche aus der Sicht `roomView` (die
+  // Wohnung trägt nichts, die Zimmer ihren Teil), bei „Wohneinheiten“ zählt die Wohnung einmal, sobald eines ihrer
+  // Zimmer dabei ist.
+  const view = roomView(units)
+  const valueOf = (u: Unit) => (form.externalMeasure === 'mea' ? u.mea ?? 0 : form.externalMeasure === 'area' ? u.areaM2 : view.flatOf.has(u.id) ? 0 : 1)
   // Mit Teilnehmern (#105) nur deren Wohnungen, wie in der Abrechnung.
-  const own = basisUnitsOf(units).filter((u) => form.participants === null || form.participants.includes(u.id)).reduce((a, u) => a + valueOf(u), 0)
+  const basis = basisUnitsOf(view.units).filter((u) => form.participants === null || form.participants.includes(u.id))
+  const flats = form.externalMeasure === 'units' ? new Set(basis.flatMap((u) => view.flatOf.get(u.id)?.id ?? [])).size : 0
+  const own = basis.reduce((a, u) => a + valueOf(u), 0) + flats
   if (!(own > 0)) return form.externalMeasure === 'mea' ? 'Für die Wohnungen sind noch keine Miteigentumsanteile hinterlegt (Stammdaten).' : null
   const amount = parseEuro(form.amount)
   return { own, total, expected: Math.round((totalCents * own * (part && 'days' in part ? part.days / part.of : 1)) / total), amount: amount === null ? null : amount + (part?.othersCents ?? 0) }
@@ -1053,10 +1060,12 @@ export function meterRestChoices(form: Pick<ItemForm, 'meterType' | 'meterRest'>
 
 // Bezugszähler wählen (Wert leer: der Hauptzähler). Bei einem anderen ist die Liste dahinter Pflicht; sie wird mit den
 // Zählern der Verteilbasis vorbelegt (Entwurf: Ein Allgemeinstromzähler misst die Wohnungszähler der Mieter nicht, dann
-// haken Sie sie ab). Der neue Bezug fällt aus den Zwischenzählern.
+// haken Sie sie ab). Der neue Bezug fällt aus den Zwischenzählern. Der Zähler einer Wohnung mit Zimmern (#573) gehört dazu,
+// sobald eines ihrer Zimmer in der Verteilbasis liegt, denn er steht für die Zimmer (sonst `meter.rest-mixed`).
 export function withReference(form: ItemForm, id: string, meters: readonly Meter[], units: readonly Unit[]): ItemForm {
   if (!form.meterRest) return form
-  const basis = new Set(restBasisUnits(form, units).map((u) => u.id))
+  const inBasis = restBasisUnits(form, units)
+  const basis = new Set([...inBasis.map((u) => u.id), ...inBasis.flatMap((u) => u.parentUnitId ?? [])])
   const behind = id === '' ? null : meters.filter((m) => usable(m, form.meterType) && m.unitId && basis.has(m.unitId)).map((m) => m.id)
   return { ...form, meterRest: normalized({ ...form.meterRest, referenceMeterId: id === '' ? null : id, behindMeterIds: behind, subMeters: form.meterRest.subMeters.filter((s) => s.meterId !== id) }) }
 }

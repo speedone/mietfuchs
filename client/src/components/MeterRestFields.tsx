@@ -16,16 +16,19 @@ type Props = {
   form: ItemForm
   meters: readonly Meter[]
   units: Unit[]
+  // Alle Einheiten des Objekts für die Namen der Zähler (#573): `units` sind die Empfänger, ohne Wohnung mit Zimmern; ihr
+  // Zähler steht trotzdem in der Liste dahinter und braucht ihren Namen.
+  allUnits?: Unit[]
   onChange: (next: ItemForm) => void
   // Kennung und Meldung aus `useFormError().field('meterRest')`; die Kennung trägt die erste Antwort.
   field?: { id?: string; error?: string; onFix?: () => void }
 }
 
-export default function MeterRestFields({ form, meters, units, onChange, field }: Props) {
+export default function MeterRestFields({ form, meters, units, allUnits, onChange, field }: Props) {
   const name = useId()
   const rest = form.meterRest
   const choice = meterRestChoiceOf(form)
-  const { references, behind, subs } = meterRestChoices(form, meters, units)
+  const { references, behind, subs } = meterRestChoices(form, meters, allUnits ?? units)
   const basisIds = restBasisUnits(form, units).map((u) => u.id)
   const errorId = field?.error ? `${name}-error` : undefined
   const change = (next: ItemForm) => { field?.onFix?.(); onChange(next) }
