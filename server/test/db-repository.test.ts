@@ -458,6 +458,11 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       coll: 'meters', table: meters, id: 'probe-hkv',
       body: { propertyId: 'objekt-1', name: 'Wohnzimmer', unitId: 'u1', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit', ratingFactor: 1.25 },
     },
+    // #98: ein Zähler für einen Teil des Hauses hat keine Wohnung und gehört nicht zur Anlage.
+    {
+      coll: 'meters', table: meters, id: 'probe-teil-des-hauses',
+      body: { propertyId: 'objekt-1', name: 'Allgemeinstrom', unitId: null, type: 'strom', unit: 'kWh', scope: 'common' },
+    },
     {
       coll: 'readings', table: readings,
       body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel', interimFor: '2024-12-30' },

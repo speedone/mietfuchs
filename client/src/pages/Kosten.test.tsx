@@ -24,6 +24,7 @@ const UNITS: Unit[] = [
 // Nur ein Zähler, und zwar „sonstig" - die Konstellation aus der Fehlermeldung.
 const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' }]
 
+let meterList: Meter[] = METERS
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let gets: string[]
 let plants: unknown[] = []
@@ -32,6 +33,7 @@ let costItems: unknown[] = []
 beforeEach(() => {
   sent = []
   gets = []
+  meterList = METERS
   plants = []
   costItems = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -44,7 +46,7 @@ beforeEach(() => {
     const responses: Record<string, unknown> = {
       '/api/properties': [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
       '/api/costItems': costItems,
-      '/api/meters': METERS,
+      '/api/meters': meterList,
       '/api/uploads': [],
       '/api/heating-plants': plants,
     }
@@ -1118,4 +1120,31 @@ test('Verteilung am Teil einer Rechnung über zwei Jahre: kein Satz beim Öffnen
   expect(screen.queryByText(/Bitte tragen Sie das Datum der Zahlung an allen Teilen/)).toBeNull()
   fireEvent.change(field, { target: { value: '2' } })
   expect(await screen.findByText(/Bitte tragen Sie das Datum der Zahlung an allen Teilen/)).toBeTruthy()
+})
+
+// #98: Bezugszähler und Rest im Seitenfenster; gespeichert wird, was die Auswahl zeigt.
+test('Allgemeinverbrauch (#98): nach Personen verteilt, Speichern sendet meterRest', async () => {
+  meterList = [
+    { id: 'haupt', propertyId: 'objekt-1', name: 'Hauptwasser', unitId: null, type: 'kaltwasser', unit: 'm³' },
+    { id: 'w2', propertyId: 'objekt-1', name: 'Wasser OG links', unitId: 'u2', type: 'kaltwasser', unit: 'm³' },
+  ]
+  await openForm()
+  await waitFor(() => expect(select(/Umlageschlüssel/i).querySelector('option[value="meter"]')).toBeTruthy())
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'meter' } })
+  expect(select(/Zählertyp/i).value).toBe('kaltwasser')
+  expect((screen.getByRole('radio', { name: /^tragen Sie/ }) as HTMLInputElement).checked).toBe(true)
+  fireEvent.click(screen.getByRole('radio', { name: /nach Personen/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(sent.length).toBe(1))
+  expect(sent[0]?.body).toMatchObject({ key: 'meter', meterType: 'kaltwasser', meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'persons', unitIds: null, subMeters: [] } })
+})
+
+test('Allgemeinverbrauch (#98): ohne Wahl wie bisher, Speichern sendet null', async () => {
+  meterList = [{ id: 'w2', propertyId: 'objekt-1', name: 'Wasser OG links', unitId: 'u2', type: 'kaltwasser', unit: 'm³' }]
+  await openForm()
+  await waitFor(() => expect(select(/Umlageschlüssel/i).querySelector('option[value="meter"]')).toBeTruthy())
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'meter' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(sent.length).toBe(1))
+  expect(sent[0]?.body).toMatchObject({ key: 'meter', meterRest: null })
 })

@@ -759,3 +759,18 @@ test('#270: Prüfbedingung, die Angabe nur am Abzug ohne Verweis', async () => {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Abschlussdurchsicht von #98, I1: Der Abzug übernimmt auch Bezugszähler und Rest der Stromrechnung; sonst rechnete er nach
+// den Wohnungszählern (oder gar nicht) und die Mieter zahlten den Abzug nicht ab.
+test('Schätzhilfe: der Abzug übernimmt Bezugszähler und Rest der Stromrechnung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', operatingPower: null, key: 'area', heatingPlantId: 'hp' })))
+    await opened.write((db) => createEntity(db, 'meters', 'as', { propertyId: 'objekt-1', name: 'Allgemeinstrom', unitId: null, type: 'strom', unit: 'kWh', scope: 'common' }))
+    const meterRest = { referenceMeterId: 'as', behindMeterIds: [], key: 'area', unitIds: null, subMeters: [] }
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, key: 'meter', meterType: 'strom', meterRest }))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids))
+    if (!b) return assert.fail('keine Anlage')
+    assert.deepEqual([b.deduction.key, b.deduction.meterType, b.deduction.meterRest], ['meter', 'strom', meterRest])
+  })
+})

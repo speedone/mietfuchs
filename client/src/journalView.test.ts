@@ -5,7 +5,7 @@
 // Die Lücken von vor dem Wächter stehen in `BACKLOG`; die Liste darf nur kürzer werden. Wer eine neue Spalte anlegt,
 // gibt ihr eine Beschriftung (#96 PR 2 und #262 PR 1 erweitern den Wächter um ihre Spalten).
 import { describe, expect, test } from 'vitest'
-import { fieldLabel } from './journalView'
+import { fieldLabel, formatValue } from './journalView'
 
 // Gelesen mit node:fs wie in uiRules.test.ts.
 const fsModule = 'node:fs'
@@ -106,5 +106,18 @@ describe('Verlauf: die Verteilung nach § 82b EStDV (#262)', () => {
     expect(columns).toContain('spread_rest_year')
     expect(fieldLabel('spread_years')).toBe('Für die Steuer verteilen (§ 82b EStDV)')
     expect(fieldLabel('spread_rest_year')).toBe('Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr')
+  })
+})
+
+describe('Verlauf: Werte von Bezugszähler und Rest (#98)', () => {
+  test('Aufzählungen und Ja/Nein stehen in Worten, nicht roh', () => {
+    expect(formatValue('scope', 'common', 'meters')).toBe('einen Teil des Hauses')
+    expect(formatValue('target_kind', 'selfUse', 'cost_item_meter_rest_subs')).toBe('Eigenanteil des Vermieters (privat)')
+    expect(formatValue('target_key', 'direct', 'cost_item_meter_rest_subs')).toBe('Direktzuordnung')
+    expect(formatValue('key', 'landlord', 'cost_item_meter_rest')).toBe('Vermieter trägt (abziehbar)')
+    expect(formatValue('key', 'area', 'cost_item_meter_rest')).toBe('nach Wohnfläche')
+    expect(formatValue('key', 'standard', 'cost_item_meter_rest')).toBe('wie bisher (wie ohne Bezugszähler)')
+    expect(formatValue('unit_ids_all', 1, 'cost_item_meter_rest')).toBe('ja')
+    expect(formatValue('behind_all', 0, 'cost_item_meter_rest')).toBe('nein')
   })
 })

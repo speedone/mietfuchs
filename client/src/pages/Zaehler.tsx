@@ -5,7 +5,7 @@ import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
@@ -174,7 +174,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   }
 
   const readingMeter = readingFor === null ? null : meters.find((m) => m.id === readingFor) ?? null
-  const unitName = (id: string | null) => (id ? units.find((u) => u.id === id)?.name ?? '?' : 'Haus (Hauptzähler)')
+  const unitName = (id: string | null, scope?: Meter['scope']) => (id ? units.find((u) => u.id === id)?.name ?? '?' : scope === 'common' ? 'Haus (Teil des Hauses)' : 'Haus (Hauptzähler)')
 
   return (
     <>
@@ -221,7 +221,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     open={openMeterId === m.id}
                     focused={focusedId === m.id}
                     readings={mReadings}
-                    unitName={unitName(m.unitId)}
+                    unitName={unitName(m.unitId, m.scope)}
                     consumptionLabel={label}
                     onToggle={() => setOpenMeterId(openMeterId === m.id ? null : m.id)}
                     onEdit={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
@@ -333,6 +333,14 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
+            {/* #98: Ein Zähler ohne Wohnung ist der Hauptzähler, außer er misst nur einen Teil des Hauses. */}
+            {asksScope(meterForm) && (
+              <Field label="Misst dieser Zähler das ganze Haus oder einen Teil?" hint={SCOPE_HELP}>
+                <select value={meterForm.scope} onChange={(e) => setMeterForm({ ...meterForm, scope: e.target.value === 'common' ? 'common' : 'property' })}>
+                  {SCOPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </Field>
+            )}
             <label className="field">
               Sparte
               <select value={meterForm.type} onChange={(e) => setMeterForm(withMeterType(meterForm, e.target.value as MeterType))}>

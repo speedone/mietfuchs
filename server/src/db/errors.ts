@@ -66,6 +66,10 @@ const FIELD_NAMES: Record<string, string> = {
   quantity: 'Menge',
   heating_value: 'Heizwert',
   key: 'Umlageschlüssel',
+  // Bezugszähler und Rest (#98)
+  scope: 'die Angabe, was der Zähler misst',
+  target_kind: 'das Ziel des Zwischenzählers',
+  target_key: 'den Schlüssel des Ziels',
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
   state: 'Bundesland',
@@ -218,6 +222,10 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   properties_ownership_transfer_on_valid: 'Der Tag des Eigentumsübergangs ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
   properties_building_application_on_valid: 'Der Tag des Bauantrags, der Bauanzeige oder der Baubeginnsanzeige ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
   properties_completed_on_valid: 'Der Tag der Fertigstellung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  // Bezugszähler und Rest (#98); db/meterRest.ts und das Repository prüfen vorher.
+  meters_scope_valid: 'Ein Zähler für einen Teil des Hauses gehört zu keiner Wohnung und nicht zur Heizanlage.',
+  cost_item_meter_rest_behind_all_valid: 'Nur beim Hauptzähler gelten alle Zähler der Wohnungen als dahinter. Bei einem anderen Bezugszähler nennen Sie bitte die Zähler, die hinter ihm hängen.',
+  cost_item_meter_rest_subs_group_valid: 'Ein Zwischenzähler mit eigener Verteilung nennt Schlüssel und Wohnungen, die anderen Ziele nennen beides nicht. Bitte laden Sie die Seite neu.',
   tenancies_relative_known: 'An Angehörige vermietet ist ja oder nein. Bitte setzen oder entfernen Sie den Haken.',
   // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
   law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',

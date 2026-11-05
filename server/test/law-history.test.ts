@@ -155,6 +155,8 @@ const SHIPPED: readonly string[] = [
   'holiday.repentance|||{"day":"repentance","states":["SN"],"local":{}}',
   'holiday.christmas|||{"day":"12-25","states":["BW","BY","BE","BB","HB","HH","HE","MV","NI","NW","RP","SL","SN","ST","SH","TH"],"local":{}}',
   'holiday.boxing-day|||{"day":"12-26","states":["BW","BY","BE","BB","HB","HH","HE","MV","NI","NW","RP","SL","SN","ST","SH","TH"],"local":{}}',
+  // Bezugszähler und verteilter Rest (#98)
+  'practice.meter-rest-high|||20',
 ]
 
 const current = (): string[] =>

@@ -83,3 +83,30 @@ export const practiceEvaporatorWindow: LawParam<{ readonly min: number; readonly
   }],
   describe: (v) => `${v.min} bis ${v.max} ‰ der Gradtagszahlen seit der Hauptablesung`,
 }
+
+// **Allgemeinverbrauch über dem Bezugszähler (#98, Entwurf 2026-11-04-virtuelle-zaehler-design.md, „Recht und
+// Hinweise“).** Messen alle Einheiten der Gruppe, ist der Rest des Bezugszählers eine Messdifferenz. Eine gesetzliche
+// Grenze gibt es nicht; nach dem Orientierungssatz von LG Braunschweig, Urteil vom 22.12.1998, 6 S 163/98 (WuM 1999,
+// 294), darf der Vermieter eine Differenz bis 20 % umlegen, eine darüber schließt jede Umlage der Unterschiedsmenge aus
+// (gelesen bei Haufe am 05.11.2026). Ebenso, nur aus zweiter Hand, AG Mitte, 20 C 394/06. Mietfuchs rechnet mit dem Rest
+// trotzdem und warnt darüber (`meter.rest-high`); ein Prüfwert, kein Rechenwert. Bei einer Gruppe ohne Zähler ist der
+// Rest kein Messfehler, dort wird nicht gefragt.
+export const practiceMeterRestHigh: LawParam<number, 'periodStart'> = {
+  id: 'practice.meter-rest-high',
+  checkOnly: true,
+  title: 'Warngrenze für den Allgemeinverbrauch bei ganz gemessener Gruppe',
+  norm: 'Instanzrechtsprechung, LG Braunschweig, Urteil vom 22.12.1998, 6 S 163/98',
+  timing: 'periodStart',
+  versions: [{
+    value: 20,
+    source: {
+      rank: 'court',
+      cite: 'LG Braunschweig, Urteil vom 22.12.1998, 6 S 163/98, Orientierungssatz',
+      url: 'https://www.haufe.de/id/entscheidung/lg-braunschweig-urteil-vom-22121998-6-s-16398-HI538299.html',
+      retrieved: '2026-11-05',
+      checked: 'checked',
+    },
+    enacted: 'Festlegung von Mietfuchs (#98) nach LG Braunschweig, 6 S 163/98',
+  }],
+  describe: (v) => `Warnung ab mehr als ${v} % Allgemeinverbrauch`,
+}

@@ -112,6 +112,8 @@ export type SnapshotCostItem = Pick<
   // Die Umlagevereinbarung je Mietverhältnis (#258): wer die Position laut Vertrag nicht trägt.
   | 'notAgreedTenancyIds'
   | 'namedTenancyIds'
+  // Bezugszähler und verteilter Rest (#98): die Berechnung liest ihn bei Positionen nach Verbrauch; fehlend heißt wie bisher.
+  | 'meterRest'
   | 'labor35aCents'
   // Nur für den Hinweis auf eine mögliche Doppelung (shared/duplicates.ts); verteilt wird nach
   // keinem der beiden.
@@ -145,6 +147,8 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
   & Partial<Pick<Meter, 'hcaScale' | 'ratingFactor'>>
   // Eichjahr (Heizung PR 21): nur für den Hinweis auf der Zähler-Seite, keine Zahl hängt daran.
   & Partial<Pick<Meter, 'calibratedUntil'>>
+  // Was ein Zähler ohne Wohnung misst (#98): `common` zählt nie als Hauptzähler und nie in eine Basis. Fehlend heißt `property`.
+  & Partial<Pick<Meter, 'scope'>>
   // Zählernummer: nur für den Ausweis einer Grenze ohne Ablesung (Befund M7 aus #341), keine Zahl hängt daran.
   & Partial<Pick<Meter, 'meterNumber'>>
   // Maßeinheit: für das Ableseergebnis der eigenen Heizkostenabrechnung (UI-Durchsicht H5) und seit #342 für die

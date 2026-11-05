@@ -10,7 +10,7 @@ import { estgAcquisitionRelated, estgCheapRent, estgShortPeriodDays } from './es
 import { gmodgHeating43 } from './gmodg.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRenewableExemption, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from './heizkostenv.ts'
 import { messevCalibrationYears } from './messev.ts'
-import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from './practice.ts'
+import { practiceEvaporatorWindow, practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons } from './practice.ts'
 import { ustgGasHeatNetworkRate, ustgSmallBusiness, ustgStandardRate } from './ustg.ts'
 
 export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
@@ -81,4 +81,6 @@ export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   estgShortPeriodDays,
   // Garage und Umsatzsteuer (#323)
   ustgSmallBusiness,
+  // Bezugszähler und verteilter Rest (#98)
+  practiceMeterRestHigh,
 ]

@@ -537,7 +537,7 @@
  },
  {
   "code": "key.changed-from-previous-year",
-  "text": "„Versicherung 2026-05“ wird 2026/2027 nach Wohneinheiten verteilt, die Kostenart „Sach- und Haftpflichtversicherung“ 01.01.–30.04.2026 nach Personenzahl. Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter, oder durch Ihre Erklärung in Textform, nur vor Beginn eines Abrechnungszeitraums und nur hin zu einer Verteilung nach erfasstem Verbrauch oder erfasster Verursachung (§ 556a Abs. 2 BGB). Bei einer vermieteten Eigentumswohnung gilt, soweit nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; widerspricht er billigem Ermessen, wird nach Absatz 1 umgelegt, also in der Regel nach Wohnfläche (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun."
+  "text": "„Wasser“ wird 2025 wieder nach Verbrauch verteilt, aber mit einer anderen Verteilung des Allgemeinverbrauchs (Bezugszähler, Rest oder Zwischenzähler) als 2024. Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter, oder durch Ihre Erklärung in Textform, nur vor Beginn eines Abrechnungszeitraums und nur hin zu einer Verteilung nach erfasstem Verbrauch oder erfasster Verursachung (§ 556a Abs. 2 BGB). Bei einer vermieteten Eigentumswohnung gilt, soweit nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; widerspricht er billigem Ermessen, wird nach Absatz 1 umgelegt, also in der Regel nach Wohnfläche (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun."
  },
  {
   "code": "labor35a.invalid",
@@ -557,7 +557,7 @@
  },
  {
   "code": "meter.main-partial",
-  "text": "„Wasser“: der Hauptzähler deckt 2025 nur 288 von 365 Tagen ab - bitte Ablesungen zum 31.12.2024 und zum Jahresende (31.12.2025) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt."
+  "text": "„Wasser“: der Hauptzähler deckt 2025 nur 275 von 365 Tagen ab; der Allgemeinverbrauch lässt sich deshalb nicht bilden und wird nicht verteilt. Bis zu den fehlenden Ablesungen wird nach den Zählern verteilt."
  },
  {
   "code": "meter.negative",
@@ -572,12 +572,32 @@
   "text": "Zählerwechsel am 30.06.2025 ohne Endstand des alten Geräts - der Verbrauch bis zum Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen."
  },
  {
+  "code": "meter.rest-high",
+  "text": "„Wasser“: Der Allgemeinverbrauch beträgt 500 von 1.500 (33,3 %), obwohl alle Empfänger Zähler haben. Eine gesetzliche Grenze gibt es nicht, nach der Rechtsprechung der Instanzgerichte ist die Umlage einer Differenz über 20 % aber angreifbar. So LG Braunschweig, 6 S 163/98. Davon tragen in dieser Abrechnung t-a (a) rund 200,00 € und t-b (b) rund 300,00 €. Prüfen Sie Zähler und Ablesungen; oft erklärt ein Leck, eine Zapfstelle ohne Zähler oder eine nicht angelegte Wohnung die Differenz."
+ },
+ {
+  "code": "meter.rest-mixed",
+  "text": "„Wasser“: x hängt ohne eigenen Zähler „Kaltwasser“ am Bezugszähler, gehört aber nicht zu den Empfängern des Allgemeinverbrauchs. Ihr Verbrauch steckt im Rest und lässt sich nicht trennen. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Nehmen Sie die Einheit in die Empfänger auf oder erfassen Sie einen Zähler; hat eine Einheit keinen Anschluss, entfernen Sie in den Stammdaten unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart."
+ },
+ {
+  "code": "meter.rest-not-self",
+  "text": "„Wasser“: Alle Einheiten hinter dem Bezugszähler haben einen Zähler. Der Allgemeinverbrauch ist dann eine Messdifferenz und kein Verbrauch Ihrer eigenen Wohnung; er bleibt abziehbar beim Vermieter und gilt nicht als Eigenanteil. Soll er auf die Mieter verteilt werden, wählen Sie dafür einen Schlüssel."
+ },
+ {
+  "code": "meter.rest-unavailable",
+  "text": "„Wasser“: der Hauptzähler deckt 2025 nur 275 von 365 Tagen ab, und ohne ihn lässt sich der Allgemeinverbrauch nicht bilden. Weil die Empfänger keine eigenen Zähler haben, trügen nach den Zählern die gemessenen Einheiten die ganze Rechnung. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Bitte die Ablesungen zu Beginn und Ende des Zeitraums nachtragen."
+ },
+ {
   "code": "meter.same-day",
   "text": "Mehrere Ablesungen am 30.06.2025: Die Stände unterscheiden sich um 0,004, und diese Menge wird nicht verteilt, weil zwischen ihnen kein Tag liegt. Bitte eine der Ablesungen prüfen."
  },
  {
   "code": "meter.sub-exceeds-main",
-  "text": "„Wasser“: die Wohnungszähler zeigen zusammen 152, mehr als der Hauptzähler (108) - bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern."
+  "text": "„Wasser“: die Zähler hinter dem Bezugszähler und die Zwischenzähler zeigen zusammen 1.000, mehr als der Hauptzähler (900) - bitte die Ablesungen prüfen. Verteilt wird nach den Zählern, ein Allgemeinverbrauch nicht."
+ },
+ {
+  "code": "meter.sub-incomplete",
+  "text": "„Wasser“: Der Zwischenzähler „zgarten“ deckt 2025 nicht ganz ab. Ein Teilverbrauch ginge still an die falschen Empfänger. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Bitte die Ablesungen zu Beginn und Ende des Zeitraums nachtragen."
  },
  {
   "code": "meter.unit-partial",
@@ -585,7 +605,7 @@
  },
  {
   "code": "meter.unit-without-meter",
-  "text": "„Wasser“: für W0, W1, W2 und W3 gibt es keinen abgelesenen Zähler „Kaltwasser“ - der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt. Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus. Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart."
+  "text": "„Wasser“: für e gibt es keinen abgelesenen Zähler „Kaltwasser“ - der Allgemeinverbrauch gilt für die Tage als Eigenanteil, an denen alle Einheiten ohne Zähler selbstgenutzt sind, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau. Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart."
  },
  {
   "code": "model.prepayment-unsettled",

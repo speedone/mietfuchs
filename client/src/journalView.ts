@@ -66,6 +66,10 @@ const TABLE_LABELS: Record<string, string> = {
   cost_item_self_amounts: 'Eigenbetrag',
   cost_item_contract: 'Umlagevereinbarung',
   cost_sources: 'Aufgeteilte Rechnung',
+  cost_item_meter_rest: 'Bezugszähler und Rest',
+  cost_item_meter_rest_units: 'Empfänger des Rests',
+  cost_item_meter_rest_behind: 'Zähler hinter dem Bezugszähler',
+  cost_item_meter_rest_subs: 'Zwischenzähler',
   unit_no_connection: 'Ohne Anschluss',
   unit_usage_changes: 'Nutzungswechsel',
   unit_local_rents: 'Ortsübliche Miete',
@@ -173,6 +177,13 @@ const FIELD_LABELS: Record<string, string> = {
   invoice_date: 'Rechnungsdatum',
   label: 'Bezeichnung',
   calibrated_until: 'Geeicht bis',
+  scope: 'Zähler für',
+  reference_meter_id: 'Bezugszähler',
+  unit_ids_all: 'Rest an alle Teilnehmer',
+  behind_all: 'Alle Zähler der Wohnungen dahinter',
+  target_kind: 'Ziel des Zwischenzählers',
+  target_key: 'Schlüssel des Ziels',
+  target_unit_ids: 'Wohnungen des Ziels',
   state: 'Bundesland',
   heating_plant_id: 'Heizanlage',
   plant_id: 'Heizanlage',
@@ -207,15 +218,22 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   heating_model: asLabels(HEATING_MODEL_LABELS),
   deposit_status: asLabels(DEPOSIT_STATUS_LABELS),
   state: STATE_LABELS,
+  scope: { common: 'einen Teil des Hauses', property: 'das ganze Haus' },
 }
 // Spalten, deren Aufzählung je Tabelle verschieden ist.
 const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> = {
   payments: { kind: asLabels(PAYMENT_KIND_LABELS) },
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
   cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
+  // Bezugszähler und Rest (#98): der Rest hat zusätzlich zwei Ziele beim Vermieter.
+  cost_item_meter_rest: { key: { area: KEY_LABELS.area, persons: KEY_LABELS.persons, units: KEY_LABELS.units, meter: 'im Verhältnis der Zähler', landlord: 'Vermieter trägt (abziehbar)', selfUse: 'Eigenanteil des Vermieters (privat)', standard: 'wie bisher (wie ohne Bezugszähler)' } },
+  cost_item_meter_rest_subs: {
+    target_kind: { landlord: 'Vermieter trägt (abziehbar)', selfUse: 'Eigenanteil des Vermieters (privat)', excluded: 'zählt in dieser Position nicht', group: 'auf eine Gruppe von Wohnungen' },
+    target_key: { area: KEY_LABELS.area, persons: KEY_LABELS.persons, units: KEY_LABELS.units, direct: KEY_LABELS.direct },
+  },
 }
 
-const BOOLEAN_COLUMNS = new Set(['participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated'])
+const BOOLEAN_COLUMNS = new Set(['participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
 export const fieldLabel = (column: string): string => FIELD_LABELS[column] ?? column

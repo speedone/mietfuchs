@@ -221,6 +221,15 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // erzeugt und die Marken ersetzt.
   '0082_verteilung_82b': '60d0a2823758b911783f46808c4699b28327240dacc9034eb1b5f7b4ef745668',
   '0083_verteilung_82b_bedingungen': 'c2babce16bbde1323bf14a69d4471e4ca11913f40a5722e22b6bc47e96ff7783',
+  // #98: Bezugszähler und verteilter Rest (vier Tabellen `cost_item_meter_rest…`, `meters.scope`), danach die Bedingungen an
+  // `meters` (Neubau der Tabelle). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt
+  // und die Marken ersetzt.
+  '0085_bezugszaehler_rest': '0f43ed7990508484e786d1d9c9e7f576adc3966d36991d4ad08c6a0f6c400de5',
+  '0086_bezugszaehler_rest_bedingungen': 'bed6685b53508584fa5ee6051acc4718eb35fa806d3133cd771fdc7424c0247c',
+  // #98, Abschlussdurchsicht I2: der Rest-Schlüssel 'standard' („tragen Sie (wie bisher)“) in der Bedingung (Neubau der Tabelle
+  // `cost_item_meter_rest`). Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke
+  // ersetzt.
+  '0087_rest_wie_bisher': '2e2c6da4c580cd34f2a86e22ab089eb5c8759414b1c89dc8434ca4288bd02d99',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
