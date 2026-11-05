@@ -99,6 +99,9 @@ export type Unit = {
   usageChanges?: UsageChange[]
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung)
   rooms?: number // Zimmerzahl
+  // Die Wohnung, in der diese Einheit als Zimmer liegt (#573); fehlend oder null: keine. Eine Einheit, auf die
+  // andere verweisen, heißt Wohnung mit Zimmern. Eine Ebene, im selben Objekt.
+  parentUnitId?: string | null
   floor?: string // Etage, z. B. „EG“, „1. OG“
   notes?: string // freie Notiz zur Wohnung
   // Ortsübliche Warmmiete für die Steuer (§ 21 Abs. 2 EStG, #257), als Staffel „ab Monat gilt Wert“. An der Wohnung
@@ -471,6 +474,8 @@ export type CostItem = {
   namedTenancyIds?: string[] | null
   // Bezugszähler und verteilter Rest (#98), nur beim Schlüssel `meter`; fehlend heißt wie bisher.
   meterRest?: MeterRest | null
+  // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573), nur beim Schlüssel `meter`; fehlend heißt `area`.
+  roomSplit?: 'area' | 'persons'
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
   // Die Heizanlage, zu der die Position gehört (Heizung PR 4), nur bei der Kostenart „Heizung und
@@ -1754,6 +1759,8 @@ export type UnitDependents = {
   directCostItems: number
   // Rechnungen einer Etagenheizung an der Wohnung; solange es welche gibt, lehnt das Löschen ab (S1).
   fuelDeliveries: number
+  // Zimmer, die in dieser Wohnung liegen (#573); solange es welche gibt, lehnt das Löschen ab.
+  rooms: number
 }
 
 // Was die Oberfläche aus einer KI-Belegauswertung bekommt: das Ergebnis, nicht die rohe Antwort

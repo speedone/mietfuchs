@@ -97,6 +97,7 @@ export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'uni
 // Was ein Zähler ohne Wohnung misst (#98). Gespeichert wird nur `common`; der Hauptzähler des Objekts hat keinen Eintrag
 // (`Meter.scope` kennt `property` zusätzlich, für den Aufrufer, nie in der Datei), deshalb nicht über `exactly`.
 export const METER_SCOPES = ['common'] as const
+export const ROOM_SPLITS = ['area', 'persons'] as const
 export const REST_KEYS = ['area', 'persons', 'units', 'meter', 'landlord', 'selfUse', 'standard'] as const
 export const REST_GROUP_KEYS = ['area', 'persons', 'units', 'direct'] as const
 export const REST_TARGET_KINDS = ['landlord', 'selfUse', 'excluded', 'group'] as const
@@ -271,6 +272,9 @@ export const units = sqliteTable(
     rooms: integer('rooms'),
     floor: text('floor'),
     notes: text('notes'),
+    // Die Wohnung, in der die Einheit als Zimmer liegt (#573); NULL heißt keine. `RESTRICT`: Eine Wohnung mit Zimmern wird
+    // nicht still gelöscht (das Repository sagt vorher mit einem Satz, 409). Fremdschlüssel und Bedingung im zweiten Schritt.
+    parentUnitId: text('parent_unit_id').references((): AnySQLiteColumn => units.id, { onDelete: 'restrict' }),
   },
   (t) => [
     // Eine negative Wohnfläche verkleinerte die Verteilbasis und triebe damit die Mieteranteile
@@ -281,6 +285,8 @@ export const units = sqliteTable(
     notNegative('units_self_persons_not_negative', 'self_persons'),
     notNegative('units_rooms_not_negative', 'rooms'),
     notNegative('units_mea_not_negative', 'mea'),
+    // Ein Zimmer liegt nie in sich selbst (#573); die übrigen Regeln (Objekt, Ebene, Mietverhältnis) kennt nur das Repository.
+    check('units_parent_valid', sql.raw('"parent_unit_id" IS NULL OR "parent_unit_id" <> "id"')),
   ],
 )
 
@@ -1225,6 +1231,9 @@ export const costItems = sqliteTable(
     // `allowsSpread` (shared/spread.ts); die Kostenarten sind Text, eine Bedingung hier müsste bei jeder neuen die
     // Tabelle neu bauen. Die Abrechnung liest die Spalte nie.
     spreadYears: integer('spread_years').$type<SpreadYears>(),
+    // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573); NULL heißt Fläche. Gespeichert nur bei Schlüssel `meter`
+    // (repository.ts). Bedingung im zweiten Schritt.
+    roomSplit: text('room_split', { enum: ROOM_SPLITS }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -1237,6 +1246,7 @@ export const costItems = sqliteTable(
     // Vermieter zu. Deshalb hier eine echte Bedingung und nicht nur der Typ.
     oneOf('cost_items_key_known', 'key', COST_KEYS),
     oneOf('cost_items_meter_type_known', 'meter_type', METER_TYPES),
+    oneOf('cost_items_room_split_known', 'room_split', ROOM_SPLITS),
     oneOf('cost_items_external_measure_known', 'external_measure', EXTERNAL_MEASURES),
     // Leistungszeitraum (#208): beide oder keines, als Datum, Beginn nicht nach dem Ende.
     // Die Namen folgen der Konvention aus errors.ts (db-errors.test.ts); die Sätze dazu stehen

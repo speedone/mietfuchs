@@ -389,6 +389,9 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       coll: 'units', table: units,
       body: { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, mea: 124, rooms: 3, floor: 'EG', notes: 'Notiz' },
     },
+    // #573: Wohnung und Zimmer; ein Zimmer verweist auf eine Wohnung ohne Mietverhältnis und ohne Eigennutzung.
+    { coll: 'units', table: units, id: 'probe-wohnung', body: { propertyId: 'objekt-1', name: 'Wohnung', areaM2: 80, participates: false } },
+    { coll: 'units', table: units, id: 'probe-zimmer', body: { propertyId: 'objekt-1', name: 'Zimmer 1', areaM2: 15, participates: true, parentUnitId: 'probe-wohnung' } },
     {
       coll: 'tenancies', table: tenancies,
       body: {
@@ -436,6 +439,11 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
     {
       coll: 'costItems', table: costItems, id: 'probe-verteilung',
       body: { propertyId: 'objekt-1', period: '2024-01', category: 'Nicht umlagefähig', description: 'Dach', amountCents: 1_000_000, key: 'area', spreadYears: 3 },
+    },
+    // #573: wie der Zähler einer Wohnung auf ihre Zimmer geht, nur beim Schlüssel `meter`.
+    {
+      coll: 'costItems', table: costItems, id: 'probe-zimmerteilung',
+      body: { propertyId: 'objekt-1', period: '2024-01', category: 'Wasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser', roomSplit: 'persons' },
     },
     // #270: die Angabe „dem Messdienst gemeldet“ gibt es nur am Abzug ohne Verweis.
     {

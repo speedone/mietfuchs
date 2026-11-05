@@ -226,6 +226,9 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   meters_scope_valid: 'Ein Zähler für einen Teil des Hauses gehört zu keiner Wohnung und nicht zur Heizanlage.',
   cost_item_meter_rest_behind_all_valid: 'Nur beim Hauptzähler gelten alle Zähler der Wohnungen als dahinter. Bei einem anderen Bezugszähler nennen Sie bitte die Zähler, die hinter ihm hängen.',
   cost_item_meter_rest_subs_group_valid: 'Ein Zwischenzähler mit eigener Verteilung nennt Schlüssel und Wohnungen, die anderen Ziele nennen beides nicht. Bitte laden Sie die Seite neu.',
+  // Zimmer einer Wohnung (#573); db/rooms.ts und das Repository prüfen vorher.
+  units_parent_valid: 'Ein Zimmer kann nicht in sich selbst liegen. Bitte wählen Sie eine andere Wohnung.',
+  cost_items_room_split_known: 'Der Zähler einer Wohnung geht nach Fläche oder nach Personen auf ihre Zimmer. Bitte laden Sie die Seite neu und wählen Sie es noch einmal.',
   tenancies_relative_known: 'An Angehörige vermietet ist ja oder nein. Bitte setzen oder entfernen Sie den Haken.',
   // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
   law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',

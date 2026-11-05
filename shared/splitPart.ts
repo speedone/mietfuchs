@@ -62,6 +62,7 @@ export const SPLIT_FIELDS = {
   participantUnitIds: 'same', notAgreedTenancyIds: 'same', namedTenancyIds: 'same', invoiceFile: 'same',
   // Bezugszähler und Rest (#98): Zähler und Verteilung der Rechnung, jeder Teil trägt dieselbe Angabe.
   meterRest: 'same',
+  roomSplit: 'same',
   heatingPlantId: 'same', fuelDeliveryId: 'same', operatingPower: 'same', operatingPowerItemId: 'same',
   operatingPowerBasis: 'same', operatingPowerGeneralId: 'same', operatingPowerReported: 'same',
   // Die Quelle (#455): Jeder Teil verweist auf dieselbe Rechnung.
