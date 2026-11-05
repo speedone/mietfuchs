@@ -73,6 +73,7 @@ import {
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
+import { guardRoomMeter, guardRoomRecipients, guardRooms, guardRoomsRemoval, guardRoomTenancy, roomCount, roomSplitOf, roomViolations } from './rooms.ts'
 import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
 
 export type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
@@ -435,6 +436,8 @@ function mergeUnit(current: Unit, body: unknown): Unit {
     // (`usageChangesOf`, dieselbe Regel wie beim Rechnen). Krumm wird geradegerückt, nicht abgelehnt.
     usageChanges: merged(body, 'usageChanges', current.usageChanges, readUsageChanges),
     rooms: merged(body, 'rooms', current.rooms, asOptionalNumber),
+    // Die Wohnung, in der die Einheit als Zimmer liegt (#573); `null` oder leer löst die Verknüpfung.
+    parentUnitId: merged(body, 'parentUnitId', current.parentUnitId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
     floor: merged(body, 'floor', current.floor, asOptionalText),
     notes: merged(body, 'notes', current.notes, asOptionalText),
     localRents: merged(body, 'localRents', current.localRents, readLocalRents),
@@ -544,6 +547,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...(notAgreed === undefined ? {} : { notAgreedTenancyIds: notAgreed }),
     ...(named === undefined ? {} : { namedTenancyIds: named }),
     ...(meterRest === undefined ? {} : { meterRest }),
+    ...roomSplitField(roomSplitOf(key, has(body, 'roomSplit') ? raw(body, 'roomSplit') : current.roomSplit)),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
     // `null` leert, wie bei den übrigen optionalen Feldern (#208).
@@ -584,6 +588,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...spreadField(merged(body, 'spreadYears', current.spreadYears, readSpreadYears)),
   }
 }
+
+const roomSplitField = (v: CostItem['roomSplit']): Pick<CostItem, 'roomSplit'> => (v === undefined ? {} : { roomSplit: v })
 
 // Das Feld nur, wenn es eine Wahl gibt: Eine Position ohne Verteilung liest sich Schlüssel für Schlüssel wie vorher.
 const spreadField = (v: SpreadYears | undefined): Pick<CostItem, 'spreadYears'> => (v === undefined ? {} : { spreadYears: v })
@@ -1529,6 +1535,7 @@ async function closedHcaPeriodOf(db: Executor, m: Meter): Promise<string | null>
 
 async function guardMeter(db: Executor, before: Meter | null, after: Meter): Promise<void> {
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
+  await guardRoomMeter(db, after)
   // Ein Zähler für einen Teil des Hauses (#98) hat keine Wohnung und gehört nicht zur Heizanlage.
   if (after.scope === 'common' && (after.unitId || after.heatingPlantId)) {
     throw new MeterRestError('Ein Zähler für einen Teil des Hauses gehört zu keiner Wohnung und nicht zur Heizanlage. Wählen Sie „Haus (Hauptzähler)“ bei der Zuordnung oder lassen Sie die Kennzeichnung weg.')
@@ -1654,6 +1661,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
   await guardMeterRest(db, after)
+  await guardRoomRecipients(db, after)
   await guardFuelLink(db, before, after)
   await guardOperatingPower(db, before, after, options)
 }
@@ -1853,6 +1861,7 @@ export async function guardServedChange(db: Executor, plantId: string, unitIds: 
 }
 
 async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
+  await guardRooms(db, before, after)
   // „Kein Anschluss: Wärme“ ändert, welche Anlage ohne Liste die Wohnung versorgt (#117, Heizung PR 5).
   if (before && before.propertyId === after.propertyId) {
     const plants = await db.select({ id: heatingPlants.id }).from(heatingPlants)
@@ -1945,6 +1954,7 @@ async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy
   const [unit] = await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, after.unitId))
   if (unit) await requirePeriods(db, unit.propertyId, Object.keys(after.prepaymentOverrides), legacyYear, `Die Jahreskorrektur von „${after.tenantName}“`)
   await guardHeatingOverrides(db, after)
+  await guardRoomTenancy(db, after.unitId)
   await guardTenancyMove(db, before, after)
 }
 
@@ -2097,6 +2107,8 @@ export async function crossPropertyViolations(db: Executor): Promise<string[]> {
   for (const c of eigen) befunde.push(`Die Kostenposition „${c.description}“ hat einen Eigenbetrag für eine Wohnung eines anderen Objekts.`)
   // Bezugszähler und Rest (#98): Zähler und Wohnungen im Objekt der Position.
   befunde.push(...(await meterRestViolations(db)))
+  // Zimmer einer Wohnung (#573): Objekt, Ebene und was eine Wohnung mit Zimmern nicht haben darf.
+  befunde.push(...(await roomViolations(db)))
   // Eine aufgeteilte Rechnung (#455) gehört zum Objekt ihrer Teile.
   const quelle = await db
     .select({ description: costItems.description })
@@ -2369,6 +2381,7 @@ export async function unitDependents(db: Executor, unitId: string): Promise<Unit
     costItemLinks: verweise,
     directCostItems: await n(db.select({ n: count() }).from(costItems).where(eq(costItems.directUnitId, unitId))),
     fuelDeliveries: await n(db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, unitId))),
+    rooms: await roomCount(db, unitId),
   }
 }
 
@@ -2410,7 +2423,7 @@ const orNull = <T>(value: T | undefined): T | null => value ?? null
 const unitRow = (u: Unit) => ({
   id: u.id, propertyId: u.propertyId, name: u.name, areaM2: u.areaM2, participates: u.participates,
   selfUsed: orNull(u.selfUsed), selfPersons: orNull(u.selfPersons), mea: orNull(u.mea), rooms: orNull(u.rooms),
-  floor: orNull(u.floor), notes: orNull(u.notes),
+  floor: orNull(u.floor), notes: orNull(u.notes), parentUnitId: orNull(u.parentUnitId),
 })
 const tenancyRow = (t: Tenancy) => ({
   id: t.id, unitId: t.unitId, tenantName: t.tenantName, persons: t.persons, start: t.start, end: t.end,
@@ -2439,6 +2452,7 @@ const costItemRow = (c: CostItem) => ({
   operatingPowerReported: orNull(c.operatingPowerReported),
   sourceId: orNull(c.sourceId),
   spreadYears: orNull(c.spreadYears),
+  roomSplit: c.key === 'meter' ? orNull(c.roomSplit) : null,
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -2587,6 +2601,7 @@ const unitCollection: Collection<Unit> = {
   // S1). Gesperrt wie das Löschen einer Lieferung mit Position und eines Objekts mit Heizanlage: Die Rechnung ist
   // Beleg der CO₂-Aufteilung, und wer sie wirklich nicht mehr braucht, löscht sie auf der Seite Heizkosten.
   remove: async (db, id) => {
+    await guardRoomsRemoval(db, id)
     const rechnungen = await db.select({ label: fuelDeliveries.label }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, id))
     if (rechnungen.length > 0) {
       const namen = andList(rechnungen.map((r) => `„${r.label || 'Rechnung'}“`))

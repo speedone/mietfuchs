@@ -151,10 +151,10 @@ describe('Cockpit: Wohnungen mit 0 m² (#135)', () => {
 // #142: Die Löschfrage nannte nur die Mietverhältnisse; mit der Wohnung gehen auch Zähler,
 // Ablesungen, Zahlungen und ihre Anteile an Kostenpositionen.
 describe('Löschfrage einer Wohnung', () => {
-  const none = { tenancies: 0, meters: 0, readings: 0, payments: 0, costItemLinks: 0, directCostItems: 0, fuelDeliveries: 0 }
+  const none = { tenancies: 0, meters: 0, readings: 0, payments: 0, costItemLinks: 0, directCostItems: 0, fuelDeliveries: 0, rooms: 0 }
 
   test('nennt alles, was mitgelöscht wird, mit Anzahl', () => {
-    expect(unitDeleteMessage({ tenancies: 2, meters: 1, readings: 5, payments: 24, costItemLinks: 3, directCostItems: 0, fuelDeliveries: 0 })).toBe(
+    expect(unitDeleteMessage({ tenancies: 2, meters: 1, readings: 5, payments: 24, costItemLinks: 3, directCostItems: 0, fuelDeliveries: 0, rooms: 0 })).toBe(
       'Mit der Wohnung werden gelöscht: 2 Mietverhältnisse, 1 Zähler, 5 Ablesungen, 24 Zahlungen und 3 Angaben an Kostenpositionen ' +
         '(vereinbarte Anteile, Teilnahmen, Einzelbeträge). Das lässt sich nicht rückgängig machen.',
     )

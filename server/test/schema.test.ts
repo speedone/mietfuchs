@@ -735,7 +735,7 @@ test('Drizzle liest und schreibt über den Proxy', async () => {
     await connection.db.insert(schema.units).values({ id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true })
     const rows = await connection.db.select().from(schema.units)
     assert.deepEqual(rows, [
-      { id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true, selfUsed: null, selfPersons: null, mea: null, rooms: null, floor: null, notes: null },
+      { id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true, selfUsed: null, selfPersons: null, mea: null, rooms: null, floor: null, notes: null, parentUnitId: null },
     ])
     // Wahrheitswerte kommen als 0 und 1 in die Datenbank und als boolean zurück.
     const eine = await connection.db.select().from(schema.units).get()
@@ -1270,4 +1270,23 @@ test('Heizperiode: Vergleichswert (§ 6a Abs. 3 Nr. 4) und Klimafaktoren (Nr. 5)
 
 test('Nutzungen: dieselbe Liste in Schema und shared/unitUsage.ts, in derselben Reihenfolge (#259)', () => {
   assert.deepEqual([...schema.UNIT_USAGES], [...SHARED_UNIT_USAGES])
+})
+
+// ---------- Zimmer einer Wohnung (#573) ----------
+
+test('Zimmer: Verweis auf eine Wohnung mit RESTRICT, nie auf sich selbst, roomSplit nur Fläche oder Personen', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('w', 'objekt-1', 'Wohnung', 80, 0)")
+    assert.equal(rejects(connection, "INSERT INTO units (id, property_id, name, area_m2, participates, parent_unit_id) VALUES ('z', 'objekt-1', 'Zimmer', 15, 1, 'w')"), null)
+    assert.ok(rejects(connection, "INSERT INTO units (id, property_id, name, area_m2, participates, parent_unit_id) VALUES ('x', 'objekt-1', 'X', 15, 1, 'gibt-es-nicht')"), 'Wohnung muss bestehen')
+    assert.ok(rejects(connection, "UPDATE units SET parent_unit_id = 'w' WHERE id = 'w'"), 'nicht in sich selbst')
+    assert.ok(rejects(connection, "DELETE FROM units WHERE id = 'w'"), 'eine Wohnung mit Zimmern wird nicht still gelöscht')
+    assert.equal(rejects(connection, "DELETE FROM units WHERE id = 'z'"), null)
+    connection.exec("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c', 'objekt-1', '2025-01', 'Wasser', 'Wasser', 100, 'meter')")
+    assert.equal(rejects(connection, "UPDATE cost_items SET room_split = 'persons' WHERE id = 'c'"), null)
+    assert.ok(rejects(connection, "UPDATE cost_items SET room_split = 'tage' WHERE id = 'c'"), 'unbekannte Teilung')
+  } finally {
+    cleanup()
+  }
 })

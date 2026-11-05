@@ -28,7 +28,8 @@ import { archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnaps
 import type { Database } from '../src/db/client.ts'
 import { createEntity, createProperty } from '../src/db/repository.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
-import { costItems, heatingPeriods, heatingPlants } from '../src/db/schema.ts'
+import { costItems, heatingPeriods, heatingPlants, tenancies, units } from '../src/db/schema.ts'
+import { eq } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodKey } from '../../shared/period.ts'
 
@@ -257,4 +258,32 @@ test('Eine Heizperiode, die es für das Objekt nicht gibt, wird beanstandet', as
   })
   assert.ok(befund)
   assert.match(befund, /Heizanlage „Keller“ hat Angaben zur Heizperiode 2025-05/)
+})
+
+// ---------- Zimmer einer Wohnung (#573) ----------
+
+test('Ein Backup, in dem ein Zimmer auf eine Wohnung eines anderen Objekts zeigt, wird beanstandet', async () => {
+  const befund = await withHeatingDatabase(async (db) => {
+    await createProperty(db, 'objekt-2', { name: 'Zweites Haus', kind: 'mfh', address: '' })
+    await createEntity(db, 'units', 'wohnung', { propertyId: 'objekt-2', name: 'Wohnung drüben', areaM2: 80, participates: false })
+    await createEntity(db, 'units', 'zimmer', { propertyId: 'objekt-1', name: 'Zimmer 1', areaM2: 15, participates: true })
+    // Am Server vorbei, wie in einem von Hand bearbeiteten Archiv.
+    await db.update(units).set({ parentUnitId: 'wohnung' }).where(eq(units.id, 'zimmer'))
+  })
+  assert.ok(befund, 'es gibt eine Beanstandung')
+  assert.match(befund, /Das Zimmer „Zimmer 1“ liegt in der Wohnung „Wohnung drüben“ eines anderen Objekts/)
+})
+
+test('Ein Backup mit Zimmer im Zimmer oder Mietverhältnis an der Wohnung mit Zimmern wird beanstandet', async () => {
+  const befund = await withHeatingDatabase(async (db) => {
+    await createEntity(db, 'units', 'w', { propertyId: 'objekt-1', name: 'Wohnung', areaM2: 80, participates: false })
+    await createEntity(db, 'units', 'z1', { propertyId: 'objekt-1', name: 'Zimmer 1', areaM2: 15, participates: true })
+    await createEntity(db, 'units', 'z2', { propertyId: 'objekt-1', name: 'Zimmer 2', areaM2: 15, participates: true })
+    await db.update(units).set({ parentUnitId: 'w' }).where(eq(units.id, 'z1'))
+    await db.update(units).set({ parentUnitId: 'z1' }).where(eq(units.id, 'z2'))
+    await db.insert(tenancies).values({ id: 't', unitId: 'w', tenantName: 'Eins', persons: 1, start: '2025-01-01', end: null })
+  })
+  assert.ok(befund)
+  assert.match(befund, /„Zimmer 2“ liegt in „Zimmer 1“, die selbst ein Zimmer ist/)
+  assert.match(befund, /Wohnung „Wohnung“ hat Zimmer, hat aber ein Mietverhältnis/)
 })

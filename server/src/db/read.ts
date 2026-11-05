@@ -183,6 +183,8 @@ export async function readUnits(db: Executor): Promise<Unit[]> {
     ...(localRents.has(u.id) ? { localRents: localRents.get(u.id) } : {}),
     ...(usageChanges.has(u.id) ? { usageChanges: usageChanges.get(u.id) } : {}),
     rooms: orUndefined(u.rooms),
+    // Nur mit Wert (#573): Die db.json kennt keine Zimmer.
+    ...(u.parentUnitId === null ? {} : { parentUnitId: u.parentUnitId }),
     floor: orUndefined(u.floor),
     notes: orUndefined(u.notes),
   }))
@@ -327,6 +329,7 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
         ? { notAgreedTenancyIds: vertrag.filter(([, im]) => !im).map(([id]) => id), namedTenancyIds: vertrag.filter(([, im]) => im).map(([id]) => id) }
         : {}),
       // Nur mit Zeile: Eine Position ohne Angabe liest sich wie vorher.
+      ...(c.roomSplit === null ? {} : { roomSplit: c.roomSplit }),
       ...(restRows.has(c.id) ? { meterRest: meterRestOf(restRows.get(c.id), restUnits.get(c.id), restBehind.get(c.id), restSubs.get(c.id)) } : {}),
       ...(c.externalMeasure !== null && c.externalTotal !== null && c.externalTotalCents !== null
         ? { externalBasis: { measure: c.externalMeasure, total: c.externalTotal, totalCents: c.externalTotalCents } }

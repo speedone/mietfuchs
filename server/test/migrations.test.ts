@@ -230,6 +230,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // `cost_item_meter_rest`). Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke
   // ersetzt.
   '0087_rest_wie_bisher': '2e2c6da4c580cd34f2a86e22ab089eb5c8759414b1c89dc8434ca4288bd02d99',
+  // #573: Zimmer einer Wohnung (`units.parent_unit_id`, `cost_items.room_split`), danach die Bedingungen (Neubau von `units` und
+  // `cost_items`). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0088_zimmer_wohnung': '0c1068fd19c5454f7841956ef8f992ea901e1b2204e60f6380ba49d00aa4d22a',
+  '0089_zimmer_wohnung_bedingungen': '98f83e5eaf6fb3382d72553a81800a3a00f3636d2e43fa806fbd0e4cf5ea26e4',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

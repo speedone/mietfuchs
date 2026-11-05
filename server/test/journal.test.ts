@@ -72,7 +72,7 @@ test('Journal: Einfügen, Ändern und Löschen stehen mit Vorher und Nachher in 
   assert.equal(JSON.parse(log[1].after ?? '').name, 'EG links')
   // Der Vorher-Stand ist vollständig: jede Spalte der Tabelle, dazu die `rowid` (Schritt 4, Reihenfolge beim Wiedereinfügen).
   assert.deepEqual(Object.keys(JSON.parse(log[2].before ?? '')).sort(),
-    ['$rowid', 'area_m2', 'floor', 'id', 'mea', 'name', 'notes', 'participates', 'property_id', 'rooms', 'self_persons', 'self_used'])
+    ['$rowid', 'area_m2', 'floor', 'id', 'mea', 'name', 'notes', 'parent_unit_id', 'participates', 'property_id', 'rooms', 'self_persons', 'self_used'])
   assert.equal(log[2].after, null)
 }))
 

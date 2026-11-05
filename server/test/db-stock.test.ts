@@ -375,7 +375,9 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'relative',
   // Die Verteilung nach § 82b EStDV (#262) kennt die db.json nicht; jede Position bekommt NULL, die Rundreise prüfen
   // db-repository.test.ts und api-kosten-verteilung.test.ts (Backup).
-  'spreadYears'])
+  'spreadYears',
+  // Zimmer einer Wohnung und ihre Teilung (#573) kennt die db.json nicht; die Rundreise prüfen db-repository.test.ts und api-zimmer.test.ts.
+  'parentUnitId', 'roomSplit'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;
