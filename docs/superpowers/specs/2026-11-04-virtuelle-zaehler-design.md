@@ -1,6 +1,7 @@
 # Bezugszähler und verteilter Rest (#98, Grundlage für #573)
 
-Stand: Entwurf vom 04.11.2026, nicht freigegeben. Teil von #91. Nach einer Gegenprüfung aus Sicht der Umsetzung
+Stand: Entwurf vom 04.11.2026, freigegeben und umgesetzt in PR #574 (05.11.2026); Abweichungen bei der Umsetzung
+stehen am Ende. Teil von #91. Nach einer Gegenprüfung aus Sicht der Umsetzung
 umgeschnitten: Statt gespeicherter Rechenzähler („virtueller Zähler“ als Formel) braucht jeder bekannte Fall dasselbe,
 nämlich einen **Bezugszähler** und die Verteilung des **Rests** nach einem zweiten Schlüssel.
 
@@ -31,7 +32,13 @@ belegt vollständig ab: Meist wird der Hauptzähler nur erfasst oder die Differe
 | WG mit Zimmerzählern (#573) | Zähler der WG-Wohnung | | die Zimmer, nach Fläche oder Personen | Herleitung |
 
 Die Differenz zum Hauptzähler zu bilden ist zulässig, ein Zähler je Wohnung ist nicht nötig (BGH, Urteil vom
-25.11.2009, VIII ZR 69/09; vor der Umsetzung im Volltext nachlesen, bisher nur aus zweiter Hand).
+25.11.2009, VIII ZR 69/09; Volltext gelesen am 05.11.2026). Der Fall: eine Gewerbeeinheit mit Zwischenzähler, vier
+Wohnungen ohne Zähler, der Rest nach Wohnfläche auf die Wohnungen. Der Senat hält den Vorwegabzug für unbedenklich
+(Rn. 12, 13), die Umlage des Rests nach Wohnfläche für zulässig (Rn. 18, § 556a Abs. 1 Satz 1 BGB) und eine Pflicht,
+Nutzergruppen gesondert zu erfassen, für nicht gegeben; § 5 Abs. 2 HeizkostenV gilt für Wasser nicht (Rn. 14, 15).
+Höhere Messungenauigkeiten sind hinzunehmen, Grenze ist erst eine krasse Unbilligkeit (Rn. 8, 15, 16); eine Zahl nennt
+das Urteil nicht, ebenso wenig etwas zur Eichung des Zwischenzählers. Nach Verbrauch umzulegen ist nur, was erfasst
+wird (Rn. 20, § 556a Abs. 1 Satz 2 BGB).
 
 Nicht hier: Wallbox mit eigenem Zähler (Zähler an der Einheit des Stellplatzes, geht heute), Betriebs- und
 Wärmepumpenstrom (Heizung), Photovoltaik und Mieterstrom (Lieferung, keine Betriebskosten).
@@ -69,7 +76,7 @@ type LandlordTarget = 'landlord' | 'selfUse' // abziehbar bzw. Eigenanteil (priv
 type MeterRest = {
   referenceMeterId: string | null // null: der Hauptzähler der Sparte (`unitId: null`, `scope: 'property'`)
   behindMeterIds: string[] | null // Zähler von Einheiten hinter dem Bezugszähler; null nur beim Hauptzähler (s. u.)
-  key: RestKey | 'meter' | LandlordTarget // 'meter': im Verhältnis der Zähler, nur bei ganz gemessener Gruppe
+  key: RestKey | 'meter' | LandlordTarget | 'standard' // 'meter': im Verhältnis der Zähler, nur bei ganz gemessener Gruppe; 'standard' s. Abweichungen
   unitIds: string[] | null        // Empfänger des Rests; null: die Verteilbasis der Position
   subMeters: {                    // Zwischenzähler ohne Wohnung (`scope: 'common'`), hinter dem Bezugszähler
     meterId: string
@@ -202,7 +209,7 @@ wird nur, was dieselbe Rechnung ist.
 - Allgemeinstrom: Wohnungsstromzähler der Mieter werden nicht abgezogen (nicht in `behindMeterIds`).
 - Steuer: Zwischenzähler `selfUse` erscheint als privater Anteil, `landlord` als abziehbar.
 - Neue Codes in `noticeKinds`: `meter.rest-mixed`, `meter.rest-unavailable`, `meter.sub-incomplete` (je `error`),
-  `meter.rest-high` (`warning`).
+  `meter.rest-high` und `meter.rest-not-self` (je `warning`).
 
 ## Zuschnitt
 
@@ -215,3 +222,30 @@ Danach #573 (Gliederung von Wohnung und Zimmern) auf dem Baustein aus Rechnung, 
 
 - Name und genaue Form von `meterRest`, Name der Tabelle.
 - Wortlaut der Hinweise, im Stil der vorhandenen (gesiezt, mit Betrag, ohne Geviertstrich).
+
+## Abweichungen bei der Umsetzung (PR #574)
+
+Entschieden während der Umsetzung, meist nach einer Durchsicht; der Entwurf oben bleibt als Herleitung stehen.
+
+- **Rest-Schlüssel `'standard'`** („tragen Sie (wie bisher)“, Migration 0087): rechnet genau wie ohne Angabe, also
+  nach #116. Ganz gemessene Gruppe: im Verhältnis der Zähler; sonst Vermieter oder Eigenanteil nach den Regeln von
+  #116 (`selfRestShare`) mit deren Hinweisen; Hauptzähler kurz: Rückfall wie #116. Gebraucht wird er, damit
+  „wie bisher“ und Zwischenzähler zusammengehen; ohne Zwischenzähler speichert die Oberfläche `null`. Zulässig nur mit
+  dem Hauptzähler als Bezug, ohne `unitIds` und ohne Teilnehmer (Server 400, Feldhinweis, in der Rechnung
+  `meter.rest-unavailable`), weil #116 den Hauptzähler bei Teilnehmern nie nutzt.
+- **Voreinstellung**: Die Oberfläche belegt „tragen Sie (wie bisher)“ vor, nicht `key: 'meter'`. Gewählt „im
+  Verhältnis der Zähler“, nehmen Zähler von Einheiten außerhalb der Abrechnungseinheit keinen Teil der Differenz auf
+  (Schritt 2); das betrifft nur so eingestellte Positionen.
+- **Eigenanteil als Rest-Schlüssel** (`'selfUse'`) gilt nur unter den Bedingungen von #116 (jede ungemessene bewohnte
+  Einheit hinter dem Bezug ganz selbstgenutzt, kein lückenhafter Zähler, sonst tagesgenau); sonst geht der Rest
+  abziehbar an den Vermieter. Eine selbstgenutzte Einheit mit eigenem Zähler, der nicht hinter dem Bezug hängt, gilt
+  dabei nicht als ungemessen. Neuer Hinweis `meter.rest-not-self` (`warning`).
+- **Betriebsstrom**: Der Abzug beim Allgemeinstrom übernimmt `meterRest` der Stromposition, und der Schlüsselvergleich
+  (`sameAllocation`) berücksichtigt es. Der Nicht-Ziel-Satz oben bleibt richtig: Ein Zwischenzähler der Heizanlage
+  ist kein Zwischenzähler im Sinn von `meterRest`.
+- **`Meter.scope: 'common'`** nur für `kaltwasser`, `strom`, `sonstig` (Server und Formular).
+- **Löschen einer Einheit**, die in einem Gruppenziel steht, nimmt sie dort heraus; wird die Gruppe leer, geht der
+  Zwischenzähler an den Vermieter.
+- **Offen**: Wird der einzige Empfänger des Rests gelöscht, bleibt `unitIds: []`; die Position meldet `item.no-basis`,
+  der Vermieter trägt sichtbar. Bei `key: 'meter'` mit Teilnehmern geht der Verbrauch der Nicht-Teilnehmer wie
+  vorgesehen an den Vermieter, ohne eigenen Hinweis.

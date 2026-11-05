@@ -687,8 +687,10 @@ export const GLOSSARY = {
     example: 'Hauptzähler 200 m³, Zwischenzähler der Einliegerwohnung 40 m³, Ihre Wohnung ohne Zähler: Die übrigen 160 m³ gelten als Ihr Verbrauch. Bei 1.000 € Wasser trägt der Mieter der Einliegerwohnung 200 €, 800 € sind Ihr Eigenanteil.',
     needed: 'Wenn nicht jede Wohnung einen eigenen Zähler hat, etwa bei einer Einliegerwohnung. Lesen Sie den Hauptzähler dann zum 31.12. ab. Weicht die Summe der Wohnungszähler um mehr als etwa 20 % vom Hauptzähler ab, ist das Umlegen der Differenz nach der Rechtsprechung der Instanzgerichte angreifbar; klären Sie dann die Ursache.',
   },
-  // Bezugszähler und verteilter Rest (#98): Leitsatz von BGH VIII ZR 69/09 und Orientierungssatz von LG Braunschweig
-  // 6 S 163/98 bei Haufe gelesen am 05.11.2026; die Schwelle kommt aus dem Register (`practice.meter-rest-high`).
+  // Bezugszähler und verteilter Rest (#98): BGH VIII ZR 69/09 im Volltext gelesen am 05.11.2026 (Rn. 12-20:
+  // Vorwegabzug des Gewerbes, Rest nach Wohnfläche, Messungenauigkeiten bis zur krassen Unbilligkeit hinzunehmen, keine
+  // Zahl); Orientierungssatz von LG Braunschweig 6 S 163/98 bei Haufe gelesen am 05.11.2026; die Schwelle kommt aus dem
+  // Register (`practice.meter-rest-high`).
   meterRest: {
     topic: 'meters',
     title: 'Allgemeinverbrauch',
