@@ -853,7 +853,8 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Festlegungen im Lexikon `roomOfFlat`. Hinweise: `unit.rooms-area` (Wohnung ohne Fläche, es gelten die Zimmerflächen),
   `rooms.outside-basis` (ein Zimmer außerhalb der Basis, sein Teil bleibt beim Vermieter), `rooms.household-cost` (Kosten nur
   der Wohnung, etwa Strom oder Internet der WG, sind keine Betriebskosten: § 556 Abs. 1 und 4 BGB, § 1 BetrKV; Wasser, Entwässerung
-  und Heizung ausgenommen). Die Oberfläche bietet nur an, was der Server annimmt (`parentUnitOptions` in client/src/unitForm.ts,
+  und Heizung ausgenommen), `rooms.zero-area` (Zimmer mit 0 m² neben Zimmern mit Fläche: bei „laut Gemeinschaftsabrechnung“
+  geht sein Anteil an die übrigen Zimmer). Die Oberfläche bietet nur an, was der Server annimmt (`parentUnitOptions` in client/src/unitForm.ts,
   `showsRoomSplit` in costForm.ts, `meterTypeChoices` in meterForm.ts); **der Wechsel einer im Ganzen vermieteten Wohnung zur WG
   ist kein Merkmal**, das Lexikon beschreibt den Weg (alte Wohnung ab dem Umbau per Nutzungswechsel herausnehmen, neue Wohnung mit
   Zimmern anlegen).
