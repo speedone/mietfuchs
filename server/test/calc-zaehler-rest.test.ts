@@ -455,3 +455,81 @@ test('Schlüssel gegenüber dem Vorjahr: ein anderer Rest-Schlüssel ergibt key.
   assert.match(found[0]?.text ?? '', /Allgemeinverbrauch/)
   assert.equal(changed(null).length, 1)
 })
+
+// ---------- Ruling 11: „tragen Sie (wie bisher)“ mit Zwischenzähler ('standard') ----------
+
+// Ohne Zwischenzähler rechnet 'standard' Zahl für Zahl wie ohne Angabe (#116): ganz gemessen nach den Zählern (auch die
+// Zähler außerhalb der Abrechnungseinheit nehmen die Differenz mit auf), sonst Rest beim Vermieter oder als Eigenanteil,
+// bei kurzem oder zu kleinem Hauptzähler nach den Zählern.
+test("'standard' ohne Zwischenzähler: dieselben Beträge wie ohne Angabe (#116), in jedem Fall", () => {
+  const outside: Partial<SnapshotSource> = (() => {
+    const p = pair(1250)
+    return { ...p, units: [...(p.units ?? []), room('x', 30, { participates: false })], tenancies: [...(p.tenancies ?? []), lease('t-x', 'x')],
+      meters: [...(p.meters ?? []), gauge('zx', 'x', 'kaltwasser')], readings: [...(p.readings ?? []), ...used('zx', 100)] }
+  })()
+  const short = (s: Partial<SnapshotSource>): Partial<SnapshotSource> => ({ ...s, readings: [...(s.readings ?? []).filter((r) => r.meterId !== 'zm'), { meterId: 'zm', date: '2025-06-30', value: 0 }, { meterId: 'zm', date: '2025-12-31', value: 900 }] })
+  const cases: [string, Partial<SnapshotSource>][] = [
+    ['ganz gemessen', pair(1100)], ['krumm', pair(987.65, 321.1, 600.2)], ['Zähler außerhalb', outside],
+    ['vermietet ohne Zähler', shop()], ['selbstgenutzt ohne Zähler', withOwn(ownUnit)],
+    ['Lücke', withOwn(ownUnit, [], [{ meterId: 'zg', date: '2025-03-31', value: 0 }, { meterId: 'zg', date: '2025-12-31', value: 150 }])],
+    ['Hauptzähler kurz', short(shop())], ['Hauptzähler zu klein', pair(900)],
+  ]
+  const watched = ['meter.unit-without-meter', 'meter.main-partial', 'meter.sub-exceeds-main', 'meter.unit-partial']
+  const money = (s: ComputedSettlement) => ({
+    shares: s.statements.map((st) => [st.tenancyId, st.totalShareCents]), landlord: s.landlord.totalCents, self: s.selfUsedShareCents,
+    parts: ['mainMeterRest', 'outsideUnit', 'vacancy', 'selfUse'].map((r) => part(s, r)),
+  })
+  for (const [label, src] of cases) {
+    const today = run(src, [water(123457, null)])
+    const made = run(src, [water(123457, rest({ key: 'standard' }))])
+    assert.deepEqual(money(made), money(today), label)
+    // Ganz gemessen prüft #116 den Hauptzähler nicht; 'standard' sagt zusätzlich, dass er weniger zeigt als die Zähler.
+    const extra = label === 'Hauptzähler zu klein' ? ['meter.sub-exceeds-main'] : []
+    assert.deepEqual(codes(made).filter((c) => watched.includes(c)).sort(), [...codes(today).filter((c) => watched.includes(c)), ...extra].sort(), label)
+    assert.ok(!made.notices.some((n) => n.level === 'error'), `${label}: ${made.warnings.join(' | ')}`)
+  }
+})
+
+// Der Garten des Vermieters (50 m³ von 1.150 m³) an den Vermieter, der Rest wie bisher: im ganz gemessenen Haus nach den
+// Zählern, also wie im Verhältnis der Zähler (Zahlen der Durchsicht: 440/660 €, Vermieter 50 €).
+const garden = (s: Partial<SnapshotSource>, value = 50): Partial<SnapshotSource> => ({
+  ...s, meters: [...(s.meters ?? []), gauge('zgarten', null, 'kaltwasser', 'common')], readings: [...(s.readings ?? []), ...used('zgarten', value)],
+})
+const toLandlord = [{ meterId: 'zgarten', target: 'landlord' as const }]
+
+test("'standard' mit Garten im ganz gemessenen Haus: wie im Verhältnis der Zähler", () => {
+  const src = garden(pair(1150))
+  const made = run(src, [water(115000, rest({ key: 'standard', subMeters: toLandlord }))])
+  const meter = run(src, [water(115000, rest({ key: 'meter', subMeters: toLandlord }))])
+  assert.deepEqual([share(made, 't-a'), share(made, 't-b'), made.landlord.totalCents], [44000, 66000, 5000])
+  assert.deepEqual([share(made, 't-a'), share(made, 't-b'), made.landlord.totalCents], [share(meter, 't-a'), share(meter, 't-b'), meter.landlord.totalCents])
+})
+
+test("'standard' mit Garten und vermieteter Einheit ohne Zähler: Rest beim Vermieter mit dem Hinweis von #116", () => {
+  const s = run(garden(shop(), 100), [water(100000, rest({ key: 'standard', subMeters: toLandlord }))])
+  assert.deepEqual([share(s, 't-g'), share(s, 't-w1'), share(s, 't-w2')], [20000, 0, 0])
+  assert.equal(part(s, 'mainMeterRest'), 80000)
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.match(notice(s, 'meter.unit-without-meter')?.text ?? '', /für w1 und w2 gibt es keinen abgelesenen Zähler.*geht an den Vermieter/)
+})
+
+test("'standard' mit Garten und nur selbstgenutzter Einheit ohne Zähler: Rest als Eigenanteil", () => {
+  const src = garden(withOwn(ownUnit) as Partial<SnapshotSource>, 100) as SnapshotSource
+  const item = water(100000, rest({ key: 'standard', subMeters: toLandlord }))
+  const s = settleSrc(src, item)
+  assert.equal(share(s, 't-g'), 20000)
+  assert.equal(s.selfUsedShareCents, 70000)
+  assert.equal(part(s, 'mainMeterRest'), 10000)
+  assert.ok(!codes(s).includes('meter.rest-not-self'))
+})
+
+test("'standard' mit Garten und kurzem Hauptzähler: nach den Zählern wie bei #116, kein Fehler", () => {
+  const src = garden(shop(), 100)
+  const s = run({ ...src, readings: [...(src.readings ?? []).filter((r) => r.meterId !== 'zm'), { meterId: 'zm', date: '2025-06-30', value: 0 }, { meterId: 'zm', date: '2025-12-31', value: 900 }] },
+    [water(90000, rest({ key: 'standard', subMeters: toLandlord }))])
+  assert.ok(!codes(s).includes('meter.rest-unavailable'), s.warnings.join(' | '))
+  assert.ok(codes(s).includes('meter.main-partial'))
+  assert.ok(codes(s).includes('meter.unit-without-meter'))
+  // 200 m³ der Gewerbeeinheit und 100 m³ Garten: 60.000 und 30.000.
+  assert.deepEqual([share(s, 't-g'), share(s, 't-w1'), part(s, 'mainMeterRest')], [60000, 0, 30000])
+})

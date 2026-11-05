@@ -40,7 +40,7 @@ export default function MeterRestFields({ form, meters, units, onChange, field }
         „tragen Sie (wie bisher)“: Haben alle bewohnten Wohnungen einen Zähler, zählt nur deren Verbrauch.
       </small>
       {field?.error && <FieldMessage id={errorId} error={field.error} />}
-      {meterRestKeyOptions().map((o, i) => (
+      {meterRestKeyOptions(form.meterRest).map((o, i) => (
         <label key={o.value} className="checkline">
           <input type="radio" name={`${name}-key`} value={o.value} checked={choice === o.value}
             id={i === 0 ? field?.id : undefined} aria-invalid={field?.error ? true : undefined}

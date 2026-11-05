@@ -50,7 +50,11 @@ export type RestPlan =
 const NOISE = 1e-9
 
 export function planMeterRest(input: RestInput): RestPlan {
-  const byLandlord = input.key === 'landlord' || input.key === 'selfUse'
+  // 'standard' (wie ohne Angabe, #116) prüft wie der Vermieter keine Gruppe: Ganz gemessen verteilt es nach den Zählern,
+  // sonst trägt der Vermieter den Rest (oder er ist Eigenanteil); den Weg wählt calc.ts. Den Rückfall nach den Zählern
+  // gibt es wie bei #116 auch mit Einheiten ohne Zähler.
+  const standard = input.key === 'standard'
+  const byLandlord = input.key === 'landlord' || input.key === 'selfUse' || standard
   const unmeasured = input.group.filter((u) => u.occupied && !u.measured).map((u) => u.unitId)
   const anyMeasured = input.group.some((u) => u.measured)
   // Ganz gemessen: keine bewohnte Einheit ohne Zähler, und wenigstens eine mit. Eine Gruppe ganz ohne Zähler und
@@ -72,7 +76,7 @@ export function planMeterRest(input: RestInput): RestPlan {
   const measuredIn = input.behind.filter((m) => m.inBasis).reduce((a, m) => a + m.value, 0)
   const outside = input.behind.filter((m) => !m.inBasis).reduce((a, m) => a + m.value, 0)
   // Ganz gemessen heißt beim Vermieter: Niemand ohne Zähler hängt am Bezug.
-  const fallbackAllowed = input.asMainMeterRest === true || (byLandlord ? unmeasured.length === 0 && input.unmeteredOutside.length === 0 : groupMeasured)
+  const fallbackAllowed = input.asMainMeterRest === true || standard || (byLandlord ? unmeasured.length === 0 && input.unmeteredOutside.length === 0 : groupMeasured)
   // Schritt 3: Lässt sich der Rest nicht bilden, nach den Zählern (gemessen) oder gar nicht (ungemessen).
   const fallback = (reason: 'main-partial' | 'negative'): RestPlan => (fallbackAllowed
     ? { kind: 'fallback', reason, total: measuredIn + outside + counted, measuredIn, outside, rest: 0, subs }

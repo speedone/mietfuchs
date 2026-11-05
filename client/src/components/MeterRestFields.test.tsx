@@ -73,8 +73,8 @@ test('Zwischenzähler „Garten“ direkt an die Garage: sendet die Einheit, ang
   expect(shown(after)).toBe('an Garage')
 })
 
-test('Vermieter oder Eigenanteil gespeichert: angezeigt als „tragen Sie“, die Gruppe des Zwischenzählers mit ihren Häkchen', () => {
-  const stored: ItemForm = { ...water, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'selfUse', unitIds: null, subMeters: [{ meterId: 'garten', target: { key: 'persons', unitIds: ['eg', 'og'] } }] } }
+test('„wie bisher“ mit Zwischenzähler gespeichert: angezeigt als „tragen Sie“, die Gruppe des Zwischenzählers mit ihren Häkchen', () => {
+  const stored: ItemForm = { ...water, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [{ meterId: 'garten', target: { key: 'persons', unitIds: ['eg', 'og'] } }] } }
   render(<Harness start={stored} />)
   expect(radio(/^tragen Sie/).checked).toBe(true)
   const sub = screen.getByLabelText(/Zwischenzähler „Garten“/) as HTMLSelectElement
@@ -90,10 +90,19 @@ test('Zwischenzähler bei „tragen Sie“: wählbar ohne andere Antwort, der le
   render(<Harness start={water} />)
   fireEvent.change(screen.getByLabelText(/Zwischenzähler „Garten“/), { target: { value: 'excluded' } })
   expect(radio(/^tragen Sie/).checked).toBe(true)
-  expect(last.meterRest).toMatchObject({ key: 'landlord', referenceMeterId: null, subMeters: [{ meterId: 'garten', target: 'excluded' }] })
+  expect(last.meterRest).toMatchObject({ key: 'standard', referenceMeterId: null, subMeters: [{ meterId: 'garten', target: 'excluded' }] })
   expect(screen.queryByLabelText(/Bezugszähler/)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Zwischenzähler „Garten“/), { target: { value: 'none' } })
   expect(last.meterRest).toBeNull()
+})
+
+// Ruling 11: Ein gespeicherter Schlüssel Eigenanteil (oder Vermieter) steht als eigene Antwort da, nicht als „tragen Sie“.
+test('Eigenanteil gespeichert: als eigene Antwort gewählt angezeigt', () => {
+  const stored: ItemForm = { ...water, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'selfUse', unitIds: null, subMeters: [{ meterId: 'garten', target: 'excluded' }] } }
+  render(<Harness start={stored} />)
+  expect(radio(/als Ihr Eigenanteil/).checked).toBe(true)
+  expect(radio(/^tragen Sie/).checked).toBe(false)
+  expect(screen.queryByRole('radio', { name: /trägt der Vermieter/ })).toBeNull()
 })
 
 test('nur auf bestimmte Wohnungen: abgehakt wird die Liste der Empfänger', () => {

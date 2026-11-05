@@ -2048,7 +2048,7 @@ function randomMeterRest(r: Rng, type: 'kaltwasser' | 'sonstig', prefix: string,
   const refValue = () => (r() < 0.8 ? below + Math.round(r() * 150) : Math.round(r() * 400))
   const referenceMeterId = other ? meter(`${prefix}ref`, null, refValue(), 'common') : null
   if (!other && !meters.some((m) => m.unitId === null && m.type === type && m.scope !== 'common') && r() < 0.7) meter(`${prefix}main`, null, refValue())
-  const key = pick(['area', 'persons', 'units', 'meter', 'landlord', 'selfUse'] as const)
+  const key = pick(['area', 'persons', 'units', 'meter', 'landlord', 'selfUse', 'standard'] as const)
   const group = r() < 0.5 ? null : subset(unitIds)
   return { referenceMeterId, behindMeterIds, key, unitIds: group, subMeters }
 }
@@ -2261,7 +2261,7 @@ test('Invariante (#98): Rest des Bezugszählers - Summe, Vorzeichen, Eigenanteil
       assert.ok(Math.abs(self) <= Math.abs(landlord), `Eigenanteil ${self} > Vermieteranteil ${landlord}: ${context}`)
       assertLandlordParts(s, one.tenancies.length, context)
       assertControlSums(s, context)
-      if (mr.unitIds === null || mr.key === 'landlord' || mr.key === 'selfUse') continue
+      if (mr.unitIds === null || mr.key === 'landlord' || mr.key === 'selfUse' || mr.key === 'standard') continue
       if (tenants.every((r) => r.shareCents === 0)) continue
       const group = new Set(mr.unitIds)
       const inSubs = new Set(mr.subMeters.flatMap((x) => (typeof x.target === 'string' ? [] : x.target.unitIds)))
@@ -2279,6 +2279,26 @@ test('Invariante (#98): Rest des Bezugszählers - Summe, Vorzeichen, Eigenanteil
   }
   assert.ok(items >= 2000, `nur ${items} Positionen mit Bezugszähler`)
   assert.ok(compared >= 60 && restMoved >= 50, `zu wenige Vergleiche: ${compared} außerhalb, ${restMoved} mit Rest`)
+})
+
+// Ruling 11 (#98): „tragen Sie (wie bisher)“ ohne Zwischenzähler ('standard' am Hauptzähler) ist Zahl für Zahl dasselbe
+// wie ohne Angabe (#116), über zufällige Bestände: jede Mieterzeile, der Vermieteranteil und der Eigenanteil.
+test('Invariante (#98): Rest wie bisher (standard) ohne Zwischenzähler rechnet wie ohne Angabe', () => {
+  let compared = 0
+  for (let i = 0; i < 4000; i++) {
+    const db = randomDb(makeRng(110_000 + i * 7919))
+    for (const drawn of db.costItems) {
+      if (drawn.key !== 'meter' || drawn.meterRest || !(drawn.meterType === 'kaltwasser' || drawn.meterType === 'sonstig')) continue
+      const item: CostItem = { ...drawn, category: 'Wasser/Abwasser' }
+      const money = (c: CostItem) => {
+        const s = computeSettlement(snapshotFromDb({ ...db, costItems: [c] }, 2025))
+        return { rows: s.statements.map((st) => [st.tenancyId, st.rows.filter((r) => r.costItemId === c.id).reduce((a, r) => a + r.shareCents, 0)]), landlord: rowsOfItem(s, c.id).landlord, self: s.selfUsedShareCents }
+      }
+      compared++
+      assert.deepEqual(money({ ...item, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [] } }), money(item), `Fall ${i}, ${item.id}\n${JSON.stringify({ ...db, costItems: [item] })}`)
+    }
+  }
+  assert.ok(compared >= 500, `nur ${compared} Positionen verglichen`)
 })
 
 test('Invariante: der Eigenanteil steckt je Position im Vermieteranteil, mit gleichem Vorzeichen', () => {

@@ -1143,10 +1143,9 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     // Ein gespeicherter Bezug, den die Liste nicht kennt, steht trotzdem darin (angezeigt gleich gespeichert).
     const odd = water({ meterRest: on({ referenceMeterId: 'weg', behindMeterIds: [] }) })
     expect(meterRestChoices(odd, meters, units).references.map((o) => o.value)).toContain('weg')
-    // Die Wahl „Verbrauch ohne eigenen Zähler“: fünf Antworten; Vermieter und Eigenanteil zeigt sie als „tragen Sie“.
+    // Die Wahl „Verbrauch ohne eigenen Zähler“: fünf Antworten; „wie bisher“ mit Zwischenzähler zeigt sie als „tragen Sie“.
     expect(meterRestKeyOptions().map((o) => o.value)).toEqual(['off', 'meter', 'area', 'persons', 'units'])
-    expect(meterRestChoiceOf(water({ meterRest: on({ key: 'selfUse' }) }))).toBe('off')
-    expect(meterRestChoiceOf(water({ meterRest: on({ key: 'landlord' }) }))).toBe('off')
+    expect(meterRestChoiceOf(water({ meterRest: on({ key: 'standard' }) }))).toBe('off')
     expect(meterRestChoiceOf(water())).toBe('off')
     // Durchsicht: Ein gespeicherter Zähler dahinter, den die Liste nicht mehr anbietet, steht als Häkchen darin.
     const strayBehind = water({ meterRest: on({ referenceMeterId: 'wg', behindMeterIds: ['s-eg'] }) })
@@ -1201,22 +1200,34 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(meterRestDroppedText(withKey(water(), 'area', ['kaltwasser']))).toBeNull()
   })
 
-  test('Durchsicht I1: Zwischenzähler bei „tragen Sie“, Eigenanteil mit selbstgenutzter Einheit, sonst Vermieter', () => {
+  test('Ruling 11: Zwischenzähler bei „tragen Sie (wie bisher)“ speichert den Rest-Schlüssel standard, mit und ohne Eigennutzung', () => {
     // Einliegerwohnung des Vermieters ohne Zähler, die übrigen gemessen; Gartenwasser zählt beim Abwasser nicht.
     const own = [u('elw', { participates: false, selfUsed: true }), u('eg'), u('og')]
     const f = withSubTarget(water(), 'garten', 'excluded', own)
     expect(meterRestChoiceOf(f)).toBe('off')
     const built = buildCostItemBody(f, own, 2025)
     if (!('body' in built)) return expect.fail(JSON.stringify(built))
-    expect(built.body.meterRest).toEqual({ key: 'selfUse', referenceMeterId: null, behindMeterIds: null, unitIds: null, subMeters: [{ meterId: 'garten', target: 'excluded' }] })
-    // Ohne selbstgenutzte Einheit trägt der Vermieter (abziehbar).
-    expect(withSubTarget(water(), 'garten', 'landlord', units).meterRest).toMatchObject({ key: 'landlord', subMeters: [{ meterId: 'garten', target: 'landlord' }] })
+    expect(built.body.meterRest).toEqual({ key: 'standard', referenceMeterId: null, behindMeterIds: null, unitIds: null, subMeters: [{ meterId: 'garten', target: 'excluded' }] })
+    // Ohne selbstgenutzte Einheit derselbe Schlüssel: Wer den Rest trägt, entscheidet die Abrechnung wie bisher (#116).
+    expect(withSubTarget(water(), 'garten', 'landlord', units).meterRest).toMatchObject({ key: 'standard', subMeters: [{ meterId: 'garten', target: 'landlord' }] })
     // Der letzte Zwischenzähler weg: wieder ohne Angabe.
     expect(withSubTarget(f, 'garten', 'none', own).meterRest).toBeNull()
     // „tragen Sie“ aus einer anderen Antwort behält die Zwischenzähler am Hauptzähler; ohne sie ohne Angabe.
     const area = withSubTarget(withReference(withMeterRestKey(water(), 'area'), 'wg', meters, units), 'garten', 'excluded', units)
-    expect(withMeterRestKey(area, 'off', units).meterRest).toEqual(on({ key: 'landlord', subMeters: [{ meterId: 'garten', target: 'excluded' }] }))
+    expect(withMeterRestKey(area, 'off', units).meterRest).toEqual(on({ key: 'standard', subMeters: [{ meterId: 'garten', target: 'excluded' }] }))
     expect(withMeterRestKey(withMeterRestKey(water(), 'area'), 'off', units).meterRest).toBeNull()
+  })
+
+  test('Ruling 11: gespeicherte Schlüssel Vermieter und Eigenanteil stehen als eigene Antwort da und bleiben beim Speichern', () => {
+    const landlord = water({ meterRest: on({ key: 'landlord' }) })
+    expect(meterRestChoiceOf(landlord)).toBe('landlord')
+    expect(meterRestKeyOptions(landlord.meterRest).map((o) => o.value)).toEqual(['off', 'meter', 'area', 'persons', 'units', 'landlord'])
+    expect(meterRestChoiceOf(water({ meterRest: on({ key: 'selfUse' }) }))).toBe('selfUse')
+    // Ohne Zwischenzähler bleibt die gespeicherte Angabe stehen, auch wenn ein Zwischenzähler wieder herausgenommen wird.
+    const kept = withSubTarget(withSubTarget(landlord, 'garten', 'excluded', units), 'garten', 'none', units)
+    expect(kept.meterRest).toEqual(on({ key: 'landlord' }))
+    // „tragen Sie (wie bisher)“ gewählt: ohne Zwischenzähler wieder ohne Angabe.
+    expect(withMeterRestKey(landlord, 'off', units).meterRest).toBeNull()
   })
 
   test('Zwischenzähler mit Ziel: angezeigter Wert gleich gespeichertem, die Garage direkt', () => {

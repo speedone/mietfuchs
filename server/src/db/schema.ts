@@ -97,7 +97,7 @@ export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'uni
 // Was ein Zähler ohne Wohnung misst (#98). Gespeichert wird nur `common`; der Hauptzähler des Objekts hat keinen Eintrag
 // (`Meter.scope` kennt `property` zusätzlich, für den Aufrufer, nie in der Datei), deshalb nicht über `exactly`.
 export const METER_SCOPES = ['common'] as const
-export const REST_KEYS = ['area', 'persons', 'units', 'meter', 'landlord', 'selfUse'] as const
+export const REST_KEYS = ['area', 'persons', 'units', 'meter', 'landlord', 'selfUse', 'standard'] as const
 export const REST_GROUP_KEYS = ['area', 'persons', 'units', 'direct'] as const
 export const REST_TARGET_KINDS = ['landlord', 'selfUse', 'excluded', 'group'] as const
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)

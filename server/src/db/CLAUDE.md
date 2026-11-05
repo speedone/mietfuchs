@@ -94,7 +94,8 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   mit Wohnung wird nur über die Wohnung gelöscht, auch dort die Sperre. `meters.scope` ist nur `common` oder `NULL`. Das Ziel
   einer Zielgruppe trägt seine Wohnungen als JSON (`target_unit_ids`); eine gelöschte Wohnung bleibt dort stehen, die
   Berechnung schneidet mit den Wohnungen des Objekts. Die zwei Schritte 0085 (Tabellen, Spalte) und 0086 (Bedingungen an
-  `meters`, Neubau) sind getrennt, weil drizzle-kit eine neue Spalte samt Bedingung in einem Schritt falsch umbaut.
+  `meters`, Neubau) sind getrennt, weil drizzle-kit eine neue Spalte samt Bedingung in einem Schritt falsch umbaut. Schritt 0087 nimmt den Rest-Schlüssel
+  `standard` („tragen Sie (wie bisher)“ mit Zwischenzähler) in die Bedingung auf (Neubau von `cost_item_meter_rest`).
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn

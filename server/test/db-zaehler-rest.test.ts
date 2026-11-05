@@ -78,3 +78,17 @@ test('Wiederherstellen: ein Zähler oder eine Wohnung eines anderen Objekts in d
     assert.equal(befunde.filter((b) => /Zwischenzählers auf eine Wohnung eines anderen Objekts/.test(b)).length, 1, befunde.join('\n'))
   })
 })
+
+// Ruling 11: „tragen Sie (wie bisher)“ mit Zwischenzähler wird als eigener Schlüssel 'standard' gespeichert; die
+// Bedingung der Tabelle kennt ihn, und ein Bestand vor dem Schritt behält seine Zeilen.
+test("Rest-Schlüssel 'standard' wird gespeichert und gelesen", async () => {
+  await withDatabase(async (opened) => {
+    const rest: MeterRest = { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [{ meterId: 'garten', target: 'landlord' }] }
+    await opened.write(async (db) => {
+      await createEntity(db, 'meters', 'garten', meter('garten', 'objekt-1', { scope: 'common' }))
+      await createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser', meterRest: rest })
+    })
+    const stock = await opened.read(readStock)
+    assert.deepEqual(stock.costItems.find((c) => c.id === 'c1')?.meterRest, rest)
+  })
+})

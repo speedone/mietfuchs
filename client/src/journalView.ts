@@ -226,7 +226,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
   cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
   // Bezugszähler und Rest (#98): der Rest hat zusätzlich zwei Ziele beim Vermieter.
-  cost_item_meter_rest: { key: { area: KEY_LABELS.area, persons: KEY_LABELS.persons, units: KEY_LABELS.units, meter: 'im Verhältnis der Zähler', landlord: 'Vermieter trägt (abziehbar)', selfUse: 'Eigenanteil des Vermieters (privat)' } },
+  cost_item_meter_rest: { key: { area: KEY_LABELS.area, persons: KEY_LABELS.persons, units: KEY_LABELS.units, meter: 'im Verhältnis der Zähler', landlord: 'Vermieter trägt (abziehbar)', selfUse: 'Eigenanteil des Vermieters (privat)', standard: 'wie bisher (wie ohne Bezugszähler)' } },
   cost_item_meter_rest_subs: {
     target_kind: { landlord: 'Vermieter trägt (abziehbar)', selfUse: 'Eigenanteil des Vermieters (privat)', excluded: 'zählt in dieser Position nicht', group: 'auf eine Gruppe von Wohnungen' },
     target_key: { area: KEY_LABELS.area, persons: KEY_LABELS.persons, units: KEY_LABELS.units, direct: KEY_LABELS.direct },

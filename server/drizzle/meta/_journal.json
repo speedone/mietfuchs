@@ -610,6 +610,13 @@
       "when": 1793887049648,
       "tag": "0086_bezugszaehler_rest_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "6",
+      "when": 1793898743780,
+      "tag": "0087_rest_wie_bisher",
+      "breakpoints": true
     }
   ]
 }

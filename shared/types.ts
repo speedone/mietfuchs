@@ -368,8 +368,10 @@ export type MeterRest = {
   referenceMeterId: string | null
   // Zähler von Einheiten hinter dem Bezugszähler; null nur beim Hauptzähler (alle Zähler von Einheiten des Objekts).
   behindMeterIds: string[] | null
-  // Wie der Rest verteilt wird; 'meter' im Verhältnis der Zähler, 'landlord' abziehbar, 'selfUse' Eigenanteil.
-  key: MeterRestKey | 'meter' | 'landlord' | 'selfUse'
+  // Wie der Rest verteilt wird; 'meter' im Verhältnis der Zähler, 'landlord' abziehbar, 'selfUse' Eigenanteil,
+  // 'standard' wie ohne Angabe („tragen Sie (wie bisher)“, #116): ganz gemessen nach den Zählern, sonst beim Vermieter
+  // oder als Eigenanteil nach den Regeln von #116. Die Oberfläche speichert es, sobald ein Zwischenzähler dazukommt.
+  key: MeterRestKey | 'meter' | 'landlord' | 'selfUse' | 'standard'
   // Empfänger des Rests; null: die Verteilbasis der Position.
   unitIds: string[] | null
   // Zwischenzähler ohne Wohnung (`scope: 'common'`) hinter dem Bezugszähler.

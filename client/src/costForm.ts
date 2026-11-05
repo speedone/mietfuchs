@@ -957,39 +957,42 @@ export type RestOption = { value: string; label: string }
 export const showsMeterRest = (form: Pick<ItemForm, 'key' | 'meterType' | 'category'>): boolean =>
   form.key === 'meter' && form.meterType !== '' && REST_METER_TYPES.includes(form.meterType) && form.category !== HEATING_CATEGORY
 
-// Die Antworten, bewusst kurz. „tragen Sie“ ist ohne Angabe (`null`, wie bisher) oder, sobald ein Zwischenzähler dazukommt,
-// der Rest beim Vermieter (`landlord`) bzw. als Eigenanteil (`selfUse`); beide zeigt die Auswahl als „tragen Sie“.
+// Die Antworten, bewusst kurz. „tragen Sie (wie bisher)“ ist ohne Angabe (`null`) oder, sobald ein Zwischenzähler
+// dazukommt, der Schlüssel `standard` (Ruling 11): Der Rest rechnet dann wie ohne Angabe (#116), ganz gemessen nach den
+// Zählern, sonst beim Vermieter oder als Eigenanteil. Gespeicherte Schlüssel `landlord` und `selfUse` (aus einem Backup
+// oder einer früheren Fassung des Zweigs) stehen als eigene Antwort da, damit sichtbar ist, was gespeichert ist.
 export type MeterRestChoice = 'off' | MeterRest['key']
-const REST_KEY_LABELS: Record<'off' | 'meter' | MeterRestKey, string> = {
+const REST_KEY_LABELS: Record<Exclude<MeterRestChoice, 'standard'>, string> = {
   off: 'tragen Sie (wie bisher)',
   meter: 'im Verhältnis der Zähler',
   area: 'nach Fläche',
   persons: 'nach Personen',
   units: 'nach Einheiten',
+  landlord: 'trägt der Vermieter (abziehbar)',
+  selfUse: 'als Ihr Eigenanteil',
 }
-export function meterRestKeyOptions(): { value: MeterRestChoice; label: string }[] {
-  return (['off', 'meter', 'area', 'persons', 'units'] as const).map((value) => ({ value, label: REST_KEY_LABELS[value] }))
+export function meterRestKeyOptions(stored: MeterRest | null = null): { value: MeterRestChoice; label: string }[] {
+  const extra = stored && (stored.key === 'landlord' || stored.key === 'selfUse') ? [stored.key] : []
+  return (['off', 'meter', 'area', 'persons', 'units', ...extra] as const).map((value) => ({ value, label: REST_KEY_LABELS[value] }))
 }
-const byLandlord = (key: MeterRest['key']) => key === 'landlord' || key === 'selfUse'
+const byLandlord = (key: MeterRest['key']) => key === 'landlord' || key === 'selfUse' || key === 'standard'
 export const meterRestChoiceOf = (form: Pick<ItemForm, 'meterRest'>): MeterRestChoice =>
-  form.meterRest === null || byLandlord(form.meterRest.key) ? 'off' : form.meterRest.key
+  form.meterRest === null || form.meterRest.key === 'standard' ? 'off' : form.meterRest.key
 
-// „tragen Sie“ mit Zwischenzähler: Eigenanteil, wenn das Objekt eine selbstgenutzte Einheit hat (dann gelten die Regeln
-// des Eigenanteils aus #116, wie ohne Angabe), sonst beim Vermieter.
-const landlordKey = (units: readonly Unit[]): 'selfUse' | 'landlord' => (units.some((u) => u.selfUsed) ? 'selfUse' : 'landlord')
-
-// „tragen Sie“ ohne Zwischenzähler und mit dem Hauptzähler ist ohne Angabe (wie bisher).
+// „tragen Sie (wie bisher)“ ohne Zwischenzähler und mit dem Hauptzähler ist ohne Angabe.
 const normalized = (rest: MeterRest | null): MeterRest | null =>
-  rest && byLandlord(rest.key) && rest.subMeters.length === 0 && rest.referenceMeterId === null && rest.unitIds === null ? null : rest
+  rest && rest.key === 'standard' && rest.subMeters.length === 0 && rest.referenceMeterId === null && rest.unitIds === null ? null : rest
 
 // Einschalten: der Hauptzähler der Sparte, ohne Liste, ohne Zwischenzähler (Entwurf, „Datenmodell“). Ein Wechsel der
 // Antwort behält Bezug, Empfänger und Zwischenzähler; „tragen Sie“ behält nur die Zwischenzähler, am Hauptzähler.
 export function withMeterRestKey(form: ItemForm, choice: MeterRestChoice, units: readonly Unit[] = []): ItemForm {
   const now = form.meterRest
-  if (choice === 'off' || choice === 'landlord' || choice === 'selfUse') {
+  if (choice === 'off' || choice === 'standard') {
     if (!now || now.subMeters.length === 0) return { ...form, meterRest: null }
-    return { ...form, meterRest: { referenceMeterId: null, behindMeterIds: null, key: byLandlord(now.key) ? now.key : landlordKey(units), unitIds: null, subMeters: now.subMeters } }
+    return { ...form, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: now.subMeters } }
   }
+  // Nur eine gespeicherte Antwort steht zur Wahl; sie wieder zu wählen, stellt sie wieder her.
+  if ((choice === 'landlord' || choice === 'selfUse') && now) return { ...form, meterRest: { ...now, key: choice } }
   const base: MeterRest = now ?? { referenceMeterId: null, behindMeterIds: null, key: choice, unitIds: null, subMeters: [] }
   return { ...form, meterRest: { ...base, key: choice } }
 }
@@ -1103,11 +1106,11 @@ export function subGroupUnits(form: Pick<ItemForm, 'meterRest'>, meterId: string
   return t && typeof t !== 'string' && t.key !== 'direct' ? t.unitIds : null
 }
 
-// Ein Zwischenzähler bei „tragen Sie“ ohne Angabe schaltet die Angabe ein (der Rest bleibt beim Vermieter bzw. als
-// Eigenanteil); ist der letzte entfernt, gilt wieder „ohne Angabe“. Eine neue Gruppe beginnt mit allen Wohnungen der
+// Ein Zwischenzähler bei „tragen Sie (wie bisher)“ ohne Angabe schaltet die Angabe mit dem Schlüssel `standard` ein (der
+// Rest rechnet wie ohne Angabe); ist der letzte entfernt, gilt wieder „ohne Angabe“. Eine neue Gruppe beginnt mit allen Wohnungen der
 // Verteilbasis, ein Wechsel zwischen den Gruppenschlüsseln behält die Wohnungen.
 export function withSubTarget(form: ItemForm, meterId: string, value: string, units: readonly Unit[] = []): ItemForm {
-  const rest: MeterRest = form.meterRest ?? { referenceMeterId: null, behindMeterIds: null, key: landlordKey(units), unitIds: null, subMeters: [] }
+  const rest: MeterRest = form.meterRest ?? { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [] }
   const before = subOf(form, meterId)?.target
   const keptIds = before && typeof before !== 'string' && before.key !== 'direct' ? before.unitIds : null
   let target: MeterRestTarget | null

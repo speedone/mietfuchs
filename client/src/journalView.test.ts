@@ -116,6 +116,7 @@ describe('Verlauf: Werte von Bezugszähler und Rest (#98)', () => {
     expect(formatValue('target_key', 'direct', 'cost_item_meter_rest_subs')).toBe('Direktzuordnung')
     expect(formatValue('key', 'landlord', 'cost_item_meter_rest')).toBe('Vermieter trägt (abziehbar)')
     expect(formatValue('key', 'area', 'cost_item_meter_rest')).toBe('nach Wohnfläche')
+    expect(formatValue('key', 'standard', 'cost_item_meter_rest')).toBe('wie bisher (wie ohne Bezugszähler)')
     expect(formatValue('unit_ids_all', 1, 'cost_item_meter_rest')).toBe('ja')
     expect(formatValue('behind_all', 0, 'cost_item_meter_rest')).toBe('nein')
   })

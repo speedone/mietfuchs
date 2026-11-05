@@ -366,8 +366,9 @@ test('Vermerk: ein umgezogener Ordner öffnet nur lesend, Schreibrouten sagen wa
 // dort zu Recht nicht läuft. Gezeigt wird jetzt eine Kopie außerhalb des Ordners; der Ordner selbst bleibt, wie er ist,
 // auch eine Datenbank wird darin nicht migriert.
 // Der letzte Schritt der Kette (Index im Journal) und wie seine Wirkung zurückgenommen wird; siehe den Test darunter.
-const LAST_STEP_INDEX = 86
-// Der letzte Schritt (0086, Bedingungen an `meters`) baut die Tabelle neu und lässt sich ohne Rücknahme noch einmal anwenden.
+const LAST_STEP_INDEX = 87
+// Der letzte Schritt (0087, Bedingung an `cost_item_meter_rest`) baut die Tabelle neu und lässt sich ohne Rücknahme noch
+// einmal anwenden.
 const undoLastStep = (_db: { exec: (sql: string) => void }): void => {}
 
 test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner etwas ändert', async () => {
@@ -377,7 +378,7 @@ test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner e
     if (kind === 'database') {
       // Eine Datenbank aus einer früheren Fassung: Der letzte Schritt der Kette fehlt noch, Marke und Wirkung. Fügt ein
       // neuer letzter Schritt eine Spalte an, scheiterte er sonst an der schon vorhandenen; seine Wirkung nimmt
-      // `undoLastStep` zurück (heute 0086_bezugszaehler_rest_bedingungen, ein Neubau von `meters`, den nichts zurücknehmen muss).
+      // `undoLastStep` zurück (heute 0087_rest_wie_bisher, ein Neubau von `cost_item_meter_rest`, den nichts zurücknehmen muss).
       const { DatabaseSync } = await import('node:sqlite')
       const db = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
       const last = db.prepare('SELECT max(id) AS id FROM __drizzle_migrations').get()
