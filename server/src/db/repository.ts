@@ -614,7 +614,7 @@ function mergeMeter(current: Meter, body: unknown): Meter {
   const scope = merged(body, 'scope', current.scope === 'common' ? 'common' : undefined, (v) => {
     if (v === null || v === undefined || v === 'property') return undefined
     if (v === 'common') return 'common'
-    throw new MeterRestError('Was der Zähler misst, ist entweder das ganze Haus (Hauptzähler) oder ein Teil des Hauses („common“). Bitte laden Sie die Seite neu.')
+    throw new MeterRestError('Ein Zähler ohne Wohnung misst entweder das ganze Haus (Hauptzähler) oder ist ein „Zähler für einen Teil des Hauses“. Bitte laden Sie die Seite neu und wählen Sie es noch einmal.')
   })
   return {
     id: current.id,
@@ -1532,6 +1532,11 @@ async function guardMeter(db: Executor, before: Meter | null, after: Meter): Pro
   // Ein Zähler für einen Teil des Hauses (#98) hat keine Wohnung und gehört nicht zur Heizanlage.
   if (after.scope === 'common' && (after.unitId || after.heatingPlantId)) {
     throw new MeterRestError('Ein Zähler für einen Teil des Hauses gehört zu keiner Wohnung und nicht zur Heizanlage. Wählen Sie „Haus (Hauptzähler)“ bei der Zuordnung oder lassen Sie die Kennzeichnung weg.')
+  }
+  // M2 der Abschlussdurchsicht: nur die Sparten mit verteiltem Rest (db/meterRest.ts). Geprüft wird nur eine neu gesetzte
+  // Kennzeichnung oder eine geänderte Sparte (krumm, nicht kaputt: ein so gespeicherter Zähler bleibt speicherbar).
+  if (after.scope === 'common' && !['kaltwasser', 'strom', 'sonstig'].includes(after.type) && (before?.scope !== 'common' || before.type !== after.type)) {
+    throw new MeterRestError('Einen Zähler für einen Teil des Hauses gibt es für Wasser, Strom und „Sonstiges“. Wärme und Warmwasser verteilt die Heizkostenabrechnung; lassen Sie die Kennzeichnung bei diesem Zähler weg.')
   }
   // Ein Zähler, den eine Position als Bezugs-, Zwischen- oder Zähler dahinter nennt, behält Objekt, Sparte, Anlage und
   // Rolle; sonst stünde die Angabe der Position nach dem Speichern gegen die Regeln von `guardMeterRest`.

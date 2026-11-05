@@ -126,3 +126,17 @@ test('Eine unbekannte Wohnung in der Angabe: der Satz sagt, dass es sie nicht me
     (e: Error) => /gibt es nicht mehr/.test(e.message) && !/anderen Objekt/.test(e.message))
   })
 })
+
+// M2: „Zähler für einen Teil des Hauses“ gibt es nur für die Sparten mit verteiltem Rest; die Meldung nennt keinen
+// internen Wert.
+test('Zähler für einen Teil des Hauses nur bei Wasser, Strom und Sonstigem; Meldung ohne internen Wert', async () => {
+  await withDatabase(async (opened) => {
+    for (const [type, unit] of [['warmwasser', 'm³'], ['waerme', 'kWh']] as const) {
+      await assert.rejects(opened.write((db) => createEntity(db, 'meters', `x-${type}`, meter(`x-${type}`, 'objekt-1', { type, unit, scope: 'common' }))),
+        (e: Error) => /Teil des Hauses/.test(e.message) && /Wasser, Strom und „Sonstiges“/.test(e.message), type)
+    }
+    await opened.write((db) => createEntity(db, 'meters', 'ok', meter('ok', 'objekt-1', { type: 'strom', unit: 'kWh', scope: 'common' })))
+    await assert.rejects(opened.write((db) => createEntity(db, 'meters', 'odd', { ...meter('odd', 'objekt-1'), scope: 'teil' })),
+      (e: Error) => !/common/.test(e.message) && /Zähler für einen Teil des Hauses/.test(e.message))
+  })
+})
