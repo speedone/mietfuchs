@@ -103,6 +103,7 @@ import {
 import { SCRIPT_REFUSAL, carriesScript, describeFile, describeFolder, hashFile, mimeTypeOf, servedTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
+import { roomView } from '../../shared/rooms.ts'
 import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
 import { derivedTaxLines, incomeCsv, partsBySource, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { carriesStock, createPriorVersion, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked } from './db/priorVersions.ts'
@@ -1218,7 +1219,8 @@ async function openLetters(db: Executor, s: Parameters<typeof lettersOf>[0], tar
   const property = (await listProperties(db)).find((p) => p.id === propertyId) ?? null
   // #317: Der Monat der Anpassung ist ohne eigene Angabe der übernächste nach heute; der Abschluss friert ihn ein.
   // Druck (#415): Wohnfläche und Lohnanteile nach § 35a EStG für den Kopf und die Tabelle der Aufstellung, eingefroren mit dem Anschreiben.
-  return lettersFor(db, s, { settings: storedSettings, property, tenancies: await readTenancies(db), units: await readUnits(db), costItems: await readCostItems(db), doc, asOf: today() })
+  // Zimmer einer Wohnung (#573): die Wohnfläche des Zimmers ist seine wirksame, wie in der Abrechnung (Sicht der Rechnung).
+  return lettersFor(db, s, { settings: storedSettings, property, tenancies: await readTenancies(db), units: roomView(await readUnits(db)).units, costItems: await readCostItems(db), doc, asOf: today() })
 }
 
 // Das Anschreiben einer abgeschlossenen Abrechnung ist das eingefrorene. Wurde sie vor #415

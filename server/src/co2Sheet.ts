@@ -268,7 +268,8 @@ export function co2SheetFor(
     ...meta,
     plant: { ...plant, name: plant.name ?? '', nonResidential: plant.nonResidential ?? false, restriction: plant.restriction ?? 'none', districtEtsNew: plant.districtEtsNew ?? false },
     h: { key, from: h.from, to: h.to },
-    units: source.units.filter((u) => u.propertyId === propertyId),
+    // Die Wohnungen in der Sicht der Rechnung (#573): Zimmer mit wirksamer Fläche, die Wohnung mit Zimmern ohne.
+    units: snap.units,
     enteredAreaM2: statement?.areaM2 ?? null,
     stock: row && row.stockUnit != null ? {
       stockUnit: row.stockUnit, openingQuantity: row.openingQuantity ?? null, openingEmissionsKg: row.openingEmissionsKg ?? null, openingCo2Cents: row.openingCo2Cents ?? null,

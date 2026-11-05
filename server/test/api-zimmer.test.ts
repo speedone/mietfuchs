@@ -2,7 +2,7 @@
 // (`parentUnitId`), ist eine Wohnung mit Zimmern; ihre Regeln stehen in db/rooms.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { CostItem, Meter, Property, Tenancy, Unit, UnitDependents } from '../../shared/types.ts'
+import type { CostItem, Meter, Property, Settlement, Tenancy, Unit, UnitDependents } from '../../shared/types.ts'
 import { errorFrom, startServer, type Server } from '../testing/api.ts'
 
 const json = (body: unknown) => ({ headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -122,5 +122,27 @@ test('roomSplit: nur beim Schlüssel meter gespeichert und gelesen', async () =>
     const gewechselt = await s.api<CostItem>(`/api/costItems/${meter.id}`, { method: 'PUT', body: JSON.stringify({ key: 'area' }) })
     assert.equal(gewechselt.roomSplit, undefined)
     assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === meter.id)?.roomSplit, undefined)
+  } finally { s.stop() }
+})
+
+// Sicht der Rechnung (#573, Task 2): Abrechnung und Anschreiben nennen das Zimmer mit vollem Namen und wirksamer Fläche;
+// die Stammdaten zeigen es, wie es gespeichert ist.
+test('Zimmer in Abrechnung und Anschreiben: voller Name, wirksame Fläche; Stammdaten unverändert', async () => {
+  const s = await startServer()
+  try {
+    await unit(s, 'A', { areaM2: 60 })
+    const w = await unit(s, 'WG', { areaM2: 80, participates: false })
+    const z1 = await unit(s, 'Zimmer 1', { areaM2: 12, parentUnitId: w.id })
+    await unit(s, 'Zimmer 2', { areaM2: 12, parentUnitId: w.id })
+    await unit(s, 'Zimmer 3', { areaM2: 16, parentUnitId: w.id })
+    const t = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify(tenancy(z1.id)) })
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area' }) })
+    const st = await s.api<Settlement>('/api/settlement/2025')
+    const mine = st.statements.find((x) => x.tenancyId === t.id)
+    assert.equal(mine?.unitName, 'Zimmer 1 in der Wohnung WG')
+    assert.equal(mine?.totalShareCents, 17143)
+    assert.equal(st.letters?.[t.id]?.premises?.areaM2, 24)
+    const listed = (await s.api<Unit[]>('/api/units')).find((u) => u.id === z1.id)
+    assert.deepEqual([listed?.name, listed?.areaM2], ['Zimmer 1', 12])
   } finally { s.stop() }
 })

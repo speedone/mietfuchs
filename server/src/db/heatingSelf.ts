@@ -32,6 +32,7 @@ import { andList } from '../../../shared/wording.ts'
 import { has, HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
 import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, lineRowsOf } from './selfLine.ts'
+import { roomView } from '../../../shared/rooms.ts'
 
 export const SELF_VIA_SETUP =
   'Die eigene Heizkostenabrechnung richten Sie in den Stammdaten unter „Heizung“ mit den Fragen der Einrichtung ein; dort entstehen Anteil, Zähler und die Umstellung der Positionen gemeinsam.'
@@ -277,7 +278,9 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   // Zähler, die fehlen: je angeschlossener Wohnung Wärme, bei Warmwasser auch Warmwasser; an der Anlage
   // der Wärmezähler am Speicher und der Gesamtwärmezähler, wenn gewünscht.
   // Durchsicht S1 zu #322: Einheiten ohne Fläche (Garage) bekommen keine Zähler; die Abrechnung zählt sie ohne Zähler nicht mit.
-  const allUnits = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(after, u) && (u.areaM2 || 0) > 0)
+  // Zimmer einer Wohnung (#573): Nutzer sind die Zimmer; die Wohnung hat in der Sicht der Rechnung keine Fläche und
+  // bekommt keinen Zähler (an ihr hängen nur Kaltwasser, Strom und Sonstiges).
+  const allUnits = roomView((await readUnits(db)).filter((u) => u.propertyId === current.propertyId)).units.filter((u) => servesUnit(after, u) && (u.areaM2 || 0) > 0)
   const allMeters = await readMeters(db)
   const lineIds = lineIdsOf((await lineRowsOf(db, plantId)).plants, plantId)
   const pots = after.hotWater === 'none' ? (['heating'] as const) : (['heating', 'water'] as const)

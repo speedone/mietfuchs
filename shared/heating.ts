@@ -3,12 +3,13 @@
 // beide dasselbe, und das Cockpit kann nicht „Ablesungen nicht erforderlich“ melden, während die
 // Abrechnung einen Kürzungsbetrag nennt.
 import type { CostKey, EstimatePart, SelfPot } from './types.ts'
+import { dwellingsOf } from './rooms.ts'
 
 // Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt. Dieselbe Zeichenkette steht in
 // CATEGORIES (client/src/types.ts) und im Kategorie-Schema der KI-Auswertung.
 export const HEATING_CATEGORY = 'Heizung und Warmwasser'
 
-type HeatingUnit = { id: string; participates: boolean; selfUsed?: boolean }
+type HeatingUnit = { id: string; participates: boolean; selfUsed?: boolean; parentUnitId?: string | null }
 type HeatingItem = { id: string; category: string; key: CostKey; amountCents: number; participantUnitIds?: string[] | null }
 
 // § 2 HeizkostenV: Außer bei Gebäuden mit nicht mehr als zwei Wohnungen, von denen eine der
@@ -20,9 +21,10 @@ type HeatingItem = { id: string; category: string; key: CostKey; amountCents: nu
 // Fläche zählt, sonst würde aus einem Dreifamilienhaus ein Zweifamilienhaus.
 // Eine vermietete Eigentumswohnung in einer großen Anlage erkennt Mietfuchs daran nicht (nur die
 // Zahl der angelegten Wohnungen, nicht die der Anlage).
+// Zimmer einer Wohnung (#573) zählen nicht, die Wohnung mit Zimmern zählt einmal (`dwellingsOf` in shared/rooms.ts).
 export function mayAgreeOtherwise<U extends HeatingUnit>(units: readonly U[], isDwelling: (u: U) => boolean): boolean {
-  const dwellings = units.filter(isDwelling)
-  return dwellings.length <= 2 && dwellings.some((u) => u.selfUsed === true && !u.participates)
+  const dwellings = dwellingsOf(units, isDwelling)
+  return dwellings.length <= 2 && dwellings.some((d) => d.selfUsed && !d.participates)
 }
 
 // Gilt eine Position als nach Verbrauch verteilt? Nach Zählern (`meter`), als Einzelbeträge aus

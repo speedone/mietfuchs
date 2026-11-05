@@ -15,6 +15,7 @@ import { heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
 import { readHeatingPlants, readStock } from './read.ts'
 import { has, HeatingError } from './repository.ts'
 import { heatingMonthlyInfo } from './schema.ts'
+import { roomView } from '../../../shared/rooms.ts'
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const isDay = (text: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(`${text}T00:00:00Z`).toISOString().slice(0, 10) === text
@@ -100,7 +101,8 @@ export async function monthlyInfoView(db: Database, plantId: string, periodText:
     ? monthlyInfoMonths({
         plants: group,
         meters,
-        units: units.map((u) => ({ id: u.id, name: u.name, areaM2: u.areaM2 || 0, noConnection: u.noConnection })),
+        // Zimmer einer Wohnung (#573): voller Name und wirksame Fläche wie in der Abrechnung (Sicht der Rechnung).
+        units: roomView(units).units.map((u) => ({ id: u.id, name: u.name, areaM2: u.areaM2 || 0, noConnection: u.noConnection })),
         tenancies,
         readings,
         rows: stock.monthlyInfoRows.filter((r) => lineIds.has(r.plantId)),
