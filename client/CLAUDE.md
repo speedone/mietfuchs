@@ -361,6 +361,15 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   gespeicherte, ungültige Angabe sperrt den Wechsel nicht, wie bei der IBAN). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
   `no-print`.
 
+- **Zimmer einer Wohnung** (#573): Die Oberfläche bietet nur an, was der Server annimmt. `parentUnitOptions` ([unitForm.ts](src/unitForm.ts))
+  speist das Feld „Liegt als Zimmer in der Wohnung“ (Wohnungen des Objekts ohne Verweis, Mietverhältnis, Eigennutzung,
+  Nutzungswechsel und Wärmezähler; der gespeicherte Verweis steht immer darin), `meterTypeChoices`/`meterUnitChoices`
+  ([meterForm.ts](src/meterForm.ts)) die Sparten an einer Wohnung mit Zimmern und ihre Zuordnung, `showsRoomSplit` und
+  `ROOM_SPLIT_OPTIONS` ([costForm.ts](src/costForm.ts)) die Auswahl der Verteilung auf die Zimmer. Eine Wohnung mit Zimmern
+  zeigt Nutzung, Personen und Nutzungswechsel nicht (ein Satz sagt warum), das Mietverhältnis bietet sie nicht an, die Liste
+  rückt die Zimmer unter ihre Wohnung (`listedUnits`). Die Löschsperre sagt `unitDeleteBlocked` vorher (`dependents.rooms`).
+  Tests: zimmerStammdaten.test.tsx, zimmerZaehler.test.tsx.
+
 ## Lexikon und Anleitungen
 
 - **Begriffslexikon** ([shared/glossary.ts](../shared/glossary.ts)): Erklärung, Beispiel mit Zahlen,

@@ -68,6 +68,8 @@ import {
   subGroupUnits,
   toggleSubUnit,
   restUnitChoices,
+  showsRoomSplit,
+  ROOM_SPLIT_OPTIONS,
 } from './costForm'
 
 const unit = (id: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1',
@@ -1339,3 +1341,54 @@ test('Betriebsstrom: Abzug übernimmt Bezugszähler und Rest der Stromrechnung',
   const mit = withGeneralChoice(hand, 'strom', [strom])
   expect([mit.key, mit.meterType, mit.meterRest]).toEqual(['meter', 'strom', meterRest])
 })
+
+// Zimmer einer Wohnung (#573): Der Zähler der Wohnung geht auf die Zimmer, nach Fläche oder Personentagen.
+describe('Zähler der Wohnung auf die Zimmer verteilen', () => {
+  const wg = unit('wg', { name: 'WG' })
+  const z1 = unit('z1', { parentUnitId: 'wg' })
+  const z2 = unit('z2', { parentUnitId: 'wg' })
+  const flatMeter = { type: 'kaltwasser' as const, unitId: 'wg' }
+  const meterForm = (patch: Partial<ItemForm> = {}) => form({ key: 'meter', meterType: 'kaltwasser', ...patch })
+
+  test('die Auswahl steht nur bei Verbrauch einer Sparte, wenn in der Basis eine Wohnung mit Zimmern und Zähler der Sparte liegt', () => {
+    const units = [wg, z1, z2, unit('eg')]
+    expect(showsRoomSplit(meterForm(), units, [flatMeter])).toBe(true)
+    // andere Sparte als der Zähler der Wohnung
+    expect(showsRoomSplit(meterForm({ meterType: 'strom' }), units, [flatMeter])).toBe(false)
+    // kein Zähler an der Wohnung
+    expect(showsRoomSplit(meterForm(), units, [{ type: 'kaltwasser', unitId: 'eg' }])).toBe(false)
+    // keine Wohnung mit Zimmern
+    expect(showsRoomSplit(meterForm(), [unit('eg'), unit('og')], [{ type: 'kaltwasser', unitId: 'eg' }])).toBe(false)
+    // anderer Schlüssel
+    expect(showsRoomSplit(meterForm({ key: 'area' }), units, [flatMeter])).toBe(false)
+    // Teilnehmer ohne ein Zimmer der Wohnung: die Wohnung liegt nicht in der Basis
+    expect(showsRoomSplit(meterForm({ participants: ['eg'] }), units, [flatMeter])).toBe(false)
+    expect(showsRoomSplit(meterForm({ participants: ['z1', 'eg'] }), units, [flatMeter])).toBe(true)
+  })
+
+  test('die Optionen: Fläche und Personentage, der Wert der Auswahl steht in den Optionen', () => {
+    expect(ROOM_SPLIT_OPTIONS.map((o) => o.label)).toEqual(['Fläche', 'Personentagen'])
+    for (const choice of ['area', 'persons'] as const) {
+      expect(ROOM_SPLIT_OPTIONS.map((o) => o.value)).toContain(itemToFormOf({ ...itemOf('meter'), roomSplit: choice }).roomSplit)
+    }
+    // ohne Angabe zeigt die Auswahl „Fläche“, das ist die Voreinstellung der Berechnung
+    expect(itemToFormOf(itemOf('meter')).roomSplit).toBe('area')
+  })
+
+  test('gespeichert wird roomSplit nur beim Schlüssel „nach Verbrauch“; Fläche ist die Voreinstellung und bleibt ungespeichert', () => {
+    const units = [wg, z1, z2]
+    const persons = buildCostItemBody(meterForm({ roomSplit: 'persons' }), units, 2025)
+    expect(persons).toHaveProperty('body.roomSplit', 'persons')
+    expect(buildCostItemBody(meterForm({ roomSplit: 'area' }), units, 2025)).toHaveProperty('body.roomSplit', null)
+    const other = buildCostItemBody(form({ key: 'area', roomSplit: 'persons' }), units, 2025)
+    expect(other).toHaveProperty('body.roomSplit', null)
+  })
+
+  test('Rundlauf: eine gespeicherte Personentage-Position bleibt Personentage', () => {
+    const f = itemToFormOf({ ...itemOf('meter'), roomSplit: 'persons' })
+    expect(buildCostItemBody({ ...f, meterType: 'kaltwasser' }, [wg, z1, z2], 2025)).toHaveProperty('body.roomSplit', 'persons')
+  })
+})
+const itemOf = (key: CostKey): CostItemOf => ({
+  id: 'c1', propertyId: 'objekt-1', period: '2025', category: 'Wasser', description: 'Wasser', amountCents: 10000, key, meterType: 'kaltwasser',
+} as CostItemOf)

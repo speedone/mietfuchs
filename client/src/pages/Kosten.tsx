@@ -37,6 +37,8 @@ import {
   withKey,
   withMeterRestType,
   showsMeterRest,
+  showsRoomSplit,
+  ROOM_SPLIT_OPTIONS,
   meterRestDroppedText,
   keepMeterRest,
   withCategory,
@@ -1392,6 +1394,15 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {/* #98: Bezugszähler und verteilter Rest; ohne Wahl wie bisher („tragen Sie“). */}
             {showsMeterRest(form) && (
               <MeterRestFields form={form} meters={meters} units={units} onChange={setForm} field={formErrors.field('meterRest')} />
+            )}
+            {/* #573: Der Zähler einer Wohnung mit Zimmern geht erst auf die Wohnung, dann nach Fläche oder Personentagen auf die Zimmer. */}
+            {showsRoomSplit(form, units, meters) && (
+              <label className="field">
+                Zähler der Wohnung auf die Zimmer verteilen nach:
+                <select value={form.roomSplit} onChange={(e) => setForm({ ...form, roomSplit: e.target.value === 'persons' ? 'persons' : 'area' })}>
+                  {ROOM_SPLIT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
             )}
             {meterRestDroppedText(form) && <small className="muted basis-full">{meterRestDroppedText(form)}</small>}
             {form.key === 'custom' && (

@@ -88,6 +88,8 @@ export type ItemForm = {
   // Die Angabe je Sparte, wie sie zuletzt eingegeben war (`keepMeterRest`): Ein Wechsel der Sparte nimmt die Zähler der
   // bisherigen heraus, der Wechsel zurück stellt deren Angabe wieder her. Wird nicht gesendet.
   meterRestKept: Partial<Record<MeterType, MeterRest | null>>
+  // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573); nur beim Schlüssel `meter` gesendet, `area` ist die Voreinstellung.
+  roomSplit: RoomSplit
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -123,6 +125,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   spreadYears: '',
   meterRest: null,
   meterRestKept: {},
+  roomSplit: 'area',
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -164,6 +167,7 @@ export function itemToForm(i: CostItem): ItemForm {
     spreadYears: isSpreadYears(i.spreadYears) ? `${i.spreadYears}` : '',
     meterRest: i.meterRest ?? null,
     meterRestKept: {},
+    roomSplit: i.roomSplit === 'persons' ? 'persons' : 'area',
   }
 }
 
@@ -603,7 +607,7 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 // Belegbuchung und KI-Auswertung nie vorbelegen.
 // Dazu Bezugszähler und Rest (#98): die Angabe, wo das Formular sie zeigt (`showsMeterRest`), sonst `null`, das eine
 // gespeicherte entfernt.
-export type FormBody = CostItemBody & { spreadYears: SpreadYears | null; meterRest: MeterRest | null }
+export type FormBody = CostItemBody & { spreadYears: SpreadYears | null; meterRest: MeterRest | null; roomSplit: RoomSplit | null }
 export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): { error: string } | { body: FormBody } | { error: string, problems: Problem<'participants' | 'meterRest'>[] } {
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
@@ -617,7 +621,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
   if (rest.length > 0) return { error: rest.map((x) => x.text).join(' '), problems: rest }
   const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
   return 'body' in result
-    ? { body: { ...withSpread(withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p), form), meterRest: showsMeterRest(form) ? form.meterRest : null } }
+    ? { body: { ...withSpread(withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p), form), meterRest: showsMeterRest(form) ? form.meterRest : null, roomSplit: form.key === 'meter' && form.roomSplit === 'persons' ? 'persons' : null } }
     : result
 }
 
@@ -1200,4 +1204,30 @@ export function meterRestProblems(form: ItemForm, units: readonly Unit[]): Probl
     problems.push({ field: 'meterRest', short: 'Bitte wählen', text: 'Zwischenzähler: Bitte haken Sie wenigstens eine Wohnung an, die seinen Verbrauch bekommt.' })
   }
   return problems
+}
+
+// ---------- Zähler der Wohnung auf die Zimmer (#573, Entwurf 2026-11-05-wohnung-zimmer-design.md, „Oberfläche“) ----------
+
+export type RoomSplit = NonNullable<CostItem['roomSplit']>
+
+// Die Antworten der Auswahl „Zähler der Wohnung auf die Zimmer verteilen nach:“. `area` ist die Voreinstellung der
+// Berechnung (fehlend heißt Fläche); Personentage zählen die Tage der Mieter je Zimmer.
+export const ROOM_SPLIT_OPTIONS: { value: RoomSplit; label: string }[] = [
+  { value: 'area', label: 'Fläche' },
+  { value: 'persons', label: 'Personentagen' },
+]
+
+// Die Auswahl steht nur bei einer Position nach Verbrauch, wenn in der Verteilbasis eine Wohnung mit Zimmern liegt, die
+// einen Zähler der gewählten Sparte hat. Sonst gäbe es nichts zu verteilen, und die Frage verwirrte nur. In der Basis liegt die
+// Wohnung, wenn eines ihrer Zimmer teilnimmt (die Wohnung selbst nimmt nie teil).
+export function showsRoomSplit(
+  form: Pick<ItemForm, 'key' | 'meterType' | 'participants' | 'category'>,
+  units: readonly Unit[],
+  meters: readonly Pick<Meter, 'type' | 'unitId'>[],
+): boolean {
+  if (form.key !== 'meter' || form.meterType === '' || form.category === HEATING_CATEGORY) return false
+  const inBasisIds = new Set(restBasisUnits(form, units).map((u) => u.id))
+  return units.some((flat) =>
+    units.some((r) => r.parentUnitId === flat.id && inBasisIds.has(r.id)) &&
+    meters.some((m) => m.unitId === flat.id && m.type === form.meterType))
 }

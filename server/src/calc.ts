@@ -296,12 +296,12 @@ const noticeKinds = {
   'basis.vacancy-no-area': { level: 'hint', title: 'Leere Einheit ohne Fläche', terms: ['vacancy', 'personDays'] },
   // Zimmer einer Wohnung (#573): Ohne Fläche der Wohnung gelten die Zimmerflächen, wie sie stehen. Fehlen darin Küche,
   // Bad und Flur, tragen die übrigen Mieter im Haus zu viel; das Geld landet vermutlich anders als gewollt.
-  'unit.rooms-area': { level: 'warning', title: 'Wohnfläche der Wohnung mit Zimmern fehlt', terms: ['distributionBasis'] },
+  'unit.rooms-area': { level: 'warning', title: 'Wohnfläche der Wohnung mit Zimmern fehlt', terms: ['roomOfFlat', 'distributionBasis'] },
   // Ein Zimmer außerhalb der Verteilbasis einer Position: Sein Teil bleibt beim Vermieter, obwohl vielleicht ein Mieter
   // ihn tragen sollte; das Geld landet vermutlich anders als gewollt.
-  'rooms.outside-basis': { level: 'warning', title: 'Zimmer außerhalb der Verteilbasis', terms: ['distributionBasis'] },
+  'rooms.outside-basis': { level: 'warning', title: 'Zimmer außerhalb der Verteilbasis', terms: ['roomOfFlat', 'distributionBasis'] },
   // Kosten nur einer Wohnung mit Zimmern (Strom, Internet der WG) sind keine Betriebskosten (#573, Entwurf „Rechtliche Grundlage“).
-  'rooms.household-cost': { level: 'warning', title: 'Kosten nur der Wohnung mit Zimmern', terms: ['distributionBasis'] },
+  'rooms.household-cost': { level: 'warning', title: 'Kosten nur der Wohnung mit Zimmern', terms: ['roomOfFlat', 'distributionBasis'] },
   // Nutzungswechsel (#259): eine Auskunft, nichts ist falsch erfasst; färbt das Cockpit nicht.
   'usage.changed': { level: 'hint', title: 'Nutzung wechselt im Zeitraum', terms: ['usageChange', 'ownShare'] },
   // Ein Mietverhältnis in einer Zeit, in der die Einheit nicht vermietet ist: Die Angaben widersprechen sich, und

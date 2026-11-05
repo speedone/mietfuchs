@@ -189,6 +189,9 @@ const FIELD_LABELS: Record<string, string> = {
   plant_id: 'Heizanlage',
   cost_item_id: 'Kostenposition',
   direct_unit_id: 'Direkt zugeordnet',
+  // Zimmer einer Wohnung (#573)
+  parent_unit_id: 'Liegt als Zimmer in der Wohnung',
+  room_split: 'Zähler der Wohnung auf die Zimmer nach',
   meter_type: 'Zählertyp',
   heating_part: 'Teil der Heizkosten',
   energy: 'Energieträger',
@@ -225,6 +228,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   payments: { kind: asLabels(PAYMENT_KIND_LABELS) },
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
   cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
+  cost_items: { room_split: { area: 'Fläche', persons: 'Personentagen' } },
   // Bezugszähler und Rest (#98): der Rest hat zusätzlich zwei Ziele beim Vermieter.
   cost_item_meter_rest: { key: { area: KEY_LABELS.area, persons: KEY_LABELS.persons, units: KEY_LABELS.units, meter: 'im Verhältnis der Zähler', landlord: 'Vermieter trägt (abziehbar)', selfUse: 'Eigenanteil des Vermieters (privat)', standard: 'wie bisher (wie ohne Bezugszähler)' } },
   cost_item_meter_rest_subs: {

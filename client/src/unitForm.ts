@@ -20,12 +20,14 @@ export type UnitForm = {
   // Nutzungswechsel (#259): ab Tag ('JJJJ-MM-TT') gilt die Nutzung; `usage` oben gilt bis zum ersten.
   usageChanges: { from: string; usage: UnitUsage }[]
   rooms: string
+  // Die Wohnung, in der diese Einheit als Zimmer liegt (#573); leer heißt keine.
+  parentUnitId: string
   floor: string
   notes: string
 }
 
 export const EMPTY_UNIT_FORM: UnitForm = {
-  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', noConnection: [], usageChanges: [], rooms: '', floor: '', notes: '',
+  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', noConnection: [], usageChanges: [], rooms: '', parentUnitId: '', floor: '', notes: '',
 }
 
 const numStr = (n: number | undefined | null) => (n != null ? String(n).replace('.', ',') : '')
@@ -41,6 +43,7 @@ export function unitToForm(u: Unit): UnitForm {
     noConnection: u.noConnection ?? [],
     usageChanges: (u.usageChanges ?? []).map((c) => ({ from: c.from, usage: c.usage })),
     rooms: numStr(u.rooms),
+    parentUnitId: u.parentUnitId ?? '',
     floor: u.floor ?? '',
     notes: u.notes ?? '',
   }
@@ -115,6 +118,7 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
       noConnection: form.noConnection,
       usageChanges: [...form.usageChanges].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0)).map((c) => ({ from: c.from, usage: c.usage })),
       rooms,
+      parentUnitId: form.parentUnitId || null,
       floor: form.floor.trim() || null,
       notes: form.notes.trim() || null,
     },
@@ -197,13 +201,62 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
 // Rechnungen einer Etagenheizung sperren das Löschen der Wohnung (Integrationsdurchsicht S1, Regel in
 // server/src/db/repository.ts). Die Oberfläche sagt es, bevor sie fragt, statt erst „Löschen“ anzubieten.
 export function unitDeleteBlocked(deps: UnitDependents | null): string | null {
-  const n = deps?.fuelDeliveries ?? 0
+  const parts = [roomsBlocked(deps?.rooms ?? 0), fuelBlocked(deps?.fuelDeliveries ?? 0)].filter((t) => t !== null)
+  return parts.length > 0 ? parts.join(' ') : null
+}
+
+// Zimmer sperren das Löschen der Wohnung (#573, Satz des Servers in server/src/db/rooms.ts: 409).
+function roomsBlocked(n: number): string | null {
+  if (n === 0) return null
+  return `In der Wohnung ${n === 1 ? 'liegt 1 Zimmer' : `liegen ${n} Zimmer`}. ` +
+    'Löschen oder lösen Sie zuerst die Zimmer, damit keines ohne Wohnung zurückbleibt; dann lässt sich die Wohnung löschen.'
+}
+
+function fuelBlocked(n: number): string | null {
   if (n === 0) return null
   return n === 1
     ? 'An der Wohnung hängt 1 Rechnung der Etagenheizung. Sie belegt Brennstoffkosten und CO₂-Aufteilung und bleibt deshalb; ' +
       'die Wohnung lässt sich erst löschen, wenn Sie die Rechnung auf der Seite Heizkosten unter „Lieferungen“ gelöscht haben.'
     : `An der Wohnung hängen ${n} Rechnungen der Etagenheizung. Sie belegen Brennstoffkosten und CO₂-Aufteilung und bleiben deshalb; ` +
       'die Wohnung lässt sich erst löschen, wenn Sie die Rechnungen auf der Seite Heizkosten unter „Lieferungen“ gelöscht haben.'
+}
+
+// ---------- Zimmer einer Wohnung (#573) ----------
+
+// Die Wohnungen mit Zimmern: Einheiten, auf die eine andere verweist.
+export function flatIdsWithRooms(units: readonly Pick<Unit, 'id' | 'parentUnitId'>[]): Set<string> {
+  const ids = new Set(units.map((u) => u.id))
+  return new Set(units.flatMap((u) => (u.parentUnitId && ids.has(u.parentUnitId) ? [u.parentUnitId] : [])))
+}
+export const roomCountOf = (units: readonly Pick<Unit, 'parentUnitId'>[], flatId: string): number =>
+  units.filter((u) => u.parentUnitId === flatId).length
+
+// Zähler, die ein Zimmer nicht an der Wohnung haben darf (db/rooms.ts): Wärme, Warmwasser und Heizkostenverteiler messen
+// am Zimmer; an der Wohnung bleiben Kaltwasser, Strom und Sonstiges.
+export const APARTMENT_METER_TYPES: readonly MeterType[] = ['kaltwasser', 'strom', 'sonstig']
+
+// Die Auswahl „Liegt als Zimmer in der Wohnung“: nur, was der Server annimmt, nämlich Wohnungen des Objekts (`units` ist
+// die Liste des gewählten Objekts), die selbst in keiner liegen, kein Mietverhältnis haben, nicht selbstgenutzt sind, keine
+// Nutzungswechsel und keine Wärme-, Warmwasser- oder Heizkostenverteilerzähler haben. Eine Wohnung mit eigenen Zimmern liegt
+// in keiner anderen (eine Ebene). Der gespeicherte Verweis steht immer darin, auch wenn er nicht mehr zulässig ist: Sonst
+// zeigte die Auswahl den ersten Eintrag und speicherte etwas anderes als das Sichtbare. Der Server sagt dann, was nicht geht.
+export function parentUnitOptions(
+  units: readonly Unit[],
+  tenancies: readonly Pick<Tenancy, 'unitId'>[],
+  meters: readonly Pick<Meter, 'type' | 'unitId'>[],
+  selfId: string,
+  stored: string,
+): { id: string, name: string }[] {
+  if (flatIdsWithRooms(units).has(selfId)) return []
+  const rented = new Set(tenancies.map((t) => t.unitId))
+  const wrongMeter = new Set(meters.filter((m) => m.unitId && !APARTMENT_METER_TYPES.includes(m.type)).map((m) => m.unitId))
+  const options: { id: string, name: string }[] = units
+    .filter((u) => u.id !== selfId && !u.parentUnitId && !rented.has(u.id) && !wrongMeter.has(u.id) && !u.selfUsed && (u.usageChanges ?? []).length === 0)
+    .map((u) => ({ id: u.id, name: u.name }))
+  if (stored && !options.some((o) => o.id === stored)) {
+    options.push({ id: stored, name: units.find((u) => u.id === stored)?.name ?? 'gelöschte Wohnung' })
+  }
+  return options
 }
 
 // Anschlüsse einer Einheit (#142). Gefragt wird positiv: angehakt heißt angeschlossen, und das ist

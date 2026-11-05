@@ -7,6 +7,8 @@ import { calibrationEnd } from '../../shared/calibration.ts'
 import { CALIBRATION_AMENDED_ON } from '../../shared/law/messev.ts'
 import { hasKnownUnits, knownUnit, meterUnitOptions, unitKey, unitLabel, unitProblem } from '../../shared/meterUnits.ts'
 import { METER_TYPE_LABELS } from '../../shared/wording.ts'
+import type { Unit } from './types'
+import { APARTMENT_METER_TYPES, flatIdsWithRooms } from './unitForm'
 import type { Problem } from './formProblems'
 import { parseYearText } from './yearText'
 import { YEAR_MAX, YEAR_MIN } from './monthText'
@@ -318,3 +320,24 @@ export function calibrationSuggestion(type: MeterType, markedYear: string): { ye
 export const CALIBRATION_MARK_HELP =
   'Die Jahreszahl auf der Eichmarke nennt das Jahr, in dem die Eichfrist beginnt. Wurde der Zähler erst nach Ablauf der alten Frist neu geeicht, beginnt die neue Frist mit dem Ablauf der alten; auf der Marke steht dann dieses Jahr und nicht das Jahr der Eichung (§ 34 Abs. 1 Satz 3, Anlage 8 MessEV). ' +
   'Eine Bauartzulassung nach dem früheren Eichrecht kann eine andere Frist bestimmen (§ 34 Abs. 1 Nr. 2 MessEV). Nehmen Sie im Zweifel das Jahr laut Eichschein oder Messdienst.'
+
+// ---------- Zimmer einer Wohnung (#573) ----------
+
+// Die Reihenfolge der Auswahl ist die der Beschriftungen (wie bisher im Formular).
+const ALL_METER_TYPES = Object.keys(METER_TYPE_LABELS) as MeterType[]
+
+// Die Sparten, die das Formular zu einer Zuordnung anbietet: An einer Wohnung mit Zimmern nur Kaltwasser, Strom und
+// Sonstiges (Wärme, Warmwasser und Heizkostenverteiler messen am Zimmer, db/rooms.ts). Die gespeicherte Sparte steht immer
+// darin, sonst zeigte die Auswahl den ersten Eintrag und speicherte etwas anderes; der Server sagt dann, was nicht geht.
+export function meterTypeChoices(unitId: string, units: readonly Pick<Unit, 'id' | 'parentUnitId'>[], stored: MeterType): MeterType[] {
+  if (!unitId || !flatIdsWithRooms(units).has(unitId)) return [...ALL_METER_TYPES]
+  return ALL_METER_TYPES.filter((t) => APARTMENT_METER_TYPES.includes(t) || t === stored)
+}
+
+// Die Zuordnungen, die das Formular zu einer Sparte anbietet: Wärme, Warmwasser und Heizkostenverteiler nicht an einer
+// Wohnung mit Zimmern. Die gewählte bleibt immer darin.
+export function meterUnitChoices<U extends Pick<Unit, 'id' | 'parentUnitId'>>(units: readonly U[], type: MeterType, selected: string): U[] {
+  if (APARTMENT_METER_TYPES.includes(type)) return [...units]
+  const flats = flatIdsWithRooms(units)
+  return units.filter((u) => u.id === selected || !flats.has(u.id))
+}

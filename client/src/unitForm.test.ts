@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { CostItem, MeterType, Tenancy, Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, flatIdsWithRooms, parentUnitOptions, roomCountOf, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -273,3 +273,86 @@ describe('Cockpit: fehlende Fläche oder leere Einheit mit 0 m² (Endprüfung rc
     })
   })
 })
+
+// Zimmer einer Wohnung (#573): Das Feld „Liegt als Zimmer in der Wohnung“ bietet nur, was der Server annimmt.
+describe('Zimmer einer Wohnung', () => {
+  const unit = (id: string, patch: Partial<Unit> = {}): Unit => ({ id, propertyId: 'p1', name: id, areaM2: 20, participates: true, ...patch })
+  const rent = (unitId: string): Tenancy => ({
+    id: `t-${unitId}`, unitId, tenantName: 'M', persons: 1, personHistory: [], start: '2025-01-01', end: null,
+    prepayments: [], prepaymentOverrides: {}, baseRents: [],
+  })
+  const none = { tenancies: 0, meters: 0, readings: 0, payments: 0, costItemLinks: 0, directCostItems: 0, fuelDeliveries: 0, rooms: 0 }
+
+  test('der Rumpf trägt die Wohnung, leer heißt keine (null löscht einen alten Verweis)', () => {
+    expect(body(form({ parentUnitId: 'wg' })).parentUnitId).toBe('wg')
+    expect(body(form({ parentUnitId: '' })).parentUnitId).toBeNull()
+    expect(body(EMPTY_UNIT_FORM_WITH_NAME()).parentUnitId).toBeNull()
+  })
+
+  test('Rundlauf: Wohnung → Formular → Rumpf behält den Verweis', () => {
+    const f = unitToForm({ ...unit('z1'), parentUnitId: 'wg' })
+    expect(f.parentUnitId).toBe('wg')
+    expect(body(f).parentUnitId).toBe('wg')
+    expect(unitToForm(unit('z2')).parentUnitId).toBe('')
+    expect(unitToForm({ ...unit('z3'), parentUnitId: null }).parentUnitId).toBe('')
+  })
+
+  test('angeboten werden Wohnungen ohne Verweis, ohne Mietverhältnis, nicht die Einheit selbst', () => {
+    const units = [unit('wg'), unit('z1', { parentUnitId: 'wg' }), unit('eg'), unit('og')]
+    const ids = (self: string) => parentUnitOptions(units, [rent('eg')], [], self, '').map((o) => o.id)
+    // z1 liegt selbst in einer Wohnung (ein Zimmer ist keine Wohnung), eg hat ein Mietverhältnis, og ist die Einheit selbst.
+    expect(ids('og')).toEqual(['wg'])
+    expect(ids('neu')).toEqual(['wg', 'og'])
+  })
+
+  test('nicht angeboten: selbstgenutzt, Nutzungswechsel, Wärme- oder Warmwasserzähler an der Wohnung', () => {
+    const units = [
+      unit('eigen', { participates: false, selfUsed: true }),
+      unit('wechsel', { usageChanges: [{ from: '2026-01-01', usage: 'eigen' }] }),
+      unit('heiz'), unit('ok'),
+    ]
+    const meters = [{ type: 'waerme' as const, unitId: 'heiz' }, { type: 'kaltwasser' as const, unitId: 'ok' }]
+    expect(parentUnitOptions(units, [], meters, 'neu', '').map((o) => o.id)).toEqual(['ok'])
+  })
+
+  test('eine Wohnung mit eigenen Zimmern liegt in keiner anderen: keine Auswahl', () => {
+    const units = [unit('wg'), unit('z1', { parentUnitId: 'wg' }), unit('eg')]
+    expect(parentUnitOptions(units, [], [], 'wg', '')).toEqual([])
+  })
+
+  test('der gespeicherte Verweis steht immer in der Auswahl, damit sie zeigt, was gespeichert ist', () => {
+    const units = [unit('wg', { name: 'WG Nord' }), unit('z1', { parentUnitId: 'wg' })]
+    // Die Wohnung hat inzwischen ein Mietverhältnis (Bestand von früher): Sie bleibt gewählt sichtbar.
+    expect(parentUnitOptions(units, [rent('wg')], [], 'z1', 'wg').map((o) => o.id)).toEqual(['wg'])
+    // Ein Verweis ins Leere (gelöschte Wohnung) bleibt ebenfalls sichtbar.
+    expect(parentUnitOptions(units, [], [], 'z1', 'weg').map((o) => o.id)).toContain('weg')
+  })
+
+  test('Wohnungen mit Zimmern', () => {
+    const units = [unit('wg'), unit('z1', { parentUnitId: 'wg' }), unit('z2', { parentUnitId: 'wg' }), unit('eg'), unit('x', { parentUnitId: 'weg' })]
+    expect([...flatIdsWithRooms(units)]).toEqual(['wg'])
+    expect(roomCountOf(units, 'wg')).toBe(2)
+    expect(roomCountOf(units, 'eg')).toBe(0)
+  })
+
+  test('Löschfrage: Zimmer sperren das Löschen, die Oberfläche sagt es vorher und nennt keine Zahlen wie „nichts hängt dran“', () => {
+    expect(unitDeleteBlocked({ ...none, rooms: 2 })).toBe(
+      'In der Wohnung liegen 2 Zimmer. Löschen oder lösen Sie zuerst die Zimmer, damit keines ohne Wohnung zurückbleibt; ' +
+        'dann lässt sich die Wohnung löschen.',
+    )
+    expect(unitDeleteBlocked({ ...none, rooms: 1 })).toMatch(/^In der Wohnung liegt 1 Zimmer\. /)
+    // Beides zusammen: beide Gründe stehen da.
+    const both = unitDeleteBlocked({ ...none, rooms: 1, fuelDeliveries: 1 })
+    expect(both).toMatch(/Zimmer/)
+    expect(both).toMatch(/Etagenheizung/)
+  })
+
+  test('Löschfrage: das Zimmer selbst löscht sich wie jede Einheit', () => {
+    expect(unitDeleteMessage(none)).toBe('An der Wohnung hängt nichts weiter. Das lässt sich nicht rückgängig machen.')
+  })
+
+  test('eine Wohnung mit Zimmern hat Nutzung, Personen und Nutzungswechsel nicht: Rumpf ohne Eigennutzung', () => {
+    expect(body(form({ usage: 'vermietet', parentUnitId: '' }))).toMatchObject({ selfUsed: false, usageChanges: [] })
+  })
+})
+const EMPTY_UNIT_FORM_WITH_NAME = (): UnitForm => form()

@@ -3,7 +3,7 @@ import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPla
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
-import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, type UnitField, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
@@ -231,7 +231,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // „Wohnung anlegen“ und „Mietverhältnis anlegen“ aus Cockpit, Abrechnung und Leerzustand (#554): dasselbe Formular wie
   // der Knopf der Karte. Ohne Wohnung bleibt das Mietverhältnis gesperrt wie dort; die Karte nennt dann den Grund.
   const newUnit = () => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }
-  const newTenancy = () => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }
+  const newTenancy = () => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units.filter((u) => !flats.has(u.id)), tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }
   // Der Fokus vorher auf den Knopf der Karte, wie oben auf das ✎ der Wohnung
   const newUnitButton = useRef<HTMLButtonElement>(null)
   const newTenancyButton = useRef<HTMLButtonElement>(null)
@@ -410,6 +410,16 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
   // In irgendeiner Stufe der Staffel vermietet (#259); sonst wäre die Abrechnung leer.
   const participating = units.filter(everRented)
+  // Zimmer einer Wohnung (#573): Wohnungen mit Zimmern, die Liste mit den Zimmern unter ihrer Wohnung, und was die Wohnung
+  // mit Zimmern nicht hat (Mietverhältnis, Nutzung, Wärmezähler: sie hängen an den Zimmern).
+  const flats = useMemo(() => flatIdsWithRooms(units), [units])
+  const listedUnits = useMemo(() => {
+    const roomsOf = (id: string) => units.filter((u) => u.parentUnitId === id)
+    return units.flatMap((u) => (u.parentUnitId && flats.has(u.parentUnitId) ? [] : [u, ...roomsOf(u.id)]))
+  }, [units, flats])
+  const unitHasRooms = unitForm?.id !== undefined && flats.has(unitForm.id)
+  const parentChoices = unitForm ? parentUnitOptions(units, tenancies, objectMeters, unitForm.id ?? '', unitForm.parentUnitId) : []
+  const tenancyUnits = units.filter((u) => u.id === tenForm?.unitId || !flats.has(u.id))
   // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
   const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)
 
@@ -543,10 +553,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               </tr>
             </thead>
             <tbody>
-              {units.map((u) => (
+              {listedUnits.map((u) => (
                 <tr key={u.id}>
-                  <td data-label="Name">
+                  <td data-label="Name" className={u.parentUnitId && flats.has(u.parentUnitId) ? 'pl-6' : undefined}>
+                    {u.parentUnitId && flats.has(u.parentUnitId) && <span aria-hidden="true">↳ </span>}
                     {u.name}
+                    {flats.has(u.id) && <span className="badge gray badge-next">{roomCountOf(units, u.id)} Zimmer</span>}
                     {(u.rooms != null || u.floor || u.notes) && (
                       <div className="muted cell-sub">
                         {[u.floor, u.rooms != null ? `${u.rooms.toLocaleString('de-DE')} Zi.` : null, u.notes].filter(Boolean).join(' · ')}
@@ -556,13 +568,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <td className="num" data-label="Wohnfläche">{u.areaM2.toLocaleString('de-DE')} m²</td>
                   {showsMea && <td className="num" data-label="MEA">{u.mea != null ? u.mea.toLocaleString('de-DE') : '-'}</td>}
                   <td data-label="Kostenverteilung">
-                    {usageOf(u) === 'vermietet' && <span className="badge accent">beteiligt</span>}
-                    {usageOf(u) === 'eigen' && (
+                    {flats.has(u.id) && <span className="badge gray" title="Die Wohnung wird über ihre Zimmer vermietet; die Zimmer nehmen an der Verteilung teil">über die Zimmer</span>}
+                    {!flats.has(u.id) && usageOf(u) === 'vermietet' && <span className="badge accent">beteiligt</span>}
+                    {!flats.has(u.id) && usageOf(u) === 'eigen' && (
                       <span className="badge gray" title="In der Verteilbasis, Anteil trägt der Vermieter">
                         Eigennutzung - Eigenanteil
                       </span>
                     )}
-                    {usageOf(u) === 'ausgenommen' && (
+                    {!flats.has(u.id) && usageOf(u) === 'ausgenommen' && (
                       <span className="badge gray" title="Bleibt vollständig außen vor">nicht beteiligt</span>
                     )}
                     {/* Nutzungswechsel (#259) stehen unter der Angabe, mit dem Tag. */}
@@ -665,7 +678,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <Field label="Wohnung" required {...tenErrors.field('unitId')}>
               <select value={tenForm.unitId} onChange={(e) => setTenForm({ ...tenForm, unitId: e.target.value })}>
                 <option value="">Bitte wählen</option>
-                {units.map((u) => (
+                {tenancyUnits.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </select>
@@ -903,6 +916,22 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <Field label="Etage" width="m">
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
             </Field>
+            {/* Zimmer einer Wohnung (#573): Die Auswahl bietet nur, was der Server annimmt (parentUnitOptions). */}
+            {(unitForm.parentUnitId !== '' || parentChoices.length > 0) && (
+              <Field label={<Term id="roomOfFlat">Liegt als Zimmer in der Wohnung</Term>} hint="Leer lassen, wenn diese Einheit eine Wohnung oder ein Stellplatz ist. Ein Zimmer einer Wohngemeinschaft vermieten Sie einzeln; seine Fläche zählt anteilig an der Wohnung.">
+                <select value={unitForm.parentUnitId} onChange={(e) => setUnitForm({ ...unitForm, parentUnitId: e.target.value })}>
+                  <option value="">keine, eine eigene Wohnung</option>
+                  {parentChoices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              </Field>
+            )}
+            {unitHasRooms && (
+              <small className="muted basis-full">
+                Diese Wohnung hat {roomCountOf(units, unitForm.id ?? '')} Zimmer.
+                Die Zimmer werden einzeln vermietet; Nutzung, Personen und Nutzungswechsel tragen Sie deshalb an den Zimmern ein.
+              </small>
+            )}
+            {!unitHasRooms && (<>
             <label className="field">
               Nutzung
               <select value={unitForm.usage} onChange={(e) => setUnitForm({ ...unitForm, usage: e.target.value as UnitUsage })}>
@@ -942,6 +971,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <input inputMode="numeric" value={unitForm.selfPersons} onChange={(e) => setUnitForm({ ...unitForm, selfPersons: e.target.value })} placeholder="z. B. 2" />
               </Field>
             )}
+            </>)}
             <Field label="Notiz">
               <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
             </Field>
