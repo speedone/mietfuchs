@@ -315,7 +315,8 @@ test("Rest 'selfUse' bei vermieteter Einheit ohne Zähler: kein Eigenanteil, bei
   assert.equal(s.selfUsedShareCents, 0)
   assert.equal(part(s, 'mainMeterRest'), 80000)
   assert.equal(privateOf(src, item), 0)
-  assert.match(notice(s, 'meter.unit-without-meter')?.text ?? '', /e.*Eigenanteil/)
+  // Ohne selbstgenutzte Einheit wie bei #116 ohne den Satz zum Eigenanteil.
+  assert.match(notice(s, 'meter.unit-without-meter')?.text ?? '', /für e gibt es keinen abgelesenen Zähler.*geht an den Vermieter/)
 })
 
 test("Rest 'selfUse' bei Lücke im Zähler: kein Eigenanteil", () => {
@@ -373,4 +374,52 @@ test('Zwischenzähler direkt an eine selbstgenutzte Wohnung: ein Mietverhältnis
   }, [water(110000, rest({ subMeters: [{ meterId: 'zgarten', target: { key: 'direct', unitIds: ['e'] } }] }))])
   assert.equal(s.selfUsedShareCents, 10000)
   assert.equal(part(s, 'outsideUnit'), 0)
+})
+
+// ---------- Fix-Runde 2: Hinweise beim Eigenanteil wie bei #116 ----------
+
+test("'selfUse' mit Bezugszähler der Einliegerwohnung: eine vermietete Wohnung mit eigenem Zähler, der nicht dahinter hängt, wird genannt, mit Rat zu den Teilnehmern", () => {
+  const src: SnapshotSource = {
+    units: [room('g', 60), room('e', 80, { participates: false, selfUsed: true }), room('h', 70)],
+    tenancies: [lease('t-g', 'g'), lease('t-h', 'h')],
+    meters: [gauge('zg', 'g', 'kaltwasser'), gauge('zh', 'h', 'kaltwasser'), gauge('zref', null, 'kaltwasser', 'common')],
+    readings: [...used('zg', 200), ...used('zh', 300), ...used('zref', 1000)],
+    costItems: [], payments: [], closedSettlements: [],
+  }
+  const s = settleSrc(src, water(100000, rest({ referenceMeterId: 'zref', behindMeterIds: ['zg'], key: 'selfUse' })))
+  assert.equal(s.selfUsedShareCents, 0, 'im Zweifel abziehbar')
+  const texts = s.notices.filter((n) => n.code === 'meter.unit-without-meter').map((n) => n.text)
+  assert.ok(texts.some((t) => /h hat einen Zähler „Kaltwasser“, der nicht hinter dem Bezugszähler hängt/.test(t) && /nur bestimmte Wohnungen beteiligen/.test(t)), texts.join(' | '))
+  assert.ok(texts.every((t) => !/für e und h gibt es keinen/.test(t)), texts.join(' | '))
+  // Mit den Teilnehmern, die hinter dem Bezug hängen, ist der Rest Eigenanteil.
+  const narrowed = settleSrc(src, water(100000, rest({ referenceMeterId: 'zref', behindMeterIds: ['zg'], key: 'selfUse' }), { participantUnitIds: ['g', 'e'] }))
+  assert.equal(narrowed.selfUsedShareCents, 80000)
+})
+
+test("'selfUse': die Lücke im Zähler einer vermieteten Einheit außerhalb der Abrechnungseinheit wird genannt", () => {
+  const gap: SnapshotReading[] = [{ meterId: 'zx', date: '2025-03-31', value: 0 }, { meterId: 'zx', date: '2025-12-31', value: 50 }]
+  const src = withOwn(ownUnit, [lease('t-x', 'x')])
+  const s = settleSrc({ ...src, units: [...src.units, room('x', 40, { participates: false })], meters: [...src.meters, gauge('zx', 'x', 'kaltwasser')], readings: [...src.readings, ...gap] },
+    water(100000, rest({ key: 'selfUse' })))
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.match(notice(s, 'meter.unit-partial')?.text ?? '', /x \(/)
+})
+
+test("'selfUse' mit Lücke und vermieteter Einheit ohne Zähler: beide Hinweise wie bei #116", () => {
+  const gap: SnapshotReading[] = [{ meterId: 'zg', date: '2025-03-31', value: 0 }, { meterId: 'zg', date: '2025-12-31', value: 150 }]
+  const src = withOwn(ownUnit, [lease('t-r', 'r')], gap)
+  const s = settleSrc({ ...src, units: [...src.units, room('r', 40)] }, water(100000, rest({ key: 'selfUse' })))
+  assert.ok(codes(s).includes('meter.unit-partial'))
+  assert.match(notice(s, 'meter.unit-without-meter')?.text ?? '', /geht an den Vermieter/)
+})
+
+test("'selfUse' ohne gemeinsamen Tag der Eigennutzung: kein Eigenanteil und der Satz für den Vermieter", () => {
+  const e1 = room('e1', 40, { participates: false, selfUsed: true, usageChanges: [{ from: '2025-07-01', usage: 'ausgenommen' }] })
+  const e2 = room('e2', 40, { participates: false, selfUsed: false, usageChanges: [{ from: '2025-07-01', usage: 'eigen' }] })
+  const src = withOwn(e1)
+  const s = settleSrc({ ...src, units: [...src.units, e2] }, water(100000, rest({ key: 'selfUse' })))
+  assert.equal(s.selfUsedShareCents, 0)
+  const text = notice(s, 'meter.unit-without-meter')?.text ?? assert.fail(s.warnings.join(' | '))
+  assert.match(text, /geht an den Vermieter/)
+  assert.doesNotMatch(text, /für die Tage als Eigenanteil/)
 })

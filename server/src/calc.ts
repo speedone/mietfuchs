@@ -6057,7 +6057,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           warn('meter.sub-exceeds-main', `${where}: die Zähler hinter dem Bezugszähler und die Zwischenzähler zeigen zusammen ${amount(plan.total)}, mehr als ${refName} (${amount(reference ?? 0)}) - bitte die Ablesungen prüfen. Verteilt wird nach den Zählern, ein Allgemeinverbrauch nicht.`, itemSubject(item))
         }
         // Lückenhafte Zähler gelten als gemessen (Schritt 1); ihre Lücke steckt im Rest.
-        const partial = b.basisUnits.flatMap((u) => {
+        // Gefragt wird wie bei #116 über alle Einheiten hinter dem Bezug (`candidates`), auch außerhalb der Verteilbasis.
+        const partial = candidates.flatMap((u) => {
           if (!occupied.has(u.id) || !measuredUnit(u)) return []
           const got = unitCoveredDays(behindOf(u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo)
           const needed = neededDays(u)
@@ -6148,13 +6149,24 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             })
             selfRaw += restRaw * own.share
             mainRestRaw += restRaw * (1 - own.share)
-            const names = andList(unmeasured.map((u) => u.name))
             // Die Sätze wie beim Rest des Hauptzählers (#116, `meter.unit-without-meter`); die Lücke nennt `meter.unit-partial`.
-            if (own.reason === 'rented') {
-              warn('meter.unit-without-meter', `${where}: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - der Allgemeinverbrauch geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt. Einen Eigenanteil weist Mietfuchs für ihn deshalb nicht aus.`, unitSubject(unmeasured))
-            } else if (own.reason === 'days') {
-              warn('meter.unit-without-meter', `${where}: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - der Allgemeinverbrauch gilt für die Tage als Eigenanteil, an denen alle Einheiten ohne Zähler selbstgenutzt sind, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau.`, unitSubject(unmeasured))
-            } else if (own.reason === 'none-unmetered') {
+            // Bei einem anderen Bezugszähler kann eine Einheit einen Zähler haben, der nur nicht dahinter hängt: Dann sagt
+            // der Hinweis das und rät zu den Teilnehmern, statt einen fehlenden Zähler zu behaupten.
+            const ownMeter = (u: SnapshotUnit) => allMeters.some((m) => m.unitId === u.id && m.type === type && covered(m) > 0)
+            const without = unmeasured.filter((u) => !ownMeter(u))
+            const notBehind = unmeasured.filter(ownMeter)
+            if (own.notice !== null && without.length > 0) {
+              const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'
+              const text = own.notice === 'days'
+                ? `der Allgemeinverbrauch gilt für die Tage als Eigenanteil, an denen alle Einheiten ohne Zähler selbstgenutzt sind, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau.${noConnection}`
+                : `der Allgemeinverbrauch geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt.${b.selfUnits.length > 0 ? ' Einen Eigenanteil weist Mietfuchs für ihn deshalb nicht aus.' : ''}${noConnection}`
+              warn('meter.unit-without-meter', `${where}: für ${andList(without.map((u) => u.name))} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - ${text}`, unitSubject(without))
+            }
+            if (own.notice !== null && notBehind.length > 0) {
+              const many = notBehind.length > 1
+              warn('meter.unit-without-meter', `${where}: ${andList(notBehind.map((u) => u.name))} ${many ? 'haben' : 'hat'} einen Zähler „${meterTypeLabel(type)}“, der nicht hinter dem Bezugszähler hängt. Als Teil der Verteilbasis ${many ? 'gelten sie' : 'gilt sie'} hier als Einheit ohne Zähler, deshalb geht der Allgemeinverbrauch an den Vermieter und gilt nicht als Eigenanteil. ${many ? 'Hängen sie' : 'Hängt sie'} nicht am Bezugszähler, wählen Sie bei der Position „nur bestimmte Wohnungen beteiligen“ und nehmen nur die Wohnungen dahinter auf.`, unitSubject(notBehind))
+            }
+            if (own.reason === 'none-unmetered') {
               warn('meter.rest-not-self', `${where}: Alle Einheiten hinter dem Bezugszähler haben einen Zähler. Der Allgemeinverbrauch ist dann eine Messdifferenz und kein Verbrauch Ihrer eigenen Wohnung; er bleibt abziehbar beim Vermieter und gilt nicht als Eigenanteil. Soll er auf die Mieter verteilt werden, wählen Sie dafür einen Schlüssel.`, itemSubject(item))
             }
           }

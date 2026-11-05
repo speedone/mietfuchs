@@ -605,7 +605,7 @@
  },
  {
   "code": "meter.unit-without-meter",
-  "text": "„Wasser“: für W0, W1, W2 und W3 gibt es keinen abgelesenen Zähler „Kaltwasser“ - der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt. Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus. Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart."
+  "text": "„Wasser“: für e gibt es keinen abgelesenen Zähler „Kaltwasser“ - der Allgemeinverbrauch gilt für die Tage als Eigenanteil, an denen alle Einheiten ohne Zähler selbstgenutzt sind, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau. Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart."
  },
  {
   "code": "model.prepayment-unsettled",

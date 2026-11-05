@@ -97,12 +97,19 @@ export type SelfRestInput = {
   daysAllSelf: number
   days: number
 }
-export type SelfRest = { share: number; reason: 'whole' | 'days' | 'none-unmetered' | 'partial' | 'rented' }
+// `notice`: welcher Satz von `meter.unit-without-meter` gilt, wie bei #116: keiner, wenn nur ganz selbstgenutzte
+// Einheiten keinen Zähler haben (eine Lücke nennt dann `meter.unit-partial` allein); `days`, wenn ein Eigenanteil nach
+// Tagen entsteht; sonst `landlord` (der Rest geht an den Vermieter).
+export type SelfRest = { share: number; reason: 'whole' | 'days' | 'none-unmetered' | 'partial' | 'rented'; notice: 'landlord' | 'days' | null }
 
 export function selfRestShare(input: SelfRestInput): SelfRest {
-  if (input.unmeasured.length === 0) return { share: 0, reason: 'none-unmetered' }
-  if (input.partial > 0) return { share: 0, reason: 'partial' }
-  if (input.unmeasured.every((u) => u.selfUsed && u.wholeSelf)) return { share: 1, reason: 'whole' }
-  if (input.unmeasured.every((u) => u.selfUsed)) return { share: input.days > 0 ? Math.min(1, Math.max(0, input.daysAllSelf / input.days)) : 0, reason: 'days' }
-  return { share: 0, reason: 'rented' }
+  if (input.unmeasured.length === 0) return { share: 0, reason: 'none-unmetered', notice: null }
+  const onlyWholeSelf = input.unmeasured.every((u) => u.selfUsed && u.wholeSelf)
+  if (input.partial > 0) return { share: 0, reason: 'partial', notice: onlyWholeSelf ? null : 'landlord' }
+  if (onlyWholeSelf) return { share: 1, reason: 'whole', notice: null }
+  if (input.unmeasured.every((u) => u.selfUsed)) {
+    const share = input.days > 0 ? Math.min(1, Math.max(0, input.daysAllSelf / input.days)) : 0
+    return { share, reason: 'days', notice: share > 0 ? 'days' : 'landlord' }
+  }
+  return { share: 0, reason: 'rented', notice: 'landlord' }
 }

@@ -162,10 +162,19 @@ test('Summenregel: gemessen + außerhalb + Rest + Zwischenzähler (ohne excluded
 // Fix-Runde 1: Wann der Rest Eigenanteil ist, genau wie beim Rest des Hauptzählers (#116).
 test('selfRestShare: Eigenanteil nur, wenn alle Einheiten ohne Zähler selbstgenutzt sind und kein Zähler eine Lücke hat', () => {
   const self = { unitId: 'e', selfUsed: true, wholeSelf: true }
-  assert.deepEqual(selfRestShare({ unmeasured: [self], partial: 0, daysAllSelf: 365, days: 365 }), { share: 1, reason: 'whole' })
-  assert.deepEqual(selfRestShare({ unmeasured: [self, { unitId: 'w', selfUsed: false, wholeSelf: false }], partial: 0, daysAllSelf: 0, days: 365 }), { share: 0, reason: 'rented' })
-  assert.deepEqual(selfRestShare({ unmeasured: [self], partial: 1, daysAllSelf: 365, days: 365 }), { share: 0, reason: 'partial' })
-  assert.deepEqual(selfRestShare({ unmeasured: [], partial: 0, daysAllSelf: 365, days: 365 }), { share: 0, reason: 'none-unmetered' })
+  const rented = { unitId: 'w', selfUsed: false, wholeSelf: false }
+  const phased = { unitId: 'e', selfUsed: true, wholeSelf: false }
+  // `notice`: welcher Satz von `meter.unit-without-meter` gilt, genau wie bei #116 (keiner, wenn nur ganz
+  // selbstgenutzte Einheiten keinen Zähler haben; den Tagessatz nur, wenn ein Eigenanteil nach Tagen entsteht).
+  assert.deepEqual(selfRestShare({ unmeasured: [self], partial: 0, daysAllSelf: 365, days: 365 }), { share: 1, reason: 'whole', notice: null })
+  assert.deepEqual(selfRestShare({ unmeasured: [self, rented], partial: 0, daysAllSelf: 0, days: 365 }), { share: 0, reason: 'rented', notice: 'landlord' })
+  assert.deepEqual(selfRestShare({ unmeasured: [self], partial: 1, daysAllSelf: 365, days: 365 }), { share: 0, reason: 'partial', notice: null })
+  // Lücke und vermietete Einheit ohne Zähler: beide Hinweise wie bei #116.
+  assert.deepEqual(selfRestShare({ unmeasured: [self, rented], partial: 1, daysAllSelf: 0, days: 365 }), { share: 0, reason: 'partial', notice: 'landlord' })
+  assert.deepEqual(selfRestShare({ unmeasured: [phased], partial: 1, daysAllSelf: 73, days: 365 }), { share: 0, reason: 'partial', notice: 'landlord' })
+  assert.deepEqual(selfRestShare({ unmeasured: [], partial: 0, daysAllSelf: 365, days: 365 }), { share: 0, reason: 'none-unmetered', notice: null })
   // Nutzungswechsel: je Tag, an dem alle Einheiten ohne Zähler selbstgenutzt sind (#259, `daysAllSelf`).
-  assert.deepEqual(selfRestShare({ unmeasured: [{ unitId: 'e', selfUsed: true, wholeSelf: false }], partial: 0, daysAllSelf: 73, days: 365 }), { share: 0.2, reason: 'days' })
+  assert.deepEqual(selfRestShare({ unmeasured: [phased], partial: 0, daysAllSelf: 73, days: 365 }), { share: 0.2, reason: 'days', notice: 'days' })
+  // Kein gemeinsamer Tag: kein Eigenanteil, und der Satz ist der für den Vermieter.
+  assert.deepEqual(selfRestShare({ unmeasured: [phased, { unitId: 'f', selfUsed: true, wholeSelf: false }], partial: 0, daysAllSelf: 0, days: 365 }), { share: 0, reason: 'days', notice: 'landlord' })
 })
