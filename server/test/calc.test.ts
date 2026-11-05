@@ -27,7 +27,7 @@ import {
 import type { AllocationTrace, ComputedSettlement } from '../src/calc.ts'
 import { snapshotFor, snapshotFromDb, snapshotOf, type PropertyScopedSource, type SnapshotSource } from '../src/snapshot.ts'
 import type { ClosedSettlement, Db } from '../src/store.ts'
-import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
+import type { CostKey, CostModel, MeterRest, MeterRestTarget, MeterType, Payment, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
 import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyMeterType, LegacyUnit as Unit } from '../src/store.ts'
 import { assertControlSums, assertLandlordParts } from '../testing/landlordParts.ts'
@@ -2001,9 +2001,56 @@ function randomDb(rnd: Rng): Db {
     if (tenancies.length > 0 && !isNotAllocable(item.category) && item.category !== 'Heizung und Warmwasser' && side() < 0.2) {
       item.notAgreedTenancyIds = [tenancies[Math.floor(side() * tenancies.length)].id]
     }
+    // #98: Bei 25 % der Positionen nach Verbrauch (Wasser, „Sonstiges“) ein Bezugszähler mit verteiltem Rest. Ein eigener
+    // Zufallsstrom wie bei #258, damit alle übrigen Zufallsfälle dieselben bleiben; seine Zähler kommen nur mit ihm dazu.
+    const restRnd = makeRng(amount * 11 + i + 98)
+    if (key === 'meter' && (item.meterType === 'kaltwasser' || item.meterType === 'sonstig') && restRnd() < 0.25) {
+      item.meterRest = randomMeterRest(restRnd, item.meterType, `r${i}`, units, meters, readings)
+    }
     costItems.push(item)
   }
   return { ...emptyDb(), units, tenancies, meters, readings, payments, costItems }
+}
+
+// Ein gültiges `meterRest` (#98) nach den Regeln, die der Server beim Speichern prüft (`guardMeterRest`): Bezugs- und
+// Zwischenzähler ohne Wohnung mit `scope: 'common'`, Zähler dahinter mit Wohnung und derselben Sparte, Liste dahinter
+// genau beim anderen Bezugszähler, Empfänger und Zielgruppen aus den Wohnungen des Objekts (randomDb kennt keine
+// Teilnehmer). Bezugs- und Zwischenzähler sind manchmal nur für einen Teil des Jahres abgelesen, und ihr Stand ist
+// zufällig, damit Rückfall, negativer Rest und Fehler vorkommen.
+function randomMeterRest(r: Rng, type: 'kaltwasser' | 'sonstig', prefix: string, units: Unit[], meters: Meter[], readings: Reading[]): MeterRest {
+  const pick = <T>(arr: readonly T[]): T => arr[Math.floor(r() * arr.length)]
+  const subset = <T>(arr: readonly T[]): T[] => arr.filter(() => r() < 0.6)
+  const endValue = (id: string) => readings.find((x) => x.id === `${id}b`)?.value ?? 0
+  const meter = (id: string, unitId: string | null, value: number, scope?: 'common'): string => {
+    meters.push({ id, unitId, type, name: id, unit: 'm³', ...(scope ? { scope } : {}) })
+    readings.push({ id: `${id}a`, meterId: id, date: r() < 0.85 ? '2024-12-31' : '2025-06-30', value: 0 })
+    readings.push({ id: `${id}b`, meterId: id, date: '2025-12-31', value })
+    return id
+  }
+  // Die Hälfte der Bestände ganz gemessen, sonst wie gewürfelt (gemischte und ungemessene Gruppen, Fehlerfälle).
+  if (r() < 0.5) {
+    for (const u of units) if (!meters.some((m) => m.unitId === u.id && m.type === type)) meter(`${prefix}u${u.id}`, u.id, Math.round(r() * 100))
+  }
+  const unitIds = units.map((u) => u.id)
+  const own = meters.filter((m) => m.unitId !== null && m.type === type).map((m) => m.id)
+  const subMeters = Array.from({ length: Math.floor(r() * 3) }, (_, k) => {
+    const meterId = meter(`${prefix}s${k}`, null, Math.round(r() * 60), 'common')
+    const kind = pick(['landlord', 'selfUse', 'excluded', 'area', 'persons', 'units', 'direct'] as const)
+    const target: MeterRestTarget = kind === 'landlord' || kind === 'selfUse' || kind === 'excluded' ? kind
+      : kind === 'direct' ? { key: 'direct', unitIds: unitIds.length > 0 ? [pick(unitIds)] : [] }
+      : { key: kind, unitIds: subset(unitIds) }
+    return { meterId, target }
+  })
+  const other = r() < 0.4
+  const behindMeterIds = other ? subset(own) : null
+  // Der Stand des Bezugszählers: meist über der Summe dahinter (ein Rest), sonst zufällig (negativ, Rückfall).
+  const below = [...(behindMeterIds ?? own), ...subMeters.map((x) => x.meterId)].reduce((a, id) => a + endValue(id), 0)
+  const refValue = () => (r() < 0.8 ? below + Math.round(r() * 150) : Math.round(r() * 400))
+  const referenceMeterId = other ? meter(`${prefix}ref`, null, refValue(), 'common') : null
+  if (!other && !meters.some((m) => m.unitId === null && m.type === type && m.scope !== 'common') && r() < 0.7) meter(`${prefix}main`, null, refValue())
+  const key = pick(['area', 'persons', 'units', 'meter', 'landlord', 'selfUse'] as const)
+  const group = r() < 0.5 ? null : subset(unitIds)
+  return { referenceMeterId, behindMeterIds, key, unitIds: group, subMeters }
 }
 
 // Was eine Position im Ergebnis ergibt: die Zeilen der Mieter und die des Vermieters.
@@ -2182,6 +2229,58 @@ test('Invariante: §35a-Lohnanteil der Mieter - Summe, Obergrenze, Reihenfolge, 
 // nur noch je Position: Eine Gutschrift senkt den Eigenanteil (#129) und kann die Summe unter 0
 // drücken. Je Position wird gerechnet, indem der Bestand nur diese Position trägt; die Summe der
 // Eigenanteile je Position ist dann der Eigenanteil der ganzen Abrechnung.
+// #98: Bezugszähler und verteilter Rest über zufällige Bestände. randomDb setzt `meterRest` nur bei wenigen Positionen,
+// deshalb hier mehr Fälle und nur die Bestände mit einem. Geprüft je Position mit `meterRest`, der Bestand trägt dabei nur
+// diese Position: Mieter + Vermieter = Betrag, jeder Anteil mit dem Vorzeichen der Position (Gutschrift spiegelbildlich),
+// Eigenanteil ≤ Vermieteranteil mit gleichem Vorzeichen, Zerlegung des Vermieteranteils. Und: Kein Mieter außerhalb der
+// Empfänger bekommt Rest. Das zeigt der Vergleich mit derselben Position, deren Rest der Vermieter trägt: Der exakte Wert
+// eines solchen Mieters ist in beiden gleich (nur sein Verbrauch), sein Anteil weicht also höchstens um den Rest-Cent ab.
+// Ausgenommen sind Mieter in einer Zielgruppe eines Zwischenzählers und Positionen, die gar nicht verteilt werden.
+test('Invariante (#98): Rest des Bezugszählers - Summe, Vorzeichen, Eigenanteil, nur die Empfänger bekommen Rest', () => {
+  let items = 0
+  let compared = 0
+  let restMoved = 0
+  // Je Fall ein eigener Startwert: makeRng wiederholt sich nach gut 10.000 Werten (das Produkt überschreitet die
+  // Genauigkeit von double), und 20.000 Bestände aus einem Strom wären zum größten Teil dieselben.
+  for (let i = 0; i < 40000; i++) {
+    const db = randomDb(makeRng(980_000 + i * 7919))
+    for (const drawn of db.costItems) {
+      const mr = drawn.meterRest
+      if (!mr) continue
+      items++
+      // Umlagefähig und kalt: Heizung rechnet ohne Rest (Heizkostenverordnung), nicht Umlagefähiges trägt kein Mieter.
+      const item: CostItem = { ...drawn, category: 'Wasser/Abwasser' }
+      const one: Db = { ...db, costItems: [item] }
+      const context = `Fall ${i}, ${item.id}\n${JSON.stringify(one)}`
+      const s = computeSettlement(snapshotFromDb(one, 2025))
+      const { tenants, landlord } = rowsOfItem(s, item.id)
+      assert.equal(tenants.reduce((a, r) => a + r.shareCents, 0) + landlord, item.amountCents, `Summe: ${context}`)
+      for (const r of tenants) assert.ok(r.shareCents === 0 || Math.sign(r.shareCents) === Math.sign(item.amountCents), `Anteil ${r.shareCents} an ${item.amountCents}: ${context}`)
+      const self = s.selfUsedShareCents
+      assert.ok(self === 0 || Math.sign(self) === Math.sign(landlord), `Eigenanteil ${self}, Vermieteranteil ${landlord}: ${context}`)
+      assert.ok(Math.abs(self) <= Math.abs(landlord), `Eigenanteil ${self} > Vermieteranteil ${landlord}: ${context}`)
+      assertLandlordParts(s, one.tenancies.length, context)
+      assertControlSums(s, context)
+      if (mr.unitIds === null || mr.key === 'landlord' || mr.key === 'selfUse') continue
+      if (tenants.every((r) => r.shareCents === 0)) continue
+      const group = new Set(mr.unitIds)
+      const inSubs = new Set(mr.subMeters.flatMap((x) => (typeof x.target === 'string' ? [] : x.target.unitIds)))
+      const toLandlord = computeSettlement(snapshotFromDb({ ...one, costItems: [{ ...item, meterRest: { ...mr, key: 'landlord' } }] }, 2025))
+      const shareOf = (r: ComputedSettlement, tenancyId: string) => r.statements.find((st) => st.tenancyId === tenancyId)?.rows.find((x) => x.costItemId === item.id)?.shareCents ?? 0
+      for (const t of one.tenancies) {
+        const a = shareOf(s, t.id)
+        const b = shareOf(toLandlord, t.id)
+        if (group.has(t.unitId)) { if (a !== b) restMoved++; continue }
+        if (inSubs.has(t.unitId)) continue
+        compared++
+        assert.ok(Math.abs(a - b) <= 1, `Mieter ${t.id} außerhalb der Empfänger: ${a} mit Rest, ${b} ohne: ${context}`)
+      }
+    }
+  }
+  assert.ok(items >= 2000, `nur ${items} Positionen mit Bezugszähler`)
+  assert.ok(compared >= 60 && restMoved >= 50, `zu wenige Vergleiche: ${compared} außerhalb, ${restMoved} mit Rest`)
+})
+
 test('Invariante: der Eigenanteil steckt je Position im Vermieteranteil, mit gleichem Vorzeichen', () => {
   const rnd = makeRng(1234567)
   for (let i = 0; i < 500; i++) {
@@ -2246,6 +2345,11 @@ test('Invariante: Steuer - ohne selbstgenutzte Wohnung ist nichts privat, und de
     const db = randomDb(rnd)
     // Jede selbstgenutzte Wohnung wird vermietet; der Bestand bleibt sonst derselbe.
     for (const u of db.units) if (u.selfUsed) { u.selfUsed = false; u.participates = true }
+    // Ein Zwischenzähler mit dem Ziel Eigenanteil (#98, Garten des Vermieters) ist privat, auch ohne selbstgenutzte
+    // Wohnung; er trägt dann der Vermieter abziehbar.
+    for (const c of db.costItems) {
+      if (c.meterRest) c.meterRest = { ...c.meterRest, subMeters: c.meterRest.subMeters.map((s) => (s.target === 'selfUse' ? { ...s, target: 'landlord' } : s)) }
+    }
     const r = taxReport(snapshotFromDb(db, 2025))
     const fall = `Fall ${i}\n${JSON.stringify(db)}`
     assert.equal(r.expenses.privateCents, 0, fall)

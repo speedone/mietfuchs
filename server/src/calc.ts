@@ -3330,6 +3330,8 @@ type ConsumptionByTypeEntry = {
   limited: boolean
   hasMain: boolean
   main: number | null
+  // Der Rest des Hauptzählers aus `planMeterRest` (Hauptzähler minus Wohnungszähler), gesetzt mit `main`.
+  mainRest: number | null
   mainPartial: { meterId: string, days: number } | null
   mainBelowUnits: { main: number, units: number } | null
   mainGap: { main: number, units: number } | null
@@ -3864,28 +3866,45 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       let mainBelowUnits: ConsumptionByTypeEntry['mainBelowUnits'] = null
       let mainGap: ConsumptionByTypeEntry['mainGap'] = null
       let mainSelfByDays = false
+      let mainRest: number | null = null
       if (mainOfType.length > 0 && unmetered.length > 0) {
-        if (mainShort) {
+        // **Über die Restverteilung (#98, Entwurf „Bestehende Logik“)** mit festem Ziel: Rest beim Vermieter bzw.
+        // Eigenanteil, Zahl für Zahl wie vorher (`asMainMeterRest`). Hinter dem Hauptzähler hängen alle Wohnungszähler
+        // dieser Sparte, in derselben Reihenfolge wie `basis` oben, damit die Summe dieselbe Gleitkommazahl ist; die
+        // Gruppe sind die Einheiten ohne Zähler. Einen Fehler gibt es so nicht: Beim Ziel Eigenanteil prüft der Plan
+        // keine Gruppe, Zwischenzähler gibt es keine, und der Rückfall gilt auch mit Einheiten ohne Zähler.
+        const plan = planMeterRest({
+          reference: mainShort ? null : main,
+          behind: meters.map((m) => ({ unitId: m.unitId, inGroup: false, inBasis: true, value: use(m, yFrom, yTo) })),
+          subs: [],
+          group: unmetered.map((u) => ({ unitId: u.id, measured: false, occupied: true })),
+          unmeteredOutside: [],
+          key: 'selfUse',
+          asMainMeterRest: true,
+        })
+        if (plan.kind === 'fallback' && plan.reason === 'main-partial') {
           mainPartial = mainShort
-        } else if (main < basis) {
+        } else if (plan.kind === 'fallback') {
           mainBelowUnits = { main, units: basis }
-        } else if (main > 0) {
+        } else if (plan.kind === 'plan' && main > 0) {
           mainBasis = main
           // Der Rest gehört zu den Einheiten ohne Zähler. Sind das nur selbstgenutzte, ist er ihr
           // Eigenanteil. Ist eine andere dabei, lässt er sich nicht aufteilen und bleibt beim
-          // Vermieter, ohne Eigenanteil zu sein; das sagt eine Warnung.
-          if (unmetered.every((u) => selfIds.has(u.id) && wholeSelf(u)) && partial.length === 0) selfConsumption += main - basis
+          // Vermieter, ohne Eigenanteil zu sein; das sagt eine Warnung. Die Regel steht in `selfRestShare`,
+          // dieselbe wie beim Ziel Eigenanteil eines Bezugszählers.
           // Durchsicht S2 und Nachprüfung S-b (#259): Mit Nutzungswechsel gilt der Rest je Tag: Sind an dem Tag alle
           // Einheiten ohne Zähler selbstgenutzt, ist sein Anteil Eigenanteil, sonst bleibt er beim Vermieter (eine Einheit
           // außerhalb ist dabei nie selbstgenutzt, ihr Verbrauch gehört nicht in den Eigenanteil, #116). Nach Tagen
           // geteilt, also unter der Annahme gleichmäßigen Verbrauchs; das ist eine Auslegung.
-          else if (partial.length === 0 && unmetered.every((u) => selfIds.has(u.id))) {
-            const allSelf = daysAllSelf(unmetered)
-            if (allSelf > 0) {
-              mainSelfByDays = true
-              selfConsumption += (main - basis) * (allSelf / diy)
-            }
-          }
+          const own = selfRestShare({
+            unmeasured: unmetered.map((u) => ({ unitId: u.id, selfUsed: selfIds.has(u.id), wholeSelf: wholeSelf(u) })),
+            partial: partial.length,
+            daysAllSelf: unmetered.every((u) => selfIds.has(u.id)) ? daysAllSelf(unmetered) : 0,
+            days: diy,
+          })
+          if (own.share > 0) selfConsumption += plan.rest * own.share
+          mainSelfByDays = own.notice === 'days'
+          mainRest = plan.rest
           basis = main
         }
       } else if (mainOfType.length > 0 && !mainShort && basis < main * 0.8) {
@@ -3897,7 +3916,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
       byType[type] = {
         meters, basis, perUnit, selfConsumption, outsidePhased, mainSelfByDays, unmetered, limited: only !== null,
-        hasMain: mainOfType.length > 0, main: mainBasis, mainPartial, mainBelowUnits, mainGap, partial,
+        hasMain: mainOfType.length > 0, main: mainBasis, mainRest, mainPartial, mainBelowUnits, mainGap, partial,
         scaleOf, unitProblem: scale.problem, unit: scale.problem ? '' : scale.unit,
       }
     }
@@ -6257,9 +6276,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // außerhalb der Abrechnungseinheit, und beim Hauptzähler, was keine Wohnung misst.
         const inBasis = new Set(b.basisUnits.map((u) => u.id))
         const yearOf = (m: SnapshotMeter) => consumptionInPeriod(readingsOf(m.id), yFrom, yTo) * data.scaleOf(m.id)
-        const measured = data.meters.reduce((a, m) => a + yearOf(m), 0)
         outsideRaw = item.amountCents * ((data.meters.filter((m) => !inBasis.has(m.unitId)).reduce((a, m) => a + yearOf(m), 0) + data.outsidePhased) / data.basis)
-        if (data.main !== null) mainRestRaw = item.amountCents * ((data.basis - measured) / data.basis)
+        if (data.mainRest !== null) mainRestRaw = item.amountCents * (data.mainRest / data.basis)
         if (data.mainPartial) {
           // Der Tag vor dem Zeitraum und sein Ende (#208); im Kalenderjahr wortgleich wie bisher.
           const vorher = new Date(toUTC(yFrom) - MS_DAY).toISOString().slice(0, 10)

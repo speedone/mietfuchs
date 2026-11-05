@@ -18,6 +18,10 @@ export type RestInput = {
   // Bewohnte Einheiten ohne Zähler hinter dem Bezug, die nicht in der Gruppe sind: Ihr Verbrauch steckt im Rest.
   unmeteredOutside: string[]
   key: MeterRest['key']
+  // Der Rest des Hauptzählers nach #116 (`consumptionFor` in calc.ts), Zahl für Zahl wie vor #98 (Entwurf, „Bestehende
+  // Logik“): Ziel `selfUse`, ohne Zwischenzähler. Er fällt auch mit Einheiten ohne Zähler nach den Zählern zurück (mit
+  // Warnung statt Fehler; so verteilt #116 seit jeher), und Rechenrauschen bleibt stehen, denn #116 vergleicht genau.
+  asMainMeterRest?: boolean
 }
 
 type RestAmounts = {
@@ -68,7 +72,7 @@ export function planMeterRest(input: RestInput): RestPlan {
   const measuredIn = input.behind.filter((m) => m.inBasis).reduce((a, m) => a + m.value, 0)
   const outside = input.behind.filter((m) => !m.inBasis).reduce((a, m) => a + m.value, 0)
   // Ganz gemessen heißt beim Vermieter: Niemand ohne Zähler hängt am Bezug.
-  const fallbackAllowed = byLandlord ? unmeasured.length === 0 && input.unmeteredOutside.length === 0 : groupMeasured
+  const fallbackAllowed = input.asMainMeterRest === true || (byLandlord ? unmeasured.length === 0 && input.unmeteredOutside.length === 0 : groupMeasured)
   // Schritt 3: Lässt sich der Rest nicht bilden, nach den Zählern (gemessen) oder gar nicht (ungemessen).
   const fallback = (reason: 'main-partial' | 'negative'): RestPlan => (fallbackAllowed
     ? { kind: 'fallback', reason, total: measuredIn + outside + counted, measuredIn, outside, rest: 0, subs }
@@ -76,7 +80,7 @@ export function planMeterRest(input: RestInput): RestPlan {
   if (input.reference === null) return fallback('main-partial')
   const total = input.reference - excluded
   let rest = total - measuredIn - outside - counted
-  if (Math.abs(rest) <= NOISE * Math.max(1, Math.abs(input.reference))) rest = 0
+  if (input.asMainMeterRest !== true && Math.abs(rest) <= NOISE * Math.max(1, Math.abs(input.reference))) rest = 0
   if (rest < 0) return fallback('negative')
   return { kind: 'plan', total: measuredIn + outside + rest + counted, measuredIn, outside, rest, subs }
 }

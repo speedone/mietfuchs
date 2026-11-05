@@ -160,6 +160,22 @@ test('Summenregel: gemessen + außerhalb + Rest + Zwischenzähler (ohne excluded
 })
 
 // Fix-Runde 1: Wann der Rest Eigenanteil ist, genau wie beim Rest des Hauptzählers (#116).
+test('Rest des Hauptzählers nach #116 (asMainMeterRest): Rückfall auch mit Einheiten ohne Zähler, Rauschen bleibt', () => {
+  // Wie consumptionFor ihn fragt: Gewerbe gemessen, die Wohnungen ohne Zähler, Ziel Eigenanteil.
+  const main = (over: Partial<RestInput> = {}) => unmeasured({ key: 'selfUse', asMainMeterRest: true, ...over })
+  assert.equal(errorOf(planMeterRest(unmeasured({ key: 'selfUse', reference: null }))).code, 'meter.rest-unavailable')
+  const short = fallbackOf(planMeterRest(main({ reference: null })))
+  assert.equal(short.reason, 'main-partial')
+  assert.equal(short.total, 200)
+  assert.equal(fallbackOf(planMeterRest(main({ reference: 150 }))).reason, 'negative')
+  // Was #116 genau vergleicht, vergleicht auch der Plan genau: 0,1 + 0,2 liegt über 0,3.
+  const noise = main({ reference: 0.3, behind: [{ unitId: 'g', inGroup: false, inBasis: true, value: 0.1 }, { unitId: 'h', inGroup: false, inBasis: true, value: 0.2 }] })
+  assert.equal(fallbackOf(planMeterRest(noise)).reason, 'negative')
+  const above = planOf(planMeterRest(main({ reference: 0.3 + 1e-12, behind: [{ unitId: 'g', inGroup: false, inBasis: true, value: 0.3 }] })))
+  assert.equal(above.rest, 0.3 + 1e-12 - 0.3)
+  assert.equal(planOf(planMeterRest(main())).rest, 800)
+})
+
 test('selfRestShare: Eigenanteil nur, wenn alle Einheiten ohne Zähler selbstgenutzt sind und kein Zähler eine Lücke hat', () => {
   const self = { unitId: 'e', selfUsed: true, wholeSelf: true }
   const rented = { unitId: 'w', selfUsed: false, wholeSelf: false }
