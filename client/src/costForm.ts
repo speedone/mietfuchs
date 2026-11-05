@@ -958,7 +958,7 @@ export const showsMeterRest = (form: Pick<ItemForm, 'key' | 'meterType' | 'categ
   form.key === 'meter' && form.meterType !== '' && REST_METER_TYPES.includes(form.meterType) && form.category !== HEATING_CATEGORY
 
 // Die Antworten, bewusst kurz. „tragen Sie (wie bisher)“ ist ohne Angabe (`null`) oder, sobald ein Zwischenzähler
-// dazukommt, der Schlüssel `standard` (Ruling 11): Der Rest rechnet dann wie ohne Angabe (#116), ganz gemessen nach den
+// dazukommt, der Schlüssel `standard` (Abschlussdurchsicht I2): Der Rest rechnet dann wie ohne Angabe (#116), ganz gemessen nach den
 // Zählern, sonst beim Vermieter oder als Eigenanteil. Gespeicherte Schlüssel `landlord` und `selfUse` (aus einem Backup
 // oder einer früheren Fassung des Zweigs) stehen als eigene Antwort da, damit sichtbar ist, was gespeichert ist.
 export type MeterRestChoice = 'off' | MeterRest['key']

@@ -1222,7 +1222,7 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(strom.meterRest).toBeNull()
   })
 
-  test('Ruling 11: Zwischenzähler bei „tragen Sie (wie bisher)“ speichert den Rest-Schlüssel standard, mit und ohne Eigennutzung', () => {
+  test('Abschlussdurchsicht I2: Zwischenzähler bei „tragen Sie (wie bisher)“ speichert den Rest-Schlüssel standard, mit und ohne Eigennutzung', () => {
     // Einliegerwohnung des Vermieters ohne Zähler, die übrigen gemessen; Gartenwasser zählt beim Abwasser nicht.
     const own = [u('elw', { participates: false, selfUsed: true }), u('eg'), u('og')]
     const f = withSubTarget(water(), 'garten', 'excluded', own)
@@ -1240,7 +1240,7 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(withMeterRestKey(withMeterRestKey(water(), 'area'), 'off', units).meterRest).toBeNull()
   })
 
-  test('Ruling 11: gespeicherte Schlüssel Vermieter und Eigenanteil stehen als eigene Antwort da und bleiben beim Speichern', () => {
+  test('Abschlussdurchsicht I2: gespeicherte Schlüssel Vermieter und Eigenanteil stehen als eigene Antwort da und bleiben beim Speichern', () => {
     const landlord = water({ meterRest: on({ key: 'landlord' }) })
     expect(meterRestChoiceOf(landlord)).toBe('landlord')
     expect(meterRestKeyOptions(landlord.meterRest).map((o) => o.value)).toEqual(['off', 'meter', 'area', 'persons', 'units', 'landlord'])

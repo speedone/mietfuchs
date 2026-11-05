@@ -96,7 +96,7 @@ test('Zwischenzähler bei „tragen Sie“: wählbar ohne andere Antwort, der le
   expect(last.meterRest).toBeNull()
 })
 
-// Ruling 11: Ein gespeicherter Schlüssel Eigenanteil (oder Vermieter) steht als eigene Antwort da, nicht als „tragen Sie“.
+// Abschlussdurchsicht I2: Ein gespeicherter Schlüssel Eigenanteil (oder Vermieter) steht als eigene Antwort da, nicht als „tragen Sie“.
 test('Eigenanteil gespeichert: als eigene Antwort gewählt angezeigt', () => {
   const stored: ItemForm = { ...water, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'selfUse', unitIds: null, subMeters: [{ meterId: 'garten', target: 'excluded' }] } }
   render(<Harness start={stored} />)

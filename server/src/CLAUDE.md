@@ -818,7 +818,9 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   (#117, `unit_no_connection`): der Einheit fehlt dann kein Zähler.
 - **Bezugszähler und verteilter Rest** (#98, `server/src/meterRest.ts`, `planMeterRest`): `CostItem.meterRest`
   wählt den Bezugszähler (Voreinstellung der Hauptzähler, sonst jeder Zähler), die Zähler dahinter und den
-  Restschlüssel: tragen (wie bisher, #116), im Verhältnis der Zähler, nach Fläche, Personen oder Einheiten,
+  Restschlüssel: tragen (wie bisher, #116; mit Zwischenzähler gespeichert als `standard`, Abschlussdurchsicht I2: ganz gemessen nach
+  den Zählern samt der Zähler außerhalb, sonst Vermieter oder Eigenanteil nach `selfRestShare`, kurzer Hauptzähler nach den
+  Zählern), im Verhältnis der Zähler, nach Fläche, Personen oder Einheiten,
   wahlweise nur für bestimmte Einheiten. Zwischenzähler haben als Ziel Vermieter, `selfUse` (Eigenanteil, privat),
   ausgeschlossen, eine Einheit oder eine Gruppe von Einheiten nach Fläche, Personen oder Einheiten.
   `Meter.scope: 'common'` („Zähler für einen Teil des Hauses“) zählt nie als Hauptzähler; gefragt wird nur bei

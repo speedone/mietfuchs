@@ -2281,7 +2281,7 @@ test('Invariante (#98): Rest des Bezugszählers - Summe, Vorzeichen, Eigenanteil
   assert.ok(compared >= 60 && restMoved >= 50, `zu wenige Vergleiche: ${compared} außerhalb, ${restMoved} mit Rest`)
 })
 
-// Ruling 11 (#98): „tragen Sie (wie bisher)“ ohne Zwischenzähler ('standard' am Hauptzähler) ist Zahl für Zahl dasselbe
+// Abschlussdurchsicht von #98, I2: „tragen Sie (wie bisher)“ ohne Zwischenzähler ('standard' am Hauptzähler) ist Zahl für Zahl dasselbe
 // wie ohne Angabe (#116), über zufällige Bestände: jede Mieterzeile, der Vermieteranteil und der Eigenanteil.
 test('Invariante (#98): Rest wie bisher (standard) ohne Zwischenzähler rechnet wie ohne Angabe', () => {
   let compared = 0

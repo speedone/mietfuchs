@@ -6039,7 +6039,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const unmeteredOutside = candidates.filter((u) => !groupSet.has(u.id) && occupied.has(u.id) && connected(u) && !measuredUnit(u))
       // Ein eigener abgelesener Zähler der Sparte, auch einer, der nicht hinter dem Bezug hängt.
       const ownMeter = (u: SnapshotUnit) => allMeters.some((m) => m.unitId === u.id && m.type === type && covered(m) > 0)
-      // **'standard' („tragen Sie (wie bisher)“, Ruling 11)** rechnet den Rest wie #116: Hat jede bewohnte Einheit hinter
+      // **'standard' („tragen Sie (wie bisher)“, Abschlussdurchsicht I2)** rechnet den Rest wie #116: Hat jede bewohnte Einheit hinter
       // dem Bezug einen Zähler, geht er im Verhältnis der Zähler auf (`meter`, samt der Zähler außerhalb der
       // Abrechnungseinheit, wie bisher); sonst trägt ihn der Vermieter, als Eigenanteil nur nach den Regeln von #116
       // (`selfUse`). Eine Einheit, deren Zähler nicht hinter dem Bezug hängt, hängt selbst nicht dahinter.

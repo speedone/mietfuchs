@@ -79,7 +79,7 @@ test('Wiederherstellen: ein Zähler oder eine Wohnung eines anderen Objekts in d
   })
 })
 
-// Ruling 11: „tragen Sie (wie bisher)“ mit Zwischenzähler wird als eigener Schlüssel 'standard' gespeichert; die
+// Abschlussdurchsicht I2: „tragen Sie (wie bisher)“ mit Zwischenzähler wird als eigener Schlüssel 'standard' gespeichert; die
 // Bedingung der Tabelle kennt ihn, und ein Bestand vor dem Schritt behält seine Zeilen.
 test("Rest-Schlüssel 'standard' wird gespeichert und gelesen", async () => {
   await withDatabase(async (opened) => {

@@ -456,7 +456,7 @@ test('Schlüssel gegenüber dem Vorjahr: ein anderer Rest-Schlüssel ergibt key.
   assert.equal(changed(null).length, 1)
 })
 
-// ---------- Ruling 11: „tragen Sie (wie bisher)“ mit Zwischenzähler ('standard') ----------
+// ---------- Abschlussdurchsicht I2: „tragen Sie (wie bisher)“ mit Zwischenzähler ('standard') ----------
 
 // Ohne Zwischenzähler rechnet 'standard' Zahl für Zahl wie ohne Angabe (#116): ganz gemessen nach den Zählern (auch die
 // Zähler außerhalb der Abrechnungseinheit nehmen die Differenz mit auf), sonst Rest beim Vermieter oder als Eigenanteil,

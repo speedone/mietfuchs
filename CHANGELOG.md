@@ -10,7 +10,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - **Bezugszähler und verteilter Rest**: Bei einer Kostenposition nach Verbrauch wählen Sie jetzt, von welchem Zähler
   der Allgemeinverbrauch abgezogen wird (Voreinstellung: der Hauptzähler), und wie der Rest verteilt wird: wie bisher
-  beim Vermieter, im Verhältnis der Zähler oder nach Fläche, Personen oder Einheiten, auch nur für bestimmte Wohnungen.
+  (haben alle bewohnten Wohnungen einen Zähler, im Verhältnis der Zähler, sonst beim Vermieter oder als Ihr Eigenanteil),
+  im Verhältnis der Zähler oder nach Fläche, Personen oder Einheiten, auch nur für bestimmte Wohnungen. Gewählt „im
+  Verhältnis der Zähler“, nehmen Zähler von Wohnungen außerhalb der Abrechnungseinheit keinen Teil der Differenz mehr
+  auf; das gilt nur für so eingestellte Positionen.
   Zwischenzähler hinter dem Bezugszähler legen Sie dem Vermieter, Ihrem Eigenanteil, einer Wohnung oder einer Gruppe
   von Wohnungen zu oder schließen sie aus. Neu ist der Zählerbereich „Zähler für einen Teil des Hauses“, etwa ein
   Allgemeinstromzähler. Mietfuchs warnt, wenn der Rest bei ganz gemessenen Wohnungen über 20 % des Bezugsverbrauchs

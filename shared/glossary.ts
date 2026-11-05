@@ -692,7 +692,7 @@ export const GLOSSARY = {
   meterRest: {
     topic: 'meters',
     title: 'Allgemeinverbrauch',
-    short: 'Was ein Bezugszähler misst, aber keiner der Zähler dahinter: die Messdifferenz der Zähler, Treppenhaus, Außenhahn oder ein Leck, und der Verbrauch von Einheiten ohne eigenen Zähler. Bei einer Position nach Verbrauch können Sie ihn nach Fläche, Personen oder Einheiten verteilen, im Verhältnis der Zähler, oder selbst tragen; Zwischenzähler ohne Wohnung, etwa für den Garten, ziehen Sie vorher ab. Im Verhältnis der Zähler verteilt Mietfuchs nur unter den Einheiten der Abrechnung; Zähler von Einheiten außerhalb nehmen keinen Teil der Differenz mehr auf.',
+    short: 'Was ein Bezugszähler misst, aber keiner der Zähler dahinter: die Messdifferenz der Zähler, Treppenhaus, Außenhahn oder ein Leck, und der Verbrauch von Einheiten ohne eigenen Zähler. Bei einer Position nach Verbrauch können Sie ihn nach Fläche, Personen oder Einheiten verteilen, im Verhältnis der Zähler, oder wie bisher behandeln (haben alle bewohnten Einheiten einen Zähler, im Verhältnis der Zähler, sonst tragen Sie ihn selbst); Zwischenzähler ohne Wohnung, etwa für den Garten, ziehen Sie vorher ab. Im Verhältnis der Zähler verteilt Mietfuchs nur unter den Einheiten der Abrechnung; Zähler von Einheiten außerhalb nehmen keinen Teil der Differenz mehr auf.',
     example: 'Der Hauptzähler zeigt 1.100 m³, die Wohnungszähler 400 und 600 m³: Der Allgemeinverbrauch sind 100 m³. Bei 1.100 € Wasser, Rest nach Fläche (40 und 60 m²), tragen die Mieter 400 € + 40 € = 440 € und 600 € + 60 € = 660 €.',
     norm: '§ 556a Abs. 1 BGB; BGH, Urteil vom 25.11.2009, VIII ZR 69/09',
     needed:
