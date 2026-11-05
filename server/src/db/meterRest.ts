@@ -152,6 +152,8 @@ export async function guardMeterRest(db: Executor, after: CostItem): Promise<voi
     const foreign = named.find((id) => !own.has(id))
     if (foreign !== undefined) {
       const [u] = await db.select({ name: units.name }).from(units).where(eq(units.id, foreign))
+      // Abschlussdurchsicht I3: Eine Wohnung, die es nicht (mehr) gibt, ist kein Verweis über die Grenze eines Objekts.
+      if (!u) throw new MeterRestError(`Eine Wohnung, die ${label} beim Allgemeinverbrauch oder einem Zwischenzähler nennt, gibt es nicht mehr. Bitte laden Sie die Seite neu und wählen Sie die Wohnungen noch einmal.`)
       throw new CrossPropertyError(`Die Kostenposition ${label} gehört zu einem anderen Objekt als die Wohnung${u ? ` „${u.name}“` : ''}, die der Rest bekommen soll. Bitte wählen Sie Wohnungen desselben Objekts.`)
     }
     return
@@ -161,6 +163,38 @@ export async function guardMeterRest(db: Executor, after: CostItem): Promise<voi
     const rows = await db.select({ name: units.name }).from(units).where(inArray(units.id, outside))
     throw new MeterRestError(`${label} verteilt nur auf die Teilnehmer, die Sie gewählt haben. ${andList(rows.map((r) => `„${r.name}“`))} ${rows.length === 1 ? 'gehört' : 'gehören'} nicht dazu und kann den Rest nicht bekommen.`)
   }
+}
+
+// ---------- Eine Wohnung wird gelöscht ----------
+
+// Die Gruppen der Zwischenzähler tragen ihre Wohnungen als JSON und kaskadieren nicht (Abschlussdurchsicht I3): Ohne
+// diesen Schritt bliebe die Kennung stehen, und jedes spätere Speichern der Position scheiterte an der Prüfung. Die
+// Wohnung fällt aus jeder Gruppe; eine leere Gruppe (auch die Direktzuordnung an genau diese Wohnung) geht an den
+// Vermieter, wie die Berechnung einen Teil ohne Basis ohnehin verbucht. Das Journal hält die Änderung fest (Trigger).
+// Die Empfänger des Rests (`cost_item_meter_rest_units`) nimmt der Fremdschlüssel mit.
+export async function dropUnitFromMeterRest(db: Executor, unitId: string): Promise<void> {
+  for (const r of await db.select().from(costItemMeterRestSubs)) {
+    if (r.targetUnitIds === null) continue
+    let ids: unknown
+    try { ids = JSON.parse(r.targetUnitIds) } catch { continue }
+    if (!Array.isArray(ids) || !ids.includes(unitId)) continue
+    const left = ids.filter((id) => id !== unitId)
+    const where = and(eq(costItemMeterRestSubs.costItemId, r.costItemId), eq(costItemMeterRestSubs.meterId, r.meterId))
+    await db.update(costItemMeterRestSubs).set(left.length > 0
+      ? { targetUnitIds: JSON.stringify(left) }
+      : { targetKind: 'landlord', targetKey: null, targetUnitIds: null }).where(where)
+  }
+}
+
+// Wie viele Angaben zum Allgemeinverbrauch die Wohnung nennen (Empfänger des Rests, Gruppen der Zwischenzähler), für die
+// Löschfrage (`unitDependents`).
+export async function meterRestUnitLinks(db: Executor, unitId: string): Promise<number> {
+  const recipients = (await db.select({ id: costItemMeterRestUnits.costItemId }).from(costItemMeterRestUnits).where(eq(costItemMeterRestUnits.unitId, unitId))).length
+  const groups = (await db.select({ ids: costItemMeterRestSubs.targetUnitIds }).from(costItemMeterRestSubs)).filter((r) => {
+    if (r.ids === null) return false
+    try { const ids: unknown = JSON.parse(r.ids); return Array.isArray(ids) && ids.includes(unitId) } catch { return false }
+  }).length
+  return recipients + groups
 }
 
 // ---------- Wer einen Zähler braucht ----------
@@ -202,7 +236,8 @@ export async function meterRestViolations(db: Executor): Promise<string[]> {
   for (const r of await db.select({ d: costItems.description }).from(costItemMeterRestUnits)
     .innerJoin(costItems, eq(costItemMeterRestUnits.costItemId, costItems.id)).innerJoin(units, eq(costItemMeterRestUnits.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))) out.push(`Die Kostenposition „${r.d}“ verteilt den Rest auf eine Wohnung eines anderen Objekts.`)
-  // Die Wohnungen eines Ziels stehen als JSON in der Zeile; eine gelöschte Wohnung bleibt dort stehen und ist harmlos.
+  // Die Wohnungen eines Ziels stehen als JSON in der Zeile; eine gelöschte nimmt `dropUnitFromMeterRest` heraus, eine
+  // übrig gebliebene (älterer Bestand) ist harmlos.
   const groups = await db.select({ d: costItems.description, p: costItems.propertyId, ids: costItemMeterRestSubs.targetUnitIds })
     .from(costItemMeterRestSubs).innerJoin(costItems, eq(costItemMeterRestSubs.costItemId, costItems.id))
   const unitProperty = new Map((await db.select({ id: units.id, p: units.propertyId }).from(units)).map((u) => [u.id, u.p]))

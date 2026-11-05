@@ -73,7 +73,7 @@ import {
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
-import { guardMeterRest, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
+import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
 
 export type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
 export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Payment
@@ -2353,7 +2353,9 @@ export async function unitDependents(db: Executor, unitId: string): Promise<Unit
     await n(db.select({ n: count() }).from(costItemSelfAmounts).where(eq(costItemSelfAmounts.unitId, unitId))) +
     await n(db.select({ n: count() }).from(costItemAmounts).where(inArray(costItemAmounts.tenancyId, ihreMietverhaeltnisse))) +
     // #258: die Angaben zum Mietvertrag ihrer Mietverhältnisse, die mit ihnen wegfallen.
-    await n(db.select({ n: count() }).from(costItemContract).where(inArray(costItemContract.tenancyId, ihreMietverhaeltnisse)))
+    await n(db.select({ n: count() }).from(costItemContract).where(inArray(costItemContract.tenancyId, ihreMietverhaeltnisse))) +
+    // #98: Empfänger des Allgemeinverbrauchs und Gruppen der Zwischenzähler, aus denen die Wohnung fällt.
+    await meterRestUnitLinks(db, unitId)
   return {
     tenancies: await n(db.select({ n: count() }).from(tenancies).where(eq(tenancies.unitId, unitId))),
     meters: await n(db.select({ n: count() }).from(meters).where(eq(meters.unitId, unitId))),
@@ -2591,6 +2593,7 @@ const unitCollection: Collection<Unit> = {
       const used = meterRestUsedText(`Der Zähler „${x.name}“ dieser Wohnung`, await meterRestUsers(db, [x.id]))
       if (used !== null) throw new HeatingError(409, used)
     }
+    await dropUnitFromMeterRest(db, id)
     await db.delete(units).where(eq(units.id, id))
   },
 }

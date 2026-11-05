@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
-import { createEntity, createProperty, crossPropertyViolations } from '../src/db/repository.ts'
+import { createEntity, createProperty, crossPropertyViolations, removeEntity, unitDependents, updateEntity } from '../src/db/repository.ts'
 import { costItemMeterRest, costItemMeterRestBehind, costItemMeterRestSubs, costItemMeterRestUnits } from '../src/db/schema.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -90,5 +90,39 @@ test("Rest-Schlüssel 'standard' wird gespeichert und gelesen", async () => {
     })
     const stock = await opened.read(readStock)
     assert.deepEqual(stock.costItems.find((c) => c.id === 'c1')?.meterRest, rest)
+  })
+})
+
+// Abschlussdurchsicht I3: Eine gelöschte Wohnung, die in der Gruppe eines Zwischenzählers stand, sperrte danach jedes
+// Speichern der Position mit einem falschen Satz („anderes Objekt“). Sie fällt jetzt aus der Gruppe; eine leere Gruppe
+// geht an den Vermieter, wie die Berechnung einen Teil ohne Basis ohnehin verbucht.
+test('Wohnung gelöscht: sie fällt aus der Gruppe des Zwischenzählers, die Position lässt sich weiter speichern', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
+      await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
+      await createEntity(db, 'meters', 'g', meter('g', 'objekt-1', { scope: 'common' }))
+      await createEntity(db, 'meters', 'h', meter('h', 'objekt-1', { scope: 'common' }))
+      await createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser',
+        meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'area', unitIds: null, subMeters: [{ meterId: 'g', target: { key: 'area', unitIds: ['a', 'b'] } }, { meterId: 'h', target: { key: 'direct', unitIds: ['b'] } }] } })
+    })
+    const deps = await opened.read((db) => unitDependents(db, 'b')) ?? assert.fail('Wohnung fehlt')
+    assert.ok(deps.costItemLinks >= 2, `Verweise: ${deps.costItemLinks}`)
+    await opened.write((db) => removeEntity(db, 'units', 'b'))
+    await opened.write((db) => updateEntity(db, 'costItems', 'c1', { amountCents: 2000 }))
+    const stock = await opened.read(readStock)
+    assert.deepEqual(stock.costItems.find((c) => c.id === 'c1')?.meterRest?.subMeters, [
+      { meterId: 'g', target: { key: 'area', unitIds: ['a'] } },
+      { meterId: 'h', target: 'landlord' },
+    ])
+  })
+})
+
+test('Eine unbekannte Wohnung in der Angabe: der Satz sagt, dass es sie nicht mehr gibt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'meters', 'g', meter('g', 'objekt-1', { scope: 'common' })))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser',
+      meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'area', unitIds: null, subMeters: [{ meterId: 'g', target: { key: 'area', unitIds: ['weg'] } }] } })),
+    (e: Error) => /gibt es nicht mehr/.test(e.message) && !/anderen Objekt/.test(e.message))
   })
 })
