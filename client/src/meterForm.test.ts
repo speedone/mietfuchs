@@ -294,3 +294,14 @@ test('#98: „Misst dieser Zähler das ganze Haus oder einen Teil?“ nur bei ei
   expect(meterToForm({ id: 'm', propertyId: 'p', name: 'WG', unitId: null, type: 'kaltwasser', unit: 'm³', scope: 'common' }).scope).toBe('common')
   expect(meterToForm({ id: 'm', propertyId: 'p', name: 'Haupt', unitId: null, type: 'kaltwasser', unit: 'm³' }).scope).toBe('property')
 })
+
+test('#98 Durchsicht: die Frage nach dem Teil des Hauses nur bei Kaltwasser, Strom und „Sonstiges“', () => {
+  const house = { ...emptyMeterForm(), name: 'Haus' }
+  expect(asksScope({ ...house, type: 'kaltwasser' })).toBe(true)
+  expect(asksScope({ ...house, type: 'sonstig' })).toBe(true)
+  expect(asksScope({ ...house, type: 'warmwasser' })).toBe(false)
+  expect(asksScope({ ...house, type: 'waerme' })).toBe(false)
+  expect(meterBody({ ...house, type: 'waerme', unit: 'kWh' }, null)).toMatchObject({ body: { scope: null } })
+  // Ein gespeichertes `common` bleibt sichtbar und wird so gesendet (angezeigt gleich gespeichert).
+  expect(asksScope({ ...house, type: 'waerme', scope: 'common' })).toBe(true)
+})

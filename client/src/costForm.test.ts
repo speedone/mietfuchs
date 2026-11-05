@@ -63,6 +63,10 @@ import {
   subTargetOptions,
   subTargetValue,
   withSubTarget,
+  meterRestChoiceOf,
+  subGroupUnits,
+  toggleSubUnit,
+  restUnitChoices,
 } from './costForm'
 
 const unit = (id: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1',
@@ -1139,10 +1143,14 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     // Ein gespeicherter Bezug, den die Liste nicht kennt, steht trotzdem darin (angezeigt gleich gespeichert).
     const odd = water({ meterRest: on({ referenceMeterId: 'weg', behindMeterIds: [] }) })
     expect(meterRestChoices(odd, meters, units).references.map((o) => o.value)).toContain('weg')
-    // Die Wahl „Verbrauch ohne eigenen Zähler“: die fünf Antworten, ein gespeichertes Ziel des Vermieters dazu.
-    expect(meterRestKeyOptions(null).map((o) => o.value)).toEqual(['off', 'meter', 'area', 'persons', 'units'])
-    expect(meterRestKeyOptions(on({ key: 'selfUse' })).map((o) => o.value)).toContain('selfUse')
-    expect(meterRestKeyOptions(on({ key: 'landlord' })).map((o) => o.value)).toContain('landlord')
+    // Die Wahl „Verbrauch ohne eigenen Zähler“: fünf Antworten; Vermieter und Eigenanteil zeigt sie als „tragen Sie“.
+    expect(meterRestKeyOptions().map((o) => o.value)).toEqual(['off', 'meter', 'area', 'persons', 'units'])
+    expect(meterRestChoiceOf(water({ meterRest: on({ key: 'selfUse' }) }))).toBe('off')
+    expect(meterRestChoiceOf(water({ meterRest: on({ key: 'landlord' }) }))).toBe('off')
+    expect(meterRestChoiceOf(water())).toBe('off')
+    // Durchsicht: Ein gespeicherter Zähler dahinter, den die Liste nicht mehr anbietet, steht als Häkchen darin.
+    const strayBehind = water({ meterRest: on({ referenceMeterId: 'wg', behindMeterIds: ['s-eg'] }) })
+    expect(meterRestChoices(strayBehind, meters, units).behind.map((o) => o.value)).toContain('s-eg')
   })
 
   test('Bezug ungleich Hauptzähler: die Liste ist mit den Zählern der Verteilbasis vorbelegt', () => {
@@ -1166,50 +1174,102 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(built.problems).toEqual([{ field: 'meterRest', short: 'Bitte wählen', text: expect.stringMatching(/^Zähler hinter dem Bezugszähler: /) }])
   })
 
-  test('Wechsel des Schlüssels weg von „nach Verbrauch“ oder auf eine andere Sparte leert die Angabe, mit Satz', () => {
-    const f = withMeterRestKey(water(), 'area')
+  test('Durchsicht I2: Wechsel weg und zurück stellt die Angabe wieder her; gesendet wird sie nur, wo sie gilt', () => {
+    const f = withReference(withMeterRestKey(water(), 'area'), 'wg', meters, units)
     const area = withKey(f, 'area', ['kaltwasser'])
-    expect(area.meterRest).toBeNull()
-    expect(meterRestDroppedText(area)).toMatch(/Allgemeinverbrauch/)
-    const warm = withMeterRestType(f, 'warmwasser')
-    expect(warm.meterRest).toBeNull()
-    expect(meterRestDroppedText(warm)).toMatch(/Allgemeinverbrauch/)
-    // Zurück zu einer passenden Angabe: kein Satz mehr.
-    expect(meterRestDroppedText(withKey(area, 'meter', ['kaltwasser']))).toBeNull()
-    // Eine andere erlaubte Sparte behält die Wahl, aber nicht die Zähler der alten Sparte.
-    const wg = withReference(f, 'wg', meters, units)
-    expect(withMeterRestType(wg, 'strom').meterRest).toEqual(on({ key: 'area' }))
-    // Ohne Angabe gibt es nichts zu sagen.
-    expect(meterRestDroppedText(withKey(water(), 'area', ['kaltwasser']))).toBeNull()
-    // Der Rumpf schickt null, das eine gespeicherte Angabe entfernt.
+    expect(meterRestDroppedText(area)).toMatch(/werden beim Speichern entfernt/)
     const built = buildCostItemBody(area, units, 2025)
     if (!('body' in built)) return expect.fail(JSON.stringify(built))
     expect(built.body.meterRest).toBeNull()
+    const back = withKey(area, 'meter', ['kaltwasser'])
+    expect(back.meterRest).toEqual(f.meterRest)
+    expect(meterRestDroppedText(back)).toBeNull()
+    // Sparte ohne Bezugszähler und zurück.
+    const warm = withMeterRestType(f, 'warmwasser')
+    expect(meterRestDroppedText(warm)).toMatch(/werden beim Speichern entfernt/)
+    expect(withMeterRestType(warm, 'kaltwasser').meterRest).toEqual(f.meterRest)
+    // Andere passende Sparte: die Zähler fallen mit Satz heraus, die Antwort bleibt; zurück gelten sie wieder.
+    const power = withMeterRestType(f, 'strom')
+    expect(power.meterRest).toEqual(on({ key: 'area' }))
+    expect(meterRestDroppedText(power)).toMatch(/^Bezugszähler, Zähler dahinter und Zwischenzähler der Sparte „Kaltwasser“/)
+    const again = withMeterRestType(power, 'kaltwasser')
+    expect(again.meterRest).toEqual(f.meterRest)
+    expect(meterRestDroppedText(again)).toBeNull()
+    // Über eine dritte Sparte hinweg ebenso.
+    expect(withMeterRestType(withMeterRestType(power, 'warmwasser'), 'kaltwasser').meterRest).toEqual(f.meterRest)
+    // Ohne Angabe gibt es nichts zu sagen.
+    expect(meterRestDroppedText(withKey(water(), 'area', ['kaltwasser']))).toBeNull()
+  })
+
+  test('Durchsicht I1: Zwischenzähler bei „tragen Sie“, Eigenanteil mit selbstgenutzter Einheit, sonst Vermieter', () => {
+    // Einliegerwohnung des Vermieters ohne Zähler, die übrigen gemessen; Gartenwasser zählt beim Abwasser nicht.
+    const own = [u('elw', { participates: false, selfUsed: true }), u('eg'), u('og')]
+    const f = withSubTarget(water(), 'garten', 'excluded', own)
+    expect(meterRestChoiceOf(f)).toBe('off')
+    const built = buildCostItemBody(f, own, 2025)
+    if (!('body' in built)) return expect.fail(JSON.stringify(built))
+    expect(built.body.meterRest).toEqual({ key: 'selfUse', referenceMeterId: null, behindMeterIds: null, unitIds: null, subMeters: [{ meterId: 'garten', target: 'excluded' }] })
+    // Ohne selbstgenutzte Einheit trägt der Vermieter (abziehbar).
+    expect(withSubTarget(water(), 'garten', 'landlord', units).meterRest).toMatchObject({ key: 'landlord', subMeters: [{ meterId: 'garten', target: 'landlord' }] })
+    // Der letzte Zwischenzähler weg: wieder ohne Angabe.
+    expect(withSubTarget(f, 'garten', 'none', own).meterRest).toBeNull()
+    // „tragen Sie“ aus einer anderen Antwort behält die Zwischenzähler am Hauptzähler; ohne sie ohne Angabe.
+    const area = withSubTarget(withReference(withMeterRestKey(water(), 'area'), 'wg', meters, units), 'garten', 'excluded', units)
+    expect(withMeterRestKey(area, 'off', units).meterRest).toEqual(on({ key: 'landlord', subMeters: [{ meterId: 'garten', target: 'excluded' }] }))
+    expect(withMeterRestKey(withMeterRestKey(water(), 'area'), 'off', units).meterRest).toBeNull()
   })
 
   test('Zwischenzähler mit Ziel: angezeigter Wert gleich gespeichertem, die Garage direkt', () => {
     const f = withMeterRestKey(water(), 'area')
-    const basis = ['eg', 'og', 'garage']
     const values = subTargetOptions(f, 'garten', units).map((o) => o.value)
-    expect(values).toEqual(['none', 'excluded', 'landlord', 'selfUse', `area:${basis.join(',')}`, `persons:${basis.join(',')}`, `units:${basis.join(',')}`, 'direct:eg', 'direct:og', 'direct:garage'])
-    const garage = withSubTarget(f, 'garten', 'direct:garage')
+    expect(values).toEqual(['none', 'excluded', 'landlord', 'selfUse', 'area', 'persons', 'units', 'direct:eg', 'direct:og', 'direct:garage'])
+    const garage = withSubTarget(f, 'garten', 'direct:garage', units)
     expect(garage.meterRest?.subMeters).toEqual([{ meterId: 'garten', target: { key: 'direct', unitIds: ['garage'] } }])
     expect(subTargetValue(garage, 'garten')).toBe('direct:garage')
-    expect(withSubTarget(garage, 'garten', 'none').meterRest?.subMeters).toEqual([])
-    expect(withSubTarget(f, 'garten', 'excluded').meterRest?.subMeters).toEqual([{ meterId: 'garten', target: 'excluded' }])
-    // Eine gespeicherte Gruppe, die keine der Antworten ist, steht mit ihren Wohnungen darin.
-    const stored = water({ meterRest: on({ subMeters: [{ meterId: 'garten', target: { key: 'persons', unitIds: ['eg', 'og'] } }] }) })
-    const opts = subTargetOptions(stored, 'garten', units)
-    expect(opts.map((o) => o.value)).toContain(subTargetValue(stored, 'garten'))
-    expect(opts.find((o) => o.value === subTargetValue(stored, 'garten'))?.label).toBe('nach Personen auf EG und OG')
+    expect(withSubTarget(garage, 'garten', 'none', units).meterRest?.subMeters).toEqual([])
+    expect(withSubTarget(f, 'garten', 'excluded', units).meterRest?.subMeters).toEqual([{ meterId: 'garten', target: 'excluded' }])
   })
 
-  test('nur auf bestimmte Wohnungen: abgewählt wird die Liste, alle angehakt heißt alle', () => {
+  test('Durchsicht I4: eine Gruppe auf gewählte Wohnungen (Waschküche, Gartenwasser an die Nutzer)', () => {
+    const f = withSubTarget(withMeterRestKey(water(), 'area'), 'garten', 'persons', units)
+    expect(subGroupUnits(f, 'garten')).toEqual(['eg', 'og', 'garage'])
+    const two = toggleSubUnit(f, 'garten', 'garage', false)
+    expect(two.meterRest?.subMeters).toEqual([{ meterId: 'garten', target: { key: 'persons', unitIds: ['eg', 'og'] } }])
+    expect(subTargetValue(two, 'garten')).toBe('persons')
+    // Ein anderer Gruppenschlüssel behält die Wohnungen.
+    expect(withSubTarget(two, 'garten', 'area', units).meterRest?.subMeters).toEqual([{ meterId: 'garten', target: { key: 'area', unitIds: ['eg', 'og'] } }])
+    // Keine Wohnung: Meldung am Feld.
+    const none = toggleSubUnit(toggleSubUnit(two, 'garten', 'eg', false), 'garten', 'og', false)
+    const built = buildCostItemBody(none, units, 2025)
+    if (!('problems' in built)) return expect.fail('ohne Wohnung gespeichert')
+    expect(built.problems.map((p) => p.text)).toEqual([expect.stringMatching(/^Zwischenzähler: /)])
+  })
+
+  test('nur auf bestimmte Wohnungen: abgewählt wird die Liste, alle angehakt heißt alle, keine ist eine Meldung', () => {
     const f = withMeterRestKey(water(), 'area')
     const basis = ['eg', 'og', 'garage']
     const two = toggleRestUnit(f, 'garage', false, basis)
     expect(two.meterRest?.unitIds).toEqual(['eg', 'og'])
     expect(toggleRestUnit(two, 'garage', true, basis).meterRest?.unitIds).toBeNull()
+    const none = toggleRestUnit(toggleRestUnit(two, 'eg', false, basis), 'og', false, basis)
+    expect(none.meterRest?.unitIds).toEqual([])
+    const built = buildCostItemBody(none, units, 2025)
+    if (!('problems' in built)) return expect.fail('ohne Empfänger gespeichert')
+    expect(built.problems).toEqual([{ field: 'meterRest', short: 'Bitte wählen', text: expect.stringMatching(/wenigstens eine Wohnung/) }])
+  })
+
+  test('Durchsicht I3: Teilnehmer eingegrenzt, Empfänger und Gruppen außerhalb sind sichtbar und eine Meldung', () => {
+    const f = toggleSubUnit(withSubTarget(toggleRestUnit(withMeterRestKey(water(), 'area'), 'garage', false, ['eg', 'og', 'garage']), 'garten', 'units', units), 'garten', 'eg', false)
+    const narrowed = { ...f, participants: ['og', 'garage'] }
+    expect(restUnitChoices(narrowed, units, narrowed.meterRest?.unitIds ?? null)).toEqual([
+      { id: 'og', label: 'OG', outside: false }, { id: 'garage', label: 'GARAGE', outside: false }, { id: 'eg', label: 'EG (nicht beteiligt)', outside: true },
+    ])
+    const built = buildCostItemBody(narrowed, units, 2025)
+    if (!('problems' in built)) return expect.fail('außerhalb der Teilnehmer gespeichert')
+    expect(built.problems).toEqual([{ field: 'meterRest', short: 'Nicht beteiligt', text: expect.stringMatching(/EG ist nicht an dieser Position beteiligt/) }])
+    // Häkchen heraus: geht durch.
+    const fixed = toggleRestUnit(narrowed, 'eg', false, ['og', 'garage'])
+    expect('body' in buildCostItemBody(fixed, units, 2025)).toBe(true)
   })
 
   test('Formular aus einer gespeicherten Position und zurück: die Angabe bleibt, wie sie ist', () => {

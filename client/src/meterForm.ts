@@ -107,9 +107,12 @@ export const meterToForm = (m: Meter): MeterForm => ({
 })
 
 // #98: Die Frage „Misst dieser Zähler das ganze Haus oder einen Teil?“ nur bei einem Zähler ohne Wohnung, der nicht zur
-// Heizanlage gehört (der Server nimmt `common` nur dann an); ein Heizkostenverteiler hat immer eine Wohnung.
-export const asksScope = (form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'type'>): boolean =>
-  !form.unitId && form.heatingRole === '' && form.type !== 'hkv'
+// Heizanlage gehört (der Server nimmt `common` nur dann an), und nur in den Sparten mit Bezugszähler (Kaltwasser, Strom,
+// „Sonstiges“); Wärme und Warmwasser verteilt die Heizkostenabrechnung. Ein gespeichertes `common` bleibt gefragt, damit
+// die Auswahl zeigt, was gesendet wird.
+const SCOPE_TYPES: readonly MeterType[] = ['kaltwasser', 'strom', 'sonstig']
+export const asksScope = (form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'type'> & Partial<Pick<MeterForm, 'scope'>>): boolean =>
+  !form.unitId && form.heatingRole === '' && form.type !== 'hkv' && (SCOPE_TYPES.includes(form.type) || form.scope === 'common')
 export const SCOPE_OPTIONS: { value: MeterForm['scope']; label: string }[] = [
   { value: 'property', label: 'das ganze Haus (Hauptzähler)' },
   { value: 'common', label: 'einen Teil des Hauses' },
