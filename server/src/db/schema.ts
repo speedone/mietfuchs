@@ -94,6 +94,12 @@ const exactly =
 
 export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts', 'heatingSystem'] as const)
 export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
+// Was ein Zähler ohne Wohnung misst (#98). Gespeichert wird nur `common`; der Hauptzähler des Objekts hat keinen Eintrag
+// (`Meter.scope` kennt `property` zusätzlich, für den Aufrufer, nie in der Datei), deshalb nicht über `exactly`.
+export const METER_SCOPES = ['common'] as const
+export const REST_KEYS = ['area', 'persons', 'units', 'meter', 'landlord', 'selfUse'] as const
+export const REST_GROUP_KEYS = ['area', 'persons', 'units', 'direct'] as const
+export const REST_TARGET_KINDS = ['landlord', 'selfUse', 'excluded', 'group'] as const
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
 // Für die Heizung zusätzlich „Mieter heizt selbst“ (Heizung PR 19, #97).
 export const HEATING_MODELS = exactly<HeatingModel>()([...COST_MODELS, 'selfSupply'] as const)
@@ -1374,6 +1380,83 @@ export const costItemContract = sqliteTable(
   (t) => [primaryKey({ columns: [t.costItemId, t.tenancyId] })],
 )
 
+// Bezugszähler und verteilter Rest einer Position nach Verbrauch (#98, Entwurf 2026-11-04-virtuelle-zaehler-design.md):
+// eine Zeile je Position, mit Untertabellen für die Empfänger, die Zähler dahinter und die Zwischenzähler. `behind_all`
+// heißt `behindMeterIds: null` (alle Zähler von Einheiten, nur beim Hauptzähler), `unit_ids_all` heißt `unitIds: null`
+// (die Verteilbasis der Position); beide Male stehen keine Zeilen in der Untertabelle. Zähler sind `RESTRICT`: Ein Zähler,
+// auf den eine Position verweist, wird nicht gelöscht, das prüft das Repository mit einem Satz vorher. Ein Verweis über
+// die Grenze eines Objekts prüft `crossPropertyViolations`.
+export const costItemMeterRest = sqliteTable(
+  'cost_item_meter_rest',
+  {
+    costItemId: text('cost_item_id')
+      .primaryKey()
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    // null: der Hauptzähler der Sparte.
+    referenceMeterId: text('reference_meter_id').references(() => meters.id, { onDelete: 'restrict' }),
+    key: text('key', { enum: REST_KEYS }).notNull(),
+    unitIdsAll: integer('unit_ids_all', { mode: 'boolean' }).notNull(),
+    behindAll: integer('behind_all', { mode: 'boolean' }).notNull(),
+  },
+  () => [
+    oneOf('cost_item_meter_rest_key_known', 'key', REST_KEYS),
+    // `behindMeterIds: null` gibt es nur beim Hauptzähler.
+    check('cost_item_meter_rest_behind_all_valid', sql.raw('"reference_meter_id" IS NULL OR "behind_all" = 0')),
+  ],
+)
+
+// Die Empfänger des Rests (`unitIds`); eine gelöschte Wohnung nimmt ihre Zeile mit.
+export const costItemMeterRestUnits = sqliteTable(
+  'cost_item_meter_rest_units',
+  {
+    costItemId: text('cost_item_id')
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.costItemId, t.unitId] })],
+)
+
+// Die Zähler von Einheiten hinter dem Bezugszähler (`behindMeterIds`).
+export const costItemMeterRestBehind = sqliteTable(
+  'cost_item_meter_rest_behind',
+  {
+    costItemId: text('cost_item_id')
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    meterId: text('meter_id')
+      .notNull()
+      .references(() => meters.id, { onDelete: 'restrict' }),
+  },
+  (t) => [primaryKey({ columns: [t.costItemId, t.meterId] })],
+)
+
+// Die Zwischenzähler ohne Wohnung (`subMeters`) mit ihrem Ziel. `target_kind` `group` trägt Schlüssel und Wohnungen
+// (JSON-Liste von Kennungen, wie die Wohnungen der Gruppe als Ganzes gelesen werden); die anderen Ziele tragen keins von beiden.
+export const costItemMeterRestSubs = sqliteTable(
+  'cost_item_meter_rest_subs',
+  {
+    costItemId: text('cost_item_id')
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    meterId: text('meter_id')
+      .notNull()
+      .references(() => meters.id, { onDelete: 'restrict' }),
+    targetKind: text('target_kind', { enum: REST_TARGET_KINDS }).notNull(),
+    targetKey: text('target_key', { enum: REST_GROUP_KEYS }),
+    targetUnitIds: text('target_unit_ids'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.costItemId, t.meterId] }),
+    oneOf('cost_item_meter_rest_subs_kind_known', 'target_kind', REST_TARGET_KINDS),
+    oneOf('cost_item_meter_rest_subs_key_known', 'target_key', REST_GROUP_KEYS),
+    check('cost_item_meter_rest_subs_group_valid', sql.raw(`("target_kind" = 'group') = ("target_key" IS NOT NULL AND "target_unit_ids" IS NOT NULL)`)),
+  ],
+)
+
 // Beträge selbstgenutzter Wohnungen (#104), etwa aus derselben Abrechnung des Messdienstes. Sie
 // sind der Eigenanteil des Vermieters. Eine gelöschte Wohnung nimmt ihren Betrag mit, wie bei den
 // Einzelbeträgen der Mietverhältnisse.
@@ -1485,8 +1568,14 @@ export const meters = sqliteTable(
     ratingFactor: real('rating_factor'),
     // Geeicht bis Ende dieses Jahres (Heizung PR 21, #98, Entwurf 3.12); null heißt nicht eingetragen.
     calibratedUntil: integer('calibrated_until'),
+    // Was ein Zähler ohne Wohnung misst (#98): gespeichert wird nur `common` (ein Zähler, der einen Teil des Hauses
+    // misst); null ist der Hauptzähler des Objekts, das bisherige Verhalten.
+    scope: text('scope', { enum: METER_SCOPES }),
   },
   () => [
+    oneOf('meters_scope_known', 'scope', METER_SCOPES),
+    // Nur ein Zähler ohne Wohnung und ohne Heizanlage kann einen Teil des Hauses messen.
+    check('meters_scope_valid', sql.raw(`"scope" IS NULL OR ("unit_id" IS NULL AND "heating_plant_id" IS NULL)`)),
     // Der Zählertyp verbindet Zähler und Kostenposition (`cost_items.meter_type`). Ein
     // unbekannter Wert fände keine Zähler und ergäbe eine Position ohne Verteilbasis.
     oneOf('meters_type_known', 'type', METER_TYPES),

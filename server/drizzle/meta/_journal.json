@@ -596,6 +596,20 @@
       "when": 1793571412326,
       "tag": "0084_umstieg_hinweis",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "6",
+      "when": 1793887047812,
+      "tag": "0085_bezugszaehler_rest",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "6",
+      "when": 1793887049648,
+      "tag": "0086_bezugszaehler_rest_bedingungen",
+      "breakpoints": true
     }
   ]
 }

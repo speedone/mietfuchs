@@ -19,7 +19,7 @@
 
 import { isSpreadYears } from '../../../shared/spread.ts'
 import { asc, eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
@@ -27,7 +27,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitLocalRents, unitNoConnection, unitUsageChanges, meters, payments,
+  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemMeterRest, costItemMeterRestBehind, costItemMeterRestSubs, costItemMeterRestUnits, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitLocalRents, unitNoConnection, unitUsageChanges, meters, payments,
   flatRates, tenancyDirectCharges, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
@@ -256,6 +256,31 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
   }))
 }
 
+// Das Ziel eines Zwischenzählers aus seiner Zeile; eine Gruppe mit unlesbarer Liste (kann es wegen der Bedingung nur durch
+// Handarbeit geben) hat keine Wohnungen.
+function subTarget(r: { targetKind: 'landlord' | 'selfUse' | 'excluded' | 'group'; targetKey: 'area' | 'persons' | 'units' | 'direct' | null; targetUnitIds: string | null }): MeterRestTarget {
+  if (r.targetKind !== 'group') return r.targetKind
+  let ids: unknown = []
+  try { ids = JSON.parse(r.targetUnitIds ?? '[]') } catch { /* keine Wohnungen */ }
+  return { key: r.targetKey ?? 'area', unitIds: Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : [] }
+}
+
+function meterRestOf(
+  row: { referenceMeterId: string | null; key: MeterRest['key']; unitIdsAll: boolean; behindAll: boolean } | undefined,
+  unitIds: string[] | undefined,
+  behind: string[] | undefined,
+  subs: { meterId: string; target: MeterRestTarget }[] | undefined,
+): MeterRest | undefined {
+  if (!row) return undefined
+  return {
+    referenceMeterId: row.referenceMeterId,
+    behindMeterIds: row.behindAll ? null : behind ?? [],
+    key: row.key,
+    unitIds: row.unitIdsAll ? null : unitIds ?? [],
+    subMeters: subs ?? [],
+  }
+}
+
 export async function readCostItems(db: Executor): Promise<CostItem[]> {
   const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
   const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
@@ -268,6 +293,11 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
   const selfAmounts = groupBy(selfAmountRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.amountCents])
   const contractRows = await db.select().from(costItemContract).orderBy(INSERTION_ORDER)
   const contract = groupBy(contractRows, (r) => r.costItemId, (r): [string, boolean] => [r.tenancyId, r.inContract])
+  // Bezugszähler und Rest (#98): eine Zeile je Position, dazu die drei Listen.
+  const restRows = new Map((await db.select().from(costItemMeterRest).orderBy(INSERTION_ORDER)).map((r) => [r.costItemId, r]))
+  const restUnits = groupBy(await db.select().from(costItemMeterRestUnits).orderBy(INSERTION_ORDER), (r) => r.costItemId, (r) => r.unitId)
+  const restBehind = groupBy(await db.select().from(costItemMeterRestBehind).orderBy(INSERTION_ORDER), (r) => r.costItemId, (r) => r.meterId)
+  const restSubs = groupBy(await db.select().from(costItemMeterRestSubs).orderBy(INSERTION_ORDER), (r) => r.costItemId, (r) => ({ meterId: r.meterId, target: subTarget(r) }))
   return rows.map((c) => {
     const own = shares.get(c.id)
     const teilnehmer = participants.get(c.id)
@@ -296,6 +326,8 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(vertrag
         ? { notAgreedTenancyIds: vertrag.filter(([, im]) => !im).map(([id]) => id), namedTenancyIds: vertrag.filter(([, im]) => im).map(([id]) => id) }
         : {}),
+      // Nur mit Zeile: Eine Position ohne Angabe liest sich wie vorher.
+      ...(restRows.has(c.id) ? { meterRest: meterRestOf(restRows.get(c.id), restUnits.get(c.id), restBehind.get(c.id), restSubs.get(c.id)) } : {}),
       ...(c.externalMeasure !== null && c.externalTotal !== null && c.externalTotalCents !== null
         ? { externalBasis: { measure: c.externalMeasure, total: c.externalTotal, totalCents: c.externalTotalCents } }
         : {}),
@@ -351,6 +383,8 @@ export async function readMeters(db: Executor): Promise<Meter[]> {
     ...(m.ratingFactor !== null ? { ratingFactor: m.ratingFactor } : {}),
     // Eichjahr (Heizung PR 21).
     ...(m.calibratedUntil !== null ? { calibratedUntil: m.calibratedUntil } : {}),
+    // Was ein Zähler ohne Wohnung misst (#98): nur `common` ist gespeichert.
+    ...(m.scope !== null ? { scope: m.scope } : {}),
   }))
 }
 

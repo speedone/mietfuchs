@@ -88,6 +88,13 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   einer machte, und, darüber hinaus, Teile einer Rechnung, an deren einem Teil der Beleg hängt; nie eine zweimal
   erfasste Rechnung mit gleichem Betrag als eine, und von zwei solchen Fassungen jede für sich nur, wenn jede
   vollständig ist (Regel und bekannte Grenze im Kopf des Schrittes, server/src/CLAUDE.md); Backups älterer Stände laufen beim Einspielen durch dieselbe Kette.
+- **Bezugszähler und Rest** (#98, `cost_item_meter_rest` mit `_units`, `_behind`, `_subs`, [meterRest.ts](meterRest.ts)): eine Zeile
+  je Position nach Verbrauch, `null` der Listen `unitIds` und `behindMeterIds` heißt `unit_ids_all`/`behind_all` ohne Zeilen.
+  Zähler sind `RESTRICT`, das Repository sagt vorher mit einem Satz (409), welche Position einen Zähler braucht; ein Zähler
+  mit Wohnung wird nur über die Wohnung gelöscht, auch dort die Sperre. `meters.scope` ist nur `common` oder `NULL`. Das Ziel
+  einer Zielgruppe trägt seine Wohnungen als JSON (`target_unit_ids`); eine gelöschte Wohnung bleibt dort stehen, die
+  Berechnung schneidet mit den Wohnungen des Objekts. Die zwei Schritte 0085 (Tabellen, Spalte) und 0086 (Bedingungen an
+  `meters`, Neubau) sind getrennt, weil drizzle-kit eine neue Spalte samt Bedingung in einem Schritt falsch umbaut.
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn

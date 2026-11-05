@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, UsageChange, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, MeterRest, MeterRestTarget, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, UsageChange, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -102,7 +102,7 @@ type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepay
 // die Angaben der Gemeinschaft als drei Spalten statt eines Objekts. An ihrer Stelle stehen
 // deshalb die drei Spalten im Vergleich. Die Eigenbeträge (#104) stehen ebenfalls in einer
 // eigenen Tabelle, ebenso die Umlagevereinbarung je Mietverhältnis (#258).
-type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis' | 'notAgreedTenancyIds' | 'namedTenancyIds'> & {
+type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis' | 'notAgreedTenancyIds' | 'namedTenancyIds' | 'meterRest'> & {
   externalMeasure?: ExternalBasis['measure']
   externalTotal?: ExternalBasis['total']
   externalTotalCents?: ExternalBasis['totalCents']
@@ -121,6 +121,19 @@ type _AmountCents = Assert<Equals<AmountRow['amountCents'], number>>
 type ContractRow = typeof schema.costItemContract.$inferSelect
 type _ContractTenancy = Assert<Equals<ContractRow['tenancyId'], Tenancy['id']>>
 type _ContractFlag = Assert<Equals<ContractRow['inContract'], boolean>>
+
+// Bezugszähler und Rest (#98): eine Zeile je Position, die Listen in Untertabellen. `unitIdsAll`/`behindAll` stehen für
+// `null` der beiden Listen; der Schlüssel der Zeile ist der des Modells.
+type RestRow = typeof schema.costItemMeterRest.$inferSelect
+type _RestKey = Assert<Equals<RestRow['key'], MeterRest['key']>>
+type _RestReference = Assert<Equals<RestRow['referenceMeterId'], MeterRest['referenceMeterId']>>
+type _RestUnit = Assert<Equals<(typeof schema.costItemMeterRestUnits.$inferSelect)['unitId'], Unit['id']>>
+type _RestBehind = Assert<Equals<(typeof schema.costItemMeterRestBehind.$inferSelect)['meterId'], Meter['id']>>
+type SubRow = typeof schema.costItemMeterRestSubs.$inferSelect
+type _SubKind = Assert<Equals<Extract<MeterRestTarget, string> | 'group', SubRow['targetKind']>>
+type _SubKey = Assert<Equals<Exclude<MeterRestTarget, string>['key'], NonNullable<SubRow['targetKey']>>>
+// `scope` wird nur als `common` gespeichert; `property` ist der Aufrufer (kein Eintrag).
+type _MeterScope = Assert<Equals<NonNullable<(typeof schema.meters.$inferSelect)['scope']>, Exclude<NonNullable<Meter['scope']>, 'property'>>>
 
 // `customShares` ist `Record<Wohnungs-Kennung, Prozent>`. Auch hier prüft der Namensvergleich
 // nichts, wohl aber die Typen der beiden Spalten, die daraus geworden sind.
@@ -286,6 +299,10 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'co2_tenant_reliefs',
       'cost_item_amounts',
       'cost_item_contract',
+      'cost_item_meter_rest',
+      'cost_item_meter_rest_behind',
+      'cost_item_meter_rest_subs',
+      'cost_item_meter_rest_units',
       'cost_item_participants',
       'cost_item_self_amounts',
       'cost_item_shares',
@@ -748,6 +765,53 @@ test('Heizanlage: Vorgaben, und die Gemeinschaft rechnet nur wie ein Messdienst 
     assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp4', 'objekt-1', 'kernkraft')"), 'unbekannter Energieträger')
     assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, period_start_month) VALUES ('hp5', 'objekt-1', 'gas', 13)"), 'Monat 13')
     assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, warm_rent_average_2022_2024) VALUES ('hp6', 'objekt-1', 'gas', -1)"), 'negativer Betrag')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Bezugszähler (#98): Bedingungen der Tabellen, Löschverhalten, scope nur ohne Wohnung', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec(eineAnlage)
+    connection.exec("INSERT INTO meters (id, property_id, name, type, unit) VALUES ('main', 'objekt-1', 'Haupt', 'kaltwasser', 'm³')")
+    connection.exec("INSERT INTO meters (id, property_id, name, type, unit, scope) VALUES ('wg', 'objekt-1', 'WG', 'kaltwasser', 'm³', 'common')")
+    connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('m1', 'objekt-1', 'EG', 'u1', 'kaltwasser', 'm³')")
+    assert.ok(rejects(connection, "INSERT INTO meters (id, property_id, name, unit_id, type, unit, scope) VALUES ('x1', 'objekt-1', 'X', 'u1', 'kaltwasser', 'm³', 'common')"), 'common mit Wohnung')
+    assert.ok(rejects(connection, "INSERT INTO meters (id, property_id, name, type, unit, scope) VALUES ('x2', 'objekt-1', 'X', 'kaltwasser', 'm³', 'property')"), 'property wird nicht gespeichert')
+    assert.ok(rejects(connection, "INSERT INTO meters (id, property_id, name, type, unit, scope, heating_plant_id, heating_role) VALUES ('x3', 'objekt-1', 'X', 'kaltwasser', 'm³', 'common', 'hp1', 'supply')"), 'common mit Anlage')
+
+    connection.exec("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', '2025-01', 'Wasser', 'Wasser', 100, 'meter')")
+    assert.equal(rejects(connection, "INSERT INTO cost_item_meter_rest (cost_item_id, reference_meter_id, key, unit_ids_all, behind_all) VALUES ('c1', 'main', 'area', 1, 0)"), null)
+    assert.ok(rejects(connection, "INSERT INTO cost_item_meter_rest (cost_item_id, reference_meter_id, key, unit_ids_all, behind_all) VALUES ('c1', NULL, 'area', 1, 1)"), 'eine Zeile je Position')
+    connection.exec("DELETE FROM cost_item_meter_rest")
+    assert.ok(rejects(connection, "INSERT INTO cost_item_meter_rest (cost_item_id, reference_meter_id, key, unit_ids_all, behind_all) VALUES ('c1', NULL, 'gewicht', 1, 1)"), 'unbekannter Schlüssel')
+    assert.ok(rejects(connection, "INSERT INTO cost_item_meter_rest (cost_item_id, reference_meter_id, key, unit_ids_all, behind_all) VALUES ('c1', 'main', 'area', 1, 1)"), 'behind_all nur beim Hauptzähler')
+    assert.ok(rejects(connection, "INSERT INTO cost_item_meter_rest (cost_item_id, reference_meter_id, key, unit_ids_all, behind_all) VALUES ('c1', 'gibtsnicht', 'area', 1, 0)"), 'Bezugszähler muss es geben')
+    connection.exec("INSERT INTO cost_item_meter_rest (cost_item_id, reference_meter_id, key, unit_ids_all, behind_all) VALUES ('c1', 'main', 'area', 0, 0)")
+    assert.equal(rejects(connection, "INSERT INTO cost_item_meter_rest_units (cost_item_id, unit_id) VALUES ('c1', 'u1')"), null)
+    assert.equal(rejects(connection, "INSERT INTO cost_item_meter_rest_behind (cost_item_id, meter_id) VALUES ('c1', 'm1')"), null)
+    assert.ok(rejects(connection, "INSERT INTO cost_item_meter_rest_behind (cost_item_id, meter_id) VALUES ('c1', 'm1')"), 'jeder Zähler einmal')
+    assert.equal(rejects(connection, "INSERT INTO cost_item_meter_rest_subs (cost_item_id, meter_id, target_kind) VALUES ('c1', 'wg', 'excluded')"), null)
+    connection.exec("DELETE FROM cost_item_meter_rest_subs")
+    assert.equal(rejects(connection, `INSERT INTO cost_item_meter_rest_subs (cost_item_id, meter_id, target_kind, target_key, target_unit_ids) VALUES ('c1', 'wg', 'group', 'area', '["u1"]')`), null)
+    connection.exec("DELETE FROM cost_item_meter_rest_subs")
+    assert.ok(rejects(connection, "INSERT INTO cost_item_meter_rest_subs (cost_item_id, meter_id, target_kind) VALUES ('c1', 'wg', 'group')"), 'Gruppe ohne Schlüssel und Wohnungen')
+    assert.ok(rejects(connection, `INSERT INTO cost_item_meter_rest_subs (cost_item_id, meter_id, target_kind, target_key, target_unit_ids) VALUES ('c1', 'wg', 'excluded', 'area', '[]')`), 'Schlüssel an einem Ziel ohne Gruppe')
+    assert.ok(rejects(connection, `INSERT INTO cost_item_meter_rest_subs (cost_item_id, meter_id, target_kind, target_key, target_unit_ids) VALUES ('c1', 'wg', 'group', 'gewicht', '[]')`), 'unbekannter Schlüssel der Gruppe')
+    assert.ok(rejects(connection, "INSERT INTO cost_item_meter_rest_subs (cost_item_id, meter_id, target_kind) VALUES ('c1', 'wg', 'tonne')"), 'unbekanntes Ziel')
+    connection.exec("INSERT INTO cost_item_meter_rest_subs (cost_item_id, meter_id, target_kind) VALUES ('c1', 'wg', 'landlord')")
+
+    // Zähler sind RESTRICT, Position und Wohnung nehmen ihre Zeilen mit.
+    assert.ok(rejects(connection, "DELETE FROM meters WHERE id = 'main'"), 'Bezugszähler bleibt')
+    assert.ok(rejects(connection, "DELETE FROM meters WHERE id = 'wg'"), 'Zwischenzähler bleibt')
+    assert.ok(rejects(connection, "DELETE FROM units WHERE id = 'u1'"), 'Zähler dahinter bleibt, also auch seine Wohnung')
+    connection.exec("DELETE FROM cost_items WHERE id = 'c1'")
+    for (const t of ['cost_item_meter_rest', 'cost_item_meter_rest_units', 'cost_item_meter_rest_behind', 'cost_item_meter_rest_subs']) {
+      assert.equal(Number(connection.rows(`SELECT count(*) FROM ${t}`)[0]?.[0]), 0, t)
+    }
+    assert.equal(rejects(connection, "DELETE FROM meters WHERE id = 'main'"), null)
   } finally {
     cleanup()
   }

@@ -354,6 +354,26 @@ export type Meter = {
   // dieses Jahres (§ 34 Abs. 2 MessEV). Fehlt die Angabe, ist sie nicht eingetragen. Nie bei `hkv`, denn
   // Heizkostenverteiler sind nicht eichpflichtig (Entwurf 3.12, Z-B10).
   calibratedUntil?: number | null
+  // Was ein Zähler ohne Wohnung misst (#98): `property` (fehlend, das bisherige Verhalten) ist der Hauptzähler des
+  // Objekts, `common` ein Zähler, der nur einen Teil des Hauses misst (Allgemeinstrom, der Zähler einer WG-Wohnung).
+  // Gibt es nur bei `unitId: null` und wird nur als `common` gespeichert; `common` zählt nie als Hauptzähler.
+  scope?: 'property' | 'common'
+}
+
+// Bezugszähler und verteilter Rest einer Position nach Verbrauch (#98, Entwurf 2026-11-04-virtuelle-zaehler-design.md).
+export type MeterRestKey = 'area' | 'persons' | 'units'
+export type MeterRestTarget = 'landlord' | 'selfUse' | 'excluded' | { key: MeterRestKey | 'direct'; unitIds: string[] }
+export type MeterRest = {
+  // null: der Hauptzähler der Sparte (`unitId: null`, `scope: 'property'`).
+  referenceMeterId: string | null
+  // Zähler von Einheiten hinter dem Bezugszähler; null nur beim Hauptzähler (alle Zähler von Einheiten des Objekts).
+  behindMeterIds: string[] | null
+  // Wie der Rest verteilt wird; 'meter' im Verhältnis der Zähler, 'landlord' abziehbar, 'selfUse' Eigenanteil.
+  key: MeterRestKey | 'meter' | 'landlord' | 'selfUse'
+  // Empfänger des Rests; null: die Verteilbasis der Position.
+  unitIds: string[] | null
+  // Zwischenzähler ohne Wohnung (`scope: 'common'`) hinter dem Bezugszähler.
+  subMeters: { meterId: string; target: MeterRestTarget }[]
 }
 
 export type Reading = {
@@ -447,6 +467,8 @@ export type CostItem = {
   // Fehlen beide, rechnet Mietfuchs wie ohne Angabe. Nicht bei Heizung, nicht umlagefähig und Rücklage.
   notAgreedTenancyIds?: string[] | null
   namedTenancyIds?: string[] | null
+  // Bezugszähler und verteilter Rest (#98), nur beim Schlüssel `meter`; fehlend heißt wie bisher.
+  meterRest?: MeterRest | null
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
   // Die Heizanlage, zu der die Position gehört (Heizung PR 4), nur bei der Kostenart „Heizung und

@@ -73,6 +73,7 @@ import {
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
+import { guardMeterRest, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
 
 export type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
 export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Payment
@@ -509,6 +510,10 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const selfAmounts = merged(body, 'selfAmounts', current.selfAmounts, (v) => (v === null ? null : readAmounts(v)))
   const notAgreed = merged(body, 'notAgreedTenancyIds', current.notAgreedTenancyIds, (v) => (v === null ? null : readTenancyIds(v)))
   const named = merged(body, 'namedTenancyIds', current.namedTenancyIds, (v) => (v === null ? null : readTenancyIds(v)))
+  // Bezugszähler und Rest (#98): nur beim Schlüssel `meter`. Wechselt der Schlüssel, ohne dass der Rumpf die Angabe nennt,
+  // fällt sie weg (wie die Direktzuordnung beim Schlüsselwechsel); sie ausdrücklich zu schicken, prüft `guardMeterRest`.
+  const key = merged(body, 'key', current.key, (v) => oneOfOrUndefined(COST_KEYS, v) ?? current.key)
+  const meterRest = !has(body, 'meterRest') && key !== 'meter' ? undefined : merged(body, 'meterRest', current.meterRest ?? undefined, readMeterRest)
   const category = merged(body, 'category', current.category, (v) => asText(v, ''))
   const operatingPower = merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v))
   const operatingPowerItemId = merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined))
@@ -524,7 +529,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
     vendor: merged(body, 'vendor', current.vendor, asOptionalText),
     amountCents: merged(body, 'amountCents', current.amountCents, (v) => asNumber(v, 0)),
-    key: merged(body, 'key', current.key, (v) => oneOfOrUndefined(COST_KEYS, v) ?? current.key),
+    key,
     // `null` ist hier ein ausdrücklicher Wert: Beim Wechsel des Umlageschlüssels wird die
     // Direktzuordnung bewusst zurückgesetzt (siehe saveItem in Kosten.tsx).
     directUnitId: merged(body, 'directUnitId', current.directUnitId, asNullableText),
@@ -538,6 +543,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...(selfAmounts === undefined ? {} : { selfAmounts }),
     ...(notAgreed === undefined ? {} : { notAgreedTenancyIds: notAgreed }),
     ...(named === undefined ? {} : { namedTenancyIds: named }),
+    ...(meterRest === undefined ? {} : { meterRest }),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
     // `null` leert, wie bei den übrigen optionalen Feldern (#208).
@@ -605,6 +611,11 @@ function acceptMeterUnit(type: MeterType, value: string, stored: string, isNew: 
 function mergeMeter(current: Meter, body: unknown): Meter {
   const heatingPlantId = merged(body, 'heatingPlantId', current.heatingPlantId ?? null, asNullableFilled)
   const type = merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type)
+  const scope = merged(body, 'scope', current.scope === 'common' ? 'common' : undefined, (v) => {
+    if (v === null || v === undefined || v === 'property') return undefined
+    if (v === 'common') return 'common'
+    throw new MeterRestError('Was der Zähler misst, ist entweder das ganze Haus (Hauptzähler) oder ein Teil des Hauses („common“). Bitte laden Sie die Seite neu.')
+  })
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -634,6 +645,8 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     calibratedUntil: type === 'hkv' && !has(body, 'calibratedUntil')
       ? null
       : merged(body, 'calibratedUntil', current.calibratedUntil ?? null, (v) => (v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : Number.NaN)),
+    // Was ein Zähler ohne Wohnung misst (#98): gespeichert wird nur `common`; `property` und `null` sind das Bisherige.
+    ...(scope === 'common' ? { scope } : {}),
   }
 }
 
@@ -1516,6 +1529,17 @@ async function closedHcaPeriodOf(db: Executor, m: Meter): Promise<string | null>
 
 async function guardMeter(db: Executor, before: Meter | null, after: Meter): Promise<void> {
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
+  // Ein Zähler für einen Teil des Hauses (#98) hat keine Wohnung und gehört nicht zur Heizanlage.
+  if (after.scope === 'common' && (after.unitId || after.heatingPlantId)) {
+    throw new MeterRestError('Ein Zähler für einen Teil des Hauses gehört zu keiner Wohnung und nicht zur Heizanlage. Wählen Sie „Haus (Hauptzähler)“ bei der Zuordnung oder lassen Sie die Kennzeichnung weg.')
+  }
+  // Ein Zähler, den eine Position als Bezugs-, Zwischen- oder Zähler dahinter nennt, behält Objekt, Sparte, Anlage und
+  // Rolle; sonst stünde die Angabe der Position nach dem Speichern gegen die Regeln von `guardMeterRest`.
+  if (before && (before.propertyId !== after.propertyId || before.type !== after.type || (before.heatingPlantId ?? null) !== (after.heatingPlantId ?? null)
+    || (before.scope === 'common') !== (after.scope === 'common') || (!before.unitId) !== (!after.unitId))) {
+    const text = meterRestUsedText(`Der Zähler „${before.name}“`, await meterRestUsers(db, [before.id]))
+    if (text !== null) throw new HeatingError(409, `${text} Objekt, Sparte, Wohnung und die Kennzeichnung als Zähler für einen Teil des Hauses ändern sich dann nicht.`)
+  }
   if (after.type === 'hkv' && !after.unitId) {
     throw new HeatingError(400, 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie bei der Zuordnung die Wohnung.')
   }
@@ -1624,6 +1648,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
+  await guardMeterRest(db, after)
   await guardFuelLink(db, before, after)
   await guardOperatingPower(db, before, after, options)
 }
@@ -2065,6 +2090,8 @@ export async function crossPropertyViolations(db: Executor): Promise<string[]> {
     .innerJoin(units, eq(costItemSelfAmounts.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))
   for (const c of eigen) befunde.push(`Die Kostenposition „${c.description}“ hat einen Eigenbetrag für eine Wohnung eines anderen Objekts.`)
+  // Bezugszähler und Rest (#98): Zähler und Wohnungen im Objekt der Position.
+  befunde.push(...(await meterRestViolations(db)))
   // Eine aufgeteilte Rechnung (#455) gehört zum Objekt ihrer Teile.
   const quelle = await db
     .select({ description: costItems.description })
@@ -2410,6 +2437,7 @@ const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
   heatingPlantId: m.heatingPlantId ?? null, heatingRole: m.heatingRole ?? null, remoteReadable: m.remoteReadable ?? null, installedOn: m.installedOn ?? null,
   hcaScale: m.hcaScale ?? null, ratingFactor: m.ratingFactor ?? null, calibratedUntil: m.calibratedUntil ?? null,
+  scope: m.scope === 'common' ? ('common' as const) : null,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
@@ -2557,6 +2585,12 @@ const unitCollection: Collection<Unit> = {
       const namen = andList(rechnungen.map((r) => `„${r.label || 'Rechnung'}“`))
       throw new HeatingError(409, `An der Wohnung ${rechnungen.length === 1 ? 'hängt die Rechnung' : `hängen die ${rechnungen.length} Rechnungen`} ${namen} der Etagenheizung. Sie ${rechnungen.length === 1 ? 'belegt' : 'belegen'} Brennstoffkosten und CO₂-Aufteilung und würden mit der Wohnung gelöscht. Löschen Sie die ${rechnungen.length === 1 ? 'Rechnung' : 'Rechnungen'} zuerst auf der Seite Heizkosten unter „Lieferungen“, wenn Sie sie nicht mehr brauchen.`)
     }
+    // Die Zähler der Wohnung fielen mit ihr weg (#98): Nennt eine Position einen davon, ein Satz statt des Fremdschlüssels.
+    const mine = await db.select({ id: meters.id, name: meters.name }).from(meters).where(eq(meters.unitId, id))
+    for (const x of mine) {
+      const used = meterRestUsedText(`Der Zähler „${x.name}“ dieser Wohnung`, await meterRestUsers(db, [x.id]))
+      if (used !== null) throw new HeatingError(409, used)
+    }
     await db.delete(units).where(eq(units.id, id))
   },
 }
@@ -2589,12 +2623,14 @@ const costItemCollection: Collection<CostItem> = {
     const entity = c.heatingPlantId === undefined ? { ...c, ...(await defaultHeatingPlant(db, c)) } : c
     await db.insert(costItems).values(costItemRow(entity))
     await writeCostItemShares(db, entity)
+    await writeMeterRest(db, entity)
   },
   replace: async (db, c) => {
     // Wird eine Position zur Heizposition, bekommt sie die Anlage wie beim Anlegen (Durchsicht von #230).
     const entity = c.heatingPlantId === undefined ? { ...c, ...(await defaultHeatingPlant(db, c)) } : c
     await db.update(costItems).set(costItemRow(entity)).where(eq(costItems.id, entity.id))
     await writeCostItemShares(db, entity)
+    await writeMeterRest(db, entity)
   },
   remove: async (db, id) => {
     // Heizung PR 15: ein Satz statt des Fremdschlüssels (Review Focus 2), für den Betriebsstrom wie für die
@@ -2623,6 +2659,9 @@ const meterCollection: Collection<Meter> = {
   // Heizperiode zählt, bleibt; mit ihm fielen seine Ablesungen (CASCADE).
   remove: async (db, id) => {
     const m = (await readMeters(db)).find((x) => x.id === id)
+    // Eine Position, die den Zähler nennt (#98): ein Satz statt des Fremdschlüssels.
+    const used = meterRestUsedText(`Der Zähler „${m?.name ?? ''}“`, await meterRestUsers(db, [id]))
+    if (used !== null) throw new HeatingError(409, used)
     const closed = m && m.type === 'hkv' ? await closedHcaPeriodOf(db, m) : null
     if (m && closed !== null) {
       throw new HeatingError(409, `Die Ablesungen von „${m.name}“ zählen in der abgeschlossenen Heizperiode ${closed}; mit dem Gerät fielen sie weg. Ein ausgebautes Gerät lassen Sie stehen; es zählt in späteren Heizperioden nicht mehr mit.`)
