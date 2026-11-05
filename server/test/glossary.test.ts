@@ -726,7 +726,7 @@ test('Zimmer einer Wohnung: Beispiel nachgerechnet, Heizung, § 12 und Wechsel z
   assert.match(t.needed, /Nutzungswechsel/)
   assert.match(t.needed, /§ 556 Abs\. 4 BGB/)
   assert.match(t.norm ?? '', /VIII ZR 69\/09/)
-  for (const code of ['unit.rooms-area', 'rooms.outside-basis', 'rooms.household-cost'] as const) {
+  for (const code of ['unit.rooms-area', 'rooms.outside-basis', 'rooms.household-cost', 'rooms.zero-area'] as const) {
     assert.ok(NOTICE_KINDS[code]?.terms?.includes('roomOfFlat'), code)
   }
 })

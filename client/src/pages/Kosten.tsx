@@ -1462,10 +1462,11 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                   </label>
                 </div>
                 {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
-                {externalHint(form, units, formPart) && (
-                  externalMismatch(form, units, formPart)
-                    ? <NoticeBox level="warning"><strong>{externalHint(form, units, formPart)}</strong></NoticeBox>
-                    : <div className="muted">{externalHint(form, units, formPart)}</div>
+                {/* #573: mit allen Einheiten, damit eine Wohnung mit Zimmern einmal zählt (die Empfängerlisten bieten sie nicht an). */}
+                {externalHint(form, allUnits, formPart) && (
+                  externalMismatch(form, allUnits, formPart)
+                    ? <NoticeBox level="warning"><strong>{externalHint(form, allUnits, formPart)}</strong></NoticeBox>
+                    : <div className="muted">{externalHint(form, allUnits, formPart)}</div>
                 )}
               </div>
             )}

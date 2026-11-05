@@ -262,7 +262,7 @@ export const GLOSSARY = {
     norm: '§ 556a Abs. 1 BGB (Verteilung nach dem Anteil der Wohnfläche); zum Leerstand BGH, Urteil vom 31.05.2006, VIII ZR 159/05. Steuerlich sind Aufwendungen für eine zunächst selbst bewohnte, danach leer stehende Wohnung nur abziehbar, wenn der Entschluss zu vermieten durch ernsthafte und nachhaltige Vermietungsbemühungen belegt ist (BFH, Urteil vom 28.10.2008, IX R 1/07).',
     needed: 'Wenn eine Einheit im Jahr die Nutzung wechselt. Tragen Sie den Wechsel in den Stammdaten der Einheit unter „Nutzungswechsel“ mit dem Tag ein, ab dem die neue Nutzung gilt; die Angabe „Nutzung“ gilt dann bis zum ersten Wechsel. Ein Mietverhältnis zählt nur in der vermieteten Zeit. Mietfuchs nimmt an, dass die Kosten gleichmäßig über das Jahr anfallen, und teilt sie nach Tagen; das ist eine Auslegung von Mietfuchs.',
   },
-  // #573: Die Hinweise `unit.rooms-area`, `rooms.outside-basis` und `rooms.household-cost` verweisen hierher. Das Beispiel
+  // #573: Die Hinweise `unit.rooms-area`, `rooms.outside-basis`, `rooms.household-cost` und `rooms.zero-area` verweisen hierher. Das Beispiel
   // rechnet glossary.test.ts nach (Fläche je Zimmer und Verbrauch).
   roomOfFlat: {
     topic: 'tenants',
