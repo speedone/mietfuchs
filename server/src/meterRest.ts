@@ -80,3 +80,29 @@ export function planMeterRest(input: RestInput): RestPlan {
   if (rest < 0) return fallback('negative')
   return { kind: 'plan', total: measuredIn + outside + rest + counted, measuredIn, outside, rest, subs }
 }
+
+// **Wann der Rest Eigenanteil ist** (`key: 'selfUse'`), genau wie beim Rest des Hauptzählers nach #116 (consumptionFor in
+// calc.ts), damit beide dieselbe Regel haben, wenn #116 über diesen Baustein läuft: Eigenanteil (privat) ist er nur, wenn
+// er auf selbstgenutzte Einheiten ohne Zähler entfällt. Gibt es keine Einheit ohne Zähler, ist er eine Messdifferenz;
+// hat ein Zähler eine Lücke, steckt deren Verbrauch darin; wohnt in einer Einheit ohne Zähler ein Mieter, lässt sich
+// nicht bestimmen, wie viel auf ihn entfällt. Dann bleibt er beim Vermieter, abziehbar (`mainMeterRest`). Mit
+// Nutzungswechsel (#259) gilt er je Tag, an dem alle Einheiten ohne Zähler selbstgenutzt sind (`daysAllSelf`, eine
+// Auslegung: gleichmäßiger Verbrauch).
+export type SelfRestInput = {
+  // Bewohnte Einheiten ohne Zähler hinter dem Bezug; `selfUsed`: im Zeitraum selbstgenutzt, `wholeSelf`: an jedem Tag.
+  unmeasured: { unitId: string; selfUsed: boolean; wholeSelf: boolean }[]
+  // Wie viele gemessene Einheiten einen lückenhaften Zähler haben.
+  partial: number
+  // Tage, an denen alle Einheiten ohne Zähler selbstgenutzt sind, und Tage des Zeitraums.
+  daysAllSelf: number
+  days: number
+}
+export type SelfRest = { share: number; reason: 'whole' | 'days' | 'none-unmetered' | 'partial' | 'rented' }
+
+export function selfRestShare(input: SelfRestInput): SelfRest {
+  if (input.unmeasured.length === 0) return { share: 0, reason: 'none-unmetered' }
+  if (input.partial > 0) return { share: 0, reason: 'partial' }
+  if (input.unmeasured.every((u) => u.selfUsed && u.wholeSelf)) return { share: 1, reason: 'whole' }
+  if (input.unmeasured.every((u) => u.selfUsed)) return { share: input.days > 0 ? Math.min(1, Math.max(0, input.daysAllSelf / input.days)) : 0, reason: 'days' }
+  return { share: 0, reason: 'rented' }
+}

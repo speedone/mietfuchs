@@ -91,7 +91,7 @@ import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from '
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
-import { planMeterRest } from './meterRest.ts'
+import { planMeterRest, selfRestShare } from './meterRest.ts'
 import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
@@ -323,6 +323,9 @@ const noticeKinds = {
   'meter.rest-unavailable': { level: 'error', title: 'Allgemeinverbrauch lässt sich nicht bilden', terms: ['meterRest', 'referenceMeter'] },
   'meter.sub-incomplete': { level: 'error', title: 'Zwischenzähler deckt nicht den ganzen Zeitraum ab', terms: ['meterRest', 'meterReading'] },
   'meter.rest-high': { level: 'warning', title: 'Hoher Allgemeinverbrauch', terms: ['meterRest', 'referenceMeter'] },
+  // Der Rest soll Eigenanteil sein, ist aber eine Messdifferenz (keine Einheit ohne Zähler): Er bleibt abziehbar beim
+  // Vermieter. `warning`, weil sonst Privates in der Steuer fehlte bzw. Abziehbares privat stünde.
+  'meter.rest-not-self': { level: 'warning', title: 'Allgemeinverbrauch ist kein Eigenanteil', terms: ['meterRest', 'ownShare'] },
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr', terms: ['directAssignment'] },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
   'heating.not-by-consumption': { level: 'warning', title: 'Heizkosten nicht nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
@@ -6061,7 +6064,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           return got < needed ? [{ unit: u, covered: got, needed }] : []
         })
         if (partial.length > 0) {
-          warn('meter.unit-partial', `${where}: der Zähler von ${andList(partial.map((p) => `${p.unit.name} (${p.covered} von ${p.needed} Tagen)`))} deckt nicht die ganze Zeit ab, in der dort gewohnt wurde - der Verbrauch der Lücke steckt im Allgemeinverbrauch und geht mit ihm an dessen Empfänger. Bitte die fehlenden Ablesungen nachtragen.`, unitSubject(partial.map((p) => p.unit)))
+          const gapGoes = mr.key === 'selfUse' ? 'der deshalb beim Vermieter bleibt und nicht als Eigenanteil gilt' : mr.key === 'landlord' ? 'den der Vermieter trägt' : 'und geht mit ihm an dessen Empfänger'
+          warn('meter.unit-partial', `${where}: der Zähler von ${andList(partial.map((p) => `${p.unit.name} (${p.covered} von ${p.needed} Tagen)`))} deckt nicht die ganze Zeit ab, in der dort gewohnt wurde - der Verbrauch der Lücke steckt im Allgemeinverbrauch, ${gapGoes}. Bitte die fehlenden Ablesungen nachtragen.`, unitSubject(partial.map((p) => p.unit)))
         }
         const per = item.amountCents / plan.total
         type Acc = { t: TenancyWithUnit, raw: number, restRaw: number, texts: string[] }
@@ -6079,7 +6083,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const c = tenancyUse(t)
           const e = accOf(t)
           e.raw += c * per
-          e.texts.push(`${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(plan.total * 100) / 100)}${unitSuffix} gemessen`)
+          // Ohne Zähler hinter dem Bezug (Allgemeinstrom: die Wohnungsstromzähler hängen nicht dahinter) nichts Gemessenes.
+          if (behindOf(t.unitId).length > 0) e.texts.push(`${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(plan.total * 100) / 100)}${unitSuffix} gemessen`)
         }
         const selfUse = (u: SnapshotUnit) => (usageIn(u).phased ? spanUse(u, 'eigen') : unitUse(u.id, yFrom, yTo))
         selfRaw += b.selfUnits.reduce((a, u) => a + selfUse(u), 0) * per
@@ -6105,7 +6110,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const direct = (raw: number, ids: string[], what: string) => {
           const u = ids.length === 1 ? b.basisUnits.find((x) => x.id === ids[0]) : undefined
           if (!u) return partToLandlord(raw, what, ids.length === 1 ? `die Wohnung ${nameOfUnit(ids[0] ?? '')} gehört nicht zur Verteilbasis` : 'eine Direktzuordnung geht an genau eine Wohnung')
-          const own = b.partTenancies.filter((t) => t.unitId === u.id)
+          // Wie die Direktzuordnung: Ein Mietverhältnis ohne Abrechnung in der selbstgenutzten Wohnung zählt zur Eigennutzung.
+          const toSelf = b.selfUnits.includes(u)
+          const own = b.partTenancies.filter((t) => t.unitId === u.id && !(toSelf && !usageIn(u).phased && !statements.has(t.id)))
           let given = 0
           for (const t of own) {
             const x = raw * dayShare(t)
@@ -6116,7 +6123,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           if (usageIn(u).phased) {
             selfRaw += raw * itemSelfShare(u)
             outsideRaw += raw * itemOutsideShare(u)
-          } else if (b.selfUnits.includes(u)) {
+          } else if (toSelf) {
             const self = raw - given
             if (self * raw > 0) selfRaw += self
           }
@@ -6127,7 +6134,30 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         let groupUse = 0
         if (restRaw !== 0) {
           if (mr.key === 'landlord') mainRestRaw += restRaw
-          else if (mr.key === 'selfUse') selfRaw += restRaw
+          else if (mr.key === 'selfUse') {
+            // Eigenanteil nur unter den Bedingungen von #116 (`selfRestShare`), sonst abziehbar beim Vermieter.
+            const unmeasured = candidates.filter((u) => occupied.has(u.id) && connected(u) && !measuredUnit(u))
+            const gaps = candidates.filter((u) => occupied.has(u.id) && measuredUnit(u) &&
+              unitCoveredDays(behindOf(u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo) < neededDays(u))
+            const selfIds = new Set(b.selfUnits.map((u) => u.id))
+            const own = selfRestShare({
+              unmeasured: unmeasured.map((u) => ({ unitId: u.id, selfUsed: selfIds.has(u.id), wholeSelf: wholeSelf(u) })),
+              partial: gaps.length,
+              daysAllSelf: unmeasured.every((u) => selfIds.has(u.id)) ? daysAllSelf(unmeasured) : 0,
+              days: diy,
+            })
+            selfRaw += restRaw * own.share
+            mainRestRaw += restRaw * (1 - own.share)
+            const names = andList(unmeasured.map((u) => u.name))
+            // Die Sätze wie beim Rest des Hauptzählers (#116, `meter.unit-without-meter`); die Lücke nennt `meter.unit-partial`.
+            if (own.reason === 'rented') {
+              warn('meter.unit-without-meter', `${where}: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - der Allgemeinverbrauch geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt. Einen Eigenanteil weist Mietfuchs für ihn deshalb nicht aus.`, unitSubject(unmeasured))
+            } else if (own.reason === 'days') {
+              warn('meter.unit-without-meter', `${where}: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - der Allgemeinverbrauch gilt für die Tage als Eigenanteil, an denen alle Einheiten ohne Zähler selbstgenutzt sind, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau.`, unitSubject(unmeasured))
+            } else if (own.reason === 'none-unmetered') {
+              warn('meter.rest-not-self', `${where}: Alle Einheiten hinter dem Bezugszähler haben einen Zähler. Der Allgemeinverbrauch ist dann eine Messdifferenz und kein Verbrauch Ihrer eigenen Wohnung; er bleibt abziehbar beim Vermieter und gilt nicht als Eigenanteil. Soll er auf die Mieter verteilt werden, wählen Sie dafür einen Schlüssel.`, itemSubject(item))
+            }
+          }
           else if (mr.key === 'meter') {
             // Im Verhältnis der Zähler der Gruppe: Jeder Teil des Verbrauchs einer Einheit bekommt denselben Aufschlag.
             groupUse = groupUnits.reduce((a, u) => a + unitUse(u.id, yFrom, yTo), 0)

@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planMeterRest, type RestInput, type RestPlan } from '../src/meterRest.ts'
+import { planMeterRest, selfRestShare, type RestInput, type RestPlan } from '../src/meterRest.ts'
 import { makeRng } from '../testing/taxStock.ts'
 import type { MeterRestTarget } from '../../shared/types.ts'
 
@@ -157,4 +157,15 @@ test('Summenregel: gemessen + außerhalb + Rest + Zwischenzähler (ohne excluded
     if (p.kind === 'plan') plans++
   }
   assert.ok(plans > 50, `nur ${plans} Pläne`)
+})
+
+// Fix-Runde 1: Wann der Rest Eigenanteil ist, genau wie beim Rest des Hauptzählers (#116).
+test('selfRestShare: Eigenanteil nur, wenn alle Einheiten ohne Zähler selbstgenutzt sind und kein Zähler eine Lücke hat', () => {
+  const self = { unitId: 'e', selfUsed: true, wholeSelf: true }
+  assert.deepEqual(selfRestShare({ unmeasured: [self], partial: 0, daysAllSelf: 365, days: 365 }), { share: 1, reason: 'whole' })
+  assert.deepEqual(selfRestShare({ unmeasured: [self, { unitId: 'w', selfUsed: false, wholeSelf: false }], partial: 0, daysAllSelf: 0, days: 365 }), { share: 0, reason: 'rented' })
+  assert.deepEqual(selfRestShare({ unmeasured: [self], partial: 1, daysAllSelf: 365, days: 365 }), { share: 0, reason: 'partial' })
+  assert.deepEqual(selfRestShare({ unmeasured: [], partial: 0, daysAllSelf: 365, days: 365 }), { share: 0, reason: 'none-unmetered' })
+  // Nutzungswechsel: je Tag, an dem alle Einheiten ohne Zähler selbstgenutzt sind (#259, `daysAllSelf`).
+  assert.deepEqual(selfRestShare({ unmeasured: [{ unitId: 'e', selfUsed: true, wholeSelf: false }], partial: 0, daysAllSelf: 73, days: 365 }), { share: 0.2, reason: 'days' })
 })

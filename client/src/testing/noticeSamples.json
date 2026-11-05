@@ -580,6 +580,10 @@
   "text": "„Wasser“: x hängt ohne eigenen Zähler „Kaltwasser“ am Bezugszähler, gehört aber nicht zu den Empfängern des Allgemeinverbrauchs. Ihr Verbrauch steckt im Rest und lässt sich nicht trennen. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Nehmen Sie die Einheit in die Empfänger auf oder erfassen Sie einen Zähler; hat eine Einheit keinen Anschluss, entfernen Sie in den Stammdaten unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart."
  },
  {
+  "code": "meter.rest-not-self",
+  "text": "„Wasser“: Alle Einheiten hinter dem Bezugszähler haben einen Zähler. Der Allgemeinverbrauch ist dann eine Messdifferenz und kein Verbrauch Ihrer eigenen Wohnung; er bleibt abziehbar beim Vermieter und gilt nicht als Eigenanteil. Soll er auf die Mieter verteilt werden, wählen Sie dafür einen Schlüssel."
+ },
+ {
   "code": "meter.rest-unavailable",
   "text": "„Wasser“: der Hauptzähler deckt 2025 nur 275 von 365 Tagen ab, und ohne ihn lässt sich der Allgemeinverbrauch nicht bilden. Weil die Empfänger keine eigenen Zähler haben, trügen nach den Zählern die gemessenen Einheiten die ganze Rechnung. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Bitte die Ablesungen zu Beginn und Ende des Zeitraums nachtragen."
  },

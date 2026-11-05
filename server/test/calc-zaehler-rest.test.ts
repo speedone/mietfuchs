@@ -4,7 +4,7 @@ import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { taxReport } from '../src/calc.ts'
+import { consumptionOverview, taxReport } from '../src/calc.ts'
 import type { MeterRest } from '../../shared/types.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotMeter, type SnapshotReading, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
@@ -273,4 +273,104 @@ test('Rechenweg: Bezugszähler mit Anfangs- und Endstand, Summe der Zähler, Res
   assert.match(text, /Allgemeinverbrauch: 1\.100 − 1\.000 = 100/)
   assert.match(text, /Wohnfläche/)
   assert.ok(steps.some((x) => x.term === 'referenceMeter') && steps.some((x) => x.term === 'meterRest'))
+})
+
+// ---------- Fix-Runde 1: Rest beim Vermieter oder als Eigenanteil, Eichfrist ----------
+
+// Gewerbe mit Zähler (200 von 1.000), dazu eine Einheit e ohne Zähler.
+const withOwn = (e: SnapshotUnit, extra: SnapshotTenancy[] = [], readings: SnapshotReading[] = used('zg', 200)): SnapshotSource => ({
+  units: [room('g', 100), e],
+  tenancies: [lease('t-g', 'g'), ...extra],
+  meters: [gauge('zg', 'g', 'kaltwasser'), gauge('zm', null, 'kaltwasser')],
+  readings: [...readings, ...used('zm', 1000)],
+  costItems: [], payments: [], closedSettlements: [],
+})
+const settleSrc = (src: SnapshotSource, item: SnapshotCostItem) => computeSettlement(snapshotOf({ ...src, costItems: [item] }, 2025))
+const privateOf = (src: SnapshotSource, item: SnapshotCostItem) =>
+  (taxReport(snapshotOf({ ...src, costItems: [item] }, 2025)).expenses.items.find((x) => x.costItemId === item.id) ?? assert.fail('Position fehlt')).privateCents
+const ownUnit = room('e', 80, { participates: false, selfUsed: true })
+
+test("Rest 'landlord': an den Vermieter als mainMeterRest", () => {
+  const src = withOwn(room('e', 80), [lease('t-e', 'e')])
+  const s = settleSrc(src, water(100000, rest({ key: 'landlord' })))
+  assert.equal(share(s, 't-g'), 20000)
+  assert.equal(share(s, 't-e'), 0)
+  assert.equal(part(s, 'mainMeterRest'), 80000)
+  assert.equal(s.selfUsedShareCents, 0)
+})
+
+test("Rest 'selfUse' bei nur selbstgenutzter Einheit ohne Zähler: Eigenanteil, privat in der Steuer", () => {
+  const src = withOwn(ownUnit)
+  const item = water(100000, rest({ key: 'selfUse' }))
+  const s = settleSrc(src, item)
+  assert.equal(share(s, 't-g'), 20000)
+  assert.equal(s.selfUsedShareCents, 80000)
+  assert.equal(privateOf(src, item), 80000)
+})
+
+test("Rest 'selfUse' bei vermieteter Einheit ohne Zähler: kein Eigenanteil, beim Vermieter mit Hinweis", () => {
+  const src = withOwn(room('e', 80), [lease('t-e', 'e')])
+  const item = water(100000, rest({ key: 'selfUse' }))
+  const s = settleSrc(src, item)
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.equal(part(s, 'mainMeterRest'), 80000)
+  assert.equal(privateOf(src, item), 0)
+  assert.match(notice(s, 'meter.unit-without-meter')?.text ?? '', /e.*Eigenanteil/)
+})
+
+test("Rest 'selfUse' bei Lücke im Zähler: kein Eigenanteil", () => {
+  const gap: SnapshotReading[] = [{ meterId: 'zg', date: '2025-03-31', value: 0 }, { meterId: 'zg', date: '2025-12-31', value: 150 }]
+  const s = settleSrc(withOwn(ownUnit, [], gap), water(100000, rest({ key: 'selfUse' })))
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.match(notice(s, 'meter.unit-partial')?.text ?? '', /nicht als Eigenanteil/)
+})
+
+test("Rest 'selfUse' ohne Einheit ohne Zähler: Messdifferenz, kein Eigenanteil", () => {
+  const p = pair(1100)
+  const s = run(p, [water(110000, rest({ key: 'selfUse' }))])
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.equal(part(s, 'mainMeterRest'), 10000)
+  assert.ok(codes(s).includes('meter.rest-not-self'), s.warnings.join(' | '))
+})
+
+test("Rest 'selfUse' bei Nutzungswechsel: Eigenanteil nur für die Tage, an denen die Einheit ohne Zähler selbstgenutzt ist", () => {
+  const e = room('e', 80, { participates: false, selfUsed: true, usageChanges: [{ from: '2025-07-01', usage: 'vermietet' }] })
+  const s = settleSrc(withOwn(e), water(100000, rest({ key: 'selfUse' })))
+  // 181 von 365 Tagen selbstgenutzt: 80.000 × 181/365 = 39.671,23 ct Eigenanteil, der Rest beim Vermieter.
+  assert.equal(s.selfUsedShareCents, Math.round(80000 * 181 / 365))
+  assert.ok(codes(s).includes('meter.unit-without-meter'))
+})
+
+test('Eichfrist gilt auch für Bezugs- und Zwischenzähler ohne Wohnung (scope common)', () => {
+  const snap = snapshotOf({
+    units: [room('a', 50)], tenancies: [lease('t-a', 'a')], costItems: [], payments: [], closedSettlements: [],
+    meters: [{ ...gauge('zall', null, 'kaltwasser', 'common'), calibratedUntil: 2020 }, { ...gauge('zm', null, 'kaltwasser'), calibratedUntil: 2020 }],
+    readings: [...used('zall', 100), ...used('zm', 100)],
+  }, 2025)
+  const overview = consumptionOverview(snap)
+  for (const id of ['zall', 'zm']) {
+    assert.ok(overview.find((r) => r.meterId === id)?.notices.some((n) => n.code === 'meter.calibration-overdue'), id)
+  }
+})
+
+test('Allgemeinstrom ohne Zähler dahinter: kein „0 gemessen“ in der Verteilbasis', () => {
+  const s = run({
+    units: [room('a', 50), room('b', 50)], tenancies: [lease('t-a', 'a'), lease('t-b', 'b')],
+    meters: [gauge('za', 'a', 'strom'), gauge('zall', null, 'strom', 'common')], readings: [...used('za', 1500), ...used('zall', 2000)],
+  }, [{ id: 'as', period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Allgemeinstrom', amountCents: 100000, key: 'meter', meterType: 'strom', meterRest: rest({ referenceMeterId: 'zall', behindMeterIds: [] }) }])
+  const row = s.statements.find((st) => st.tenancyId === 't-a')?.rows[0] ?? assert.fail('keine Zeile')
+  assert.doesNotMatch(row.basisText ?? '', /gemessen/)
+  assert.equal(row.shareCents, 50000)
+})
+
+test('Zwischenzähler direkt an eine selbstgenutzte Wohnung: ein Mietverhältnis ohne Abrechnung dort zählt zur Eigennutzung', () => {
+  // Wie die Direktzuordnung: e ist selbstgenutzt, ein dort eingetragenes Mietverhältnis hat keine Abrechnung.
+  const p = pair(1100)
+  const s = run({
+    ...p, units: [...(p.units ?? []), room('e', 50, { participates: false, selfUsed: true })], tenancies: [...(p.tenancies ?? []), lease('t-e', 'e')],
+    meters: [...(p.meters ?? []), gauge('ze', 'e', 'kaltwasser'), gauge('zgarten', null, 'kaltwasser', 'common')],
+    readings: [...(p.readings ?? []), ...used('ze', 0), ...used('zgarten', 100)],
+  }, [water(110000, rest({ subMeters: [{ meterId: 'zgarten', target: { key: 'direct', unitIds: ['e'] } }] }))])
+  assert.equal(s.selfUsedShareCents, 10000)
+  assert.equal(part(s, 'outsideUnit'), 0)
 })
