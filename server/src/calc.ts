@@ -5655,7 +5655,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const starts = [yFrom, ...[...cuts].sort()]
       return starts.map((from, i) => ({ from, to: i + 1 < starts.length ? dayBefore(starts[i + 1] as string) : yTo }))
     }
-    const segmented = (segs: Period[], units: SnapshotUnit[], weight: (u: SnapshotUnit) => number, byDegree: boolean, amountRaw: number) => {
+    const segmented = (segs: Period[], units: SnapshotUnit[], weight: (u: SnapshotUnit) => number, byDegree: boolean, amountRaw: number, partTenancies: TenancyWithUnit[]) => {
       const days = (r: Period) => rangeOverlapDays(r.from, r.to, r.from, r.to)
       const measure = (r: Period): number => (byDegree && degreeTable && fullDegree > 0 ? degreeDayPermille([r], degreeTable) : days(r))
       const full = byDegree && degreeTable && fullDegree > 0 ? fullDegree : diy
@@ -5672,7 +5672,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const segMeasure = measure(seg)
         if (!(total > 0) || !(segMeasure > 0)) continue
         const amount = amountRaw * (segMeasure / full)
-        for (const t of b.partTenancies) {
+        for (const t of partTenancies) {
           if (!members.some((u) => u.id === t.unitId)) continue
           const o = cut(seg, t.start > yFrom ? t.start : yFrom, t.end !== null && t.end < yTo ? t.end : yTo)
           if (!o) continue
@@ -5704,58 +5704,58 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Bezugszähler und Rest, #98). Rundet nicht (#202: einmal je Position in `distributeCents`); die Teilnehmer
     // stecken in der Basis `b`. Liefert die Anteile der Mietverhältnisse und den Anteil der Selbstnutzung oder den Grund,
     // warum keine Basis da ist (der Aufrufer meldet ihn).
-    const keyRaws = (key: 'area' | 'units' | 'persons', amountRaw: number, b: typeof fullBasis):
+    const keyRaws = (key: 'area' | 'units' | 'persons', amountRaw: number, basis: typeof fullBasis):
       { targets: { t: TenancyWithUnit; raw: number; basisText: string }[]; selfRaw: number } | { noBasis: string } => {
       const targets: { t: TenancyWithUnit; raw: number; basisText: string }[] = []
       let selfRaw = 0
-      const segs = key === 'persons' ? null : segmentsOf(b.basisUnits)
-      const degreeSelf = degreeTable !== null && fullDegree > 0 && b.selfUnits.some((u) => usageIn(u).phased)
-      if (key === 'area' && !(b.basisArea > 0)) {
-        return { noBasis: b === fullBasis ? 'für keine Wohnung ist eine Wohnfläche hinterlegt' : 'für keine teilnehmende Wohnung ist eine Wohnfläche hinterlegt' }
-      } else if (key === 'units' && b.basisUnits.length === 0) {
-        return { noBasis: b === fullBasis ? 'keine Wohnung gehört zur Abrechnungseinheit' : 'keine teilnehmende Wohnung gehört zur Abrechnungseinheit' }
-      } else if (key === 'persons' && !(b.occupantPersonDays > 0) && b.partTenancies.length > 0) {
+      const unitSegs = key === 'persons' ? null : segmentsOf(basis.basisUnits)
+      const degreeSelf = degreeTable !== null && fullDegree > 0 && basis.selfUnits.some((u) => usageIn(u).phased)
+      if (key === 'area' && !(basis.basisArea > 0)) {
+        return { noBasis: basis === fullBasis ? 'für keine Wohnung ist eine Wohnfläche hinterlegt' : 'für keine teilnehmende Wohnung ist eine Wohnfläche hinterlegt' }
+      } else if (key === 'units' && basis.basisUnits.length === 0) {
+        return { noBasis: basis === fullBasis ? 'keine Wohnung gehört zur Abrechnungseinheit' : 'keine teilnehmende Wohnung gehört zur Abrechnungseinheit' }
+      } else if (key === 'persons' && !(basis.occupantPersonDays > 0) && basis.partTenancies.length > 0) {
         return { noBasis: 'für die vermieteten Wohnungen sind keine Personen hinterlegt' }
-      } else if (key === 'area' && b.basisArea > 0 && segs) {
-        const r = segmented(segs, b.basisUnits, (u) => u.areaM2 || 0, true, amountRaw)
-        for (const t of b.partTenancies) {
+      } else if (key === 'area' && basis.basisArea > 0 && unitSegs) {
+        const r = segmented(unitSegs, basis.basisUnits, (u) => u.areaM2 || 0, true, amountRaw, basis.partTenancies)
+        for (const t of basis.partTenancies) {
           const e = r.tenants.get(t.id)
           if (e) targets.push({ t, raw: e.raw, basisText: partsText(e.parts, 'm²') })
         }
         selfRaw = r.self
-      } else if (key === 'area' && b.basisArea > 0) {
-        for (const t of b.partTenancies) {
-          const raw = amountRaw * ((t.unit.areaM2 || 0) / b.basisArea) * dayShare(t)
-          targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2 || 0)} von ${fmtNum(b.basisArea)} m²${partOfYear(t)}` })
+      } else if (key === 'area' && basis.basisArea > 0) {
+        for (const t of basis.partTenancies) {
+          const raw = amountRaw * ((t.unit.areaM2 || 0) / basis.basisArea) * dayShare(t)
+          targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2 || 0)} von ${fmtNum(basis.basisArea)} m²${partOfYear(t)}` })
         }
         selfRaw = degreeSelf
-          ? amountRaw * (b.selfUnits.reduce((a, u) => a + (u.areaM2 || 0) * itemSelfShare(u), 0) / b.basisArea)
-          : amountRaw * (b.selfArea / b.basisArea)
-      } else if (key === 'units' && b.basisUnits.length > 0 && segs) {
-        const r = segmented(segs, b.basisUnits, () => 1, true, amountRaw)
-        for (const t of b.partTenancies) {
+          ? amountRaw * (basis.selfUnits.reduce((a, u) => a + (u.areaM2 || 0) * itemSelfShare(u), 0) / basis.basisArea)
+          : amountRaw * (basis.selfArea / basis.basisArea)
+      } else if (key === 'units' && basis.basisUnits.length > 0 && unitSegs) {
+        const r = segmented(unitSegs, basis.basisUnits, () => 1, true, amountRaw, basis.partTenancies)
+        for (const t of basis.partTenancies) {
           const e = r.tenants.get(t.id)
           if (e) targets.push({ t, raw: e.raw, basisText: partsText(e.parts, 'Einheiten') })
         }
         selfRaw = r.self
-      } else if (key === 'units' && b.basisUnits.length > 0) {
+      } else if (key === 'units' && basis.basisUnits.length > 0) {
         // Ohne Wechsel zwischen drinnen und außerhalb ist `unitCount` die Zahl der Einheiten (#259).
-        const count = Number.isInteger(b.unitCount) ? String(b.unitCount) : fmtNum(Math.round(b.unitCount * 100) / 100)
-        for (const t of b.partTenancies) {
-          const raw = (amountRaw / b.unitCount) * dayShare(t)
+        const count = Number.isInteger(basis.unitCount) ? String(basis.unitCount) : fmtNum(Math.round(basis.unitCount * 100) / 100)
+        for (const t of basis.partTenancies) {
+          const raw = (amountRaw / basis.unitCount) * dayShare(t)
           targets.push({ t, raw, basisText: `1 von ${count} Einheiten${partOfYear(t)}` })
         }
-        selfRaw = (amountRaw / b.unitCount) * (degreeSelf ? b.selfUnits.reduce((a, u) => a + itemSelfShare(u), 0) : b.selfUnitCount)
-      } else if (key === 'persons' && b.basisPersonDays > 0) {
-        for (const t of b.partTenancies) {
+        selfRaw = (amountRaw / basis.unitCount) * (degreeSelf ? basis.selfUnits.reduce((a, u) => a + itemSelfShare(u), 0) : basis.selfUnitCount)
+      } else if (key === 'persons' && basis.basisPersonDays > 0) {
+        for (const t of basis.partTenancies) {
           const pd = personDaysInPeriod(t, yFrom, yTo)
-          const raw = amountRaw * (pd / b.basisPersonDays)
+          const raw = amountRaw * (pd / basis.basisPersonDays)
           // Der Leerstand steht im gedruckten Text dabei, sonst ginge die Summe der Personentage für
           // den Mieter nicht auf (#177).
-          const vacancyNote = b.vacancyPersonDays > 0 ? ` (davon ${fmtNum(b.vacancyPersonDays)} Leerstand)` : ''
-          targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(b.basisPersonDays)} Personentagen${vacancyNote}` })
+          const vacancyNote = basis.vacancyPersonDays > 0 ? ` (davon ${fmtNum(basis.vacancyPersonDays)} Leerstand)` : ''
+          targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(basis.basisPersonDays)} Personentagen${vacancyNote}` })
         }
-        selfRaw = amountRaw * (b.selfPersonDays / b.basisPersonDays)
+        selfRaw = amountRaw * (basis.selfPersonDays / basis.basisPersonDays)
       }
       return { targets, selfRaw }
     }
@@ -5820,7 +5820,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const suffix = ` · Kosten der Gemeinschaft ${fmtCents(eb.totalCents)}${applied}`
           const label = MEASURE_LABELS[eb.measure]
           // Je Abschnitt, wenn eine Einheit zwischen drinnen und außerhalb wechselt (#259, S1).
-          const r = segs ? segmented(segs, b.basisUnits, valueOf, false, item.amountCents) : null
+          const r = segs ? segmented(segs, b.basisUnits, valueOf, false, item.amountCents, b.partTenancies) : null
           for (const t of b.partTenancies) {
             const e = r ? r.tenants.get(t.id) : undefined
             if (r && !e) continue
