@@ -93,10 +93,12 @@ export const unitBasisOf = (plant: Pick<HeatingPlant, 'units' | 'basisValues'>, 
   plantUnitValues(plant).find((u) => u.unitId === unitId)
 
 // Ohne Liste versorgt eine Anlage alle Wohnungen ohne „kein Anschluss: Wärme“ (#117), mit Liste
-// genau diese (PR 4, `units_limited`).
-export function servesUnit(plant: { units: readonly { unitId: string }[] | null }, unit: Pick<Unit, 'id' | 'noConnection'>): boolean {
+// genau diese (PR 4, `units_limited`). Ein Zimmer einer Wohnung (#573) versorgt sie auch, wenn die Liste
+// seine Wohnung nennt: Kommen Zimmer später dazu, fielen sie sonst still aus der Heizung.
+export function servesUnit(plant: { units: readonly { unitId: string }[] | null }, unit: Pick<Unit, 'id' | 'noConnection'> & { parentUnitId?: string | null }): boolean {
   if (plant.units === null) return !(unit.noConnection ?? []).includes('waerme')
-  return plant.units.some((u) => u.unitId === unit.id)
+  const flat = unit.parentUnitId ?? null
+  return plant.units.some((u) => u.unitId === unit.id || (flat !== null && u.unitId === flat))
 }
 
 // Kesseltausch (Heizung PR 9): Zwei Anlagen hängen zusammen, wenn die eine die andere ersetzt, auch über
