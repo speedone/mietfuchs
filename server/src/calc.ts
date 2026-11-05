@@ -90,7 +90,8 @@ import { MONTHLY_INFO_GAP_TEXT, monthRanges } from '../../shared/monthlyInfo.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
-import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
+import { practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
+import { planMeterRest } from './meterRest.ts'
 import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
@@ -99,7 +100,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, leavesRentalWithin, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
-import type { TaxSpread, UnitUsage } from '../../shared/types.ts'
+import type { MeterRestKey, MeterRestTarget, TaxSpread, UnitUsage } from '../../shared/types.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
@@ -127,6 +128,10 @@ import { CAPTURE_TEXT, captureOf, coversPeriod, estimateFits, hotWaterOf, lineSe
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 import { calibrationOverdue } from './calibration.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotPayment, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
+
+// Sparten mit Bezugszähler und verteiltem Rest (#98); dieselbe Liste prüft der Server beim Speichern (db/meterRest.ts).
+// Eine Position einer anderen Sparte mit `meterRest` (etwa aus einem alten Backup) rechnet wie ohne.
+const REST_METER_TYPES: readonly MeterType[] = ['kaltwasser', 'strom', 'sonstig']
 
 export const KEY_LABELS: Record<CostKey, string> = {
   area: 'Wohnfläche',
@@ -312,6 +317,12 @@ const noticeKinds = {
   'meter.main-partial': { level: 'warning', title: 'Hauptzähler deckt nicht das ganze Jahr ab', terms: ['mainMeter', 'meterReading'] },
   'meter.main-gap': { level: 'hint', title: 'Wohnungszähler erfassen wenig vom Hauptzähler', terms: ['mainMeter'] },
   'meter.unit-partial': { level: 'warning', title: 'Zähler deckt nicht die ganze Zeit ab', terms: ['mainMeter', 'meterReading'] },
+  // Bezugszähler und verteilter Rest (#98): `error`, wo die Position nicht verteilt wird, weil sich der Rest nicht ohne
+  // Schaden für eine der Seiten bilden oder zuordnen lässt; `warning` bei einer Messdifferenz über der Schwelle.
+  'meter.rest-mixed': { level: 'error', title: 'Allgemeinverbrauch lässt sich nicht trennen', terms: ['meterRest', 'referenceMeter'] },
+  'meter.rest-unavailable': { level: 'error', title: 'Allgemeinverbrauch lässt sich nicht bilden', terms: ['meterRest', 'referenceMeter'] },
+  'meter.sub-incomplete': { level: 'error', title: 'Zwischenzähler deckt nicht den ganzen Zeitraum ab', terms: ['meterRest', 'meterReading'] },
+  'meter.rest-high': { level: 'warning', title: 'Hoher Allgemeinverbrauch', terms: ['meterRest', 'referenceMeter'] },
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr', terms: ['directAssignment'] },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
   'heating.not-by-consumption': { level: 'warning', title: 'Heizkosten nicht nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
@@ -3292,7 +3303,8 @@ function partialMonthHint(t: TenancyWithUnit, partial: readonly PartialMonth[], 
 type CommunitySteps = { costsCents: number, share: string, term: TermId, appliedCents: number | null, ownShare: string | null }
 // `heating`: bei der eigenen Heizkostenabrechnung (Heizung PR 10) die Schritte über Grund- und
 // Verbrauchskosten, Warmwasseranteil und Anteil, statt der Verteilbasis.
-type Target = { t: TenancyWithUnit, raw: number, basisText: string, community?: CommunitySteps, heating?: CalcStep[] }
+// `meterRest`: die Schritte des Rests eines Bezugszählers (#98), im Rechenweg nach dem Anteil an der Verteilbasis.
+type Target = { t: TenancyWithUnit, raw: number, basisText: string, community?: CommunitySteps, heating?: CalcStep[], meterRest?: CalcStep[] }
 
 // Verbrauch und Zähler eines Zählertyps, aufbereitet für die Verteilung. Der Wert ist bewusst
 // optional (nicht `Record<string, ConsumptionByTypeEntry>`): zu einer Kostenposition mit einem
@@ -5953,6 +5965,237 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         outsideRaw = item.amountCents * (outsideCapped / 100)
         customUnassignedRaw = item.amountCents * (Math.max(0, 100 - pctSumIn - outsideCapped) / 100)
       }
+    } else if (item.key === 'meter' && item.meterRest && item.category !== HEATING_CATEGORY && REST_METER_TYPES.includes(item.meterType as MeterType)) {
+      // **Bezugszähler und verteilter Rest (#98, Entwurf 2026-11-04-virtuelle-zaehler-design.md, „Rechnung“).** Die
+      // Mengen sammelt dieser Zweig, ob und wie sich der Rest bilden lässt, entscheidet `planMeterRest`; der Betrag wird
+      // danach einmal verteilt (#202). Jeder Teil (gemessen, Rest, Zwischenzähler) verhält sich wie eine Position mit
+      // seinem Schlüssel, nur ohne eigene Rundung. Ohne `meterRest` gilt der Zweig darunter, Zahl für Zahl wie bisher.
+      const mr = item.meterRest
+      const type = item.meterType as MeterType
+      const where = `„${item.description}“`
+      const byId = new Map(allMeters.map((m) => [m.id, m]))
+      const refMeters = mr.referenceMeterId === null
+        ? houseMeters.filter((m) => m.type === type)
+        : [byId.get(mr.referenceMeterId)].filter((m): m is SnapshotMeter => m !== undefined)
+      // Beim Hauptzähler ohne Liste alle Zähler von Einheiten des Objekts in dieser Sparte, wie heute (samt `measures`).
+      const behindMeters = (mr.behindMeterIds === null
+        ? allMeters.filter((m) => m.unitId && measures(type, m))
+        : mr.behindMeterIds.flatMap((id) => { const m = byId.get(id); return m && m.unitId ? [m] : [] })) as (SnapshotMeter & { unitId: string })[]
+      const subList = mr.subMeters.map((s) => ({ s, m: byId.get(s.meterId) ?? null }))
+      const covered = (m: SnapshotMeter) => coveredDays(readingsOf(m.id), yFrom, yTo)
+      const scale = unitScale([...refMeters, ...behindMeters, ...subList.flatMap((x) => (x.m ? [x.m] : []))].filter((m) => covered(m) > 0), 'relative')
+      const unitText = scale.problem ? '' : scale.unit
+      const unitSuffix = unitText ? ` ${unitText}` : ''
+      const use = (m: SnapshotMeter, from: string, to: string): number => consumptionInPeriod(readingsOf(m.id), from, to) * scale.factorOf(m.id)
+      const yearUse = (m: SnapshotMeter) => use(m, yFrom, yTo)
+      const amount = (n: number) => `${fmtMeter(Math.round(n * 1000) / 1000)}${unitSuffix}`
+      const refName = mr.referenceMeterId === null ? 'der Hauptzähler' : `der Bezugszähler „${refMeters[0]?.name ?? mr.referenceMeterId}“`
+      const refShort = refMeters.find((m) => covered(m) < diy)
+      const reference = refMeters.length > 0 && !refShort ? refMeters.reduce((a, m) => a + yearUse(m), 0) : null
+      const inBasis = new Set(b.basisUnits.map((u) => u.id))
+      const groupIds = mr.unitIds === null ? b.basisUnits.map((u) => u.id) : mr.unitIds.filter((id) => inBasis.has(id))
+      const groupSet = new Set(groupIds)
+      const behindOf = (unitId: string) => behindMeters.filter((m) => m.unitId === unitId)
+      const unitUse = (unitId: string, from: string, to: string) => behindOf(unitId).reduce((a, m) => a + use(m, from, to), 0)
+      const spanUse = (u: SnapshotUnit, k: UnitUsage) => usageIn(u).spans.filter((x) => x.usage === k).reduce((a, x) => a + unitUse(u.id, x.from, x.to), 0)
+      // Gemessen wie heute (#116, G-B8): ein Zähler genau dieser Sparte hinter dem Bezug, im Zeitraum abgelesen. Ohne
+      // Anschluss (#117) ist eine Einheit weder gemessen noch ungemessen.
+      const measuredUnit = (u: SnapshotUnit) => behindOf(u.id).some((m) => m.type === type && covered(m) > 0)
+      const connected = (u: SnapshotUnit) => !(u.noConnection ?? []).includes(type)
+      const groupUnits = b.basisUnits.filter((u) => groupSet.has(u.id))
+      const group = groupUnits.map((u) => ({ unitId: u.id, measured: measuredUnit(u), occupied: occupied.has(u.id) && connected(u) }))
+      const groupMeasured = group.some((g) => g.measured) && !group.some((g) => g.occupied && !g.measured)
+      // Wer hinter dem Bezug ohne Zähler wohnt und nicht in der Gruppe ist: beim Hauptzähler jede Einheit des Objekts,
+      // sonst die Verteilbasis (welche Einheit ohne Zähler hinter einem anderen Bezug hängt, weiß Mietfuchs nicht).
+      const candidates = mr.referenceMeterId === null ? periodUnits : b.basisUnits
+      const unmeteredOutside = candidates.filter((u) => !groupSet.has(u.id) && occupied.has(u.id) && connected(u) && !measuredUnit(u))
+      const plan = planMeterRest({
+        reference,
+        behind: behindMeters.map((m) => ({ unitId: m.unitId, inGroup: groupSet.has(m.unitId), inBasis: inBasis.has(m.unitId), value: yearUse(m) })),
+        subs: subList.map(({ s, m }) => ({ meterId: s.meterId, value: m && covered(m) >= diy ? yearUse(m) : null, target: s.target })),
+        group,
+        unmeteredOutside: unmeteredOutside.map((u) => u.id),
+        key: mr.key,
+      })
+      const nameOfUnit = (id: string) => unitById.get(id)?.name ?? id
+      const nameOfMeter = (id: string) => byId.get(id)?.name ?? id
+      const notDistributed = 'Die Position wird nicht verteilt, der Betrag steht beim Vermieter.'
+      const refGap = refMeters.length === 0
+        ? `es gibt keinen ${mr.referenceMeterId === null ? `Hauptzähler „${meterTypeLabel(type)}“` : 'Bezugszähler mehr'}`
+        : `${refName} deckt ${label} nur ${refShort ? covered(refShort) : diy} von ${diy} Tagen ab`
+      if (scale.problem?.kind === 'unknown') warn('meter.unit-unknown', unitUnknownText(where, scale.problem.meters), unitProblemSubject(scale.problem.meters))
+      if (scale.problem?.kind === 'mixed') {
+        forced = 'noBasis'
+        warn('meter.units-mixed', unitsMixedText(where, scale.problem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(scale.problem.meters))
+      } else if (plan.kind === 'error') {
+        forced = 'noBasis'
+        const names = andList(plan.detail.map(nameOfUnit))
+        const many = plan.detail.length > 1
+        if (plan.code === 'meter.rest-mixed' && plan.reason === 'mixed') {
+          warn('meter.rest-mixed', `${where}: Den Allgemeinverbrauch bekommen Einheiten mit und ohne Zähler „${meterTypeLabel(type)}“ hinter dem Bezugszähler; ${names} ${many ? 'haben' : 'hat'} keinen. So zahlten die gemessenen Einheiten den Verbrauch der übrigen mit. ${notDistributed} Wählen Sie als Empfänger nur Einheiten ohne Zähler oder nur solche mit, oder erfassen Sie den fehlenden Zähler.`, unitSubject(plan.detail.map((id) => ({ id }))))
+        } else if (plan.code === 'meter.rest-mixed' && plan.reason === 'outside') {
+          warn('meter.rest-mixed', `${where}: ${names} ${many ? 'hängen' : 'hängt'} ohne eigenen Zähler „${meterTypeLabel(type)}“ am Bezugszähler, ${many ? 'gehören' : 'gehört'} aber nicht zu den Empfängern des Allgemeinverbrauchs. Ihr Verbrauch steckt im Rest und lässt sich nicht trennen. ${notDistributed} Nehmen Sie ${many ? 'sie' : 'die Einheit'} in die Empfänger auf oder erfassen Sie einen Zähler; hat eine Einheit keinen Anschluss, entfernen Sie in den Stammdaten unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.`, unitSubject(plan.detail.map((id) => ({ id }))))
+        } else if (plan.code === 'meter.rest-mixed') {
+          warn('meter.rest-mixed', `${where}: Im Verhältnis der Zähler lässt sich der Allgemeinverbrauch nur verteilen, wenn alle Empfänger einen Zähler „${meterTypeLabel(type)}“ hinter dem Bezugszähler haben${plan.detail.length > 0 ? `; ${names} ${many ? 'haben' : 'hat'} keinen` : ''}. ${notDistributed} Wählen Sie Fläche, Personen oder Einheiten.`, itemSubject(item))
+        } else if (plan.code === 'meter.sub-incomplete') {
+          warn('meter.sub-incomplete', `${where}: ${many ? 'Die Zwischenzähler' : 'Der Zwischenzähler'} ${andList(plan.detail.map((id) => `„${nameOfMeter(id)}“`))} ${many ? 'decken' : 'deckt'} ${label} nicht ganz ab. Ein Teilverbrauch ginge still an die falschen Empfänger. ${notDistributed} Bitte die Ablesungen zu Beginn und Ende des Zeitraums nachtragen.`, plan.detail[0] ? { kind: 'meter', id: plan.detail[0] } : itemSubject(item))
+        } else if (plan.reason === 'main-partial') {
+          warn('meter.rest-unavailable', `${where}: ${refGap}, und ohne ihn lässt sich der Allgemeinverbrauch nicht bilden. Weil die Empfänger keine eigenen Zähler haben, trügen nach den Zählern die gemessenen Einheiten die ganze Rechnung. ${notDistributed} Bitte die Ablesungen zu Beginn und Ende des Zeitraums nachtragen.`, refShort ? { kind: 'meter', id: refShort.id } : itemSubject(item))
+        } else {
+          warn('meter.rest-unavailable', `${where}: Die Zähler hinter dem Bezugszähler und die Zwischenzähler zeigen zusammen mehr als ${refName} (${amount(reference ?? 0)}); der Allgemeinverbrauch wäre negativ. ${notDistributed} Bitte die Ablesungen prüfen.`, itemSubject(item))
+        }
+      } else if (!(plan.total > 0)) {
+        forced = 'noBasis'
+        warn('meter.no-consumption', `${where}: kein Verbrauch für Zählertyp „${meterTypeLabel(type)}“ erfasst - Betrag geht an den Vermieter.`, itemSubject(item))
+      } else {
+        if (plan.kind === 'fallback' && plan.reason === 'main-partial') {
+          warn('meter.main-partial', `${where}: ${refGap}; der Allgemeinverbrauch lässt sich deshalb nicht bilden und wird nicht verteilt. Bis zu den fehlenden Ablesungen wird nach den Zählern verteilt.`, refShort ? { kind: 'meter', id: refShort.id } : itemSubject(item))
+        } else if (plan.kind === 'fallback') {
+          warn('meter.sub-exceeds-main', `${where}: die Zähler hinter dem Bezugszähler und die Zwischenzähler zeigen zusammen ${amount(plan.total)}, mehr als ${refName} (${amount(reference ?? 0)}) - bitte die Ablesungen prüfen. Verteilt wird nach den Zählern, ein Allgemeinverbrauch nicht.`, itemSubject(item))
+        }
+        // Lückenhafte Zähler gelten als gemessen (Schritt 1); ihre Lücke steckt im Rest.
+        const partial = b.basisUnits.flatMap((u) => {
+          if (!occupied.has(u.id) || !measuredUnit(u)) return []
+          const got = unitCoveredDays(behindOf(u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo)
+          const needed = neededDays(u)
+          return got < needed ? [{ unit: u, covered: got, needed }] : []
+        })
+        if (partial.length > 0) {
+          warn('meter.unit-partial', `${where}: der Zähler von ${andList(partial.map((p) => `${p.unit.name} (${p.covered} von ${p.needed} Tagen)`))} deckt nicht die ganze Zeit ab, in der dort gewohnt wurde - der Verbrauch der Lücke steckt im Allgemeinverbrauch und geht mit ihm an dessen Empfänger. Bitte die fehlenden Ablesungen nachtragen.`, unitSubject(partial.map((p) => p.unit)))
+        }
+        const per = item.amountCents / plan.total
+        type Acc = { t: TenancyWithUnit, raw: number, restRaw: number, texts: string[] }
+        const accs = new Map<string, Acc>()
+        const accOf = (t: TenancyWithUnit): Acc => {
+          const e = accs.get(t.id) ?? { t, raw: 0, restRaw: 0, texts: [] }
+          accs.set(t.id, e)
+          return e
+        }
+        const periodOf = (t: TenancyWithUnit) => ({ from: t.start > yFrom ? t.start : yFrom, to: t.end !== null && t.end < yTo ? t.end : yTo })
+        const tenancyUse = (t: TenancyWithUnit) => { const p = periodOf(t); return unitUse(t.unitId, p.from, p.to) }
+        // Gemessen: je Mietverhältnis sein Verbrauch in seinen Tagen (wie heute), die Eigennutzung als Eigenanteil, die
+        // Tage außerhalb (#259) und Zähler außerhalb der Verteilbasis an den Vermieter; der Leerstand bleibt als Rest.
+        for (const t of b.partTenancies) {
+          const c = tenancyUse(t)
+          const e = accOf(t)
+          e.raw += c * per
+          e.texts.push(`${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(plan.total * 100) / 100)}${unitSuffix} gemessen`)
+        }
+        const selfUse = (u: SnapshotUnit) => (usageIn(u).phased ? spanUse(u, 'eigen') : unitUse(u.id, yFrom, yTo))
+        selfRaw += b.selfUnits.reduce((a, u) => a + selfUse(u), 0) * per
+        outsideRaw += (plan.outside + b.basisUnits.filter((u) => usageIn(u).phased).reduce((a, u) => a + spanUse(u, 'ausgenommen'), 0)) * per
+        const keyLabel = (k: MeterRestKey | 'direct' | 'meter') => (k === 'meter' ? 'Verbrauch' : KEY_LABELS[k])
+        // Ein Teilbetrag, der keine Basis findet, bleibt beim Vermieter wie der Rest des Hauptzählers; das sagt ein Hinweis.
+        const partToLandlord = (raw: number, what: string, why: string) => {
+          mainRestRaw += raw
+          warn('item.no-basis', `${where}: ${what}: ${why} - dieser Teil geht an den Vermieter.`, itemSubject(item))
+        }
+        const byKey = (k: MeterRestKey, raw: number, ids: string[] | null, what: string, rest: boolean) => {
+          const basis = ids === null ? b : basisOf({ ...item, participantUnitIds: ids.filter((id) => inBasis.has(id)) })
+          const r = keyRaws(k, raw, basis)
+          if ('noBasis' in r) return partToLandlord(raw, what, r.noBasis)
+          for (const x of r.targets) {
+            const e = accOf(x.t)
+            e.raw += x.raw
+            if (rest) e.restRaw += x.raw
+            e.texts.push(`${what} nach ${keyLabel(k)}: ${x.basisText}`)
+          }
+          selfRaw += r.selfRaw
+        }
+        const direct = (raw: number, ids: string[], what: string) => {
+          const u = ids.length === 1 ? b.basisUnits.find((x) => x.id === ids[0]) : undefined
+          if (!u) return partToLandlord(raw, what, ids.length === 1 ? `die Wohnung ${nameOfUnit(ids[0] ?? '')} gehört nicht zur Verteilbasis` : 'eine Direktzuordnung geht an genau eine Wohnung')
+          const own = b.partTenancies.filter((t) => t.unitId === u.id)
+          let given = 0
+          for (const t of own) {
+            const x = raw * dayShare(t)
+            given += x
+            accOf(t).raw += x
+            accOf(t).texts.push(`${what}: Direktzuordnung ${u.name}${partOfYear(t)}`)
+          }
+          if (usageIn(u).phased) {
+            selfRaw += raw * itemSelfShare(u)
+            outsideRaw += raw * itemOutsideShare(u)
+          } else if (b.selfUnits.includes(u)) {
+            const self = raw - given
+            if (self * raw > 0) selfRaw += self
+          }
+        }
+        // Der Rest (Schritt 4): nach dem gewählten Schlüssel innerhalb der Gruppe.
+        const restRaw = plan.rest * per
+        const restWhat = `Allgemeinverbrauch ${amount(plan.rest)}`
+        let groupUse = 0
+        if (restRaw !== 0) {
+          if (mr.key === 'landlord') mainRestRaw += restRaw
+          else if (mr.key === 'selfUse') selfRaw += restRaw
+          else if (mr.key === 'meter') {
+            // Im Verhältnis der Zähler der Gruppe: Jeder Teil des Verbrauchs einer Einheit bekommt denselben Aufschlag.
+            groupUse = groupUnits.reduce((a, u) => a + unitUse(u.id, yFrom, yTo), 0)
+            if (!(groupUse > 0)) partToLandlord(restRaw, restWhat, 'die Zähler der Empfänger zeigen keinen Verbrauch')
+            else {
+              const f = restRaw / groupUse
+              for (const t of b.partTenancies.filter((x) => groupSet.has(x.unitId))) {
+                const c = tenancyUse(t)
+                const e = accOf(t)
+                e.raw += c * f
+                e.restRaw += c * f
+                e.texts.push(`${restWhat} nach Verbrauch: ${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(groupUse * 100) / 100)}${unitSuffix}`)
+              }
+              selfRaw += b.selfUnits.filter((u) => groupSet.has(u.id)).reduce((a, u) => a + selfUse(u), 0) * f
+              outsideRaw += groupUnits.filter((u) => usageIn(u).phased).reduce((a, u) => a + spanUse(u, 'ausgenommen'), 0) * f
+            }
+          } else byKey(mr.key, restRaw, mr.unitIds === null ? null : groupIds, restWhat, true)
+        }
+        // Zwischenzähler: jeder mit seinem Verbrauch an sein Ziel; `excluded` steckt schon nicht in `total`.
+        for (const s of plan.subs) {
+          const raw = s.value * per
+          const what = `Zwischenzähler „${nameOfMeter(s.meterId)}“ ${amount(s.value)}`
+          if (s.target === 'excluded' || raw === 0) continue
+          if (s.target === 'landlord') mainRestRaw += raw
+          else if (s.target === 'selfUse') selfRaw += raw
+          else if (s.target.key === 'direct') direct(raw, s.target.unitIds, what)
+          else byKey(s.target.key, raw, s.target.unitIds, what, false)
+        }
+        // Rechenweg (#114): Bezugszähler mit Anfangs- und Endstand, Zähler dahinter, Zwischenzähler, Rest, Schlüssel.
+        const steps: CalcStep[] = []
+        for (const m of refMeters) {
+          const rs = [...readingsOf(m.id)].sort((x, y) => compareText(x.date, y.date))
+          const start = [...rs].reverse().find((r) => r.date <= dayBefore(yFrom)) ?? rs[0]
+          const end = rs.find((r) => r.date >= yTo) ?? rs[rs.length - 1]
+          const stands = start && end ? ` (Stand ${fmtMeter(start.value)} am ${fmtDay(start.date)}, ${fmtMeter(end.value)} am ${fmtDay(end.date)})` : ''
+          steps.push({ label: 'Bezugszähler', value: `„${m.name ?? m.id}“${stands}: ${amount(yearUse(m))}${covered(m) < diy ? `, nur ${covered(m)} von ${diy} Tagen` : ''}`, term: 'referenceMeter' })
+        }
+        const behindSum = plan.measuredIn + plan.outside
+        steps.push({ label: 'Zähler dahinter', value: `${plural(behindMeters.length, 'Zähler', 'Zähler')}, zusammen ${amount(behindSum)}${plan.outside !== 0 ? `, davon ${amount(plan.outside)} außerhalb der Verteilbasis (an den Vermieter)` : ''}`, term: 'meterRest' })
+        const targetText = (t: MeterRestTarget) => (t === 'excluded' ? 'zählt in dieser Position nicht'
+          : t === 'landlord' ? 'trägt der Vermieter' : t === 'selfUse' ? 'Eigenanteil'
+          : t.key === 'direct' ? `direkt an ${andList(t.unitIds.map(nameOfUnit))}` : `nach ${keyLabel(t.key)} an ${andList(t.unitIds.map(nameOfUnit))}`)
+        for (const s of plan.subs) steps.push({ label: 'Zwischenzähler', value: `„${nameOfMeter(s.meterId)}“ ${amount(s.value)}: ${targetText(s.target)}`, term: 'meterRest' })
+        const counted = plan.subs.filter((s) => s.target !== 'excluded').reduce((a, s) => a + s.value, 0)
+        const excluded = plan.subs.filter((s) => s.target === 'excluded').reduce((a, s) => a + s.value, 0)
+        steps.push(plan.kind === 'fallback'
+          ? { label: 'Allgemeinverbrauch', value: 'nicht gebildet (siehe Hinweis); verteilt nach den Zählern', term: 'meterRest' }
+          : {
+            label: 'Allgemeinverbrauch',
+            value: `${[reference ?? 0, ...(excluded !== 0 ? [excluded] : []), behindSum, ...(counted !== 0 ? [counted] : [])].map((n) => fmtMeter(Math.round(n * 1000) / 1000)).join(' − ')} = ${amount(plan.rest)}`,
+            term: 'meterRest',
+          })
+        if (plan.kind === 'plan' && plan.rest !== 0) {
+          const how = mr.key === 'landlord' ? 'trägt der Vermieter' : mr.key === 'selfUse' ? 'Eigenanteil' : `verteilt nach ${keyLabel(mr.key)}${mr.unitIds === null ? '' : ` an ${andList(groupIds.map(nameOfUnit))}`}`
+          steps.push({ label: 'Allgemeinverbrauch verteilt', value: how, term: 'meterRest' })
+        }
+        steps.push({ label: 'Verteilbasis', value: `${amount(plan.total)}${excluded !== 0 ? ` (Bezugszähler ohne ${amount(excluded)}, die hier nicht zählen)` : ''}`, term: 'distributionBasis' })
+        for (const e of accs.values()) targets.push({ t: e.t, raw: e.raw, basisText: e.texts.join('; '), meterRest: steps })
+        // Messdifferenz über der Schwelle (Recht und Hinweise): nur bei ganz gemessener Gruppe, nur wenn Mieter den Rest tragen.
+        if (plan.kind === 'plan' && groupMeasured && mr.key !== 'landlord' && mr.key !== 'selfUse' && plan.rest > 0) {
+          const limit = law(practiceMeterRestHigh, { period: lawPeriod }, lawLog)
+          if (plan.rest * 100 > plan.total * limit) {
+            const payers = [...accs.values()].filter((e) => bookable(e.t) && roundHalfAway(e.restRaw) !== 0)
+            const list = payers.map((e) => `${e.t.tenantName} (${e.t.unit.name}) rund ${fmtCents(roundHalfAway(e.restRaw))}`)
+            warn('meter.rest-high', `${where}: Der Allgemeinverbrauch beträgt ${amount(plan.rest)} von ${amount(plan.total)} (${fmtNum(Math.round((plan.rest / plan.total) * 1000) / 10)} %), obwohl alle Empfänger Zähler haben. Eine gesetzliche Grenze gibt es nicht, nach der Rechtsprechung der Instanzgerichte ist die Umlage einer Differenz über ${limit} % aber angreifbar. So LG Braunschweig, 6 S 163/98.${list.length > 0 ? ` Davon tragen in dieser Abrechnung ${andList(list)}.` : ''} Prüfen Sie Zähler und Ablesungen; oft erklärt ein Leck, eine Zapfstelle ohne Zähler oder eine nicht angelegte Wohnung die Differenz.`, itemSubject(item))
+          }
+        }
+      }
     } else if (item.key === 'meter') {
       // `item.meterType` ist optional (string | null | undefined); die Indizierung selbst
       // verhält sich für null/undefined wie für einen unbekannten Zählertyp (kein Treffer,
@@ -6268,6 +6511,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
       } else {
         steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
+        if (x.meterRest) steps.push(...x.meterRest)
         // Der Leerstand steckt in der Verteilbasis (#177); ohne diesen Schritt sähe der Mieter eine
         // Summe der Personentage, die größer ist als die der Bewohner, und niemand erklärte sie.
         if (item.key === 'persons' && b.vacancies.length > 0) {
