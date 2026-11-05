@@ -37,6 +37,7 @@ import { asksCo2Facts, monthsOf, ownedBy } from '../fuelForm'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
+import { flatIdsWithRooms } from '../unitForm'
 import { selfUsedWithin } from '../../../shared/unitUsage.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 import { NoticeBox } from '../components/Notice'
@@ -197,7 +198,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
                   <ServiceValuesCard
                     key={`svc:${v.period}:${JSON.stringify(v.serviceValues ?? [])}`}
                     plantId={plant.id} period={v.period} from={v.from} to={v.to} closed={v.closed}
-                    units={units.filter((u) => servesUnit(plant, u)).map((u) => ({ id: u.id, name: u.name }))}
+                    units={units.filter((u) => servesUnit(plant, u) && !flatIdsWithRooms(units).has(u.id)).map((u) => ({ id: u.id, name: u.name }))}
                     values={v.serviceValues ?? []} remoteUnknown={plant.devicesRemote === 'unknown'} onSaved={() => void load()}
                   />
                 )}

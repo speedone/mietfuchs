@@ -28,6 +28,14 @@ export function usesUnitBasis(items: CostItem[]): boolean {
 // Fläche und Personen tragen sie nichts; beim Schlüssel nach Einheiten zählt jede als eine Einheit
 // (`basisUnits` in calc.ts). Das nennt die Zeile nur für die Einheiten in `byUnits`, also die, die an einer
 // Position nach Einheiten im Zeitraum teilnehmen (`countsByUnits`).
+// Die beteiligten Wohnungen für die Zeile „Mietverhältnisse“: vermietet, ohne eine Wohnung mit Zimmern (#573), denn sie
+// steht in keiner Verteilbasis, ihre Zimmer zählen (Gesamtdurchsicht D4).
+export function participatingUnits<U extends { id: string; participates: boolean; parentUnitId?: string | null }>(units: readonly U[]): U[] {
+  const ids = new Set(units.map((u) => u.id))
+  const flats = new Set(units.flatMap((u) => (u.parentUnitId && ids.has(u.parentUnitId) ? [u.parentUnitId] : [])))
+  return units.filter((u) => u.participates && !flats.has(u.id))
+}
+
 export function tenanciesDetail(tenancies: number, notSettled: number, participating: number, zeroArea: string[], byUnits: string[] = []): string {
   const one = zeroArea.length === 1
   const all = byUnits.length === zeroArea.length && zeroArea.every((n) => byUnits.includes(n))

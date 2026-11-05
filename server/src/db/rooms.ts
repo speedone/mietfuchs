@@ -178,7 +178,7 @@ export async function roomViolations(db: Executor): Promise<string[]> {
   }
   for (const r of await db.select({ name: units.name, parent: parent.name }).from(units)
     .innerJoin(parent, eq(units.parentUnitId, parent.id)).where(isNotNull(parent.parentUnitId))) {
-    out.push(`Das Zimmer ${q(r.name)} liegt in ${q(r.parent)}, die selbst ein Zimmer ist; es gibt nur eine Ebene.`)
+    out.push(`Das Zimmer ${q(r.name)} liegt in ${q(r.parent)}, das selbst ein Zimmer ist; es gibt nur eine Ebene.`)
   }
   const apartmentIds = [...new Set((await db.select({ p: units.parentUnitId }).from(units).where(isNotNull(units.parentUnitId))).flatMap((r) => (r.p === null ? [] : [r.p])))]
   if (apartmentIds.length === 0) return out
