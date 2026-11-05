@@ -683,7 +683,7 @@ export const GLOSSARY = {
   mainMeter: {
     topic: 'meters',
     title: 'Hauptzähler und Zwischenzähler',
-    short: 'Der Hauptzähler misst das ganze Haus, ein Zwischenzähler eine einzelne Wohnung. Fehlt nur Ihrer eigenen Wohnung der Zwischenzähler, gilt für sie der Rest des Hauptzählers, samt Messdifferenz. Fehlt er einer vermieteten Wohnung, rechnen Sie besser nach Fläche ab; zur Abrechnung nach Verbrauch sind Sie dann nicht verpflichtet. Rechnen Sie trotzdem so, lässt Mietfuchs den Rest des Hauptzählers beim Vermieter, sofern der Hauptzähler das ganze Jahr abgelesen ist; sonst tragen die übrigen Wohnungen diesen Verbrauch mit, und Mietfuchs warnt.',
+    short: 'Der Hauptzähler misst das ganze Haus, ein Zwischenzähler eine einzelne Wohnung. Fehlt nur Ihrer eigenen Wohnung der Zwischenzähler, gilt für sie der Rest des Hauptzählers, samt Messdifferenz. Fehlt er einer vermieteten Wohnung, rechnen Sie besser nach Fläche ab; zur Abrechnung nach Verbrauch sind Sie dann nicht verpflichtet. Rechnen Sie trotzdem so, lässt Mietfuchs den Rest des Hauptzählers beim Vermieter, sofern der Hauptzähler das ganze Jahr abgelesen ist; sonst tragen die übrigen Wohnungen diesen Verbrauch mit, und Mietfuchs warnt. Wollen Sie den Rest selbst verteilen, statt ihn zu tragen, stellen Sie das an der Kostenposition ein (siehe Allgemeinverbrauch und Bezugszähler).',
     example: 'Hauptzähler 200 m³, Zwischenzähler der Einliegerwohnung 40 m³, Ihre Wohnung ohne Zähler: Die übrigen 160 m³ gelten als Ihr Verbrauch. Bei 1.000 € Wasser trägt der Mieter der Einliegerwohnung 200 €, 800 € sind Ihr Eigenanteil.',
     needed: 'Wenn nicht jede Wohnung einen eigenen Zähler hat, etwa bei einer Einliegerwohnung. Lesen Sie den Hauptzähler dann zum 31.12. ab. Weicht die Summe der Wohnungszähler um mehr als etwa 20 % vom Hauptzähler ab, ist das Umlegen der Differenz nach der Rechtsprechung der Instanzgerichte angreifbar; klären Sie dann die Ursache.',
   },
@@ -692,7 +692,7 @@ export const GLOSSARY = {
   meterRest: {
     topic: 'meters',
     title: 'Allgemeinverbrauch',
-    short: 'Was ein Bezugszähler misst, aber keiner der Zähler dahinter: die Messdifferenz der Zähler, Treppenhaus, Außenhahn oder ein Leck, und der Verbrauch von Einheiten ohne eigenen Zähler. Bei einer Position nach Verbrauch können Sie ihn nach Fläche, Personen oder Einheiten verteilen, im Verhältnis der Zähler, oder selbst tragen; Zwischenzähler ohne Wohnung, etwa für den Garten, ziehen Sie vorher ab.',
+    short: 'Was ein Bezugszähler misst, aber keiner der Zähler dahinter: die Messdifferenz der Zähler, Treppenhaus, Außenhahn oder ein Leck, und der Verbrauch von Einheiten ohne eigenen Zähler. Bei einer Position nach Verbrauch können Sie ihn nach Fläche, Personen oder Einheiten verteilen, im Verhältnis der Zähler, oder selbst tragen; Zwischenzähler ohne Wohnung, etwa für den Garten, ziehen Sie vorher ab. Im Verhältnis der Zähler verteilt Mietfuchs nur unter den Einheiten der Abrechnung; Zähler von Einheiten außerhalb nehmen keinen Teil der Differenz mehr auf.',
     example: 'Der Hauptzähler zeigt 1.100 m³, die Wohnungszähler 400 und 600 m³: Der Allgemeinverbrauch sind 100 m³. Bei 1.100 € Wasser, Rest nach Fläche (40 und 60 m²), tragen die Mieter 400 € + 40 € = 440 € und 600 € + 60 € = 660 €.',
     norm: '§ 556a Abs. 1 BGB; BGH, Urteil vom 25.11.2009, VIII ZR 69/09',
     needed:
@@ -704,7 +704,7 @@ export const GLOSSARY = {
   referenceMeter: {
     topic: 'meters',
     title: 'Bezugszähler',
-    short: 'Der Zähler, von dem der Allgemeinverbrauch abgezogen wird: meist der Hauptzähler des Hauses, sonst ein Zähler für einen Teil des Hauses, etwa der Allgemeinstromzähler oder der Zähler einer Wohngemeinschaft. Hinter ihm hängen die Zähler, deren Verbrauch er mitmisst.',
+    short: 'Der Zähler, von dem der Allgemeinverbrauch abgezogen wird: meist der Hauptzähler des Hauses, sonst ein Zähler für einen Teil des Hauses, etwa der Allgemeinstromzähler oder der Zähler einer Wohngemeinschaft. Hinter ihm hängen die Zähler, deren Verbrauch er mitmisst. Misst er nur einen Teil des Hauses, beteiligen Sie unter „nur bestimmte Wohnungen beteiligen“ nur die Wohnungen dahinter, sonst bekommen auch Wohnungen davor einen Anteil.',
     example: 'Der Allgemeinstromzähler zeigt 2.000 kWh, der Zwischenzähler der Garage 200 kWh. Die Wohnungsstromzähler der Mieter hängen nicht dahinter. Bei 1.000 € trägt der Mieter der Garage 100 €, die übrigen 900 € (1.800 kWh) gehen nach Fläche an alle.',
     norm: '§ 556a Abs. 1 BGB',
     needed: `Nur wenn Sie den Allgemeinverbrauch verteilen. Lesen Sie den Bezugszähler zu Beginn und Ende des Zeitraums ab; deckt er ihn nicht, lässt sich der Rest nicht bilden. Für ihn gilt die Eichfrist wie für jeden Zähler (BGH VIII ZR 112/10). Messen alle Einheiten, verteilt Mietfuchs dann nach den Zählern; messen sie nicht, verteilt es die Position nicht.`,

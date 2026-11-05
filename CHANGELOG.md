@@ -6,6 +6,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Bezugszähler und verteilter Rest**: Bei einer Kostenposition nach Verbrauch wählen Sie jetzt, von welchem Zähler
+  der Allgemeinverbrauch abgezogen wird (Voreinstellung: der Hauptzähler), und wie der Rest verteilt wird: wie bisher
+  beim Vermieter, im Verhältnis der Zähler oder nach Fläche, Personen oder Einheiten, auch nur für bestimmte Wohnungen.
+  Zwischenzähler hinter dem Bezugszähler legen Sie dem Vermieter, Ihrem Eigenanteil, einer Wohnung oder einer Gruppe
+  von Wohnungen zu oder schließen sie aus. Neu ist der Zählerbereich „Zähler für einen Teil des Hauses“, etwa ein
+  Allgemeinstromzähler. Mietfuchs warnt, wenn der Rest bei ganz gemessenen Wohnungen über 20 % des Bezugsverbrauchs
+  liegt, und verteilt nicht, wenn gemessene und ungemessene Einheiten vermischt wären. Bestehende Abrechnungen bleiben
+  centgenau unverändert ([#98](https://github.com/speedone/mietfuchs/issues/98)).
+
 ## [0.15.2] – 2026-11-02
 
 ### Behoben

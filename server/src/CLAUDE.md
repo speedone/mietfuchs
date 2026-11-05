@@ -816,6 +816,22 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   nicht (`coveredDays`); ein Hauptzähler, der nicht den ganzen Zeitraum deckt, wird nicht zur Basis,
   sondern ergibt eine Warnung. Mit Teilnehmern gilt der Hauptzähler nie. `noConnection` je Zählertyp
   (#117, `unit_no_connection`): der Einheit fehlt dann kein Zähler.
+- **Bezugszähler und verteilter Rest** (#98, `server/src/meterRest.ts`, `planMeterRest`): `CostItem.meterRest`
+  wählt den Bezugszähler (Voreinstellung der Hauptzähler, sonst jeder Zähler), die Zähler dahinter und den
+  Restschlüssel: tragen (wie bisher, #116), im Verhältnis der Zähler, nach Fläche, Personen oder Einheiten,
+  wahlweise nur für bestimmte Einheiten. Zwischenzähler haben als Ziel Vermieter, `selfUse` (Eigenanteil, privat),
+  ausgeschlossen, eine Einheit oder eine Gruppe von Einheiten nach Fläche, Personen oder Einheiten.
+  `Meter.scope: 'common'` („Zähler für einen Teil des Hauses“) zählt nie als Hauptzähler; gefragt wird nur bei
+  kaltwasser, strom und sonstig ohne Einheit. Hinweise: `meter.rest-mixed`, `meter.rest-unavailable`,
+  `meter.sub-incomplete` (Fehler: Position nicht verteilt, der Vermieter trägt sichtbar), `meter.rest-high`
+  (Warnung über 20 % des Bezugsverbrauchs bei ganz gemessener Gruppe, Parameter `practice.meter-rest-high`),
+  `meter.rest-not-self` (`selfUse` gewählt, Eigenanteil aber nicht erlaubt: absetzbar). Der Eigenanteil über
+  `selfUse` folgt den Regeln von #116 (`selfRestShare`); der Rest des Hauptzählers aus #116 läuft jetzt über
+  `planMeterRest`, ohne dass sich eine Zahl ändert. **Im Verhältnis der Zähler** nehmen Zähler von Einheiten
+  außerhalb der Abrechnung keinen Teil der Differenz mehr auf (nur für neue `meterRest`-Positionen).
+  **Misst der Bezugszähler nur einen Teil des Hauses**, sind die Teilnehmer („nur bestimmte Wohnungen
+  beteiligen“) auf die Einheiten dahinter einzuschränken; Mietfuchs tut das nicht selbst. Heizung bleibt
+  ausgenommen (HeizkostenV, docs/heizung.md).
 - **Leerstand beim Personenschlüssel** (#177): Jede vermietbare Wohnung der Basis zählt je Tag ohne
   Mietverhältnis mit `VACANCY_PERSONS` (1) Personen; der Anteil bleibt als `vacancy` beim Vermieter.
   **Das ist eine Auslegung an genau einer Stelle** (höchstrichterlich nicht geklärt; VIII ZR 159/05,
