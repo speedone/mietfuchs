@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
@@ -170,6 +170,16 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     void api<Meter[]>(withProperty('/api/meters', propertyId))
       .then((all) => { if (alive) setObjectMeters(all) })
       .catch(() => { if (alive) setObjectMeters([]) })
+    return () => { alive = false }
+  }, [propertyId])
+  // Die Kostenpositionen des Objekts: Eine Wohnung, die eine als Empfänger nennt, kann kein Zimmer bekommen (#573).
+  const [objectCosts, setObjectCosts] = useState<CostItem[]>([])
+  useEffect(() => {
+    if (!propertyId) return
+    let alive = true
+    void api<CostItem[]>(withProperty('/api/costItems', propertyId))
+      .then((all) => { if (alive) setObjectCosts(Array.isArray(all) ? all : []) })
+      .catch(() => { if (alive) setObjectCosts([]) })
     return () => { alive = false }
   }, [propertyId])
   // Die Heizanlagen (Heizung PR 5): Rechnet die Anlage einer Wohnung die Heizkosten getrennt ab, fragen
@@ -418,7 +428,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     return units.flatMap((u) => (u.parentUnitId && flats.has(u.parentUnitId) ? [] : [u, ...roomsOf(u.id)]))
   }, [units, flats])
   const unitHasRooms = unitForm?.id !== undefined && flats.has(unitForm.id)
-  const parentChoices = unitForm ? parentUnitOptions(units, tenancies, objectMeters, unitForm.id ?? '', unitForm.parentUnitId) : []
+  const parentChoices = unitForm ? parentUnitOptions(units, tenancies, objectMeters, unitForm.id ?? '', unitForm.parentUnitId, objectCosts) : []
   const tenancyUnits = units.filter((u) => u.id === tenForm?.unitId || !flats.has(u.id))
   // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
   const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)

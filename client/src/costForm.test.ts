@@ -70,6 +70,8 @@ import {
   restUnitChoices,
   showsRoomSplit,
   ROOM_SPLIT_OPTIONS,
+  recipientUnits,
+  namedRecipients,
 } from './costForm'
 
 const unit = (id: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1',
@@ -1389,6 +1391,32 @@ describe('Zähler der Wohnung auf die Zimmer verteilen', () => {
     expect(buildCostItemBody({ ...f, meterType: 'kaltwasser' }, [wg, z1, z2], 2025)).toHaveProperty('body.roomSplit', 'persons')
   })
 })
+
+// Die Wohnung mit Zimmern bekommt selbst keinen Anteil (guardRoomRecipients, 400): Die Empfängerlisten des Formulars bieten sie nicht an.
+describe('Wohnung mit Zimmern als Empfänger', () => {
+  const wg = unit('wg', { name: 'WG' })
+  const units = [wg, unit('z1', { parentUnitId: 'wg' }), unit('z2', { parentUnitId: 'wg' }), unit('eg')]
+
+  test('ohne Nennung steht sie nicht in der Auswahl; was gespeichert ist, bleibt sichtbar', () => {
+    expect(recipientUnits(units, []).map((u) => u.id)).toEqual(['z1', 'z2', 'eg'])
+    expect(recipientUnits(units, ['wg']).map((u) => u.id)).toEqual(['wg', 'z1', 'z2', 'eg'])
+  })
+
+  test('genannt ist sie als Direktzuordnung, Teilnehmer, Anteil, Eigenbetrag, Empfänger des Rests oder Zielgruppe', () => {
+    expect(namedRecipients(form({ directUnitId: 'wg' }))).toEqual(['wg'])
+    expect(namedRecipients(form({ participants: ['wg', 'eg'] }))).toEqual(['wg', 'eg'])
+    expect(namedRecipients(form({ customShares: { wg: '50', eg: '' } }))).toEqual(['wg'])
+    expect(namedRecipients(form({ selfAmounts: { wg: '1,00', eg: '' } }))).toEqual(['wg'])
+    const rest: MeterRest = { referenceMeterId: null, behindMeterIds: null, key: 'area', unitIds: ['wg'], subMeters: [{ meterId: 'm', target: { key: 'area', unitIds: ['eg'] } }] }
+    expect(namedRecipients(form({ meterRest: rest }))).toEqual(['wg', 'eg'])
+    expect(namedRecipients(form())).toEqual([])
+  })
+
+  test('Teilnehmer: alle Zimmer und die Einheit angehakt heißt alle, auch wenn die Wohnung in der Liste fehlt', () => {
+    const built = buildCostItemBody(form({ key: 'area', participants: ['z1', 'z2', 'eg'] }), recipientUnits(units, []), 2025)
+    expect(built).toHaveProperty('body.participantUnitIds', null)
+  })
+})
 const itemOf = (key: CostKey): CostItemOf => ({
-  id: 'c1', propertyId: 'objekt-1', period: '2025', category: 'Wasser', description: 'Wasser', amountCents: 10000, key, meterType: 'kaltwasser',
-} as CostItemOf)
+  id: 'c1', propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser', amountCents: 10000, key, meterType: 'kaltwasser',
+})

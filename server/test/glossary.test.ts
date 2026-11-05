@@ -720,6 +720,8 @@ test('Zimmer einer Wohnung: Beispiel nachgerechnet, Heizung, § 12 und Wechsel z
   assert.match(t.needed, new RegExp(`${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} %`))
   assert.equal(valueAt(hkvCutNotByConsumption, LAW_AS_OF), 15)
   assert.match(t.needed, /§ 12 Abs\. 1 HeizkostenV/)
+  assert.match(t.needed, /nach dieser Auslegung/)
+  assert.doesNotMatch(t.needed, /Mietfuchs nennt den Betrag/)
   assert.match(t.needed, /Wechsel zur WG/)
   assert.match(t.needed, /Nutzungswechsel/)
   assert.match(t.needed, /§ 556 Abs\. 4 BGB/)

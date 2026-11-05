@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { CostItem, MeterType, Tenancy, Unit } from './types'
 import { usageOf } from './types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, flatIdsWithRooms, parentUnitOptions, roomCountOf, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
@@ -313,6 +313,20 @@ describe('Zimmer einer Wohnung', () => {
     ]
     const meters = [{ type: 'waerme' as const, unitId: 'heiz' }, { type: 'kaltwasser' as const, unitId: 'ok' }]
     expect(parentUnitOptions(units, [], meters, 'neu', '').map((o) => o.id)).toEqual(['ok'])
+  })
+
+  test('nicht angeboten: eine Wohnung, die eine Kostenposition als Empfänger nennt (guardRooms, apartmentProblems)', () => {
+    const units = [unit('a'), unit('b'), unit('c'), unit('d'), unit('e'), unit('f'), unit('ok')]
+    const item = (patch: Partial<CostItem>): CostItem => ({ id: 'c', propertyId: 'p1', period: periodKey('2025-01'), category: 'Wasser/Abwasser', description: 'x', amountCents: 100, key: 'area', ...patch })
+    const items = [
+      item({ key: 'direct', directUnitId: 'a' }),
+      item({ participantUnitIds: ['b'] }),
+      item({ key: 'custom', customShares: { c: 50 } }),
+      item({ selfAmounts: { d: 100 } }),
+      item({ key: 'meter', meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'area', unitIds: ['e'], subMeters: [] } }),
+      item({ key: 'meter', meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [{ meterId: 'm', target: { key: 'area', unitIds: ['f'] } }] } }),
+    ]
+    expect(parentUnitOptions(units, [], [], 'neu', '', items).map((o) => o.id)).toEqual(['ok'])
   })
 
   test('eine Wohnung mit eigenen Zimmern liegt in keiner anderen: keine Auswahl', () => {

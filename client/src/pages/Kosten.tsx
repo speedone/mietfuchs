@@ -38,6 +38,8 @@ import {
   withMeterRestType,
   showsMeterRest,
   showsRoomSplit,
+  recipientUnits,
+  namedRecipients,
   ROOM_SPLIT_OPTIONS,
   meterRestDroppedText,
   keepMeterRest,
@@ -144,7 +146,7 @@ const TARGET_INVALID = 'Ziel: Das gespeicherte Ziel passt nicht dazu, wie die An
 const TARGET_SHORT = 'Ziel neu wählen'
 
 
-export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone, onOpenReceipt, onOpenAiSettings, onOpenMeters, receiptStart, onReceiptStartDone, onNewCostItem, onOpenInbox, renderThumb = renderThumbnail, readReceiptText = receiptText }: Props) {
+export default function Kosten({ units: allUnits, settings, tenancies = [], focus, onFocusDone, onOpenReceipt, onOpenAiSettings, onOpenMeters, receiptStart, onReceiptStartDone, onNewCostItem, onOpenInbox, renderThumb = renderThumbnail, readReceiptText = receiptText }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   // Der gewählte Abrechnungszeitraum (#208). `year` ist das Kalenderjahr, in dem er beginnt: Belege
@@ -163,6 +165,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // wird er festgehalten (Zuordnung).
   const [meterData, setMeterData] = useState<'loading' | 'ok' | 'failed'>('loading')
   const [form, setForm] = useState<ItemForm | null>(null)
+  // Eine Wohnung mit Zimmern bekommt selbst keinen Anteil (#573): Die Empfängerlisten bieten sie nur an, wo sie schon genannt ist.
+  const namedKey = form ? namedRecipients(form).join('|') : ''
+  const units = useMemo(() => recipientUnits(allUnits, namedKey ? namedKey.split('|') : []), [allUnits, namedKey])
   // Verlangt die Vorschau des Aufteilens das Jahr der Zahlung (#208), zeigt das Formular das Feld
   // auch bei einem Zeitraum in einem Kalenderjahr.
   const [needsTaxYear, setNeedsTaxYear] = useState(false)
@@ -1396,7 +1401,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <MeterRestFields form={form} meters={meters} units={units} onChange={setForm} field={formErrors.field('meterRest')} />
             )}
             {/* #573: Der Zähler einer Wohnung mit Zimmern geht erst auf die Wohnung, dann nach Fläche oder Personentagen auf die Zimmer. */}
-            {showsRoomSplit(form, units, meters) && (
+            {showsRoomSplit(form, allUnits, meters) && (
               <label className="field">
                 Zähler der Wohnung auf die Zimmer verteilen nach:
                 <select value={form.roomSplit} onChange={(e) => setForm({ ...form, roomSplit: e.target.value === 'persons' ? 'persons' : 'area' })}>
