@@ -419,6 +419,8 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
     customShares: shares,
     participantUnitIds: participants,
     externalBasis: total !== null ? { measure: form.externalMeasure, total, totalCents: 0 } : { measure: form.externalMeasure, total: 0, totalCents: 0 },
+    // Gesendet wird die Angabe nur, wo das Formular sie zeigt (`buildCostItemBody`); so auch hier.
+    meterRest: showsMeterRest(form) ? form.meterRest : null,
   }, all)
 }
 
@@ -768,7 +770,8 @@ export function withGeneralChoice(form: ItemForm, id: string, items: readonly Co
   const g = items.find((c) => c.id === id)
   if (!g) return { ...form, operatingPowerGeneralId: '' }
   const f = itemToForm(g)
-  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants, notAgreed: f.notAgreed }
+  // Bezugszähler und Rest (#98) gehören dazu (Abschlussdurchsicht, I1); die gemerkte Angabe einer anderen Sparte nicht.
+  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants, notAgreed: f.notAgreed, meterRest: f.meterRest, meterRestKept: null }
 }
 
 // Der Rumpf trägt die drei Felder bei Heizkosten und beim Allgemeinstrom (Review Focus 3): Das Formular

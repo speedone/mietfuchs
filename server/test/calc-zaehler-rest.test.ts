@@ -423,3 +423,35 @@ test("'selfUse' ohne gemeinsamen Tag der Eigennutzung: kein Eigenanteil und der 
   assert.match(text, /geht an den Vermieter/)
   assert.doesNotMatch(text, /für die Tage als Eigenanteil/)
 })
+
+// ---------- Abschlussdurchsicht (#98) ----------
+
+// I1: Der Abzug beim Betriebsstrom ist ein Ausschnitt seiner Stromrechnung. Rechnet er ohne deren Angabe zum Bezugszähler,
+// zahlen die Mieter den Abzug zu wenig ab (400/600 statt 320/480 €); das muss der Hinweis sagen.
+test('Betriebsstrom: Abzug ohne die Angabe zum Bezugszähler seiner Stromrechnung ergibt heating.operating-power-key', () => {
+  const general = rest({ referenceMeterId: 'as', behindMeterIds: [] })
+  const g: SnapshotCostItem = { id: 'g', period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Allgemeinstrom', amountCents: 100000, key: 'meter', meterType: 'strom', meterRest: general }
+  const d: SnapshotCostItem = { id: 'd', period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Betriebsstrom', amountCents: -20000, key: 'meter', meterType: 'strom', operatingPower: 'deduction', operatingPowerGeneralId: 'g' }
+  const src: Partial<SnapshotSource> = {
+    units: [room('a', 40), room('b', 60)], tenancies: [lease('t-a', 'a'), lease('t-b', 'b')],
+    meters: [gauge('as', null, 'strom', 'common')], readings: used('as', 5000),
+  }
+  const without = run(src, [g, d])
+  assert.ok(codes(without).includes('heating.operating-power-key'), without.warnings.join(' | '))
+  const copied = run(src, [g, { ...d, meterRest: general }])
+  assert.deepEqual([share(copied, 't-a'), share(copied, 't-b'), copied.landlord.totalCents], [32000, 48000, 0])
+  assert.ok(!codes(copied).includes('heating.operating-power-key'))
+})
+
+// M3: Ein anderer Empfänger des Allgemeinverbrauchs ist ein anderer Schlüssel als im Vorjahr.
+test('Schlüssel gegenüber dem Vorjahr: ein anderer Rest-Schlüssel ergibt key.changed-from-previous-year', () => {
+  const before = water(110000, rest({ key: 'area' }), { id: 'alt', period: calendarPeriod(2024) })
+  const changed = (now: MeterRest | null) => computeSettlement(snapshotOf({
+    ...pair(1100), costItems: [before, water(110000, now)], payments: [], closedSettlements: [],
+  } as SnapshotSource, 2025)).notices.filter((n) => n.code === 'key.changed-from-previous-year')
+  assert.equal(changed(rest({ key: 'area' })).length, 0)
+  const found = changed(rest({ key: 'meter' }))
+  assert.equal(found.length, 1)
+  assert.match(found[0]?.text ?? '', /Allgemeinverbrauch/)
+  assert.equal(changed(null).length, 1)
+})

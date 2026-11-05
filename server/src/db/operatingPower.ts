@@ -62,6 +62,8 @@ const distributionOf = (c: CostItem) => ({
   ...(c.directUnitId ? { directUnitId: c.directUnitId } : {}),
   ...(c.customShares ? { customShares: c.customShares } : {}),
   ...(c.participantUnitIds ? { participantUnitIds: c.participantUnitIds } : {}),
+  // Bezugszähler und Rest (#98, Abschlussdurchsicht I1): ohne sie rechnete der Abzug nach den Wohnungszählern.
+  ...(c.meterRest ? { meterRest: c.meterRest } : {}),
 })
 
 export async function bookOperatingPower(db: Database, plantId: string, body: unknown, newId: () => string): Promise<OperatingPowerBooking | null> {

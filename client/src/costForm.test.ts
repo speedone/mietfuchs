@@ -1283,3 +1283,12 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(itemToForm({ ...item, meterRest: undefined }).meterRest).toBeNull()
   })
 })
+
+// Abschlussdurchsicht von #98, I1: Der Abzug beim Betriebsstrom übernimmt auch Bezugszähler und Rest seiner Stromrechnung.
+test('Betriebsstrom: Abzug übernimmt Bezugszähler und Rest der Stromrechnung', () => {
+  const meterRest: MeterRest = { referenceMeterId: 'as', behindMeterIds: [], key: 'area', unitIds: null, subMeters: [] }
+  const strom: CostItemOf = { id: 'strom', propertyId: 'o', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 100000, key: 'meter', meterType: 'strom', meterRest }
+  const hand = withDeductionChoice({ ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-300,00', key: 'area' }, 'service')
+  const mit = withGeneralChoice(hand, 'strom', [strom])
+  expect([mit.key, mit.meterType, mit.meterRest]).toEqual(['meter', 'strom', meterRest])
+})

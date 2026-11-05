@@ -96,7 +96,7 @@ import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
-import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
+import { allocationOf, comparablePrevious, sameAllocation, sameMeterRest, sameUnits } from '../../shared/allocation.ts'
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, leavesRentalWithin, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
@@ -3518,7 +3518,8 @@ function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostIt
         : sameKey.meterType !== now.meterType ? 'einem anderen Zählertyp'
           : sameKey.directUnitId !== now.directUnitId ? 'einer anderen Wohnung'
             : now.key === 'custom' ? 'anderen vereinbarten Anteilen'
-              : 'einem anderen Maßstab der Gemeinschaft'
+              : !sameMeterRest(sameKey.meterRest ?? null, now.meterRest ?? null) ? 'einer anderen Verteilung des Allgemeinverbrauchs (Bezugszähler, Rest oder Zwischenzähler)'
+                : 'einem anderen Maßstab der Gemeinschaft'
     } als ${at.previousLabel}.`
   // Wortlaut nachgelesen auf gesetze-im-internet.de: § 556a BGB und § 6 Abs. 4 HeizkostenV. Für
   // Heizung und Warmwasser geht die Verordnung vor und erlaubt die Änderung in weiteren Fällen.

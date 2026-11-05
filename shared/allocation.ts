@@ -7,12 +7,12 @@
 // Eine eigene Staffel „Schlüssel je Kostenart ab Jahr“ gibt es bewusst nicht: Die Positionen des
 // Vorjahres tragen den Schlüssel schon, und ein zweites Abbild davon liefe auseinander (siehe
 // docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
-import type { CostItem, CostKey, ExternalMeasure, MeterType, PeriodKey } from './types.ts'
+import type { CostItem, CostKey, ExternalMeasure, MeterRest, MeterType, PeriodKey } from './types.ts'
 import type { PeriodContext } from './period.ts'
 
 // Der Zeitraum ist optional: `allocationOf` braucht ihn nicht, nur die Suche nach dem Vorzeitraum.
 export type AllocatedItem = Pick<CostItem, 'category' | 'key' | 'description'> &
-  Partial<Pick<CostItem, 'period' | 'meterType' | 'directUnitId' | 'customShares' | 'participantUnitIds' | 'externalBasis' | 'notAgreedTenancyIds'>>
+  Partial<Pick<CostItem, 'period' | 'meterType' | 'directUnitId' | 'customShares' | 'participantUnitIds' | 'externalBasis' | 'notAgreedTenancyIds' | 'meterRest'>>
 
 // Der Schlüssel einer Position mit genau den Angaben, die zu ihm gehören. Ein Zählertyp, der an
 // einer Flächenposition stehengeblieben ist, gehört nicht dazu. Die Kosten der Gemeinschaft
@@ -30,6 +30,10 @@ export type Allocation = {
   // den „Schlüssel“. Der Abzug beim Betriebsstrom ist dagegen ein Ausschnitt seiner Stromrechnung und muss auch
   // hier übereinstimmen (`heating.operating-power-key`).
   notAgreedTenancyIds?: string[] | null
+  // Bezugszähler und verteilter Rest (#98), nur nach Verbrauch und nur, wenn angegeben: Wer den Allgemeinverbrauch
+  // bekommt, gehört zum Schlüssel (Durchsicht, M3), und der Abzug beim Betriebsstrom muss ihn mit seiner Stromrechnung
+  // teilen. Ohne Angabe fehlt das Feld, so bleibt der Vergleich aller übrigen Positionen, wie er war.
+  meterRest?: MeterRest
 }
 
 // Bei diesen Schlüsseln wirken Teilnehmer (#94); das Formular (client/src/costForm.ts) nimmt die
@@ -56,7 +60,21 @@ export function allocationOf(item: AllocatedItem, basisUnitIds?: readonly string
     participantUnitIds,
     externalBasis: k === 'external' && item.externalBasis ? { measure: item.externalBasis.measure, total: item.externalBasis.total } : null,
     ...(contract ? { notAgreedTenancyIds: item.notAgreedTenancyIds && item.notAgreedTenancyIds.length > 0 ? item.notAgreedTenancyIds : null } : {}),
+    ...(k === 'meter' && item.meterRest ? { meterRest: item.meterRest } : {}),
   }
+}
+
+// Dieselbe Angabe zum Bezugszähler? Listen als Mengen, die Zwischenzähler je Zähler mit ihrem Ziel.
+const sameIds = (a: readonly string[] | null, b: readonly string[] | null): boolean =>
+  a === null || b === null ? a === b : a.length === b.length && a.every((x) => b.includes(x))
+const sameTarget = (a: MeterRest['subMeters'][number]['target'], b: MeterRest['subMeters'][number]['target']): boolean =>
+  typeof a === 'string' || typeof b === 'string' ? a === b : a.key === b.key && sameIds(a.unitIds, b.unitIds)
+export function sameMeterRest(a: MeterRest | null, b: MeterRest | null): boolean {
+  if (a === null || b === null) return a === b
+  return a.referenceMeterId === b.referenceMeterId && a.key === b.key &&
+    sameIds(a.behindMeterIds, b.behindMeterIds) && sameIds(a.unitIds, b.unitIds) &&
+    a.subMeters.length === b.subMeters.length &&
+    a.subMeters.every((s) => b.subMeters.some((t) => t.meterId === s.meterId && sameTarget(s.target, t.target)))
 }
 
 // Dieselben Wohnungen, gleich in welcher Reihenfolge; `null` heißt alle.
@@ -79,7 +97,8 @@ export function sameAllocation(a: Allocation, b: Allocation): boolean {
     sameShares(a.customShares, b.customShares) &&
     sameUnits(a.participantUnitIds, b.participantUnitIds) &&
     (a.externalBasis?.measure ?? null) === (b.externalBasis?.measure ?? null) &&
-    sameUnits(a.notAgreedTenancyIds ?? null, b.notAgreedTenancyIds ?? null)
+    sameUnits(a.notAgreedTenancyIds ?? null, b.notAgreedTenancyIds ?? null) &&
+    sameMeterRest(a.meterRest ?? null, b.meterRest ?? null)
 }
 
 // Die Positionen derselben Kostenart im Vorzeitraum (#208): der Zeitraum unmittelbar davor und kein

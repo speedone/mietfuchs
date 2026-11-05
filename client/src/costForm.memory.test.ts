@@ -210,3 +210,14 @@ describe('Durchsicht: breite Kostenart, KI-Zeilen mit Einschränkung, unvollstä
     expect(text).toMatch(/Zustimmung|Erklärung/)
   })
 })
+
+// Abschlussdurchsicht von #98, M3: Bezugszähler und Rest gehören zum Schlüssel, im Formular wie in der Abrechnung.
+describe('Hinweis im Formular: anderer Allgemeinverbrauch als im Vorjahr', () => {
+  const rest = { referenceMeterId: null, behindMeterIds: null, key: 'area' as const, unitIds: null, subMeters: [] }
+  const items = [item({ period: calendarPeriod(2025), category: 'Wasser/Abwasser', key: 'meter', meterType: 'kaltwasser', meterRest: rest })]
+  const water = { ...EMPTY_ITEM_FORM, category: 'Wasser/Abwasser', key: 'meter' as const, meterType: 'kaltwasser' as const }
+  test('derselbe Rest: nichts; ein anderer Rest-Schlüssel: Hinweis', () => {
+    expect(keyChangeNotice({ ...water, meterRest: rest }, UNITS, ctx(items))).toBe('')
+    expect(keyChangeNotice({ ...water, meterRest: { ...rest, key: 'meter' } }, UNITS, ctx(items))).toMatch(/2025/)
+  })
+})
