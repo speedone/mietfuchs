@@ -6177,10 +6177,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           if (restKey === 'landlord') mainRestRaw += restRaw
           else if (restKey === 'selfUse') {
             // Eigenanteil nur unter den Bedingungen von #116 (`selfRestShare`), sonst abziehbar beim Vermieter.
-            const unmeasured = candidates.filter((u) => occupied.has(u.id) && connected(u) && !measuredUnit(u))
+            const selfIds = new Set(b.selfUnits.map((u) => u.id))
+            // M1 der Abschlussdurchsicht: Eine ganz selbstgenutzte Einheit mit eigenem Zähler, der nicht hinter dem Bezug
+            // hängt, ist gemessen, nur woanders; ihr Verbrauch steckt nicht im Rest und macht ihn nicht zum Eigenanteil.
+            // Eine vermietete in derselben Lage zählt weiter als ohne Zähler (im Zweifel abziehbar): Hängt sie doch dahinter,
+            // trüge sonst der Vermieter privat, was ein Mieter verbraucht hat.
+            const measuredElsewhere = (u: SnapshotUnit) => selfIds.has(u.id) && wholeSelf(u) && ownMeter(u)
+            const unmeasured = candidates.filter((u) => occupied.has(u.id) && connected(u) && !measuredUnit(u) && !measuredElsewhere(u))
+            const selfElsewhere = candidates.filter((u) => occupied.has(u.id) && connected(u) && !measuredUnit(u) && measuredElsewhere(u))
             const gaps = candidates.filter((u) => occupied.has(u.id) && measuredUnit(u) &&
               unitCoveredDays(behindOf(u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo) < neededDays(u))
-            const selfIds = new Set(b.selfUnits.map((u) => u.id))
             const own = selfRestShare({
               unmeasured: unmeasured.map((u) => ({ unitId: u.id, selfUsed: selfIds.has(u.id), wholeSelf: wholeSelf(u) })),
               partial: gaps.length,
@@ -6204,6 +6210,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             if (own.notice !== null && notBehind.length > 0) {
               const many = notBehind.length > 1
               warn('meter.unit-without-meter', `${where}: ${andList(notBehind.map((u) => u.name))} ${many ? 'haben' : 'hat'} einen Zähler „${meterTypeLabel(type)}“, der nicht hinter dem Bezugszähler hängt. Als Teil der Verteilbasis ${many ? 'gelten sie' : 'gilt sie'} hier als Einheit ohne Zähler, deshalb geht der Allgemeinverbrauch an den Vermieter und gilt nicht als Eigenanteil. ${many ? 'Hängen sie' : 'Hängt sie'} nicht am Bezugszähler, wählen Sie bei der Position „nur bestimmte Wohnungen beteiligen“ und nehmen nur die Wohnungen dahinter auf.`, unitSubject(notBehind))
+            }
+            // Immer gesagt, auch wenn kein anderer Satz kommt: Sonst bliebe still offen, warum der Rest kein Eigenanteil ist.
+            if (selfElsewhere.length > 0) {
+              const many = selfElsewhere.length > 1
+              warn('meter.unit-without-meter', `${where}: ${andList(selfElsewhere.map((u) => u.name))} ${many ? 'haben' : 'hat'} einen Zähler „${meterTypeLabel(type)}“, der nicht hinter dem Bezugszähler hängt. Ihr Verbrauch steckt deshalb nicht im Allgemeinverbrauch, und der Allgemeinverbrauch gilt dafür nicht als Ihr Eigenanteil. Hängt der Zähler doch hinter dem Bezugszähler, haken Sie ihn bei der Position unter „Zähler hinter dem Bezugszähler“ an; sonst wählen Sie „nur bestimmte Wohnungen beteiligen“ und nehmen nur die Wohnungen dahinter auf.`, unitSubject(selfElsewhere))
             }
             // Bei 'standard' hat niemand einen Eigenanteil gewählt; dass der Rest beim Vermieter bleibt, ist wie bisher.
             if (own.reason === 'none-unmetered' && !isStandard) {

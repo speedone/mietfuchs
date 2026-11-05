@@ -533,3 +533,20 @@ test("'standard' mit Garten und kurzem Hauptzähler: nach den Zählern wie bei #
   // 200 m³ der Gewerbeeinheit und 100 m³ Garten: 60.000 und 30.000.
   assert.deepEqual([share(s, 't-g'), share(s, 't-w1'), part(s, 'mainMeterRest')], [60000, 0, 30000])
 })
+
+// M1: Eine selbstgenutzte Einheit, deren eigener Zähler nicht hinter dem Bezug hängt, ist gemessen (nur woanders); ihr
+// Verbrauch steckt nicht im Rest. Vorher galt sie als Einheit ohne Zähler, und der ganze Rest (600 von 1.000 €) wurde
+// still privat.
+test("'selfUse': selbstgenutzte Einheit mit Zähler, der nicht hinter dem Bezug hängt, macht den Rest nicht still zum Eigenanteil", () => {
+  const src: SnapshotSource = {
+    units: [room('a', 40), room('s', 60, { selfUsed: true, participates: false, selfPersons: 1 })], tenancies: [lease('t-a', 'a')],
+    meters: [gauge('za', 'a', 'kaltwasser'), gauge('zs', 's', 'kaltwasser'), gauge('ref', null, 'kaltwasser', 'common')],
+    readings: [...used('za', 400), ...used('zs', 300), ...used('ref', 1000)], costItems: [], payments: [], closedSettlements: [],
+  }
+  const s = settleSrc(src, water(100000, rest({ referenceMeterId: 'ref', behindMeterIds: ['za'], key: 'selfUse' })))
+  assert.equal(share(s, 't-a'), 40000)
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.equal(part(s, 'mainMeterRest'), 60000)
+  assert.ok(codes(s).includes('meter.rest-not-self'), s.warnings.join(' | '))
+  assert.ok(s.notices.some((n) => n.code === 'meter.unit-without-meter' && /s hat einen Zähler „Kaltwasser“, der nicht hinter dem Bezugszähler hängt/.test(n.text)), s.warnings.join(' | '))
+})
