@@ -470,3 +470,49 @@ test('Invariante: Bestände mit Zimmern - Summe, Vorzeichen, Eigenanteil im Verm
   }
   assert.ok(items === 1500 && split >= 200, `zu wenige Fälle mit Wohnungszähler: ${split}`)
 })
+
+// ---------- Nachbesserung Task 3 (Durchsicht) ----------
+
+test('Wohnungszähler nach Personentagen ohne Personen: Hinweis item.no-basis mit Betrag, Teil sichtbar beim Vermieter', () => {
+  const zero = (id: string, unitId: string) => tenancy(id, unitId, { persons: 0, personHistory: [{ from: '2025-01-01', persons: 0 }] })
+  const leases = [tenancy('t-a', 'a'), zero('t-z1', 'z1'), zero('t-z2', 'z2'), zero('t-z3', 'z3')]
+  for (const meterRest of [undefined, { referenceMeterId: null, behindMeterIds: ['za', 'zw'], key: 'area' as const, unitIds: null, subMeters: [] }]) {
+    const s = settle(waterHouse({ tenancies: leases }, [water({ roomSplit: 'persons', ...(meterRest ? { meterRest } : {}) })]))
+    assert.equal(shareOf(s, 't-a'), 20000)
+    assert.deepEqual(shares(s, ROOMS), [0, 0, 0])
+    assert.equal(s.landlord.totalCents, 40000)
+    const n = s.notices.find((x) => x.code === 'item.no-basis') ?? assert.fail(`kein Hinweis: ${codes(s).join()}`)
+    assert.match(n.text, /keine Personen/)
+    assert.match(n.text, /400,00 €/)
+  }
+})
+
+test('Wohnungszähler nach Fläche mit überschneidenden Mietverhältnissen in einem Zimmer (#204): kein negativer Teil, Summen stimmen', () => {
+  const rest = { referenceMeterId: null, behindMeterIds: ['za', 'zw'], key: 'area' as const, unitIds: null, subMeters: [] }
+  const overlap = [tenancy('t-a', 'a'), tenancy('t-z1', 'z1'), tenancy('t-z1b', 'z1', { start: '2025-07-01' }), tenancy('t-z2', 'z2')]
+  for (const meterRest of [undefined, rest]) {
+    for (const z3 of [tenancy('t-z3', 'z3'), tenancy('t-z3', 'z3', { end: '2025-06-30' })]) {
+      const leases = [...overlap, z3]
+      const s = settle(waterHouse({ tenancies: leases }, [water(meterRest ? { meterRest } : {})]))
+      const context = `${meterRest ? 'Bezug' : 'ohne'} ${z3.end ?? 'ganzjährig'} ${JSON.stringify(s.landlord.rows)}`
+      assertLandlordParts(s, leases.length, context)
+      assertControlSums(s, context)
+      // Gerechnet wie erfasst (#204), wie bei jeder Wohnung nach Fläche oder Verbrauch: Beide Mietverhältnisse von
+      // Zimmer 1 tragen ihren Teil, Hinweis tenancy.overlap, und der Mehrbetrag steht als negativer Leerstand beim
+      // Vermieter. Kein anderer Grund wird negativ, auch nicht der Teil außerhalb.
+      for (const r of s.landlord.rows) for (const p of r.landlordParts ?? []) if (p.reason !== 'vacancy') assert.ok(p.cents >= 0, `${p.reason} ${p.cents}: ${context}`)
+      assert.equal(shareOf(s, 't-z1'), 12000, context)
+      assert.ok(s.notices.some((n) => n.code === 'tenancy.overlap'), context)
+      // Der Vermieter trägt den leeren Teil von Zimmer 3 (160 € × 184 / 365) abzüglich des Mehrbetrags von Zimmer 1, wie
+      // die eine Verteilung (#202) jeden Mehrbetrag aus #204 mit dem Rest des Vermieters verrechnet.
+      const empty = z3.end ? Math.round(16000 * 184 / 365) : 0
+      assert.ok(Math.abs(s.landlord.totalCents - (empty - shareOf(s, 't-z1b'))) <= 1, `${s.landlord.totalCents}: ${context}`)
+    }
+  }
+})
+
+test('rooms.household-cost: nicht bei Entwässerung (Niederschlagswasser)', () => {
+  const regen = item({ id: 'n', category: 'Niederschlagswasser', description: 'Niederschlagswasser', amountCents: 12000, key: 'area', participantUnitIds: ['z1', 'z2', 'z3'] })
+  const s = settle(wgHouse(80, { costItems: [regen] }))
+  assert.ok(!codes(s).includes('rooms.household-cost'), codes(s).join())
+})
