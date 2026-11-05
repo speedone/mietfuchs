@@ -297,6 +297,11 @@ const noticeKinds = {
   // Zimmer einer Wohnung (#573): Ohne Fläche der Wohnung gelten die Zimmerflächen, wie sie stehen. Fehlen darin Küche,
   // Bad und Flur, tragen die übrigen Mieter im Haus zu viel; das Geld landet vermutlich anders als gewollt.
   'unit.rooms-area': { level: 'warning', title: 'Wohnfläche der Wohnung mit Zimmern fehlt', terms: ['distributionBasis'] },
+  // Ein Zimmer außerhalb der Verteilbasis einer Position: Sein Teil bleibt beim Vermieter, obwohl vielleicht ein Mieter
+  // ihn tragen sollte; das Geld landet vermutlich anders als gewollt.
+  'rooms.outside-basis': { level: 'warning', title: 'Zimmer außerhalb der Verteilbasis', terms: ['distributionBasis'] },
+  // Kosten nur einer Wohnung mit Zimmern (Strom, Internet der WG) sind keine Betriebskosten (#573, Entwurf „Rechtliche Grundlage“).
+  'rooms.household-cost': { level: 'warning', title: 'Kosten nur der Wohnung mit Zimmern', terms: ['distributionBasis'] },
   // Nutzungswechsel (#259): eine Auskunft, nichts ist falsch erfasst; färbt das Cockpit nicht.
   'usage.changed': { level: 'hint', title: 'Nutzung wechselt im Zeitraum', terms: ['usageChange', 'ownShare'] },
   // Ein Mietverhältnis in einer Zeit, in der die Einheit nicht vermietet ist: Die Angaben widersprechen sich, und
@@ -620,6 +625,14 @@ function unitUnknownText(where: string, meters: readonly UnitMeterRef[]): string
 function unitsMixedText(where: string, meters: readonly UnitMeterRef[], consequence: string): string {
   return `${where}: Die Zähler stehen in Einheiten verschiedener Größen: ${metersByUnitText(meters)}. Mietfuchs rechnet sie nicht ineinander um${consequence ? `. ${consequence}` : '.'} ` +
     'Prüfen Sie auf der Seite Zähler, welche Einheit jeder Zähler wirklich zeigt; Zähler, nach denen gemeinsam verteilt wird, brauchen dieselbe.'
+}
+// Eine Wohnung mit Zimmern, deren Zähler auf die Zimmer geht, und ein Zimmer mit eigenem Zähler derselben Sparte
+// (#573): Der Zähler der Wohnung misst dessen Verbrauch mit, auf die Zimmer geteilt zahlte es ihn doppelt.
+function mixedRoomsText(where: string, type: string, rooms: readonly { name: string }[]): string {
+  const many = rooms.length > 1
+  return `${where}: ${andList(rooms.map((r) => r.name))} ${many ? 'haben' : 'hat'} einen eigenen Zähler „${meterTypeLabel(type)}“, die Wohnung ${many ? 'dieser Zimmer' : 'dieses Zimmers'} aber auch einen. ` +
+    `Der Zähler der Wohnung misst den Verbrauch ${many ? 'dieser Zimmer' : 'des Zimmers'} mit; auf die Zimmer geteilt, zahlte ${many ? 'ihr Mieter' : 'sein Mieter'} ihn doppelt. ` +
+    'Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Erfassen Sie den Verbrauch der Zimmer entweder nur am Zähler der Wohnung oder an Zählern aller Zimmer.'
 }
 // Zum ersten Zähler, dessen Einheit nicht passt, sonst zum ersten.
 function unitProblemSubject(meters: readonly UnitMeterRef[]): NoticeSubject | undefined {
@@ -3641,6 +3654,33 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Ganz selbstgenutzt im Zeitraum: Nur dann wird der Rest des Hauptzählers Eigenanteil (#116).
   const wholeSelf = (u: { id: string }): boolean => usageIn(u).self >= diy
   const unitById = new Map(periodUnits.map((u) => [u.id, u]))
+  // **Zimmer einer Wohnung (#573).** Je Wohnung mit Zimmern ihre Zimmer (mit den Kennzeichen dieses Zeitraums) und je
+  // Zimmer seine Wohnung; ohne `parentUnitId` beide leer, und keine Formel unten ändert eine Zahl.
+  const roomsOfFlat = new Map<string, SnapshotUnit[]>()
+  for (const [flatId, rooms] of snapshot.rooms?.roomsOf ?? []) roomsOfFlat.set(flatId, rooms.flatMap((r) => unitById.get(r.id) ?? []))
+  const flatIdOfRoom = new Map<string, string>([...roomsOfFlat].flatMap(([flatId, rooms]) => rooms.map((r): [string, string] => [r.id, flatId])))
+  // Gewicht im Einheiten-Schlüssel: eine Wohnung mit Zimmern zählt als eine Einheit, ein Zimmer mit seinem Anteil an der
+  // eingetragenen Fläche der Zimmer seiner Wohnung (alle 0: zu gleichen Teilen); jede andere Einheit mit 1.
+  const unitWeight = (u: { id: string }): number => {
+    const flatId = flatIdOfRoom.get(u.id)
+    const rooms = flatId === undefined ? undefined : roomsOfFlat.get(flatId)
+    if (!rooms || rooms.length === 0) return 1
+    const raw = (id: string) => Math.max(0, snapshot.rooms?.rawArea.get(id) ?? 0)
+    const sum = rooms.reduce((a, r) => a + raw(r.id), 0)
+    return sum > 0 ? raw(u.id) / sum : 1 / rooms.length
+  }
+  // Rechenweg (#573): die wirksame Fläche eines Zimmers aus der eingetragenen und der Fläche der Wohnung, für den
+  // Flächenschlüssel und die Grundkosten der Heizung nach Fläche (der Entwurf: „der Rechenweg nennt beides“).
+  const roomAreaStep = (unitId: string, areaM2: number): CalcStep | null => {
+    const flat = snapshot.rooms?.flatOf.get(unitId)
+    if (!flat || !(flat.areaM2 > 0)) return null
+    const entered = snapshot.rooms?.rawArea.get(unitId) ?? 0
+    return {
+      label: 'Fläche des Zimmers',
+      value: `${NF_FIX2.format(areaM2)} m² wirksam: ${NF_FIX2.format(entered)} m² eingetragen, Anteil an ${NF_FIX2.format(flat.areaM2)} m² der Wohnung ${flat.name} nach dem Verhältnis der Zimmerflächen`,
+      term: 'distributionBasis',
+    }
+  }
   // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
   // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
   // Mieter umgelegt werden, der auf die selbstgenutzte Wohnung entfallende Teil bleibt beim
@@ -3803,7 +3843,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const measures = (type: string, m: SnapshotMeter): boolean => m.type === type || (type === 'kaltwasser' && m.type === 'warmwasser')
   const consumptionFor = (selfOnes: SnapshotUnit[], only: Set<string> | null, basisOnes: SnapshotUnit[]) => {
     const byType: Record<string, ConsumptionByTypeEntry | undefined> = {}
-    const unitMeters = allMeters.filter((m) => m.unitId && (only === null || only.has(m.unitId)))
+    // Der Zähler einer Wohnung mit Zimmern (#573) gehört zur Position, sobald eines ihrer Zimmer teilnimmt.
+    const unitMeters = allMeters.filter((m) => m.unitId && (only === null || only.has(m.unitId) || (roomsOfFlat.get(m.unitId) ?? []).some((r) => only.has(r.id))))
     // Hauptzähler: Zähler ohne Wohnung. Er misst das ganze Haus und taugt deshalb nicht als
     // Basis einer Position, die nur für einen Teil der Wohnungen gilt.
     const mainMeters = only === null ? houseMeters : []
@@ -3835,6 +3876,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           if (m.type === type) perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
         }
       }
+      // Zimmer einer Wohnung mit abgelesenem Zähler dieser Sparte gelten als gemessen (#573): Ihr Verbrauch steckt im
+      // Zähler der Wohnung, nicht im Rest des Hauptzählers (#116). Geteilt wird er erst in der Position (`splitFlat`).
+      for (const [flatId, rooms] of roomsOfFlat) {
+        if (perUnit.has(flatId)) for (const r of rooms) if (!perUnit.has(r.id)) perUnit.set(r.id, 0)
+      }
+      // Die Zähler, die den Verbrauch einer Einheit messen: ihre eigenen, beim Zimmer ohne eigenen der Zähler der Wohnung.
+      const metersOfType = (unitId: string) => {
+        const own = meters.filter((m) => m.unitId === unitId && m.type === type)
+        const flatId = flatIdOfRoom.get(unitId)
+        return own.length === 0 && flatId !== undefined ? meters.filter((m) => m.unitId === flatId && m.type === type) : own
+      }
       // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
       // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
       // Wohnungen fällt damit ohnehin dem Vermieter zu.
@@ -3857,7 +3909,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Gemessen, aber lückenhaft: Der Verbrauch der Lücke steckt dann im Rest des Hauptzählers.
       const partial = candidates.flatMap((u) => {
         if (!occupied.has(u.id) || !perUnit.has(u.id)) return []
-        const covered = unitCoveredDays(meters.filter((m) => m.unitId === u.id && m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo)
+        const covered = unitCoveredDays(metersOfType(u.id).map((m) => readingsOf(m.id)), yFrom, yTo)
         const needed = neededDays(u)
         return covered < needed ? [{ unit: u, covered, needed }] : []
       })
@@ -5088,6 +5140,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : ` · ${u.days}/${sp.hDays} Tage`
         : ''
       steps.push({ label: `Grundkosten ${POT_NAME[p]}`, value: `${fmtNum(area)} von ${fmtNum(total.area)} ${basis}${part}`, term: 'baseCosts' })
+      // Grundkosten nach der wirksamen Fläche eines Zimmers (#573): einmal, beim ersten Topf, der nach ihr teilt.
+      const roomStep = basis === 'm²' && area === unit.unit.areaM2 && !steps.some((x) => x.label === 'Fläche des Zimmers') ? roomAreaStep(unit.unit.id, area) : null
+      if (roomStep) steps.push(roomStep)
       const v = u.pots[p].value
       // Nur der Teil des Nutzers ohne gültige Ablesung ist geschätzt (Heizung PR 13, Abweichung 3 des Plans).
       const estimatedHere = u.pots[p].estimated === true
@@ -5442,8 +5497,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Für den Vergleich mit dem Vorjahr (#141): die Wohnungen der Abrechnungseinheit heute.
   const basisUnitIds = basisUnits.map((u) => u.id)
   // Einheiten gezählt nach dem Anteil ihrer Tage (#259); ohne Wechsel genau ihre Zahl.
-  const unitCountOf = (us: SnapshotUnit[]): number => us.reduce((a, u) => a + inShare(u), 0)
-  const selfCountOf = (us: SnapshotUnit[]): number => us.reduce((a, u) => a + selfShare(u), 0)
+  // Eine Wohnung mit Zimmern zählt als eine Einheit, sobald eines ihrer Zimmer in der Basis liegt (#573); was auf ein
+  // Zimmer außerhalb entfällt, bleibt beim Vermieter (`keyRaws`).
+  const unitCountOf = (us: SnapshotUnit[]): number => us.filter((u) => !flatIdOfRoom.has(u.id)).reduce((a, u) => a + inShare(u), 0) +
+    new Set(us.flatMap((u) => flatIdOfRoom.get(u.id) ?? [])).size
+  const selfCountOf = (us: SnapshotUnit[]): number => us.reduce((a, u) => a + selfShare(u) * unitWeight(u), 0)
   const fullBasis = {
     basisUnits, selfUnits, basisArea, selfArea, partTenancies: costTenancies, basisPersonDays, occupantPersonDays, selfPersonDays, vacancies, vacancyPersonDays, consumptionByType,
     unitCount: unitCountOf(basisUnits), selfUnitCount: selfCountOf(selfUnits),
@@ -5672,6 +5730,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       forced = 'noBasis'
       warn('item.no-basis', `„${item.description}“: ${reason} - Betrag geht an den Vermieter.`, itemSubject(item))
     }
+    // Zimmer einer Wohnung außerhalb der Verteilbasis (#573): Ihr Teil bleibt beim Vermieter (abziehbar, wie außerhalb
+    // in #98), nie bei den übrigen Zimmern; je Zimmer ein Hinweis mit Betrag, nach der Verteilung.
+    const roomsOutside = new Map<string, { unit: SnapshotUnit; raw: number }>()
+    const toRoomOutside = (unit: SnapshotUnit, raw: number) => {
+      outsideRaw += raw
+      const e = roomsOutside.get(unit.id) ?? { unit, raw: 0 }
+      e.raw += raw
+      roomsOutside.set(unit.id, e)
+    }
+    // Kosten nur einer Wohnung mit Zimmern (#573, Entwurf „Hinweise“): Verteilbasis nur Zimmer einer Wohnung bei einer
+    // Kostenart außer Wasser und Heizung, oder ein Stromzähler einer Wohnung mit Zimmern in der Position.
+    if (roomsOfFlat.size > 0 && !isNotAllocable(item.category)) {
+      const ids = item.participantUnitIds ?? null
+      const onlyRooms = ids !== null && ids.length > 0 && new Set(ids.map((id) => flatIdOfRoom.get(id) ?? `:${id}`)).size === 1 && flatIdOfRoom.has(ids[0] ?? '')
+      const flatPower = item.key === 'meter' && item.meterType === 'strom' && [...roomsOfFlat].some(([flatId, rooms]) =>
+        allMeters.some((m) => m.unitId === flatId && m.type === 'strom') && (ids === null || rooms.some((r) => ids.includes(r.id))))
+      if ((onlyRooms && item.category !== 'Wasser/Abwasser' && item.category !== HEATING_CATEGORY) || flatPower) {
+        warn('rooms.household-cost',
+          `„${item.description}“: Kosten nur dieser Wohnung, etwa Strom oder Internet der WG, sind keine Betriebskosten, auch nicht mit einer Vereinbarung im Mietvertrag. Verlangen können Sie sie nur aus einer gesonderten Abrede, etwa als Pauschale. In der Betriebskostenabrechnung kann der Mieter sie zurückweisen.`,
+          itemSubject(item))
+      }
+    }
     // Tage im Rechenweg, nur bei einem Teiljahr.
     // „Nur Heizung“ bei freien Schlüsseln (Heizung PR 10, Entwurf 5.3 `change_split`, A2, B7): Beim
     // Mieterwechsel teilen die übrigen Wärmekosten nach Gradtagszahlen (§ 9b Abs. 2), wenn die Anlage
@@ -5711,7 +5791,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const starts = [yFrom, ...[...cuts].sort()]
       return starts.map((from, i) => ({ from, to: i + 1 < starts.length ? dayBefore(starts[i + 1] as string) : yTo }))
     }
-    const segmented = (segs: Period[], units: SnapshotUnit[], weight: (u: SnapshotUnit) => number, byDegree: boolean, amountRaw: number, partTenancies: TenancyWithUnit[]) => {
+    // `fill` (#573, Einheiten-Schlüssel): Gewichte, die im Abschnitt zur Basis zählen, ohne dass ihre Einheit darin liegt
+    // (die Zimmer außerhalb einer Wohnung, deren übrige Zimmer darin liegen); ihr Teil steht in `outside`.
+    const segmented = (segs: Period[], units: SnapshotUnit[], weight: (u: SnapshotUnit) => number, byDegree: boolean, amountRaw: number, partTenancies: TenancyWithUnit[],
+      fill?: (members: SnapshotUnit[]) => SnapshotUnit[]) => {
       const days = (r: Period) => rangeOverlapDays(r.from, r.to, r.from, r.to)
       const measure = (r: Period): number => (byDegree && degreeTable && fullDegree > 0 ? degreeDayPermille([r], degreeTable) : days(r))
       const full = byDegree && degreeTable && fullDegree > 0 ? fullDegree : diy
@@ -5722,12 +5805,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
       const tenants = new Map<string, { raw: number, parts: { from: string, to: string, w: number, total: number }[] }>()
       let self = 0
+      const outside = new Map<string, { unit: SnapshotUnit; raw: number }>()
       for (const seg of segs) {
         const members = units.filter((u) => usageIn(u).spans.some((x) => x.usage !== 'ausgenommen' && cut(seg, x.from, x.to) !== null))
-        const total = members.reduce((a, u) => a + weight(u), 0)
+        const extra = fill ? fill(members) : []
+        const total = members.reduce((a, u) => a + weight(u), 0) + extra.reduce((a, u) => a + weight(u), 0)
         const segMeasure = measure(seg)
         if (!(total > 0) || !(segMeasure > 0)) continue
         const amount = amountRaw * (segMeasure / full)
+        for (const u of extra) {
+          const e = outside.get(u.id) ?? { unit: u, raw: 0 }
+          e.raw += amount * (weight(u) / total)
+          outside.set(u.id, e)
+        }
         for (const t of partTenancies) {
           if (!members.some((u) => u.id === t.unitId)) continue
           const o = cut(seg, t.start > yFrom ? t.start : yFrom, t.end !== null && t.end < yTo ? t.end : yTo)
@@ -5743,7 +5833,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           self += amount * (weight(u) / total) * (selfMeasure / segMeasure)
         }
       }
-      return { tenants, self }
+      return { tenants, self, outside }
     }
     const partsText = (parts: { from: string, to: string, w: number, total: number }[], unitText: string) =>
       parts.map((x) => `${fmtNum(x.w)} von ${fmtNum(Math.round(x.total * 100) / 100)} ${unitText} ${formatDayRange(x.from, x.to)}`).join('; ')
@@ -5760,10 +5850,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Bezugszähler und Rest, #98). Rundet nicht (#202: einmal je Position in `distributeCents`); die Teilnehmer
     // stecken in der Basis `b`. Liefert die Anteile der Mietverhältnisse und den Anteil der Selbstnutzung oder den Grund,
     // warum keine Basis da ist (der Aufrufer meldet ihn).
+    // `outsideRooms` (#573, nur beim Einheiten-Schlüssel): Zimmer einer Wohnung, die mit einem anderen Zimmer in der Basis
+    // liegt, selbst aber nicht; ihr Gewicht bleibt beim Vermieter (der Aufrufer bucht es als außerhalb und nennt es).
     const keyRaws = (key: 'area' | 'units' | 'persons', amountRaw: number, basis: typeof fullBasis):
-      { targets: { t: TenancyWithUnit; raw: number; basisText: string }[]; selfRaw: number } | { noBasis: string } => {
+      { targets: { t: TenancyWithUnit; raw: number; basisText: string }[]; selfRaw: number; outsideRooms: { unit: SnapshotUnit; raw: number }[] } | { noBasis: string } => {
       const targets: { t: TenancyWithUnit; raw: number; basisText: string }[] = []
       let selfRaw = 0
+      const outsideRooms: { unit: SnapshotUnit; raw: number }[] = []
       const unitSegs = key === 'persons' ? null : segmentsOf(basis.basisUnits)
       const degreeSelf = degreeTable !== null && fullDegree > 0 && basis.selfUnits.some((u) => usageIn(u).phased)
       if (key === 'area' && !(basis.basisArea > 0)) {
@@ -5788,20 +5881,36 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           ? amountRaw * (basis.selfUnits.reduce((a, u) => a + (u.areaM2 || 0) * itemSelfShare(u), 0) / basis.basisArea)
           : amountRaw * (basis.selfArea / basis.basisArea)
       } else if (key === 'units' && basis.basisUnits.length > 0 && unitSegs) {
-        const r = segmented(unitSegs, basis.basisUnits, () => 1, true, amountRaw, basis.partTenancies)
+        // Geteilt wird immer auf alle Zimmer der Wohnung (#573), auch im Abschnitt: Zimmer außerhalb zählen mit ihrem Gewicht.
+        const roomsBeside = (members: SnapshotUnit[]) => {
+          const ids = new Set(members.map((u) => u.id))
+          return [...new Set(members.flatMap((u) => flatIdOfRoom.get(u.id) ?? []))].flatMap((f) => (roomsOfFlat.get(f) ?? []).filter((r) => !ids.has(r.id)))
+        }
+        const r = segmented(unitSegs, basis.basisUnits, unitWeight, true, amountRaw, basis.partTenancies, roomsOfFlat.size > 0 ? roomsBeside : undefined)
         for (const t of basis.partTenancies) {
           const e = r.tenants.get(t.id)
           if (e) targets.push({ t, raw: e.raw, basisText: partsText(e.parts, 'Einheiten') })
         }
         selfRaw = r.self
+        outsideRooms.push(...r.outside.values())
       } else if (key === 'units' && basis.basisUnits.length > 0) {
         // Ohne Wechsel zwischen drinnen und außerhalb ist `unitCount` die Zahl der Einheiten (#259).
         const count = Number.isInteger(basis.unitCount) ? String(basis.unitCount) : fmtNum(Math.round(basis.unitCount * 100) / 100)
         for (const t of basis.partTenancies) {
-          const raw = (amountRaw / basis.unitCount) * dayShare(t)
-          targets.push({ t, raw, basisText: `1 von ${count} Einheiten${partOfYear(t)}` })
+          const w = unitWeight(t.unit)
+          const raw = (amountRaw / basis.unitCount) * w * dayShare(t)
+          const room = flatIdOfRoom.has(t.unitId) ? `, davon ${fmtNum(Math.round(w * 1000) / 10)} % für dieses Zimmer` : ''
+          targets.push({ t, raw, basisText: `1 von ${count} Einheiten${room}${partOfYear(t)}` })
         }
-        selfRaw = (amountRaw / basis.unitCount) * (degreeSelf ? basis.selfUnits.reduce((a, u) => a + itemSelfShare(u), 0) : basis.selfUnitCount)
+        selfRaw = (amountRaw / basis.unitCount) * (degreeSelf ? basis.selfUnits.reduce((a, u) => a + itemSelfShare(u) * unitWeight(u), 0) : basis.selfUnitCount)
+        // Geteilt wird immer auf alle Zimmer der Wohnung (#573): Ein Zimmer außerhalb der Basis trägt sein Gewicht beim
+        // Vermieter, nie die übrigen Zimmer.
+        const inside = new Set(basis.basisUnits.map((u) => u.id))
+        for (const flatId of new Set(basis.basisUnits.flatMap((u) => flatIdOfRoom.get(u.id) ?? []))) {
+          for (const r of roomsOfFlat.get(flatId) ?? []) {
+            if (!inside.has(r.id)) outsideRooms.push({ unit: r, raw: (amountRaw / basis.unitCount) * unitWeight(r) })
+          }
+        }
       } else if (key === 'persons' && basis.basisPersonDays > 0) {
         for (const t of basis.partTenancies) {
           const pd = personDaysInPeriod(t, yFrom, yTo)
@@ -5813,7 +5922,78 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
         selfRaw = amountRaw * (basis.selfPersonDays / basis.basisPersonDays)
       }
-      return { targets, selfRaw }
+      return { targets, selfRaw, outsideRooms }
+    }
+    // **Der Zähler einer Wohnung auf ihre Zimmer (#573, Entwurf „Rechnung“ 2).** Die Menge `qty` (Verbrauch des Zählers
+    // der Wohnung, in der Einheit der Position) geht auf **alle** Zimmer der Wohnung, nach `roomSplit`: wirksame Fläche mal
+    // Tage oder Personentage, je wie der Flächen- bzw. Personenschlüssel (beim Personenschlüssel mit dem Leerstand nach
+    // #177, hier auch für ein ausgenommenes Zimmer). Geteilt wird in Mengen, das Geld entsteht danach im Zweig der
+    // Position und wird einmal gerundet (#202). Die Zimmer der Basis `basis` tragen ihren Teil (Mietverhältnis, Eigenanteil);
+    // was auf leere Tage, ausgenommene Zimmer und Zimmer außerhalb der Basis entfällt, steht in `landlord` (davon die
+    // Zimmer außerhalb der Basis in `outside` je Zimmer, für den Hinweis) und geht nie an die übrigen Zimmer.
+    type FlatSplit = { tenancy: Map<string, number>; self: Map<string, number>; roomTotal: Map<string, number>; landlord: number; outside: { unit: SnapshotUnit; qty: number }[]; text: Map<string, string> }
+    const splitFlat = (flatId: string, qty: number, basis: typeof fullBasis, unitText: string): FlatSplit => {
+      const rooms = roomsOfFlat.get(flatId) ?? []
+      const flatName = unitById.get(flatId)?.name ?? flatId
+      const inside = new Set(basis.basisUnits.map((u) => u.id))
+      const out: FlatSplit = { tenancy: new Map(), self: new Map(), roomTotal: new Map(), landlord: 0, outside: [], text: new Map() }
+      const qtyText = `${fmtNum(Math.round(qty * 100) / 100)}${unitText}`
+      const own = (r: SnapshotUnit) => costTenancies.filter((t) => t.unitId === r.id)
+      const selfOf = (r: SnapshotUnit) => (selfShare(r) > 0 ? 1 : 0)
+      let assigned = 0
+      const give = (r: SnapshotUnit, roomQty: number, parts: { t: TenancyWithUnit; q: number; text: string }[], selfQty: number) => {
+        out.roomTotal.set(r.id, roomQty)
+        if (!inside.has(r.id)) {
+          if (roomQty !== 0) out.outside.push({ unit: r, qty: roomQty })
+          return
+        }
+        for (const p of parts) {
+          out.tenancy.set(p.t.id, (out.tenancy.get(p.t.id) ?? 0) + p.q)
+          out.text.set(p.t.id, `Zähler der Wohnung ${flatName} (${qtyText}) auf die Zimmer nach ${p.text}`)
+          assigned += p.q
+        }
+        if (selfQty !== 0) {
+          out.self.set(r.id, selfQty)
+          assigned += selfQty
+        }
+      }
+      if (item.roomSplit === 'persons') {
+        const vacancyDays = (r: SnapshotUnit) => (isDwelling(r)
+          ? Math.max(0, diy - occupiedDays(own(r), yFrom, yTo) - (selfOf(r) ? selfDaysOf(r) : 0)) : 0)
+        const persons = rooms.map((r) => {
+          const ts = own(r).map((t) => ({ t, pd: personDaysInPeriod(t, yFrom, yTo) }))
+          const self = selfOf(r) ? selfPersonsOf(r) * selfDaysOf(r) : 0
+          const vacant = vacancyDays(r)
+          const vacancy = vacant > 0 ? vacant * vacancyPersons(r) : 0
+          return { r, ts, self, vacancy, sum: ts.reduce((a, x) => a + x.pd, 0) + self + vacancy }
+        })
+        const total = persons.reduce((a, x) => a + x.sum, 0)
+        const vacancyAll = persons.reduce((a, x) => a + x.vacancy, 0)
+        if (!(total > 0)) {
+          out.landlord = qty
+          return out
+        }
+        for (const x of persons) {
+          give(x.r, qty * (x.sum / total), x.ts.map(({ t, pd }) => ({
+            t, q: qty * (pd / total),
+            text: `Personentagen: ${fmtNum(pd)} von ${fmtNum(total)}${vacancyAll > 0 ? ` (davon ${fmtNum(vacancyAll)} Leerstand)` : ''}`,
+          })), qty * (x.self / total))
+        }
+      } else {
+        const areaOf = (r: SnapshotUnit) => (r.areaM2 > 0 ? r.areaM2 : 0)
+        const sum = rooms.reduce((a, r) => a + areaOf(r), 0)
+        const weight = (r: SnapshotUnit) => (sum > 0 ? areaOf(r) : 1)
+        const total = sum > 0 ? sum : rooms.length
+        for (const r of rooms) {
+          const roomQty = qty * (weight(r) / total)
+          give(r, roomQty, own(r).map((t) => ({
+            t, q: roomQty * dayShare(t),
+            text: sum > 0 ? `Fläche: ${fmtNum(areaOf(r))} von ${fmtNum(sum)} m²${partOfYear(t)}` : `gleichen Teilen: 1 von ${rooms.length} Zimmern${partOfYear(t)}`,
+          })), roomQty * itemSelfShare(r) * selfOf(r))
+        }
+      }
+      out.landlord = qty - assigned
+      return out
     }
     // Teilnehmer wirken bei den Schlüsseln, deren Basis aus Wohnungen entsteht (#94).
     const withParticipants = ['area', 'units', 'persons', 'meter', 'external', 'amounts'].includes(item.key)
@@ -5827,6 +6007,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       else {
         targets.push(...r.targets)
         selfRaw = r.selfRaw
+        for (const x of r.outsideRooms) toRoomOutside(x.unit, x.raw)
       }
     } else if (item.key === 'external') {
       // Laut Gemeinschaftsabrechnung (#94). Der Betrag ist der eigene Anteil, also das, was der
@@ -6043,7 +6224,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const spanUse = (u: SnapshotUnit, k: UnitUsage) => usageIn(u).spans.filter((x) => x.usage === k).reduce((a, x) => a + unitUse(u.id, x.from, x.to), 0)
       // Gemessen wie heute (#116, G-B8): ein Zähler genau dieser Sparte hinter dem Bezug, im Zeitraum abgelesen. Ohne
       // Anschluss (#117) ist eine Einheit weder gemessen noch ungemessen.
-      const measuredUnit = (u: SnapshotUnit) => behindOf(u.id).some((m) => m.type === type && covered(m) > 0)
+      // Ein Zimmer ist gemessen, wenn der Zähler seiner Wohnung dahinter hängt (#573); sein Wert steht für die Zimmer.
+      const flatBehind = (u: { id: string }): string | null => {
+        const flatId = flatIdOfRoom.get(u.id)
+        return flatId !== undefined && behindOf(flatId).some((m) => m.type === type && covered(m) > 0) ? flatId : null
+      }
+      const measuredUnit = (u: SnapshotUnit) => behindOf(u.id).some((m) => m.type === type && covered(m) > 0) || flatBehind(u) !== null
+      const mixedRooms = [...roomsOfFlat].flatMap(([flatId, rooms]) => (behindOf(flatId).length === 0 ? []
+        : rooms.filter((r) => allMeters.some((m) => m.unitId === r.id && measures(type, m)))))
       const connected = (u: SnapshotUnit) => !(u.noConnection ?? []).includes(type)
       const groupUnits = b.basisUnits.filter((u) => groupSet.has(u.id))
       const group = groupUnits.map((u) => ({ unitId: u.id, measured: measuredUnit(u), occupied: occupied.has(u.id) && connected(u) }))
@@ -6053,7 +6241,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const candidates = mr.referenceMeterId === null ? periodUnits : b.basisUnits
       const unmeteredOutside = candidates.filter((u) => !groupSet.has(u.id) && occupied.has(u.id) && connected(u) && !measuredUnit(u))
       // Ein eigener abgelesener Zähler der Sparte, auch einer, der nicht hinter dem Bezug hängt.
-      const ownMeter = (u: SnapshotUnit) => allMeters.some((m) => m.unitId === u.id && m.type === type && covered(m) > 0)
+      const ownMeter = (u: SnapshotUnit) => allMeters.some((m) => (m.unitId === u.id || m.unitId === flatIdOfRoom.get(u.id)) && m.type === type && covered(m) > 0)
       // **'standard' („tragen Sie (wie bisher)“, Abschlussdurchsicht I2)** rechnet den Rest wie #116: Hat jede bewohnte Einheit hinter
       // dem Bezug einen Zähler, geht er im Verhältnis der Zähler auf (`meter`, samt der Zähler außerhalb der
       // Abrechnungseinheit, wie bisher); sonst trägt ihn der Vermieter, als Eigenanteil nur nach den Regeln von #116
@@ -6063,7 +6251,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const restKey: MeterRest['key'] = isStandard ? (standardMeasured ? 'meter' : 'selfUse') : mr.key
       const plan = planMeterRest({
         reference,
-        behind: behindMeters.map((m) => ({ unitId: m.unitId, inGroup: groupSet.has(m.unitId), inBasis: inBasis.has(m.unitId), value: yearUse(m) })),
+        // Der Zähler einer Wohnung mit Zimmern zählt zur Basis; was auf Zimmer außerhalb entfällt, teilt `splitFlat` ab.
+        behind: behindMeters.map((m) => ({ unitId: m.unitId, inGroup: groupSet.has(m.unitId), inBasis: inBasis.has(m.unitId) || roomsOfFlat.has(m.unitId), value: yearUse(m) })),
         subs: subList.map(({ s, m }) => ({ meterId: s.meterId, value: m && covered(m) >= diy ? yearUse(m) : null, target: s.target })),
         group,
         unmeteredOutside: unmeteredOutside.map((u) => u.id),
@@ -6079,6 +6268,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (scale.problem?.kind === 'mixed') {
         forced = 'noBasis'
         warn('meter.units-mixed', unitsMixedText(where, scale.problem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(scale.problem.meters))
+      } else if (mixedRooms.length > 0) {
+        forced = 'noBasis'
+        warn('meter.rest-mixed', mixedRoomsText(where, type, mixedRooms), unitSubject(mixedRooms))
       } else if (standardMisplaced(mr, item.participantUnitIds)) {
         // Nachprüfung der Abschlussdurchsicht: Ein „wie bisher“ mit Teilnehmern, anderem Bezug oder Empfängern (Backup, ältere Schnittstelle) gibt es
         // nicht; die Speicherprüfung lehnt es ab. Hier wird nicht still anders verteilt als ohne Angabe: Fehler, und der
@@ -6123,7 +6315,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // Gefragt wird wie bei #116 über alle Einheiten hinter dem Bezug (`candidates`), auch außerhalb der Verteilbasis.
         const partial = candidates.flatMap((u) => {
           if (!occupied.has(u.id) || !measuredUnit(u)) return []
-          const got = unitCoveredDays(behindOf(u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo)
+          const got = unitCoveredDays(behindOf(flatBehind(u) ?? u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo)
           const needed = neededDays(u)
           return got < needed ? [{ unit: u, covered: got, needed }] : []
         })
@@ -6140,7 +6332,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           return e
         }
         const periodOf = (t: TenancyWithUnit) => ({ from: t.start > yFrom ? t.start : yFrom, to: t.end !== null && t.end < yTo ? t.end : yTo })
-        const tenancyUse = (t: TenancyWithUnit) => { const p = periodOf(t); return unitUse(t.unitId, p.from, p.to) }
+        // Der Zähler einer Wohnung hinter dem Bezug geht auf ihre Zimmer (#573); die Zimmer zählen danach wie Einheiten
+        // mit eigenem Zähler.
+        const splits = new Map([...roomsOfFlat.keys()].flatMap((flatId) => {
+          const ms = behindOf(flatId)
+          return ms.length === 0 ? [] : [[flatId, splitFlat(flatId, ms.reduce((a, m) => a + yearUse(m), 0), b, unitSuffix)] as const]
+        }))
+        const splitOf = (unitId: string) => splits.get(flatIdOfRoom.get(unitId) ?? '')
+        for (const sp of splits.values()) {
+          outsideRaw += (sp.landlord - sp.outside.reduce((a, x) => a + x.qty, 0)) * per
+          for (const x of sp.outside) toRoomOutside(x.unit, x.qty * per)
+        }
+        const tenancyUse = (t: TenancyWithUnit) => {
+          const sp = splitOf(t.unitId)
+          if (sp) return sp.tenancy.get(t.id) ?? 0
+          const p = periodOf(t)
+          return unitUse(t.unitId, p.from, p.to)
+        }
         // Gemessen: je Mietverhältnis sein Verbrauch in seinen Tagen (wie heute), die Eigennutzung als Eigenanteil, die
         // Tage außerhalb (#259) und Zähler außerhalb der Verteilbasis an den Vermieter; der Leerstand bleibt als Rest.
         for (const t of b.partTenancies) {
@@ -6148,9 +6356,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const e = accOf(t)
           e.raw += c * per
           // Ohne Zähler hinter dem Bezug (Allgemeinstrom: die Wohnungsstromzähler hängen nicht dahinter) nichts Gemessenes.
-          if (behindOf(t.unitId).length > 0) e.texts.push(`${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(plan.total * 100) / 100)}${unitSuffix} gemessen`)
+          if (behindOf(t.unitId).length > 0 || splitOf(t.unitId)) e.texts.push(`${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(plan.total * 100) / 100)}${unitSuffix} gemessen`)
+          const flatText = splitOf(t.unitId)?.text.get(t.id)
+          if (flatText) e.texts.push(flatText)
         }
-        const selfUse = (u: SnapshotUnit) => (usageIn(u).phased ? spanUse(u, 'eigen') : unitUse(u.id, yFrom, yTo))
+        const selfUse = (u: SnapshotUnit) => {
+          const sp = splitOf(u.id)
+          if (sp) return sp.self.get(u.id) ?? 0
+          return usageIn(u).phased ? spanUse(u, 'eigen') : unitUse(u.id, yFrom, yTo)
+        }
         selfRaw += b.selfUnits.reduce((a, u) => a + selfUse(u), 0) * per
         outsideRaw += (plan.outside + b.basisUnits.filter((u) => usageIn(u).phased).reduce((a, u) => a + spanUse(u, 'ausgenommen'), 0)) * per
         const keyLabel = (k: MeterRestKey | 'direct' | 'meter') => (k === 'meter' ? 'Verbrauch' : KEY_LABELS[k])
@@ -6170,6 +6384,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             e.texts.push(`${what} nach ${keyLabel(k)}: ${x.basisText}`)
           }
           selfRaw += r.selfRaw
+          for (const x of r.outsideRooms) toRoomOutside(x.unit, x.raw)
         }
         const direct = (raw: number, ids: string[], what: string) => {
           const u = ids.length === 1 ? b.basisUnits.find((x) => x.id === ids[0]) : undefined
@@ -6247,7 +6462,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           else if (restKey === 'meter') {
             // Im Verhältnis der Zähler der Gruppe: Jeder Teil des Verbrauchs einer Einheit bekommt denselben Aufschlag. Bei
             // 'standard' wie bisher (#116) auch die Zähler außerhalb der Verteilbasis; ihr Teil geht an den Vermieter.
-            groupUse = groupUnits.reduce((a, u) => a + unitUse(u.id, yFrom, yTo), 0) + (isStandard ? plan.outside : 0)
+            groupUse = groupUnits.reduce((a, u) => a + (splitOf(u.id)?.roomTotal.get(u.id) ?? unitUse(u.id, yFrom, yTo)), 0) + (isStandard ? plan.outside : 0)
             if (!(groupUse > 0)) partToLandlord(restRaw, restWhat, 'die Zähler der Empfänger zeigen keinen Verbrauch')
             else {
               const f = restRaw / groupUse
@@ -6321,10 +6536,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // `data` bleibt undefined), deshalb hier nur eine Typ-Zusicherung, keine neue Prüfung.
       const data = b.consumptionByType[item.meterType as MeterType]
       if (data?.unitProblem?.kind === 'unknown') warn('meter.unit-unknown', unitUnknownText(`„${item.description}“`, data.unitProblem.meters), unitProblemSubject(data.unitProblem.meters))
+      // Wohnungen mit Zimmern, deren Zähler in dieser Position zählt (#573), und die gemischten darunter: Hat ein Zimmer
+      // selbst einen Zähler der Sparte, misst der Zähler der Wohnung dessen Verbrauch mit.
+      const flatIds = data ? [...new Set(data.meters.flatMap((m) => (roomsOfFlat.has(m.unitId) ? [m.unitId] : [])))] : []
+      const mixedRooms = flatIds.flatMap((f) => (roomsOfFlat.get(f) ?? []).filter((r) => allMeters.some((m) => m.unitId === r.id && measures(item.meterType ?? '', m))))
       if (data?.unitProblem?.kind === 'mixed') {
         // Verschiedene Größen (Gas in m³ neben kWh) rechnete schon vor #342 falsch; verteilt wird nicht.
         forced = 'noBasis'
         warn('meter.units-mixed', unitsMixedText(`„${item.description}“`, data.unitProblem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(data.unitProblem.meters))
+      } else if (mixedRooms.length > 0) {
+        forced = 'noBasis'
+        warn('meter.rest-mixed', mixedRoomsText(`„${item.description}“`, item.meterType ?? '', mixedRooms), unitSubject(mixedRooms))
       } else if (!data || data.basis <= 0) {
         forced = 'noBasis'
         warn('meter.no-consumption', `„${item.description}“: kein Verbrauch für Zählertyp „${meterTypeLabel(item.meterType)}“ erfasst - Betrag geht an den Vermieter.`, itemSubject(item))
@@ -6334,7 +6556,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // außerhalb der Abrechnungseinheit, und beim Hauptzähler, was keine Wohnung misst.
         const inBasis = new Set(b.basisUnits.map((u) => u.id))
         const yearOf = (m: SnapshotMeter) => consumptionInPeriod(readingsOf(m.id), yFrom, yTo) * data.scaleOf(m.id)
-        outsideRaw = item.amountCents * ((data.meters.filter((m) => !inBasis.has(m.unitId)).reduce((a, m) => a + yearOf(m), 0) + data.outsidePhased) / data.basis)
+        outsideRaw = item.amountCents * ((data.meters.filter((m) => !inBasis.has(m.unitId) && !roomsOfFlat.has(m.unitId)).reduce((a, m) => a + yearOf(m), 0) + data.outsidePhased) / data.basis)
         if (data.mainRest !== null) mainRestRaw = item.amountCents * (data.mainRest / data.basis)
         if (data.mainPartial) {
           // Der Tag vor dem Zeitraum und sein Ende (#208); im Kalenderjahr wortgleich wie bisher.
@@ -6372,6 +6594,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           warn('meter.unit-without-meter', `„${item.description}“: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - ${text}`, unitSubject(data.unmetered))
         }
         selfRaw = item.amountCents * (data.selfConsumption / data.basis)
+        // Der Zähler einer Wohnung mit Zimmern geht auf die Zimmer (#573).
+        const splits = flatIds.map((f) => splitFlat(f, data.meters.filter((m) => m.unitId === f).reduce((a, m) => a + yearOf(m), 0), b, data.unit ? ` ${data.unit}` : ''))
+        for (const sp of splits) {
+          selfRaw += item.amountCents * ([...sp.self.values()].reduce((a, q) => a + q, 0) / data.basis)
+          outsideRaw += item.amountCents * ((sp.landlord - sp.outside.reduce((a, x) => a + x.qty, 0)) / data.basis)
+          for (const x of sp.outside) toRoomOutside(x.unit, item.amountCents * (x.qty / data.basis))
+        }
         for (const t of b.partTenancies) {
           const meters = data.meters.filter((m) => m.unitId === t.unitId)
           let c = 0
@@ -6381,8 +6610,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             const pTo = t.end && t.end < yTo ? t.end : yTo
             c += consumptionInPeriod(readings, pFrom, pTo) * data.scaleOf(m.id)
           }
+          const fromFlat = splits.find((sp) => sp.tenancy.has(t.id))
+          if (fromFlat) c += fromFlat.tenancy.get(t.id) ?? 0
           const raw = item.amountCents * (c / data.basis)
-          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)}${data.unit ? ` ${data.unit}` : ''} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})` })
+          const flatText = fromFlat ? `; ${fromFlat.text.get(t.id) ?? ''}` : ''
+          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)}${data.unit ? ` ${data.unit}` : ''} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})${flatText}` })
         }
       }
     } else if (item.key === 'heatingSystem') {
@@ -6487,6 +6719,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         byPlant.set(x.t.id, e)
         manualSplitTime.set(manualPlant.id, byPlant)
       }
+    }
+    for (const { unit, raw } of roomsOutside.values()) {
+      if (roundHalfAway(raw) === 0) continue
+      const flat = unitById.get(flatIdOfRoom.get(unit.id) ?? '')
+      const inHouse = basisUnits.some((u) => u.id === unit.id)
+      warn('rooms.outside-basis',
+        `„${item.description}“: ${unit.name} gehört nicht zur Verteilbasis dieser Position. Geteilt wird trotzdem auf alle Zimmer der Wohnung${flat ? ` ${flat.name}` : ''}; der Teil dieses Zimmers von ${fmtCents(roundHalfAway(raw))} bleibt bei Ihnen und geht nicht an die übrigen Zimmer. ` +
+          (inHouse ? 'Soll der Mieter des Zimmers ihn tragen, nehmen Sie das Zimmer in die Teilnehmer der Position auf.' : 'Gehört das Zimmer zur Abrechnungseinheit, ändern Sie seine Nutzung in den Stammdaten.'),
+        unitSubject([unit]))
     }
     const booked = targets.map((x) => bookable(x.t))
     // Pauschale und Inklusivmiete bei der eigenen Heizkostenabrechnung (Entwurf 6.3): Den Betrag nach der
@@ -6630,15 +6871,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else {
         steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
         // Zimmer einer Wohnung (#573): die wirksame Fläche aus der eingetragenen und der Fläche der Wohnung.
-        const roomFlat = item.key === 'area' ? snapshot.rooms?.flatOf.get(x.t.unit.id) : undefined
-        if (roomFlat && roomFlat.areaM2 > 0) {
-          const entered = snapshot.rooms?.rawArea.get(x.t.unit.id) ?? 0
-          steps.push({
-            label: 'Fläche des Zimmers',
-            value: `${NF_FIX2.format(x.t.unit.areaM2)} m² wirksam: ${NF_FIX2.format(entered)} m² eingetragen, Anteil an ${NF_FIX2.format(roomFlat.areaM2)} m² der Wohnung ${roomFlat.name} nach dem Verhältnis der Zimmerflächen`,
-            term: 'distributionBasis',
-          })
-        }
+        const roomStep = item.key === 'area' ? roomAreaStep(x.t.unit.id, x.t.unit.areaM2) : null
+        if (roomStep) steps.push(roomStep)
         if (x.meterRest) steps.push(...x.meterRest)
         // Der Leerstand steckt in der Verteilbasis (#177); ohne diesen Schritt sähe der Mieter eine
         // Summe der Personentage, die größer ist als die der Bewohner, und niemand erklärte sie.

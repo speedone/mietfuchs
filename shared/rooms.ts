@@ -35,18 +35,22 @@ export function effectiveRoomAreas(flat: Pick<Unit, 'areaM2'>, rooms: readonly P
 // Zimmer in der Sicht (wirksame Fläche, voller Name), `rawArea` je Zimmer die eingetragene Fläche.
 export type RoomView<U> = { units: U[]; flatOf: Map<string, U>; roomsOf: Map<string, U[]>; rawArea: Map<string, number> }
 
+// Die Wohnung, in der eine Einheit als Zimmer liegt, oder null. Eine Ebene (db/rooms.ts prüft das beim Speichern):
+// Wohnung ist nur, was es gibt und selbst in keiner liegt. Ein krummer Bestand (Wiederherstellen eines Backups, eine
+// Kette über zwei Ebenen, ein Verweis ins Leere) ergibt so in `roomView` und `dwellingsOf` dieselbe Lesart.
+type Nested = { id: string; parentUnitId?: string | null }
+export function flatIdOf(u: Nested, byId: ReadonlyMap<string, Nested>): string | null {
+  const p = u.parentUnitId ?? null
+  if (p === null || p === u.id) return null
+  const parent = byId.get(p)
+  return parent && (parent.parentUnitId ?? null) === null ? p : null
+}
+
 export function roomView<U extends RoomUnit>(units: U[]): RoomView<U> {
   const byId = new Map(units.map((u) => [u.id, u]))
-  // Eine Ebene (db/rooms.ts prüft das beim Speichern): Wohnung ist nur, was selbst in keiner liegt.
-  const flatIdOf = (u: U): string | null => {
-    const p = u.parentUnitId ?? null
-    if (p === null || p === u.id) return null
-    const parent = byId.get(p)
-    return parent && (parent.parentUnitId ?? null) === null ? p : null
-  }
   const grouped = new Map<string, U[]>()
   for (const u of units) {
-    const p = flatIdOf(u)
+    const p = flatIdOf(u, byId)
     if (p !== null) grouped.set(p, [...(grouped.get(p) ?? []), u])
   }
   if (grouped.size === 0) return { units, flatOf: new Map(), roomsOf: new Map(), rawArea: new Map() }
@@ -81,11 +85,8 @@ export function dwellingsOf<U extends { id: string; participates: boolean; selfU
   units: readonly U[],
   isDwelling: (u: U) => boolean,
 ): Dwelling<U>[] {
-  const ids = new Set(units.map((u) => u.id))
-  const flatOf = (u: U): string | null => {
-    const p = u.parentUnitId ?? null
-    return p !== null && p !== u.id && ids.has(p) ? p : null
-  }
+  const byId = new Map(units.map((u) => [u.id, u]))
+  const flatOf = (u: U): string | null => flatIdOf(u, byId)
   const flats = new Set(units.flatMap((u) => flatOf(u) ?? []))
   const result: Dwelling<U>[] = []
   for (const u of units) {
