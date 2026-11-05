@@ -3883,6 +3883,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           key: 'selfUse',
           asMainMeterRest: true,
         })
+        // Unerreichbar (siehe oben); käme es doch, verteilte #116 sonst still nach den Wohnungszählern ohne Hinweis.
+        if (plan.kind === 'error') throw new Error(`Rest des Hauptzählers (#116): unerwarteter Fehler ${plan.code} (${plan.reason}) im Plan`)
         if (plan.kind === 'fallback' && plan.reason === 'main-partial') {
           mainPartial = mainShort
         } else if (plan.kind === 'fallback') {
