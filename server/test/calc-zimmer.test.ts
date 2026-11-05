@@ -352,6 +352,62 @@ test('Einheiten-Schlüssel mit Nutzungswechsel (Abschnitte): ein ausgenommenes Z
   assert.ok(ausgenommen.notices.some((n) => n.code === 'rooms.outside-basis'))
 })
 
+// Laut Gemeinschaftsabrechnung (#573, Gesamtdurchsicht C1): Die Wohnung zählt im Maßstab der Gemeinschaft genau einmal,
+// ihre MEA geht nach dem Verhältnis der Zimmerflächen auf die Zimmer, bei „Wohneinheiten“ trägt sie eine Einheit.
+const gemeinschaft = (measure: 'mea' | 'units' | 'area', over: Partial<SnapshotCostItem> = {}): SnapshotCostItem => item({
+  id: 'hg', category: 'Hausmeister', description: 'Hausmeister', amountCents: 14000, key: 'external',
+  externalBasis: { measure, total: measure === 'mea' ? 1000 : measure === 'units' ? 20 : 2000, totalCents: measure === 'mea' ? 100000 : measure === 'units' ? 140000 : 200000 },
+  ...over,
+})
+const etw = (src: SnapshotSource) => computeSettlement({ ...snapshotOf(src, 2025), property: { kind: 'etw', cableBuiltBeforeDec2021: null } })
+
+test('Orakel Gemeinschaft (MEA, Wohneinheiten, Fläche): A trägt wie mit der WG als einer Wohnung, die Zimmer zusammen den Anteil der WG', () => {
+  for (const measure of ['mea', 'units', 'area'] as const) {
+    const withMea = (src: SnapshotSource): SnapshotSource => ({ ...src, units: src.units.map((u) => (u.id === 'a' ? { ...u, mea: 60 } : u.id === 'wg' ? { ...u, mea: 80 } : u)) })
+    const mitZimmern = etw(withMea(wgHouse(80, { costItems: [gemeinschaft(measure)] })))
+    const ohne = etw(withMea(source({
+      units: [unit('a', { name: 'A', areaM2: 60 }), unit('wg', { name: 'WG', areaM2: 80 })],
+      tenancies: [tenancy('t-a', 'a'), tenancy('t-wg', 'wg')],
+      costItems: [gemeinschaft(measure)],
+    })))
+    assert.equal(shareOf(mitZimmern, 't-a'), shareOf(ohne, 't-a'), measure)
+    assert.equal(ROOMS.reduce((a, id) => a + shareOf(mitZimmern, id), 0), shareOf(ohne, 't-wg'), measure)
+    assert.equal(mitZimmern.landlord.totalCents, 0, measure)
+    assert.deepEqual(mitZimmern.notices.filter((n) => n.code.startsWith('external.')).map((n) => n.code), [], measure)
+    if (measure === 'mea') assert.deepEqual(shares(mitZimmern, ['t-a', ...ROOMS]), [6000, 2400, 2400, 3200])
+    if (measure === 'units') assert.deepEqual(shares(mitZimmern, ['t-a', ...ROOMS]), [7000, 2100, 2100, 2800])
+  }
+})
+
+test('Gemeinschaft nach Wohneinheiten: ein Zimmer außerhalb der Teilnehmer trägt sein Gewicht beim Vermieter, nie die übrigen Zimmer', () => {
+  const s = etw(wgHouse(80, { costItems: [gemeinschaft('units', { participantUnitIds: ['a', 'z1', 'z3'] })] }))
+  assert.deepEqual(shares(s, ['t-a', ...ROOMS]), [7000, 2100, 0, 2800])
+  assert.equal(landlordPart(s, 'outsideUnit'), 2100)
+  assert.ok(s.notices.some((n) => n.code === 'rooms.outside-basis'))
+  assert.ok(!s.notices.some((n) => n.code === 'external.amount-mismatch'))
+})
+
+test('rooms.outside-basis: ein nur zeitweise ausgenommenes Zimmer bekommt keinen Rat zu den Teilnehmern (Gesamtdurchsicht M1)', () => {
+  const s = settle(source({
+    units: [
+      unit('a', { name: 'A', areaM2: 60 }),
+      unit('wg', { name: 'WG', areaM2: 80, participates: false }),
+      unit('z1', { name: 'Zimmer 1', areaM2: 12, parentUnitId: 'wg' }),
+      unit('z2', { name: 'Zimmer 2', areaM2: 12, parentUnitId: 'wg' }),
+      unit('z3', { name: 'Zimmer 3', areaM2: 16, parentUnitId: 'wg', usageChanges: [{ from: '2025-07-01', usage: 'ausgenommen' }] }),
+    ],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-z1', 'z1'), tenancy('t-z2', 'z2'), tenancy('t-z3', 'z3', { end: '2025-06-30' })],
+    costItems: [muell()],
+  }))
+  const n = s.notices.find((x) => x.code === 'rooms.outside-basis') ?? assert.fail('kein Hinweis')
+  assert.doesNotMatch(n.text, /Teilnehmer/)
+  assert.match(n.text, /zeitweise/)
+  assert.match(n.text, /Nutzung/)
+  const teilnehmer = settle(wgHouse(80, { costItems: [muell({ participantUnitIds: ['a', 'z1', 'z3'] })] }))
+  const m = teilnehmer.notices.find((x) => x.code === 'rooms.outside-basis') ?? assert.fail('kein Hinweis')
+  assert.match(m.text, /nehmen Sie das Zimmer in die Teilnehmer der Position auf/)
+})
+
 test('rooms.household-cost: Internet nur für die Zimmer der WG und Stromzähler der Wohnung, nicht Wasser', () => {
   const internet = item({ id: 'i', category: 'Sonstige Betriebskosten', description: 'Internet', amountCents: 36000, key: 'area', participantUnitIds: ['z1', 'z2', 'z3'] })
   const s1 = settle(wgHouse(80, { costItems: [internet] }))
