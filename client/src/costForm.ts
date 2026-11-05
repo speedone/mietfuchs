@@ -1,7 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird - sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtDate, fmtEuro, parseEuro } from './api'
@@ -82,6 +82,11 @@ export type ItemForm = {
   pendingWhy: string[]
   // Verteilung nach § 82b EStDV (#262 PR 3) als Wert der Auswahl (`spreadOptions`), leer heißt „nicht verteilen“.
   spreadYears: '' | `${SpreadYears}`
+  // Bezugszähler und verteilter Rest (#98); `null` heißt wie bisher (ohne Angabe).
+  meterRest: MeterRest | null
+  // Ein Wechsel von Schlüssel, Sparte oder Kostenart hat die Angabe geleert (`keepMeterRest`); nur für den Satz am Feld,
+  // wird nicht gesendet.
+  meterRestDropped: boolean
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -115,6 +120,8 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   named: [],
   pendingWhy: [],
   spreadYears: '',
+  meterRest: null,
+  meterRestDropped: false,
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -154,6 +161,8 @@ export function itemToForm(i: CostItem): ItemForm {
     named: i.namedTenancyIds ?? [],
     pendingWhy: [],
     spreadYears: isSpreadYears(i.spreadYears) ? `${i.spreadYears}` : '',
+    meterRest: i.meterRest ?? null,
+    meterRestDropped: false,
   }
 }
 
@@ -345,7 +354,7 @@ export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[
   const [only, ...more] = unitMeterTypes
   const meterType = key === 'meter' && !form.meterType && only && more.length === 0 ? only : form.meterType
   const last = key === 'external' && ctx && !form.externalTotal.trim() ? lastExternalBasis(ctx.items) : null
-  return { ...form, key, meterType, ...(last ? externalFields(last) : {}) }
+  return keepMeterRest(form, { ...form, key, meterType, ...(last ? externalFields(last) : {}) })
 }
 
 // ---------- Schlüssel merken (#141) ----------
@@ -374,7 +383,8 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
 // Die Angaben zum Schlüssel werden dabei zurückgesetzt: Sonst blieben die gemerkten Teilnehmer der
 // einen Kostenart an der nächsten hängen, ohne dass jemand sie gewählt hätte.
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
-  const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null }
+  // Bezugszähler und Rest (#98) merkt sich der Vorschlag nicht: Sie gehören zu den Zählern, nicht zur Kostenart.
+  const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null, meterRest: null }
   // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
   const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.at ?? calendarContext(ctx.year), form.description) : null
   if (remembered) return applyAllocation(form, remembered, units)
@@ -588,8 +598,10 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 // `plantEnergy`: die Energie der Anlage der Heizposition, für die Kennzeichnung des Stroms zur Wärmeerzeugung (R-W2).
 // Der Rumpf des Formulars: der gemeinsame aus shared/costItem.ts und dazu die Verteilung nach § 82b EStDV (#262 PR 3), die
 // Belegbuchung und KI-Auswertung nie vorbelegen.
-export type FormBody = CostItemBody & { spreadYears: SpreadYears | null }
-export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): { error: string } | { body: FormBody } | { error: string, problems: Problem<'participants'>[] } {
+// Dazu Bezugszähler und Rest (#98): die Angabe, wo das Formular sie zeigt (`showsMeterRest`), sonst `null`, das eine
+// gespeicherte entfernt.
+export type FormBody = CostItemBody & { spreadYears: SpreadYears | null; meterRest: MeterRest | null }
+export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): { error: string } | { body: FormBody } | { error: string, problems: Problem<'participants' | 'meterRest'>[] } {
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
   // Eine abgewählte Wohnung ohne Antwort (#258): „Speichern“ meldet es am Feld, wie jede Pflichtangabe.
@@ -598,8 +610,12 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
     const problems = open.map((u): Problem<'participants'> => ({ field: 'participants', short: 'Bitte wählen Sie, warum', text: `Teilnehmer: Bitte wählen Sie bei ${u.name}, warum sie diese Kosten nicht trägt.` }))
     return { error: problems.map((x) => x.text).join(' '), problems }
   }
+  const rest = meterRestProblems(form)
+  if (rest.length > 0) return { error: rest.map((x) => x.text).join(' '), problems: rest }
   const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
-  return 'body' in result ? { body: withSpread(withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p), form) } : result
+  return 'body' in result
+    ? { body: { ...withSpread(withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p), form), meterRest: showsMeterRest(form) ? form.meterRest : null } }
+    : result
 }
 
 // ---------- Verteilung nach § 82b EStDV (#262 PR 3, Entwurf E-9) ----------
@@ -908,7 +924,7 @@ export const paidOnTenDayHint = (form: Pick<ItemForm, 'paidOn' | 'category'>): b
 // Die Angaben der Kostenposition, die ein eigenes Feld haben, alle auf einmal (#346, Schritt 3, Durchsicht S1):
 // Beschreibung, Betrag (leer oder keine Zahl), Lohnanteil (dieselbe Regel wie in shared/costItem.ts) und Ziel.
 // `participants`: die Warum-Frage unter einer abgewählten Wohnung (#258).
-export type CostField = 'category' | 'description' | 'amount' | 'labor35a' | 'target' | 'participants'
+export type CostField = 'category' | 'description' | 'amount' | 'labor35a' | 'target' | 'participants' | 'meterRest'
 export function costFieldProblems(form: { description: string; amount: string; labor35a: string; category: string }, target: { text: string; short: string } | null): Problem<CostField>[] {
   const problems: Problem<CostField>[] = []
   // Leer nur, wenn ein Beleg keine Kostenart nannte (#490 PR 3): Die Auswahl zeigt dann die leere Wahl.
@@ -924,4 +940,166 @@ export function costFieldProblems(form: { description: string; amount: string; l
   }
   if (target !== null) problems.push({ field: 'target', ...target })
   return problems
+}
+
+// ---------- Bezugszähler und verteilter Rest (#98, Entwurf 2026-11-04-virtuelle-zaehler-design.md, „Oberfläche“) ----------
+
+// Dieselben Sparten wie der Server (server/src/db/meterRest.ts): Wasser, Strom und „Sonstiges“ (Gas).
+const REST_METER_TYPES: readonly MeterType[] = ['kaltwasser', 'strom', 'sonstig']
+
+export type RestOption = { value: string; label: string }
+
+// Die Frage „Verbrauch ohne eigenen Zähler“ steht nur bei einer Position nach Verbrauch einer dieser Sparten; die Heizung
+// verteilt die Heizkostenabrechnung, ihr Rest gehört nicht hierher.
+export const showsMeterRest = (form: Pick<ItemForm, 'key' | 'meterType' | 'category'>): boolean =>
+  form.key === 'meter' && form.meterType !== '' && REST_METER_TYPES.includes(form.meterType) && form.category !== HEATING_CATEGORY
+
+// Die Antworten: „tragen Sie“ heißt ohne Angabe, wie bisher (`off`). Ein Ziel des Vermieters, das nur gespeichert sein
+// kann (`landlord`, `selfUse`), steht dazu, damit die Auswahl zeigt, was gespeichert ist.
+export type MeterRestChoice = 'off' | MeterRest['key']
+const REST_KEY_LABELS: Record<MeterRest['key'], string> = {
+  meter: 'im Verhältnis der Zähler',
+  area: 'nach Fläche',
+  persons: 'nach Personen',
+  units: 'nach Einheiten',
+  landlord: 'tragen Sie, nach dem gewählten Bezugszähler',
+  selfUse: 'als Ihr Eigenanteil (privat)',
+}
+export function meterRestKeyOptions(stored: MeterRest | null): { value: MeterRestChoice; label: string }[] {
+  const base: MeterRestChoice[] = ['off', 'meter', 'area', 'persons', 'units']
+  const all = stored && !base.includes(stored.key) ? [...base, stored.key] : base
+  return all.map((value) => ({ value, label: value === 'off' ? 'tragen Sie' : REST_KEY_LABELS[value] }))
+}
+export const meterRestChoiceOf = (form: Pick<ItemForm, 'meterRest'>): MeterRestChoice => form.meterRest?.key ?? 'off'
+
+// Einschalten: der Hauptzähler der Sparte, ohne Liste, ohne Zwischenzähler (Entwurf, „Datenmodell“). Ein Wechsel der
+// Antwort behält Bezug, Empfänger und Zwischenzähler.
+export function withMeterRestKey(form: ItemForm, choice: MeterRestChoice): ItemForm {
+  if (choice === 'off') return { ...form, meterRest: null }
+  const base: MeterRest = form.meterRest ?? { referenceMeterId: null, behindMeterIds: null, key: choice, unitIds: null, subMeters: [] }
+  return { ...form, meterRest: { ...base, key: choice }, meterRestDropped: false }
+}
+
+// Die Wohnungen, die den Rest bekommen können: die Verteilbasis der Position (Teilnehmer, sonst alle).
+export function restBasisUnits(form: Pick<ItemForm, 'participants'>, units: Unit[]): Unit[] {
+  const basis = basisUnitsOf(units)
+  return form.participants === null ? basis : basis.filter((u) => form.participants?.includes(u.id))
+}
+
+const usable = (m: Meter, type: MeterType | '') => m.type === type && !m.heatingPlantId
+const isCommon = (m: Meter) => !m.unitId && m.scope === 'common'
+
+// Die Auswahl zu Bezugszähler, Zählern dahinter und Zwischenzählern: nur Zähler der Sparte der Position, keine der
+// Heizanlage. Bezug: der Hauptzähler (Wert leer) oder ein Zähler für einen Teil des Hauses; dahinter: Zähler von
+// Wohnungen; Zwischenzähler: Zähler für einen Teil des Hauses außer dem Bezug. Ein gespeicherter Bezug steht immer darin.
+export function meterRestChoices(form: Pick<ItemForm, 'meterType' | 'meterRest'>, meters: readonly Meter[], units: readonly Unit[]): { references: RestOption[]; behind: RestOption[]; subs: RestOption[] } {
+  const type = form.meterType
+  const ref = form.meterRest?.referenceMeterId ?? null
+  const main = meters.filter((m) => usable(m, type) && !m.unitId && !isCommon(m))
+  const references: RestOption[] = [
+    { value: '', label: main.length === 1 ? `Hauptzähler „${main[0]?.name}“` : 'Hauptzähler' },
+    ...meters.filter((m) => usable(m, type) && isCommon(m)).map((m) => ({ value: m.id, label: `„${m.name}“` })),
+  ]
+  if (ref !== null && !references.some((o) => o.value === ref)) {
+    const known = meters.find((m) => m.id === ref)
+    references.push({ value: ref, label: known ? `„${known.name}“` : 'bisheriger Zähler (nicht mehr vorhanden)' })
+  }
+  const unitName = (id: string) => units.find((u) => u.id === id)?.name ?? id
+  const behind = meters.filter((m) => usable(m, type) && m.unitId).map((m) => ({ value: m.id, label: `${m.name} (${unitName(m.unitId ?? '')})` }))
+  const subs = meters.filter((m) => usable(m, type) && isCommon(m) && m.id !== ref).map((m) => ({ value: m.id, label: m.name }))
+  return { references, behind, subs }
+}
+
+// Bezugszähler wählen (Wert leer: der Hauptzähler). Bei einem anderen ist die Liste dahinter Pflicht; sie wird mit den
+// Zählern der Verteilbasis vorbelegt (Entwurf: Ein Allgemeinstromzähler misst die Wohnungszähler der Mieter nicht, dann
+// haken Sie sie ab). Der neue Bezug fällt aus den Zwischenzählern.
+export function withReference(form: ItemForm, id: string, meters: readonly Meter[], units: Unit[]): ItemForm {
+  if (!form.meterRest) return form
+  const basis = new Set(restBasisUnits(form, units).map((u) => u.id))
+  const behind = id === '' ? null : meters.filter((m) => usable(m, form.meterType) && m.unitId && basis.has(m.unitId)).map((m) => m.id)
+  return { ...form, meterRest: { ...form.meterRest, referenceMeterId: id === '' ? null : id, behindMeterIds: behind, subMeters: form.meterRest.subMeters.filter((s) => s.meterId !== id) } }
+}
+
+export function toggleBehind(form: ItemForm, meterId: string, checked: boolean): ItemForm {
+  if (!form.meterRest) return form
+  const list = (form.meterRest.behindMeterIds ?? []).filter((id) => id !== meterId)
+  return { ...form, meterRest: { ...form.meterRest, behindMeterIds: checked ? [...list, meterId] : list } }
+}
+
+// „nur auf bestimmte Wohnungen“: alle angehakt heißt alle (`null`), wie bei den Teilnehmern.
+export function toggleRestUnit(form: ItemForm, unitId: string, checked: boolean, basisIds: readonly string[]): ItemForm {
+  if (!form.meterRest) return form
+  const now = form.meterRest.unitIds ?? [...basisIds]
+  const next = checked ? [...new Set([...now, unitId])] : now.filter((id) => id !== unitId)
+  const all = basisIds.every((id) => next.includes(id))
+  return { ...form, meterRest: { ...form.meterRest, unitIds: all ? null : basisIds.filter((id) => next.includes(id)) } }
+}
+
+// Das Ziel eines Zwischenzählers als Wert einer Auswahl: `none` (kein Zwischenzähler dieser Position), die drei festen
+// Ziele, `<Schlüssel>:<Wohnungen>` für eine Gruppe und `direct:<Wohnung>`.
+const encodeTarget = (t: MeterRestTarget): string => (typeof t === 'string' ? t : `${t.key}:${t.unitIds.join(',')}`)
+function decodeTarget(value: string): MeterRestTarget | null {
+  if (value === 'none') return null
+  if (value === 'excluded' || value === 'landlord' || value === 'selfUse') return value
+  const [key = '', ids = ''] = value.split(':')
+  if (key !== 'area' && key !== 'persons' && key !== 'units' && key !== 'direct') return null
+  return { key, unitIds: ids === '' ? [] : ids.split(',') }
+}
+export function subTargetValue(form: Pick<ItemForm, 'meterRest'>, meterId: string): string {
+  const s = form.meterRest?.subMeters.find((x) => x.meterId === meterId)
+  return s ? encodeTarget(s.target) : 'none'
+}
+const GROUP_LABELS: Record<MeterRestKey | 'direct', string> = { area: 'nach Fläche', persons: 'nach Personen', units: 'nach Einheiten', direct: 'an' }
+export function subTargetOptions(form: Pick<ItemForm, 'meterRest' | 'participants'>, meterId: string, units: Unit[]): RestOption[] {
+  const basis = restBasisUnits(form, units)
+  const all = basis.map((u) => u.id).join(',')
+  const options: RestOption[] = [
+    { value: 'none', label: 'nicht abziehen' },
+    { value: 'excluded', label: 'zählt hier nicht mit' },
+    { value: 'landlord', label: 'tragen Sie' },
+    { value: 'selfUse', label: 'Ihr Eigenanteil' },
+    ...(['area', 'persons', 'units'] as const).map((k) => ({ value: `${k}:${all}`, label: GROUP_LABELS[k] })),
+    ...basis.map((u) => ({ value: `direct:${u.id}`, label: `an ${u.name}` })),
+  ]
+  const current = subTargetValue(form, meterId)
+  const target = decodeTarget(current)
+  if (!options.some((o) => o.value === current) && target !== null && typeof target !== 'string') {
+    const names = target.unitIds.map((id) => units.find((u) => u.id === id)?.name ?? id)
+    options.push({ value: current, label: target.key === 'direct' ? `an ${andList(names)}` : `${GROUP_LABELS[target.key]} auf ${andList(names)}` })
+  }
+  return options
+}
+export function withSubTarget(form: ItemForm, meterId: string, value: string): ItemForm {
+  if (!form.meterRest) return form
+  const target = decodeTarget(value)
+  const others = form.meterRest.subMeters.filter((s) => s.meterId !== meterId)
+  const at = form.meterRest.subMeters.findIndex((s) => s.meterId === meterId)
+  const subMeters = target === null ? others : at < 0
+    ? [...others, { meterId, target }]
+    : form.meterRest.subMeters.map((s) => (s.meterId === meterId ? { meterId, target } : s))
+  return { ...form, meterRest: { ...form.meterRest, subMeters } }
+}
+
+// Nach einem Wechsel von Schlüssel, Sparte oder Kostenart: Passt die Angabe nicht mehr, wird sie geleert, und ein Satz
+// sagt es (`meterRestDroppedText`). Eine andere passende Sparte behält die Antwort und die Empfänger, nicht aber die
+// Zähler der bisherigen Sparte.
+export function keepMeterRest(before: ItemForm, after: ItemForm): ItemForm {
+  if (!after.meterRest) return { ...after, meterRestDropped: after.meterRestDropped && !showsMeterRest(after) }
+  if (!showsMeterRest(after)) return { ...after, meterRest: null, meterRestDropped: true }
+  if (after.meterType !== before.meterType) return { ...after, meterRest: { ...after.meterRest, referenceMeterId: null, behindMeterIds: null, subMeters: [] } }
+  return after
+}
+export const withMeterRestType = (form: ItemForm, meterType: MeterType | ''): ItemForm => keepMeterRest(form, { ...form, meterType })
+
+export function meterRestDroppedText(form: Pick<ItemForm, 'meterRestDropped' | 'key' | 'meterType' | 'category'>): string | null {
+  return form.meterRestDropped && !showsMeterRest(form)
+    ? 'Den Allgemeinverbrauch mit Bezugszähler gibt es nur nach Verbrauch bei Kaltwasser, Strom und „Sonstiges“. Ihre Angaben dazu werden beim Speichern entfernt.'
+    : null
+}
+
+// Bei einem anderen Bezugszähler als dem Hauptzähler nennt die Position die Zähler dahinter (der Server verlangt es).
+export function meterRestProblems(form: ItemForm): Problem<'meterRest'>[] {
+  const r = form.meterRest
+  if (!showsMeterRest(form) || !r || r.referenceMeterId === null || r.behindMeterIds !== null) return []
+  return [{ field: 'meterRest', short: 'Bitte wählen', text: 'Zähler hinter dem Bezugszähler: Bitte haken Sie die Zähler der Wohnungen an, deren Verbrauch der Bezugszähler mitmisst.' }]
 }

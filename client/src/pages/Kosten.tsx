@@ -35,6 +35,10 @@ import {
   toggleTaxUnit,
   withTaxUnit,
   withKey,
+  withMeterRestType,
+  showsMeterRest,
+  meterRestDroppedText,
+  keepMeterRest,
   withCategory,
   keepPaidOnYear,
   droppedPaidOnText,
@@ -86,6 +90,7 @@ import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
 import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
+import MeterRestFields from '../components/MeterRestFields'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
@@ -1223,7 +1228,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 erste Kostenart (angezeigt = gespeichert) */}
             <Field label={<>Kostenart{categorySuggested && <> <span className="badge amber">Vorschlag aus dem Dateinamen</span></>}</>}
               required={form.category === ''} {...formErrors.field('category')}>
-              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))}>
+              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period))))}>
                 {form.category === '' && <option value="">Bitte wählen</option>}
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
@@ -1376,7 +1381,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {form.key === 'meter' && (
               <label className="field">
                 Zählertyp
-                <select value={form.meterType} onChange={(e) => setForm({ ...form, meterType: e.target.value as MeterType | '' })}>
+                <select value={form.meterType} onChange={(e) => setForm(withMeterRestType(form, e.target.value as MeterType | ''))}>
                   <option value="">Bitte wählen</option>
                   {meterTypeOptions(unitMeterTypes, form.meterType).map((t) => (
                     <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>
@@ -1384,6 +1389,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </select>
               </label>
             )}
+            {/* #98: Bezugszähler und verteilter Rest; ohne Wahl wie bisher („tragen Sie“). */}
+            {showsMeterRest(form) && (
+              <MeterRestFields form={form} meters={meters} units={units} onChange={setForm} field={formErrors.field('meterRest')} />
+            )}
+            {meterRestDroppedText(form) && <small className="muted basis-full">{meterRestDroppedText(form)}</small>}
             {form.key === 'custom' && (
               <div className="field-group">
                 <div className="field-group-label"><Term id="agreedShares">Vereinbarte Anteile</Term></div>

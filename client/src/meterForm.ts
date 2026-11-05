@@ -44,6 +44,8 @@ export type MeterForm = {
   hca: HcaFieldsForm
   // Heizung PR 21: geeicht bis Ende dieses Jahres; leer heißt „nicht angegeben“.
   calibratedUntil: string
+  // #98: Was ein Zähler ohne Wohnung misst: das ganze Haus (Hauptzähler, wie bisher) oder einen Teil davon.
+  scope: 'property' | 'common'
 }
 
 // Die Einheit, die ein Zähler seiner Sparte nach meist zeigt (#142). Vorher stand für jede Sparte
@@ -79,7 +81,7 @@ export function meterUnitHint(form: Pick<MeterForm, 'id' | 'type' | 'unit' | 'un
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), keptUnit: '', unitDropped: '', keptType: '', heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '',
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), keptUnit: '', unitDropped: '', keptType: '', heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '', scope: 'property',
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -101,7 +103,18 @@ export const meterToForm = (m: Meter): MeterForm => ({
   heatingPlantId: m.heatingPlantId ?? '',
   hca: hcaFieldsOf(m),
   calibratedUntil: m.calibratedUntil == null ? '' : String(m.calibratedUntil),
+  scope: m.scope === 'common' ? 'common' : 'property',
 })
+
+// #98: Die Frage „Misst dieser Zähler das ganze Haus oder einen Teil?“ nur bei einem Zähler ohne Wohnung, der nicht zur
+// Heizanlage gehört (der Server nimmt `common` nur dann an); ein Heizkostenverteiler hat immer eine Wohnung.
+export const asksScope = (form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'type'>): boolean =>
+  !form.unitId && form.heatingRole === '' && form.type !== 'hkv'
+export const SCOPE_OPTIONS: { value: MeterForm['scope']; label: string }[] = [
+  { value: 'property', label: 'das ganze Haus (Hauptzähler)' },
+  { value: 'common', label: 'einen Teil des Hauses' },
+]
+export const SCOPE_HELP = 'Einen Teil des Hauses misst etwa der Allgemeinstromzähler, ein Gartenwasserzähler oder der Zähler einer Wohngemeinschaft, deren Zimmer einzeln vermietet sind. Ein Zähler für einen Teil des Hauses zählt nie als Hauptzähler; Sie wählen ihn bei einer Kostenposition als Bezugs- oder Zwischenzähler.'
 
 export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
   supply: 'Versorgungszähler der Heizanlage (etwa der Gaszähler)',
@@ -158,6 +171,8 @@ export type MeterBody = {
   ratingFactor: number | null
   // Heizung PR 21: bei jeder Sparte, auch ohne Heizanlage; beim Heizkostenverteiler immer `null`.
   calibratedUntil: number | null
+  // #98: `common` nur, wo gefragt wird (`asksScope`); sonst `null`, der Hauptzähler bzw. ein Zähler einer Wohnung.
+  scope: 'common' | null
 }
 
 // Der Hilfetext am Einbaudatum, mit den Stichtagen aus dem Register (Durchsicht von #230, M5).
@@ -230,6 +245,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
       heatingRole: role,
       // Heizkostenverteiler sind nicht eichpflichtig (Entwurf 3.12): nie ein Eichjahr.
       calibratedUntil: asksCalibration(form) && until.kind === 'year' ? until.year : null,
+      scope: asksScope({ ...form, heatingRole: role ?? '' }) && form.scope === 'common' ? 'common' : null,
       ...(plantId === null ? {} : {
         remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
         installedOn: asks && form.installedOn !== '' ? form.installedOn : null,

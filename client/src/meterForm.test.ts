@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksCalibration, asksRemote, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
+import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -102,7 +102,7 @@ test('Warmwasser in m³, Heizkostenverteiler in Einheiten (Heizung PR 4)', () =>
 test('Zähler der Heizanlage: nur ohne Wohnung und mit Anlage; Fernablesbarkeit nur bei Geräten nach § 5 HeizkostenV', () => {
   const speicher = { ...emptyMeterForm(), name: 'Speicher', type: 'waerme' as const, unit: 'kWh', heatingRole: 'dhwHeat' as const, remote: 'no' as const, installedOn: '2022-03-01' }
   expect(meterBody(speicher, 'hp1')).toEqual({
-    body: { name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01', hcaScale: null, ratingFactor: null, calibratedUntil: null },
+    body: { name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01', hcaScale: null, ratingFactor: null, calibratedUntil: null, scope: null },
   })
   // Ohne Anlage im Objekt bleibt es ein Hauptzähler, und dann fragt das Formular nicht nach § 5. Die
   // Felder fehlen dann im Rumpf, damit eine gespeicherte Angabe bleibt (Durchsicht von #230, M1).
@@ -129,7 +129,7 @@ test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
   expect(meterToForm({
     id: 'm1', propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
     heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
-  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', keptUnit: 'kWh', unitDropped: '', keptType: 'waerme', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' }, calibratedUntil: '' })
+  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', keptUnit: 'kWh', unitDropped: '', keptType: 'waerme', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' }, calibratedUntil: '', scope: 'property' })
 })
 
 // Sichtprüfung E19: „Gehört zur Heizanlage?“ stand auch bei Kaltwasser. Ein Wasserzähler ist weder
@@ -275,4 +275,22 @@ test('Ablesungen eines Zählers stehen mit gleich vielen Nachkommastellen', () =
   expect(oldEndText(null, digits)).toBe('fehlt')
   expect(readingDigits([{ value: 316 }, { value: 1387 }])).toBe(0)
   expect(readingDigits([{ value: 0.12345 }])).toBe(3)
+})
+
+test('#98: „Misst dieser Zähler das ganze Haus oder einen Teil?“ nur bei einem Zähler ohne Wohnung und ohne Heizanlage', () => {
+  const house = { ...emptyMeterForm(), name: 'Allgemeinstrom', type: 'strom' as const, unit: 'kWh' }
+  expect(asksScope(house)).toBe(true)
+  expect(asksScope({ ...house, unitId: 'eg' })).toBe(false)
+  expect(asksScope({ ...house, heatingRole: 'supply' })).toBe(false)
+  expect(asksScope({ ...house, type: 'hkv' })).toBe(false)
+  // Vorgabe wie bisher: das ganze Haus; gesendet wird `null`, das den Hauptzähler meint.
+  expect(emptyMeterForm().scope).toBe('property')
+  expect(meterBody(house, null)).toMatchObject({ body: { scope: null } })
+  expect(meterBody({ ...house, scope: 'common' }, null)).toMatchObject({ body: { scope: 'common' } })
+  // An einer Wohnung oder an der Heizanlage nie `common`, sonst lehnte der Server ab.
+  expect(meterBody({ ...house, scope: 'common', unitId: 'eg' }, null)).toMatchObject({ body: { scope: null } })
+  expect(meterBody({ ...house, scope: 'common', heatingRole: 'supply' }, 'pl')).toMatchObject({ body: { scope: null } })
+  // Gespeichert und wieder geöffnet: angezeigt wie gespeichert.
+  expect(meterToForm({ id: 'm', propertyId: 'p', name: 'WG', unitId: null, type: 'kaltwasser', unit: 'm³', scope: 'common' }).scope).toBe('common')
+  expect(meterToForm({ id: 'm', propertyId: 'p', name: 'Haupt', unitId: null, type: 'kaltwasser', unit: 'm³' }).scope).toBe('property')
 })

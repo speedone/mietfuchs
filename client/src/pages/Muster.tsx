@@ -23,7 +23,8 @@ import { useConfirm, useToast } from '../components/feedback'
 import { useDraft } from '../useDraft'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
-import type { Notice, Property, Tenancy, Unit } from '../types'
+import MeterRestFields from '../components/MeterRestFields'
+import type { Meter, Notice, Property, Tenancy, Unit } from '../types'
 import Letter from '../components/Letter'
 import { PaperPreview } from '../components/LetterDesignDrawer'
 import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES } from '../../../shared/letter.ts'
@@ -46,6 +47,10 @@ const CONTRACT_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), contract
 const CONTRACT_PERIOD = { from: '2025-01-01', to: '2025-12-31' }
 // Mieterwechsel in OG rechts: „Steht nicht im Mietvertrag von:“ mit je einem Häkchen
 const CHANGE_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), { ...contractTenancy('t2', 'og', 'Jonas Hartmann'), end: '2025-06-30' }, { ...contractTenancy('t3', 'og', 'Lea Schneider'), start: '2025-07-01' }]
+
+// Bezugszähler und Rest (#98): Hauptzähler, ein WG-Zähler und ein Gartenzähler für einen Teil des Hauses, zwei Wohnungszähler.
+const restMeter = (id: string, name: string, unitId: string | null, scope?: 'common'): Meter => ({ id, propertyId: 'muster', name, unitId, type: 'kaltwasser', unit: 'm³', ...(scope ? { scope } : {}) })
+const REST_METERS: Meter[] = [restMeter('haupt', 'Hauptwasser', null), restMeter('wg', 'WG-Zähler', null, 'common'), restMeter('garten', 'Garten', null, 'common'), restMeter('w-eg', 'Wasser EG', 'eg'), restMeter('w-og', 'Wasser OG', 'og')]
 
 // Zwei Mieter mit Rückstand im Mietkonto, für den Kasten gleicher Hinweise.
 const ARREARS_PEOPLE = noticePeople([
@@ -72,6 +77,11 @@ export default function Muster() {
   const [change, setChange] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Aufzug', notAgreed: ['t3'] })
   const [changeChosen, setChangeChosen] = useState(true)
   const [other, setOther] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Sonstige Betriebskosten', named: ['t1'] })
+  const [restOff, setRestOff] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Wasser/Abwasser', key: 'meter', meterType: 'kaltwasser' })
+  const [restOn, setRestOn] = useState<ItemForm>({
+    ...EMPTY_ITEM_FORM, category: 'Wasser/Abwasser', key: 'meter', meterType: 'kaltwasser',
+    meterRest: { referenceMeterId: 'wg', behindMeterIds: ['w-og'], key: 'area', unitIds: null, subMeters: [{ meterId: 'garten', target: { key: 'direct', unitIds: ['eg'] } }] },
+  })
   // Die Sammelmeldung mit einer Meldung am Feld, ohne den Fokus beim Laden zu nehmen
   useEffect(() => {
     errors.report([{ field: 'betrag', short: 'Betrag fehlt', text: 'Betrag: Bitte tragen Sie den Betrag laut Rechnung ein.' }], { focus: false })
@@ -152,6 +162,13 @@ export default function Muster() {
         </div>
         <ContractAgreementFields form={why} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setWhy} />
         <ContractAgreementFields form={other} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setOther} />
+      </Card>
+
+      <Card title="Verbrauch ohne eigenen Zähler">
+        <div className="row">
+          <MeterRestFields form={restOff} meters={REST_METERS} units={CONTRACT_UNITS} onChange={setRestOff} />
+          <MeterRestFields form={restOn} meters={REST_METERS} units={CONTRACT_UNITS} onChange={setRestOn} />
+        </div>
       </Card>
 
       {/* Die Leiste des Fadens einer Anleitung (#488, PR 2); in der App unten angeheftet, hier im Fluss. */}

@@ -371,3 +371,13 @@ describe('Mieterwechsel beim Übernehmen (#258)', () => {
     expect(form.named).toEqual(['t1b'])
   })
 })
+
+// #98: Bezugszähler und Rest sind eine Angabe über das Haus wie der Schlüssel, keine Zahl des Jahres; die Übernahme
+// trägt sie mit, sonst verteilte das neue Jahr den Allgemeinverbrauch still wieder wie ohne Angabe.
+test('Aus dem Vorjahr übernehmen: Bezugszähler und Rest kommen mit (#98)', () => {
+  const rest = { referenceMeterId: 'wg', behindMeterIds: ['w1'], key: 'area' as const, unitIds: null, subMeters: [{ meterId: 'garten', target: 'excluded' as const }] }
+  const items = [item({ period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser 2025', key: 'meter', meterType: 'kaltwasser', meterRest: rest })]
+  const row = rowOf(carryOverRows(items, 2026), 'Wasser 2025')
+  expect(carryOverForm(row).meterRest).toEqual(rest)
+  expect(carryOverBody(withCarryAmount(row, '480,00'), UNITS, 2026)).toMatchObject({ body: { key: 'meter', meterType: 'kaltwasser', meterRest: rest } })
+})
