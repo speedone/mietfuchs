@@ -299,6 +299,9 @@ const noticeKinds = {
   'unit.rooms-area': { level: 'warning', title: 'Wohnfläche der Wohnung mit Zimmern fehlt', terms: ['roomOfFlat', 'distributionBasis'] },
   // Ein Zimmer außerhalb der Verteilbasis einer Position: Sein Teil bleibt beim Vermieter, obwohl vielleicht ein Mieter
   // ihn tragen sollte; das Geld landet vermutlich anders als gewollt.
+  // Ein Zimmer mit Fläche 0 neben Zimmern mit Fläche bei „laut Gemeinschaftsabrechnung“: Sein Anteil an der Wohnung geht
+  // an die übrigen Zimmer; vermutlich ist die Fläche vergessen (Nachprüfung C1).
+  'rooms.zero-area': { level: 'warning', title: 'Zimmer ohne Fläche', terms: ['roomOfFlat', 'distributionBasis'] },
   'rooms.outside-basis': { level: 'warning', title: 'Zimmer außerhalb der Verteilbasis', terms: ['roomOfFlat', 'distributionBasis'] },
   // Kosten nur einer Wohnung mit Zimmern (Strom, Internet der WG) sind keine Betriebskosten (#573, Entwurf „Rechtliche Grundlage“).
   'rooms.household-cost': { level: 'warning', title: 'Kosten nur der Wohnung mit Zimmern', terms: ['roomOfFlat', 'distributionBasis'] },
@@ -6047,7 +6050,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         } else {
           // Eine Garage-artige Einheit ohne Fläche (#135) fehlt beim Maßstab Fläche nicht, sie hat
           // bewusst keine; bei Miteigentumsanteilen bleibt jede fehlende Angabe eine Lücke.
-          const missing = b.basisUnits.filter((u) => valueOf(u) === 0 && !(eb.measure === 'area' && isGarageLike(u)))
+          // Ein Zimmer mit eingetragener Fläche 0 neben Zimmern mit Fläche (#573, Nachprüfung C1): Ihm fehlt keine Angabe, sein
+          // Anteil an der Wohnung geht nach dem Verhältnis der Zimmerflächen an die übrigen Zimmer. Eigener Hinweis.
+          const rawRoomArea = (id: string) => Math.max(0, snapshot.rooms?.rawArea.get(id) ?? 0)
+          const zeroRoom = (u: SnapshotUnit): boolean => {
+            const flatId = flatIdOfRoom.get(u.id)
+            return flatId !== undefined && rawRoomArea(u.id) === 0 && (roomsOfFlat.get(flatId) ?? []).some((r) => rawRoomArea(r.id) > 0)
+          }
+          const zeroRooms = b.basisUnits.filter((u) => valueOf(u) === 0 && zeroRoom(u))
+          for (const rooms of roomsOfFlat.values()) {
+            const here = zeroRooms.filter((u) => rooms.some((r) => r.id === u.id))
+            const flat = snapshot.rooms?.flatOf.get(here[0]?.id ?? '')
+            if (here.length === 0 || !flat) continue
+            const one = here.length === 1
+            warn('rooms.zero-area',
+              `„${item.description}“: ${andList(here.map((u) => u.name))} ${one ? 'hat' : 'haben'} die Zimmerfläche 0 m². Die Wohnung ${flat.name} wird nach dem Verhältnis der Zimmerflächen auf ihre Zimmer geteilt, ${one ? 'sein' : 'ihr'} Anteil geht deshalb an die übrigen Zimmer. ` +
+                `Soll ${one ? 'das Zimmer' : 'jedes dieser Zimmer'} mitzahlen, tragen Sie in den Stammdaten die Zimmerfläche ein.`,
+              unitSubject(here))
+          }
+          const missing = b.basisUnits.filter((u) => valueOf(u) === 0 && !zeroRoom(u) && !(eb.measure === 'area' && isGarageLike(u)))
           if (missing.length > 0) {
             warn('external.value-missing', `„${item.description}“: für ${andList(missing.map((u) => u.name))} ${eb.measure === 'mea' ? 'sind keine Miteigentumsanteile' : 'ist keine Wohnfläche'} hinterlegt - ihr Anteil verteilt sich auf die übrigen Wohnungen.`, unitSubject(missing))
           }

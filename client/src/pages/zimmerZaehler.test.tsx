@@ -138,3 +138,32 @@ test('Kostenposition: Bezugszähler für einen Teil des Hauses, der Zähler der 
   expect((screen.getByRole('checkbox', { name: 'Wasser EG (EG)' }) as HTMLInputElement).checked).toBe(true)
   expect(screen.queryByText(/\(\?\)/)).toBeNull()
 })
+
+// Gesamtdurchsicht C1 (Nachprüfung): Der rechnerische Anteil laut Gemeinschaftsabrechnung auf der Seite zählt die Wohnung mit
+// Zimmern einmal, mit ihren MEA, auch wenn die Empfängerlisten sie nicht anbieten.
+test('Kostenposition laut Gemeinschaftsabrechnung: MEA und Einheiten zählen die WG einmal, ohne Warnung', async () => {
+  const units: Unit[] = [
+    unit('a', 'A', { areaM2: 60, mea: 60 }),
+    unit('wg', 'WG', { areaM2: 80, mea: 80, participates: false }),
+    unit('z1', 'Zimmer 1', { areaM2: 12, parentUnitId: 'wg' }),
+    unit('z2', 'Zimmer 2', { areaM2: 12, parentUnitId: 'wg' }),
+    unit('z3', 'Zimmer 3', { areaM2: 16, parentUnitId: 'wg' }),
+  ]
+  meters = []
+  render(<PeriodProvider><PropertyProvider><Kosten units={units} settings={null} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }, SLOW))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Hausmeister' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '140,00' } })
+  await waitFor(() => expect([...labelled(/Umlageschlüssel/i).options].some((o) => o.value === 'external')).toBe(true))
+  fireEvent.change(labelled(/Umlageschlüssel/i), { target: { value: 'external' } })
+  fireEvent.change(labelled(/^Maßstab/), { target: { value: 'mea' } })
+  fireEvent.change(screen.getByLabelText(/Summe der Miteigentumsanteile/), { target: { value: '1000' } })
+  fireEvent.change(screen.getByLabelText(/Kosten der Gemeinschaft/), { target: { value: '1.000,00' } })
+  expect(screen.getByText(/Rechnerischer Anteil/).textContent).toBe('Rechnerischer Anteil: 140 von 1.000 MEA = 140,00 €')
+  expect(screen.queryByText(/weicht um/)).toBeNull()
+  fireEvent.change(labelled(/^Maßstab/), { target: { value: 'units' } })
+  fireEvent.change(screen.getByLabelText(/Zahl der Einheiten in der Anlage/), { target: { value: '20' } })
+  fireEvent.change(screen.getByLabelText(/Kosten der Gemeinschaft/), { target: { value: '1.400,00' } })
+  expect(screen.getByText(/Rechnerischer Anteil/).textContent).toMatch(/^Rechnerischer Anteil: 2 von 20 .* = 140,00 €$/)
+  expect(screen.queryByText(/weicht um/)).toBeNull()
+})

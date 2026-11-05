@@ -387,6 +387,21 @@ test('Gemeinschaft nach Wohneinheiten: ein Zimmer außerhalb der Teilnehmer trä
   assert.ok(!s.notices.some((n) => n.code === 'external.amount-mismatch'))
 })
 
+test('Gemeinschaft: ein Zimmer mit 0 m² neben Zimmern mit Fläche bekommt einen passenden Hinweis, nicht external.value-missing', () => {
+  for (const measure of ['mea', 'units', 'area'] as const) {
+    const src = wgHouse(80, { costItems: [gemeinschaft(measure)] })
+    const s = etw({ ...src, units: src.units.map((u) => (u.id === 'a' ? { ...u, mea: 60 } : u.id === 'wg' ? { ...u, mea: 80 } : u.id === 'z2' ? { ...u, areaM2: 0 } : u)) })
+    assert.ok(!s.notices.some((n) => n.code === 'external.value-missing'), measure)
+    const n = s.notices.find((x) => x.code === 'rooms.zero-area') ?? assert.fail(`kein Hinweis rooms.zero-area (${measure})`)
+    assert.match(n.text, /Zimmer 2 in der Wohnung WG/)
+    assert.match(n.text, /übrigen Zimmer/)
+    assert.doesNotMatch(n.text, /keine Miteigentumsanteile|keine Wohnfläche hinterlegt/)
+    // Der Anteil der WG bleibt bei ihren Zimmern: A trägt wie ohne Zimmer.
+    assert.equal(shareOf(s, 't-z2'), 0, measure)
+    assert.equal(shareOf(s, 't-a'), measure === 'units' ? 7000 : 6000, measure)
+  }
+})
+
 test('rooms.outside-basis: ein nur zeitweise ausgenommenes Zimmer bekommt keinen Rat zu den Teilnehmern (Gesamtdurchsicht M1)', () => {
   const s = settle(source({
     units: [
