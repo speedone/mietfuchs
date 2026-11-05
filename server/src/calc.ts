@@ -3767,7 +3767,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Wohnung, sind aber kein Hauptzähler des Hauses: Sie messen, was die Anlage bezieht oder erzeugt,
   // nicht, was die Wohnungen zusammen verbraucht haben. Als Hauptzähler gelesen, machte ein
   // Wärmezähler am Speicher aus jeder Wohnung ohne Wärmezähler einen Rest nach #116.
-  const houseMeters = allMeters.filter((m) => !m.unitId && !m.heatingPlantId)
+  // Ein Zähler für einen Teil des Hauses (`scope: 'common'`, #98: der Zähler der eigenen Wohnung,
+  // der Allgemeinstrom) misst nicht das ganze Haus und ist deshalb nie Hauptzähler; als solcher
+  // gelesen, machte er aus jeder Wohnung ohne Zähler einen falschen Rest. Er wirkt nur dort, wo eine
+  // Position ihn ausdrücklich als Bezugszähler nennt.
+  const houseMeters = allMeters.filter((m) => !m.unitId && !m.heatingPlantId && m.scope !== 'common')
   // Wasser (Entwurf 5.3, G-B8): Beim Kaltwasser zählen die Warmwasserzähler der Wohnungen mit, denn
   // die Wasserkosten des Warmwassers gehören dazu, soweit sie nicht gesondert abgerechnet werden
   // (§ 8 Abs. 2 HeizkostenV), und der Hauptzähler misst beides. Ob eine Wohnung einen Zähler hat
