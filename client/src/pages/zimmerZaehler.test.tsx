@@ -101,3 +101,23 @@ test('Kostenposition: ohne Zähler an der Wohnung gibt es die Auswahl nicht', as
   await waitFor(() => labelled(/Zählertyp/i))
   expect(screen.queryByLabelText(/Zähler der Wohnung auf die Zimmer verteilen nach/)).toBeNull()
 })
+
+test('Kostenposition: die Wohnung mit Zimmern steht nicht in der Direktzuordnung, Teilnehmern und Steuerauswahl', async () => {
+  await openCostForm()
+  fireEvent.change(labelled(/Umlageschlüssel/i), { target: { value: 'direct' } })
+  const direct = await waitFor(() => labelled(/Zugeordnet zu|Wohnung/i))
+  expect([...direct.options].map((o) => o.text)).not.toContain('WG')
+  expect([...direct.options].map((o) => o.text)).toContain('Zimmer 1')
+  fireEvent.change(labelled(/Umlageschlüssel/i), { target: { value: 'area' } })
+  expect(screen.queryByRole('checkbox', { name: /WG/ })).toBeNull()
+  expect(screen.getByRole('checkbox', { name: /Zimmer 1/ })).toBeTruthy()
+})
+
+test('Kostenposition: eine gespeicherte Direktzuordnung an die Wohnung bleibt sichtbar', async () => {
+  costItems = [{ id: 'c9', propertyId: 'objekt-1', period: '2025-01', category: 'Wasser/Abwasser', description: 'Alt', amountCents: 100, key: 'direct', directUnitId: 'wg' }]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }, SLOW))
+  const direct = await waitFor(() => labelled(/Zugeordnet zu|Wohnung/i))
+  expect(direct.value).toBe('wg')
+  expect([...direct.options].map((o) => o.value)).toContain('wg')
+})

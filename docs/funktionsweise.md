@@ -129,11 +129,14 @@ Wohnung selbst hat kein Mietverhältnis und keine Nutzung, beides gehört an die
   den des Zimmers. Mietfuchs rechnet ihn deshalb erst der Wohnung zu und teilt ihn dann auf die Zimmer, nach Fläche oder
   nach Personentagen (Auswahl „Zähler der Wohnung auf die Zimmer verteilen nach“ an der Kostenposition). Für Zimmer ohne
   eigenen Zähler gibt es keinen erfassten Verbrauch, der vorginge.
-- **Heizung:** Jeder Zimmermieter ist Nutzer im Sinne der Heizkostenverordnung. Wärme-, Warmwasser- und
-  Heizkostenverteilerzähler gehören an die Zimmer; ein Wärmezähler der ganzen Wohnung, nach Fläche auf die Zimmer geteilt,
-  ist keine Verbrauchserfassung je Nutzer, und die Mieter dürfen um 15 % kürzen (§ 12 Abs. 1 HeizkostenV).
-- **Strom und Internet der WG** sind keine Betriebskosten und lassen sich nur durch eine gesonderte Abrede verlangen, etwa
-  als Pauschale. Mietfuchs rechnet sie auf Wunsch mit ab und weist darauf hin.
+- **Heizung:** Jeder Zimmermieter ist Nutzer im Sinne der Heizkostenverordnung (§ 1 HeizkostenV), die Verordnung geht
+  abweichenden Vereinbarungen vor (§ 2). Mietfuchs legt § 4 Abs. 3 HeizkostenV so aus, dass die Erfassung in den Zimmern
+  genügt: Wärme-, Warmwasser- und Heizkostenverteilerzähler gehören an die Zimmer. Wird die Heizung der WG nach Fläche
+  oder Personen geteilt, gelten die bekannten Hinweise zum Kürzungsrecht nach § 12 HeizkostenV. Ob eine Gastherme, die nur
+  die WG beheizt, unter die Verordnung fällt, ist ungeklärt.
+- **Strom und Internet der WG** sind keine Betriebskosten (§ 556 Abs. 1 BGB, § 1 BetrKV), und eine Vereinbarung macht sie
+  nicht dazu (§ 556 Abs. 4 BGB). Zulässig ist eine gesonderte Zahlungsabrede neben den Betriebskosten, etwa eine Pauschale
+  oder eine Abrechnung nach Zähler. Mietfuchs rechnet solche Positionen auf Wunsch mit ab und weist darauf hin.
 - **Umbau zur WG:** Eine bisher im Ganzen vermietete Wohnung behalten Sie für die alten Jahre, nehmen sie ab dem Umbau per
   Nutzungswechsel heraus und legen eine neue Wohnung mit Zimmern an.
 

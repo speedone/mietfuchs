@@ -26,6 +26,7 @@ import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { allowsSpread, isSpreadYears, spreadOptions, spreadQuestions, spreadRates } from '../../shared/spread.ts'
 import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
+import { flatIdsWithRooms } from './unitForm'
 import { allowsContractAnswer, contractTenancies, openWhy } from './contractAgreement'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
@@ -1230,4 +1231,28 @@ export function showsRoomSplit(
   return units.some((flat) =>
     units.some((r) => r.parentUnitId === flat.id && inBasisIds.has(r.id)) &&
     meters.some((m) => m.unitId === flat.id && m.type === form.meterType))
+}
+
+// ---------- Empfänger: keine Wohnung mit Zimmern (#573) ----------
+
+// Die Wohnung mit Zimmern bekommt selbst keinen Anteil (server/src/db/rooms.ts, `guardRoomRecipients`: 400). Die Empfängerlisten
+// des Formulars (Direktzuordnung, Teilnehmer, Anteile, Eigenbeträge, Steuer, Rest) bieten sie deshalb nicht an. Was schon
+// genannt ist, bleibt sichtbar, damit die Auswahl zeigt, was gespeichert ist; der Server sagt dann, was nicht geht.
+export function recipientUnits(units: Unit[], named: readonly string[]): Unit[] {
+  const flats = flatIdsWithRooms(units)
+  return units.filter((u) => !flats.has(u.id) || named.includes(u.id))
+}
+
+// Die Einheiten, die das Formular als Empfänger nennt.
+export function namedRecipients(form: Pick<ItemForm, 'directUnitId' | 'participants' | 'customShares' | 'selfAmounts' | 'meterRest'>): string[] {
+  const filled = (m: Record<string, string>) => Object.entries(m).filter(([, v]) => v.trim() !== '').map(([id]) => id)
+  const groups = (form.meterRest?.subMeters ?? []).flatMap((s) => (typeof s.target === 'string' ? [] : s.target.unitIds))
+  return [...new Set([
+    ...(form.directUnitId ? [form.directUnitId] : []),
+    ...(form.participants ?? []),
+    ...filled(form.customShares),
+    ...filled(form.selfAmounts),
+    ...(form.meterRest?.unitIds ?? []),
+    ...groups,
+  ])]
 }

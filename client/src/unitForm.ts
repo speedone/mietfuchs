@@ -235,6 +235,14 @@ export const roomCountOf = (units: readonly Pick<Unit, 'parentUnitId'>[], flatId
 // am Zimmer; an der Wohnung bleiben Kaltwasser, Strom und Sonstiges.
 export const APARTMENT_METER_TYPES: readonly MeterType[] = ['kaltwasser', 'strom', 'sonstig']
 
+// Die Einheiten, die eine Kostenposition als Empfänger nennt (Direktzuordnung, Anteil, Teilnehmer, Eigenbetrag, Rest, Zielgruppe);
+// dieselben Stellen prüft der Server beim Speichern einer Wohnung mit Zimmern (`recipientUsers` in db/rooms.ts).
+function recipientsOf(c: CostItem): string[] {
+  const groups = (c.meterRest?.subMeters ?? []).flatMap((s) => (typeof s.target === 'string' ? [] : s.target.unitIds))
+  return [...(c.directUnitId ? [c.directUnitId] : []), ...Object.keys(c.customShares ?? {}), ...(c.participantUnitIds ?? []),
+    ...Object.keys(c.selfAmounts ?? {}), ...(c.meterRest?.unitIds ?? []), ...groups]
+}
+
 // Die Auswahl „Liegt als Zimmer in der Wohnung“: nur, was der Server annimmt, nämlich Wohnungen des Objekts (`units` ist
 // die Liste des gewählten Objekts), die selbst in keiner liegen, kein Mietverhältnis haben, nicht selbstgenutzt sind, keine
 // Nutzungswechsel und keine Wärme-, Warmwasser- oder Heizkostenverteilerzähler haben. Eine Wohnung mit eigenen Zimmern liegt
@@ -246,12 +254,14 @@ export function parentUnitOptions(
   meters: readonly Pick<Meter, 'type' | 'unitId'>[],
   selfId: string,
   stored: string,
+  costItems: readonly CostItem[] = [],
 ): { id: string, name: string }[] {
   if (flatIdsWithRooms(units).has(selfId)) return []
+  const named = new Set(costItems.flatMap(recipientsOf))
   const rented = new Set(tenancies.map((t) => t.unitId))
   const wrongMeter = new Set(meters.filter((m) => m.unitId && !APARTMENT_METER_TYPES.includes(m.type)).map((m) => m.unitId))
   const options: { id: string, name: string }[] = units
-    .filter((u) => u.id !== selfId && !u.parentUnitId && !rented.has(u.id) && !wrongMeter.has(u.id) && !u.selfUsed && (u.usageChanges ?? []).length === 0)
+    .filter((u) => u.id !== selfId && !u.parentUnitId && !rented.has(u.id) && !wrongMeter.has(u.id) && !named.has(u.id) && !u.selfUsed && (u.usageChanges ?? []).length === 0)
     .map((u) => ({ id: u.id, name: u.name }))
   if (stored && !options.some((o) => o.id === stored)) {
     options.push({ id: stored, name: units.find((u) => u.id === stored)?.name ?? 'gelöschte Wohnung' })
