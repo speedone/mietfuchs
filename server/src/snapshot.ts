@@ -25,6 +25,7 @@ import { asBilledPlant } from '../../shared/heatDelivery.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
 import { isFuelMarked, isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { roomView, type RoomView } from '../../shared/rooms.ts'
 import { selfActive } from './heating.ts'
 import { soleOutflowYear } from './outflow.ts'
 import type { Db } from './store.ts'
@@ -491,7 +492,13 @@ export type Snapshot = {
   // Er soll sich nicht mit einem anderen verwechseln lassen. `null` ist ein Bestand ohne
   // Objekte, also der Stand von Migration 0000, wie ihn Regression und Umstieg rechnen.
   propertyId: string | null
+  // Die Wohnungen in der Sicht der Rechnung (#573, `roomView` in shared/rooms.ts): Zimmer mit wirksamer Fläche und
+  // vollem Namen, eine Wohnung mit Zimmern in keiner Verteilbasis. Ohne Zimmer der Bestand selbst.
   units: SnapshotUnit[]
+  // Nur mit Zimmern: je Zimmer seine Wohnung, wie gespeichert, je Wohnung ihre Zimmer der Sicht und je Zimmer die
+  // eingetragene Fläche (Rechenweg, Hinweise, Verteilung des Wohnungszählers). Ohne Zimmer fehlt das Feld, damit der
+  // Schnappschuss Feld für Feld bleibt, wie er war.
+  rooms?: Omit<RoomView<SnapshotUnit>, 'units'>
   tenancies: SnapshotTenancy[]
   costItems: SnapshotCostItem[]
   meters: SnapshotMeter[]
@@ -1179,12 +1186,18 @@ export function snapshotOfPeriod(source: SnapshotSource, period: BillingPeriod, 
   // calc.test.ts hält das fest.
   const closed = source.closedSettlements.find((c) => c.period === period.key)
   const receipted = [...new Set(source.costItems.filter((c) => c.sourceId && c.invoiceFile).map((c) => c.sourceId as string))]
+  // Zimmer einer Wohnung (#573): die Sicht der Rechnung, **nur hier** gesetzt. `snapshotFor`, `heatingSnapshotFor` und
+  // `snapshotFromDb` kommen alle hier durch; `narrowToProperty` bleibt beim Bestand, denn die Routen listen über sie
+  // (die Stammdaten zeigen das Zimmer mit seinem eigenen Namen und seiner Fläche). Zweimal angewandt hieße der Name
+  // „… in der Wohnung … in der Wohnung …“.
+  const rooms = roomView(source.units)
   return {
     period,
     previousPeriod: previous,
     year: Number(period.from.slice(0, 4)),
     propertyId: null,
-    units: source.units,
+    units: rooms.units,
+    ...(rooms.flatOf.size > 0 ? { rooms: { flatOf: rooms.flatOf, roomsOf: rooms.roomsOf, rawArea: rooms.rawArea } } : {}),
     tenancies: source.tenancies,
     costItems: source.costItems.filter((c) => c.period === period.key),
     // Der Vorzeitraum nur für den Vergleich der Schlüssel (#141) und der Doppelungen; dieselbe

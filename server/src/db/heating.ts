@@ -38,6 +38,7 @@ import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { gmodgHeating43 } from '../../../shared/law/gmodg.ts'
 import { co2HalfSplitNewBuildings } from '../../../shared/law/co2kostaufg.ts'
+import { roomView } from '../../../shared/rooms.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, itemPeriodClosed, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { dropOpenHeatingLetters } from './letters.ts'
 import { buildingCycle, lineRoot, plantUnitValues, sameLine, servesUnit, unitBasisOf } from '../../../shared/heatingPeriod.ts'
@@ -222,8 +223,9 @@ export const basisMissingText = (basis: 'heatedArea' | 'volume', names: readonly
 async function guardBasisValues(db: Executor, after: HeatingPlant): Promise<void> {
   if (after.areaBasisHeat === 'area') return
   const basis = after.areaBasisHeat
-  const missing = (await readUnits(db))
-    .filter((u) => u.propertyId === after.propertyId && servesUnit(after, u) && (u.areaM2 || 0) > 0)
+  // Zimmer einer Wohnung (#573): verlangt bei den Zimmern, nicht bei der Wohnung (Sicht der Rechnung, Fläche 0).
+  const missing = roomView((await readUnits(db)).filter((u) => u.propertyId === after.propertyId)).units
+    .filter((u) => servesUnit(after, u) && (u.areaM2 || 0) > 0)
     .filter((u) => {
       const v = unitBasisOf(after, u.id)
       return !(((basis === 'volume' ? v?.volumeM3 : v?.heatedAreaM2) ?? 0) > 0)

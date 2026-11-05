@@ -95,6 +95,7 @@ import { planMeterRest, selfRestShare } from './meterRest.ts'
 import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
 import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
+import { dwellingsOf } from '../../shared/rooms.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameMeterRest, sameUnits } from '../../shared/allocation.ts'
@@ -293,6 +294,9 @@ const noticeKinds = {
   // Eine leere Einheit ohne Fläche ist beim Personenschlüssel kein Leerstand (#177); wie bei
   // `basis.unit-zero` ist die 0 meist eine Angabe (Garage, Stellplatz).
   'basis.vacancy-no-area': { level: 'hint', title: 'Leere Einheit ohne Fläche', terms: ['vacancy', 'personDays'] },
+  // Zimmer einer Wohnung (#573): Ohne Fläche der Wohnung gelten die Zimmerflächen, wie sie stehen. Fehlen darin Küche,
+  // Bad und Flur, tragen die übrigen Mieter im Haus zu viel; das Geld landet vermutlich anders als gewollt.
+  'unit.rooms-area': { level: 'warning', title: 'Wohnfläche der Wohnung mit Zimmern fehlt', terms: ['distributionBasis'] },
   // Nutzungswechsel (#259): eine Auskunft, nichts ist falsch erfasst; färbt das Cockpit nicht.
   'usage.changed': { level: 'hint', title: 'Nutzung wechselt im Zeitraum', terms: ['usageChange', 'ownShare'] },
   // Ein Mietverhältnis in einer Zeit, in der die Einheit nicht vermietet ist: Die Angaben widersprechen sich, und
@@ -5310,6 +5314,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Jahr, ist sie Garage-artig, und beide Nullen sind ein Hinweis (`basis.unit-zero`,
   // `basis.tenancy-zero`). Wohnt dort jemand, ist 0 m² eine vergessene Fläche; hat sie Fläche, sind
   // 0 Personen eine vergessene Personenzahl. Beides bleibt eine Warnung wie vor #135.
+  // Zimmer einer Wohnung (#573): Ohne Fläche der Wohnung gelten die Zimmerflächen, wie sie stehen (`roomView`).
+  for (const [flatId, rooms] of snapshot.rooms?.roomsOf ?? []) {
+    const flat = rooms[0] ? snapshot.rooms?.flatOf.get(rooms[0].id) : undefined
+    if (!flat || flat.areaM2 > 0) continue
+    warn('unit.rooms-area',
+      `Für die Wohnung ${flat.name} mit ${rooms.length} ${plural(rooms.length, 'Zimmer', 'Zimmern')} ist keine Wohnfläche hinterlegt; Mietfuchs rechnet deshalb mit den Flächen der Zimmer, wie sie eingetragen sind. ` +
+        'Fehlen darin Küche, Bad und Flur, tragen die übrigen Mieter im Haus zu viel. Tragen Sie die Wohnfläche der ganzen Wohnung in den Stammdaten ein; sie geht dann nach dem Verhältnis der Zimmerflächen auf die Zimmer.',
+      unitSubject([{ id: flatId }]),
+    )
+  }
   const positionsOf = (key: CostKey, unitIds: string[]) => {
     const names = [...new Set(items
       .filter((c) => c.key === key && !isNotAllocable(c.category) && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
@@ -6615,6 +6629,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
       } else {
         steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
+        // Zimmer einer Wohnung (#573): die wirksame Fläche aus der eingetragenen und der Fläche der Wohnung.
+        const roomFlat = item.key === 'area' ? snapshot.rooms?.flatOf.get(x.t.unit.id) : undefined
+        if (roomFlat && roomFlat.areaM2 > 0) {
+          const entered = snapshot.rooms?.rawArea.get(x.t.unit.id) ?? 0
+          steps.push({
+            label: 'Fläche des Zimmers',
+            value: `${NF_FIX2.format(x.t.unit.areaM2)} m² wirksam: ${NF_FIX2.format(entered)} m² eingetragen, Anteil an ${NF_FIX2.format(roomFlat.areaM2)} m² der Wohnung ${roomFlat.name} nach dem Verhältnis der Zimmerflächen`,
+            term: 'distributionBasis',
+          })
+        }
         if (x.meterRest) steps.push(...x.meterRest)
         // Der Leerstand steckt in der Verteilbasis (#177); ohne diesen Schritt sähe der Mieter eine
         // Summe der Personentage, die größer ist als die der Bewohner, und niemand erklärte sie.
@@ -7312,8 +7336,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // § 5d Abs. 3 (Abweichung 15): höchstens zwei Wohnungen, eine selbst bewohnt, beide an dieser zentralen
     // Anlage („gemeinsame Wärmeversorgung“). § 5d Abs. 4 je Mietverhältnis mit Tagen in H (Abweichung 3); der
     // angespannte Markt nach seiner Geltung (Abweichung 4).
-    const dwellings = dwellerUnits.filter(isDwelling)
-    const selfUsed = dwellings.some((u) => u.selfUsed === true && !u.participates)
+    // Zimmer einer Wohnung (#573) zählen nicht, die Wohnung mit Zimmern zählt einmal (`dwellingsOf`).
+    const dwellingList = dwellingsOf(dwellerUnits, isDwelling)
+    const dwellings = dwellingList.flatMap((d) => d.members)
+    const selfUsed = dwellingList.some((d) => d.selfUsed && !d.participates)
     let two: TwoFamily = { kind: 'notApplicable' }
     let maxDwellings: number | null = null
     if (selfUsed && (plant.supply ?? 'central') === 'central' && status.kind === 'applies') {
@@ -7328,7 +7354,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         .map((t) => ({ tenantName: t.tenantName, contractFrom: t.contractDate ?? t.start, noticeOn: t.halfSplitNoticeOn ?? null }))
       maxDwellings = law(co2HalfSplitTwoFamily, { period: h }, lawLog).maxDwellings
       two = twoFamilyOf({
-        dwellings: dwellings.length, selfUsed, central: true, servesAll: dwellings.every((u) => servesUnit(plant, u)),
+        dwellings: dwellingList.length, selfUsed, central: true, servesAll: dwellings.every((u) => servesUnit(plant, u)),
         tightMarket: tightMarketIn(prop, h), tenancies, conditionsFrom,
         deadline: settlementDeadline(h, law(bgbDeadlineMonths, { period: h }, lawLog)),
       }, maxDwellings, h.from)
@@ -9181,7 +9207,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Die Grenzen 50 und 70 % (`hkv.consumption-share`) fragt heatingFindings nur ab, wenn es eine
   // Wohnung mit Verbrauchs- und Grundkostenposition gibt.
   const consumptionShare = () => law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
-  const heatingUnits = snapshot.units.filter((u) => !outsideHeating(u))
+  // Eine Wohnung mit Zimmern ist kein Nutzer (#573); ihre Zimmer sind es.
+  const heatingUnits = snapshot.units.filter((u) => !outsideHeating(u) && !snapshot.rooms?.roomsOf.has(u.id))
   const heating = heatingFindings(items, heatingUnits, heatingCovered, consumptionShare)
   // Die Überträge aus Rechnungen anderer Zeiträume (S2) nur für die Frage, wer nicht nach Verbrauch gedeckt ist; der
   // Rahmen von 50 bis 70 % bleibt bei den Positionen, wie bisher.
@@ -9559,7 +9586,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // genau das Zweifamilienhaus der Ausnahme. Mietfuchs erkennt es an der eigenen Wohnung,
         // und die fehlt dann. Bei zwei oder mehr angelegten Wohnungen hülfe sie nicht mehr.
         // Nicht bei einer Eigentumswohnung: In einer Anlage hilft die eigene Wohnung nicht (#121).
-        (snapshot.units.length === 1 && selfUnits.length === 0 && snapshot.property?.kind !== 'etw'
+        // Eine Wohnung mit Zimmern ist eine angelegte Wohnung, ihre Zimmer zählen nicht (#573).
+        (snapshot.units.filter((u) => !snapshot.rooms?.flatOf.has(u.id)).length === 1 && selfUnits.length === 0 && snapshot.property?.kind !== 'etw'
           ? ' Wohnen Sie selbst im Haus und hat es nur diese beiden Wohnungen, legen Sie Ihre eigene Wohnung unter Stammdaten als selbstgenutzt an; dann gilt die Ausnahme, und die Warnung entfällt.'
           : ''),
       tenancySubject(heatingFlat),
