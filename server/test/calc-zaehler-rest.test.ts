@@ -461,7 +461,7 @@ test('Schlüssel gegenüber dem Vorjahr: ein anderer Rest-Schlüssel ergibt key.
 // Ohne Zwischenzähler rechnet 'standard' Zahl für Zahl wie ohne Angabe (#116): ganz gemessen nach den Zählern (auch die
 // Zähler außerhalb der Abrechnungseinheit nehmen die Differenz mit auf), sonst Rest beim Vermieter oder als Eigenanteil,
 // bei kurzem oder zu kleinem Hauptzähler nach den Zählern.
-test("'standard' ohne Zwischenzähler: dieselben Beträge wie ohne Angabe (#116), in jedem Fall", () => {
+test("'standard' ohne Zwischenzähler, am Hauptzähler und ohne Teilnehmer: dieselben Beträge wie ohne Angabe (#116) in diesen Beständen", () => {
   const outside: Partial<SnapshotSource> = (() => {
     const p = pair(1250)
     return { ...p, units: [...(p.units ?? []), room('x', 30, { participates: false })], tenancies: [...(p.tenancies ?? []), lease('t-x', 'x')],
@@ -549,4 +549,27 @@ test("'selfUse': selbstgenutzte Einheit mit Zähler, der nicht hinter dem Bezug 
   assert.equal(part(s, 'mainMeterRest'), 60000)
   assert.ok(codes(s).includes('meter.rest-not-self'), s.warnings.join(' | '))
   assert.ok(s.notices.some((n) => n.code === 'meter.unit-without-meter' && /s hat einen Zähler „Kaltwasser“, der nicht hinter dem Bezugszähler hängt/.test(n.text)), s.warnings.join(' | '))
+})
+
+// Nachprüfung der Abschlussdurchsicht: „wie bisher“ gibt es nur am Hauptzähler, ohne Empfänger und ohne Teilnehmer; #116 nimmt den Hauptzähler nie,
+// wenn Teilnehmer gesetzt sind. Kommt eine solche Angabe doch an (Backup, alte Schnittstelle), wird die Position nicht
+// still anders verteilt, sondern gar nicht, mit Fehler, und der Vermieter trägt sichtbar. Zahlen der Durchsicht: ohne
+// Angabe trägt a 1.150 €; mit 'standard' gingen still 690 € bzw. 710 € an den Vermieter.
+test("'standard' mit Teilnehmern, anderem Bezugszähler oder Empfängern: Fehler, nicht verteilt", () => {
+  const src = garden(pair(1150))
+  const plain = run(src, [water(115000, null, { participantUnitIds: ['a'] })])
+  assert.deepEqual([share(plain, 't-a'), plain.landlord.totalCents], [115000, 0])
+  const cases: [string, SnapshotCostItem][] = [
+    ['Teilnehmer', water(115000, rest({ key: 'standard' }), { participantUnitIds: ['a'] })],
+    ['Teilnehmer und Garten', water(115000, rest({ key: 'standard', subMeters: toLandlord }), { participantUnitIds: ['a'] })],
+    ['anderer Bezug', water(115000, rest({ key: 'standard', referenceMeterId: 'zgarten', behindMeterIds: ['za'] }))],
+    ['Empfänger', water(115000, rest({ key: 'standard', unitIds: ['a'] }))],
+  ]
+  for (const [label, item] of cases) {
+    const s = run(src, [item])
+    const n = notice(s, 'meter.rest-unavailable') ?? assert.fail(`${label}: ${s.warnings.join(' | ')}`)
+    assert.equal(n.level, 'error', label)
+    assert.match(n.text, /wie bisher/, label)
+    assert.deepEqual([share(s, 't-a'), share(s, 't-b'), s.landlord.totalCents], [0, 0, 115000], label)
+  }
 })

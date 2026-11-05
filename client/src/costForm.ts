@@ -3,6 +3,7 @@
 // tatsächlich gespeichert wird - sie ist in client/src/costForm.test.ts geprüft.
 import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable } from './types'
+import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
@@ -1180,6 +1181,11 @@ export function meterRestProblems(form: ItemForm, units: readonly Unit[]): Probl
   if (r.referenceMeterId !== null && r.behindMeterIds === null) {
     problems.push({ field: 'meterRest', short: 'Bitte wählen', text: 'Zähler hinter dem Bezugszähler: Bitte haken Sie die Zähler der Wohnungen an, deren Verbrauch der Bezugszähler mitmisst.' })
   }
+  // Nachprüfung der Abschlussdurchsicht: „wie bisher“ nur mit allen Wohnungen und am Hauptzähler (shared/meterRest.ts); alle angehakt heißt alle,
+  // wie beim Speichern. Gemeldet statt gesendet, auch wenn die Teilnehmer erst danach eingeschränkt werden.
+  const all = basisUnitsOf([...units]).map((u) => u.id)
+  const participants = form.participants && !all.every((id) => form.participants?.includes(id)) ? form.participants : null
+  if (standardMisplaced(r, participants)) problems.push({ field: 'meterRest', short: 'Schlüssel wählen', text: STANDARD_ONLY })
   if (r.unitIds !== null && r.unitIds.length === 0 && !byLandlord(r.key)) {
     problems.push({ field: 'meterRest', short: 'Bitte wählen', text: 'Verbrauch ohne eigenen Zähler: Bitte haken Sie wenigstens eine Wohnung an, die ihn bekommt.' })
   }

@@ -92,6 +92,7 @@ import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText a
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { planMeterRest, selfRestShare } from './meterRest.ts'
+import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
 import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
@@ -6064,6 +6065,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (scale.problem?.kind === 'mixed') {
         forced = 'noBasis'
         warn('meter.units-mixed', unitsMixedText(where, scale.problem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(scale.problem.meters))
+      } else if (standardMisplaced(mr, item.participantUnitIds)) {
+        // Nachprüfung der Abschlussdurchsicht: Ein „wie bisher“ mit Teilnehmern, anderem Bezug oder Empfängern (Backup, ältere Schnittstelle) gibt es
+        // nicht; die Speicherprüfung lehnt es ab. Hier wird nicht still anders verteilt als ohne Angabe: Fehler, und der
+        // Vermieter trägt sichtbar.
+        forced = 'noBasis'
+        warn('meter.rest-unavailable', `${where}: ${STANDARD_ONLY} ${notDistributed}`, itemSubject(item))
       } else if (plan.kind === 'error') {
         forced = 'noBasis'
         const names = andList(plan.detail.map(nameOfUnit))

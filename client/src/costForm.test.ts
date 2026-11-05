@@ -1240,6 +1240,20 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(withMeterRestKey(withMeterRestKey(water(), 'area'), 'off', units).meterRest).toBeNull()
   })
 
+  // Nachprüfung der Abschlussdurchsicht: „wie bisher“ nur mit allen Wohnungen und am Hauptzähler; sonst eine Meldung am Feld statt eines Rumpfs,
+  // den der Server ablehnte. Auch wenn die Teilnehmer erst danach eingeschränkt werden.
+  test('„tragen Sie (wie bisher)“ mit Zwischenzähler und eingeschränkten Teilnehmern: Meldung statt Rumpf', () => {
+    const limited = withSubTarget(water({ participants: ['eg'] }), 'garten', 'landlord', units)
+    const built = buildCostItemBody(limited, units, 2025)
+    if (!('problems' in built)) return expect.fail(JSON.stringify(built))
+    expect(built.problems.map((p) => p.text).join(' ')).toMatch(/„tragen Sie \(wie bisher\)“ geht nur/)
+    const later = { ...withSubTarget(water(), 'garten', 'landlord', units), participants: ['eg'] }
+    expect('problems' in buildCostItemBody(later, units, 2025)).toBe(true)
+    // Alle Wohnungen angehakt heißt alle: keine Meldung.
+    const all = { ...later, participants: ['eg', 'og', 'garage'] }
+    expect('body' in buildCostItemBody(all, units, 2025)).toBe(true)
+  })
+
   test('Abschlussdurchsicht I2: gespeicherte Schlüssel Vermieter und Eigenanteil stehen als eigene Antwort da und bleiben beim Speichern', () => {
     const landlord = water({ meterRest: on({ key: 'landlord' }) })
     expect(meterRestChoiceOf(landlord)).toBe('landlord')

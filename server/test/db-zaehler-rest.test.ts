@@ -140,3 +140,25 @@ test('Zähler für einen Teil des Hauses nur bei Wasser, Strom und Sonstigem; Me
       (e: Error) => !/common/.test(e.message) && /Zähler für einen Teil des Hauses/.test(e.message))
   })
 })
+
+// Nachprüfung der Abschlussdurchsicht: „wie bisher“ nur am Hauptzähler, ohne Empfänger und mit allen Wohnungen; sonst 400 mit Satz, auch wenn die
+// Teilnehmer erst später eingeschränkt werden.
+test("Rest-Schlüssel 'standard' nur am Hauptzähler, ohne Empfänger und ohne Teilnehmer", async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
+      await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
+      await createEntity(db, 'meters', 'ma', meter('ma', 'objekt-1', { unitId: 'a' }))
+      await createEntity(db, 'meters', 'g', meter('g', 'objekt-1', { scope: 'common' }))
+      await createEntity(db, 'meters', 'ref', meter('ref', 'objekt-1', { scope: 'common' }))
+    })
+    const base = { propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser' }
+    const std = (over: Partial<MeterRest> = {}): MeterRest => ({ referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [{ meterId: 'g', target: 'landlord' }], ...over })
+    const refused = (e: Error) => /„tragen Sie \(wie bisher\)“/.test(e.message) && /Schlüssel/.test(e.message)
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c1', { ...base, participantUnitIds: ['a'], meterRest: std() })), refused, 'Teilnehmer')
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c2', { ...base, meterRest: std({ referenceMeterId: 'ref', behindMeterIds: ['ma'] }) })), refused, 'Bezug')
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c3', { ...base, meterRest: std({ unitIds: ['a'] }) })), refused, 'Empfänger')
+    await opened.write((db) => createEntity(db, 'costItems', 'c4', { ...base, meterRest: std() }))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c4', { participantUnitIds: ['a'] })), refused, 'Teilnehmer nachträglich')
+  })
+})

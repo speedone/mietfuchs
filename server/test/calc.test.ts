@@ -2281,24 +2281,36 @@ test('Invariante (#98): Rest des Bezugszählers - Summe, Vorzeichen, Eigenanteil
   assert.ok(compared >= 60 && restMoved >= 50, `zu wenige Vergleiche: ${compared} außerhalb, ${restMoved} mit Rest`)
 })
 
-// Abschlussdurchsicht von #98, I2: „tragen Sie (wie bisher)“ ohne Zwischenzähler ('standard' am Hauptzähler) ist Zahl für Zahl dasselbe
-// wie ohne Angabe (#116), über zufällige Bestände: jede Mieterzeile, der Vermieteranteil und der Eigenanteil.
-test('Invariante (#98): Rest wie bisher (standard) ohne Zwischenzähler rechnet wie ohne Angabe', () => {
+// Abschlussdurchsicht von #98, I2: „tragen Sie (wie bisher)“ ohne Zwischenzähler ('standard' am Hauptzähler) ist Zahl
+// für Zahl dasselbe wie ohne Angabe (#116), über zufällige Bestände: jede Mieterzeile, der Vermieteranteil und der
+// Eigenanteil. Nachprüfung der Abschlussdurchsicht: Bei jeder dritten Position sind Teilnehmer gesetzt (randomDb setzt nie welche); dann gibt es kein
+// „wie bisher“, und die Position wird mit Fehler nicht verteilt, nie still anders.
+test('Invariante (#98): Rest wie bisher (standard) ohne Zwischenzähler rechnet wie ohne Angabe, mit Teilnehmern gar nicht', () => {
   let compared = 0
+  let refused = 0
   for (let i = 0; i < 4000; i++) {
-    const db = randomDb(makeRng(110_000 + i * 7919))
+    const r = makeRng(110_000 + i * 7919)
+    const db = randomDb(r)
     for (const drawn of db.costItems) {
       if (drawn.key !== 'meter' || drawn.meterRest || !(drawn.meterType === 'kaltwasser' || drawn.meterType === 'sonstig')) continue
-      const item: CostItem = { ...drawn, category: 'Wasser/Abwasser' }
-      const money = (c: CostItem) => {
-        const s = computeSettlement(snapshotFromDb({ ...db, costItems: [c] }, 2025))
-        return { rows: s.statements.map((st) => [st.tenancyId, st.rows.filter((r) => r.costItemId === c.id).reduce((a, r) => a + r.shareCents, 0)]), landlord: rowsOfItem(s, c.id).landlord, self: s.selfUsedShareCents }
+      const limited = db.units.length > 0 && r() < 1 / 3
+      const item: CostItem = { ...drawn, category: 'Wasser/Abwasser', ...(limited ? { participantUnitIds: [db.units[0].id, ...db.units.slice(1).filter(() => r() < 0.5).map((u) => u.id)] } : {}) }
+      const settle = (c: CostItem) => computeSettlement(snapshotFromDb({ ...db, costItems: [c] }, 2025))
+      const money = (s: ComputedSettlement, c: CostItem) => ({ rows: s.statements.map((st) => [st.tenancyId, st.rows.filter((x) => x.costItemId === c.id).reduce((a, x) => a + x.shareCents, 0)]), landlord: rowsOfItem(s, c.id).landlord, self: s.selfUsedShareCents })
+      const withStandard: CostItem = { ...item, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [] } }
+      const made = settle(withStandard)
+      const context = `Fall ${i}, ${item.id}\n${JSON.stringify({ ...db, costItems: [withStandard] })}`
+      if (limited) {
+        refused++
+        assert.ok(made.notices.some((n) => n.code === 'meter.rest-unavailable' && n.level === 'error'), `kein Fehler: ${context}`)
+        assert.equal(rowsOfItem(made, item.id).tenants.reduce((a, x) => a + x.shareCents, 0), 0, `verteilt: ${context}`)
+        continue
       }
       compared++
-      assert.deepEqual(money({ ...item, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'standard', unitIds: null, subMeters: [] } }), money(item), `Fall ${i}, ${item.id}\n${JSON.stringify({ ...db, costItems: [item] })}`)
+      assert.deepEqual(money(made, withStandard), money(settle(item), item), context)
     }
   }
-  assert.ok(compared >= 500, `nur ${compared} Positionen verglichen`)
+  assert.ok(compared >= 400 && refused >= 150, `zu wenige Fälle: ${compared} verglichen, ${refused} mit Teilnehmern`)
 })
 
 test('Invariante: der Eigenanteil steckt je Position im Vermieteranteil, mit gleichem Vorzeichen', () => {

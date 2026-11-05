@@ -5,6 +5,7 @@
 import { and, eq, inArray, ne } from 'drizzle-orm'
 import type { CostItem, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType } from '../../../shared/types.ts'
 import { andList } from '../../../shared/wording.ts'
+import { STANDARD_ONLY, standardMisplaced } from '../../../shared/meterRest.ts'
 import type { Executor } from './client.ts'
 import { CrossPropertyError } from './repository.ts'
 import {
@@ -112,6 +113,10 @@ export async function guardMeterRest(db: Executor, after: CostItem): Promise<voi
   const type = after.meterType ?? null
   if (type === null || !REST_METER_TYPES.includes(type)) {
     throw new MeterRestError(`Einen Bezugszähler mit verteiltem Rest gibt es für Wasser, Strom und „Sonstiges“. ${label} hat eine andere Sparte oder keine; bitte wählen Sie die Sparte, die der Zähler misst.`)
+  }
+  // „Wie bisher“ nur am Hauptzähler, ohne Empfänger und mit allen Wohnungen (shared/meterRest.ts).
+  if (standardMisplaced(rest, after.participantUnitIds)) {
+    throw new MeterRestError(`${label}: ${STANDARD_ONLY}`)
   }
   if (rest.referenceMeterId !== null && rest.behindMeterIds === null) {
     throw new MeterRestError(`Bei einem anderen Bezugszähler als dem Hauptzähler nennen Sie bitte die Zähler, die hinter ihm hängen (${label}); sonst ließe sich der Rest nicht bestimmen.`)
