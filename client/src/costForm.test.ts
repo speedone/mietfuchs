@@ -59,6 +59,7 @@ import {
   toggleBehind,
   toggleRestUnit,
   withMeterRestType,
+  keepMeterRest,
   meterRestDroppedText,
   subTargetOptions,
   subTargetValue,
@@ -1198,6 +1199,27 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(withMeterRestType(withMeterRestType(power, 'warmwasser'), 'kaltwasser').meterRest).toEqual(f.meterRest)
     // Ohne Angabe gibt es nichts zu sagen.
     expect(meterRestDroppedText(withKey(water(), 'area', ['kaltwasser']))).toBeNull()
+  })
+
+  // Abschlussdurchsicht I4: gemerkt wird je Sparte, bei jedem Wechsel neu. Vorher kam beim Zurück auf Strom die Angabe zum
+  // Kaltwasser wieder, und die Einstellung zum Allgemeinstrom war still verloren.
+  test('Sparte wechseln: jede Sparte behält ihre eigene Angabe, auch nach Bearbeiten', () => {
+    const elec: Meter[] = [...meters, m('as', null, { type: 'strom', scope: 'common', name: 'Allgemeinstrom' })]
+    const wasser = withSubTarget(withMeterRestKey(water(), 'area'), 'garten', 'excluded', units)
+    const strom = withReference(withMeterRestType(wasser, 'strom'), 'as', elec, units)
+    expect(strom.meterRest?.referenceMeterId).toBe('as')
+    const sonst = withMeterRestType(strom, 'sonstig')
+    expect(sonst.meterRest?.referenceMeterId).toBeNull()
+    const back = withMeterRestType(sonst, 'strom')
+    expect(back.meterRest).toEqual(strom.meterRest)
+    expect(withMeterRestType(back, 'kaltwasser').meterRest).toEqual(wasser.meterRest)
+  })
+
+  // M4: Eine andere Kostenart nimmt den Vorschlag, nie die Angabe der bisherigen Sparte.
+  test('Kostenart wechseln: der Vorschlag für Strom bekommt nicht den Rest-Schlüssel des Wassers', () => {
+    const wasser = withMeterRestKey(water(), 'persons')
+    const strom = keepMeterRest(wasser, { ...wasser, category: 'Beleuchtung/Allgemeinstrom', meterType: 'strom', meterRest: null, meterRestKept: {} })
+    expect(strom.meterRest).toBeNull()
   })
 
   test('Ruling 11: Zwischenzähler bei „tragen Sie (wie bisher)“ speichert den Rest-Schlüssel standard, mit und ohne Eigennutzung', () => {

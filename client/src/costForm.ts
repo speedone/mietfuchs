@@ -84,9 +84,9 @@ export type ItemForm = {
   spreadYears: '' | `${SpreadYears}`
   // Bezugszähler und verteilter Rest (#98); `null` heißt wie bisher (ohne Angabe).
   meterRest: MeterRest | null
-  // Die Angabe, wie sie zu einer anderen Sparte eingegeben war (`keepMeterRest`): Ein Wechsel der Sparte nimmt deren Zähler
-  // heraus, der Wechsel zurück stellt sie wieder her. Wird nicht gesendet.
-  meterRestKept: { meterType: MeterType; rest: MeterRest } | null
+  // Die Angabe je Sparte, wie sie zuletzt eingegeben war (`keepMeterRest`): Ein Wechsel der Sparte nimmt die Zähler der
+  // bisherigen heraus, der Wechsel zurück stellt deren Angabe wieder her. Wird nicht gesendet.
+  meterRestKept: Partial<Record<MeterType, MeterRest | null>>
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -121,7 +121,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   pendingWhy: [],
   spreadYears: '',
   meterRest: null,
-  meterRestKept: null,
+  meterRestKept: {},
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -162,7 +162,7 @@ export function itemToForm(i: CostItem): ItemForm {
     pendingWhy: [],
     spreadYears: isSpreadYears(i.spreadYears) ? `${i.spreadYears}` : '',
     meterRest: i.meterRest ?? null,
-    meterRestKept: null,
+    meterRestKept: {},
   }
 }
 
@@ -384,7 +384,7 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
 // einen Kostenart an der nächsten hängen, ohne dass jemand sie gewählt hätte.
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   // Bezugszähler und Rest (#98) merkt sich der Vorschlag nicht: Sie gehören zu den Zählern, nicht zur Kostenart.
-  const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null, meterRest: null, meterRestKept: null }
+  const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null, meterRest: null, meterRestKept: {} }
   // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
   const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.at ?? calendarContext(ctx.year), form.description) : null
   if (remembered) return applyAllocation(form, remembered, units)
@@ -771,7 +771,7 @@ export function withGeneralChoice(form: ItemForm, id: string, items: readonly Co
   if (!g) return { ...form, operatingPowerGeneralId: '' }
   const f = itemToForm(g)
   // Bezugszähler und Rest (#98) gehören dazu (Abschlussdurchsicht, I1); die gemerkte Angabe einer anderen Sparte nicht.
-  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants, notAgreed: f.notAgreed, meterRest: f.meterRest, meterRestKept: null }
+  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants, notAgreed: f.notAgreed, meterRest: f.meterRest, meterRestKept: {} }
 }
 
 // Der Rumpf trägt die drei Felder bei Heizkosten und beim Allgemeinstrom (Review Focus 3): Das Formular
@@ -1135,17 +1135,24 @@ export function toggleSubUnit(form: ItemForm, meterId: string, unitId: string, c
 
 // Nach einem Wechsel von Sparte, Schlüssel oder Kostenart. Die Angabe bleibt im Formular stehen; gesendet wird sie nur,
 // wo `showsMeterRest` gilt (sonst `null`), ein Wechsel zurück stellt sie also wieder her. Bei einer anderen passenden Sparte
-// passen Bezugszähler, Zähler dahinter und Zwischenzähler nicht mehr: Sie fallen heraus, die Angabe zur bisherigen Sparte
-// bleibt gemerkt (`meterRestKept`), und der Wechsel zurück stellt sie wieder her.
+// passen Bezugszähler, Zähler dahinter und Zwischenzähler nicht mehr: Sie fallen heraus, die Angabe jeder Sparte bleibt
+// gemerkt (`meterRestKept`), und der Wechsel zurück stellt sie wieder her.
 const withoutMeters = (rest: MeterRest): MeterRest | null => normalized({ ...rest, referenceMeterId: null, behindMeterIds: null, subMeters: [] })
+const sameRest = (a: MeterRest, b: MeterRest | null) => b !== null && JSON.stringify(a) === JSON.stringify(b)
 const hasMeters = (rest: MeterRest) => rest.referenceMeterId !== null || (rest.behindMeterIds?.length ?? 0) > 0 || rest.subMeters.length > 0
 export function keepMeterRest(before: ItemForm, after: ItemForm): ItemForm {
   if (after.meterType === before.meterType) return after
-  const kept = before.meterRestKept ?? (before.meterRest && before.meterType !== '' ? { meterType: before.meterType, rest: before.meterRest } : null)
-  if (kept === null) return after
-  if (after.meterType === kept.meterType) return { ...after, meterRest: kept.rest, meterRestKept: null }
-  if (!REST_METER_TYPES.includes(after.meterType as MeterType)) return { ...after, meterRest: kept.rest, meterRestKept: kept }
-  return { ...after, meterRest: withoutMeters(kept.rest), meterRestKept: kept }
+  // M4 der Abschlussdurchsicht: Mit der Kostenart kommt der Vorschlag (`proposal`), keine Angabe der bisherigen Sparte.
+  if (after.category !== before.category) return after
+  // Gemerkt wird je Sparte, bei jedem Wechsel der Stand von eben (I4). Eine Sparte ohne Bezugszähler merkt nichts: Ihre
+  // Angabe ist die zuletzt gezeigte, die nur nicht gesendet wird.
+  const kept: Partial<Record<MeterType, MeterRest | null>> = { ...before.meterRestKept }
+  if (REST_METER_TYPES.includes(before.meterType as MeterType)) kept[before.meterType as MeterType] = before.meterRest
+  const type = after.meterType as MeterType
+  if (!REST_METER_TYPES.includes(type)) return { ...after, meterRest: before.meterRest, meterRestKept: kept }
+  const own = kept[type]
+  if (own !== undefined) return { ...after, meterRest: own, meterRestKept: kept }
+  return { ...after, meterRest: before.meterRest ? withoutMeters(before.meterRest) : null, meterRestKept: kept }
 }
 export const withMeterRestType = (form: ItemForm, meterType: MeterType | ''): ItemForm => keepMeterRest(form, { ...form, meterType })
 
@@ -1153,9 +1160,12 @@ export function meterRestDroppedText(form: Pick<ItemForm, 'meterRest' | 'meterRe
   if (form.meterRest !== null && !showsMeterRest(form)) {
     return 'Den Allgemeinverbrauch mit Bezugszähler gibt es nur nach Verbrauch bei Kaltwasser, Strom und „Sonstiges“. Ihre Angaben dazu werden beim Speichern entfernt; wählen Sie die bisherige Angabe wieder, gelten sie weiter.'
   }
-  const kept = form.meterRestKept
-  if (showsMeterRest(form) && kept && kept.meterType !== form.meterType && hasMeters(kept.rest)) {
-    return `Bezugszähler, Zähler dahinter und Zwischenzähler der Sparte „${METER_TYPE_LABELS[kept.meterType]}“ passen nicht zu „${METER_TYPE_LABELS[form.meterType as MeterType]}“ und werden beim Speichern entfernt. Wählen Sie wieder „${METER_TYPE_LABELS[kept.meterType]}“, gelten sie weiter.`
+  // Eine andere Sparte mit Zählern in ihrer Angabe: Sie gelten hier nicht, kommen aber mit der Sparte wieder.
+  const other = showsMeterRest(form)
+    ? (Object.entries(form.meterRestKept) as [MeterType, MeterRest | null][]).find(([t, r]) => t !== form.meterType && r !== null && hasMeters(r) && !sameRest(r, form.meterRest))
+    : undefined
+  if (other) {
+    return `Bezugszähler, Zähler dahinter und Zwischenzähler der Sparte „${METER_TYPE_LABELS[other[0]]}“ passen nicht zu „${METER_TYPE_LABELS[form.meterType as MeterType]}“ und werden beim Speichern entfernt. Wählen Sie wieder „${METER_TYPE_LABELS[other[0]]}“, gelten sie weiter.`
   }
   return null
 }
