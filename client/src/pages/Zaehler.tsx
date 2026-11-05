@@ -5,7 +5,7 @@ import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
@@ -330,7 +330,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
                 {/* Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung (Durchsicht von #241, Minor 11). */}
                 <option value="">{meterForm.type === 'hkv' ? 'Bitte Wohnung wählen' : 'Haus (Hauptzähler)'}</option>
-                {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {/* Zimmer (#573): Wärme, Warmwasser und Heizkostenverteiler hängen nicht an einer Wohnung mit Zimmern. */}
+                {meterUnitChoices(units, meterForm.type, meterForm.unitId).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
             {/* #98: Ein Zähler ohne Wohnung ist der Hauptzähler, außer er misst nur einen Teil des Hauses. */}
@@ -344,10 +345,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             <label className="field">
               Sparte
               <select value={meterForm.type} onChange={(e) => setMeterForm(withMeterType(meterForm, e.target.value as MeterType))}>
-                {(Object.keys(METER_TYPE_LABELS) as MeterType[]).map((t) => (
+                {meterTypeChoices(meterForm.unitId, units, meterForm.type).map((t) => (
                   <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>
                 ))}
               </select>
+              {meterForm.unitId && meterTypeChoices(meterForm.unitId, units, meterForm.type).length < 6 && (
+                <small className="muted">An einer Wohnung mit Zimmern hängen nur Zähler für Kaltwasser, Strom und Sonstiges; Wärme, Warmwasser und Heizkostenverteiler gehören an das Zimmer.</small>
+              )}
             </label>
             <Field label="Zählernummer" width="m">
               <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} />

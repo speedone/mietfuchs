@@ -107,11 +107,35 @@ Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbeg
   selbstgenutzten neben einer Einliegerwohnung mit Zwischenzähler), wird der Hauptzähler zur
   Basis; den Rest einer vermieteten Wohnung ohne Zähler trägt dann der Vermieter, mit Warnung.
   Eine Einheit ohne Anschluss (etwa die Garage ohne Wasser) gilt nicht als Wohnung ohne Zähler.
+  Bei einer Wohnung mit Zimmern (siehe unten) geht der Zähler der Wohnung zuerst auf die Wohnung und dann nach Fläche
+  oder Personentagen auf die Zimmer.
 - **Direktzuordnung** an eine Wohnung
 - **Vereinbarte Anteile** in Prozent je Wohnung
 - **Laut Gemeinschaftsabrechnung:** bei der Eigentumswohnung den eigenen Anteil aus der
   Hausgeldabrechnung übernehmen, nach Miteigentumsanteilen, Fläche oder je Einheit
 - **Einzelbeträge** je Mietverhältnis, etwa aus der fertigen Abrechnung eines Messdienstes
+
+## Zimmer einer Wohnung (WG)
+
+Vermieten Sie die Zimmer einer Wohnung einzeln, jeweils mit eigenem Vertrag, legen Sie die Wohnung mit ihrer
+Gesamtfläche an und jedes Zimmer als eigene Einheit; dort wählen Sie „Liegt als Zimmer in der Wohnung“. Die
+Wohnung selbst hat kein Mietverhältnis und keine Nutzung, beides gehört an die Zimmer.
+
+- **Fläche:** Jedes Zimmer zählt mit dem Anteil an der Wohnfläche, den es an den Zimmerflächen hat. Die ganze Wohnung mit
+  Küche, Bad und Flur zählt so genau einmal. Fehlt die Fläche der Wohnung, rechnet Mietfuchs mit den Zimmerflächen, wie sie
+  stehen, und warnt.
+- **Einheiten:** Beim Schlüssel „Wohneinheiten“ zählt die Wohnung einmal, nicht je Zimmer.
+- **Zähler der Wohnung:** Der Zähler der Wohnung (Kaltwasser, Strom, Sonstiges) erfasst den Verbrauch der Wohnung, nicht
+  den des Zimmers. Mietfuchs rechnet ihn deshalb erst der Wohnung zu und teilt ihn dann auf die Zimmer, nach Fläche oder
+  nach Personentagen (Auswahl „Zähler der Wohnung auf die Zimmer verteilen nach“ an der Kostenposition). Für Zimmer ohne
+  eigenen Zähler gibt es keinen erfassten Verbrauch, der vorginge.
+- **Heizung:** Jeder Zimmermieter ist Nutzer im Sinne der Heizkostenverordnung. Wärme-, Warmwasser- und
+  Heizkostenverteilerzähler gehören an die Zimmer; ein Wärmezähler der ganzen Wohnung, nach Fläche auf die Zimmer geteilt,
+  ist keine Verbrauchserfassung je Nutzer, und die Mieter dürfen um 15 % kürzen (§ 12 Abs. 1 HeizkostenV).
+- **Strom und Internet der WG** sind keine Betriebskosten und lassen sich nur durch eine gesonderte Abrede verlangen, etwa
+  als Pauschale. Mietfuchs rechnet sie auf Wunsch mit ab und weist darauf hin.
+- **Umbau zur WG:** Eine bisher im Ganzen vermietete Wohnung behalten Sie für die alten Jahre, nehmen sie ab dem Umbau per
+  Nutzungswechsel heraus und legen eine neue Wohnung mit Zimmern an.
 
 Je Position lässt sich die Verteilbasis auf bestimmte Wohnungen eingrenzen (z. B. Aufzug nur für
 die oberen Etagen). Korrekturen der tatsächlich gezahlten Vorauszahlungen (z. B. ausgefallene

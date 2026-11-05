@@ -76,7 +76,7 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.
   `cost_items.direct_unit_id` ist **`SET NULL`**: die Rechnung gehört weiter in ihre Abrechnung.
   Aufs Objekt verweisen Wurzeln mit `RESTRICT`. Eine Wohnung mit Rechnungen einer Etagenheizung
-  löscht die Route nicht (409, `dependents.fuelDeliveries`).
+  löscht die Route nicht (409, `dependents.fuelDeliveries`); ebenso keine Wohnung mit Zimmern (409, `dependents.rooms`).
 - **Quellen aufgeteilter Rechnungen** (#455): `cost_sources` (Objekt, Regel `days`); `cost_items.source_id` verweist darauf mit
   **`RESTRICT`**: Eine Quelle mit Teilen wird nicht gelöscht, die Teile gehen zuerst (der letzte Teil löscht die Quelle
   im Repository mit). In der erzeugten Datenbank stand dieser Fremdschlüssel bis zum Schritt
@@ -97,6 +97,18 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   der Position an der Prüfung); die Löschfrage zählt diese Angaben mit (`meterRestUnitLinks`). Die zwei Schritte 0085 (Tabellen, Spalte) und 0086 (Bedingungen an
   `meters`, Neubau) sind getrennt, weil drizzle-kit eine neue Spalte samt Bedingung in einem Schritt falsch umbaut. Schritt 0087 nimmt den Rest-Schlüssel
   `standard` („tragen Sie (wie bisher)“ mit Zwischenzähler) in die Bedingung auf (Neubau von `cost_item_meter_rest`).
+- **Zimmer einer Wohnung** (#573, [rooms.ts](rooms.ts)): `units.parent_unit_id` verweist auf die Wohnung, in der die Einheit als
+  Zimmer liegt (`NULL` keine; `RESTRICT`, die Bedingung `units_parent_valid` verbietet nur den Verweis auf sich selbst); eine
+  Einheit, auf die eine andere verweist, heißt Wohnung mit Zimmern, ein eigenes Feld dafür gibt es nicht. `cost_items.room_split`
+  (`area`/`persons`, `NULL` heißt Fläche) wird nur beim Schlüssel `meter` gespeichert (`roomSplitOf`). **Alle übrigen Regeln kennt nur
+  das Repository**, je ein Satz (400, bei einem fremden Objekt `CrossPropertyError`, Löschen 409): `guardRooms` beim Speichern
+  einer Einheit (Wohnung desselben Objekts, eine Ebene, nicht sie selbst; die Wohnung hat kein Mietverhältnis, ist nicht
+  selbstgenutzt, hat keine Nutzungswechsel, nur Zähler für Kaltwasser, Strom und Sonstiges und wird nirgends als Empfänger
+  genannt), `guardRoomTenancy`, `guardRoomMeter`, `guardRoomRecipients` an der jeweiligen Route, `guardRoomsRemoval` beim Löschen
+  (die Löschfrage zählt `dependents.rooms`). `roomViolations` prüft denselben Bestand als Ganzes und ist Teil von
+  `crossPropertyViolations` (Wiederherstellen, Rücksprung). Die Berechnung liest nichts davon aus der Datenbank, sie bekommt
+  `parentUnitId` über den Schnappschuss. Die Schritte trennen Spalte und Bedingung, weil drizzle-kit beides in einem Schritt
+  falsch umbaut (wie 0085/0086).
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn

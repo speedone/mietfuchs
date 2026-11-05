@@ -8,6 +8,7 @@ import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } fr
 import { NOTICE_KINDS } from '../src/calc.ts'
 import { co2HalfSplit, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { hkvCutNotByConsumption } from '../../shared/law/heizkostenv.ts'
 import { estgAcquisitionRelated, estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { ustgSmallBusiness } from '../../shared/law/ustg.ts'
 import { spreadRates } from '../../shared/spread.ts'
@@ -701,4 +702,29 @@ test('Verteilung nach § 82b EStDV: Garagen nach dem Wortlaut, Ferienwohnung mit
   assert.match(all, /nicht mehr als ein Personenkraftwagen für jede Wohnung untergestellt werden kann/)
   assert.match(all, /Ferienwohnung.*BFH, Urteil vom 04\.09\.2000, IX R 75\/99/s)
   assert.match(all, /weder abgezogen noch verteilt.*ohne den Anteil des ersten Jahres.*IX R 152\/89.*rechnet Mietfuchs nicht/s)
+})
+
+// #573: Das Beispiel „Zimmer einer Wohnung (WG)“ rechnet die wirksamen Flächen und die Aufteilung des Zählers der Wohnung
+// mit derselben Funktion wie die Berechnung nach; Heizung und Wechsel zur WG stehen, wie der Entwurf es festlegt.
+test('Zimmer einer Wohnung: Beispiel nachgerechnet, Heizung, § 12 und Wechsel zur WG', async () => {
+  const { effectiveRoomAreas } = await import('../../shared/rooms.ts')
+  const areas = effectiveRoomAreas({ areaM2: 90 }, [{ id: 'a', areaM2: 20 }, { id: 'b', areaM2: 15 }, { id: 'c', areaM2: 25 }])
+  assert.deepEqual([...areas.values()], [30, 22.5, 37.5])
+  const t = GLOSSARY.roomOfFlat
+  assert.match(t.example, /90 m² × 20\/60 = 30 m²/)
+  assert.match(t.example, /22,5 m²/)
+  assert.match(t.example, /37,5 m²/)
+  assert.deepEqual([30 * 20 / 60, 30 * 15 / 60, 30 * 25 / 60], [10, 7.5, 12.5])
+  assert.match(t.example, /10 m³, 7,5 m³ und 12,5 m³/)
+  assert.match(t.needed, /§ 1 HeizkostenV/)
+  assert.match(t.needed, new RegExp(`${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} %`))
+  assert.equal(valueAt(hkvCutNotByConsumption, LAW_AS_OF), 15)
+  assert.match(t.needed, /§ 12 Abs\. 1 HeizkostenV/)
+  assert.match(t.needed, /Wechsel zur WG/)
+  assert.match(t.needed, /Nutzungswechsel/)
+  assert.match(t.needed, /§ 556 Abs\. 4 BGB/)
+  assert.match(t.norm ?? '', /VIII ZR 69\/09/)
+  for (const code of ['unit.rooms-area', 'rooms.outside-basis', 'rooms.household-cost'] as const) {
+    assert.ok(NOTICE_KINDS[code]?.terms?.includes('roomOfFlat'), code)
+  }
 })

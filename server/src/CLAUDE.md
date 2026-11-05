@@ -835,6 +835,27 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   **Misst der Bezugszähler nur einen Teil des Hauses**, sind die Teilnehmer („nur bestimmte Wohnungen
   beteiligen“) auf die Einheiten dahinter einzuschränken; Mietfuchs tut das nicht selbst. Heizung bleibt
   ausgenommen (HeizkostenV, docs/heizung.md).
+- **Zimmer einer Wohnung** (#573, Entwurf `2026-11-05-wohnung-zimmer-design.md`; Speichern und Prüfungen in [db/rooms.ts](db/CLAUDE.md),
+  Sicht der Rechnung in [shared/rooms.ts](../../shared/rooms.ts)): Eine Einheit, auf die andere mit `parentUnitId` verweisen, ist eine
+  Wohnung mit Zimmern; **für die Rechnung gilt die Sicht `roomView`**, gesetzt beim Bilden des Schnappschusses, damit jeder Leser von
+  Fläche und Name sie bekommt. Die Zimmer tragen ihre **wirksame Fläche** (Fläche der Wohnung × Zimmerfläche / Summe der
+  Zimmerflächen, die ganze Wohnung mit Küche, Bad und Flur zählt so genau einmal) und den Namen „<Zimmer> in der Wohnung <Wohnung>“
+  (`roomName`); die Wohnung selbst steht in keiner Verteilbasis (Fläche 0, `participates` und `selfUsed` false), nur ihre Kennung bleibt
+  für die Zähler. Ohne `parentUnitId` ist die Sicht der Bestand selbst, keine Zahl wandert. **Der Schlüssel „Einheiten“ zählt die Wohnung
+  einmal**, nicht je Zimmer. **Der Zähler der Wohnung** (Kaltwasser, Strom, Sonstiges) misst den Verbrauch der Wohnung, nicht des
+  Zimmers (§ 556a Abs. 1 Satz 2 BGB): Er geht beim Schlüssel `meter` zuerst auf die Wohnung und innerhalb auf **alle** Zimmer nach
+  `CostItem.roomSplit` (`area`, Voreinstellung: wirksame Fläche mal Tage; `persons`: Personentage mit Leerstand nach #177), in Mengen,
+  das Geld entsteht danach einmal gerundet (#202). Der Teil leerer Tage, ausgenommener Zimmer und Zimmer außerhalb der Basis steht beim
+  Vermieter und geht nie an die übrigen Zimmer. Hat ein Zimmer einen eigenen Zähler derselben Sparte, misst der der Wohnung ihn mit:
+  die Position wird nicht verteilt (Fehler, Betrag beim Vermieter). Wärme, Warmwasser und Heizkostenverteiler hängen am Zimmer; ein
+  Wärmezähler der ganzen Wohnung wäre keine Verbrauchserfassung je Nutzer (§ 12 Abs. 1 HeizkostenV, 15 % Kürzung), Auslegung und
+  Festlegungen im Lexikon `roomOfFlat`. Hinweise: `unit.rooms-area` (Wohnung ohne Fläche, es gelten die Zimmerflächen),
+  `rooms.outside-basis` (ein Zimmer außerhalb der Basis, sein Teil bleibt beim Vermieter), `rooms.household-cost` (Kosten nur
+  der Wohnung, etwa Strom oder Internet der WG, sind keine Betriebskosten: § 556 Abs. 1 und 4 BGB, § 1 BetrKV; Wasser, Entwässerung
+  und Heizung ausgenommen). Die Oberfläche bietet nur an, was der Server annimmt (`parentUnitOptions` in client/src/unitForm.ts,
+  `showsRoomSplit` in costForm.ts, `meterTypeChoices` in meterForm.ts); **der Wechsel einer im Ganzen vermieteten Wohnung zur WG
+  ist kein Merkmal**, das Lexikon beschreibt den Weg (alte Wohnung ab dem Umbau per Nutzungswechsel herausnehmen, neue Wohnung mit
+  Zimmern anlegen).
 - **Leerstand beim Personenschlüssel** (#177): Jede vermietbare Wohnung der Basis zählt je Tag ohne
   Mietverhältnis mit `VACANCY_PERSONS` (1) Personen; der Anteil bleibt als `vacancy` beim Vermieter.
   **Das ist eine Auslegung an genau einer Stelle** (höchstrichterlich nicht geklärt; VIII ZR 159/05,

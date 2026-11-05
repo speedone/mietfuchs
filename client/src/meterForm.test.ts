@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
+import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -304,4 +304,29 @@ test('#98 Durchsicht: die Frage nach dem Teil des Hauses nur bei Kaltwasser, Str
   expect(meterBody({ ...house, type: 'waerme', unit: 'kWh' }, null)).toMatchObject({ body: { scope: null } })
   // Ein gespeichertes `common` bleibt sichtbar und wird so gesendet (angezeigt gleich gespeichert).
   expect(asksScope({ ...house, type: 'waerme', scope: 'common' })).toBe(true)
+})
+
+// Zimmer einer Wohnung (#573): An einer Wohnung mit Zimmern hängen nur Kaltwasser, Strom und Sonstiges.
+describe('Zähler an einer Wohnung mit Zimmern', () => {
+  const unit = (id: string, parentUnitId?: string) => ({ id, propertyId: 'p', name: id, areaM2: 20, participates: true, parentUnitId })
+  const units = [unit('wg'), unit('z1', 'wg'), unit('eg')]
+
+  test('Sparten: an der Wohnung mit Zimmern nur die drei, sonst alle', () => {
+    expect(meterTypeChoices('wg', units, 'kaltwasser')).toEqual(['kaltwasser', 'strom', 'sonstig'])
+    expect(meterTypeChoices('eg', units, 'kaltwasser')).toEqual(['kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig'])
+    expect(meterTypeChoices('', units, 'waerme')).toHaveLength(6)
+    expect(meterTypeChoices('z1', units, 'hkv')).toHaveLength(6)
+  })
+
+  test('die gespeicherte Sparte steht immer darin, auch wenn der Server sie ablehnt', () => {
+    expect(meterTypeChoices('wg', units, 'waerme')).toContain('waerme')
+  })
+
+  test('Zuordnung: Wärme, Warmwasser und Heizkostenverteiler bieten die Wohnung mit Zimmern nicht an', () => {
+    expect(meterUnitChoices(units, 'waerme', '').map((u) => u.id)).toEqual(['z1', 'eg'])
+    expect(meterUnitChoices(units, 'hkv', '').map((u) => u.id)).toEqual(['z1', 'eg'])
+    expect(meterUnitChoices(units, 'kaltwasser', '').map((u) => u.id)).toEqual(['wg', 'z1', 'eg'])
+    // die gewählte bleibt, damit die Auswahl zeigt, was gespeichert ist
+    expect(meterUnitChoices(units, 'waerme', 'wg').map((u) => u.id)).toEqual(['wg', 'z1', 'eg'])
+  })
 })
