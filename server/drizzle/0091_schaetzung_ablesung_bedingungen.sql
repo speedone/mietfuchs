@@ -13,8 +13,8 @@ CREATE TABLE `__new_readings` (
 	FOREIGN KEY (`meter_id`) REFERENCES `meters`(`id`) ON UPDATE no action ON DELETE cascade,
 	CONSTRAINT "readings_value_not_negative" CHECK("value" >= 0),
 	CONSTRAINT "readings_old_end_value_not_negative" CHECK("old_end_value" >= 0),
-	CONSTRAINT "readings_estimated_valid" CHECK("estimated" IS NULL OR "estimated" = 1),
-	CONSTRAINT "readings_estimate_reason_valid" CHECK(("estimated" IS NULL AND "estimate_reason" IS NULL) OR ("estimated" = 1 AND trim("estimate_reason") <> ''))
+	CONSTRAINT "readings_estimated_valid" CHECK("estimated" IS NULL OR "estimated" IS 1),
+	CONSTRAINT "readings_estimate_reason_valid" CHECK(("estimated" IS NULL AND "estimate_reason" IS NULL) OR ("estimated" IS 1 AND "estimate_reason" IS NOT NULL AND trim("estimate_reason") <> ''))
 );
 --> statement-breakpoint
 INSERT INTO `__new_readings`("id", "meter_id", "date", "value", "replacement", "old_end_value", "note", "interim_for", "estimated", "estimate_reason") SELECT "id", "meter_id", "date", "value", "replacement", "old_end_value", "note", "interim_for", "estimated", "estimate_reason" FROM `readings`;--> statement-breakpoint

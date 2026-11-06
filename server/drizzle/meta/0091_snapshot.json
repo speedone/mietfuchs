@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ec51d436-c76f-43f8-9e9b-ce235f883876",
+  "id": "5a4b5b39-154e-44e0-9eb6-c0ca4fa830d9",
   "prevId": "b1aa5570-36a0-4761-b0af-a02c624b675f",
   "tables": {
     "ai_slots": {
@@ -6226,11 +6226,11 @@
         },
         "readings_estimated_valid": {
           "name": "readings_estimated_valid",
-          "value": "\"estimated\" IS NULL OR \"estimated\" = 1"
+          "value": "\"estimated\" IS NULL OR \"estimated\" IS 1"
         },
         "readings_estimate_reason_valid": {
           "name": "readings_estimate_reason_valid",
-          "value": "(\"estimated\" IS NULL AND \"estimate_reason\" IS NULL) OR (\"estimated\" = 1 AND trim(\"estimate_reason\") <> '')"
+          "value": "(\"estimated\" IS NULL AND \"estimate_reason\" IS NULL) OR (\"estimated\" IS 1 AND \"estimate_reason\" IS NOT NULL AND trim(\"estimate_reason\") <> '')"
         }
       }
     },

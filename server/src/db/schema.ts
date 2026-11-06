@@ -1632,8 +1632,9 @@ export const readings = sqliteTable(
     notNegative('readings_value_not_negative', 'value'),
     notNegative('readings_old_end_value_not_negative', 'old_end_value'),
     // #98: Eine Schätzung hat eine Begründung, eine Ablesung keine. Der Satz dazu kommt vorher aus dem Repository.
-    check('readings_estimated_valid', sql.raw(`"estimated" IS NULL OR "estimated" = 1`)),
-    check('readings_estimate_reason_valid', sql.raw(`("estimated" IS NULL AND "estimate_reason" IS NULL) OR ("estimated" = 1 AND trim("estimate_reason") <> '')`)),
+    // Verglichen mit IS (Durchsicht M1): Ein CHECK, der NULL ergibt, gilt in SQLite als erfüllt.
+    check('readings_estimated_valid', sql.raw(`"estimated" IS NULL OR "estimated" IS 1`)),
+    check('readings_estimate_reason_valid', sql.raw(`("estimated" IS NULL AND "estimate_reason" IS NULL) OR ("estimated" IS 1 AND "estimate_reason" IS NOT NULL AND trim("estimate_reason") <> '')`)),
   ],
 )
 
