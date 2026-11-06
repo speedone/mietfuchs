@@ -55,6 +55,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 
 - 🏘️ **Mehrere Objekte** in einer Installation: Häuser und Eigentumswohnungen, jedes rechnet für sich
 - 🏠 **Selbstgenutzte Wohnung, Garage, Stellplatz:** zählen in die Verteilbasis, der Anteil der selbstgenutzten bleibt beim Vermieter
+- 🛏️ **Zimmer einer Wohnung (WG)** einzeln vermieten: jedes Zimmer mit Anteil an der Wohnfläche, die Wohnung zählt genau einmal
 - 📈 **Staffeln** für Personenzahl, Vorauszahlung, Kaltmiete und Pauschale: kein neues Mietverhältnis bei Geburt, Auszug oder Erhöhung
 - 🧾 **Nebenkostenmodell je Mietverhältnis:** Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte Betriebskosten und Heizung
 - 📅 **Abrechnungszeitraum wählbar:** Kalenderjahr oder etwa Mai bis April, mit Vorschau beim Wechsel
@@ -68,7 +69,8 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 - 🔁 **Kosten aus dem Vorjahr übernehmen:** Positionen samt Umlageschlüssel übernehmen, nur den neuen Betrag eintragen; den Schlüssel merkt sich Mietfuchs je Kostenart
 - 🛠️ **§35a-Lohnanteil, Gutschriften, Erhaltungsrücklage** und Reparaturen, die sich für die Steuer einer Einheit zuordnen lassen
 - 📆 **Leerstand und Zeiträume:** Leerstand trägt der Vermieter, eine Rechnung über zwei Zeiträume teilt Mietfuchs nach Tagen auf
-- 📏 **Zähler** mit Jahres- und Zwischenablesung beim Mieterwechsel, Zählerwechsel, Plausibilitäts- und Eichfrist-Warnung
+- 📏 **Zähler** mit Jahres- und Zwischenablesung beim Mieterwechsel, Zählerwechsel, geschätzter Ablesung mit Begründung, Plausibilitäts- und Eichfrist-Warnung
+- 💧 **Allgemeinverbrauch am Hauptzähler** (Treppenhaus, Garten, Messdifferenz) nach Zählern, Fläche, Personen oder Einheiten verteilen, auch über Zähler für einen Teil des Hauses wie den Allgemeinstrom
 
 **Heizung und Warmwasser**
 

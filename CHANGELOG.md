@@ -18,28 +18,30 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die nur die WG betreffen (Strom, Internet: keine Betriebskosten), und bei Zimmern außerhalb der Verteilbasis. Wer ein Haus
   im Ganzen vermietet, merkt nichts davon. Das Lexikon erklärt „Zimmer einer Wohnung (WG)“ mit Heizung, § 12 HeizkostenV
   und dem Umbau einer vermieteten Wohnung zur WG.
-- **Bezugszähler und verteilter Rest**: Bei einer Kostenposition nach Verbrauch wählen Sie jetzt, von welchem Zähler
-  der Allgemeinverbrauch abgezogen wird (Voreinstellung: der Hauptzähler), und wie der Rest verteilt wird: wie bisher
-  (haben alle bewohnten Wohnungen einen Zähler, im Verhältnis der Zähler, sonst beim Vermieter oder als Ihr Eigenanteil),
-  im Verhältnis der Zähler oder nach Fläche, Personen oder Einheiten, auch nur für bestimmte Wohnungen. Gewählt „im
-  Verhältnis der Zähler“, nehmen Zähler von Wohnungen außerhalb der Abrechnungseinheit keinen Teil der Differenz mehr
-  auf; das gilt nur für so eingestellte Positionen.
-  Zwischenzähler hinter dem Bezugszähler legen Sie dem Vermieter, Ihrem Eigenanteil, einer Wohnung oder einer Gruppe
-  von Wohnungen zu oder schließen sie aus. Neu ist der Zählerbereich „Zähler für einen Teil des Hauses“, etwa ein
-  Allgemeinstromzähler. Mietfuchs warnt, wenn der Rest bei ganz gemessenen Wohnungen über 20 % des Bezugsverbrauchs
-  liegt, und verteilt nicht, wenn gemessene und ungemessene Einheiten vermischt wären. Bestehende Abrechnungen bleiben
-  centgenau unverändert ([#98](https://github.com/speedone/mietfuchs/issues/98)).
-- **Geschätzte Ablesung**: Konnten Sie einen Zählerstand nicht ablesen, haken Sie bei der Ablesung „Stand geschätzt
-  (nicht abgelesen)“ an und tragen die Begründung ein ([#98](https://github.com/speedone/mietfuchs/issues/98)). Mietfuchs
-  rechnet mit dem Stand wie mit einem abgelesenen, zeigt ihn auf der Seite Zähler als „geschätzt“ und nennt die Schätzung
-  mit Begründung beim Verbrauch des Mieters in der Abrechnung. Bei der eigenen Heizkostenabrechnung warnt Mietfuchs, wenn
-  geschätzte Ablesungen mehr als 25 % der Fläche betreffen; dann sind die Kosten nach § 9a Abs. 2 HeizkostenV nur nach
-  Fläche zu verteilen, was die Schätzung auf der Seite Heizkosten übernimmt. Keine Zahl einer bestehenden Abrechnung
-  ändert sich.
-- **Hinweis bei Wasser nach Personen oder Fläche**, obwohl jede vermietete Wohnung einen abgelesenen Kaltwasserzähler hat:
-  Ohne andere Vereinbarung ist dann nach Verbrauch umzulegen (§ 556a Abs. 1 Satz 2 BGB). Eine abweichende Vereinbarung im
-  Mietvertrag geht vor; Mietfuchs kennt sie nicht und ändert nichts an der Verteilung
-  ([#98](https://github.com/speedone/mietfuchs/issues/98)).
+- **Zähler: Allgemeinverbrauch verteilen, geschätzte Ablesung, Wasser nach Verbrauch**
+  ([#98](https://github.com/speedone/mietfuchs/issues/98)). Keine Zahl einer bestehenden Abrechnung ändert sich.
+  - **Bezugszähler und verteilter Rest**: Bei einer Kostenposition nach Verbrauch wählen Sie jetzt, von welchem Zähler
+    der Allgemeinverbrauch abgezogen wird (Voreinstellung: der Hauptzähler), und wie der Rest verteilt wird: wie bisher
+    (haben alle bewohnten Wohnungen einen Zähler, im Verhältnis der Zähler, sonst beim Vermieter oder als Ihr
+    Eigenanteil), im Verhältnis der Zähler oder nach Fläche, Personen oder Einheiten, auch nur für bestimmte Wohnungen.
+    Gewählt „im Verhältnis der Zähler“, nehmen Zähler von Wohnungen außerhalb der Abrechnungseinheit keinen Teil der
+    Differenz mehr auf; das gilt nur für so eingestellte Positionen. Zwischenzähler hinter dem Bezugszähler legen Sie
+    dem Vermieter, Ihrem Eigenanteil, einer Wohnung oder einer Gruppe von Wohnungen zu oder schließen sie aus.
+    Mietfuchs warnt, wenn der Rest bei ganz gemessenen Wohnungen über 20 % des Bezugsverbrauchs liegt, und verteilt
+    nicht, wenn gemessene und ungemessene Einheiten vermischt wären.
+  - **Zähler für einen Teil des Hauses**: Bei einem Zähler ohne Wohnung fragt die Seite Zähler „Misst dieser Zähler das
+    ganze Haus oder einen Teil?“. Ein Zähler für einen Teil des Hauses, etwa der Allgemeinstromzähler, ein
+    Gartenwasserzähler oder der Zähler einer WG, zählt nie als Hauptzähler; Sie wählen ihn an der Kostenposition als
+    Bezugs- oder Zwischenzähler.
+  - **Geschätzte Ablesung**: Konnten Sie einen Zählerstand nicht ablesen, haken Sie bei der Ablesung „Stand geschätzt
+    (nicht abgelesen)“ an und tragen die Begründung ein. Mietfuchs rechnet mit dem Stand wie mit einem abgelesenen,
+    zeigt ihn auf der Seite Zähler als „geschätzt“ und nennt die Schätzung mit Begründung beim Verbrauch des Mieters
+    in der Abrechnung. Bei der eigenen Heizkostenabrechnung warnt Mietfuchs, wenn geschätzte Ablesungen mehr als 25 %
+    der Fläche betreffen; dann sind die Kosten nach § 9a Abs. 2 HeizkostenV nur nach Fläche zu verteilen, was die
+    Schätzung auf der Seite Heizkosten übernimmt.
+  - **Hinweis bei Wasser nach Personen oder Fläche**, obwohl jede bewohnte Wohnung, auch Ihre eigene, einen
+    Kaltwasserzähler hat: Ohne andere Vereinbarung ist dann nach Verbrauch umzulegen (§ 556a Abs. 1 Satz 2 BGB). Eine
+    abweichende Vereinbarung im Mietvertrag geht vor; Mietfuchs kennt sie nicht und ändert nichts an der Verteilung.
 
 ### Geändert
 

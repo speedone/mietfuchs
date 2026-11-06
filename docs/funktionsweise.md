@@ -50,7 +50,10 @@ Kurzfassung steht im [README](../README.md#funktionen).
    Heizkostenverteiler) mit Ablesungen: Jahresablesung, Zwischenablesung beim Mieterwechsel
    (exakte Aufteilung), Zählerwechsel (Endstand alt + Startstand neu) mit Plausibilitätswarnung
    bei negativem Verbrauch. Mietfuchs warnt vor abgelaufener Eichfrist und nennt bei Geräten, die
-   aus der Ferne ablesbar sein müssen, die Kürzung nach der Heizkostenverordnung.
+   aus der Ferne ablesbar sein müssen, die Kürzung nach der Heizkostenverordnung. Ein Zähler ohne
+   Wohnung misst das ganze Haus (Hauptzähler) oder einen Teil davon, etwa den Allgemeinstrom oder den
+   Garten. Einen Stand, den du nicht ablesen konntest, kennzeichnest du als „geschätzt“ mit Begründung;
+   gerechnet wird mit ihm wie mit einem abgelesenen, und die Abrechnung nennt die Schätzung beim Mieter.
 5. **Heizkosten** (sobald eine Heizanlage angelegt ist): Rechnungen des Versorgers als Lieferungen,
    bei Öl, Flüssiggas, Pellets, Holz und Kohle mit Vorrat; die eigene Heizkostenabrechnung nach
    §§ 7 bis 9 HeizkostenV (Grund- und Verbrauchskosten, Warmwasseranteil gemessen oder nach
@@ -109,6 +112,15 @@ Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbeg
   selbstgenutzten neben einer Einliegerwohnung mit Zwischenzähler), wird der Hauptzähler zur
   Basis; den Rest einer vermieteten Wohnung ohne Zähler trägt dann der Vermieter, mit Warnung.
   Eine Einheit ohne Anschluss (etwa die Garage ohne Wasser) gilt nicht als Wohnung ohne Zähler.
+  Den **Allgemeinverbrauch**, also was der Hauptzähler oder ein anderer Bezugszähler mehr misst als
+  die Zähler dahinter, kannst du an der Kostenposition selbst verteilen: im Verhältnis der Zähler
+  oder nach Fläche, Personen oder Einheiten, auch nur auf bestimmte Wohnungen. Zwischenzähler ohne
+  Wohnung (etwa für den Garten) gehen vorher ab und an ein eigenes Ziel. Liegt der Rest bei ganz
+  gemessenen Wohnungen über 20 % des Bezugsverbrauchs, warnt Mietfuchs; gemessene und ungemessene
+  Wohnungen in einer Gruppe verteilt es nicht. Ohne Wahl bleibt alles wie bisher.
+  Verteilst du Wasser nach Personen oder Fläche, obwohl jede bewohnte Wohnung einen Kaltwasserzähler
+  hat, weist Mietfuchs auf § 556a Abs. 1 Satz 2 BGB hin; eine abweichende Vereinbarung im Mietvertrag
+  geht vor.
   Bei einer Wohnung mit Zimmern (siehe unten) geht der Zähler der Wohnung zuerst auf die Wohnung und dann nach Fläche
   oder Personentagen auf die Zimmer.
 - **Direktzuordnung** an eine Wohnung
@@ -119,9 +131,10 @@ Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbeg
 
 ## Zimmer einer Wohnung (WG)
 
-Vermieten Sie die Zimmer einer Wohnung einzeln, jeweils mit eigenem Vertrag, legen Sie die Wohnung mit ihrer
-Gesamtfläche an und jedes Zimmer als eigene Einheit; dort wählen Sie „Liegt als Zimmer in der Wohnung“. Die
-Wohnung selbst hat kein Mietverhältnis und keine Nutzung, beides gehört an die Zimmer.
+Vermietest du die Zimmer einer Wohnung einzeln, jeweils mit eigenem Vertrag, legst du die Wohnung mit ihrer
+Gesamtfläche an und jedes Zimmer als eigene Einheit; dort wählst du „Liegt als Zimmer in der Wohnung“. Die
+Wohnung selbst hat kein Mietverhältnis und keine Nutzung, beides gehört an die Zimmer. Wer ein Haus im Ganzen
+vermietet, merkt davon nichts.
 
 - **Fläche:** Jedes Zimmer zählt mit dem Anteil an der Wohnfläche, den es an den Zimmerflächen hat. Die ganze Wohnung mit
   Küche, Bad und Flur zählt so genau einmal. Fehlt die Fläche der Wohnung, rechnet Mietfuchs mit den Zimmerflächen, wie sie
@@ -139,8 +152,8 @@ Wohnung selbst hat kein Mietverhältnis und keine Nutzung, beides gehört an die
 - **Strom und Internet der WG** sind keine Betriebskosten (§ 556 Abs. 1 BGB, § 1 BetrKV), und eine Vereinbarung macht sie
   nicht dazu (§ 556 Abs. 4 BGB). Zulässig ist eine gesonderte Zahlungsabrede neben den Betriebskosten, etwa eine Pauschale
   oder eine Abrechnung nach Zähler. Mietfuchs rechnet solche Positionen auf Wunsch mit ab und weist darauf hin.
-- **Umbau zur WG:** Eine bisher im Ganzen vermietete Wohnung behalten Sie für die alten Jahre, nehmen sie ab dem Umbau per
-  Nutzungswechsel heraus und legen eine neue Wohnung mit Zimmern an.
+- **Umbau zur WG:** Eine bisher im Ganzen vermietete Wohnung behältst du für die alten Jahre, nimmst sie ab dem Umbau per
+  Nutzungswechsel heraus und legst eine neue Wohnung mit Zimmern an.
 
 Je Position lässt sich die Verteilbasis auf bestimmte Wohnungen eingrenzen (z. B. Aufzug nur für
 die oberen Etagen). Korrekturen der tatsächlich gezahlten Vorauszahlungen (z. B. ausgefallene
