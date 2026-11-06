@@ -1287,6 +1287,18 @@ describe('Allgemeinverbrauch im Kostenformular (#98)', () => {
     expect(withMeterRestKey(landlord, 'off', units).meterRest).toBeNull()
   })
 
+  // Browserprüfung 0.16.0 (S6): Am Zwischenzähler stand nur „tragen Sie“, direkt neben „tragen Sie (wie bisher)“ beim Rest,
+  // das etwas anderes bedeutet. Die Antwort am Zwischenzähler nennt den Vermieter und ist von jeder Antwort beim Rest
+  // verschieden.
+  test('Zwischenzähler: „tragen Sie als Vermieter“, nicht zu verwechseln mit den Antworten beim Rest', () => {
+    const f = withMeterRestKey(water(), 'area')
+    const labels = subTargetOptions(f, 'garten', units)
+    expect(labels.find((o) => o.value === 'landlord')?.label).toBe('tragen Sie als Vermieter')
+    const restLabels = meterRestKeyOptions({ ...on({ key: 'landlord' }) }).map((o) => o.label)
+    for (const o of labels) expect(restLabels).not.toContain(o.label)
+    expect(labels.every((o) => o.label !== 'tragen Sie')).toBe(true)
+  })
+
   test('Zwischenzähler mit Ziel: angezeigter Wert gleich gespeichertem, die Garage direkt', () => {
     const f = withMeterRestKey(water(), 'area')
     const values = subTargetOptions(f, 'garten', units).map((o) => o.value)
