@@ -20,6 +20,7 @@
 
 import { periodContaining, periodOfKey, periodsBetween, settlementDeadline } from './period.ts'
 import type { BillingPeriod, CaptureMethod, HeatingPlant, HeatingPlantUnit, HotWater, PeriodKey, PeriodRules, SelfSpanRange, SeparateSpan, Unit } from './types.ts'
+import { roomShares, type RoomView } from './rooms.ts'
 
 export type PlantRhythm = { periodStartMonth: number | null; periodChanges: readonly string[] }
 export type PlantWay = PlantRhythm & { separateSpans: readonly SeparateSpan[] }
@@ -91,6 +92,21 @@ export function settlementKeyOf(
 export const plantUnitValues = (plant: Pick<HeatingPlant, 'units' | 'basisValues'>): readonly HeatingPlantUnit[] => plant.units ?? plant.basisValues ?? []
 export const unitBasisOf = (plant: Pick<HeatingPlant, 'units' | 'basisValues'>, unitId: string): HeatingPlantUnit | undefined =>
   plantUnitValues(plant).find((u) => u.unitId === unitId)
+
+// Zimmer einer Wohnung (#573): Nennt die Anlage beheizte Fläche oder umbauten Raum nur für die Wohnung, gilt für ein Zimmer
+// ohne eigenen Wert der Wert der Wohnung nach dem Verhältnis der eingetragenen Zimmerflächen (`roomShares`, dieselbe
+// Teilung wie die wirksame Fläche). Ein eigener Wert des Zimmers geht vor. `rooms` ist die Sicht der Rechnung
+// (`roomView`); ohne sie oder ohne Zimmer ist es `unitBasisOf`.
+export type RoomBasisView = Pick<RoomView<{ id: string }>, 'flatOf' | 'roomsOf' | 'rawArea'>
+export function unitBasisValue(plant: Pick<HeatingPlant, 'units' | 'basisValues'>, unitId: string, field: 'heatedAreaM2' | 'volumeM3', rooms?: RoomBasisView): number | null {
+  const own = unitBasisOf(plant, unitId)?.[field] ?? null
+  if ((own ?? 0) > 0 || !rooms) return own
+  const flat = rooms.flatOf.get(unitId)
+  const flatValue = flat ? unitBasisOf(plant, flat.id)?.[field] ?? null : null
+  if (!flat || flatValue === null || !(flatValue > 0)) return own
+  const shares = roomShares((rooms.roomsOf.get(flat.id) ?? []).map((r) => ({ id: r.id, areaM2: rooms.rawArea.get(r.id) ?? 0 })))
+  return flatValue * (shares.get(unitId) ?? 0)
+}
 
 // Ohne Liste versorgt eine Anlage alle Wohnungen ohne „kein Anschluss: Wärme“ (#117), mit Liste
 // genau diese (PR 4, `units_limited`). Ein Zimmer einer Wohnung (#573) versorgt sie auch, wenn die Liste

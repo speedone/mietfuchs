@@ -12,7 +12,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   als Einheit mit „Liegt als Zimmer in der Wohnung“ ([#573](https://github.com/speedone/mietfuchs/issues/573)). Die Zimmer
   zählen mit dem Anteil der Wohnfläche, die ganze Wohnung mit Küche, Bad und Flur genau einmal; bei „Wohneinheiten“ zählt
   die Wohnung einmal. Der Zähler der Wohnung (Kaltwasser, Strom, Sonstiges) geht an der Kostenposition nach Fläche oder
-  Personentagen auf die Zimmer. Mietverhältnis, Nutzung und Wärmezähler gehören an die Zimmer; Mietfuchs warnt bei Kosten,
+  Personentagen auf die Zimmer; ein Warmwasserzähler im Zimmer zählt daneben für das Zimmer. Beheizte Fläche oder umbauter
+  Raum, bei der Heizanlage nur für die Wohnung eingetragen, gehen ebenso nach Fläche auf die Zimmer. Mietverhältnis, Nutzung
+  und Wärmezähler gehören an die Zimmer; Mietfuchs warnt bei Kosten,
   die nur die WG betreffen (Strom, Internet: keine Betriebskosten), und bei Zimmern außerhalb der Verteilbasis. Wer ein Haus
   im Ganzen vermietet, merkt nichts davon. Das Lexikon erklärt „Zimmer einer Wohnung (WG)“ mit Heizung, § 12 HeizkostenV
   und dem Umbau einer vermieteten Wohnung zur WG.

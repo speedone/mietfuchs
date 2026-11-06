@@ -9,7 +9,7 @@ import path from 'node:path'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { createEntity } from '../src/db/repository.ts'
-import { createHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 
@@ -56,5 +56,22 @@ test('Beheizte Fläche: verlangt bei den Zimmern, nicht bei der Wohnung', async 
     const ok = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, areaBasisHeat: 'heatedArea', unitValues }, '2026-02-01', newId))
     assert.equal(ok?.plant.areaBasisHeat, 'heatedArea')
     assert.equal((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.units ?? null, null)
+  })
+})
+
+test('Beheizte Fläche: die Liste der Anlage nennt die Wohnung, ihr Wert geht auf die Zimmer (keine Sackgasse beim Speichern)', async () => {
+  await withWg(async (opened) => {
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { units: [{ unitId: 'a' }, { unitId: 'wg' }] }))
+    const unitValues = [{ unitId: 'a', heatedAreaM2: 55 }, { unitId: 'wg', heatedAreaM2: 70 }]
+    const ok = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, areaBasisHeat: 'heatedArea', unitValues }, '2026-02-01', newId))
+    assert.equal(ok?.plant.areaBasisHeat, 'heatedArea')
+  })
+})
+
+test('Beheizte Fläche: fehlt sie bei der Wohnung und bei den Zimmern, nennt die Meldung die Zimmer', async () => {
+  await withWg(async (opened) => {
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { units: [{ unitId: 'a' }, { unitId: 'wg' }] }))
+    const unitValues = [{ unitId: 'a', heatedAreaM2: 55 }]
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, areaBasisHeat: 'heatedArea', unitValues }, '2026-02-01', newId)), /beheizte Fläche.*z1 in der Wohnung WG/)
   })
 })

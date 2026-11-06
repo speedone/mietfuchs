@@ -41,7 +41,7 @@ import { co2HalfSplitNewBuildings } from '../../../shared/law/co2kostaufg.ts'
 import { roomView } from '../../../shared/rooms.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, itemPeriodClosed, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { dropOpenHeatingLetters } from './letters.ts'
-import { buildingCycle, lineRoot, plantUnitValues, sameLine, servesUnit, unitBasisOf } from '../../../shared/heatingPeriod.ts'
+import { buildingCycle, lineRoot, plantUnitValues, sameLine, servesUnit, unitBasisOf, unitBasisValue } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, OPERATING_POWER_HANDLINGS, PREVIOUS_SUPPLIES, co2Statements as co2StatementRows, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
@@ -224,12 +224,11 @@ async function guardBasisValues(db: Executor, after: HeatingPlant): Promise<void
   if (after.areaBasisHeat === 'area') return
   const basis = after.areaBasisHeat
   // Zimmer einer Wohnung (#573): verlangt bei den Zimmern, nicht bei der Wohnung (Sicht der Rechnung, Fläche 0).
-  const missing = roomView((await readUnits(db)).filter((u) => u.propertyId === after.propertyId)).units
+  // Nennt die Anlage den Wert nur für die Wohnung, geht er auf ihre Zimmer (`unitBasisValue`).
+  const view = roomView((await readUnits(db)).filter((u) => u.propertyId === after.propertyId))
+  const missing = view.units
     .filter((u) => servesUnit(after, u) && (u.areaM2 || 0) > 0)
-    .filter((u) => {
-      const v = unitBasisOf(after, u.id)
-      return !(((basis === 'volume' ? v?.volumeM3 : v?.heatedAreaM2) ?? 0) > 0)
-    })
+    .filter((u) => !((unitBasisValue(after, u.id, basis === 'volume' ? 'volumeM3' : 'heatedAreaM2', view) ?? 0) > 0))
     .map((u) => u.name)
   if (missing.length > 0) throw new HeatingError(400, basisMissingText(basis, missing))
 }
