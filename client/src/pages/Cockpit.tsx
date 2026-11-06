@@ -339,7 +339,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
         const t = heatingRowTarget(h, rules)
         void switchPeriod(t.period).then((ok) => { if (ok) onNavigate('abrechnung', t.focus) })
       } : undefined
-      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: 'Zur Abrechnung', go }) })
+      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: row.cta ?? 'Zur Abrechnung', go }) })
     }
 
     return list
@@ -355,8 +355,9 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
   const sentAt = settlement?.closed?.sentAt ?? null
   const openTitles = relevant.filter((c) => c.level !== 'gruen').map((c) => c.title)
 
+  // #337: Ein Versanddatum, das zu prüfen ist, steht neutral statt grün.
   const statusBadge = settlement?.closed?.sentAt
-    ? <span className="badge green">versendet</span>
+    ? <span className={sentAtRefusal(settlement.closed.sentAt, settlement.period.to, localToday()) ? 'badge' : 'badge green'}>versendet</span>
     : settlement?.closed
       ? <span className="badge">abgeschlossen</span>
       : <span className="badge gray">Entwurf</span>

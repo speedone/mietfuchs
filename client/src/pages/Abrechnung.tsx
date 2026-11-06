@@ -418,7 +418,15 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Feld stehen, der Entwurf mit ihm. Er gehört zu diesem Abschluss der gewählten Abrechnung: Eine
   // andere Abrechnung oder „Wieder öffnen“ verwirft ihn, sonst zählte er unsichtbar als offenes
   // Formular weiter und tauchte beim nächsten Abschluss wieder auf.
-  const sentAt = useDraft(data?.closed?.sentAt ?? '', { scope: `${propertyId ?? ''}|${paths.close}|${data?.closed?.closedAt ?? ''}` })
+  const sentAtScope = `${propertyId ?? ''}|${paths.close}|${data?.closed?.closedAt ?? ''}`
+  const sentAt = useDraft(data?.closed?.sentAt ?? '', { scope: sentAtScope })
+  // „Als versendet markieren“ ist ein Schritt (#337, Durchsicht): Das Feld bleibt stehen, bis „Verwerfen“ oder
+  // „Speichern“ ihn beendet, auch wenn das Datum geleert ist und der Entwurf dann dem Gespeicherten gleicht. Er gehört
+  // zum scope des Entwurfs; eine andere Abrechnung oder „Wieder öffnen“ beendet ihn.
+  const [markingScope, setMarkingScope] = useState<string | null>(null)
+  const marking = markingScope === sentAtScope
+  useOpenForm(marking)
+  const sentAtDraft = { ...sentAt, discard: () => { sentAt.discard(); setMarkingScope(null) } }
   // #337: Ein Datum nach heute oder vor dem Ende des Zeitraums wird nicht gespeichert (der Grund steht am Feld), und ein
   // gespeichertes ändert sich nur nach einer Rückfrage.
   async function saveSentAt(value: string) {
@@ -428,6 +436,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     if (change && !(await confirm({ ...change, defaultChoice: 'cancel' }))) return keepDraft
     if (value && !(await askSentMonth(value, 'Versanddatum speichern'))) return keepDraft
     await api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: value || null }) })
+    setMarkingScope(null)
     await load()
   }
   const isClosed = !!data?.closed
@@ -795,8 +804,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {isClosed ? (
                 // Der Versand ist ein eigener Schritt nach dem Abschluss (#337): erst „Als versendet markieren“, dann das
                 // Datum (Vorgabe heute) mit „Speichern“. Ein gespeichertes Datum steht im Feld.
-                !data.closed?.sentAt && !sentAt.dirty && !sentAt.error ? (
-                  <button type="button" className="btn" data-jump-focus onClick={() => sentAt.set(localToday())}>
+                !data.closed?.sentAt && !marking && !sentAt.dirty && !sentAt.error ? (
+                  <button type="button" className="btn" data-jump-focus onClick={() => { setMarkingScope(sentAtScope); sentAt.set(localToday()) }}>
                     Als versendet markieren
                   </button>
                 ) : (
@@ -812,7 +821,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                         onChange={(e) => sentAt.set(e.target.value)}
                       />
                     </label>
-                    <DraftActions draft={sentAt} onSave={saveSentAt} what="Versanddatum" />
+                    <DraftActions draft={sentAtDraft} onSave={saveSentAt} what="Versanddatum" />
+                    {/* Geleert gleicht der Entwurf dem Gespeicherten, „Verwerfen“ beendet den Schritt dann trotzdem. */}
+                    {marking && !sentAt.dirty && (
+                      <button type="button" className="btn small secondary" onClick={sentAtDraft.discard}>
+                        Verwerfen{' '}<span className="sr-only">(Versanddatum)</span>
+                      </button>
+                    )}
                   </>
                 )
               ) : (

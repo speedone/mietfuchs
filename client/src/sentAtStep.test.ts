@@ -31,4 +31,20 @@ describe('Versanddatum plausibel (#337)', () => {
     expect(deadlineView('2025', '2026-12-31', '2025-11-30', [], heute, '2025-12-31').text).toMatch(/vor dem Ende des Abrechnungszeitraums/)
     expect(deadlineView('2025', '2026-12-31', '2026-03-01', [], heute, '2025-12-31').text).toMatch(/gewahrt/)
   })
+
+  test('ein unplausibles Versanddatum eines früheren Abschlusses zählt nicht als Versand', () => {
+    const heute = new Date(2026, 2, 10, 12)
+    const frueher = (sentAt: string) => ({ id: 'h', closedAt: '2026-01-10T09:00:00.000Z', sentAt, reopenedAt: '2026-03-01T10:00:00.000Z', settlement: {} })
+    const zukunft = deadlineView('2025', '2026-12-31', null, [frueher('2026-06-01')], heute, '2025-12-31')
+    expect(zukunft.level).toBe('notice')
+    expect(zukunft.text).not.toMatch(/gewahrt/)
+    expect(zukunft.text).toBe('Als Versanddatum einer früheren Fassung der Abrechnung 2025 ist der 01.06.2026 eingetragen. Das Versanddatum liegt nach heute. Tragen Sie den Tag ein, an dem die Abrechnung an die Mieter ging. Abrechnungsfrist (§ 556 BGB): Die Abrechnung 2025 muss dem Mieter bis zum 31.12.2026 zugehen - noch 296 Tage.')
+    // Nach Fristende: kein „nach dem Ende der Frist“ aus einem Datum, das nicht stimmen kann; die Frist ohne Versand gilt.
+    const spaet = deadlineView('2025', '2026-12-31', null, [frueher('2027-02-01')], new Date(2027, 0, 10, 12), '2025-12-31')
+    expect(spaet.level).toBe('error')
+    expect(spaet.text).not.toMatch(/nach dem Ende der Frist/)
+    expect(spaet.text).toMatch(/^Als Versanddatum einer früheren Fassung der Abrechnung 2025 ist der 01\.02\.2027 eingetragen\. Das Versanddatum liegt nach heute\./)
+    // Ein plausibles früheres Datum geht einem unplausiblen vor.
+    expect(deadlineView('2025', '2026-12-31', null, [frueher('2025-11-01'), frueher('2026-01-12')], heute, '2025-12-31').text).toMatch(/am 12\.01\.2026 versendet .*gewahrt/)
+  })
 })

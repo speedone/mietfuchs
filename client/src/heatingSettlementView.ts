@@ -6,6 +6,7 @@ import { fmtDate } from './api'
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
 import { formatDayRange, paymentYear, periodLabel } from '../../shared/period.ts'
 import { taxYearOptions } from './costForm'
+import { sentAtRefusal } from './sentAtStep'
 import type { BillingPeriod, HeatingPlant, HeatingPrepaymentOverride, HeatingSettlementInfo, PeriodKey, PeriodRules, Settlement, Statement, Tenancy, Unit } from './types'
 
 const sameDays = (a: Pick<BillingPeriod, 'from' | 'to'>, b: Pick<BillingPeriod, 'from' | 'to'>): boolean => a.from === b.from && a.to === b.to
@@ -75,7 +76,8 @@ export function heatingOverridesWith(tenancy: Pick<Tenancy, 'heatingPrepaymentOv
   return cents === null ? rest : [...rest, { plantId, period, cents, provisional: false, fromMonth: null, toMonth: null }]
 }
 
-export type HeatingDeadlineRow = { key: string; label: string; level: 'gruen' | 'gelb' | 'rot'; text: string }
+// `cta`: die Beschriftung des Sprungs, wenn sie nicht „Zur Abrechnung“ ist.
+export type HeatingDeadlineRow = { key: string; label: string; level: 'gruen' | 'gelb' | 'rot'; text: string; cta?: string }
 
 // Das Cockpit führt jede beendete Heizperiode nach Weg d mit ihrer eigenen Frist (3.1, B3).
 export function cockpitHeatingRows(list: readonly HeatingSettlementInfo[], today: string): HeatingDeadlineRow[] {
@@ -83,6 +85,11 @@ export function cockpitHeatingRows(list: readonly HeatingSettlementInfo[], today
     const label = `Heizkostenabrechnung ${h.period.label}${h.plantName ? ` (${h.plantName})` : ''}`
     const key = `${h.plantId}|${h.period.key}`
     const sent = h.closed?.sentAt ?? null
+    // #337: Ein vor der Prüfung gespeichertes Datum nach heute oder vor dem Ende der Heizperiode ist kein Versand.
+    const implausible = sent !== null ? sentAtRefusal(sent, h.period.to, today) : null
+    if (sent !== null && implausible) {
+      return { key, label, level: 'gelb', cta: 'Versanddatum prüfen', text: `Als Versanddatum ist der ${fmtDate(sent)} eingetragen. ${implausible}` }
+    }
     if (sent !== null) {
       return sent <= h.deadline
         ? { key, label, level: 'gruen', text: `Versendet am ${fmtDate(sent)}, vor Ablauf der Frist.` }

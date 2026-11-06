@@ -179,6 +179,7 @@ test('Abrechnung: „Versanddatum prüfen“ setzt den Fokus in das Feld „vers
   wrap(<Abrechnung settings={null} units={UNITS} tenancies={TENANCIES} reload={async () => {}} focus={{ kind: 'section', section: 'sentAt' }} onFocusDone={() => {}} />)
   const field = await screen.findByLabelText(/versendet am/, {}, SLOW)
   await waitFor(() => expect(document.activeElement).toBe(field))
+  expect(field.closest('.card')?.classList.contains('focus-target')).toBe(true)
 })
 
 test('Abrechnung: „Mietverhältnis anlegen“ bei Kosten ohne Mietverhältnis öffnet in den Stammdaten das Formular', async () => {

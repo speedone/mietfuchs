@@ -64,8 +64,10 @@ Kurzfassung steht im [README](../README.md#funktionen).
    oder abweichend am Objekt),
    §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
-   Eine versendete Abrechnung wird **abgeschlossen** und damit eingefroren; ändert sich danach
-   etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf.
+   Vor dem Versand wird die Abrechnung **abgeschlossen** und damit eingefroren; ändert sich danach
+   etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf. Ist sie
+   an die Mieter gegangen, hältst du das mit „Als versendet markieren“ und dem Datum des Versands fest;
+   ein Datum nach heute oder vor dem Ende des Abrechnungszeitraums nimmt Mietfuchs nicht an.
 7. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
    Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
    Zahlungseingänge füllen die Monate der Reihe nach, ein Monatsraster zeigt *bezahlt /

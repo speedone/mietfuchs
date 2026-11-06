@@ -367,9 +367,19 @@ test('Als versendet markieren (#337): Vorgabe heute, unplausible Daten werden ni
   expect(status.className).toBe('badge')
   expect(screen.queryByLabelText(/versendet am/)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Als versendet markieren' }))
-  const feld = await sentAtField()
+  let feld = await sentAtField()
   expect(feld.value).toBe(`${YEAR + 1}-03-10`)
   expect(document.activeElement).toBe(feld)
+
+  // Ein geleertes Feld bleibt stehen, bis „Verwerfen“ den Schritt beendet (Durchsicht zu #337).
+  fireEvent.change(feld, { target: { value: '' } })
+  expect(await sentAtField()).toBe(feld)
+  expect(document.activeElement).toBe(feld)
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Versanddatum)' }))
+  expect(await screen.findByRole('button', { name: 'Als versendet markieren' }, SLOW)).toBeTruthy()
+  expect(screen.queryByLabelText(/versendet am/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Als versendet markieren' }))
+  feld = await sentAtField()
 
   fireEvent.change(feld, { target: { value: `${YEAR + 1}-03-11` } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
