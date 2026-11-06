@@ -54,6 +54,10 @@ async function upload(container: HTMLElement) {
 
 async function expectKept(onOpenReceipt: ReturnType<typeof vi.fn>, inbox = false) {
   expect(await screen.findByText('Gespeichert, nicht ausgewertet')).toBeTruthy()
+  // Im Eingang steht der Hinweis zuerst am Eintrag der Warteschlange und wandert an die Karte des Belegs, sobald
+  // „Ohne Position“ nachgeladen ist (entryCards in BelegeEingang.tsx). Gewartet wird auf diesen Endzustand,
+  // nicht auf den ersten Text, sonst scheitert der Test, wenn das Nachladen unter Last länger braucht (#534).
+  if (inbox) await waitFor(() => expect(screen.getByText('Gespeichert, nicht ausgewertet').closest('li.receipt-card')?.getAttribute('data-file')).toBe('srv-foto.jpg'))
   expect(screen.getByText(/Die KI ist gerade nicht erreichbar\. Ist der Rechner mit der KI eingeschaltet, oder läuft Ollama\?/)).toBeTruthy()
   expect(screen.getByText(/Ihr Beleg ist gespeichert und steht auf der Seite Belege\. Sie können ihn jetzt von Hand erfassen oder es später erneut versuchen\./)).toBeTruthy()
   expect(screen.queryByText('Fehler')).toBeNull()
