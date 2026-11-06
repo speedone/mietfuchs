@@ -361,6 +361,13 @@ Speichern). Karte [EstimateCard.tsx](../client/src/components/EstimateCard.tsx),
   `-below-measured`, `-base-unit`.
 - **Über `hkv.estimate-threshold`** geschätzter Fläche je Topf (streng größer; die Fläche einer
   Wohnung zählt ganz; **Auslegung**) geht der Topf nur nach Fläche, ohne Kürzung (VIII ZR 373/04).
+- **Geschätzte Ablesungen** (#98, `readings.estimated`, server/src/CLAUDE.md „Zähler“) an den Geräten eines Topfs zählen
+  für die Grenze mit: die Fläche der Wohnungen mit geschätzter Ablesung (ohne Schätzung nach § 9a, jede Wohnung einmal)
+  zusammen mit der geschätzten Fläche. Darüber warnt `heating.reading-estimate-over-25` (warning, Regel
+  `heating-estimate`) mit Fläche und Quote und verweist auf „Schätzung (§ 9a)“; **umgestellt wird nicht**, gerechnet wird
+  weiter nach Verbrauch mit den geschätzten Ständen, damit sich kein Betrag einer bestehenden Abrechnung ändert. Mit den
+  Werten eines Ablesedienstes zählen die Geräte nicht. Beim Mieter steht der geschätzte Stand mit Begründung im Text seiner
+  Zeile.
 - Gelesen **über die Linie**. Keine Schätzung ohne Gerät (400; beim Ablesedienst nicht geprüft), nie
   wegen verschiedener Ablesetage, gesperrt in abgeschlossenen Heizperioden. Eine Wohnung mit
   Schätzung oder Ablesedienstwerten wechselt nicht das Objekt. Vorschläge (`estimateProposals`):

@@ -562,6 +562,8 @@ export async function readReadings(db: Executor): Promise<Reading[]> {
     note: orUndefined(r.note),
     // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10), nur wenn gesetzt.
     ...(r.interimFor !== null ? { interimFor: r.interimFor } : {}),
+    // Geschätzte Ablesung (#98), nur wenn gesetzt.
+    ...(r.estimated === true ? { estimated: true, ...(r.estimateReason !== null ? { estimateReason: r.estimateReason } : {}) } : {}),
   }))
 }
 

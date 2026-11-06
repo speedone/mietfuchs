@@ -164,6 +164,7 @@ const FIELD_LABELS: Record<string, string> = {
   value: 'Wert',
   replacement: 'Zählerwechsel',
   old_end_value: 'Endstand des alten Zählers',
+  estimate_reason: 'Begründung der Schätzung',
   monthly_cents: 'Monatsbetrag',
   from: 'Ab',
   percent: 'Anteil (%)',

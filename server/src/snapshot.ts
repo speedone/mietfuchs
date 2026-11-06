@@ -224,8 +224,9 @@ export type SnapshotScope = { kind: 'heating' | 'heatingPart'; plant: SnapshotHe
 
 // Gelesen werden Zähler, Datum, Stand und der Zählerwechsel mit dem Endstand des alten Geräts.
 // Die eigene Kennung der Ablesung und die Notiz braucht die Verbrauchsrechnung nicht.
-// Seit Heizung PR 10 die Grenze einer Ablesung aus dem Mieterwechsel (`interimFor`), optional.
-export type SnapshotReading = Pick<Reading, 'meterId' | 'date' | 'value' | 'replacement' | 'oldEndValue'> & Partial<Pick<Reading, 'interimFor'>>
+// Seit Heizung PR 10 die Grenze einer Ablesung aus dem Mieterwechsel (`interimFor`), optional. Seit #98 die
+// Kennzeichnung „geschätzt“ mit Begründung, optional; sie ändert keine Zahl, nur die Texte.
+export type SnapshotReading = Pick<Reading, 'meterId' | 'date' | 'value' | 'replacement' | 'oldEndValue'> & Partial<Pick<Reading, 'interimFor' | 'estimated' | 'estimateReason'>>
 
 // Gelesen werden Kennung, Mietverhältnis, Datum, Betrag, Art und Monat laut Verwendungszweck. Die Tilgung nach
 // § 366 BGB (rentAllocation.ts, #281) braucht die Kennung als Nachrang beim Sortieren und zum Zusammenlegen der Teile;

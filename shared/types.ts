@@ -392,6 +392,11 @@ export type Reading = {
   // Bei einer Ablesung aus dem Mieterwechsel (#150) die Grenze, zu der sie gehört: der letzte Tag des
   // bisherigen Nutzers (Heizung PR 10). Fehlt bei allen übrigen Ablesungen.
   interimFor?: string
+  // Geschätzte Ablesung (#98): Der Stand ist nicht abgelesen, sondern geschätzt, mit Begründung (Pflicht). Eine
+  // Angabe, keine andere Rechnung: Mietfuchs rechnet mit dem Stand wie mit einem abgelesenen und nennt die
+  // Schätzung auf der Zähler-Seite und beim Verbrauch des Mieters. Fehlt die Angabe, ist der Stand abgelesen.
+  estimated?: boolean
+  estimateReason?: string
 }
 
 export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter' | 'custom' | 'external' | 'amounts' | 'heatingSystem'

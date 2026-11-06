@@ -4,7 +4,7 @@ import Field from '../components/Field'
 import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
+import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, ESTIMATE_HELP, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
@@ -293,6 +293,16 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               {...readingError.field('newCalibratedUntil')}
             />
           )}
+          {/* #98: geschätzt statt abgelesen, mit Begründung (Pflicht); sie steht beim Verbrauch des Mieters. */}
+          <label className="checkline">
+            <input type="checkbox" checked={readingForm.estimated} onChange={(e) => setReadingForm({ ...readingForm, estimated: e.target.checked })} />
+            <span>Stand geschätzt (nicht abgelesen)</span>
+          </label>
+          {readingForm.estimated && (
+            <Field label="Begründung der Schätzung" required hint={ESTIMATE_HELP} {...readingError.field('estimateReason')}>
+              <input value={readingForm.estimateReason} onChange={(e) => setReadingForm({ ...readingForm, estimateReason: e.target.value })} placeholder="z. B. Zähler defekt" />
+            </Field>
+          )}
           <Field label="Hinweis">
             <input value={readingForm.note} onChange={(e) => setReadingForm({ ...readingForm, note: e.target.value })} placeholder="z. B. Zwischenablesung Auszug Müller" />
           </Field>
@@ -520,7 +530,9 @@ function FragmentRow(props: {
                         {r.replacement && <div className="muted">{isCutoffReading(m.type, r) ? 'Stichtagswert' : 'Endstand alt'}: {oldEndText(r.oldEndValue, digits)}</div>}
                       </td>
                       <td className="muted">
-                        {r.replacement && <span className="badge gray">{isCutoffReading(m.type, r) ? 'Stichtag' : 'Zählerwechsel'}</span>} {r.note}
+                        {r.replacement && <span className="badge gray">{isCutoffReading(m.type, r) ? 'Stichtag' : 'Zählerwechsel'}</span>}
+                        {r.estimated && <span className="badge amber">geschätzt</span>} {r.note}
+                        {r.estimated && r.estimateReason && <div>Begründung: {r.estimateReason}</div>}
                       </td>
                       <td className="actions"><button className="icon-btn danger" title="Löschen" aria-label="Ablesung löschen" onClick={() => onDeleteReading(r)}>🗑</button></td>
                     </tr>

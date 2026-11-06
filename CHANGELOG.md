@@ -29,6 +29,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Allgemeinstromzähler. Mietfuchs warnt, wenn der Rest bei ganz gemessenen Wohnungen über 20 % des Bezugsverbrauchs
   liegt, und verteilt nicht, wenn gemessene und ungemessene Einheiten vermischt wären. Bestehende Abrechnungen bleiben
   centgenau unverändert ([#98](https://github.com/speedone/mietfuchs/issues/98)).
+- **Geschätzte Ablesung**: Konnten Sie einen Zählerstand nicht ablesen, haken Sie bei der Ablesung „Stand geschätzt
+  (nicht abgelesen)“ an und tragen die Begründung ein ([#98](https://github.com/speedone/mietfuchs/issues/98)). Mietfuchs
+  rechnet mit dem Stand wie mit einem abgelesenen, zeigt ihn auf der Seite Zähler als „geschätzt“ und nennt die Schätzung
+  mit Begründung beim Verbrauch des Mieters in der Abrechnung. Bei der eigenen Heizkostenabrechnung warnt Mietfuchs, wenn
+  geschätzte Ablesungen mehr als 25 % der Fläche betreffen; dann sind die Kosten nach § 9a Abs. 2 HeizkostenV nur nach
+  Fläche zu verteilen, was die Schätzung auf der Seite Heizkosten übernimmt. Keine Zahl einer bestehenden Abrechnung
+  ändert sich.
+- **Hinweis bei Wasser nach Personen oder Fläche**, obwohl jede vermietete Wohnung einen abgelesenen Kaltwasserzähler hat:
+  Ohne andere Vereinbarung ist dann nach Verbrauch umzulegen (§ 556a Abs. 1 Satz 2 BGB). Eine abweichende Vereinbarung im
+  Mietvertrag geht vor; Mietfuchs kennt sie nicht und ändert nichts an der Verteilung
+  ([#98](https://github.com/speedone/mietfuchs/issues/98)).
 
 ### Geändert
 
