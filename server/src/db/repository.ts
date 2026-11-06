@@ -74,7 +74,7 @@ import {
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 import { guardRoomMeter, guardRoomRecipients, guardRooms, guardRoomsRemoval, guardRoomTenancy, roomCount, roomSplitOf, roomViolations } from './rooms.ts'
-import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUnitRefs,meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
+import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUnitRefs, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
 
 export type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
 export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Payment
