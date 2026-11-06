@@ -8,11 +8,11 @@ import assert from 'node:assert/strict'
 import { computeSettlement, consumptionOverview, type ComputedSettlement } from '../src/calc.ts'
 import { estimatedReadingsUsed } from '../src/readingEstimate.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotReading, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import { RULES } from '../../shared/law/rules.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
-import { selfReadings, selfSnapshot } from '../testing/selfHeating.ts'
-import type { Reading } from '../../shared/types.ts'
+import { selfReadings, selfSnapshot, selfUnit } from '../testing/selfHeating.ts'
+import type { HeatingEstimate, Reading } from '../../shared/types.ts'
 
 const r = (meterId: string, date: string, value: number, extra: Partial<SnapshotReading> = {}): SnapshotReading => ({ meterId, date, value, ...extra })
 const year2025 = { from: '2025-01-01', to: '2025-12-31' }
@@ -191,4 +191,65 @@ test('§ 556a, Durchsicht S2: kein Hinweis bei nur einer verteilten Einheit und 
   assert.ok(!settle(eine).notices.some((n) => n.code === 'key.water-not-by-meter'))
   const etw = computeSettlement({ ...snapshotOf(stock(false, { costItems: [water({ key: 'persons', meterType: null })] }), 2025), property: { kind: 'etw', cableBuiltBeforeDec2021: null } })
   assert.ok(!etw.notices.some((n) => n.code === 'key.water-not-by-meter'))
+})
+
+// ---------- Durchsicht S1: Mutationen, die grün blieben ----------
+
+test('S1: Zweig mit Bezugszähler nennt den geschätzten Stand des Bezugszählers beim Mieter', () => {
+  const s = stock(false, {
+    costItems: [water({ meterRest: { referenceMeterId: 'main', behindMeterIds: ['ka', 'kb'], key: 'area', unitIds: null, subMeters: [] } })],
+    meters: [
+      { id: 'ka', name: 'Kaltwasser A', unitId: 'a', type: 'kaltwasser', unit: 'm³' },
+      { id: 'kb', name: 'Kaltwasser B', unitId: 'b', type: 'kaltwasser', unit: 'm³' },
+      { id: 'main', name: 'Hauptzähler', unitId: null, type: 'kaltwasser', unit: 'm³' },
+    ],
+    readings: [
+      r('ka', '2024-12-31', 100), r('ka', '2025-12-31', 160), r('kb', '2024-12-31', 200), r('kb', '2025-12-31', 240),
+      r('main', '2024-12-31', 0), r('main', '2025-12-31', 120, { estimated: true, estimateReason: 'Schacht überflutet' }),
+    ],
+  })
+  const mit = settle(s)
+  for (const t of ['A', 'B']) assert.match(rowOf(mit, t).basisText ?? '', /geschätzt: „Hauptzähler“ Stand vom 31\.12\.2025 \(„Schacht überflutet“\)/, t)
+})
+
+test('S1: Das Zimmer einer WG sieht den geschätzten Stand des Zählers der Wohnung', () => {
+  const s: SnapshotSource = {
+    units: [unit('a'), unit('wg', { name: 'WG', areaM2: 80, participates: false }), unit('z1', { name: 'Zimmer 1', areaM2: 12, parentUnitId: 'wg' }), unit('z2', { name: 'Zimmer 2', areaM2: 12, parentUnitId: 'wg' })],
+    tenancies: [tenancy('A', 'a'), tenancy('Z1', 'z1'), tenancy('Z2', 'z2')],
+    costItems: [water()],
+    meters: [
+      { id: 'ka', name: 'Kaltwasser A', unitId: 'a', type: 'kaltwasser', unit: 'm³' },
+      { id: 'kw', name: 'Kaltwasser WG', unitId: 'wg', type: 'kaltwasser', unit: 'm³' },
+    ],
+    readings: [r('ka', '2024-12-31', 0), r('ka', '2025-12-31', 50), r('kw', '2024-12-31', 0), r('kw', '2025-12-31', 90, { estimated: true, estimateReason: 'Zähler defekt' })],
+    payments: [], closedSettlements: [],
+  }
+  const mit = settle(s)
+  assert.match(rowOf(mit, 'Z1').basisText ?? '', /geschätzt: „Kaltwasser WG“ Stand vom 31\.12\.2025 \(„Zähler defekt“\)/)
+  assert.doesNotMatch(rowOf(mit, 'A').basisText ?? '', /geschätzt/)
+})
+
+// A 30, B 140, C 30 m² (200 m²). C hat eine Schätzung nach § 9a und zusätzlich eine geschätzte Ablesung, A eine geschätzte
+// Ablesung. Betroffen sind 60 von 200 m² (30 %): C zählt einmal, die Schätzung zählt mit.
+const heatEstimate: HeatingEstimate = {
+  plantId: 'hp', period: periodKey('2025-01'), unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh',
+}
+const flaggedMany = (...ids: string[]): Reading[] => selfReadings().map((x) => (ids.includes(x.meterId) && x.date === '2025-12-31' ? { ...x, estimated: true, estimateReason: 'Gerät ausgefallen' } : x))
+const overNotice = (s: ComputedSettlement) => s.notices.find((x) => x.code === 'heating.reading-estimate-over-25')
+
+test('S1: § 9a Abs. 2 zählt Schätzung und geschätzte Ablesung zusammen, jede Wohnung einmal', () => {
+  const units = [selfUnit('a', 30), selfUnit('b', 140), selfUnit('c', 30)]
+  const beide = computeSettlement(selfSnapshot({ units, readings: flaggedMany('wz-a', 'wz-c'), estimates: [heatEstimate] }))
+  const n = overNotice(beide) ?? assert.fail(`kein Hinweis: ${beide.notices.map((x) => x.code).join(', ')}`)
+  assert.match(n.text, /bei A und auf Schätzungen nach § 9a für 30 m²; betroffen sind 60 von 200 m² \(30 %\)/)
+  // Nur C (Schätzung und geschätzte Ablesung): 30 von 200 m², 15 %, keine Warnung.
+  assert.equal(overNotice(computeSettlement(selfSnapshot({ units, readings: flaggedMany('wz-c'), estimates: [heatEstimate] }))), undefined)
+})
+
+test('S1: § 9a Abs. 2 bei genau 25 % keine Warnung (überschreitet heißt streng größer)', () => {
+  const units = [selfUnit('a', 50), selfUnit('b', 120), selfUnit('c', 30)]
+  assert.equal(overNotice(computeSettlement(selfSnapshot({ units, readings: flaggedMany('wz-a') }))), undefined)
+  // Gegenprobe: 51 von 201 m² liegt darüber.
+  const knapp = [selfUnit('a', 51), selfUnit('b', 120), selfUnit('c', 30)]
+  assert.ok(overNotice(computeSettlement(selfSnapshot({ units: knapp, readings: flaggedMany('wz-a') }))))
 })
