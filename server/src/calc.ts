@@ -128,7 +128,8 @@ import {
 import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
 import { CAPTURE_TEXT, captureOf, coversPeriod, estimateFits, hotWaterOf, lineServiceRows, potUnitFor, serviceUnitsMixed, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters, withoutEstimatedSwitches } from './hca.ts'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
-import { calibrationOverdue } from './calibration.ts'
+import { calibrationOverdue, readingsUsedFor } from './calibration.ts'
+import { estimatedReadingsUsed, estimatedSuffix } from './readingEstimate.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotPayment, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 // Sparten mit Bezugszähler und verteiltem Rest (#98); dieselbe Liste prüft der Server beim Speichern (db/meterRest.ts).
@@ -277,6 +278,15 @@ const noticeKinds = {
   // Heizung PR 21 (#98): eine Warnung, keine Sperre; die Werte werden verwendet (Entwurf 3.12, #91). Nur auf der
   // Zähler-Seite und im Cockpit, nie auf der Abrechnung (wie die übrigen Zählerhinweise).
   'meter.calibration-overdue': { level: 'warning', title: 'Eichfrist abgelaufen', rule: 'meter-calibration', terms: ['meterCalibration', 'meterReading'] },
+  // Geschätzte Ablesung (#98): eine Angabe, keine Sperre und keine andere Rechnung. Wie die Eichfrist nur auf der
+  // Zähler-Seite; beim Mieter steht die Schätzung im Text seiner Zeile.
+  'meter.reading-estimated': { level: 'hint', title: 'Ablesung geschätzt', rule: 'meter-estimate', terms: ['meterReading'] },
+  // § 9a Abs. 2 HeizkostenV bei geschätzten Ablesungen (#98): Mietfuchs stellt nicht still um, sondern warnt mit der Quote;
+  // umgestellt wird über die Schätzung nach § 9a auf der Seite Heizkosten. warning, weil eine Rechtsregel verletzt sein kann.
+  'heating.reading-estimate-over-25': { level: 'warning', title: 'Geschätzte Ablesungen über der Grenze des § 9a Abs. 2', rule: 'heating-estimate', terms: ['heatingEstimate', 'meterReading'] },
+  // § 556a Abs. 1 Satz 2 BGB (#98): Wasser nicht nach Verbrauch, obwohl jede vermietete Wohnung einen Zähler hat. Ein
+  // Hinweis: Eine abweichende Vereinbarung geht vor, und ob es sie gibt, weiß Mietfuchs nicht.
+  'key.water-not-by-meter': { level: 'hint', title: 'Wasser nicht nach Zählern', terms: ['consumptionKey'] },
   'basis.self-no-persons': { level: 'warning', title: 'Personenzahl der eigenen Wohnung fehlt', terms: ['ownShare', 'personDays'] },
   'basis.self-no-area': { level: 'warning', title: 'Wohnfläche der eigenen Wohnung fehlt', terms: ['ownShare', 'distributionBasis'] },
   'basis.unit-no-area': { level: 'warning', title: 'Wohnfläche fehlt', terms: ['distributionBasis'] },
@@ -876,6 +886,19 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
           'Nach Ablauf der Eichfrist darf der Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in einer Abrechnung verwendet werden (§ 37 Abs. 1, § 33 Abs. 1 MessEG); das kann als Ordnungswidrigkeit geahndet werden. Mietfuchs rechnet mit den Werten trotzdem. ' +
           'Bestreitet ein Mieter sie, gilt: „Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH VIII ZR 112/10, Leitsatz c). ' +
           'Lassen Sie den Zähler eichen oder tauschen. Hat der Messdienst oder Versorger die Eichfrist im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das Jahr ein, bis zu dem sie verlängert ist; auf dem Zähler ist das nicht zu sehen.',
+        { kind: 'meter', id: m.id })
+      notices.push(n)
+      warnings.push(n.text)
+    }
+    // Geschätzte Ablesung (#98): je benutzte Ablesung des Zeitraums mit ihrer Begründung. Wortlaut des Urteils
+    // VIII ZR 112/14 (Leitsatz, Rn. 18) und des § 9a HeizkostenV nachgelesen am 06.11.2026.
+    for (const e of estimatedReadingsUsed(readings, [m.id], { from, to })) {
+      const n = makeNotice('meter.reading-estimated',
+        `Zähler „${m.name ?? m.id}“: Der Stand vom ${fmtDay(e.date)} ist geschätzt${e.reason ? ` („${e.reason}“)` : ''}. Mietfuchs rechnet mit dem geschätzten Stand wie mit einem abgelesenen und nennt die Schätzung mit Begründung beim Verbrauch des Mieters. ` +
+          'Für die formelle Ordnungsmäßigkeit der Abrechnung ist es ohne Bedeutung, ob die Kosten auf abgelesenen Werten oder einer Schätzung beruhen (BGH VIII ZR 112/14); ob die Schätzung inhaltlich stimmt, ist davon getrennt zu prüfen. ' +
+          (m.type === 'waerme' || m.type === 'warmwasser' || m.type === 'hkv'
+            ? 'Für Wärme und Warmwasser nach der Heizkostenverordnung darf nur geschätzt werden, wenn der Verbrauch wegen Geräteausfalls oder aus anderen zwingenden Gründen nicht ordnungsgemäß erfasst werden kann (§ 9a Abs. 1 HeizkostenV). Lässt sich der Stand noch ablesen, tragen Sie die Ablesung nach.'
+            : 'Lässt sich der Stand noch ablesen, tragen Sie die Ablesung nach.'),
         { kind: 'meter', id: m.id })
       notices.push(n)
       warnings.push(n.text)
@@ -3824,6 +3847,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Zähler wirklich; eine leere Wohnung oder eine unvermietete Garage verbraucht nichts (#116).
   const occupied = new Set([...periodUnits.filter((u) => u.selfUsed).map((u) => u.id), ...tenancies.map((t) => t.unitId)])
   const readingsOf = (meterId: string) => allReadings.filter((r) => r.meterId === meterId)
+  // Geschätzte Ablesungen (#98) beim Verbrauch eines Mieters: die Zähler der Sparte an seiner Einheit und an der Wohnung,
+  // in der sie als Zimmer liegt (#573), dazu `extra` (Haupt- oder Bezugszähler, an denen sein Anteil hängt). Nur ein Text,
+  // keine Zahl; ohne Kennzeichnung im Bestand leer, die Texte bleiben dann wortgleich.
+  const anyEstimated = allReadings.some((r) => r.estimated === true)
+  const mainMeterIds = (type: MeterType): string[] => allMeters.filter((m) => m.type === type && m.unitId === null && m.scope !== 'common' && (m.heatingPlantId ?? null) === null).map((m) => m.id)
+  const estimateSuffixFor = (t: { unitId: string; start: string; end: string | null }, types: readonly MeterType[], from: string, to: string, extra: readonly string[] = []): string => {
+    if (!anyEstimated) return ''
+    const flat = flatIdOfRoom.get(t.unitId)
+    const ids = [...allMeters.filter((m) => types.includes(m.type) && (m.unitId === t.unitId || (flat !== undefined && m.unitId === flat))).map((m) => m.id), ...extra]
+    const pFrom = t.start > from ? t.start : from
+    const pTo = t.end && t.end < to ? t.end : to
+    return estimatedSuffix(estimatedReadingsUsed(allReadings, ids, { from: pFrom, to: pTo }), (id) => allMeters.find((m) => m.id === id)?.name ?? id)
+  }
   // Wie viele Tage des Jahres ein Zähler der Einheit abdecken muss: das ganze Jahr bei einer
   // selbstgenutzten, sonst die Tage ihrer Mietverhältnisse.
   // Mit Wechsel im Zeitraum (#259): die Tage der Eigennutzung und der vermieteten Mietverhältnisse.
@@ -5191,6 +5227,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return steps
   }
   const TARGET_TEXT: Record<HeatingTarget, string> = { both: 'Heizung und Warmwasser', heating: 'Heizung', water: 'Warmwasser' }
+  // Die Geräte eines Ziels, deren geschätzte Ablesungen (#98) beim Mieter stehen; mit den Werten eines Ablesedienstes keine.
+  const selfEstimateTypes = (sp: SelfPlantPlan, target: HeatingTarget): MeterType[] => {
+    if (sp.capture === 'serviceValues') return []
+    const heat: MeterType = sp.capture === 'hca' ? 'hkv' : 'waerme'
+    return target === 'heating' ? [heat] : target === 'water' ? ['warmwasser'] : [heat, 'warmwasser']
+  }
   const selfBasisText = (sp: SelfPlantPlan, key: string, target: HeatingTarget): string =>
     `nach Heizkostenverordnung, ${TARGET_TEXT[target]} ${fmtPercent((sp.weights?.get(key)?.[target] ?? 0) * 100)} %`
   // Die Kosten eines Topfs: jede Position der Anlage nach ihrem Ziel, „Heizung und Warmwasser“ nach dem
@@ -5715,6 +5757,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         `„${item.description}“: Kosten der Verbrauchserfassung und Abrechnung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, etwa für die Zwischenablesung der Wasserzähler, sind keine umlagefähigen Betriebskosten, sondern Verwaltungskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). ` +
           'Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
         itemSubject(item))
+    }
+    // § 556a Abs. 1 Satz 2 BGB (#98): Wasser nach Personen oder Fläche, obwohl jede Einheit mit Mietverhältnis in der
+    // Position einen im Zeitraum abgelesenen Kaltwasserzähler hat (oder ausdrücklich keinen Anschluss, wie beim Vorschlag
+    // des Formulars). Wortlaut nachgelesen am 06.11.2026 auf gesetze-im-internet.de. Ein Hinweis, keine andere Rechnung:
+    // Eine abweichende Vereinbarung geht vor, und das Modell hält keinen vereinbarten Schlüssel je Mietverhältnis fest
+    // (#258 kennt nur, ob die Position umgelegt wird). Ein Zähler der Wohnung erfasst nicht den Verbrauch eines Zimmers.
+    if (!carry && item.category === 'Wasser/Abwasser' && (item.key === 'persons' || item.key === 'area')) {
+      const rentedUnitIds = [...new Set(b.partTenancies.map((t) => t.unitId))]
+      const read = (unitId: string): boolean => allMeters.some((m) => m.unitId === unitId && m.type === 'kaltwasser' && readingsUsedFor(readingsOf(m.id), { from: yFrom, to: yTo }).length >= 2)
+      const noConnection = (unitId: string): boolean => (unitById.get(unitId)?.noConnection ?? []).includes('kaltwasser')
+      if (rentedUnitIds.some(read) && rentedUnitIds.every((id) => read(id) || noConnection(id))) {
+        warn('key.water-not-by-meter',
+          `„${item.description}“: Jede vermietete Wohnung hat einen abgelesenen Kaltwasserzähler, verteilt wird aber nach ${item.key === 'persons' ? 'Personen' : 'Wohnfläche'}. ` +
+            'Kosten, die von einem erfassten Verbrauch der Mieter abhängen, sind nach einem Maßstab umzulegen, der dem unterschiedlichen Verbrauch Rechnung trägt, soweit nichts anderes vereinbart ist (§ 556a Abs. 1 Satz 2 BGB); haben alle Mietwohnungen einen Zähler, ist danach nach Verbrauch umzulegen (vgl. BGH VIII ZR 188/07 zum umgekehrten Fall). ' +
+            'Eine abweichende Vereinbarung im Mietvertrag geht vor; ob es sie gibt, weiß Mietfuchs nicht. Ist nichts anderes vereinbart, wählen Sie bei der Position den Schlüssel „nach Verbrauch“ mit den Kaltwasserzählern.',
+          itemSubject(item))
+      }
     }
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
@@ -6559,7 +6618,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           steps.push({ label: 'Allgemeinverbrauch verteilt', value: how, term: 'meterRest' })
         }
         steps.push({ label: 'Verteilbasis', value: `${amount(plan.total)}${excluded !== 0 ? ` (Bezugszähler ohne ${amount(excluded)}, die hier nicht zählen)` : ''}`, term: 'distributionBasis' })
-        for (const e of accs.values()) targets.push({ t: e.t, raw: e.raw, basisText: e.texts.join('; '), meterRest: steps })
+        // Geschätzte Ablesungen (#98) der eigenen Zähler und des Bezugszählers, an dem der Rest hängt.
+        for (const e of accs.values()) targets.push({ t: e.t, raw: e.raw, basisText: `${e.texts.join('; ')}${estimateSuffixFor(e.t, [type], yFrom, yTo, refMeters.map((m) => m.id))}`, meterRest: steps })
         // Messdifferenz über der Schwelle (Recht und Hinweise): nur bei ganz gemessener Gruppe, nur wenn Mieter den Rest tragen.
         if (plan.kind === 'plan' && groupMeasured && restKey !== 'landlord' && restKey !== 'selfUse' && plan.rest > 0) {
           const limit = law(practiceMeterRestHigh, { period: lawPeriod }, lawLog)
@@ -6657,7 +6717,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           if (fromFlat) c += fromFlat.tenancy.get(t.id) ?? 0
           const raw = item.amountCents * (c / data.basis)
           const flatText = fromFlat ? `; ${fromFlat.text.get(t.id) ?? ''}` : ''
-          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)}${data.unit ? ` ${data.unit}` : ''} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})${flatText}` })
+          const estimated = item.meterType ? estimateSuffixFor(t, [item.meterType], yFrom, yTo, data.main !== null ? mainMeterIds(item.meterType) : []) : ''
+          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)}${data.unit ? ` ${data.unit}` : ''} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})${flatText}${estimated}` })
         }
       }
     } else if (item.key === 'heatingSystem') {
@@ -6694,7 +6755,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
               const selfPart = all > 0 ? own.filter((y) => y.usage === 'eigen').reduce((a, y) => a + y.days, 0) / all : 0
               selfRaw += raw * selfPart
               outsideRaw += raw * (1 - selfPart)
-            } else if (t) targets.push({ t, raw, basisText: selfBasisText(sp, u.key, target), heating: selfSteps(sp, u.key, target, item.amountCents) })
+            } else if (t) targets.push({ t, raw, basisText: `${selfBasisText(sp, u.key, target)}${estimateSuffixFor({ unitId: u.unitId, start: u.from, end: u.to }, selfEstimateTypes(sp, target), yFrom, yTo)}`, heating: selfSteps(sp, u.key, target, item.amountCents) })
             else outsideRaw += raw
           } else if (u.role === 'self') {
             selfRaw += raw
@@ -8681,6 +8742,32 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           'Einen Kürzungsbetrag nach § 12 HeizkostenV nennt Mietfuchs nicht: Die Verteilung nach Fläche schreibt hier die Verordnung selbst vor, und § 12 Abs. 1 Satz 1 betrifft eine Abrechnung „entgegen den Vorschriften dieser Verordnung“. ' +
           `Für eine Abrechnung mit einem nach § 9a Abs. 1 ermittelten Verbrauch hat der BGH die Kürzung um ${cut} % verneint (BGH VIII ZR 373/04); für die Verteilung nach Abs. 2 ist das nicht ausdrücklich entschieden.`,
         subject)
+    }
+    // Geschätzte Ablesungen (#98) an den Geräten eines Topfs: Für § 9a Abs. 2 zählen sie wie eine Schätzung, zusammen mit
+    // den Schätzungen der Seite Heizkosten, und wie dort die ganze Fläche der Wohnung. Mietfuchs stellt nicht still um
+    // (keine Zahl einer bestehenden Abrechnung ändert sich), sondern warnt mit der Quote; umgestellt wird über die
+    // Schätzung nach § 9a, an die der Topf schon andockt. Mit den Werten eines Ablesedienstes zählen die Geräte nicht.
+    if (sp.capture !== 'serviceValues' && anyEstimated) {
+      for (const p of sp.plan.pots) {
+        const t = sp.plan.totals[p]
+        if (t.overThreshold || !(t.area > 0)) continue
+        const type: MeterType = p === 'heating' ? (sp.capture === 'hca' ? 'hkv' : 'waerme') : 'warmwasser'
+        const areaOfUnit = (u: SelfUnitPlan): number => (p === 'heating' ? u.heatArea : u.unit.areaM2 || 0)
+        const flagged = sp.plan.units.filter((u) => !u.estimated[p] && estimatedReadingsUsed(snapshot.readings, sp.input.meters.filter((m) => m.unitId === u.unit.id && m.type === type).map((m) => m.id), { from: period.from, to: period.to }).length > 0)
+        const flaggedArea = flagged.reduce((a, u) => a + areaOfUnit(u), 0)
+        if (flaggedArea === 0 || !firstInLine(`${root}|reading-over|${p}`)) continue
+        const limit = law(hkvEstimateThreshold, { period: lawPeriod }, lawLog)
+        const affected = flaggedArea + t.estimatedArea
+        if (!(affected * 100 > t.area * limit)) continue
+        const raum = basisUnitOf(sp, p) === 'm³'
+        const qm = raum ? 'm³' : 'm²'
+        warn('heating.reading-estimate-over-25',
+          `${where}: Der Verbrauch ${potWord(p)} beruht auf geschätzten Ablesungen bei ${andList(flagged.map((u) => u.unit.name))}${t.estimatedArea > 0 ? ` und auf Schätzungen nach § 9a für ${fmtNum(t.estimatedArea)} ${qm}` : ''}; betroffen sind ${fmtNum(affected)} von ${fmtNum(t.area)} ${qm} (${fmtPercent((affected * 100) / t.area)} %). ` +
+            `Das ${hkvEstimateThreshold.describe(limit)} ${raum ? 'des für die Verteilung maßgeblichen umbauten Raums' : 'der für die Verteilung maßgeblichen Fläche'}; dann sind die Kosten ${p === 'heating' ? 'der Heizung' : 'des Warmwassers'} ausschließlich nach ${raum ? 'umbautem Raum' : 'Fläche'} zu verteilen (§ 9a Abs. 2 HeizkostenV). ` +
+            'Mietfuchs rechnet weiter nach Verbrauch mit den geschätzten Ständen. ' +
+            `Tragen Sie die Schätzung stattdessen auf der Seite Heizkosten unter „Schätzung (§ 9a)“ ein; dann verteilt Mietfuchs ${p === 'heating' ? 'die Heizung' : 'das Warmwasser'} nach ${raum ? 'umbautem Raum' : 'Fläche'}. Lassen sich die Stände noch ablesen, tragen Sie die Ablesungen nach.`,
+          subject)
+      }
     }
   }
   for (const sp of selfPlans.values()) {

@@ -1622,12 +1622,18 @@ export const readings = sqliteTable(
     note: text('note'),
     // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): letzter Tag des bisherigen Nutzers.
     interimFor: text('interim_for'),
+    // Geschätzte Ablesung (#98): nur `1` oder `NULL` (abgelesen), die Begründung nur und immer bei einer Schätzung.
+    estimated: integer('estimated', { mode: 'boolean' }),
+    estimateReason: text('estimate_reason'),
   },
   (t) => [
     // Ein Zählerstand ist eine ablesbare Menge und läuft nicht unter null. Der negative
     // *Verbrauch*, vor dem calc.ts warnt, entsteht aus zwei Ständen und ist etwas anderes.
     notNegative('readings_value_not_negative', 'value'),
     notNegative('readings_old_end_value_not_negative', 'old_end_value'),
+    // #98: Eine Schätzung hat eine Begründung, eine Ablesung keine. Der Satz dazu kommt vorher aus dem Repository.
+    check('readings_estimated_valid', sql.raw(`"estimated" IS NULL OR "estimated" = 1`)),
+    check('readings_estimate_reason_valid', sql.raw(`("estimated" IS NULL AND "estimate_reason" IS NULL) OR ("estimated" = 1 AND trim("estimate_reason") <> '')`)),
   ],
 )
 

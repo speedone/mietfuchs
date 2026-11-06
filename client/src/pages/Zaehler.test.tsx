@@ -256,6 +256,38 @@ test('Ablesung mit Zählerwechsel: Endstand alt und Startstand neu wie bisher', 
   expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980 } })
 })
 
+// Geschätzte Ablesung (#98): Haken und Begründung gehen mit hinaus; der angezeigte Haken ist der gespeicherte.
+test('Geschätzte Ablesung: Haken und Begründung im Rumpf, ohne Begründung eine Meldung am Feld', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2025-12-31' } })
+  fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '180' } })
+  expect(within(box).queryByLabelText(/^Begründung der Schätzung/)).toBeNull()
+  const haken = within(box).getByLabelText(/Stand geschätzt/) as HTMLInputElement
+  fireEvent.click(haken)
+  expect(haken.checked).toBe(true)
+  saveReadingIn(box)
+  await waitFor(() => expect(within(box).getAllByText('Begründung fehlt').length).toBeGreaterThan(0))
+  expect(calls).toEqual([])
+  fireEvent.change(within(box).getByLabelText(/^Begründung der Schätzung/), { target: { value: 'Zähler defekt' } })
+  saveReadingIn(box)
+  await waitFor(() => expect(calls).toHaveLength(1))
+  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-12-31', value: 180, estimated: true, estimateReason: 'Zähler defekt' } })
+})
+
+test('Geschätzte Ablesung in der Liste: „geschätzt“ mit Begründung', async () => {
+  readings = [{ id: 'r1', meterId: 'm1', date: '2025-12-31', value: 180, estimated: true, estimateReason: 'Zähler defekt' }]
+  try {
+    stubWithUrls()
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(1\)/ }, { timeout: 5000 }))
+    expect(screen.getByText('geschätzt')).toBeTruthy()
+    expect(screen.getByText(/Begründung: Zähler defekt/)).toBeTruthy()
+  } finally {
+    readings = []
+  }
+})
+
 // Praxistest: Nach dem Wechsel blieb die Warnung „Eichfrist abgelaufen“ stehen, denn das Fenster fragte kein
 // Eichjahr für den neuen Zähler ab. Jetzt fragt es danach, nur beim Wechsel; leer bleibt der Rumpf wie bisher.
 test('Zählerwechsel: Eichjahr des neuen Zählers geht mit der Ablesung hinaus, leer nicht', async () => {

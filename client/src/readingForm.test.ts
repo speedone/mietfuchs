@@ -62,3 +62,17 @@ describe('Eichjahr des neuen Zählers beim Wechsel (Praxistest)', () => {
   })
 })
 
+
+describe('Geschätzte Ablesung (#98)', () => {
+  test('mit Begründung: estimated und die Begründung im Rumpf, ohne Haken nichts davon', () => {
+    expect(bodyOf(form({ estimated: true, estimateReason: '  Zähler defekt ' }))).toMatchObject({ estimated: true, estimateReason: 'Zähler defekt' })
+    const plain = bodyOf(form({ estimated: false, estimateReason: 'vergessen' }))
+    expect(plain).not.toHaveProperty('estimated')
+    expect(plain).not.toHaveProperty('estimateReason')
+  })
+
+  test('ohne Begründung eine Meldung am Feld', () => {
+    const r = buildReadingBody(form({ estimated: true, estimateReason: '   ' }), 'm1')
+    expect('problems' in r && r.problems.map((p) => [p.field, p.short])).toEqual([['estimateReason', 'Begründung fehlt']])
+  })
+})

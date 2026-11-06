@@ -353,6 +353,8 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'calibratedUntil',
   // Was ein Zähler ohne Wohnung misst (#98) kennt die db.json nicht; seine Rundreise prüft db-repository.test.ts.
   'scope',
+  // Die geschätzte Ablesung (#98) ebenso; ihre Rundreise prüfen db-repository.test.ts und api-ablesung.test.ts.
+  'estimated', 'estimateReason',
   // Die Mitteilung nach § 5d Abs. 4 (Heizung PR 18) ebenso; ihre Rundreise prüft db-repository.test.ts.
   'halfSplitNoticeOn',
   // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.

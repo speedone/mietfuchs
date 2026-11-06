@@ -702,5 +702,17 @@
  {
   "code": "usage.tenancy-conflict",
   "text": "t-b (b): Das Mietverhältnis läuft an 306 Tagen in einer Zeit, in der die Einheit laut ihrer Nutzung nicht vermietet ist. Für diese Tage trägt der Mieter keine Betriebskosten; sie bleiben beim Vermieter. Für dieses Mietverhältnis entsteht deshalb keine Abrechnung, und seine Vorauszahlungen von 1.000,00 € werden in keiner Abrechnung angerechnet. Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten."
+ },
+ {
+  "code": "meter.reading-estimated",
+  "text": "Zähler „Kaltwasser A“: Der Stand vom 31.12.2025 ist geschätzt („Zähler defekt“). Mietfuchs rechnet mit dem geschätzten Stand wie mit einem abgelesenen und nennt die Schätzung mit Begründung beim Verbrauch des Mieters. Für die formelle Ordnungsmäßigkeit der Abrechnung ist es ohne Bedeutung, ob die Kosten auf abgelesenen Werten oder einer Schätzung beruhen (BGH VIII ZR 112/14); ob die Schätzung inhaltlich stimmt, ist davon getrennt zu prüfen. Lässt sich der Stand noch ablesen, tragen Sie die Ablesung nach."
+ },
+ {
+  "code": "key.water-not-by-meter",
+  "text": "„Wasser“: Jede vermietete Wohnung hat einen abgelesenen Kaltwasserzähler, verteilt wird aber nach Personen. Kosten, die von einem erfassten Verbrauch der Mieter abhängen, sind nach einem Maßstab umzulegen, der dem unterschiedlichen Verbrauch Rechnung trägt, soweit nichts anderes vereinbart ist (§ 556a Abs. 1 Satz 2 BGB); haben alle Mietwohnungen einen Zähler, ist danach nach Verbrauch umzulegen (vgl. BGH VIII ZR 188/07 zum umgekehrten Fall). Eine abweichende Vereinbarung im Mietvertrag geht vor; ob es sie gibt, weiß Mietfuchs nicht. Ist nichts anderes vereinbart, wählen Sie bei der Position den Schlüssel „nach Verbrauch“ mit den Kaltwasserzählern."
+ },
+ {
+  "code": "heating.reading-estimate-over-25",
+  "text": "Heizanlage, Heizperiode 2025: Der Verbrauch für die Heizung beruht auf geschätzten Ablesungen bei C; betroffen sind 60 von 200 m² (30 %). Das überschreitet 25 % der für die Verteilung maßgeblichen Fläche; dann sind die Kosten der Heizung ausschließlich nach Fläche zu verteilen (§ 9a Abs. 2 HeizkostenV). Mietfuchs rechnet weiter nach Verbrauch mit den geschätzten Ständen. Tragen Sie die Schätzung stattdessen auf der Seite Heizkosten unter „Schätzung (§ 9a)“ ein; dann verteilt Mietfuchs die Heizung nach Fläche. Lassen sich die Stände noch ablesen, tragen Sie die Ablesungen nach."
  }
 ]

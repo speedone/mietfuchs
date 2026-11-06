@@ -7,9 +7,11 @@ import type { Meter } from './types'
 import { asksCalibration } from './meterForm'
 
 // `newCalibratedUntil`: das Eichjahr des neuen Zählers beim Wechsel (Praxistest), als Text wie das Jahresfeld.
-export type ReadingForm = { date: string; value: string; replacement: boolean; oldEndValue: string; newCalibratedUntil: string; note: string }
+// `estimated` und `estimateReason` (#98): Der Stand ist geschätzt; die Begründung ist dann Pflicht und steht beim
+// Verbrauch des Mieters.
+export type ReadingForm = { date: string; value: string; replacement: boolean; oldEndValue: string; newCalibratedUntil: string; note: string; estimated: boolean; estimateReason: string }
 
-export const EMPTY_READING: ReadingForm = { date: '', value: '', replacement: false, oldEndValue: '', newCalibratedUntil: '', note: '' }
+export const EMPTY_READING: ReadingForm = { date: '', value: '', replacement: false, oldEndValue: '', newCalibratedUntil: '', note: '', estimated: false, estimateReason: '' }
 
 export type ReadingBody = {
   meterId: string
@@ -19,6 +21,8 @@ export type ReadingBody = {
   oldEndValue: number | null | undefined
   note: string | undefined
   newCalibratedUntil?: number
+  estimated?: true
+  estimateReason?: string
 }
 
 // Ein leeres Feld ist kein Wert und nie 0 (#149). Vorher rechnete die Seite mit Number(''), und das
@@ -32,7 +36,8 @@ export type ReadingBody = {
 // Eichjahr des neuen Zählers (Praxistest): Das Jahr am Zähler gilt für das heutige Gerät; nach dem Wechsel blieb
 // sonst die Warnung des ausgebauten stehen. Gefragt nur beim Wechsel eines eichpflichtigen Zählers (`asksYear`, nie
 // am Heizkostenverteiler); leer heißt „nicht bekannt“ und lässt das bisherige Jahr stehen, gesendet wird dann nichts.
-export type ReadingField = 'date' | 'value' | 'oldEndValue' | 'newCalibratedUntil'
+// Geschätzt (#98): Ohne Haken geht nichts davon in den Rumpf, der Rumpf bleibt wie bisher.
+export type ReadingField = 'date' | 'value' | 'oldEndValue' | 'newCalibratedUntil' | 'estimateReason'
 export function buildReadingBody(form: ReadingForm, meterId: string, asksYear = false): { problems: Problem<ReadingField>[] } | { body: ReadingBody } {
   const problems: Problem<ReadingField>[] = []
   if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) problems.push({ field: 'date', short: 'Datum fehlt', text: 'Bitte das Datum der Ablesung angeben.' })
@@ -53,6 +58,10 @@ export function buildReadingBody(form: ReadingForm, meterId: string, asksYear = 
   if (year?.kind === 'invalid') {
     problems.push({ field: 'newCalibratedUntil', short: year.short, text: `Eichjahr des neuen Zählers: ${year.text} Oder lassen Sie das Feld leer, wenn Sie es nicht kennen.` })
   }
+  const reason = form.estimateReason.trim()
+  if (form.estimated && reason === '') {
+    problems.push({ field: 'estimateReason', short: 'Begründung fehlt', text: 'Bitte begründen Sie die Schätzung, etwa „Zähler defekt“ oder „Wohnung bei der Ablesung nicht zugänglich“. Die Begründung steht beim Verbrauch des Mieters.' })
+  }
   if (problems.length > 0 || value === null) return { problems }
   return {
     body: {
@@ -63,6 +72,7 @@ export function buildReadingBody(form: ReadingForm, meterId: string, asksYear = 
       oldEndValue,
       note: form.note.trim() || undefined,
       ...(year?.kind === 'year' ? { newCalibratedUntil: year.year } : {}),
+      ...(form.estimated ? { estimated: true as const, estimateReason: reason } : {}),
     },
   }
 }
@@ -77,3 +87,6 @@ export function replacementCalibrationHint(meter: Pick<Meter, 'calibratedUntil'>
     ? 'Leer lassen, wenn Sie es nicht kennen.'
     : `Bisher eingetragen: geeicht bis Ende ${meter.calibratedUntil}, das Jahr des ausgebauten Zählers. Leer gelassen bleibt es stehen.`
 }
+
+// Die Hilfe am Haken „geschätzt“ (#98): wann geschätzt werden darf, und dass sich keine Zahl ändert.
+export const ESTIMATE_HELP = 'Haken Sie das an, wenn der Stand nicht abgelesen, sondern geschätzt ist, etwa weil der Zähler defekt oder die Wohnung nicht zugänglich war. Mietfuchs rechnet mit dem Stand wie mit einem abgelesenen und nennt die Schätzung mit Ihrer Begründung beim Verbrauch des Mieters. Bei Wärme und Warmwasser darf nur bei Geräteausfall oder aus anderen zwingenden Gründen geschätzt werden (§ 9a HeizkostenV).'

@@ -300,6 +300,18 @@ export const RULES: readonly Rule[] = [
       'Heizkostenverteiler sind nicht eichpflichtig.',
     scope: 'meters',
   },
+  {
+    // Geschätzte Ablesung (#98). Wortlaut des § 9a HeizkostenV gelesen am 06.11.2026 auf gesetze-im-internet.de; das
+    // Urteil mit seinem Leitsatz und Rn. 18. Wie die Eichfrist nur auf der Zähler-Seite (`scope`).
+    code: 'meter-estimate',
+    title: 'Geschätzte Ablesung',
+    norm: '§ 9a HeizkostenV; BGH, Urteil vom 11.11.2014, VIII ZR 112/14',
+    summary:
+      'Für die formelle Ordnungsmäßigkeit einer Betriebskostenabrechnung ist es ohne Bedeutung, ob die für den Mieter angesetzten Kosten auf abgelesenen Messwerten oder einer Schätzung beruhen; einer Erläuterung bedarf es dort nicht. Ob die Schätzung inhaltlich richtig ist, ist eine andere Frage. ' +
+      'Für Wärme und Warmwasser nach der Heizkostenverordnung darf nur geschätzt werden, wenn der Verbrauch wegen Geräteausfalls oder aus anderen zwingenden Gründen nicht ordnungsgemäß erfasst werden kann; ermittelt wird er aus dem Verbrauch der betroffenen Räume in vergleichbaren Zeiträumen, vergleichbarer anderer Räume im selben Zeitraum oder dem Durchschnitt des Gebäudes oder der Nutzergruppe. ' +
+      `Überschreitet die betroffene Fläche oder der umbaute Raum ${estimateThreshold} % der für die Verteilung maßgeblichen, sind die Kosten ausschließlich nach Fläche bzw. umbautem Raum zu verteilen.`,
+    scope: 'meters',
+  },
 ]
 
 function ruleByCode(code: string): Rule {

@@ -948,6 +948,23 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Ablesung 400. Gefragt wird nur im Fenster der Seite Zähler, nicht im Eingang der Seite Belege. Das bisherige Jahr wird ersetzt, nicht
   aufbewahrt: Für einen Zeitraum, in dem das ausgebaute Gerät schon abgelaufen war, entfällt dessen Warnung
   (bekannte Grenze; das Jahr je Gerät hieße eine Spalte an der Ablesung).
+- **Geschätzte Ablesung** (#98, [readingEstimate.ts](readingEstimate.ts)): `readings.estimated` (nur `1` oder `NULL`) mit
+  `estimate_reason` (Pflicht bei einer Schätzung, sonst `NULL`; Bedingungen in Schritt 0091, Spalten in 0090, getrennt wie
+  0085/0086). Das Repository rückt `estimated: false` samt Begründung zu „abgelesen“ gerade und lehnt eine Schätzung ohne
+  Begründung mit einem Satz ab (400). **Keine Zahl ändert sich**: gerechnet wird mit dem Stand wie mit einem abgelesenen.
+  Benutzt ist eine Ablesung nach `readingsUsedFor` (wie die Eichfrist). Die Zähler-Seite zeigt `meter.reading-estimated`
+  (hint, Regel `meter-estimate` mit `scope: 'meters'`, nie im Rechtsstand einer Abrechnung); beim Mieter hängt
+  `estimatedSuffix` „; geschätzt: „Zähler“ Stand vom … („Begründung“)“ an den Text seiner Zeile (Verbrauchsschlüssel samt
+  Hauptzähler, Bezugszähler, eigene Heizkostenabrechnung ohne Ablesedienst). Ohne Kennzeichnung im Bestand sind alle Texte
+  wortgleich. **§ 9a Abs. 2**: Überschreitet die Fläche der Wohnungen mit geschätzter Ablesung (ohne Schätzung nach § 9a)
+  zusammen mit den Schätzungen die Grenze, warnt `heating.reading-estimate-over-25` mit Quote und verweist auf die
+  Schätzung nach § 9a; umgestellt wird nicht. BGH VIII ZR 112/14 (Leitsatz, Rn. 18): Für die formelle Ordnungsmäßigkeit
+  ist eine Schätzung ohne Bedeutung, eine Kennzeichnung verlangt das Urteil nicht; Mietfuchs nennt sie trotzdem.
+- **Wasser nicht nach Zählern** (#98, `key.water-not-by-meter`, hint): Wasser/Abwasser nach Personen oder Fläche, obwohl jede
+  Einheit mit Mietverhältnis in der Position einen im Zeitraum abgelesenen Kaltwasserzähler hat oder keinen Anschluss
+  (§ 556a Abs. 1 Satz 2 BGB). Das Modell kennt keinen vereinbarten Schlüssel je Mietverhältnis (#258 nur, ob umgelegt
+  wird), der Hinweis kommt deshalb immer und sagt, dass eine abweichende Vereinbarung vorgeht. Ein Zähler der Wohnung
+  zählt nicht für ihre Zimmer.
 
 ### Mietkonto
 

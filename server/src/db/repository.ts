@@ -672,6 +672,27 @@ function mergeReading(current: Reading, body: unknown): Reading {
     note: merged(body, 'note', current.note, asOptionalText),
     // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): der letzte Tag des bisherigen Nutzers.
     interimFor: merged(body, 'interimFor', current.interimFor, (v) => (typeof v === 'string' && ISO_DATE.test(v) ? v : undefined)),
+    ...mergeReadingEstimate(current, body),
+  }
+}
+
+// Geschätzte Ablesung (#98). `estimated` nur als Wahrheitswert; was keiner ist, wird abgelehnt statt still zu „abgelesen“,
+// denn gemeint war dann etwas anderes. Ohne Schätzung fällt die Begründung weg (geradegerückt, wie ein Teilrumpf, der nur
+// `estimated: false` schickt). Eine Schätzung ohne Begründung lehnt `guardReadingEstimate` mit einem Satz ab.
+function mergeReadingEstimate(current: Reading, body: unknown): Pick<Reading, 'estimated' | 'estimateReason'> {
+  const estimated = merged(body, 'estimated', current.estimated, (v) => {
+    if (v === null || v === undefined || v === false) return undefined
+    if (v === true) return true
+    throw new HeatingError(400, 'Ob die Ablesung geschätzt ist, geben Sie mit ja oder nein an (estimated: true oder false).')
+  })
+  if (estimated !== true) return {}
+  const reason = merged(body, 'estimateReason', current.estimateReason, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined))
+  return { estimated, ...(reason !== undefined ? { estimateReason: reason } : {}) }
+}
+
+function guardReadingEstimate(r: Reading): void {
+  if (r.estimated === true && !r.estimateReason) {
+    throw new HeatingError(400, 'Eine geschätzte Ablesung braucht eine Begründung, etwa „Zähler defekt“ oder „Wohnung bei der Ablesung nicht zugänglich“. Sie steht beim Verbrauch des Mieters.')
   }
 }
 
@@ -922,6 +943,7 @@ async function guardSupplyReading(db: Executor, reading: Pick<Reading, 'meterId'
 }
 
 async function guardReading(db: Executor, before: Reading | null, after: Reading): Promise<void> {
+  guardReadingEstimate(after)
   if (before) await guardSupplyReading(db, before)
   await guardSupplyReading(db, after)
 }
@@ -2464,6 +2486,7 @@ const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
   replacement: orNull(r.replacement), oldEndValue: orNull(r.oldEndValue), note: orNull(r.note),
   interimFor: orNull(r.interimFor),
+  estimated: r.estimated === true ? true : null, estimateReason: r.estimated === true ? orNull(r.estimateReason) : null,
 })
 const paymentRow = (p: Payment) => ({
   id: p.id, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, note: orNull(p.note), kind: p.kind,

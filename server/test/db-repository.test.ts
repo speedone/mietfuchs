@@ -473,7 +473,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
     },
     {
       coll: 'readings', table: readings,
-      body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel', interimFor: '2024-12-30' },
+      body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel', interimFor: '2024-12-30', estimated: true, estimateReason: 'Zähler defekt' },
     },
     {
       coll: 'payments', table: payments,
