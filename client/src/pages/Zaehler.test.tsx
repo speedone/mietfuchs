@@ -204,6 +204,25 @@ test('Eichfrist: das Jahr steht in der Liste, die abgelaufene Frist als Warnung 
   }
 })
 
+// Browserprüfung 0.16.0 (M1): Die geschätzte Ablesung meldet der Server als Hinweis. Die Seite stufte jede Meldung
+// außer der Eichfrist als Fehler ein und zeigte einen roten Kasten „Fehler Ablesung geschätzt“.
+test('Geschätzte Ablesung: Stufe aus der Meldung, ein Hinweis und kein Fehler', async () => {
+  const notice = { code: 'meter.reading-estimated', level: 'hint', title: 'Ablesung geschätzt', text: 'Zähler „Wasser EG“: Der Stand vom 31.12.2025 ist geschätzt.', subject: { kind: 'meter', id: 'm1' } }
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? ''
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/meters') return json(METERS)
+    if (path.startsWith('/api/consumption')) return json([{ meterId: 'm1', consumption: 80, readingCount: 2, warnings: [notice.text], notices: [notice] }])
+    return json([])
+  })
+  renderPage()
+  const box = (await screen.findByText(notice.text, undefined, { timeout: 5000 })).closest('.notice-item')
+  expect(box?.textContent).toContain('Hinweis')
+  expect(box?.textContent).not.toContain('Fehler')
+  expect(box?.className).not.toMatch(/error/)
+})
+
 // ---------- #346 Schritt 7: die Ablesung im Seitenfenster, mit derselben Anfrage ----------
 // Die Rümpfe sind die, die die Ablesezeile vor dem Seitenfenster schickte.
 let calls: { url: string; method: string; body: unknown }[] = []

@@ -484,11 +484,11 @@ function FragmentRow(props: {
           {m.meterNumber && <div className="muted">Nr. {m.meterNumber}</div>}
           {hcaSummary(m) && <div className="muted">{hcaSummary(m)}</div>}
           {m.calibratedUntil != null && <div className="muted">geeicht bis Ende {m.calibratedUntil}</div>}
-          {/* Die abgelaufene Eichfrist ist eine Warnung und kein Fehler der Stände (Heizung PR 21). */}
+          {/* Die Stufe kommt aus der Meldung des Servers (Browserprüfung 0.16.0, M1): Eichfrist Warnung, Schätzung Hinweis. */}
           {/* Über den Baustein Notice (Durchsicht K3, S26): Stufe als Zeichen und Wort; ein Fehler steht ganz offen. */}
           {cons?.warnings.map((w, i) => {
             const n = cons.notices?.[i]
-            return <CalcNotice key={i} notice={{ code: n?.code ?? 'legacy', level: n?.code === 'meter.calibration-overdue' ? 'warning' : 'error', title: n?.title ?? '', text: w }} />
+            return <CalcNotice key={i} notice={{ code: n?.code ?? 'legacy', level: n?.level ?? 'error', title: n?.title ?? '', text: w }} />
           })}
         </td>
         <td data-label="Zuordnung">{unitName}</td>
