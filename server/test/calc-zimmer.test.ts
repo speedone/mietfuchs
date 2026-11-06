@@ -11,6 +11,7 @@ import { co2Source } from '../testing/co2Snapshot.ts'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotMeter, type SnapshotReading, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { servesUnit } from '../../shared/heatingPeriod.ts'
+import type { MeterRestTarget } from '../../shared/types.ts'
 import { dwellingsOf, roomView } from '../../shared/rooms.ts'
 import { makeRng } from '../testing/taxStock.ts'
 import { assertControlSums, assertLandlordParts } from '../testing/landlordParts.ts'
@@ -476,6 +477,8 @@ test('Rechenweg der Heizung: Grundkosten nach Fläche nennen die Fläche des Zim
 test('Invariante: Bestände mit Zimmern - Summe, Vorzeichen, Eigenanteil im Vermieteranteil', () => {
   let items = 0
   let split = 0
+  // Abgedeckt: Rest am Bezugszähler mit Warmwasser im Zimmer und Rest nach Verbrauch, mit Zwischenzähler, als Eigenanteil.
+  const covered = { warmRest: 0, sub: 0, self: 0 }
   for (let i = 0; i < 1500; i++) {
     const r = makeRng(573_000 + i * 7919)
     const pick = <T>(xs: readonly T[]): T => xs[Math.floor(r() * xs.length)] as T
@@ -483,13 +486,16 @@ test('Invariante: Bestände mit Zimmern - Summe, Vorzeichen, Eigenanteil im Verm
     const tenancies: SnapshotTenancy[] = []
     const meters: SnapshotMeter[] = []
     const readings: SnapshotReading[] = []
-    const usageOf = () => pick(['vermietet', 'vermietet', 'vermietet', 'eigen', 'ausgenommen'] as const)
+    // Ein Teil der Bestände ganz und ganzjährig vermietet: Ohne Leerstand und Eigennutzung fällt auf, wenn mehr als die
+    // Rechnung an die Mieter geht (der Vermieter trüge dann gegen das Vorzeichen der Position).
+    const full = r() < 0.25
+    const usageOf = () => (full ? 'vermietet' : pick(['vermietet', 'vermietet', 'vermietet', 'eigen', 'ausgenommen'] as const))
     const addUnit = (id: string, over: Partial<SnapshotUnit>) => {
       const usage = usageOf()
       units.push(unit(id, { name: id, areaM2: r() < 0.15 ? 0 : Math.round(r() * 30), participates: usage === 'vermietet', selfUsed: usage === 'eigen', selfPersons: usage === 'eigen' ? Math.floor(r() * 3) : undefined, ...over }))
-      if (usage === 'vermietet' && r() < 0.8) {
-        const start = r() < 0.3 ? `2025-0${1 + Math.floor(r() * 9)}-01` : '2024-01-01'
-        const end = r() < 0.3 ? `2025-${String(10 + Math.floor(r() * 3))}-15` : null
+      if (usage === 'vermietet' && (full || r() < 0.8)) {
+        const start = !full && r() < 0.3 ? `2025-0${1 + Math.floor(r() * 9)}-01` : '2024-01-01'
+        const end = !full && r() < 0.3 ? `2025-${String(10 + Math.floor(r() * 3))}-15` : null
         const persons = Math.floor(r() * 3)
         tenancies.push(tenancy(`t-${id}`, id, { start, end, persons, personHistory: [{ from: start, persons }], ...(r() < 0.1 ? { costModel: 'flatRate' as const } : {}) }))
       }
@@ -507,12 +513,21 @@ test('Invariante: Bestände mit Zimmern - Summe, Vorzeichen, Eigenanteil im Verm
     for (const id of roomIds) {
       addUnit(id, { parentUnitId: 'wg' })
       if (r() < 0.1) reading(`m-${id}`, id, 'kaltwasser', Math.round(r() * 30))
+      // Ein Warmwasserzähler im Zimmer misst eine eigene Leitung neben dem Kaltwasser der Wohnung.
+      if (r() < 0.5) reading(`w-${id}`, id, 'warmwasser', Math.round(r() * 30))
     }
     if (r() < 0.85) reading('m-wg', 'wg', 'kaltwasser', Math.round(r() * 200))
     if (r() < 0.5) reading('m-wgs', 'wg', 'strom', Math.round(r() * 2000))
-    if (r() < 0.5) reading('m-main', null, 'kaltwasser', Math.round(r() * 400))
+    if (r() < 0.6) reading('m-main', null, 'kaltwasser', 100 + Math.round(r() * 400))
+    // Ein Zähler für einen Teil des Hauses (Garten) als Zwischenzähler.
+    const garden = r() < 0.4
+    if (garden) {
+      reading('m-garden', null, 'kaltwasser', Math.round(r() * 40))
+      const g = meters[meters.length - 1] ?? assert.fail('kein Gartenzähler')
+      g.scope = 'common'
+    }
     const ids = units.filter((u) => u.id !== 'wg').map((u) => u.id)
-    const unitMeters = meters.filter((m) => m.unitId !== null && m.type === 'kaltwasser').map((m) => m.id)
+    const unitMeters = meters.filter((m) => m.unitId !== null && (m.type === 'kaltwasser' || m.type === 'warmwasser')).map((m) => m.id)
     const key = pick(['area', 'persons', 'units', 'meter', 'meter', 'meter'] as const)
     const amount = 1 + Math.floor(r() * 200000)
     const drawn: SnapshotCostItem = item({
@@ -521,9 +536,19 @@ test('Invariante: Bestände mit Zimmern - Summe, Vorzeichen, Eigenanteil im Verm
       ...(key === 'meter' ? { meterType: pick(['kaltwasser', 'kaltwasser', 'strom'] as const), ...(r() < 0.5 ? { roomSplit: 'persons' as const } : {}) } : {}),
       ...(r() < 0.3 ? { participantUnitIds: ids.filter(() => r() < 0.7) } : {}),
     })
-    const withRest = key === 'meter' && drawn.meterType === 'kaltwasser' && r() < 0.3
+    const withRest = key === 'meter' && drawn.meterType === 'kaltwasser' && r() < 0.5
+    const subTarget = (): MeterRestTarget => pick([
+      'landlord', 'selfUse', 'excluded', { key: 'area', unitIds: ids.filter(() => r() < 0.6) }, { key: 'direct', unitIds: [pick(ids)] },
+    ] as const)
     const one: SnapshotCostItem = withRest
-      ? { ...drawn, meterRest: { referenceMeterId: null, behindMeterIds: unitMeters, key: pick(['area', 'persons', 'units', 'meter', 'landlord'] as const), unitIds: null, subMeters: [] } }
+      ? {
+        ...drawn,
+        meterRest: {
+          referenceMeterId: null, behindMeterIds: r() < 0.5 ? null : unitMeters,
+          key: pick(['area', 'persons', 'units', 'meter', 'meter', 'landlord', 'selfUse', 'standard', 'standard'] as const), unitIds: null,
+          subMeters: garden ? [{ meterId: 'm-garden', target: subTarget() }] : [],
+        },
+      }
       : drawn
     const context = `Fall ${i}\n${JSON.stringify({ units, tenancies, meters, readings, one })}`
     const s = settle(source({ units, tenancies, meters, readings, costItems: [one] }))
@@ -532,14 +557,22 @@ test('Invariante: Bestände mit Zimmern - Summe, Vorzeichen, Eigenanteil im Verm
     const landlord = s.landlord.rows.filter((x) => x.costItemId === 'c').reduce((a, x) => a + x.shareCents, 0)
     assert.equal(tenants.reduce((a, x) => a + x.shareCents, 0) + landlord, one.amountCents, `Summe: ${context}`)
     for (const x of tenants) assert.ok(x.shareCents === 0 || Math.sign(x.shareCents) === Math.sign(one.amountCents), `Vorzeichen ${x.shareCents}: ${context}`)
+    // Auch der Vermieter trägt nie gegen das Vorzeichen der Position: Sonst gingen an die Mieter mehr als 100 % hinaus.
+    assert.ok(landlord === 0 || Math.sign(landlord) === Math.sign(one.amountCents), `Vorzeichen Vermieter ${landlord}: ${context}`)
     const self = s.selfUsedShareCents
     assert.ok(self === 0 || Math.sign(self) === Math.sign(landlord), `Eigenanteil ${self}, Vermieter ${landlord}: ${context}`)
     assert.ok(Math.abs(self) <= Math.abs(landlord), `Eigenanteil ${self} > Vermieter ${landlord}: ${context}`)
     assertLandlordParts(s, tenancies.length, context)
     assertControlSums(s, context)
     if (key === 'meter' && meters.some((m) => m.unitId === 'wg' && m.type === one.meterType) && tenants.some((x) => x.shareCents !== 0)) split++
+    const restKey = one.meterRest?.key
+    const distributed = !s.notices.some((n) => n.level === 'error')
+    if (distributed && (restKey === 'meter' || restKey === 'standard') && meters.some((m) => m.type === 'warmwasser') && tenants.some((x) => x.shareCents !== 0)) covered.warmRest++
+    if (distributed && (one.meterRest?.subMeters.length ?? 0) > 0) covered.sub++
+    if (distributed && (restKey === 'selfUse' || restKey === 'standard') && self !== 0) covered.self++
   }
   assert.ok(items === 1500 && split >= 200, `zu wenige Fälle mit Wohnungszähler: ${split}`)
+  assert.ok(covered.warmRest >= 20 && covered.sub >= 20 && covered.self >= 10, `zu wenige Fälle mit Bezugszähler: ${JSON.stringify(covered)}`)
 })
 
 // ---------- Nachbesserung Task 3 (Durchsicht) ----------
@@ -663,5 +696,73 @@ test('Selbstgenutztes Zimmer mit Warmwasserzähler: Teil der Wohnung und eigenes
     assert.deepEqual(shares(s, ['t-a', 't-z2', 't-z3']), [18750, 11250, 15000], it.meterRest ? 'Bezugszähler' : 'ohne')
     assert.equal(s.selfUsedShareCents, 15000, it.meterRest ? 'Bezugszähler' : 'ohne')
     assert.equal(s.landlord.totalCents, 15000)
+  }
+})
+
+// ---------- Integrationsdurchsicht #573 mit #98: Rest am Bezugszähler und WG-Zimmer ----------
+
+const restAt = (key: 'meter' | 'standard' | 'selfUse', subMeters: NonNullable<SnapshotCostItem['meterRest']>['subMeters'] = []) =>
+  ({ meterRest: { referenceMeterId: null, behindMeterIds: null, key, unitIds: null, subMeters } })
+
+test('Rest nach Verbrauch mit Warmwasserzähler im Zimmer: genau 100 % verteilt, wie ohne Angabe und wie zwei Wohnungen 70/50', () => {
+  // WG mit zwei Zimmern je 12 m², Kaltwasser der Wohnung 100, Warmwasser in Zimmer 1 20, Hauptzähler 150, 1.500 €.
+  // Zimmer 1 verbraucht 50 + 20 = 70, Zimmer 2 50; der Rest 30 geht im Verhältnis 70 : 50.
+  const src = (it: SnapshotCostItem) => source({
+    units: [
+      unit('wg', { name: 'WG', areaM2: 80, participates: false }),
+      unit('z1', { name: 'Zimmer 1', areaM2: 12, parentUnitId: 'wg' }),
+      unit('z2', { name: 'Zimmer 2', areaM2: 12, parentUnitId: 'wg' }),
+    ],
+    tenancies: [tenancy('t-z1', 'z1'), tenancy('t-z2', 'z2')],
+    meters: [gauge('zh', null), gauge('zw', 'wg'), gauge('z1w', 'z1', 'warmwasser')],
+    readings: [...used('zh', 150), ...used('zw', 100), ...used('z1w', 20)],
+    costItems: [it],
+  })
+  for (const key of ['meter', 'standard', null] as const) {
+    const s = settle(src(water({ amountCents: 150000, ...(key ? restAt(key) : {}) })))
+    assert.deepEqual(shares(s, ['t-z1', 't-z2']), [87500, 62500], `Rest ${key ?? 'ohne Angabe'}`)
+    assert.equal(s.landlord.totalCents, 0, `Rest ${key ?? 'ohne Angabe'}: ${JSON.stringify(s.landlord.rows)}`)
+  }
+})
+
+test('Rest nach Verbrauch mit Warmwasserzählern in allen Zimmern und einer Wohnung daneben: wie ohne Angabe', () => {
+  // A 50, WG 100 (Zimmer 12/12/16 m²), Warmwasser je Zimmer 10, Hauptzähler 200, 2.000 €: Rest 20 nach Verbrauch.
+  const over = {
+    meters: [gauge('zh', null), gauge('za', 'a'), gauge('zw', 'wg'), gauge('w1', 'z1', 'warmwasser'), gauge('w2', 'z2', 'warmwasser'), gauge('w3', 'z3', 'warmwasser')],
+    readings: [...used('zh', 200), ...used('za', 50), ...used('zw', 100), ...used('w1', 10), ...used('w2', 10), ...used('w3', 10)],
+  }
+  for (const key of ['meter', 'standard', null] as const) {
+    const s = settle(waterHouse(over, [water({ amountCents: 200000, ...(key ? restAt(key) : {}) })]))
+    assert.deepEqual(shares(s, ['t-a', ...ROOMS]), [55556, 44444, 44444, 55556], `Rest ${key ?? 'ohne Angabe'}`)
+    assert.equal(s.landlord.totalCents, 0, `Rest ${key ?? 'ohne Angabe'}: ${JSON.stringify(s.landlord.rows)}`)
+  }
+})
+
+test("Rest als Eigenanteil ('selfUse', 'standard') bei einer über den Wohnungszähler gemessenen WG: der Eigenanteil bleibt", () => {
+  // E 60 m² selbstgenutzt ohne Zähler, WG mit zwei Zimmern und Kaltwasserzähler 100, Hauptzähler 140, Garten (Teil des Hauses) 10.
+  const src = (it: SnapshotCostItem, rooms: boolean) => source({
+    units: [
+      unit('e', { name: 'E', areaM2: 60, participates: false, selfUsed: true, selfPersons: 1 }),
+      ...(rooms
+        ? [unit('wg', { name: 'WG', areaM2: 80, participates: false }), unit('z1', { name: 'Zimmer 1', areaM2: 20, parentUnitId: 'wg' }), unit('z2', { name: 'Zimmer 2', areaM2: 20, parentUnitId: 'wg' })]
+        : [unit('wg', { name: 'WG', areaM2: 80 })]),
+    ],
+    tenancies: rooms ? [tenancy('t-z1', 'z1'), tenancy('t-z2', 'z2')] : [tenancy('t-wg', 'wg')],
+    meters: [gauge('zh', null), gauge('zw', 'wg'), { ...gauge('garten', null), scope: 'common' }],
+    readings: [...used('zh', 140), ...used('zw', 100), ...used('garten', 10)],
+    costItems: [it],
+  })
+  for (const rooms of [true, false]) {
+    const label = rooms ? 'mit Zimmern' : 'Gegenprobe ohne Zimmer'
+    // Ohne Zwischenzähler: der ganze Rest 40 ist der Verbrauch von E.
+    const own = settle(src(water({ amountCents: 140000, ...restAt('selfUse') }), rooms))
+    assert.equal(own.selfUsedShareCents, 40000, `selfUse ${label}`)
+    assert.equal(landlordPart(own, 'selfUse'), 40000, `selfUse ${label}`)
+    assert.equal(landlordPart(own, 'mainMeterRest'), 0, `selfUse ${label}`)
+    // Garten an den Vermieter, wie die Oberfläche es als 'standard' speichert: Rest 30 Eigenanteil, Garten 10 abziehbar.
+    const standard = settle(src(water({ amountCents: 140000, ...restAt('standard', [{ meterId: 'garten', target: 'landlord' }]) }), rooms))
+    assert.equal(standard.selfUsedShareCents, 30000, `standard ${label}`)
+    assert.equal(landlordPart(standard, 'selfUse'), 30000, `standard ${label}`)
+    assert.equal(landlordPart(standard, 'mainMeterRest'), 10000, `standard ${label}`)
   }
 })
