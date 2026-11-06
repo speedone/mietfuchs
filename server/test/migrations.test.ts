@@ -234,6 +234,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // `cost_items`). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0088_zimmer_wohnung': '0c1068fd19c5454f7841956ef8f992ea901e1b2204e60f6380ba49d00aa4d22a',
   '0089_zimmer_wohnung_bedingungen': '98f83e5eaf6fb3382d72553a81800a3a00f3636d2e43fa806fbd0e4cf5ea26e4',
+  // #98: geschätzte Ablesung (`readings.estimated`, `readings.estimate_reason`), danach die Bedingungen (Neubau von `readings`).
+  // Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0090_schaetzung_ablesung': 'a68c74b2a24849f52b08d9a58238e6ffa43a66fc9adeae8e7fcdc180c94af686',
+  '0091_schaetzung_ablesung_bedingungen': 'afe90d49a585ee978a6cc2023862ec6d52d8bf3f85c9d4d68099d87dae17a5c5',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

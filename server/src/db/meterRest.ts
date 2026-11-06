@@ -194,12 +194,18 @@ export async function dropUnitFromMeterRest(db: Executor, unitId: string): Promi
 // Wie viele Angaben zum Allgemeinverbrauch die Wohnung nennen (Empfänger des Rests, Gruppen der Zwischenzähler), für die
 // Löschfrage (`unitDependents`).
 export async function meterRestUnitLinks(db: Executor, unitId: string): Promise<number> {
+  const { recipients, groups } = await meterRestUnitRefs(db, unitId)
+  return recipients + groups
+}
+
+// Getrennt nach Empfängern des Rests und Gruppen der Zwischenzähler, damit der Objektwechsel (`guardUnit`) beide nennen kann.
+export async function meterRestUnitRefs(db: Executor, unitId: string): Promise<{ recipients: number; groups: number }> {
   const recipients = (await db.select({ id: costItemMeterRestUnits.costItemId }).from(costItemMeterRestUnits).where(eq(costItemMeterRestUnits.unitId, unitId))).length
   const groups = (await db.select({ ids: costItemMeterRestSubs.targetUnitIds }).from(costItemMeterRestSubs)).filter((r) => {
     if (r.ids === null) return false
     try { const ids: unknown = JSON.parse(r.ids); return Array.isArray(ids) && ids.includes(unitId) } catch { return false }
   }).length
-  return recipients + groups
+  return { recipients, groups }
 }
 
 // ---------- Wer einen Zähler braucht ----------

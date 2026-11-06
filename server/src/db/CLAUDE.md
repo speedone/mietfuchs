@@ -94,7 +94,8 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   mit Wohnung wird nur über die Wohnung gelöscht, auch dort die Sperre. `meters.scope` ist nur `common` oder `NULL`. Das Ziel
   einer Zielgruppe trägt seine Wohnungen als JSON (`target_unit_ids`); beim Löschen einer Wohnung nimmt
   `dropUnitFromMeterRest` sie heraus, eine leere Gruppe geht an den Vermieter (sonst scheiterte jedes spätere Speichern
-  der Position an der Prüfung); die Löschfrage zählt diese Angaben mit (`meterRestUnitLinks`). Die zwei Schritte 0085 (Tabellen, Spalte) und 0086 (Bedingungen an
+  der Position an der Prüfung); die Löschfrage zählt diese Angaben mit (`meterRestUnitLinks`). Eine Wohnung, die im Rest
+  oder in der Gruppe eines Zwischenzählers steht, wechselt das Objekt nicht (`guardUnit`, `meterRestUnitRefs`). Die zwei Schritte 0085 (Tabellen, Spalte) und 0086 (Bedingungen an
   `meters`, Neubau) sind getrennt, weil drizzle-kit eine neue Spalte samt Bedingung in einem Schritt falsch umbaut. Schritt 0087 nimmt den Rest-Schlüssel
   `standard` („tragen Sie (wie bisher)“ mit Zwischenzähler) in die Bedingung auf (Neubau von `cost_item_meter_rest`).
 - **Zimmer einer Wohnung** (#573, [rooms.ts](rooms.ts)): `units.parent_unit_id` verweist auf die Wohnung, in der die Einheit als
@@ -109,6 +110,9 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `crossPropertyViolations` (Wiederherstellen, Rücksprung). Die Berechnung liest nichts davon aus der Datenbank, sie bekommt
   `parentUnitId` über den Schnappschuss. Die Schritte trennen Spalte und Bedingung, weil drizzle-kit beides in einem Schritt
   falsch umbaut (wie 0085/0086).
+- **Geschätzte Ablesung** (#98): `readings.estimated` (nur `1` oder `NULL`) und `estimate_reason` in Schritt 0090, die
+  Bedingungen (mit `IS`, weil beide Spalten `NULL` sein dürfen) in 0091, getrennt wie 0085/0086. Beschreibung in
+  [../CLAUDE.md](../CLAUDE.md) unter „Zähler“.
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn

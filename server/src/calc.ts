@@ -6525,8 +6525,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             const measuredElsewhere = (u: SnapshotUnit) => selfIds.has(u.id) && wholeSelf(u) && ownMeter(u)
             const unmeasured = candidates.filter((u) => occupied.has(u.id) && connected(u) && !measuredUnit(u) && !measuredElsewhere(u))
             const selfElsewhere = candidates.filter((u) => occupied.has(u.id) && connected(u) && !measuredUnit(u) && measuredElsewhere(u))
+            // Ein Zimmer ist über den Zähler seiner Wohnung gemessen (#573); gefragt wird nach dessen Lücke, wie bei `partial`.
             const gaps = candidates.filter((u) => occupied.has(u.id) && measuredUnit(u) &&
-              unitCoveredDays(behindOf(u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo) < neededDays(u))
+              unitCoveredDays(behindOf(flatBehind(u) ?? u.id).filter((m) => m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo) < neededDays(u))
             const own = selfRestShare({
               unmeasured: unmeasured.map((u) => ({ unitId: u.id, selfUsed: selfIds.has(u.id), wholeSelf: wholeSelf(u) })),
               partial: gaps.length,
@@ -6564,7 +6565,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           else if (restKey === 'meter') {
             // Im Verhältnis der Zähler der Gruppe: Jeder Teil des Verbrauchs einer Einheit bekommt denselben Aufschlag. Bei
             // 'standard' wie bisher (#116) auch die Zähler außerhalb der Verteilbasis; ihr Teil geht an den Vermieter.
-            groupUse = groupUnits.reduce((a, u) => a + (splitOf(u.id)?.roomTotal.get(u.id) ?? unitUse(u.id, yFrom, yTo)), 0) + (isStandard ? plan.outside : 0)
+            // Je Einheit dasselbe Maß wie im Zähler (`tenancyUse`, `selfUse`): ein Zimmer mit seinem Teil der Wohnung und dem,
+            // was sein eigener Zähler einer anderen Art misst (Warmwasser); sonst ginge mehr als der Rest hinaus.
+            groupUse = groupUnits.reduce((a, u) => a + (splitOf(u.id)?.roomTotal.get(u.id) ?? 0) + unitUse(u.id, yFrom, yTo), 0) + (isStandard ? plan.outside : 0)
             if (!(groupUse > 0)) partToLandlord(restRaw, restWhat, 'die Zähler der Empfänger zeigen keinen Verbrauch')
             else {
               const f = restRaw / groupUse
