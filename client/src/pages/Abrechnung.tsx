@@ -21,6 +21,7 @@ import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
 import { deviationView } from '../deviation'
 import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
+import { sentAtChangeQuestion, sentAtRefusal } from '../sentAtStep'
 import { costBasisText, personsText } from '../statementView'
 import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../notices'
 import { CalcNotice, CalcNoticeGroup, NoticeBox, NoticeGroup } from '../components/Notice'
@@ -418,7 +419,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // andere Abrechnung oder „Wieder öffnen“ verwirft ihn, sonst zählte er unsichtbar als offenes
   // Formular weiter und tauchte beim nächsten Abschluss wieder auf.
   const sentAt = useDraft(data?.closed?.sentAt ?? '', { scope: `${propertyId ?? ''}|${paths.close}|${data?.closed?.closedAt ?? ''}` })
+  // #337: Ein Datum nach heute oder vor dem Ende des Zeitraums wird nicht gespeichert (der Grund steht am Feld), und ein
+  // gespeichertes ändert sich nur nach einer Rückfrage.
   async function saveSentAt(value: string) {
+    const refusal = data ? sentAtRefusal(value, data.period.to, localToday()) : null
+    if (refusal) throw new Error(refusal)
+    const change = sentAtChangeQuestion(data?.closed?.sentAt ?? '', value)
+    if (change && !(await confirm({ ...change, defaultChoice: 'cancel' }))) return keepDraft
     if (value && !(await askSentMonth(value, 'Versanddatum speichern'))) return keepDraft
     await api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: value || null }) })
     await load()
@@ -598,7 +605,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     return () => { alive = false }
   }, [plannedKey])
   const missingDesign = [...new Set([...(designs?.missing ?? []), ...design.failed])]
-  const deadlineInfo = data ? deadlineView(data.period.label, data.deadline, data.closed?.sentAt ?? null, history, new Date()) : null
+  const deadlineInfo = data ? deadlineView(data.period.label, data.deadline, data.closed?.sentAt ?? null, history, new Date(), data.period.to) : null
 
   // Alles, was eine Mieterabrechnung zum Drucken braucht, einmal je Mieter: für die Abrechnung selbst, für das Fenster
   // „Drucken“ (was vor dem Druck zu prüfen ist) und für „Zu prüfen“.
@@ -769,7 +776,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             <div className="grow">
               {isClosed ? (
                 <>
-                  <span className="badge green">abgeschlossen</span>{' '}
+                  {/* Neutral, keine Erfolgsmeldung (#337): Nach dem Abschluss steht der Versand noch aus. */}
+                  <span className="badge">abgeschlossen</span>{' '}
                   <span className="muted">
                     am {fmtDate(data.closed!.closedAt.slice(0, 10))} eingefroren - Änderungen an Kosten/Stammdaten wirken sich nicht mehr aus.
                   </span>
@@ -777,7 +785,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               ) : (
                 <>
                   <span className="badge gray">Entwurf</span>{' '}
-                  <span className="muted">Die Abrechnung wird laufend neu berechnet. Nach dem Versand abschließen, damit sich der Stand nicht mehr ändert.</span>
+                  <span className="muted">Die Abrechnung wird laufend neu berechnet. Vor dem Versand abschließen, damit sich der Stand nicht mehr ändert; den Versand halten Sie danach fest.</span>
                 </>
               )}
               {/* Die Frist (§ 556 Abs. 3 BGB) in derselben Zeile; läuft sie bald ab oder ist sie abgelaufen, steht sie darunter als Hinweis. */}
@@ -785,19 +793,28 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {isClosed ? (
-                <>
-                  <label className="field" title="Datum, an dem die Abrechnung an die Mieter ging - maßgeblich für die §556-Frist">
-                    versendet am
-                    <input
-                      type="date"
-                      data-jump-focus
-                      value={sentAt.value}
-                      disabled={sentAt.saving}
-                      onChange={(e) => sentAt.set(e.target.value)}
-                    />
-                  </label>
-                  <DraftActions draft={sentAt} onSave={saveSentAt} what="Versanddatum" />
-                </>
+                // Der Versand ist ein eigener Schritt nach dem Abschluss (#337): erst „Als versendet markieren“, dann das
+                // Datum (Vorgabe heute) mit „Speichern“. Ein gespeichertes Datum steht im Feld.
+                !data.closed?.sentAt && !sentAt.dirty && !sentAt.error ? (
+                  <button type="button" className="btn" data-jump-focus onClick={() => sentAt.set(localToday())}>
+                    Als versendet markieren
+                  </button>
+                ) : (
+                  <>
+                    <label className="field" title="Datum, an dem die Abrechnung an die Mieter ging - maßgeblich für die §556-Frist">
+                      versendet am
+                      <input
+                        type="date"
+                        data-jump-focus
+                        autoFocus={!data.closed?.sentAt}
+                        value={sentAt.value}
+                        disabled={sentAt.saving}
+                        onChange={(e) => sentAt.set(e.target.value)}
+                      />
+                    </label>
+                    <DraftActions draft={sentAt} onSave={saveSentAt} what="Versanddatum" />
+                  </>
+                )
               ) : (
                 <>
                   <button className="btn" disabled={!data || data.totalCostsCents === 0} aria-describedby={data.totalCostsCents === 0 ? 'close-none' : undefined} onClick={() => void closeSettlement()}>

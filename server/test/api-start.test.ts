@@ -699,18 +699,18 @@ const closeRequest = (method: string, year: number, body: unknown): Promise<Resp
   })
 
 test('Versanddatum: ohne Angabe abgeschlossen, mit Datum nachgetragen, leer wieder gelöscht', async () => {
-  await srv.api('/api/settlement/2040/close', { method: 'POST', body: JSON.stringify({}) })
-  assert.equal((await closedOf(srv, 2040))?.sentAt, null)
+  await srv.api('/api/settlement/2011/close', { method: 'POST', body: JSON.stringify({}) })
+  assert.equal((await closedOf(srv, 2011))?.sentAt, null)
 
   // So schickt es die Oberfläche aus <input type="date">
-  await srv.api('/api/settlement/2040/close', { method: 'PUT', body: JSON.stringify({ sentAt: '2041-03-14' }) })
-  assert.equal((await closedOf(srv, 2040))?.sentAt, '2041-03-14')
+  await srv.api('/api/settlement/2011/close', { method: 'PUT', body: JSON.stringify({ sentAt: '2012-03-14' }) })
+  assert.equal((await closedOf(srv, 2011))?.sentAt, '2012-03-14')
 
   // Ein geleertes Feld heißt „doch noch nicht versendet"
-  await srv.api('/api/settlement/2040/close', { method: 'PUT', body: JSON.stringify({ sentAt: null }) })
-  assert.equal((await closedOf(srv, 2040))?.sentAt, null)
+  await srv.api('/api/settlement/2011/close', { method: 'PUT', body: JSON.stringify({ sentAt: null }) })
+  assert.equal((await closedOf(srv, 2011))?.sentAt, null)
 
-  await srv.api('/api/settlement/2040/close', { method: 'DELETE' })
+  await srv.api('/api/settlement/2011/close', { method: 'DELETE' })
 })
 
 test('Abschließen friert Hinweise und Rechtsstand mit ein (#112)', async () => {
@@ -806,28 +806,28 @@ test('Abgeschlossenes Jahr mit Einzug am 15.03.: eingefroren bleibt 1.350 €, d
 test('Wiederöffnen behält den verschickten Stand im Verlauf, erneutes Abschließen legt einen weiteren daneben (#56)', async () => {
   const u = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Verlauf', areaM2: 50, participates: true }) })
   await srv.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({
-    unitId: u.id, tenantName: 'Verlauf', persons: 1, personHistory: [], start: '2048-01-01', end: '2048-12-31',
+    unitId: u.id, tenantName: 'Verlauf', persons: 1, personHistory: [], start: '2012-01-01', end: '2012-12-31',
     prepayments: [], prepaymentOverrides: {}, baseRents: [],
   }) })
-  const k = await srv.api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify({ year: 2048, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 30000, key: 'direct', directUnitId: u.id }) })
-  await srv.api('/api/settlement/2048/close', { method: 'POST', body: JSON.stringify({ sentAt: '2049-02-01' }) })
-  await srv.api('/api/settlement/2048/close', { method: 'DELETE' })
-  let history = await srv.api<{ closedAt: string, sentAt: string | null, reopenedAt: string, settlement: { totalCostsCents: number } }[]>('/api/settlement/2048/history')
+  const k = await srv.api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify({ year: 2012, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 30000, key: 'direct', directUnitId: u.id }) })
+  await srv.api('/api/settlement/2012/close', { method: 'POST', body: JSON.stringify({ sentAt: '2013-02-01' }) })
+  await srv.api('/api/settlement/2012/close', { method: 'DELETE' })
+  let history = await srv.api<{ closedAt: string, sentAt: string | null, reopenedAt: string, settlement: { totalCostsCents: number } }[]>('/api/settlement/2012/history')
   assert.equal(history.length, 1, 'der verschickte Stand ist nicht verloren')
-  assert.equal(history[0]?.sentAt, '2049-02-01')
+  assert.equal(history[0]?.sentAt, '2013-02-01')
   assert.equal(history[0]?.settlement.totalCostsCents, 30000)
   assert.match(history[0]?.reopenedAt ?? '', /^\d{4}-\d{2}-\d{2}T/)
   await srv.api(`/api/costItems/${k.id}`, { method: 'PUT', body: JSON.stringify({ amountCents: 25000 }) })
-  await srv.api('/api/settlement/2048/close', { method: 'POST', body: JSON.stringify({}) })
+  await srv.api('/api/settlement/2012/close', { method: 'POST', body: JSON.stringify({}) })
   try {
-    const gueltig = await srv.api<Settlement>('/api/settlement/2048')
+    const gueltig = await srv.api<Settlement>('/api/settlement/2012')
     assert.equal(gueltig.totalCostsCents, 25000, 'gültig ist der neue Abschluss')
-    history = await srv.api('/api/settlement/2048/history')
+    history = await srv.api('/api/settlement/2012/history')
     assert.equal(history.length, 1, 'der gültige Stand steht nicht im Verlauf')
   } finally {
-    await srv.api('/api/settlement/2048/close', { method: 'DELETE' })
+    await srv.api('/api/settlement/2012/close', { method: 'DELETE' })
   }
-  history = await srv.api('/api/settlement/2048/history')
+  history = await srv.api('/api/settlement/2012/history')
   assert.deepEqual(history.map((h) => h.settlement.totalCostsCents), [25000, 30000], 'neueste zuerst')
 })
 
@@ -854,15 +854,15 @@ test('Abschließen: ein zweites Mal für dasselbe Jahr wird abgelehnt, und zwar 
 })
 
 test('Versanddatum: was kein Datum ist, kommt nicht in die db.json', async () => {
-  await srv.api('/api/settlement/2041/close', { method: 'POST', body: JSON.stringify({ sentAt: '2042-05-02' }) })
+  await srv.api('/api/settlement/2013/close', { method: 'POST', body: JSON.stringify({ sentAt: '2014-05-02' }) })
   for (const sentAt of NO_DATES) {
-    const res = await closeRequest('PUT', 2041, { sentAt })
+    const res = await closeRequest('PUT', 2013, { sentAt })
     assert.equal(res.status, 400, `angenommen: ${JSON.stringify(sentAt)}`)
     assert.match(await errorFrom(res), /Versanddatum/)
   }
-  assert.equal((await closedOf(srv, 2041))?.sentAt, '2042-05-02', 'das gespeicherte Datum wurde überschrieben')
+  assert.equal((await closedOf(srv, 2013))?.sentAt, '2014-05-02', 'das gespeicherte Datum wurde überschrieben')
 
-  await srv.api('/api/settlement/2041/close', { method: 'DELETE' })
+  await srv.api('/api/settlement/2013/close', { method: 'DELETE' })
 })
 
 test('Versanddatum: ein ungültiges Datum friert die Abrechnung gar nicht erst ein', async () => {

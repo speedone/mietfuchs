@@ -30,6 +30,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   liegt, und verteilt nicht, wenn gemessene und ungemessene Einheiten vermischt wären. Bestehende Abrechnungen bleiben
   centgenau unverändert ([#98](https://github.com/speedone/mietfuchs/issues/98)).
 
+### Geändert
+
+- **Versand als eigener Schritt nach dem Abschluss**: Eine abgeschlossene Abrechnung zeigt „Als versendet markieren“;
+  danach steht das Datum mit heute als Vorgabe im Feld „versendet am“ und wird mit „Speichern“ festgehalten
+  ([#337](https://github.com/speedone/mietfuchs/issues/337)). Ein Versanddatum nach heute oder vor dem Ende des
+  Abrechnungszeitraums nimmt Mietfuchs nicht mehr an, und ein gespeichertes ändert sich nur nach einer Rückfrage. Ein
+  früher gespeichertes Datum, das so nicht mehr ginge, bleibt stehen; Seite und Cockpit nennen die Frist dann nicht
+  „gewahrt“, sondern bitten Sie, das Datum zu prüfen. Der Dialog zum Abschließen sagt, dass der Versand danach
+  festgehalten wird, und „abgeschlossen“ steht neutral statt grün da. Keine Zahl einer Abrechnung ändert sich.
+
 ## [0.15.2] – 2026-11-02
 
 ### Behoben

@@ -188,8 +188,11 @@ test('Heizkostenabrechnung (Heizung PR 5): rechnen, eigene Frist, abschließen; 
     assert.equal((await s.api<Settlement>(url)).closed, null)
     assert.equal((await send(`${url}/close`, 'POST', {})).status, 201)
     assert.equal((await send(`${url}/close`, 'POST', {})).status, 409)
-    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2027-03-01' })).status, 200)
-    assert.deepEqual((await s.api<Settlement>(url)).closed?.sentAt, '2027-03-01')
+    // #337: nicht vor dem Ende der Heizperiode (30.04.2026), der letzte Tag gilt.
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2026-04-29' })).status, 400)
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2026-04-30' })).status, 200)
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2026-06-01' })).status, 200)
+    assert.deepEqual((await s.api<Settlement>(url)).closed?.sentAt, '2026-06-01')
     assert.equal((await send(`/api/heating-plants/${plant.id}`, 'DELETE')).status, 409)
     assert.equal((await send(`${url}/close`, 'DELETE')).status, 200)
     assert.equal((await s.api<unknown[]>(`${url}/history`)).length, 1)

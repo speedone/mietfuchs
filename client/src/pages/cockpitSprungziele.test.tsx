@@ -160,3 +160,12 @@ test('Abgeschlossen ohne Versanddatum: „Versanddatum eintragen“ führt zum F
   await clickRow('Abgeschlossen & versendet')
   expect(navigate).toHaveBeenCalledWith('abrechnung', { kind: 'section', section: 'sentAt' })
 })
+
+// #337: Ein gespeichertes Versanddatum vor dem Ende des Zeitraums (aus der Zeit vor der Prüfung) ist kein Versand.
+test('Versanddatum vor dem Ende des Zeitraums: gelb, ohne „gewahrt“, „Versanddatum prüfen“ führt zum Feld', async () => {
+  const navigate = page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1')], settlement: { closed: { closedAt: `${YEAR + 1}-01-10T10:00:00Z`, sentAt: `${YEAR}-12-01` } } })
+  expect(await screen.findByText(/Als Versanddatum ist der 01\.12\.\d{4} eingetragen\. Das Versanddatum liegt vor dem Ende des Abrechnungszeitraums/, {}, SLOW)).toBeTruthy()
+  expect(screen.queryByText(/gewahrt/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /Versanddatum prüfen/ }))
+  expect(navigate).toHaveBeenCalledWith('abrechnung', { kind: 'section', section: 'sentAt' })
+})

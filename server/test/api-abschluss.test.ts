@@ -3,7 +3,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { CostItem, FuelDelivery, FuelGapQuestion, HeatingPlant, Notice, Settlement, Unit } from '../../shared/types.ts'
-import { type Server, jsonOf, startServer } from '../testing/api.ts'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { setSentAt } from '../src/db/repository.ts'
+import { calendarPeriod } from '../../shared/period.ts'
+import { type Server, errorFrom, inDatabase, jsonOf, startServer, startServerIn } from '../testing/api.ts'
 
 type Question = { error: string; errorNotices?: Notice[]; errorToken?: string; fuelGaps?: FuelGapQuestion[] }
 
@@ -144,6 +149,40 @@ test('Abschließen (#319): Lücke und Fehler in einer Rückfrage; eine Schätzun
 
     assert.equal((await send('/api/settlement/2025/close', 'POST', { fuelEstimates: 'estimate', despiteErrors: zweite.errorToken })).status, 201)
     assert.ok((await s.api<FuelDelivery[]>(`/api/heating-plants/${plant.id}/deliveries`)).some((x) => x.estimated))
+  } finally {
+    s.stop()
+  }
+})
+
+// #337: Ein Versanddatum nach heute meldete die Frist als „gewahrt“, eines vor dem Ende des Zeitraums kann nicht stimmen.
+// Beide Grenzen gelten (inklusiv). „Heute“ hat einen Tag Spielraum: Die Oberfläche rechnet in der Zeitzone des Browsers,
+// der Server in UTC. Ein gespeichertes Datum, das so nicht mehr angenommen würde, bleibt lesbar und lässt sich leeren.
+test('Versanddatum (#337): nicht nach heute, nicht vor dem Ende des Zeitraums; ein gespeichertes bleibt lesbar', async () => {
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), { NKA_TEST_TODAY: '2026-03-10' })
+  try {
+    const send = sender(s)
+    const closed = async () => (await s.api<Settlement>('/api/settlement/2025')).closed
+    const zukunft = await send('/api/settlement/2025/close', 'POST', { sentAt: '2026-03-12' })
+    assert.equal(zukunft.status, 400)
+    assert.equal(await errorFrom(zukunft), 'Das Versanddatum liegt nach heute. Tragen Sie den Tag ein, an dem die Abrechnung an die Mieter ging.')
+    const vorher = await send('/api/settlement/2025/close', 'POST', { sentAt: '2025-12-30' })
+    assert.equal(vorher.status, 400)
+    assert.match(await errorFrom(vorher), /vor dem Ende des Abrechnungszeitraums am 31\.12\.2025/)
+    assert.equal(await closed(), null, 'nichts eingefroren')
+
+    assert.equal((await send('/api/settlement/2025/close', 'POST', {})).status, 201)
+    for (const [sentAt, status] of [['2025-12-31', 200], ['2026-03-10', 200], ['2026-03-11', 200], ['2026-03-12', 400], ['2025-12-30', 400]] as const) {
+      assert.equal((await send('/api/settlement/2025/close', 'PUT', { sentAt })).status, status, sentAt)
+    }
+    assert.equal((await closed())?.sentAt, '2026-03-11', 'ein abgelehntes Datum ändert nichts')
+
+    // Bestand: ein Datum von vor #337, das heute abgelehnt würde.
+    const property = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    await inDatabase(s, (db) => setSentAt(db, property, calendarPeriod(2025), '2027-01-01'))
+    assert.equal((await closed())?.sentAt, '2027-01-01', 'gelesen wird es weiter')
+    assert.equal((await send('/api/settlement/2025/close', 'PUT', { sentAt: '2027-01-01' })).status, 200, 'unverändert geschickt ist es keine Änderung')
+    assert.equal((await send('/api/settlement/2025/close', 'PUT', { sentAt: null })).status, 200, 'leeren geht')
+    assert.equal((await closed())?.sentAt, null)
   } finally {
     s.stop()
   }

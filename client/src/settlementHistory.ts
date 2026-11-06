@@ -4,6 +4,11 @@
 // Version und wird deshalb vorsichtig gelesen.
 
 import { fmtDate, fmtEuro } from './api'
+import { sentAtRefusal } from './sentAtStep'
+
+// Der Kalendertag eines Zeitpunkts in der Zeitzone des Browsers, wie `localToday` (periodForm.ts).
+const dayOf = (d: Date): string =>
+  `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 export type HistoryEntry = { id: string, closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
 
@@ -38,10 +43,16 @@ function linesOf(settlement: unknown): string[] {
 // und Ende der Frist kommen von der Abrechnung des Servers (#208); die Seite rechnet sie nicht selbst.
 export type DeadlineView = { level: 'ok' | 'notice' | 'error', text: string }
 
-export function deadlineView(label: string, deadline: string, sentAt: string | null, history: HistoryEntry[], today: Date): DeadlineView {
+// `periodTo` (#337): Ein gespeichertes Versanddatum nach heute oder vor dem Ende des Zeitraums (aus der Zeit vor der
+// Prüfung) ist kein tatsächlicher Versand; dann sagt die Zeile das, statt die Frist „gewahrt“ zu nennen.
+export function deadlineView(label: string, deadline: string, sentAt: string | null, history: HistoryEntry[], today: Date, periodTo?: string): DeadlineView {
   const end = deadline
   const endText = fmtDate(deadline)
   const daysLeft = Math.ceil((Date.parse(`${deadline}T00:00:00Z`) - today.getTime()) / 86400000)
+  const refusal = sentAt && periodTo ? sentAtRefusal(sentAt, periodTo, dayOf(today)) : null
+  if (sentAt && refusal) {
+    return { level: 'notice', text: `Als Versanddatum der Abrechnung ${label} ist der ${fmtDate(sentAt)} eingetragen. ${refusal}` }
+  }
   if (sentAt) {
     return { level: 'ok', text: `Abrechnung ${label} am ${fmtDate(sentAt)} versendet - die Frist nach § 556 BGB (${endText}) ist ${sentAt <= end ? 'gewahrt' : 'überschritten'}.` }
   }

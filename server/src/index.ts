@@ -30,6 +30,7 @@ import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, Lette
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
+import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
 import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
@@ -1087,6 +1088,7 @@ app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
     const target = await heatingTargetOf(db, req)
     const label = periodLabel(target.period)
     if (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) return { schonDa: true, label, question: null }
+    checkSentAt(sentAt, null, target.period.to)
     const question = await closeWithFuel(
       db,
       answer,
@@ -1109,6 +1111,9 @@ app.put('/api/heating-settlement/:plant/:period/close', async (req, res) => {
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
   const gefunden = await writeData(async (db) => {
     const target = await heatingTargetOf(db, req)
+    const closed = await findClosedHeatingSettlement(db, target.plant.id, target.period.key)
+    if (!closed) return false
+    checkSentAt(sentAt, closed.sentAt, target.period.to)
     return setHeatingSentAt(db, target.plant.id, target.period.key, sentAt)
   })
   if (!gefunden) return res.status(404).json({ error: 'Die Heizkostenabrechnung ist nicht abgeschlossen.' })
@@ -1557,6 +1562,17 @@ const sentAtOf = (req: Request): string | null | false => {
   if (value === undefined || value === null || value === '') return null
   return isDateOnly(value) ? value : false
 }
+// Plausibel (#337, shared/sentAt.ts): nicht nach heute und nicht vor dem Ende des Zeitraums `periodTo`. Geprüft wird nur
+// ein neues Datum: Ein gespeichertes (`stored`) von vor dieser Prüfung bleibt lesbar, lässt sich unverändert wieder
+// schicken und leeren. „Heute“ mit einem Tag Spielraum: Die Oberfläche rechnet in der Zeitzone des Browsers, der Server
+// in UTC, und kurz nach Mitternacht in Deutschland ist es dort noch gestern. Wirft 400 mit dem Satz für den Nutzer.
+const checkSentAt = (sentAt: string | null, stored: string | null, periodTo: string): void => {
+  if (sentAt === null || sentAt === stored) return
+  // Der Tag nach heute in UTC; nicht über shared/holidays.ts, das der Server erst mit amtlich gelesenen Feiertagen nutzt.
+  const tomorrow = new Date(Date.parse(`${today()}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+  const problem = sentAtProblem(sentAt, periodTo, tomorrow)
+  if (problem) throw new RouteProblem(400, sentAtProblemText(problem, periodTo))
+}
 
 // Die Antwort auf die Rückfrage zur Schätzung (Heizung PR 7, Entwurf 8.2, N1, A5): `estimate` legt je
 // Lücke eine geschätzte Lieferung mit Vorbehalt an, `none` schließt ohne ab. `null`: keine Antwort,
@@ -1632,6 +1648,7 @@ app.post('/api/settlement/:period/close', async (req, res) => {
     const period = await periodOf(db, req, property)
     const label = periodLabel(period)
     if (await findClosedSettlement(db, property, period.key)) return { schonDa: true, label, question: null }
+    checkSentAt(sentAt, null, period.to)
     const question = await closeWithFuel(
       db,
       answer,
@@ -1656,7 +1673,11 @@ app.put('/api/settlement/:period/close', async (req, res) => {
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
   const gefunden = await writeData(async (db) => {
     const property = await propertyOf(db, req)
-    return setSentAt(db, property, (await periodOf(db, req, property)).key, sentAt)
+    const period = await periodOf(db, req, property)
+    const closed = await findClosedSettlement(db, property, period.key)
+    if (!closed) return false
+    checkSentAt(sentAt, closed.sentAt, period.to)
+    return setSentAt(db, property, period.key, sentAt)
   })
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
