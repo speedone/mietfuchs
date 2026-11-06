@@ -74,7 +74,7 @@ import {
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 import { guardRoomMeter, guardRoomRecipients, guardRooms, guardRoomsRemoval, guardRoomTenancy, roomCount, roomSplitOf, roomViolations } from './rooms.ts'
-import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
+import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUnitRefs,meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
 
 export type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
 export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Payment
@@ -1941,6 +1941,12 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   if ((schaetzungen[0]?.n ?? 0) > 0) haengt.push('Schätzungen nach § 9a HeizkostenV')
   const ablesedienst = await db.select({ n: count() }).from(heatingServiceValues).where(eq(heatingServiceValues.unitId, after.id))
   if ((ablesedienst[0]?.n ?? 0) > 0) haengt.push('Werte des Ablesedienstes')
+  // Bezugszähler und Rest (#98): Empfänger des Rests und Gruppen der Zwischenzähler gehören zur Position des bisherigen
+  // Objekts (Integrationsdurchsicht); sonst ging der Rest still an den Vermieter, und Rücksprung, Speichern der Position
+  // und Einspielen des Backups scheiterten an der Prüfung über die Objektgrenze.
+  const rest = await meterRestUnitRefs(db, after.id)
+  if (rest.recipients > 0) haengt.push('Empfänger des Allgemeinverbrauchs von Kostenpositionen')
+  if (rest.groups > 0) haengt.push('Zielgruppen von Zwischenzählern')
   if (haengt.length === 0) {
     // Durchsicht zu PR #427, K4: Die offenen Anschreiben ihrer Mieter gehören zum bisherigen Haus und entfallen im selben
     // Vorgang; die abgeschlossener Abrechnungen bleiben.

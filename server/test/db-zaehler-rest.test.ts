@@ -162,3 +162,24 @@ test("Rest-Schlüssel 'standard' nur am Hauptzähler, ohne Empfänger und ohne T
     await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c4', { participantUnitIds: ['a'] })), refused, 'Teilnehmer nachträglich')
   })
 })
+
+// Integrationsdurchsicht (Daten): Eine Wohnung, die im Rest oder in der Gruppe eines Zwischenzählers steht, wechselte das
+// Objekt. Danach gab die Abrechnung den Rest still an den Vermieter, jeder Rücksprung, das Speichern der Position und das
+// Einspielen des Backups scheiterten an der Prüfung über die Objektgrenze.
+test('Objektwechsel: eine Wohnung als Empfänger des Rests oder in der Gruppe eines Zwischenzählers wechselt nicht', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createProperty(db, 'objekt-2', { name: 'Nebenhaus' })
+      await createEntity(db, 'units', 'laden', { propertyId: 'objekt-1', name: 'Laden', areaM2: 60, participates: true })
+      await createEntity(db, 'units', 'kiosk', { propertyId: 'objekt-1', name: 'Kiosk', areaM2: 20, participates: true })
+      await createEntity(db, 'meters', 'g', meter('g', 'objekt-1', { scope: 'common' }))
+      await createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser 2025', amountCents: 1000, key: 'meter', meterType: 'kaltwasser',
+        meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'area', unitIds: ['laden'], subMeters: [{ meterId: 'g', target: { key: 'area', unitIds: ['kiosk'] } }] } })
+    })
+    await assert.rejects(opened.write((db) => updateEntity(db, 'units', 'laden', { propertyId: 'objekt-2' })),
+      (e: Error) => /„Laden“ kann nicht in ein anderes Objekt wechseln/.test(e.message) && /Empfänger des Allgemeinverbrauchs/.test(e.message))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'units', 'kiosk', { propertyId: 'objekt-2' })),
+      (e: Error) => /„Kiosk“ kann nicht in ein anderes Objekt wechseln/.test(e.message) && /Zwischenzähler/.test(e.message))
+    assert.deepEqual(await opened.read(crossPropertyViolations), [])
+  })
+})
