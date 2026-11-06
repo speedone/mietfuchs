@@ -119,6 +119,12 @@ export const SCOPE_OPTIONS: { value: MeterForm['scope']; label: string }[] = [
   { value: 'property', label: 'das ganze Haus (Hauptzähler)' },
   { value: 'common', label: 'einen Teil des Hauses' },
 ]
+// Ein Zähler ohne Wohnung, wie er in der Zuordnung und in der Zählerliste heißt (Browserprüfung 0.16.0, S3): Misst er
+// einen Teil des Hauses, ist er kein Hauptzähler, und die Zuordnung darf das nicht behaupten. Maßgeblich ist, was
+// `meterBody` mit leerer Zuordnung senden würde.
+export function houseLabel(form: Pick<MeterForm, 'heatingRole' | 'type' | 'scope'>): string {
+  return form.scope === 'common' && asksScope({ ...form, unitId: '' }) ? 'Haus (Teil des Hauses)' : 'Haus (Hauptzähler)'
+}
 export const SCOPE_HELP = 'Einen Teil des Hauses misst etwa der Allgemeinstromzähler, ein Gartenwasserzähler oder der Zähler einer Wohngemeinschaft, deren Zimmer einzeln vermietet sind. Ein Zähler für einen Teil des Hauses zählt nie als Hauptzähler; Sie wählen ihn bei einer Kostenposition als Bezugs- oder Zwischenzähler.'
 
 export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {

@@ -160,6 +160,27 @@ test('ein Zähler der Anlage zeigt seine gespeicherte Rolle', async () => {
   }
 })
 
+// Browserprüfung 0.16.0 (S3): Ein Zähler für einen Teil des Hauses stand in der Zuordnung als „Haus (Hauptzähler)“, in
+// der Liste als „Haus (Teil des Hauses)“. Die Zuordnung sagt dasselbe wie die Liste; angezeigt ist der gespeicherte Wert.
+test('Zähler für einen Teil des Hauses: die Zuordnung behauptet nicht „Hauptzähler“', async () => {
+  METERS = [{ id: 'g', propertyId: 'objekt-1', name: 'Gartenwasser', unitId: null, type: 'kaltwasser', unit: 'm³', scope: 'common' }]
+  try {
+    renderPage()
+    expect(await screen.findByText('Haus (Teil des Hauses)', undefined, { timeout: 5000 })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Zähler bearbeiten' }))
+    const zuordnung = (await screen.findByRole('combobox', { name: /^Zuordnung/ })) as HTMLSelectElement
+    expect(zuordnung.value).toBe('')
+    expect(zuordnung.selectedOptions[0]?.textContent).toBe('Haus (Teil des Hauses)')
+    const teil = screen.getByRole('combobox', { name: /ganze Haus oder einen Teil/ }) as HTMLSelectElement
+    expect(teil.value).toBe('common')
+    // Umgestellt auf das ganze Haus heißt die Zuordnung wieder „Hauptzähler“.
+    fireEvent.change(teil, { target: { value: 'property' } })
+    expect(zuordnung.selectedOptions[0]?.textContent).toBe('Haus (Hauptzähler)')
+  } finally {
+    METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }]
+  }
+})
+
 // Heizung PR 21 (#98): Eichjahr mit Vorschlag aus der Jahreszahl auf dem Zähler; beim Heizkostenverteiler kein Feld.
 test('Eichfrist: Vorschlag übernehmen und speichern; beim Heizkostenverteiler kein Feld', async () => {
   renderPage()
@@ -292,6 +313,21 @@ test('Geschätzte Ablesung: Haken und Begründung im Rumpf, ohne Begründung ein
   saveReadingIn(box)
   await waitFor(() => expect(calls).toHaveLength(1))
   expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-12-31', value: 180, estimated: true, estimateReason: 'Zähler defekt' } })
+})
+
+// Browserprüfung 0.16.0 (S2): Der Hilfetext des Häkchens („Haken Sie das an, …“) stand unter der Begründung. Er
+// beschreibt das Häkchen; die Begründung ist Pflicht und trägt `required`.
+const description = (el: Element) => (el.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean).map((id) => document.getElementById(id)?.textContent ?? '').join(' ')
+test('Geschätzte Ablesung: Hilfetext am Häkchen, die Begründung ist Pflicht', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  const haken = within(box).getByLabelText(/Stand geschätzt/)
+  expect(description(haken)).toMatch(/^Haken Sie das an, wenn der Stand nicht abgelesen/)
+  fireEvent.click(haken)
+  const grund = within(box).getByLabelText(/^Begründung der Schätzung/) as HTMLInputElement
+  expect(grund.required).toBe(true)
+  expect(description(grund)).not.toMatch(/Haken Sie das an/)
+  expect(within(box).getAllByText(/Haken Sie das an/)).toHaveLength(1)
 })
 
 test('Geschätzte Ablesung in der Liste: „geschätzt“ mit Begründung', async () => {

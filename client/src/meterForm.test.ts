@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
+import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -329,4 +329,16 @@ describe('Zähler an einer Wohnung mit Zimmern', () => {
     // die gewählte bleibt, damit die Auswahl zeigt, was gespeichert ist
     expect(meterUnitChoices(units, 'waerme', 'wg').map((u) => u.id)).toEqual(['wg', 'z1', 'eg'])
   })
+})
+
+// Browserprüfung 0.16.0 (S3): „ohne Wohnung“ heißt in Zuordnung und Liste gleich; ein Teil des Hauses ist kein Hauptzähler.
+test('houseLabel: Hauptzähler oder Teil des Hauses, wie gesendet würde', () => {
+  const house = { ...emptyMeterForm(), name: 'Garten', type: 'kaltwasser' as const, unit: 'm³' }
+  expect(houseLabel(house)).toBe('Haus (Hauptzähler)')
+  expect(houseLabel({ ...house, scope: 'common' })).toBe('Haus (Teil des Hauses)')
+  // Mit gewählter Wohnung gilt die Beschriftung der Option „ohne Wohnung“, also wie mit leerer Zuordnung.
+  const atUnit = { ...house, scope: 'common' as const, unitId: 'eg' }
+  expect(houseLabel(atUnit)).toBe('Haus (Teil des Hauses)')
+  // An der Heizanlage wird `common` nicht gesendet.
+  expect(houseLabel({ ...house, scope: 'common', heatingRole: 'supply' })).toBe('Haus (Hauptzähler)')
 })
