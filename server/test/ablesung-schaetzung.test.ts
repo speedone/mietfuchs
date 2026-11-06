@@ -10,6 +10,7 @@ import { estimatedReadingsUsed } from '../src/readingEstimate.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotReading, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import { RULES } from '../../shared/law/rules.ts'
+import { GLOSSARY } from '../../shared/glossary.ts'
 import { selfReadings, selfSnapshot } from '../testing/selfHeating.ts'
 import type { Reading } from '../../shared/types.ts'
 
@@ -71,7 +72,9 @@ test('Zähler-Seite: Hinweis mit Datum und Begründung, Rechtsquelle wörtlich b
   assert.equal(zeile.consumption, 60)
   const regel = RULES.find((x) => x.code === 'meter-estimate') ?? assert.fail('Regel fehlt')
   assert.equal(regel.scope, 'meters', 'nur Zähler-Seite, nicht im Rechtsstand jeder Abrechnung')
-  assert.match(regel.norm, /§ 9a HeizkostenV.*VIII ZR 112\/14/)
+  // Durchsicht M3: Das Urteil ist vom 12.11.2014 (zitiert so in BGH VIII ZR 193/14, Rn. 13).
+  assert.match(regel.norm, /§ 9a HeizkostenV; BGH, Urteil vom 12\.11\.2014, VIII ZR 112\/14/)
+  assert.match(GLOSSARY.meterReading.norm ?? '', /BGH, Urteil vom 12\.11\.2014, VIII ZR 112\/14/)
 })
 
 test('Abrechnung: kein Betrag ändert sich, der Mieter sieht „geschätzt“ mit Begründung bei seinem Verbrauch', () => {

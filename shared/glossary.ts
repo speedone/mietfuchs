@@ -728,7 +728,7 @@ export const GLOSSARY = {
     example: 'Stand am 31.12.2024: 120 m³, am 31.12.2025: 165 m³, Verbrauch 45 m³. Beim Tausch im Juni: alter Zähler endet bei 140, neuer beginnt bei 0 und steht am Jahresende bei 25; zusammen ebenfalls 45 m³.',
     // #98: geschätzte Ablesung; Wortlaut § 9a HeizkostenV und BGH VIII ZR 112/14 (Leitsatz, Rn. 18) gelesen am 06.11.2026.
     needed: 'Wenn Sie nach Verbrauch abrechnen. Ablesen am besten immer zum 31.12. Konnten Sie einen Stand nicht ablesen und haben ihn geschätzt, haken Sie bei der Ablesung „Stand geschätzt (nicht abgelesen)“ an und tragen die Begründung ein; Mietfuchs rechnet mit dem Stand wie mit einem abgelesenen und nennt die Schätzung beim Verbrauch des Mieters. Ob die Kosten auf abgelesenen Werten oder einer Schätzung beruhen, ist für die formelle Ordnungsmäßigkeit der Abrechnung ohne Bedeutung; ob die Schätzung inhaltlich stimmt, ist eine andere Frage. Bei Wärme und Warmwasser darf nur bei Geräteausfall oder aus anderen zwingenden Gründen geschätzt werden.',
-    norm: '§ 9a HeizkostenV; BGH, Urteil vom 11.11.2014, VIII ZR 112/14',
+    norm: '§ 9a HeizkostenV; BGH, Urteil vom 12.11.2014, VIII ZR 112/14',
   },
   // #342: Einheit des Zählers; die Faktoren stehen in shared/meterUnits.ts.
   meterUnit: {
