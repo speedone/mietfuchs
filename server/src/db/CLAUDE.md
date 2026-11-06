@@ -110,6 +110,9 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `crossPropertyViolations` (Wiederherstellen, Rücksprung). Die Berechnung liest nichts davon aus der Datenbank, sie bekommt
   `parentUnitId` über den Schnappschuss. Die Schritte trennen Spalte und Bedingung, weil drizzle-kit beides in einem Schritt
   falsch umbaut (wie 0085/0086).
+- **Geschätzte Ablesung** (#98): `readings.estimated` (nur `1` oder `NULL`) und `estimate_reason` in Schritt 0090, die
+  Bedingungen (mit `IS`, weil beide Spalten `NULL` sein dürfen) in 0091, getrennt wie 0085/0086. Beschreibung in
+  [../CLAUDE.md](../CLAUDE.md) unter „Zähler“.
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn
