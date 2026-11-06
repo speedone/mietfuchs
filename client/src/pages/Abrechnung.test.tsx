@@ -376,8 +376,10 @@ test('Als versendet markieren (#337): Vorgabe heute, unplausible Daten werden ni
   expect(await sentAtField()).toBe(feld)
   expect(document.activeElement).toBe(feld)
   fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Versanddatum)' }))
-  expect(await screen.findByRole('button', { name: 'Als versendet markieren' }, SLOW)).toBeTruthy()
+  const markieren = await screen.findByRole('button', { name: 'Als versendet markieren' }, SLOW)
   expect(screen.queryByLabelText(/versendet am/)).toBeNull()
+  // Das Feld ist weg; der Fokus fällt nicht auf body, sondern auf den Knopf, der den Schritt wieder beginnt (S1).
+  await waitFor(() => expect(document.activeElement).toBe(markieren), SLOW)
   fireEvent.click(screen.getByRole('button', { name: 'Als versendet markieren' }))
   feld = await sentAtField()
 
@@ -394,6 +396,39 @@ test('Als versendet markieren (#337): Vorgabe heute, unplausible Daten werden ni
   await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-03-10` }]), SLOW)
   expect(screen.queryByRole('alertdialog')).toBeNull()
   expect((await sentAtField()).value).toBe(`${YEAR + 1}-03-10`)
+})
+
+// Browserprüfung 0.16.0 (S1): Nach „Speichern“, nach „Abbrechen“ der Rückfrage und nach „Verwerfen“ lag der Fokus auf
+// body, weil die Knöpfe verschwinden oder während des Speicherns gesperrt sind. Er gehört zurück ins Feld.
+test('Versanddatum: der Fokus geht nach Abbrechen, Speichern und Verwerfen zurück ins Feld', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  show()
+  const feld = await sentAtField()
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-01` } })
+  const speichern = screen.getByRole('button', { name: 'Speichern (Versanddatum)' })
+  speichern.focus()
+  fireEvent.click(speichern)
+  let dialog = await screen.findByRole('alertdialog', {}, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
+  await waitFor(() => expect(document.activeElement).toBe(feld), SLOW)
+  // Der Entwurf bleibt stehen und zeigt, dass er nicht gespeichert ist.
+  expect(feld.value).toBe(`${YEAR + 1}-01-01`)
+  expect(screen.getByRole('button', { name: 'Speichern (Versanddatum)' })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
+  dialog = await screen.findByRole('alertdialog', {}, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Versanddatum ändern' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Versanddatum)' })).toBeNull(), SLOW)
+  expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-01` }])
+  await waitFor(() => expect(document.activeElement).toBe(feld), SLOW)
+
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-02` } })
+  const verwerfen = screen.getByRole('button', { name: 'Verwerfen (Versanddatum)' })
+  verwerfen.focus()
+  fireEvent.click(verwerfen)
+  await waitFor(() => expect(document.activeElement).toBe(feld), SLOW)
 })
 
 test('Versanddatum: „Verwerfen“ stellt das gespeicherte Datum her, ohne zu senden (#309)', async () => {

@@ -7,7 +7,7 @@ import {
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
-import { useFocusTarget, useSectionJump, type JumpTarget } from '../focus'
+import { useFocusTarget, useRefocus, useSectionJump, type JumpTarget } from '../focus'
 import { NEW_TENANCY_TARGET, senderFix } from '../jumpTargets'
 import { itemsOfFile, settledInvoiceFiles, statementInvoiceFiles, type BookedFiles, type PlantPeriods } from '../costPeriods'
 import { filesByItem } from '../receipts'
@@ -426,7 +426,14 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const [markingScope, setMarkingScope] = useState<string | null>(null)
   const marking = markingScope === sentAtScope
   useOpenForm(marking)
-  const sentAtDraft = { ...sentAt, discard: () => { sentAt.discard(); setMarkingScope(null) } }
+  // Nach „Speichern“, „Abbrechen“ der Rückfrage und „Verwerfen“ zurück ins Feld bzw. auf „Als versendet markieren“
+  // (Browserprüfung 0.16.0, S1); die Knöpfe sind dann weg oder waren beim Schließen der Rückfrage gesperrt.
+  const { ref: sentAtCard, refocus: refocusSentAt } = useRefocus<HTMLDivElement>()
+  const sentAtDraft = {
+    ...sentAt,
+    discard: () => { sentAt.discard(); setMarkingScope(null); refocusSentAt() },
+    save: async (fn: (value: string) => Promise<unknown>) => { const saved = await sentAt.save(fn); refocusSentAt(); return saved },
+  }
   // #337: Ein Datum nach heute oder vor dem Ende des Zeitraums wird nicht gespeichert (der Grund steht am Feld), und ein
   // gespeichertes ändert sich nur nach einer Rückfrage.
   async function saveSentAt(value: string) {
@@ -765,7 +772,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           „Drucken“ und „Mehr“. Im leeren Zeitraum gibt es nichts zu drucken (N12); den Umschalter zur
           Heizkostenabrechnung gibt es trotzdem. In der Vorschau eines Mieters steht statt ihrer die Leiste der Vorschau. */}
       {!preview && data && (!empty || choices.length > 0) && (
-      <div {...jumpAt('sentAt', 'card no-print')}>
+      <div ref={sentAtCard} {...jumpAt('sentAt', 'card no-print')}>
         {choices.length > 0 && (
           // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist
           <div className="segmented no-print" role="group" aria-label="Welche Abrechnung?">
