@@ -961,10 +961,12 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Schätzung nach § 9a; umgestellt wird nicht. BGH VIII ZR 112/14 (Leitsatz, Rn. 18): Für die formelle Ordnungsmäßigkeit
   ist eine Schätzung ohne Bedeutung, eine Kennzeichnung verlangt das Urteil nicht; Mietfuchs nennt sie trotzdem.
 - **Wasser nicht nach Zählern** (#98, `key.water-not-by-meter`, hint): Wasser/Abwasser nach Personen oder Fläche, obwohl jede
-  Einheit mit Mietverhältnis in der Position einen im Zeitraum abgelesenen Kaltwasserzähler hat oder keinen Anschluss
-  (§ 556a Abs. 1 Satz 2 BGB). Das Modell kennt keinen vereinbarten Schlüssel je Mietverhältnis (#258 nur, ob umgelegt
-  wird), der Hinweis kommt deshalb immer und sagt, dass eine abweichende Vereinbarung vorgeht. Ein Zähler der Wohnung
-  zählt nicht für ihre Zimmer.
+  genutzte Einheit der Position (mit Mietverhältnis **oder selbstgenutzt**: sonst trüge nach Verbrauch ein Mieter den
+  Verbrauch des Vermieters) einen Kaltwasserzähler mit Ständen für den Zeitraum hat, auch geschätzten, oder keinen
+  Anschluss (§ 556a Abs. 1 Satz 2 BGB). Nicht bei nur einer genutzten Einheit und nicht bei einer Eigentumswohnung
+  (`etw`: ohne Vereinbarung gilt der Maßstab der Gemeinschaft, § 556a Abs. 3 BGB). Das Modell kennt keinen vereinbarten
+  Schlüssel je Mietverhältnis (#258 nur, ob umgelegt wird), der Hinweis sagt deshalb, dass eine abweichende Vereinbarung
+  vorgeht. Ein Zähler der Wohnung zählt nicht für ihre Zimmer.
 
 ### Mietkonto
 

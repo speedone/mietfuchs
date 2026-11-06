@@ -709,7 +709,7 @@
  },
  {
   "code": "key.water-not-by-meter",
-  "text": "„Wasser“: Jede vermietete Wohnung hat einen abgelesenen Kaltwasserzähler, verteilt wird aber nach Personen. Kosten, die von einem erfassten Verbrauch der Mieter abhängen, sind nach einem Maßstab umzulegen, der dem unterschiedlichen Verbrauch Rechnung trägt, soweit nichts anderes vereinbart ist (§ 556a Abs. 1 Satz 2 BGB); haben alle Mietwohnungen einen Zähler, ist danach nach Verbrauch umzulegen (vgl. BGH VIII ZR 188/07 zum umgekehrten Fall). Eine abweichende Vereinbarung im Mietvertrag geht vor; ob es sie gibt, weiß Mietfuchs nicht. Ist nichts anderes vereinbart, wählen Sie bei der Position den Schlüssel „nach Verbrauch“ mit den Kaltwasserzählern."
+  "text": "„Wasser“: Jede genutzte Wohnung hat einen Kaltwasserzähler mit Ständen für den Zeitraum oder keinen Wasseranschluss, verteilt wird aber nach Personen. Kosten, die von einem erfassten Verbrauch der Mieter abhängen, sind nach einem Maßstab umzulegen, der dem unterschiedlichen Verbrauch Rechnung trägt, soweit nichts anderes vereinbart ist (§ 556a Abs. 1 Satz 2 BGB); haben alle Mietwohnungen einen Zähler, ist danach nach Verbrauch umzulegen (vgl. BGH VIII ZR 188/07 zum umgekehrten Fall). Eine abweichende Vereinbarung im Mietvertrag geht vor; ob es sie gibt, weiß Mietfuchs nicht. Ist nichts anderes vereinbart, wählen Sie bei der Position den Schlüssel „nach Verbrauch“ mit den Kaltwasserzählern."
  },
  {
   "code": "heating.reading-estimate-over-25",

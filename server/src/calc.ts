@@ -5758,18 +5758,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           'Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
         itemSubject(item))
     }
-    // § 556a Abs. 1 Satz 2 BGB (#98): Wasser nach Personen oder Fläche, obwohl jede Einheit mit Mietverhältnis in der
-    // Position einen im Zeitraum abgelesenen Kaltwasserzähler hat (oder ausdrücklich keinen Anschluss, wie beim Vorschlag
-    // des Formulars). Wortlaut nachgelesen am 06.11.2026 auf gesetze-im-internet.de. Ein Hinweis, keine andere Rechnung:
-    // Eine abweichende Vereinbarung geht vor, und das Modell hält keinen vereinbarten Schlüssel je Mietverhältnis fest
-    // (#258 kennt nur, ob die Position umgelegt wird). Ein Zähler der Wohnung erfasst nicht den Verbrauch eines Zimmers.
-    if (!carry && item.category === 'Wasser/Abwasser' && (item.key === 'persons' || item.key === 'area')) {
-      const rentedUnitIds = [...new Set(b.partTenancies.map((t) => t.unitId))]
+    // § 556a Abs. 1 Satz 2 BGB (#98): Wasser nach Personen oder Fläche, obwohl jede genutzte Einheit der Position (mit
+    // Mietverhältnis oder selbstgenutzt, Durchsicht M2: sonst trüge nach Verbrauch ein Mieter den Verbrauch des Vermieters)
+    // einen Kaltwasserzähler mit Ständen für den Zeitraum hat, auch geschätzten, oder ausdrücklich keinen Anschluss (wie beim
+    // Vorschlag des Formulars). Wortlaut nachgelesen am 06.11.2026 auf gesetze-im-internet.de. Ein Hinweis, keine andere
+    // Rechnung: Eine abweichende Vereinbarung geht vor, und das Modell hält keinen vereinbarten Schlüssel je Mietverhältnis
+    // fest (#258 kennt nur, ob die Position umgelegt wird). Ein Zähler der Wohnung erfasst nicht den Verbrauch eines Zimmers.
+    // Nicht bei nur einer genutzten Einheit (nichts änderte sich) und nicht bei einer Eigentumswohnung: Dort gilt ohne
+    // Vereinbarung der Maßstab der Gemeinschaft, abweichend von Absatz 1 (§ 556a Abs. 3 BGB; Durchsicht S2).
+    if (!carry && item.category === 'Wasser/Abwasser' && (item.key === 'persons' || item.key === 'area') && snapshot.property?.kind !== 'etw') {
+      const usedUnitIds = [...new Set([...b.partTenancies.map((t) => t.unitId), ...b.selfUnits.map((u) => u.id)])]
       const read = (unitId: string): boolean => allMeters.some((m) => m.unitId === unitId && m.type === 'kaltwasser' && readingsUsedFor(readingsOf(m.id), { from: yFrom, to: yTo }).length >= 2)
       const noConnection = (unitId: string): boolean => (unitById.get(unitId)?.noConnection ?? []).includes('kaltwasser')
-      if (rentedUnitIds.some(read) && rentedUnitIds.every((id) => read(id) || noConnection(id))) {
+      if (usedUnitIds.length >= 2 && usedUnitIds.some(read) && usedUnitIds.every((id) => read(id) || noConnection(id))) {
         warn('key.water-not-by-meter',
-          `„${item.description}“: Jede vermietete Wohnung hat einen abgelesenen Kaltwasserzähler, verteilt wird aber nach ${item.key === 'persons' ? 'Personen' : 'Wohnfläche'}. ` +
+          `„${item.description}“: Jede genutzte Wohnung hat einen Kaltwasserzähler mit Ständen für den Zeitraum oder keinen Wasseranschluss, verteilt wird aber nach ${item.key === 'persons' ? 'Personen' : 'Wohnfläche'}. ` +
             'Kosten, die von einem erfassten Verbrauch der Mieter abhängen, sind nach einem Maßstab umzulegen, der dem unterschiedlichen Verbrauch Rechnung trägt, soweit nichts anderes vereinbart ist (§ 556a Abs. 1 Satz 2 BGB); haben alle Mietwohnungen einen Zähler, ist danach nach Verbrauch umzulegen (vgl. BGH VIII ZR 188/07 zum umgekehrten Fall). ' +
             'Eine abweichende Vereinbarung im Mietvertrag geht vor; ob es sie gibt, weiß Mietfuchs nicht. Ist nichts anderes vereinbart, wählen Sie bei der Position den Schlüssel „nach Verbrauch“ mit den Kaltwasserzählern.',
           itemSubject(item))

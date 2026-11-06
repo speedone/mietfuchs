@@ -141,7 +141,9 @@ test('§ 556a: Wasser nach Personen oder Fläche, obwohl jede vermietete Wohnung
     const n = s.notices.find((x) => x.code === 'key.water-not-by-meter') ?? assert.fail(`kein Hinweis bei ${key}`)
     assert.equal(n.level, 'hint')
     assert.deepEqual(n.subject, { kind: 'costItem', id: 'w' })
-    assert.match(n.text, /„Wasser“: Jede vermietete Wohnung hat einen abgelesenen Kaltwasserzähler/)
+    // Durchsicht S4: gezählt werden auch geschätzte Stände und Einheiten ohne Anschluss, nicht nur abgelesene.
+    assert.match(n.text, /„Wasser“: Jede genutzte Wohnung hat einen Kaltwasserzähler mit Ständen für den Zeitraum oder keinen Wasseranschluss/)
+    assert.doesNotMatch(n.text, /abgelesenen Kaltwasserzähler/)
     assert.match(n.text, /§ 556a Abs\. 1 Satz 2 BGB/)
     assert.match(n.text, /Eine abweichende Vereinbarung im Mietvertrag geht vor; ob es sie gibt, weiß Mietfuchs nicht/)
     assert.match(n.text, /VIII ZR 188\/07/)
@@ -163,4 +165,30 @@ test('§ 556a: kein Hinweis nach Zählern, ohne Zähler einer vermieteten Wohnun
   // Der Hinweis ändert keine Zahl.
   const mit = settle(stock(false, { costItems: [water({ key: 'persons', meterType: null })] }))
   assert.equal(mit.statements.reduce((a, st) => a + st.totalShareCents, 0), 100000)
+})
+
+test('§ 556a, Durchsicht M2: Wohnt der Vermieter selbst ohne Zähler, kein Hinweis; mit Zähler ja', () => {
+  // Zweifamilienhaus: a selbstgenutzt ohne Zähler, b vermietet mit Zähler, Wasser 1.000 € nach Fläche. Nach Verbrauch
+  // trüge B alles; § 556a Abs. 1 Satz 2 verlangt einen erfassten Verbrauch aller Nutzer.
+  const zwei = (withMeterA: boolean) => stock(false, {
+    units: [unit('a', { participates: false, selfUsed: true }), unit('b')],
+    tenancies: [tenancy('B', 'b')],
+    costItems: [water({ key: 'area', meterType: null })],
+    meters: [
+      ...(withMeterA ? [{ id: 'ka', name: 'Kaltwasser A', unitId: 'a', type: 'kaltwasser' as const, unit: 'm³' }] : []),
+      { id: 'kb', name: 'Kaltwasser B', unitId: 'b', type: 'kaltwasser', unit: 'm³' },
+    ],
+  })
+  assert.ok(!settle(zwei(false)).notices.some((n) => n.code === 'key.water-not-by-meter'))
+  assert.ok(settle(zwei(true)).notices.some((n) => n.code === 'key.water-not-by-meter'))
+})
+
+test('§ 556a, Durchsicht S2: kein Hinweis bei nur einer verteilten Einheit und bei einer Eigentumswohnung (§ 556a Abs. 3)', () => {
+  const eine = stock(false, {
+    units: [unit('a')], tenancies: [tenancy('A', 'a')], costItems: [water({ key: 'persons', meterType: null })],
+    meters: [{ id: 'ka', name: 'Kaltwasser A', unitId: 'a', type: 'kaltwasser', unit: 'm³' }],
+  })
+  assert.ok(!settle(eine).notices.some((n) => n.code === 'key.water-not-by-meter'))
+  const etw = computeSettlement({ ...snapshotOf(stock(false, { costItems: [water({ key: 'persons', meterType: null })] }), 2025), property: { kind: 'etw', cableBuiltBeforeDec2021: null } })
+  assert.ok(!etw.notices.some((n) => n.code === 'key.water-not-by-meter'))
 })
