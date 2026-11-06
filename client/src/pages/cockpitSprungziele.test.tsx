@@ -139,6 +139,19 @@ test('Eichfrist bei einem Zähler: der Zähler öffnet sich', async () => {
   expect(navigate).toHaveBeenCalledWith('zaehler', { kind: 'meter', id: 'm1' })
 })
 
+// Browserprüfung 0.16.0 (M1): Eine geschätzte Ablesung (Hinweis des Servers) machte die Zeile rot mit „Stände
+// erfassen“, obwohl Anfang und Ende erfasst sind.
+test('Geschätzte Ablesung bei vollständigen Ständen: „Zählerstände“ grün, ohne „Stände erfassen“', async () => {
+  const estimated: Notice = { code: 'meter.reading-estimated', level: 'hint', title: 'Ablesung geschätzt', text: 'geschätzt', subject: { kind: 'meter', id: 'm1' } }
+  page({
+    units: [unit('u1')], tenancies: [tenancy('t1', 'u1')], items: [item('k1', { key: 'meter', meterType: 'kaltwasser', category: 'Wasser/Abwasser' })], meters: [meter('m1')],
+    consumption: [{ meterId: 'm1', consumption: 10, readingCount: 2, warnings: ['geschätzt'], notices: [estimated] }],
+  })
+  expect(await screen.findByText(/1 Zähler mit Anfangs- und Endstand erfasst/, {}, SLOW)).toBeTruthy()
+  expect(screen.queryByText(/Anfang\/Ende fehlt/)).toBeNull()
+  expect(screen.queryByRole('button', { name: /Stände erfassen/ })).toBeNull()
+})
+
 test('Plausibilität: eine Kostenart des Vorjahres fehlt, „Kosten erfassen“ öffnet das Formular', async () => {
   const navigate = page({
     units: [unit('u1')], tenancies: [tenancy('t1', 'u1')],

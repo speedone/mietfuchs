@@ -5,7 +5,7 @@ import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, ESTIMATE_HELP, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
@@ -50,6 +50,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   // Die Ablesung im Seitenfenster (#346 Schritt 7, N16a): der Zähler, für den das Fenster offen ist.
   const [readingFor, setReadingFor] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
+  const estimateHelpId = useId()
   const [error, setError] = useState('')
   // Ableseformular (#320): Auswahl im Seitenfenster, danach das Blatt zum Drucken.
   const [sheetChoice, setSheetChoice] = useState(false)
@@ -293,13 +294,15 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               {...readingError.field('newCalibratedUntil')}
             />
           )}
-          {/* #98: geschätzt statt abgelesen, mit Begründung (Pflicht); sie steht beim Verbrauch des Mieters. */}
+          {/* #98: geschätzt statt abgelesen, mit Begründung (Pflicht); sie steht beim Verbrauch des Mieters. Der Hilfetext
+              gehört zum Häkchen, nicht unter die Begründung (Browserprüfung 0.16.0, S2). */}
           <label className="checkline">
-            <input type="checkbox" checked={readingForm.estimated} onChange={(e) => setReadingForm({ ...readingForm, estimated: e.target.checked })} />
+            <input type="checkbox" checked={readingForm.estimated} aria-describedby={estimateHelpId} onChange={(e) => setReadingForm({ ...readingForm, estimated: e.target.checked })} />
             <span>Stand geschätzt (nicht abgelesen)</span>
           </label>
+          <small id={estimateHelpId} className="muted">{ESTIMATE_HELP}</small>
           {readingForm.estimated && (
-            <Field label="Begründung der Schätzung" required hint={ESTIMATE_HELP} {...readingError.field('estimateReason')}>
+            <Field label="Begründung der Schätzung" required {...readingError.field('estimateReason')}>
               <input value={readingForm.estimateReason} onChange={(e) => setReadingForm({ ...readingForm, estimateReason: e.target.value })} placeholder="z. B. Zähler defekt" />
             </Field>
           )}
@@ -339,7 +342,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             >
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
                 {/* Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung (Durchsicht von #241, Minor 11). */}
-                <option value="">{meterForm.type === 'hkv' ? 'Bitte Wohnung wählen' : 'Haus (Hauptzähler)'}</option>
+                <option value="">{meterForm.type === 'hkv' ? 'Bitte Wohnung wählen' : houseLabel(meterForm)}</option>
                 {/* Zimmer (#573): Wärme, Warmwasser und Heizkostenverteiler hängen nicht an einer Wohnung mit Zimmern. */}
                 {meterUnitChoices(units, meterForm.type, meterForm.unitId).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
@@ -484,11 +487,11 @@ function FragmentRow(props: {
           {m.meterNumber && <div className="muted">Nr. {m.meterNumber}</div>}
           {hcaSummary(m) && <div className="muted">{hcaSummary(m)}</div>}
           {m.calibratedUntil != null && <div className="muted">geeicht bis Ende {m.calibratedUntil}</div>}
-          {/* Die abgelaufene Eichfrist ist eine Warnung und kein Fehler der Stände (Heizung PR 21). */}
+          {/* Die Stufe kommt aus der Meldung des Servers (Browserprüfung 0.16.0, M1): Eichfrist Warnung, Schätzung Hinweis. */}
           {/* Über den Baustein Notice (Durchsicht K3, S26): Stufe als Zeichen und Wort; ein Fehler steht ganz offen. */}
           {cons?.warnings.map((w, i) => {
             const n = cons.notices?.[i]
-            return <CalcNotice key={i} notice={{ code: n?.code ?? 'legacy', level: n?.code === 'meter.calibration-overdue' ? 'warning' : 'error', title: n?.title ?? '', text: w }} />
+            return <CalcNotice key={i} notice={{ code: n?.code ?? 'legacy', level: n?.level ?? 'error', title: n?.title ?? '', text: w }} />
           })}
         </td>
         <td data-label="Zuordnung">{unitName}</td>

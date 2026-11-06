@@ -3,7 +3,7 @@
 // die Seite liest es, sobald ihre Daten da sind, öffnet den Eintrag und meldet das zurück. So
 // klappt ein späterer Besuch der Seite nichts mehr von selbst auf.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { NoticeSubject } from './types'
 
 // Sprungziele (#554): Neben einem Eintrag des Servers (`NoticeSubject`, das der Server an Hinweisen setzt und deshalb in
@@ -72,6 +72,24 @@ export function useScrollToFocus(): () => void {
     }, 50)
     timers.current.add(timer)
   }, [])
+}
+
+// Den Fokus in einem Bereich halten, dessen Knöpfe nach dem Klick verschwinden oder gesperrt sind (Browserprüfung
+// 0.16.0, S1): „Speichern“ und „Verwerfen“ eines Entwurfs am Feld gibt es danach nicht mehr, und während des Speicherns
+// sind sie gesperrt, sodass auch die Rückfrage den Fokus nicht an „Speichern“ zurückgeben kann. Er fiele auf body.
+// `refocus()` nach dem Klick setzt ihn nach dem nächsten Zeichnen auf das Element mit `data-jump-focus` im Bereich
+// (`ref`), aber nur, wenn er verloren ist: Wer inzwischen anderswo steht, bleibt dort.
+export function useRefocus<T extends HTMLElement>(): { ref: RefObject<T | null>; refocus: () => void } {
+  const ref = useRef<T>(null)
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (tick === 0) return
+    const active = document.activeElement
+    const lost = !active || active === document.body || !active.isConnected || (active as HTMLButtonElement).disabled === true
+    if (lost) ref.current?.querySelector<HTMLElement>('[data-jump-focus]:not(:disabled)')?.focus()
+  }, [tick])
+  const refocus = useCallback(() => setTick((t) => t + 1), [])
+  return { ref, refocus }
 }
 
 // Vor dem Öffnen eines Fensters aus einem Sprung den Fokus auf den Knopf setzen, der es auf der Seite selbst öffnet

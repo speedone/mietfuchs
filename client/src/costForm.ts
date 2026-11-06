@@ -1103,7 +1103,7 @@ export function subTargetOptions(form: Pick<ItemForm, 'meterRest' | 'participant
   const options: RestOption[] = [
     { value: 'none', label: 'nicht abziehen' },
     { value: 'excluded', label: 'zählt hier nicht mit' },
-    { value: 'landlord', label: 'tragen Sie' },
+    { value: 'landlord', label: 'tragen Sie als Vermieter' },
     { value: 'selfUse', label: 'Ihr Eigenanteil' },
     ...GROUP_KEYS.map((k) => ({ value: k, label: `${GROUP_LABELS[k]} auf gewählte Wohnungen` })),
     ...basis.map((u) => ({ value: `direct:${u.id}`, label: `an ${u.name}` })),

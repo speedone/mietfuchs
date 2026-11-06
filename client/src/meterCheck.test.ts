@@ -57,6 +57,14 @@ test('Eichfrist neben einem anderen Befund: unvollständig wegen des anderen', (
   expect(meterReadiness([meter('k1', 'u1')], verbrauch, new Set(['kaltwasser'])).incomplete.map((m) => m.id)).toEqual(['k1'])
 })
 
+// Geschätzte Ablesung (#98, Browserprüfung 0.16.0 M1): Der Server meldet sie als Hinweis. Anfang und Ende sind da,
+// die Ampel bleibt grün; maßgeblich ist die Stufe der Meldung, nicht eine Liste von Codes.
+test('Hinweis zu einem Zähler (geschätzte Ablesung): Zählerstände vollständig', () => {
+  const geschaetzt: Notice = { code: 'meter.reading-estimated', level: 'hint', title: 'Ablesung geschätzt', text: 'geschätzt', subject: { kind: 'meter', id: 'k1' } }
+  const info: Notice = { code: 'meter.irgendwas', level: 'info', title: 'Info', text: 'info', subject: { kind: 'meter', id: 'k1' } }
+  expect(meterReadiness([meter('k1', 'u1')], [mitHinweisen('k1', [geschaetzt, info])], new Set(['kaltwasser'])).incomplete).toEqual([])
+})
+
 test('Ohne Hinweise (älterer Server) zählen die Texte wie bisher', () => {
   expect(meterReadiness([meter('k1', 'u1')], [{ meterId: 'k1', readingCount: 2, warnings: ['x'] }], new Set(['kaltwasser'])).incomplete.map((m) => m.id)).toEqual(['k1'])
   expect(overdueMeters([meter('k1', 'u1')], [{ meterId: 'k1', readingCount: 2, warnings: ['x'] }])).toEqual([])

@@ -9,9 +9,14 @@ export type MeterConsumption = { meterId: string; readingCount: number; warnings
 // Die abgelaufene Eichfrist (Heizung PR 21) ist eine Warnung und keine Sperre: Mietfuchs rechnet mit den
 // Werten, und die Stände sind vollständig. Sie macht einen Zähler deshalb nicht unvollständig, sondern hat im
 // Cockpit eine eigene gelbe Zeile (Prüfung des Plans, M1).
+// Ob eine Meldung die Stände fraglich macht, sagt ihre Stufe (Browserprüfung 0.16.0, M1): Ein Hinweis wie die
+// geschätzte Ablesung (#98) nennt nur etwas, Anfang und Ende sind da. Warnungen und Fehler zu den Ständen (negativer
+// Verbrauch, zwei Ablesungen am selben Tag, Wechsel ohne Endstand) verschieben Geld zwischen Mietern und bleiben rot.
 const CALIBRATION_CODE = 'meter.calibration-overdue'
 const readingProblems = (c: MeterConsumption): number =>
-  c.notices ? c.notices.filter((n) => n.code !== CALIBRATION_CODE).length : c.warnings.length
+  c.notices
+    ? c.notices.filter((n) => (n.level === 'warning' || n.level === 'error') && n.code !== CALIBRATION_CODE).length
+    : c.warnings.length
 
 // Welche Zähler für die verbrauchsabhängige Umlage zählen und welchen davon Anfang oder Ende
 // fehlt oder deren Stände unplausibel sind.
