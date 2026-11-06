@@ -108,7 +108,7 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodCo
 import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
 import { RESERVE_CONTRIBUTION_CATEGORY, RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
-import { lineRoot, unitBasisOf, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { lineRoot, unitBasisValue, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { deductionPlan, outflowShares, paidWhollyIn, planRates, storedOutflowYear } from './outflow.ts'
 import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
@@ -4715,8 +4715,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const selfUnits: SelfUnit[] = served.map((u) => ({
       id: u.id, name: u.name, areaM2: u.areaM2 || 0,
       // #322: mit Liste an deren Eintrag, ohne Liste aus `basisValues` (Durchsicht M1).
-      heatedAreaM2: unitBasisOf(plant, u.id)?.heatedAreaM2 ?? null,
-      volumeM3: unitBasisOf(plant, u.id)?.volumeM3 ?? null,
+      // Zimmer (#573): ohne eigenen Wert der der Wohnung nach dem Verhältnis der Zimmerflächen (`unitBasisValue`).
+      heatedAreaM2: unitBasisValue(plant, u.id, 'heatedAreaM2', snapshot.rooms),
+      volumeM3: unitBasisValue(plant, u.id, 'volumeM3', snapshot.rooms),
       role: u.participates ? 'rented' : u.selfUsed ? 'self' : 'outside',
       // Nutzungswechsel (#259): Die Zeiten ohne Mietverhältnis teilt `usersOf` an den Grenzen der Staffel, ein
       // Wechsel ist also ein Nutzerwechsel nach § 9b HeizkostenV. Über die Heizperiode und ihre Nachbarn, denn
@@ -6273,7 +6274,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
       const measuredUnit = (u: SnapshotUnit) => behindOf(u.id).some((m) => m.type === type && covered(m) > 0) || flatBehind(u) !== null
       const mixedRooms = [...roomsOfFlat].flatMap(([flatId, rooms]) => (behindOf(flatId).length === 0 ? []
-        : rooms.filter((r) => allMeters.some((m) => m.unitId === r.id && measures(type, m)))))
+        : rooms.filter((r) => allMeters.some((m) => m.unitId === r.id && m.type === type))))
       const connected = (u: SnapshotUnit) => !(u.noConnection ?? []).includes(type)
       const groupUnits = b.basisUnits.filter((u) => groupSet.has(u.id))
       const group = groupUnits.map((u) => ({ unitId: u.id, measured: measuredUnit(u), occupied: occupied.has(u.id) && connected(u) }))
@@ -6386,11 +6387,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           outsideRaw += (sp.landlord - sp.outside.reduce((a, x) => a + x.qty, 0)) * per
           for (const x of sp.outside) toRoomOutside(x.unit, x.qty * per)
         }
+        // Ein Zimmer zahlt seinen Teil des Zählers der Wohnung und dazu, was ein eigener Zähler einer anderen Art misst
+        // (Warmwasser neben dem Kaltwasser der Wohnung); ohne eigenen Zähler ist das 0.
         const tenancyUse = (t: TenancyWithUnit) => {
-          const sp = splitOf(t.unitId)
-          if (sp) return sp.tenancy.get(t.id) ?? 0
           const p = periodOf(t)
-          return unitUse(t.unitId, p.from, p.to)
+          return (splitOf(t.unitId)?.tenancy.get(t.id) ?? 0) + unitUse(t.unitId, p.from, p.to)
         }
         // Gemessen: je Mietverhältnis sein Verbrauch in seinen Tagen (wie heute), die Eigennutzung als Eigenanteil, die
         // Tage außerhalb (#259) und Zähler außerhalb der Verteilbasis an den Vermieter; der Leerstand bleibt als Rest.
@@ -6403,11 +6404,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const flatText = splitOf(t.unitId)?.text.get(t.id)
           if (flatText) e.texts.push(flatText)
         }
-        const selfUse = (u: SnapshotUnit) => {
-          const sp = splitOf(u.id)
-          if (sp) return sp.self.get(u.id) ?? 0
-          return usageIn(u).phased ? spanUse(u, 'eigen') : unitUse(u.id, yFrom, yTo)
-        }
+        const selfUse = (u: SnapshotUnit) => (splitOf(u.id)?.self.get(u.id) ?? 0) + (usageIn(u).phased ? spanUse(u, 'eigen') : unitUse(u.id, yFrom, yTo))
         selfRaw += b.selfUnits.reduce((a, u) => a + selfUse(u), 0) * per
         outsideRaw += (plan.outside + b.basisUnits.filter((u) => usageIn(u).phased).reduce((a, u) => a + spanUse(u, 'ausgenommen'), 0)) * per
         const keyLabel = (k: MeterRestKey | 'direct' | 'meter') => (k === 'meter' ? 'Verbrauch' : KEY_LABELS[k])
@@ -6582,7 +6579,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Wohnungen mit Zimmern, deren Zähler in dieser Position zählt (#573), und die gemischten darunter: Hat ein Zimmer
       // selbst einen Zähler der Sparte, misst der Zähler der Wohnung dessen Verbrauch mit.
       const flatIds = data ? [...new Set(data.meters.flatMap((m) => (roomsOfFlat.has(m.unitId) ? [m.unitId] : [])))] : []
-      const mixedRooms = flatIds.flatMap((f) => (roomsOfFlat.get(f) ?? []).filter((r) => allMeters.some((m) => m.unitId === r.id && measures(item.meterType ?? '', m))))
+      // Nur ein Zähler derselben Art: Ein Warmwasserzähler im Zimmer misst eine eigene Leitung, nicht im Kaltwasserzähler der
+      // Wohnung (wie bei jeder Wohnung mit beiden Zählern, `measures`); das Zimmer zahlt dann seinen Teil der Wohnung und sein Warmwasser.
+      const mixedRooms = flatIds.flatMap((f) => (roomsOfFlat.get(f) ?? []).filter((r) => allMeters.some((m) => m.unitId === r.id && m.type === item.meterType)))
       if (data?.unitProblem?.kind === 'mixed') {
         // Verschiedene Größen (Gas in m³ neben kWh) rechnete schon vor #342 falsch; verteilt wird nicht.
         forced = 'noBasis'

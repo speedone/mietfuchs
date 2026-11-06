@@ -847,8 +847,12 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Zimmers (§ 556a Abs. 1 Satz 2 BGB): Er geht beim Schlüssel `meter` zuerst auf die Wohnung und innerhalb auf **alle** Zimmer nach
   `CostItem.roomSplit` (`area`, Voreinstellung: wirksame Fläche mal Tage; `persons`: Personentage mit Leerstand nach #177), in Mengen,
   das Geld entsteht danach einmal gerundet (#202). Der Teil leerer Tage, ausgenommener Zimmer und Zimmer außerhalb der Basis steht beim
-  Vermieter und geht nie an die übrigen Zimmer. Hat ein Zimmer einen eigenen Zähler derselben Sparte, misst der der Wohnung ihn mit:
-  die Position wird nicht verteilt (Fehler, Betrag beim Vermieter). Wärme, Warmwasser und Heizkostenverteiler hängen am Zimmer; ein
+  Vermieter und geht nie an die übrigen Zimmer. Hat ein Zimmer einen eigenen Zähler **derselben Art**, misst der der Wohnung ihn mit:
+  die Position wird nicht verteilt (Fehler, Betrag beim Vermieter). Ein Warmwasserzähler im Zimmer neben dem Kaltwasserzähler der
+  Wohnung misst eine eigene Leitung (wie `measures` bei jeder Wohnung): Das Zimmer zahlt seinen Teil der Wohnung und sein Warmwasser,
+  in beiden Zweigen (mit und ohne Bezugszähler). Beheizte Fläche und umbauter Raum einer Heizanlage, die nur für die Wohnung
+  eingetragen sind, gehen wie die Fläche nach `roomShares` auf die Zimmer; ein eigener Wert des Zimmers geht vor (`unitBasisValue` in
+  shared/heatingPeriod.ts, in calc.ts und `guardBasisValues`). Wärme, Warmwasser und Heizkostenverteiler hängen am Zimmer; ein
   Wärmezähler der ganzen Wohnung wäre keine Verbrauchserfassung je Nutzer (§ 12 Abs. 1 HeizkostenV, 15 % Kürzung), Auslegung und
   Festlegungen im Lexikon `roomOfFlat`. Hinweise: `unit.rooms-area` (Wohnung ohne Fläche, es gelten die Zimmerflächen),
   `rooms.outside-basis` (ein Zimmer außerhalb der Basis, sein Teil bleibt beim Vermieter), `rooms.household-cost` (Kosten nur

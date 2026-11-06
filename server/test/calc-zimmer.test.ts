@@ -587,3 +587,81 @@ test('rooms.household-cost: nicht bei Entwässerung (Niederschlagswasser)', () =
   const s = settle(wgHouse(80, { costItems: [regen] }))
   assert.ok(!codes(s).includes('rooms.household-cost'), codes(s).join())
 })
+
+// ---------- Nachtrag zu #573: Warmwasserzähler im Zimmer, beheizte Fläche der Wohnung ----------
+
+test('Zimmer mit eigenem Warmwasserzähler neben dem Kaltwasserzähler der Wohnung: nicht gemischt, Zimmer zahlt Teil der Wohnung plus eigenes Warmwasser', () => {
+  // Kaltwasser- und Warmwasserzähler messen getrennte Leitungen (wie bei jeder Wohnung mit beiden Zählern, `measures`):
+  // 50 m³ A, 100 m³ kalt in der WG, 10 m³ warm in Zimmer 1, zusammen 160 m³ für 600 €.
+  const s = settle(waterHouse({
+    meters: [gauge('zh', null), gauge('za', 'a'), gauge('zw', 'wg'), gauge('z1w', 'z1', 'warmwasser')],
+    readings: [...used('zh', 160), ...used('za', 50), ...used('zw', 100), ...used('z1w', 10)],
+  }))
+  assert.ok(!codes(s).includes('meter.rest-mixed'), codes(s).join())
+  // A 50/160, die WG 100/160 = 375 € nach Fläche 112,50/112,50/150, Zimmer 1 dazu 10/160 = 37,50 €.
+  assert.deepEqual(shares(s, ['t-a', ...ROOMS]), [18750, 15000, 11250, 15000])
+  assert.equal(s.landlord.totalCents, 0)
+  assert.ok(!codes(s).includes('meter.unit-without-meter'), codes(s).join())
+})
+
+test('Warmwasserzähler im Zimmer, Verteilung über den Bezugszähler (#98): ebenso nicht gemischt', () => {
+  const s = settle(waterHouse({
+    meters: [gauge('zh', null), gauge('za', 'a'), gauge('zw', 'wg'), gauge('z1w', 'z1', 'warmwasser')],
+    readings: [...used('zh', 160), ...used('za', 50), ...used('zw', 100), ...used('z1w', 10)],
+  }, [water({ meterRest: { referenceMeterId: null, behindMeterIds: ['za', 'zw', 'z1w'], key: 'area', unitIds: null, subMeters: [] } })]))
+  assert.ok(!codes(s).includes('meter.rest-mixed'), codes(s).join())
+  assert.deepEqual(shares(s, ['t-a', ...ROOMS]), [18750, 15000, 11250, 15000])
+  assert.equal(s.landlord.totalCents, 0)
+})
+
+test('Beheizte Fläche in der Liste der Anlage nur für die Wohnung: geht nach dem Verhältnis der Zimmerflächen auf die Zimmer', () => {
+  const s = computeSettlement(selfSnapshot({
+    units: [selfUnit('a', 60), selfUnit('b', 80), selfUnit('c', 90, { participates: false }), selfUnit('r1', 20, { parentUnitId: 'c' }), selfUnit('r2', 40, { parentUnitId: 'c' })],
+    tenancies: [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('R1', 'r1', '2020-01-01', null), selfTenancy('R2', 'r2', '2020-01-01', null)],
+    meters: selfMeters().map((m) => (m.unitId === 'c' ? { ...m, unitId: 'r1' } : m)).concat([selfMeter('wz-r2', 'r2', 'Wärme R2', 'waerme'), selfMeter('xw-r2', 'r2', 'Warmwasser R2', 'warmwasser')]),
+    readings: selfReadings().filter((r) => r.date !== '2025-09-30').concat([selfReading('wz-r2', '2024-12-31', 0), selfReading('wz-r2', '2025-12-31', 3000), selfReading('xw-r2', '2024-12-31', 0), selfReading('xw-r2', '2025-12-31', 5)]),
+    plant: { areaBasisHeat: 'heatedArea', units: [{ unitId: 'a', heatedAreaM2: 50, volumeM3: null }, { unitId: 'b', heatedAreaM2: 70, volumeM3: null }, { unitId: 'c', heatedAreaM2: 75, volumeM3: null }] },
+  }))
+  assert.ok(!s.notices.some((n) => n.level === 'error'), s.notices.filter((n) => n.level === 'error').map((n) => n.text).join('\n'))
+  const steps = (id: string) => (statementOf(s, id).rows.find((r) => r.costItemId === 'wz')?.steps ?? assert.fail(`keine Zeile wz bei ${id}`)).map((x) => `${x.label}: ${x.value}`).join('\n')
+  // 75 m² der Wohnung C nach 20 : 40 eingetragener Zimmerfläche: 25 und 50 m², zusammen 195 m².
+  assert.match(steps('R1'), /Grundkosten Heizung: 25 von 195 m²/)
+  assert.match(steps('R2'), /Grundkosten Heizung: 50 von 195 m²/)
+  assert.match(steps('A'), /Grundkosten Heizung: 50 von 195 m²/)
+})
+
+test('Umbauter Raum nur für die Wohnung: ebenso nach dem Verhältnis der Zimmerflächen, ein eigener Eintrag des Zimmers geht vor', () => {
+  const s = computeSettlement(selfSnapshot({
+    units: [selfUnit('a', 60), selfUnit('b', 80), selfUnit('c', 90, { participates: false }), selfUnit('r1', 20, { parentUnitId: 'c' }), selfUnit('r2', 40, { parentUnitId: 'c' })],
+    tenancies: [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('R1', 'r1', '2020-01-01', null), selfTenancy('R2', 'r2', '2020-01-01', null)],
+    meters: selfMeters().map((m) => (m.unitId === 'c' ? { ...m, unitId: 'r1' } : m)).concat([selfMeter('wz-r2', 'r2', 'Wärme R2', 'waerme'), selfMeter('xw-r2', 'r2', 'Warmwasser R2', 'warmwasser')]),
+    readings: selfReadings().filter((r) => r.date !== '2025-09-30').concat([selfReading('wz-r2', '2024-12-31', 0), selfReading('wz-r2', '2025-12-31', 3000), selfReading('xw-r2', '2024-12-31', 0), selfReading('xw-r2', '2025-12-31', 5)]),
+    plant: { areaBasisHeat: 'volume', units: [{ unitId: 'a', heatedAreaM2: null, volumeM3: 150 }, { unitId: 'b', heatedAreaM2: null, volumeM3: 200 }, { unitId: 'c', heatedAreaM2: null, volumeM3: 240 }, { unitId: 'r2', heatedAreaM2: null, volumeM3: 100 }] },
+  }))
+  assert.ok(!s.notices.some((n) => n.level === 'error'), s.notices.filter((n) => n.level === 'error').map((n) => n.text).join('\n'))
+  const steps = (id: string) => (statementOf(s, id).rows.find((r) => r.costItemId === 'wz')?.steps ?? assert.fail(`keine Zeile wz bei ${id}`)).map((x) => `${x.label}: ${x.value}`).join('\n')
+  // R1 ohne eigenen Eintrag: 240 m³ × 20/60 = 80 m³; R2 mit eigenem Eintrag 100 m³. Zusammen 150 + 200 + 80 + 100 = 530.
+  assert.match(steps('R1'), /Grundkosten Heizung: 80 von 530 m³/)
+  assert.match(steps('R2'), /Grundkosten Heizung: 100 von 530 m³/)
+})
+
+test('Selbstgenutztes Zimmer mit Warmwasserzähler: Teil der Wohnung und eigenes Warmwasser sind Eigenanteil, auf beiden Wegen', () => {
+  const units = [
+    unit('a', { name: 'A', areaM2: 60 }),
+    unit('wg', { name: 'WG', areaM2: 80, participates: false }),
+    unit('z1', { name: 'Zimmer 1', areaM2: 12, parentUnitId: 'wg', participates: false, selfUsed: true, selfPersons: 1 }),
+    unit('z2', { name: 'Zimmer 2', areaM2: 12, parentUnitId: 'wg' }),
+    unit('z3', { name: 'Zimmer 3', areaM2: 16, parentUnitId: 'wg' }),
+  ]
+  const over = {
+    units, tenancies: [tenancy('t-a', 'a'), tenancy('t-z2', 'z2'), tenancy('t-z3', 'z3')],
+    meters: [gauge('zh', null), gauge('za', 'a'), gauge('zw', 'wg'), gauge('z1w', 'z1', 'warmwasser')],
+    readings: [...used('zh', 160), ...used('za', 50), ...used('zw', 100), ...used('z1w', 10)],
+  }
+  for (const it of [water(), water({ meterRest: { referenceMeterId: null, behindMeterIds: ['za', 'zw', 'z1w'], key: 'area', unitIds: null, subMeters: [] } })]) {
+    const s = settle(waterHouse(over, [it]))
+    assert.deepEqual(shares(s, ['t-a', 't-z2', 't-z3']), [18750, 11250, 15000], it.meterRest ? 'Bezugszähler' : 'ohne')
+    assert.equal(s.selfUsedShareCents, 15000, it.meterRest ? 'Bezugszähler' : 'ohne')
+    assert.equal(s.landlord.totalCents, 15000)
+  }
+})
