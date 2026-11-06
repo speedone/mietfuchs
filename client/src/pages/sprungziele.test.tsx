@@ -165,8 +165,17 @@ test('Abrechnung: der Sprung zu „Zu prüfen“ hebt die Karte hervor und setzt
   expect(done).toHaveBeenCalled()
 })
 
-test('Abrechnung: „Versanddatum eintragen“ setzt den Fokus in das Feld „versendet am“', async () => {
+// #337: Ohne Versanddatum ist der Schritt „Als versendet markieren“ das Ziel, mit einem gespeicherten das Feld.
+test('Abrechnung: „Versanddatum eintragen“ setzt den Fokus auf „Als versendet markieren“', async () => {
   settlement = { ...SETTLEMENT, closed: { closedAt: `${YEAR + 1}-01-15T10:00:00Z`, sentAt: null } }
+  wrap(<Abrechnung settings={null} units={UNITS} tenancies={TENANCIES} reload={async () => {}} focus={{ kind: 'section', section: 'sentAt' }} onFocusDone={() => {}} />)
+  const button = await screen.findByRole('button', { name: 'Als versendet markieren' }, SLOW)
+  await waitFor(() => expect(document.activeElement).toBe(button))
+  expect(button.closest('.card')?.classList.contains('focus-target')).toBe(true)
+})
+
+test('Abrechnung: „Versanddatum prüfen“ setzt den Fokus in das Feld „versendet am“', async () => {
+  settlement = { ...SETTLEMENT, closed: { closedAt: `${YEAR + 1}-01-15T10:00:00Z`, sentAt: `${YEAR}-12-01` } }
   wrap(<Abrechnung settings={null} units={UNITS} tenancies={TENANCIES} reload={async () => {}} focus={{ kind: 'section', section: 'sentAt' }} onFocusDone={() => {}} />)
   const field = await screen.findByLabelText(/versendet am/, {}, SLOW)
   await waitFor(() => expect(document.activeElement).toBe(field))

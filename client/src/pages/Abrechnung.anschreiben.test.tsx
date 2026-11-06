@@ -65,6 +65,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 const show = (settings: Settings = SETTINGS) => render(
@@ -177,7 +178,11 @@ test('S1: ein spätes Versanddatum fragt nach dem Monat der Anpassung, Abbrechen
   const frozen = settlement.letters?.t1
   if (!frozen) throw new Error('kein Anschreiben')
   settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null }, letters: { t1: { ...frozen, adjustment: { ...frozen.adjustment, from: `${YEAR + 1}-04` } } } }
+  // Ein Versanddatum nach heute nimmt die Seite nicht an (#337): heute ist hier der 10. Mai.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(YEAR + 1, 4, 10, 12))
   show()
+  fireEvent.click(await screen.findByRole('button', { name: 'Als versendet markieren' }, SLOW))
   const field = await screen.findByLabelText(/versendet am/, {}, SLOW)
   fireEvent.change(field, { target: { value: `${YEAR + 1}-04-02` } })
   fireEvent.click(await screen.findByRole('button', { name: /Speichern.*Versanddatum/ }, SLOW))

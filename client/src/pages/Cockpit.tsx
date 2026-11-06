@@ -4,6 +4,7 @@ import type { NavTarget } from '../nav'
 import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
+import { sentAtRefusal } from '../sentAtStep'
 import { isNotAllocable, usageOf } from '../types'
 import { rentedWithin, usageAt } from '../../../shared/unitUsage.ts'
 import { participatingUnits, cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
@@ -302,10 +303,15 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
 
     // 7. Abschluss & Versand
     const closed = settlement.closed
+    // #337: Ein gespeichertes Datum nach heute oder vor dem Ende des Zeitraums ist kein tatsächlicher Versand.
+    const implausibleSent = closed?.sentAt ? sentAtRefusal(closed.sentAt, settlement.period.to, localToday()) : null
     if (settlement.statements.length === 0 && (settlement.notSettled ?? []).length > 0 && (settlement.notSettled ?? []).every((n) => !n.usageConflict)) {
       // Nur Pauschale oder Inklusivmiete (#93): Es gibt keine Abrechnung, also auch keine Frist.
       list.push({ title: 'Abgeschlossen & versendet', level: 'gruen',
         detail: 'Keine Abrechnung nötig: Alle Mietverhältnisse haben eine Pauschale oder Inklusivmiete.' })
+    } else if (closed?.sentAt && implausibleSent) {
+      list.push({ title: 'Abgeschlossen & versendet', level: 'gelb', tab: 'abrechnung', focus: SENT_AT_TARGET, cta: 'Versanddatum prüfen',
+        detail: `Als Versanddatum ist der ${fmtDate(closed.sentAt)} eingetragen. ${implausibleSent}` })
     } else if (closed?.sentAt) {
       const ok = closed.sentAt <= settlement.deadline
       list.push({ title: 'Abgeschlossen & versendet', level: ok ? 'gruen' : 'rot',
@@ -333,7 +339,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
         const t = heatingRowTarget(h, rules)
         void switchPeriod(t.period).then((ok) => { if (ok) onNavigate('abrechnung', t.focus) })
       } : undefined
-      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: 'Zur Abrechnung', go }) })
+      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: row.cta ?? 'Zur Abrechnung', go }) })
     }
 
     return list
@@ -349,10 +355,11 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
   const sentAt = settlement?.closed?.sentAt ?? null
   const openTitles = relevant.filter((c) => c.level !== 'gruen').map((c) => c.title)
 
+  // #337: Ein Versanddatum, das zu prüfen ist, steht neutral statt grün.
   const statusBadge = settlement?.closed?.sentAt
-    ? <span className="badge green">versendet</span>
+    ? <span className={sentAtRefusal(settlement.closed.sentAt, settlement.period.to, localToday()) ? 'badge' : 'badge green'}>versendet</span>
     : settlement?.closed
-      ? <span className="badge green">abgeschlossen</span>
+      ? <span className="badge">abgeschlossen</span>
       : <span className="badge gray">Entwurf</span>
 
   // Vermutlich falsch eingetragene IBANs (#279): ein ruhiger Hinweis, keine Ampel (ibanCheck.ts).

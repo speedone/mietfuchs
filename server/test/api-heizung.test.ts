@@ -13,8 +13,10 @@ import type {
   AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, LawOverrideSlot, MonthlyInfoRow, MonthlyInfoView, Co2Sheet, CostItem, Meter, Property, Settlement, StockView, Tenancy, Unit,
 } from '../../shared/types.ts'
 import { withoutCo2 } from '../testing/co2.ts'
+import { setHeatingSentAt } from '../src/db/heatingSettlements.ts'
+import { periodKey } from '../../shared/period.ts'
 import {
-  type Server, errorFrom, jsonOf, removeDataDir, startServer, startServerIn, startServerRaw, until, waitForExit, wechsel, withProperties,
+  type Server, errorFrom, inDatabase, jsonOf, removeDataDir, startServer, startServerIn, startServerRaw, until, waitForExit, wechsel, withProperties,
 } from '../testing/api.ts'
 
 // ---------- Heizanlage (Heizung PR 4) ----------
@@ -186,10 +188,24 @@ test('Heizkostenabrechnung (Heizung PR 5): rechnen, eigene Frist, abschließen; 
     // B3: Der Abschluss von P 2026 friert die Heizkostenabrechnung nicht ein.
     assert.equal((await send('/api/settlement/2026/close', 'POST', {})).status, 201)
     assert.equal((await s.api<Settlement>(url)).closed, null)
+    // #337: Abschließen mit einem Versanddatum nach heute friert nichts ein.
+    const zukunft = await send(`${url}/close`, 'POST', { sentAt: '2099-01-01' })
+    assert.equal(zukunft.status, 400)
+    assert.match(await errorFrom(zukunft), /Das Versanddatum liegt nach heute/)
+    assert.equal((await s.api<Settlement>(url)).closed, null)
     assert.equal((await send(`${url}/close`, 'POST', {})).status, 201)
     assert.equal((await send(`${url}/close`, 'POST', {})).status, 409)
-    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2027-03-01' })).status, 200)
-    assert.deepEqual((await s.api<Settlement>(url)).closed?.sentAt, '2027-03-01')
+    // #337: nicht vor dem Ende der Heizperiode (30.04.2026), der letzte Tag gilt.
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2026-04-29' })).status, 400)
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2026-04-30' })).status, 200)
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2026-06-01' })).status, 200)
+    assert.deepEqual((await s.api<Settlement>(url)).closed?.sentAt, '2026-06-01')
+    // Bestand von vor #337: ein Datum nach heute bleibt lesbar und lässt sich unverändert schicken, ein neues nicht.
+    await inDatabase(s, (db) => setHeatingSentAt(db, plant.id, periodKey('2025-05'), '2099-01-01'))
+    assert.equal((await s.api<Settlement>(url)).closed?.sentAt, '2099-01-01')
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2099-01-01' })).status, 200)
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2099-01-02' })).status, 400)
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2026-06-01' })).status, 200)
     assert.equal((await send(`/api/heating-plants/${plant.id}`, 'DELETE')).status, 409)
     assert.equal((await send(`${url}/close`, 'DELETE')).status, 200)
     assert.equal((await s.api<unknown[]>(`${url}/history`)).length, 1)

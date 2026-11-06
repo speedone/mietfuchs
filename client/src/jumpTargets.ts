@@ -12,7 +12,7 @@ export const NEW_COST_ITEM_TARGET: JumpTarget = { kind: 'new', what: 'costItem' 
 export const TENANCIES_TARGET: JumpTarget = { kind: 'section', section: 'tenancies' }
 // „Zu prüfen“ in der Abrechnung: dort stehen die Hinweise der Berechnung und die Prüfungen der Seite (Anschrift, Absender)
 export const CHECKS_TARGET: JumpTarget = { kind: 'section', section: 'checks' }
-// Das Feld „versendet am“ einer abgeschlossenen Abrechnung
+// Der Versand einer abgeschlossenen Abrechnung: „Als versendet markieren“, mit gespeichertem Datum das Feld „versendet am“ (#337)
 export const SENT_AT_TARGET: JumpTarget = { kind: 'section', section: 'sentAt' }
 // Die Kopfangaben der Anlage V stehen am Objekt, unter „Für die Steuer (Anlage V)“
 export const TAX_HEADER_TARGET: JumpTarget = { kind: 'property', part: 'tax' }

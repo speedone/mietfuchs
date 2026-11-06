@@ -13,7 +13,7 @@ import type { NoticeSubject } from './types'
 // Welcher Knopf welches Ziel hat, steht in jumpTargets.ts.
 export type NewForm = 'unit' | 'tenancy' | 'costItem'
 // Die Karten, zu denen gesprungen wird, je Seite: Stammdaten (`units`, `tenancies`), Abrechnung (`checks` = „Zu
-// prüfen“, `sentAt` = Kopfzeile mit „versendet am“), Einstellungen (`landlord`, `ai`, `about`).
+// prüfen“, `sentAt` = Kopfzeile mit „Als versendet markieren“ bzw. „versendet am“), Einstellungen (`landlord`, `ai`, `about`).
 export type SectionId = 'units' | 'tenancies' | 'checks' | 'sentAt' | 'landlord' | 'ai' | 'about'
 export type PropertyPart = 'tax' | 'landlord'
 export type JumpTarget =

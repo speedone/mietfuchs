@@ -64,6 +64,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 const show = () => render(
@@ -298,6 +299,8 @@ test('Abschließen fragt, ob alle Rechnungen des Jahres vorliegen (#409)', async
   const dialog = await screen.findByRole('alertdialog', {}, SLOW)
   expect(dialog.textContent).toContain(`Liegen alle Rechnungen für ${YEAR} vor`)
   expect(dialog.textContent).toMatch(/Versorgerabrechnungen/)
+  // #337: Abschluss und Versand sind zwei Schritte.
+  expect(dialog.textContent).toContain('Den Versand an die Mieter halten Sie danach mit „Als versendet markieren“ fest.')
   fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
   expect(bodies).toEqual([])
@@ -321,21 +324,76 @@ function stubSentAt(puts: unknown[]) {
 }
 const sentAtField = async () => (await screen.findByLabelText(/versendet am/, {}, SLOW)) as HTMLInputElement
 
-test('Versanddatum: Ändern sendet nichts, „Speichern“ sendet genau einmal (#309)', async () => {
+test('Versanddatum: Ändern sendet nichts, „Speichern“ sendet nach der Rückfrage genau einmal (#309, #337)', async () => {
   const puts: unknown[] = []
   stubSentAt(puts)
   show()
   const feld = await sentAtField()
   expect(feld.value).toBe(`${YEAR + 1}-01-10`)
   expect(screen.queryByRole('button', { name: 'Speichern (Versanddatum)' })).toBeNull()
-  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-01` } })
   expect(puts).toEqual([])
   const speichern = screen.getByRole('button', { name: 'Speichern (Versanddatum)' })
   fireEvent.click(speichern)
   fireEvent.click(speichern)
+  // #337: Ein gespeichertes Datum ändert sich nur nach Bestätigung; „Abbrechen“ behält den Entwurf.
+  let dialog = await screen.findByRole('alertdialog', {}, SLOW)
+  expect(dialog.textContent).toContain('Versanddatum ändern?')
+  expect(dialog.textContent).toContain(`Gespeichert ist als Versanddatum der 10.01.${YEAR + 1}, neu wäre es der 01.01.${YEAR + 1}.`)
+  expect(document.activeElement?.textContent).toBe('Abbrechen')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
+  expect(puts).toEqual([])
+  expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-01`)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
+  dialog = await screen.findByRole('alertdialog', {}, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Versanddatum ändern' }))
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Versanddatum)' })).toBeNull(), SLOW)
-  expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }])
-  expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-15`)
+  expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-01` }])
+  expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-01`)
+})
+
+// #337: Der Versand ist ein eigener Schritt. Ohne Versanddatum steht „Als versendet markieren“, das Feld folgt mit
+// heute als Vorgabe; angezeigt ist, was gespeichert wird. Ein Datum nach heute oder vor dem Ende des Zeitraums geht
+// nicht hinaus, der Grund steht am Feld.
+test('Als versendet markieren (#337): Vorgabe heute, unplausible Daten werden nicht gesendet', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(YEAR + 1, 2, 10, 12))
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-01-08T09:00:00.000Z`, sentAt: null } }
+  show()
+  const status = await screen.findByText('abgeschlossen', {}, SLOW)
+  expect(status.className).toBe('badge')
+  expect(screen.queryByLabelText(/versendet am/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Als versendet markieren' }))
+  let feld = await sentAtField()
+  expect(feld.value).toBe(`${YEAR + 1}-03-10`)
+  expect(document.activeElement).toBe(feld)
+
+  // Ein geleertes Feld bleibt stehen, bis „Verwerfen“ den Schritt beendet (Durchsicht zu #337).
+  fireEvent.change(feld, { target: { value: '' } })
+  expect(await sentAtField()).toBe(feld)
+  expect(document.activeElement).toBe(feld)
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Versanddatum)' }))
+  expect(await screen.findByRole('button', { name: 'Als versendet markieren' }, SLOW)).toBeTruthy()
+  expect(screen.queryByLabelText(/versendet am/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Als versendet markieren' }))
+  feld = await sentAtField()
+
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-03-11` } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
+  expect(await screen.findByText('Nicht gespeichert: Das Versanddatum liegt nach heute. Tragen Sie den Tag ein, an dem die Abrechnung an die Mieter ging.', {}, SLOW)).toBeTruthy()
+  fireEvent.change(feld, { target: { value: `${YEAR}-12-30` } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
+  expect(await screen.findByText(`Nicht gespeichert: Das Versanddatum liegt vor dem Ende des Abrechnungszeitraums am 31.12.${YEAR}. Tragen Sie den Tag ein, an dem die Abrechnung an die Mieter ging.`, {}, SLOW)).toBeTruthy()
+  expect(puts).toEqual([])
+
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-03-10` } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
+  await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-03-10` }]), SLOW)
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect((await sentAtField()).value).toBe(`${YEAR + 1}-03-10`)
 })
 
 test('Versanddatum: „Verwerfen“ stellt das gespeicherte Datum her, ohne zu senden (#309)', async () => {
@@ -452,11 +510,14 @@ test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, ohne 
   const puts: unknown[] = []
   stubSentAt(puts)
   settlement.notices = [HEAT_ERROR]
+  // Das erste Versanddatum: Eine Änderung fragte nach #337 ohnehin nach, um die Fehler geht es hier.
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-01-08T09:00:00.000Z`, sentAt: null } }
   show()
+  fireEvent.click(await screen.findByRole('button', { name: 'Als versendet markieren' }, SLOW))
   const feld = await sentAtField()
-  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-01` } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
-  await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }]), SLOW)
+  await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-01` }]), SLOW)
   expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(screen.queryByText(/Entwurf, nicht versenden/)).toBeNull()
   await printOne()

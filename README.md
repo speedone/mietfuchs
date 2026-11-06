@@ -81,7 +81,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 **Abrechnung, Mietkonto, Steuer**
 
 - 📄 **Fertige Abrechnung** je Mieter mit Saldo, Zahlungsaufforderung, §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB); Druck oder PDF
-- 🔍 **Rechenweg** jeder Zeile aufklappbar; eine versendete Abrechnung wird abgeschlossen und eingefroren, spätere Abweichungen zeigt Mietfuchs je Mieter
+- 🔍 **Rechenweg** jeder Zeile aufklappbar; eine Abrechnung wird vor dem Versand abgeschlossen und eingefroren, der Versand danach mit Datum festgehalten, spätere Abweichungen zeigt Mietfuchs je Mieter
 - ⏰ **Fristen im Blick:** Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB)
 - 💶 **Mietkonto:** Soll/Ist je Monat, fällige Rückstände auf einen Blick, Ein- und Auszug im Lauf eines Monats nach Kalendertagen
 - 🧾 **Steuer-Übersicht (Anlage V):** Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt

@@ -411,7 +411,10 @@ Heizung betreffenden in docs/heizung.md. Was sich nicht aus dem Code erschließt
   Berechnung anders ergäbe ([settlementDiff.ts](settlementDiff.ts); unlesbar heißt „nicht
   vergleichbar“, nicht „keine Abweichung“). DELETE verschiebt den Stand nach
   `closed_settlement_history` (`…/history`, #56). `taxReport` nimmt den Eigenanteil aus dem
-  eingefrorenen Stand.
+  eingefrorenen Stand. **Ein neues `sentAt` muss plausibel sein** (#337, [shared/sentAt.ts](../../shared/sentAt.ts),
+  `checkSentAt`): nicht vor dem Ende des Zeitraums, nicht nach heute (mit einem Tag Spielraum, weil die Oberfläche in
+  der Zeitzone des Browsers rechnet), sonst 400 mit Satz; ein gespeichertes unplausibles bleibt lesbar, unverändert
+  annehmbar und leerbar. Die Oberfläche fragt vor jeder Änderung eines gespeicherten Datums, ein Verlauf wird nicht geführt.
 
 ## Anschreiben zur Abrechnung (#415)
 

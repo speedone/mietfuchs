@@ -65,9 +65,12 @@ export function completenessQuestion(label: string, kind: PropertyKind | undefin
   return `Liegen alle Rechnungen für ${label} vor, auch die, die erst später kommen (${later})? Mietfuchs kennt nur, was erfasst ist.`
 }
 
+// Abschluss und Versand sind zwei Schritte (#337): Der Dialog sagt, wie der Versand danach festgehalten wird.
+export const SENT_AFTER_CLOSE = 'Den Versand an die Mieter halten Sie danach mit „Als versendet markieren“ fest.'
+
 export function closeMessage(label: string, kind: PropertyKind | undefined, heating = false): string {
   return `${completenessQuestion(label, kind, heating)} Der aktuelle Berechnungsstand wird eingefroren - spätere Änderungen an Kosten `
-    + 'oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.'
+    + `oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen. ${SENT_AFTER_CLOSE}`
 }
 
 // Die erste Rückfrage zum Abschließen, wenn die Seite schon Fehler zeigt; `title` ist der Titel der
@@ -77,7 +80,7 @@ export function closeErrorsQuestion(title: string, notices: readonly Notice[], q
   if (errors.length === 0) return null
   return {
     title,
-    message: `${question} Die Abrechnung enthält außerdem ${countText(errors.length)}. ${INTRO} Abgeschlossen wird dieser Stand so eingefroren, wie er ist; spätere Änderungen an Kosten oder Stammdaten ändern ihn nicht mehr. Sie lässt sich wieder öffnen. Beheben Sie die Angaben besser vorher.`,
+    message: `${question} Die Abrechnung enthält außerdem ${countText(errors.length)}. ${INTRO} Abgeschlossen wird dieser Stand so eingefroren, wie er ist; spätere Änderungen an Kosten oder Stammdaten ändern ihn nicht mehr. Sie lässt sich wieder öffnen. Beheben Sie die Angaben besser vorher. ${SENT_AFTER_CLOSE}`,
     cancelLabel: 'Nicht abschließen',
     confirmLabel: 'Trotzdem abschließen',
     errors,

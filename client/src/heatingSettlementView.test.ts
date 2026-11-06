@@ -80,6 +80,14 @@ describe('Heizkostenabrechnungen auswählen, abschließen, korrigieren', () => {
     expect(rows[1]?.text).toBe('Frist 30.04.2027, noch nicht versendet.')
     expect(cockpitHeatingRows([info('2024-05', '2025-04-30')], '2026-05-01')[0]).toMatchObject({ level: 'rot', text: 'Frist 30.04.2026 abgelaufen; eine Nachforderung ist in der Regel ausgeschlossen, außer Sie haben die Verspätung nicht zu vertreten (§ 556 Abs. 3 Satz 3 BGB).' })
   })
+  // #337: Ein vor der Prüfung gespeichertes Datum nach heute oder vor dem Ende der Heizperiode ist kein Versand.
+  test('Cockpit: ein unplausibles Versanddatum der Heizkostenabrechnung ist gelb, ohne „vor Ablauf der Frist“', () => {
+    const [zukunft] = cockpitHeatingRows([info('2025-05', '2026-04-30', { closedAt: '2026-06-01', sentAt: '2027-03-01' })], '2026-10-05')
+    expect(zukunft).toMatchObject({ level: 'gelb', cta: 'Versanddatum prüfen', text: 'Als Versanddatum ist der 01.03.2027 eingetragen. Das Versanddatum liegt nach heute. Tragen Sie den Tag ein, an dem die Abrechnung an die Mieter ging.' })
+    const [vorher] = cockpitHeatingRows([info('2025-05', '2026-04-30', { closedAt: '2026-06-01', sentAt: '2026-04-01' })], '2026-10-05')
+    expect(vorher).toMatchObject({ level: 'gelb', cta: 'Versanddatum prüfen' })
+    expect(vorher?.text).toMatch(/vor dem Ende des Abrechnungszeitraums am 30\.04\.2026/)
+  })
 })
 
 describe('Kostenformular und Mietverhältnis', () => {
