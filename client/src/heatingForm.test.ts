@@ -543,3 +543,20 @@ describe('#322, Durchsicht M1: beheizte Fläche und umbauter Raum in „Heizanla
     expect(unitValueFields(plant, units).map((u) => u.label)).toEqual(['Umbauter Raum EG in m³', 'Umbauter Raum OG in m³'])
   })
 })
+
+describe('#573: beheizte Fläche einer Wohnung mit Zimmern, dieselbe Regel wie am Server', () => {
+  const units = [{ id: 'a', name: 'A', areaM2: 60 }, { id: 'wg', name: 'WG', areaM2: 80 }, { id: 'z1', name: 'Zimmer 1', areaM2: 20, parentUnitId: 'wg' }, { id: 'z2', name: 'Zimmer 2', areaM2: 40, parentUnitId: 'wg' }]
+  const plant: HeatingPlant = { ...PLANT, method: 'self', areaBasisHeat: 'heatedArea', units: null, basisValues: [] }
+  test('nur die Wohnung eingetragen: die Zimmer sind dann nicht Pflicht, gesendet wird der Wert der Wohnung', () => {
+    const form = { ...heatingToForm(plant, units), unitValues: { a: '55', wg: '75', z1: '', z2: '' } }
+    expect(heatingPlantBody(form, units, [], 'hp1', plant)).toMatchObject({ body: { unitValues: [{ unitId: 'a', heatedAreaM2: 55 }, { unitId: 'wg', heatedAreaM2: 75 }] } })
+  })
+  test('nur die Zimmer eingetragen: die Wohnung ist nicht Pflicht', () => {
+    const form = { ...heatingToForm(plant, units), unitValues: { a: '55', wg: '', z1: '18', z2: '36' } }
+    expect(heatingPlantBody(form, units, [], 'hp1', plant)).toMatchObject({ body: { unitValues: [{ unitId: 'a', heatedAreaM2: 55 }, { unitId: 'z1', heatedAreaM2: 18 }, { unitId: 'z2', heatedAreaM2: 36 }] } })
+  })
+  test('weder Wohnung noch Zimmer: die Meldung nennt das Zimmer', () => {
+    const form = { ...heatingToForm(plant, units), unitValues: { a: '55', wg: '', z1: '18', z2: '' } }
+    expect(heatingPlantBody(form, units, [], 'hp1', plant)).toEqual({ error: expect.stringMatching(/^Zimmer 2: Bitte tragen Sie die beheizte Fläche/) })
+  })
+})
