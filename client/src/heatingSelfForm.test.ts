@@ -119,3 +119,15 @@ describe('#322: Grundkosten nach umbautem Raum', () => {
     expect(selfSetupBody({ ...form, areaBasisHeat: 'area' }, 'gas', units)).not.toHaveProperty('body.unitValues')
   })
 })
+
+describe('#573: Einrichtung mit einer Wohnung mit Zimmern, dieselbe Regel wie am Server', () => {
+  const units = [{ id: 'a', name: 'A' }, { id: 'wg', name: 'WG' }, { id: 'z1', name: 'Zimmer 1', parentUnitId: 'wg' }, { id: 'z2', name: 'Zimmer 2', parentUnitId: 'wg' }]
+  it('nur die Wohnung eingetragen: kein Fehler, die Zimmer leer bleiben ungesendet', () => {
+    const r = selfSetupBody(filled({ areaBasisHeat: 'heatedArea', unitValues: { a: '55', wg: '75' } }), 'gas', units)
+    expect(r).toMatchObject({ body: { unitValues: [{ unitId: 'a', heatedAreaM2: 55 }, { unitId: 'wg', heatedAreaM2: 75 }] } })
+  })
+  it('ohne Wohnung und ohne Zimmer 1: Meldung am Zimmer, nicht an der Wohnung', () => {
+    const r = selfSetupBody(filled({ areaBasisHeat: 'heatedArea', unitValues: { a: '55', z2: '36' } }), 'gas', units)
+    expect(r).toMatchObject({ problems: [{ field: 'unit:z1' }] })
+  })
+})

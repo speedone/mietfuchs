@@ -93,7 +93,7 @@ export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
 // `singleTenant`: Das Angebot verlangt einen einzigen Mieter (zentrale Heizung mit Brennstoff des Mieters); ohne Angabe wie `central`.
 export type HeatingResult = { body: HeatingPlantBody; adjust: AdjustRow[]; setUpSelf?: boolean } | { error: string } | { none: string; selfSupplyUnitIds: string[]; central: boolean; singleTenant?: boolean }
 
-type UnitInfo = Pick<Unit, 'id' | 'noConnection'> & Partial<Pick<Unit, 'name' | 'areaM2'>>
+type UnitInfo = Pick<Unit, 'id' | 'noConnection'> & Partial<Pick<Unit, 'name' | 'areaM2' | 'parentUnitId'>>
 
 export const ENERGY_OPTIONS: { value: EnergyAnswer; label: string }[] = [
   { value: 'gas', label: 'Gas' },
@@ -380,6 +380,14 @@ export function unitValueFields(plant: Pick<HeatingPlant, 'method' | 'areaBasisH
     .map((u) => ({ id: u.id, label: `${volume ? 'Umbauter Raum' : 'Beheizte Fläche'} ${u.name ?? u.id} in ${volume ? 'm³' : 'm²'}` }))
 }
 
+// Zimmer einer Wohnung (#573), dieselbe Regel wie `guardBasisValues` am Server (`unitBasisValue`): Eine Wohnung mit Zimmern
+// braucht keinen eigenen Wert, ein Zimmer keinen, wenn seine Wohnung einen hat. Alle übrigen Einheiten brauchen ihn.
+export function basisValueRequired(unit: { id: string; parentUnitId?: string | null }, units: readonly { id: string; parentUnitId?: string | null }[], entered: (id: string) => number | null): boolean {
+  if (units.some((u) => u.parentUnitId === unit.id)) return false
+  const flat = unit.parentUnitId ?? null
+  return !(flat !== null && (entered(flat) ?? 0) > 0)
+}
+
 // ---------- Wärmelieferung (Heizung PR 16, #213) ----------
 
 // Prüfung R-S2: Maßgeblich ist der Mietvertrag (BGH VIII ZR 46/25 Rn. 30). Die Fälle, in denen § 556c nicht greift,
@@ -453,8 +461,12 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
   for (const f of fields) {
     const v = parseNumberDe(form.unitValues[f.id] ?? '')
     const volume = current?.areaBasisHeat === 'volume'
-    const name = units.find((u) => u.id === f.id)?.name ?? f.id
-    if (v === null || !(v > 0)) return { error: `${name}: Bitte tragen Sie ${volume ? 'den umbauten Raum in m³' : 'die beheizte Fläche in m²'} ein, eine Zahl über 0.` }
+    const unit = units.find((u) => u.id === f.id)
+    const name = unit?.name ?? f.id
+    if (v === null || !(v > 0)) {
+      if (!basisValueRequired(unit ?? { id: f.id }, units, (id) => parseNumberDe(form.unitValues[id] ?? ''))) continue
+      return { error: `${name}: Bitte tragen Sie ${volume ? 'den umbauten Raum in m³' : 'die beheizte Fläche in m²'} ein, eine Zahl über 0.` }
+    }
     unitValues.push(volume ? { unitId: f.id, volumeM3: v } : { unitId: f.id, heatedAreaM2: v })
   }
   if (form.energy === 'perUnit') {

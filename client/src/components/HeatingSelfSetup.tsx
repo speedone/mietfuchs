@@ -20,7 +20,7 @@ import { NoticeBox } from './Notice'
 // die Anlage bei „Niemand“.
 // `units`: die Wohnungen der Anlage, für beheizte Fläche und umbauten Raum je Wohnung (#322).
 export default function HeatingSelfSetup({ plant, units = [], period, periodLabel, onDone, onCancel }: {
-  plant: HeatingPlant; units?: readonly { id: string; name: string }[]; period: string; periodLabel?: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
+  plant: HeatingPlant; units?: readonly { id: string; name: string; parentUnitId?: string | null }[]; period: string; periodLabel?: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
 }) {
   const [form, setForm] = useState(() => emptySelfSetup(plant, period))
   const errors = useFormError<SelfSetupField>()

@@ -7,6 +7,7 @@ import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { EVAPORATOR_DEADLINE } from './hcaForm'
 import { billingEnergy } from '../../shared/heatDelivery.ts'
 import { parseNumberDe } from './numbers'
+import { basisValueRequired } from './heatingForm'
 import { plantUnitValues } from '../../shared/heatingPeriod.ts'
 
 export type SelfItemRow = { id: string; description: string; amountCents: number; heatingPart: HeatingPart | ''; heatingTarget: HeatingTarget | '' }
@@ -136,7 +137,7 @@ type SelfSetupProblem = { text: string; field: SelfSetupField; short: string }
 type SelfSetupError = { error: string; field: SelfSetupField; short: string; problems: SelfSetupProblem[] }
 
 // `units`: die Wohnungen der Anlage; nach beheizter Fläche oder umbautem Raum braucht jede ihren Wert (#322).
-export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy, units: readonly { id: string; name: string }[] = []): { body: SelfSetupBody } | SelfSetupError {
+export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy, units: readonly { id: string; name: string; parentUnitId?: string | null }[] = []): { body: SelfSetupBody } | SelfSetupError {
   const { min, max } = shareBounds()
   const problems: SelfSetupProblem[] = []
   if (CAPTURE_SELF_OPTIONS.find((o) => o.value === form.capture)?.later) {
@@ -190,6 +191,8 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy, units:
     for (const u of units) {
       const v = parseNumberDe(form.unitValues[u.id] ?? '')
       if (v === null || !(v > 0)) {
+        // Zimmer einer Wohnung (#573): dieselbe Regel wie am Server.
+        if (!basisValueRequired(u, units, (id) => parseNumberDe(form.unitValues[id] ?? ''))) continue
         problems.push(volume
           ? { text: `${u.name}: Bitte tragen Sie den umbauten Raum in m³ ein, eine Zahl über 0.`, field: `unit:${u.id}`, short: 'Rauminhalt fehlt' }
           : { text: `${u.name}: Bitte tragen Sie die beheizte Fläche in m² ein, eine Zahl über 0.`, field: `unit:${u.id}`, short: 'Fläche fehlt' })
