@@ -122,7 +122,8 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“ und tragen Sie Bezeichnung, Adresse und die Art „Mehrfamilienhaus“ ein.' },
       { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ alle Wohnungen des Hauses an, auch eine selbstgenutzte („Eigennutzung - Anteil trägt der Vermieter“). Eine Einheit, die gesondert abgerechnet wird, etwa ein Laden, stellen Sie auf „nicht beteiligt - bleibt außen vor“.' },
       { page: 'stammdaten', text: 'Legen Sie je Mieter mit „+ Mietverhältnis anlegen“ ein Mietverhältnis an. Ändert sich später die Personenzahl oder die Vorauszahlung, ergänzen Sie die Staffel mit „+ Änderung ab Datum …“ oder „+ Erhöhung ab Monat …“, statt ein neues Mietverhältnis anzulegen.' },
-      { page: 'zaehler', text: 'Legen Sie die Wohnungszähler mit ihrer Wohnung an und, wenn vorhanden, den Hauszähler als „Haus (Hauptzähler)“. Erfassen Sie für jeden Zähler den Stand zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.) mit „+ Ablesung anlegen“. Mit Wohnungszählern steht bei den Kosten der Schlüssel „nach Verbrauch (Zähler)“ zur Wahl.' },
+      { page: 'zaehler', text: 'Legen Sie die Wohnungszähler mit ihrer Wohnung an und, wenn vorhanden, den Hauszähler als „Haus (Hauptzähler)“. Erfassen Sie für jeden Zähler den Stand zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.) mit „+ Ablesung anlegen“. Mit Wohnungszählern steht bei den Kosten der Schlüssel „nach Verbrauch (Zähler)“ zur Wahl. Misst ein Zähler ohne Wohnung nur einen Teil des Hauses, etwa den Allgemeinstrom oder den Garten, wählen Sie bei „Misst dieser Zähler das ganze Haus oder einen Teil?“ den Eintrag „einen Teil des Hauses“.' },
+      { page: 'kosten', text: 'Was der Hauptzähler mehr misst als die Wohnungszähler (Treppenhaus, Außenhahn, Messdifferenz), verteilen Sie bei einer Position nach Verbrauch unter „Verbrauch ohne eigenen Zähler“ „im Verhältnis der Zähler“, „nach Fläche“, „nach Personen“ oder „nach Einheiten“; mit „tragen Sie (wie bisher)“ bleibt es, wie es war.' },
       { page: 'belege', view: 'eingang', text: 'Legen Sie Rechnungen auf der Seite Belege im Eingang ab, auch mehrere auf einmal. Ist eine KI eingerichtet, zerlegt Mietfuchs jede in Positionen; mit „Nur ablegen, ohne Auswertung“ werden sie nur gespeichert. Gespeicherte Belege stehen unter „Ohne Position“; von dort erfassen Sie jeden mit „Von Hand erfassen“ im Kostenformular, ordnen ihn einer Position zu oder lassen ihn mit „Per KI auswerten“ in Positionen zerlegen.' },
       { page: 'kosten', text: 'Erfassen Sie jede Rechnung mit Kostenart und Umlageschlüssel. Betrifft eine Rechnung nur einen Teil der Wohnungen, etwa den Aufzug im Hinterhaus, wählen Sie bei der Position „Weitere Optionen: nur bestimmte Wohnungen beteiligen“.' },
       { page: 'kosten', text: 'Ab dem zweiten Jahr übernehmen Sie die Positionen des Vorjahres mit dem Knopf über der Liste (für 2026 heißt er Aus 2025 übernehmen …). Kostenart, Beschreibung und Umlageschlüssel kommen mit, Sie tragen je Zeile nur den neuen Betrag ein.' },
@@ -147,9 +148,8 @@ const GUIDE_DATA = {
     ],
     gaps: [
       { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen; die rechnet Mietfuchs noch nicht.', issue: 218 },
-      { text: 'Die Differenz zwischen Hauptzähler und Wohnungszählern als eigener Posten, Eichfristen und geschätzte Ablesungen.', issue: 98 },
     ],
-    terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance', 'operatingPower'],
+    terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance', 'operatingPower', 'meterRest', 'referenceMeter'],
   },
   condo: {
     group: 'property',
@@ -365,6 +365,7 @@ const GUIDE_DATA = {
       'Bei Heizkostenverteilern zählt jedes Gerät mit seinem Bewertungsfaktor; jeder Mieter bekommt seine Geräte mit Einheiten, Skala und Faktor ausgewiesen. Die Werte eines Ablesedienstes zählen wie abgelesen.',
       'Mit der Abrechnung druckt Mietfuchs für jeden Mieter die Informationen nach § 6a: Energieträger, Steuern und Abgaben, Entgelte der Erfassung, Kontaktadressen, den Vergleich mit dem Durchschnittsnutzer und den witterungsbereinigten Vergleich mit dem vorhergehenden Abrechnungszeitraum als Balken, beides nur mit seinen eigenen Zahlen. Fehlt einem Mieter eine Angabe, nennt die Abrechnung seine Kürzung.',
       `Ein geschätzter Verbrauch gilt für die ganze Heizperiode der Wohnung; wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert. Betrifft die Schätzung mehr als ${ESTIMATE_THRESHOLD} % der Fläche, gehen die Kosten dieses Topfs nur nach der Fläche.`,
+      `Haben Sie an einer Ablesung „Stand geschätzt (nicht abgelesen)“ angehakt, zählt die Fläche der Wohnung für diese Grenze mit. Darüber warnt Mietfuchs, rechnet aber weiter nach Verbrauch mit den geschätzten Ständen, bis Sie die Schätzung in der Karte „Schätzung (§ 9a)“ eintragen.`,
     ],
     example: 'Zwei Wohnungen à 50 m², Fernwärme 3.000 €, kein zentrales Warmwasser, 70 % nach Verbrauch. Grundkosten 30 %: 900 €, je Wohnung 450 €. Verbrauchskosten 70 %: 2.100 € für 10.000 kWh. Wohnung A: 4.000 kWh, 840 €, zusammen 1.290 €. Wohnung B: 6.000 kWh, zusammen 1.710 €.',
     caveats: [
@@ -398,7 +399,7 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Klicken Sie beim laufenden Mietverhältnis auf „Mieterwechsel“. Im Fenster tragen Sie das „Auszugsdatum (letzter Miettag)“ ein, dann die Zählerstände zum Auszug („Zwischenablesung der Zähler“) und zuletzt den neuen Mieter.' },
       { page: 'stammdaten', text: 'Steht die Wohnung danach leer, setzen Sie den Haken „Wohnung bleibt vorerst leer (Leerstand)“. Mit „Speichern“ wird alles auf einmal gespeichert; den neuen Mieter legen Sie später mit „+ Mietverhältnis anlegen“ an.' },
       { page: 'stammdaten', text: 'Die neue Anschrift des ausgezogenen Mieters tragen Sie an seinem Mietverhältnis ein: ✎ klicken, „Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ aufklappen und „Abweichende Anschrift (Schriftverkehr)“ ausfüllen. So haben Sie sie beim Versand der Abrechnung zur Hand; auf den Ausdruck kommt sie nicht.' },
-      { page: 'zaehler', text: 'Eine Zwischenablesung können Sie auch später nachtragen: Ablesungen des Zählers aufklappen, „+ Ablesung anlegen“ klicken, Datum und Stand eintragen und „Anlegen“.' },
+      { page: 'zaehler', text: 'Eine Zwischenablesung können Sie auch später nachtragen: Ablesungen des Zählers aufklappen, „+ Ablesung anlegen“ klicken, Datum und Stand eintragen und „Anlegen“. Konnten Sie zum Auszug nicht ablesen und haben den Stand geschätzt, haken Sie dabei „Stand geschätzt (nicht abgelesen)“ an und tragen die „Begründung der Schätzung“ ein.' },
       { page: 'mietkonto', text: 'Prüfen Sie im Mietkonto, ob die Vorauszahlungen bis zum Auszug eingegangen sind.' },
       { page: 'abrechnung', text: 'Jedes Mietverhältnis bekommt seine eigene Abrechnung. Hat ein Mieter anders gezahlt als angesetzt, auch im Auszugs- oder Einzugsmonat, tragen Sie den gezahlten Betrag mit „✎ anpassen“ ein.' },
       { page: 'stammdaten', text: 'Ziehen Sie nach dem Auszug selbst ein oder vermieten Sie Ihre bisher eigene Wohnung zum ersten Mal, öffnen Sie die Wohnung mit ✎ und tragen Sie unter „Nutzungswechsel“ mit „+ Wechsel ab Datum …“ den Tag und die neue Nutzung ein.' },
@@ -420,7 +421,7 @@ const GUIDE_DATA = {
       { text: 'Abgerechnet wird gegen die Vorauszahlungen, die der Mieter für den Abrechnungszeitraum tatsächlich geleistet hat.', norm: 'BGH, Urteil vom 18.05.2011, VIII ZR 240/10' },
     ],
     gaps: [
-      { text: 'Eine geschätzte Ablesung kennzeichnen, wenn die Zwischenablesung versäumt wurde.', issue: 98 },
+      { text: 'Im Fenster „Mieterwechsel“ lässt sich ein Zählerstand nicht als geschätzt kennzeichnen. Löschen Sie die Zwischenablesung dann auf der Seite Zähler und legen Sie sie dort mit „Stand geschätzt (nicht abgelesen)“ neu an.' },
     ],
     terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'partialMonth', 'settlementDeadline', 'usageChange'],
   },
