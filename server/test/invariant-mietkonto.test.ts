@@ -363,7 +363,9 @@ test('Fälligkeit (#334): jeder Monat genau bezahlt, mit zufälliger Regel und L
   assert.ok(notDueCompared > 20, `nur ${notDueCompared} Vergleiche mit einem Monat „noch nicht Rückstand“`)
 })
 
-test('Tilgung nach § 366 BGB unabhängig von der Fälligkeit: dieselben Teile mit und ohne Regel am Mietverhältnis', () => {
+// Gilt für dasselbe geführte Mietverhältnis; über den Beginn der Erfassung (`ledgerStartOf`, Dauerauftrag zum Monatsende)
+// wirkt die Regel sehr wohl auf die Tilgung (Integrationsdurchsicht K4).
+test('Tilgung nach § 366 BGB ohne Einfluss der Fälligkeit: dasselbe Mietverhältnis tilgt mit und ohne Regel dieselben Teile', () => {
   for (const seed of seeds().slice(0, 150)) {
     const stock = randomRentStock(makeRng(seed))
     const withRule = withTerms(stock.tenancy, makeRng(seed * 5 + 1))

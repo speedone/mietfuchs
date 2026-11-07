@@ -97,7 +97,9 @@ export function oracleArrearsFrom(t: OracleTerms, month: string, state: State | 
   const m = Number(month.slice(5, 7))
   const next = (k: number): string => iso(Date.UTC(y, m - 1 + k, 1))
   const moveIn = t.start.startsWith(month) && t.start > `${month}-01`
-  const atStart = oracleRule(t) === 'startWorkday' && !moveIn && !(t.start.startsWith(month) && t.firstRentAtStart)
+  const rule = oracleRule(t)
+  const early = rule === 'startWorkday' || (rule === 'dayOfMonth' && (t.rentDueDay ?? 99) <= 14)
+  const atStart = early && !moveIn && !(t.start.startsWith(month) && t.firstRentAtStart)
   const safe = atStart ? next(1) : next(2)
   if (!checked || y < 1995) return safe
   const due = (state === null ? [...STATES] : [state]).map((s) => dueIn(t, month, s)).sort().at(-1) ?? ''
