@@ -80,6 +80,11 @@ Proben von Hand):
   `NKA_RUNTIME=binary`) bei jedem Start ein Browserfenster.
 - **`NKA_UPDATE_URL`** auf einen geschlossenen Port, damit nichts zu GitHub hinausgeht.
 
+Dazu empfohlen **`NKA_HOST=127.0.0.1`** (#528): Ohne lauscht der Server im Netz, und ein frischer Datenordner
+verlangt erst ein Passwort (Anmeldung, server/src/CLAUDE.md). `startServerIn`/`startServerRaw` setzen es; ein Test, der
+das Netz oder die Anmeldung prüft, setzt `NKA_HOST: '0.0.0.0'` und bei Bedarf `NKA_AUTH` und meldet sich mit `signIn`
+an (server/testing/api.ts). `npm run dev` lauscht über server/dev.env auf 127.0.0.1.
+
 Vorlage dafür sind `startServerIn`/`startServerRaw` und
 [scripts/umstieg-praxislauf.mjs](scripts/umstieg-praxislauf.mjs). `CI` steht dort **hinter** dem
 `...env` des Aufrufers, damit es nicht überschrieben werden kann; ein Wächter in
@@ -176,7 +181,7 @@ seine Sprungmarken verlinken App und Release-Notes, sie bleiben beim Umbau erhal
   Praxislauf des Umstiegs, Prüfumfang je Anlass.
 - [server/src/db/CLAUDE.md](server/src/db/CLAUDE.md): Datenbank (Treiber, Schlange, Migrationen,
   eingefrorener Eingang, Validator, Backup und Wiederherstellen, ZIP) und Umstieg.
-- [server/src/CLAUDE.md](server/src/CLAUDE.md): Objekte, Abrechnungszeitraum, Fristen und
+- [server/src/CLAUDE.md](server/src/CLAUDE.md): Anmeldung, Objekte, Abrechnungszeitraum, Fristen und
   Feiertage, Belege (Eingang und Ordner), API, Schnappschuss, Hinweise und Rechtsregister, IBAN, Rechenweg,
   Schlüssel merken, doppelte Positionen, Belegbuchung, Berechnungs-Engine (Verteilung, Zähler,
   Leerstand, Betriebsstrom, Contracting, § 5a, Mietkonto, Steuer), Update-Hinweis.

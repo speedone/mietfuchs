@@ -186,8 +186,11 @@ Das Programm ist zunächst nur auf diesem Rechner erreichbar. Für Handy, Tablet
 Rechner im selben WLAN setzt du in den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen;
 dann muss der PC laufen. Soll Mietfuchs jederzeit erreichbar sein, läuft es auf einem Gerät, das
 immer an ist ([Docker](docs/docker.md) auf NAS oder Heimserver, Linux-Paket auf dem Raspberry Pi).
-Mietfuchs hat kein Passwort: Erlaube den Zugriff nur in einem Netz, dem du vertraust, und stelle es
-nie per Portfreigabe ins Internet.
+Sobald andere Geräte Mietfuchs erreichen, fragt es nach einem Passwort: Beim Einschalten legst du es
+auf der Karte fest, Docker, Programmdatei und Linux-Paket starten mit einer Einrichtung (den Code
+nennen Protokoll bzw. Konsolenfenster). Über `http://` lässt sich im Heimnetz trotzdem mitlesen:
+Erlaube den Zugriff nur in einem Netz, dem du vertraust, und stelle Mietfuchs nie per Portfreigabe
+ins Internet.
 [Mehr dazu](docs/installation.md#zugriff-vom-handy-oder-einem-zweiten-rechner)
 
 ### Download prüfen (für Fortgeschrittene)

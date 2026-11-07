@@ -6,7 +6,9 @@
 # Aktualisieren:  docker compose -f compose.ollama.yml pull && docker compose -f compose.ollama.yml up -d
 #
 # Mietfuchs spricht Ollama über den Dienstnamen an (NKA_OLLAMA_URL), Ollama selbst ist von außen nicht
-# erreichbar. Gerechnet wird auf dem Prozessor. Mietfuchs hat kein Login: Port 3001 nie ins Internet freigeben.
+# erreichbar. Gerechnet wird auf dem Prozessor. Beim ersten Start fragt Mietfuchs nach einem Passwort; den
+# Einrichtungscode nennt  docker compose -f compose.ollama.yml logs mietfuchs
+# Port 3001 trotzdem nie ins Internet freigeben.
 services:
   mietfuchs:
     image: ghcr.io/speedone/mietfuchs:latest

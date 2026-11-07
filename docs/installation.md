@@ -193,8 +193,9 @@ Von unterwegs kommst du nur über ein VPN an Mietfuchs, nie über eine Portfreig
 17517), deshalb fragt auch keine Firewall. Willst du Mietfuchs auf dem Handy, Tablet oder einem
 zweiten Rechner im selben WLAN öffnen:
 
-1. In den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen setzen und speichern.
-   Mietfuchs startet dabei kurz neu.
+1. In den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen setzen. Die Karte fragt
+   dabei nach einem Passwort für andere Geräte (mindestens 15 Zeichen, sie schlägt einen Satz aus
+   mehreren Wörtern vor), dann speichern. Mietfuchs startet dabei kurz neu.
 2. Fragt Windows danach, ob Mietfuchs ins Netz darf, lass nur **Private Netzwerke** zu, nicht
    öffentliche. Kommt das Handy dann nicht durch, führt Windows dein WLAN vermutlich als
    öffentliches Netz: unter *Einstellungen → Netzwerk und Internet → WLAN →* dein Netz den
@@ -202,9 +203,17 @@ zweiten Rechner im selben WLAN öffnen:
 3. Die Karte nennt die Adresse fürs Handy, etwa `http://192.168.178.23:17517`.
 
 Die Adresse ist eine andere als bei der bisherigen Programmdatei und der Store-Fassung bis 0.14
-(dort Port 3001); ein Lesezeichen auf dem Handy legst du also neu an. Mietfuchs hat kein Passwort: Solange der Zugriff
-erlaubt ist, kann jeder in deinem Heimnetz deine Daten öffnen und ändern. Erlaube ihn nur in
-einem Netz, dem du vertraust.
+(dort Port 3001); ein Lesezeichen auf dem Handy legst du also neu an.
+
+Das Handy meldet sich mit dem Passwort an, das Fenster am PC selbst braucht keines. Die Anmeldung
+endet nach 30 Minuten ohne Aktivität, spätestens nach 8 Stunden; ein Neustart von Mietfuchs meldet
+alle Geräte ab. Ändern, abschalten oder auf allen Geräten abmelden geht unter *Einstellungen →
+Anmeldung*. Lässt du das Passwort weg („Ohne Passwort weiter“), kann jeder in deinem Heimnetz deine
+Daten öffnen und ändern. Auch mit Passwort lässt sich über `http://` im Heimnetz mitlesen, das
+Passwort eingeschlossen: Erlaube den Zugriff nur in einem Netz, dem du vertraust. Hattest du den
+Zugriff schon vor Version 0.17 an, bleibt er offen wie bisher; unten in der Seitenleiste steht dann
+„Ohne Passwort im Netz“, und unter *Einstellungen → Anmeldung* legst du ein Passwort fest. Ab
+Version 1.0 verlangt Mietfuchs dort ein Passwort.
 
 **Tipp: Mietfuchs auf den Startbildschirm legen.**
 
@@ -296,6 +305,17 @@ Daneben öffnet sich ein Konsolenfenster mit Text (unter Windows schwarz, auf de
 Terminal). Lass es offen, solange du arbeitest; zum Beenden einfach schließen oder in Mietfuchs
 unten in der Seitenleiste auf *Mietfuchs beenden* klicken.
 
+**Beim ersten Start fragt Mietfuchs nach einem Passwort**, denn die Programmdatei ist auch aus dem
+Heimnetz erreichbar. Der Browser öffnet dafür die Einrichtung mit dem Einrichtungscode schon
+eingetragen; der Code steht auch im Konsolenfenster und in `einrichtungscode.txt` im Ordner
+`data/`. Legst du ein Passwort fest (mindestens 15 Zeichen), melden sich alle Geräte damit an, auch
+dieser Rechner. Brauchst du keinen Zugriff von anderen Geräten, starte die Datei mit
+`NKA_HOST=127.0.0.1` (unten): Dann gibt es keine Anmeldung. Ein Ordner `data/` mit Daten von vor
+Version 0.17 bleibt offen wie bisher, mit Hinweis in der Seitenleiste; ab Version 1.0 verlangt
+Mietfuchs auch dort ein Passwort. **Passwort vergessen:** Lege im Ordner `data/` eine leere Datei
+`passwort-zuruecksetzen` an und lade die Seite neu. Mietfuchs löscht das Passwort, meldet alle
+Geräte ab und nennt im Konsolenfenster einen neuen Code; die Daten bleiben.
+
 Beim ersten Start meldet sich das Betriebssystem, weil die Datei nicht kostenpflichtig
 signiert ist:
 
@@ -338,13 +358,17 @@ Für ARM-Rechner (Raspberry Pi 4/5 mit 64-Bit-System) heißen die Dateien `arm64
 und `aarch64` statt `x86_64`.
 
 Ein Klick im Startmenü startet Mietfuchs und öffnet den Browser; ein Konsolenfenster gibt es
-dabei nicht. Zum Beenden dient der Knopf **„Mietfuchs beenden"** unten in der Seitenleiste. Ein
+dabei nicht. Beim ersten Start öffnet der Browser die Einrichtung eines Passworts mit dem Code schon
+eingetragen, wie bei der [Programmdatei](#bisherige-programmdatei-ohne-installation). Zum Beenden dient der Knopf **„Mietfuchs beenden"** unten in der Seitenleiste. Ein
 zweiter Klick im Menü holt einfach die laufende Oberfläche nach vorn.
 
 Ohne grafische Oberfläche, etwa auf einem Server oder einem Raspberry Pi per SSH, funktioniert
 das Paket genauso: `mietfuchs` im Terminal starten und die Oberfläche von einem anderen Rechner
 unter `http://<ip-des-rechners>:3001` aufrufen. Dass sich dort kein Browser öffnet, ist normal;
-Mietfuchs sagt es in der Ausgabe.
+Mietfuchs sagt es in der Ausgabe. Den Einrichtungscode für das Passwort nennt die Ausgabe ebenfalls,
+er steht auch in `~/.local/share/mietfuchs/einrichtungscode.txt`; läuft Mietfuchs als Dienst, steht er
+in dessen Protokoll. Passwort vergessen: `touch ~/.local/share/mietfuchs/passwort-zuruecksetzen`, Seite
+neu laden, neuer Code in der Ausgabe.
 
 Mietfuchs antwortet dabei unter seiner IP-Adresse, unter `localhost` und unter Namen im Heimnetz
 (ohne Punkt wie `raspberrypi`, oder mit Endungen wie `.local`, `.lan`, `.fritz.box`, `.home.arpa`,
@@ -354,6 +378,17 @@ schaltet die Prüfung ab). Das schützt davor, dass eine fremde Webseite in dein
 über einen eigenen Namen erreicht oder darin etwas ändert. Im Docker-Image ist die Prüfung aus,
 solange `NKA_ALLOWED_HOSTS` nicht gesetzt ist. `NKA_HOST` legt fest, auf welcher Adresse
 Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner; ohne Angabe auf allen.
+
+Die Lausch-Adresse entscheidet auch über die Anmeldung: Lauscht Mietfuchs auf allen Adressen,
+fragt es nach einem Passwort, mit `NKA_HOST=127.0.0.1` nicht. `NKA_AUTH` legt das fest: ohne Angabe
+oder `auto` wie eben, `off` schaltet die Anmeldung ab (nur, wenn niemand außer diesem Rechner
+herankommt oder ein Reverse-Proxy davor selbst nach einem Passwort fragt), `on` verlangt sie auch bei
+`127.0.0.1`. Ein anderer Wert verhindert den Start. Steht ein Reverse-Proxy auf demselben Rechner vor
+einem Mietfuchs auf `127.0.0.1`, erkennt Mietfuchs ihn an seinen Kopfzeilen (`Forwarded`,
+`X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP`, `Via`): Ist ein Passwort festgelegt, brauchen
+solche Anfragen eine Anmeldung, und ohne Passwort zeigt Mietfuchs einen Hinweis. Setzt dein Proxy
+keine dieser Kopfzeilen, nimm `NKA_AUTH=on`. Alles auf demselben Rechner gilt als vertrauenswürdig:
+Andere Dienste dort bekommen das Anmelde-Cookie mit, auch auf einem anderen Port.
 
 Aus einem Paket installiert, liegen die Daten in **`~/.local/share/mietfuchs`** statt neben der
 Programmdatei; in `/usr/bin` darf niemand schreiben. Backup = diesen Ordner kopieren. Wer die

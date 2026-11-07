@@ -6,7 +6,35 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Anmeldung mit Passwort, wenn Mietfuchs im Netz erreichbar ist**
+  ([#528](https://github.com/speedone/mietfuchs/issues/528)): Docker, Programmdatei, Linux-Paket, `npm start` und das
+  Programmfenster mit „Zugriff aus dem Heimnetz“ schützen Ihre Daten jetzt mit einem Passwort (15 bis 128 Zeichen,
+  Mietfuchs schlägt einen Satz aus mehreren Wörtern vor). Festgelegt wird es beim ersten Start mit einem
+  Einrichtungscode aus Konsolenfenster, Protokoll (`docker compose logs mietfuchs`) oder der Datei
+  `einrichtungscode.txt` im Datenordner; die Programmdatei öffnet den Browser mit dem Code schon eingetragen. Im
+  Programmfenster fragt die Karte „Zugriff aus dem Heimnetz“ beim Einschalten nach dem Passwort, das Fenster selbst
+  bleibt ohne Anmeldung. Eine Anmeldung endet nach 30 Minuten ohne Aktivität, spätestens nach 8 Stunden; läuft sie
+  während der Arbeit ab, erscheint die Anmeldung über der Seite, und Ihre Eingaben bleiben stehen. Unter
+  *Einstellungen → Anmeldung* ändern Sie das Passwort, melden alle anderen Geräte ab oder schalten die Anmeldung aus.
+  Nach Fehlversuchen wird Mietfuchs langsamer, sperrt aber nie aus. **Passwort vergessen**: eine leere Datei
+  `passwort-zuruecksetzen` im Datenordner anlegen und die Seite neu laden, dann nennt Mietfuchs einen neuen Code. Nur auf
+  Ihrem Rechner (Programmfenster ohne Heimnetz, Microsoft Store, `NKA_HOST=127.0.0.1`) ändert sich nichts.
+  `NKA_AUTH=off` schaltet die Anmeldung ab, etwa hinter einem Proxy mit eigener Anmeldung, `NKA_AUTH=on` verlangt sie
+  auch auf `127.0.0.1`. Passwort und Code gehen nicht ins Backup. Über `http://` lässt sich im Heimnetz weiter
+  mitlesen; HTTPS gibt es mit einem Proxy oder VPN ([Docker](docs/docker.md#zuerst-sicherheit)).
+
 ### Geändert
+
+- **Neue Datenordner im Netz verlangen ein Passwort**: Ein frisches Docker-Volume, eine Programmdatei mit neuem Ordner
+  `data` und ein neues Linux-Paket starten in der Einrichtung; ohne sie sieht niemand Daten. Das ist die sichere
+  Voreinstellung für Docker aus der Liste für Version 1.0 ([#447](https://github.com/speedone/mietfuchs/issues/447)).
+  Wer bewusst ohne Passwort arbeiten will, wählt dort „Ohne Passwort weiter“.
+- **Bestehende Installationen im Netz bleiben vorerst offen**: Mit Daten von vor dieser Version zeigt Mietfuchs unten
+  in der Seitenleiste „Ohne Passwort im Netz“ und nennt den Einrichtungscode im Protokoll. **Ab Version 1.0.0-rc.1 ist
+  das Passwort Pflicht.** Für bestehende Daten ist nichts zu tun außer dem Passwort; wie es geht, steht in
+  [MIGRATION.md](MIGRATION.md#nach-dem-update-fragt-mietfuchs-nach-einem-passwort).
 
 - Der Umlageschlüssel „laut Gemeinschaftsabrechnung“ heißt im Kostenformular ohne den Zusatz „(Eigentumswohnung)“: Am
   Handy zeigte die Auswahl ihn nicht ganz. Gefunden hat das der Browserlauf, der jetzt auch eine WG, eine geschätzte

@@ -8,13 +8,18 @@
 # Stammzertifikat für deine Geräte holen:
 #                 docker compose -f compose.caddy.yml cp caddy:/data/caddy/pki/authorities/local/root.crt .
 #
-# Mietfuchs selbst hat keinen veröffentlichten Port, erreichbar ist es nur über Caddy. Mietfuchs hat kein
-# Login: Ports 80 und 443 nie ins Internet freigeben. Ein Passwort davor setzt basic_auth im Caddyfile.
+# Mietfuchs selbst hat keinen veröffentlichten Port, erreichbar ist es nur über Caddy. Beim ersten Start fragt
+# Mietfuchs nach einem Passwort; den Einrichtungscode nennt  docker compose -f compose.caddy.yml logs mietfuchs
+# Ports 80 und 443 trotzdem nie ins Internet freigeben. Wer die Anmeldung lieber in Caddy hat (basic_auth im
+# Caddyfile), schaltet die von Mietfuchs unten mit NKA_AUTH: "off" ab, sonst fragen beide.
 services:
   mietfuchs:
     image: ghcr.io/speedone/mietfuchs:latest
     volumes:
       - mietfuchs-data:/app/server/data
+    # Nur zusammen mit basic_auth im Caddyfile: dann fragt Caddy nach dem Passwort statt Mietfuchs
+    # environment:
+    #   NKA_AUTH: "off"
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
