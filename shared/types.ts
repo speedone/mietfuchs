@@ -23,9 +23,9 @@ export type UsageChange = { from: string; usage: UnitUsage }
 // den Wohnungen), Sonstiges (etwa ein Garagenhof).
 export type PropertyKind = 'mfh' | 'etw' | 'efh' | 'zfh' | 'sonstiges'
 
-// Die 16 Länder mit ihren üblichen Kürzeln (Namen und Feiertage in shared/holidays.ts).
 // Fälligkeit der Miete am Mietverhältnis (#334); die Rechnung steht in shared/rentDue.ts.
 export type RentDueRule = 'startWorkday' | 'dayOfMonth' | 'inArrears'
+// Die 16 Länder mit ihren üblichen Kürzeln (Namen und Feiertage in shared/holidays.ts).
 export type FederalState = 'BW' | 'BY' | 'BE' | 'BB' | 'HB' | 'HH' | 'HE' | 'MV' | 'NI' | 'NW' | 'RP' | 'SL' | 'SN' | 'ST' | 'SH' | 'TH'
 
 // Ein Objekt ist zugleich die Abrechnungseinheit. Wohnungen, Zähler, Kostenpositionen und

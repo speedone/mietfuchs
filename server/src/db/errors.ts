@@ -122,8 +122,6 @@ function uniqueMessage(details: string): string {
   return 'Diesen Datensatz gibt es schon. Bitte laden Sie die Seite neu.'
 }
 
-// Bedingungen, deren Endung allein den falschen Satz ergäbe (#208): `_complete` spräche von der
-// Gemeinschaftsabrechnung, `_valid` von einem Monat in der Form JJJJ-MM.
 // Fälligkeit der Miete am Mietverhältnis (#334): dieselben Sätze im Repository und an den Bedingungen.
 export const RENT_DUE_TEXTS = {
   rule: 'Die Fälligkeit der Miete ist „Wie im Gesetz“, „Zu Beginn des Monats“, „An einem festen Tag des Monats“ oder „Nach Ablauf des Monats“. Bitte wählen Sie eine davon.',
@@ -134,6 +132,8 @@ export const RENT_DUE_TEXTS = {
   firstRent: 'Erste Miete schon bei Mietbeginn fällig ist ja oder nein. Bitte setzen oder entfernen Sie den Haken.',
 } as const
 
+// Bedingungen, deren Endung allein den falschen Satz ergäbe (#208): `_complete` spräche von der
+// Gemeinschaftsabrechnung, `_valid` von einem Monat in der Form JJJJ-MM.
 const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_service_complete: 'Zum Leistungszeitraum gehören Beginn und Ende. Bitte tragen Sie beide ein oder lassen Sie beide leer.',
   cost_items_service_from_valid: 'Der Beginn des Leistungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.',

@@ -1596,11 +1596,17 @@ type ReceivedInput = {
 // am Ort (ohne Land dem spätesten aller Länder) und nur, wenn jeder Tag bis dahin geprüft ist (Auflage aus #290).
 // Vor 1995 kennt Mietfuchs keine Feiertage (Durchsicht S1): dann nach dem Datum der Zahlung. Dass der nach § 193 BGB
 // verschobene Tag zählt und nicht der vereinbarte, ist eine Auslegung (im Zweifel nach dem Datum der Zahlung).
+const SAFE_JANUARY_DAY = 8
 function januaryDueInWindow(t: SnapshotTenancy, year: number, rule: RentDueRule, state: FederalState | null, days: number, checked: (date: string) => boolean): boolean {
   if (compareText(t.start, `${year}-01-01`) > 0) return false
   if (rule !== 'dayOfMonth') return rule === 'startWorkday'
   const month = `${year}-01`
   if (year < FIRST_YEAR || (t.end !== null && compareText(t.end, `${month}-01`) < 0)) return false
+  // Bis zum 8. ist der nach § 193 BGB verschobene Tag in jedem Land spätestens der 10.01. (Test über alle Länder 1995 bis
+  // 2100 in calc-steuer-zufluss.test.ts), wie der dritte Werktag; dafür braucht es keine Prüfung der Feiertage
+  // (Integrationsdurchsicht M1). Danach entscheiden Wochentag und Feiertage.
+  const day = t.rentDueDay
+  if (typeof day === 'number' && day <= SAFE_JANUARY_DAY) return true
   const due = rentDueOn(t, month, state)
   if (compareText(due, `${month}-${String(days).padStart(2, '0')}`) > 0) return false
   for (let d = `${month}-01`; compareText(d, due) <= 0; d = dayAfter(d)) if (!checked(d)) return false
