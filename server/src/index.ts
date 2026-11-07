@@ -92,6 +92,7 @@ import {
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, forOtherDevice, mayAskGitHub, UPDATE_URL } from './update.ts'
 import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './version.ts'
+import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
@@ -159,7 +160,8 @@ app.use((req, res, next) => {
 // ändern könnte, bekommt den Satz mit dem neuen Ort; nur Beenden und die Frage nach Updates bleiben.
 app.use((req, res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next()
-  if (req.path === '/api/quit' || req.path === '/api/update/check') return next()
+  // In jeder Schreibweise, die Express auf diese Routen bringt (#585)
+  if (['/api/quit', '/api/update/check'].includes(routePath(req.path))) return next()
   // Je Anfrage gelesen, nicht nur beim Start: Zieht das Fenster die Daten um, während diese Fassung läuft, gilt der
   // Vermerk ab sofort (Durchsicht D5).
   const moved = MOVED_AWAY ?? readMovedMarker(DATA_DIR)
@@ -381,6 +383,7 @@ function settingsForClient() {
 // (aus dem Heimnetz beendete es das Fenster mit), KI-Schlüssel und die Bestätigung externer Dienste, und die Zustimmung
 // zur Update-Prüfung (unter Windows lädt das Fenster danach auch herunter). Zustimmen soll, wer vor dem Rechner sitzt.
 // Nur im Fenster: Im Container und im npm-Betrieb kommt jede Anfrage von außen, auch die vom eigenen Rechner.
+// Verglichen wird `routePath(req.path)`: Express nimmt `/API/QUIT` und `/api/quit/` als `/api/quit` an (#585).
 const AT_THIS_COMPUTER: [RegExp, string][] = [
   [/^\/api\/quit$/, 'Beenden geht nur am Rechner, auf dem Mietfuchs läuft.'],
   [/^\/api\/ai\/(key|consent)(\/|$)/, 'KI-Schlüssel und Zustimmungen ändern Sie nur am Rechner, auf dem Mietfuchs läuft.'],
@@ -388,7 +391,8 @@ const AT_THIS_COMPUTER: [RegExp, string][] = [
 const UPDATE_CHECK_HERE = 'Die Update-Prüfung schalten Sie nur am Rechner ein oder aus, auf dem Mietfuchs läuft.'
 app.use((req, res, next) => {
   if (!IN_WINDOW || req.method === 'GET' || req.method === 'HEAD' || fromThisComputer(req)) return next()
-  const refusal = AT_THIS_COMPUTER.find(([route]) => route.test(req.path))?.[1]
+  const route = routePath(req.path)
+  const refusal = AT_THIS_COMPUTER.find(([pattern]) => pattern.test(route))?.[1]
   if (refusal) return void res.status(403).json({ error: refusal })
   next()
 })

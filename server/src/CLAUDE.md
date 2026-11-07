@@ -392,7 +392,10 @@ Heimnetz beendete es das Fenster mit), jede schreibende Anfrage an `/api/ai/key`
 `updateCheck` in `PUT /api/settings` (unter Windows lädt das Fenster danach auch herunter) bekommen von dort 403 mit
 gesiezter Meldung: Zustimmen soll, wer vor dem Rechner sitzt. Ein PUT mit unverändertem `updateCheck` geht durch, das
 übrige Speichern der Einstellungen bleibt aus dem Heimnetz möglich. Nur bei `IN_WINDOW` (desktop, store); im Container
-und im npm-Betrieb kommt jede Anfrage von außen. Geprüft in api-fenster.test.ts.
+und im npm-Betrieb kommt jede Anfrage von außen. Verglichen wird `routePath(req.path)` ([routePath.ts](routePath.ts),
+#585): Express nimmt Routen ohne Rücksicht auf Groß und Klein und mit einem Schrägstrich am Ende an; **wer `req.path` selbst
+mit einem Pfad vergleicht, nimmt `routePath`** (ebenso die Ausnahmen beim umgezogenen Ordner). Geprüft in
+api-fenster.test.ts, routePath.test.ts (an Express selbst gemessen).
 
 [index.ts](index.ts): generische CRUD-Routen in einer Schleife für `units, tenancies, costItems,
 meters, readings, payments`, durch [db/repository.ts](db/repository.ts); Kaskaden erledigen die
