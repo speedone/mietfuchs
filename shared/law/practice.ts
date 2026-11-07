@@ -139,7 +139,7 @@ export const practiceCreditBookingDays: LawParam<number, 'eventDate'> = {
 // Zahlungsdienstleister den Geschäftsbetrieb unterhält (§ 675n Abs. 1 Satz 4 BGB). Der 24. und der 31. Dezember sind keine
 // gesetzlichen Feiertage; dass viele Banken dort keinen Geschäftsbetrieb unterhalten, ist eine Annahme aus der Praxis.
 // Mietfuchs zählt sie deshalb nicht als Bankgeschäftstag, das verschiebt den erwarteten Eingang nur nach hinten.
-// `eventDate`: gefragt am Fälligkeitstag. Tage als 'MM-TT'.
+// `eventDate`: gefragt an dem Tag, der Bankgeschäftstag sein soll. Tage als 'MM-TT'.
 export const practiceBankClosedDays: LawParam<readonly string[], 'eventDate'> = {
   id: 'practice.bank-closed-days',
   title: 'Tage ohne Geschäftsbetrieb der Banken',

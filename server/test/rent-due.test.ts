@@ -265,9 +265,9 @@ test('Feiertage je Land: Allerheiligen, Buß- und Bettag, Reformationstag, Fronl
 // ---------- sichere Grenze, Prüfstand der Feiertage ----------
 
 test('Sichere Grenze ohne geprüfte Feiertage: voller Monat zu Beginn ab dem Ersten des Folgemonats, sonst des übernächsten', () => {
-  assert.equal(safeArrearsFrom(terms(), '2017-10'), '2017-11-01')
-  assert.equal(safeArrearsFrom(terms({ rentDue: 'dayOfMonth', rentDueDay: 3 }), '2017-10'), '2017-12-01')
-  assert.equal(safeArrearsFrom(terms({ rentDue: 'inArrears' }), '2017-10'), '2017-12-01')
+  assert.equal(safeArrearsFrom(terms({ start: '2010-01-01' }), '2017-10'), '2017-11-01')
+  assert.equal(safeArrearsFrom(terms({ start: '2010-01-01', rentDue: 'dayOfMonth', rentDueDay: 3 }), '2017-10'), '2017-12-01')
+  assert.equal(safeArrearsFrom(terms({ start: '2010-01-01', rentDue: 'inArrears' }), '2017-10'), '2017-12-01')
   assert.equal(safeArrearsFrom(terms({ start: '2017-10-02' }), '2017-10'), '2017-12-01')
   assert.equal(safeArrearsFrom(terms({ start: '2017-10-01', firstRentAtStart: true }), '2017-10'), '2017-12-01')
   assert.equal(safeArrearsFrom(terms(), '2026-12'), '2027-01-01')
@@ -326,10 +326,12 @@ test('Invariante: Rückstand nie vor dem Tag nach der Fälligkeit, die sichere G
   const random = rng(334)
   const pick = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)] as T
   const states: readonly (FederalState | null)[] = [...STATE_CODES, null]
-  for (let i = 0; i < 2000; i++) {
-    const year = 2019 + Math.floor(random() * 60)
+  for (let i = 0; i < 3000; i++) {
+    // Durchsicht S2: Jahre ab 1995 und Einzug an jedem Tag, auch am 29. bis 31. (Fälligkeit im Folgemonat).
+    const year = 1995 + Math.floor(random() * 90)
     const startMonth = 1 + Math.floor(random() * 12)
-    const startDay = random() < 0.4 ? 1 : 1 + Math.floor(random() * 28)
+    const lastDay = new Date(Date.UTC(year, startMonth, 0)).getUTCDate()
+    const startDay = random() < 0.3 ? 1 : random() < 0.3 ? lastDay - Math.floor(random() * 3) : 1 + Math.floor(random() * lastDay)
     const start = `${year}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`
     const end = random() < 0.3 ? addDays(start, 20 + Math.floor(random() * 400)) : null
     const rule = pick(['startWorkday', 'dayOfMonth', 'inArrears', undefined] as const)
@@ -415,4 +417,55 @@ test('Feiertage im Server: nur benannte Stellen binden holidays.ts, deadlines.ts
   const source = fs.readFileSync(path.join(here, '..', '..', 'shared', 'rentDue.ts'), 'utf8')
   assert.match(source, /options\.holidaysChecked \?\? holidaysCheckedOn/)
   assert.match(source, /const from = all \? dayAfter\(expected\) : safe/)
+})
+
+// Durchsicht der Bausteine (S1, K3, K6): Monate außerhalb des Mietverhältnisses, ungültiger Tag, Fenster über den
+// Monatswechsel, Einzug am Wochenende und am Jahresende.
+test('Durchsicht: ein Monat ohne Tag im Mietverhältnis ist ein Fehler, auch vor 1995 und für die sichere Grenze', () => {
+  assert.throws(() => monthDue(terms({ start: '1990-05-01' }), '1990-03', 'BY', '2026-01-01'), /besteht das Mietverhältnis nicht/)
+  assert.throws(() => safeArrearsFrom(terms({ start: '1990-05-01' }), '1990-03'), /besteht das Mietverhältnis nicht/)
+  assert.throws(() => arrearsFrom(terms({ start: '2026-05-01' }), '2026-03', 'BY'), /besteht das Mietverhältnis nicht/)
+  assert.throws(() => rentDueOn(terms({ start: '2026-05-01', end: '2026-06-30' }), '2026-07', 'BY'), /besteht das Mietverhältnis nicht/)
+  assert.throws(() => rentDueOn(terms(), '2026-13', 'BY'), /kein Monat/)
+})
+
+test('Durchsicht: ein fester Tag außerhalb 1 bis 31 ist ein Fehler, auch im ersten Monat mit Miete bei Beginn', () => {
+  for (const day of [0, 32, 1.5, undefined, null]) {
+    assert.throws(() => rentDueOn(terms({ rentDue: 'dayOfMonth', rentDueDay: day }), '2026-03', 'NW'), /festen Tag/, String(day))
+    assert.throws(() => rentDueOn(terms({ start: '2026-03-05', rentDue: 'dayOfMonth', rentDueDay: day, firstRentAtStart: true }), '2026-03', 'NW'), /festen Tag/, String(day))
+  }
+})
+
+test('Durchsicht: das Fenster der Prüfung reicht bei „nach Ablauf“ und beim verschobenen festen Tag bis in den Folgemonat', () => {
+  const asked = (t: RentDueTerms, month: string): string[] => {
+    const days: string[] = []
+    arrearsFrom(t, month, 'NW', { holidaysChecked: (d) => (days.push(d), true) })
+    return [...new Set(days)].sort()
+  }
+  // März 2026 nach Ablauf: fällig Mi 01.04., erwartet bis Do 09.04.; gefragt ab dem 01.03.
+  const inArrears = asked(terms({ rentDue: 'inArrears' }), '2026-03')
+  assert.equal(inArrears[0], '2026-03-01')
+  assert.equal(inArrears.at(-1), '2026-04-09')
+  assert.equal(inArrears.length, 40)
+  // Februar 2026, Tag 31: Sa 28.02. → Mo 02.03., erwartet bis Fr 06.03.
+  const day31 = asked(terms({ rentDue: 'dayOfMonth', rentDueDay: 31 }), '2026-02')
+  assert.equal(day31[0], '2026-02-01')
+  assert.equal(day31.at(-1), '2026-03-06')
+  // Ein ungeprüfter Tag im Folgemonat genügt für die sichere Grenze.
+  assert.equal(arrearsFrom(terms({ rentDue: 'inArrears' }), '2026-03', 'NW', { holidaysChecked: (d) => d !== '2026-04-08' }), '2026-05-01')
+  assert.equal(arrearsFrom(terms({ rentDue: 'inArrears' }), '2026-03', 'NW', CHECKED), '2026-04-10')
+})
+
+test('Durchsicht: Einzug am Samstag zählt ab dem Montag, Einzug am 31.12. ohne Land reicht in den Januar', () => {
+  // Sa 10.10.2026: Mo 12. (1), Di 13. (2), Mi 14. (3).
+  assert.equal(rentDueOn(terms({ start: '2026-10-10' }), '2026-10', 'NW'), '2026-10-14')
+  // So 11.10.2026: ebenso.
+  assert.equal(rentDueOn(terms({ start: '2026-10-11' }), '2026-10', 'NW'), '2026-10-14')
+  // Do 31.12.2026 ohne Land: Do 31. (1), Neujahr, Mo 04.01. (2), Di 05.01. (3); Bankgeschäftstage Do 07., Fr 08., Mo 11.,
+  // Di 12.01. (der 06.01. ist in drei Ländern Feiertag); sichere Grenze 01.02.2027.
+  const t = terms({ start: '2026-12-31' })
+  assert.equal(rentDueOn(t, '2026-12', null), '2027-01-05')
+  assert.equal(creditExpectedBy('2027-01-05'), '2027-01-12')
+  assert.equal(arrearsFrom(t, '2026-12', null, CHECKED), '2027-01-13')
+  assert.equal(arrearsFrom(t, '2026-12', null, UNCHECKED), '2027-02-01')
 })

@@ -159,16 +159,29 @@ function sectionStart(t: RentDueTerms, month: string): string {
 const isFirstMonth = (t: RentDueTerms, month: string): boolean => t.start.slice(0, 7) === month
 const isMoveInMonth = (t: RentDueTerms, month: string): boolean => sectionStart(t, month) !== `${month}-01`
 
+// Der feste Tag, geprüft an einer Stelle (Durchsicht K6): auch im ersten Monat mit Miete bei Beginn, wo er nicht zählt.
+function agreedDay(t: RentDueTerms): number {
+  const day = t.rentDueDay
+  if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31) {
+    throw new RangeError('Für die Fälligkeit an einem festen Tag fehlt der Tag (1 bis 31).')
+  }
+  return day
+}
+
+// Ein Monat ohne Tag im Mietverhältnis hat keine Fälligkeit; ihn zu fragen ist ein Programmfehler (Durchsicht S1), sonst
+// zählte ein Rückstand für einen Monat, den es nicht gibt.
+function checkTenancyMonth(t: RentDueTerms, month: string): void {
+  checkMonth(month)
+  if (monthShare(t, month).days === 0) throw new RangeError(`Im Monat ${month} besteht das Mietverhältnis nicht.`)
+}
+
 function dueInState(t: RentDueTerms, month: string, state: FederalState, log: LawLog): string {
+  const rule = effectiveRentDue(t, log)
+  const day = rule === 'dayOfMonth' ? agreedDay(t) : 0
   if (isFirstMonth(t, month) && t.firstRentAtStart === true) return onWorkday(t.start, state, log)
   const from = sectionStart(t, month)
-  const rule = effectiveRentDue(t, log)
   if (rule === 'startWorkday') return nthWorkdayFrom(from, state, log)
   if (rule === 'dayOfMonth') {
-    const day = t.rentDueDay
-    if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31) {
-      throw new RangeError('Für die Fälligkeit an einem festen Tag fehlt der Tag (1 bis 31).')
-    }
     const agreed = onWorkday(`${month}-${String(Math.min(day, lastDayOf(month))).padStart(2, '0')}`, state, log)
     return from === `${month}-01` ? agreed : maxText(agreed, nthWorkdayFrom(from, state, log))
   }
@@ -180,8 +193,7 @@ function dueInState(t: RentDueTerms, month: string, state: FederalState, log: La
 // Der Fälligkeitstag der Miete des Monats; ohne Land der späteste aller Länder. Der Monat muss einen Tag im
 // Mietverhältnis haben, und gerechnet wird ab 1995 (`FIRST_YEAR` der Feiertage).
 export function rentDueOn(t: RentDueTerms, month: string, state: FederalState | null, options: RentDueOptions = {}): string {
-  checkMonth(month)
-  if (monthShare(t, month).days === 0) throw new RangeError(`Im Monat ${month} besteht das Mietverhältnis nicht.`)
+  checkTenancyMonth(t, month)
   const log = options.log ?? createLawLog()
   const states = state === null ? STATE_CODES : [state]
   return states.map((s) => dueInState(t, month, s, log)).reduce(maxText)
@@ -217,7 +229,8 @@ export function creditExpectedBy(dueOn: string, options: Pick<RentDueOptions, 'l
 // Die sichere Grenze ohne Feiertage (E6): ein voller Monat, der zu Beginn fällig ist, ab dem Ersten des Folgemonats,
 // jeder andere ab dem Ersten des übernächsten.
 export function safeArrearsFrom(t: RentDueTerms, month: string, log: LawLog = createLawLog()): string {
-  checkMonth(month)
+  checkTenancyMonth(t, month)
+  if (effectiveRentDue(t, log) === 'dayOfMonth') agreedDay(t)
   const atStart = effectiveRentDue(t, log) === 'startWorkday' && !isMoveInMonth(t, month) && !(isFirstMonth(t, month) && t.firstRentAtStart === true)
   const next = nextMonth(month)
   return `${atStart ? next : nextMonth(next)}-01`
@@ -228,7 +241,7 @@ export type MonthDue = { dueOn: string | null; creditExpectedBy: string | null; 
 // Fälligkeit, erwarteter Eingang und Beginn des Rückstands eines Monats; `arrears` sagt, ob er am Stichtag `asOf`
 // Rückstand ist. Vor 1995 kennt Mietfuchs keine Feiertage: dann nur die sichere Grenze, ohne Auskunft.
 export function monthDue(t: RentDueTerms, month: string, state: FederalState | null, asOf: string, options: RentDueOptions = {}): MonthDue {
-  checkMonth(month)
+  checkTenancyMonth(t, month)
   const log = options.log ?? createLawLog()
   const safe = safeArrearsFrom(t, month, log)
   if (Number(month.slice(0, 4)) < FIRST_YEAR) return { dueOn: null, creditExpectedBy: null, arrearsFrom: safe, arrears: asOf >= safe }
