@@ -45,11 +45,12 @@ const enthaelt = (text, teil, was) =>
 
 // ---------- Ein Server auf einem Wegwerf-Ordner ----------
 
-async function withServer(dataDir, work) {
+// `env`: etwa `NKA_HOST: '0.0.0.0'` für die Anmeldung (#528); sonst nur auf diesem Rechner, ohne Anmeldung
+async function withServer(dataDir, work, env = {}) {
   const p = nextPort()
   const log = []
   const kind = spawn(process.execPath, [SERVER], {
-    env: { ...process.env, NKA_HOST: '127.0.0.1', NKA_DATA_DIR: dataDir, NKA_PORT: String(p), CI: 'true', NKA_UPDATE_URL: 'http://127.0.0.1:9/nichts' },
+    env: { ...process.env, NKA_HOST: '127.0.0.1', NKA_AUTH: '', ...env, NKA_DATA_DIR: dataDir, NKA_PORT: String(p), CI: 'true', NKA_UPDATE_URL: 'http://127.0.0.1:9/nichts' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   kind.stdout.on('data', (d) => log.push(String(d)))
@@ -872,6 +873,66 @@ fall(18, 'Datenbank von 0.13 mit aufgeteilten Rechnungen, Update auf Quellen (#4
     const kosten = await holen(base, '/api/costItems')
     gleich(kosten.filter((c) => c.sourceId).map((c) => c.id).sort(), ['vs-1', 'vs-2'], 'zweiter Start: die Quelle bleibt, keine kommt hinzu')
   })
+})
+
+// Anmeldung (#528, Stufe A): Wer Mietfuchs schon im Netz betreibt, wird nach dem Update nicht ausgesperrt; ein neuer
+// Datenordner im Netz verlangt das Passwort von Anfang an. Zugang und Code gehen nie ins Backup.
+const IM_NETZ = { NKA_HOST: '0.0.0.0' }
+const codeIn = (dataDir) => fs.readFileSync(path.join(dataDir, 'einrichtungscode.txt'), 'utf8').trim()
+const einrichten = async (base, dataDir, password = 'ein langes Passwort im Praxislauf') => {
+  const res = await fetch(`${base}/api/auth/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: codeIn(dataDir), password }) })
+  return { status: res.status, cookie: (res.headers.get('set-cookie') ?? '').split(';')[0] }
+}
+
+fall(19, 'Anmeldung: alter Bestand im Netz bleibt offen mit Hinweis, neuer Ordner startet in der Einrichtung (#528)', async () => {
+  // Ein Bestand einer frühen Fassung (db.json aus 0.2), jetzt im Netz gestartet
+  const alt = tempDir()
+  fs.writeFileSync(path.join(alt, 'db.json'), JSON.stringify(bestand02()))
+  await withServer(alt, async ({ base, log }) => {
+    await umstiegGelungen(base, 'im Netz')
+    const zugang = await holen(base, '/api/auth')
+    gleich([zugang.mode, zugang.required], ['transition', false], 'alter Bestand im Netz: Übergang, keine Anmeldung nötig')
+    gleich((await fetch(`${base}/api/units`)).status, 200, 'alter Bestand im Netz: die Daten sind ohne Anmeldung lesbar wie bisher')
+    enthaelt(log(), 'Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.', 'alter Bestand im Netz: das Protokoll nennt die Pflicht ab 1.0')
+    enthaelt(log(), `Einrichtungscode zum Festlegen eines Passworts: ${codeIn(alt)}`, 'alter Bestand im Netz: das Protokoll nennt den Code')
+    gleich(fs.existsSync(path.join(alt, 'zugang.json')), false, 'alter Bestand im Netz: es wird nichts entschieden (keine zugang.json)')
+  }, IM_NETZ)
+  // Derselbe Bestand, inzwischen in der Datenbank, wieder lokal: nichts davon
+  await withServer(alt, async ({ base }) => {
+    gleich((await holen(base, '/api/auth')).mode, 'none', 'lokal: keine Anmeldung, kein Hinweis')
+    gleich(fs.existsSync(path.join(alt, 'einrichtungscode.txt')), false, 'lokal: kein Code')
+  })
+
+  // Ein neuer Ordner im Netz: Einrichtung, dann Passwort, Backup ohne Zugang
+  const neu = tempDir()
+  /** @type {Buffer | null} */
+  let zip = null
+  await withServer(neu, async ({ base, log }) => {
+    const zugang = await holen(base, '/api/auth')
+    gleich([zugang.mode, zugang.required], ['setup', true], 'neuer Ordner im Netz: Einrichtung verlangt')
+    gleich((await fetch(`${base}/api/units`)).status, 401, 'neuer Ordner im Netz: ohne Passwort keine Daten')
+    enthaelt(log(), `Einrichtungscode: ${codeIn(neu)}`, 'neuer Ordner im Netz: Code im Protokoll')
+    const { status, cookie } = await einrichten(base, neu)
+    gleich(status, 200, 'neuer Ordner im Netz: Passwort mit dem Code festgelegt')
+    const angelegt = await fetch(`${base}/api/units`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ name: 'EG', areaM2: 50, participates: true }) })
+    gleich(angelegt.status, 201, 'mit Sitzung lässt sich anlegen')
+    const backup = await fetch(`${base}/api/backup`, { headers: { cookie } })
+    zip = Buffer.from(await backup.arrayBuffer())
+    const namen = new AdmZip(zip).getEntries().map((e) => e.entryName)
+    gleich(namen.filter((n) => /zugang|einrichtungscode/.test(n)), [], 'das Backup enthält weder Zugang noch Code')
+  }, IM_NETZ)
+  // Wiederherstellen auf einem frischen Ordner im Netz: dort gilt dessen Einrichtung mit eigenem Code
+  const anderer = tempDir()
+  await withServer(anderer, async ({ base }) => {
+    const { cookie } = await einrichten(base, anderer, 'ein anderes langes Passwort')
+    const fd = new FormData()
+    fd.append('file', new Blob([/** @type {Buffer} */ (zip)], { type: 'application/zip' }), 'backup.zip')
+    const res = await fetch(`${base}/api/restore`, { method: 'POST', body: fd, headers: { cookie } })
+    gleich(res.status, 200, 'Wiederherstellen auf dem anderen Ordner gelingt')
+    gleich((await jsonOf(await fetch(`${base}/api/units`, { headers: { cookie } }))).map((u) => u.name), ['EG'], 'der Bestand ist da')
+    const ohne = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'ein langes Passwort im Praxislauf' }) })
+    gleich(ohne.status, 401, 'das Passwort des alten Rechners gilt dort nicht')
+  }, IM_NETZ)
 })
 
 // ---------- Lauf ----------
