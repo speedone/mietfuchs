@@ -69,6 +69,7 @@ import type {
   PeriodKey,
   SpreadYears,
   PropertyKind,
+  RentDueRule,
   Settings,
   StoredAssessment,
   UploadKind,
@@ -117,6 +118,8 @@ export const OPERATING_POWER_HANDLINGS = exactly<OperatingPowerHandling>()(['own
 export const PREVIOUS_SUPPLIES = exactly<PreviousSupply>()(['landlord', 'tenant'] as const)
 // Die Art einer Zahlung (#280): Miete oder Nachzahlung/Guthaben aus der Abrechnung.
 export const PAYMENT_KINDS = exactly<PaymentKind>()(['rent', 'settlement'] as const)
+// Die Fälligkeit der Miete laut Vertrag (#334); NULL heißt gesetzlich. Beschriftungen in client/src/tenancyModel.ts.
+export const RENT_DUE_RULES = exactly<RentDueRule>()(['startWorkday', 'dayOfMonth', 'inArrears'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
@@ -329,6 +332,11 @@ export const tenancies = sqliteTable(
     // An Angehörige zu Wohnzwecken vermietet (#96 PR 2, Anlage V Z. 10, Kz. 62); NULL heißt nein, wie bisher.
     // Bedingung im zweiten Schritt.
     relative: integer('relative', { mode: 'boolean' }),
+    // Fälligkeit der Miete laut Vertrag (#334): NULL heißt gesetzlich. Der Tag (1 bis 31) nur beim festen Tag, die erste
+    // Miete bei Mietbeginn nur „ja“. Bedingungen im zweiten Schritt.
+    rentDue: text('rent_due', { enum: RENT_DUE_RULES }),
+    rentDueDay: integer('rent_due_day'),
+    firstRentAtStart: integer('first_rent_at_start', { mode: 'boolean' }),
   },
   (t) => [
     notNegative('tenancies_persons_not_negative', 'persons'),
@@ -345,6 +353,11 @@ export const tenancies = sqliteTable(
     check('tenancies_half_split_notice_valid', sql.raw(`"half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     // An Angehörige vermietet (#96 PR 2): ja oder nein; `mode: 'boolean'` bindet nur den Übersetzer.
     check('tenancies_relative_known', sql.raw(`"relative" IS NULL OR "relative" IN (0, 1)`)),
+    // Fälligkeit der Miete (#334): eine Regel aus der Liste, der Tag genau beim festen Tag und zwischen 1 und 31, die erste
+    // Miete bei Mietbeginn nur 1. Mit IS, weil alle drei Spalten NULL sein dürfen.
+    check('tenancies_rent_due_known', sql.raw(`"rent_due" IS NULL OR "rent_due" IN ('startWorkday', 'dayOfMonth', 'inArrears')`)),
+    check('tenancies_rent_due_day_valid', sql.raw(`("rent_due" IS 'dayOfMonth') = ("rent_due_day" IS NOT NULL) AND ("rent_due_day" IS NULL OR "rent_due_day" BETWEEN 1 AND 31)`)),
+    check('tenancies_first_rent_at_start_valid', sql.raw(`"first_rent_at_start" IS NULL OR "first_rent_at_start" IS 1`)),
   ],
 )
 

@@ -375,6 +375,9 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   // „An Angehörige vermietet“ (#96 PR 2) kennt die db.json nicht; jedes Mietverhältnis bekommt NULL, die Rundreise prüfen
   // db-repository.test.ts, db-steuer-kopf.test.ts und api-objekte.test.ts (Backup).
   'relative',
+  // Die Fälligkeit der Miete (#334) kennt die db.json nicht; jedes Mietverhältnis bekommt NULL (gesetzlich), die Rundreise
+  // prüfen db-repository.test.ts und api-faelligkeit.test.ts (Backup).
+  'rentDue', 'rentDueDay', 'firstRentAtStart',
   // Die Verteilung nach § 82b EStDV (#262) kennt die db.json nicht; jede Position bekommt NULL, die Rundreise prüfen
   // db-repository.test.ts und api-kosten-verteilung.test.ts (Backup).
   'spreadYears',

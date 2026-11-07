@@ -72,7 +72,7 @@ import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 // rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
 import { compareText, largestRemainder } from './apportion.ts'
 import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule, type SollComponent } from '../../shared/monthRate.ts'
-import { allocateRentPayments, ledgerStartOf, ledgerTenancy, monthCoverage, recordingStart, openingBalance, rentDueAtStartOf, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
+import { allocateRentPayments, ledgerStartOf, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
@@ -102,7 +102,8 @@ import { allocationOf, comparablePrevious, sameAllocation, sameMeterRest, sameUn
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, leavesRentalWithin, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
-import type { MeterRest, MeterRestKey, MeterRestTarget, TaxSpread, UnitUsage } from '../../shared/types.ts'
+import type { FederalState, MeterRest, MeterRestKey, MeterRestTarget, RentDueRule, TaxSpread, UnitUsage } from '../../shared/types.ts'
+import { effectiveRentDue, holidaysCheckedOn, rentDueOn } from '../../shared/rentDue.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
@@ -1562,12 +1563,14 @@ export type CarriedRate = {
 //   beziffert als `forwardOldLeaseCents`. Die Dezembermiete ist am 31.12. fällig: Anfang Januar gezahlt, gehörte sie
 //   nach der Regel ins Vorjahr. Auch das wird **nicht** verschoben, nur beziffert (`lateDecemberCents`), mit dem Vorbehalt
 //   „nur wenn laut Vertrag am Monatsende fällig“, denn ein Altvertrag wird oft auf Zahlung zu Beginn umgestellt sein.
-// **Bewusste Grenze**: Eine vertraglich abweichende Fälligkeit (§ 556b und § 551 a. F. sind abdingbar) kennt Mietfuchs
-// nicht; es gibt am Mietverhältnis kein Feld dafür. Ein Wochenende oder Feiertag verlängert die zehn Tage nicht (BFH,
+// **Vertraglich abweichende Fälligkeit** (#334, `Tenancy.rentDue`; § 556b und § 551 a. F. sind abdingbar): „zu Beginn“
+// rechnet wie ein Vertrag nach § 556b, „nach Ablauf des Monats“ wie ein Altvertrag; ein fester Tag verschiebt nur, wenn
+// der nach § 193 BGB verschobene Tag im Januar in der kurzen Zeit liegt, und nur, wo die Feiertage geprüft sind (sonst
+// nach dem Datum der Zahlung, wie bisher bei Beginn im Januar); beziffert wird beim festen Tag nichts. Ein Wochenende oder Feiertag verlängert die zehn Tage nicht (BFH,
 // Urteil vom 11.11.2014, VIII R 34/12, BStBl 2015 II S. 285, und vom 27.06.2018, X R 44/16, BStBl 2018 II S. 781:
 // § 108 Abs. 3 AO gilt nicht; X R 44/16 lässt die Frage der Fälligkeit offen, Rn. 12).
 type ReceivedInput = {
-  snapshot: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>
+  snapshot: Pick<Snapshot, 'units' | 'tenancies' | 'payments'> & Partial<Pick<Snapshot, 'property'>>
   year: number
   inclusive: (t: SnapshotTenancy) => boolean
   // Die kurze Zeit um den Jahreswechsel in Tagen, für das Kalenderjahr, zu dem eine Zahlung wirtschaftlich gehört
@@ -1575,8 +1578,8 @@ type ReceivedInput = {
   shortDays: (year: number) => number
 }
 
-// Ob die Miete zu Beginn des Monats fällig ist (§ 556b Abs. 1 BGB): `rentDueAtStartOf` in rentAllocation.ts, dieselbe Stelle
-// wie für den Beginn der Erfassung.
+// Welche Fälligkeit gilt (#334): `effectiveRentDue` in shared/rentDue.ts, dieselbe Stelle wie für den Beginn der Erfassung
+// (`rentDueAtStartOf` in rentAllocation.ts).
 
 // Ist der Januar-Abschnitt des Jahres `year` sicher in der kurzen Zeit fällig (Nachdurchsicht M1)? Nach § 556b Abs. 1
 // BGB ist die Miete zu Beginn des Zeitabschnitts, spätestens am dritten Werktag fällig. Beginnt der Abschnitt am 01.01.
@@ -1586,7 +1589,19 @@ type ReceivedInput = {
 // Mit Feiertagen darf der Server erst rechnen, wenn alle Landesgesetze amtlich gelesen sind (Auflage aus #290,
 // holidays.test.ts); bis dahin wird ein Mietverhältnis mit Beginn nach dem 01.01. **nicht** verschoben (bekannte
 // Grenze, im Zweifel nach dem Datum der Zahlung). Bei Beginn am 15.01. ist die erste Miete ohnehin erst ab dem 15.01. fällig.
-const januaryDueInWindow = (t: Pick<SnapshotTenancy, 'start'>, year: number): boolean => compareText(t.start, `${year}-01-01`) <= 0
+// Mit vereinbarter Fälligkeit (#334): „zu Beginn“ wie § 556b, „nach Ablauf“ nie; ein fester Tag nur, wenn der Januar-Abschnitt
+// am 01.01. beginnt und sein nach § 193 BGB verschobener Tag in den ersten `days` Tagen liegt, gerechnet mit den Feiertagen
+// am Ort (ohne Land dem spätesten aller Länder) und nur, wenn jeder Tag bis dahin geprüft ist (Auflage aus #290).
+function januaryDueInWindow(t: SnapshotTenancy, year: number, rule: RentDueRule, state: FederalState | null, days: number): boolean {
+  if (compareText(t.start, `${year}-01-01`) > 0) return false
+  if (rule !== 'dayOfMonth') return rule === 'startWorkday'
+  const month = `${year}-01`
+  if (t.end !== null && compareText(t.end, `${month}-01`) < 0) return false
+  const due = rentDueOn(t, month, state)
+  if (compareText(due, `${month}-${String(days).padStart(2, '0')}`) > 0) return false
+  for (let d = `${month}-01`; compareText(d, due) <= 0; d = dayAfter(d)) if (!holidaysCheckedOn(d)) return false
+  return true
+}
 
 const emptyTenancyReceived = (): Omit<TaxReceivedTenancy, 'tenancyId' | 'unitId' | 'tenantName' | 'unitName' | 'start' | 'end' | 'relative'> => ({
   rentCents: 0, inclusiveRentCents: 0, allocationsCents: 0, settlementCents: 0, formerYearsCents: 0, unallocatedCents: 0, forwardCents: 0,
@@ -1626,11 +1641,14 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     const slices = allocateRentPayments(tracked, own)
     const row = emptyTenancyReceived()
     const isInclusive = inclusive(t)
-    const dueAtStart = rentDueAtStartOf(t)
-    // Verschoben wird nur, was nach § 556b in der kurzen Zeit fällig war (M1); eine Rücknahme folgt der zurückgenommenen
+    const rule = effectiveRentDue(t)
+    // Nach Ablauf des Monats fällig (Altvertrag oder vereinbart): nichts verschoben, nur beziffert.
+    const atEnd = rule === 'inArrears'
+    // Verschoben wird nur, was in der kurzen Zeit fällig war (M1); eine Rücknahme folgt der zurückgenommenen
     // Zahlung (S1): Sie wird nur verschoben, wenn deren Datum ebenfalls in der kurzen Zeit vor dem Jahreswechsel liegt.
-    const movesForward = dueAtStart && januaryDueInWindow(t, year + 1)
-    const movedFromPrevious = dueAtStart && januaryDueInWindow(t, year)
+    const state = snapshot.property?.state ?? null
+    const movesForward = januaryDueInWindow(t, year + 1, rule, state, shortDays(year + 1))
+    const movedFromPrevious = januaryDueInWindow(t, year, rule, state, shortDays(year))
     const originInWindow = (s: AllocationSlice, from: string, to: string): boolean => s.reversesPaidOn === undefined || (s.reversesPaidOn >= from && s.reversesPaidOn <= to)
     let movedIn = false
     for (const s of slices) {
@@ -1659,7 +1677,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
       if (s.month < firstMonth) {
         row.formerYearsCents += s.cents
         if (isAllocation(s.component)) out.formerYearsAllocationsCents += s.cents
-        if (!dueAtStart && s.month === lastDecember && s.paidOn <= lateTo) out.turnOfYear.lateDecemberCents += s.cents
+        if (atEnd && s.month === lastDecember && s.paidOn <= lateTo) out.turnOfYear.lateDecemberCents += s.cents
         continue
       }
       if (isAllocation(s.component)) {
@@ -1670,7 +1688,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
         if (isInclusive) row.inclusiveRentCents += s.cents
       }
       // Altvertrag (§ 551 a. F.): Die Januarmiete war Ende Januar fällig, die Regel greift nicht; nur beziffert.
-      if (forward && !dueAtStart) out.turnOfYear.forwardOldLeaseCents += s.cents
+      if (forward && atEnd) out.turnOfYear.forwardOldLeaseCents += s.cents
     }
     row.settlementCents = own.filter((p) => !isRentPayment(p) && inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
     out.possibleDeposits.push(...possibleDepositsOf(t, own, slices, inYear))

@@ -63,6 +63,10 @@ export type SnapshotTenancy = Pick<
   | 'halfSplitNoticeOn'
   // An Angehörige vermietet (#96 PR 2), nur für den Kopf der Anlage V; die Abrechnung liest es nicht.
   | 'relative'
+  // Fälligkeit der Miete laut Vertrag (#334): Rückstand im Mietkonto und Zehn-Tage-Regel der Steuer.
+  | 'rentDue'
+  | 'rentDueDay'
+  | 'firstRentAtStart'
   // Die vereinbarte Kaution, nur für den Hinweis der Steuer auf eine als Miete erfasste Kaution (#312 PR 2, E9).
   | 'depositCents'
   // Heizstaffel und Heizkorrekturen (Heizung PR 5)
@@ -653,7 +657,9 @@ function fuelSnapshotOf(
 
 // Seit Heizung PR 18 der angespannte Wohnungsmarkt mit seiner Geltung (§ 5d Abs. 3 Satz 2 CO2KostAufG); fehlt er,
 // ist er unbekannt.
-export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'> & Partial<Pick<Property, 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo'>>
+// `state` (#334): das Land des Objekts, für den Fälligkeitstag der Miete und den Rückstand im Mietkonto; fehlt es, rechnet
+// das Mietkonto mit dem spätesten Tag aller Länder.
+export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'> & Partial<Pick<Property, 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>>
 
 // Die Sammlungen, aus denen ein Schnappschuss entsteht, ohne die Frage, woher sie kommen. Die
 // JSON-Datei füllt sie über `snapshotFromDb` unten, die Datenbank über `snapshotFromStock` in
@@ -1083,7 +1089,7 @@ export function snapshotFor(
   return {
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
-    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null } : null,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null, state: found.state ?? null } : null,
     // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier.
     heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => plants.some((p) => p.id === c.plantId)),
@@ -1129,7 +1135,7 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
   return {
     ...snapshotOfPeriod({ ...narrowed, costItems: mine, closedSettlements: [] }, h, previousPeriod(rules, h)),
     propertyId,
-    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null } : null,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null, state: found.state ?? null } : null,
     heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => c.plantId === plantId),
     heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => r.plantId === plantId || line.has(r.plantId)),

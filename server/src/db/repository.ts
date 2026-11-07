@@ -67,11 +67,12 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_DUE_RULES, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
+import { RENT_DUE_TEXTS } from './errors.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 import { guardRoomMeter, guardRoomRecipients, guardRooms, guardRoomsRemoval, guardRoomTenancy, roomCount, roomSplitOf, roomViolations } from './rooms.ts'
 import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUnitRefs, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
@@ -444,10 +445,33 @@ function mergeUnit(current: Unit, body: unknown): Unit {
   }
 }
 
+// Die Fälligkeit der Miete (#334): Regel und Tag gehören zusammen. Der Tag gilt nur beim festen Tag; wechselt die Regel,
+// ohne dass der Rumpf einen Tag nennt, fällt der gespeicherte weg (wie die Art der Selbstversorgung). Ein Tag bei einer
+// anderen Regel, ein fehlender oder einer außerhalb von 1 bis 31 ist eine 400 mit Satz, nie still geradegerückt: Sonst
+// rechnete das Mietkonto mit einer anderen Fälligkeit als der eingetragenen. `null` heißt gesetzlich.
+function mergedRentDue(current: Tenancy, body: unknown): Pick<Tenancy, 'rentDue' | 'rentDueDay'> {
+  const rentDue = merged(body, 'rentDue', current.rentDue, (v) => {
+    if (v === null || v === undefined) return undefined
+    const rule = RENT_DUE_RULES.find((r) => r === v)
+    if (rule === undefined) throw new LetterInputError(RENT_DUE_TEXTS.rule)
+    return rule
+  })
+  const sent = has(body, 'rentDueDay') ? raw(body, 'rentDueDay') : undefined
+  if (rentDue !== 'dayOfMonth') {
+    if (sent !== undefined && sent !== null) throw new LetterInputError(RENT_DUE_TEXTS.dayWithoutRule)
+    return rentDue === undefined ? {} : { rentDue }
+  }
+  const day = has(body, 'rentDueDay') ? sent : current.rentDueDay
+  if (day === undefined || day === null) throw new LetterInputError(RENT_DUE_TEXTS.dayMissing)
+  if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31) throw new LetterInputError(RENT_DUE_TEXTS.dayRange)
+  return { rentDue, rentDueDay: day }
+}
+
 function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
   // Der Einzugstag zuerst: Die Personen-Staffel wird gegen ihn geradegerückt, und im selben
   // Rumpf kann beides stehen.
   const start = merged(body, 'start', current.start, (v) => asText(v, ''))
+  const { rentDue, rentDueDay } = mergedRentDue(current, body)
   return {
     id: current.id,
     unitId: merged(body, 'unitId', current.unitId, (v) => asText(v, '')),
@@ -486,6 +510,10 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     // An Angehörige vermietet (#96 PR 2): gespeichert nur „ja“; „nein“ und leer sind das bisherige Verhalten. Ein anderer
     // Wert wird abgelehnt und nicht still zu „nein“, sonst fehlte die Angabe in Zeile 10 der Anlage V.
     relative: merged(body, 'relative', current.relative, (v) => (nullableBoolean(v, 'An Angehörige vermietet') === true ? true : undefined)),
+    // Fälligkeit der Miete (#334): gespeichert nur, was vom Gesetz abweicht; die erste Miete bei Beginn nur „ja“.
+    ...(rentDue !== undefined ? { rentDue } : {}),
+    ...(rentDueDay !== undefined ? { rentDueDay } : {}),
+    ...(merged(body, 'firstRentAtStart', current.firstRentAtStart, (v) => (nullableBoolean(v, 'Erste Miete schon bei Mietbeginn fällig') === true ? true : undefined)) === true ? { firstRentAtStart: true } : {}),
     notes: merged(body, 'notes', current.notes, asOptionalText),
   }
 }
@@ -2463,6 +2491,9 @@ const tenancyRow = (t: Tenancy) => ({
   selfSupplyKind: t.heatingModel === 'selfSupply' ? orNull(t.selfSupplyKind) : null,
   halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),
   relative: t.relative === true ? true : null,
+  rentDue: orNull(t.rentDue),
+  rentDueDay: t.rentDue === 'dayOfMonth' ? orNull(t.rentDueDay) : null,
+  firstRentAtStart: t.firstRentAtStart === true ? true : null,
 })
 const costItemRow = (c: CostItem) => ({
   id: c.id, propertyId: c.propertyId, period: c.period, category: c.category, description: c.description, vendor: orNull(c.vendor),

@@ -13,6 +13,7 @@ import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import type { LawParam } from '../../shared/law/register.ts'
 import { tenDayWindow } from '../../shared/paidOn.ts'
+import { holidaysCheckedOn } from '../../shared/rentDue.ts'
 import { derivedTaxLines, incomeCsv, planTaxArchive } from '../src/taxReceipts.ts'
 
 type Pay = TaxSource['payments'][number]
@@ -509,4 +510,38 @@ test('Zehn-Tage-Regel je Mietverhältnis: A zahlt am 25. für den Folgemonat, B 
   assert.equal(y24.turnOfYear.forwardCents, 80000, 'die Zahlung von A am 25.12.2024')
   assert.equal(y24.turnOfYear.fromPreviousCents, 80000, 'die Zahlung von A am 25.12.2023')
   assert.equal(y24.formerYearsCents, 0, 'kein Rückstand aus 2023')
+})
+
+// #334: Die Fälligkeit am Mietverhältnis entscheidet die Zehn-Tage-Regel. „Zu Beginn“ wie § 556b, „nach Ablauf“ wie ein
+// Altvertrag (nur beziffert), ein fester Tag nur, wenn der verschobene Tag im Januar in der kurzen Zeit liegt und die
+// Feiertage bis dahin geprüft sind; ohne Angabe wie bisher.
+test('Zehn-Tage-Regel mit Fälligkeit am Mietverhältnis: zu Beginn, nach Ablauf, fester Tag', () => {
+  const forward = (t: SnapshotTenancy, year = 2025, state: 'NW' | 'BY' | null = 'NW') => {
+    const payments = [...monthly('t', `${year}-01`, `${year}-12`, 80000), pay('t', `${year}-12-28`, 80000)]
+    const s = { ...source([t], payments), properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES, state }] } as TaxSource
+    const r = received(s, year).turnOfYear
+    return [r.forwardCents, r.forwardOldLeaseCents]
+  }
+  // Ohne Angabe: unverändert (neu verschoben, alt beziffert).
+  assert.deepEqual(forward(tenancy('t', 'eg')), [80000, 0])
+  assert.deepEqual(forward(alt('t', 'eg')), [0, 80000])
+  // Nach Ablauf vereinbart (Vertrag von 2024): nicht verschoben, beziffert wie ein Altvertrag.
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'inArrears' })), [0, 80000])
+  // Zu Beginn vereinbart (Altvertrag von 1999 mit Vorauszahlungsklausel): verschoben wie ein neuer Vertrag.
+  assert.deepEqual(forward(alt('t', 'eg', { rentDue: 'startWorkday' })), [80000, 0])
+  // Fester Tag 15: außerhalb der zehn Tage, weder verschoben noch beziffert.
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 15 })), [0, 0])
+  assert.deepEqual(forward(alt('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 15 })), [0, 0])
+  // Fester Tag 10 im Januar 2027: ein Sonntag, nach § 193 BGB Montag, 11.01., also außerhalb.
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 10 }), 2026), [0, 0])
+  // Fester Tag 5 im Januar 2026 (Montag) bzw. 6 im Januar 2027 in Bayern (Heilige Drei Könige, also Do 07.01.): in der
+  // kurzen Zeit, verschoben nur, wo die Feiertage bis dahin geprüft sind; sonst nach dem Datum der Zahlung.
+  const checked = (to: string): boolean => {
+    for (let d = `${to.slice(0, 8)}01`; d <= to; d = `${to.slice(0, 8)}${String(Number(d.slice(8)) + 1).padStart(2, '0')}`) if (!holidaysCheckedOn(d)) return false
+    return true
+  }
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 5 })), [checked('2026-01-05') ? 80000 : 0, 0])
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 6 }), 2026, 'BY'), [checked('2027-01-07') ? 80000 : 0, 0])
+  // Beginn im Januar: wie bisher nie verschoben.
+  assert.deepEqual(forward(tenancy('t', 'eg', { start: '2026-01-02', rentDue: 'dayOfMonth', rentDueDay: 5 })), [0, 0])
 })

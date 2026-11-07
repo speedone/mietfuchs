@@ -24,6 +24,8 @@ export type UsageChange = { from: string; usage: UnitUsage }
 export type PropertyKind = 'mfh' | 'etw' | 'efh' | 'zfh' | 'sonstiges'
 
 // Die 16 Länder mit ihren üblichen Kürzeln (Namen und Feiertage in shared/holidays.ts).
+// Fälligkeit der Miete am Mietverhältnis (#334); die Rechnung steht in shared/rentDue.ts.
+export type RentDueRule = 'startWorkday' | 'dayOfMonth' | 'inArrears'
 export type FederalState = 'BW' | 'BY' | 'BE' | 'BB' | 'HB' | 'HH' | 'HE' | 'MV' | 'NI' | 'NW' | 'RP' | 'SL' | 'SN' | 'ST' | 'SH' | 'TH'
 
 // Ein Objekt ist zugleich die Abrechnungseinheit. Wohnungen, Zähler, Kostenpositionen und
@@ -199,6 +201,13 @@ export type Tenancy = {
   // An Angehörige zu Wohnzwecken vermietet (#96, Anlage V Zeile 10, Kennzahl 62). Fehlt es, heißt das „nein“, also das
   // bisherige Verhalten; gespeichert wird nur `true`. Die Abrechnung liest es nicht.
   relative?: boolean
+  // Fälligkeit der Miete laut Mietvertrag (#334, Entwurf E1). Fehlt sie, gilt das Gesetz: zu Beginn, spätestens am dritten
+  // Werktag (§ 556b Abs. 1 BGB), für ein am 01.09.2001 bestehendes Mietverhältnis nach Ablauf des Monats (Art. 229 § 3
+  // Abs. 1 Nr. 7 EGBGB). `rentDueDay` (1 bis 31) nur bei `dayOfMonth`. `firstRentAtStart`: die erste Miete ist schon bei
+  // Mietbeginn fällig; gespeichert wird nur `true`. Gelesen vom Mietkonto (Rückstand) und der Zehn-Tage-Regel der Steuer.
+  rentDue?: RentDueRule
+  rentDueDay?: number
+  firstRentAtStart?: boolean
   depositCents?: number // vereinbarte Kaution
   depositStatus?: DepositStatus // Stand der Kaution
   notes?: string // freie Notiz zum Mietverhältnis

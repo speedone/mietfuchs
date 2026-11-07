@@ -401,6 +401,8 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         costModel: 'flatRate', heatingModel: 'selfSupply', selfSupplyKind: 'central', halfSplitNoticeOn: '2023-12-01',
         // #96 PR 2: an Angehörige vermietet.
         relative: true,
+        // #334: Fälligkeit an einem festen Tag, erste Miete bei Mietbeginn.
+        rentDue: 'dayOfMonth', rentDueDay: 15, firstRentAtStart: true,
       },
     },
     {

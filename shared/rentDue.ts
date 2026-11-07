@@ -40,7 +40,7 @@
 // sind, und ihre Fassungen stehen im Register.
 //
 // Daten sind 'JJJJ-MM-TT', Monate 'JJJJ-MM'.
-import type { FederalState } from './types.ts'
+import type { FederalState, RentDueRule } from './types.ts'
 import { addDays, FIRST_YEAR, holidaysOf, localHolidaysOf, STATE_CODES, weekdayOf } from './holidays.ts'
 import { createLawLog, dayAfter, law, type LawLog } from './law/register.ts'
 import { holidaysCheckedOn } from './holidaysChecked.ts'
@@ -49,7 +49,7 @@ import { practiceBankClosedDays, practiceCreditBookingDays } from './law/practic
 import { monthShare } from './monthRate.ts'
 
 // Fehlend (oder `null` aus der Datenbank) heißt gesetzlich.
-export type RentDueRule = 'startWorkday' | 'dayOfMonth' | 'inArrears'
+export type { RentDueRule }
 export const RENT_DUE_RULES: readonly RentDueRule[] = ['startWorkday', 'dayOfMonth', 'inArrears']
 export const isRentDueRule = (v: unknown): v is RentDueRule => typeof v === 'string' && RENT_DUE_RULES.some((r) => r === v)
 
@@ -136,7 +136,7 @@ function onWorkday(date: string, state: FederalState, log: LawLog): string {
 // ---------- Regel und Fälligkeitstag ----------
 
 // Die Regel, die für das Mietverhältnis gilt: eingestellt oder gesetzlich (E1).
-export function effectiveRentDue(t: RentDueTerms, log: LawLog = createLawLog()): RentDueRule {
+export function effectiveRentDue(t: Pick<RentDueTerms, 'start' | 'contractDate' | 'rentDue'>, log: LawLog = createLawLog()): RentDueRule {
   if (isRentDueRule(t.rentDue)) return t.rentDue
   const contract = typeof t.contractDate === 'string' && ISO_DATE.test(t.contractDate) ? t.contractDate : null
   const since = contract !== null && contract < t.start ? contract : t.start
