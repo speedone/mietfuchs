@@ -5,6 +5,15 @@ Umsetzt „Schritt 1“ aus dem Kommentar in #528 und den Punkt „Zugriffsschut
 ein optionales Passwort, dazu eine sichere Voreinstellung für Docker“). Schritt 2 (Kopplung des Fensters, eigenes
 Zertifikat) wird nur so weit bedacht, dass Schritt 1 ihn nicht verbaut.
 
+## Vom Projektinhaber bestätigt (07.11.2026)
+
+- Eigener schmaler Kern auf `node:crypto`, keine Bibliothek für die Anmeldung.
+- Übergang in zwei Stufen: Stufe A in 0.17.0 (neue, von außen erreichbare Datenordner starten in der Einrichtung, bestehende bleiben offen mit Hinweis), Stufe B (Pflicht) ab 1.0.0-rc.1.
+- Sitzung 30 Minuten ohne Aktivität, höchstens 8 Stunden.
+- Passwort mindestens 15 Zeichen, mit Vorschlag für eine Passphrase.
+- Docker mit `-p 127.0.0.1:…` bekommt die Anmeldung auch; `NKA_AUTH=off` steht in der Doku.
+- Aufgabe 0 (Sperre am eigenen Rechner bei anderer Schreibweise des Pfads) ist #585 und kommt vorab als 0.16.1.
+
 ## Ziel
 
 Wer Mietfuchs so betreibt, dass andere Geräte es erreichen (Docker, Programmdatei, Linux-Paket, `npm start`,
