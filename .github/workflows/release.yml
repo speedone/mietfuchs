@@ -1049,8 +1049,9 @@ jobs:
     needs: umfang
     if: needs.umfang.outputs.vollstaendig == 'true'
     runs-on: ubuntu-24.04
-    # Lokal drei bis vier Minuten je Engine; ein hängender Browser hält das Anhängen sonst sechs Stunden auf
-    timeout-minutes: 30
+    # Lokal 13 bis 16 Minuten je Engine, seit der Lauf vier Objekte prüft (#584); ein hängender Browser hält das
+    # Anhängen sonst sechs Stunden auf
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

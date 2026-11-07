@@ -158,7 +158,7 @@ const GUIDE_DATA = {
     steps: [
       { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“, wählen Sie die Art „Eigentumswohnung“ und klicken Sie auf „Speichern“; für eine weitere Wohnung neben einem Haus legen Sie in der Karte „Weitere Objekte“ mit „+ Objekt anlegen“ ein eigenes Objekt an.' },
       { page: 'stammdaten', text: 'Legen Sie nur Ihre eigene Wohnung an, nicht die übrigen Wohnungen der Anlage, und tragen Sie bei „Miteigentumsanteile“ den Wert aus der Teilungserklärung oder der Hausgeldabrechnung ein. Danach das Mietverhältnis mit „+ Mietverhältnis anlegen“.' },
-      { page: 'kosten', text: 'Übernehmen Sie aus der Hausgeldabrechnung jede umlagefähige Kostenart als eigene Position mit dem Umlageschlüssel „laut Gemeinschaftsabrechnung (Eigentumswohnung)“. Unter „Betrag €“ steht Ihr Anteil laut Hausgeldabrechnung, darunter „Maßstab“, die Summe der Anteile in der Anlage und „Kosten der Gemeinschaft (ganze Anlage) €“.' },
+      { page: 'kosten', text: 'Übernehmen Sie aus der Hausgeldabrechnung jede umlagefähige Kostenart als eigene Position mit dem Umlageschlüssel „laut Gemeinschaftsabrechnung“. Unter „Betrag €“ steht Ihr Anteil laut Hausgeldabrechnung, darunter „Maßstab“, die Summe der Anteile in der Anlage und „Kosten der Gemeinschaft (ganze Anlage) €“.' },
       { page: 'kosten', text: 'Verwaltervergütung, Kontoführung und Reparaturen erfassen Sie als „Nicht umlagefähig“, die Zuführung zur Rücklage als „Zuführung Erhaltungsrücklage“ und Ihren Anteil an Maßnahmen, die die Gemeinschaft aus der Rücklage bezahlt hat, als „Entnahme Erhaltungsrücklage“.' },
       { page: 'kosten', text: 'Die Grundsteuer steht nicht in der Hausgeldabrechnung; erfassen Sie sie nach Ihrem Bescheid, etwa „nach Wohnfläche“.' },
       { page: 'kosten', text: 'Mit der nächsten Hausgeldabrechnung übernehmen Sie die Positionen aus dem Vorjahr (Knopf über der Liste, für 2026 Aus 2025 übernehmen …) und tragen je Zeile Ihren neuen Anteil und die Kosten der Gemeinschaft ein; Maßstab und Summe der Anteile kommen mit.' },
@@ -166,7 +166,7 @@ const GUIDE_DATA = {
     ],
     result: [
       'Die Abrechnung zeigt dem Mieter den Rechenweg mit Ihren Miteigentumsanteilen und den Kosten der Gemeinschaft. Weicht Ihr eingetragener Betrag um mehr als 1 € vom rechnerischen Anteil ab, markiert das Kostenformular das, und verteilt wird der eingetragene Betrag.',
-      'Bei einer Eigentumswohnung schlägt das Kostenformular für eine neue Position ohne Vorjahr den Umlageschlüssel „laut Gemeinschaftsabrechnung (Eigentumswohnung)“ vor, außer bei der Grundsteuer; danach den Schlüssel derselben Kostenart im Vorjahr.',
+      'Bei einer Eigentumswohnung schlägt das Kostenformular für eine neue Position ohne Vorjahr den Umlageschlüssel „laut Gemeinschaftsabrechnung“ vor, außer bei der Grundsteuer; danach den Schlüssel derselben Kostenart im Vorjahr.',
       'Nicht umlagefähige Positionen trägt der Vermieter; die Zuführung zur Erhaltungsrücklage weist die Steuerübersicht getrennt von den Werbungskosten aus, eine Entnahme steht als Erhaltungsaufwand im Jahr, in dem die Gemeinschaft das Geld ausgibt.',
       'Bei einer Eigentumswohnung erinnert die Steuerübersicht daran, dass für die Steuer das gezahlte Hausgeld zählt und nicht die Beträge der Hausgeldabrechnung.',
     ],

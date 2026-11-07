@@ -38,6 +38,12 @@
 // Server und Bestand kommen aus demo-stock.mjs, mit den drei Angaben jedes Prüfstarts (CLAUDE.md). Der
 // Bestand bekommt zusätzlich eine Heizanlage (freie Schlüssel, ändert keine Zahl), damit auch die Seite
 // Heizkosten in der Navigation steht. Die Bedienproben speichern nichts: Jede verwirft, was sie eingibt.
+//
+// Dazu die Zustände aus browser-check-stock.mjs (#584), je in einem eigenen Objekt: eine WG mit geschätzter Ablesung
+// und Bezugszähler („wg“), eine abgeschlossene („abgeschlossen“) und eine abgeschlossene, versendete Abrechnung
+// („versendet“). Jede Seite der Navigation wird nach dem Lindenweg auch dort geprüft, als „<seite>@<objekt>“, samt den
+// gezielten Prüfungen des Objekts (Befund „Erwartung“, etwa: die geschätzte Ablesung ist ein Hinweis und kein Fehler).
+//   npm run browser-check -- --skip-build --engines chromium --views desktop --pages zaehler-staende@wg,cockpit@wg
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -45,6 +51,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { navFor } from '../client/src/nav.ts'
 import { loadPlaywright, startDemo, textPdf } from './demo-stock.mjs'
+import { seedBrowserCheck } from './browser-check-stock.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -66,6 +73,10 @@ const SKIP_BUILD = argv.includes('--skip-build')
 // Nur diese Seiten (Kennung wie im Bericht, etwa „stammdaten“), zum Nachprüfen eines Befunds; „-“ prüft keine
 // Seite und nur die Bedienproben. Ohne Angabe alle Seiten der Navigation.
 const PAGES = opt('pages', null) === null ? null : list(opt('pages', '')).filter((p) => p !== '-')
+// Ob eine Seite geprüft wird: `--pages zaehler` prüft die Seite Zähler in jedem Objekt des Laufs, `--pages zaehler@wg`
+// nur im Objekt „wg“ (browser-check-stock.mjs), ohne Objekt nur im Lindenweg.
+/** @param {string} id @param {string | null} passId */
+const wanted = (id, passId) => PAGES === null || PAGES.includes(id) || (passId !== null && PAGES.includes(`${id}@${passId}`))
 const EXCEPTIONS_FILE = path.join(root, 'scripts', 'browser-check-axe.json')
 // Ob dieser Lauf alles prüft: Nur dann sagt eine kleinere Anzahl, dass eine Ausnahme sinken kann.
 const FULL = PAGES === null && ENGINES.every((e) => engines.includes(e)) && Object.keys(VIEWS).every((v) => views.includes(v)) && THEMES.every((t) => themes.includes(t))
@@ -97,7 +108,10 @@ for (const ex of axeExceptions) {
 }
 /** Die größte gemessene Zahl je Ausnahme. @type {Map<AxeException, number>} */
 const axeSeen = new Map(axeExceptions.map((ex) => [ex, 0]))
-const exceptionFor = (rule, pageId, combo) => axeExceptions.find((ex) => ex.regel === rule && ex.seite === pageId
+// Eine Ausnahme für eine Seite gilt in jedem Objekt des Laufs: „zaehler-staende“ auch für „zaehler-staende@wg“.
+/** @param {string} pageId */
+const basePage = (pageId) => pageId.split('@')[0]
+const exceptionFor = (rule, pageId, combo) => axeExceptions.find((ex) => ex.regel === rule && ex.seite === basePage(pageId)
   && (!ex.ansicht || ex.ansicht === combo.view) && (!ex.design || ex.design === combo.theme) && (!ex.engine || ex.engine === combo.engine))
 
 const exceptionKey = (ex) => [ex.regel, ex.seite, ex.ansicht ?? '', ex.design ?? '', ex.engine ?? ''].join('|')
@@ -322,7 +336,7 @@ for (const ex of fieldExceptions) {
   if (!ex.seite || !ex.feld || !ex.grund?.trim()) throw new Error(`browser-check-fields.json: Eintrag ohne Seite, Feld oder Grund: ${JSON.stringify(ex)}`)
 }
 const fieldSeen = new Set()
-const fieldExceptionFor = (pageId, name, view) => fieldExceptions.find((ex) => ex.seite === pageId && name.startsWith(ex.feld) && (!ex.ansicht || ex.ansicht === view))
+const fieldExceptionFor = (pageId, name, view) => fieldExceptions.find((ex) => ex.seite === basePage(pageId) && name.startsWith(ex.feld) && (!ex.ansicht || ex.ansicht === view))
 // Die Mindestzahl geöffneter Seitenfenster je Engine und Ansicht, wenn alle Seiten geprüft werden (Stammdaten 11,
 // Kosten 2, Zähler 2, Mietkonto 1, Heizkosten 1); weniger heißt, ein Knopf ist umbenannt oder ein Fenster öffnet nicht.
 const MIN_DRAWERS = 17
@@ -348,6 +362,27 @@ async function visibleErrors(page) {
     }
     return [...new Set(out)]
   })
+}
+
+// Gezielte Prüfungen eines Objekts (#584, `expect` in browser-check-stock.mjs): Je Erwartung muss ein sichtbares Element
+// zu `selector` mit passendem Text dastehen, mit `absent` darf keines dastehen. Ergibt die Sätze der nicht erfüllten.
+/** @param {import('./browser-check-stock.mjs').Expectation[]} list @returns {Promise<string[]>} */
+async function unmetExpectations(page, list) {
+  const plain = list.map((e) => ({ selector: e.selector, source: e.text.source, flags: e.text.flags, absent: e.absent === true, why: e.why }))
+  return page.evaluate((items) => {
+    const win = /** @type {any} */ (globalThis)
+    const out = []
+    for (const e of items) {
+      const re = new RegExp(e.source, e.flags)
+      const found = [...win.document.querySelectorAll(e.selector)].some((el) => {
+        const r = el.getBoundingClientRect()
+        const style = win.getComputedStyle(el)
+        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && re.test((el.textContent ?? '').replace(/\s+/g, ' ').trim())
+      })
+      if (found === e.absent) out.push(`${e.why} (${e.absent ? 'steht doch da' : 'fehlt'}: ${e.selector} mit ${re})`)
+    }
+    return out
+  }, plain)
 }
 
 // ---------- Navigation ----------
@@ -414,7 +449,8 @@ async function coveredByThread(page, engine) {
 }
 
 // ---------- Eine Kombination ----------
-async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
+/** @param {import('./browser-check-stock.mjs').Pass[]} passes */
+async function checkCombination(browser, base, combo, AxeBuilder, navLabels, passes) {
   const { engine, view, theme } = combo
   const context = await browser.newContext({
     viewport: VIEWS[view], deviceScaleFactor: 1, colorScheme: theme === 'dark' ? 'dark' : 'light', locale: 'de-DE', timezoneId: 'Europe/Berlin',
@@ -531,28 +567,42 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     if (theme === themes[0]) drawersOpened += await checkDrawers(page, id, dir, add, reportClipped)
   }
 
-  for (const label of labels) {
-    const id = slug(label)
-    if (PAGES && !PAGES.includes(id)) continue
-    current = id
-    try {
-      await go(page, view, label)
-    } catch (err) {
-      add(id, 'Navigation', `„${label}“ ließ sich nicht öffnen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
-      continue
-    }
-    checkedPages++
-    await measure(id)
-    // Die Seite Belege (#490) hat zwei Ansichten; die zweite wird ebenso gemessen, als eigene Seite „belege-ordner“
-    if (id === 'belege') {
-      await page.locator('main [role="tab"]').filter({ hasText: 'Ordner' }).click()
-      await settle(page)
-      await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
-      await measure('belege-ordner')
-      await page.locator('main [role="tab"]').filter({ hasText: 'Eingang' }).click()
-      await settle(page)
+  // Jede Seite der Navigation im gewählten Objekt; in einem weiteren Objekt des Laufs (`pass`) trägt die Kennung dessen
+  // Namen („zaehler@wg“), und nach dem Messen gelten dessen gezielte Prüfungen.
+  /** @param {string[]} pageLabels @param {import('./browser-check-stock.mjs').Pass | null} pass */
+  const checkPages = async (pageLabels, pass) => {
+    for (const label of pageLabels) {
+      const base = slug(label)
+      // Die Ansicht „Ordner“ der Belege misst der Lauf nur von der Seite Belege aus
+      if (!wanted(base, pass?.id ?? null) && !(base === 'belege' && wanted('belege-ordner', pass?.id ?? null))) continue
+      const id = pass ? `${base}@${pass.id}` : base
+      current = id
+      try {
+        await go(page, view, label)
+      } catch (err) {
+        add(id, 'Navigation', `„${label}“ ließ sich nicht öffnen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+        continue
+      }
+      checkedPages++
+      await measure(id)
+      if (pass) {
+        // Auch auf jeder Seite: das Objekt des Durchgangs (eine Seite ohne Kontextzeile zählt nicht)
+        const context = await page.locator('main .page-context').first().textContent({ timeout: 1000 }).catch(() => null)
+        if (context !== null && !context.startsWith(pass.name)) add(id, 'Objekt', `Die Seite zeigt nicht „${pass.name}“, sondern „${context}“.`)
+      }
+      for (const text of await unmetExpectations(page, pass?.expect[base] ?? [])) add(id, 'Erwartung', text)
+      // Die Seite Belege (#490) hat zwei Ansichten; die zweite wird ebenso gemessen, als eigene Seite „belege-ordner“
+      if (base === 'belege') {
+        await page.locator('main [role="tab"]').filter({ hasText: 'Ordner' }).click()
+        await settle(page)
+        await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
+        await measure(pass ? `belege-ordner@${pass.id}` : 'belege-ordner')
+        await page.locator('main [role="tab"]').filter({ hasText: 'Eingang' }).click()
+        await settle(page)
+      }
     }
   }
+  await checkPages(labels, null)
 
   // Der Gang „faden“ (#488, PR 2): aus einer Anleitung auf die Seite eines Schritts, dort die Leiste des Fadens
   if (PAGES === null || PAGES.includes('hilfe-begriffe') || PAGES.includes('faden')) {
@@ -700,6 +750,29 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       }
     }
   }
+  // Die weiteren Objekte des Laufs (#584, browser-check-stock.mjs): WG, geschätzte Ablesung, Bezugszähler, abgeschlossen
+  // und versendet. Gewählt wird das Objekt wie von der Oberfläche gemerkt (localStorage, property.tsx), dann neu geladen.
+  for (const pass of passes) {
+    if (PAGES !== null && !labels.some((l) => wanted(slug(l), pass.id)) && !wanted('belege-ordner', pass.id)) continue
+    current = `objekt@${pass.id}`
+    try {
+      await page.evaluate((id) => /** @type {any} */ (globalThis).localStorage.setItem('mietfuchs.property', id), pass.property)
+      await page.goto(base)
+      await page.locator(view === 'mobile' ? 'button.menu-toggle' : 'nav.sidebar').first().waitFor()
+      await settle(page)
+      // Steht das Objekt wirklich da? Sonst prüfte der Lauf still den Lindenweg ein zweites Mal. Gefragt wird die
+      // Kontextzeile der Seite („Objekt · Zeitraum“), nicht die Seitenleiste: deren Auswahlfeld nennt jedes Objekt.
+      const context = (await page.locator('main .page-context').first().textContent({ timeout: 5000 }).catch(() => null)) ?? ''
+      if (!context.startsWith(pass.name)) throw new Error(`Das Objekt „${pass.name}“ ist nach dem Wechsel nicht gewählt (Kontextzeile „${context}“).`)
+      const passLabels = await readNav(page, view)
+      const expected = navFor(pass.heating).flatMap((g) => g.items.map((i) => i.label))
+      for (const l of expected) if (!passLabels.includes(l)) add(`${slug(l)}@${pass.id}`, 'Navigation', `„${l}“ steht in nav.ts, fehlt aber in der Navigation von „${pass.name}“.`)
+      for (const l of passLabels) if (!expected.includes(l)) add(`${slug(l)}@${pass.id}`, 'Navigation', `„${l}“ steht in der Navigation von „${pass.name}“, aber nicht in nav.ts.`)
+      await checkPages(passLabels, pass)
+    } catch (err) {
+      add(current, 'Objekt', `„${pass.name}“ ließ sich nicht prüfen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+    }
+  }
   await context.close()
   return labels
 }
@@ -721,7 +794,7 @@ async function checkDrawers(page, id, dir, add, reportClipped) {
     return out
   }, DRAWER_OPENERS.source)
   let n = 0
-  for (const name of names.filter((x) => x !== PRINT_OPENER || id === 'abrechnung')) {
+  for (const name of names.filter((x) => x !== PRINT_OPENER || basePage(id) === 'abrechnung')) {
     const button = page.locator('main').getByRole('button', { name, exact: true }).first()
     if (!(await button.count())) continue
     await button.scrollIntoViewIfNeeded().catch(() => {})
@@ -1011,6 +1084,9 @@ async function main() {
     // Eine Heizanlage mit freien Schlüsseln, damit die Seite Heizkosten in der Navigation steht. Sie ändert
     // keine Zahl (docs/heizung.md, Heizanlage) und kommt nicht in den Bestand der Bildschirmfotos.
     await demo.api.post(`/api/heating-plants?property=${demo.ids.haus}`, { energy: 'gas', method: 'manual', assignItemIds: [] })
+    // Die Zustände, die nur der Browserlauf prüft (#584): je ein weiteres Objekt mit WG, geschätzter Ablesung und
+    // Bezugszähler, abgeschlossen, abgeschlossen und versendet. Auch sie nicht im Bestand der Bildschirmfotos.
+    const passes = await seedBrowserCheck(demo.api, demo.ids)
     // Welche Seiten die Navigation zeigen muss: alle aus nav.ts, die Heizkosten, weil der Bestand eine Anlage hat.
     // Fehlt eine, prüfte der Lauf sonst still eine Seite weniger.
     const expected = navFor(true).flatMap((g) => g.items.map((i) => i.label))
@@ -1032,7 +1108,7 @@ async function main() {
         for (const view of ['desktop', 'mobile'].filter((v) => views.includes(v))) {
           for (const theme of themes) {
             const before = findings.length
-            const labels = await checkCombination(browser, demo.base, { engine, view, theme }, AxeBuilder, navLabels)
+            const labels = await checkCombination(browser, demo.base, { engine, view, theme }, AxeBuilder, navLabels, passes)
             if (!navLabels) {
               navLabels = labels
               for (const l of expected) if (!labels.includes(l)) findings.push({ engine, view, theme, page: slug(l), kind: 'Navigation', text: `„${l}“ steht in nav.ts, fehlt aber in der Navigation.` })
@@ -1052,7 +1128,13 @@ async function main() {
     // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
     if (PAGES) {
       for (const id of PAGES) {
-        if (id !== 'muster' && id !== 'faden' && id !== 'lexikon' && id !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        const [pageId, passId, ...rest] = id.split('@')
+        const pass = passes.find((p) => p.id === passId)
+        // In einem weiteren Objekt gibt es nur die Seiten seiner Navigation; Musterseite, Faden und Lexikon nur einmal
+        const passPages = pass ? [...navFor(pass.heating).flatMap((g) => g.items.map((i) => slug(i.label))), 'belege-ordner'] : []
+        if (rest.length > 0 || (passId !== undefined && !pass)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, der Lauf hat kein solches Objekt (möglich: ${passes.map((p) => p.id).join(', ')}).` })
+        else if (pass && !passPages.includes(pageId)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, im Objekt „${pass.name}“ gibt es diese Seite nicht (möglich: ${passPages.join(', ')}).` })
+        else if (!pass && pageId !== 'muster' && pageId !== 'faden' && pageId !== 'lexikon' && pageId !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === pageId)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {
