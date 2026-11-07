@@ -12,6 +12,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Handy zeigte die Auswahl ihn nicht ganz. Gefunden hat das der Browserlauf, der jetzt auch eine WG, eine geschätzte
   Ablesung, einen Bezugszähler und abgeschlossene und versendete Abrechnungen prüft
   ([#584](https://github.com/speedone/mietfuchs/issues/584)).
+
 ## [0.16.1] – 2026-11-07
 
 ### Behoben
@@ -21,8 +22,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vorher erreichte etwa `/API/QUIT` das Beenden, ohne dass die Sperre griff
   ([#585](https://github.com/speedone/mietfuchs/issues/585)). Docker, `npm start` und das Fenster ohne Zugriff aus dem
   Heimnetz waren nicht betroffen.
-
-
 
 ## [0.16.0] – 2026-11-06
 
