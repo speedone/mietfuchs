@@ -125,13 +125,21 @@ Ergebnis des amtlichen Nachlesens am 07.11.2026 (Auftrag aus #290/#334):
 | BB | deckungsgleich | § 2 Abs. 1 FTG vom 21.03.1991, zuletzt geändert durch G vom 30.04.2015 (GVBl. I Nr. 13), https://bravors.brandenburg.de/gesetze/ftg_2015 |
 | NI | deckungsgleich | § 2 Abs. 1 NFeiertagsG i. d. F. vom 07.03.1995, zuletzt geändert durch G vom 22.06.2018 (Nds. GVBl. S. 123), Fassung ab 29.06.2018, NI-VORIS https://voris.wolterskluwer-online.de/browse/document/f74bc6e7-6ded-3c2c-9afb-b34620456e56 |
 | SN | deckungsgleich | § 1 Abs. 1 SächsSFG, Stand 07.05.2025, https://www.revosax.sachsen.de/vorschrift/3997; § 1 FronleichnamsVO vom 04.05.1993 mit Anlage (29 Gemeinden), https://www.revosax.sachsen.de/vorschrift/4142 |
-| BW, BE, HB, HH, HE, MV, NW, RP, SL, ST, SH, TH | amtlich nicht gelesen | Die Portale liefern ohne Browser mit JavaScript nur eine leere Seite (juris-Anwendungen, recht.nrw.de) oder verweigern den Abruf (transparenz.bremen.de 403, rv.hessenrecht.hessen.de). Nicht umgangen. |
+| BW, BE, HE, MV, NW, SL, SH, TH | deckungsgleich (Task 1, gelesen am 07.11.2026) | Fundstellen und Kette der Änderungen je Land in `STATE_HOLIDAY_LAW` (shared/law/feiertagsgesetze.ts); gelesen im Gesetzblatt, meist über die Parlamentsdokumentation des Landtags, NW auf recht.nrw.de |
+| HB, HH, RP, ST | Inhalt deckungsgleich, Wortlaut der Liste amtlich nicht lesbar | juris-Portale antworten einem Browser ohne Fenster mit 204, *.bremen.de mit 403; Gesetzblätter der Stammfassungen nicht online. Grund je Land in `STATE_HOLIDAY_LAW_UNREAD`. Nicht umgangen. |
 
 Für Berlin bleiben die schon gelesenen Gesetzblätter (G vom 30.01.2019, GVBl. S. 22; G vom 10.07.2024, GVBl. S. 460)
 die Fundstelle der einmaligen Feiertage; ein Teilbefund aus dem Blatt von 2019 (8. Mai und 17. Juni dort als
 Gedenktage) widerspricht dem nicht, denn die Einfügung für 2025 und 2028 steht erst im Gesetz von 2024. Das amtliche
 Lesen der zwölf Länder ist **Task 1 des Plans**, von Hand im Browser oder über das jeweilige Gesetz- und
 Verordnungsblatt (PDF).
+
+**Stand nach Task 1:** Zwölf Länder sind im Wortlaut gelesen, kein Wert weicht ab. HB, HH, RP und ST bleiben offen,
+weil ihr Landesrecht-Portal oder Gesetzblatt für einen Browser ohne Fenster gesperrt ist; ihr Inhalt deckt sich mit
+amtlichen Teilbelegen (Drucksachen, Änderungsgesetze, Angaben der Landesbehörden). Folge für E6: Die geltenden
+Fassungen bleiben `adopted`, `holidaysCheckedOn` ist für heutige Tage falsch, und Task 4 rechnet bis dahin mit der
+sicheren Grenze. Schließen lässt sich die Lücke nur, indem jemand die vier Listen in einem gewöhnlichen Browser im
+Landesrecht-Portal liest und in `STATE_HOLIDAY_LAW` einträgt; die Fassungen werden dann von selbst `checked`.
 
 ## Entscheidungen
 

@@ -13,6 +13,9 @@ import {
 } from '../../shared/holidays.ts'
 import type { FederalState } from '../../shared/types.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
+import { dayAfter, LAW_AS_OF, versionAt } from '../../shared/law/register.ts'
+import { HOLIDAY_PARAMS, holidayReformation, holidayUprising1953, STATE_HOLIDAY_LAW, STATE_HOLIDAY_LAW_UNREAD } from '../../shared/law/feiertagsgesetze.ts'
+import { holidaysCheckedOn } from '../../shared/holidaysChecked.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 type Fixture = { jahre: [number, number]; ostern: string[]; varianten: Record<string, string[]> }
@@ -169,16 +172,84 @@ test('die Zeitzone des Rechners ändert nichts', () => {
   assert.equal(new Set(results).size, 1, results.join('\n'))
 })
 
-// Auflage aus #290: Die Feiertage dürfen nur so lange `adopted` sein, wie sie lediglich eine Auskunft in
-// der Oberfläche ergeben. Rechnet der Server mit ihnen (Rückstand, Fristen, #334), muss vorher jedes
-// Landesgesetz amtlich gelesen und der Eintrag auf `checked` gehoben sein. Geprüft wird der Quelltext,
-// denn ein Verhalten gibt es erst, wenn jemand die Bausteine einbindet.
-test('Feiertage: der Server rechnet erst mit ihnen, wenn alle Fassungen amtlich gelesen sind', () => {
+// Auflage aus #290, präzisiert in #334 (Entwurf E6): Mit Feiertagen rechnet der Server nur für einen Tag,
+// an dem jede dann geltende Fassung jedes `holiday.*` amtlich gelesen (`checked`) ist. Ältere Fassungen
+// (Reformationstag 2017, Frauentag vor 2019 …) dürfen `adopted` bleiben; für sie ist `holidaysCheckedOn`
+// falsch, und wer rechnet, nimmt dort die sichere Grenze ohne Feiertage.
+test('Feiertage: jedes Land ist entweder amtlich gelesen oder mit Grund offen', () => {
+  for (const s of STATE_CODES) {
+    const read = STATE_HOLIDAY_LAW[s]
+    const unread = STATE_HOLIDAY_LAW_UNREAD[s]
+    assert.equal((read === undefined) !== (unread === undefined), true, `${s}: genau eines von gelesen und offen`)
+    if (read) {
+      assert.match(read.url, /^https:\/\//, s)
+      assert.doesNotMatch(read.url, /kirchenrecht|umwelt-online|lexaris|dejure|buzer|wikipedia/, `${s}: keine Sammlung als Quelle`)
+      assert.match(read.cite, /§|Art\./, s)
+    }
+    if (unread !== undefined) assert.ok(unread.trim().length > 40, `${s}: Grund nennen`)
+  }
+})
+
+// Solange ein Land offen ist, bleibt jede geltende Fassung `adopted` und nennt das Land; sind alle gelesen,
+// ist jede geltende Fassung von heute bis 2100 `checked`. Jede Fassung sagt etwas über alle 16 Länder (auch
+// „nur in Berlin“ heißt „in keinem anderen Land“); ausgenommen ist nur der Tag der Deutschen Einheit, den
+// der Einigungsvertrag als Bundesrecht festlegt.
+test('Feiertage: ab dem Rechtsstand bis 2100 ist jede geltende Fassung amtlich gelesen, sobald jedes Land gelesen ist', () => {
+  const unread = STATE_CODES.filter((s) => STATE_HOLIDAY_LAW_UNREAD[s] !== undefined)
+  const params = LAW_PARAMS.filter((p) => p.id.startsWith('holiday.'))
+  assert.equal(params.length, HOLIDAY_PARAMS.length)
+  // Jede Grenze einer Fassung ab dem Rechtsstand, dazu der Rechtsstand selbst und das Ende 2100: Zwischen
+  // zwei Grenzen gilt dieselbe Fassung, jeder Tag dazwischen ergibt dasselbe.
+  const days = new Set<string>([LAW_AS_OF, '2100-12-31'])
+  for (const p of params) {
+    for (const v of p.versions) {
+      if (v.validFrom !== undefined && v.validFrom >= LAW_AS_OF) days.add(v.validFrom)
+      if (v.validTo !== undefined && v.validTo >= LAW_AS_OF) { days.add(v.validTo); days.add(dayAfter(v.validTo)) }
+    }
+  }
+  for (const day of [...days].sort()) {
+    const open = params.filter((p) => versionAt(p, day).source.checked !== 'checked')
+    if (unread.length === 0) assert.deepEqual(open.map((p) => p.id), [], `am ${day} nicht amtlich gelesen`)
+    else assert.deepEqual(params.filter((p) => !open.includes(p)).map((p) => p.id), ['holiday.unity-day'], `am ${day} geprüft trotz offener Länder`)
+    for (const p of open) {
+      const { cite } = versionAt(p, day).source
+      for (const s of unread) assert.match(cite, new RegExp(`\\b${s}\\b`), `${p.id} am ${day} nennt das offene Land ${s}`)
+    }
+    assert.equal(holidaysCheckedOn(day), unread.length === 0, day)
+  }
+})
+
+test('Feiertage: an einem Tag mit übernommener Fassung ist nichts geprüft', () => {
+  // Der Reformationstag 2017 galt einmalig in allen Ländern, jedes mit eigener Regelung; nicht jede ist
+  // amtlich gelesen.
+  assert.equal(versionAt(holidayReformation, '2017-10-31').source.checked, 'adopted')
+  assert.equal(holidaysCheckedOn('2017-10-31'), false)
+  assert.equal(holidaysCheckedOn('2019-02-06'), false, 'Frauentag vor Berlin')
+  assert.throws(() => holidaysCheckedOn('31.10.2017'), /kein Datum/)
+})
+
+// Wer unter server/src mit Feiertagen rechnet, steht hier mit Grund. Eine neue Stelle ist damit eine
+// bewusste Entscheidung, und shared/rentDue.ts, über das der Rückstand rechnet, fragt vor jedem Feiertag
+// `holidaysCheckedOn`. Geprüft wird der Quelltext.
+const HOLIDAY_USERS: Readonly<Record<string, string>> = {}
+
+test('Feiertage: jede Stelle im Server, die mit ihnen rechnet, ist benannt', () => {
   const root = path.join(here, '..', 'src')
   const files = (fs.readdirSync(root, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts'))
-  const users = files.filter((f) => /shared\/(holidays|deadlines)\.ts['"]/.test(fs.readFileSync(path.join(root, f), 'utf8')))
-  if (users.length === 0) return
-  const open = LAW_PARAMS.filter((p) => p.id.startsWith('holiday.'))
-    .flatMap((p) => p.versions.filter((v) => v.source.checked !== 'checked').map((v) => `${p.id} ab ${v.validFrom ?? '…'}`))
-  assert.deepEqual(open, [], `${users.join(', ')} nutzt die Feiertage; vorher amtlich lesen und auf checked heben:\n${open.join('\n')}`)
+  const users = files.filter((f) => /shared\/(holidays|deadlines|rentDue)\.ts['"]/.test(fs.readFileSync(path.join(root, f), 'utf8')))
+    .map((f) => f.split(path.sep).join('/')).sort()
+  assert.deepEqual(users, Object.keys(HOLIDAY_USERS).sort(), 'neue Stelle mit Grund in HOLIDAY_USERS eintragen')
+  const rentDue = path.join(here, '..', '..', 'shared', 'rentDue.ts')
+  if (fs.existsSync(rentDue)) {
+    const src = fs.readFileSync(rentDue, 'utf8')
+    assert.match(src, /holidaysCheckedOn\(/, 'shared/rentDue.ts rechnet mit Feiertagen nur über holidaysCheckedOn')
+  }
+})
+
+// Befunde der Gegenprüfung vom 07.11.2026 (#334): Die Fundstellen stimmen mit dem Gesetzblatt überein.
+test('Fundstellen: Berlin 17.06.2028 ist § 1 Abs. 1 Nr. 11, NRW 2017 steht in GV. NRW. S. 496', () => {
+  // Art. 2 G v. 10.07.2024 (in Kraft am 09.05.2025): „Nummer 12 wird zu Nummer 11“; Art. 3 hebt Nr. 11 auf.
+  assert.match(holidayUprising1953.norm, /Nr\. 11\b/)
+  assert.match(versionAt(holidayUprising1953, '2028-06-17').source.cite, /^§ 1 Abs\. 1 Nr\. 11\b/)
+  assert.match(versionAt(holidayReformation, '2017-10-31').source.cite, /GV\. NRW\. S\. 496/)
 })

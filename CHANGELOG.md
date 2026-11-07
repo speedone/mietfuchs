@@ -12,6 +12,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Handy zeigte die Auswahl ihn nicht ganz. Gefunden hat das der Browserlauf, der jetzt auch eine WG, eine geschätzte
   Ablesung, einen Bezugszähler und abgeschlossene und versendete Abrechnungen prüft
   ([#584](https://github.com/speedone/mietfuchs/issues/584)).
+## [0.16.1] – 2026-11-07
+
 ### Behoben
 
 - **Programmfenster mit Zugriff aus dem Heimnetz**: Beenden, KI-Schlüssel und Zustimmungen lehnt Mietfuchs von einem
@@ -3518,7 +3520,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.16.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/speedone/mietfuchs/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/speedone/mietfuchs/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/speedone/mietfuchs/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/speedone/mietfuchs/compare/v0.15.0...v0.15.1

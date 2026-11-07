@@ -309,7 +309,12 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
 - **Regeln und Feiertage stehen im Rechtsregister**: `bgb.rent-due-workday` (3, § 556b Abs. 1),
   `bgb.rent-due-saturday` (Samstag zählt nicht, VIII ZR 129/09), `bgb.deadline-on-workday`
   (§ 193 BGB), je Feiertag `holiday.*` in [shared/law/feiertagsgesetze.ts](../../shared/law/feiertagsgesetze.ts).
-  `checked` nur, wo der Wortlaut amtlich gelesen ist, sonst `adopted` mit Angabe. Gerechnet wird
+  `checked` nur, wo der Wortlaut amtlich gelesen ist, sonst `adopted` mit Angabe. Die geltenden
+  Fassungen werden erst `checked`, wenn die Liste jedes Landes gelesen ist: je Land Fundstelle in
+  `STATE_HOLIDAY_LAW`, offene Länder mit Grund in `STATE_HOLIDAY_LAW_UNREAD` (Stand 07.11.2026: HB, HH, RP,
+  ST). `holidaysCheckedOn(date)` ([shared/holidaysChecked.ts](../../shared/holidaysChecked.ts)) sagt, ob
+  an einem Tag jede geltende Fassung `checked` ist. Wer im Server mit Feiertagen rechnet, steht mit Grund
+  in `HOLIDAY_USERS` in holidays.test.ts, und shared/rentDue.ts fragt `holidaysCheckedOn` (#334, Entwurf E6). Gerechnet wird
   mit Osterformel ohne Laufzeitbibliothek (date-holidays: Daten unter CC BY-SA 3.0, mit AGPL nicht
   verträglich).
 - **Geprüft gegen zwei unabhängige Quellen**: feste Liste der Python-Bibliothek holidays
