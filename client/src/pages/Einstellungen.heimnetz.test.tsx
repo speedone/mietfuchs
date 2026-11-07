@@ -37,13 +37,26 @@ function fakeBridge(start: NetworkState) {
   return { bridge, calls }
 }
 
-function renderPage() {
-  vi.stubGlobal('fetch', async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }))
+type Call = { url: string, method: string, body: unknown }
+function renderPage(initialAuth: Record<string, unknown> | null = null) {
+  let auth = initialAuth
+  const calls: Call[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) : undefined })
+    if (url === '/api/auth' && auth) return new Response(JSON.stringify(auth), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (url === '/api/auth/setup' && auth?.setupConflict) {
+      auth = { ...auth, mode: 'password' }
+      return new Response(JSON.stringify({ error: 'Ein Passwort ist schon festgelegt.' }), { status: 409, headers: { 'content-type': 'application/json' } })
+    }
+    if (url === '/api/auth/setup') return new Response(JSON.stringify({ ok: true, mode: 'password' }), { status: 200, headers: { 'content-type': 'application/json' } })
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+  })
   render(
     <PropertyProvider>
       <UIProvider><Einstellungen settings={SETTINGS} reload={async () => {}} update={{ status: STATUS, checking: false, checkNow: async () => {} }} /></UIProvider>
     </PropertyProvider>,
   )
+  return calls
 }
 
 async function findCard() {
@@ -64,8 +77,8 @@ test('Heimnetz im Fenster: Warnung, Einschalten erst mit Speichern, danach die A
   expect(cards.indexOf(card)).toBe(cards.length - 2)
   expect(cards[cards.length - 1]).toBe(about)
   const box = await within(card).findByRole('checkbox', { name: 'Zugriff aus dem Heimnetz erlauben' }, SLOW)
-  expect(card.textContent).toMatch(/kein Passwort/)
-  expect(card.textContent).toMatch(/jeder in Ihrem Heimnetz/)
+  // Ohne Stand des Zugangs (älterer Server) bleibt die Warnung (#528)
+  expect(card.textContent).toMatch(/Ohne Passwort kann jeder in Ihrem Heimnetz/)
   expect(card.textContent).not.toContain(ADDRESS)
 
   expect((box as HTMLInputElement).checked).toBe(false)
@@ -116,4 +129,85 @@ test('Heimnetz im Browser: ohne Brücke des Fensters keine Karte', async () => {
   renderPage()
   await screen.findByRole('heading', { name: 'Über Mietfuchs' }, SLOW)
   expect(screen.queryByRole('heading', { name: 'Zugriff aus dem Heimnetz' })).toBeNull()
+})
+
+// Anmeldung (#528): Ohne Passwort fragt die Karte beim Einschalten danach, im selben Entwurf; gespeichert wird erst das
+// Passwort (über den Fensterschlüssel, ohne Code), dann der Zugriff
+const NONE = { mode: 'none', required: false, signedIn: false, window: true, reachable: 'local', envFixed: false, minLength: 15 }
+
+test('Heimnetz einschalten ohne Passwort: erst Passwort festlegen, dann umschalten', async () => {
+  const { bridge, calls } = fakeBridge({ enabled: false, port: 17517, addresses: [ADDRESS] })
+  window.mietfuchsDesktop = { network: bridge }
+  const requests = renderPage(NONE)
+  const card = await findCard()
+  fireEvent.click(await within(card).findByRole('checkbox', { name: 'Zugriff aus dem Heimnetz erlauben' }, SLOW))
+  const password = await within(card).findByLabelText('Passwort für andere Geräte', {}, SLOW)
+  const repeat = within(card).getByLabelText('Passwort wiederholen')
+  fireEvent.change(password, { target: { value: 'Sonne Wolke Regen' } })
+  fireEvent.change(repeat, { target: { value: 'Sonne Wolke Regem' } })
+  fireEvent.click(within(card).getByRole('button', { name: /^Speichern/ }))
+  expect(await within(card).findByText(/Die beiden Passwörter stimmen nicht überein\./, {}, SLOW)).toBeTruthy()
+  expect(calls).toEqual([])
+  fireEvent.change(repeat, { target: { value: 'Sonne Wolke Regen' } })
+  fireEvent.click(within(card).getByRole('button', { name: /^Speichern/ }))
+  await vi.waitFor(() => expect(calls).toEqual([true]), SLOW)
+  const setup = requests.filter((r) => r.url === '/api/auth/setup')
+  expect(setup).toEqual([{ url: '/api/auth/setup', method: 'POST', body: { password: 'Sonne Wolke Regen' } }])
+})
+
+test('Heimnetz einschalten ohne Passwort: „Ohne Passwort“ nur nach Rückfrage', async () => {
+  const { bridge, calls } = fakeBridge({ enabled: false, port: 17517, addresses: [ADDRESS] })
+  window.mietfuchsDesktop = { network: bridge }
+  const requests = renderPage(NONE)
+  const card = await findCard()
+  fireEvent.click(await within(card).findByRole('checkbox', { name: 'Zugriff aus dem Heimnetz erlauben' }, SLOW))
+  fireEvent.click(await within(card).findByRole('checkbox', { name: 'Ohne Passwort' }, SLOW))
+  expect(card.textContent).toMatch(/jeder in Ihrem Heimnetz/)
+  expect(within(card).queryByLabelText('Passwort für andere Geräte')).toBeNull()
+  fireEvent.click(within(card).getByRole('button', { name: /^Speichern/ }))
+  const question = await screen.findByRole('alertdialog', {}, SLOW)
+  fireEvent.click(within(question).getByRole('button', { name: 'Abbrechen' }))
+  await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
+  expect(calls).toEqual([])
+  fireEvent.click(await within(card).findByRole('button', { name: /^Speichern/ }, SLOW))
+  fireEvent.click(within(await screen.findByRole('alertdialog', {}, SLOW)).getByRole('button', { name: 'Ohne Passwort erlauben' }))
+  await vi.waitFor(() => expect(calls).toEqual([true]), SLOW)
+  expect(requests.filter((r) => r.url === '/api/auth/setup').map((r) => r.body)).toEqual([{ withoutPassword: true }])
+})
+
+test('Heimnetz einschalten mit festgelegtem Passwort: keine Felder', async () => {
+  const { bridge, calls } = fakeBridge({ enabled: false, port: 17517, addresses: [ADDRESS] })
+  window.mietfuchsDesktop = { network: bridge }
+  const requests = renderPage({ ...NONE, mode: 'password' })
+  const card = await findCard()
+  fireEvent.click(await within(card).findByRole('checkbox', { name: 'Zugriff aus dem Heimnetz erlauben' }, SLOW))
+  expect(within(card).queryByLabelText('Passwort für andere Geräte')).toBeNull()
+  fireEvent.click(within(card).getByRole('button', { name: /^Speichern/ }))
+  await vi.waitFor(() => expect(calls).toEqual([true]), SLOW)
+  expect(requests.some((r) => r.url === '/api/auth/setup')).toBe(false)
+})
+
+test('Heimnetz: inzwischen anderswo ein Passwort festgelegt, dann ohne Einrichtung umschalten', async () => {
+  const { bridge, calls } = fakeBridge({ enabled: false, port: 17517, addresses: [ADDRESS] })
+  window.mietfuchsDesktop = { network: bridge }
+  renderPage({ ...NONE, setupConflict: true })
+  const card = await findCard()
+  fireEvent.click(await within(card).findByRole('checkbox', { name: 'Zugriff aus dem Heimnetz erlauben' }, SLOW))
+  fireEvent.change(await within(card).findByLabelText('Passwort für andere Geräte', {}, SLOW), { target: { value: 'Sonne Wolke Regen' } })
+  fireEvent.change(within(card).getByLabelText('Passwort wiederholen'), { target: { value: 'Sonne Wolke Regen' } })
+  fireEvent.click(within(card).getByRole('button', { name: /^Speichern/ }))
+  await vi.waitFor(() => expect(calls).toEqual([true]), SLOW)
+})
+
+test('Heimnetz: Verwerfen leert die Passwortfelder', async () => {
+  const { bridge } = fakeBridge({ enabled: false, port: 17517, addresses: [ADDRESS] })
+  window.mietfuchsDesktop = { network: bridge }
+  renderPage(NONE)
+  const card = await findCard()
+  const box = await within(card).findByRole('checkbox', { name: 'Zugriff aus dem Heimnetz erlauben' }, SLOW)
+  fireEvent.click(box)
+  fireEvent.change(await within(card).findByLabelText('Passwort für andere Geräte', {}, SLOW), { target: { value: 'Sonne Wolke Regen' } })
+  fireEvent.click(box)
+  fireEvent.click(box)
+  expect((await within(card).findByLabelText('Passwort für andere Geräte', {}, SLOW) as HTMLInputElement).value).toBe('')
 })

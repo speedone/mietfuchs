@@ -56,10 +56,12 @@ export function serverModule({ packaged, platform, resourcesPath, repoRoot }) {
  * @param {NodeJS.ProcessEnv} base
  * `searchDirs`: Downloads, Schreibtisch und Dokumente, wie das System sie nennt (`app.getPath`), für die Suche beim
  * Umzug der Daten (#517); unter Windows liegen sie oft im OneDrive-Ordner. Eine geerbte Angabe gilt nicht.
- * @param {{ port: number, network: boolean, packaged: boolean, windowsStore: boolean, repoRoot: string, platform: NodeJS.Platform, searchDirs?: string[] }} options
+ * `windowKey` (#528): der Fensterschlüssel dieses Starts, mit dem das Fenster als angemeldet gilt. Eine geerbte Angabe
+ * gilt nie.
+ * @param {{ port: number, network: boolean, packaged: boolean, windowsStore: boolean, repoRoot: string, platform: NodeJS.Platform, searchDirs?: string[], windowKey?: string }} options
  * @returns {NodeJS.ProcessEnv}
  */
-export function serverEnv(base, { port, network, packaged, windowsStore, repoRoot, platform, searchDirs = [] }) {
+export function serverEnv(base, { port, network, packaged, windowsStore, repoRoot, platform, searchDirs = [], windowKey }) {
   /** @type {NodeJS.ProcessEnv} */
   const env = { ...base, NKA_DESKTOP: '1', NKA_PORT: String(port), NKA_HOST: network ? '0.0.0.0' : '127.0.0.1' }
   // Electron setzt das für sich selbst; erbte es der Server, liefe Node darin als nacktes Node
@@ -68,15 +70,18 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
   delete env.NKA_RUNTIME
   delete env.NKA_STORE
   delete env.NKA_SEARCH_DIRS
+  delete env.NKA_WINDOW_KEY
+  if (windowKey) env.NKA_WINDOW_KEY = windowKey
   if (searchDirs.length > 0) env.NKA_SEARCH_DIRS = JSON.stringify(searchDirs)
   // Ausgeliefert ohne die beiden Schranken der Testgriffe (testGrips.js) nichts davon an den Server: CI schaltete dort
   // Ortsdatei und Suche beim Umzug ab, ein NKA_TEST_* stellte Uhr, Heimatordner oder Ports um, ein NKA_ALLOWED_HOSTS mit
   // `*` aus einer Docker-Einrichtung schaltete die Prüfung von Host und Origin still ab, und NKA_UPDATE_URL lenkte den
-  // Update-Hinweis samt Download-Link auf einen fremden Server. NKA_DATA_DIR bleibt: Den Datenordner zu verlegen ist
+  // Update-Hinweis samt Download-Link auf einen fremden Server, und NKA_AUTH=off schaltete die Anmeldung still ab (#528).
+  // NKA_DATA_DIR bleibt: Den Datenordner zu verlegen ist
   // eine Einstellung, kein Testgriff.
   if (packaged && !testGripsAllowed(base)) {
     for (const name of Object.keys(env)) {
-      if (name === 'CI' || name === 'NKA_ALLOWED_HOSTS' || name === 'NKA_UPDATE_URL' || name.startsWith('NKA_TEST_')) delete env[name]
+      if (name === 'CI' || name === 'NKA_ALLOWED_HOSTS' || name === 'NKA_UPDATE_URL' || name === 'NKA_AUTH' || name.startsWith('NKA_TEST_')) delete env[name]
     }
   }
   if (windowsStore) env.NKA_STORE = '1'

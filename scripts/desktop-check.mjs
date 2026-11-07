@@ -6,6 +6,7 @@
 //   3. Ein zweiter Start holt nur das vorhandene Fenster nach vorn und endet.
 //   4. Beenden aus der Oberfläche (/api/quit): Fenster und Server enden mit 0, der Port ist frei.
 //   5. Absturz des Fensters (hart beendet): Der Server endet von selbst, keine Waise hält Port und Datenbank.
+//   1. prüft dazu, dass die Seite im Fenster den Fensterschlüssel trägt und ein Abruf von außen nicht (#528).
 //   6. Umzug der Daten: Der Bestand aus 1. liegt wie bei der bisherigen Programmdatei in `data/` neben ihr im
 //      Download-Ordner eines nachgestellten Benutzerordners; das Fenster findet ihn mit leerem Datenordner über die
 //      Suche dieses Systems und übernimmt ihn.
@@ -107,6 +108,11 @@ if (ready) {
   check(serverPid !== null && serverPid !== first.child.pid && alive(serverPid), `Der Server läuft als eigener Prozess des Fensters (PID ${serverPid})`)
   const pdf = fs.readFileSync(path.join(first.selftest, 'fenster.pdf'))
   check(pdf.subarray(0, 5).toString() === '%PDF-', 'PDF der ersten Seite erzeugt')
+  // Anmeldung (#528): Die Seite im Fenster gilt über den Fensterschlüssel als angemeldet, ein Abruf von außen ohne ihn nicht
+  check(selftest.access?.window === true, 'Die Seite im Fenster trägt den Fensterschlüssel (window: true)')
+  /** @type {any} */
+  const outside = await fetch(`http://127.0.0.1:${PORT}/api/auth`).then((r) => r.json()).catch(() => null)
+  check(outside?.window === false, 'Ein Abruf ohne Fenster trägt ihn nicht (window: false)')
 
   let smoke = 0
   try {

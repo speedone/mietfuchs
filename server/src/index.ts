@@ -163,12 +163,19 @@ app.use((req, res, next) => {
 // Anmeldung auch dort geht, und vor `express.json()`, damit ungeprüfte Rümpfe nicht gelesen werden. Der Zustand entsteht
 // beim Start (`ACCESS.start` vor dem Öffnen der Datenbank); bis dahin wartet jede Anfrage.
 const AUTH_SETTING = authSetting(process.env)
+// Der Fensterschlüssel (#528) gilt nur im Fenster; gelesen und aus der Umgebung genommen, damit ihn kein Kindprozess erbt.
+// In der Umgebung des Prozesses selbst (/proc/<pid>/environ) bleibt er für denselben Benutzer lesbar: hingenommen, der
+// liest auch die Datenbank.
+const WINDOW_KEY = process.env.NKA_WINDOW_KEY?.trim() || null
+delete process.env.NKA_WINDOW_KEY
 const ACCESS = createAccess({
   dataDir: DATA_DIR,
   host: process.env.NKA_HOST,
   setting: typeof AUTH_SETTING === 'string' ? AUTH_SETTING : 'on',
   allowedHosts: process.env.NKA_ALLOWED_HOSTS,
   runtime: RUNTIME,
+  inWindow: IN_WINDOW,
+  windowKey: WINDOW_KEY,
 })
 app.use(ACCESS.middleware)
 ACCESS.install(app)

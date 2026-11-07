@@ -191,6 +191,12 @@ export const normalizeCode = (input: unknown): string => (typeof input === 'stri
 
 const digest = (value: string): Buffer => crypto.createHash('sha256').update(value).digest()
 
+// Der Fensterschlüssel (#528), zeitkonstant über SHA-256 beider Werte
+export function sameKey(given: unknown, key: string | null): boolean {
+  if (!key || typeof given !== 'string' || !given) return false
+  return crypto.timingSafeEqual(digest(given), digest(key))
+}
+
 // Zeitkonstant über SHA-256 beider Werte, damit auch die Länge nichts verrät
 export function sameCode(input: unknown, code: string | null): boolean {
   const given = normalizeCode(input)

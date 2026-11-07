@@ -52,6 +52,22 @@ export function networkView(saved: NetworkState, checked: boolean): NetworkView 
   }
 }
 
+// ---------- Anmeldung beim Einschalten (#528) ----------
+// Was die Karte vom Zugang wissen muss (GET /api/auth). Fehlt er (älterer Server, Fehler), fragt sie nicht.
+export type NetworkAccess = { mode: string, envFixed: boolean, minLength: number }
+
+// Beim Einschalten fragt die Karte nach einem Passwort für andere Geräte, solange keines festgelegt ist und NKA_AUTH es
+// nicht festlegt. Festgelegt wird es über den Fensterschlüssel, ohne Code.
+export const askForPassword = (access: NetworkAccess | null, saved: NetworkState, checked: boolean): boolean =>
+  access !== null && checked && !saved.enabled && !access.envFixed && access.mode !== 'password'
+
+// Gezählt nach Zeichen wie am Server (NFC, ein Emoji ist ein Zeichen); die übrigen Regeln prüft der Server
+export function passwordEntryProblem(password: string, repeat: string, minLength: number): string | null {
+  if ([...password.normalize('NFC')].length < minLength) return `Das Passwort braucht mindestens ${minLength} Zeichen.`
+  if (password !== repeat) return 'Die beiden Passwörter stimmen nicht überein.'
+  return null
+}
+
 // Der Hinweis „Im Heimnetz erreichbar“ in der Seitenleiste (#517, Durchsicht vor 0.15.0 K5, components/NetworkHint.tsx):
 // Er liest den Stand einmal von der Brücke und folgt danach der Karte, die nach dem Speichern den neuen Stand meldet.
 // Sonst stünde er nach dem Ausschalten noch da, bis das Fenster die Seite neu lädt.
