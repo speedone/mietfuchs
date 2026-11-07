@@ -1,4 +1,5 @@
 import { parseNumberDe } from './numbers'
+import { appFetch } from './access'
 // Eine Ablehnung des Servers mit Status und Rumpf (#170): Die Buchung braucht bei 409 den Stand
 // oder die neue Vorschau aus der Antwort, nicht nur die Meldung. Für alle anderen Aufrufer bleibt
 // es ein `Error` mit derselben Meldung wie bisher.
@@ -17,7 +18,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     init?.body && !(init.body instanceof FormData)
       ? { 'Content-Type': 'application/json', ...init?.headers }
       : init?.headers
-  const res = await fetch(path, { ...init, headers })
+  // Über appFetch: Verlangt der Server eine Anmeldung, meldet es das Ereignis für den Anmeldedialog (#528)
+  const res = await appFetch(path, { ...init, headers })
   if (!res.ok) {
     const raw: unknown = await res.json().catch(() => ({}))
     const data: Record<string, unknown> = raw !== null && typeof raw === 'object' ? { ...raw } : {}

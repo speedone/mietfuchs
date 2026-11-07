@@ -18,6 +18,7 @@ import Field from '../components/Field'
 import LetterTemplateCard from '../components/LetterTemplateCard'
 import LetterDesignCard from '../components/LetterDesignCard'
 import NetworkCard from '../components/NetworkCard'
+import AccessCard from '../components/AccessCard'
 import { networkBridge } from '../desktopNetwork'
 import { useSectionJump, type FocusProps } from '../focus'
 
@@ -30,7 +31,7 @@ const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`
 // `focus`: die Karte, zu der ein Sprung führt (#554): Vermieter und IBAN, KI-Belegauswertung, Anleitung zum Update.
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void; onOpenRelocation?: () => void } & FocusProps
 
-const SETTINGS_SECTIONS = ['landlord', 'ai', 'about'] as const
+const SETTINGS_SECTIONS = ['landlord', 'ai', 'about', 'access'] as const
 
 export default function Einstellungen({ settings, reload, update, onNavigate, onOpenRelocation, focus, onFocusDone }: Props) {
   const jumpAt = useSectionJump(focus, SETTINGS_SECTIONS, true, onFocusDone)
@@ -226,6 +227,9 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
       </p>
 
       {network && <NetworkCard bridge={network} />}
+
+      {/* Die Anmeldung (#528): nur, wenn Mietfuchs im Netz erreichbar ist, ein Passwort hat oder im Übergang steht */}
+      <AccessCard jump={jumpAt('access')} />
 
       {/* Am Ende wie der Abschnitt „Info“ einer Windows-App: Version und Updates, dann Urheber und Lizenz. Wer aus dem
           Microsoft Store installiert, sieht README und LICENSE nie; die AGPL sieht Urheber, fehlende Gewähr und den Weg

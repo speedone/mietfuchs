@@ -54,9 +54,9 @@ export type GuideGap = {
   // Das Issue, in dem es geplant ist, wo es eines gibt.
   issue?: number
 }
-// Die Gruppen der Anleitungen auf der Startseite der Hilfe: das Objekt, Ereignisse im Abrechnungsjahr, die Heizung.
-// Die Beschriftungen stehen im Client (client/src/helpView.ts).
-export const GUIDE_GROUPS = ['property', 'year', 'heating'] as const
+// Die Gruppen der Anleitungen auf der Startseite der Hilfe: das Objekt, Ereignisse im Abrechnungsjahr, die Heizung und
+// der Betrieb (Zugriff im Netz, #528). Die Beschriftungen stehen im Client (client/src/helpView.ts).
+export const GUIDE_GROUPS = ['property', 'year', 'heating', 'operation'] as const
 export type GuideGroup = (typeof GUIDE_GROUPS)[number]
 
 export type Guide = {
@@ -536,6 +536,36 @@ const GUIDE_DATA = {
       { text: 'Ein gemeinsamer Gaszähler für mehrere Wohnungen mit Etagenheizung.', issue: 97 },
     ],
     terms: ['boilerSwap', 'perUnitHeating', 'heatingSystem', 'co2Stage'],
+  },
+  // #528, Schritt 1: Anmeldung, wenn Mietfuchs von anderen Geräten erreichbar ist.
+  network: {
+    group: 'operation',
+    title: 'Mietfuchs im Netz: Anmeldung mit Passwort',
+    applies: 'Sie öffnen Mietfuchs auch vom Handy, Tablet oder einem anderen Rechner, etwa weil es in Docker auf einem NAS läuft, als Programmdatei oder Paket auf einem Rechner im Heimnetz oder im Programmfenster mit Zugriff aus dem Heimnetz. Dann fragt Mietfuchs nach einem Passwort, damit nur Sie Ihre Daten sehen.',
+    steps: [
+      { text: 'Beim ersten Öffnen zeigt Mietfuchs „Mietfuchs einrichten“. Tragen Sie den „Einrichtungscode“ ein: Er steht im Konsolenfenster von Mietfuchs, bei Docker in der Ausgabe von docker compose logs mietfuchs, und in der Datei einrichtungscode.txt im Datenordner.' },
+      { text: 'Tragen Sie unter „Passwort“ und „Passwort wiederholen“ ein Passwort mit mindestens 15 Zeichen ein; „Passwort vorschlagen“ trägt vier zufällige Wörter ein, die Sie sich aufschreiben. Klicken Sie auf „Passwort festlegen“.' },
+      { text: 'Auf jedem anderen Gerät melden Sie sich mit diesem Passwort und „Anmelden“ an. Am Ende melden Sie sich unten in der Seitenleiste mit „Abmelden“ ab.' },
+      { page: 'einstellungen', text: 'Läuft Mietfuchs schon länger ohne Passwort im Netz, steht unten in der Seitenleiste „Ohne Passwort im Netz“. Es führt zur Karte „Anmeldung“: Klicken Sie dort auf „Passwort festlegen“, tragen Sie Einrichtungscode und Passwort ein und klicken Sie auf „Speichern“.' },
+      { page: 'einstellungen', text: 'Ändern lässt sich das Passwort in der Karte „Anmeldung“ mit „Passwort ändern“. Ist ein Handy verloren, melden Sie dort mit „Auf allen Geräten abmelden“ jedes andere Gerät ab.' },
+      { text: 'Passwort vergessen: Legen Sie im Datenordner von Mietfuchs eine leere Datei mit dem Namen passwort-zuruecksetzen an, im Container mit docker compose exec mietfuchs touch /app/server/data/passwort-zuruecksetzen. Laden Sie die Seite danach neu; Mietfuchs fragt dann wie beim ersten Öffnen nach Einrichtungscode und neuem Passwort.' },
+    ],
+    result: [
+      'Ohne Anmeldung sehen andere Geräte nur die Anmeldeseite; Ihre Daten, Belege und das Backup gibt es erst danach.',
+      'Eine Anmeldung endet nach 30 Minuten ohne Aktivität, spätestens nach 8 Stunden. Läuft sie mitten in der Arbeit ab, fragt Mietfuchs in einem Fenster über der Seite nach dem Passwort; was Sie eingegeben haben, bleibt stehen.',
+      'Nach mehreren falschen Passwörtern wartet Mietfuchs mit dem nächsten Versuch; nach der Anmeldung nennt es die Zahl der Fehlversuche seit Ihrer letzten Anmeldung.',
+      'Läuft Mietfuchs nur auf Ihrem Rechner, etwa im Programmfenster ohne Zugriff aus dem Heimnetz, fragt es nicht nach einem Passwort.',
+    ],
+    example: 'Ein Passwort aus vier Wörtern wie tisch-garten-wolke-ofen hat 23 Zeichen; Mietfuchs verlangt mindestens 15. Der Einrichtungscode hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW. Eine Anmeldung gilt bis 30 Minuten ohne Aktivität und höchstens 8 Stunden.',
+    caveats: [
+      { text: 'Im Heimnetz geht das Passwort ohne Verschlüsselung über die Leitung (HTTP); wer den Verkehr im selben Netz mitschneidet, kann es lesen. Nutzen Sie Mietfuchs deshalb nur in einem Netz, dem Sie vertrauen, nicht in einem öffentlichen WLAN.' },
+      { text: 'Ab Version 1.0 verlangt Mietfuchs im Netz ein Passwort. Wer bis dahin bewusst „Ohne Passwort weiter“ gewählt hat, bleibt dabei; jedes Gerät in Ihrem Netz kann dann Ihre Daten sehen und ändern.' },
+      { text: 'Der Einrichtungscode gilt nur bis zur Einrichtung. Geben Sie ihn nicht weiter: Wer ihn kennt, kann bis dahin das Passwort festlegen.' },
+    ],
+    gaps: [
+      { text: 'Eine verschlüsselte Verbindung (HTTPS) mit eigenem Zertifikat und das Koppeln eines Programmfensters auf einem zweiten Rechner kommen in einem späteren Schritt.', issue: 528 },
+    ],
+    terms: ['signIn', 'setupCode'],
   },
 } satisfies Record<string, Guide>
 

@@ -21,6 +21,8 @@ export const PROPERTY_LANDLORD_TARGET: JumpTarget = { kind: 'property', part: 'l
 export const AI_SETTINGS_TARGET: JumpTarget = { kind: 'section', section: 'ai' }
 // „So aktualisieren Sie“: die Anleitung steht in der Karte „Über Mietfuchs“
 export const UPDATE_GUIDE_TARGET: JumpTarget = { kind: 'section', section: 'about' }
+// „Ohne Passwort im Netz“ in der Seitenleiste (#528): die Karte „Anmeldung“ der Einstellungen
+export const ACCESS_TARGET: JumpTarget = { kind: 'section', section: 'access' }
 
 // Eine betroffene Wohnung öffnet sich selbst, mehrere führen zur Karte „Wohnungen“.
 export function unitsTarget(ids: readonly string[]): JumpTarget {

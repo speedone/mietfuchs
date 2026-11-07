@@ -10,6 +10,7 @@
 // Zählerstand mit „Ablesung übernehmen“.
 import { createContext, createElement, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { aiRequest, type AiProgress } from './aiRequest'
+import { appFetch } from './access'
 import { buildUpload } from './pdfIntake'
 import { errorText } from './api'
 import { failureOf } from './aiFailure'
@@ -281,7 +282,7 @@ export class EvaluationQueue {
 }
 
 async function fetchStored(name: string, fileName: string, signal: AbortSignal): Promise<File> {
-  const res = await fetch(`/uploads/${encodeURIComponent(name)}`, { signal })
+  const res = await appFetch(`/uploads/${encodeURIComponent(name)}`, { signal })
   if (!res.ok) throw new Error(`„${fileName}“ ließ sich nicht aus der Ablage der Belege holen (HTTP ${res.status}).`)
   const blob = await res.blob()
   return new File([blob], fileName, { type: blob.type })

@@ -36,6 +36,7 @@ import { createEntity } from '../src/db/repository.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { CALENDAR_RULES } from '../../shared/period.ts'
+import { CODE_LENGTH, MIN_PASSWORD, createSessions, formatCode, newSetupCode } from '../src/access.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ids = Object.keys(GUIDES) as GuideId[]
@@ -43,7 +44,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -500,6 +501,31 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     const parts = splitByService({ startMonth: 1, changes: ['2025-05'] }, { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
     assert.deepEqual(parts.map((p) => p.amountCents), [15781, 32219])
     inOrder(GUIDES.periodMayApril.example, ['01.01.', '30.04.2025', '30.04.2026', eur(48000), eur(15781), eur(32219)], 'periodMayApril')
+  },
+  // #528: Mindestlänge, Länge des Codes und die Dauer einer Sitzung aus dem Kern der Anmeldung (server/src/access.ts)
+  network: () => {
+    const example = 'tisch-garten-wolke-ofen'
+    assert.ok([...example].length >= MIN_PASSWORD)
+    const code = formatCode(newSetupCode())
+    assert.equal(code.replaceAll('-', '').length, CODE_LENGTH)
+    assert.equal(code.split('-').length, 3)
+    // 30 Minuten ohne Aktivität: kurz davor gilt sie noch, danach nicht mehr
+    let at = 0
+    const sessions = createSessions({ now: () => at })
+    const idle = sessions.create()
+    at = 30 * 60_000 - 1
+    assert.equal(sessions.check(idle), true)
+    at += 30 * 60_000
+    assert.equal(sessions.check(idle), false)
+    // höchstens 8 Stunden, auch bei Aktivität
+    at = 0
+    const busy = sessions.create()
+    for (at = 20 * 60_000; at < 8 * 60 * 60_000; at += 20 * 60_000) assert.equal(sessions.check(busy), true, `nach ${at / 60_000} Minuten`)
+    at = 8 * 60 * 60_000
+    assert.equal(sessions.check(busy), false)
+    inOrder(GUIDES.network.example, [`${[...example].length} Zeichen`, String(MIN_PASSWORD), `${CODE_LENGTH} Zeichen`, '30 Minuten', '8 Stunden'], 'network')
+    inOrder(GLOSSARY.signIn.example, [String(MIN_PASSWORD), `${[...example].length} Zeichen`, '30 Minuten', '8 Stunden'], 'signIn')
+    inOrder(GLOSSARY.setupCode.example, [`${CODE_LENGTH} Zeichen`], 'setupCode')
   },
 }
 

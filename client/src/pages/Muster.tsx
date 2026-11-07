@@ -6,6 +6,8 @@ import MonthField from '../components/MonthField'
 import YearField from '../components/YearField'
 import Term from '../components/Term'
 import GuideThread from '../components/GuideThread'
+import AccessHint from '../components/AccessHint'
+import { LoginForm } from '../components/LoginDialog'
 import Table from '../components/Table'
 import Drawer from '../components/Drawer'
 import DraftActions from '../components/DraftActions'
@@ -174,6 +176,12 @@ export default function Muster() {
       {/* Die Leiste des Fadens einer Anleitung (#488, PR 2); in der App unten angeheftet, hier im Fluss. */}
       <Card title="Faden einer Anleitung">
         <GuideThread guide="garage" step={3} sticky={false} onNext={async () => { toast('Nächster Schritt.'); return true }} onBack={() => toast('Zurück zur Anleitung.')} onClose={() => toast('Leiste geschlossen.')} />
+      </Card>
+
+      {/* Die Anmeldung (#528): das Formular der Anmeldeseite und des Dialogs, der Hinweis im Übergang aus der Seitenleiste */}
+      <Card title="Anmeldung">
+        <LoginForm info={null} onSignedIn={() => toast('Angemeldet.')} />
+        <AccessHint onOpen={() => toast('Zur Karte „Anmeldung“.')} />
       </Card>
 
       {/* Der Beleg oben im Kostenformular (#490 PR 3): Vorschaubild und „Beleg in neuem Tab öffnen“ als ein Link */}

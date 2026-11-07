@@ -1,8 +1,14 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CostItem, HeatingPlant, Settings, Tenancy, Unit } from './types'
 import type { JumpTarget } from './focus'
-import { AI_SETTINGS_TARGET, NEW_UNIT_TARGET, UPDATE_GUIDE_TARGET } from './jumpTargets'
-import { api } from './api'
+import { ACCESS_TARGET, AI_SETTINGS_TARGET, NEW_UNIT_TARGET, UPDATE_GUIDE_TARGET } from './jumpTargets'
+import { api, errorText } from './api'
+import { AccessContext, loadAccess, onAccessDemand, useAccess, type AccessInfo } from './access'
+import { accessView, failedAttemptsText, showsSignOut, showsTransitionHint, takeSetupCode } from './accessView'
+import AccessHint from './components/AccessHint'
+import LoginDialog, { type LoginResult } from './components/LoginDialog'
+import Anmeldung from './pages/Anmeldung'
+import Einrichtung from './pages/Einrichtung'
 import { PeriodProvider, usePeriod, useSwitchTo } from './period'
 import { PeriodSelect } from './components/PeriodSelect'
 import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
@@ -357,6 +363,27 @@ function Shell() {
     if (await navigate('kosten')) setReceiptStart(u)
   }
   const update = useUpdateStatus(settings)
+  // Die Anmeldung (#528): „Abmelden“ nur mit Sitzung, der Hinweis im Übergang
+  const access = useAccess()
+  const signOut = async () => {
+    if (hasOpenForm()) {
+      const ok = await confirmLeave({
+        title: 'Ungespeicherte Änderungen verwerfen?',
+        message: 'Auf dieser Seite ist ein Formular offen oder eine Änderung noch nicht gespeichert. Beim Abmelden geht sie verloren.',
+        confirmLabel: 'Verwerfen',
+        cancelLabel: 'Abbrechen',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    try {
+      await api('/api/auth/logout', { method: 'POST' })
+    } catch (e) {
+      toastShell(errorText(e), 'error')
+      return
+    }
+    await access?.reload()
+  }
   const propertyId = property?.id
   // Das zuletzt gewählte Objekt, für den Reihenfolge-Schutz in reload (#145)
   const currentProperty = useRef(propertyId)
@@ -494,7 +521,10 @@ function Shell() {
       <div className="foot">
         {/* Im Programmfenster, solange der Zugriff aus dem Heimnetz an ist (#517, K5); führt zur Karte in den Einstellungen */}
         {network && <NetworkHint bridge={network} onOpen={() => { void navigateFromNav('einstellungen').then((done) => { if (done) close?.() }) }} />}
+        {/* Im Übergang (#528, Stufe A): ohne Passwort im Netz erreichbar; führt zur Karte „Anmeldung“ */}
+        {showsTransitionHint(access?.info ?? null) && <AccessHint onOpen={() => { void navigate('einstellungen', ACCESS_TARGET, null).then((done) => { if (done) close?.() }) }} />}
         {themeButton}
+        {showsSignOut(access?.info ?? null) && <button type="button" className="theme-toggle" onClick={() => void signOut()}>⎋ Abmelden</button>}
         {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
       </div>
     </>
@@ -606,23 +636,67 @@ function musterTheme(): 'light' | 'dark' | null {
   return params.get('muster') === 'dunkel' ? 'dark' : 'light'
 }
 
+// Die Anmeldung vor der Schale (#528): Erst `GET /api/auth`, dann die Anmeldeseite, die Einrichtung oder die App. Die
+// Schale hängt erst danach ein, denn sie fragt gleich den Server; ohne Anmeldung bekäme jede Frage ein 401. Läuft
+// während der Arbeit die Sitzung ab, meldet ein Abruf das Ereignis (access.ts), und die Anmeldung erscheint als Dialog
+// über der Seite; ihre Eingaben bleiben stehen. Verlangt der Server die Einrichtung, wird neu gefragt.
+function AccessGate({ children }: { children: ReactNode }) {
+  // Der Code aus `#einrichtung=…` wird einmal gelesen und gleich aus der Adresse genommen
+  const [setupCode] = useState(() => takeSetupCode())
+  const [info, setInfo] = useState<AccessInfo | null | 'loading'>('loading')
+  const reload = useCallback(async () => { setInfo(await loadAccess()) }, [])
+  useEffect(() => { void reload() }, [reload])
+  // Der Dialog merkt sich, wo der Fokus stand, als der Abruf scheiterte; dorthin geht er danach zurück
+  const [dialog, setDialog] = useState<{ opener: HTMLElement | null } | null>(null)
+  useEffect(() => onAccessDemand((demand) => {
+    if (demand === 'setup') {
+      void reload()
+      return
+    }
+    setDialog((d) => d ?? { opener: document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null })
+  }), [reload])
+  const toast = useToast()
+  const signedIn = useCallback(async ({ failedAttempts }: LoginResult) => {
+    setDialog(null)
+    const note = failedAttemptsText(failedAttempts)
+    if (note) toast(note, 'info')
+    await reload()
+  }, [reload, toast])
+  const state = useMemo(() => ({ info: info === 'loading' ? null : info, reload, setupCode }), [info, reload, setupCode])
+  // Bis zur Antwort bleibt die Seite leer, damit weder die App noch die Anmeldung kurz aufblitzt
+  if (info === 'loading') return null
+  const view = accessView(info)
+  if (info && view === 'setup') return <Einrichtung info={info} code={setupCode} onDone={() => void reload()} />
+  if (info && view === 'login') return <Anmeldung info={info} onSignedIn={(r) => void signedIn(r)} />
+  return (
+    <AccessContext.Provider value={state}>
+      {children}
+      {dialog && <LoginDialog info={info} opener={dialog.opener} onSignedIn={(r) => void signedIn(r)} onClose={() => setDialog(null)} />}
+    </AccessContext.Provider>
+  )
+}
+
 export default function App() {
   const muster = musterTheme()
   useEffect(() => { if (muster) document.documentElement.dataset.theme = muster }, [muster])
   // Ohne Objekt- und Zeitraum-Provider: die fragen den Server, die Musterseite kommt ohne aus (Durchsicht)
   if (muster) return <UIProvider><main><Muster /></main></UIProvider>
+  // Rückfragen und Mitteilungen ganz außen, damit auch Anmeldung und Einrichtung sie haben und eine Mitteilung nach dem
+  // Anmelden den Wechsel zur App überlebt
   return (
-    <PeriodProvider>
-      <PropertyProvider>
-        <UIProvider>
-          <NewPropertyProvider>
-            {/* Eine Warteschlange der KI-Auswertung für die ganze App (#490), außerhalb der Seiten */}
-            <EvaluationQueueProvider>
-              <Shell />
-            </EvaluationQueueProvider>
-          </NewPropertyProvider>
-        </UIProvider>
-      </PropertyProvider>
-    </PeriodProvider>
+    <UIProvider>
+      <AccessGate>
+        <PeriodProvider>
+          <PropertyProvider>
+            <NewPropertyProvider>
+              {/* Eine Warteschlange der KI-Auswertung für die ganze App (#490), außerhalb der Seiten */}
+              <EvaluationQueueProvider>
+                <Shell />
+              </EvaluationQueueProvider>
+            </NewPropertyProvider>
+          </PropertyProvider>
+        </PeriodProvider>
+      </AccessGate>
+    </UIProvider>
   )
 }
