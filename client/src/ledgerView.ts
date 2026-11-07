@@ -7,7 +7,8 @@
 
 import type { FederalState, NotDemandable, RentDueInfo, RentLedgerCarried, RentLedgerRow, RentMonth } from './types'
 import { stateName, weekdayOf } from '../../shared/holidays.ts'
-import { dayAfter } from '../../shared/law/register.ts'
+import { dayAfter, germanDate } from '../../shared/law/register.ts'
+import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { MONTH_NAMES } from './monthText'
 import { fmtDate, fmtEuro } from './api'
 
@@ -172,11 +173,14 @@ export function dueLine(row: Pick<RentLedgerRow, 'months'>, asOf: string | undef
 // Die Einzelheiten zur Fälligkeit (aufklappbar unter der Zeile), nach der Regel des Mietverhältnisses (`dueRule` vom
 // Server; fehlt sie, ein älterer Server, die Regel für neue Verträge). `checked`: ob die Feiertage heute amtlich gelesen
 // sind (`holidaysCheckedOn`); sonst nennt der Text die sichere Grenze.
+// Der Stichtag der alten Fälligkeit aus dem Register (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB), nicht als Text.
+const OLD_LEASE_UNTIL = germanDate(bgbRentDueAtStart.versions.find((v) => v.value === false)?.validTo ?? '')
+
 function ruleText(r: RentDueInfo): string {
   if (r.rule === 'inArrears') {
     return r.agreed
       ? 'Die Miete ist laut Mietvertrag nach Ablauf des Monats fällig, am Ersten des Folgemonats bzw. am Tag nach dem Auszug, auf den nächsten Werktag verschoben (§ 193 BGB; der Erste des Folgemonats ist eine Auslegung von Mietfuchs)'
-      : 'Die Miete ist nach Ablauf des Monats fällig, weil das Mietverhältnis schon am 01.09.2001 bestand (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB); Mietfuchs nimmt den Ersten des Folgemonats, auf den nächsten Werktag verschoben (Auslegung). Steht im Vertrag, dass im Voraus zu zahlen ist, stellen Sie das am Mietverhältnis ein'
+      : `Die Miete ist nach Ablauf des Monats fällig, weil das Mietverhältnis schon am ${OLD_LEASE_UNTIL} bestand (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB); Mietfuchs nimmt den Ersten des Folgemonats, auf den nächsten Werktag verschoben (Auslegung). Steht im Vertrag, dass im Voraus zu zahlen ist, stellen Sie das am Mietverhältnis ein`
   }
   if (r.rule === 'dayOfMonth') {
     return `Die Miete ist laut Mietvertrag am ${r.day ?? '?'}. des Monats fällig, in kürzeren Monaten am letzten Tag (Auslegung), auf den nächsten Werktag verschoben (§ 193 BGB); im Einzugsmonat gilt der spätere von diesem Tag und dem dritten Werktag ab dem Einzug (Auslegung)`
@@ -190,9 +194,9 @@ export function dueDetails(state: FederalState | null | undefined, checked: bool
     : 'Ohne Bundesland am Objekt nimmt Mietfuchs den spätesten Tag aller Länder; am Ort kann die Miete früher fällig sein.'
   const first = rule.firstRentAtStart ? ' Die erste Miete ist laut Mietvertrag schon bei Mietbeginn fällig; ob diese Klausel wirksam ist, ist nicht höchstrichterlich geklärt.' : ''
   return `${ruleText(rule)}.${first} ${where} ` +
-    'Rechtzeitig ist eine Überweisung, die bis zum Fälligkeitstag bei gedecktem Konto in Auftrag gegeben ist (BGH, Urteil vom 05.10.2016, VIII ZR 222/15). Als Rückstand zählt ein Monat deshalb erst ab dem Tag nach dem spätesten erwarteten Eingang, vier Bankgeschäftstage nach dem Fälligkeitstag (Auslegung von Mietfuchs). ' +
+    'Rechtzeitig ist eine Überweisung, die bis zum Fälligkeitstag bei gedecktem Konto in Auftrag gegeben ist (BGH VIII ZR 222/15). Als Rückstand zählt ein Monat deshalb erst ab dem Tag nach dem spätesten erwarteten Eingang, vier Bankgeschäftstage nach dem Fälligkeitstag (Auslegung von Mietfuchs). ' +
     (checked ? '' : 'Für den Rückstand zählen Feiertage erst, wenn alle Feiertagsgesetze der Länder amtlich gelesen sind; bis dahin zählt Mietfuchs einen Monat vorsichtig erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einem festen Tag nach dem 14. und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
-    'Bei einer Lastschrift holen Sie die Miete selbst ein; rechtzeitig ist der Mieter, wenn sein Konto gedeckt ist (BGH, Urteil vom 20.07.2010, XI ZR 236/07; zur Miete nicht eigens entschieden).'
+    'Bei einer Lastschrift holen Sie die Miete selbst ein; rechtzeitig ist der Mieter, wenn sein Konto gedeckt ist (BGH XI ZR 236/07; zur Miete nicht eigens entschieden).'
 }
 
 // Was das Monatskästchen zusätzlich sagt (Tooltip und Vorleser): der Fälligkeitstag und, nur zur Prüfung, ein Eingang

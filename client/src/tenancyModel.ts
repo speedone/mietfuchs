@@ -7,7 +7,8 @@ import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
 import { monthLabel, parseMonthText } from './monthText'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
-import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { monthShare, rateAtMonth, rateInMonth } from '../../shared/monthRate.ts'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
@@ -289,6 +290,10 @@ export function tenancyRequired(form: { tenantName: string; unitId: string; star
 // Die Regel am Mietverhältnis; '' heißt „Wie im Gesetz“ und wird als null gespeichert. Die Rechnung steht in
 // shared/rentDue.ts, hier stehen nur Beschriftungen, Prüfung und Rumpf.
 export type RentDueChoice = '' | RentDueRule
+// Der Stichtag der alten Fälligkeit aus dem Register (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB) und der erste Tag danach.
+const OLD_LEASE_LAST = bgbRentDueAtStart.versions.find((v) => v.value === false)?.validTo ?? ''
+const OLD_LEASE_UNTIL = germanDate(OLD_LEASE_LAST)
+const NEW_LEASE_FROM = germanDate(OLD_LEASE_LAST ? dayAfter(OLD_LEASE_LAST) : '')
 export type RentDueForm = { rentDue: RentDueChoice; rentDueDay: string; firstRentAtStart: boolean }
 export const EMPTY_RENT_DUE: RentDueForm = { rentDue: '', rentDueDay: '', firstRentAtStart: false }
 
@@ -308,7 +313,7 @@ export function legalRentDue(form: { start: string; contractDate: string }): Ren
 
 // Die Auswahl „Fälligkeit der Miete“: immer alle vier Einträge, damit der gespeicherte Wert sichtbar bleibt.
 export function rentDueOptions(form: { start: string; contractDate: string }): { value: RentDueChoice; label: string }[] {
-  const legal = legalRentDue(form) === 'inArrears' ? 'nach Ablauf des Monats, Mietverhältnis vor dem 02.09.2001' : 'zu Beginn, spätestens am dritten Werktag'
+  const legal = legalRentDue(form) === 'inArrears' ? `nach Ablauf des Monats, Mietverhältnis vor dem ${NEW_LEASE_FROM}` : 'zu Beginn, spätestens am dritten Werktag'
   return [
     { value: '', label: `Wie im Gesetz (${legal})` },
     ...(['startWorkday', 'dayOfMonth', 'inArrears'] as const).map((value) => ({ value, label: RENT_DUE_LABELS[value] })),
@@ -320,7 +325,7 @@ export function rentDueOptions(form: { start: string; contractDate: string }): {
 export function rentDueHint(form: RentDueForm & { start: string; contractDate: string }): string {
   const parts: string[] = []
   if (form.rentDue === '' && legalRentDue(form) === 'inArrears') {
-    parts.push('Das Mietverhältnis bestand schon am 01.09.2001; ohne andere Vereinbarung ist die Miete nach Ablauf des Monats fällig (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). Steht im Vertrag, dass die Miete im Voraus zu zahlen ist, wählen Sie „Zu Beginn des Monats, spätestens am dritten Werktag“.')
+    parts.push(`Das Mietverhältnis bestand schon am ${OLD_LEASE_UNTIL}; ohne andere Vereinbarung ist die Miete nach Ablauf des Monats fällig (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). Steht im Vertrag, dass die Miete im Voraus zu zahlen ist, wählen Sie „Zu Beginn des Monats, spätestens am dritten Werktag“.`)
   } else if (form.rentDue === '') {
     parts.push('Ohne andere Vereinbarung ist die Miete zu Beginn des Monats fällig, spätestens am dritten Werktag; der Samstag zählt nicht (§ 556b Abs. 1 BGB). Nur wenn Ihr Vertrag etwas anderes bestimmt, wählen Sie es hier.')
   }
