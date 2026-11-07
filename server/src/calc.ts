@@ -1283,8 +1283,10 @@ export function ledgerRows(
         const sollCents = baseRentCents + prepaymentCents + heatingPrepaymentCents + flatRateCents
         // Fälligkeit nur als Auskunft am Monat mit Soll und Erfassung (#334); ob er Rückstand ist, sagt `monthIsArrears`.
         const shown = !notRecorded && sollCents > 0 ? dueOfMonth(t, mm, due) : null
-        const arrears = monthIsArrears(t, mm, due)
+        const arrears = shown !== null ? shown.arrears : monthIsArrears(t, mm, due)
         if (arrears) arrearsMonths.add(k)
+        // Nur Auskunft (E3, für #188): verglichen mit dem erwarteten Eingang mit Feiertagen, auch solange der Rückstand
+        // nach der sicheren Grenze zählt; daraus folgt nie ein Verzug.
         const paidAfter = shown?.creditExpectedBy && covered && c?.coveredOn && compareText(c.coveredOn, shown.creditExpectedBy) > 0 ? c.coveredOn : null
         return {
           month: Number(mm.slice(5, 7)),
@@ -3603,7 +3605,7 @@ const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
 export const allocationModel = (m: HeatingModel | undefined): CostModel => (m === 'selfSupply' || m === undefined ? 'settlement' : m)
 
 // Optionen der Abrechnung. `asOf` (JJJJ-MM-TT) ist der Stichtag für den Hinweis auf einen
-// Rückstand im Mietkonto (#133); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
+// Rückstand im Mietkonto (#133, #334: ab dem Tag nach dem erwarteten Eingang); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
 // nach dem heutigen Datum, sonst rechneten dieselben Daten an zwei Tagen verschieden. Ohne
 // Stichtag (Tests, Regression des Umstiegs) gilt das ganze Jahr als fällig.
 // `onAllocation` bekommt je Position ihre Verteilung (#202), für die Invarianten der Tests; die
@@ -10009,7 +10011,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const openCents = monthCoverage(tracked, slices, dueInPeriod, until).reduce((a, c) =>
         a + c.soll.prepayment - c.paid.prepayment + (heatingHere(c.month) ? c.soll.heatingPrepayment - c.paid.heatingPrepayment : 0), 0)
       if (openCents <= 0) continue
-      // Die Fristregeln, nach denen die Monate fällig sind, gehören dann zu den Rechtswerten der Abrechnung.
+      // Die Fristregeln, nach denen die Monate fällig sind, gehören dann zu den Rechtswerten der Abrechnung. Gerechnet und
+      // damit protokolliert werden nur die Monate um den Stichtag (ältere sind ohne Rechnung fällig); ein Hinweis allein
+      // aus älteren Monaten nennt deshalb keine Fristregel (bewusst so, Durchsicht K4).
       for (const v of dueLog.values) if (!lawLog.values.some((a) => a.id === v.id && a.validFrom === v.validFrom)) lawLog.values.push(v)
       warn('prepayment.arrears',
         // Die Sätze ohne Betrag stehen für sich: Bei mehreren Mietern fasst „Zu prüfen“ sie zu einem Kasten zusammen

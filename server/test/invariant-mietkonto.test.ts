@@ -313,6 +313,14 @@ test('Fälligkeit (#334): Status und Beginn des Rückstands wie das Orakel, mono
             if (mo.status !== 'notDue') assert.ok(m <= asOf.slice(0, 7), `${at}, ${asOf}: ${m} früher als einen Monat nach der alten Regel`)
           }
         }
+        // Rückstand über alle Jahre = offene Teile aller Monate ab dem geführten Beginn bis zum Ende der Spanne, die nach dem
+        // Orakel Rückstand sind (Durchsicht S1; ohne `statements` keine Abrechnungsreife).
+        const tracked = ledgerTenancy(tenancy, stock.payments, year)
+        const months = monthsBetween(tracked.start.slice(0, 7), tenancy.end !== null && tenancy.end < `${year}-12-31` ? tenancy.end.slice(0, 7) : `${year}-12`)
+        const cover = monthCoverage(tracked, allocateRentPayments(tracked, stock.payments), months, `${year}-12-31`)
+        const open = cover.filter((c) => asOf >= oracleArrearsFrom(tenancy, c.month, state, checked))
+          .reduce((a, c) => a + COMPONENTS.reduce((x, k) => x + c.soll[k] - c.paid[k], 0), 0)
+        assert.equal(row.arrearsCents, open, `${at}, ${asOf}: Rückstand über alle Jahre`)
         // (b) monoton
         assert.ok(row.arrearsCents >= previous, `${at}, ${asOf}: Rückstand sinkt von ${previous} auf ${row.arrearsCents}`)
         previous = row.arrearsCents
@@ -325,6 +333,7 @@ test('Fälligkeit (#334): Status und Beginn des Rückstands wie das Orakel, mono
 
 test('Fälligkeit (#334): jeder Monat genau bezahlt, mit zufälliger Regel und Land: dieselben Zahlen wie das FIFO-Orakel', () => {
   let compared = 0
+  let notDueCompared = 0
   for (const seed of seeds().slice(0, 120)) {
     const rnd = makeRng(seed * 17 + 3)
     const shape = randomRentStock(makeRng(seed)).tenancy
@@ -336,8 +345,10 @@ test('Fälligkeit (#334): jeder Monat genau bezahlt, mit zufälliger Regel und L
     for (const year of yearsBetween(tenancy.start, lastPaidMonth(stock))) {
       if (`${year}-12` > lastPaidMonth(stock)) continue
       const asOf = `${year}-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rnd() * 28)).padStart(2, '0')}`
-      const [old] = fifoLedgerRows(sourceOf(tenancy, payments), calendarYearPeriod(year), { asOf, state, checked })
-      const row = rentLedger(withState(snapshotOf(sourceOf(tenancy, payments), year), state), { asOf, holidaysChecked: () => checked }).rows.find((r) => r.tenancyId === tenancy.id)
+      // Nur Zahlungen bis zum Stichtag (Durchsicht S1): Dann hängt der Status des laufenden Monats an der Fälligkeit.
+      const known = payments.filter((p) => p.date <= asOf)
+      const [old] = fifoLedgerRows(sourceOf(tenancy, known), calendarYearPeriod(year), { asOf, state, checked })
+      const row = rentLedger(withState(snapshotOf(sourceOf(tenancy, known), year), state), { asOf, holidaysChecked: () => checked }).rows.find((r) => r.tenancyId === tenancy.id)
       if (!old || !row) continue
       const at = `Startwert ${seed}, ${year}, Stichtag ${asOf}`
       assert.deepEqual(row.months.map((m) => [m.status, m.paidCents]), old.months.map((m) => [m.status, m.paidCents]), `${at}: Monate`)
@@ -345,9 +356,11 @@ test('Fälligkeit (#334): jeder Monat genau bezahlt, mit zufälliger Regel und L
       assert.equal(row.openMonths, old.openMonths, `${at}: offene Monate`)
       assert.equal(row.dueSollCents, old.dueSollCents, `${at}: fälliges Soll`)
       compared++
+      if (row.months.some((m) => m.status === 'notDue' && m.paidCents < m.sollCents)) notDueCompared++
     }
   }
   assert.ok(compared > 100, `nur ${compared} Vergleiche`)
+  assert.ok(notDueCompared > 20, `nur ${notDueCompared} Vergleiche mit einem Monat „noch nicht Rückstand“`)
 })
 
 test('Tilgung nach § 366 BGB unabhängig von der Fälligkeit: dieselben Teile mit und ohne Regel am Mietverhältnis', () => {

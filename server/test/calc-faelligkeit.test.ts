@@ -158,3 +158,22 @@ test('Hinweis prepayment.arrears: der laufende Monat zählt erst nach dem erwart
   assert.equal(oldNotice('2026-11-30', UNCHECKED), 0)
   assert.equal(oldNotice('2026-12-01', UNCHECKED), 1)
 })
+
+// Durchsicht S2: seit wann ein Monat gedeckt ist, mit Teilzahlung und Rücklastschrift.
+test('Gedeckt nach dem erwarteten Eingang: Teilzahlung, Rücklastschrift, Rücklastschrift nach dem Jahr', () => {
+  const t = tenancy()
+  const janToOct = Array.from({ length: 10 }, (_, i) => pay('t', `2026-${String(i + 1).padStart(2, '0')}-02`, 80000))
+  const after = (payments: SnapshotPayment[]) => monthOf(rowOf(snapshot([t], [...janToOct, ...payments], 2026), { asOf: '2026-11-25', ...CHECKED }), 11)
+  // Pünktlich gezahlt, zurückgebucht, nach dem erwarteten Eingang (10.11.) erneut gezahlt: gedeckt seit dem 20.11.
+  const back = after([pay('t', '2026-11-03', 80000), pay('t', '2026-11-09', -80000), pay('t', '2026-11-20', 80000)])
+  assert.deepEqual([back.status, back.paidAfterExpected], ['paid', '2026-11-20'])
+  // 500 € pünktlich, 300 € am 18.11.: gedeckt erst am 18.11.
+  const parts = after([pay('t', '2026-11-05', 50000), pay('t', '2026-11-18', 30000)])
+  assert.deepEqual([parts.status, parts.paidAfterExpected], ['paid', '2026-11-18'])
+  // Zurückgebucht und am selben Tag neu gezahlt, alles vor dem erwarteten Eingang: pünktlich.
+  const same = after([pay('t', '2026-11-03', 80000), pay('t', '2026-11-06', -80000), pay('t', '2026-11-06', 80000)])
+  assert.deepEqual([same.status, same.paidAfterExpected], ['paid', undefined])
+  // Eine Rücklastschrift erst im Folgejahr zählt im Jahr 2026 nicht.
+  const later = after([pay('t', '2026-11-20', 80000), pay('t', '2027-01-05', -80000)])
+  assert.deepEqual([later.status, later.paidAfterExpected], ['paid', '2026-11-20'])
+})
