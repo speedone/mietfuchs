@@ -20,7 +20,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   *Einstellungen → Anmeldung* ändern Sie das Passwort, melden alle anderen Geräte ab oder schalten die Anmeldung aus.
   Nach Fehlversuchen wird Mietfuchs langsamer, sperrt aber nie aus. **Passwort vergessen**: eine leere Datei
   `passwort-zuruecksetzen` im Datenordner anlegen und die Seite neu laden, dann nennt Mietfuchs einen neuen Code. Nur auf
-  Ihrem Rechner (Programmfenster ohne Heimnetz, Microsoft Store, `NKA_HOST=127.0.0.1`) ändert sich nichts.
+  Ihrem Rechner (Programmfenster, auch aus dem Microsoft Store, ohne Zugriff aus dem Heimnetz; `NKA_HOST=127.0.0.1`) ändert sich nichts.
   `NKA_AUTH=off` schaltet die Anmeldung ab, etwa hinter einem Proxy mit eigener Anmeldung, `NKA_AUTH=on` verlangt sie
   auch auf `127.0.0.1`. Passwort und Code gehen nicht ins Backup. Über `http://` lässt sich im Heimnetz weiter
   mitlesen; HTTPS gibt es mit einem Proxy oder VPN ([Docker](docs/docker.md#zuerst-sicherheit)).

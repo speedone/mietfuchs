@@ -21,12 +21,12 @@ Suchen Sie sich unten heraus, was auf Sie zutrifft.
 
 Ab Version 0.17 schützt Mietfuchs Ihre Daten mit einem Passwort, sobald andere Geräte es erreichen
 können: im Docker-Container, als Programmdatei, als Linux-Paket und im Programmfenster mit „Zugriff
-aus dem Heimnetz“. Nutzen Sie das Programmfenster nur auf Ihrem Rechner oder die App aus dem
-Microsoft Store, ändert sich für Sie nichts.
+aus dem Heimnetz“. Nutzen Sie das Programmfenster (auch die App aus dem Microsoft Store) ohne
+„Zugriff aus dem Heimnetz“, ändert sich für Sie nichts.
 
 **Sie hatten schon Daten:** Dann bleibt zunächst alles, wie es war, Mietfuchs ist weiter ohne
 Passwort erreichbar. Unten in der Seitenleiste steht „Ohne Passwort im Netz“; ein Klick führt zur
-Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0 verlangt
+Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0 (schon in ihren Vorabversionen) verlangt
 Mietfuchs das Passwort.** An Ihren Daten ändert sich dadurch nichts.
 
 **Mietfuchs zeigt „Passwort festlegen“ und fragt nach einem Einrichtungscode:** Das geschieht bei

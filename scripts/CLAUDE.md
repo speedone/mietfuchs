@@ -41,7 +41,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Darstellung gehört dorthin, nicht nach demo-stock.mjs: Bildschirmfotos und Druck in Safari bleiben, wie sie sind. Jede Seite wird
   ein zweites Mal mit allen `<details>` offen gemessen (Breite und abgeschnittene Felder, Befund
   „aufgeklappt:“). Die Musterseite (`?muster`) prüft er in jeder Kombination wie eine Seite, mit
-  offenem Seitenfenster, Rückfrage und Begriff; `--pages muster` allein. Jeder Befund: Exit 1
+  offenem Seitenfenster, Rückfrage und Begriff; `--pages muster` allein. Ebenso **Einrichtung und Anmeldung** (#528,
+  Seiten `einrichtung` und `anmeldung`) auf zwei eigenen Servern mit `NKA_HOST=0.0.0.0`, einer in der Einrichtung, einer
+  mit Passwort (axe, Breite, abgeschnittene Felder, keine Seitenleiste; `--pages einrichtung,anmeldung` nur diese). Jeder Befund: Exit 1
   und eine Zeile in `<out>/bericht.md`; Fotos in `--out` (Temp, nie im Repo). Ausnahmen für axe in
   [browser-check-axe.json](browser-check-axe.json) mit Grund und Anzahl, nur sinkend (heute leer;
   `--merge` fasst CI-Läufe zusammen). Eingrenzen mit `--engines`, `--views`, `--themes`, `--pages`
@@ -549,14 +551,17 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   ohne `NKA_HOST`), docker.yml (`--code-command` in den Container) und release.yml (Programmdateien mit
   `--code-file`, Container der Distributionen und Pakete mit `--code-command`). Server, die Skripte selbst starten
   (demo-stock.mjs, perf-stock.mjs, umstieg-praxislauf.mjs, fenster-umzug-praxislauf.mjs, bundle-vergleich.mjs),
-  lauschen mit `NKA_HOST=127.0.0.1` ohne Anmeldung.
+  lauschen mit `NKA_HOST=127.0.0.1` ohne Anmeldung, außer wo sie die Anmeldung ausdrücklich prüfen (unten).
 - **[umstieg-praxislauf.mjs](umstieg-praxislauf.mjs)** spielt den Umstieg mit echten Servern über
   zwei Starts durch (frischer Rechner, gewachsener Bestand, Altformate, abgelehnter Bestand, Backup
   mit und ohne Datenbank; ein Fall einzeln mit `--nur 6`). **Fall 7** (Archive von vor der Datenbank,
   auf die [MIGRATION.md](../MIGRATION.md) verweist) startet bewusst in einem **anderen Haus**
   (`bestandAnderesHaus`), sonst blieben die Zusicherungen grün, auch wenn nichts übernommen wurde.
   **Fall 18** legt rohe Zeilen auf den Stand 0076 und prüft den Datenschritt 0077 (Quellen, #455) über
-  echte Starts; er wird rot, wenn der Schritt in `DATA_STEPS` fehlt. Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
+  echte Starts; er wird rot, wenn der Schritt in `DATA_STEPS` fehlt. **Fall 19** (Anmeldung, #528): ein Bestand einer
+  frühen Fassung im Netz (`NKA_HOST=0.0.0.0`) bleibt im Übergang offen, mit Pflicht ab 1.0 und Code im Protokoll, auch
+  beim zweiten Start ohne `zugang.json`; lokal kein Code; ein neuer Ordner im Netz startet in der Einrichtung; nach dem
+  Wiederherstellen auf einem anderen Ordner gilt dessen Anmeldung. Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
   `--slow-ai 320` lässt das Ollama über fünf Minuten schweigen; das läuft im vollen Umfang auf den
   Programmdateien (Linux x64, Windows x64, Apple Silicon) und gegen Node.
 - **[fenster-umzug-praxislauf.mjs](fenster-umzug-praxislauf.mjs)** (#517): lädt die Linux-Programmdateien 0.3.1 und

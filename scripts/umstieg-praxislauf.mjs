@@ -897,6 +897,11 @@ fall(19, 'Anmeldung: alter Bestand im Netz bleibt offen mit Hinweis, neuer Ordne
     enthaelt(log(), `Einrichtungscode zum Festlegen eines Passworts: ${codeIn(alt)}`, 'alter Bestand im Netz: das Protokoll nennt den Code')
     gleich(fs.existsSync(path.join(alt, 'zugang.json')), false, 'alter Bestand im Netz: es wird nichts entschieden (keine zugang.json)')
   }, IM_NETZ)
+  // Ein zweiter Start im Netz entscheidet ebenso wenig: weiter Übergang, weiter keine zugang.json
+  await withServer(alt, async ({ base }) => {
+    gleich((await holen(base, '/api/auth')).mode, 'transition', 'alter Bestand, zweiter Start im Netz: weiter im Übergang')
+    gleich(fs.existsSync(path.join(alt, 'zugang.json')), false, 'alter Bestand, zweiter Start im Netz: weiter keine zugang.json')
+  }, IM_NETZ)
   // Derselbe Bestand, inzwischen in der Datenbank, wieder lokal: nichts davon
   await withServer(alt, async ({ base }) => {
     gleich((await holen(base, '/api/auth')).mode, 'none', 'lokal: keine Anmeldung, kein Hinweis')

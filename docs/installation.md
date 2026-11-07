@@ -194,8 +194,8 @@ Von unterwegs kommst du nur über ein VPN an Mietfuchs, nie über eine Portfreig
 zweiten Rechner im selben WLAN öffnen:
 
 1. In den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen setzen. Die Karte fragt
-   dabei nach einem Passwort für andere Geräte (mindestens 15 Zeichen, sie schlägt einen Satz aus
-   mehreren Wörtern vor), dann speichern. Mietfuchs startet dabei kurz neu.
+   dabei nach einem Passwort für andere Geräte (mindestens 15 Zeichen, ein Satz aus drei, vier
+   Wörtern lässt sich gut merken), dann speichern. Mietfuchs startet dabei kurz neu.
 2. Fragt Windows danach, ob Mietfuchs ins Netz darf, lass nur **Private Netzwerke** zu, nicht
    öffentliche. Kommt das Handy dann nicht durch, führt Windows dein WLAN vermutlich als
    öffentliches Netz: unter *Einstellungen → Netzwerk und Internet → WLAN →* dein Netz den

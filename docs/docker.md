@@ -86,7 +86,7 @@ In der Compose-Datei unter dem Dienst `mietfuchs`:
 ```
 
 Ein anderer Wert verhindert den Start, damit ein Tippfehler die Anmeldung nicht still abschaltet.
-Mit gesetztem `NKA_AUTH` zeigt die Karte in den Einstellungen nur noch an, was gilt.
+Mit `NKA_AUTH=on` oder `off` zeigt die Karte in den Einstellungen nur noch an, was gilt.
 
 ### Container von vor Version 0.17
 

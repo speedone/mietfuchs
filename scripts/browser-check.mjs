@@ -1077,21 +1077,30 @@ const accessWanted = () => PAGES === null || PAGES.some((p) => ACCESS_PAGES.incl
 async function startAccessServers() {
   const setupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-browserlauf-einrichtung-'))
   const loginDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-browserlauf-anmeldung-'))
-  const network = { NKA_HOST: '0.0.0.0', NKA_TEST_IDS: '' }
-  const setup = await startServer(setupDir, '', network)
-  const login = await startServer(loginDir, '', network)
-  const code = fs.readFileSync(path.join(loginDir, 'einrichtungscode.txt'), 'utf8').trim()
-  const res = await fetch(`${login.base}/api/auth/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, password: 'ein langes Passwort im Browserlauf' }) })
-  if (!res.ok) throw new Error(`Einrichtung für den Browserlauf gescheitert: ${res.status}`)
+  const network = { NKA_HOST: '0.0.0.0' }
+  /** @type {Awaited<ReturnType<typeof startServer>>[]} */
+  const started = []
+  const cleanUp = async () => {
+    for (const server of started) await server.stop()
+    fs.rmSync(setupDir, { recursive: true, force: true })
+    fs.rmSync(loginDir, { recursive: true, force: true })
+  }
+  // Scheitert ein Start oder die Einrichtung, bleibt nichts liegen (Durchsicht)
+  try {
+    started.push(await startServer(setupDir, '', network))
+    started.push(await startServer(loginDir, '', network))
+    const code = fs.readFileSync(path.join(loginDir, 'einrichtungscode.txt'), 'utf8').trim()
+    const res = await fetch(`${started[1].base}/api/auth/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, password: 'ein langes Passwort im Browserlauf' }) })
+    if (!res.ok) throw new Error(`Einrichtung für den Browserlauf gescheitert: ${res.status}`)
+  } catch (err) {
+    await cleanUp()
+    throw err
+  }
+  const [setup, login] = started
   return {
     pages: [{ id: 'einrichtung', base: setup.base, heading: 'Mietfuchs einrichten' }, { id: 'anmeldung', base: login.base, heading: 'Mietfuchs' }],
     problem: () => setup.problem() ?? login.problem(),
-    stop: async () => {
-      await setup.stop()
-      await login.stop()
-      fs.rmSync(setupDir, { recursive: true, force: true })
-      fs.rmSync(loginDir, { recursive: true, force: true })
-    },
+    stop: cleanUp,
   }
 }
 
@@ -1197,7 +1206,8 @@ async function main() {
               const accessDown = access.problem()
               if (accessDown) throw new Error(accessDown)
             }
-            if (PAGES !== null && PAGES.every((p) => ACCESS_PAGES.includes(p))) {
+            // Nur die beiden Seiten verlangt; `--pages -` (leere Liste, nur Bedienproben) gehört nicht dazu
+            if (PAGES !== null && PAGES.length > 0 && PAGES.every((p) => ACCESS_PAGES.includes(p))) {
               console.log(`  ${view} ${theme}: ${findings.length - before ? `${findings.length - before} Befunde` : 'ohne Befund'}`)
               continue
             }
