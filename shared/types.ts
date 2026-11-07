@@ -263,6 +263,15 @@ export type RentMonth = {
   paidLaterOn?: string
   // Davon nicht mehr einzeln einforderbare Vorauszahlung (Abrechnungsreife, E5), nur wenn > 0.
   notDemandableCents?: number
+  // Fälligkeit (#334), nur mit Stichtag und Soll und ab 1995: Fälligkeitstag nach der Regel des Mietverhältnisses und den
+  // Feiertagen am Ort (ohne Land der späteste aller Länder), spätester erwarteter Eingang (vierter Bankgeschäftstag danach)
+  // und der Tag, ab dem der Monat Rückstand ist. `arrearsFrom` ist der Tag nach `creditExpectedBy`, solange die Feiertage
+  // dafür geprüft sind, sonst die sichere Grenze ohne Feiertage (Entwurf E6). `notDue` gilt bis zum Tag davor.
+  dueOn?: string
+  creditExpectedBy?: string
+  arrearsFrom?: string
+  // Gedeckt erst nach dem erwarteten Eingang: der Tag der Deckung, nur Auskunft („zur Prüfung“, nie Verzug).
+  paidAfterExpected?: string
 }
 
 // Warum eine offene Vorauszahlung nicht mehr einzeln einforderbar ist (#281, E5; BGH VIII ZR 84/17 Rn. 53):
@@ -322,6 +331,9 @@ export type RentLedgerCarried = {
 
 export type RentLedger = {
   year: number
+  // Der Stichtag, mit dem gerechnet ist (#334; die Route setzt heute), damit die Oberfläche „fällig am“ und „fällig seit“
+  // am selben Tag entscheidet wie der Server.
+  asOf?: string
   rows: RentLedgerRow[]
   // Mietverhältnisse ohne Tag im Jahr, für die eine Zahlung aus der Abrechnung im Jahr erfasst ist
   // (#280): Nachzahlung und Guthaben kommen oft erst nach dem Auszug.

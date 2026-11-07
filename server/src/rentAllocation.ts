@@ -303,12 +303,13 @@ export type MonthCoverage = {
   paid: MonthSoll // bis `until` getilgt (einschließlich, nach `paidOn`)
   covered: boolean // die Regel „bezahlt = Σ Teile ≥ Soll“, an dieser einen Stelle; ohne Soll gedeckt
   paidLaterOn: string | null // zum Stichtag nicht gedeckt, später gedeckt worden: der Tag, ab dem er gedeckt ist
+  coveredOn: string | null // zum Stichtag gedeckt: der Tag, seit dem er ohne Unterbrechung gedeckt ist (#334); ohne Soll null
 }
 
 // Je Monat und Bestandteil: Soll und das bis `until` (einschließlich, nach `paidOn`) Getilgte. Gedeckt ist ein Monat,
 // wenn die Summe seiner Teile das Soll erreicht, wie im Mietkonto; ein Monat ohne Soll ist gedeckt. `paidLaterOn`
 // nennt für einen zum Stichtag nicht gedeckten Monat den Tag, an dem ihn spätere Zahlungen gedeckt haben (und seither
-// gedeckt lassen); „noch nicht fällig“ (#133) entscheidet weiter das Mietkonto mit seinem Stichtag.
+// gedeckt lassen); „noch nicht fällig“ entscheidet das Mietkonto mit seinem Stichtag (#334, `monthIsArrears` in calc.ts).
 export function monthCoverage(t: AllocationTenancy, slices: readonly AllocationSlice[], months: readonly string[], until: string): MonthCoverage[] {
   const byMonth = new Map<string, AllocationSlice[]>()
   for (const s of slices) {
@@ -335,7 +336,20 @@ export function monthCoverage(t: AllocationTenancy, slices: readonly AllocationS
         else paidLaterOn = null
       }
     }
-    return { month, soll, paid, covered, paidLaterOn }
+    // Seit wann gedeckt (#334, nur Auskunft): der Tag, ab dem die Summe der Teile bis zum Stichtag das Soll erreicht und
+    // nicht wieder darunter fällt (eine Rücknahme danach beginnt neu).
+    let coveredOn: string | null = null
+    if (covered && sollTotal > 0) {
+      const upTo = own.filter((s) => s.paidOn <= until).sort((a, b) => compareText(a.paidOn, b.paidOn))
+      let run = 0
+      for (let i = 0; i < upTo.length;) {
+        const day = upTo[i]?.paidOn ?? ''
+        for (; i < upTo.length && upTo[i]?.paidOn === day; i++) run += upTo[i]?.cents ?? 0
+        if (run >= sollTotal) coveredOn ??= day
+        else coveredOn = null
+      }
+    }
+    return { month, soll, paid, covered, paidLaterOn, coveredOn }
   })
 }
 
