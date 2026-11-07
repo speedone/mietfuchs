@@ -425,8 +425,8 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
   `firstRentAtStart`), `creditExpectedBy` (vierter Bankgeschäftstag: `bgb.transfer-execution-days` und
   `practice.credit-booking-days`; kein Feiertag in irgendeinem Land oder einer Gemeinde, nicht `practice.bank-closed-days`),
   `monthDue`/`arrearsFrom`: Rückstand ab dem Tag nach dem erwarteten Eingang, wenn jeder Tag vom Abschnittsbeginn bis
-  dahin `holidaysCheckedOn` ist, sonst die **sichere Grenze** (`safeArrearsFrom`: voller Monat zu Beginn ab dem Ersten des
-  Folgemonats, jeder andere ab dem Ersten des übernächsten; Invariante: nie früher als mit Feiertagen). Vor 1995 nur
+  dahin `holidaysCheckedOn` ist, sonst die **sichere Grenze** (`safeArrearsFrom`: voller Monat zu Beginn oder mit festem
+  Tag bis zum 14. (`EARLY_DAY_LIMIT`) ab dem Ersten des Folgemonats, jeder andere ab dem Ersten des übernächsten; Invariante: nie früher als mit Feiertagen). Vor 1995 nur
   die sichere Grenze. calc.ts liest es an **einer** Stelle (`monthIsArrears`, siehe Mietkonto); die Fristregeln fragt es mit
   `law()`. Die Auskunft im Mietkonto rechnet der Server (`RentMonth.dueOn` …, `RentLedgerRow.dueRule` für die Einzelheiten),
   nicht mehr der Client. `rentDueDate`/`rentDueRuleText` (deadlines.ts) haben seitdem keinen Aufrufer außer Tests; sie
@@ -1185,7 +1185,8 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   nichts verschoben, nur beziffert (`forwardOldLeaseCents`, `lateDecemberCents`) mit dem Vorbehalt „nur wenn laut Vertrag
   am Monatsende fällig“. **Vereinbarte Fälligkeit** (#334, `Tenancy.rentDue`): „zu Beginn“ wie § 556b, „nach Ablauf“
   verschiebt nichts und wird nicht beziffert (die Texte der Bezifferung sprechen vom Altvertrag), ein fester Tag
-  verschiebt nur, wenn der nach § 193 verschobene Tag im Januar in der kurzen Zeit liegt und jeder Tag bis dahin
+  bis zum 8. verschiebt wie „zu Beginn“ (der verschobene Tag ist in jedem Land spätestens der 10.01., Test über alle
+  Länder), sonst nur, wenn der nach § 193 verschobene Tag im Januar in der kurzen Zeit liegt und jeder Tag bis dahin
   `holidaysCheckedOn` ist (vor 1995 nie). Rückwärts wird bei vereinbarter Fälligkeit nichts beziffert (bekannte Grenze). Die Zahl der Tage steht im Register (`estg.short-period-days`, gefragt für das Jahr, zu dem die
   Zahlung gehört), auch für den Hinweis am Zahlungsdatum der Kostenposition (`tenDayWindow`). Das Mietkonto verschiebt
   nie, es bleibt beim Datum.

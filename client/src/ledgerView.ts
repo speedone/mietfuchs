@@ -191,7 +191,7 @@ export function dueDetails(state: FederalState | null | undefined, checked: bool
   const first = rule.firstRentAtStart ? ' Die erste Miete ist laut Mietvertrag schon bei Mietbeginn fällig; ob diese Klausel wirksam ist, ist nicht höchstrichterlich geklärt.' : ''
   return `${ruleText(rule)}.${first} ${where} ` +
     'Rechtzeitig ist eine Überweisung, die bis zum Fälligkeitstag bei gedecktem Konto in Auftrag gegeben ist (BGH, Urteil vom 05.10.2016, VIII ZR 222/15). Als Rückstand zählt ein Monat deshalb erst ab dem Tag nach dem spätesten erwarteten Eingang, vier Bankgeschäftstage nach dem Fälligkeitstag (Auslegung von Mietfuchs). ' +
-    (checked ? '' : 'Für den Rückstand zählen Feiertage erst, wenn alle Feiertagsgesetze der Länder amtlich gelesen sind; bis dahin zählt Mietfuchs einen Monat vorsichtig erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einem festen Tag und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
+    (checked ? '' : 'Für den Rückstand zählen Feiertage erst, wenn alle Feiertagsgesetze der Länder amtlich gelesen sind; bis dahin zählt Mietfuchs einen Monat vorsichtig erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einem festen Tag nach dem 14. und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
     'Bei einer Lastschrift holen Sie die Miete selbst ein; rechtzeitig ist der Mieter, wenn sein Konto gedeckt ist (BGH, Urteil vom 20.07.2010, XI ZR 236/07; zur Miete nicht eigens entschieden).'
 }
 

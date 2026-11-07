@@ -59,7 +59,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Werktag“, „An einem festen Tag des Monats“ mit dem Tag oder „Nach Ablauf des Monats“, dazu „Erste Miete schon bei
     Mietbeginn fällig“. Bestimmt Ihr Vertrag etwas anderes als das Gesetz, tragen Sie es dort ein; bei einem Altvertrag mit
     Vorauszahlungsklausel „Zu Beginn des Monats, spätestens am dritten Werktag“. Die Steuerübersicht wendet die
-    Zehn-Tage-Regel nach dieser Angabe an; ohne Angabe ändert sich nichts.
+    Zehn-Tage-Regel nach dieser Angabe an; ohne Angabe ändert sich nichts. Ein fester Tag bis zum 14. zählt im Mietkonto
+    wie „zu Beginn“ ab dem Ersten des Folgemonats als Rückstand, solange die Feiertage nicht amtlich gelesen sind.
   - Das Lexikon erklärt den neuen Begriff „Fälligkeit der Miete“ mit Beispiel und Rechtsgrundlage.
 
 ## [0.16.1] – 2026-11-08
