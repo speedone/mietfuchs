@@ -3,7 +3,7 @@ import type { CostItem, HeatingPlant, Settings, Tenancy, Unit } from './types'
 import type { JumpTarget } from './focus'
 import { ACCESS_TARGET, AI_SETTINGS_TARGET, NEW_UNIT_TARGET, UPDATE_GUIDE_TARGET } from './jumpTargets'
 import { api, errorText } from './api'
-import { AccessContext, loadAccess, onAccessDemand, useAccess, type AccessInfo } from './access'
+import { AccessContext, announceSignedIn, loadAccess, onAccessDemand, onSignedInAgain, useAccess, type AccessInfo } from './access'
 import { accessView, failedAttemptsText, showsSignOut, showsTransitionHint, takeSetupCode } from './accessView'
 import AccessHint from './components/AccessHint'
 import LoginDialog, { type LoginResult } from './components/LoginDialog'
@@ -412,6 +412,15 @@ function Shell() {
     reload().catch((e) => console.error(e))
   }, [reload])
 
+  // Nach der Anmeldung im Dialog (#528): Was beim Laden am 401 scheiterte, steht sonst leer da. Ohne offenes Formular wird
+  // die Seite neu eingehängt und der Bestand neu geladen; mit offenem Formular bleibt alles stehen, wie der Dialog sagt.
+  const [remount, setRemount] = useState(0)
+  useEffect(() => onSignedInAgain(() => {
+    if (hasOpenForm()) return
+    setRemount((n) => n + 1)
+    reload().catch((e) => console.error(e))
+  }), [hasOpenForm, reload])
+
   // Die Seite Heizkosten erscheint erst mit einer Heizanlage (Heizung PR 6, Entwurf 11.4). Neu
   // gefragt wird bei jedem Seitenwechsel, so erscheint sie, sobald die Anlage in den Stammdaten
   // angelegt ist.
@@ -524,7 +533,7 @@ function Shell() {
         {/* Im Übergang (#528, Stufe A): ohne Passwort im Netz erreichbar; führt zur Karte „Anmeldung“ */}
         {showsTransitionHint(access?.info ?? null) && <AccessHint onOpen={() => { void navigate('einstellungen', ACCESS_TARGET, null).then((done) => { if (done) close?.() }) }} />}
         {themeButton}
-        {showsSignOut(access?.info ?? null) && <button type="button" className="theme-toggle" onClick={() => void signOut()}>⎋ Abmelden</button>}
+        {showsSignOut(access?.info ?? null) && <button type="button" className="theme-toggle" onClick={() => void signOut()}><span aria-hidden="true">⎋</span> Abmelden</button>}
         {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
       </div>
     </>
@@ -588,7 +597,7 @@ function Shell() {
         {/* Je Objekt und Jahr neu aufgestellt (#145, Durchsicht zu #141): Formulare und
             Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. Die
             Warteschlange der KI-Auswertung liegt darüber (App), sie überlebt den Wechsel (#490). */}
-        <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
+        <Fragment key={`${propertyId ?? ''}:${periodKeyNow}:${remount}`}>
         {/* Solange der Umzug angeboten ist, auf jeder Seite (Durchsicht D4): Eine Eingabe dazwischen machte ihn unmöglich */}
         {relocation === 'offered' && <Umzug onFresh={() => setRelocation('none')} />}
         {relocation === 'none' && relocationManual && <Umzug manual onClose={() => setRelocationManual(false)} />}
@@ -642,7 +651,8 @@ function musterTheme(): 'light' | 'dark' | null {
 // über der Seite; ihre Eingaben bleiben stehen. Verlangt der Server die Einrichtung, wird neu gefragt.
 function AccessGate({ children }: { children: ReactNode }) {
   // Der Code aus `#einrichtung=…` wird einmal gelesen und gleich aus der Adresse genommen
-  const [setupCode] = useState(() => takeSetupCode())
+  const [setupCode, setSetupCode] = useState(() => takeSetupCode())
+  const clearSetupCode = useCallback(() => setSetupCode(''), [])
   const [info, setInfo] = useState<AccessInfo | null | 'loading'>('loading')
   const reload = useCallback(async () => { setInfo(await loadAccess()) }, [])
   useEffect(() => { void reload() }, [reload])
@@ -657,21 +667,34 @@ function AccessGate({ children }: { children: ReactNode }) {
   }), [reload])
   const toast = useToast()
   const signedIn = useCallback(async ({ failedAttempts }: LoginResult) => {
+    const again = dialog !== null
     setDialog(null)
     const note = failedAttemptsText(failedAttempts)
     if (note) toast(note, 'info')
     await reload()
+    // Aus dem Dialog: Die Seite darunter lädt neu, was beim Laden am 401 gescheitert ist
+    if (again) announceSignedIn()
+  }, [dialog, reload, toast])
+  // Der Zustand hat sich anderswo geändert (409: inzwischen festgelegt oder ausgeschaltet): neu lesen, Satz als Mitteilung
+  const stale = useCallback(async (message: string) => {
+    setDialog(null)
+    toast(message, 'info')
+    await reload()
   }, [reload, toast])
-  const state = useMemo(() => ({ info: info === 'loading' ? null : info, reload, setupCode }), [info, reload, setupCode])
+  const setupDone = useCallback(async () => {
+    clearSetupCode()
+    await reload()
+  }, [clearSetupCode, reload])
+  const state = useMemo(() => ({ info: info === 'loading' ? null : info, reload, setupCode, clearSetupCode }), [info, reload, setupCode, clearSetupCode])
   // Bis zur Antwort bleibt die Seite leer, damit weder die App noch die Anmeldung kurz aufblitzt
   if (info === 'loading') return null
   const view = accessView(info)
-  if (info && view === 'setup') return <Einrichtung info={info} code={setupCode} onDone={() => void reload()} />
-  if (info && view === 'login') return <Anmeldung info={info} onSignedIn={(r) => void signedIn(r)} />
+  if (info && view === 'setup') return <Einrichtung info={info} code={setupCode} onDone={() => void setupDone()} />
+  if (info && view === 'login') return <Anmeldung info={info} onSignedIn={(r) => void signedIn(r)} onStale={(m) => void stale(m)} />
   return (
     <AccessContext.Provider value={state}>
       {children}
-      {dialog && <LoginDialog info={info} opener={dialog.opener} onSignedIn={(r) => void signedIn(r)} onClose={() => setDialog(null)} />}
+      {dialog && <LoginDialog info={info} opener={dialog.opener} onSignedIn={(r) => void signedIn(r)} onStale={(m) => void stale(m)} onClose={() => setDialog(null)} />}
     </AccessContext.Provider>
   )
 }

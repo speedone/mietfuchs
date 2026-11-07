@@ -2,13 +2,15 @@
 // Mit dem Einrichtungscode (vom Rechner, auf dem Mietfuchs läuft) legt man das Passwort fest oder geht bewusst ohne
 // weiter. Im Programmfenster gilt die Anfrage als „am Rechner selbst“, dort fehlt das Codefeld. Geprüft wird vorher in
 // der Seite (accessView.ts): Ungleiche oder zu kurze Passwörter gehen nicht hinaus.
+// Den Zweig `info.window` gibt es für den Fall, dass das Fenster die Seite je zeigt: Mit seinem Schlüssel ist es angemeldet
+// und kommt sonst nicht hierher (es richtet über die Heimnetz-Karte ein).
 import { useState, type FormEvent } from 'react'
-import { api, errorText } from '../api'
+import { api, ApiError, errorText } from '../api'
 import type { AccessInfo } from '../access'
-import { setupProblems, WITHOUT_PASSWORD_WARNING, type AccessField } from '../accessView'
+import { setupErrorField, setupProblems, WITHOUT_PASSWORD_WARNING, type AccessField } from '../accessView'
 import { CodeField, NewPasswordFields, type NewPassword } from '../components/AccessFields'
 import { ErrorSummary, useFormError } from '../components/ErrorSummary'
-import { useConfirm } from '../components/feedback'
+import { useConfirm, useToast } from '../components/feedback'
 import FoxLogo from '../components/Logo'
 
 export default function Einrichtung({ info, code: initialCode, onDone }: { info: AccessInfo; code: string; onDone: () => void }) {
@@ -17,6 +19,7 @@ export default function Einrichtung({ info, code: initialCode, onDone }: { info:
   const [busy, setBusy] = useState(false)
   const errors = useFormError<AccessField>()
   const confirm = useConfirm()
+  const toast = useToast()
 
   async function send(body: Record<string, unknown>) {
     setBusy(true)
@@ -24,7 +27,15 @@ export default function Einrichtung({ info, code: initialCode, onDone }: { info:
       await api('/api/auth/setup', { method: 'POST', body: JSON.stringify({ ...(info.window ? {} : { code }), ...body }) })
       onDone()
     } catch (e) {
-      errors.show(errorText(e))
+      // 409: inzwischen anderswo festgelegt; dann gilt der neue Zustand, der Satz steht als Mitteilung
+      if (e instanceof ApiError && e.status === 409) {
+        toast(e.message, 'info')
+        onDone()
+        return
+      }
+      const field = setupErrorField(e)
+      if (field) errors.report([{ field, text: errorText(e) }])
+      else errors.show(errorText(e))
     } finally {
       setBusy(false)
     }

@@ -3,6 +3,7 @@
 // AccessCard.tsx) rendern nur.
 import type { AccessInfo } from './access'
 import type { Problem } from './formProblems'
+import { ApiError } from './api'
 
 export type AccessViewKind = 'setup' | 'login' | 'app'
 
@@ -72,6 +73,16 @@ export function setupProblems(info: AccessInfo, code: string, value: { password:
   if (!info.window && !code.trim()) problems.push({ field: 'code', short: 'Code fehlt', text: 'Bitte geben Sie den Einrichtungscode ein.' })
   if (value) problems.push(...passwordProblems(value.password, value.repeat, info.minLength))
   return problems
+}
+
+// Welches Feld eine Ablehnung des Servers betrifft, damit sie wie jede Meldung auch dort steht: der Code (fehlt: 403,
+// falsch: 400 mit „Code“), das bisherige Passwort (403 oder „bisherige“), sonst bei 400 das neue Passwort.
+export function setupErrorField(e: unknown): AccessField | null {
+  if (!(e instanceof ApiError)) return null
+  if (/code/i.test(e.message) && (e.status === 400 || e.status === 403)) return 'code'
+  if (/bisherige/.test(e.message) || e.status === 403) return 'current'
+  if (e.status === 400) return 'password'
+  return null
 }
 
 // Wo der Einrichtungscode steht, je Betriebsart. Den vollen Pfad nennt der Server nur am Rechner selbst.

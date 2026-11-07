@@ -15,7 +15,13 @@ import { ResetHelp } from './AccessFields'
 export type LoginResult = { failedAttempts: number }
 
 // `autoFocus` auf der Anmeldeseite; der Dialog setzt den Fokus selbst, die Musterseite gar nicht
-export function LoginForm({ info, onSignedIn, autoFocus = false }: { info: AccessInfo | null; onSignedIn: (result: LoginResult) => void; autoFocus?: boolean }) {
+// `onStale`: 409, der Zustand hat sich anderswo geändert (kein Passwort mehr, ausgeschaltet); die App liest ihn neu
+export function LoginForm({ info, onSignedIn, onStale, autoFocus = false }: {
+  info: AccessInfo | null
+  onSignedIn: (result: LoginResult) => void
+  onStale?: (message: string) => void
+  autoFocus?: boolean
+}) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const errors = useFormError<'password'>()
@@ -35,6 +41,10 @@ export function LoginForm({ info, onSignedIn, autoFocus = false }: { info: Acces
       errors.clear()
       onSignedIn({ failedAttempts: typeof r.failedAttempts === 'number' ? r.failedAttempts : 0 })
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && onStale) {
+        onStale(err.message)
+        return
+      }
       // Bei 429 nennt der Server die Wartezeit im Satz; fehlt er, aus `retryAfter`
       const retry = err instanceof ApiError && err.status === 429 && typeof err.data.retryAfter === 'number' ? err.data.retryAfter : null
       const text = err instanceof ApiError && err.status === 429 && !/erneut/.test(err.message) && retry !== null ? `${err.message} ${waitText(retry)}` : errorText(err)
@@ -62,10 +72,11 @@ export function LoginForm({ info, onSignedIn, autoFocus = false }: { info: Acces
 
 // Der Dialog über der Seite. `opener` ist das Element, das beim Abruf den Fokus hatte; dorthin geht er nach der
 // Anmeldung oder beim Schließen zurück.
-export default function LoginDialog({ info, opener, onSignedIn, onClose }: {
+export default function LoginDialog({ info, opener, onSignedIn, onStale, onClose }: {
   info: AccessInfo | null
   opener: HTMLElement | null
   onSignedIn: (result: LoginResult) => void
+  onStale: (message: string) => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -93,7 +104,7 @@ export default function LoginDialog({ info, opener, onSignedIn, onClose }: {
       <div className="dialog">
         <h2 id={titleId}>Bitte melden Sie sich wieder an</h2>
         <p className="dialog-msg">Ihre Anmeldung ist abgelaufen. Was Sie auf der Seite eingegeben haben, bleibt stehen; wiederholen Sie nach der Anmeldung den letzten Schritt.</p>
-        <LoginForm info={info} onSignedIn={onSignedIn} />
+        <LoginForm info={info} onSignedIn={onSignedIn} onStale={onStale} />
         <div className="dialog-actions">
           <button type="button" className="btn ghost" onClick={onClose}>Schließen</button>
         </div>

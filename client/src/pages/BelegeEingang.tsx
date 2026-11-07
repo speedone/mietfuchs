@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { JumpTarget } from '../focus'
 import type { AiStatus, AssessmentView, CostItem, LineDecision, Reading, Settings, Unit, UploadInfo, Meter } from '../types'
 import { calendarPeriod, periodContext, periodOfKey, rulesOf, startYearOf } from '../../../shared/period.ts'
-import { api, errorText, fmtEuro } from '../api'
+import { api, errorText, fmtEuro, loadErrorText } from '../api'
 import { appFetch } from '../access'
 import { aiSummary } from '../aiForm'
 import { type KeyContext } from '../costForm'
@@ -170,7 +170,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Mit dem Bestand der Seite: Was hier gebucht oder zugeordnet wird, steht danach im Ordner richtig.
   const reloadAll = () => Promise.all([loadData(), stock.reload()])
   useEffect(() => {
-    loadData().catch(() => setError('Server nicht erreichbar: Läuft `npm run dev`?'))
+    loadData().catch((e: unknown) => setError(loadErrorText(e, 'Server nicht erreichbar: Läuft `npm run dev`?')))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
 

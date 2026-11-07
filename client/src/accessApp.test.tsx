@@ -14,6 +14,8 @@ const info = (over: Partial<AccessInfo> = {}): AccessInfo => ({
 
 let auth: AccessInfo
 let settingsAnswer: () => Response
+// Abgelaufene Sitzung: Die Zähler antworten bis zur Anmeldung mit 401 der Vorschaltung
+let expired = false
 const calls: { path: string; method: string }[] = []
 
 beforeEach(() => {
@@ -21,6 +23,7 @@ beforeEach(() => {
   calls.length = 0
   auth = info()
   settingsAnswer = () => json({ ok: true })
+  expired = false
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }))
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0] ?? ''
@@ -29,12 +32,14 @@ beforeEach(() => {
     if (path === '/api/auth') return json(auth)
     if (path === '/api/auth/login') {
       auth = info()
+      expired = false
       return json({ ok: true, failedAttempts: 2 })
     }
     if (path === '/api/auth/logout') {
       auth = info({ signedIn: false })
       return json({ ok: true })
     }
+    if (path === '/api/meters' && expired) return json({ error: 'Bitte melden Sie sich an.', login: true }, 401)
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     if (path === '/api/settings' && method === 'PUT') return settingsAnswer()
     if (path === '/api/settings') return json({ landlordName: '', iban: '', paymentDeadlineDays: 30 })
@@ -108,4 +113,25 @@ test('im Übergang „Ohne Passwort im Netz“, führt zur Karte „Anmeldung“
   expect(await screen.findByRole('heading', { name: 'Anmeldung' })).toBeTruthy()
   expect(document.body.textContent).toContain('Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.')
   expect(screen.queryByRole('button', { name: /Abmelden/ })).toBeNull()
+})
+
+test('401 beim Laden einer Seite: kein „Server nicht erreichbar“, nach der Anmeldung lädt die Seite neu', async () => {
+  render(<App />)
+  await screen.findByRole('navigation', { name: 'Hauptnavigation' })
+  expired = true
+  fireEvent.click(screen.getByRole('button', { name: /Zähler/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'Bitte melden Sie sich wieder an' })
+  await waitFor(() => expect(document.body.textContent).toContain('Bitte melden Sie sich an'))
+  expect(document.body.textContent).not.toContain('Server nicht erreichbar')
+  const before = calls.filter((c) => c.path === '/api/meters').length
+  fireEvent.change(within(dialog).getByLabelText('Passwort'), { target: { value: 'tisch-garten-wolke-ofen' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Anmelden' }))
+  await waitFor(() => expect(calls.filter((c) => c.path === '/api/meters').length).toBeGreaterThan(before))
+  await waitFor(() => expect(document.body.textContent).not.toContain('Bitte melden Sie sich an'))
+  expect(document.body.textContent).not.toContain('Server nicht erreichbar')
+})
+
+test('„Abmelden“ heißt für Vorleser genau so, das Zeichen davor ist ausgeblendet', async () => {
+  render(<App />)
+  expect(await screen.findByRole('button', { name: 'Abmelden' })).toBeTruthy()
 })

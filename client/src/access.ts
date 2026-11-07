@@ -76,6 +76,9 @@ export function onAccessDemand(listener: (demand: AccessDemand) => void): () => 
 // Jeder Abruf der Oberfläche geht hierüber (Wächter in access.test.ts): Verlangt der Server eine Anmeldung, meldet es
 // das Ereignis, und die App zeigt die Anmeldung. Die Antwort geht unverändert weiter, der Aufrufer behandelt den Fehler
 // wie jeden anderen. Gelesen wird eine Kopie, damit der Aufrufer den Rumpf noch lesen kann.
+// Nicht hierüber gehen, was der Browser selbst lädt: pdf.js, `<img>`, `<iframe>`, Downloads über Links und `sendBeacon`.
+// Das ist hingenommen: Sie bekommen mit abgelaufener Sitzung nur ein leeres Bild oder eine Fehlerseite, und der nächste
+// Abruf über api() öffnet den Dialog.
 export async function appFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const res = await fetch(input, init)
   if (res.status === 401 && typeof res.clone === 'function') {
@@ -98,6 +101,16 @@ export async function loadAccess(): Promise<AccessInfo | null> {
   }
 }
 
+// Nach der Anmeldung im Dialog: Seiten, die beim Laden ein 401 bekamen, laden neu (App.tsx, Shell)
+export const SIGNED_IN_EVENT = 'mietfuchs:angemeldet'
+export function announceSignedIn(): void {
+  window.dispatchEvent(new Event(SIGNED_IN_EVENT))
+}
+export function onSignedInAgain(listener: () => void): () => void {
+  window.addEventListener(SIGNED_IN_EVENT, listener)
+  return () => window.removeEventListener(SIGNED_IN_EVENT, listener)
+}
+
 // ---------- Zustand für die Schale ----------
 
 export type AccessState = {
@@ -106,6 +119,8 @@ export type AccessState = {
   reload: () => Promise<void>
   // Der Einrichtungscode aus der Adresse (`#einrichtung=…`), schon aus ihr entfernt
   setupCode: string
+  // Nach jeder Einrichtung (mit oder ohne Passwort) gilt er nicht mehr: Der Server gibt danach einen neuen aus
+  clearSetupCode: () => void
 }
 export const AccessContext = createContext<AccessState | null>(null)
 export const useAccess = (): AccessState | null => useContext(AccessContext)

@@ -33,6 +33,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 // Servers als Error; alles andere (Netz weg) kommt ebenfalls lesbar heraus.
 export const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
+// Der Satz zu einem gescheiterten Laden einer Seite: Verlangt der Server eine Anmeldung (#528), ist der Server erreichbar,
+// und es gilt sein Satz; der Anmeldedialog steht dann schon da, und nach der Anmeldung lädt die Seite neu. Sonst `offline`.
+export const loadErrorText = (e: unknown, offline: string): string =>
+  e instanceof ApiError && e.status === 401 ? e.message : offline
+
 // Seit der Belegbuchung (#170) in shared/costItem.ts, weil der Server denselben Betrag ausschreibt.
 export { euro as fmtEuro } from '../../shared/costItem.ts'
 

@@ -3,8 +3,9 @@ import { describe, expect, test } from 'vitest'
 import type { AccessInfo } from './access'
 import {
   accessView, codeFromHash, codePlaces, failedAttemptsText, passwordProblems, showsAccessCard, showsSignOut,
-  showsTransitionHint, takeSetupCode, waitText, withoutSetupHash,
+  setupErrorField, showsTransitionHint, takeSetupCode, waitText, withoutSetupHash,
 } from './accessView'
+import { ApiError } from './api'
 import { passphrase, PASSPHRASE_WORDS } from './passphrase'
 
 const info = (over: Partial<AccessInfo> = {}): AccessInfo => ({
@@ -104,5 +105,17 @@ describe('Vorschlag einer Passphrase', () => {
     expect(PASSPHRASE_WORDS.length).toBeGreaterThanOrEqual(256)
     // Nur Kleinbuchstaben ohne Umlaut: am Handy ohne Umschalten zu tippen
     for (const w of PASSPHRASE_WORDS) expect(w).toMatch(/^[a-z]{3,9}$/)
+  })
+})
+
+describe('Ablehnungen des Servers am Feld', () => {
+  test('Code, bisheriges Passwort, neues Passwort', () => {
+    expect(setupErrorField(new ApiError('Der Code stimmt nicht.', 400, {}))).toBe('code')
+    expect(setupErrorField(new ApiError('Bitte geben Sie den Einrichtungscode ein. Er steht im Protokoll von Mietfuchs.', 403, {}))).toBe('code')
+    expect(setupErrorField(new ApiError('Das bisherige Passwort stimmt nicht.', 403, {}))).toBe('current')
+    expect(setupErrorField(new ApiError('Bitte geben Sie Ihr bisheriges Passwort ein.', 400, {}))).toBe('current')
+    expect(setupErrorField(new ApiError('Das Passwort braucht mindestens 15 Zeichen.', 400, {}))).toBe('password')
+    expect(setupErrorField(new ApiError('Bitte melden Sie sich an.', 401, {}))).toBeNull()
+    expect(setupErrorField(new Error('Netz weg'))).toBeNull()
   })
 })

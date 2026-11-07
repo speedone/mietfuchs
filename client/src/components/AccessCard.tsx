@@ -5,10 +5,10 @@
 // Programmfenster, das am Rechner selbst steht. Ist NKA_AUTH gesetzt, entscheidet die Umgebung über Ein und Aus; die
 // Karte bietet dann kein Ausschalten und kein „Ohne Passwort weiter“ an.
 import { useState } from 'react'
-import { api, errorText } from '../api'
+import { api, ApiError, errorText } from '../api'
 import { useAccess, type AccessInfo } from '../access'
 import {
-  accessStateText, ENV_FIXED_NOTE, passwordProblems, setupProblems, showsAccessCard, TRANSITION_NOTE,
+  accessStateText, ENV_FIXED_NOTE, passwordProblems, setupErrorField, setupProblems, showsAccessCard, TRANSITION_NOTE,
   WITHOUT_PASSWORD_WARNING, type AccessField,
 } from '../accessView'
 import type { JumpProps } from '../focus'
@@ -62,12 +62,23 @@ export default function AccessCard({ jump }: { jump?: JumpProps }) {
     try {
       await api(path, { method, body: JSON.stringify(body) })
     } catch (e) {
-      errors.show(errorText(e))
       setBusy(false)
+      // 409: Der Zustand hat sich anderswo geändert; Fenster zu, neu lesen, der Satz als Mitteilung
+      if (e instanceof ApiError && e.status === 409) {
+        setForm(null)
+        toast(e.message, 'info')
+        await access?.reload()
+        return
+      }
+      const field = setupErrorField(e)
+      if (field) errors.report([{ field, text: errorText(e) }])
+      else errors.show(errorText(e))
       return
     }
     setBusy(false)
     setForm(null)
+    // Nach jeder Einrichtung gilt der Code aus der Adresse nicht mehr (der Server gibt einen neuen aus)
+    if (path === '/api/auth/setup') access?.clearSetupCode()
     toast(done)
     await access?.reload()
   }

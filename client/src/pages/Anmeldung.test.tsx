@@ -22,8 +22,9 @@ function setup(answer: () => Response) {
     return answer()
   })
   const onSignedIn = vi.fn()
-  render(<Anmeldung info={info} onSignedIn={onSignedIn} />)
-  return { calls, onSignedIn }
+  const onStale = vi.fn()
+  render(<Anmeldung info={info} onSignedIn={onSignedIn} onStale={onStale} />)
+  return { calls, onSignedIn, onStale }
 }
 
 test('ohne Seitenmenü: Fuchs, „Mietfuchs“, Feld „Passwort“, „Anmelden“ und die Hilfe zum Vergessen', () => {
@@ -70,4 +71,12 @@ test('nach Erfolg mit der Zahl der Fehlversuche seit der letzten Anmeldung', asy
   fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'tisch-garten-wolke-ofen' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }))
   await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith({ failedAttempts: 3 }))
+})
+
+test('409 (kein Passwort mehr festgelegt): der Satz geht an die App, die den Zustand neu liest', async () => {
+  const { onStale, onSignedIn } = setup(() => json(409, { error: 'Für Mietfuchs ist kein Passwort festgelegt.' }))
+  fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'tisch-garten-wolke-ofen' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }))
+  await waitFor(() => expect(onStale).toHaveBeenCalledWith('Für Mietfuchs ist kein Passwort festgelegt.'))
+  expect(onSignedIn).not.toHaveBeenCalled()
 })

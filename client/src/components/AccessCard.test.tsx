@@ -14,15 +14,16 @@ afterEach(() => {
 
 const base: AccessInfo = { mode: 'password', required: true, signedIn: true, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' }
 
-function setup(info: AccessInfo = base, setupCode = '') {
+function setup(info: AccessInfo = base, setupCode = '', answer: { status: number; body: unknown } = { status: 200, body: { ok: true } }) {
   const calls: { url: string; method: string; body: unknown }[] = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     calls.push({ url, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) : null })
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } })
   })
   const reload = vi.fn(async () => {})
-  render(<UIProvider><AccessContext.Provider value={{ info, reload, setupCode }}><AccessCard /></AccessContext.Provider></UIProvider>)
-  return { calls, reload }
+  const clearSetupCode = vi.fn()
+  render(<UIProvider><AccessContext.Provider value={{ info, reload, setupCode, clearSetupCode }}><AccessCard /></AccessContext.Provider></UIProvider>)
+  return { calls, reload, clearSetupCode }
 }
 const drawer = () => screen.getByRole('dialog')
 const type = (label: string, value: string) => fireEvent.change(within(drawer()).getByLabelText(label), { target: { value } })
@@ -81,7 +82,7 @@ test('NKA_AUTH=off im Netz: nur Anzeige', () => {
 })
 
 test('im Übergang: Satz zu Version 1.0, Passwort festlegen mit Code aus der Adresse, ohne Passwort weiter mit Rückfrage', async () => {
-  const { calls } = setup({ ...base, mode: 'transition', required: false, signedIn: false, codeFileName: 'einrichtungscode.txt' }, 'K7QM-4XPA-9TRW')
+  const { calls, clearSetupCode } = setup({ ...base, mode: 'transition', required: false, signedIn: false, codeFileName: 'einrichtungscode.txt' }, 'K7QM-4XPA-9TRW')
   expect(document.body.textContent).toContain('Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.')
   expect(screen.queryByRole('button', { name: 'Passwort ändern' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Passwort festlegen' }))
@@ -90,4 +91,26 @@ test('im Übergang: Satz zu Version 1.0, Passwort festlegen mit Code aus der Adr
   const question = await screen.findByRole('alertdialog')
   fireEvent.click(within(question).getByRole('button', { name: 'Ohne Passwort weiter' }))
   await waitFor(() => expect(calls).toEqual([{ url: '/api/auth/setup', method: 'POST', body: { code: 'K7QM-4XPA-9TRW', withoutPassword: true } }]))
+  // Der Server gibt danach einen neuen Code aus; der aus der Adresse gilt nicht mehr
+  await waitFor(() => expect(clearSetupCode).toHaveBeenCalled())
+})
+
+test('„Das bisherige Passwort stimmt nicht.“ steht am Feld', async () => {
+  setup(base, '', { status: 403, body: { error: 'Das bisherige Passwort stimmt nicht.' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Auf allen Geräten abmelden' }))
+  type('Bisheriges Passwort', 'falsch-falsch-falsch')
+  fireEvent.click(within(drawer()).getByRole('button', { name: 'Abmelden' }))
+  await waitFor(() => expect(within(drawer()).getByLabelText('Bisheriges Passwort').getAttribute('aria-invalid')).toBe('true'))
+})
+
+test('409: Fenster zu, Zustand neu lesen, der Satz als Mitteilung', async () => {
+  const { reload } = setup({ ...base, mode: 'off', required: false, signedIn: false }, '', { status: 409, body: { error: 'Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Passwort festlegen' }))
+  type('Einrichtungscode', 'K7QM-4XPA-9TRW')
+  type('Passwort', 'tisch-garten-wolke-ofen')
+  type('Passwort wiederholen', 'tisch-garten-wolke-ofen')
+  fireEvent.click(within(drawer()).getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(reload).toHaveBeenCalled())
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(await screen.findAllByText('Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.')).not.toHaveLength(0)
 })

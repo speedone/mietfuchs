@@ -14,11 +14,11 @@ afterEach(() => {
 
 const base: AccessInfo = { mode: 'setup', required: true, signedIn: false, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'binary', codeFile: '/home/v/mietfuchs/data/einrichtungscode.txt' }
 
-function setup(info: AccessInfo = base, code = '') {
+function setup(info: AccessInfo = base, code = '', answer: { status: number; body: unknown } = { status: 200, body: { ok: true, mode: 'password' } }) {
   const calls: { url: string; body: unknown }[] = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null })
-    return new Response(JSON.stringify({ ok: true, mode: 'password' }), { status: 200, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } })
   })
   const onDone = vi.fn()
   render(<UIProvider><Einrichtung info={info} code={code} onDone={onDone} /></UIProvider>)
@@ -90,4 +90,24 @@ test('im Programmfenster ohne Codefeld und ohne Code im Rumpf', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Passwort festlegen' }))
   await waitFor(() => expect(onDone).toHaveBeenCalled())
   expect(calls).toEqual([{ url: '/api/auth/setup', body: { password: 'tisch-garten-wolke-ofen' } }])
+})
+
+const fill = () => {
+  type('Passwort', 'tisch-garten-wolke-ofen')
+  type('Passwort wiederholen', 'tisch-garten-wolke-ofen')
+  fireEvent.click(screen.getByRole('button', { name: 'Passwort festlegen' }))
+}
+
+test('„Der Code stimmt nicht.“ steht am Codefeld', async () => {
+  setup(base, 'FALS-CHER-CODE', { status: 400, body: { error: 'Der Code stimmt nicht.' } })
+  fill()
+  await waitFor(() => expect(screen.getByLabelText('Einrichtungscode').getAttribute('aria-invalid')).toBe('true'))
+  expect((await screen.findByRole('alert')).textContent).toContain('Der Code stimmt nicht.')
+})
+
+test('409 (inzwischen anderswo festgelegt): Zustand neu lesen und den Satz als Mitteilung', async () => {
+  const { onDone } = setup(base, 'K7QM-4XPA-9TRW', { status: 409, body: { error: 'Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.' } })
+  fill()
+  await waitFor(() => expect(onDone).toHaveBeenCalled())
+  expect(await screen.findAllByText('Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.')).not.toHaveLength(0)
 })

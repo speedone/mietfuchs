@@ -4,7 +4,7 @@ import type { AccessInfo } from '../access'
 import FoxLogo from '../components/Logo'
 import { LoginForm, type LoginResult } from '../components/LoginDialog'
 
-export default function Anmeldung({ info, onSignedIn }: { info: AccessInfo; onSignedIn: (result: LoginResult) => void }) {
+export default function Anmeldung({ info, onSignedIn, onStale }: { info: AccessInfo; onSignedIn: (result: LoginResult) => void; onStale: (message: string) => void }) {
   return (
     <main className="stopped">
       <div className="card text-left">
@@ -12,7 +12,7 @@ export default function Anmeldung({ info, onSignedIn }: { info: AccessInfo; onSi
           <FoxLogo size={40} />
           <h1 className="m-0">Mietfuchs</h1>
         </div>
-        <LoginForm info={info} onSignedIn={onSignedIn} autoFocus />
+        <LoginForm info={info} onSignedIn={onSignedIn} onStale={onStale} autoFocus />
       </div>
     </main>
   )
