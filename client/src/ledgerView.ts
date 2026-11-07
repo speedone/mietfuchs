@@ -5,7 +5,7 @@
 // gefunden, die nicht stimmten. Eine ungeprüfte Bedingung in einer Komponente ist keine
 // Formalie, sondern die Stelle, an der so etwas sitzt.
 
-import type { FederalState, NotDemandable, RentLedgerCarried, RentLedgerRow, RentMonth } from './types'
+import type { FederalState, NotDemandable, RentDueInfo, RentLedgerCarried, RentLedgerRow, RentMonth } from './types'
 import { stateName, weekdayOf } from '../../shared/holidays.ts'
 import { dayAfter } from '../../shared/law/register.ts'
 import { MONTH_NAMES } from './monthText'
@@ -156,7 +156,9 @@ export type DueLine = { text: string, tone: 'red' | 'muted' }
 export function dueLine(row: Pick<RentLedgerRow, 'months'>, asOf: string | undefined): DueLine | null {
   if (asOf === undefined) return null
   const name = (mo: RentMonth): string => MONTH_NAMES[mo.month - 1] ?? String(mo.month)
-  const open = row.months.find((mo) => (mo.status === 'open' || mo.status === 'partial') && mo.dueOn !== undefined)
+  // Rot nur, was heute Rückstand ist: nicht ein später bezahlter Monat (S3) und nicht, was nur noch über die Abrechnung
+  // offen ist (S2).
+  const open = row.months.find((mo) => (mo.status === 'open' || mo.status === 'partial') && mo.dueOn !== undefined && !mo.paidLaterOn && (mo.notDemandableCents ?? 0) < mo.sollCents - mo.paidCents)
   if (open?.dueOn) return { text: `Miete ${name(open)} offen seit ${fullDate(open.dueOn)}`, tone: 'red' }
   const next = row.months.find((mo) => mo.status === 'notDue' && mo.sollCents > 0 && mo.dueOn !== undefined)
   if (!next?.dueOn) return null
@@ -167,22 +169,37 @@ export function dueLine(row: Pick<RentLedgerRow, 'months'>, asOf: string | undef
   return { text: `Miete ${name(next)} fällig seit ${dayMonth(next.dueOn)}, zählt als Rückstand ab ${fullDate(next.arrearsFrom ?? next.dueOn)}`, tone: 'muted' }
 }
 
-// Die Einzelheiten zur Fälligkeit (aufklappbar unter der Zeile).
-// `checked`: ob die Feiertage heute amtlich gelesen sind (`holidaysCheckedOn`); sonst nennt der Text die sichere Grenze.
-export function dueDetails(state: FederalState | null | undefined, checked: boolean): string {
-  const where = state ? `nach den Feiertagen in ${stateName(state)}, auch denen einzelner Gemeinden` : 'ohne Bundesland am Objekt nach dem spätesten Tag aller Länder; am Ort kann sie früher sein'
-  return `Fällig ist die Miete nach der Regel am Mietverhältnis, ohne Angabe zu Beginn des Monats, spätestens am dritten Werktag, der Samstag zählt nicht; ${where}. ` +
-    'Das gilt, wenn der Mietvertrag nichts anderes bestimmt; eine andere Fälligkeit tragen Sie am Mietverhältnis ein. ' +
-    'Rechtzeitig ist eine Überweisung, die bis zum Fälligkeitstag in Auftrag gegeben ist. Als Rückstand zählt ein Monat deshalb erst ab dem Tag nach dem spätesten erwarteten Eingang, vier Bankgeschäftstage nach dem Fälligkeitstag. ' +
-    (checked ? '' : 'Solange nicht alle Feiertagsgesetze der Länder amtlich gelesen sind, rechnet Mietfuchs vorsichtig ohne Feiertage und zählt einen Monat erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einem festen Tag und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
-    'Bei einer Lastschrift holen Sie die Miete selbst ein; rechtzeitig ist der Mieter, wenn sein Konto gedeckt ist.'
+// Die Einzelheiten zur Fälligkeit (aufklappbar unter der Zeile), nach der Regel des Mietverhältnisses (`dueRule` vom
+// Server; fehlt sie, ein älterer Server, die Regel für neue Verträge). `checked`: ob die Feiertage heute amtlich gelesen
+// sind (`holidaysCheckedOn`); sonst nennt der Text die sichere Grenze.
+function ruleText(r: RentDueInfo): string {
+  if (r.rule === 'inArrears') {
+    return r.agreed
+      ? 'Die Miete ist laut Mietvertrag nach Ablauf des Monats fällig, am Ersten des Folgemonats bzw. am Tag nach dem Auszug, auf den nächsten Werktag verschoben (§ 193 BGB; der Erste des Folgemonats ist eine Auslegung von Mietfuchs)'
+      : 'Die Miete ist nach Ablauf des Monats fällig, weil das Mietverhältnis schon am 01.09.2001 bestand (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB); Mietfuchs nimmt den Ersten des Folgemonats, auf den nächsten Werktag verschoben (Auslegung). Steht im Vertrag, dass im Voraus zu zahlen ist, stellen Sie das am Mietverhältnis ein'
+  }
+  if (r.rule === 'dayOfMonth') {
+    return `Die Miete ist laut Mietvertrag am ${r.day ?? '?'}. des Monats fällig, in kürzeren Monaten am letzten Tag (Auslegung), auf den nächsten Werktag verschoben (§ 193 BGB); im Einzugsmonat gilt der spätere von diesem Tag und dem dritten Werktag ab dem Einzug (Auslegung)`
+  }
+  return `Die Miete ist ${r.agreed ? 'laut Mietvertrag' : 'ohne andere Vereinbarung'} zu Beginn des Monats, spätestens am dritten Werktag fällig, der Samstag zählt nicht (§ 556b Abs. 1 BGB); im Einzugsmonat zählen die drei Werktage ab dem Einzug (Auslegung)`
+}
+
+export function dueDetails(state: FederalState | null | undefined, checked: boolean, rule: RentDueInfo = { rule: 'startWorkday', agreed: false }): string {
+  const where = state
+    ? `Feiertage zählen nach ${stateName(state)}, auch die einzelner Gemeinden; wo sie nicht gelten, kann die Miete einen Werktag früher fällig sein.`
+    : 'Ohne Bundesland am Objekt nimmt Mietfuchs den spätesten Tag aller Länder; am Ort kann die Miete früher fällig sein.'
+  const first = rule.firstRentAtStart ? ' Die erste Miete ist laut Mietvertrag schon bei Mietbeginn fällig; ob diese Klausel wirksam ist, ist nicht höchstrichterlich geklärt.' : ''
+  return `${ruleText(rule)}.${first} ${where} ` +
+    'Rechtzeitig ist eine Überweisung, die bis zum Fälligkeitstag bei gedecktem Konto in Auftrag gegeben ist (BGH, Urteil vom 05.10.2016, VIII ZR 222/15). Als Rückstand zählt ein Monat deshalb erst ab dem Tag nach dem spätesten erwarteten Eingang, vier Bankgeschäftstage nach dem Fälligkeitstag (Auslegung von Mietfuchs). ' +
+    (checked ? '' : 'Für den Rückstand zählen Feiertage erst, wenn alle Feiertagsgesetze der Länder amtlich gelesen sind; bis dahin zählt Mietfuchs einen Monat vorsichtig erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einem festen Tag und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
+    'Bei einer Lastschrift holen Sie die Miete selbst ein; rechtzeitig ist der Mieter, wenn sein Konto gedeckt ist (BGH, Urteil vom 20.07.2010, XI ZR 236/07; zur Miete nicht eigens entschieden).'
 }
 
 // Was das Monatskästchen zusätzlich sagt (Tooltip und Vorleser): der Fälligkeitstag und, nur zur Prüfung, ein Eingang
 // nach dem erwarteten Tag. Ohne Farbe; ob rechtzeitig überwiesen wurde, zeigt nur der Auftrag des Mieters.
-export function monthDueText(mo: Pick<RentMonth, 'dueOn' | 'paidAfterExpected'>): string | null {
+export function monthDueText(mo: Pick<RentMonth, 'dueOn' | 'paidAfterExpected' | 'status'>): string | null {
   const parts: string[] = []
-  if (mo.dueOn) parts.push(`fällig am ${fullDate(mo.dueOn)}`)
+  if (mo.dueOn && mo.status !== 'paid') parts.push(`fällig am ${fullDate(mo.dueOn)}`)
   if (mo.paidAfterExpected) parts.push(`eingegangen am ${fullDate(mo.paidAfterExpected)}, nach dem erwarteten Eingang; ob rechtzeitig überwiesen wurde, zeigt nur der Auftrag des Mieters`)
   return parts.length > 0 ? parts.join(' · ') : null
 }

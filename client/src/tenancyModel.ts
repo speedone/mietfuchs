@@ -324,8 +324,8 @@ export function rentDueHint(form: RentDueForm & { start: string; contractDate: s
   } else if (form.rentDue === '') {
     parts.push('Ohne andere Vereinbarung ist die Miete zu Beginn des Monats fällig, spätestens am dritten Werktag; der Samstag zählt nicht (§ 556b Abs. 1 BGB). Nur wenn Ihr Vertrag etwas anderes bestimmt, wählen Sie es hier.')
   }
-  if (form.rentDue === 'dayOfMonth') parts.push('In kürzeren Monaten gilt der letzte Tag; fällt der Tag auf ein Wochenende oder einen Feiertag, der nächste Werktag (§ 193 BGB).')
-  if (form.firstRentAtStart) parts.push('Ob eine solche Klausel im Formularvertrag wirksam ist, ist nicht höchstrichterlich geklärt.')
+  if (form.rentDue === 'dayOfMonth') parts.push('Fällt der Tag auf ein Wochenende oder einen Feiertag, gilt der nächste Werktag (§ 193 BGB). In kürzeren Monaten nimmt Mietfuchs den letzten Tag, im Einzugsmonat den späteren von diesem Tag und dem dritten Werktag ab dem Einzug (Auslegung).')
+  if (form.firstRentAtStart) parts.push('Ob die Klausel „Erste Miete schon bei Mietbeginn fällig“ im Formularvertrag wirksam ist, ist nicht höchstrichterlich geklärt.')
   return parts.join(' ')
 }
 

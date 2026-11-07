@@ -421,14 +421,16 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
   dritter Werktag ohne Samstag; `deadlineOnWorkday`: Fristende nach § 193 BGB.
 - **Fälligkeit am Mietverhältnis und Rückstand (#334)**, [shared/rentDue.ts](../../shared/rentDue.ts): `effectiveRentDue`
   (`Tenancy.rentDue`, sonst gesetzlich über `bgb.rent-due-at-start`), `rentDueOn` (dritter Werktag, im Einzugsmonat ab
-  dem Mietbeginn; fester Tag mit § 193; nach Ablauf der Erste des Folgemonats bzw. der Tag nach dem Mietende;
+  dem Mietbeginn; fester Tag mit § 193; nach Ablauf der Erste des Folgemonats bzw. der Tag nach dem Mietende, nach § 193 verschoben;
   `firstRentAtStart`), `creditExpectedBy` (vierter Bankgeschäftstag: `bgb.transfer-execution-days` und
   `practice.credit-booking-days`; kein Feiertag in irgendeinem Land oder einer Gemeinde, nicht `practice.bank-closed-days`),
   `monthDue`/`arrearsFrom`: Rückstand ab dem Tag nach dem erwarteten Eingang, wenn jeder Tag vom Abschnittsbeginn bis
   dahin `holidaysCheckedOn` ist, sonst die **sichere Grenze** (`safeArrearsFrom`: voller Monat zu Beginn ab dem Ersten des
   Folgemonats, jeder andere ab dem Ersten des übernächsten; Invariante: nie früher als mit Feiertagen). Vor 1995 nur
   die sichere Grenze. calc.ts liest es an **einer** Stelle (`monthIsArrears`, siehe Mietkonto); die Fristregeln fragt es mit
-  `law()`. Die Auskunft im Mietkonto rechnet der Server (`RentMonth.dueOn` …), nicht mehr der Client.
+  `law()`. Die Auskunft im Mietkonto rechnet der Server (`RentMonth.dueOn` …, `RentLedgerRow.dueRule` für die Einzelheiten),
+  nicht mehr der Client. `rentDueDate`/`rentDueRuleText` (deadlines.ts) haben seitdem keinen Aufrufer außer Tests; sie
+  bleiben als Bausteine für Fristen ohne Rückstand.
 - Bewusst nicht: Land aus der Postleitzahl, Sonntage in Hessen, ob § 193 BGB auf eine Frist
   anzuwenden ist (entscheidet der Aufrufer).
 

@@ -131,7 +131,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     .filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
     .sort((a, b) => b.date.localeCompare(a.date))
   // Die Einzelheiten zur Fälligkeit (#334): ob die Feiertage heute amtlich gelesen sind, entscheidet der Text.
-  const dueMore = ledger?.asOf ? dueDetails(property?.state, holidaysCheckedOn(ledger.asOf)) : ''
+  const dueChecked = ledger?.asOf ? holidaysCheckedOn(ledger.asOf) : false
 
   return (
     <>
@@ -302,7 +302,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 {due && (
                   <details className={`no-print rent-due ${due.tone === 'red' ? 'text-red' : 'muted'}`}>
                     <summary>{due.text}</summary>
-                    <p>{dueMore}</p>
+                    <p>{dueDetails(property?.state, dueChecked, r.dueRule)}</p>
                   </details>
                 )}
                 <div className="rent-grid">

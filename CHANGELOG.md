@@ -49,11 +49,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   gedeckt ist, sonst „noch nichts fällig“. Geht die Miete erst nach dem erwarteten Eingang ein, nennt das Monatskästchen den
   Tag nur zur Prüfung. Derselbe Tag gilt für den Hinweis zu nicht gezahlten Vorauszahlungen in der Abrechnung.
   - **Was sich für bestehende Daten ändert**: Sobald die Feiertagsgesetze aller Länder amtlich gelesen sind, zählt der
-    laufende Monat bei Verträgen ab dem 02.09.2001 schon ab etwa dem 8. bis 14. als Rückstand statt erst ab dem Ersten des
+    laufende Monat bei Verträgen ab dem 02.09.2001 schon ab etwa dem 10. bis 14. als Rückstand statt erst ab dem Ersten des
     Folgemonats. Bis dahin (heute sind Bremen, Hamburg, Rheinland-Pfalz und Sachsen-Anhalt nicht amtlich gelesen) rechnet
     Mietfuchs vorsichtig ohne Feiertage: Ein voller Monat, der zu Beginn fällig ist, zählt wie bisher ab dem Ersten des
-    Folgemonats; im Einzugsmonat, bei einem festen Tag und bei einem Mietverhältnis, das schon am 01.09.2001 bestand
-    (fällig nach Ablauf des Monats), erst ab dem Ersten des übernächsten Monats, also später als bisher.
+    Folgemonats; im Einzugsmonat und bei einem Mietverhältnis, das schon am 01.09.2001 bestand (fällig nach Ablauf des
+    Monats), erst ab dem Ersten des übernächsten Monats, also später als bisher.
   - **Fälligkeit am Mietverhältnis**: In den Stammdaten wählen Sie neben dem Vertragsdatum „Fälligkeit der Miete“: „Wie im
     Gesetz“ (Voreinstellung, nennt die Regel für dieses Mietverhältnis), „Zu Beginn des Monats, spätestens am dritten
     Werktag“, „An einem festen Tag des Monats“ mit dem Tag oder „Nach Ablauf des Monats“, dazu „Erste Miete schon bei

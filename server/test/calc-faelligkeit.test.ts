@@ -177,3 +177,13 @@ test('Gedeckt nach dem erwarteten Eingang: Teilzahlung, Rücklastschrift, Rückl
   const later = after([pay('t', '2026-11-20', 80000), pay('t', '2027-01-05', -80000)])
   assert.deepEqual([later.status, later.paidAfterExpected], ['paid', '2026-11-20'])
 })
+
+// Durchsicht der Oberfläche (M1): Die Zeile nennt die wirksame Regel, damit die Einzelheiten stimmen; nur mit Stichtag.
+test('Die Zeile nennt die Regel der Fälligkeit: gesetzlich oder vereinbart, fester Tag, erste Miete bei Beginn', () => {
+  const ruleOf = (t: SnapshotTenancy, options: LedgerOptions = { asOf: '2026-11-07' }) => rowOf(snapshot([t], [pay('t', '2026-01-02', 80000)], 2026), options).dueRule
+  assert.deepEqual(ruleOf(tenancy()), { rule: 'startWorkday', agreed: false })
+  assert.deepEqual(ruleOf(tenancy({ start: '1998-04-01' })), { rule: 'inArrears', agreed: false })
+  assert.deepEqual(ruleOf(tenancy({ rentDue: 'inArrears' })), { rule: 'inArrears', agreed: true })
+  assert.deepEqual(ruleOf(tenancy({ rentDue: 'dayOfMonth', rentDueDay: 15, firstRentAtStart: true })), { rule: 'dayOfMonth', agreed: true, day: 15, firstRentAtStart: true })
+  assert.equal(ruleOf(tenancy(), {}), undefined, 'ohne Stichtag keine Auskunft')
+})

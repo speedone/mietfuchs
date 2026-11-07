@@ -280,7 +280,13 @@ export type RentMonth = {
 export type NotDemandableReason = 'inStatement' | 'creditedAsPaid' | 'deadlinePassed'
 export type NotDemandable = { reason: NotDemandableReason; label: string; cents: number; differenceCents?: number }
 
+// Die Regel der Fälligkeit eines Mietverhältnisses für die Auskunft im Mietkonto (#334): die wirksame Regel, ob sie
+// vereinbart ist (sonst gesetzlich), der feste Tag und die erste Miete bei Mietbeginn.
+export type RentDueInfo = { rule: RentDueRule; agreed: boolean; day?: number; firstRentAtStart?: boolean }
+
 export type RentLedgerRow = {
+  // Nur mit Stichtag (#334).
+  dueRule?: RentDueInfo
   tenancyId: string
   tenantName: string
   unitName: string

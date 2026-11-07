@@ -191,18 +191,62 @@ describe('Mietkonto: Fälligkeit je Karte (#334)', () => {
   it('das Monatskästchen nennt den Fälligkeitstag und einen späten Eingang nur zur Prüfung', () => {
     expect(monthDueText(october('notDue'))).toBe('fällig am 13.10.2026')
     expect(monthDueText({ ...due(11, 'paid', '2026-11-04', '2026-11-10', '2026-11-11'), paidAfterExpected: '2026-11-20' }))
-      .toBe('fällig am 04.11.2026 · eingegangen am 20.11.2026, nach dem erwarteten Eingang; ob rechtzeitig überwiesen wurde, zeigt nur der Auftrag des Mieters')
+      .toBe('eingegangen am 20.11.2026, nach dem erwarteten Eingang; ob rechtzeitig überwiesen wurde, zeigt nur der Auftrag des Mieters')
     expect(monthDueText(month(3, 80000, 'paid'))).toBeNull()
   })
   it('die Einzelheiten nennen Land, Vertrag, Überweisungsauftrag und vier Bankgeschäftstage; die sichere Grenze nur ohne geprüfte Feiertage', () => {
-    const nw = dueDetails('NW', false)
-    expect(nw).toMatch(/Feiertagen in Nordrhein-Westfalen, auch denen einzelner Gemeinden/)
-    expect(nw).toMatch(/wenn der Mietvertrag nichts anderes bestimmt/)
+    const nw = dueDetails('NW', false, { rule: 'startWorkday', agreed: false })
+    expect(nw).toMatch(/Feiertage zählen nach Nordrhein-Westfalen, auch die einzelner Gemeinden/)
+    expect(nw).toMatch(/ohne andere Vereinbarung/)
     expect(nw).toMatch(/in Auftrag gegeben/)
     expect(nw).toMatch(/vier Bankgeschäftstage/)
-    expect(nw).toMatch(/vorsichtig ohne Feiertage/)
-    expect(dueDetails('NW', true)).not.toMatch(/vorsichtig ohne Feiertage/)
-    expect(dueDetails(null, false)).toMatch(/spätesten Tag aller Länder; am Ort kann sie früher sein/)
+    expect(nw).toMatch(/Für den Rückstand zählen Feiertage erst/)
+    expect(dueDetails('NW', true, { rule: 'startWorkday', agreed: false })).not.toMatch(/Für den Rückstand zählen Feiertage erst/)
+    expect(dueDetails(null, false, { rule: 'startWorkday', agreed: false })).toMatch(/spätesten Tag aller Länder; am Ort kann die Miete früher fällig sein/)
+  })
+})
+
+// Durchsicht der Oberfläche (#334): M1 Einzelheiten nach der Regel des Mietverhältnisses, S2/S3/S9 Randfälle der Zeile.
+describe('Mietkonto: Fälligkeit, Durchsicht', () => {
+  it('M1: die Einzelheiten nennen die Regel des Mietverhältnisses, beim Altvertrag „nach Ablauf“', () => {
+    const old = dueDetails('NW', false, { rule: 'inArrears', agreed: false })
+    expect(old).toMatch(/nach Ablauf des Monats fällig, weil das Mietverhältnis schon am 01\.09\.2001 bestand \(Art\. 229 § 3 Abs\. 1 Nr\. 7 EGBGB\)/)
+    expect(old).not.toMatch(/spätestens am dritten Werktag/)
+    expect(dueDetails('NW', false, { rule: 'inArrears', agreed: true })).toMatch(/laut Mietvertrag nach Ablauf des Monats/)
+    expect(dueDetails('NW', false, { rule: 'dayOfMonth', agreed: true, day: 15 })).toMatch(/laut Mietvertrag am 15\. des Monats/)
+    expect(dueDetails('NW', false, { rule: 'startWorkday', agreed: false })).toMatch(/zu Beginn des Monats, spätestens am dritten Werktag/)
+    expect(dueDetails('NW', false, { rule: 'startWorkday', agreed: false, firstRentAtStart: true })).toMatch(/erste Miete ist laut Mietvertrag schon bei Mietbeginn fällig; ob diese Klausel wirksam ist, ist nicht höchstrichterlich geklärt/)
+    // S4: Feiertage einzelner Gemeinden zählen mit, am Ort kann es früher sein.
+    expect(dueDetails('SN', false, { rule: 'startWorkday', agreed: false })).toMatch(/wo sie nicht gelten, kann die Miete einen Werktag früher fällig sein/)
+    // S6: die Lastschrift mit Vorbehalt.
+    expect(old).toMatch(/zur Miete nicht eigens entschieden/)
+  })
+  it('S2: ein Monat, der nur noch über die Abrechnung offen ist, ist nicht rot „offen seit“', () => {
+    const via = { ...due(3, 'open', '2025-03-05', '2025-03-11', '2025-03-12'), notDemandableCents: 80000 }
+    const r = card([month(1, 80000, 'paid'), month(2, 80000, 'paid'), via, ...Array.from({ length: 9 }, (_, i) => month(i + 4, 80000, 'paid'))])
+    expect(dueLine(r, '2026-11-07')).toBeNull()
+  })
+  it('S3: ein später bezahlter Monat ist nicht „offen seit“', () => {
+    const later = { ...due(12, 'open', '2025-12-03', '2025-12-09', '2025-12-10'), paidLaterOn: '2026-01-15' }
+    const r = card([...Array.from({ length: 11 }, (_, i) => month(i + 1, 80000, 'paid')), later])
+    expect(dueLine(r, '2026-11-07')).toBeNull()
+  })
+  it('S9: kommendes Jahr, ausgezogen, Rückstand nur aus dem Vorjahr', () => {
+    // Kommendes Jahr: nichts fällig, die Zeile nennt den Januar.
+    const next = card(Array.from({ length: 12 }, (_, i) => due(i + 1, 'notDue', `2027-${String(i + 1).padStart(2, '0')}-05`, `2027-${String(i + 1).padStart(2, '0')}-11`, `2027-${String(i + 1).padStart(2, '0')}-12`)))
+    expect(rowStanding(next, '2026-11-07')).toEqual({ kind: 'nothingDue', cents: 0 })
+    expect(dueLine(next, '2026-11-07')?.text).toBe('Miete Januar fällig am Di., 05.01.2027')
+    // Ausgezogen im Juni, alles bezahlt: keine Zeile.
+    const gone = card([...Array.from({ length: 6 }, (_, i) => month(i + 1, 80000, 'paid')), ...Array.from({ length: 6 }, (_, i) => month(i + 7, 0, 'paid'))])
+    expect(dueLine(gone, '2026-11-07')).toBeNull()
+    // Rückstand nur aus dem Vorjahr: rote Plakette, die Zeile nennt neutral den nächsten Monat.
+    const carried = card(moveIn('notDue'), { arrearsCents: 50000, openingBalanceCents: -50000 })
+    expect(rowStanding(carried, '2026-10-12').kind).toBe('arrears')
+    expect(dueLine(carried, '2026-10-12')).toEqual({ text: 'Miete Oktober fällig am Di., 13.10.2026', tone: 'muted' })
+  })
+  it('das Kästchen nennt „fällig am“ nur, solange der Monat nicht bezahlt ist', () => {
+    expect(monthDueText(due(11, 'paid', '2026-11-04', '2026-11-10', '2026-11-11'))).toBeNull()
+    expect(monthDueText(due(11, 'open', '2026-11-04', '2026-11-10', '2026-11-11'))).toBe('fällig am 04.11.2026')
   })
 })
 
