@@ -40,6 +40,27 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Handy zeigte die Auswahl ihn nicht ganz. Gefunden hat das der Browserlauf, der jetzt auch eine WG, eine geschätzte
   Ablesung, einen Bezugszähler und abgeschlossene und versendete Abrechnungen prüft
   ([#584](https://github.com/speedone/mietfuchs/issues/584)).
+- **Mietkonto: Rückstand ab dem Fälligkeitstag statt ab dem Folgemonat**
+  ([#334](https://github.com/speedone/mietfuchs/issues/334)). Ein Monat zählt als Rückstand ab dem Tag nach dem spätesten
+  erwarteten Eingang der Miete: Fälligkeitstag nach der Regel des Mietverhältnisses und den Feiertagen am Ort (ohne
+  Bundesland der späteste Tag aller Länder, Feiertage einzelner Gemeinden zählen mit), dazu vier Bankgeschäftstage für
+  Überweisung und Buchung. Jede Karte sagt „Miete Oktober fällig am Di., 13.10.2026“, danach „fällig seit 13.10., Eingang
+  erwartet bis 19.10.“ und erst dann rot „offen seit 13.10.2026“; „bisher bezahlt“ steht nur noch, wenn ein fälliger Monat
+  gedeckt ist, sonst „noch nichts fällig“. Geht die Miete erst nach dem erwarteten Eingang ein, nennt das Monatskästchen den
+  Tag nur zur Prüfung. Derselbe Tag gilt für den Hinweis zu nicht gezahlten Vorauszahlungen in der Abrechnung.
+  - **Was sich für bestehende Daten ändert**: Sobald die Feiertagsgesetze aller Länder amtlich gelesen sind, zählt der
+    laufende Monat bei Verträgen ab dem 02.09.2001 schon ab etwa dem 8. bis 14. als Rückstand statt erst ab dem Ersten des
+    Folgemonats. Bis dahin (heute sind Bremen, Hamburg, Rheinland-Pfalz und Sachsen-Anhalt nicht amtlich gelesen) rechnet
+    Mietfuchs vorsichtig ohne Feiertage: Ein voller Monat, der zu Beginn fällig ist, zählt wie bisher ab dem Ersten des
+    Folgemonats; im Einzugsmonat, bei einem festen Tag und bei einem Mietverhältnis, das schon am 01.09.2001 bestand
+    (fällig nach Ablauf des Monats), erst ab dem Ersten des übernächsten Monats, also später als bisher.
+  - **Fälligkeit am Mietverhältnis**: In den Stammdaten wählen Sie neben dem Vertragsdatum „Fälligkeit der Miete“: „Wie im
+    Gesetz“ (Voreinstellung, nennt die Regel für dieses Mietverhältnis), „Zu Beginn des Monats, spätestens am dritten
+    Werktag“, „An einem festen Tag des Monats“ mit dem Tag oder „Nach Ablauf des Monats“, dazu „Erste Miete schon bei
+    Mietbeginn fällig“. Bestimmt Ihr Vertrag etwas anderes als das Gesetz, tragen Sie es dort ein; bei einem Altvertrag mit
+    Vorauszahlungsklausel „Zu Beginn des Monats, spätestens am dritten Werktag“. Die Steuerübersicht wendet die
+    Zehn-Tage-Regel nach dieser Angabe an; ohne Angabe ändert sich nichts.
+  - Das Lexikon erklärt den neuen Begriff „Fälligkeit der Miete“ mit Beispiel und Rechtsgrundlage.
 
 ## [0.16.1] – 2026-11-08
 

@@ -4,7 +4,7 @@
 
 import { fmtDate, fmtEuro } from './api'
 import { DEPOSIT_STATUS_LABELS, KEY_LABELS, METER_TYPE_LABELS, PROPERTY_KIND_LABELS } from './types'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, RENT_DUE_LABELS } from './tenancyModel'
 import { PAYMENT_KIND_LABELS } from './paymentForm'
 import { STATES } from '../../shared/states.ts'
 
@@ -224,7 +224,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   meter_type: asLabels(METER_TYPE_LABELS),
   cost_model: asLabels(COST_MODEL_LABELS),
   heating_model: asLabels(HEATING_MODEL_LABELS),
-  rent_due: { startWorkday: 'Zu Beginn des Monats, spätestens am dritten Werktag', dayOfMonth: 'An einem festen Tag des Monats', inArrears: 'Nach Ablauf des Monats' },
+  rent_due: asLabels(RENT_DUE_LABELS),
   deposit_status: asLabels(DEPOSIT_STATUS_LABELS),
   state: STATE_LABELS,
   scope: { common: 'einen Teil des Hauses', property: 'das ganze Haus' },

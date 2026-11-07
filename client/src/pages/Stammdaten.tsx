@@ -17,7 +17,7 @@ import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, partialMonthNote, prepaymentColumn, tenancyRequired, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, EMPTY_RENT_DUE, overlapQuestion, partialMonthNote, prepaymentColumn, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyRequired, type RentDueChoice, type RentDueForm, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, contactForm, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type ContactForm, type NewTenantForm, type TenantChangeField } from '../tenantChange'
 import { DEADLINE_SENTENCE, ownAddressWarning } from '../landlord'
@@ -66,6 +66,8 @@ type TenancyForm = {
   contractDate: string
   // An Angehörige vermietet, für die Steuer (#96 PR 2, Anlage V Zeile 10)
   relative: boolean
+  // Fälligkeit der Miete laut Vertrag (#334)
+  rentDue: RentDueForm
   deposit: string
   depositStatus: DepositStatus
   notes: string
@@ -86,6 +88,7 @@ const EMPTY_TENANCY_EXTRA = {
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel, selfSupplyKind: '' as SelfSupplyKind | '',
   flatRates: [] as { from: string; amount: string }[],
   heatingPrepayments: [] as { from: string; amount: string }[],
+  rentDue: EMPTY_RENT_DUE,
 }
 
 // Der Tag davor, für „bis …“ in der Liste der Wohnungen (#259).
@@ -126,6 +129,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     iban: ibanToInput(t.iban),
     contractDate: t.contractDate ?? '',
     relative: t.relative === true,
+    rentDue: rentDueFormOf(t),
     deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
     depositStatus: t.depositStatus ?? 'offen',
     notes: t.notes ?? '',
@@ -304,7 +308,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     if (!tenForm) return
     // Jede fehlende Pflichtangabe mit ihrem Feld (#346, Schritt 3); vorher „Bitte Mieter, Wohnung und
     // Einzugsdatum prüfen.“ für alle drei zusammen (UI-Durchsicht M5).
-    const missing = tenancyRequired(tenForm)
+    const missing = [...tenancyRequired(tenForm), ...rentDueProblems(tenForm.rentDue)]
     if (missing.length > 0) {
       tenErrors.report(missing)
       return
@@ -371,6 +375,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       contractDate: tenForm.contractDate || null,
       // #96 PR 2: gespeichert nur „ja“; „nein“ ist das bisherige Verhalten.
       relative: tenForm.relative,
+      // #334: nur, was sich an der Fälligkeit geändert hat.
+      ...rentDueBody(tenForm.rentDue, tenancies.find((t) => t.id === tenForm.id)),
       depositCents,
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
       notes: tenForm.notes.trim() || null,
@@ -869,6 +875,21 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <Field label="Vertragsdatum" {...tenErrors.field('contractDate')}>
                   <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />
                 </Field>
+                {/* #334: Fälligkeit der Miete laut Vertrag; „Wie im Gesetz“ nennt, was ohne Angabe gilt. */}
+                <Field label={<><Term id="rentDue">Fälligkeit der Miete</Term></>} hint={rentDueHint({ ...tenForm.rentDue, start: tenForm.start, contractDate: tenForm.contractDate })}>
+                  <select value={tenForm.rentDue.rentDue} onChange={(e) => setTenForm({ ...tenForm, rentDue: { ...tenForm.rentDue, rentDue: e.target.value as RentDueChoice } })}>
+                    {rentDueOptions(tenForm).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </Field>
+                {tenForm.rentDue.rentDue === 'dayOfMonth' && (
+                  <Field label="Tag des Monats" width="s" required {...tenErrors.field('rentDueDay')}>
+                    <input value={tenForm.rentDue.rentDueDay} inputMode="numeric" placeholder="z. B. 15" onChange={(e) => setTenForm({ ...tenForm, rentDue: { ...tenForm.rentDue, rentDueDay: e.target.value } })} />
+                  </Field>
+                )}
+                <label className="checkline">
+                  <input type="checkbox" checked={tenForm.rentDue.firstRentAtStart} onChange={(e) => setTenForm({ ...tenForm, rentDue: { ...tenForm.rentDue, firstRentAtStart: e.target.checked } })} />
+                  <span>Erste Miete schon bei Mietbeginn fällig</span>
+                </label>
                 {/* #96 PR 2 (Entwurf B3): Zeile 10 der Anlage V; die eigentliche Folge liegt bei der verbilligten Vermietung.
                     „Zu Wohnzwecken“ wie Kennzahl 62 (Durchsicht K3): Eine Garage zählt nicht, auch wenn der Haken gesetzt ist. */}
                 <label className="checkline">

@@ -5,7 +5,8 @@ import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
-import { bookingDate, carriedText, carryText, ledgerStartText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from '../ledgerView'
+import { bookingDate, carriedText, carryText, ledgerStartText, closingLines, dueDetails, dueLine, monthDueText, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rowStanding, shareText } from '../ledgerView'
+import { holidaysCheckedOn } from '../../../shared/holidaysChecked.ts'
 import { DESIGNATED_MONTH_HINT, emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentChangeBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentDraft, type PaymentField, type PaymentForm } from '../paymentForm'
 import { keepDraft, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
@@ -129,7 +130,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const yearPayments = payments
     .filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
     .sort((a, b) => b.date.localeCompare(a.date))
-  const dueNote = rentDueNote(year, new Date(), property?.state)
+  // Die Einzelheiten zur Fälligkeit (#334): ob die Feiertage heute amtlich gelesen sind, entscheidet der Text.
+  const dueMore = ledger?.asOf ? dueDetails(property?.state, holidaysCheckedOn(ledger.asOf)) : ''
 
   return (
     <>
@@ -255,16 +257,11 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             more={<p>Nennt der Mieter keinen Monat, tilgt eine Zahlung zuerst die offenen Vorauszahlungen, dann Kaltmiete und Pauschale, jeweils die ältesten zuerst. Beispiel: Offen sind 600 € Kaltmiete und 200 € Vorauszahlung, der Mieter zahlt 300 €. Dann sind 200 € auf die Vorauszahlung und 100 € auf die Kaltmiete angerechnet; offen bleiben 500 € Kaltmiete (BGH, Urteil vom 21.03.2018, VIII ZR 84/17, Rn. 56 und 57). Nennt er einen Monat, tragen Sie ihn an der Zahlung bei „Für Monat“ ein.</p>} />
         </>
       )}
-      {/* Nur eine Auskunft: Die Rechnung des Mietkontos ändert sie nicht (#133). */}
-      {dueNote && ledger && rentDueApplies(ledger.rows, year, new Date()) && (
-        <details className="muted no-print rent-due">
-          <summary>{dueNote.text}</summary>
-          <p>{dueNote.details}</p>
-        </details>
-      )}
       {ledger?.rows.map((r) => {
         const noRent = r.sollYearCents === 0
-        const standing = rowStanding(r)
+        const standing = rowStanding(r, ledger.asOf)
+        // Fälligkeit je Karte (#334), aus den Daten des Servers.
+        const due = dueLine(r, ledger.asOf)
         const carry = carryText(r, year)
         const partialLines = r.months.flatMap((mo) => {
           const text = openPartsText(mo)
@@ -283,6 +280,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               <span className="badge">über die Abrechnung</span>
             ) : standing.kind === 'credit' ? (
               <span className="badge green">{fmtEuro(standing.cents)} vorausbezahlt</span>
+            ) : standing.kind === 'dueAwaiting' && standing.since ? (
+              <span className="badge">fällig seit {`${standing.since.slice(8, 10)}.${standing.since.slice(5, 7)}.`}</span>
+            ) : standing.kind === 'nothingDue' ? (
+              <span className="badge">noch nichts fällig</span>
             ) : standing.kind === 'paidSoFar' ? (
               <span className="badge green">bisher bezahlt</span>
             ) : !noRent ? (
@@ -298,6 +299,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               <>
                 {carry && <p className={r.openingBalanceCents < 0 ? 'text-red' : 'muted'}><strong>{carry}</strong></p>}
                 {ledgerStartText(r) && <p className="muted">{ledgerStartText(r)}</p>}
+                {due && (
+                  <details className={`no-print rent-due ${due.tone === 'red' ? 'text-red' : 'muted'}`}>
+                    <summary>{due.text}</summary>
+                    <p>{dueMore}</p>
+                  </details>
+                )}
                 <div className="rent-grid">
                   {r.months.map((mo) => {
                     // Vor dem Beginn der Erfassung im Objekt (#281): nicht erfasst, weder bezahlt noch offen, kein Buchungsknopf.
@@ -308,7 +315,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                     const parts = openPartsText(mo)
                     // Nicht mehr einzeln einforderbar (E5): gedämpft gekennzeichnet; der Status bleibt, was die Zahlungen sagen.
                     const via = (mo.notDemandableCents ?? 0) > 0 ? 'Vorauszahlung: über die Abrechnung' : null
-                    const extra = [parts, later, via].filter((x) => x !== null).join(' · ')
+                    const dueText = monthDueText(mo)
+                    const extra = [parts, later, via, dueText].filter((x) => x !== null).join(' · ')
                     const detail = mo.sollCents === 0 ? 'kein Mietverhältnis' : notRecorded ? `Soll ${fmtEuro(mo.sollCents)} · nicht erfasst` : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · zählt noch nicht als Rückstand' : ''}${extra ? ` · ${extra}` : ''}`
                     const content = (
                       <>
@@ -333,13 +341,14 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                           onClick={() => bookMonth(r.tenancyId, mo)}
                         >
                           {content}
-                          <span className="sr-only">{`: gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ', zählt noch nicht als Rückstand' : ''}${parts ? `, ${parts}` : ''}${via ? `, ${via}` : ''}, Zahlung erfassen`}</span>
+                          <span className="sr-only">{`: gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ', zählt noch nicht als Rückstand' : ''}${parts ? `, ${parts}` : ''}${via ? `, ${via}` : ''}${dueText ? `, ${dueText}` : ''}, Zahlung erfassen`}</span>
                         </button>
                       )
                     }
                     return (
                       <div key={mo.month} className={`rent-month ${cls}`} title={detail}>
                         {content}
+                        {dueText && <span className="sr-only">{`, ${dueText}`}</span>}
                       </div>
                     )
                   })}

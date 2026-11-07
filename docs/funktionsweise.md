@@ -74,8 +74,14 @@ Kurzfassung steht im [README](../README.md#funktionen).
 7. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
    Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
    Zahlungseingänge füllen die Monate der Reihe nach, ein Monatsraster zeigt *bezahlt /
-   teilweise / offen*, im laufenden Jahr *noch nicht fällig* für den laufenden und die kommenden Monate, dazu
-   Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Zeigt das Mietkonto einen
+   teilweise / offen*, dazu Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Ein Monat zählt als
+   Rückstand erst ab dem Tag nach dem spätesten erwarteten Eingang der Miete: Fälligkeitstag nach der Regel am
+   Mietverhältnis (ohne Angabe wie im Gesetz: zu Beginn, spätestens am dritten Werktag; bei Mietverhältnissen, die
+   schon am 01.09.2001 bestanden, nach Ablauf des Monats) und den Feiertagen am Ort, dazu vier Bankgeschäftstage für
+   Überweisung und Buchung. Jede Karte sagt „fällig am …“, „fällig seit …, Eingang erwartet bis …“ oder rot „offen
+   seit …“. Solange nicht alle Feiertagsgesetze der Länder amtlich gelesen sind, rechnet Mietfuchs vorsichtig ohne
+   Feiertage: Ein voller Monat zählt ab dem Ersten des Folgemonats, Einzugsmonat, fester Tag und „nach Ablauf“ ab dem
+   Ersten des übernächsten. Zeigt das Mietkonto einen
    Rückstand, weist die Abrechnung darauf hin, denn maßgeblich ist, was tatsächlich gezahlt wurde.
    Beginnt oder endet ein Mietverhältnis im Lauf eines Monats, setzen Mietkonto und Abrechnung
    Miete und Vorauszahlung dieses Monats nach Kalendertagen an (Einzug am 15.03. bei 150 €

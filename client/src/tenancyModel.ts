@@ -1,4 +1,5 @@
-import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit } from './types'
+import type { CostModel, HeatingModel, NotSettled, RentDueRule, SelfSupplyKind, Tenancy, Unit } from './types'
+import { effectiveRentDue } from '../../shared/rentDue.ts'
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { usageAt } from '../../shared/unitUsage.ts'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
@@ -275,11 +276,80 @@ export function prepaymentColumn(t: Pick<Tenancy, 'prepayments' | 'heatingPrepay
 
 // Die Pflichtangaben eines Mietverhältnisses (#346, Schritt 3), je mit Feld. Vorher stand für alle drei ein
 // Satz „Bitte Mieter, Wohnung und Einzugsdatum prüfen.“, der nicht sagte, welches Feld fehlt (UI-Durchsicht M5).
-export type TenancyField = 'tenantName' | 'unitId' | 'start' | 'deposit' | 'contractDate' | 'iban' | ScheduleField
+export type TenancyField = 'tenantName' | 'unitId' | 'start' | 'deposit' | 'contractDate' | 'iban' | 'rentDueDay' | ScheduleField
 export function tenancyRequired(form: { tenantName: string; unitId: string; start: string }): Problem<TenancyField>[] {
   const problems: Problem<TenancyField>[] = []
   if (!form.tenantName.trim()) problems.push({ field: 'tenantName', short: 'Mieter fehlt', text: 'Mieter: Geben Sie den Namen des Mieters ein, etwa „Familie Müller“.' })
   if (!form.unitId) problems.push({ field: 'unitId', short: 'Wohnung fehlt', text: 'Wohnung: Wählen Sie die Wohnung, die vermietet ist.' })
   if (!/^\d{4}-\d{2}-\d{2}$/.test(form.start)) problems.push({ field: 'start', short: 'Einzug fehlt', text: 'Einzug: Geben Sie das Datum des Einzugs ein.' })
   return problems
+}
+
+// ---------- Fälligkeit der Miete (#334) ----------
+// Die Regel am Mietverhältnis; '' heißt „Wie im Gesetz“ und wird als null gespeichert. Die Rechnung steht in
+// shared/rentDue.ts, hier stehen nur Beschriftungen, Prüfung und Rumpf.
+export type RentDueChoice = '' | RentDueRule
+export type RentDueForm = { rentDue: RentDueChoice; rentDueDay: string; firstRentAtStart: boolean }
+export const EMPTY_RENT_DUE: RentDueForm = { rentDue: '', rentDueDay: '', firstRentAtStart: false }
+
+export const RENT_DUE_LABELS: Record<RentDueRule, string> = {
+  startWorkday: 'Zu Beginn des Monats, spätestens am dritten Werktag',
+  dayOfMonth: 'An einem festen Tag des Monats',
+  inArrears: 'Nach Ablauf des Monats',
+}
+const ISO = /^\d{4}-\d{2}-\d{2}$/
+
+// Was „Wie im Gesetz“ für dieses Mietverhältnis heißt: nach Ablauf des Monats, wenn es am 01.09.2001 schon bestand
+// (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB), sonst zu Beginn (§ 556b Abs. 1 BGB). Ohne Einzug die Regel für neue Verträge.
+export function legalRentDue(form: { start: string; contractDate: string }): RentDueRule {
+  if (!ISO.test(form.start)) return 'startWorkday'
+  return effectiveRentDue({ start: form.start, contractDate: ISO.test(form.contractDate) ? form.contractDate : null })
+}
+
+// Die Auswahl „Fälligkeit der Miete“: immer alle vier Einträge, damit der gespeicherte Wert sichtbar bleibt.
+export function rentDueOptions(form: { start: string; contractDate: string }): { value: RentDueChoice; label: string }[] {
+  const legal = legalRentDue(form) === 'inArrears' ? 'nach Ablauf des Monats, Mietverhältnis vor dem 02.09.2001' : 'zu Beginn, spätestens am dritten Werktag'
+  return [
+    { value: '', label: `Wie im Gesetz (${legal})` },
+    ...(['startWorkday', 'dayOfMonth', 'inArrears'] as const).map((value) => ({ value, label: RENT_DUE_LABELS[value] })),
+  ]
+}
+
+// Der Satz unter der Auswahl. Beim Altvertrag der Hinweis auf die Vorauszahlungsklausel (BGH VIII ZR 291/09 Rn. 17), bei
+// der ersten Miete bei Mietbeginn, dass die Wirksamkeit dieser Klausel nicht höchstrichterlich geklärt ist (Entwurf E8 B).
+export function rentDueHint(form: RentDueForm & { start: string; contractDate: string }): string {
+  const parts: string[] = []
+  if (form.rentDue === '' && legalRentDue(form) === 'inArrears') {
+    parts.push('Das Mietverhältnis bestand schon am 01.09.2001; ohne andere Vereinbarung ist die Miete nach Ablauf des Monats fällig (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). Steht im Vertrag, dass die Miete im Voraus zu zahlen ist, wählen Sie „Zu Beginn des Monats, spätestens am dritten Werktag“.')
+  } else if (form.rentDue === '') {
+    parts.push('Ohne andere Vereinbarung ist die Miete zu Beginn des Monats fällig, spätestens am dritten Werktag; der Samstag zählt nicht (§ 556b Abs. 1 BGB). Nur wenn Ihr Vertrag etwas anderes bestimmt, wählen Sie es hier.')
+  }
+  if (form.rentDue === 'dayOfMonth') parts.push('In kürzeren Monaten gilt der letzte Tag; fällt der Tag auf ein Wochenende oder einen Feiertag, der nächste Werktag (§ 193 BGB).')
+  if (form.firstRentAtStart) parts.push('Ob eine solche Klausel im Formularvertrag wirksam ist, ist nicht höchstrichterlich geklärt.')
+  return parts.join(' ')
+}
+
+export function rentDueFormOf(t: Pick<Tenancy, 'rentDue' | 'rentDueDay' | 'firstRentAtStart'>): RentDueForm {
+  return { rentDue: t.rentDue ?? '', rentDueDay: t.rentDue === 'dayOfMonth' && typeof t.rentDueDay === 'number' ? String(t.rentDueDay) : '', firstRentAtStart: t.firstRentAtStart === true }
+}
+
+const dayOf = (text: string): number | null => (/^\s*\d{1,2}\s*$/.test(text) && Number(text) >= 1 && Number(text) <= 31 ? Number(text) : null)
+
+export function rentDueProblems(form: RentDueForm): Problem<TenancyField>[] {
+  if (form.rentDue !== 'dayOfMonth') return []
+  if (form.rentDueDay.trim() === '') return [{ field: 'rentDueDay', short: 'Tag fehlt', text: 'Fälligkeit der Miete: Geben Sie den Tag des Monats ein, an dem die Miete laut Vertrag fällig ist (1 bis 31).' }]
+  if (dayOf(form.rentDueDay) === null) return [{ field: 'rentDueDay', short: 'Kein Tag 1 bis 31', text: 'Fälligkeit der Miete: Der Tag des Monats ist eine ganze Zahl von 1 bis 31.' }]
+  return []
+}
+
+// Was gesendet wird: nur, was sich gegenüber dem gespeicherten Stand geändert hat (beim Anlegen gegenüber „Wie im
+// Gesetz“). Wechselt die Regel weg vom festen Tag, nimmt der Server den Tag selbst mit.
+export function rentDueBody(form: RentDueForm, stored: Pick<Tenancy, 'rentDue' | 'rentDueDay' | 'firstRentAtStart'> | undefined): { rentDue?: RentDueRule | null; rentDueDay?: number; firstRentAtStart?: boolean } {
+  const rule = form.rentDue === '' ? null : form.rentDue
+  const day = rule === 'dayOfMonth' ? dayOf(form.rentDueDay) : null
+  const body: { rentDue?: RentDueRule | null; rentDueDay?: number; firstRentAtStart?: boolean } = {}
+  if (rule !== (stored?.rentDue ?? null)) body.rentDue = rule
+  if (rule === 'dayOfMonth' && day !== null && day !== (stored?.rentDueDay ?? null)) body.rentDueDay = day
+  if (form.firstRentAtStart !== (stored?.firstRentAtStart === true)) body.firstRentAtStart = form.firstRentAtStart
+  return body
 }

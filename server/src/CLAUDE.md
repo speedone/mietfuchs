@@ -414,15 +414,21 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
   devDependency der Wurzel** (nur Tests dürfen es importieren; Dependabot hebt es, eine
   Gesetzesänderung macht den Test rot und ergibt eine neue Fassung im Register). Vor 1995 wird
   nicht gerechnet.
-- **Gemeindeweise Feiertage werden nie gezählt**, nur genannt (`localHolidaysOf`); das Mietkonto sagt,
-  wenn einer bis zum Fälligkeitstag fällt. **Ohne Land** zählen nur bundesweite Feiertage, und die
-  Oberfläche sagt, dass die Frist am Ort einen Tag später sein kann.
+- **Gemeindeweise Feiertage** zählen in holidays.ts und deadlines.ts nie, nur als Hinweis (`localHolidaysOf`); **ohne
+  Land** zählen dort nur bundesweite Feiertage. Für den **Rückstand** (shared/rentDue.ts, #334) zählen sie mit, und ohne
+  Land gilt der späteste Tag aller Länder (Entwurf E4, E5): beides schiebt nur nach hinten.
 - `isWorkday` verlangt die Angabe, ob der Samstag zählt (keine Voreinstellung). `rentDueDate`:
   dritter Werktag ohne Samstag; `deadlineOnWorkday`: Fristende nach § 193 BGB.
-- **Nichts wird still ersetzt**: calc.ts nutzt die Bausteine nicht, `ledgerRows` und die Regel aus
-  #133 (laufender Monat nie fällig) bleiben. Einziger Einsatz ist die Auskunft „Miete … fällig am …“
-  im Mietkonto (`rentDueNote`, nur bei voller Monatsmiete, `rentDueApplies`). Jeder weitere Einsatz
-  ist eine eigene Entscheidung mit eigenem Test; rechnet calc.ts einmal damit, dann mit `law()`.
+- **Fälligkeit am Mietverhältnis und Rückstand (#334)**, [shared/rentDue.ts](../../shared/rentDue.ts): `effectiveRentDue`
+  (`Tenancy.rentDue`, sonst gesetzlich über `bgb.rent-due-at-start`), `rentDueOn` (dritter Werktag, im Einzugsmonat ab
+  dem Mietbeginn; fester Tag mit § 193; nach Ablauf der Erste des Folgemonats bzw. der Tag nach dem Mietende;
+  `firstRentAtStart`), `creditExpectedBy` (vierter Bankgeschäftstag: `bgb.transfer-execution-days` und
+  `practice.credit-booking-days`; kein Feiertag in irgendeinem Land oder einer Gemeinde, nicht `practice.bank-closed-days`),
+  `monthDue`/`arrearsFrom`: Rückstand ab dem Tag nach dem erwarteten Eingang, wenn jeder Tag vom Abschnittsbeginn bis
+  dahin `holidaysCheckedOn` ist, sonst die **sichere Grenze** (`safeArrearsFrom`: voller Monat zu Beginn ab dem Ersten des
+  Folgemonats, jeder andere ab dem Ersten des übernächsten; Invariante: nie früher als mit Feiertagen). Vor 1995 nur
+  die sichere Grenze. calc.ts liest es an **einer** Stelle (`monthIsArrears`, siehe Mietkonto); die Fristregeln fragt es mit
+  `law()`. Die Auskunft im Mietkonto rechnet der Server (`RentMonth.dueOn` …), nicht mehr der Client.
 - Bewusst nicht: Land aus der Postleitzahl, Sonntage in Hessen, ob § 193 BGB auf eine Frist
   anzuwenden ist (entscheidet der Aufrufer).
 
@@ -1114,6 +1120,15 @@ importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die 
   Abrechnungsreife tilgt weiter zuerst die nicht mehr einzeln verlangbaren Vorauszahlungen (VIII ZR 84/17 Rn. 53),
   etwa 800 € im April 2025 zuerst die offene Vorauszahlung Dezember 2024 einer im März erteilten Abrechnung. Die
   Tilgung bleibt stichtagsunabhängig, damit Mietkonto und Steuer dieselben Teile haben (Entwurf E5).
+- **Rückstand ab dem Fälligkeitstag** (#334, löst #133 ab): `monthIsArrears` in calc.ts, eine Stelle für `tenancyAccount`,
+  `ledgerRows` und `prepayment.arrears`. Ohne Stichtag alles fällig; ab dem Ersten des übernächsten Monats immer, bis zum
+  Monatsersten nie Rückstand, dazwischen `monthDue` mit dem vereinbarten (nicht dem geführten) Mietverhältnis und
+  `property.state` aus dem Schnappschuss. `notDue` gilt bis einschließlich zum Tag vor `arrearsFrom`. Je Monat mit Soll und
+  Stichtag stehen `dueOn`, `creditExpectedBy`, `arrearsFrom` an der Zeile, `paidAfterExpected` (aus
+  `MonthCoverage.coveredOn`) nur als Auskunft, nie als Verzug. `RentLedger.asOf` nennt den Stichtag. Die Fristregeln stehen
+  in `legalBasis.values` nur, wenn `prepayment.arrears` erscheint. `holidaysChecked` an den Optionen ist ein Testgriff. Die
+  Tilgung fragt weiter „am oder nach dem Monatsersten“ (bekannte Grenze E7 bei „nach Ablauf“ und späten festen Tagen).
+  Orakel: server/testing/dueOracle.ts (Feiertage aus der Vergleichsliste), Invarianten in invariant-mietkonto.test.ts.
 - **Monat laut Verwendungszweck**: nur an `rent` und nur für einen Monat des Mietverhältnisses (400 in `guardPayment`,
   repository.ts); fällt er später heraus (Beginn oder Ende geändert), bleibt er stehen, wirkt wie keine Bestimmung und
   steht in `designatedOutside`. Kontoauszug-Import und KI setzen ihn nie.
@@ -1166,8 +1181,10 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Anfang Januar gezahlt bleibt sie im neuen Jahr (Zeile 25), `lateDecemberCents` = 0. **Mietverhältnis, das am
   01.09.2001 bestand** (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB, § 551 BGB a. F.: Monatsende; Vertragsdatum, sonst Beginn):
   nichts verschoben, nur beziffert (`forwardOldLeaseCents`, `lateDecemberCents`) mit dem Vorbehalt „nur wenn laut Vertrag
-  am Monatsende fällig“. **Bewusste Grenze**: Eine vertraglich abweichende Fälligkeit kennt Mietfuchs nicht (kein Feld am
-  Mietverhältnis). Die Zahl der Tage steht im Register (`estg.short-period-days`, gefragt für das Jahr, zu dem die
+  am Monatsende fällig“. **Vereinbarte Fälligkeit** (#334, `Tenancy.rentDue`): „zu Beginn“ wie § 556b, „nach Ablauf“
+  verschiebt nichts und wird nicht beziffert (die Texte der Bezifferung sprechen vom Altvertrag), ein fester Tag
+  verschiebt nur, wenn der nach § 193 verschobene Tag im Januar in der kurzen Zeit liegt und jeder Tag bis dahin
+  `holidaysCheckedOn` ist (vor 1995 nie). Rückwärts wird bei vereinbarter Fälligkeit nichts beziffert (bekannte Grenze). Die Zahl der Tage steht im Register (`estg.short-period-days`, gefragt für das Jahr, zu dem die
   Zahlung gehört), auch für den Hinweis am Zahlungsdatum der Kostenposition (`tenDayWindow`). Das Mietkonto verschiebt
   nie, es bleibt beim Datum.
 - **Vorauszahlungen**: `taxReport` führt `prepaymentSollCents` und `prepaymentSettlementCents`

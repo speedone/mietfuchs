@@ -411,6 +411,7 @@ const GUIDE_DATA = {
       'Für ein Mietverhältnis, das im Jahr endet, schlägt die Abrechnung keine neue Vorauszahlung vor.',
       'Bleibt nach dem Auszug ein Rückstand offen, führt das Mietkonto ihn in den Folgejahren unter „Offene Salden früherer Mietverhältnisse“ weiter.',
       'Im Auszugs- und Einzugsmonat setzt Mietfuchs Miete und Vorauszahlung anteilig nach Kalendertagen an, im Mietkonto wie in der Abrechnung; das ist eine Auslegung von Mietfuchs, und ein Hinweis nennt den angesetzten Betrag.',
+      'Die erste Miete ist im Einzugsmonat spätestens am dritten Werktag ab dem Einzug fällig, wenn der Vertrag nichts anderes bestimmt; das ist eine Auslegung von Mietfuchs. Als Rückstand zählt sie im Mietkonto erst nach dem spätesten erwarteten Eingang der Überweisung. Ist laut Vertrag die erste Miete schon bei Mietbeginn fällig, haken Sie am Mietverhältnis „Erste Miete schon bei Mietbeginn fällig“ an.',
       'Mit einem Nutzungswechsel rechnet Mietfuchs jeden Abschnitt nach seinen Tagen: In der Zeit der Eigennutzung ist der Anteil Ihr Eigenanteil, eine Zeit ohne Mieter in der vermieteten Zeit ist Leerstand. Dass die Kosten gleichmäßig über das Jahr anfallen, ist eine Auslegung von Mietfuchs.',
     ],
     example: 'Eine Wohnung mit 60 von 180 m², Grundsteuer 1.800 € nach Wohnfläche, auf die Wohnung entfallen 600 €. Der alte Mieter wohnt bis 31.03.2025, 90 Tage: 147,95 €. April und Mai steht die Wohnung leer, 61 Tage: 100,27 € trägt der Vermieter. Der neue Mieter zieht am 01.06.2025 ein, 214 Tage: 351,78 €.',

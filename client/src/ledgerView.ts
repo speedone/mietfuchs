@@ -6,8 +6,8 @@
 // Formalie, sondern die Stelle, an der so etwas sitzt.
 
 import type { FederalState, NotDemandable, RentLedgerCarried, RentLedgerRow, RentMonth } from './types'
-import { rentDueDate, rentDueRuleText } from '../../shared/deadlines.ts'
-import { isHoliday, localHolidaysOf, stateName, weekdayOf } from '../../shared/holidays.ts'
+import { stateName, weekdayOf } from '../../shared/holidays.ts'
+import { dayAfter } from '../../shared/law/register.ts'
 import { MONTH_NAMES } from './monthText'
 import { fmtDate, fmtEuro } from './api'
 
@@ -21,13 +21,27 @@ import { fmtDate, fmtEuro } from './api'
 // (`arrearsCents`, über alle Jahre ab Beginn). Nicht mehr einzeln einforderbare Vorauszahlungen (Abrechnungsreife,
 // E5) sind kein Rückstand, sondern „über die Abrechnung“. Sonst entscheidet der Endsaldo zum 31.12.: positiv
 // vorausbezahlt, negativ sind es die künftigen Monate („bisher bezahlt“), sonst ausgeglichen.
-export type RowStanding = { kind: 'arrears' | 'credit' | 'paidSoFar' | 'paid' | 'viaSettlement', cents: number }
+//
+// Mit der Fälligkeit am Mietverhältnis (#334) zwei weitere: `dueAwaiting` „fällig seit {Datum}“, wenn ein Monat fällig,
+// sein Eingang aber noch erwartet ist (neutral, kein Rückstand); `nothingDue` „noch nichts fällig“, wenn im Jahr bisher
+// kein Monat fällig war. „bisher bezahlt“ nur, wenn mindestens ein Monat fällig war und gedeckt ist. `asOf` ist der
+// Stichtag des Servers (`RentLedger.asOf`).
+export type RowStanding = { kind: 'arrears' | 'credit' | 'paidSoFar' | 'paid' | 'viaSettlement' | 'dueAwaiting' | 'nothingDue', cents: number, since?: string }
 
-export function rowStanding(row: RentLedgerRow): RowStanding {
+// Ob ein Monat zum Stichtag fällig war: mit Auskunft des Servers ab dem Fälligkeitstag, sonst nach dem Status.
+const wasDue = (mo: RentMonth, asOf: string | undefined): boolean =>
+  mo.sollCents > 0 && mo.status !== 'notRecorded' && (mo.dueOn !== undefined && asOf !== undefined ? mo.dueOn <= asOf : mo.status !== 'notDue')
+
+export function rowStanding(row: RentLedgerRow, asOf?: string): RowStanding {
   if (row.arrearsCents > 0) return { kind: 'arrears', cents: row.arrearsCents }
   if (row.notDemandableCents > 0) return { kind: 'viaSettlement', cents: row.notDemandableCents }
+  const awaiting = asOf === undefined ? undefined : row.months.find((mo) => mo.status === 'notDue' && mo.sollCents > 0 && mo.dueOn !== undefined && mo.dueOn <= asOf)
+  if (awaiting?.dueOn) return { kind: 'dueAwaiting', cents: awaiting.sollCents - awaiting.paidCents, since: awaiting.dueOn }
   if (row.closingBalanceCents > 0) return { kind: 'credit', cents: row.closingBalanceCents }
-  if (row.closingBalanceCents < 0) return { kind: 'paidSoFar', cents: -row.closingBalanceCents }
+  if (row.closingBalanceCents < 0) {
+    if (!row.months.some((mo) => wasDue(mo, asOf)) && row.openingBalanceCents >= 0) return { kind: 'nothingDue', cents: 0 }
+    return { kind: 'paidSoFar', cents: -row.closingBalanceCents }
+  }
   return { kind: 'paid', cents: 0 }
 }
 
@@ -129,44 +143,46 @@ export function shareText(mo: Pick<RentMonth, 'share'>): string | null {
   return mo.share ? `anteilig ${mo.share.days}/${mo.share.of} Tage` : null
 }
 
-// Bis wann die Miete des laufenden Monats zu zahlen ist, als **Auskunft** über den Karten: nach der Regel
-// im Rechtsregister und den Feiertagen am Ort des Objekts (rentDueDate in shared/deadlines.ts). Kurz
-// eine Zeile (`text`), die Einzelheiten zum Aufklappen (`details`): Regel, Feiertage am Ort bzw. nur
-// bundesweit ohne Bundesland, ein Feiertag einzelner Gemeinden, der die Frist dort verschiebt, und die
-// beiden Einschränkungen (Vertrag, Überweisungsauftrag). Über den Rückstand sagt die Auskunft nichts:
-// Das Mietkonto zählt den laufenden Monat noch pauschal erst ab dem nächsten (#133); den Fälligkeitstag
-// dort einzusetzen ist ein eigener Schritt. Nur im laufenden Jahr, örtlich wie showDecemberNote.
+// ---------- Fälligkeit je Karte (#334) ----------
+// Die Daten kommen vom Server (`RentMonth.dueOn`, `creditExpectedBy`, `arrearsFrom`); der Client rechnet die Fälligkeit
+// nicht selbst. Eine Zeile je Karte: der älteste offene Monat rot „offen seit“, sonst der nächste noch nicht als
+// Rückstand zählende Monat „fällig am“ bzw. „fällig seit …, Eingang erwartet bis …“. Die Einzelheiten zum Aufklappen.
 const WEEKDAYS = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.']
+const dayMonth = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.`
+const fullDate = (iso: string): string => `${dayMonth(iso)}${iso.slice(0, 4)}`
 
-export type RentDueNote = { text: string; details: string }
+export type DueLine = { text: string, tone: 'red' | 'muted' }
 
-export function rentDueNote(year: number, today: Date, state: FederalState | null | undefined): RentDueNote | null {
-  if (year !== today.getFullYear()) return null
-  const month = today.getMonth() + 1
-  const iso = (d: number) => `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-  const due = rentDueDate(iso(1).slice(0, 7), state ?? null)
-  const [, m, d] = due.split('-')
-  const where = state ? `nach den Feiertagen in ${stateName(state)}` : 'nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist'
-  // Feiertage einzelner Gemeinden zählt rentDueDate nicht mit (shared/holidays.ts). Fällt einer auf einen
-  // Werktag bis zum Fälligkeitstag, ist es dort ein Werktag später; das steht in den Einzelheiten, sonst
-  // hielte der Vermieter in diesen Gemeinden eine pünktliche Zahlung für verspätet.
-  const local = state
-    ? localHolidaysOf(year, state).filter((h) => h.date >= iso(1) && h.date <= due && weekdayOf(h.date) !== 0 && weekdayOf(h.date) !== 6 && !isHoliday(h.date, state))
-    : []
-  const localText = local.map((h) => ` In Gemeinden, in denen am ${h.date.slice(8, 10)}.${h.date.slice(5, 7)}. ${h.name} gilt, ist es ein Werktag später.`).join('')
-  return {
-    text: `Miete ${MONTH_NAMES[month - 1]} fällig am ${WEEKDAYS[weekdayOf(due)]}, ${d}.${m}.${year}` + (state ? '' : ' (ohne Bundesland: nur bundesweite Feiertage)'),
-    details: `${rentDueRuleText(due)}; ${where}.${localText} Das gilt, wenn der Mietvertrag nichts anderes bestimmt; bei einem sehr alten Mietverhältnis ohne vereinbarte Vorauszahlung kann die Miete erst nach Ablauf des Monats fällig sein (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). ` +
-      'Rechtzeitig ist eine Überweisung, die bis zu diesem Tag in Auftrag gegeben ist; die Gutschrift kann später kommen.',
-  }
+export function dueLine(row: Pick<RentLedgerRow, 'months'>, asOf: string | undefined): DueLine | null {
+  if (asOf === undefined) return null
+  const name = (mo: RentMonth): string => MONTH_NAMES[mo.month - 1] ?? String(mo.month)
+  const open = row.months.find((mo) => (mo.status === 'open' || mo.status === 'partial') && mo.dueOn !== undefined)
+  if (open?.dueOn) return { text: `Miete ${name(open)} offen seit ${fullDate(open.dueOn)}`, tone: 'red' }
+  const next = row.months.find((mo) => mo.status === 'notDue' && mo.sollCents > 0 && mo.dueOn !== undefined)
+  if (!next?.dueOn) return null
+  if (asOf < next.dueOn) return { text: `Miete ${name(next)} fällig am ${WEEKDAYS[weekdayOf(next.dueOn)]}, ${fullDate(next.dueOn)}`, tone: 'muted' }
+  // Ohne geprüfte Feiertage zählt der Rückstand erst ab der sicheren Grenze; dann sagt die Zeile diesen Tag.
+  const expected = next.creditExpectedBy
+  if (expected && next.arrearsFrom === dayAfter(expected)) return { text: `Miete ${name(next)} fällig seit ${dayMonth(next.dueOn)}, Eingang erwartet bis ${dayMonth(expected)}`, tone: 'muted' }
+  return { text: `Miete ${name(next)} fällig seit ${dayMonth(next.dueOn)}, zählt als Rückstand ab ${fullDate(next.arrearsFrom ?? next.dueOn)}`, tone: 'muted' }
 }
 
-// Ob die Auskunft überhaupt etwas zu sagen hat: nur wenn im laufenden Monat eine **volle** Monatsmiete
-// geschuldet ist. Ein angebrochener Monat (#311) beginnt oder endet mitten im Monat; zieht der Mieter am
-// 15. ein, ist der dritte Werktag des Monats kein Termin für ihn. Ohne Soll im Monat (das letzte
-// Mietverhältnis endete im Vormonat) gibt es nichts zu zahlen. Nur im laufenden Jahr, wie rentDueNote.
-export function rentDueApplies(rows: readonly RentLedgerRow[], year: number, today: Date): boolean {
-  if (year !== today.getFullYear()) return false
-  const month = today.getMonth() + 1
-  return rows.some((r) => r.months.some((mo) => mo.month === month && mo.sollCents > 0 && !mo.share))
+// Die Einzelheiten zur Fälligkeit (aufklappbar unter der Zeile).
+// `checked`: ob die Feiertage heute amtlich gelesen sind (`holidaysCheckedOn`); sonst nennt der Text die sichere Grenze.
+export function dueDetails(state: FederalState | null | undefined, checked: boolean): string {
+  const where = state ? `nach den Feiertagen in ${stateName(state)}, auch denen einzelner Gemeinden` : 'ohne Bundesland am Objekt nach dem spätesten Tag aller Länder; am Ort kann sie früher sein'
+  return `Fällig ist die Miete nach der Regel am Mietverhältnis, ohne Angabe zu Beginn des Monats, spätestens am dritten Werktag, der Samstag zählt nicht; ${where}. ` +
+    'Das gilt, wenn der Mietvertrag nichts anderes bestimmt; eine andere Fälligkeit tragen Sie am Mietverhältnis ein. ' +
+    'Rechtzeitig ist eine Überweisung, die bis zum Fälligkeitstag in Auftrag gegeben ist. Als Rückstand zählt ein Monat deshalb erst ab dem Tag nach dem spätesten erwarteten Eingang, vier Bankgeschäftstage nach dem Fälligkeitstag. ' +
+    (checked ? '' : 'Solange nicht alle Feiertagsgesetze der Länder amtlich gelesen sind, rechnet Mietfuchs vorsichtig ohne Feiertage und zählt einen Monat erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einem festen Tag und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
+    'Bei einer Lastschrift holen Sie die Miete selbst ein; rechtzeitig ist der Mieter, wenn sein Konto gedeckt ist.'
+}
+
+// Was das Monatskästchen zusätzlich sagt (Tooltip und Vorleser): der Fälligkeitstag und, nur zur Prüfung, ein Eingang
+// nach dem erwarteten Tag. Ohne Farbe; ob rechtzeitig überwiesen wurde, zeigt nur der Auftrag des Mieters.
+export function monthDueText(mo: Pick<RentMonth, 'dueOn' | 'paidAfterExpected'>): string | null {
+  const parts: string[] = []
+  if (mo.dueOn) parts.push(`fällig am ${fullDate(mo.dueOn)}`)
+  if (mo.paidAfterExpected) parts.push(`eingegangen am ${fullDate(mo.paidAfterExpected)}, nach dem erwarteten Eingang; ob rechtzeitig überwiesen wurde, zeigt nur der Auftrag des Mieters`)
+  return parts.length > 0 ? parts.join(' · ') : null
 }
