@@ -160,6 +160,10 @@ const FIELD_LABELS: Record<string, string> = {
   building_application_on: 'Bauantrag vom',
   completed_on: 'Fertiggestellt am',
   relative: 'An Angehörige zu Wohnzwecken vermietet',
+  // #334: Fälligkeit der Miete am Mietverhältnis, wie im Formular
+  rent_due: 'Fälligkeit der Miete',
+  rent_due_day: 'Tag des Monats',
+  first_rent_at_start: 'Erste Miete schon bei Mietbeginn fällig',
   date: 'Datum',
   value: 'Wert',
   replacement: 'Zählerwechsel',
@@ -220,6 +224,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   meter_type: asLabels(METER_TYPE_LABELS),
   cost_model: asLabels(COST_MODEL_LABELS),
   heating_model: asLabels(HEATING_MODEL_LABELS),
+  rent_due: { startWorkday: 'Zu Beginn des Monats, spätestens am dritten Werktag', dayOfMonth: 'An einem festen Tag des Monats', inArrears: 'Nach Ablauf des Monats' },
   deposit_status: asLabels(DEPOSIT_STATUS_LABELS),
   state: STATE_LABELS,
   scope: { common: 'einen Teil des Hauses', property: 'das ganze Haus' },
