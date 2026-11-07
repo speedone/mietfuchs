@@ -6,6 +6,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- Der Umlageschlüssel „laut Gemeinschaftsabrechnung“ heißt im Kostenformular ohne den Zusatz „(Eigentumswohnung)“: Am
+  Handy zeigte die Auswahl ihn nicht ganz. Gefunden hat das der Browserlauf, der jetzt auch eine WG, eine geschätzte
+  Ablesung, einen Bezugszähler und abgeschlossene und versendete Abrechnungen prüft
+  ([#584](https://github.com/speedone/mietfuchs/issues/584)).
+
 ## [0.16.1] – 2026-11-07
 
 ### Behoben

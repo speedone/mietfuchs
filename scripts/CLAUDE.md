@@ -23,7 +23,22 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   seitliches Scrollen, kein abgeschnittenes Feld (auch in Seitenfenstern, siehe client/CLAUDE.md),
   axe-core ohne serious/critical. Dazu Bedienproben per Tastatur (Seitenfenster, Monatsfeld,
   Begriff, Sammelmeldung, Beleg zuordnen ohne springenden Knopf, Menüblatt am Handy), axe auch auf
-  diesen Zuständen und mit der Regel `target-size` (WCAG 2.5.8, in axe sonst aus). Jede Seite wird
+  diesen Zuständen und mit der Regel `target-size` (WCAG 2.5.8, in axe sonst aus). **Zustände nur für den
+  Browserlauf** (#584) legt [browser-check-stock.mjs](browser-check-stock.mjs) an, je in einem eigenen Objekt:
+  „Birkenhof 3“ (`wg`: Wohnung mit drei vermieteten Zimmern, geschätzte Ablesung mit Begründung, Wasser nach
+  Verbrauch mit Bezugszähler, Zählern dahinter, Rest nach Fläche und Zwischenzähler, offen), die Eigentumswohnung
+  aus demo-stock.mjs abgeschlossen ohne Versanddatum (`abgeschlossen`) und „Ahornweg 4“ abgeschlossen und versendet
+  (`versendet`). Nach dem Lindenweg prüft der Lauf jede Seite der Navigation auch in diesen Objekten (gewählt über
+  `mietfuchs.property` im localStorage, Kennung „zaehler-staende@wg“; `--pages zaehler-staende` nimmt sie in allen
+  Objekten, `--pages zaehler-staende@wg` nur dort; Ausnahmen in den beiden JSON-Dateien gelten für die Seite in jedem
+  Objekt). Weil die Objekte vor dem ersten Durchgang angelegt werden, sieht auch der Lindenweg vier Objekte im
+  Umschalter und unter „Weitere Objekte“. Der Lauf dauert damit gut dreimal so lange (lokal 13 bis 16 Minuten je
+  Engine, `timeout-minutes` in release.yml). Dazu gezielte Prüfungen je Objekt (`expect`, Befund
+  „Erwartung“): Die geschätzte Ablesung ist auf der Seite Zähler ein Hinweis und kein Fehler, das Cockpit zeigt die
+  Zählerstände grün, Abrechnung und Cockpit nennen abgeschlossen bzw. versendet. Den Fehler aus 0.16.0 (Schätzung
+  als roter Fehler, Zählerstände unvollständig) meldet der Lauf so als Fehlermeldung auf der Seite Zähler und als Erwartung auf
+  Zähler und Cockpit (nachgeprüft mit zurückgesetztem Fix). Ein neuer Zustand mit eigener
+  Darstellung gehört dorthin, nicht nach demo-stock.mjs: Bildschirmfotos und Druck in Safari bleiben, wie sie sind. Jede Seite wird
   ein zweites Mal mit allen `<details>` offen gemessen (Breite und abgeschnittene Felder, Befund
   „aufgeklappt:“). Die Musterseite (`?muster`) prüft er in jeder Kombination wie eine Seite, mit
   offenem Seitenfenster, Rückfrage und Begriff; `--pages muster` allein. Jeder Befund: Exit 1
