@@ -353,6 +353,10 @@ test('Vermerk: ein umgezogener Ordner öffnet nur lesend, Schreibrouten sagen wa
     assert.match(String(refused.body.error), /ins neue Mietfuchs umgezogen \(am 1\. November 2026 nach C:\\Users\\Anna\\Mietfuchs\)/)
     const put = await fetch(`${s.base}/api/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{}' })
     assert.equal(put.status, 423)
+    // Die Frage nach Updates bleibt, auch in anderer Schreibweise, wie Express sie annimmt (#585)
+    for (const urlPath of ['/api/update/check', '/API/Update/Check', '/api/update/check/']) {
+      assert.notEqual((await post(s.base, urlPath)).status, 423, urlPath)
+    }
     // Kein Umstieg der liegengebliebenen db.json, keine Sicherung, nichts im Ordner geändert
     assert.ok(fs.existsSync(path.join(old.data, 'db.json')))
     assert.ok(!fs.existsSync(path.join(old.data, 'vorversionen')))

@@ -176,6 +176,15 @@ test('Fenster: Beenden, KI-Schlüssel, Zustimmungen und Update-Prüfung nur vom 
       ['POST', '/api/ai/consent', { slot: 'text' }, /nur am Rechner/],
       ['DELETE', '/api/ai/consent/text', undefined, /nur am Rechner/],
       ['PUT', '/api/settings', { updateCheck: 'on' }, /^Die Update-Prüfung schalten Sie nur am Rechner ein oder aus, auf dem Mietfuchs läuft\.$/],
+      // Express nimmt Routen ohne Rücksicht auf Groß und Klein und mit einem Schrägstrich am Ende an; die Sperre auch (#585)
+      ['POST', '/API/QUIT', {}, /^Beenden geht nur am Rechner/],
+      ['POST', '/api/quit/', {}, /^Beenden geht nur am Rechner/],
+      ['POST', '/Api/Quit/', {}, /^Beenden geht nur am Rechner/],
+      ['PUT', '/API/ai/key', { slot: 'text', key: 'sk-test' }, /^KI-Schlüssel und Zustimmungen/],
+      ['PUT', '/api/ai/key/', { slot: 'text', key: 'sk-test' }, /^KI-Schlüssel und Zustimmungen/],
+      ['DELETE', '/API/AI/KEY/text/', undefined, /nur am Rechner/],
+      ['POST', '/api/AI/Consent/', { slot: 'text' }, /nur am Rechner/],
+      ['DELETE', '/API/ai/consent/text', undefined, /nur am Rechner/],
     ]
     for (const [method, urlPath, body, message] of refused) {
       const res = await call(fromLan, method, urlPath, body)
