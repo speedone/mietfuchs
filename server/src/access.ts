@@ -33,6 +33,9 @@ export type AccessState = {
   required: boolean
   instance: string
   hash: string | null
+  // Lokal lauschend: Anfragen über einen Proxy brauchen auch in der Einrichtung eine Sitzung (nach dem Zurücksetzen eines
+  // Passworts, mit Code). Ohne Code bliebe eine alte `setup`-Datei sonst eine Sperre ohne Ausweg.
+  proxyStrict?: boolean
 }
 
 export const ACCESS_FILE = 'zugang.json'
@@ -504,7 +507,8 @@ function pathOf(raw: string): { key: string, guarded: boolean } {
 // Übergang und bei `off`. Lokal lauschend nur für Anfragen über einen Proxy, und nur mit Passwort: Eine `setup`-Datei
 // von früher (im Netz) sperrte sonst jeden Proxy aus, lokal gibt es keinen Code (Durchsicht PR 2, M1).
 export const gateActive = (state: AccessState, proxied: boolean): boolean =>
-  state.setting !== 'off' && (state.mode === 'setup' || state.mode === 'password') && (state.required || (proxied && state.mode === 'password'))
+  state.setting !== 'off' && (state.mode === 'setup' || state.mode === 'password') &&
+  (state.required || (proxied && (state.mode === 'password' || state.proxyStrict === true)))
 
 // Von außen erreichbar und offen (Übergang, `off`): Wenigstens fremde Seiten, die der Browser selbst als solche
 // ausweist, schreiben nicht. Sec-Fetch-Site kann keine Seite fälschen, und es hängt nicht am Host.

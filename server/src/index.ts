@@ -5103,7 +5103,7 @@ if (!MOVED_AWAY) {
       : 'Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
     // In der CI (GitHub setzt CI=true) prüft ein Skript die Programmdatei; ein Browserfenster
     // auf dem Runner nützt dort niemandem.
-    if (!ciSet(process.env)) openBrowser(url)
+    if (!ciSet(process.env)) openBrowser(ACCESS.browserUrl(url))
   }
 }
 startupDone = true

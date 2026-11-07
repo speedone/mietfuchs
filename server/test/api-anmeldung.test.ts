@@ -51,7 +51,8 @@ test('Anmeldung: neuer Datenordner im Netz startet in der Einrichtung, mit Code 
       assert.equal(fs.statSync(path.join(s.dataDir, 'einrichtungscode.txt')).mode & 0o777, 0o600)
       assert.equal(fs.statSync(path.join(s.dataDir, 'zugang.json')).mode & 0o777, 0o600)
     }
-    assert.match(s.output(), /Mietfuchs ist im Netz erreichbar und noch ohne Passwort\./)
+    await waitFor(() => s.output().includes('Einrichtungscode:'))
+    await waitFor(() => /Mietfuchs ist im Netz erreichbar und noch ohne Passwort\./.test(s.output()))
     assert.ok(s.output().includes(`Einrichtungscode: ${code}  (auch in ${path.join(s.dataDir, 'einrichtungscode.txt')})`), s.output())
     const zugang = JSON.parse(fs.readFileSync(path.join(s.dataDir, 'zugang.json'), 'utf8'))
     assert.equal(zugang.mode, 'setup')
@@ -189,7 +190,7 @@ test('Anmeldung: anmelden, abmelden, jede Anmeldung mit neuer Kennung', async ()
     const name = first.split('=')[0]
     assert.equal((await fetch(`${s.base}/api/units`, { headers: { cookie: `${name}=gefaelscht; ${first}` } })).status, 200)
     assert.equal((await fetch(`${s.base}/api/units`, { headers: { cookie: `${name}=gefaelscht` } })).status, 401)
-    assert.match(s.output(), /falsches Passwort von 127\.0\.0\.1/)
+    await waitFor(() => /falsches Passwort von 127\.0\.0\.1/.test(s.output()))
   } finally {
     s.stop()
   }
@@ -366,7 +367,7 @@ test('Anmeldung: bestehender Bestand im Netz ist im Übergang, offen, nichts ges
     assert.equal(units.status, 200)
     assert.equal(fs.existsSync(path.join(dir, 'zugang.json')), false)
     assert.ok(fs.existsSync(path.join(dir, 'einrichtungscode.txt')))
-    assert.match(s.output(), /Ab Version 1\.0 verlangt Mietfuchs hier ein Passwort\./)
+    await waitFor(() => /Ab Version 1\.0 verlangt Mietfuchs hier ein Passwort\./.test(s.output()))
     assert.equal((await fetch(`${s.base}/api/auth/setup`, post({ password: TEST_PASSWORD }))).status, 403)
     // eine fremde Seite, die der Browser als solche ausweist, schreibt auch im Übergang nicht
     assert.equal((await rawRequest(s.base, { method: 'POST', urlPath: '/api/units', headers: { 'sec-fetch-site': 'cross-site' }, body: '{}' })).status, 403)
@@ -421,7 +422,7 @@ test('Anmeldung: NKA_AUTH off, on und ein ungültiger Wert', async () => {
     assert.equal(auth.envFixed, true)
     assert.equal((await fetch(`${off.base}/api/units`)).status, 200)
     assert.equal(fs.existsSync(path.join(off.dataDir, 'zugang.json')), false)
-    assert.match(off.output(), /NKA_AUTH=off abgeschaltet/)
+    await waitFor(() => /NKA_AUTH=off abgeschaltet/.test(off.output()))
   } finally {
     off.stop()
   }
@@ -520,6 +521,187 @@ test('Anmeldung: im umgezogenen Ordner geht die Anmeldung trotz 423', async () =
     const { fetch: signed } = await signIn(s)
     assert.equal((await signed('/api/properties')).status, 200)
     assert.equal((await signed('/api/units', post({ name: 'x' }))).status, 423)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Betrieb: Zurücksetzen, Protokoll, Browser (Aufgabe 3) ----------
+
+const waitFor = async (check: () => boolean | Promise<boolean>, ms = 5000): Promise<void> => {
+  const deadline = Date.now() + ms
+  while (!(await check())) {
+    if (Date.now() > deadline) assert.fail('Bedingung nicht erreicht')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
+test('Zurücksetzen: Datei bei laufendem Server, nächste Anmeldung verlangt die Einrichtung mit neuem Code', async () => {
+  const s = await startServerIn(freshDir(), NETWORK)
+  try {
+    const { cookie } = await signIn(s)
+    // Fehlversuche mit dem Code: Die Bremse leert sich mit dem Zurücksetzen
+    for (let i = 0; i < 5; i++) await fetch(`${s.base}/api/auth/setup`, post({ code: 'AAAA-AAAA-AAAA', password: TEST_PASSWORD }))
+    fs.writeFileSync(path.join(s.dataDir, 'passwort-zuruecksetzen'), '')
+    const login = await fetch(`${s.base}/api/auth/login`, post({ password: TEST_PASSWORD }))
+    assert.equal(login.status, 401)
+    assert.equal((await jsonOf<{ setup?: boolean }>(login)).setup, true)
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'passwort-zuruecksetzen')), false)
+    assert.equal((await fetch(`${s.base}/api/units`, { headers: { cookie } })).status, 401)
+    const code = setupCode(s.dataDir)
+    assert.ok(s.output().includes(`Einrichtungscode: ${code}`), s.output())
+    await waitFor(() => /Das Passwort ist zurückgesetzt, alle Geräte sind abgemeldet\./.test(s.output()))
+    assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'zugang.json'), 'utf8')).mode, 'setup')
+    const again = await fetch(`${s.base}/api/auth/setup`, post({ code, password: 'ein ganz neues langes Passwort' }))
+    assert.equal(again.status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zurücksetzen: auch ohne Anmeldung, bei der nächsten Anfrage', async () => {
+  const s = await startServerIn(freshDir(), NETWORK)
+  try {
+    const { cookie } = await signIn(s)
+    fs.writeFileSync(path.join(s.dataDir, 'passwort-zuruecksetzen'), 'egal')
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    const res = await fetch(`${s.base}/api/units`, { headers: { cookie } })
+    assert.equal(res.status, 401)
+    assert.equal((await jsonOf<{ setup?: boolean }>(res)).setup, true)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zurücksetzen: Datei beim Start', async () => {
+  const dir = freshDir()
+  const first = await startServerIn(dir, NETWORK)
+  const instance = JSON.parse(fs.readFileSync(path.join(dir, 'zugang.json'), 'utf8')).instance
+  await signIn(first)
+  first.child.kill()
+  await waitForExit(first.child).catch(() => null)
+  fs.writeFileSync(path.join(dir, 'passwort-zuruecksetzen'), '')
+  const s = await startServerIn(dir, NETWORK)
+  try {
+    assert.equal((await authOf(s.base)).mode, 'setup')
+    assert.equal(fs.existsSync(path.join(dir, 'passwort-zuruecksetzen')), false)
+    const zugang = JSON.parse(fs.readFileSync(path.join(dir, 'zugang.json'), 'utf8'))
+    assert.equal(zugang.mode, 'setup')
+    assert.equal(zugang.instance, instance)
+    await waitFor(() => /Das Passwort ist zurückgesetzt \(Datei passwort-zuruecksetzen\)/.test(s.output()))
+    await waitFor(() => s.output().includes(`Einrichtungscode: ${setupCode(dir)}`))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zurücksetzen: bei NKA_AUTH=off ohne Wirkung', async () => {
+  const s = await startServerIn(freshDir(), { ...NETWORK, NKA_AUTH: 'off' })
+  try {
+    fs.writeFileSync(path.join(s.dataDir, 'passwort-zuruecksetzen'), '')
+    assert.equal((await authOf(s.base)).required, false)
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'zugang.json')), false)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Proxy vor einem lokalen Mietfuchs ohne Passwort: eine Zeile im Protokoll, Hinweis mit Code', async () => {
+  const s = await startServerIn(freshDir())
+  try {
+    assert.equal((await authOf(s.base)).mode, 'none')
+    for (let i = 0; i < 2; i++) assert.equal((await rawRequest(s.base, { urlPath: '/api/units', headers: { 'x-forwarded-for': '192.168.1.9' } })).status, 200)
+    await waitFor(() => /Anfragen über einen Proxy erreichen Mietfuchs ohne Passwort/.test(s.output()))
+    assert.equal(s.output().match(/Anfragen über einen Proxy/g)?.length, 1)
+    const auth = await authOf(s.base)
+    assert.equal(auth.mode, 'transition')
+    assert.equal(auth.required, false)
+    // mit dem Code eingerichtet brauchen Anfragen über den Proxy danach eine Sitzung, direkte nicht
+    await signIn(s)
+    assert.equal((await rawRequest(s.base, { urlPath: '/api/units', headers: { 'x-forwarded-for': '192.168.1.9' } })).status, 401)
+    assert.equal((await fetch(`${s.base}/api/units`)).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Programmdatei: der Browser öffnet die Einrichtung mit dem Code im Fragment', async () => {
+  const { browserUrlFor } = await import('../src/accessServer.ts')
+  assert.equal(browserUrlFor('http://127.0.0.1:3001', 'setup', 'K7QM4XPA9TRW'), 'http://127.0.0.1:3001/#einrichtung=K7QM-4XPA-9TRW')
+  assert.equal(browserUrlFor('http://127.0.0.1:3001', 'password', null), 'http://127.0.0.1:3001')
+  assert.equal(browserUrlFor('http://127.0.0.1:3001', 'transition', 'K7QM4XPA9TRW'), 'http://127.0.0.1:3001')
+  // mit CI kein Browser, der Code steht trotzdem im Protokoll
+  const s = await startServerIn(freshDir(), { ...NETWORK, NKA_RUNTIME: 'binary' })
+  try {
+    await waitFor(() => s.output().includes(`Einrichtungscode: ${setupCode(s.dataDir)}`))
+    assert.doesNotMatch(s.output(), /#einrichtung=/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht PR 3: Zurücksetzen während einer laufenden Berechnung (scrypt braucht eine halbe Sekunde)
+const resetDuring = async (s: { base: string, dataDir: string }, running: Promise<Response>): Promise<Response> => {
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  fs.writeFileSync(path.join(s.dataDir, 'passwort-zuruecksetzen'), '')
+  await fetch(`${s.base}/api/auth`)
+  return running
+}
+
+test('Zurücksetzen während einer Anmeldung: keine Sitzung, die das Zurücksetzen überlebt', async () => {
+  const s = await startServerIn(freshDir(), NETWORK)
+  try {
+    await signIn(s)
+    const login = await resetDuring(s, fetch(`${s.base}/api/auth/login`, post({ password: TEST_PASSWORD })))
+    assert.equal(login.status, 401)
+    assert.equal(login.headers.get('set-cookie'), null)
+    assert.equal((await authOf(s.base)).mode, 'setup')
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zurücksetzen während Ausschalten oder Passwortwechsel: das Zurücksetzen gilt', async () => {
+  const s = await startServerIn(freshDir(), NETWORK)
+  try {
+    const { cookie } = await signIn(s)
+    const off = await resetDuring(s, fetch(`${s.base}/api/auth/off`, post({ current: TEST_PASSWORD }, { cookie })))
+    assert.equal(off.status, 409)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'zugang.json'), 'utf8')).mode, 'setup')
+    const { cookie: again } = await signIn(s)
+    const put = await resetDuring(s, fetch(`${s.base}/api/auth/password`, { ...post({ current: TEST_PASSWORD, password: 'ein Passwort des Angreifers' }, { cookie: again }), method: 'PUT' }))
+    assert.equal(put.status, 409)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'zugang.json'), 'utf8')).mode, 'setup')
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zurücksetzen lokal hinter einem Proxy: über den Proxy bleibt es streng, direkt nicht', async () => {
+  const dir = freshDir()
+  const { hashPassword } = await import('../src/access.ts')
+  fs.writeFileSync(path.join(dir, 'zugang.json'), JSON.stringify({ version: 1, mode: 'password', instance: 'abcdef', hash: await hashPassword(TEST_PASSWORD, { logN: 12 }), changedAt: '' }))
+  const s = await startServerIn(dir)
+  try {
+    const proxied = () => rawRequest(s.base, { urlPath: '/api/units', headers: { 'x-forwarded-for': '192.168.1.9' } })
+    assert.equal((await proxied()).status, 401)
+    fs.writeFileSync(path.join(dir, 'passwort-zuruecksetzen'), '')
+    await fetch(`${s.base}/api/auth`)
+    const after = await proxied()
+    assert.equal(after.status, 401)
+    assert.equal(JSON.parse(after.body).setup, true)
+    assert.equal((await fetch(`${s.base}/api/units`)).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zurücksetzen: ein Ordner dieses Namens zählt nicht', async () => {
+  const s = await startServerIn(freshDir(), NETWORK)
+  try {
+    await signIn(s)
+    fs.mkdirSync(path.join(s.dataDir, 'passwort-zuruecksetzen'))
+    assert.equal((await authOf(s.base)).mode, 'password')
   } finally {
     s.stop()
   }
