@@ -103,7 +103,7 @@ import { invoicesOf, possibleDuplicates, receiptedSources, separateService } fro
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, leavesRentalWithin, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
 import type { FederalState, MeterRest, MeterRestKey, MeterRestTarget, RentDueRule, TaxSpread, UnitUsage } from '../../shared/types.ts'
-import { effectiveRentDue, holidaysCheckedOn, rentDueOn } from '../../shared/rentDue.ts'
+import { effectiveRentDue, FIRST_YEAR, holidaysCheckedOn, rentDueOn } from '../../shared/rentDue.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
@@ -1519,7 +1519,8 @@ const shiftIsoDay = (iso: string, days: number): string => {
 // `restYear` und `carriedRates` (§ 82b EStDV, #262 PR 2) reicht `taxReportFor` herein: das vorzeitige Ende am Objekt
 // (Abs. 2) und die Anteile aus Vorjahren (`carriedRates`). Ohne sie rechnet die Übersicht nur die Verteilungen, die in
 // diesem Jahr beginnen (E-6).
-export type TaxReportOptions = { linkable?: readonly SnapshotCostItem[]; foreignQuota?: ForeignHeatQuota; received?: boolean; restYear?: number | null; carriedRates?: readonly CarriedRate[] }
+// `holidaysChecked` nur für Tests (#334): ersetzt `holidaysCheckedOn` bei der Zehn-Tage-Regel mit festem Tag.
+export type TaxReportOptions = { linkable?: readonly SnapshotCostItem[]; foreignQuota?: ForeignHeatQuota; received?: boolean; restYear?: number | null; carriedRates?: readonly CarriedRate[]; holidaysChecked?: (date: string) => boolean }
 
 // Ein Anteil einer Verteilung aus dem Jahr ihres Abflusses (#262 PR 2, E-6): die Zeile der Position in der Übersicht
 // jenes Jahres (`from`, mit `spread`), die Position selbst (Schlüssel und Einheiten für die Kürzung bei verbilligter
@@ -1576,6 +1577,7 @@ type ReceivedInput = {
   // Die kurze Zeit um den Jahreswechsel in Tagen, für das Kalenderjahr, zu dem eine Zahlung wirtschaftlich gehört
   // (Zeitregel `periodStart` von `estg.short-period-days`).
   shortDays: (year: number) => number
+  holidaysChecked?: (date: string) => boolean
 }
 
 // Welche Fälligkeit gilt (#334): `effectiveRentDue` in shared/rentDue.ts, dieselbe Stelle wie für den Beginn der Erfassung
@@ -1592,14 +1594,16 @@ type ReceivedInput = {
 // Mit vereinbarter Fälligkeit (#334): „zu Beginn“ wie § 556b, „nach Ablauf“ nie; ein fester Tag nur, wenn der Januar-Abschnitt
 // am 01.01. beginnt und sein nach § 193 BGB verschobener Tag in den ersten `days` Tagen liegt, gerechnet mit den Feiertagen
 // am Ort (ohne Land dem spätesten aller Länder) und nur, wenn jeder Tag bis dahin geprüft ist (Auflage aus #290).
-function januaryDueInWindow(t: SnapshotTenancy, year: number, rule: RentDueRule, state: FederalState | null, days: number): boolean {
+// Vor 1995 kennt Mietfuchs keine Feiertage (Durchsicht S1): dann nach dem Datum der Zahlung. Dass der nach § 193 BGB
+// verschobene Tag zählt und nicht der vereinbarte, ist eine Auslegung (im Zweifel nach dem Datum der Zahlung).
+function januaryDueInWindow(t: SnapshotTenancy, year: number, rule: RentDueRule, state: FederalState | null, days: number, checked: (date: string) => boolean): boolean {
   if (compareText(t.start, `${year}-01-01`) > 0) return false
   if (rule !== 'dayOfMonth') return rule === 'startWorkday'
   const month = `${year}-01`
-  if (t.end !== null && compareText(t.end, `${month}-01`) < 0) return false
+  if (year < FIRST_YEAR || (t.end !== null && compareText(t.end, `${month}-01`) < 0)) return false
   const due = rentDueOn(t, month, state)
   if (compareText(due, `${month}-${String(days).padStart(2, '0')}`) > 0) return false
-  for (let d = `${month}-01`; compareText(d, due) <= 0; d = dayAfter(d)) if (!holidaysCheckedOn(d)) return false
+  for (let d = `${month}-01`; compareText(d, due) <= 0; d = dayAfter(d)) if (!checked(d)) return false
   return true
 }
 
@@ -1611,7 +1615,7 @@ const emptyTenancyReceived = (): Omit<TaxReceivedTenancy, 'tenancyId' | 'unitId'
 // Die Fläche für die Zeilen 13/14: eine fehlende Wohnfläche wie 0 m² (Geraderücken in validate.ts), ohne Einheit keine.
 const areaOf = (u: Pick<SnapshotUnit, 'areaM2'> | undefined): number | null => (u === undefined ? null : u.areaM2 ?? 0)
 
-function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput): TaxReceived {
+function receivedIncome({ snapshot, year, inclusive, shortDays, holidaysChecked = holidaysCheckedOn }: ReceivedInput): TaxReceived {
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
   const inYear = (d: string): boolean => d >= yFrom && d <= yTo
@@ -1642,13 +1646,15 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     const row = emptyTenancyReceived()
     const isInclusive = inclusive(t)
     const rule = effectiveRentDue(t)
-    // Nach Ablauf des Monats fällig (Altvertrag oder vereinbart): nichts verschoben, nur beziffert.
-    const atEnd = rule === 'inArrears'
+    // Altvertrag ohne Angabe (§ 551 BGB a. F.): nichts verschoben, nur beziffert, mit dem Vorbehalt der Oberfläche
+    // („nur wenn laut Vertrag am Monatsende fällig“). Bei vereinbarter Fälligkeit (Durchsicht S2, S3) wird rückwärts
+    // nichts beziffert; die Texte der Bezifferung sprechen vom Altvertrag (bekannte Grenze).
+    const atEnd = rule === 'inArrears' && t.rentDue == null
     // Verschoben wird nur, was in der kurzen Zeit fällig war (M1); eine Rücknahme folgt der zurückgenommenen
     // Zahlung (S1): Sie wird nur verschoben, wenn deren Datum ebenfalls in der kurzen Zeit vor dem Jahreswechsel liegt.
     const state = snapshot.property?.state ?? null
-    const movesForward = januaryDueInWindow(t, year + 1, rule, state, shortDays(year + 1))
-    const movedFromPrevious = januaryDueInWindow(t, year, rule, state, shortDays(year))
+    const movesForward = januaryDueInWindow(t, year + 1, rule, state, shortDays(year + 1), holidaysChecked)
+    const movedFromPrevious = januaryDueInWindow(t, year, rule, state, shortDays(year), holidaysChecked)
     const originInWindow = (s: AllocationSlice, from: string, to: string): boolean => s.reversesPaidOn === undefined || (s.reversesPaidOn >= from && s.reversesPaidOn <= to)
     let movedIn = false
     for (const s of slices) {
@@ -1864,6 +1870,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     year,
     inclusive: (t) => isInclusiveModel(tenancyCostModel(t, heatingBilled)),
     shortDays: (y) => law(estgShortPeriodDays, { period: calendarYearPeriod(y) }, createLawLog()),
+    ...(options.holidaysChecked !== undefined ? { holidaysChecked: options.holidaysChecked } : {}),
   })
   // Das Soll der Angehörigen (Durchsicht von PR 3, S4), aus denselben Zeilen des Mietkontos wie das Soll oben und mit
   // derselben Lesart „an Angehörige zu Wohnzwecken“ wie Kennzahl 62.
@@ -2564,7 +2571,7 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
 // `parts`: die Teile aus `taxPartsFor`, wenn der Aufrufer sie ohnehin braucht (das Steuer-ZIP wählt mit denselben
 // Teilen aus, Durchsicht von #255 PR 1, K5); sonst rechnet sie die Funktion selbst.
 // `carried: false` (#262, E-6): ohne die Anteile aus Vorjahren, für den Rückgriff auf das Jahr des Abflusses.
-export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, parts: readonly TaxPart[] = taxPartsFor(source, propertyId, year), options: Pick<TaxReportOptions, 'received'> & { carried?: false } = {}): TaxReport {
+export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, parts: readonly TaxPart[] = taxPartsFor(source, propertyId, year), options: Pick<TaxReportOptions, 'received' | 'holidaysChecked'> & { carried?: false } = {}): TaxReport {
   const calendar = snapshotFor(source, propertyId, calendarYearPeriod(year))
   // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
   // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.

@@ -50,6 +50,8 @@ import { monthShare } from './monthRate.ts'
 
 // Fehlend (oder `null` aus der Datenbank) heißt gesetzlich.
 export type { RentDueRule }
+// Ab diesem Jahr rechnet Mietfuchs mit Feiertagen (shared/holidays.ts); weitergereicht für den Server.
+export { FIRST_YEAR }
 export const RENT_DUE_RULES: readonly RentDueRule[] = ['startWorkday', 'dayOfMonth', 'inArrears']
 export const isRentDueRule = (v: unknown): v is RentDueRule => typeof v === 'string' && RENT_DUE_RULES.some((r) => r === v)
 

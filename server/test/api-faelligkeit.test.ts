@@ -144,3 +144,32 @@ test('Fälligkeit am Mietverhältnis: ein Backup von vor den Schritten 0092/0093
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Durchsicht K3: Beim Mieterwechsel behält der Ausziehende seine Fälligkeit, der Nachmieter beginnt gesetzlich, außer er
+// bringt eine eigene mit.
+test('Fälligkeit beim Mieterwechsel: der Ausziehende behält sie, der Nachmieter beginnt gesetzlich oder mit seiner eigenen', async () => {
+  const s = await startServer()
+  try {
+    const u = await post<Unit>(s, '/api/units', { name: 'EG', areaM2: 50, participates: true })
+    const alt = await post<Tenancy>(s, '/api/tenancies', { ...EMPTY, unitId: u.id, tenantName: 'Alt', persons: 1, start: '2025-01-01', rentDue: 'dayOfMonth', rentDueDay: 15, firstRentAtStart: true })
+    const change = (id: string, body: unknown) => fetch(`${s.base}/api/tenancies/${id}/change?property=objekt-1`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const newBody = (over: Record<string, unknown> = {}) => ({ tenantName: 'Neu', persons: 1, personHistory: [], start: '2025-07-01', baseRents: [{ from: '2025-07', monthlyCents: 50000 }], prepayments: [], prepaymentOverrides: {}, ...over })
+    const res = await change(alt.id, { end: '2025-06-30', readings: [], newTenancy: newBody() })
+    assert.equal(res.status, 200, await res.clone().text())
+    const all = await s.api<Tenancy[]>('/api/tenancies')
+    assert.deepEqual(terms(all.find((t) => t.tenantName === 'Alt')), ['dayOfMonth', 15, true])
+    const neu = all.find((t) => t.tenantName === 'Neu')
+    assert.deepEqual(terms(neu), [null, null, null])
+    // Der nächste Nachmieter bringt eine eigene Fälligkeit mit.
+    const res2 = await change(neu?.id ?? assert.fail('kein Nachmieter'), { end: '2025-12-31', readings: [], newTenancy: newBody({ tenantName: 'Danach', start: '2026-01-01', baseRents: [{ from: '2026-01', monthlyCents: 50000 }], rentDue: 'inArrears' }) })
+    assert.equal(res2.status, 200, await res2.clone().text())
+    assert.deepEqual(terms((await s.api<Tenancy[]>('/api/tenancies')).find((t) => t.tenantName === 'Danach')), ['inArrears', null, null])
+    // Eine ungültige Angabe am Nachmieter ist eine 400, und nichts ist beendet.
+    const danach = (await s.api<Tenancy[]>('/api/tenancies')).find((t) => t.tenantName === 'Danach')
+    const bad = await change(danach?.id ?? assert.fail('kein Nachmieter'), { end: '2026-06-30', readings: [], newTenancy: newBody({ tenantName: 'X', start: '2026-07-01', baseRents: [], rentDue: 'dayOfMonth' }) })
+    assert.equal(bad.status, 400)
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies')).find((t) => t.tenantName === 'Danach')?.end, null)
+  } finally {
+    s.stop()
+  }
+})

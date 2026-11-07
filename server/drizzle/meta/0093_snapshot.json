@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "29c22268-962f-4218-b0d7-ac04f7e0dad5",
+  "id": "cc0e06fe-0f4f-4085-9772-8dc867576699",
   "prevId": "8d24908d-286e-4b1a-940f-771b22bc7861",
   "tables": {
     "ai_slots": {
@@ -6662,7 +6662,7 @@
         },
         "tenancies_rent_due_day_valid": {
           "name": "tenancies_rent_due_day_valid",
-          "value": "(\"rent_due\" IS 'dayOfMonth') = (\"rent_due_day\" IS NOT NULL) AND (\"rent_due_day\" IS NULL OR \"rent_due_day\" BETWEEN 1 AND 31)"
+          "value": "(\"rent_due\" IS 'dayOfMonth') = (\"rent_due_day\" IS NOT NULL) AND (\"rent_due_day\" IS NULL OR (typeof(\"rent_due_day\") = 'integer' AND \"rent_due_day\" BETWEEN 1 AND 31))"
         },
         "tenancies_first_rent_at_start_valid": {
           "name": "tenancies_first_rent_at_start_valid",

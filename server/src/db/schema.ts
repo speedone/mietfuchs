@@ -353,10 +353,10 @@ export const tenancies = sqliteTable(
     check('tenancies_half_split_notice_valid', sql.raw(`"half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     // An Angehörige vermietet (#96 PR 2): ja oder nein; `mode: 'boolean'` bindet nur den Übersetzer.
     check('tenancies_relative_known', sql.raw(`"relative" IS NULL OR "relative" IN (0, 1)`)),
-    // Fälligkeit der Miete (#334): eine Regel aus der Liste, der Tag genau beim festen Tag und zwischen 1 und 31, die erste
+    // Fälligkeit der Miete (#334): eine Regel aus der Liste, der Tag genau beim festen Tag, ganzzahlig und zwischen 1 und 31, die erste
     // Miete bei Mietbeginn nur 1. Mit IS, weil alle drei Spalten NULL sein dürfen.
     check('tenancies_rent_due_known', sql.raw(`"rent_due" IS NULL OR "rent_due" IN ('startWorkday', 'dayOfMonth', 'inArrears')`)),
-    check('tenancies_rent_due_day_valid', sql.raw(`("rent_due" IS 'dayOfMonth') = ("rent_due_day" IS NOT NULL) AND ("rent_due_day" IS NULL OR "rent_due_day" BETWEEN 1 AND 31)`)),
+    check('tenancies_rent_due_day_valid', sql.raw(`("rent_due" IS 'dayOfMonth') = ("rent_due_day" IS NOT NULL) AND ("rent_due_day" IS NULL OR (typeof("rent_due_day") = 'integer' AND "rent_due_day" BETWEEN 1 AND 31))`)),
     check('tenancies_first_rent_at_start_valid', sql.raw(`"first_rent_at_start" IS NULL OR "first_rent_at_start" IS 1`)),
   ],
 )

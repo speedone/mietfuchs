@@ -34,7 +34,7 @@ CREATE TABLE `__new_tenancies` (
 	CONSTRAINT "tenancies_half_split_notice_valid" CHECK("half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
 	CONSTRAINT "tenancies_relative_known" CHECK("relative" IS NULL OR "relative" IN (0, 1)),
 	CONSTRAINT "tenancies_rent_due_known" CHECK("rent_due" IS NULL OR "rent_due" IN ('startWorkday', 'dayOfMonth', 'inArrears')),
-	CONSTRAINT "tenancies_rent_due_day_valid" CHECK(("rent_due" IS 'dayOfMonth') = ("rent_due_day" IS NOT NULL) AND ("rent_due_day" IS NULL OR "rent_due_day" BETWEEN 1 AND 31)),
+	CONSTRAINT "tenancies_rent_due_day_valid" CHECK(("rent_due" IS 'dayOfMonth') = ("rent_due_day" IS NOT NULL) AND ("rent_due_day" IS NULL OR (typeof("rent_due_day") = 'integer' AND "rent_due_day" BETWEEN 1 AND 31))),
 	CONSTRAINT "tenancies_first_rent_at_start_valid" CHECK("first_rent_at_start" IS NULL OR "first_rent_at_start" IS 1)
 );
 --> statement-breakpoint
