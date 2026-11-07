@@ -42,8 +42,8 @@
 // Daten sind 'JJJJ-MM-TT', Monate 'JJJJ-MM'.
 import type { FederalState } from './types.ts'
 import { addDays, FIRST_YEAR, holidaysOf, localHolidaysOf, STATE_CODES, weekdayOf } from './holidays.ts'
-import { createLawLog, dayAfter, law, versionAt, type LawLog } from './law/register.ts'
-import { HOLIDAY_PARAMS } from './law/feiertagsgesetze.ts'
+import { createLawLog, dayAfter, law, type LawLog } from './law/register.ts'
+import { holidaysCheckedOn } from './holidaysChecked.ts'
 import { bgbDeadlineOnWorkday, bgbRentDueAtStart, bgbRentDueSaturday, bgbRentDueWorkday, bgbTransferExecutionDays } from './law/bgb-betrkv.ts'
 import { practiceBankClosedDays, practiceCreditBookingDays } from './law/practice.ts'
 import { monthShare } from './monthRate.ts'
@@ -82,17 +82,9 @@ const maxText = (a: string, b: string): string => (a >= b ? a : b)
 
 // ---------- Prüfstand der Feiertage ----------
 
-const checkedCache = new Map<string, boolean>()
-
-// Ob an einem Tag jede dann geltende Fassung jedes Feiertags im Register amtlich gelesen ist (Auflage aus #290, E6).
-export function holidaysCheckedOn(date: string): boolean {
-  let known = checkedCache.get(date)
-  if (known === undefined) {
-    known = HOLIDAY_PARAMS.every((p) => versionAt(p, date).source.checked === 'checked')
-    checkedCache.set(date, known)
-  }
-  return known
-}
+// Ob an einem Tag jede dann geltende Fassung jedes Feiertags amtlich gelesen ist (Auflage aus #290, E6), aus
+// shared/holidaysChecked.ts; weitergereicht für Server und Tests.
+export { holidaysCheckedOn }
 
 // ---------- Feiertage für den Rückstand ----------
 

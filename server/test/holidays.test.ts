@@ -242,7 +242,14 @@ test('Feiertage: jede Stelle im Server, die mit ihnen rechnet, ist benannt', () 
   const rentDue = path.join(here, '..', '..', 'shared', 'rentDue.ts')
   if (fs.existsSync(rentDue)) {
     const src = fs.readFileSync(rentDue, 'utf8')
-    assert.match(src, /holidaysCheckedOn\(/, 'shared/rentDue.ts rechnet mit Feiertagen nur über holidaysCheckedOn')
+    assert.match(src, /holidaysCheckedOn/, 'shared/rentDue.ts rechnet mit Feiertagen nur über holidaysCheckedOn')
+    // #334 (Kann-Befund der Durchsicht von #593): genau eine Stelle entscheidet den Rückstand, und sie nimmt ohne geprüfte
+    // Feiertage die sichere Grenze; das Verhalten prüft rent-due.test.ts (ein ungeprüfter Tag im Fenster genügt).
+    assert.match(src, /import \{ holidaysCheckedOn \} from '\.\/holidaysChecked\.ts'/, 'der Prüfstand kommt aus shared/holidaysChecked.ts')
+    assert.match(src, /const checked = options\.holidaysChecked \?\? holidaysCheckedOn/)
+    assert.match(src, /for \(let d = sectionStart\(t, month\); all && d <= expected; d = addDays\(d, 1\)\) all = checked\(d\)/, 'jeder Tag vom Abschnitt bis zum erwarteten Eingang')
+    assert.match(src, /const from = all \? dayAfter\(expected\) : safe/)
+    assert.equal(src.match(/dayAfter\(expected\)/g)?.length, 1, 'nur eine Stelle rechnet den Rückstand mit Feiertagen')
   }
 })
 

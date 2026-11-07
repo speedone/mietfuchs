@@ -403,22 +403,6 @@ test('Register: die Bausteine fragen die Fristregeln mit Protokoll', () => {
   assert.ok(!fixed.values.some((v) => v.id === 'bgb.rent-due-at-start'), 'eine eingestellte Regel fragt die gesetzliche Vorgabe nicht')
 })
 
-// Auflage aus #290, präzisiert in E6: Der Server darf die Bausteine der Fristen nur an benannten Stellen einbinden, und
-// jede rechnet den Rückstand über `monthDue`, das Feiertage nur an geprüften Tagen zählt (Tests oben: ein ungeprüfter
-// Tag im Fenster ergibt die sichere Grenze). Wer eine Datei hinzufügt, nennt hier den Grund.
-const SERVER_USERS: Readonly<Record<string, string>> = {}
-
-test('Feiertage im Server: nur benannte Stellen binden holidays.ts, deadlines.ts oder rentDue.ts ein', () => {
-  const root = path.join(here, '..', 'src')
-  const files = (fs.readdirSync(root, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts'))
-  const users = files.filter((f) => /shared\/(holidays|deadlines|rentDue)\.ts['"]/.test(fs.readFileSync(path.join(root, f), 'utf8'))).map((f) => f.split(path.sep).join('/')).sort()
-  assert.deepEqual(users, Object.keys(SERVER_USERS).sort())
-  // rentDue.ts selbst entscheidet den Rückstand nur über den Prüfstand der Feiertage.
-  const source = fs.readFileSync(path.join(here, '..', '..', 'shared', 'rentDue.ts'), 'utf8')
-  assert.match(source, /options\.holidaysChecked \?\? holidaysCheckedOn/)
-  assert.match(source, /const from = all \? dayAfter\(expected\) : safe/)
-})
-
 // Durchsicht der Bausteine (S1, K3, K6): Monate außerhalb des Mietverhältnisses, ungültiger Tag, Fenster über den
 // Monatswechsel, Einzug am Wochenende und am Jahresende.
 test('Durchsicht: ein Monat ohne Tag im Mietverhältnis ist ein Fehler, auch vor 1995 und für die sichere Grenze', () => {
