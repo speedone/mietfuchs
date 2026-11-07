@@ -266,7 +266,11 @@ test('Feiertage je Land: Allerheiligen, Buß- und Bettag, Reformationstag, Fronl
 
 test('Sichere Grenze ohne geprüfte Feiertage: voller Monat zu Beginn ab dem Ersten des Folgemonats, sonst des übernächsten', () => {
   assert.equal(safeArrearsFrom(terms({ start: '2010-01-01' }), '2017-10'), '2017-11-01')
-  assert.equal(safeArrearsFrom(terms({ start: '2010-01-01', rentDue: 'dayOfMonth', rentDueDay: 3 }), '2017-10'), '2017-12-01')
+  // Integrationsdurchsicht S2: ein fester Tag bis zum 14. wie „zu Beginn“ ab dem Ersten des Folgemonats, später ab dem
+  // Ersten des übernächsten.
+  assert.equal(safeArrearsFrom(terms({ start: '2010-01-01', rentDue: 'dayOfMonth', rentDueDay: 3 }), '2017-10'), '2017-11-01')
+  assert.equal(safeArrearsFrom(terms({ start: '2010-01-01', rentDue: 'dayOfMonth', rentDueDay: 14 }), '2017-10'), '2017-11-01')
+  assert.equal(safeArrearsFrom(terms({ start: '2010-01-01', rentDue: 'dayOfMonth', rentDueDay: 15 }), '2017-10'), '2017-12-01')
   assert.equal(safeArrearsFrom(terms({ start: '2010-01-01', rentDue: 'inArrears' }), '2017-10'), '2017-12-01')
   assert.equal(safeArrearsFrom(terms({ start: '2017-10-02' }), '2017-10'), '2017-12-01')
   assert.equal(safeArrearsFrom(terms({ start: '2017-10-01', firstRentAtStart: true }), '2017-10'), '2017-12-01')
@@ -360,7 +364,8 @@ test('Invariante: Rückstand nie vor dem Tag nach der Fälligkeit, die sichere G
     // Ohne Land nie früher als mit irgendeinem Land.
     if (state === null) for (const s of STATE_CODES) assert.ok(withHolidays >= arrearsFrom(t, month, s, CHECKED), `${label} ${s}`)
     const full = !(t.start.slice(0, 7) === month && t.start > `${month}-01`)
-    if (effectiveRentDue(t) === 'startWorkday' && full && !(t.firstRentAtStart === true && t.start.slice(0, 7) === month)) {
+    const early = effectiveRentDue(t) === 'startWorkday' || (effectiveRentDue(t) === 'dayOfMonth' && (t.rentDueDay ?? 99) <= 14)
+    if (early && full && !(t.firstRentAtStart === true && t.start.slice(0, 7) === month)) {
       assert.ok(withHolidays <= nextMonthFirst(month), `${label}: zu Beginn fällig, aber erst ${withHolidays}`)
       assert.equal(safe, nextMonthFirst(month), label)
     } else {
@@ -369,11 +374,13 @@ test('Invariante: Rückstand nie vor dem Tag nach der Fälligkeit, die sichere G
   }
 })
 
-test('Invariante: Für volle Monate zu Beginn liegt der Rückstand 2019 bis 2100 in jedem Land im Monat selbst', () => {
-  for (const month of monthsFrom('2019-01', '2100-12')) {
+test('Invariante: Für volle Monate zu Beginn und mit festem Tag bis zum 14. liegt der Rückstand 1995 bis 2100 in jedem Land im Monat selbst', () => {
+  for (const month of monthsFrom('1995-02', '2100-12')) {
     for (const s of [...STATE_CODES, null]) {
-      const from = arrearsFrom(terms({ start: '2018-01-01' }), month, s, CHECKED)
-      assert.ok(from > `${month}-01` && from <= nextMonthFirst(month), `${month} ${s}: ${from}`)
+      for (const t of [terms({ start: '1995-01-01', rentDue: 'startWorkday' }), terms({ start: '1995-01-01', rentDue: 'dayOfMonth', rentDueDay: 14 })]) {
+        const from = arrearsFrom(t, month, s, CHECKED)
+        assert.ok(from > `${month}-01` && from <= nextMonthFirst(month), `${month} ${s} ${t.rentDue}: ${from}`)
+      }
     }
   }
 })

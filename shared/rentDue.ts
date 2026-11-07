@@ -30,9 +30,9 @@
 // **Auflage aus #290** (E6): Mit Feiertagen rechnet der Rückstand nur, wenn jeder Tag vom Beginn des Abschnitts bis zum
 // erwarteten Eingang geprüft ist (`holidaysCheckedOn`: jede am Tag geltende Fassung jedes `holiday.*` ist amtlich
 // gelesen). Sonst gilt je Regel eine sichere obere Grenze ohne Feiertage (`safeArrearsFrom`): ein voller Monat, der zu
-// Beginn fällig ist, ab dem Ersten des Folgemonats (wie #133; der dritte Werktag liegt nie nach dem 7., und vier
-// Bankgeschäftstage später ist es noch derselbe Monat, Invariante in rent-due.test.ts), jeder andere Monat
-// (fester Tag, nach Ablauf, Einzugsmonat, erste Miete bei Beginn) ab dem Ersten des übernächsten. Fälligkeitstag und
+// Beginn oder an einem festen Tag bis zum 14. fällig ist, ab dem Ersten des Folgemonats (wie #133; der dritte Werktag liegt
+// nie nach dem 7., und vier Bankgeschäftstage später ist es noch derselbe Monat, Invariante in rent-due.test.ts), jeder
+// andere Monat (späterer fester Tag, nach Ablauf, Einzugsmonat, erste Miete bei Beginn) ab dem Ersten des übernächsten. Fälligkeitstag und
 // erwarteter Eingang selbst sind eine Auskunft und werden immer mit Feiertagen genannt; was zählt, ist `arrearsFrom`.
 //
 // Die Fristregeln fragt jede Funktion mit `law()`; wer ein Protokoll hineinreicht (eine Abrechnung), bekommt die benutzten
@@ -218,12 +218,17 @@ export function creditExpectedBy(dueOn: string, options: Pick<RentDueOptions, 'l
 
 // ---------- ab wann Rückstand ----------
 
-// Die sichere Grenze ohne Feiertage (E6): ein voller Monat, der zu Beginn fällig ist, ab dem Ersten des Folgemonats,
-// jeder andere ab dem Ersten des übernächsten.
+// Die sichere Grenze ohne Feiertage (E6): ein voller Monat, der zu Beginn oder an einem festen Tag bis zum 14. fällig ist,
+// ab dem Ersten des Folgemonats, jeder andere ab dem Ersten des übernächsten. Keine Rechtszahl, nur die Grenze, bis zu der
+// die Invariante den Monat hält.
+export const EARLY_DAY_LIMIT = 14
 export function safeArrearsFrom(t: RentDueTerms, month: string, log: LawLog = createLawLog()): string {
   checkTenancyMonth(t, month)
-  if (effectiveRentDue(t, log) === 'dayOfMonth') agreedDay(t)
-  const atStart = effectiveRentDue(t, log) === 'startWorkday' && !isMoveInMonth(t, month) && !(isFirstMonth(t, month) && t.firstRentAtStart === true)
+  const rule = effectiveRentDue(t, log)
+  // Ein fester Tag bis zum 14. ist nach § 193 BGB und vier Bankgeschäftstagen noch im Monat erledigt (Invariante in
+  // rent-due.test.ts über alle Länder 1995 bis 2100), wie der dritte Werktag (Integrationsdurchsicht S2).
+  const early = rule === 'startWorkday' || (rule === 'dayOfMonth' && agreedDay(t) <= EARLY_DAY_LIMIT)
+  const atStart = early && !isMoveInMonth(t, month) && !(isFirstMonth(t, month) && t.firstRentAtStart === true)
   const next = nextMonth(month)
   return `${atStart ? next : nextMonth(next)}-01`
 }
