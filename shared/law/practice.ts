@@ -110,3 +110,51 @@ export const practiceMeterRestHigh: LawParam<number, 'periodStart'> = {
   }],
   describe: (v) => `Warnung ab mehr als ${v} % Allgemeinverbrauch`,
 }
+
+// **Buchung nach dem Eingang (#334, Entwurf E3).** Der Zahlungsdienstleister des Empfängers hat den Betrag „unverzüglich
+// verfügbar zu machen, nachdem“ er eingegangen ist; nur die Wertstellung muss spätestens an dem Geschäftstag liegen, an
+// dem er eingegangen ist (§ 675t Abs. 1 Sätze 1 und 2 BGB, gelesen am 07.11.2026). Mietfuchs kennt nur das Buchungsdatum,
+// nicht die Wertstellung, und ein Buchungstag nach dem Eingang ist nicht ausgeschlossen. Auslegung von Mietfuchs: ein
+// Geschäftstag für die Buchung. `eventDate`: gefragt am Fälligkeitstag.
+export const practiceCreditBookingDays: LawParam<number, 'eventDate'> = {
+  id: 'practice.credit-booking-days',
+  title: 'Buchung einer eingegangenen Überweisung',
+  norm: 'Auslegung zu § 675t Abs. 1 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: 1,
+    source: {
+      rank: 'interpretation',
+      cite: 'Auslegung zu § 675t Abs. 1 Sätze 1 und 2 BGB (unverzüglich verfügbar, Wertstellung spätestens am Geschäftstag des Eingangs)',
+      url: 'https://www.gesetze-im-internet.de/bgb/__675t.html',
+      retrieved: '2026-11-07',
+      checked: 'adopted',
+    },
+    enacted: 'Festlegung von Mietfuchs (#334, Entwurf E3)',
+  }],
+  describe: (v) => (v === 1 ? 'ein Geschäftstag für die Buchung nach dem Eingang' : `${v} Geschäftstage für die Buchung nach dem Eingang`),
+}
+
+// **Tage ohne Geschäftsbetrieb der Banken (#334, Entwurf E3).** Geschäftstag ist ein Tag, an dem der beteiligte
+// Zahlungsdienstleister den Geschäftsbetrieb unterhält (§ 675n Abs. 1 Satz 4 BGB). Der 24. und der 31. Dezember sind keine
+// gesetzlichen Feiertage; dass viele Banken dort keinen Geschäftsbetrieb unterhalten, ist eine Annahme aus der Praxis.
+// Mietfuchs zählt sie deshalb nicht als Bankgeschäftstag, das verschiebt den erwarteten Eingang nur nach hinten.
+// `eventDate`: gefragt am Fälligkeitstag. Tage als 'MM-TT'.
+export const practiceBankClosedDays: LawParam<readonly string[], 'eventDate'> = {
+  id: 'practice.bank-closed-days',
+  title: 'Tage ohne Geschäftsbetrieb der Banken',
+  norm: 'Annahme aus der Praxis zu § 675n Abs. 1 Satz 4 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: ['12-24', '12-31'],
+    source: {
+      rank: 'practice',
+      cite: 'Annahme aus der Praxis: kein Geschäftsbetrieb vieler Banken am 24. und 31. Dezember (keine gesetzlichen Feiertage)',
+      url: 'https://www.gesetze-im-internet.de/bgb/__675n.html',
+      retrieved: '2026-11-07',
+      checked: 'adopted',
+    },
+    enacted: 'Festlegung von Mietfuchs (#334, Entwurf E3)',
+  }],
+  describe: (v) => `kein Bankgeschäftstag: ${v.map((d) => `${d.slice(3, 5)}.${d.slice(0, 2)}.`).join(' und ')}`,
+}
