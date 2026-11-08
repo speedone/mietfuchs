@@ -225,7 +225,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               className="btn secondary"
               disabled={!ledger || markPaidBlocked !== null}
               aria-describedby={markPaidBlocked !== null ? 'mark-paid-blocked' : undefined}
-              onClick={() => setMarkPaid(markPaidStart(year, new Date()))}
+              onClick={() => setMarkPaid(markPaidStart(year, new Date(), ledger?.rows ?? []))}
             >
               Monate als bezahlt erfassen …
             </button>
@@ -354,7 +354,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             <p role="status">{emptyPlanText(markPaid.through)}</p>
           ) : (
             <>
-              {affectedText(markPaidPlan) && <NoticeBox level="warning" title="Andere Monate zählen dann neu" action={affectedText(markPaidPlan)} />}
+              {affectedText(markPaidPlan) && <NoticeBox level="warning" title="Auch andere Monate ändern sich" action={affectedText(markPaidPlan)} />}
               {unresolvedText(markPaidPlan) && <NoticeBox level="hint" action={unresolvedText(markPaidPlan)} />}
               <Table className="stacked">
                 <thead>

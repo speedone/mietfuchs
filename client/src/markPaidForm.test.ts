@@ -21,8 +21,15 @@ describe('Monate als bezahlt erfassen (#608): Formularlogik', () => {
     ])
   })
   it('Vorgabe: alle, im laufenden Jahr bis zum aktuellen Monat, in früheren bis Dezember', () => {
-    expect(markPaidStart(2026, heute)).toEqual({ tenancyId: ALL_TENANCIES, through: '2026-11' })
-    expect(markPaidStart(2025, heute)).toEqual({ tenancyId: ALL_TENANCIES, through: '2025-12' })
+    expect(markPaidStart(2026, heute, ROWS)).toEqual({ tenancyId: ALL_TENANCIES, through: '2026-11' })
+    expect(markPaidStart(2025, heute, ROWS)).toEqual({ tenancyId: ALL_TENANCIES, through: '2025-12' })
+  })
+  it('Vorgabe (Durchsicht S2): ist der laufende Monat noch nicht fällig, der Vormonat', () => {
+    const notDue = { ...row('t3', 'Celik', 'DG'), months: [
+      ...Array.from({ length: 10 }, (_, i) => ({ month: i + 1, baseRentCents: 80000, prepaymentCents: 0, flatRateCents: 0, sollCents: 80000, paidCents: 80000, status: 'paid' as const, openPrepaymentCents: 0, openRentCents: 0 })),
+      { month: 11, baseRentCents: 80000, prepaymentCents: 0, flatRateCents: 0, sollCents: 80000, paidCents: 0, status: 'notDue' as const, openPrepaymentCents: 0, openRentCents: 80000, dueOn: '2026-11-04' },
+    ] }
+    expect(markPaidStart(2026, new Date(2026, 10, 2), [...ROWS, notDue]).through).toBe('2026-10')
   })
   it('gesperrt ohne Mietverhältnis im Jahr und in einem künftigen Jahr, mit Grund', () => {
     expect(markPaidBlocked(ROWS, 2026, heute)).toBeNull()
@@ -47,9 +54,14 @@ describe('Monate als bezahlt erfassen (#608): Formularlogik', () => {
   it('Sätze: leerer Plan, betroffene Mietverhältnisse, nicht gedeckte Monate, Mitteilung', () => {
     expect(emptyPlanText('2026-03')).toBe('Bis März 2026 ist nichts offen.')
     expect(affectedText(plan())).toBeNull()
-    expect(affectedText(plan({ othersAffected: [{ tenancyId: 't2', tenantName: 'Brandt', unitName: 'OG', beforeCents: 0, afterCents: 160000 }] }))).toBe(
-      'Das Mietkonto des Objekts beginnt mit der frühesten erfassten Mietzahlung. Mit diesen Zahlungen beginnt es früher, und Monate, die bisher nicht erfasst waren, zählen dann mit: '
-      + `Brandt (OG): Rückstand bisher ${fmtEuro(0)}, danach ${fmtEuro(160000)}. Erfassen Sie die Zahlungen dieser Monate, oder wählen Sie die Mietverhältnisse mit.`)
+    expect(affectedText(plan({ othersAffected: [
+      { tenancyId: 't2', tenantName: 'Brandt', unitName: 'OG', year: 2026, reason: 'recordingStart', beforeCents: 0, afterCents: 160000 },
+      { tenancyId: 't1', tenantName: 'Albers', unitName: 'EG', year: 2026, reason: 'shifted', beforeCents: 80000, afterCents: 20000 },
+    ] }))).toBe(
+      'Danach ändert sich das Mietkonto auch außerhalb der geplanten Monate: '
+      + `Brandt (OG), ${'2026'}: Bisher nicht erfasste Monate zählen mit, weil das Mietkonto des Objekts mit der frühesten erfassten Mietzahlung beginnt; Rückstand bisher ${fmtEuro(0)}, danach ${fmtEuro(160000)}. `
+      + `Albers (EG), 2026: Vorhandene Zahlungen tilgen andere Monate als bisher (§ 366 BGB); Rückstand bisher ${fmtEuro(80000)}, danach ${fmtEuro(20000)}. `
+      + 'Prüfen Sie diese Mietverhältnisse, oder erfassen Sie ihre Monate mit.')
     expect(unresolvedText(plan())).toBeNull()
     expect(unresolvedText(plan({ unresolved: [{ tenancyId: 't1', tenantName: 'Albers', unitName: 'EG', month: '2026-02', status: 'partial', openCents: 20000 }] }))).toBe(
       `Nicht ganz gedeckt bleibt danach: Albers, Februar 2026 (noch ${fmtEuro(20000)} offen). Eine Zahlung ohne Monat im Verwendungszweck tilgt dann eine ältere Forderung (§ 366 BGB); prüfen Sie die Zahlungen dieses Mietverhältnisses.`)

@@ -8,7 +8,7 @@ import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTen
 import type { Snapshot } from '../src/snapshot.ts'
 import { markPaidRequestOf, markPaidToken, markPaidWrites, planMarkPaid } from '../src/markPaid.ts'
 import { rentDueOn, rentPaidOn } from '../../shared/rentDue.ts'
-import type { FederalState, MarkPaidPayment } from '../../shared/types.ts'
+import type { FederalState, MarkPaidPayment, RentLedger } from '../../shared/types.ts'
 
 // 800 € im Monat: 600 € Kaltmiete, 200 € Vorauszahlung.
 const tenancy = (id: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -75,8 +75,9 @@ test('Plan: im Einzugsmonat anteilig und ab dem dritten Werktag nach Einzug, nac
 
 test('Plan: Datum nie nach heute, „nach Ablauf“ höchstens der Monatsletzte, ohne Land der späteste Tag aller Länder', () => {
   const old = tenancy('a', { start: '2025-01-01', rentDue: 'inArrears' })
-  const p = plan(snapshot([old], []), '2025-03-02', ['a'], '2025-03')
-  assert.deepEqual(p.payments.map((x) => x.date), ['2025-01-31', '2025-02-28', '2025-03-02'])
+  // Nach Ablauf zählt ein Monat ohne geprüfte Feiertage ab dem Ersten des übernächsten als Rückstand (sichere Grenze).
+  const p = plan(snapshot([old], []), '2025-04-15', ['a'], '2025-02')
+  assert.deepEqual(p.payments.map((x) => x.date), ['2025-01-31', '2025-02-28'])
   const noState = snapshot([tenancy('b')], [], 2025, null)
   const q = plan(noState, '2025-02-20', ['b'], '2025-01')
   assert.equal(q.payments[0]?.date, rentDueOn(tenancy('b'), '2025-01', null), 'Heilige Drei Könige in Bayern: 07.01.')
@@ -148,7 +149,7 @@ test('othersAffected: Zahlungen im Objekt erst ab Juni, ein Mietverhältnis rüc
   const p = plan(s, asOf, ['a'], '2025-05')
   assert.deepEqual(p.payments.map((x) => x.month), ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05'], 'nicht erfasst zählt mit dem ganzen Soll')
   assert.deepEqual(p.unresolved, [])
-  assert.deepEqual(p.othersAffected, [{ tenancyId: 'b', tenantName: 'Mieter b', unitName: 'Wohnung b', beforeCents: 0, afterCents: 340000 }])
+  assert.deepEqual(p.othersAffected, [{ tenancyId: 'b', tenantName: 'Mieter b', unitName: 'Wohnung b', year: 2025, reason: 'recordingStart', beforeCents: 0, afterCents: 340000 }])
   // Die Juni- und Julizahlung von b tilgen danach zuerst die Vorauszahlungen Januar bis Juli, dann 400 € Kaltmiete Januar;
   // Rückstand sind Januar bis Juni: 4.800 € Soll − 1.400 € (der Juli ist noch nicht fällig).
   // Für beide zusammen: niemand verliert.
@@ -160,7 +161,7 @@ test('othersAffected: auch ein gewähltes Mietverhältnis, dessen Monate nach �
   const s = snapshot([tenancy('a')], payments)
   // Die Junizahlung tilgt danach den April; Mai und Juni sind Rückstand.
   const p = plan(s, '2025-07-02', ['a'], '2025-03')
-  assert.deepEqual(p.othersAffected, [{ tenancyId: 'a', tenantName: 'Mieter a', unitName: 'Wohnung a', beforeCents: 0, afterCents: 160000 }])
+  assert.deepEqual(p.othersAffected, [{ tenancyId: 'a', tenantName: 'Mieter a', unitName: 'Wohnung a', year: 2025, reason: 'recordingStart', beforeCents: 0, afterCents: 160000 }])
 })
 
 test('Marke: über Anfrage und Plan; ändert sich der Bestand, ändert sie sich', () => {
@@ -192,4 +193,61 @@ test('Anfrage: Bis Monat im Jahr und nicht nach dem laufenden Monat, Mietverhäl
   assert.match(error({ tenancyIds: [], through: '2025-03' }), /Wählen Sie/)
   assert.match(error({ through: '2025-03' }), /Wählen Sie/)
   assert.match(error({ tenancyIds: ['x'], through: '2025-03' }), /gehört nicht zu diesem Objekt/)
+})
+
+// Durchsicht M1: Rückwirkende Zahlungen für ein früheres Jahr verlegen den Beginn der Erfassung auch für spätere Jahre.
+test('othersAffected: auch in späteren Jahren bis heute, für gewählte und andere Mietverhältnisse', () => {
+  const since2020 = tenancy('a', { start: '2020-01-01', prepayments: [{ from: '2020-01', monthlyCents: 20000 }], baseRents: [{ from: '2020-01', monthlyCents: 60000 }] })
+  const b = tenancy('b', { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 20000 }], baseRents: [{ from: '2026-01', monthlyCents: 60000 }] })
+  const payments = ['06', '07', '08', '09', '10'].flatMap((m) => [pay('a', `2026-${m}-03`, 80000), pay('b', `2026-${m}-03`, 80000)])
+  const asOf = '2026-11-08'
+  const s25 = snapshot([since2020, b], payments, 2025)
+  const p = plan(s25, asOf, ['a'], '2025-12')
+  assert.equal(p.payments.length, 12)
+  const s26 = snapshot([since2020, b], payments, 2026)
+  const before = rentLedger(s26, { asOf })
+  const after = rentLedger(withPlan(s26, p.payments), { asOf })
+  const arrears = (l: RentLedger, id: string) => l.rows.find((r) => r.tenancyId === id)?.arrearsCents ?? assert.fail(`keine Zeile ${id}`)
+  assert.ok(arrears(after, 'a') > arrears(before, 'a') && arrears(after, 'b') > arrears(before, 'b'), 'im Mietkonto 2026 steigt der Rückstand')
+  assert.deepEqual(p.othersAffected, [
+    { tenancyId: 'a', tenantName: 'Mieter a', unitName: 'Wohnung a', year: 2026, reason: 'recordingStart', beforeCents: arrears(before, 'a'), afterCents: arrears(after, 'a') },
+    { tenancyId: 'b', tenantName: 'Mieter b', unitName: 'Wohnung b', year: 2026, reason: 'recordingStart', beforeCents: arrears(before, 'b'), afterCents: arrears(after, 'b') },
+  ])
+})
+
+// Durchsicht S1: Eine Zahlung „für März“ vor dem Beginn der Erfassung (designatedOutside) zählt für den März.
+test('Plan: ein nicht erfasster Monat mit einer Zahlung laut Verwendungszweck wird nicht noch einmal geplant', () => {
+  const since2020 = tenancy('a', { start: '2020-01-01', prepayments: [{ from: '2020-01', monthlyCents: 20000 }], baseRents: [{ from: '2020-01', monthlyCents: 60000 }] })
+  const payments = [pay('a', '2025-06-03', 80000), pay('a', '2025-06-10', 80000, { designatedMonth: '2025-03' })]
+  const s = snapshot([since2020], payments)
+  const p = plan(s, '2025-07-02', ['a'], '2025-05')
+  assert.deepEqual(p.payments.map((x) => [x.month, x.amountCents]), [['2025-01', 80000], ['2025-02', 80000], ['2025-04', 80000], ['2025-05', 80000]])
+  assert.deepEqual(p.unresolved, [])
+  assert.deepEqual(p.othersAffected, [])
+  const after = rentLedger(withPlan(s, p.payments), { asOf: '2025-07-02' }).rows[0] ?? assert.fail('keine Zeile')
+  assert.deepEqual(after.months.slice(0, 6).map((m) => m.status), ['paid', 'paid', 'paid', 'paid', 'paid', 'paid'])
+})
+
+// Durchsicht S2: Ein noch nicht fälliger Monat ist nicht eingegangen, nur weil er zum Monat gehört.
+test('Plan: ein noch nicht fälliger Monat wird nicht geplant', () => {
+  const p = plan(snapshot([tenancy('a')], []), '2025-03-02', ['a'], '2025-03')
+  assert.deepEqual(p.payments.map((x) => x.month), ['2025-01', '2025-02'], 'März ist erst am 05.03. fällig')
+})
+
+// Durchsicht S1, zweiter Teil: Steht ein Monat außerhalb des Plans danach besser da, wandert eine vorhandene Zahlung.
+test('othersAffected: eine vorhandene Zahlung tilgt danach einen späteren Monat; Grund „shifted“', () => {
+  // Erfasst seit November 2024 (400 € am 03.11.); am 20.02. 400 € ohne Monat: die Vorauszahlungen Dezember und Januar.
+  // Die neue Januarzahlung (600 €, am 06.01.) tilgt zuerst die Vorauszahlung Januar; die Februarzahlung geht danach an
+  // Dezember und Februar.
+  const payments = [pay('a', '2024-11-03', 40000), pay('a', '2025-02-20', 40000)]
+  const s = snapshot([since2024], payments)
+  const asOf = '2025-05-20'
+  const p = plan(s, asOf, ['a'], '2025-01')
+  assert.deepEqual(p.payments.map((x) => [x.month, x.amountCents]), [['2025-01', 60000]])
+  assert.deepEqual(p.unresolved.map((u) => [u.month, u.openCents]), [['2025-01', 20000]])
+  const before = rentLedger(s, { asOf }).rows[0] ?? assert.fail('keine Zeile')
+  const after = rentLedger(withPlan(s, p.payments), { asOf }).rows[0] ?? assert.fail('keine Zeile')
+  assert.equal(before.months[1]?.paidCents, 0)
+  assert.equal(after.months[1]?.paidCents, 20000, 'der Februar trägt danach 200 € der Zahlung vom 20.02.')
+  assert.deepEqual(p.othersAffected, [{ tenancyId: 'a', tenantName: 'Mieter a', unitName: 'Wohnung a', year: 2025, reason: 'shifted', beforeCents: before.arrearsCents, afterCents: after.arrearsCents }])
 })

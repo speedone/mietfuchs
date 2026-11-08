@@ -84,7 +84,7 @@ Kurzfassung steht im [README](../README.md#funktionen).
    Folgemonats; jeder andere (Einzug im Lauf des Monats, späterer fester Tag, „nach Ablauf“, erste Miete schon bei
    Mietbeginn) ab dem Ersten des übernächsten. Zeigt das Mietkonto einen
    Rückstand, weist die Abrechnung darauf hin, denn maßgeblich ist, was tatsächlich gezahlt wurde.
-   Gehen die Mieten pünktlich und in voller Höhe ein, erfasst „Monate als bezahlt erfassen …“ alle offenen Monate bis
+   Gehen die Mieten pünktlich und in voller Höhe ein, erfasst „Monate als bezahlt erfassen …“ alle offenen, schon fälligen Monate bis
    zu einem gewählten Monat in einem Schritt, auch rückwirkend: je Monat eine Zahlung über den offenen Rest, für diesen
    Monat und am Fälligkeitstag, nach einer Vorschau. Ein Klick auf einen offenen Monat belegt die einzelne Zahlung
    ebenso vor.

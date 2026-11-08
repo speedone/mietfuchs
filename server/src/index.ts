@@ -22,7 +22,7 @@ import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement, type LedgerOptions } from './calc.ts'
-import { markPaidRequestOf, markPaidTitle, markPaidToken, markPaidWrites, planMarkPaid, type MarkPaidRequest } from './markPaid.ts'
+import { markPaidRequestOf, markPaidTitle, markPaidToken, markPaidWrites, planMarkPaid, type LedgerView, type MarkPaidRequest } from './markPaid.ts'
 import { taxOverview } from './taxOverview.ts'
 import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor, type Snapshot } from './snapshot.ts'
@@ -1781,7 +1781,14 @@ async function markPaidPlanOf(db: Database, req: Request, year: number): Promise
   const { snapshot, options } = await ledgerInputOf(db, req, year)
   const checked = markPaidRequestOf(year, bodyObject(req), options.asOf, new Set(snapshot.tenancies.map((t) => t.id)))
   if ('error' in checked) throw new RouteProblem(400, checked.error)
-  const body = planMarkPaid(snapshot, options, checked.request)
+  // Die Jahre danach bis heute (Durchsicht M1), je mit Schnappschuss und Abrechnungen des Jahres wie in der Ansicht.
+  const laterViews = new Map<number, LedgerView>()
+  for (let y = year + 1; y <= Number(options.asOf.slice(0, 4)); y++) laterViews.set(y, await ledgerInputOf(db, req, y))
+  const body = planMarkPaid(snapshot, options, checked.request, (y) => {
+    const view = laterViews.get(y)
+    if (!view) throw new Error(`Mietkonto ${y} fehlt für die Nachprüfung.`)
+    return view
+  })
   return { request: checked.request, plan: { ...body, token: markPaidToken(checked.request, body) } }
 }
 app.post('/api/rentledger/:year/mark-paid/plan', async (req, res) => {

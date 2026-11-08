@@ -70,7 +70,39 @@ const accountsOf = (l: RentLedger): Map<string, Account> => new Map([
   ...l.carriedOnly.map((r): [string, Account] => [r.tenancyId, { ...r, arrearsCents: r.openCents }]),
 ])
 
-export function planMarkPaid(snapshot: Snapshot, options: LedgerOptions & { asOf: string }, request: MarkPaidRequest): MarkPaidPlanBody {
+// Ein Jahr des Mietkontos, wie die Route es rechnet (Schnappschuss und Optionen des Jahres).
+export type LedgerView = { snapshot: Snapshot, options: LedgerOptions & { asOf: string } }
+
+// Vergleich eines Jahres vorher und nachher, je Mietverhältnis außerhalb der geplanten Monate. Im Jahr der Ansicht zählt
+// ein steigender Rückstand nur bei nicht gewählten Mietverhältnissen (bei gewählten sinkt er durch den Plan und steigt
+// höchstens durch Monate außerhalb des Plans, die der Vergleich je Monat sieht); in späteren Jahren bei allen.
+function affectedIn(before: RentLedger, after: RentLedger, planned: ReadonlySet<string>, chosen: ReadonlySet<string>, requestYear: boolean): MarkPaidAffected[] {
+  const beforeAccounts = accountsOf(before)
+  return [...accountsOf(after).values()].flatMap((a): MarkPaidAffected[] => {
+    const prevRow = before.rows.find((r) => r.tenancyId === a.tenancyId)
+    const row = after.rows.find((r) => r.tenancyId === a.tenancyId)
+    let recorded = false
+    let changed = false
+    for (const [k, mo] of (row?.months ?? []).entries()) {
+      const was = prevRow?.months[k]
+      if (!was || planned.has(`${a.tenancyId}/${monthOf(after.year, mo.month)}`)) continue
+      if (was.status === 'notRecorded' && mo.status !== 'notRecorded') {
+        recorded = true
+        if (mo.status === 'open' || mo.status === 'partial') changed = true
+      } else if (worse(was.status, mo.status) || (was.status !== 'notRecorded' && mo.paidCents > was.paidCents)) {
+        changed = true
+      }
+    }
+    const beforeCents = beforeAccounts.get(a.tenancyId)?.arrearsCents ?? 0
+    const risen = a.arrearsCents > beforeCents && (!requestYear || !chosen.has(a.tenancyId))
+    if (!changed && !risen) return []
+    return [{ tenancyId: a.tenancyId, tenantName: a.tenantName, unitName: a.unitName, year: after.year, reason: recorded ? 'recordingStart' : 'shifted', beforeCents, afterCents: a.arrearsCents }]
+  })
+}
+
+// `later`: das Mietkonto eines späteren Jahres (bis zum Jahr von heute) für die Nachprüfung; ohne Angabe derselbe
+// Schnappschuss mit dem anderen Jahr und ohne Abrechnungen (die nur einteilen, was nicht mehr einzeln einforderbar ist).
+export function planMarkPaid(snapshot: Snapshot, options: LedgerOptions & { asOf: string }, request: MarkPaidRequest, later?: (year: number) => LedgerView): MarkPaidPlanBody {
   const before = rentLedger(snapshot, options)
   const chosen = new Set(request.tenancyIds)
   const last = Number(request.through.slice(5, 7))
@@ -78,10 +110,16 @@ export function planMarkPaid(snapshot: Snapshot, options: LedgerOptions & { asOf
   for (const row of before.rows) {
     if (!chosen.has(row.tenancyId)) continue
     for (const mo of row.months) {
-      if (mo.month > last || mo.sollCents <= 0 || mo.paidLaterOn) continue
-      const rest = mo.status === 'notRecorded' ? mo.sollCents : mo.sollCents - mo.paidCents
-      if (rest <= 0) continue
+      // Noch nicht fällig (Durchsicht S2): nicht eingegangen, nur weil der Monat begonnen hat.
+      if (mo.month > last || mo.sollCents <= 0 || mo.paidLaterOn || mo.status === 'notDue') continue
       const month = monthOf(before.year, mo.month)
+      // Vor dem Beginn der Erfassung (Durchsicht S1): das Soll abzüglich der Mietzahlungen, die diesen Monat laut
+      // Verwendungszweck nennen (bisher in `designatedOutside`); sie gelten danach für ihn.
+      const designated = snapshot.payments
+        .filter((p) => p.tenancyId === row.tenancyId && (p.kind ?? 'rent') === 'rent' && p.designatedMonth === month)
+        .reduce((x, p) => x + p.amountCents, 0)
+      const rest = mo.status === 'notRecorded' ? mo.sollCents - designated : mo.sollCents - mo.paidCents
+      if (rest <= 0) continue
       payments.push({
         tenancyId: row.tenancyId, tenantName: row.tenantName, unitName: row.unitName, month,
         date: rentPaidOn(month, dueDateOf(snapshot, row.tenancyId, month), options.asOf), amountCents: rest,
@@ -93,7 +131,8 @@ export function planMarkPaid(snapshot: Snapshot, options: LedgerOptions & { asOf
 
   // Nachprüfung auf dem Schnappschuss mit den neuen Zahlungen.
   const added: SnapshotPayment[] = payments.map((p, i) => ({ id: `markpaid-${String(i).padStart(4, '0')}`, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, kind: 'rent', designatedMonth: p.month }))
-  const after = rentLedger({ ...snapshot, payments: [...snapshot.payments, ...added] }, options)
+  const withAdded = (s: Snapshot): Snapshot => ({ ...s, payments: [...s.payments, ...added] })
+  const after = rentLedger(withAdded(snapshot), options)
   const planned = new Set(payments.map((p) => `${p.tenancyId}/${p.month}`))
   const unresolved: MarkPaidUnresolved[] = payments.flatMap((p) => {
     const row = after.rows.find((r) => r.tenancyId === p.tenancyId)
@@ -101,20 +140,16 @@ export function planMarkPaid(snapshot: Snapshot, options: LedgerOptions & { asOf
     if (!row || !mo || mo.status === 'paid') return []
     return [{ tenancyId: p.tenancyId, tenantName: p.tenantName, unitName: p.unitName, month: p.month, status: mo.status, openCents: mo.openPrepaymentCents + mo.openRentCents }]
   })
-  const beforeAccounts = accountsOf(before)
-  const othersAffected: MarkPaidAffected[] = [...accountsOf(after).values()].flatMap((a) => {
-    const prev = beforeAccounts.get(a.tenancyId)
-    const prevRow = before.rows.find((r) => r.tenancyId === a.tenancyId)
-    const row = after.rows.find((r) => r.tenancyId === a.tenancyId)
-    const monthsWorse = row !== undefined && prevRow !== undefined && row.months.some((mo, k) => {
-      const was = prevRow.months[k]
-      return was !== undefined && !planned.has(`${a.tenancyId}/${monthOf(after.year, mo.month)}`) && worse(was.status, mo.status)
-    })
-    const beforeCents = prev?.arrearsCents ?? 0
-    const risen = !chosen.has(a.tenancyId) && a.arrearsCents > beforeCents
-    if (!monthsWorse && !risen) return []
-    return [{ tenancyId: a.tenancyId, tenantName: a.tenantName, unitName: a.unitName, beforeCents, afterCents: a.arrearsCents }]
-  })
+  const othersAffected = affectedIn(before, after, planned, chosen, true)
+  // Durchsicht M1: Der frühere Beginn der Erfassung gilt auch für die Jahre danach, bis heute.
+  const viewOf = later ?? ((y: number): LedgerView => ({
+    snapshot: { ...snapshot, year: y },
+    options: { asOf: options.asOf, ...(options.holidaysChecked ? { holidaysChecked: options.holidaysChecked } : {}) },
+  }))
+  for (let y = before.year + 1; y <= Number(options.asOf.slice(0, 4)); y++) {
+    const view = viewOf(y)
+    othersAffected.push(...affectedIn(rentLedger(view.snapshot, view.options), rentLedger(withAdded(view.snapshot), view.options), planned, chosen, false))
+  }
   return { payments, totalCents, unresolved, othersAffected }
 }
 

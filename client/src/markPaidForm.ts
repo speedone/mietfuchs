@@ -1,7 +1,7 @@
 // „Offene Monate als bezahlt erfassen“ im Mietkonto (#608), ohne DOM, damit es prüfbar bleibt (markPaidForm.test.ts).
 // Den Plan rechnet der Server (server/src/markPaid.ts); hier stehen Auswahl, Vorgaben, die Prüfung vor der Vorschau und
 // die Sätze. Die Seite rendert nur.
-import type { MarkPaidPlan, RentLedgerRow } from './types'
+import type { MarkPaidAffectedReason, MarkPaidPlan, RentLedgerRow } from './types'
 import type { Checked } from './formProblems'
 import { fmtEuro } from './api'
 import { monthLabel, parseMonthText } from './monthText'
@@ -20,9 +20,13 @@ export function markPaidTenancyOptions(rows: readonly Row[]): { value: string; l
   return [{ value: ALL_TENANCIES, label: 'Alle Mietverhältnisse' }, ...rows.map((r) => ({ value: r.tenancyId, label: `${r.tenantName} · ${r.unitName}` }))]
 }
 
-// Vorgabe beim Öffnen: alle, im laufenden Jahr bis zum aktuellen Monat, in früheren Jahren bis Dezember. Örtlich.
-export function markPaidStart(year: number, today: Date): MarkPaidValue {
-  return { tenancyId: ALL_TENANCIES, through: year < today.getFullYear() ? `${year}-12` : currentMonth(today) }
+// Vorgabe beim Öffnen: alle, im laufenden Jahr bis zum aktuellen Monat, in früheren Jahren bis Dezember; zählt dieser
+// Monat bei einem Mietverhältnis noch nicht als Rückstand (`notDue`, Daten des Servers), der letzte Monat davor, der es
+// bei keinem mehr tut (Durchsicht S2: am 02.11. ist die Novembermiete noch nicht eingegangen). Örtlich.
+export function markPaidStart(year: number, today: Date, rows: readonly Pick<RentLedgerRow, 'months'>[]): MarkPaidValue {
+  let month = year < today.getFullYear() ? 12 : today.getMonth() + 1
+  while (month > 1 && rows.some((r) => r.months.some((mo) => mo.month === month && mo.status === 'notDue'))) month--
+  return { tenancyId: ALL_TENANCIES, through: `${year}-${pad(month)}` }
 }
 
 // Warum der Knopf gesperrt ist, oder `null`.
@@ -49,7 +53,7 @@ export function markPaidRequest(value: MarkPaidValue, rows: readonly Row[], year
 
 // Der Satz über der Vorschau.
 export const MARK_PAID_EXPLAIN =
-  'Je offenem Monat legt Mietfuchs eine Mietzahlung über den offenen Rest an. Jede gilt dem genannten Monat, wie „Für Monat“ an einer Zahlung, ' +
+  'Je offenem, schon fälligem Monat legt Mietfuchs eine Mietzahlung über den offenen Rest an. Jede gilt dem genannten Monat, wie „Für Monat“ an einer Zahlung, ' +
   'und trägt den Fälligkeitstag als Datum, höchstens heute. Ging eine Miete später oder in anderer Höhe ein, ändern Sie danach die Zahlung; eine Teilzahlung erfassen Sie mit „+ Zahlung anlegen“.'
 
 // „Bis Monat“ wie eingegeben („3.2026“ oder „2026-03“).
@@ -58,12 +62,15 @@ export function emptyPlanText(through: string): string {
   return `Bis ${month.kind === 'month' ? monthLabel(month.key) : through} ist nichts offen.`
 }
 
-// Rückwirkende Zahlungen können das Mietkonto früher beginnen lassen (Beginn der Erfassung im Objekt).
+// Was sich außerhalb der geplanten Monate ändert (Nachprüfung des Servers), je Mietverhältnis und Jahr mit Grund.
+const AFFECTED_REASON: Record<MarkPaidAffectedReason, string> = {
+  recordingStart: 'Bisher nicht erfasste Monate zählen mit, weil das Mietkonto des Objekts mit der frühesten erfassten Mietzahlung beginnt',
+  shifted: 'Vorhandene Zahlungen tilgen andere Monate als bisher (§ 366 BGB)',
+}
 export function affectedText(plan: Pick<MarkPaidPlan, 'othersAffected'>): string | null {
   if (plan.othersAffected.length === 0) return null
-  const list = plan.othersAffected.map((a) => `${a.tenantName} (${a.unitName}): Rückstand bisher ${fmtEuro(a.beforeCents)}, danach ${fmtEuro(a.afterCents)}`).join('; ')
-  return 'Das Mietkonto des Objekts beginnt mit der frühesten erfassten Mietzahlung. Mit diesen Zahlungen beginnt es früher, und Monate, die bisher nicht erfasst waren, zählen dann mit: ' +
-    `${list}. Erfassen Sie die Zahlungen dieser Monate, oder wählen Sie die Mietverhältnisse mit.`
+  const list = plan.othersAffected.map((a) => `${a.tenantName} (${a.unitName}), ${a.year}: ${AFFECTED_REASON[a.reason]}; Rückstand bisher ${fmtEuro(a.beforeCents)}, danach ${fmtEuro(a.afterCents)}.`)
+  return `Danach ändert sich das Mietkonto auch außerhalb der geplanten Monate: ${list.join(' ')} Prüfen Sie diese Mietverhältnisse, oder erfassen Sie ihre Monate mit.`
 }
 
 // Geplante Monate, die nach der Nachprüfung des Servers nicht ganz gedeckt sind.

@@ -152,7 +152,7 @@ test('Monate als bezahlt erfassen: jede Änderung lädt die Vorschau neu, eine v
 
 test('Monate als bezahlt erfassen: Warnung bei betroffenen Mietverhältnissen, Hinweis bei nicht gedeckten Monaten, 409 zeigt die neue Vorschau', async () => {
   planReply = (b) => planFor(b.tenancyIds, b.through, {
-    othersAffected: [{ tenancyId: 't2', tenantName: 'Brandt', unitName: 'OG', beforeCents: 0, afterCents: 160000 }],
+    othersAffected: [{ tenancyId: 't2', tenantName: 'Brandt', unitName: 'OG', year: YEAR, reason: 'recordingStart', beforeCents: 0, afterCents: 160000 }],
     unresolved: [{ tenancyId: 't1', tenantName: 'Albers', unitName: 'EG', month: `${YEAR}-03`, status: 'partial', openCents: 20000 }],
   })
   let calls = 0
@@ -162,11 +162,11 @@ test('Monate als bezahlt erfassen: Warnung bei betroffenen Mietverhältnissen, H
   await waitFor(() => expect(open.disabled).toBe(false))
   fireEvent.click(open)
   const d = await drawer()
-  expect(await within(d).findByText(/Brandt \(OG\): Rückstand bisher/)).toBeTruthy()
+  expect(await within(d).findByText(/Brandt \(OG\), \d{4}: Bisher nicht erfasste Monate zählen mit/)).toBeTruthy()
   expect(within(d).getByText(/Nicht ganz gedeckt bleibt danach: Albers, März/)).toBeTruthy()
   fireEvent.click(within(d).getByRole('button', { name: /^Anlegen$/ }))
   expect(await within(d).findAllByText(/Der Stand hat sich geändert/)).not.toHaveLength(0)
-  await waitFor(() => expect(within(d).queryByText(/Brandt \(OG\): Rückstand bisher/)).toBeNull())
+  await waitFor(() => expect(within(d).queryByText(/Brandt \(OG\), \d{4}: Bisher nicht erfasste Monate zählen mit/)).toBeNull())
   fireEvent.click(within(d).getByRole('button', { name: /^Anlegen$/ }))
   await waitFor(() => expect(sent.filter((s) => s.url.endsWith('/mark-paid'))).toHaveLength(2))
   expect(sent.filter((s) => s.url.endsWith('/mark-paid'))[1]?.body).toMatchObject({ token: 'neu' })

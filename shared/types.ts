@@ -367,10 +367,13 @@ export type MarkPaidPayment = {
 }
 // Ein geplanter Monat, der nach der Nachprüfung (Mietkonto mit den neuen Zahlungen) nicht bezahlt ist.
 export type MarkPaidUnresolved = { tenancyId: string; tenantName: string; unitName: string; month: string; status: RentMonthStatus; openCents: number }
-// Ein Mietverhältnis, bei dem die neuen Zahlungen außerhalb der geplanten Monate etwas verschlechtern: Das Konto des
-// Objekts beginnt mit der frühesten erfassten Mietzahlung, rückwirkende Zahlungen lassen frühere Monate neu zählen.
-// `beforeCents`/`afterCents`: der Rückstand (`arrearsCents`) vorher und nachher.
-export type MarkPaidAffected = { tenancyId: string; tenantName: string; unitName: string; beforeCents: number; afterCents: number }
+// Ein Mietverhältnis, bei dem die neuen Zahlungen außerhalb der geplanten Monate etwas ändern, im Jahr der Ansicht oder
+// einem späteren bis heute (`year`). `recordingStart`: Das Konto des Objekts beginnt mit der frühesten erfassten
+// Mietzahlung, rückwirkende Zahlungen lassen bisher nicht erfasste Monate zählen. `shifted`: Zahlungen tilgen danach andere
+// Monate (§ 366 BGB), ein Monat steht schlechter oder ein späterer ist besser gedeckt (Geld wandert in die Zukunft).
+// `beforeCents`/`afterCents`: der Rückstand (`arrearsCents`) in diesem Jahr vorher und nachher.
+export type MarkPaidAffectedReason = 'recordingStart' | 'shifted'
+export type MarkPaidAffected = { tenancyId: string; tenantName: string; unitName: string; year: number; reason: MarkPaidAffectedReason; beforeCents: number; afterCents: number }
 export type MarkPaidPlan = {
   payments: MarkPaidPayment[]
   totalCents: number
