@@ -418,3 +418,19 @@ test('S4: verspätete erste Zahlung am 25., danach pünktlich am 3.: keine Versc
   assert.equal(r.closingBalanceCents, 0)
   assert.equal(r.arrearsCents, 0)
 })
+
+// #334: Ob die erste Zahlung zum Monatsende schon die Miete des Folgemonats ist, hängt an der Fälligkeit am Mietverhältnis:
+// zu Beginn und an einem festen Tag in den ersten zehn Tagen ja, an einem späteren Tag und nach Ablauf des Monats nicht.
+test('Geführt ab mit Fälligkeit am Mietverhältnis: fester Tag 3 wie zu Beginn, fester Tag 15 und nach Ablauf nicht', () => {
+  const payments = [pay('2023-12-30', 80000), ...monthsBetween('2024-01', '2024-12').map((m) => pay(`${m}-${m.endsWith('-02') ? 28 : 30}`, 80000))]
+  const startOf = (over: Partial<SnapshotTenancy>) => rowOf(ledger({ tenancies: [since2020(over)], payments }, 2024, { asOf: '2025-03-01' })).ledgerStart
+  assert.equal(startOf({}), '2024-01-01')
+  assert.equal(startOf({ rentDue: 'startWorkday' }), '2024-01-01')
+  assert.equal(startOf({ rentDue: 'dayOfMonth', rentDueDay: 3 }), '2024-01-01')
+  assert.equal(startOf({ rentDue: 'dayOfMonth', rentDueDay: 10 }), '2024-01-01')
+  assert.equal(startOf({ rentDue: 'dayOfMonth', rentDueDay: 15 }), '2023-12-01')
+  assert.equal(startOf({ rentDue: 'inArrears' }), '2023-12-01')
+  // Ein Altvertrag mit Vorauszahlungsklausel (zu Beginn eingestellt) wie ein neuer.
+  assert.equal(startOf({ contractDate: '1999-01-01', rentDue: 'startWorkday' }), '2024-01-01')
+  assert.equal(startOf({ contractDate: '1999-01-01' }), '2023-12-01')
+})

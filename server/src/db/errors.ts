@@ -122,6 +122,16 @@ function uniqueMessage(details: string): string {
   return 'Diesen Datensatz gibt es schon. Bitte laden Sie die Seite neu.'
 }
 
+// Fälligkeit der Miete am Mietverhältnis (#334): dieselben Sätze im Repository und an den Bedingungen.
+export const RENT_DUE_TEXTS = {
+  rule: 'Die Fälligkeit der Miete ist „Wie im Gesetz“, „Zu Beginn des Monats“, „An einem festen Tag des Monats“ oder „Nach Ablauf des Monats“. Bitte wählen Sie eine davon.',
+  dayWithoutRule: 'Einen Tag des Monats gibt es nur bei einem festen Tag. Bitte wählen Sie bei der Fälligkeit der Miete „An einem festen Tag des Monats“ oder lassen Sie den Tag leer.',
+  dayMissing: 'Bei einem festen Tag fehlt der Tag des Monats. Bitte tragen Sie ihn ein (1 bis 31).',
+  dayRange: 'Der Tag des Monats liegt zwischen 1 und 31. Bitte tragen Sie eine ganze Zahl ein; in kürzeren Monaten gilt der letzte Tag.',
+  day: 'Der Tag des Monats (zwischen 1 und 31) gehört genau zu einem festen Tag. Bitte prüfen Sie die Fälligkeit der Miete.',
+  firstRent: 'Erste Miete schon bei Mietbeginn fällig ist ja oder nein. Bitte setzen oder entfernen Sie den Haken.',
+} as const
+
 // Bedingungen, deren Endung allein den falschen Satz ergäbe (#208): `_complete` spräche von der
 // Gemeinschaftsabrechnung, `_valid` von einem Monat in der Form JJJJ-MM.
 const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
@@ -230,6 +240,10 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   units_parent_valid: 'Ein Zimmer kann nicht in sich selbst liegen. Bitte wählen Sie eine andere Wohnung.',
   cost_items_room_split_known: 'Der Zähler einer Wohnung geht nach Fläche oder nach Personen auf ihre Zimmer. Bitte laden Sie die Seite neu und wählen Sie es noch einmal.',
   tenancies_relative_known: 'An Angehörige vermietet ist ja oder nein. Bitte setzen oder entfernen Sie den Haken.',
+  // Fälligkeit der Miete (#334); repository.ts prüft vorher mit denselben Sätzen.
+  tenancies_rent_due_known: RENT_DUE_TEXTS.rule,
+  tenancies_rent_due_day_valid: RENT_DUE_TEXTS.day,
+  tenancies_first_rent_at_start_valid: RENT_DUE_TEXTS.firstRent,
   // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
   law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',
   law_overrides_source_complete: 'Zu einem eingetragenen Rechtswert gehört die Quelle, etwa „UBA, Bekanntmachung vom …“.',

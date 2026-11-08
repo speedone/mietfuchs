@@ -160,6 +160,10 @@ const FIELD_LABELS: Record<string, string> = {
   building_application_on: 'Bauantrag vom',
   completed_on: 'Fertiggestellt am',
   relative: 'An Angehörige zu Wohnzwecken vermietet',
+  // #334: Fälligkeit der Miete am Mietverhältnis, wie im Formular
+  rent_due: 'Fälligkeit der Miete',
+  rent_due_day: 'Tag des Monats',
+  first_rent_at_start: 'Erste Miete schon bei Mietbeginn fällig',
   date: 'Datum',
   value: 'Wert',
   replacement: 'Zählerwechsel',
@@ -220,6 +224,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   meter_type: asLabels(METER_TYPE_LABELS),
   cost_model: asLabels(COST_MODEL_LABELS),
   heating_model: asLabels(HEATING_MODEL_LABELS),
+  rent_due: { startWorkday: 'Zu Beginn des Monats, spätestens am dritten Werktag', dayOfMonth: 'An einem festen Tag des Monats', inArrears: 'Nach Ablauf des Monats' },
   deposit_status: asLabels(DEPOSIT_STATUS_LABELS),
   state: STATE_LABELS,
   scope: { common: 'einen Teil des Hauses', property: 'das ganze Haus' },
@@ -238,7 +243,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   },
 }
 
-const BOOLEAN_COLUMNS = new Set(['participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all'])
+const BOOLEAN_COLUMNS = new Set(['participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
 export const fieldLabel = (column: string): string => FIELD_LABELS[column] ?? column

@@ -238,6 +238,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0090_schaetzung_ablesung': 'a68c74b2a24849f52b08d9a58238e6ffa43a66fc9adeae8e7fcdc180c94af686',
   '0091_schaetzung_ablesung_bedingungen': 'afe90d49a585ee978a6cc2023862ec6d52d8bf3f85c9d4d68099d87dae17a5c5',
+  // #334: Fälligkeit der Miete am Mietverhältnis, danach die Bedingungen (Neubau von `tenancies`). Eingetragen vor dem
+  // Merge; wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0092_faelligkeit_miete': '110f25e84f8afe184667df756d9af94cd697c7cfca424428188cefa74c8c6cb3',
+  '0093_faelligkeit_miete_bedingungen': 'dbe03d831c0255cc3f4a0760880b480295aa8ae26bf6ded63965795fe82deb58',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

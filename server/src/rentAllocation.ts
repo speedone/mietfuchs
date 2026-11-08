@@ -49,10 +49,10 @@
 import type { Payment } from '../../shared/types.ts'
 import { monthShare, monthSoll, type MonthlySchedule, type MonthSoll, type SollComponent } from '../../shared/monthRate.ts'
 import { compareText, largestRemainder } from './apportion.ts'
-import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { createLawLog, law } from '../../shared/law/register.ts'
 import { calendarYearPeriod } from '../../shared/period.ts'
+import { effectiveRentDue, type RentDueTerms } from '../../shared/rentDue.ts'
 
 export type { SollComponent }
 export type RentComponent = SollComponent | 'unallocated'
@@ -80,6 +80,9 @@ export type AllocationTenancy = {
   start: string
   end: string | null
   contractDate?: string | null
+  // Fälligkeit laut Vertrag (#334); fehlend heißt gesetzlich.
+  rentDue?: RentDueTerms['rentDue']
+  rentDueDay?: RentDueTerms['rentDueDay']
   baseRents?: readonly MonthlySchedule[]
   prepayments?: readonly MonthlySchedule[]
   flatRates?: readonly MonthlySchedule[]
@@ -142,7 +145,7 @@ const lastDayOf = (month: string): number => new Date(Date.UTC(Number(month.slic
 // Zahlungen ohne `tenancyId` gelten als die des Mietverhältnisses (Tilgung eines einzelnen Mietverhältnisses). Eine
 // Einstellung „geführt ab“ von Hand gibt es nicht; käme sie, ginge sie vor.
 type StartPayment = Pick<AllocationPayment, 'date' | 'kind'> & Partial<Pick<AllocationPayment, 'amountCents' | 'designatedMonth'>> & { tenancyId?: string }
-type StartTenancy = Pick<AllocationTenancy, 'start' | 'contractDate'> & Partial<Pick<AllocationTenancy, 'end'>> & { id?: string }
+type StartTenancy = Pick<AllocationTenancy, 'start' | 'contractDate'> & Partial<Pick<AllocationTenancy, 'end' | 'rentDue' | 'rentDueDay'>> & { id?: string }
 
 export function ledgerStartOf(t: StartTenancy, objectPayments: readonly StartPayment[], year: number): { start: string; paidOn?: string } {
   const rec = recordingStart(objectPayments, year)
@@ -159,18 +162,23 @@ export function ledgerStartOf(t: StartTenancy, objectPayments: readonly StartPay
   if (own.some((p) => p.date === first && p.designatedMonth != null && p.designatedMonth !== '')) return { start: base }
   const nextEarly = `${next.slice(0, 8)}${String(days).padStart(2, '0')}`
   if (own.some((p) => compareText(p.date, next) >= 0 && compareText(p.date, nextEarly) <= 0)) return { start: base }
-  if (!rentDueAtStartOf(t)) return { start: base }
+  if (!dueEarlyInMonth(t, days)) return { start: base }
   return { start: next, paidOn: first }
 }
 
-// Ist die Miete dieses Mietverhältnisses zu Beginn des Monats fällig (§ 556b Abs. 1 BGB)? Maßgeblich ist, ob es am
-// 01.09.2001 bestand (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB): gefragt mit dem früheren von Vertragsdatum und Beginn
-// (Auslegung: Ein Mietverhältnis besteht ab dem Vertrag). Eine Stelle für die Erfassung hier und die Zehn-Tage-Regel
-// (`receivedIncome` in calc.ts).
-export function rentDueAtStartOf(t: Pick<AllocationTenancy, 'start' | 'contractDate'>): boolean {
-  const contract = typeof t.contractDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.contractDate) ? t.contractDate : null
-  const date = contract !== null && compareText(contract, t.start) < 0 ? contract : t.start
-  return law(bgbRentDueAtStart, { date }, createLawLog())
+// Ist die Miete zu Beginn des Monats fällig, für den Dauerauftrag zum Monatsende: zu Beginn (§ 556b Abs. 1 BGB) oder an
+// einem festen Tag in den ersten `days` Tagen (#334). Ein fester Tag später im Monat und „nach Ablauf“ nicht.
+function dueEarlyInMonth(t: StartTenancy, days: number): boolean {
+  const rule = effectiveRentDue(t)
+  return rule === 'startWorkday' || (rule === 'dayOfMonth' && typeof t.rentDueDay === 'number' && t.rentDueDay <= days)
+}
+
+// Ist die Miete dieses Mietverhältnisses zu Beginn des Monats, spätestens am dritten Werktag fällig (§ 556b Abs. 1 BGB)?
+// Die Regel steht am Mietverhältnis (#334, `rentDue`); fehlt sie, ob es am 01.09.2001 bestand (Art. 229 § 3 Abs. 1 Nr. 7
+// EGBGB), gefragt mit dem früheren von Vertragsdatum und Beginn (Auslegung: Ein Mietverhältnis besteht ab dem Vertrag).
+// Eine Stelle dafür: `effectiveRentDue` in shared/rentDue.ts.
+export function rentDueAtStartOf(t: Pick<AllocationTenancy, 'start' | 'contractDate' | 'rentDue'>): boolean {
+  return effectiveRentDue(t) === 'startWorkday'
 }
 
 export function ledgerStart(t: StartTenancy, objectPayments: readonly StartPayment[], year: number): string {

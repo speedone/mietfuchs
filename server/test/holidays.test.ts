@@ -231,7 +231,10 @@ test('Feiertage: an einem Tag mit übernommener Fassung ist nichts geprüft', ()
 // Wer unter server/src mit Feiertagen rechnet, steht hier mit Grund. Eine neue Stelle ist damit eine
 // bewusste Entscheidung, und shared/rentDue.ts, über das der Rückstand rechnet, fragt vor jedem Feiertag
 // `holidaysCheckedOn`. Geprüft wird der Quelltext.
-const HOLIDAY_USERS: Readonly<Record<string, string>> = {}
+const HOLIDAY_USERS: Readonly<Record<string, string>> = {
+  'calc.ts': 'Zehn-Tage-Regel der Steuer beim festen Tag (#334): rentDueOn nur, wenn jeder Tag bis zur Fälligkeit geprüft ist; die Regel des Mietverhältnisses',
+  'rentAllocation.ts': 'nur die Regel des Mietverhältnisses (effectiveRentDue, #334) für den Beginn der Erfassung, ohne Feiertage',
+}
 
 test('Feiertage: jede Stelle im Server, die mit ihnen rechnet, ist benannt', () => {
   const root = path.join(here, '..', 'src')

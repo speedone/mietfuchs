@@ -645,6 +645,20 @@
       "when": 1793978149508,
       "tag": "0091_schaetzung_ablesung_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "6",
+      "when": 1794084454170,
+      "tag": "0092_faelligkeit_miete",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "6",
+      "when": 1794087935962,
+      "tag": "0093_faelligkeit_miete_bedingungen",
+      "breakpoints": true
     }
   ]
 }

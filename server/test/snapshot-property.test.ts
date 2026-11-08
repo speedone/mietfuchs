@@ -81,3 +81,19 @@ test('Objekt: ein unbekanntes Objekt ergibt einen leeren Bestand und keinen frem
   const x = narrowToProperty(source, 'gibt-es-nicht')
   assert.deepEqual([x.units, x.tenancies, x.costItems, x.meters, x.readings, x.payments, x.closedSettlements], [[], [], [], [], [], [], []])
 })
+
+// #334: Das Land des Objekts und die Fälligkeit am Mietverhältnis kommen in den Schnappschuss; ohne Land `null`.
+test('Fälligkeit (#334): Land des Objekts und Fälligkeit des Mietverhältnisses stehen im Schnappschuss', () => {
+  const withTerms: PropertyScopedSource = {
+    ...source,
+    tenancies: [{ ...tenancy('a-t', 'a-w'), rentDue: 'dayOfMonth', rentDueDay: 15, firstRentAtStart: true }, tenancy('b-t', 'b-w')],
+  }
+  const properties = [{ id: 'A', kind: 'mfh' as const, cableBuiltBeforeDec2021: null, state: 'NW' as const }, { id: 'B', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }]
+  const a = snapshotFor({ ...withTerms, properties }, 'A', calendarYearPeriod(2025))
+  assert.equal(a.property?.state, 'NW')
+  const [t] = a.tenancies
+  assert.deepEqual([t?.rentDue, t?.rentDueDay, t?.firstRentAtStart], ['dayOfMonth', 15, true])
+  const b = snapshotFor({ ...withTerms, properties }, 'B', calendarYearPeriod(2025))
+  assert.equal(b.property?.state, null)
+  assert.deepEqual([b.tenancies[0]?.rentDue, b.tenancies[0]?.rentDueDay, b.tenancies[0]?.firstRentAtStart], [undefined, undefined, undefined])
+})

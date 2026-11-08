@@ -121,3 +121,11 @@ describe('Verlauf: Werte von Bezugszähler und Rest (#98)', () => {
     expect(formatValue('behind_all', 0, 'cost_item_meter_rest')).toBe('nein')
   })
 })
+
+// Integrationsdurchsicht S1 (Daten, #334): Häkchen am Mietverhältnis stehen im Verlauf als ja/nein, nicht als 1.
+test('Verlauf: erste Miete bei Mietbeginn und an Angehörige vermietet als ja oder nein', () => {
+  expect(formatValue('first_rent_at_start', 1)).toBe('ja')
+  expect(formatValue('relative', 1)).toBe('ja')
+  expect(formatValue('relative', 0)).toBe('nein')
+  expect(formatValue('rent_due', 'dayOfMonth')).toBe('An einem festen Tag des Monats')
+})

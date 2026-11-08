@@ -13,6 +13,8 @@ import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import type { LawParam } from '../../shared/law/register.ts'
 import { tenDayWindow } from '../../shared/paidOn.ts'
+import { holidaysCheckedOn, rentDueOn } from '../../shared/rentDue.ts'
+import { STATE_CODES } from '../../shared/states.ts'
 import { derivedTaxLines, incomeCsv, planTaxArchive } from '../src/taxReceipts.ts'
 
 type Pay = TaxSource['payments'][number]
@@ -509,4 +511,86 @@ test('Zehn-Tage-Regel je Mietverhältnis: A zahlt am 25. für den Folgemonat, B 
   assert.equal(y24.turnOfYear.forwardCents, 80000, 'die Zahlung von A am 25.12.2024')
   assert.equal(y24.turnOfYear.fromPreviousCents, 80000, 'die Zahlung von A am 25.12.2023')
   assert.equal(y24.formerYearsCents, 0, 'kein Rückstand aus 2023')
+})
+
+// #334: Die Fälligkeit am Mietverhältnis entscheidet die Zehn-Tage-Regel. „Zu Beginn“ wie § 556b, „nach Ablauf“ wie ein
+// Altvertrag (nur beziffert), ein fester Tag nur, wenn der verschobene Tag im Januar in der kurzen Zeit liegt und die
+// Feiertage bis dahin geprüft sind; ohne Angabe wie bisher.
+test('Zehn-Tage-Regel mit Fälligkeit am Mietverhältnis: zu Beginn, nach Ablauf, fester Tag', () => {
+  const stockOf = (t: SnapshotTenancy, year: number, state: 'NW' | 'BY' | null) => {
+    const payments = [...monthly('t', `${year}-01`, `${year}-12`, 80000), pay('t', `${year}-12-28`, 80000), ...monthly('t', `${year + 1}-02`, `${year + 1}-03`, 80000)]
+    return { ...source([t], payments), properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES, state }] } as TaxSource
+  }
+  const forward = (t: SnapshotTenancy, year = 2025, state: 'NW' | 'BY' | null = 'NW') => {
+    const r = received(stockOf(t, year, state), year).turnOfYear
+    return [r.forwardCents, r.forwardOldLeaseCents]
+  }
+  // Ohne Angabe: unverändert (neu verschoben, alt beziffert).
+  assert.deepEqual(forward(tenancy('t', 'eg')), [80000, 0])
+  assert.deepEqual(forward(alt('t', 'eg')), [0, 80000])
+  // Nach Ablauf vereinbart (Vertrag von 2024): nicht verschoben; beziffert wird nur beim Altvertrag ohne Angabe, dessen
+  // Texte vom Mietverhältnis vor dem 01.09.2001 sprechen (Durchsicht S2).
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'inArrears' })), [0, 0])
+  assert.deepEqual(forward(alt('t', 'eg', { rentDue: 'inArrears' })), [0, 0])
+  // Zu Beginn vereinbart (Altvertrag von 1999 mit Vorauszahlungsklausel): verschoben wie ein neuer Vertrag.
+  assert.deepEqual(forward(alt('t', 'eg', { rentDue: 'startWorkday' })), [80000, 0])
+  // Fester Tag 15: außerhalb der zehn Tage, weder verschoben noch beziffert.
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 15 })), [0, 0])
+  assert.deepEqual(forward(alt('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 15 })), [0, 0])
+  // Fester Tag 10 im Januar 2027: ein Sonntag, nach § 193 BGB Montag, 11.01., also außerhalb.
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 10 }), 2026), [0, 0])
+  // Fester Tag 5 im Januar 2026 (Montag) bzw. 6 im Januar 2027 in Bayern (Heilige Drei Könige, also Do 07.01.): in der
+  // kurzen Zeit, verschoben nur, wo die Feiertage bis dahin geprüft sind; sonst nach dem Datum der Zahlung.
+  const checked = (to: string): boolean => {
+    for (let d = `${to.slice(0, 8)}01`; d <= to; d = `${to.slice(0, 8)}${String(Number(d.slice(8)) + 1).padStart(2, '0')}`) if (!holidaysCheckedOn(d)) return false
+    return true
+  }
+  // Integrationsdurchsicht M1 (Geld): Ein fester Tag bis zum 8. ist nach § 193 BGB in jedem Land spätestens am 10.01.
+  // fällig (Test unten über alle Länder 1995 bis 2100), also in der kurzen Zeit, wie der dritte Werktag; „am 3.“ rechnet wie
+  // ohne Angabe.
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 3 })), forward(tenancy('t', 'eg')))
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 5 })), [80000, 0])
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 8 }), 2026, 'BY'), [80000, 0])
+  // Am 9. und 10. hängt es am Wochentag und den Feiertagen: nur, wo sie geprüft sind. Fr 09.01.2026, Sa 09.01.2027.
+  assert.deepEqual(forward(tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 9 })), [checked('2026-01-09') ? 80000 : 0, 0])
+  // Beginn im Januar: wie bisher nie verschoben.
+  assert.deepEqual(forward(tenancy('t', 'eg', { start: '2026-01-02', rentDue: 'dayOfMonth', rentDueDay: 5 })), [0, 0])
+})
+
+// Durchsicht S5: Der feste Tag in der kurzen Zeit verschiebt, wenn die Feiertage geprüft sind, in beide Richtungen; S1: vor
+// 1995 kein Abbruch, nach dem Datum der Zahlung.
+test('Zehn-Tage-Regel mit festem Tag und geprüften Feiertagen: verschoben ins Folgejahr und dort mitgezählt; vor 1995 nach dem Datum', () => {
+  // Fester Tag 9: Fr 09.01.2026, nur mit geprüften Feiertagen in der kurzen Zeit (bis zum 8. immer, siehe oben).
+  const t = tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 9 })
+  const payments = [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-28', 80000), ...monthly('t', '2026-02', '2026-12', 80000)]
+  const s = { ...source([t], payments), properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES, state: 'NW' }] } as TaxSource
+  const at = (year: number, checked: boolean) => taxReportFor(s, 'objekt-1', year, undefined, { holidaysChecked: () => checked }).income.received ?? assert.fail('received fehlt')
+  // Fr 09.01.2026: in den zehn Tagen.
+  assert.equal(at(2025, true).turnOfYear.forwardCents, 80000)
+  assert.equal(at(2025, true).turnOfYear.forwardOldLeaseCents, 0)
+  assert.equal(at(2026, true).turnOfYear.fromPreviousCents, 80000)
+  assert.equal(at(2026, true).rentCents, 12 * 60000)
+  // Ein ungeprüfter Tag bis zur Fälligkeit: nach dem Datum der Zahlung.
+  assert.equal(at(2025, false).turnOfYear.forwardCents, 0)
+  assert.equal(at(2026, false).turnOfYear.fromPreviousCents, 0)
+  // Fester Tag 10 im Januar 2027 (Sonntag): nach § 193 BGB Mo 11.01., außerhalb, auch mit geprüften Feiertagen.
+  const ten = tenancy('t', 'eg', { rentDue: 'dayOfMonth', rentDueDay: 10 })
+  const s10 = { ...source([ten], [...monthly('t', '2026-01', '2026-12', 80000), pay('t', '2026-12-28', 80000)]), properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES, state: 'NW' }] } as TaxSource
+  assert.equal((taxReportFor(s10, 'objekt-1', 2026, undefined, { holidaysChecked: () => true }).income.received ?? assert.fail('received fehlt')).turnOfYear.forwardCents, 0)
+  // Mietverhältnis seit 1990 mit festem Tag: die Jahre 1993 und 1994 rechnen ohne Feiertage, nach dem Datum.
+  const old = tenancy('t', 'eg', { start: '1990-01-01', personHistory: [{ from: '1990-01-01', persons: 1 }], baseRents: [{ from: '1990-01', monthlyCents: 60000 }], prepayments: [{ from: '1990-01', monthlyCents: 20000 }], rentDue: 'dayOfMonth', rentDueDay: 3 })
+  const s94 = source([old], [...monthly('t', '1993-01', '1994-12', 80000), pay('t', '1993-12-28', 80000), pay('t', '1994-12-28', 80000)])
+  for (const year of [1993, 1994]) assert.equal(received(s94, year).turnOfYear.forwardCents, 0, String(year))
+})
+
+test('Fester Tag bis zum 8.: im Januar nach § 193 BGB in jedem Land und ohne Land spätestens am 10., 1995 bis 2100', () => {
+  for (let year = 1995; year <= 2100; year++) {
+    for (let day = 1; day <= 8; day++) {
+      const t = { start: '1990-01-01', end: null, rentDue: 'dayOfMonth' as const, rentDueDay: day }
+      for (const state of [...STATE_CODES, null]) {
+        const due = rentDueOn(t, `${year}-01`, state)
+        assert.ok(due <= `${year}-01-10`, `${year}, Tag ${day}, ${state}: ${due}`)
+      }
+    }
+  }
 })
