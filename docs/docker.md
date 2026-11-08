@@ -299,6 +299,7 @@ Zurückspielen in ein leeres Volume geht umgekehrt, mit `-v mietfuchs_mietfuchs-
 docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data \
   --name mietfuchs ghcr.io/speedone/mietfuchs:latest
 # App: http://localhost:3001
+docker logs mietfuchs    # Einrichtungscode für das Passwort beim ersten Start
 ```
 
 Aktualisieren: `docker pull ghcr.io/speedone/mietfuchs:latest`, dann `docker rm -f mietfuchs` und den

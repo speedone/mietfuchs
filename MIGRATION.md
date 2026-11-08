@@ -35,7 +35,8 @@ einem neuen Datenordner und nach dem Zurücksetzen. Der Code hat zwölf Zeichen 
 
 - **Programmdatei:** Der Browser öffnet die Seite mit dem Code schon eingetragen. Sonst steht er im
   Konsolenfenster und in der Datei `einrichtungscode.txt` im Ordner `data` neben der Programmdatei.
-- **Linux-Paket:** in der Ausgabe im Terminal und in `~/.local/share/mietfuchs/einrichtungscode.txt`.
+- **Linux-Paket:** Der Browser öffnet die Seite mit dem Code schon eingetragen. Sonst steht er in
+  der Ausgabe im Terminal und in `~/.local/share/mietfuchs/einrichtungscode.txt`.
 - **Docker:** `docker compose logs mietfuchs` zeigt die Zeile „Einrichtungscode: …“.
 - **Programmfenster:** Dort braucht es keinen Code; die Karte „Zugriff aus dem Heimnetz“ fragt beim
   Einschalten nach dem Passwort.

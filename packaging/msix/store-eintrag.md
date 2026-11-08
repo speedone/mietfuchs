@@ -55,7 +55,8 @@ Zählerstände ein. Am Jahresende rechnet Mietfuchs jede Kostenart nach dem pass
 druckt für jeden Mieter eine fertige Abrechnung mit Anschreiben.
 
 Mietfuchs läuft vollständig auf Ihrem Rechner, in einem eigenen Programmfenster, ohne Browser. Es gibt
-kein Konto, keine Anmeldung und keine Cloud;
+kein Konto und keine Cloud, und solange nur Ihr Rechner Mietfuchs erreicht, auch keine Anmeldung. Schalten Sie
+den Zugriff aus dem Heimnetz ein, schützt ein Passwort Ihre Daten vor anderen Geräten.
 Ihre Daten liegen im Ordner Mietfuchs in Ihrem Benutzerordner und bleiben auch bei einer Deinstallation
 erhalten.
 

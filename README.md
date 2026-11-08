@@ -173,6 +173,9 @@ Mietfuchs, mit HTTPS über Caddy, mit Ollama) liegen in [deploy/](deploy), erkl�
 docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs ghcr.io/speedone/mietfuchs:latest
 ```
 
+Ein neues Volume startet mit der Einrichtung eines Passworts; den Einrichtungscode nennt
+`docker logs mietfuchs`. Mehr unter [Zuerst: Sicherheit](docs/docker.md#zuerst-sicherheit).
+
 ### Umzug von der bisherigen Programmdatei
 
 Hast du Mietfuchs schon als einzelne Programmdatei (`mietfuchs-win.exe` oder `mietfuchs-macos-…`)
