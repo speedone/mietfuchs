@@ -25,7 +25,9 @@ SQLite (#55), Schema in [schema.ts](schema.ts), geöffnet in [open.ts](open.ts),
   Schreibschutz zweistufig: Die Rechteprüfung weckt nur den Verdacht (sie lügt auf
   Netzlaufwerken), bestätigt wird mit `PRAGMA user_version` auf denselben Wert (`BEGIN IMMEDIATE`
   taugt nicht, SQLite sperrt erst beim ersten Schreiben). **Eine beschädigte oder neuere Datei wird
-  nie angefasst**, auch nicht beiseitegelegt. Jede Meldung sagt, was los ist und was zu tun ist; die
+  nie angefasst**, auch nicht beiseitegelegt. Eine **gesperrte** Datei (`database is locked`, meist ein zweites
+  Mietfuchs auf demselben Ordner) ist nicht beschädigt und bekommt eine eigene Meldung ohne den Rat zum Backup
+  (`isLocked`, #603), beim Öffnen, bei der Prüfung, der Sicherung und den Migrationen. Jede Meldung sagt, was los ist und was zu tun ist; die
   Meldung von SQLite steht höchstens am Ende als „Technischer Befund“.
 - **Netzlaufwerk = Warnung, kein Abbruch.** Gefragt wird nach dem **wirklichen** Ort (Symlinks
   aufgelöst), unter Linux über `/proc/self/mounts` (längster passender Einhängepunkt, bei gleicher

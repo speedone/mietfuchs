@@ -189,6 +189,15 @@ const damaged = (file: string, befund: string): string =>
   `doch noch etwas retten lässt); beim nächsten Start legt Mietfuchs eine neue an. ` +
   `Technischer Befund: ${befund}`
 
+// Eine gesperrte Datei (#603): Ein zweites Mietfuchs auf demselben Ordner hält sie, etwa mitten in seiner Migration.
+// SQLite meldet das als „database is locked“ (SQLITE_BUSY) oder „database table is locked“ (SQLITE_LOCKED). Die Datei
+// ist in Ordnung; der Rat aus `damaged`, ein Backup an ihre Stelle zu kopieren, überschriebe den aktuellen Stand.
+export const isLocked = (text: string): boolean => /database (table )?is locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(text)
+const locked = (file: string, befund: string): string =>
+  `Die Datenbankdatei ${file} ist gerade gesperrt, weil ein anderes Programm sie benutzt, vermutlich ein zweites ` +
+  `Mietfuchs mit denselben Daten. Die Datei ist nicht beschädigt, und Mietfuchs verändert nichts daran. Bitte beenden ` +
+  `Sie das andere Mietfuchs und starten Sie dieses danach neu. Technischer Befund: ${befund}`
+
 // Die Meldung für eine Datei, in die sich nicht schreiben lässt. `attempt to write a readonly
 // database` sagt einem Vermieter nichts, und der Fall ist alltäglich: eine Datei aus einem
 // Backup zurückkopiert, ein Datenträger, der nur gelesen werden darf, ein Ordner, der einem
@@ -525,8 +534,12 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
   // Jede Meldung dieser Funktion nimmt die Hinweise mit. Der Typ steht ausdrücklich an der
   // Konstanten und nicht nur am Rumpf: Nur so weiß der Übersetzer, dass es hinter einem Aufruf
   // nicht weitergeht, und hält den folgenden Code für unerreichbar.
+  // `explained` merkt sich die eigenen Meldungen, damit der äußere catch nur Fremdes einordnet (#603).
+  const explained = new WeakSet<Error>()
   const fail: (text: string, cause?: unknown) => never = (text, cause) => {
-    throw new Error([text, ...warnings].join('\n'), cause === undefined ? undefined : { cause })
+    const error = new Error([text, ...warnings].join('\n'), cause === undefined ? undefined : { cause })
+    explained.add(error)
+    throw error
   }
 
   // Schritt 1: früh und verständlich scheitern, nicht erst beim ersten Speichern. Dieselbe
@@ -550,7 +563,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // dasselbe wie eine beschädigte. Gibt es sie noch nicht, liegt es am Ordner.
     return fail(
       vorhanden
-        ? damaged(file, messageOf(err))
+        ? (isLocked(messageOf(err)) ? locked(file, messageOf(err)) : damaged(file, messageOf(err)))
         : `Die Datenbank ${file} ließ sich nicht anlegen. Bitte prüfen Sie, ob der Ordner ` +
           `beschreibbar ist, oder wählen Sie mit NKA_DATA_DIR einen anderen. Technischer Befund: ${messageOf(err)}`,
       err,
@@ -580,7 +593,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     } catch (err) {
       befund = messageOf(err)
     }
-    if (befund !== null) fail(damaged(file, befund))
+    if (befund !== null) fail(isLocked(befund) ? locked(file, befund) : damaged(file, befund))
 
     // Lässt sich in die Datei überhaupt schreiben? Erst danach hat es Sinn, über Migrationen
     // nachzudenken, und die Meldung soll vom Schreibschutz handeln und nicht von einem
@@ -599,6 +612,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     try {
       backup = backupBeforeMigrating(connection, file, migrations)
     } catch (err) {
+      if (isLocked(messageOf(err))) return fail(locked(file, messageOf(err)), err)
       return fail(
         `Vor dem Update der Datenbank ${file} ließ sich keine Sicherung anlegen. Mietfuchs ändert ` +
           `die Datenbank deshalb nicht und arbeitet nicht damit; an Ihren Daten ist nichts ` +
@@ -618,6 +632,8 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       return fail(
         /readonly|read-only/i.test(text)
           ? readonly(file)
+          : isLocked(text)
+          ? locked(file, text)
           : `Der Aufbau der Datenbank ${file} ließ sich nicht herstellen. Mietfuchs arbeitet ` +
             `deshalb nicht damit; an Ihren Daten ist nichts verändert. Technischer Befund: ${text}`,
         err,
@@ -663,6 +679,12 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // Eine offene Verbindung zu einer Datei, mit der wir nicht arbeiten, hält unter Windows nur
     // deren Sperre, und genau die bräuchte, wer die Datei jetzt austauschen will.
     connection.close()
+    // Sperrt ein zweites Mietfuchs die Datei erst nach der Prüfung (Journal, Aufräumen; #603, Durchsicht S1), käme
+    // sonst die Meldung von SQLite roh an, bei Drizzle verpackt als „Failed query“ mit dem Grund in `cause`.
+    if (err instanceof Error && !explained.has(err)) {
+      const reason = causeChain(err).find(isLocked)
+      if (reason !== undefined) fail(locked(file, reason), err)
+    }
     throw err
   }
 }
@@ -671,6 +693,13 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
 // was ankommt. Dieselbe Überlegung wie in index.ts, hier noch einmal, weil diese Datei vom
 // Server nichts weiß. Ausgeführt auch von changeover.ts, damit im Ordner db/ nicht zwei
 // Fassungen derselben drei Zeilen stehen.
+// Die Meldungen eines Fehlers und seiner Ursachen, von außen nach innen.
+function causeChain(err: unknown): string[] {
+  const out: string[] = []
+  for (let current: unknown = err; current instanceof Error && out.length < 10; current = current.cause) out.push(current.message)
+  return out
+}
+
 export function messageOf(err: unknown): string {
   if (err !== null && typeof err === 'object' && 'message' in err && typeof err.message === 'string' && err.message) {
     return err.message

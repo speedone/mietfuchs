@@ -6,7 +6,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
-## [0.16.1] – 2026-11-07
+## [0.16.1] – 2026-11-08
 
 ### Behoben
 
@@ -15,6 +15,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vorher erreichte etwa `/API/QUIT` das Beenden, ohne dass die Sperre griff
   ([#585](https://github.com/speedone/mietfuchs/issues/585)). Docker, `npm start` und das Fenster ohne Zugriff aus dem
   Heimnetz waren nicht betroffen.
+- **Zwei Mietfuchs gleichzeitig mit denselben Daten**: Erkennt ein zweiter Start das laufende Mietfuchs nicht
+  rechtzeitig, meldet er die Datenbank jetzt als gesperrt und bittet, das andere Mietfuchs zu beenden. Vorher hieß es,
+  die Datei sei beschädigt, mit dem Rat, ein Backup an ihre Stelle zu kopieren; das hätte den aktuellen Stand
+  überschrieben ([#603](https://github.com/speedone/mietfuchs/issues/603)). Wer diese Meldung gesehen und nichts
+  ersetzt hat, muss nichts tun.
 
 ## [0.16.0] – 2026-11-06
 
