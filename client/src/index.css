@@ -465,7 +465,7 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 .page-head-text { flex: 1 1 20rem; min-width: 0; }
 .page-head-text h1 { margin-bottom: var(--space-1); }
 .page-head-text .sub { margin: 0; }
-.page-head-actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+.page-head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; max-width: 100%; }
 /* Das gewählte Objekt über dem Titel, ab zwei Objekten (#157): kleine Marke in Indigo */
 /* Kontextzeile (PageHeader.tsx): Objekt und Zeitraum, nur Anzeige, auch gedruckt; am Bildschirm des Handys nennt sie der angeheftete Kopf (siehe unten) */
 .page-context { margin: 0 0 var(--space-1); color: var(--muted); font-size: var(--text-s); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
