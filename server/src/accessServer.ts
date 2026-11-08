@@ -161,9 +161,11 @@ export function createAccess(options: AccessOptions) {
     const token = sessions.create()
     res.setHeader('Set-Cookie', sessionCookie(state.instance, token, secure(req)))
   }
+  // Die Kennung bleibt die des Zustands (fileOf setzt sie ein); aus der Datei übernommen, hielt CodeQL den Cookie-Namen
+  // für sensibel, weil dieselbe Datei den Hash trägt (js/clear-text-storage-of-sensitive-data, Fehlalarm)
   function save(file: AccessFile): void {
     writeAccessFile(dataDir, file)
-    state = { ...state, mode: file.mode, hash: file.hash ?? null, instance: file.instance, required: requiredFor(file.mode) }
+    state = { ...state, mode: file.mode, hash: file.hash ?? null, required: requiredFor(file.mode) }
   }
   const fileOf = (mode: AccessMode, hash?: string): AccessFile => ({ version: 1, mode, instance: state.instance, ...(hash ? { hash } : {}), changedAt: new Date(now()).toISOString() })
   const tooMany = (res: Response, retryAfter: number): void => {
