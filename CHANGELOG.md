@@ -26,6 +26,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `NKA_AUTH=off` schaltet die Anmeldung ab, etwa hinter einem Proxy mit eigener Anmeldung, `NKA_AUTH=on` verlangt sie
   auch auf `127.0.0.1`. Passwort und Code gehen nicht ins Backup. Über `http://` lässt sich im Heimnetz weiter
   mitlesen; HTTPS gibt es mit einem Proxy oder VPN ([Docker](docs/docker.md#zuerst-sicherheit)).
+- **Mietkonto: Monate als bezahlt erfassen, auch rückwirkend**
+  ([#608](https://github.com/speedone/mietfuchs/issues/608)): „Monate als bezahlt erfassen …“ legt für ein oder alle
+  Mietverhältnisse je offenem Monat bis zum gewählten Monat eine Mietzahlung über den offenen Rest an, für diesen Monat
+  laut Verwendungszweck und mit dem Fälligkeitstag als Datum (höchstens heute). Vorher zeigt eine Vorschau jede Zahlung
+  und die Summe; zählen durch die rückwirkenden Zahlungen bei anderen Mietverhältnissen Monate neu, weil das Mietkonto
+  des Objekts dann früher beginnt, sagt sie es mit Betrag. Im Verlauf steht alles als ein Eintrag und lässt sich in einem
+  Schritt zurücknehmen. Ein Klick auf einen offenen Monat belegt die Zahlung jetzt mit dem Fälligkeitstag und dem Monat
+  laut Verwendungszweck vor. Teilzahlungen erfassen Sie wie bisher mit „+ Zahlung anlegen“.
 
 ### Geändert
 

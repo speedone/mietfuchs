@@ -619,6 +619,10 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   `propertySummary`). Mit Vorschau
   verwirft **jede Änderung nach der Vorschau die Vorschau** (auch eine verspätete Antwort gilt dann
   nicht, Folgenummer je Anfrage), und ein Satz sagt, dass sie neu nötig ist.
+  Beispiel „Offene Monate als bezahlt erfassen“ im Mietkonto (#608, [markPaidForm.ts](src/markPaidForm.ts)): Die Vorschau
+  folgt `value` über einen Effekt; ein Auswahlfeld, dessen `onChange` selbst fragt, hält saveOnChange.test.ts für Speichern.
+  Was die Vorschau verhindert, steht als Satz an ihrer Stelle, nicht am Feld: `Field` nimmt die Meldung bei der nächsten
+  Eingabe zurück (`onFix`).
 - **Neues anlegen steht oben rechts**: für die Seite in `PageHeader actions`, für eine Karte in
   `CardHeader aside` (S27). Im Fuß einer Karte nur „Speichern“ links und Gefahrknöpfe rechts.
   Ein weiteres Objekt legt die Karte „Weitere Objekte“ der Stammdaten an („+ Objekt anlegen“); ab
