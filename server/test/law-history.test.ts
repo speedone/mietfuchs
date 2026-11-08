@@ -157,6 +157,10 @@ const SHIPPED: readonly string[] = [
   'holiday.boxing-day|||{"day":"12-26","states":["BW","BY","BE","BB","HB","HH","HE","MV","NI","NW","RP","SL","SN","ST","SH","TH"],"local":{}}',
   // Bezugszähler und verteilter Rest (#98)
   'practice.meter-rest-high|||20',
+  // Fälligkeit am Mietverhältnis (#334)
+  'bgb.transfer-execution-days|||{"afterCutoff":1,"execution":1,"paper":1}',
+  'practice.credit-booking-days|||1',
+  'practice.bank-closed-days|||["12-24","12-31"]',
 ]
 
 const current = (): string[] =>

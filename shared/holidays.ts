@@ -14,7 +14,8 @@
 // **Was gilt.** Ein Tag zählt, wenn er im ganzen Land gesetzlicher Feiertag ist. Feiertage, die nur in
 // einzelnen Gemeinden gelten (Mariä Himmelfahrt in Teilen Bayerns, das Augsburger Friedensfest,
 // Fronleichnam in Teilen Sachsens und Thüringens), werden nicht geraten: Mietfuchs kennt die Gemeinde
-// nicht. Sie stehen als Hinweis in `localHolidaysOf` und zählen bei `isHoliday` und `isWorkday` nicht.
+// nicht. Sie stehen als Hinweis in `localHolidaysOf` und zählen bei `isHoliday` und `isWorkday` nicht. Für den
+// Rückstand im Mietkonto zählt shared/rentDue.ts sie mit (#334, E5): Dort verschieben sie den Tag nur nach hinten.
 // Ohne Bundesland (`null`) zählen nur die Tage, die in allen 16 Ländern Feiertag sind; das ist auch
 // der Reformationstag 2017.
 //
@@ -23,9 +24,9 @@
 // Feiertage ohne Arbeitsruhe. Einmalige Feiertage, die ein Land künftig beschließt, kennt Mietfuchs erst,
 // wenn sie als Fassung im Register stehen; die Jahre davor bleiben richtig.
 //
-// Gefragt wird das Register ohne Protokoll (`versionAt`), denn bisher rechnet keine Abrechnung damit.
-// Rechnet calc.ts einmal mit einer Frist, fragt es mit `law(param, { date }, log)`, damit die benutzte
-// Fassung im Rechtsstand der Abrechnung steht.
+// Gefragt wird das Register ohne Protokoll (`versionAt`). Wo der Server mit Feiertagen rechnet (Rückstand im
+// Mietkonto, shared/rentDue.ts), zählen sie nur an Tagen, an denen jede geltende Fassung amtlich gelesen ist
+// (`holidaysCheckedOn`); protokolliert werden dort die Fristregeln, nicht jeder einzelne Feiertag.
 //
 // Daten sind ISO-Zeichenketten 'JJJJ-MM-TT' und werden in UTC gerechnet wie im übrigen Projekt; die
 // Zeitzone des Rechners spielt keine Rolle.

@@ -5,10 +5,13 @@
 //
 // Daten sind 'JJJJ-MM-TT', Monate 'JJJJ-MM', gerechnet in UTC wie im übrigen Projekt.
 //
-// **Nichts wird still ersetzt.** Das Mietkonto zählt einen Monat weiterhin erst ab dem Folgemonat als
-// fällig (#133, `ledgerRows` in server/src/calc.ts). Diese Bausteine werden dort eingesetzt, wo eine
-// Frist genau sein muss, und jeder Einsatz ist eine eigene Entscheidung mit eigenem Test. Rechnet eine
-// Abrechnung einmal damit, fragt sie das Register mit `law()` und Protokoll statt mit `valueAt`.
+// **Wofür diese Datei, wofür shared/rentDue.ts.** Hier stehen die allgemeinen Fristen nach dem Recht des Landes,
+// ohne Feiertage einzelner Gemeinden und ohne Land nur mit den Feiertagen, die in allen Ländern gelten (also dem
+// frühesten Tag). Den Rückstand im Mietkonto rechnet shared/rentDue.ts (#334): mit der Regel des Mietverhältnisses, den Feiertagen
+// einzelner Gemeinden, ohne Land dem spätesten Tag aller Länder und dem erwarteten Eingang der Überweisung, alles
+// zum späteren Tag hin, und nur mit geprüften Feiertagen. Jeder weitere Einsatz ist eine eigene Entscheidung mit
+// eigenem Test. Rechnet eine Abrechnung einmal mit dieser Datei, fragt sie das Register mit `law()` und Protokoll
+// statt mit `valueAt`.
 import type { FederalState } from './types.ts'
 import { addDays, isHoliday, isWorkday, weekdayOf } from './holidays.ts'
 import { valueAt } from './law/register.ts'

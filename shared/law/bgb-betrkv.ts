@@ -113,7 +113,10 @@ export const bgbRentDueWorkday: LawParam<number, 'eventDate'> = {
 // 2001 geltenden Fassung anzuwenden.“ Nach § 551 BGB a. F. ist die nach Zeitabschnitten bemessene Miete nach Ablauf des
 // einzelnen Abschnitts zu entrichten, also am Monatsende (Wortlaut der alten Fassung nicht amtlich gelesen); für alle
 // späteren Mietverhältnisse gilt § 556b Abs. 1 BGB (zu Beginn, spätestens am dritten Werktag). Beides ist abdingbar; eine
-// vertragliche Abweichung kennt Mietfuchs nicht (bewusste Grenze).
+// vertragliche Abweichung steht am Mietverhältnis (`Tenancy.rentDue`, #334), dieser Wert gilt, wenn dort nichts steht.
+// Dass § 551 a. F. die Miete nachträglich fällig stellte, steht mittelbar in BGH VIII ZR 291/09 Rn. 17 (eine
+// Vorauszahlungsklausel verlegt die Fälligkeit „abweichend von … § 551 Abs. 1 BGB aF … auf den Beginn des Monats“) und
+// VIII ZR 107/12 Rn. 14, beide am 07.11.2026 im Volltext gelesen.
 // `eventDate`: gefragt wird mit dem Tag, ab dem das Mietverhältnis besteht (Vertrag, sonst Beginn).
 // **Grenzfall 01.09.2001 (Auslegung)**: Ein Mietverhältnis, das an diesem Tag beginnt oder geschlossen wird, „besteht“ am
 // 01.09.2001; die alte Fassung gilt deshalb einschließlich dieses Tages, § 556b erst ab dem 02.09.2001.
@@ -128,7 +131,7 @@ export const bgbRentDueAtStart: LawParam<boolean, 'eventDate'> = {
     {
       validTo: '2001-09-01',
       value: false,
-      source: { rank: 'law', cite: 'Art. 229 § 3 Abs. 1 Nr. 7 EGBGB mit § 551 BGB a. F.; Wortlaut von § 551 a. F. nicht amtlich gelesen', url: 'https://www.gesetze-im-internet.de/bgbeg/art_229__3.html', retrieved: '2026-10-31', checked: 'adopted' },
+      source: { rank: 'law', cite: 'Art. 229 § 3 Abs. 1 Nr. 7 EGBGB mit § 551 BGB a. F.; Wortlaut von § 551 a. F. nicht amtlich gelesen, mittelbar BGH VIII ZR 291/09 vom 13.07.2010, Rn. 17, und VIII ZR 107/12 vom 10.10.2012, Rn. 14', url: 'https://www.gesetze-im-internet.de/bgbeg/art_229__3.html', retrieved: '2026-11-07', checked: 'adopted' },
       enacted: '§ 551 BGB in der bis zum 01.09.2001 geltenden Fassung, fortgeltend nach Art. 229 § 3 Abs. 1 Nr. 7 EGBGB (Wortlaut von § 551 a. F. nicht amtlich gelesen)',
     },
     {
@@ -178,4 +181,28 @@ export const bgbDeadlineOnWorkday: LawParam<DeadlineShift, 'eventDate'> = {
     const days = [v.saturday && 'Sonnabend', v.sunday && 'Sonntag', v.holiday && 'Feiertag am Erklärungs- oder Leistungsort'].filter((d): d is string => typeof d === 'string')
     return `fällt das Fristende auf ${days.join(', ')}, tritt der nächste Werktag an seine Stelle`
   },
+}
+
+// ---------- Laufzeit einer Überweisung (#334, shared/rentDue.ts) ----------
+
+// Wie viele Geschäftstage eine Überweisung nach dem Auftrag höchstens braucht, bis der Betrag bei der Bank des Empfängers
+// eingeht, aufgeteilt nach Grund. Am 07.11.2026 im Wortlaut gelesen: Der Auftrag wird mit Zugang wirksam; fällt der Zugang
+// nicht auf einen Geschäftstag, gilt er am folgenden als zugegangen, ebenso nach einem Annahmeschluss „nahe am Ende eines
+// Geschäftstags“ (§ 675n Abs. 1 Sätze 1 bis 3 BGB, `afterCutoff`). Der Betrag muss „spätestens am Ende des auf den
+// Zugangszeitpunkt des Zahlungsauftrags folgenden Geschäftstags“ beim Zahlungsdienstleister des Empfängers eingehen
+// (§ 675s Abs. 1 Satz 1 BGB, `execution`), bei einem in Papierform ausgelösten Vorgang kann die Frist „um einen weiteren
+// Geschäftstag verlängert werden“ (Satz 3, `paper`). `eventDate`: gefragt am Fälligkeitstag. Die Buchung auf dem Konto
+// des Vermieters ist eine Auslegung und steht getrennt (`practice.credit-booking-days`).
+export type TransferDays = { readonly afterCutoff: number; readonly execution: number; readonly paper: number }
+export const bgbTransferExecutionDays: LawParam<TransferDays, 'eventDate'> = {
+  id: 'bgb.transfer-execution-days',
+  title: 'Laufzeit einer Überweisung bis zur Bank des Empfängers',
+  norm: '§ 675n Abs. 1, § 675s Abs. 1 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: { afterCutoff: 1, execution: 1, paper: 1 },
+    source: { rank: 'law', cite: '§ 675n Abs. 1 Sätze 1 bis 4, § 675s Abs. 1 Sätze 1 und 3 BGB', url: 'https://www.gesetze-im-internet.de/bgb/__675s.html', retrieved: '2026-11-07', checked: 'checked' },
+    enacted: '§§ 675n, 675s BGB, geltende Fassung',
+  }],
+  describe: (v) => `höchstens ${v.afterCutoff + v.execution + v.paper} Geschäftstage bis zum Eingang bei der Bank des Empfängers (${v.afterCutoff} für einen Auftrag nach Annahmeschluss, ${v.execution} für die Ausführung, ${v.paper} bei Papierform)`,
 }

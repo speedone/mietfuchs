@@ -9,9 +9,9 @@ import { fileURLToPath } from 'node:url'
 import { coversDate, createLawLog, dayAfter, dayBefore, daysIn, eventPeriodEnd, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, shiftMonths, valueAt, versionAt, versionsIn, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
-import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbRentDueAtStart, bgbRentDueSaturday, bgbRentDueWorkday } from '../../shared/law/bgb-betrkv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbRentDueAtStart, bgbRentDueSaturday, bgbRentDueWorkday, bgbTransferExecutionDays } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
-import { practiceEvaporatorWindow, practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
+import { practiceBankClosedDays, practiceCreditBookingDays, practiceEvaporatorWindow, practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgGasHeatNetworkRate, ustgSmallBusiness, ustgStandardRate } from '../../shared/law/ustg.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES, rulesFor } from '../../shared/law/rules.ts'
@@ -182,7 +182,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears, holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, bgbRentDueWorkday, bgbRentDueSaturday, bgbRentDueAtStart, bgbDeadlineOnWorkday, estgCheapRent, estgAcquisitionRelated, estgShortPeriodDays, ustgSmallBusiness }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears, holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, bgbRentDueWorkday, bgbRentDueSaturday, bgbRentDueAtStart, bgbDeadlineOnWorkday, estgCheapRent, estgAcquisitionRelated, estgShortPeriodDays, ustgSmallBusiness, bgbTransferExecutionDays, practiceCreditBookingDays, practiceBankClosedDays }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -788,4 +788,26 @@ test('bgb.rent-due-at-start: bis 01.09.2001 Monatsende (Art. 229 § 3 Abs. 1 Nr.
   assert.equal(bgbRentDueAtStart.timing, 'eventDate')
   assert.equal(versionAt(bgbRentDueAtStart, '2001-08-31').source.checked, 'adopted', 'Wortlaut von § 551 a. F. nicht amtlich gelesen')
   assert.equal(versionAt(bgbRentDueAtStart, '2001-09-02').source.checked, 'checked')
+})
+
+// #334: Laufzeit einer Überweisung (Gesetz, gelesen), Buchung und Tage ohne Geschäftsbetrieb (Auslegung bzw. Praxis).
+test('Laufzeit einer Überweisung: drei Geschäftstage bis zur Bank des Empfängers, einer für die Buchung, 24. und 31.12. ohne Geschäftsbetrieb', () => {
+  const log = createLawLog()
+  assert.deepEqual(law(bgbTransferExecutionDays, { date: '2026-10-13' }, log), { afterCutoff: 1, execution: 1, paper: 1 })
+  assert.equal(law(practiceCreditBookingDays, { date: '2026-10-13' }, log), 1)
+  assert.deepEqual(law(practiceBankClosedDays, { date: '2026-10-13' }, log), ['12-24', '12-31'])
+  assert.deepEqual(log.values.map((v) => v.id), ['bgb.transfer-execution-days', 'practice.credit-booking-days', 'practice.bank-closed-days'])
+  for (const p of [bgbTransferExecutionDays, practiceCreditBookingDays, practiceBankClosedDays]) assert.equal(p.timing, 'eventDate', p.id)
+  const transfer = versionAt(bgbTransferExecutionDays, '2026-10-13')
+  assert.equal(transfer.source.checked, 'checked')
+  assert.equal(transfer.source.rank, 'law')
+  assert.match(transfer.source.cite, /§ 675n Abs\. 1.*§ 675s Abs\. 1/)
+  assert.equal(versionAt(practiceCreditBookingDays, '2026-10-13').source.rank, 'interpretation')
+  assert.equal(versionAt(practiceCreditBookingDays, '2026-10-13').source.checked, 'adopted')
+  assert.equal(versionAt(practiceBankClosedDays, '2026-10-13').source.rank, 'practice')
+  assert.equal(versionAt(practiceBankClosedDays, '2026-10-13').source.checked, 'adopted')
+  assert.equal(bgbTransferExecutionDays.describe({ afterCutoff: 1, execution: 1, paper: 1 }), 'höchstens 3 Geschäftstage bis zum Eingang bei der Bank des Empfängers (1 für einen Auftrag nach Annahmeschluss, 1 für die Ausführung, 1 bei Papierform)')
+  assert.equal(practiceBankClosedDays.describe(['12-24', '12-31']), 'kein Bankgeschäftstag: 24.12. und 31.12.')
+  // Fassung 1 von bgb.rent-due-at-start nennt die mittelbaren Belege für § 551 a. F.
+  assert.match(versionAt(bgbRentDueAtStart, '2001-08-31').source.cite, /VIII ZR 291\/09 vom 13\.07\.2010, Rn\. 17.*VIII ZR 107\/12 vom 10\.10\.2012, Rn\. 14/)
 })
