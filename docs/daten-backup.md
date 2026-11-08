@@ -21,6 +21,13 @@ Wo der Datenordner liegt, hängt davon ab, wie du Mietfuchs nutzt:
 Im Programm für Windows und macOS öffnet das Menü *Mietfuchs → Datenordner zeigen* den Ordner.
 Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
 
+Das Passwort der Anmeldung steht nur als Hash in `zugang.json` im Datenordner, daneben
+während der Einrichtung `einrichtungscode.txt`. Beides geht **nicht** ins Backup über die Oberfläche,
+nicht in die automatischen Vorversionen und nicht in den Umzug ins Programmfenster: Ein Backup in einer
+Cloud oder auf einem USB-Stick soll niemanden zum Raten einladen. Nach dem Wiederherstellen auf einem
+anderen Rechner gilt dessen Anmeldung; auf demselben Rechner bleibt dein Passwort. Kopierst du den
+ganzen Ordner von Hand, kommt `zugang.json` mit.
+
 Daneben legt das Programm für Windows und macOS einen eigenen kleinen Ordner `mietfuchs-fenster` an
 (unter Windows in `%LOCALAPPDATA%`, bei der Store-Fassung von Windows in deren Paketordner umgelenkt,
 auf dem Mac in `~/Library/Application Support`): gemerkter Port,

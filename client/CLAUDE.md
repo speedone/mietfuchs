@@ -122,6 +122,36 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   jede Zelle mit `data-label`, S23), Zahlenraster heften die erste Spalte an (`sticky-first`).
   Sicherheitsränder über `env(safe-area-inset-*)` an allem, was am Fensterrand steht (S24).
 
+## Anmeldung (#528)
+
+Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); die Oberfläche liest nur `GET /api/auth`
+([access.ts](src/access.ts)) und entscheidet daraus in [accessView.ts](src/accessView.ts) (ohne Seite prüfbar).
+
+- **`AccessGate`** (App.tsx) liegt um die Schale: erst `/api/auth`, dann Einrichtung
+  ([pages/Einrichtung.tsx](src/pages/Einrichtung.tsx)), Anmeldung ([pages/Anmeldung.tsx](src/pages/Anmeldung.tsx)) oder
+  die App; bis zur Antwort bleibt die Seite leer (nichts blitzt auf). Die Provider der Schale hängen erst danach ein,
+  sonst bekäme jede ihrer Fragen ein 401. Ohne lesbare Antwort (ältere Fassung, Netz weg) zeigt sie die App wie bisher.
+  Der Code aus `#einrichtung=…` (so öffnet die Programmdatei den Browser) wird einmal gelesen und gleich aus der
+  Adresse genommen (`takeSetupCode`); im Fenster hat die Einrichtung kein Codefeld.
+- **Kein rohes `fetch`**: Jeder Abruf geht über `appFetch` (access.ts; `api()` nutzt ihn). Eine 401 mit `login` bzw.
+  `setup` im Rumpf meldet das Ereignis `mietfuchs:anmeldung`, die Antwort geht unverändert an den Aufrufer weiter; ein
+  falsches Passwort (401 ohne beides) meldet nichts. Wächter in access.test.ts: außerhalb von api.ts und access.ts kein
+  `fetch(`. Backup-Download, pdf.js und `<img>` laufen am Helfer vorbei (der Browser schickt das Cookie trotzdem mit).
+- **Anmeldedialog** ([LoginDialog.tsx](src/components/LoginDialog.tsx)): Läuft die Sitzung während der Arbeit ab,
+  erscheint die Anmeldung als Dialog über der Seite, Eingaben und Entwürfe bleiben stehen. Er merkt sich den Fokus beim
+  Scheitern und gibt ihn nach Erfolg zurück; die erste Anmeldung nach Fehlversuchen nennt ihre Zahl als Mitteilung.
+  Meldet das Ereignis `setup`, fragt `AccessGate` neu (dann die Einrichtung statt des Dialogs).
+- **Karte „Anmeldung“** ([AccessCard.tsx](src/components/AccessCard.tsx), Felder in
+  [AccessFields.tsx](src/components/AccessFields.tsx), Passphrase in [passphrase.ts](src/passphrase.ts)) in den
+  Einstellungen, nur im Netz, mit Passwort oder im Übergang (`showsAccessCard`): „Passwort festlegen“ (mit Code, im
+  Fenster ohne), „Passwort ändern“, „Auf allen Geräten abmelden“, „Anmeldung ausschalten …“ (Rückfrage); mit
+  `envFixed` nur Anzeige. Im Übergang steht unten in der Seitenleiste „Ohne Passwort im Netz“
+  ([AccessHint.tsx](src/components/AccessHint.tsx), wie NetworkHint), „⎋ Abmelden“ nur mit Sitzung, nie im Fenster
+  (`showsSignOut`). Die Heimnetz-Karte fragt beim Einschalten nach dem Passwort (scripts/CLAUDE.md, Programmfenster).
+- Tests: access.test.ts, accessView.test.ts, accessApp.test.tsx, Anmeldung.test.tsx, Einrichtung.test.tsx,
+  AccessCard.test.tsx, Einstellungen.heimnetz.test.tsx. Beschriftungen zitiert die Anleitung (shared/guides.ts), Begriffe
+  „Anmeldung“ und „Einrichtungscode“ im Lexikon.
+
 ## Hinweise, Leerzustände, Druck
 
 - **Jeder Hinweis über den Baustein `Notice`** ([Notice.tsx](src/components/Notice.tsx)): Stufe als

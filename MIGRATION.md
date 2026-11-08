@@ -17,6 +17,54 @@ Suchen Sie sich unten heraus, was auf Sie zutrifft.
 
 ---
 
+## Nach dem Update fragt Mietfuchs nach einem Passwort
+
+Ab Version 0.17 schützt Mietfuchs Ihre Daten mit einem Passwort, sobald andere Geräte es erreichen
+können: im Docker-Container, als Programmdatei, als Linux-Paket und im Programmfenster mit „Zugriff
+aus dem Heimnetz“. Nutzen Sie das Programmfenster (auch die App aus dem Microsoft Store) ohne
+„Zugriff aus dem Heimnetz“, ändert sich für Sie nichts.
+
+**Sie hatten schon Daten:** Dann bleibt zunächst alles, wie es war, Mietfuchs ist weiter ohne
+Passwort erreichbar. Unten in der Seitenleiste steht „Ohne Passwort im Netz“; ein Klick führt zur
+Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0 (schon in ihren Vorabversionen) verlangt
+Mietfuchs das Passwort.** An Ihren Daten ändert sich dadurch nichts.
+
+**Mietfuchs zeigt „Passwort festlegen“ und fragt nach einem Einrichtungscode:** Das geschieht bei
+einem neuen Datenordner und nach dem Zurücksetzen. Der Code hat zwölf Zeichen in drei Gruppen, etwa
+`K7QM-4XPA-9TRW`, und gilt einmal. Sie finden ihn hier:
+
+- **Programmdatei:** Der Browser öffnet die Seite mit dem Code schon eingetragen. Sonst steht er im
+  Konsolenfenster und in der Datei `einrichtungscode.txt` im Ordner `data` neben der Programmdatei.
+- **Linux-Paket:** in der Ausgabe im Terminal und in `~/.local/share/mietfuchs/einrichtungscode.txt`.
+- **Docker:** `docker compose logs mietfuchs` zeigt die Zeile „Einrichtungscode: …“.
+- **Programmfenster:** Dort braucht es keinen Code; die Karte „Zugriff aus dem Heimnetz“ fragt beim
+  Einschalten nach dem Passwort.
+
+Das Passwort braucht mindestens 15 Zeichen, Leerzeichen sind erlaubt; die Seite schlägt einen Satz
+aus mehreren Wörtern vor. Danach melden Sie sich auf jedem Gerät damit an.
+
+**Ohne Passwort weiter:** Wollen Sie (noch) keines, wählen Sie auf derselben Seite „Ohne Passwort
+weiter“. Dann kann jedes Gerät in Ihrem Netz Ihre Daten öffnen und ändern. Ein Passwort legen Sie
+später unter *Einstellungen → Anmeldung* fest; den Code dafür nennen Konsolenfenster bzw. Protokoll
+bei jedem Start.
+
+**Passwort vergessen:** Legen Sie im [Datenordner](#wo-der-datenordner-liegt) eine leere Datei mit
+dem Namen `passwort-zuruecksetzen` an und laden Sie die Seite neu. Im Docker-Container geht das mit
+
+```bash
+docker compose exec mietfuchs touch /app/server/data/passwort-zuruecksetzen
+```
+
+Mietfuchs löscht dann das Passwort, meldet alle Geräte ab, entfernt die Datei und nennt einen neuen
+Code (Konsolenfenster, Terminal bzw. `docker compose logs mietfuchs`). Ihre Daten bleiben unberührt.
+
+Das Passwort steht in der Datei `zugang.json` im Datenordner, als Hash, nicht im Klartext. Sie geht
+nicht ins Backup und nicht in den Umzug: Nach dem Wiederherstellen auf einem neuen Rechner legen Sie
+das Passwort dort neu fest. Eine ältere Version als 0.17 kennt das Passwort nicht; gehen Sie zu ihr
+zurück, ist Mietfuchs im Netz wieder ohne Anmeldung erreichbar.
+
+---
+
 ## Sie wechseln von der Programmdatei zum Programm mit eigenem Fenster
 
 Seit Version 0.15 gibt es Mietfuchs unter Windows und macOS als eigenes Programm mit eigenem Fenster:

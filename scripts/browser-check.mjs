@@ -35,6 +35,10 @@
 // in GitHub Actions, in der Zusammenfassung des Laufs. Die Fotos je Seite liegen in `<out>/<engine>/…`;
 // sie gehören nicht ins Repo, die Vorgabe für `--out` liegt deshalb im Temp-Ordner.
 //
+// Anmeldung (#528): Dazu je Kombination die Einrichtung (frischer Ordner im Netz, Seite „einrichtung“) und die
+// Anmeldung (Passwort festgelegt, Seite „anmeldung“) auf zwei eigenen Servern mit NKA_HOST=0.0.0.0, mit axe, Breite,
+// abgeschnittenen Feldern und Fehlern der Seite (`--pages einrichtung,anmeldung` prüft nur diese beiden).
+//
 // Server und Bestand kommen aus demo-stock.mjs, mit den drei Angaben jedes Prüfstarts (CLAUDE.md). Der
 // Bestand bekommt zusätzlich eine Heizanlage (freie Schlüssel, ändert keine Zahl), damit auch die Seite
 // Heizkosten in der Navigation steht. Die Bedienproben speichern nichts: Jede verwirft, was sie eingibt.
@@ -50,7 +54,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { navFor } from '../client/src/nav.ts'
-import { loadPlaywright, startDemo, textPdf } from './demo-stock.mjs'
+import { loadPlaywright, startDemo, startServer, textPdf } from './demo-stock.mjs'
 import { seedBrowserCheck } from './browser-check-stock.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -1065,6 +1069,92 @@ function report() {
   return lines.join('\n')
 }
 
+// ---------- Anmelde- und Einrichtungsseite (#528) ----------
+const ACCESS_PAGES = ['einrichtung', 'anmeldung']
+const accessWanted = () => PAGES === null || PAGES.some((p) => ACCESS_PAGES.includes(p))
+
+// Zwei Server im Netz auf frischen Ordnern: einer in der Einrichtung, einer mit Passwort
+async function startAccessServers() {
+  const setupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-browserlauf-einrichtung-'))
+  const loginDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-browserlauf-anmeldung-'))
+  const network = { NKA_HOST: '0.0.0.0' }
+  /** @type {Awaited<ReturnType<typeof startServer>>[]} */
+  const started = []
+  const cleanUp = async () => {
+    for (const server of started) await server.stop()
+    fs.rmSync(setupDir, { recursive: true, force: true })
+    fs.rmSync(loginDir, { recursive: true, force: true })
+  }
+  // Scheitert ein Start oder die Einrichtung, bleibt nichts liegen (Durchsicht)
+  try {
+    started.push(await startServer(setupDir, '', network))
+    started.push(await startServer(loginDir, '', network))
+    const code = fs.readFileSync(path.join(loginDir, 'einrichtungscode.txt'), 'utf8').trim()
+    const res = await fetch(`${started[1].base}/api/auth/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, password: 'ein langes Passwort im Browserlauf' }) })
+    if (!res.ok) throw new Error(`Einrichtung für den Browserlauf gescheitert: ${res.status}`)
+  } catch (err) {
+    await cleanUp()
+    throw err
+  }
+  const [setup, login] = started
+  return {
+    pages: [{ id: 'einrichtung', base: setup.base, heading: 'Mietfuchs einrichten' }, { id: 'anmeldung', base: login.base, heading: 'Mietfuchs' }],
+    problem: () => setup.problem() ?? login.problem(),
+    stop: cleanUp,
+  }
+}
+
+/** @param {any} browser @param {{ engine: string, view: string, theme: string }} combo @param {any} AxeBuilder @param {{ id: string, base: string, heading: string }[]} pages */
+async function checkAccessPages(browser, combo, AxeBuilder, pages) {
+  const { engine, view, theme } = combo
+  for (const { id, base, heading } of pages) {
+    if (PAGES !== null && !PAGES.includes(id)) continue
+    const context = await browser.newContext({
+      viewport: VIEWS[view], deviceScaleFactor: 1, colorScheme: theme === 'dark' ? 'dark' : 'light', locale: 'de-DE', timezoneId: 'Europe/Berlin',
+    })
+    await context.addInitScript((choice) => {
+      try {
+        /** @type {any} */ (globalThis).localStorage.setItem('nka-theme', choice)
+      } catch {
+        // ohne Speicher gilt colorScheme des Kontexts
+      }
+    }, theme)
+    const page = await context.newPage()
+    const add = (kind, text) => findings.push({ engine, view, theme, page: id, kind, text })
+    page.on('pageerror', (err) => add('Fehler in der Seite', err.message))
+    // Die Anfragen der Seite vor der Anmeldung bekommen 401; das meldet der Browser als Fehler der Konsole und gehört dazu
+    page.on('console', (msg) => { if (msg.type() === 'error' && !/401|Unauthorized/.test(msg.text())) add('Konsole', msg.text()) })
+    try {
+      await page.goto(base)
+      await page.getByRole('heading', { name: heading, exact: true }).first().waitFor({ timeout: 15000 })
+      await settle(page)
+      if (await page.locator('nav.sidebar').count()) add('Ansicht', 'Vor der Anmeldung steht die Seitenleiste da.')
+      const wide = await overflow(page)
+      if (wide) add('Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster`)
+      for (const f of await clippedFields(page, 'body')) add('Abgeschnitten', `„${f.name}“: ${f.text}`)
+      for (const text of await visibleErrors(page)) add('Fehlermeldung', text)
+      const axe = await new AxeBuilder({ page }).options({ rules: { 'target-size': { enabled: true } } }).analyze()
+      for (const v of axe.violations) {
+        if (v.impact !== 'serious' && v.impact !== 'critical') continue
+        const ex = exceptionFor(v.id, id, combo)
+        if (ex) {
+          axeSeen.set(ex, Math.max(axeSeen.get(ex) ?? 0, v.nodes.length))
+          if (v.nodes.length <= ex.anzahl) continue
+        }
+        add('axe', `${v.id} (${v.impact}, ${v.nodes.length}×): ${v.help}. Zum Beispiel ${v.nodes.slice(0, 2).map((n) => n.target.join(' ')).join('; ')}`)
+      }
+      const dir = path.join(OUT, engine, `${view}-${theme}`)
+      fs.mkdirSync(dir, { recursive: true })
+      await page.screenshot({ path: path.join(dir, `${id}.png`), fullPage: true })
+      checkedPages++
+    } catch (err) {
+      add('Abbruch', err instanceof Error ? err.message.split('\n')[0] : String(err))
+    } finally {
+      await context.close()
+    }
+  }
+}
+
 // ---------- Ablauf ----------
 async function main() {
   const playwright = await loadPlaywright()
@@ -1079,6 +1169,8 @@ async function main() {
 
   console.log('Beispielbestand anlegen …')
   const demo = await startDemo({ pdf: textPdf, prefix: 'mietfuchs-browserlauf-' })
+  /** @type {Awaited<ReturnType<typeof startAccessServers>> | null} */
+  let access = null
   // Bericht und Zusammenfassung entstehen auch, wenn die Prüfung selbst scheitert: Der Fehler wird ein Befund.
   try {
     // Eine Heizanlage mit freien Schlüsseln, damit die Seite Heizkosten in der Navigation steht. Sie ändert
@@ -1108,6 +1200,17 @@ async function main() {
         for (const view of ['desktop', 'mobile'].filter((v) => views.includes(v))) {
           for (const theme of themes) {
             const before = findings.length
+            if (accessWanted()) {
+              access ??= await startAccessServers()
+              await checkAccessPages(browser, { engine, view, theme }, AxeBuilder, access.pages)
+              const accessDown = access.problem()
+              if (accessDown) throw new Error(accessDown)
+            }
+            // Nur die beiden Seiten verlangt; `--pages -` (leere Liste, nur Bedienproben) gehört nicht dazu
+            if (PAGES !== null && PAGES.length > 0 && PAGES.every((p) => ACCESS_PAGES.includes(p))) {
+              console.log(`  ${view} ${theme}: ${findings.length - before ? `${findings.length - before} Befunde` : 'ohne Befund'}`)
+              continue
+            }
             const labels = await checkCombination(browser, demo.base, { engine, view, theme }, AxeBuilder, navLabels, passes)
             if (!navLabels) {
               navLabels = labels
@@ -1134,7 +1237,7 @@ async function main() {
         const passPages = pass ? [...navFor(pass.heating).flatMap((g) => g.items.map((i) => slug(i.label))), 'belege-ordner'] : []
         if (rest.length > 0 || (passId !== undefined && !pass)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, der Lauf hat kein solches Objekt (möglich: ${passes.map((p) => p.id).join(', ')}).` })
         else if (pass && !passPages.includes(pageId)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, im Objekt „${pass.name}“ gibt es diese Seite nicht (möglich: ${passPages.join(', ')}).` })
-        else if (!pass && pageId !== 'muster' && pageId !== 'faden' && pageId !== 'lexikon' && pageId !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === pageId)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        else if (!pass && pageId !== 'muster' && pageId !== 'faden' && pageId !== 'lexikon' && pageId !== 'belege-ordner' && !ACCESS_PAGES.includes(pageId) && !(navLabels ?? []).some((l) => slug(l) === pageId)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {
@@ -1156,6 +1259,7 @@ async function main() {
     findings.push({ engine: '–', view: '–', theme: '–', page: '–', kind: 'Abbruch', text: err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err) })
     console.error(err)
   } finally {
+    await access?.stop()
     await demo.stop()
     const text = report()
     fs.writeFileSync(path.join(OUT, 'bericht.md'), `${text}\n`)

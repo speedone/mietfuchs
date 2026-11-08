@@ -1,12 +1,12 @@
 // Prüft das installierte Programmfenster (#517) von außen, auf dem Rechner, für den es gebaut ist (Windows, macOS):
 //
 //   1. Start mit den drei Angaben jedes Prüfstarts (Wegwerf-Datenordner, CI, Update-Adresse ins Leere) und der
-//      Selbstprüfung des Fensters (MIETFUCHS_SELFTEST_OUT): Startzeit, Speicher, PDF der ersten Seite.
+//      Selbstprüfung des Fensters (MIETFUCHS_SELFTEST_OUT): Startzeit, Speicher, PDF der ersten Seite; die Seite im
+//      Fenster trägt den Fensterschlüssel, ein Abruf von außen nicht (#528).
 //   2. smoke-test.mjs gegen den Server im Fenster, Betriebsart desktop.
 //   3. Ein zweiter Start holt nur das vorhandene Fenster nach vorn und endet.
 //   4. Beenden aus der Oberfläche (/api/quit): Fenster und Server enden mit 0, der Port ist frei.
 //   5. Absturz des Fensters (hart beendet): Der Server endet von selbst, keine Waise hält Port und Datenbank.
-//   1. prüft dazu, dass die Seite im Fenster den Fensterschlüssel trägt und ein Abruf von außen nicht (#528).
 //   6. Umzug der Daten: Der Bestand aus 1. liegt wie bei der bisherigen Programmdatei in `data/` neben ihr im
 //      Download-Ordner eines nachgestellten Benutzerordners; das Fenster findet ihn mit leerem Datenordner über die
 //      Suche dieses Systems und übernimmt ihn.

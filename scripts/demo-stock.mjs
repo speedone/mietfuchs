@@ -40,7 +40,8 @@ const freePort = () => new Promise((resolve, reject) => {
   })
 })
 
-export async function startServer(dataDir, ollamaUrl) {
+// `env`: etwa `NKA_HOST: '0.0.0.0'` für Anmelde- und Einrichtungsseite im Browserlauf (#528)
+export async function startServer(dataDir, ollamaUrl, env = {}) {
   const port = await freePort()
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: path.join(root, 'server'),
@@ -50,6 +51,8 @@ export async function startServer(dataDir, ollamaUrl) {
       NKA_PORT: String(port),
       // Nur auf diesem Rechner, ohne Anmeldung (#528)
       NKA_HOST: '127.0.0.1',
+      NKA_AUTH: '',
+      ...env,
       NKA_OLLAMA_URL: ollamaUrl,
       NKA_OLLAMA_MODEL: 'qwen3.5:4b',
       // Fortlaufende Kennungen (server/src/ids.ts): derselbe Bestand in jedem Lauf, auch beim Rest-Cent

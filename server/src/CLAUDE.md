@@ -166,6 +166,98 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
 - Geprüft in relocation.test.ts, api-umzug.test.ts, api-umzug-haertung.test.ts, client/src/pages/Umzug.test.tsx, mit echten alten Fassungen in
   scripts/fenster-umzug-praxislauf.mjs und auf Windows und macOS in desktop-check.mjs (Schritt 6).
 
+## Anmeldung (#528)
+
+Kern ohne Server in [access.ts](access.ts) (Zustand, Hash, Code, Sitzungen, Bremse, Entscheidung `gate`), Vorschaltung
+und Routen unter `/api/auth` in [accessServer.ts](accessServer.ts), eingehängt in index.ts. Entwurf mit Begründungen
+und Quellen (OWASP): docs/superpowers/specs/2026-11-07-anmeldung-design.md. Schritt 1 ohne HTTPS: Über HTTP lesen
+Geräte im Netz Passwort und Cookie mit (hingenommen bis Schritt 2), und alles auf einem Rechner ist eine
+Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
+
+- **Von außen erreichbar entscheidet die Lausch-Adresse** (`reachableOf(NKA_HOST)`: nur Loopback ist `local`, ohne
+  Angabe `network`), nie die Adresse einer Anfrage (ein Proxy auf demselben Rechner sähe aus wie der Rechner). Docker
+  lauscht im Container auf allen Karten, also `network`, auch mit `-p 127.0.0.1:…`.
+- **`NKA_AUTH`** `auto` (leer), `on` (auch lokal, dann ohne Übergang), `off` (aus, für Docker mit `-p 127.0.0.1:…`
+  oder einen Proxy mit eigener Anmeldung); ein anderer Wert verhindert den Start wie bei `NKA_HOST`. Gesetzt heißt
+  `envFixed`, die Karte zeigt nur an. Das installierte Fenster löscht ein geerbtes `NKA_AUTH` (`serverEnv`, wie die Testgriffe).
+- **Zustände** (`AccessView`): `setup`, `password`, `off` aus `zugang.json`, dazu `transition` (Übergang) und `none`
+  (lokal ohne Datei, nichts entschieden). `initialAccess` beim Start, vor dem Öffnen der Datenbank (`hasStock` danach
+  wäre immer wahr): Eine Datei gilt; eine verdorbene heißt `setup` (streng, nie offen, im Protokoll). Ohne Datei im
+  Netz **Stufe A** (0.17.0): ohne Bestand `setup` (Datei wird geschrieben; sichere Voreinstellung für Docker, #447),
+  mit Bestand `transition`: offen wie bisher, Hinweis in Oberfläche und Protokoll, Code zum Festlegen. **Stufe B**
+  (Pflicht, `stage: 'B'`) ist eine eigene kleine PR vor 1.0.0-rc.1.
+- **Dateien im Datenordner**: `zugang.json` (`version`, `mode`, `instance` aus 6 Hex für den Cookie-Namen, `hash`
+  `scrypt$17$8$1$…`, `changedAt`; 0600, Zwischendatei und Umbenennen wie secrets.json), `einrichtungscode.txt`
+  (solange `setup`, Übergang oder `off` im Netz; neu je Start, danach gelöscht), `passwort-zuruecksetzen`. **Nie in
+  der Datenbank**: nicht im Backup, nicht in Vorversionen, nicht im Umzug, ein Rücksprung ändert das Passwort nicht.
+  Unbekannte Felder in `zugang.json` gehen beim Zurückschreiben verloren (offen für Schritt 2, `devices`).
+- **Passwort** 15 bis 128 Zeichen nach NFC (Codepunkte), abgelehnt nur ein wiederholtes Zeichen und „mietfuchs“;
+  scrypt N = 2^17, r = 8, p = 1, Salz 16, Schlüssel 32, Vergleich mit `timingSafeEqual`; `needsRehash` rechnet nach
+  angehobenen Parametern bei der nächsten Anmeldung neu. **Höchstens eine Berechnung zugleich** (`createHashQueue`,
+  128 MiB je Berechnung). **Code**: 12 aus 31 Zeichen ohne 0/O/1/I/L (gut 59 Bit), in Vierergruppen, Eingabe ohne
+  Groß/Klein, Bindestrich und Leerzeichen, zeitkonstant über SHA-256 verglichen, nach Gebrauch verbraucht.
+- **Vorschaltung** `ACCESS.middleware` nach CSP und Host-Prüfung, **vor** dem Vermerk „umgezogen“ (Anmelden geht
+  auch dort) und vor `express.json()` (ungeprüfte Rümpfe werden nicht gelesen, `req.resume()`); `/api/auth/*` mit
+  eigenem `express.json({ limit: '4kb' })`. **Pfade wie Express** (Express 5, `caseSensitive: false`, `strict: false`):
+  geschützt ist, was klein, ohne doppelte und ohne End-Schrägstriche, roh oder bis dreimal entschlüsselt auf
+  `/^\/(api|uploads|healthz)(\/|$)/` passt; frei nur genau `GET /api/auth`, `POST …/login`, `…/setup`, `…/logout` und
+  `GET /healthz`. Übrige `GET`/`HEAD` (Oberfläche, Skripte, Manifest) sind frei. Sonst 401 mit `login: true` bzw.
+  `setup: true`, auch für `/uploads`, Backup, Update und die ND-JSON-Ströme. `Cache-Control: no-store` auf geschützten
+  Pfaden, solange die Anmeldung gilt.
+- **Wann sie gilt** (`gateActive`): nicht bei `NKA_AUTH=off`, `off`, Übergang und `none`; sonst bei `required` (Netz
+  oder `on`). Lokal lauschend mit Passwort nur für Anfragen mit **Proxy-Kopfzeilen** (`Forwarded`, `X-Forwarded-For`,
+  `X-Forwarded-Host`, `X-Real-IP`, `Via`; eine gefälschte macht nur strenger). Lokal ohne Passwort schreibt der erste
+  Abruf über einen Proxy einmal je Start ins Protokoll und schaltet auf den Hinweis des Übergangs mit Code
+  (`noticeProxy`); nach dem Zurücksetzen gilt lokal über Proxy auch die Einrichtung (`proxyStrict`). Ein Proxy ohne
+  solche Kopfzeilen bleibt unerkannt (hingenommen, dafür `NKA_AUTH=on`). `trust proxy` bleibt aus.
+- **`/healthz`** von 127.0.0.1/::1 oder mit Sitzung voll (HEALTHCHECK, `instanceGuard`), sonst nur `{ app, status }`
+  mit demselben Statuscode (`res.locals.shortHealth`). **Beenden vom Rechner**: `POST /api/quit` von Loopback ohne
+  Proxy-Kopfzeilen geht ohne Sitzung (Fenster aus dem Hauptprozess, `quit-old` des Umzugs, Server eines früheren
+  Starts), mehr nicht. `fromThisComputer`, `AT_THIS_COMPUTER` und der Umzug bleiben zusätzlich (siehe „API“).
+- **Origin bei Schreibzugriffen**, solange die Anmeldung gilt, auch bei abgeschalteter Host-Prüfung (Docker, npm) und
+  für login/setup/logout: Ist `Sec-Fetch-Site` da, geht nur `same-origin` (oder `none`); sonst `Origin` gegen `Host`,
+  den ersten `X-Forwarded-Host` oder `NKA_ALLOWED_HOSTS` (`null` abgelehnt); fehlt beides, ist es kein Browser, und
+  die Sitzung entscheidet. 403 „Änderungen nimmt Mietfuchs nur von seiner eigenen Seite an.“ Im Übergang und bei `off`
+  im Netz werden nur `cross-site`/`same-site` abgewiesen (`exposedOpen`). Grund: `SameSite=Strict` trennt keine Ports.
+- **Bremse** (`createBrake`): **verlangsamen, nie sperren**, sonst sperrte ein Gerät im Netz den Vermieter aus. Erst
+  buchen, dann rechnen, bei Erfolg zurückgenommen; je Adresse ein laufender Versuch, insgesamt zwei, darüber 429 mit
+  `Retry-After`. Je Adresse (IPv6 voll, nicht je /64; IPv4 in IPv6 als IPv4) ab dem fünften Versuch 1 s, verdoppelt
+  bis **60 s** (nicht 15 min wie im Entwurf: geteilte Adressen hinter Proxy oder Docker Desktop); ab 20 Fehlversuchen
+  in 15 Minuten über alle Adressen 1 s mehr je Berechnung. Code und Passwort zählen getrennt; dieselbe Bremse für jede
+  Route, die das bisherige Passwort prüft. Protokoll mit Adresse (die ersten fünf, dann jede Zweierpotenz); die erste
+  Anmeldung danach nennt die Zahl (`failedAttempts`).
+- **Sitzungen** (`createSessions`): 32 Zufallsbytes, im Speicher nur als SHA-256, höchstens 50, 30 min ohne Anfrage,
+  höchstens 8 h, ein Neustart meldet alle ab, neue Kennung bei jeder Anmeldung. Cookie `mietfuchs_<instance>` mit
+  `HttpOnly; SameSite=Strict; Path=/`, ohne Domain und Max-Age, `Secure` nur hinter HTTPS (`viaHttps`:
+  `X-Forwarded-Proto`, `Forwarded: proto=https` oder `Origin` mit `https:`). Bei mehreren Cookies gleichen Namens zählt
+  jeder Wert (`cookieValues`). Passwort ändern, ausschalten und „Auf allen Geräten abmelden“ verlangen das bisherige
+  Passwort; danach sind alle anderen Sitzungen weg, die eigene ist erneuert.
+- **Routen**: `GET /api/auth` (`mode`, `required`, `signedIn`, `window`, `reachable`, `envFixed`, `minLength`,
+  `runtime`; `codeFile` mit vollem Pfad nur für Loopback und Fenster, von außen `codeFileName`), `POST …/setup`
+  (`{ code, password }` oder `withoutPassword`, nur in `setup`, Übergang und `off`; falscher Code 400, fehlender 403,
+  bei `password` 409; „ohne Passwort“ ergibt `off` und sofort einen neuen Code, zurück nur mit Code oder Fenster),
+  `…/login`, `…/logout`, `PUT …/password`, `…/off`, `…/logout-all` (je `{ current }`). Bei `NKA_AUTH=off` 409.
+- **Zurücksetzen** über die Datei `passwort-zuruecksetzen` (nur eine Datei zählt, nie ihr Inhalt): geprüft beim
+  Start, vor Anmeldung und Einrichtung und höchstens einmal je Sekunde bei einer Anfrage (`checkReset`). Ergibt `setup`
+  mit neuem Code im Protokoll, meldet alle ab, leert die Bremse und löscht die Datei; lässt sie sich nicht löschen,
+  sagt es das Protokoll einmal.
+- **Fensterschlüssel**: Das Fenster erzeugt je Start 32 Bytes und reicht sie als `NKA_WINDOW_KEY`; index.ts liest und
+  löscht ihn aus `process.env`, kein Kindprozess erbt ihn. Die Seite trägt `X-Mietfuchs-Window` über
+  `onBeforeSendHeaders`, der Hauptprozess über `serverFetch` (scripts/CLAUDE.md, Programmfenster). Wirksam nur bei
+  `IN_WINDOW`, über Loopback ohne Proxy-Kopfzeilen, zeitkonstant (`atWindow`): Das Fenster gilt als angemeldet,
+  richtet ohne Code ein und ändert ohne bisheriges Passwort. Über die Adresse einer Netzwerkkarte wirkungslos; genau
+  diese Zeile lockert Schritt 2 für Geräteschlüssel über HTTPS.
+- **Wettläufe** (`generation`, `changedSince`): Jede Änderung des Zustands (Speichern, Zurücksetzen) zählt hoch. Eine
+  Anmeldung, Einrichtung oder Änderung, deren scrypt über eine solche Änderung hinweg lief, schreibt nichts und
+  antwortet 401 bzw. 409 „Der Zugang hat sich eben geändert.“ Ein Neuberechnen nach `needsRehash` schreibt nur, wenn
+  der Hash noch derselbe ist.
+- **Prüfungen**: Server aus Tests und Skripten lauschen auf 127.0.0.1 (`startServerIn`/`startServerRaw` setzen
+  `NKA_HOST` und leeren `NKA_AUTH`); wer Netz oder Anmeldung prüft, setzt `NKA_HOST: '0.0.0.0'` und meldet sich mit
+  `signIn` an (`TEST_PASSWORD`, `setupCode`, `sessionOf` in server/testing/api.ts). `hashPassword` nimmt in
+  access.test.ts ein kleineres `logN`, `createAccess`, `createBrake` und `createSessions` eine Uhr (`now`). Geprüft in
+  access.test.ts, api-anmeldung.test.ts, api-fenster.test.ts (Fensterschlüssel), smoke-test.mjs mit `--code-file` bzw.
+  `--code-command` (ci, docker, release) und desktop-check.mjs (`window: true`).
+
 ## Objekte (#92)
 
 Eine Installation verwaltet mehrere Objekte (`properties`); **ein Objekt ist zugleich die
@@ -397,10 +489,12 @@ Heimnetz beendete es das Fenster mit), jede schreibende Anfrage an `/api/ai/key`
 `updateCheck` in `PUT /api/settings` (unter Windows lädt das Fenster danach auch herunter) bekommen von dort 403 mit
 gesiezter Meldung: Zustimmen soll, wer vor dem Rechner sitzt. Ein PUT mit unverändertem `updateCheck` geht durch, das
 übrige Speichern der Einstellungen bleibt aus dem Heimnetz möglich. Nur bei `IN_WINDOW` (desktop, store); im Container
-und im npm-Betrieb kommt jede Anfrage von außen. Verglichen wird `routePath(req.path)` ([routePath.ts](routePath.ts),
+und im npm-Betrieb kommt jede Anfrage von außen. Die Anmeldung (oben) kommt hinzu und ersetzt diese Sperren nicht:
+Eine Sitzung vom Handy öffnet sie nicht. Verglichen wird `routePath(req.path)` ([routePath.ts](routePath.ts),
 #585): Express nimmt Routen ohne Rücksicht auf Groß und Klein und mit einem Schrägstrich am Ende an; **wer `req.path` selbst
-mit einem Pfad vergleicht, nimmt `routePath`** (ebenso die Ausnahmen beim umgezogenen Ordner). Geprüft in
-api-fenster.test.ts, routePath.test.ts (an Express selbst gemessen).
+mit einem Pfad vergleicht, nimmt `routePath`** (ebenso die Ausnahmen beim umgezogenen Ordner). Die Vorschaltung der
+Anmeldung vergleicht strenger (access.ts, `gate`: auch doppelte Schrägstriche und Prozentkodierung gelten als geschützt).
+Geprüft in api-fenster.test.ts, routePath.test.ts (an Express selbst gemessen).
 
 [index.ts](index.ts): generische CRUD-Routen in einer Schleife für `units, tenancies, costItems,
 meters, readings, payments`, durch [db/repository.ts](db/repository.ts); Kaskaden erledigen die

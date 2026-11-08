@@ -41,7 +41,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Darstellung gehört dorthin, nicht nach demo-stock.mjs: Bildschirmfotos und Druck in Safari bleiben, wie sie sind. Jede Seite wird
   ein zweites Mal mit allen `<details>` offen gemessen (Breite und abgeschnittene Felder, Befund
   „aufgeklappt:“). Die Musterseite (`?muster`) prüft er in jeder Kombination wie eine Seite, mit
-  offenem Seitenfenster, Rückfrage und Begriff; `--pages muster` allein. Jeder Befund: Exit 1
+  offenem Seitenfenster, Rückfrage und Begriff; `--pages muster` allein. Ebenso **Einrichtung und Anmeldung** (#528,
+  Seiten `einrichtung` und `anmeldung`) auf zwei eigenen Servern mit `NKA_HOST=0.0.0.0`, einer in der Einrichtung, einer
+  mit Passwort (axe, Breite, abgeschnittene Felder, keine Seitenleiste; `--pages einrichtung,anmeldung` nur diese). Jeder Befund: Exit 1
   und eine Zeile in `<out>/bericht.md`; Fotos in `--out` (Temp, nie im Repo). Ausnahmen für axe in
   [browser-check-axe.json](browser-check-axe.json) mit Grund und Anzahl, nur sinkend (heute leer;
   `--merge` fasst CI-Läufe zusammen). Eingrenzen mit `--engines`, `--views`, `--themes`, `--pages`
@@ -257,7 +259,20 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Solange der Zugriff an ist, steht im Fuß der Seitenleiste ruhig „📶 Im Heimnetz erreichbar“ und führt zur Karte
   ([NetworkHint.tsx](../client/src/components/NetworkHint.tsx), K5; nach dem Speichern meldet die Karte den neuen Stand
   mit `announceNetwork`). Beenden, KI-Schlüssel, Zustimmungen und die Update-Prüfung nimmt der Server dann nur vom
-  Rechner selbst an (server/src/CLAUDE.md, „API“).
+  Rechner selbst an (server/src/CLAUDE.md, „API“). **Beim Einschalten fragt die Karte nach einem Passwort für andere
+  Geräte** (#528, `askForPassword` in desktopNetwork.ts: solange keines festgelegt ist und `NKA_AUTH` nichts
+  festlegt), festgelegt über den Fensterschlüssel ohne Code, noch vor dem Neustart auf `0.0.0.0`; „Ohne Passwort im
+  Heimnetz?“ mit Rückfrage ergibt den Zustand `off`. War der Zugriff schon vor 0.17 an, gilt der Übergang
+  (server/src/CLAUDE.md, „Anmeldung“).
+- **Fensterschlüssel** (#528): main.js erzeugt je Start des Servers 32 Zufallsbytes (`windowKey`) und reicht sie über
+  `serverEnv` als `NKA_WINDOW_KEY` (eine geerbte Angabe gilt nie). Die Seite bekommt die Kopfzeile
+  `X-Mietfuchs-Window` über `session.defaultSession.webRequest.onBeforeSendHeaders`, gefiltert auf den eigenen
+  Ursprung und im Rückruf noch einmal geprüft (`attachWindowKey`, nach jedem Setzen von `origin`); Abrufe des
+  Hauptprozesses (`/api/quit`, `/api/settings`) gehen über `serverFetch`. „Im Browser öffnen“ und ein Server von außen
+  (`MIETFUCHS_SERVER_URL`) haben keinen Schlüssel. Damit gilt das Fenster auch mit Passwort im Heimnetz als
+  angemeldet; der Server nimmt ihn nur im Fenster und nur über 127.0.0.1 an. Die Selbstprüfung schreibt die Antwort
+  von `/api/auth` aus der Seite nach fenster.json (`access`), desktop-check.mjs verlangt `window: true` dort und
+  `window: false` für einen Abruf von außen.
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
@@ -528,14 +543,25 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Programmdatei auf ihrem System, in Containern vieler Distributionen (CentOS 7 mit glibc 2.17 bis
   Ubuntu 26.04), fürs Docker-Image und in der CI gegen den Quellcode. Lokal:
   `node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Den **gelungenen** Umstieg
-  prüft er nicht.
+  prüft er nicht. **Anmeldung** (#528): Lauscht die Instanz im Netz, verlangt der frische Datenordner ein Passwort;
+  dann nennt `--code-file <pfad>` die Datei `einrichtungscode.txt` bzw. `--code-command <befehl>` einen Befehl, der den
+  Code ausgibt (`docker exec … cat /app/server/data/einrichtungscode.txt`). Das Skript prüft damit die sichere
+  Voreinstellung (Einrichtung verlangt, ohne Sitzung 401, Oberfläche frei), legt das Passwort fest und fragt alles
+  Weitere mit der Sitzung; ohne beides scheitert es an einer Instanz, die eine Anmeldung verlangt. So in ci.yml (npm
+  ohne `NKA_HOST`), docker.yml (`--code-command` in den Container) und release.yml (Programmdateien mit
+  `--code-file`, Container der Distributionen und Pakete mit `--code-command`). Server, die Skripte selbst starten
+  (demo-stock.mjs, perf-stock.mjs, umstieg-praxislauf.mjs, fenster-umzug-praxislauf.mjs, bundle-vergleich.mjs),
+  lauschen mit `NKA_HOST=127.0.0.1` ohne Anmeldung, außer wo sie die Anmeldung ausdrücklich prüfen (unten).
 - **[umstieg-praxislauf.mjs](umstieg-praxislauf.mjs)** spielt den Umstieg mit echten Servern über
   zwei Starts durch (frischer Rechner, gewachsener Bestand, Altformate, abgelehnter Bestand, Backup
   mit und ohne Datenbank; ein Fall einzeln mit `--nur 6`). **Fall 7** (Archive von vor der Datenbank,
   auf die [MIGRATION.md](../MIGRATION.md) verweist) startet bewusst in einem **anderen Haus**
   (`bestandAnderesHaus`), sonst blieben die Zusicherungen grün, auch wenn nichts übernommen wurde.
   **Fall 18** legt rohe Zeilen auf den Stand 0076 und prüft den Datenschritt 0077 (Quellen, #455) über
-  echte Starts; er wird rot, wenn der Schritt in `DATA_STEPS` fehlt. Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
+  echte Starts; er wird rot, wenn der Schritt in `DATA_STEPS` fehlt. **Fall 19** (Anmeldung, #528): ein Bestand einer
+  frühen Fassung im Netz (`NKA_HOST=0.0.0.0`) bleibt im Übergang offen, mit Pflicht ab 1.0 und Code im Protokoll, auch
+  beim zweiten Start ohne `zugang.json`; lokal kein Code; ein neuer Ordner im Netz startet in der Einrichtung; nach dem
+  Wiederherstellen auf einem anderen Ordner gilt dessen Anmeldung. Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
   `--slow-ai 320` lässt das Ollama über fünf Minuten schweigen; das läuft im vollen Umfang auf den
   Programmdateien (Linux x64, Windows x64, Apple Silicon) und gegen Node.
 - **[fenster-umzug-praxislauf.mjs](fenster-umzug-praxislauf.mjs)** (#517): lädt die Linux-Programmdateien 0.3.1 und

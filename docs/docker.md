@@ -25,20 +25,82 @@ curl -O https://raw.githubusercontent.com/speedone/mietfuchs/main/deploy/compose
 
 ## Zuerst: Sicherheit
 
-**Mietfuchs hat kein Login.** Wer die Adresse im Netz erreicht, kann alle Daten lesen und ändern.
-Deshalb:
+**Mietfuchs fragt nach einem Passwort**, sobald andere Geräte es erreichen können, und im
+Container ist das immer so. Ein neues Volume startet deshalb in der Einrichtung, erst danach sieht
+jemand Daten. Trotzdem gilt:
 
 - **Nie ins Internet stellen**, also keine Portfreigabe und keine Portweiterleitung am Router für
-  3001, 80 oder 443. Von unterwegs geht es [über ein VPN](#von-unterwegs-und-mit-https-über-ein-vpn).
-- Im Heimnetz ist Mietfuchs für jedes Gerät im Netz erreichbar. Teilst du das Netz mit anderen,
-  setze im Proxy ein Passwort davor ([`basic_auth` im Caddyfile](#ein-passwort-davor)).
+  3001, 80 oder 443. Das Passwort ist für das Heimnetz gedacht. Von unterwegs geht es
+  [über ein VPN](#von-unterwegs-und-mit-https-über-ein-vpn).
+- **Über `http://` lässt sich im Heimnetz mitlesen**, auch das Passwort beim Anmelden. Teilst du das
+  Netz mit anderen, nimm [HTTPS mit Caddy](#mit-https-im-heimnetz-composecaddyyml) oder ein VPN.
+
+### Erster Start: Passwort festlegen
+
+1. Nach `docker compose up -d` steht im Protokoll ein Einrichtungscode aus zwölf Zeichen:
+
+   ```bash
+   docker compose logs mietfuchs
+   # Mietfuchs ist im Netz erreichbar und noch ohne Passwort.
+   # Einrichtungscode: K7QM-4XPA-9TRW  (auch in /app/server/data/einrichtungscode.txt)
+   ```
+
+2. Mietfuchs im Browser öffnen, den Code eintragen und ein Passwort festlegen: 15 bis 128 Zeichen,
+   Leerzeichen erlaubt. Die Seite schlägt einen Satz aus mehreren Wörtern vor. Der Code gilt einmal,
+   jeder Neustart vor der Einrichtung erzeugt einen neuen.
+3. Jedes Gerät meldet sich danach mit dem Passwort an. Die Anmeldung endet nach 30 Minuten ohne
+   Aktivität, spätestens nach 8 Stunden; ein Neustart des Containers meldet alle Geräte ab.
+
+„Ohne Passwort weiter“ auf derselben Seite lässt Mietfuchs offen wie früher; ein Passwort legst du
+dann später unter *Einstellungen → Anmeldung* fest, mit dem Code, den das Protokoll bei jedem Start
+nennt. Dort änderst du auch das Passwort, meldest alle anderen Geräte ab oder schaltest die
+Anmeldung aus. Nach Fehlversuchen wird Mietfuchs langsamer (ab dem fünften eine
+Sekunde Wartezeit, je weiterem doppelt so lang, höchstens eine Minute), es sperrt aber nie aus.
+
+### Passwort vergessen
+
+Zurücksetzen kann nur, wer an den Datenordner kommt:
+
+```bash
+docker compose exec mietfuchs touch /app/server/data/passwort-zuruecksetzen
+```
+
+Dann die Seite im Browser neu laden (oder den Container neu starten). Mietfuchs löscht das
+Passwort, meldet alle Geräte ab, entfernt die Datei und schreibt einen neuen Einrichtungscode ins
+Protokoll: `docker compose logs mietfuchs`. Mit ihm legst du ein neues Passwort fest. Deine Daten
+bleiben unberührt.
+
+### Anmeldung ein- und ausschalten (`NKA_AUTH`)
+
+| Wert | Wirkung |
+| --- | --- |
+| ohne Angabe oder `auto` | Passwort, sobald Mietfuchs im Netz lauscht. Im Container also immer, auch mit `-p 127.0.0.1:3001:3001`, denn Mietfuchs sieht nur das Netz des Containers. |
+| `off` | Keine Anmeldung. Nur, wenn außer diesem Gerät niemand an den Port kommt (`-p 127.0.0.1:3001:3001`) oder ein Proxy davor selbst nach einem Passwort fragt ([Ein Passwort davor](#ein-passwort-davor)). |
+| `on` | Anmeldung auch dann, wenn Mietfuchs nur auf `127.0.0.1` lauscht, etwa hinter einem Proxy, der keine Proxy-Kopfzeilen setzt. |
+
+In der Compose-Datei unter dem Dienst `mietfuchs`:
+
+```yaml
+    environment:
+      NKA_AUTH: "off"
+```
+
+Ein anderer Wert verhindert den Start, damit ein Tippfehler die Anmeldung nicht still abschaltet.
+Mit `NKA_AUTH=on` oder `off` zeigt die Karte in den Einstellungen nur noch an, was gilt.
+
+### Container von vor Version 0.17
+
+Ein Volume, das schon Daten hatte, bleibt nach dem Update **offen wie bisher**: Unten in der
+Seitenleiste steht „Ohne Passwort im Netz“, und das Protokoll nennt einen Einrichtungscode. Mit
+ihm legst du unter *Einstellungen → Anmeldung* ein Passwort fest, ab dann gilt es. **Ab Version
+1.0 verlangt Mietfuchs hier ein Passwort.** Für die Daten selbst ist nichts zu tun.
 
 ## Welche Datei nehme ich?
 
 | Datei | Wann nehme ich das? |
 | --- | --- |
 | [`deploy/compose.yml`](../deploy/compose.yml) | Mietfuchs auf einem NAS oder Heimserver, aufgerufen im Browser unter `http://<gerät>:3001`. Der einfachste Weg. |
-| [`deploy/compose.caddy.yml`](../deploy/compose.caddy.yml) mit [`deploy/Caddyfile`](../deploy/Caddyfile) | Du willst HTTPS im Heimnetz, etwa um Mietfuchs auf einem Android-Handy als App zu installieren, oder ein Passwort davor. |
+| [`deploy/compose.caddy.yml`](../deploy/compose.caddy.yml) mit [`deploy/Caddyfile`](../deploy/Caddyfile) | Du willst HTTPS im Heimnetz, etwa um Mietfuchs auf einem Android-Handy als App zu installieren, oder die Anmeldung im Proxy statt in Mietfuchs. |
 | [`deploy/compose.ollama.yml`](../deploy/compose.ollama.yml) | Du willst die [KI-Belegauswertung](ki-belegauswertung.md) mit Ollama als eigenem Container, ohne Ollama auf dem Gerät zu installieren. |
 
 ## Nur Mietfuchs (`compose.yml`)
@@ -123,7 +185,10 @@ docker compose -f compose.caddy.yml pull && docker compose -f compose.caddy.yml 
 
 ### Ein Passwort davor
 
-Im Caddyfile steht auskommentiert ein `basic_auth`-Block. Den Hash des Passworts erzeugt
+Mietfuchs fragt selbst nach einem Passwort (siehe [Zuerst: Sicherheit](#zuerst-sicherheit)), hinter
+Caddy genauso wie ohne. Willst du die Anmeldung lieber im Proxy haben, etwa weil dort schon andere
+Dienste mit demselben Passwort hängen, steht im Caddyfile auskommentiert ein `basic_auth`-Block. Den
+Hash des Passworts erzeugt
 
 ```bash
 docker compose -f compose.caddy.yml exec caddy caddy hash-password
@@ -131,8 +196,16 @@ docker compose -f compose.caddy.yml exec caddy caddy hash-password
 
 Dann die Zeilen einkommentieren, Benutzernamen und Hash eintragen und Caddy neu starten:
 `docker compose -f compose.caddy.yml restart caddy`. Der Browser fragt danach nach Name und
-Passwort. Das schützt im Heimnetz vor Mitbewohnern und Gästen, ist aber kein Grund, Mietfuchs ins
+Passwort. Damit nicht beide fragen, schaltest du die Anmeldung von Mietfuchs ab: `NKA_AUTH: "off"`
+unter `environment` des Dienstes `mietfuchs` in compose.caddy.yml (der Kommentar dort zeigt die
+Stelle), dann `docker compose -f compose.caddy.yml up -d`. Das gilt nur, solange Mietfuchs keinen
+eigenen Port veröffentlicht, sonst ginge es am Proxy vorbei. Auch so ist es kein Grund, Mietfuchs ins
 Internet zu stellen.
+
+Schreibt ein anderer Proxy den Namen der Anfrage um und gibt den ursprünglichen nicht als
+`X-Forwarded-Host` weiter, lehnt Mietfuchs Änderungen aus älteren Browsern ab („Änderungen nimmt Mietfuchs nur von seiner eigenen Seite
+an.“). Dann den Namen in `NKA_ALLOWED_HOSTS` eintragen, siehe
+[Installation](installation.md#linux-installationspaket-mit-startmenü-eintrag).
 
 ### Eigene Domain mit gültigem Zertifikat
 
@@ -193,7 +266,7 @@ auf. Bei selbst betriebenen Netzen schau in deren Dokumentation, ob und wie sie 
 vergeben. Gute Praxis:
 
 - **Nur `tailscale serve`, nie `tailscale funnel`.** Funnel stellt Mietfuchs ins offene Internet,
-  und Mietfuchs hat kein Login.
+  und das Passwort von Mietfuchs ist für das Heimnetz gedacht, nicht dafür.
 - **Zugriffsregeln (ACL)** im Tailnet so setzen, dass nur deine eigenen Geräte das Gerät mit
   Mietfuchs erreichen; sie gelten auch für `serve`.
 

@@ -9,9 +9,10 @@ localhost {
 	tls internal
 	reverse_proxy mietfuchs:3001
 
-	# Optional ein Passwort vor Mietfuchs. Den Hash erzeugt
+	# Mietfuchs fragt selbst nach einem Passwort. Optional fragt stattdessen Caddy. Den Hash erzeugt
 	#   docker compose -f compose.caddy.yml exec caddy caddy hash-password
-	# dann die Zeilen unten einkommentieren, Namen und Hash eintragen und Caddy neu starten.
+	# dann die Zeilen unten einkommentieren, Namen und Hash eintragen und Caddy neu starten. In
+	# compose.caddy.yml dazu NKA_AUTH: "off" beim Dienst mietfuchs einkommentieren, sonst fragen beide.
 	# basic_auth {
 	# 	vermieter <hier der Hash>
 	# }

@@ -1,6 +1,6 @@
 # Datenschutzerklärung für Mietfuchs
 
-Stand: 2. November 2026
+Stand: 7. November 2026
 
 Mietfuchs ist ein Programm für die Nebenkostenabrechnung, das vollständig auf Ihrem eigenen Rechner
 läuft. Diese Erklärung gilt für alle Fassungen: das Programm für Windows und macOS (aus dem Microsoft
@@ -9,8 +9,9 @@ und das Docker-Image.
 
 ## Was der Herausgeber erhält
 
-Nichts. Mietfuchs hat kein Konto, keine Anmeldung, keine Werbung, keine Nutzungsstatistik und keine
-Fehlerberichte an den Herausgeber. Ihre Abrechnungsdaten, Belege und Einstellungen liegen nur in
+Nichts. Mietfuchs hat kein Konto beim Herausgeber, keine Werbung, keine Nutzungsstatistik und keine
+Fehlerberichte an den Herausgeber. Das Passwort, mit dem Sie Mietfuchs im Heimnetz schützen, prüft
+nur Mietfuchs auf Ihrem Rechner. Ihre Abrechnungsdaten, Belege und Einstellungen liegen nur in
 einem Ordner auf Ihrem Rechner:
 
 - Programm für Windows (Microsoft Store oder Installer): `%USERPROFILE%\Mietfuchs`
@@ -49,16 +50,29 @@ wenn Sie die Daten nicht mehr brauchen.
 
 Das Programm für Windows und macOS ist zunächst nur auf Ihrem eigenen Rechner erreichbar. Erlauben Sie
 in den Einstellungen den „Zugriff aus dem Heimnetz“, lässt sich Mietfuchs auch von einem Handy oder
-einem anderen Rechner im selben Netz öffnen. Mietfuchs hat kein Passwort: Solange der Zugriff erlaubt
-ist, kann jeder in diesem Netz Ihre Daten ansehen und ändern. Erlauben Sie ihn deshalb nur in einem
-Netz, dem Sie vertrauen, und lassen Sie unter Windows nur „Private Netzwerke“ zu. Eine Verbindung ins
+einem anderen Rechner im selben Netz öffnen. Beim Einschalten legen Sie ein Passwort fest, mit dem
+sich andere Geräte anmelden; das Programmfenster selbst braucht keines. Verzichten Sie darauf, kann
+jeder in diesem Netz Ihre Daten ansehen und ändern. Auch mit Passwort läuft die Verbindung im
+Heimnetz über `http://`, also unverschlüsselt: Wer den Verkehr in Ihrem Netz mitschneidet, kann
+Daten und Passwort mitlesen. Erlauben Sie den Zugriff deshalb nur in einem Netz, dem Sie vertrauen,
+und lassen Sie unter Windows nur „Private Netzwerke“ zu. Eine Verbindung ins
 Internet entsteht dadurch nicht. Beenden, die Schlüssel für KI-Dienste, die Bestätigung eines
 KI-Dienstes im Internet und die Update-Prüfung lassen sich nur am Rechner selbst ändern.
 
-Die Programmdatei und die Linux-Pakete sind dagegen von Anfang an auch aus dem Heimnetz erreichbar,
-ebenfalls ohne Passwort. Mit der Umgebungsvariablen `NKA_HOST=127.0.0.1` sind sie nur noch auf Ihrem
-eigenen Rechner erreichbar. Beim Docker-Image entscheidet das die Freigabe des Ports, etwa
+Die Programmdatei, die Linux-Pakete und das Docker-Image sind dagegen von Anfang an auch aus dem
+Heimnetz erreichbar und fragen deshalb beim ersten Start nach einem Passwort; den Einrichtungscode
+dafür nennen Konsolenfenster bzw. Protokoll. Ein Bestand von vor Version 0.17 bleibt bis Version 1.0
+ohne Passwort erreichbar, mit einem Hinweis in der Oberfläche. Mit der Umgebungsvariablen
+`NKA_HOST=127.0.0.1` sind Programmdatei und Pakete nur noch auf Ihrem eigenen Rechner erreichbar,
+dann ohne Anmeldung. Beim Docker-Image entscheidet das die Freigabe des Ports, etwa
 `-p 127.0.0.1:3001:3001` für nur diesen Rechner.
+
+Für die Anmeldung legt Mietfuchs im Datenordner die Datei `zugang.json` an (der Passwort-Hash nach
+scrypt, nie das Passwort selbst) und, solange kein Passwort festgelegt ist, `einrichtungscode.txt`.
+Beide gehen nicht in Backups, Vorversionen und den Umzug ein. Angemeldete Geräte erkennt Mietfuchs
+an einem Cookie, das nur für die Sitzung gilt; es endet nach 30 Minuten ohne Aktivität, spätestens
+nach 8 Stunden und mit jedem Neustart von Mietfuchs. Fehlgeschlagene Anmeldungen schreibt Mietfuchs
+mit der Adresse des Geräts in sein Protokoll auf Ihrem Rechner.
 
 ## Verbindungen ins Internet
 
