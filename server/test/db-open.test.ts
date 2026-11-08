@@ -187,6 +187,65 @@ test('eine beschädigte Datenbankdatei wird nicht geöffnet und nicht angefasst'
   }
 })
 
+// #603: Ein zweites Mietfuchs auf demselben Ordner hält die Datei gesperrt (etwa mitten in einer Migration). Das ist
+// keine beschädigte Datei, und der Rat „Backup an ihre Stelle kopieren“ überschriebe den aktuellen Stand.
+test('eine gesperrte Datenbankdatei wird als gesperrt erklärt, nicht als beschädigt', async () => {
+  const dataDir = tempDir()
+  try {
+    const opened = await openDatabase({ dataDir })
+    opened.close()
+    const file = databaseFile(dataDir)
+    const andere = await connect(file)
+    andere.exec('BEGIN EXCLUSIVE')
+    try {
+      const vorher = fs.readFileSync(file)
+      await assert.rejects(
+        () => openDatabase({ dataDir }),
+        (err: unknown) => {
+          const text = String(err)
+          assert.match(text, /gesperrt/, 'die Meldung sagt, was los ist')
+          assert.match(text, /zweites Mietfuchs/, 'die Meldung nennt die wahrscheinliche Ursache')
+          assert.doesNotMatch(text, /ist beschädigt/, 'eine gesperrte Datei gilt nicht als beschädigt')
+          assert.doesNotMatch(text, /Backup/, 'kein Rat, die Datei zu ersetzen')
+          assert.match(text, /Technischer Befund: .*locked/, 'die Meldung von SQLite steht eingeordnet dabei')
+          return true
+        },
+      )
+      assert.deepEqual(fs.readFileSync(file), vorher, 'die Datei ist unverändert geblieben')
+    } finally {
+      andere.exec('ROLLBACK')
+      andere.close()
+    }
+    // Ist das andere beendet, öffnet sie wie immer
+    const danach = await openDatabase({ dataDir })
+    danach.close()
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+// #603, Durchsicht S1: Hält das andere Mietfuchs nur die Schreibsperre (es schreibt gerade), geht das Öffnen durch:
+// Ohne ausstehenden Schritt schreibt es nichts. Eine Sperre zwischen Prüfung und Journal fängt der äußere catch ab.
+test('eine Schreibsperre eines anderen verhindert das Öffnen nicht', async () => {
+  const dataDir = tempDir()
+  try {
+    const opened = await openDatabase({ dataDir })
+    opened.close()
+    const andere = await connect(databaseFile(dataDir))
+    andere.exec('BEGIN IMMEDIATE')
+    try {
+      const wieder = await openDatabase({ dataDir })
+      assert.equal(wieder.migrations, 0)
+      wieder.close()
+    } finally {
+      andere.exec('ROLLBACK')
+      andere.close()
+    }
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('der Befund der Unversehrtheitsprüfung wird gelesen, nicht nur ihr Gelingen', () => {
   // SQLite antwortet mit genau einer Zeile „ok“ oder mit einer Zeile je Befund. Eine
   // beschädigte Datei kann beides: werfen (siehe oben) oder Befunde aufzählen.
