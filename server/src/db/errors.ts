@@ -124,7 +124,7 @@ function uniqueMessage(details: string): string {
 
 // Fälligkeit der Miete am Mietverhältnis (#334): dieselben Sätze im Repository und an den Bedingungen.
 export const RENT_DUE_TEXTS = {
-  rule: 'Die Fälligkeit der Miete ist „Wie im Gesetz“, „Zu Beginn des Monats“, „An einem festen Tag des Monats“ oder „Nach Ablauf des Monats“. Bitte wählen Sie eine davon.',
+  rule: 'Die Fälligkeit der Miete ist „Wie im Gesetz“, „Zu Beginn, spätestens am 3. Werktag“, „An einem festen Tag des Monats“ oder „Nach Ablauf des Monats“. Bitte wählen Sie eine davon.',
   dayWithoutRule: 'Einen Tag des Monats gibt es nur bei einem festen Tag. Bitte wählen Sie bei der Fälligkeit der Miete „An einem festen Tag des Monats“ oder lassen Sie den Tag leer.',
   dayMissing: 'Bei einem festen Tag fehlt der Tag des Monats. Bitte tragen Sie ihn ein (1 bis 31).',
   dayRange: 'Der Tag des Monats liegt zwischen 1 und 31. Bitte tragen Sie eine ganze Zahl ein; in kürzeren Monaten gilt der letzte Tag.',

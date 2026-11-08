@@ -102,7 +102,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameMeterRest, sameUn
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, leavesRentalWithin, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
-import type { FederalState, MeterRest, MeterRestKey, MeterRestTarget, RentDueRule, TaxSpread, UnitUsage } from '../../shared/types.ts'
+import type { FederalState, MeterRest, MeterRestKey, MeterRestTarget, RentDueInfo, RentDueRule, TaxSpread, UnitUsage } from '../../shared/types.ts'
 import { effectiveRentDue, FIRST_YEAR, holidaysCheckedOn, monthDue, rentDueOn, type MonthDue } from '../../shared/rentDue.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
@@ -1321,7 +1321,15 @@ export function ledgerRows(
       const designatedOutside = inSpan
         .filter((p) => isRentPayment(p) && typeof p.designatedMonth === 'string' && LEDGER_MONTH.test(p.designatedMonth) && monthShare(tracked, p.designatedMonth).days === 0)
         .map((p) => p.id)
+      // Die Regel für die Auskunft im Mietkonto (#334), nur mit Stichtag.
+      const rule = effectiveRentDue(t)
+      const dueRule: RentDueInfo | undefined = options.asOf === undefined ? undefined : {
+        rule, agreed: t.rentDue != null,
+        ...(rule === 'dayOfMonth' && typeof t.rentDueDay === 'number' ? { day: t.rentDueDay } : {}),
+        ...(t.firstRentAtStart === true ? { firstRentAtStart: true } : {}),
+      }
       return {
+        ...(dueRule ? { dueRule } : {}),
         tenancyId: t.id,
         tenantName: t.tenantName,
         unitName: unitById.get(t.unitId)?.name ?? '-',

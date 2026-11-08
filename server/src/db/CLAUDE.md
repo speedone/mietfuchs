@@ -115,6 +115,11 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
 - **Geschätzte Ablesung** (#98): `readings.estimated` (nur `1` oder `NULL`) und `estimate_reason` in Schritt 0090, die
   Bedingungen (mit `IS`, weil beide Spalten `NULL` sein dürfen) in 0091, getrennt wie 0085/0086. Beschreibung in
   [../CLAUDE.md](../CLAUDE.md) unter „Zähler“.
+- **Fälligkeit der Miete** (#334): `tenancies.rent_due` (`startWorkday`, `dayOfMonth`, `inArrears`, `NULL` heißt
+  gesetzlich), `rent_due_day` (ganzzahlig 1 bis 31, genau beim festen Tag) und `first_rent_at_start` (nur `1` oder `NULL`)
+  in Schritt 0092, die Bedingungen mit `IS` und `typeof` in 0093 (Neubau von `tenancies`, getrennt wie 0085/0086). Keine
+  Datenanweisung; Backups und db.json kommen gesetzlich an. Das Repository (`mergedRentDue`) nimmt bei einem Wechsel der
+  Regel den Tag mit und lehnt Widersprüche mit einem Satz ab (`RENT_DUE_TEXTS` in errors.ts, dieselben an den Bedingungen).
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn

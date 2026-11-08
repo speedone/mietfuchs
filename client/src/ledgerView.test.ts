@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, carriedText, ledgerStartText, carryText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from './ledgerView'
+import { bookingDate, carriedText, ledgerStartText, carryText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, dueDetails, dueLine, monthDueText, rowStanding, shareText } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -144,78 +144,109 @@ describe('Mietkonto: der angebrochene Monat (#311)', () => {
   })
 })
 
-describe('Fälligkeit des laufenden Monats als Auskunft', () => {
-  it('nennt kurz den dritten Werktag nach den Feiertagen am Ort, die Einzelheiten aufklappbar', () => {
-    expect(rentDueNote(2027, new Date(2027, 0, 2), 'BW')).toEqual({
-      text: 'Miete Januar fällig am Do., 07.01.2027',
-      details: '3. Werktag, Samstag nicht mitgezählt; nach den Feiertagen in Baden-Württemberg. Das gilt, wenn der Mietvertrag nichts anderes bestimmt; bei einem sehr alten Mietverhältnis ohne vereinbarte Vorauszahlung kann die Miete erst nach Ablauf des Monats fällig sein (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). ' +
-        'Rechtzeitig ist eine Überweisung, die bis zu diesem Tag in Auftrag gegeben ist; die Gutschrift kann später kommen.',
-    })
-    expect(rentDueNote(2026, new Date(2026, 7, 1), 'BE')?.text).toBe('Miete August fällig am Mi., 05.08.2026')
-  })
+// #334: Fälligkeit je Karte aus den Daten des Servers; die Plaketten sagen nie „bisher bezahlt“, wenn nichts fällig war.
+const due = (m: number, status: RentMonthStatus, dueOn: string, creditExpectedBy: string, arrearsFrom: string, extra: Partial<RentMonth> = {}): RentMonth => ({ ...month(m, 80000, status), dueOn, creditExpectedBy, arrearsFrom, ...extra })
+const card = (months: RentMonth[], over: Partial<RentLedgerRow> = {}): RentLedgerRow => ({ ...row(month(12, 80000, 'notDue')), months, arrearsCents: 0, closingBalanceCents: -months.reduce((a, m) => a + m.sollCents - m.paidCents, 0), openingBalanceCents: 0, ...over })
+// Einzug Fr 09.10.2026: Oktober fällig 13.10., erwartet bis 19.10.; November fällig 04.11., erwartet bis 10.11.
+const october = (status: RentMonthStatus) => due(10, status, '2026-10-13', '2026-10-19', '2026-10-20')
+const november = due(11, 'notDue', '2026-11-04', '2026-11-10', '2026-11-11')
+const moveIn = (status: RentMonthStatus): RentMonth[] => [...Array.from({ length: 9 }, (_, i) => month(i + 1, 0, 'paid')), october(status), november, month(12, 80000, 'notDue')]
 
-  it('sagt nichts über den Rückstand (das Mietkonto zählt ihn noch nach #133)', () => {
-    const note = rentDueNote(2026, new Date(2026, 9, 6), 'BW')
-    expect(`${note?.text} ${note?.details}`).not.toMatch(/Rückstand/)
+describe('Mietkonto: Fälligkeit je Karte (#334)', () => {
+  it('vor dem Fälligkeitstag: „fällig am“, die Plakette „noch nichts fällig“, nicht „bisher bezahlt“', () => {
+    const r = card(moveIn('notDue'))
+    expect(dueLine(r, '2026-10-12')).toEqual({ text: 'Miete Oktober fällig am Di., 13.10.2026', tone: 'muted' })
+    expect(rowStanding(r, '2026-10-12')).toEqual({ kind: 'nothingDue', cents: 0 })
   })
-
-  it('ohne Bundesland zählen nur die bundesweiten Feiertage, und das steht dabei', () => {
-    const note = rentDueNote(2027, new Date(2027, 0, 2), null)
-    expect(note?.text).toBe('Miete Januar fällig am Mi., 06.01.2027 (ohne Bundesland: nur bundesweite Feiertage)')
-    expect(note?.details).toMatch(/nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist/)
-    expect(rentDueNote(2027, new Date(2027, 0, 2), undefined)).toEqual(note)
+  it('ab dem Fälligkeitstag bis zum erwarteten Eingang: „fällig seit …, Eingang erwartet bis …“, neutral', () => {
+    const r = card(moveIn('notDue'))
+    for (const asOf of ['2026-10-13', '2026-10-19']) {
+      expect(dueLine(r, asOf)).toEqual({ text: 'Miete Oktober fällig seit 13.10., Eingang erwartet bis 19.10.', tone: 'muted' })
+      expect(rowStanding(r, asOf)).toEqual({ kind: 'dueAwaiting', cents: 80000, since: '2026-10-13' })
+    }
   })
-
-  it('vor und nach dem Tag dieselbe Zeile', () => {
-    expect(rentDueNote(2026, new Date(2026, 9, 5), 'BY')?.text).toBe('Miete Oktober fällig am Mo., 05.10.2026')
-    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')?.text).toBe('Miete Oktober fällig am Mo., 05.10.2026')
+  it('danach Rückstand: rot „offen seit“', () => {
+    const r = card(moveIn('open'), { arrearsCents: 80000 })
+    expect(dueLine(r, '2026-10-20')).toEqual({ text: 'Miete Oktober offen seit 13.10.2026', tone: 'red' })
+    expect(rowStanding(r, '2026-10-20')).toEqual({ kind: 'arrears', cents: 80000 })
   })
-
-  it('nur im laufenden Jahr', () => {
-    expect(rentDueNote(2025, new Date(2026, 9, 6), 'BY')).toBeNull()
-    expect(rentDueNote(2027, new Date(2026, 9, 6), 'BY')).toBeNull()
+  it('ohne geprüfte Feiertage zählt der Rückstand ab der sicheren Grenze, und die Zeile nennt diesen Tag', () => {
+    const safe = [...Array.from({ length: 9 }, (_, i) => month(i + 1, 0, 'paid')), due(10, 'notDue', '2026-10-13', '2026-10-19', '2026-12-01'), month(11, 80000, 'notDue'), month(12, 80000, 'notDue')]
+    expect(dueLine(card(safe), '2026-10-25')).toEqual({ text: 'Miete Oktober fällig seit 13.10., zählt als Rückstand ab 01.12.2026', tone: 'muted' })
+  })
+  it('bezahlt: der nächste Monat; „bisher bezahlt“ erst, wenn ein fälliger Monat gedeckt ist', () => {
+    const paidOct = [...Array.from({ length: 9 }, (_, i) => month(i + 1, 0, 'paid')), october('paid'), november, month(12, 80000, 'notDue')]
+    const r = card(paidOct)
+    expect(dueLine(r, '2026-10-25')).toEqual({ text: 'Miete November fällig am Mi., 04.11.2026', tone: 'muted' })
+    expect(rowStanding(r, '2026-10-25')).toEqual({ kind: 'paidSoFar', cents: 160000 })
+    // Im Voraus bezahlt, aber noch nichts fällig: kein „bisher bezahlt“.
+    expect(rowStanding(r, '2026-10-12')).toEqual({ kind: 'nothingDue', cents: 0 })
+    // Ein Übertrag aus dem Vorjahr ist schon Geschichte: kein „noch nichts fällig“ bei einem Rückstand davor.
+    expect(rowStanding(card(moveIn('notDue'), { openingBalanceCents: -1 }), '2026-10-12').kind).toBe('paidSoFar')
+  })
+  it('ohne Stichtag (älterer Server) keine Zeile und die bisherigen Plaketten', () => {
+    expect(dueLine(card(moveIn('notDue')), undefined)).toBeNull()
+    expect(rowStanding({ ...row(month(12, 100000, 'notDue')), closingBalanceCents: -300000, arrearsCents: 0 })).toEqual({ kind: 'paidSoFar', cents: 300000 })
+  })
+  it('das Monatskästchen nennt den Fälligkeitstag und einen späten Eingang nur zur Prüfung', () => {
+    expect(monthDueText(october('notDue'))).toBe('fällig am 13.10.2026')
+    expect(monthDueText({ ...due(11, 'paid', '2026-11-04', '2026-11-10', '2026-11-11'), paidAfterExpected: '2026-11-20' }))
+      .toBe('eingegangen am 20.11.2026, nach dem erwarteten Eingang; ob rechtzeitig überwiesen wurde, zeigt nur der Auftrag des Mieters')
+    expect(monthDueText(month(3, 80000, 'paid'))).toBeNull()
+  })
+  it('die Einzelheiten nennen Land, Vertrag, Überweisungsauftrag und vier Bankgeschäftstage; die sichere Grenze nur ohne geprüfte Feiertage', () => {
+    const nw = dueDetails('NW', false, { rule: 'startWorkday', agreed: false })
+    expect(nw).toMatch(/Feiertage zählen nach Nordrhein-Westfalen, auch die einzelner Gemeinden/)
+    expect(nw).toMatch(/ohne andere Vereinbarung/)
+    expect(nw).toMatch(/in Auftrag gegeben/)
+    expect(nw).toMatch(/vier Bankgeschäftstage/)
+    expect(nw).toMatch(/Für den Rückstand zählen Feiertage erst/)
+    expect(dueDetails('NW', true, { rule: 'startWorkday', agreed: false })).not.toMatch(/Für den Rückstand zählen Feiertage erst/)
+    expect(dueDetails(null, false, { rule: 'startWorkday', agreed: false })).toMatch(/spätesten Tag aller Länder; am Ort kann die Miete früher fällig sein/)
   })
 })
 
-describe('Fälligkeit: Feiertage einzelner Gemeinden', () => {
-  // Fronleichnam am 03.06.2021 gilt in Sachsen nur in einzelnen Gemeinden. Landesweit ist der dritte
-  // Werktag der 03.06., dort aber der 04.06.; ohne Hinweis nennte die Auskunft für diese Gemeinden einen Tag
-  // zu früh, und ein Vermieter hielte eine pünktliche Zahlung für verspätet.
-  it('nennt einen gemeindeweisen Feiertag, der die Frist dort verschiebt', () => {
-    const note = rentDueNote(2021, new Date(2021, 5, 1), 'SN')
-    expect(note?.text).toBe('Miete Juni fällig am Do., 03.06.2021')
-    expect(note?.details).toMatch(/In Gemeinden, in denen am 03\.06\. Fronleichnam gilt, ist es ein Werktag später\./)
+// Durchsicht der Oberfläche (#334): M1 Einzelheiten nach der Regel des Mietverhältnisses, S2/S3/S9 Randfälle der Zeile.
+describe('Mietkonto: Fälligkeit, Durchsicht', () => {
+  it('M1: die Einzelheiten nennen die Regel des Mietverhältnisses, beim Altvertrag „nach Ablauf“', () => {
+    const old = dueDetails('NW', false, { rule: 'inArrears', agreed: false })
+    expect(old).toMatch(/nach Ablauf des Monats fällig, weil das Mietverhältnis schon am 01\.09\.2001 bestand \(Art\. 229 § 3 Abs\. 1 Nr\. 7 EGBGB\)/)
+    expect(old).not.toMatch(/spätestens am dritten Werktag/)
+    expect(dueDetails('NW', false, { rule: 'inArrears', agreed: true })).toMatch(/laut Mietvertrag nach Ablauf des Monats/)
+    expect(dueDetails('NW', false, { rule: 'dayOfMonth', agreed: true, day: 15 })).toMatch(/laut Mietvertrag am 15\. des Monats/)
+    expect(dueDetails('NW', false, { rule: 'startWorkday', agreed: false })).toMatch(/zu Beginn des Monats, spätestens am dritten Werktag/)
+    expect(dueDetails('NW', false, { rule: 'startWorkday', agreed: false, firstRentAtStart: true })).toMatch(/erste Miete ist laut Mietvertrag schon bei Mietbeginn fällig; ob diese Klausel wirksam ist, ist nicht höchstrichterlich geklärt/)
+    // S4: Feiertage einzelner Gemeinden zählen mit, am Ort kann es früher sein.
+    expect(dueDetails('SN', false, { rule: 'startWorkday', agreed: false })).toMatch(/wo sie nicht gelten, kann die Miete einen Werktag früher fällig sein/)
+    // S6: die Lastschrift mit Vorbehalt.
+    expect(old).toMatch(/zur Miete nicht eigens entschieden/)
   })
-
-  it('schweigt, wenn kein gemeindeweiser Feiertag in die Frist fällt', () => {
-    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')?.details).not.toMatch(/Gemeinden/)
-    expect(rentDueNote(2021, new Date(2021, 5, 1), 'BE')?.details).not.toMatch(/Gemeinden/)
+  it('S2: ein Monat, der nur noch über die Abrechnung offen ist, ist nicht rot „offen seit“', () => {
+    const via = { ...due(3, 'open', '2025-03-05', '2025-03-11', '2025-03-12'), notDemandableCents: 80000 }
+    const r = card([month(1, 80000, 'paid'), month(2, 80000, 'paid'), via, ...Array.from({ length: 9 }, (_, i) => month(i + 4, 80000, 'paid'))])
+    expect(dueLine(r, '2026-11-07')).toBeNull()
   })
-})
-
-// Durchsicht: Die Auskunft galt für das ganze Objekt, sobald irgendeine Zeile im Jahr Soll hatte. Beginnt das
-// Mietverhältnis erst im laufenden Monat (anteilig, #311) oder endete das letzte im Vormonat, nannte sie
-// einen Fälligkeitstag für eine Miete, die es so nicht gibt.
-describe('Fälligkeit: nur wenn im laufenden Monat eine volle Monatsmiete geschuldet ist', () => {
-  const zeile = (oktober: RentMonth): RentLedgerRow => ({ ...row(month(12, 100000, 'notDue')), months: Array.from({ length: 12 }, (_, i) => (i === 9 ? oktober : month(i + 1, 100000, 'notDue'))) })
-  const okt = new Date(2026, 9, 6)
-
-  it('ein voller Monat mit Soll: ja', () => {
-    expect(rentDueApplies([zeile(month(10, 100000, 'notDue'))], 2026, okt)).toBe(true)
+  it('S3: ein später bezahlter Monat ist nicht „offen seit“', () => {
+    const later = { ...due(12, 'open', '2025-12-03', '2025-12-09', '2025-12-10'), paidLaterOn: '2026-01-15' }
+    const r = card([...Array.from({ length: 11 }, (_, i) => month(i + 1, 80000, 'paid')), later])
+    expect(dueLine(r, '2026-11-07')).toBeNull()
   })
-
-  it('nur ein angebrochener Monat oder gar kein Soll im Monat: nein', () => {
-    expect(rentDueApplies([zeile({ ...month(10, 54839, 'notDue'), share: { days: 17, of: 31 } })], 2026, okt)).toBe(false)
-    expect(rentDueApplies([zeile(month(10, 0, 'notDue'))], 2026, okt)).toBe(false)
-    expect(rentDueApplies([], 2026, okt)).toBe(false)
+  it('S9: kommendes Jahr, ausgezogen, Rückstand nur aus dem Vorjahr', () => {
+    // Kommendes Jahr: nichts fällig, die Zeile nennt den Januar.
+    const next = card(Array.from({ length: 12 }, (_, i) => due(i + 1, 'notDue', `2027-${String(i + 1).padStart(2, '0')}-05`, `2027-${String(i + 1).padStart(2, '0')}-11`, `2027-${String(i + 1).padStart(2, '0')}-12`)))
+    expect(rowStanding(next, '2026-11-07')).toEqual({ kind: 'nothingDue', cents: 0 })
+    expect(dueLine(next, '2026-11-07')?.text).toBe('Miete Januar fällig am Di., 05.01.2027')
+    // Ausgezogen im Juni, alles bezahlt: keine Zeile.
+    const gone = card([...Array.from({ length: 6 }, (_, i) => month(i + 1, 80000, 'paid')), ...Array.from({ length: 6 }, (_, i) => month(i + 7, 0, 'paid'))])
+    expect(dueLine(gone, '2026-11-07')).toBeNull()
+    // Rückstand nur aus dem Vorjahr: rote Plakette, die Zeile nennt neutral den nächsten Monat.
+    const carried = card(moveIn('notDue'), { arrearsCents: 50000, openingBalanceCents: -50000 })
+    expect(rowStanding(carried, '2026-10-12').kind).toBe('arrears')
+    expect(dueLine(carried, '2026-10-12')).toEqual({ text: 'Miete Oktober fällig am Di., 13.10.2026', tone: 'muted' })
   })
-
-  it('reicht eine Zeile mit vollem Monat neben einer anteiligen', () => {
-    expect(rentDueApplies([zeile({ ...month(10, 54839, 'notDue'), share: { days: 17, of: 31 } }), zeile(month(10, 100000, 'notDue'))], 2026, okt)).toBe(true)
-  })
-
-  it('nur im laufenden Jahr', () => {
-    expect(rentDueApplies([zeile(month(10, 100000, 'paid'))], 2025, okt)).toBe(false)
+  it('das Kästchen nennt „fällig am“ nur, solange der Monat nicht bezahlt ist', () => {
+    expect(monthDueText(due(11, 'paid', '2026-11-04', '2026-11-10', '2026-11-11'))).toBeNull()
+    expect(monthDueText(due(11, 'open', '2026-11-04', '2026-11-10', '2026-11-11'))).toBe('fällig am 04.11.2026')
   })
 })
 

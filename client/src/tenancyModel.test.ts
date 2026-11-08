@@ -1,7 +1,7 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
 import { parseMonthText } from './monthText'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, partialMonthNote, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, partialMonthNote, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule, EMPTY_RENT_DUE, legalRentDue, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -302,4 +302,37 @@ test('Anteil im angebrochenen Monat: eine Stufe ab dem Auszugsmonat gilt im Ausz
   const rows = [{ from: '', amount: '150,00' }, { from: '03.2027', amount: '180,00' }]
   expect(partialMonthNote(rows, '2026-10-01', '2027-03-10', 'prepayment')?.replace(/\s/g, ' '))
     .toBe('Auszug am 10.03.2027: Im März 2027 zählen 10 von 31 Tagen, also 58,06 € statt 180,00 €.')
+})
+
+// #334: Fälligkeit der Miete am Mietverhältnis.
+test('Fälligkeit: „Wie im Gesetz“ nennt die Regel des Mietverhältnisses, Grenzfall 01.09.2001', () => {
+  expect(legalRentDue({ start: '2001-09-02', contractDate: '' })).toBe('startWorkday')
+  expect(legalRentDue({ start: '2001-09-02', contractDate: '2001-09-01' })).toBe('inArrears')
+  expect(legalRentDue({ start: '', contractDate: '' })).toBe('startWorkday')
+  // Kurze Einträge (Browserlauf: am Handy abgeschnitten); was „Wie im Gesetz“ heißt, steht im Hinweis.
+  expect(rentDueOptions().map((o) => o.label)).toEqual(['Wie im Gesetz', 'Zu Beginn, spätestens am 3. Werktag', 'An einem festen Tag des Monats', 'Nach Ablauf des Monats'])
+  expect(Math.max(...rentDueOptions().map((o) => o.label.length))).toBeLessThanOrEqual(36)
+  expect(rentDueHint({ ...EMPTY_RENT_DUE, start: '2020-01-01', contractDate: '' })).toMatch(/^Wie im Gesetz heißt hier: zu Beginn des Monats, spätestens am dritten Werktag/)
+  expect(rentDueHint({ ...EMPTY_RENT_DUE, start: '1990-01-01', contractDate: '' })).toMatch(/Art\. 229 § 3 Abs\. 1 Nr\. 7 EGBGB/)
+  expect(rentDueHint({ ...EMPTY_RENT_DUE, rentDue: 'dayOfMonth', start: '2020-01-01', contractDate: '' })).toMatch(/§ 193 BGB/)
+})
+
+test('Fälligkeit: der Tag ist Pflicht beim festen Tag, ganz von 1 bis 31', () => {
+  expect(rentDueProblems({ rentDue: 'dayOfMonth', rentDueDay: '', firstRentAtStart: false }).map((p) => p.short)).toEqual(['Tag fehlt'])
+  for (const day of ['0', '32', '1,5', 'x']) expect(rentDueProblems({ rentDue: 'dayOfMonth', rentDueDay: day, firstRentAtStart: false }).map((p) => p.field), day).toEqual(['rentDueDay'])
+  expect(rentDueProblems({ rentDue: 'dayOfMonth', rentDueDay: ' 31 ', firstRentAtStart: false })).toEqual([])
+  expect(rentDueProblems({ rentDue: 'startWorkday', rentDueDay: 'egal', firstRentAtStart: false })).toEqual([])
+})
+
+test('Fälligkeit: gesendet wird nur, was sich geändert hat', () => {
+  const stored = { rentDue: 'dayOfMonth' as const, rentDueDay: 15, firstRentAtStart: true }
+  expect(rentDueBody(rentDueFormOf(stored), stored)).toEqual({})
+  expect(rentDueBody({ ...rentDueFormOf(stored), rentDueDay: '20' }, stored)).toEqual({ rentDueDay: 20 })
+  expect(rentDueBody({ ...rentDueFormOf(stored), rentDue: 'inArrears' }, stored)).toEqual({ rentDue: 'inArrears' })
+  expect(rentDueBody({ ...rentDueFormOf(stored), rentDue: '' }, stored)).toEqual({ rentDue: null })
+  expect(rentDueBody({ ...rentDueFormOf(stored), firstRentAtStart: false }, stored)).toEqual({ firstRentAtStart: false })
+  // Neu angelegt: nichts bei „Wie im Gesetz“, sonst Regel und Tag.
+  expect(rentDueBody(EMPTY_RENT_DUE, undefined)).toEqual({})
+  expect(rentDueBody({ rentDue: 'dayOfMonth', rentDueDay: '3', firstRentAtStart: false }, undefined)).toEqual({ rentDue: 'dayOfMonth', rentDueDay: 3 })
+  expect(rentDueFormOf({})).toEqual(EMPTY_RENT_DUE)
 })

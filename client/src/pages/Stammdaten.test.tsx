@@ -810,3 +810,71 @@ test('Mietverhältnisse: wandert die gespeicherte Zeile unter „Frühere“, kl
   await vi.waitFor(() => expect(details?.open).toBe(true))
   await vi.waitFor(() => expect(document.activeElement).toBe(rowOf('Zieht aus').getByRole('button', { name: 'Mietverhältnis bearbeiten' })))
 })
+
+// ---------- Fälligkeit der Miete (#334) ----------
+
+const rentDueSelect = (dialog: HTMLElement): HTMLSelectElement => {
+  const select = within(dialog).getByRole('combobox', { name: /Fälligkeit der Miete/ })
+  if (!(select instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
+  return select
+}
+
+test('Fälligkeit: die Auswahl zeigt den gespeicherten Wert, auch „Wie im Gesetz“ beim Altvertrag mit seiner Regel', async () => {
+  page([
+    tenancy('t1', 'Fest', { rentDue: 'dayOfMonth', rentDueDay: 15, firstRentAtStart: true }),
+    tenancy('t2', 'Alt', { unitId: 'u2', start: '1998-04-01', contractDate: '1998-03-15', personHistory: [{ from: '1998-04-01', persons: 1 }] }),
+  ])
+  await openTenancy('Fest')
+  let dialog = screen.getByRole('dialog')
+  let select = rentDueSelect(dialog)
+  expect(select.value).toBe('dayOfMonth')
+  expect(select.selectedOptions[0]?.textContent).toBe('An einem festen Tag des Monats')
+  expect(within(dialog).getByLabelText<HTMLInputElement>(/Tag des Monats/).value).toBe('15')
+  expect(within(dialog).getByLabelText<HTMLInputElement>('Erste Miete schon bei Mietbeginn fällig').checked).toBe(true)
+  expect(within(dialog).getByText(/nicht höchstrichterlich geklärt/)).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  cleanup()
+
+  page([tenancy('t2', 'Alt', { start: '1998-04-01', contractDate: '1998-03-15', personHistory: [{ from: '1998-04-01', persons: 1 }] })])
+  await openTenancy('Alt')
+  dialog = screen.getByRole('dialog')
+  select = rentDueSelect(dialog)
+  expect(select.value).toBe('')
+  expect(select.selectedOptions[0]?.textContent).toBe('Wie im Gesetz')
+  expect(within(dialog).getByText(/im Voraus zu zahlen ist, wählen Sie „Zu Beginn, spätestens am 3. Werktag“/)).toBeTruthy()
+  expect([...select.options].map((o) => o.value)).toEqual(['', 'startWorkday', 'dayOfMonth', 'inArrears'])
+  // Den Tag gibt es nur beim festen Tag.
+  expect(within(dialog).queryByLabelText(/Tag des Monats/)).toBeNull()
+})
+
+test('Fälligkeit: Speichern schickt nur, was sich geändert hat; ein fester Tag ohne Tag wird am Feld gemeldet', async () => {
+  page([tenancy('t1', 'Becker', { rentDue: 'dayOfMonth', rentDueDay: 15 })])
+  await openTenancy('Becker')
+  let dialog = screen.getByRole('dialog')
+  // Nichts geändert: keine Felder der Fälligkeit im Rumpf.
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(Object.keys(sent[0]?.body ?? {}).filter((k) => k.startsWith('rentDue') || k === 'firstRentAtStart')).toEqual([])
+  sent = []
+  await openTenancy('Becker')
+  dialog = screen.getByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText<HTMLInputElement>(/Tag des Monats/), { target: { value: '' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  expect(await within(dialog).findAllByText(/Geben Sie den Tag des Monats ein/)).not.toHaveLength(0)
+  expect(sent).toHaveLength(0)
+  fireEvent.change(within(dialog).getByLabelText<HTMLInputElement>(/Tag des Monats/), { target: { value: '3' } })
+  fireEvent.click(within(dialog).getByLabelText('Erste Miete schon bei Mietbeginn fällig'))
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ rentDueDay: 3, firstRentAtStart: true })
+  expect('rentDue' in (sent[0]?.body ?? {})).toBe(false)
+  // Zurück auf „Wie im Gesetz“: null.
+  sent = []
+  await openTenancy('Becker')
+  dialog = screen.getByRole('dialog')
+  fireEvent.change(rentDueSelect(dialog), { target: { value: '' } })
+  expect(rentDueSelect(dialog).value).toBe('')
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ rentDue: null })
+})
