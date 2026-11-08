@@ -5,6 +5,7 @@ import {
   heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
+import { appFetch } from '../access'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
 import { useFocusTarget, useRefocus, useSectionJump, type JumpTarget } from '../focus'
@@ -157,7 +158,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     const q = data ? exportQuestion(noticesOf(data), !!data.closed) : null
     if (q && !(await askDespiteErrors(q))) return
     try {
-      const res = await fetch(withProperty(`${paths.load}/export?format=${format}`, propertyId))
+      const res = await appFetch(withProperty(`${paths.load}/export?format=${format}`, propertyId))
       if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `Der Export ist fehlgeschlagen (${res.status}).`)
       const name = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get('content-disposition') ?? '')?.[1]
       const url = URL.createObjectURL(await res.blob())

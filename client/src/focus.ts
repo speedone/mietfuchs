@@ -14,7 +14,7 @@ import type { NoticeSubject } from './types'
 export type NewForm = 'unit' | 'tenancy' | 'costItem'
 // Die Karten, zu denen gesprungen wird, je Seite: Stammdaten (`units`, `tenancies`), Abrechnung (`checks` = „Zu
 // prüfen“, `sentAt` = Kopfzeile mit „Als versendet markieren“ bzw. „versendet am“), Einstellungen (`landlord`, `ai`, `about`).
-export type SectionId = 'units' | 'tenancies' | 'checks' | 'sentAt' | 'landlord' | 'ai' | 'about'
+export type SectionId = 'units' | 'tenancies' | 'checks' | 'sentAt' | 'landlord' | 'ai' | 'about' | 'access'
 export type PropertyPart = 'tax' | 'landlord'
 export type JumpTarget =
   | NoticeSubject

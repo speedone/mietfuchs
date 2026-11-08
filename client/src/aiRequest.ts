@@ -4,6 +4,7 @@
 // minutenlange Auswertung nicht nach fünf Minuten ab, und die Oberfläche kann zeigen, dass das
 // Modell arbeitet. Geprüft in client/src/aiRequest.test.ts.
 import { withFailure } from './aiFailure'
+import { appFetch } from './access'
 
 // 'serviceStatement' und 'fuelInvoice': Messdienstabrechnung und Lieferantenrechnung (Heizung PR 20)
 export type AiStep = 'extraction' | 'classification' | 'docType' | 'meterReading' | 'serviceStatement' | 'fuelInvoice'
@@ -64,7 +65,7 @@ export async function aiRequest<T>(
   const requestId = newRequestId()
   body.set('requestId', requestId)
   return withCancel(requestId, signal, async () =>
-    readAnswer<T>(await fetch(path, { method: 'POST', body, headers: { Accept: NDJSON }, signal }), (p) => onProgress?.(p as AiProgress)))
+    readAnswer<T>(await appFetch(path, { method: 'POST', body, headers: { Accept: NDJSON }, signal }), (p) => onProgress?.(p as AiProgress)))
 }
 
 // Ein Modell über den Server laden (#33). Derselbe Strom wie bei der Auswertung, nur mit
@@ -77,7 +78,7 @@ export async function pullModel(
   const requestId = newRequestId()
   return withCancel(requestId, signal, async () =>
     readAnswer<{ model: string }>(
-      await fetch('/api/ai/pull', {
+      await appFetch('/api/ai/pull', {
         method: 'POST',
         headers: { 'content-type': 'application/json', Accept: NDJSON },
         body: JSON.stringify({ model, slot, requestId }),
@@ -91,7 +92,7 @@ export async function pullModel(
 // per sendBeacon (fetch käme dort zu spät).
 async function withCancel<T>(requestId: string, signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
   const cancelUrl = `/api/ai/cancel/${requestId}`
-  const onAbort = () => { void fetch(cancelUrl, { method: 'POST', keepalive: true }).catch(() => {}) }
+  const onAbort = () => { void appFetch(cancelUrl, { method: 'POST', keepalive: true }).catch(() => {}) }
   const onPageHide = () => { navigator.sendBeacon?.(cancelUrl) }
   signal?.addEventListener('abort', onAbort, { once: true })
   if (typeof window !== 'undefined') window.addEventListener('pagehide', onPageHide)

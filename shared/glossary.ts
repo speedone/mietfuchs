@@ -118,7 +118,8 @@ if (!FIRST || !SECOND || !LAST) throw new Error('Stufentabelle unvollständig')
 
 // Die Themen des Lexikons (Seite „Hilfe & Begriffe“): Jeder Begriff gehört zu genau einem, damit er auf der Startseite
 // der Hilfe unter seinem Thema steht. Die Beschriftungen stehen im Client (client/src/helpView.ts).
-export const TERM_TOPICS = ['costs', 'tenants', 'period', 'meters', 'heating', 'co2', 'condo', 'tax'] as const
+// `operation`: Betrieb, etwa die Anmeldung im Netz (#528)
+export const TERM_TOPICS = ['costs', 'tenants', 'period', 'meters', 'heating', 'co2', 'condo', 'tax', 'operation'] as const
 export type TermTopic = (typeof TERM_TOPICS)[number]
 
 export type Term = {
@@ -1055,6 +1056,21 @@ export const GLOSSARY = {
     short: 'Das Datum, auf dem die Regeln in Mietfuchs stehen, und die Regeln, die im Abrechnungsjahr gelten; beim Abschließen wird er mit der Abrechnung eingefroren.',
     example: 'Eine Abrechnung für 2023 mit Rechtsstand 30.09.2026 nennt die Regel zum Kabelfernsehen, denn 2023 war es bei Anlagen von vor dem 01.12.2021 noch umlagefähig; eine für 2025 nennt sie nicht mehr.',
     needed: 'Sie müssen nichts tun. Er zeigt, nach welchen Regeln eine Abrechnung erstellt wurde. Werte, die eine Behörde erst später veröffentlicht, etwa den CO₂-Preis des neuen Jahres, können Sie in den Einstellungen mit Quelle selbst eintragen; Mietfuchs braucht sie nur für die Prüfung Ihrer Rechnungen. Bringt ein Update den amtlichen Wert, gilt dieser.',
+  },
+  // #528, Schritt 1: Anmeldung, wenn Mietfuchs von anderen Geräten erreichbar ist
+  signIn: {
+    topic: 'operation',
+    title: 'Anmeldung',
+    short: 'Ist Mietfuchs von anderen Geräten im Netz erreichbar, etwa in Docker auf einem NAS oder mit Zugriff aus dem Heimnetz, fragt es nach einem Passwort; nur wer es kennt, sieht und ändert Ihre Daten.',
+    example: 'Ein Passwort braucht mindestens 15 Zeichen, etwa vier Wörter wie tisch-garten-wolke-ofen (23 Zeichen). Eine Anmeldung gilt, bis Sie 30 Minuten nichts tun, und höchstens 8 Stunden; danach fragt Mietfuchs erneut.',
+    needed: 'Nur wenn andere Geräte Mietfuchs erreichen; auf dem eigenen Rechner allein fragt es nicht. Das Passwort legen Sie beim ersten Öffnen mit dem Einrichtungscode fest, ändern lässt es sich in den Einstellungen unter „Anmeldung“. Vergessen? Legen Sie im Datenordner eine leere Datei mit dem Namen passwort-zuruecksetzen an und laden Sie die Seite neu; dann legen Sie mit einem neuen Einrichtungscode ein neues Passwort fest.',
+  },
+  setupCode: {
+    topic: 'operation',
+    title: 'Einrichtungscode',
+    short: 'Ein Code, mit dem Sie das erste Passwort festlegen. Er steht nur auf dem Rechner, auf dem Mietfuchs läuft, damit niemand sonst in Ihrem Netz das Passwort setzt.',
+    example: 'Der Code hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW. Er steht im Konsolenfenster von Mietfuchs, bei Docker in der Ausgabe von docker compose logs mietfuchs, und in der Datei einrichtungscode.txt im Datenordner.',
+    needed: 'Einmal beim Festlegen des Passworts, wieder nach dem Zurücksetzen, und wenn Sie die Anmeldung nach dem Ausschalten wieder einschalten. Danach gilt er nicht mehr.',
   },
 } satisfies Record<string, Term>
 

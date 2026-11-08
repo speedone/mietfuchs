@@ -80,7 +80,7 @@ import { joinQuestions, paidOnYear, splitPaidOnQuestions } from '../../../shared
 import { spreadPartsRefusal } from '../../../shared/spread.ts'
 import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
-import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro, loadErrorText } from '../api'
 import { aiSummary } from '../aiForm'
 import { assessmentOf, belongsTo, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
@@ -330,7 +330,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Ob die Positionen dieses Objekts da sind: Erst dann schlägt das Formular aus dem Beleg den gemerkten Schlüssel vor.
   const [itemsLoaded, setItemsLoaded] = useState(false)
   useEffect(() => {
-    load().then(() => { if (propertyId) setItemsLoaded(true) }).catch(() => { setItemsFailed(true); setError('Server nicht erreichbar - läuft `npm run dev`?') })
+    load().then(() => { if (propertyId) setItemsLoaded(true) }).catch((e: unknown) => { setItemsFailed(true); setError(loadErrorText(e, 'Server nicht erreichbar - läuft `npm run dev`?')) })
     api<Meter[]>(withProperty('/api/meters', propertyId)).then((m) => { setMeters(m); setMeterData('ok') }, () => setMeterData('failed'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])

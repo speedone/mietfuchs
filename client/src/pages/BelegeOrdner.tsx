@@ -6,6 +6,7 @@ import type { BillingPeriod, CostItem, PeriodRules, UploadInfo, Settlement } fro
 import { withProperty, useProperty } from '../property'
 import { usePeriod } from '../period'
 import { api, errorText, fmtEuro } from '../api'
+import { appFetch } from '../access'
 // Der Ordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf
 // 5.2: `uploads.year` bleibt). Die Mappe für Mieter gehört dagegen zu einer Abrechnung, also zu
 // einem Zeitraum des Objekts.
@@ -50,7 +51,7 @@ async function downloadTenantFolder(plan: TenantFolderPlan, meta: FolderMeta): P
     title: meta.title,
     subtitle: meta.subtitle,
     load: async (u) => {
-      const res = await fetch(`/uploads/${encodeURIComponent(u.file)}`)
+      const res = await appFetch(`/uploads/${encodeURIComponent(u.file)}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return new Uint8Array(await res.arrayBuffer())
     },

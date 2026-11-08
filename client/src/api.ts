@@ -1,4 +1,5 @@
 import { parseNumberDe } from './numbers'
+import { appFetch } from './access'
 // Eine Ablehnung des Servers mit Status und Rumpf (#170): Die Buchung braucht bei 409 den Stand
 // oder die neue Vorschau aus der Antwort, nicht nur die Meldung. Für alle anderen Aufrufer bleibt
 // es ein `Error` mit derselben Meldung wie bisher.
@@ -17,7 +18,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     init?.body && !(init.body instanceof FormData)
       ? { 'Content-Type': 'application/json', ...init?.headers }
       : init?.headers
-  const res = await fetch(path, { ...init, headers })
+  // Über appFetch: Verlangt der Server eine Anmeldung, meldet es das Ereignis für den Anmeldedialog (#528)
+  const res = await appFetch(path, { ...init, headers })
   if (!res.ok) {
     const raw: unknown = await res.json().catch(() => ({}))
     const data: Record<string, unknown> = raw !== null && typeof raw === 'object' ? { ...raw } : {}
@@ -30,6 +32,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 // Der Satz zu einem gescheiterten Abruf, für die Oberfläche (#146). api() wirft die Meldung des
 // Servers als Error; alles andere (Netz weg) kommt ebenfalls lesbar heraus.
 export const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+// Der Satz zu einem gescheiterten Laden einer Seite: Verlangt der Server eine Anmeldung (#528), ist der Server erreichbar,
+// und es gilt sein Satz; der Anmeldedialog steht dann schon da, und nach der Anmeldung lädt die Seite neu. Sonst `offline`.
+export const loadErrorText = (e: unknown, offline: string): string =>
+  e instanceof ApiError && e.status === 401 ? e.message : offline
 
 // Seit der Belegbuchung (#170) in shared/costItem.ts, weil der Server denselben Betrag ausschreibt.
 export { euro as fmtEuro } from '../../shared/costItem.ts'

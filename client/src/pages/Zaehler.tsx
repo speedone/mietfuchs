@@ -7,7 +7,7 @@ import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, ESTIMATE_HELP, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
-import { api, errorText, fmtDate } from '../api'
+import { api, errorText, fmtDate, loadErrorText } from '../api'
 import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
@@ -80,7 +80,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   }, [param, propertyId])
 
   useEffect(() => {
-    load().catch(() => setError('Server nicht erreichbar.'))
+    load().catch((e: unknown) => setError(loadErrorText(e, 'Server nicht erreichbar.')))
   }, [load])
 
   async function saveMeter() {

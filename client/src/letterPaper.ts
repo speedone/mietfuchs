@@ -6,6 +6,7 @@ import type { LetterDesignFile } from '../../shared/types.ts'
 import { designFileUrl, type DesignSlot } from '../../shared/letterDesign.ts'
 import { openPdf, renderPage } from './pdf'
 import { svgCanvasSize } from './letterDesignForm'
+import { appFetch } from './access'
 
 const cache = new Map<string, Promise<string>>()
 
@@ -13,7 +14,7 @@ export async function designImage(file: LetterDesignFile): Promise<string> {
   const url = designFileUrl(file.file)
   // Ein Bild wird jedes Mal nachgefragt (nur der Kopf der Antwort): Es kann seither fehlen.
   if (file.type !== 'pdf') {
-    const res = await fetch(url, { method: 'HEAD' })
+    const res = await appFetch(url, { method: 'HEAD' })
     if (!res.ok) throw new Error(`Die Datei fehlt (${res.status}).`)
     return url
   }

@@ -432,7 +432,8 @@ test('dark: gilt nicht im Druck', () => {
 // Popover (`popover`, `showPopover()` …) seit Schritt 5 nur im Baustein popover.tsx (Monatsraster, ab Schritt 6
 // auch die Begriffserklärung) und in den Mitteilungen (feedback.tsx, `popover="manual"`); das Popover ist dort
 // ein nicht modaler Dialog (`role="dialog"`). popover.tsx nehmen nur die Bausteine, die es brauchen.
-const DIALOG_FILES = new Set(['./components/MobileNav.tsx', './components/Drawer.tsx', './components/feedback.tsx'])
+// Seit #528 auch der Anmeldedialog (LoginDialog.tsx): ein Formular über der Seite, wenn die Sitzung abgelaufen ist.
+const DIALOG_FILES = new Set(['./components/MobileNav.tsx', './components/Drawer.tsx', './components/feedback.tsx', './components/LoginDialog.tsx'])
 const POPOVER_FILES = new Set(['./components/popover.tsx', './components/feedback.tsx'])
 const POPOVER_USERS = new Set(['./components/MonthField.tsx', './components/Term.tsx'])
 const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(|role=["'{`]+(?:alert)?dialog\b/g)].map((m) => m[0])
@@ -556,7 +557,8 @@ const isPrimary = (b: ButtonUse) => /(^|\s)btn(\s|$)/.test(b.className) && !/sec
 const isDangerGhost = (b: ButtonUse) => /danger-ghost/.test(b.className)
 const DRAWER_VERBS = /^(?:Anlegen|Speichern)$/
 // Ein weiteres Verb für genau ein Seitenfenster, mit Grund (nur diese Datei, nur dieses Wort).
-const DRAWER_VERB_EXCEPTIONS = new Map<string, { verb: string; why: string }>([
+const DRAWER_VERB_EXCEPTIONS = new Map<string, { verb: string | readonly string[]; why: string }>([
+  ['./components/AccessCard.tsx', { verb: ['Abmelden', 'Ausschalten'], why: 'die Fenster „Auf allen Geräten abmelden“ und „Anmeldung ausschalten“ (#528) speichern nichts, sie bestätigen mit dem bisherigen Passwort eine Handlung' }],
   ['./components/ReadingSheetDrawer.tsx', { verb: 'Drucken', why: 'das Fenster speichert nichts, es druckt das Ableseformular (#320)' }],
   ['./components/PrintDrawer.tsx', { verb: 'Drucken', why: 'das Fenster druckt die Abrechnung; die Druckeinstellungen speichert ihr eigenes „Speichern“ am Entwurf' }],
 ])
@@ -594,7 +596,8 @@ const verbProblems = (uses: ButtonUse[], src: string, file = 'probe'): string[] 
     for (const b of buttonsIn('actions', actions).filter(isPrimary)) {
       if (b.texts.length === 0) problems.push(`Drawer ohne Text am Primärknopf: ${b.tag.slice(0, 60)}`)
       for (const t of b.texts.filter((x) => !/^(?:Speichert|Wird angelegt) …$/.test(x))) {
-        if (!DRAWER_VERBS.test(t) && DRAWER_VERB_EXCEPTIONS.get(file)?.verb !== t) problems.push(`Primärknopf im Seitenfenster „${t}“ statt „Anlegen“/„Speichern“`)
+        const allowed = DRAWER_VERB_EXCEPTIONS.get(file)?.verb
+        if (!DRAWER_VERBS.test(t) && !(typeof allowed === 'string' ? allowed === t : allowed?.includes(t))) problems.push(`Primärknopf im Seitenfenster „${t}“ statt „Anlegen“/„Speichern“`)
       }
     }
   }

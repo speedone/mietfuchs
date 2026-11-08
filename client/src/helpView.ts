@@ -21,12 +21,14 @@ export const TERM_TOPIC_LABELS: Record<TermTopic, string> = {
   co2: 'CO₂-Kosten',
   condo: 'Eigentumswohnung',
   tax: 'Steuer',
+  operation: 'Betrieb',
 }
 
 export const GUIDE_GROUP_LABELS: Record<GuideGroup, string> = {
   property: 'Ihr Objekt',
   year: 'Im Abrechnungsjahr',
   heating: 'Heizung',
+  operation: 'Betrieb',
 }
 
 // Die Knöpfe unter der Suche: Wörter, die eine Anleitung und einen Begriff zugleich treffen.
