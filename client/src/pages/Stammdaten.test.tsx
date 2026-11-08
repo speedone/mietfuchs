@@ -840,8 +840,8 @@ test('Fälligkeit: die Auswahl zeigt den gespeicherten Wert, auch „Wie im Gese
   dialog = screen.getByRole('dialog')
   select = rentDueSelect(dialog)
   expect(select.value).toBe('')
-  expect(select.selectedOptions[0]?.textContent).toBe('Wie im Gesetz (nach Ablauf des Monats, Mietverhältnis vor dem 02.09.2001)')
-  expect(within(dialog).getByText(/im Voraus zu zahlen ist, wählen Sie „Zu Beginn des Monats, spätestens am dritten Werktag“/)).toBeTruthy()
+  expect(select.selectedOptions[0]?.textContent).toBe('Wie im Gesetz')
+  expect(within(dialog).getByText(/im Voraus zu zahlen ist, wählen Sie „Zu Beginn, spätestens am 3. Werktag“/)).toBeTruthy()
   expect([...select.options].map((o) => o.value)).toEqual(['', 'startWorkday', 'dayOfMonth', 'inArrears'])
   // Den Tag gibt es nur beim festen Tag.
   expect(within(dialog).queryByLabelText(/Tag des Monats/)).toBeNull()

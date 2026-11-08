@@ -7,7 +7,7 @@ import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
 import { monthLabel, parseMonthText } from './monthText'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
-import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { monthShare, rateAtMonth, rateInMonth } from '../../shared/monthRate.ts'
 
@@ -290,15 +290,14 @@ export function tenancyRequired(form: { tenantName: string; unitId: string; star
 // Die Regel am Mietverhältnis; '' heißt „Wie im Gesetz“ und wird als null gespeichert. Die Rechnung steht in
 // shared/rentDue.ts, hier stehen nur Beschriftungen, Prüfung und Rumpf.
 export type RentDueChoice = '' | RentDueRule
-// Der Stichtag der alten Fälligkeit aus dem Register (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB) und der erste Tag danach.
+// Der Stichtag der alten Fälligkeit aus dem Register (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB).
 const OLD_LEASE_LAST = bgbRentDueAtStart.versions.find((v) => v.value === false)?.validTo ?? ''
 const OLD_LEASE_UNTIL = germanDate(OLD_LEASE_LAST)
-const NEW_LEASE_FROM = germanDate(OLD_LEASE_LAST ? dayAfter(OLD_LEASE_LAST) : '')
 export type RentDueForm = { rentDue: RentDueChoice; rentDueDay: string; firstRentAtStart: boolean }
 export const EMPTY_RENT_DUE: RentDueForm = { rentDue: '', rentDueDay: '', firstRentAtStart: false }
 
 export const RENT_DUE_LABELS: Record<RentDueRule, string> = {
-  startWorkday: 'Zu Beginn des Monats, spätestens am dritten Werktag',
+  startWorkday: 'Zu Beginn, spätestens am 3. Werktag',
   dayOfMonth: 'An einem festen Tag des Monats',
   inArrears: 'Nach Ablauf des Monats',
 }
@@ -312,10 +311,11 @@ export function legalRentDue(form: { start: string; contractDate: string }): Ren
 }
 
 // Die Auswahl „Fälligkeit der Miete“: immer alle vier Einträge, damit der gespeicherte Wert sichtbar bleibt.
-export function rentDueOptions(form: { start: string; contractDate: string }): { value: RentDueChoice; label: string }[] {
-  const legal = legalRentDue(form) === 'inArrears' ? `nach Ablauf des Monats, Mietverhältnis vor dem ${NEW_LEASE_FROM}` : 'zu Beginn, spätestens am dritten Werktag'
+// Kurz, damit der Eintrag auch am Handy ganz zu sehen ist (Browserlauf); was „Wie im Gesetz“ für dieses Mietverhältnis
+// heißt, sagt der Hinweis am Feld (`rentDueHint`).
+export function rentDueOptions(): { value: RentDueChoice; label: string }[] {
   return [
-    { value: '', label: `Wie im Gesetz (${legal})` },
+    { value: '', label: 'Wie im Gesetz' },
     ...(['startWorkday', 'dayOfMonth', 'inArrears'] as const).map((value) => ({ value, label: RENT_DUE_LABELS[value] })),
   ]
 }
@@ -325,9 +325,9 @@ export function rentDueOptions(form: { start: string; contractDate: string }): {
 export function rentDueHint(form: RentDueForm & { start: string; contractDate: string }): string {
   const parts: string[] = []
   if (form.rentDue === '' && legalRentDue(form) === 'inArrears') {
-    parts.push(`Das Mietverhältnis bestand schon am ${OLD_LEASE_UNTIL}; ohne andere Vereinbarung ist die Miete nach Ablauf des Monats fällig (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). Steht im Vertrag, dass die Miete im Voraus zu zahlen ist, wählen Sie „Zu Beginn des Monats, spätestens am dritten Werktag“.`)
+    parts.push(`Das Mietverhältnis bestand schon am ${OLD_LEASE_UNTIL}; ohne andere Vereinbarung ist die Miete nach Ablauf des Monats fällig (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). Steht im Vertrag, dass die Miete im Voraus zu zahlen ist, wählen Sie „Zu Beginn, spätestens am 3. Werktag“.`)
   } else if (form.rentDue === '') {
-    parts.push('Ohne andere Vereinbarung ist die Miete zu Beginn des Monats fällig, spätestens am dritten Werktag; der Samstag zählt nicht (§ 556b Abs. 1 BGB). Nur wenn Ihr Vertrag etwas anderes bestimmt, wählen Sie es hier.')
+    parts.push('Wie im Gesetz heißt hier: zu Beginn des Monats, spätestens am dritten Werktag; der Samstag zählt nicht (§ 556b Abs. 1 BGB). Nur wenn Ihr Vertrag etwas anderes bestimmt, wählen Sie es hier.')
   }
   if (form.rentDue === 'dayOfMonth') parts.push('Fällt der Tag auf ein Wochenende oder einen Feiertag, gilt der nächste Werktag (§ 193 BGB). In kürzeren Monaten nimmt Mietfuchs den letzten Tag, im Einzugsmonat den späteren von diesem Tag und dem dritten Werktag ab dem Einzug (Auslegung).')
   if (form.firstRentAtStart) parts.push('Ob die Klausel „Erste Miete schon bei Mietbeginn fällig“ im Formularvertrag wirksam ist, ist nicht höchstrichterlich geklärt.')

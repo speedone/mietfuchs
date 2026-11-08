@@ -878,7 +878,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 {/* #334: Fälligkeit der Miete laut Vertrag; „Wie im Gesetz“ nennt, was ohne Angabe gilt. */}
                 <Field label={<><Term id="rentDue">Fälligkeit der Miete</Term></>} hint={rentDueHint({ ...tenForm.rentDue, start: tenForm.start, contractDate: tenForm.contractDate })}>
                   <select value={tenForm.rentDue.rentDue} onChange={(e) => setTenForm({ ...tenForm, rentDue: { ...tenForm.rentDue, rentDue: e.target.value as RentDueChoice } })}>
-                    {rentDueOptions(tenForm).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {rentDueOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </Field>
                 {tenForm.rentDue.rentDue === 'dayOfMonth' && (

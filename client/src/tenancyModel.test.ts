@@ -309,10 +309,10 @@ test('Fälligkeit: „Wie im Gesetz“ nennt die Regel des Mietverhältnisses, G
   expect(legalRentDue({ start: '2001-09-02', contractDate: '' })).toBe('startWorkday')
   expect(legalRentDue({ start: '2001-09-02', contractDate: '2001-09-01' })).toBe('inArrears')
   expect(legalRentDue({ start: '', contractDate: '' })).toBe('startWorkday')
-  expect(rentDueOptions({ start: '2020-01-01', contractDate: '' }).map((o) => o.label)).toEqual([
-    'Wie im Gesetz (zu Beginn, spätestens am dritten Werktag)', 'Zu Beginn des Monats, spätestens am dritten Werktag', 'An einem festen Tag des Monats', 'Nach Ablauf des Monats',
-  ])
-  expect(rentDueOptions({ start: '1990-01-01', contractDate: '' })[0]?.label).toBe('Wie im Gesetz (nach Ablauf des Monats, Mietverhältnis vor dem 02.09.2001)')
+  // Kurze Einträge (Browserlauf: am Handy abgeschnitten); was „Wie im Gesetz“ heißt, steht im Hinweis.
+  expect(rentDueOptions().map((o) => o.label)).toEqual(['Wie im Gesetz', 'Zu Beginn, spätestens am 3. Werktag', 'An einem festen Tag des Monats', 'Nach Ablauf des Monats'])
+  expect(Math.max(...rentDueOptions().map((o) => o.label.length))).toBeLessThanOrEqual(36)
+  expect(rentDueHint({ ...EMPTY_RENT_DUE, start: '2020-01-01', contractDate: '' })).toMatch(/^Wie im Gesetz heißt hier: zu Beginn des Monats, spätestens am dritten Werktag/)
   expect(rentDueHint({ ...EMPTY_RENT_DUE, start: '1990-01-01', contractDate: '' })).toMatch(/Art\. 229 § 3 Abs\. 1 Nr\. 7 EGBGB/)
   expect(rentDueHint({ ...EMPTY_RENT_DUE, rentDue: 'dayOfMonth', start: '2020-01-01', contractDate: '' })).toMatch(/§ 193 BGB/)
 })
