@@ -7,7 +7,7 @@
     "node": ">=24.15"
   },
   "scripts": {
-    "dev": "node --watch-path=src src/index.ts",
+    "dev": "node --env-file=dev.env --watch-path=src src/index.ts",
     "start": "node src/index.ts",
     "test": "node --test",
     "typecheck": "tsc --noEmit && tsc -p ../scripts",

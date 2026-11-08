@@ -5,8 +5,8 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ACCESS_FILE, CODE_FILE, MIN_PASSWORD, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
-  gate, gateActive, hashPassword, initialAccess, needsRehash, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
+  ACCESS_FILE, CODE_FILE, MIN_PASSWORD, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
+  gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
   sameCode, sessionCookie, verifyPassword, viaHttps, viaProxy, writeAccessFile, writeCodeFile,
   type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Stage,
 } from './access.ts'
@@ -52,6 +52,9 @@ const minutesText = (seconds: number): string => {
   return minutes === 1 ? 'einer Minute' : `${minutes} Minuten`
 }
 
+export const browserUrlFor = (url: string, mode: AccessState['mode'], code: string | null): string =>
+  mode === 'setup' && code ? `${url}/#einrichtung=${formatCode(code)}` : url
+
 export function createAccess(options: AccessOptions) {
   const { dataDir, host, setting, runtime, stage = 'A', log = console.log, logError = console.error, now = Date.now } = options
   const allowedHosts = (options.allowedHosts ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h && h !== '*')
@@ -67,6 +70,10 @@ export function createAccess(options: AccessOptions) {
 
   // Nach einem `await` frisch gelesen: Eine zweite Anfrage kann den Zustand inzwischen geändert haben
   const modeNow = (): AccessState['mode'] => state.mode
+  // Zählt jede Änderung des Zugangs (Speichern, Zurücksetzen). Eine Route merkt ihn vor dem Rechnen und prüft ihn danach:
+  // Lief inzwischen ein Zurücksetzen, gilt ihr Ergebnis nicht mehr (Durchsicht PR 3, M1 bis M3)
+  let generation = 0
+  const changedSince = (seen: number): boolean => generation !== seen
   const exposed = (): boolean => state.reachable === 'network' || state.setting === 'on'
   const requiredFor = (mode: AccessState['mode']): boolean => state.setting !== 'off' && exposed() && (mode === 'setup' || mode === 'password')
 
@@ -89,12 +96,86 @@ export function createAccess(options: AccessOptions) {
   }
   const codeLine = (lead: string): string => `${lead}: ${code ? formatCode(code) : '(nicht erzeugt)'}  (auch in ${codePath})`
 
+  // ---------- Passwort vergessen: Datei `passwort-zuruecksetzen` ----------
+  // Wer den Datenordner erreicht, darf zurücksetzen. Geprüft wird nur, ob die Datei da ist, nie ihr Inhalt; beim Start,
+  // vor jeder Anmeldung und Einrichtung und höchstens einmal je Sekunde bei einer Anfrage.
+  const resetPath = path.join(dataDir, RESET_FILE)
+  let resetCheckedAt = -Infinity
+  let resetStuck = false
+  // Nur eine Datei zählt: Ein Ordner dieses Namens ließe sich nicht löschen und setzte jeden Start zurück
+  const resetRequested = (): boolean => {
+    try {
+      return fs.statSync(resetPath).isFile()
+    } catch {
+      return false
+    }
+  }
+  function checkReset(throttled = false): void {
+    if (throttled && now() - resetCheckedAt < 1000) return
+    resetCheckedAt = now()
+    if (setting === 'off' || !resetRequested()) {
+      resetStuck = false
+      return
+    }
+    if (resetStuck) return
+    const file: AccessFile = { version: 1, mode: 'setup', instance: state.instance, changedAt: new Date(now()).toISOString() }
+    try {
+      writeAccessFile(dataDir, file)
+    } catch (err) {
+      logError(`Das Zurücksetzen ließ sich nicht speichern (${ACCESS_FILE}): ${(err as Error).message}`)
+    }
+    generation++
+    state = { ...state, mode: 'setup', hash: null, required: requiredFor('setup'), proxyStrict: true }
+    sessions.revokeAll()
+    brake.reset()
+    failedSinceLogin = 0
+    issueCode()
+    try {
+      fs.rmSync(resetPath, { force: true })
+    } catch (err) {
+      // Bliebe sie liegen, setzte jede Sekunde neu zurück; ein Mal reicht, bis sie verschwindet
+      resetStuck = true
+      logError(`${RESET_FILE} ließ sich nicht löschen: ${(err as Error).message}. Bitte entfernen Sie die Datei, sonst setzt jeder Start das Passwort erneut zurück.`)
+    }
+    log('Das Passwort ist zurückgesetzt, alle Geräte sind abgemeldet. Bitte legen Sie ein neues fest.')
+    log(codeLine('Einrichtungscode'))
+  }
+
+  // ---------- Proxy vor einem lokal lauschenden Mietfuchs ohne Passwort ----------
+  // Einmal je Start ins Protokoll, und ab dann zeigt die Oberfläche den Hinweis wie im Übergang, mit Code zum Festlegen
+  let proxyNoticed = false
+  function noticeProxy(): void {
+    if (proxyNoticed || setting === 'off' || state.reachable !== 'local' || state.mode !== 'none') return
+    proxyNoticed = true
+    state = { ...state, mode: 'transition' }
+    issueCode()
+    log('Anfragen über einen Proxy erreichen Mietfuchs ohne Passwort. Legen Sie in der Oberfläche ein Passwort fest; mit NKA_AUTH=on verlangt Mietfuchs es auch ohne Proxy-Kopfzeilen.')
+    log(codeLine('Einrichtungscode'))
+  }
+
   // Zustand beim Start, vor dem Öffnen der Datenbank (`hasStock` danach wäre immer wahr)
   function start({ hasStock }: { hasStock: boolean }): void {
+    const resetAtStart = setting !== 'off' && resetRequested()
     const read = readAccessFile(dataDir)
     if (read.problem) logError(read.problem)
-    const initial = initialAccess({ reachable: state.reachable, setting, file: read.file, hasStock, stage })
-    state = initial.state
+    let file = read.file
+    if (resetAtStart) {
+      const reset: AccessFile = { version: 1, mode: 'setup', instance: file && file !== 'corrupt' ? file.instance : newInstance(), changedAt: new Date(now()).toISOString() }
+      try {
+        writeAccessFile(dataDir, reset)
+      } catch (err) {
+        logError(`Das Zurücksetzen ließ sich nicht speichern (${ACCESS_FILE}): ${(err as Error).message}`)
+      }
+      file = reset
+      try {
+        fs.rmSync(resetPath, { force: true })
+      } catch (err) {
+        resetStuck = true
+        logError(`${RESET_FILE} ließ sich nicht löschen: ${(err as Error).message}. Bitte entfernen Sie die Datei, sonst setzt jeder Start das Passwort erneut zurück.`)
+      }
+    }
+    const initial = initialAccess({ reachable: state.reachable, setting, file, hasStock, stage })
+    state = { ...initial.state, proxyStrict: resetAtStart }
     if (initial.write) {
       try {
         writeAccessFile(dataDir, initial.write)
@@ -105,14 +186,15 @@ export function createAccess(options: AccessOptions) {
     }
     startLines.length = 0
     const open = state.mode === 'setup' || state.mode === 'transition' || state.mode === 'off'
-    if (setting !== 'off' && exposed() && open) issueCode()
+    if (setting !== 'off' && (exposed() || resetAtStart) && open) issueCode()
     else if (fs.existsSync(codePath)) dropCode()
     if (setting === 'off') {
       if (state.reachable === 'network') startLines.push('Die Anmeldung ist über NKA_AUTH=off abgeschaltet. Mietfuchs ist im Netz ohne Passwort erreichbar.')
       return
     }
-    if (state.mode === 'setup') {
-      startLines.push('Mietfuchs ist im Netz erreichbar und noch ohne Passwort.', codeLine('Einrichtungscode'))
+    if (resetAtStart) startLines.push('Das Passwort ist zurückgesetzt (Datei passwort-zuruecksetzen). Bitte legen Sie ein neues fest.')
+    if (state.mode === 'setup' && (exposed() || resetAtStart)) {
+      startLines.push(exposed() ? 'Mietfuchs ist im Netz erreichbar und noch ohne Passwort.' : 'Mietfuchs ist noch ohne Passwort.', codeLine('Einrichtungscode'))
     } else if (state.mode === 'transition') {
       startLines.push(
         'Mietfuchs ist im Netz erreichbar, aber ohne Passwort: Jedes Gerät in Ihrem Netz kann Ihre Daten sehen. Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.',
@@ -131,7 +213,9 @@ export function createAccess(options: AccessOptions) {
 
   // ---------- Vorschaltung ----------
   function middleware(req: Request, res: Response, next: NextFunction): void {
+    checkReset(true)
     const proxied = viaProxy(req.headers)
+    if (proxied) noticeProxy()
     const signed = signedIn(req)
     const decision = gate(state, {
       method: req.method,
@@ -165,7 +249,8 @@ export function createAccess(options: AccessOptions) {
   // für sensibel, weil dieselbe Datei den Hash trägt (js/clear-text-storage-of-sensitive-data, Fehlalarm)
   function save(file: AccessFile): void {
     writeAccessFile(dataDir, file)
-    state = { ...state, mode: file.mode, hash: file.hash ?? null, required: requiredFor(file.mode) }
+    generation++
+    state = { ...state, mode: file.mode, hash: file.hash ?? null, required: requiredFor(file.mode), proxyStrict: false }
   }
   const fileOf = (mode: AccessMode, hash?: string): AccessFile => ({ version: 1, mode, instance: state.instance, ...(hash ? { hash } : {}), changedAt: new Date(now()).toISOString() })
   const tooMany = (res: Response, retryAfter: number): void => {
@@ -227,16 +312,20 @@ export function createAccess(options: AccessOptions) {
     const json = express.json({ limit: '4kb' })
 
     app.get('/api/auth', (req, res) => {
+      checkReset()
       res.json(info(req))
     })
 
     app.post('/api/auth/login', json, async (req, res) => {
+      checkReset()
       if (setting === 'off') return res.status(409).json({ error: 'Die Anmeldung ist über NKA_AUTH=off abgeschaltet.' })
       if (state.mode === 'setup') return res.status(401).json({ error: 'Bitte legen Sie zuerst ein Passwort für Mietfuchs fest.', setup: true })
       if (state.mode !== 'password') return res.status(409).json({ error: 'Für Mietfuchs ist kein Passwort festgelegt.' })
       const { password } = bodyOf(req)
+      const seen = generation
       const ok = await attempt(req, res, 'password', checkPassword(password))
       if (ok === null) return
+      if (changedSince(seen)) return res.status(401).json(modeNow() === 'setup' ? { error: 'Bitte legen Sie zuerst ein Passwort für Mietfuchs fest.', setup: true } : { error: 'Der Zugang hat sich eben geändert. Bitte melden Sie sich erneut an.', login: true })
       if (!ok) return res.status(401).json({ error: 'Das Passwort stimmt nicht.' })
       const failedAttempts = failedSinceLogin
       failedSinceLogin = 0
@@ -256,6 +345,7 @@ export function createAccess(options: AccessOptions) {
     })
 
     app.post('/api/auth/setup', json, async (req, res) => {
+      checkReset()
       if (setting === 'off') return res.status(409).json({ error: 'Die Anmeldung ist über NKA_AUTH=off abgeschaltet.' })
       if (state.mode === 'password') return res.status(409).json({ error: 'Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.' })
       const body = bodyOf(req)
@@ -268,6 +358,7 @@ export function createAccess(options: AccessOptions) {
         const problem = passwordProblem(body.password)
         if (problem) return res.status(400).json({ error: problem })
       }
+      const seen = generation
       if (!here) {
         const ok = await attempt(req, res, 'code', () => sameCode(body.code, code))
         if (ok === null) return
@@ -284,6 +375,7 @@ export function createAccess(options: AccessOptions) {
           return res.json({ ok: true, mode: 'off' })
         }
         const hash = await hashes.run(() => hashPassword(body.password as string))
+        if (changedSince(seen)) return res.status(409).json({ error: 'Der Zugang hat sich eben geändert. Bitte laden Sie die Seite neu.' })
         if (modeNow() === 'password') return res.status(409).json({ error: 'Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.' })
         save(fileOf('password', hash))
       } catch (err) {
@@ -320,19 +412,28 @@ export function createAccess(options: AccessOptions) {
         res.status(400).json({ error: 'Bitte geben Sie Ihr bisheriges Passwort ein.' })
         return false
       }
+      const seen = generation
       const ok = await attempt(req, res, 'password', checkPassword(current))
       if (ok === null) return false
+      if (changedSince(seen)) {
+        res.status(409).json({ error: 'Der Zugang hat sich eben geändert. Bitte laden Sie die Seite neu.' })
+        return false
+      }
       if (!ok) res.status(403).json({ error: 'Das bisherige Passwort stimmt nicht.' })
       return ok
     }
+    const stale = (res: Response): void => void res.status(409).json({ error: 'Der Zugang hat sich eben geändert. Bitte laden Sie die Seite neu.' })
 
     app.put('/api/auth/password', json, async (req, res) => {
       const body = bodyOf(req)
       const problem = passwordProblem(body.password)
       if (state.mode === 'password' && mayManage(req) && problem) return res.status(400).json({ error: problem })
       if (!(await confirmed(req, res))) return
+      const seen = generation
       try {
-        save(fileOf('password', await hashes.run(() => hashPassword(body.password as string))))
+        const hash = await hashes.run(() => hashPassword(body.password as string))
+        if (changedSince(seen)) return stale(res)
+        save(fileOf('password', hash))
       } catch (err) {
         logError(`Das Passwort ließ sich nicht speichern: ${(err as Error).message}`)
         return res.status(500).json({ error: `Das Passwort ließ sich nicht speichern (${ACCESS_FILE} im Datenordner).` })
@@ -371,8 +472,13 @@ export function createAccess(options: AccessOptions) {
     })
   }
 
+  // Die Adresse, die die Programmdatei beim Start im Browser öffnet: in der Einrichtung mit dem Code im Fragment, das
+  // nicht an den Server und nicht in den Referer geht
+  const browserUrl = (url: string): string => browserUrlFor(url, state.mode, code)
+
   return {
     start,
+    browserUrl,
     middleware,
     install,
     startLines: (): readonly string[] => startLines,

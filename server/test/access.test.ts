@@ -464,6 +464,9 @@ test('Vorschaltung: Proxy-Kopfzeilen machen einen lokalen Server mit Passwort st
   assert.equal(passes(gate(stateOf({ reachable: 'local', mode: 'none', required: false }), request({ loopback: true, viaProxy: true }))), true)
   // eine Einrichtung von früher (im Netz) sperrt lokal keinen Proxy aus: lokal gibt es keinen Code
   assert.equal(passes(gate(stateOf({ reachable: 'local', mode: 'setup', required: false, hash: null }), request({ loopback: true, viaProxy: true }))), true)
+  // nach dem Zurücksetzen eines Passworts (mit Code) bleibt der Proxy streng
+  assert.equal(passes(gate(stateOf({ reachable: 'local', mode: 'setup', required: false, hash: null, proxyStrict: true }), request({ loopback: true, viaProxy: true }))), false)
+  assert.equal(passes(gate(stateOf({ reachable: 'local', mode: 'setup', required: false, hash: null, proxyStrict: true }), request({ loopback: true }))), true)
   assert.equal(passes(gate(stateOf({ reachable: 'local', setting: 'off', required: false }), request({ loopback: true, viaProxy: true }))), true)
 })
 
