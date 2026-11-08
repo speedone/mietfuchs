@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.17.0] – 2026-11-08
+
 ### Hinzugefügt
 
 - **Anmeldung mit Passwort, wenn Mietfuchs im Netz erreichbar ist**
@@ -35,7 +37,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   in der Seitenleiste „Ohne Passwort im Netz“ und nennt den Einrichtungscode im Protokoll. **Ab Version 1.0.0-rc.1 ist
   das Passwort Pflicht.** Für bestehende Daten ist nichts zu tun außer dem Passwort; wie es geht, steht in
   [MIGRATION.md](MIGRATION.md#nach-dem-update-fragt-mietfuchs-nach-einem-passwort).
-
 - Der Umlageschlüssel „laut Gemeinschaftsabrechnung“ heißt im Kostenformular ohne den Zusatz „(Eigentumswohnung)“: Am
   Handy zeigte die Auswahl ihn nicht ganz. Gefunden hat das der Browserlauf, der jetzt auch eine WG, eine geschätzte
   Ablesung, einen Bezugszähler und abgeschlossene und versendete Abrechnungen prüft
@@ -3574,7 +3575,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.16.1...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/speedone/mietfuchs/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/speedone/mietfuchs/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/speedone/mietfuchs/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/speedone/mietfuchs/compare/v0.15.1...v0.15.2
