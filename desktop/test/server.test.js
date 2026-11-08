@@ -341,3 +341,27 @@ test('Ordner wählen: auf dem Mac Ordner und Dateien, unter Windows Dateien', ()
   assert.deepEqual(folderDialogProperties('darwin'), ['openDirectory', 'openFile'])
   assert.deepEqual(folderDialogProperties('win32'), ['openFile'])
 })
+
+// Anmeldung (#528): Das Fenster gilt über einen Schlüssel je Start als angemeldet. Er kommt immer vom Fenster selbst,
+// eine geerbte Angabe gilt nie, und NKA_AUTH aus einer Shell schaltet ausgeliefert den Schutz nicht still ab.
+test('Umgebung: Fensterschlüssel immer vom Fenster, NKA_AUTH nur mit den Schranken der Testgriffe', () => {
+  const base = { NKA_WINDOW_KEY: 'geerbt', NKA_AUTH: 'off' }
+  const opts = { port: 4000, network: true, packaged: true, windowsStore: false, repoRoot: '/repo', platform: /** @type {NodeJS.Platform} */ ('linux') }
+  assert.equal(serverEnv(base, { ...opts, windowKey: 'frisch' }).NKA_WINDOW_KEY, 'frisch')
+  assert.equal(serverEnv(base, opts).NKA_WINDOW_KEY, undefined)
+  assert.equal(serverEnv(base, opts).NKA_AUTH, undefined)
+  assert.equal(serverEnv({ ...base, CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, opts).NKA_AUTH, 'off')
+  assert.equal(serverEnv(base, { ...opts, packaged: false }).NKA_AUTH, 'off')
+})
+
+// Der Hauptprozess fragt den Server nur über serverFetch, das den Schlüssel mitschickt; ein anderes fetch an den eigenen
+// Server bekäme mit Passwort 401 (readConsent, stopServer)
+test('Fenster: Abrufe des Hauptprozesses am eigenen Server nur über serverFetch', () => {
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+  // jede Zeile mit fetch( und origin, in welcher Schreibweise auch immer, außer in serverFetch selbst
+  const calls = main.split('\n').filter((line) => /\bfetch\(/.test(line) && /origin/.test(line))
+  assert.deepEqual(calls.map((line) => line.trim()), ['return fetch(`${origin}${urlPath}`, { ...init, headers })'], 'nur serverFetch selbst ruft fetch mit origin')
+  assert.match(main, /function serverFetch\(/)
+  assert.match(main, /'X-Mietfuchs-Window'/)
+  assert.match(main, /onBeforeSendHeaders\(\{ urls: \[`\$\{origin\}\/\*`\] \}/)
+})

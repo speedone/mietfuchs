@@ -1,6 +1,6 @@
 // Zugriff aus dem Heimnetz (#517): ob die Karte erscheint, was sie zeigt und was sie vor dem Speichern sagt.
 import { describe, expect, test } from 'vitest'
-import { networkBridge, networkView, type NetworkBridge, type NetworkState } from './desktopNetwork'
+import { askForPassword, networkBridge, networkView, passwordEntryProblem, type NetworkBridge, type NetworkState } from './desktopNetwork'
 
 const bridge: NetworkBridge = {
   get: async () => ({ enabled: false, port: 17517, addresses: [] }),
@@ -39,5 +39,29 @@ describe('networkView', () => {
 
   test('ausgeschaltet, noch nicht gespeichert: Neustart ankündigen, die Adressen gelten bis dahin noch', () => {
     expect(networkView(ON, false)).toEqual({ addresses: ['http://192.168.178.23:17517'], noAddress: false, restart: true, firewall: false })
+  })
+})
+
+// Anmeldung (#528): Beim Einschalten des Heimnetzes fragt die Karte nach einem Passwort, solange keines festgelegt ist
+describe('askForPassword', () => {
+  const off: NetworkState = { enabled: false, port: 17517, addresses: [] }
+  const on: NetworkState = { enabled: true, port: 17517, addresses: [] }
+  const access = (mode: string, envFixed = false) => ({ mode, envFixed, minLength: 15 })
+  test('nur beim Einschalten und ohne Passwort', () => {
+    expect(askForPassword(access('none'), off, true)).toBe(true)
+    expect(askForPassword(access('off'), off, true)).toBe(true)
+    expect(askForPassword(access('setup'), off, true)).toBe(true)
+    expect(askForPassword(access('password'), off, true)).toBe(false)
+    expect(askForPassword(access('none'), off, false)).toBe(false)
+    expect(askForPassword(access('none'), on, true)).toBe(false)
+    // NKA_AUTH legt es fest, oder der Stand ist unbekannt: nicht fragen
+    expect(askForPassword(access('none', true), off, true)).toBe(false)
+    expect(askForPassword(null, off, true)).toBe(false)
+  })
+  test('Eingabe: gleich und lang genug, gezählt nach Zeichen', () => {
+    expect(passwordEntryProblem('Sonne Wolke Regen', 'Sonne Wolke Regen', 15)).toBeNull()
+    expect(passwordEntryProblem('Sonne Wolke Regen', 'Sonne Wolke Regem', 15)).toBe('Die beiden Passwörter stimmen nicht überein.')
+    expect(passwordEntryProblem('kurz', 'kurz', 15)).toBe('Das Passwort braucht mindestens 15 Zeichen.')
+    expect(passwordEntryProblem('🦊'.repeat(14), '🦊'.repeat(14), 15)).toBe('Das Passwort braucht mindestens 15 Zeichen.')
   })
 })

@@ -7,7 +7,7 @@ import path from 'node:path'
 import {
   ACCESS_FILE, CODE_FILE, MIN_PASSWORD, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
   gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
-  sameCode, sessionCookie, verifyPassword, viaHttps, viaProxy, writeAccessFile, writeCodeFile,
+  sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, viaProxy, writeAccessFile, writeCodeFile,
   type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Stage,
 } from './access.ts'
 
@@ -18,6 +18,9 @@ export type AccessOptions = {
   // NKA_ALLOWED_HOSTS, wie es dasteht
   allowedHosts: string | undefined
   runtime: string
+  // Programmfenster (#528): Schlüssel dieses Starts aus NKA_WINDOW_KEY, wirksam nur im Fenster und nur über 127.0.0.1
+  inWindow?: boolean
+  windowKey?: string | null
   stage?: Stage
   log?: (line: string) => void
   logError?: (line: string) => void
@@ -56,7 +59,7 @@ export const browserUrlFor = (url: string, mode: AccessState['mode'], code: stri
   mode === 'setup' && code ? `${url}/#einrichtung=${formatCode(code)}` : url
 
 export function createAccess(options: AccessOptions) {
-  const { dataDir, host, setting, runtime, stage = 'A', log = console.log, logError = console.error, now = Date.now } = options
+  const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, stage = 'A', log = console.log, logError = console.error, now = Date.now } = options
   const allowedHosts = (options.allowedHosts ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h && h !== '*')
   const codePath = path.join(dataDir, CODE_FILE)
   const sessions = createSessions({ now })
@@ -207,8 +210,11 @@ export function createAccess(options: AccessOptions) {
 
   const tokensOf = (req: Request): string[] => cookieValues(header(req, 'cookie'), cookieName(state.instance))
   const hasSession = (req: Request): boolean => tokensOf(req).some((token) => sessions.check(token))
-  // Bisher nur die Sitzung; den Fensterschlüssel prüft die Fassung mit dem Programmfenster (Aufgabe 4)
-  const atWindow = (_req: Request): boolean => false
+  // Das Fenster gilt als angemeldet und als „am Rechner“ (Einrichtung ohne Code): nur im Fenster, nur über eine
+  // Verbindung von 127.0.0.1/::1 ohne Proxy-Kopfzeilen, zeitkonstant verglichen. Über die Adresse einer Netzwerkkarte
+  // ist der Schlüssel wirkungslos; Schritt 2 lockert genau diese Zeile für Geräteschlüssel über HTTPS.
+  const atWindow = (req: Request): boolean =>
+    inWindow && windowKey !== null && isLoopback(req.socket.remoteAddress) && !viaProxy(req.headers) && sameKey(header(req, 'x-mietfuchs-window'), windowKey)
   const signedIn = (req: Request): boolean => atWindow(req) || hasSession(req)
 
   // ---------- Vorschaltung ----------

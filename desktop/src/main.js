@@ -8,6 +8,7 @@
 // Sicherheit nach der Checkliste von Electron: Die Seite läuft ohne Node in der Sandbox, die Brücke (preload.cjs)
 // kennt nur das Drucken, den Zugriff aus dem Heimnetz, die Wahl des alten Ordners beim Umzug und die automatischen Updates, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
 // Standardbrowser, Berechtigungen (Kamera, Standort …) werden abgelehnt.
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -133,6 +134,8 @@ async function choosePort(settings) {
  */
 async function startServer(settings, fixedPort) {
   const port = fixedPort ?? await choosePort(settings)
+  // Je Start ein neuer Fensterschlüssel (#528): Damit gilt das Fenster als angemeldet, auch mit Passwort im Heimnetz
+  windowKey = crypto.randomBytes(32).toString('base64url')
   const repoRoot = path.resolve(here, '..', '..')
   const { modulePath, cwd } = serverModule({ packaged: app.isPackaged, platform: process.platform, resourcesPath: process.resourcesPath, repoRoot })
   const log = openLog()
@@ -143,7 +146,7 @@ async function startServer(settings, fixedPort) {
   // nicht, der utilityProcess ist Electron selbst.
   const child = utilityProcess.fork(modulePath, [], {
     cwd,
-    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged, windowsStore: process.windowsStore === true, repoRoot, platform: process.platform, searchDirs: knownFolders() }),
+    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged, windowsStore: process.windowsStore === true, repoRoot, platform: process.platform, searchDirs: knownFolders(), windowKey }),
     stdio: 'pipe',
     serviceName: SERVICE_NAME,
   })
@@ -237,6 +240,31 @@ function showStartFailure(title, err) {
   dialog.showMessageBoxSync({ type: failure.title ? 'warning' : 'error', title: failure.title ?? title, message: failure.message, detail: failure.detail, buttons: ['OK'] })
 }
 
+// ---------- Fensterschlüssel (#528) ----------
+// Der Server erkennt das Fenster an der Kopfzeile X-Mietfuchs-Window, nur über 127.0.0.1 und nur im Fenster
+// (server/src/accessServer.ts). Die Seite bekommt sie über `onBeforeSendHeaders`, nur für Anfragen an den eigenen
+// Server; „Im Browser öffnen“ geht ohne Schlüssel. Abrufe des Hauptprozesses gehen über serverFetch.
+/** @type {string | null} */
+let windowKey = null
+
+/** @param {string} urlPath @param {RequestInit} [init] */
+function serverFetch(urlPath, init = {}) {
+  const headers = { ...(/** @type {Record<string, string>} */ (init.headers ?? {})), ...(windowKey ? { 'X-Mietfuchs-Window': windowKey } : {}) }
+  return fetch(`${origin}${urlPath}`, { ...init, headers })
+}
+
+// Nach jedem Setzen von `origin`. Der Filter nimmt nur den eigenen Ursprung, die Prüfung im Rückruf hält auch ein
+// anderes Schema oder einen anderen Port fern; mit einem Server von außen (MIETFUCHS_SERVER_URL) gibt es keinen Schlüssel.
+function attachWindowKey() {
+  if (!origin) return
+  const own = origin
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`] }, (details, callback) => {
+    const headers = { ...details.requestHeaders }
+    if (windowKey && new URL(details.url).origin === own) headers['X-Mietfuchs-Window'] = windowKey
+    callback({ requestHeaders: headers })
+  })
+}
+
 // Erst über die Oberfläche beenden, damit der Server seine Schreibvorgänge abschließt; unter Windows kennt ein
 // Kindprozess kein SIGTERM, `kill()` beendete ihn sofort. Ohne Adresse (Fenster während des Starts geschlossen) die
 // Nachricht „quit“ über `process.parentPort`; der Server startet dann zu Ende und beendet sich (server/src/index.ts).
@@ -249,7 +277,7 @@ async function stopServer() {
   let busy = false
   windowLog(`Server beenden (pid ${child.pid ?? '?'}, ${origin ? `über ${origin}/api/quit` : 'über parentPort'})`)
   if (origin) {
-    const answer = await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) })
+    const answer = await serverFetch('/api/quit', { method: 'POST', signal: AbortSignal.timeout(3000) })
       .then(async (res) => { windowLog(`/api/quit: ${res.status}`); return res.json() })
       .catch((err) => { windowLog(`/api/quit gescheitert: ${err}`); return null })
     busy = /** @type {any} */ (answer)?.busy === true
@@ -452,7 +480,9 @@ async function selfTest(win) {
   const serverMemory = metrics.filter(isServer).reduce((sum, m) => sum + m.memory.workingSetSize, 0)
   const pdf = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true })
   fs.writeFileSync(path.join(out, 'fenster.pdf'), pdf)
-  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, startMs: Date.now() - startedAt, electronMemoryKiB: memory, serverMemoryKiB: serverMemory, serverPid: server?.pid ?? null, electron: process.versions.electron, chrome: process.versions.chrome }, null, 2)}\n`)
+  // Fragt die Seite selbst: kommt der Fensterschlüssel über onBeforeSendHeaders an (#528)?
+  const access = await win.webContents.executeJavaScript("fetch('/api/auth').then((r) => r.json()).catch(() => null)").catch(() => null)
+  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, startMs: Date.now() - startedAt, electronMemoryKiB: memory, serverMemoryKiB: serverMemory, serverPid: server?.pid ?? null, electron: process.versions.electron, chrome: process.versions.chrome, access }, null, 2)}\n`)
 }
 
 async function start() {
@@ -530,6 +560,7 @@ async function start() {
   if (remote) origin = new URL(remote).origin
   else try {
     origin = new URL(await startServer(readSettings())).origin
+    attachWindowKey()
   } catch (err) {
     // Fenster während des Starts geschlossen: Das Beenden läuft schon, eine Meldung wäre falsch
     if (quitting) return
@@ -592,7 +623,7 @@ async function setupUpdater() {
     // Die Zustimmung steht in den Einstellungen des Servers (das Häkchen „Beim Öffnen nach neuen Versionen schauen“)
     readConsent: async () => {
       if (!origin) return undefined
-      const res = await fetch(`${origin}/api/settings`, { signal: AbortSignal.timeout(5000) })
+      const res = await serverFetch('/api/settings', { signal: AbortSignal.timeout(5000) })
       return res.ok ? /** @type {any} */ (await res.json())?.updateCheck : undefined
     },
     // Das Ende des Servers ist kein Absturz (stopServer setzt `retired`); `quitting` bleibt, wie es ist, damit
@@ -604,6 +635,7 @@ async function setupUpdater() {
     resumeServer: async () => {
       if (quitting) return
       origin = new URL(await startServer(readSettings(), port ?? undefined)).origin
+      attachWindowKey()
       if (mainWindow) await mainWindow.loadURL(origin)
     },
     quit: () => app.quit(),

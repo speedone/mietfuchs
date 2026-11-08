@@ -243,3 +243,56 @@ test('Update-Stand: auf einem anderen Gerät ohne Download, vom eigenen Rechner 
     s.stop()
   }
 })
+
+// ---------- Fensterschlüssel (#528) ----------
+// Das Fenster gilt über einen Schlüssel je Start als angemeldet: nur im Fenster, nur über 127.0.0.1, zeitkonstant
+// verglichen. Er macht die Anfrage auch „am Rechner“ für die Einrichtung ohne Code.
+const WINDOW_KEY = 'fensterschluessel-fuer-den-test-0123456789abcdef'
+const windowHeaders = (key = WINDOW_KEY) => ({ 'X-Mietfuchs-Window': key })
+
+test('Fensterschlüssel: angemeldet ohne Cookie, Einrichtung ohne Code, nur über 127.0.0.1', async (t) => {
+  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0', NKA_WINDOW_KEY: WINDOW_KEY })
+  try {
+    const auth = await (await fetch(`${s.base}/api/auth`, { headers: windowHeaders() })).json() as { mode: string, window: boolean, signedIn: boolean }
+    assert.equal(auth.mode, 'setup')
+    assert.equal(auth.window, true)
+    assert.equal(auth.signedIn, true)
+    assert.equal((await fetch(`${s.base}/api/units`, { headers: windowHeaders() })).status, 200)
+    assert.equal((await fetch(`${s.base}/api/units`, { headers: windowHeaders('falsch') })).status, 401)
+    assert.equal((await fetch(`${s.base}/api/units`)).status, 401)
+    // Einrichtung im Fenster ohne Code
+    const setup = await fetch(`${s.base}/api/auth/setup`, { method: 'POST', headers: { ...windowHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ password: 'ein langes Fensterpasswort' }) })
+    assert.equal(setup.status, 200)
+    // mit Passwort liest der Hauptprozess die Einstellungen weiter (readConsent), ohne Anmeldung
+    assert.equal((await fetch(`${s.base}/api/settings`, { headers: windowHeaders() })).status, 200)
+    // neues Passwort im Fenster ohne das bisherige
+    const change = await fetch(`${s.base}/api/auth/password`, { method: 'PUT', headers: { ...windowHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ password: 'ein neues Fensterpasswort' }) })
+    assert.equal(change.status, 200)
+    // der Schlüssel steht nicht mehr in der Umgebung des Servers und geht in keine Antwort
+    assert.doesNotMatch(await (await fetch(`${s.base}/api/settings`, { headers: windowHeaders() })).text(), new RegExp(WINDOW_KEY))
+    const lan = someLanAddress()
+    if (!lan) return t.skip('keine Netzwerkkarte')
+    const fromLan = await send(`http://${lan}:${new URL(s.base).port}`, { urlPath: '/api/units', headers: windowHeaders() })
+    assert.equal(fromLan.status, 401)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Fensterschlüssel: ohne Fenster wirkungslos, Beenden vom Rechner auch ohne Schlüssel', async () => {
+  const s = await startServerIn(freshDir(), { NKA_RUNTIME: '', NKA_HOST: '0.0.0.0', NKA_WINDOW_KEY: WINDOW_KEY })
+  try {
+    assert.equal((await fetch(`${s.base}/api/units`, { headers: windowHeaders() })).status, 401)
+  } finally {
+    s.stop()
+  }
+  const w = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0', NKA_WINDOW_KEY: WINDOW_KEY })
+  try {
+    // ein Fenster ohne den Schlüssel dieses Starts beendet seinen Server trotzdem (stopServer, Umzug)
+    const res = await fetch(`${w.base}/api/quit`, { method: 'POST' })
+    assert.equal(res.status, 200)
+    assert.equal(await waitForExit(w.child), 0)
+  } finally {
+    w.stop()
+  }
+})

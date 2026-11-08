@@ -8,7 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   ACCESS_FILE, CODE_ALPHABET, CODE_FILE, addressKey, authSetting, createBrake, createHashQueue, createSessions, formatCode,
-  hashPassword, initialAccess, needsRehash, newInstance, newSetupCode, normalizeCode, passwordProblem, readAccessFile, reachableOf,
+  hashPassword, initialAccess, needsRehash, sameKey, newInstance, newSetupCode, normalizeCode, passwordProblem, readAccessFile, reachableOf,
   removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, viaProxy, viaHttps, cookieValues, sessionCookie,
   clearedCookie, isLoopback, type AccessFile, type AccessState, type GateDecision, type GateRequest,
 } from '../src/access.ts'
@@ -141,6 +141,14 @@ test('Zugang: Einmal-Code aus 12 Zeichen ohne Verwechslung, Eingabe ohne Rücksi
   assert.equal(sameCode('K7QM4XPA9TRX', 'K7QM4XPA9TRW'), false)
   assert.equal(sameCode('', 'K7QM4XPA9TRW'), false)
   assert.equal(sameCode('K7QM4XPA9TRW', null), false)
+})
+
+test('Zugang: Fensterschlüssel zeitkonstant, leer zählt nie', () => {
+  assert.equal(sameKey('abc', 'abc'), true)
+  assert.equal(sameKey('abd', 'abc'), false)
+  assert.equal(sameKey('', ''), false)
+  assert.equal(sameKey('abc', null), false)
+  assert.equal(sameKey(['abc'], 'abc'), false)
 })
 
 test('Zugang: Datei über Zwischendatei, nur für den eigenen Benutzer', () => {
