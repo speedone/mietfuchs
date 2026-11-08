@@ -9,6 +9,7 @@ import type { FederalState, NotDemandable, RentDueInfo, RentLedgerCarried, RentL
 import { stateName, weekdayOf } from '../../shared/holidays.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
 import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
+import { rentPaidOn } from '../../shared/rentDue.ts'
 import { MONTH_NAMES } from './monthText'
 import { fmtDate, fmtEuro } from './api'
 
@@ -119,12 +120,15 @@ export function carriedText(r: RentLedgerCarried): string {
   return `${r.tenantName}, ausgezogen am ${fmtDate(r.end)}: offen ${fmtEuro(r.openCents)}${rest}`
 }
 
-// Das Datum, mit dem ein Klick auf einen Monat die Zahlung vorbelegt. Ein fälliger Monat: der Erste
-// des Monats. Ein noch nicht fälliger (#133): heute, denn wer ihn jetzt bucht, hat heute gezahlt,
-// und für die Steuer zählt der Tag des Zuflusses (letzte Durchsicht). Örtlich, wie showDecemberNote.
+// Das Datum, mit dem ein Klick auf einen Monat die Zahlung vorbelegt (#608): der Fälligkeitstag, den der Server nennt
+// (`RentMonth.dueOn`), höchstens der Monatsletzte und nie nach heute (`rentPaidOn`, dieselbe Regel wie „Offene Monate als
+// bezahlt erfassen“). Ohne Fälligkeitstag (vor 1995) wie bisher: ein fälliger Monat am Ersten, ein noch nicht fälliger
+// (#133) heute, denn wer ihn jetzt bucht, hat heute gezahlt, und für die Steuer zählt der Tag des Zuflusses. Örtlich.
 export function bookingDate(year: number, mo: RentMonth, today: Date): string {
-  if (mo.status !== 'notDue') return `${year}-${String(mo.month).padStart(2, '0')}-01`
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const now = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const month = `${year}-${String(mo.month).padStart(2, '0')}`
+  if (mo.dueOn) return rentPaidOn(month, mo.dueOn, now)
+  return mo.status !== 'notDue' ? `${month}-01` : now
 }
 
 // Das Datum, mit dem „+ Zahlung erfassen“ vorbelegt (#142). Im laufenden Jahr heute. Ist ein

@@ -118,6 +118,16 @@ describe('Mietkonto: Buchungsdatum beim Klick auf einen Monat (#133, letzte Durc
   it('ein noch nicht fälliger Monat: heute, denn gezahlt wird heute (Zuflussprinzip)', () => {
     expect(bookingDate(2026, month(12, 100000, 'notDue'), heute)).toBe('2026-10-01')
   })
+  // #608: Mit der Auskunft des Servers der Fälligkeitstag, höchstens der Monatsletzte und nie nach heute.
+  it('mit Fälligkeitstag: dieser Tag', () => {
+    expect(bookingDate(2026, { ...month(9, 100000, 'open'), dueOn: '2026-09-03' }, heute)).toBe('2026-09-03')
+  })
+  it('Fälligkeitstag nach heute: heute', () => {
+    expect(bookingDate(2026, { ...month(10, 100000, 'notDue'), dueOn: '2026-10-05' }, heute)).toBe('2026-10-01')
+  })
+  it('Fälligkeit nach Ablauf des Monats: der Monatsletzte', () => {
+    expect(bookingDate(2026, { ...month(8, 100000, 'open'), dueOn: '2026-09-01' }, heute)).toBe('2026-08-31')
+  })
 })
 
 describe('Datum einer neuen Zahlung (#142)', () => {
