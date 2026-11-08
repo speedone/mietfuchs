@@ -203,6 +203,8 @@ describe('Mietkonto: Fälligkeit je Karte (#334)', () => {
     expect(nw).toMatch(/Für den Rückstand zählen Feiertage erst/)
     expect(dueDetails('NW', true, { rule: 'startWorkday', agreed: false })).not.toMatch(/Für den Rückstand zählen Feiertage erst/)
     expect(dueDetails(null, false, { rule: 'startWorkday', agreed: false })).toMatch(/spätesten Tag aller Länder; am Ort kann die Miete früher fällig sein/)
+    // Textdurchsicht 0.17.0: die sichere Grenze nennt auch die erste Miete, die schon bei Mietbeginn fällig ist (safeArrearsFrom).
+    expect(nw).toMatch(/im Einzugsmonat, bei einer ersten Miete, die schon bei Mietbeginn fällig ist, bei einem festen Tag nach dem 14\. und nach Ablauf des Monats ab dem Ersten des übernächsten/)
   })
 })
 

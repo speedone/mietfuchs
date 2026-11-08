@@ -80,8 +80,9 @@ Kurzfassung steht im [README](../README.md#funktionen).
    schon am 01.09.2001 bestanden, nach Ablauf des Monats) und den Feiertagen am Ort, dazu vier Bankgeschäftstage für
    Überweisung und Buchung. Jede Karte sagt „fällig am …“, „fällig seit …, Eingang erwartet bis …“ oder rot „offen
    seit …“. Solange nicht alle Feiertagsgesetze der Länder amtlich gelesen sind, rechnet Mietfuchs vorsichtig ohne
-   Feiertage: Ein voller Monat zählt ab dem Ersten des Folgemonats, Einzugsmonat, fester Tag nach dem 14. und „nach
-   Ablauf“ ab dem Ersten des übernächsten. Zeigt das Mietkonto einen
+   Feiertage: Ein voller Monat, der zu Beginn oder an einem festen Tag bis zum 14. fällig ist, zählt ab dem Ersten des
+   Folgemonats; jeder andere (Einzug im Lauf des Monats, späterer fester Tag, „nach Ablauf“, erste Miete schon bei
+   Mietbeginn) ab dem Ersten des übernächsten. Zeigt das Mietkonto einen
    Rückstand, weist die Abrechnung darauf hin, denn maßgeblich ist, was tatsächlich gezahlt wurde.
    Beginnt oder endet ein Mietverhältnis im Lauf eines Monats, setzen Mietkonto und Abrechnung
    Miete und Vorauszahlung dieses Monats nach Kalendertagen an (Einzug am 15.03. bei 150 €
