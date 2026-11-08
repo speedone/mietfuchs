@@ -402,7 +402,8 @@ jobs:
           "./bin/${{ matrix.programm }}" > server.log 2>&1 &
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe der Programmdatei"; cat server.log' EXIT
-          node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary ${{ env.SLOW_AI }}
+          # Ohne NKA_HOST im Netz (#528): Der frische Datenordner verlangt ein Passwort, den Code liest das Skript aus der Datei
+          node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary ${{ env.SLOW_AI }} --code-file "$NKA_DATA_DIR/einrichtungscode.txt"
           # Ein zweiter Start derselben Programmdatei auf demselben Port, mit Daten, die umsteigen
           # wollen (#244): Er muss mit Code 0 enden, ohne seinen Datenordner anzufassen. Ob Bun den
           # Port auf jedem System exklusiv bindet, zeigt nur dieser Lauf, in jedem Prüfumfang.
@@ -415,7 +416,7 @@ jobs:
           $env:NKA_DATA_DIR = Join-Path $env:RUNNER_TEMP 'daten'
           $p = Start-Process -FilePath "bin\${{ matrix.programm }}" -PassThru -RedirectStandardOutput server.log -RedirectStandardError server.err
           try {
-            node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary ${{ env.SLOW_AI }}
+            node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary ${{ env.SLOW_AI }} --code-file (Join-Path $env:NKA_DATA_DIR 'einrichtungscode.txt')
             if ($LASTEXITCODE -ne 0) { throw "Prüfung auf ${{ matrix.name }} fehlgeschlagen" }
             # Zweiter Start auf demselben Port (#244), siehe den Schritt für Linux und macOS
             node scripts/second-start.mjs --url "http://127.0.0.1:$env:NKA_PORT" --program "bin\${{ matrix.programm }}"
@@ -463,7 +464,7 @@ jobs:
             "${{ matrix.image }}" "/app/$datei"
           trap 'echo "--- Ausgabe der Programmdatei"; docker logs pruefling; docker rm -f pruefling > /dev/null' EXIT
           docker exec pruefling sh -c 'ldd --version 2>&1 | head -1' || true
-          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary --code-command "docker exec pruefling cat /tmp/daten/einrichtungscode.txt"
 
   # Die Installationspakete (#25) werden installiert wie bei einem Nutzer, danach startet
   # Mietfuchs als ganz normaler Benutzer. In /usr/bin darf der nicht schreiben, seine Daten
@@ -510,7 +511,7 @@ jobs:
             pruefling sh -c 'mietfuchs > /tmp/server.log 2>&1'
           # Betriebsart „package“: Aus einem Paket installiert, erklärt der Update-Hinweis das
           # Aktualisieren über die Paketverwaltung statt über das Austauschen der Datei.
-          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode package
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode package --code-command "docker exec pruefling cat /home/pruefer/.local/share/mietfuchs/einrichtungscode.txt"
           echo '--- Datenordner des Benutzers'
           # Aus einem Paket installiert, kann der Server nicht neben sich schreiben, die Daten
           # müssen also im Heimatordner liegen (systemLocation in paths.ts). Geprüft wird die
@@ -939,7 +940,7 @@ jobs:
             node server/src/index.ts > server.log 2>&1 &
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
-          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --slow-ai 320
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --slow-ai 320 --code-file "$RUNNER_TEMP/daten/einrichtungscode.txt"
 
   # Der Umzug ins Programmfenster mit echten alten Fassungen (#517, scripts/fenster-umzug-praxislauf.mjs): Die
   # Linux-Programmdateien von 0.3.1 (db.json) bis 0.14.1 legen je einen Bestand an, der Server von heute übernimmt den

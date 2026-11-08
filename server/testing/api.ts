@@ -315,6 +315,10 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       NKA_RUNTIME: '',
       // Keine Frage nach einem Mietfuchs des Entwicklers auf 3001 oder 17517 (instanceGuard.ts); wer sie prüft, setzt Ports
       NKA_TEST_TWIN_PORTS: '[]',
+      // Nur auf diesem Rechner (#528): Kein Test öffnet einen Port im Netz des Entwicklers, und ohne Netz gilt keine
+      // Anmeldung. Wer das Netz oder die Anmeldung prüft, setzt `NKA_HOST: '0.0.0.0'` bzw. `NKA_AUTH`.
+      NKA_HOST: '127.0.0.1',
+      NKA_AUTH: '',
       ...env,
       NKA_PORT: '0',
       NKA_DATA_DIR: dataDir,
@@ -364,6 +368,52 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
   return { api, base, dataDir, stop, child, output, errorOutput }
 }
 
+// ---------- Anmeldung (#528) ----------
+
+export const TEST_PASSWORD = 'ein langes Testpasswort'
+
+// Der Einmal-Code aus dem Datenordner, wie ihn der Vermieter aus Datei oder Protokoll abschreibt
+export function setupCode(dataDir: string): string {
+  const file = path.join(dataDir, 'einrichtungscode.txt')
+  if (!fs.existsSync(file)) return assert.fail(`${file} fehlt: Mietfuchs hat keinen Einrichtungscode geschrieben`)
+  return fs.readFileSync(file, 'utf8').trim()
+}
+
+// Das Cookie der Sitzung aus `Set-Cookie`, als Wert für die Kopfzeile `cookie`
+export function sessionOf(res: Response): string {
+  const cookie = res.headers.get('set-cookie')?.split(';')[0]
+  if (!cookie?.startsWith('mietfuchs_')) return assert.fail(`keine Sitzung in der Antwort (${res.status})`)
+  return cookie
+}
+
+// Richtet das Passwort mit dem Code aus dem Datenordner ein und gibt ein `fetch` mit Sitzung zurück
+export async function signIn(server: { base: string, dataDir: string }, password = TEST_PASSWORD) {
+  const res = await fetch(`${server.base}/api/auth/setup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: setupCode(server.dataDir), password }),
+  })
+  if (!res.ok) assert.fail(`Einrichtung gescheitert: ${res.status} ${await res.text()}`)
+  const cookie = sessionOf(res)
+  const signedFetch = (urlPath: string, init: RequestInit = {}): Promise<Response> =>
+    fetch(`${server.base}${urlPath}`, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), cookie } })
+  return { fetch: signedFetch, cookie }
+}
+
+// Eine Anfrage mit frei gesetzten Kopfzeilen und rohem Pfad: fetch setzt weder Host noch lässt es `..` stehen
+export function rawRequest(base: string, { method = 'GET', urlPath = '/', headers = {}, body }: { method?: string, urlPath?: string, headers?: Record<string, string>, body?: string } = {}): Promise<{ status: number, body: string, headers: http.IncomingHttpHeaders }> {
+  const url = new URL(base)
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: url.hostname, port: url.port, method, path: urlPath, headers: { ...headers, ...(body !== undefined ? { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) } : {}) } }, (res) => {
+      let text = ''
+      res.on('data', (c: Buffer) => { text += c })
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text, headers: res.headers }))
+    })
+    req.on('error', reject)
+    req.end(body)
+  })
+}
+
 // ---------- Start aus dem Startmenü (#45) ----------
 
 // Wartet, bis der Prozess endet, und liefert den Code. Wirft nach der Wartezeit.
@@ -383,7 +433,7 @@ export function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}, { s
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     // CI hinter `...env`, wie in startServerIn: Kein Aufrufer kann es versehentlich abschalten.
-    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, NKA_TEST_TWIN_PORTS: '[]', ...env, CI: 'true' },
+    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, NKA_TEST_TWIN_PORTS: '[]', NKA_HOST: '127.0.0.1', NKA_AUTH: '', ...env, CI: 'true' },
     stdio: [stdin, 'pipe', 'pipe'],
   })
   let output = ''

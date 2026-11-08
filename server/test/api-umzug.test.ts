@@ -720,7 +720,7 @@ test('Absicherung: Umzugsrouten nur vom eigenen Rechner, aus dem Heimnetz 403', 
   const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address
   if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback; ohne sie lässt sich keine Anfrage aus dem Heimnetz nachstellen.')
   const old = await oldFolder()
-  const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_HOST: '0.0.0.0' }))
+  const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_HOST: '0.0.0.0', NKA_AUTH: 'off' }))
   try {
     const port = new URL(s.base).port
     const fromLan = `http://${lan}:${port}`

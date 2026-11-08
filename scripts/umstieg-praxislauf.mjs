@@ -49,7 +49,7 @@ async function withServer(dataDir, work) {
   const p = nextPort()
   const log = []
   const kind = spawn(process.execPath, [SERVER], {
-    env: { ...process.env, NKA_DATA_DIR: dataDir, NKA_PORT: String(p), CI: 'true', NKA_UPDATE_URL: 'http://127.0.0.1:9/nichts' },
+    env: { ...process.env, NKA_HOST: '127.0.0.1', NKA_DATA_DIR: dataDir, NKA_PORT: String(p), CI: 'true', NKA_UPDATE_URL: 'http://127.0.0.1:9/nichts' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   kind.stdout.on('data', (d) => log.push(String(d)))

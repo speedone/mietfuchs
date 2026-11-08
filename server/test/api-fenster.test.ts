@@ -162,7 +162,7 @@ test('Fenster im utilityProcess: „quit“ mitten im Start beendet erst nach de
 test('Fenster: Beenden, KI-Schlüssel, Zustimmungen und Update-Prüfung nur vom eigenen Rechner', async (t) => {
   const lan = someLanAddress()
   if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback; ohne sie lässt sich keine Anfrage aus dem Heimnetz nachstellen.')
-  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0' })
+  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0', NKA_AUTH: 'off' })
   try {
     const fromLan = `http://${lan}:${new URL(s.base).port}`
     const call = async (base: string, method: string, urlPath: string, body?: unknown) => {
@@ -212,7 +212,7 @@ test('Fenster: Beenden, KI-Schlüssel, Zustimmungen und Update-Prüfung nur vom 
 test('Heimnetz im Browserbetrieb (Docker, npm): Beenden und Zustimmungen bleiben, wie sie waren', async (t) => {
   const lan = someLanAddress()
   if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback.')
-  const s = await startServerIn(freshDir(), { NKA_HOST: '0.0.0.0' })
+  const s = await startServerIn(freshDir(), { NKA_HOST: '0.0.0.0', NKA_AUTH: 'off' })
   try {
     const res = await fetch(`http://${lan}:${new URL(s.base).port}/api/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ updateCheck: 'on' }) })
     assert.equal(res.status, 200)
@@ -226,7 +226,7 @@ test('Heimnetz im Browserbetrieb (Docker, npm): Beenden und Zustimmungen bleiben
 test('Update-Stand: auf einem anderen Gerät ohne Download, vom eigenen Rechner wie bisher', async (t) => {
   const lan = someLanAddress()
   if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback; ohne sie lässt sich keine Anfrage aus dem Heimnetz nachstellen.')
-  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0' })
+  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0', NKA_AUTH: 'off' })
   try {
     const fromLan = `http://${lan}:${new URL(s.base).port}`
     for (const [method, urlPath] of [['GET', '/api/update'], ['POST', '/api/update/check']]) {
