@@ -79,7 +79,7 @@ import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
-import { coversDate, createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
+import { coversDate, createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type LawLog, type Period } from '../../shared/law/register.ts'
 import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { switchFindings, switchText } from './heatDelivery.ts'
 import { cheapRentOf } from './cheapRent.ts'
@@ -103,7 +103,7 @@ import { invoicesOf, possibleDuplicates, receiptedSources, separateService } fro
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, leavesRentalWithin, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
 import type { FederalState, MeterRest, MeterRestKey, MeterRestTarget, RentDueRule, TaxSpread, UnitUsage } from '../../shared/types.ts'
-import { effectiveRentDue, FIRST_YEAR, holidaysCheckedOn, rentDueOn } from '../../shared/rentDue.ts'
+import { effectiveRentDue, FIRST_YEAR, holidaysCheckedOn, monthDue, rentDueOn, type MonthDue } from '../../shared/rentDue.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
@@ -1070,15 +1070,42 @@ export type LedgerStatement = {
   credited: ReadonlyMap<string, number> | null
   covers: (tenancyId: string, month: string, component: PrepaymentComponent) => boolean
 }
-export type LedgerOptions = { asOf?: string, statements?: readonly LedgerStatement[] }
+// `holidaysChecked` nur für Tests (#334): ersetzt `holidaysCheckedOn`, damit beide Fälle des Prüfstands der Feiertage
+// prüfbar sind; die Routen setzen es nie.
+export type LedgerOptions = { asOf?: string, statements?: readonly LedgerStatement[], holidaysChecked?: (date: string) => boolean }
+
+// **Ab wann ein Monat Rückstand ist (#334, Entwurf E3, E6, E7), eine Stelle für `tenancyAccount`, `ledgerRows` und den
+// Hinweis `prepayment.arrears`.** Ohne Stichtag ist alles fällig (Steuer, Regression des Umstiegs, Tests). Mit Stichtag ab
+// dem Tag nach dem spätesten erwarteten Eingang der Miete (`monthDue` in shared/rentDue.ts: Fälligkeit nach der Regel des
+// Mietverhältnisses und den Feiertagen am Ort, vier Bankgeschäftstage für Überweisung und Buchung), mit Feiertagen nur an
+// geprüften Tagen, sonst ab der sicheren Grenze ohne Feiertage. Die ist nie später als der Erste des übernächsten Monats;
+// ab dann ist jeder Monat Rückstand, ohne zu rechnen. `t` ist das vereinbarte Mietverhältnis, nicht das geführte.
+type DueContext = { asOf?: string, state: FederalState | null, holidaysChecked?: (date: string) => boolean, log?: LawLog }
+const monthAfterNext = (month: string): string => nextMonthOf(nextMonthOf(month))
+function monthIsArrears(t: SnapshotTenancy, month: string, ctx: DueContext): boolean {
+  const asOf = ctx.asOf
+  if (asOf === undefined) return true
+  if (monthShare(t, month).days === 0) return false
+  if (compareText(asOf, `${monthAfterNext(month)}-01`) >= 0) return true
+  if (compareText(asOf, `${month}-01`) <= 0) return false
+  return dueOfMonth(t, month, ctx)?.arrears ?? true
+}
+// Fälligkeit, erwarteter Eingang und Beginn des Rückstands für die Anzeige, nur mit Stichtag und Tag im Mietverhältnis.
+function dueOfMonth(t: SnapshotTenancy, month: string, ctx: DueContext): MonthDue | null {
+  if (ctx.asOf === undefined || monthShare(t, month).days === 0) return null
+  return monthDue(t, month, ctx.state, ctx.asOf, {
+    ...(ctx.holidaysChecked !== undefined ? { holidaysChecked: ctx.holidaysChecked } : {}),
+    ...(ctx.log !== undefined ? { log: ctx.log } : {}),
+  })
+}
 
 const A_COMPONENTS: readonly PrepaymentComponent[] = ['prepayment', 'heatingPrepayment']
 const B_COMPONENTS: readonly SollComponent[] = ['baseRent', 'flatRate']
 const LEDGER_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const maxText = (a: string, b: string): string => (compareText(a, b) >= 0 ? a : b)
 const minText = (a: string, b: string): string => (compareText(a, b) <= 0 ? a : b)
-const prevMonth = (month: string): string => {
-  const k = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 2
+const nextMonthOf = (month: string): string => {
+  const k = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7))
   return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}`
 }
 
@@ -1099,15 +1126,14 @@ type TenancyAccount = {
 // nur, was das Mietkonto daraus liest: Rückstand fälliger Monate, Abrechnungsreife und Anfangs- und Endsaldo.
 // `t` ist das geführte Mietverhältnis (`ledgerTenancy`), `contract` das vereinbarte: Für die Abrechnungsreife gelten Monate
 // vor der Erfassung als so gezahlt, wie die Abrechnung sie anrechnet (Durchsicht, Befund 3).
-function tenancyAccount(t: SnapshotTenancy, contract: SnapshotTenancy, own: readonly SnapshotPayment[], span: Pick<BillingPeriod, 'from' | 'to'>, options: LedgerOptions): TenancyAccount {
+function tenancyAccount(t: SnapshotTenancy, contract: SnapshotTenancy, own: readonly SnapshotPayment[], span: Pick<BillingPeriod, 'from' | 'to'>, options: LedgerOptions, due: DueContext): TenancyAccount {
   const slices = allocateRentPayments(t, own)
   const spanMonths = periodMonths(span)
   const spanLast = spanMonths.at(-1) ?? span.to.slice(0, 7)
   const first = t.start.slice(0, 7)
   const tenancyLast = t.end === null ? null : t.end.slice(0, 7)
-  // Fällig ist ein Monat vor dem des Stichtags (#133), höchstens bis zum Ende der Spanne.
-  const asOfMonth = options.asOf?.slice(0, 7)
-  const dueEnd = asOfMonth === undefined ? spanLast : minText(spanLast, prevMonth(asOfMonth))
+  // Rückstand ist ein Monat ab dem Tag nach dem erwarteten Eingang (#334, `monthIsArrears`), höchstens bis zum Ende der
+  // Spanne.
   const statements = options.statements ?? []
   // Die Deckung je Monat ab Beginn bis zum Ende der Spanne bzw. zum letzten Monat einer Abrechnung (deren Anrechnung
   // die Abrechnungsreife mit dem Gezahlten vergleicht), nie über das Ende des Mietverhältnisses; dazu die Monate der
@@ -1163,7 +1189,8 @@ function tenancyAccount(t: SnapshotTenancy, contract: SnapshotTenancy, own: read
   const byStatement = new Map<LedgerStatement, number>()
   const notDemandableByMonth = new Map<string, number>()
   for (const m of months) {
-    if (compareText(m, dueEnd) > 0) break
+    if (compareText(m, spanLast) > 0) break
+    if (!monthIsArrears(contract, m, due)) continue
     const c = coverage.get(m)
     if (!c) continue
     for (const comp of B_COMPONENTS) arrearsCents += openOf(c, comp)
@@ -1204,10 +1231,9 @@ function tenancyAccount(t: SnapshotTenancy, contract: SnapshotTenancy, own: read
 // seine Teile mit Datum bis zum Ende der Spanne das Soll erreichen (`monthCoverage`, eine Stelle). `month` ist der
 // Kalendermonat (1..12), in höchstens zwölf aufeinanderfolgenden Monaten also eindeutig.
 //
-// **Fällig ist nur, was vor dem Monat des Stichtags liegt** (#133). Die Miete ist bis zum dritten
-// Werktag fällig (§ 556b Abs. 1 BGB), und eine Überweisung braucht ein paar Tage, bis sie gebucht
-// ist; den laufenden Monat erst ab einem bestimmten Tag mitzuzählen, hinge an Wochenenden und
-// Feiertagen. Liegt der Stichtag nach der Spanne, ist alles fällig, liegt er davor, nichts. Ohne
+// **Rückstand ab dem Tag nach dem spätesten erwarteten Eingang** (#334, löst die Regel aus #133 ab, nach der erst der
+// Folgemonat zählte): `monthIsArrears` oben. Bis dahin ist ein Monat mit Soll `notDue` („zählt noch nicht als
+// Rückstand“), und die Zeile nennt je Monat Fälligkeitstag, erwarteten Eingang und Beginn des Rückstands. Ohne
 // Stichtag (Steuer, Regression, Tests) gilt die ganze Spanne als fällig. Die Berechnung fragt nie
 // selbst nach „heute“; die Routen reichen den Tag hinein, und ebenso die Abrechnungen für die
 // Abrechnungsreife (`statements`, E5).
@@ -1215,13 +1241,12 @@ function tenancyAccount(t: SnapshotTenancy, contract: SnapshotTenancy, own: read
 // Wer jeden Monat genau das Soll im Monat zahlt, sieht dieselben Zahlen wie mit der früheren Verteilung je Jahr
 // (Orakel in server/testing/fifoLedger.ts, invariant-mietkonto.test.ts).
 export function ledgerRows(
-  source: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>,
+  source: Pick<Snapshot, 'units' | 'tenancies' | 'payments'> & Partial<Pick<Snapshot, 'property'>>,
   span: Pick<BillingPeriod, 'from' | 'to'>,
   options: LedgerOptions = {},
 ): RentLedgerRow[] {
   const months = periodMonths(span)
-  const asOfMonth = options.asOf?.slice(0, 7)
-  const dueMonths = asOfMonth === undefined ? months.length : months.filter((m) => m < asOfMonth).length
+  const due = dueContextOf(source, options)
   const unitById = new Map(source.units.map((u) => [u.id, u]))
   // Der Schnappschuss führt alle Zahlungen. Die Tilgung braucht sie ab Beginn; welche Zahlung zum
   // Jahr zählt (`paidYearCents`), entscheidet diese Rechnung nach ihrem Datum.
@@ -1235,10 +1260,11 @@ export function ledgerRows(
       const startOf = ledgerStartOf(t, source.payments, year)
       const tracked = startOf.start === t.start ? t : { ...t, start: startOf.start }
       const recorded = recordingStart(source.payments, year)
-      const account = tenancyAccount(tracked, t, own, span, options)
+      const account = tenancyAccount(tracked, t, own, span, options, due)
       // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
       // Felder dazu stehen nur in Zeilen mit Heizstaffel, damit sich ohne sie nichts ändert.
       const withHeating = Array.isArray(t.heatingPrepayments) && t.heatingPrepayments.length > 0
+      const arrearsMonths = new Set<number>()
       const rowMonths = months.map((mm, k): RentMonth => {
         // Dieselbe Monatsregel wie die Abrechnung (#311): im angebrochenen Monat anteilig. Das Soll je
         // Bestandteil kommt aus `monthSoll` (shared/monthRate.ts), derselben Stelle wie die Tilgung (#312).
@@ -1254,6 +1280,14 @@ export function ledgerRows(
         // Vor dem Beginn der Erfassung (`ledgerStart`), aber im Mietverhältnis: nicht erfasst, weder bezahlt noch offen.
         const notRecorded = share.days > 0 && compareText(mm, tracked.start.slice(0, 7)) < 0
         const notDemandable = account.notDemandableByMonth.get(mm) ?? 0
+        const sollCents = baseRentCents + prepaymentCents + heatingPrepaymentCents + flatRateCents
+        // Fälligkeit nur als Auskunft am Monat mit Soll und Erfassung (#334); ob er Rückstand ist, sagt `monthIsArrears`.
+        const shown = !notRecorded && sollCents > 0 ? dueOfMonth(t, mm, due) : null
+        const arrears = shown !== null ? shown.arrears : monthIsArrears(t, mm, due)
+        if (arrears) arrearsMonths.add(k)
+        // Nur Auskunft (E3, für #188): verglichen mit dem erwarteten Eingang mit Feiertagen, auch solange der Rückstand
+        // nach der sicheren Grenze zählt; daraus folgt nie ein Verzug.
+        const paidAfter = shown?.creditExpectedBy && covered && c?.coveredOn && compareText(c.coveredOn, shown.creditExpectedBy) > 0 ? c.coveredOn : null
         return {
           month: Number(mm.slice(5, 7)),
           ...(share.days > 0 && share.days < share.of ? { share } : {}),
@@ -1261,13 +1295,17 @@ export function ledgerRows(
           prepaymentCents,
           ...(withHeating ? { heatingPrepaymentCents } : {}),
           flatRateCents,
-          sollCents: baseRentCents + prepaymentCents + heatingPrepaymentCents + flatRateCents,
+          sollCents,
           paidCents: notRecorded ? 0 : paid,
-          status: notRecorded ? 'notRecorded' : covered ? 'paid' : k >= dueMonths ? 'notDue' : paid > 0 ? 'partial' : 'open',
+          status: notRecorded ? 'notRecorded' : covered ? 'paid' : !arrears ? 'notDue' : paid > 0 ? 'partial' : 'open',
           openPrepaymentCents: c ? c.soll.prepayment - c.paid.prepayment + c.soll.heatingPrepayment - c.paid.heatingPrepayment : 0,
           openRentCents: c ? c.soll.baseRent - c.paid.baseRent + c.soll.flatRate - c.paid.flatRate : 0,
           ...(c?.paidLaterOn ? { paidLaterOn: c.paidLaterOn } : {}),
           ...(notDemandable > 0 ? { notDemandableCents: notDemandable } : {}),
+          ...(shown?.dueOn ? { dueOn: shown.dueOn } : {}),
+          ...(shown?.creditExpectedBy ? { creditExpectedBy: shown.creditExpectedBy } : {}),
+          ...(shown ? { arrearsFrom: shown.arrearsFrom } : {}),
+          ...(paidAfter ? { paidAfterExpected: paidAfter } : {}),
         }
       })
       // Nur die Miete wird getilgt (#280). Eine Nachzahlung aus der Abrechnung deckt kein Monats-Soll, und ein
@@ -1276,7 +1314,7 @@ export function ledgerRows(
       const paidYearCents = inSpan.filter(isRentPayment).reduce((a, p) => a + p.amountCents, 0)
       const settlementYearCents = inSpan.filter((p) => !isRentPayment(p)).reduce((a, p) => a + p.amountCents, 0)
       const sollYearCents = rowMonths.reduce((a, mo) => a + mo.sollCents, 0)
-      const dueSollCents = rowMonths.filter((_, k) => k < dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
+      const dueSollCents = rowMonths.filter((_, k) => arrearsMonths.has(k)).reduce((a, mo) => a + mo.sollCents, 0)
       // Ein Monat laut Verwendungszweck, an dem das Mietverhältnis nicht besteht oder der vor dem Beginn des Mietkontos
       // liegt (`ledgerStart`), wirkt wie keine Bestimmung (#312 E2);
       // das Mietkonto nennt die Zahlung (krumm, nicht kaputt: Beginn oder Ende können sich später geändert haben).
@@ -1313,9 +1351,18 @@ export function ledgerRows(
     .sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
 }
 
+// Der Kontext der Fälligkeit aus Schnappschuss und Optionen: das Land des Objekts (ohne: der späteste Tag aller Länder).
+function dueContextOf(source: Partial<Pick<Snapshot, 'property'>>, options: LedgerOptions): DueContext {
+  return {
+    ...(options.asOf !== undefined ? { asOf: options.asOf } : {}),
+    state: source.property?.state ?? null,
+    ...(options.holidaysChecked !== undefined ? { holidaysChecked: options.holidaysChecked } : {}),
+  }
+}
+
 // Das Mietkonto bleibt im Kalenderjahr (#208, Entwurf 3.11), auch wenn die Abrechnung einen anderen
 // Zeitraum hat: Es ist die Grundlage der Einnahmen in der Steuer. `asOf` wie bei der Abrechnung:
-// Monate ab dem des Stichtags sind „noch nicht fällig“ und kein Rückstand (zweite Browserabnahme).
+// Ein Monat ist bis zum spätesten erwarteten Eingang „noch nicht fällig“ und kein Rückstand (#334, `monthIsArrears`).
 // Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran. `statements` (E5) nur aus der Route.
 export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): RentLedger {
   const span = calendarYearPeriod(snapshot.year)
@@ -1351,7 +1398,7 @@ export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): Ren
       const tracked = ledgerTenancy(t, snapshot.payments, snapshot.year)
       // Endete das Mietverhältnis vor dem Beginn der Erfassung im Objekt, gibt es kein geführtes Konto, also keinen Übertrag.
       if (compareText(tracked.start, end) > 0) return []
-      const account = tenancyAccount(tracked, t, own, span, options)
+      const account = tenancyAccount(tracked, t, own, span, options, dueContextOf(snapshot, options))
       if (account.arrearsCents <= 0 && account.notDemandableCents <= 0) return []
       return [{
         tenancyId: t.id,
@@ -1366,6 +1413,7 @@ export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): Ren
     .sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
   return {
     year: snapshot.year,
+    ...(options.asOf !== undefined ? { asOf: options.asOf } : {}),
     rows,
     settlementOnly,
     carriedOnly,
@@ -3557,12 +3605,13 @@ const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
 export const allocationModel = (m: HeatingModel | undefined): CostModel => (m === 'selfSupply' || m === undefined ? 'settlement' : m)
 
 // Optionen der Abrechnung. `asOf` (JJJJ-MM-TT) ist der Stichtag für den Hinweis auf einen
-// Rückstand im Mietkonto (#133); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
+// Rückstand im Mietkonto (#133, #334: ab dem Tag nach dem erwarteten Eingang); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
 // nach dem heutigen Datum, sonst rechneten dieselben Daten an zwei Tagen verschieden. Ohne
 // Stichtag (Tests, Regression des Umstiegs) gilt das ganze Jahr als fällig.
 // `onAllocation` bekommt je Position ihre Verteilung (#202), für die Invarianten der Tests; die
 // Abrechnung selbst hängt nicht davon ab.
-export type SettlementOptions = { asOf?: string, onAllocation?: (trace: AllocationTrace) => void }
+// `holidaysChecked` nur für Tests (#334), wie bei `LedgerOptions`.
+export type SettlementOptions = { asOf?: string, onAllocation?: (trace: AllocationTrace) => void, holidaysChecked?: (date: string) => boolean }
 
 // Der Schlüssel als Satzteil („2025 nach Personenzahl verteilt“), für den Hinweis unten.
 const KEY_PHRASES: Record<CostKey, string> = {
@@ -9926,25 +9975,30 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // genau den Fall, um den es geht.
   // Gemeldet wird nur, wo eine Vorauszahlung angerechnet wird: Bei Pauschale und Inklusivmiete
   // fällt die Abrechnung oben weg oder rechnet nichts an.
-  // **Fällig ist nur, was vor dem Monat des Stichtags liegt.** Das Mietkonto führt das Soll für alle
-  // zwölf Monate, im laufenden Jahr also auch für die kommenden; ohne Grenze stünde dann bei jedem
-  // Mieter ein Rückstand. Die Miete ist bis zum dritten Werktag fällig (§ 556b Abs. 1 BGB), und
-  // eine Überweisung braucht ein paar Tage, bis sie gebucht ist. Den laufenden Monat erst ab einem
-  // bestimmten Tag mitzuzählen, hinge an Wochenenden und Feiertagen; einfacher und ohne Fehlalarm
-  // ist, ihn gar nicht mitzuzählen. Ein Rückstand des laufenden Monats erscheint dann im nächsten.
-  // Liegt der Stichtag nach dem Zeitraum, ist alles fällig, liegt er davor, nichts.
+  // **Fällig ist ein Monat ab dem Tag nach dem spätesten erwarteten Eingang** (#334, dieselbe Stelle wie das Mietkonto,
+  // `monthIsArrears`; löst die Regel aus #133 ab, nach der erst der Folgemonat zählte). Das Mietkonto führt das Soll für
+  // alle Monate, im laufenden Jahr also auch für die kommenden; ohne Grenze stünde dann bei jedem Mieter ein Rückstand.
+  // Liegt der Stichtag nach dem Zeitraum, ist alles fällig, liegt er davor, nichts. Die Fristregeln, mit denen gerechnet
+  // wurde, stehen nur dann in den Rechtswerten der Abrechnung, wenn der Hinweis erscheint.
   // Nur Mietzahlungen (#280): Wer allein Nachzahlungen und Guthaben aus der Abrechnung bucht, führt
   // das Mietkonto nicht, und dann stünde für jedes Mietverhältnis die ganze Miete als Rückstand da.
   const ledgerInUse = snapshot.payments.some((p) => isRentPayment(p) && p.date >= yFrom && p.date <= yTo)
-  // Fällig ist ein Monat des Zeitraums vor dem Monat des Stichtags; ohne Stichtag alle (#133).
-  const asOfMonth = options.asOf?.slice(0, 7)
-  const anyDue = asOfMonth === undefined || periodMonths(period).some((m) => m < asOfMonth)
+  // Ohne Stichtag alle Monate.
+  const anyDue = options.asOf === undefined || periodMonths(period).some((m) => compareText(`${m}-01`, options.asOf ?? '') < 0)
   if (scope === 'all' && ledgerInUse && anyDue) {
-    const dueInPeriod = periodMonths(period).filter((m) => asOfMonth === undefined || m < asOfMonth)
     for (const st of statements.values()) {
       if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
       const t = partTenancies.find((x) => x.id === st.tenancyId)
       if (!t) continue
+      const dueLog = createLawLog()
+      const dueCtx: DueContext = {
+        ...(options.asOf !== undefined ? { asOf: options.asOf } : {}),
+        state: snapshot.property?.state ?? null,
+        ...(options.holidaysChecked !== undefined ? { holidaysChecked: options.holidaysChecked } : {}),
+        log: dueLog,
+      }
+      const dueInPeriod = periodMonths(period).filter((m) => options.asOf === undefined || monthIsArrears(t, m, dueCtx))
+      if (dueInPeriod.length === 0) continue
       const plant = plants.find((p) => servesUnit(p, t.unit))
       const way = plant ? wayOf(plant) : null
       const heatingHere = (m: string): boolean => way === null || separateOwner(way, objectRules, m) === null
@@ -9957,6 +10011,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const openCents = monthCoverage(tracked, slices, dueInPeriod, until).reduce((a, c) =>
         a + c.soll.prepayment - c.paid.prepayment + (heatingHere(c.month) ? c.soll.heatingPrepayment - c.paid.heatingPrepayment : 0), 0)
       if (openCents <= 0) continue
+      // Die Fristregeln, nach denen die Monate fällig sind, gehören dann zu den Rechtswerten der Abrechnung. Gerechnet und
+      // damit protokolliert werden nur die Monate um den Stichtag (ältere sind ohne Rechnung fällig); ein Hinweis allein
+      // aus älteren Monaten nennt deshalb keine Fristregel (bewusst so, Durchsicht K4).
+      for (const v of dueLog.values) if (!lawLog.values.some((a) => a.id === v.id && a.validFrom === v.validFrom)) lawLog.values.push(v)
       warn('prepayment.arrears',
         // Die Sätze ohne Betrag stehen für sich: Bei mehreren Mietern fasst „Zu prüfen“ sie zu einem Kasten zusammen
         // (client/src/noticeGroups.ts), und ein Satz mit Betrag bleibt beim Mieter.

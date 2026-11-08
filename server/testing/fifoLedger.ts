@@ -3,12 +3,16 @@
 // aus calc.ts vor der Umstellung auf rentAllocation.ts übernommen. invariant-mietkonto.test.ts verlangt: Wer jeden
 // Monat genau das Soll im Monat zahlt, sieht im neuen Mietkonto dieselben Zahlen wie hier.
 //
+// Fällig ist ein Monat seit #334 ab dem Tag, den das unabhängige Orakel dueOracle.ts nennt (Regel des Mietverhältnisses,
+// Feiertage aus der Vergleichsliste, `checked` wie `holidaysChecked`); vorher galt „vor dem Monat des Stichtags“.
+//
 // Liegt in testing/ und nicht in test/, weil `node --test` jede Datei unter test/ ausführt.
 import type { BillingPeriod, RentLedgerRow, RentMonth } from '../../shared/types.ts'
 import { periodMonths } from '../../shared/period.ts'
 import { monthShare, monthSoll, overlapDays as rangeOverlapDays } from '../../shared/monthRate.ts'
 import { compareName, isRentPayment } from '../src/calc.ts'
 import type { Snapshot } from '../src/snapshot.ts'
+import { oracleArrearsFrom } from './dueOracle.ts'
 
 // Was das alte Mietkonto je Zeile lieferte (die Felder vor #281).
 export type FifoLedgerRow = Pick<RentLedgerRow, 'tenancyId' | 'tenantName' | 'unitName' | 'sollYearCents' | 'baseRentYearCents' | 'prepaymentYearCents' | 'flatRateYearCents' | 'heatingPrepaymentYearCents' | 'paidYearCents' | 'settlementYearCents' | 'balanceCents' | 'dueSollCents' | 'arrearsCents' | 'openMonths'> & {
@@ -18,17 +22,18 @@ export type FifoLedgerRow = Pick<RentLedgerRow, 'tenancyId' | 'tenantName' | 'un
 export function fifoLedgerRows(
   source: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>,
   span: Pick<BillingPeriod, 'from' | 'to'>,
-  options: { asOf?: string } = {},
+  options: { asOf?: string, state?: Parameters<typeof oracleArrearsFrom>[2], checked?: boolean } = {},
 ): FifoLedgerRow[] {
   const months = periodMonths(span)
-  const asOfMonth = options.asOf?.slice(0, 7)
-  const dueMonths = asOfMonth === undefined ? months.length : months.filter((m) => m < asOfMonth).length
+  const asOf = options.asOf
   const unitById = new Map(source.units.map((u) => [u.id, u]))
   // Der Schnappschuss führt alle Zahlungen. Welche zur Spanne zählt, entscheidet diese Rechnung
   // nach ihrem Datum, und diese Regel bleibt bewusst an dieser Stelle.
   return source.tenancies
     .filter((t) => rangeOverlapDays(t.start, t.end, span.from, span.to) > 0)
     .map((t) => {
+      const isDue = (mm: string): boolean => asOf === undefined || (monthShare(t, mm).days > 0 && asOf >= oracleArrearsFrom(t, mm, options.state ?? null, options.checked ?? false))
+      const dueMonths = new Set(months.flatMap((mm, k) => (isDue(mm) ? [k] : [])))
       // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
       // Felder dazu stehen nur in Zeilen mit Heizstaffel, damit sich ohne sie nichts ändert.
       const withHeating = Array.isArray(t.heatingPrepayments) && t.heatingPrepayments.length > 0
@@ -70,10 +75,10 @@ export function fifoLedgerRows(
         const applied = Math.max(0, Math.min(remaining, mo.sollCents))
         mo.paidCents = applied
         remaining -= applied
-        mo.status = applied >= mo.sollCents ? 'paid' : k >= dueMonths ? 'notDue' : applied > 0 ? 'partial' : 'open'
+        mo.status = applied >= mo.sollCents ? 'paid' : !dueMonths.has(k) ? 'notDue' : applied > 0 ? 'partial' : 'open'
       }
       const sollYearCents = rowMonths.reduce((a, mo) => a + mo.sollCents, 0)
-      const dueSollCents = rowMonths.filter((_, k) => k < dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
+      const dueSollCents = rowMonths.filter((_, k) => dueMonths.has(k)).reduce((a, mo) => a + mo.sollCents, 0)
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,

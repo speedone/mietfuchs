@@ -237,7 +237,7 @@ export type Payment = {
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 
-// `notDue`: im laufenden Jahr ab dem aktuellen Monat, noch nicht fällig und kein Rückstand (#133).
+// `notDue`: noch nicht Rückstand, bis zum spätesten erwarteten Eingang der Miete (#334, vorher #133: ab dem aktuellen Monat).
 // `notRecorded` (#281): vor dem Beginn der Erfassung im Objekt (`ledgerStart`), weder bezahlt noch offen.
 export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue' | 'notRecorded'
 
@@ -263,6 +263,15 @@ export type RentMonth = {
   paidLaterOn?: string
   // Davon nicht mehr einzeln einforderbare Vorauszahlung (Abrechnungsreife, E5), nur wenn > 0.
   notDemandableCents?: number
+  // Fälligkeit (#334), nur mit Stichtag und Soll und ab 1995: Fälligkeitstag nach der Regel des Mietverhältnisses und den
+  // Feiertagen am Ort (ohne Land der späteste aller Länder), spätester erwarteter Eingang (vierter Bankgeschäftstag danach)
+  // und der Tag, ab dem der Monat Rückstand ist. `arrearsFrom` ist der Tag nach `creditExpectedBy`, solange die Feiertage
+  // dafür geprüft sind, sonst die sichere Grenze ohne Feiertage (Entwurf E6). `notDue` gilt bis zum Tag davor.
+  dueOn?: string
+  creditExpectedBy?: string
+  arrearsFrom?: string
+  // Gedeckt erst nach dem erwarteten Eingang: der Tag der Deckung, nur Auskunft („zur Prüfung“, nie Verzug).
+  paidAfterExpected?: string
 }
 
 // Warum eine offene Vorauszahlung nicht mehr einzeln einforderbar ist (#281, E5; BGH VIII ZR 84/17 Rn. 53):
@@ -286,8 +295,8 @@ export type RentLedgerRow = {
   // gesondert und nicht im Soll-Ist-Vergleich der Monate.
   settlementYearCents: number
   balanceCents: number // paid − soll des ganzen Jahres: >0 Guthaben/Überzahlung
-  // Soll der fälligen Monate und was davon offen ist (#133): im laufenden Jahr nur die Monate vor
-  // dem aktuellen, sonst das ganze Jahr.
+  // Soll der Monate des Jahres, die zum Stichtag Rückstand sein können (#334: ab dem Tag nach dem erwarteten Eingang),
+  // ohne Stichtag das ganze Jahr.
   dueSollCents: number
   // Mahnfähiger Rückstand zum Stand der Ansicht über alle Jahre ab Beginn (#281): offene Teile fälliger Monate, ohne
   // die nicht mehr einzeln einforderbaren Vorauszahlungen (`notDemandableCents`, je Grund in `notDemandable`).
@@ -322,6 +331,9 @@ export type RentLedgerCarried = {
 
 export type RentLedger = {
   year: number
+  // Der Stichtag, mit dem gerechnet ist (#334; die Route setzt heute), damit die Oberfläche „fällig am“ und „fällig seit“
+  // am selben Tag entscheidet wie der Server.
+  asOf?: string
   rows: RentLedgerRow[]
   // Mietverhältnisse ohne Tag im Jahr, für die eine Zahlung aus der Abrechnung im Jahr erfasst ist
   // (#280): Nachzahlung und Guthaben kommen oft erst nach dem Auszug.
