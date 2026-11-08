@@ -13,7 +13,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Ablesung, einen Bezugszähler und abgeschlossene und versendete Abrechnungen prüft
   ([#584](https://github.com/speedone/mietfuchs/issues/584)).
 
-## [0.16.1] – 2026-11-07
 ## [0.16.1] – 2026-11-08
 
 ### Behoben
