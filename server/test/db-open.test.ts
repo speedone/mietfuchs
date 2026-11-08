@@ -224,6 +224,28 @@ test('eine gesperrte Datenbankdatei wird als gesperrt erklärt, nicht als besch�
   }
 })
 
+// #603, Durchsicht S1: Hält das andere Mietfuchs nur die Schreibsperre (es schreibt gerade), geht das Öffnen durch:
+// Ohne ausstehenden Schritt schreibt es nichts. Eine Sperre zwischen Prüfung und Journal fängt der äußere catch ab.
+test('eine Schreibsperre eines anderen verhindert das Öffnen nicht', async () => {
+  const dataDir = tempDir()
+  try {
+    const opened = await openDatabase({ dataDir })
+    opened.close()
+    const andere = await connect(databaseFile(dataDir))
+    andere.exec('BEGIN IMMEDIATE')
+    try {
+      const wieder = await openDatabase({ dataDir })
+      assert.equal(wieder.migrations, 0)
+      wieder.close()
+    } finally {
+      andere.exec('ROLLBACK')
+      andere.close()
+    }
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('der Befund der Unversehrtheitsprüfung wird gelesen, nicht nur ihr Gelingen', () => {
   // SQLite antwortet mit genau einer Zeile „ok“ oder mit einer Zeile je Befund. Eine
   // beschädigte Datei kann beides: werfen (siehe oben) oder Befunde aufzählen.
