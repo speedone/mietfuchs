@@ -302,6 +302,15 @@ export async function currentGroupId(db: Executor): Promise<number | null> {
   return row?.[0] === null || row?.[0] === undefined ? null : Number(row[0])
 }
 
+// Ein genauerer Satz für die laufende Gruppe als der feste der Route, etwa mit der Zahl der angelegten Zeilen („12
+// Mietzahlungen als bezahlt erfasst“, #608; Muster: der Satz des Rücksprungs in revert.ts). Nach dem ersten Schreiben in
+// derselben Transaktion aufrufen; ohne Gruppe (Systemarbeit, nichts geschrieben) geschieht nichts.
+export async function retitleCurrentGroup(db: Executor, description: string): Promise<void> {
+  const id = await currentGroupId(db)
+  if (id === null) return
+  await db.run(sql`UPDATE change_groups SET description = ${description} WHERE id = ${id}`)
+}
+
 // Systemarbeit mitten in einem erfassten Schreibvorgang: Was `work` schreibt, steht nicht im Journal. Für die Zeile, die
 // einen schon vorhandenen Beleg nur beschreibt (`placeUpload`, Löschen eines Belegs ohne Zeile): Ihr Anlegen ist keine
 // Handlung des Vermieters, und ein Rücksprung, der sie entfernte, legte die Datei in den Papierkorb, obwohl sie vorher

@@ -146,6 +146,18 @@ export const STEPS: readonly Step[] = [
     await send(ctx.s, 'PUT', `/api/payments/${p.id}`, { amountCents: int(ctx.rng, 100, 900) * 100, ...month })
   } },
   { name: 'Zahlung löschen', routes: ['DELETE /api/payments/:id'], run: async (ctx) => { const p = pick(ctx.rng, ctx.payments); if (p) await send(ctx.s, 'DELETE', `/api/payments/${p.id}`) } },
+  // #608: Vorschau, dann Anlegen mit ihrer Marke; ein Mietverhältnis oder alle, bis zu einem Monat 2025.
+  {
+    name: 'Monate als bezahlt erfassen', routes: ['POST /api/rentledger/:year/mark-paid'],
+    run: async (ctx) => {
+      const t = pick(ctx.rng, ctx.tenancies)
+      if (!t) return
+      const tenancyIds = ctx.rng() < 0.5 ? [t.id] : ctx.tenancies.map((x) => x.id)
+      const through = `2025-${String(int(ctx.rng, 1, 12)).padStart(2, '0')}`
+      const plan = await json<{ token: string }>(await send(ctx.s, 'POST', `/api/rentledger/2025/mark-paid/plan${Q}`, { tenancyIds, through }))
+      if (plan) await send(ctx.s, 'POST', `/api/rentledger/2025/mark-paid${Q}`, { tenancyIds, through, token: plan.token })
+    },
+  },
   {
     name: 'Kostenposition anlegen', routes: ['POST /api/costItems'],
     run: ({ s, rng }) => send(s, 'POST', '/api/costItems', {

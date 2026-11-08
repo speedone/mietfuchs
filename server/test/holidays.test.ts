@@ -234,6 +234,7 @@ test('Feiertage: an einem Tag mit übernommener Fassung ist nichts geprüft', ()
 const HOLIDAY_USERS: Readonly<Record<string, string>> = {
   'calc.ts': 'Rückstand im Mietkonto und prepayment.arrears über monthDue (Feiertage nur an geprüften Tagen, #334); Zehn-Tage-Regel beim festen Tag nur, wenn jeder Tag bis zur Fälligkeit geprüft ist',
   'rentAllocation.ts': 'nur die Regel des Mietverhältnisses (effectiveRentDue, #334) für den Beginn der Erfassung, ohne Feiertage',
+  'markPaid.ts': 'Datum einer als bezahlt erfassten Miete: der Fälligkeitstag wie im Mietkonto (rentDueOn, #608), nur als Datum der Zahlung, nie für den Rückstand',
 }
 
 test('Feiertage: jede Stelle im Server, die mit ihnen rechnet, ist benannt', () => {

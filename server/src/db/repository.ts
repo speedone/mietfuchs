@@ -62,6 +62,7 @@ import { allowsSpread, isSpreadYears, spreadPartsRefusal, spreadQuestions, sprea
 import { allowsPaidOn, isPaidOnDate, joinQuestions, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
+import { retitleCurrentGroup } from './journal.ts'
 import {
   readClosedSettlements, readCostItems, readHeatingPlants, readMeters, readPayments, readProperties, readReadings, readTenancies,
   readUnits, type StoredClosedSettlement,
@@ -1227,6 +1228,18 @@ export async function insertEntityIn(tx: Executor, coll: CollectionName, id: str
     await c.guard(tx, null, entity, body)
     await c.insert(tx, entity)
   })
+}
+
+// Mehrere Zahlungen in einer Transaktion, ganz oder gar nicht (#608, „Offene Monate als bezahlt erfassen“): je Rumpf
+// dieselbe Verschmelzung und derselbe Wächter wie POST /api/payments. `title` gibt der Gruppe im Verlauf einen Satz mit
+// der Zahl. Ergibt die Kennungen in der Reihenfolge der Rümpfe.
+export async function insertPayments(db: Database, bodies: readonly unknown[], newId: () => string, title: string): Promise<string[]> {
+  const ids = bodies.map(() => newId())
+  await db.transaction(async (tx) => {
+    for (const [i, body] of bodies.entries()) await insertEntityIn(tx, 'payments', ids[i] ?? newId(), body)
+    if (bodies.length > 0) await retitleCurrentGroup(tx, title)
+  })
+  return ids
 }
 
 // Das Formular eines Mietverhältnisses kennt einen älteren Stand als den gespeicherten
