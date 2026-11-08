@@ -82,7 +82,8 @@ jobs:
             node server/src/index.ts > server.log 2>&1 &
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
-          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm
+          # Ohne NKA_HOST im Netz (#528): Der frische Datenordner verlangt ein Passwort, den Code liest das Skript aus der Datei
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --code-file "$RUNNER_TEMP/daten/einrichtungscode.txt"
 
 # Die Prüfung „Lange KI-Antwort (Node)“ stand früher hier und läuft seit #52 in
 # .github/workflows/release.yml: beim Tag, wöchentlich nach Zeitplan, beim Start von Hand und an

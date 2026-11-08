@@ -11,7 +11,13 @@
 // an und spielt ein Backup zurück. Ollama ersetzt ein nachgebauter Server, den das Skript selbst
 // startet; Mietfuchs wird per Einstellungen dorthin gelenkt. Nichts geht ins Internet.
 //
+// Anmeldung (#528): Lauscht die Instanz im Netz auf einem neuen Datenordner, verlangt sie ein Passwort. Dann nennt
+// `--code-file <pfad>` die Datei mit dem Einrichtungscode bzw. `--code-command <befehl>` einen Befehl, der ihn ausgibt
+// (Docker: `docker exec … cat /app/server/data/einrichtungscode.txt`). Das Skript prüft damit die Voreinstellung
+// (Einrichtung verlangt, ohne Sitzung 401), legt das Passwort fest und fragt danach alles mit der Sitzung.
+//
 // Absichtlich ohne Abhängigkeiten: Es läuft mit dem Node, das auf dem Runner ohnehin da ist.
+import { execSync } from 'node:child_process'
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -37,6 +43,13 @@ const TIMEOUT_SECONDS = Number(opt('timeout', '60'))
 // CI, dass eine Auswertung über fünf Minuten weder am Weg zu Ollama noch am Weg zum Browser
 // abbricht (fetch unter Node und Bun, Firefox: jeweils 300 Sekunden ohne Antwort-Header).
 const SLOW_AI_SECONDS = Number(opt('slow-ai', '0'))
+const CODE_FILE = opt('code-file', '')
+const CODE_COMMAND = opt('code-command', '')
+const PASSWORD = 'ein langes Passwort für die Prüfung'
+
+// Das Cookie der Sitzung, sobald eingerichtet; jede Anfrage trägt es
+let cookie = ''
+const call = (url, init = {}) => fetch(url, cookie ? { ...init, headers: { ...(init.headers ?? {}), cookie } } : init)
 
 let passed = 0
 function ok(text) {
@@ -49,7 +62,7 @@ function assert(condition, text, details) {
 }
 
 async function request(urlPath, init) {
-  const res = await fetch(`${BASE}${urlPath}`, init)
+  const res = await call(`${BASE}${urlPath}`, init)
   const type = res.headers.get('content-type') ?? ''
   // JSON oder Bytes, je nach Antwort. Was darin steht, prüfen die Zusicherungen und nicht der
   // Übersetzer, deshalb `any` statt des `unknown`, das `res.json()` liefert.
@@ -132,7 +145,7 @@ async function extractAsStream(longText, { fileName = 'strom.pdf', requestId, si
   fd.append('pdfText', longText)
   if (requestId) fd.append('requestId', requestId)
   const start = Date.now()
-  const res = await fetch(`${BASE}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' }, signal })
+  const res = await call(`${BASE}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' }, signal })
   const headersAfterMs = Date.now() - start
   const lines = (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l))
   return { status: res.status, type: res.headers.get('content-type') ?? '', headersAfterMs, lines, totalMs: Date.now() - start }
@@ -184,6 +197,43 @@ async function waitForStart() {
     if (Date.now() > deadline) throw new Error(`Mietfuchs antwortet nach ${TIMEOUT_SECONDS} s nicht unter ${BASE}/healthz`)
     await new Promise((r) => setTimeout(r, 500))
   }
+}
+
+// Der Code steht erst da, wenn der Server gestartet ist; ein Container braucht dafür ein paar Sekunden
+async function setupCode() {
+  const deadline = Date.now() + 30_000
+  for (;;) {
+    try {
+      const code = CODE_COMMAND ? execSync(CODE_COMMAND, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) : fs.readFileSync(CODE_FILE, 'utf8')
+      if (code.trim()) return code.trim()
+    } catch {
+      // noch nicht da
+    }
+    if (Date.now() > deadline) throw new Error(`Kein Einrichtungscode unter ${CODE_COMMAND || CODE_FILE}`)
+    await new Promise((r) => setTimeout(r, 500))
+  }
+}
+
+async function accessAndSignIn() {
+  const auth = (await request('/api/auth')).body
+  if (!CODE_FILE && !CODE_COMMAND) {
+    if (auth.required) throw new Error('Die Instanz verlangt eine Anmeldung. Bitte mit --code-file oder --code-command starten.')
+    ok(`ohne Anmeldung erreichbar (${auth.reachable === 'local' ? 'nur dieser Rechner' : auth.mode})`)
+    return
+  }
+  assert(auth.mode === 'setup' && auth.required === true, 'neuer Datenordner im Netz verlangt die Einrichtung eines Passworts', auth)
+  const before = await request('/api/units')
+  assert(before.status === 401 && before.body.setup === true, 'ohne Sitzung keine Daten (401)', before.body)
+  const front = await request('/')
+  assert(front.status === 200, 'die Oberfläche selbst ist ohne Sitzung erreichbar', front.status)
+  const res = await fetch(`${BASE}/api/auth/setup`, json('POST', { code: await setupCode(), password: PASSWORD }))
+  assert(res.status === 200, 'Passwort mit dem Einrichtungscode festgelegt', await res.text())
+  cookie = (res.headers.get('set-cookie') ?? '').split(';')[0]
+  assert(/^mietfuchs_[0-9a-f]{6}=/.test(cookie), 'Sitzung als Cookie erhalten', cookie)
+  const after = await request('/api/units')
+  assert(after.status === 200, 'mit Sitzung sind die Daten erreichbar', after.status)
+  const login = await fetch(`${BASE}/api/auth/login`, json('POST', { password: PASSWORD }))
+  assert(login.status === 200, 'Anmelden mit dem Passwort geht', login.status)
 }
 
 async function userInterface() {
@@ -357,7 +407,7 @@ async function modelPull(ollama) {
   assert(empfehlungen.body.source === 'mitgeliefert' && empfehlungen.body.models?.length > 0,
     'Empfehlungen ohne Zustimmung aus der mitgelieferten Liste', empfehlungen.body)
 
-  const res = await fetch(`${BASE}/api/ai/pull`, {
+  const res = await call(`${BASE}/api/ai/pull`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' },
     body: JSON.stringify({ model: 'smoke:latest' }),
@@ -599,6 +649,7 @@ async function selfHeating() {
 async function main() {
   console.log(`Mietfuchs prüfen: ${BASE} (erwartet: Version ${VERSION}, Betriebsart ${MODE})`)
   await waitForStart()
+  await accessAndSignIn()
   // Die Prüfung legt Daten an und rechnet mit festen Summen: Das geht nur mit leerem Datenordner.
   const existing = (await request('/api/units')).body
   if (Array.isArray(existing) && existing.length > 0) {

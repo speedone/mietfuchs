@@ -139,6 +139,8 @@ export async function startPerfServer(dataDir, { nodeArgs = [], env = {} } = {})
     cwd: path.join(ROOT, 'server'),
     env: {
       ...cleanEnv(),
+      // Nur auf diesem Rechner, ohne Anmeldung (#528); ein Aufrufer kann es überschreiben
+      NKA_HOST: '127.0.0.1',
       ...env,
       NKA_DATA_DIR: dataDir,
       NKA_PORT: String(port),

@@ -96,6 +96,8 @@ import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
+import { authSetting, isLoopback } from './access.ts'
+import { createAccess } from './accessServer.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
   ADOPT_UNCHANGED, classifyChoice, damagedStockText, placeOf, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, markStock, stockChanged, memoByStamp, copyAndHash, writePending, readPending, clearPending, switchedOver, type StockMark, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
@@ -156,6 +158,20 @@ app.use((req, res, next) => {
   if (reason) return void res.status(403).type('text/plain; charset=utf-8').send(reason)
   next()
 })
+// Anmeldung (#528): Lauscht Mietfuchs nicht nur auf diesem Rechner, braucht jede Anfrage an Daten, Belege und Beenden
+// eine Sitzung (accessServer.ts, Regeln in server/src/CLAUDE.md „Anmeldung“). Vor dem Vermerk „umgezogen“, damit die
+// Anmeldung auch dort geht, und vor `express.json()`, damit ungeprüfte Rümpfe nicht gelesen werden. Der Zustand entsteht
+// beim Start (`ACCESS.start` vor dem Öffnen der Datenbank); bis dahin wartet jede Anfrage.
+const AUTH_SETTING = authSetting(process.env)
+const ACCESS = createAccess({
+  dataDir: DATA_DIR,
+  host: process.env.NKA_HOST,
+  setting: typeof AUTH_SETTING === 'string' ? AUTH_SETTING : 'on',
+  allowedHosts: process.env.NKA_ALLOWED_HOSTS,
+  runtime: RUNTIME,
+})
+app.use(ACCESS.middleware)
+ACCESS.install(app)
 // Ein umgezogener Datenordner (#517, Vermerk `umgezogen.json`): ansehen ja, ändern nein. Jede Anfrage, die etwas
 // ändern könnte, bekommt den Satz mit dem neuen Ort; nur Beenden und die Frage nach Updates bleiben.
 app.use((req, res, next) => {
@@ -4337,6 +4353,8 @@ app.get('/healthz', (req, res) => {
   // `dataDir`: Daran erkennt ein Mietfuchs auf einem anderen Port, ob es denselben Ordner nimmt (instanceGuard.ts)
   // Ein umgezogener Ordner wird nur gelesen, auch keine Schreibprobe (Durchsicht Daten K7)
   const report = { ...healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState(), readOnly: movedNow() }), dataDir: DATA_DIR }
+  // Mit Anmeldung von außen ohne Sitzung nur Name und Zustand (#528): Version und Datenordner gehen niemanden im Netz an
+  if (res.locals.shortHealth === true) return void res.status(report.status === 'ok' ? 200 : 503).json({ app: report.app, status: report.status })
   // Umgezogen (#517): Die Oberfläche sagt es oben auf jeder Seite (Database.tsx)
   res.status(report.status === 'ok' ? 200 : 503).json(MOVED_AWAY ? { ...report, moved: { movedTo: MOVED_AWAY.movedTo, at: MOVED_AWAY.at, message: movedAwayMessage(MOVED_AWAY) } } : report)
 })
@@ -4596,7 +4614,7 @@ const portProblem = Number.isInteger(PORT) && PORT >= 0 && PORT <= 65535
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
-const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem ?? hostProblem ?? TEST_TODAY.error
+const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem ?? hostProblem ?? (typeof AUTH_SETTING === 'object' ? AUTH_SETTING.problem : null) ?? TEST_TODAY.error
 if (startProblem) {
   console.error(startProblem)
   process.exit(1)
@@ -4743,7 +4761,9 @@ if (IN_WINDOW && PARENT_PORT) {
 const server = http.createServer((req, res) => {
   if (startupDone) return app(req, res)
   if ((req.url ?? '').split('?')[0] === '/healthz') {
-    res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '1' })
+    res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '1', 'cache-control': 'no-store' })
+    // Von außen nur Name und Zustand (#528): Der Zustand des Zugangs steht erst nach dem Start fest
+    if (!isLoopback(req.socket.remoteAddress)) return void res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
     // Datenordner, Prozess und Zeitpunkt des Bindens: Daran erkennt ein zweiter Start auf einem anderen Port, ob er
     // demselben Ordner weichen muss (instanceGuard.ts, Durchsicht M2)
     res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting', version: APP_VERSION, dataDir: DATA_DIR, pid: process.pid, boundAt, ...(MOVED_AWAY ? { moved: true } : {}) }))
@@ -4923,6 +4943,10 @@ if (!MOVED_AWAY) cleanRestoreLeftovers(DATA_DIR)
 const startDelayMs = Number(process.env.NKA_TEST_START_DELAY_MS || 0)
 if (startDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, startDelayMs))
 
+// Der Zugang (#528), bevor die Datenbank geöffnet wird: Danach läge in jedem Ordner ein Bestand (`hasStock`), und ein
+// neuer Datenordner im Netz soll in der Einrichtung starten (Stufe A)
+ACCESS.start({ hasStock: hasStock(DATA_DIR) })
+
 // Ein umgezogener Ordner (#517) wird nur gelesen: Geöffnet wird eine Kopie außerhalb, sonst migrierte dieser Start die
 // Datenbank im alten Ordner oder stiege aus einer alten db.json um. Was die Kopie zeigt, ist der Stand beim Umzug, denn
 // geändert wird hier ohnehin nichts (423).
@@ -5045,6 +5069,8 @@ if (!MOVED_AWAY) {
   // oder umziehen will, soll ihn nicht suchen müssen.
   console.log(`Daten: ${DATA_DIR}`)
   if (MOVED_AWAY) console.log(`Hinweis: ${movedAwayMessage(MOVED_AWAY)}`)
+  // Anmeldung (#528): Einrichtungscode bzw. Hinweis, im Netz ohne Passwort erreichbar
+  for (const line of ACCESS.startLines()) console.log(line)
   // Die Datenbank in derselben Aufzählung: Wer seinen Bestand sichern oder umziehen will, soll
   // auch diese Datei nicht suchen müssen.
   if (database) console.log(`Datenbank: ${database.file}`)

@@ -124,7 +124,10 @@ jobs:
             docker run -d --name "pruefung-$arch" --platform "linux/$arch" --network host \
               -e NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test "mietfuchs:pruefung-$arch"
             ergebnis=0
-            node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode docker --timeout 180 || ergebnis=$?
+            # Die sichere Voreinstellung des Images (#447, #528): Ein frisches Volume verlangt ein Passwort, der Code steht
+            # im Container
+            node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode docker --timeout 180 \
+              --code-command "docker exec pruefung-$arch cat /app/server/data/einrichtungscode.txt" || ergebnis=$?
             # Der HEALTHCHECK aus dem Dockerfile muss den Container als gesund melden
             for _ in $(seq 1 60); do
               status=$(docker inspect -f '{{.State.Health.Status}}' "pruefung-$arch")
