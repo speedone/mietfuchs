@@ -19,7 +19,7 @@ export default function NetworkHint({ bridge, onOpen }: { bridge: NetworkBridge;
   }, [bridge])
   if (!enabled) return null
   return (
-    <button type="button" className="mb-2 p-0 text-s text-muted hover:text-text" aria-description="Zur Einstellung „Zugriff aus dem Heimnetz“ in den Einstellungen"
+    <button type="button" className="mb-2 p-0 border-0 bg-transparent text-s text-muted hover:text-text" aria-description="Zur Einstellung „Zugriff aus dem Heimnetz“ in den Einstellungen"
       title="Zugriff aus dem Heimnetz ist an: Geräte im selben WLAN können Mietfuchs öffnen. Zur Einstellung"
       onClick={() => { requestNetworkCard(); onOpen() }}>
       <span aria-hidden="true">📶</span> Im Heimnetz erreichbar
