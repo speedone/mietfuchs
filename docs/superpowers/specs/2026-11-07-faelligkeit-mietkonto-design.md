@@ -126,7 +126,8 @@ Ergebnis des amtlichen Nachlesens am 07.11.2026 (Auftrag aus #290/#334):
 | NI | deckungsgleich | § 2 Abs. 1 NFeiertagsG i. d. F. vom 07.03.1995, zuletzt geändert durch G vom 22.06.2018 (Nds. GVBl. S. 123), Fassung ab 29.06.2018, NI-VORIS https://voris.wolterskluwer-online.de/browse/document/f74bc6e7-6ded-3c2c-9afb-b34620456e56 |
 | SN | deckungsgleich | § 1 Abs. 1 SächsSFG, Stand 07.05.2025, https://www.revosax.sachsen.de/vorschrift/3997; § 1 FronleichnamsVO vom 04.05.1993 mit Anlage (29 Gemeinden), https://www.revosax.sachsen.de/vorschrift/4142 |
 | BW, BE, HE, MV, NW, SL, SH, TH | deckungsgleich (Task 1, gelesen am 07.11.2026) | Fundstellen und Kette der Änderungen je Land in `STATE_HOLIDAY_LAW` (shared/law/feiertagsgesetze.ts); gelesen im Gesetzblatt, meist über die Parlamentsdokumentation des Landtags, NW auf recht.nrw.de |
-| HB, HH, RP, ST | Inhalt deckungsgleich, Wortlaut der Liste amtlich nicht lesbar | juris-Portale antworten einem Browser ohne Fenster mit 204, *.bremen.de mit 403; Gesetzblätter der Stammfassungen nicht online. Grund je Land in `STATE_HOLIDAY_LAW_UNREAD`. Nicht umgangen. |
+| HB, HH (bis 07.11.2026 auch RP, ST) | Inhalt deckungsgleich, Wortlaut der Liste amtlich nicht lesbar | juris-Portale antworten einem Browser ohne Fenster mit 204, *.bremen.de mit 403; Gesetzblätter der Stammfassungen nicht online. Grund je Land in `STATE_HOLIDAY_LAW_UNREAD`. Nicht umgangen. |
+| RP, ST | deckungsgleich (nachgelesen am 08.11.2026) | Stammgesetz über Regierungsentwurf, Beschlussempfehlung und Plenarprotokoll im Landtag (OPAL, PADOKA), Änderungen über ihre Drucksachen; Fundstellen in `STATE_HOLIDAY_LAW` |
 
 Für Berlin bleiben die schon gelesenen Gesetzblätter (G vom 30.01.2019, GVBl. S. 22; G vom 10.07.2024, GVBl. S. 460)
 die Fundstelle der einmaligen Feiertage; ein Teilbefund aus dem Blatt von 2019 (8. Mai und 17. Juni dort als
@@ -140,6 +141,11 @@ amtlichen Teilbelegen (Drucksachen, Änderungsgesetze, Angaben der Landesbehörd
 Fassungen bleiben `adopted`, `holidaysCheckedOn` ist für heutige Tage falsch, und Task 4 rechnet bis dahin mit der
 sicheren Grenze. Schließen lässt sich die Lücke nur, indem jemand die vier Listen in einem gewöhnlichen Browser im
 Landesrecht-Portal liest und in `STATE_HOLIDAY_LAW` einträgt; die Fassungen werden dann von selbst `checked`.
+
+**Nachtrag 08.11.2026:** RP und ST sind über die Parlamentsdokumentation ihrer Landtage im Wortlaut gelesen
+(Stammgesetz in der beschlossenen Fassung, jede Änderung der Liste über ihre Drucksachen); kein Wert weicht ab. Offen
+bleiben HB und HH: Gesetzblatt und Transparenzportal Bremens antworten mit 403, die Parlamentsdatenbank der Hamburger
+Bürgerschaft sperrt den Zugriff, die Stammfassungen von 1953 und 1954 sind sonst nicht amtlich online.
 
 ## Entscheidungen
 

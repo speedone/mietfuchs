@@ -403,8 +403,8 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
   (§ 193 BGB), je Feiertag `holiday.*` in [shared/law/feiertagsgesetze.ts](../../shared/law/feiertagsgesetze.ts).
   `checked` nur, wo der Wortlaut amtlich gelesen ist, sonst `adopted` mit Angabe. Die geltenden
   Fassungen werden erst `checked`, wenn die Liste jedes Landes gelesen ist: je Land Fundstelle in
-  `STATE_HOLIDAY_LAW`, offene Länder mit Grund in `STATE_HOLIDAY_LAW_UNREAD` (Stand 07.11.2026: HB, HH, RP,
-  ST). `holidaysCheckedOn(date)` ([shared/holidaysChecked.ts](../../shared/holidaysChecked.ts)) sagt, ob
+  `STATE_HOLIDAY_LAW`, offene Länder mit Grund in `STATE_HOLIDAY_LAW_UNREAD` (Stand 08.11.2026: HB, HH;
+  RP und ST über die Landtagsdrucksachen gelesen). `holidaysCheckedOn(date)` ([shared/holidaysChecked.ts](../../shared/holidaysChecked.ts)) sagt, ob
   an einem Tag jede geltende Fassung `checked` ist. Wer im Server mit Feiertagen rechnet, steht mit Grund
   in `HOLIDAY_USERS` in holidays.test.ts, und shared/rentDue.ts fragt `holidaysCheckedOn` (#334, Entwurf E6). Gerechnet wird
   mit Osterformel ohne Laufzeitbibliothek (date-holidays: Daten unter CC BY-SA 3.0, mit AGPL nicht
