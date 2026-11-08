@@ -534,8 +534,12 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
   // Jede Meldung dieser Funktion nimmt die Hinweise mit. Der Typ steht ausdrücklich an der
   // Konstanten und nicht nur am Rumpf: Nur so weiß der Übersetzer, dass es hinter einem Aufruf
   // nicht weitergeht, und hält den folgenden Code für unerreichbar.
+  // `explained` merkt sich die eigenen Meldungen, damit der äußere catch nur Fremdes einordnet (#603).
+  const explained = new WeakSet<Error>()
   const fail: (text: string, cause?: unknown) => never = (text, cause) => {
-    throw new Error([text, ...warnings].join('\n'), cause === undefined ? undefined : { cause })
+    const error = new Error([text, ...warnings].join('\n'), cause === undefined ? undefined : { cause })
+    explained.add(error)
+    throw error
   }
 
   // Schritt 1: früh und verständlich scheitern, nicht erst beim ersten Speichern. Dieselbe
@@ -675,6 +679,12 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // Eine offene Verbindung zu einer Datei, mit der wir nicht arbeiten, hält unter Windows nur
     // deren Sperre, und genau die bräuchte, wer die Datei jetzt austauschen will.
     connection.close()
+    // Sperrt ein zweites Mietfuchs die Datei erst nach der Prüfung (Journal, Aufräumen; #603, Durchsicht S1), käme
+    // sonst die Meldung von SQLite roh an, bei Drizzle verpackt als „Failed query“ mit dem Grund in `cause`.
+    if (err instanceof Error && !explained.has(err)) {
+      const reason = causeChain(err).find(isLocked)
+      if (reason !== undefined) fail(locked(file, reason), err)
+    }
     throw err
   }
 }
@@ -683,6 +693,13 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
 // was ankommt. Dieselbe Überlegung wie in index.ts, hier noch einmal, weil diese Datei vom
 // Server nichts weiß. Ausgeführt auch von changeover.ts, damit im Ordner db/ nicht zwei
 // Fassungen derselben drei Zeilen stehen.
+// Die Meldungen eines Fehlers und seiner Ursachen, von außen nach innen.
+function causeChain(err: unknown): string[] {
+  const out: string[] = []
+  for (let current: unknown = err; current instanceof Error && out.length < 10; current = current.cause) out.push(current.message)
+  return out
+}
+
 export function messageOf(err: unknown): string {
   if (err !== null && typeof err === 'object' && 'message' in err && typeof err.message === 'string' && err.message) {
     return err.message
