@@ -324,6 +324,31 @@ export async function remoteFetch(remote, urlPath, { method = 'GET', body, timeo
 }
 
 /**
+ * Der gekoppelte Server lehnt den Geräteschlüssel ab (401): Hat er das Fenster vergessen (`key`, neu koppeln), oder
+ * vertraut Mietfuchs dem Proxy gerade nicht (`proxy`)? Dann gilt über ihn kein Schlüssel: kurz nach dem Neuerstellen von
+ * Caddy (bis zu 5 Sekunden, server/src/trustProxy.ts) oder wenn NKA_TRUST_PROXY fehlt. Nur in `system` gefragt, über
+ * die Vorabfrage ohne Geräteschlüssel; `secure: false` oder kein Ursprung ohne `problem` heißt `proxy`. Gepinnt, bei
+ * jedem Fehler und jeder anderen Antwort bleibt es bei `key` (Integrationsdurchsicht m4).
+ * @param {{ origin: string, trust?: Trust, certSha256: string | null }} remote
+ * @param {{ ca?: string[], timeoutMs?: number }} [options]
+ * @returns {Promise<'key' | 'proxy'>}
+ */
+export async function rejectedKeyReason(remote, { ca, timeoutMs = TIMEOUT_MS } = {}) {
+  if (remote.trust !== 'system') return 'key'
+  try {
+    const answer = await remoteFetch({ origin: remote.origin, trust: 'system', certSha256: null }, '/api/auth/pair', { ca, timeoutMs })
+    /** @type {Preflight | null} */
+    const preflight = answer.status === 200 ? jsonOr(answer.body) : null
+    if (!preflight || typeof preflight !== 'object' || preflight.app !== 'mietfuchs') return 'key'
+    if (preflight.secure === false) return 'proxy'
+    if (preflight.secure === true && preflight.origin === null && !preflight.problem) return 'proxy'
+    return 'key'
+  } catch {
+    return 'key'
+  }
+}
+
+/**
  * Eine Antwort als JSON oder null (auch für main.js)
  * @param {string} text
  */

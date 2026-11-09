@@ -23,7 +23,7 @@ import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProce
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, trustedUpdateKeys, updaterSource } from './updater.js'
 import { loopbackUrl, selftestPlan, testCa, testGripsAllowed, testUserData } from './testGrips.js'
 import { allowed } from './bridgePolicy.js'
-import { DEVICE_HEADER, certSha256FromPem, issuedBy, jsonOr, pair, pinDecision, remoteFetch, systemTrust, versionHint } from './pairing.js'
+import { DEVICE_HEADER, certSha256FromPem, issuedBy, jsonOr, pair, pinDecision, rejectedKeyReason, remoteFetch, systemTrust, versionHint } from './pairing.js'
 import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, surfaceWindow, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -437,7 +437,11 @@ async function checkRemote() {
   try {
     const auth = await remoteFetch(current, '/api/auth', { ca: trustAnchors() })
     const info = jsonOr(auth.body)
-    if (auth.status === 401 || (info?.required === true && info?.signedIn !== true)) return void remoteTrouble('key')
+    // In `system` erst die Vorabfrage: Vertraut Mietfuchs dem Proxy gerade nicht, gilt kein Schlüssel, das Fenster ist
+    // aber nicht vergessen (Integrationsdurchsicht m4)
+    if (auth.status === 401 || (info?.required === true && info?.signedIn !== true)) {
+      return void remoteTrouble(await rejectedKeyReason(current, { ca: trustAnchors() }))
+    }
     if (versionChecked) return
     const version = jsonOr((await remoteFetch(current, '/healthz', { ca: trustAnchors() })).body)?.version
     if (typeof version !== 'string' || remote !== current) return
@@ -456,7 +460,7 @@ async function checkRemote() {
 /**
  * Der gekoppelte Server lädt nicht: Grund und Ausweg in einer Rückfrage des Systems, weil die Seite selbst ja fehlt.
  * `untrusted`: In `system` lehnt Chromium das Zertifikat des Proxys ab (Kette, Name oder Gültigkeit).
- * @param {'unreachable' | 'cert' | 'key' | 'untrusted'} reason
+ * @param {'unreachable' | 'cert' | 'key' | 'untrusted' | 'proxy'} reason
  */
 async function remoteTrouble(reason) {
   if (troubleOpen || quitting || !remote) return
@@ -476,6 +480,10 @@ async function remoteTrouble(reason) {
     untrusted: {
       message: `Das Zertifikat von Mietfuchs unter ${where} ist auf diesem Rechner nicht gültig.`,
       detail: 'Prüfen Sie den Proxy vor Mietfuchs, etwa Caddy, und bei einem eigenen Stammzertifikat, ob es auf diesem Rechner noch installiert ist. Verbinden Sie sich nicht, solange Sie den Grund nicht kennen.',
+    },
+    proxy: {
+      message: `Mietfuchs unter ${where} sieht die Verbindung nicht als verschlüsselt an, weil es dem Proxy davor nicht vertraut.`,
+      detail: 'Tragen Sie den Proxy bei Mietfuchs in NKA_TRUST_PROXY ein; in compose.caddy.yml steht das schon. Wurde der Proxy eben neu gestartet, versuchen Sie es in einigen Sekunden erneut. Die Kopplung bleibt bestehen, neu koppeln müssen Sie nicht.',
     },
     key: {
       message: `Mietfuchs unter ${where} kennt dieses Programmfenster nicht mehr.`,
@@ -776,7 +784,7 @@ async function selfTestPairing(win, out) {
 /**
  * Die Rückfrage in der Selbstprüfung: festhalten, ob das Fenster dabei zu sehen wäre, und die bestellte Antwort geben.
  * Das Zurückholen aus dem Dock läuft auf dem Mac animiert; bis zu fünf Sekunden darauf warten.
- * @param {'unreachable' | 'cert' | 'key' | 'untrusted'} reason
+ * @param {'unreachable' | 'cert' | 'key' | 'untrusted' | 'proxy'} reason
  * @param {number} answer
  */
 async function recordTrouble(reason, answer) {

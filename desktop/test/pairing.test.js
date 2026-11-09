@@ -8,7 +8,7 @@ import https from 'node:https'
 import tls from 'node:tls'
 import os from 'node:os'
 import path from 'node:path'
-import { certSha256FromPem, deviceNameOf, issuedBy, jsonOr, normalizeAddress, pair, pinDecision, remoteFetch, systemTrust, versionHint } from '../src/pairing.js'
+import { certSha256FromPem, deviceNameOf, issuedBy, jsonOr, normalizeAddress, pair, pinDecision, rejectedKeyReason, remoteFetch, systemTrust, versionHint } from '../src/pairing.js'
 import { freePort } from '../src/server.js'
 
 // Die Helfer der Servertests. Über eine errechnete Adresse geladen: Der Server ist TypeScript mit eigener Typprüfung,
@@ -730,4 +730,40 @@ test('Adresse: der Satz zu einer unlesbaren Adresse nennt auch https://', () => 
   const result = normalizeAddress('ftp://nas')
   assert.ok('problem' in result)
   assert.match(result.problem, /etwa nas:3001, 192\.168\.1\.5:3001 oder https:\/\/nas\.fritz\.box\.$/)
+})
+
+// Integrationsdurchsicht m4: Ein 401 in `system` heißt nicht immer, dass der Server das Fenster vergessen hat. Vertraut
+// Mietfuchs dem Proxy gerade nicht (Caddy eben neu erstellt, NKA_TRUST_PROXY fehlt), gilt kein Geräteschlüssel. Dann der
+// Satz zu NKA_TRUST_PROXY, nicht „koppeln Sie neu“.
+test('Abgelehnter Schlüssel: in system fragt das Fenster die Vorabfrage, bevor es neu koppeln lässt', async () => {
+  /** @type {{ preflight: { secure: boolean, origin: string | null, problem?: string }, expected: string }[]} */
+  const cases = [
+    { preflight: { secure: false, origin: null }, expected: 'proxy' },
+    { preflight: { secure: true, origin: null }, expected: 'proxy' },
+    { preflight: { secure: true, origin: null, problem: 'Mietfuchs antwortet nicht unter dem Namen …' }, expected: 'key' },
+    { preflight: { secure: true, origin: 'ORIGIN' }, expected: 'key' },
+  ]
+  for (const { preflight, expected } of cases) {
+    /** @type {string} */
+    let origin = ''
+    const fake = await fakeBehindProxy((req, res) => {
+      res.setHeader('content-type', 'application/json')
+      if (req.method === 'GET' && req.url === '/api/auth/pair') return res.end(JSON.stringify({ app: 'mietfuchs', certSha256: null, ...preflight, ...(preflight.origin === 'ORIGIN' ? { origin } : {}) }))
+      res.writeHead(401)
+      res.end('{}')
+    })
+    origin = fake.origin
+    try {
+      const remote = { origin: fake.origin, trust: /** @type {const} */ ('system'), certSha256: null, deviceId: 'abcdef0123456789', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+      assert.equal(await rejectedKeyReason(remote, { ca: fake.ca }), expected, JSON.stringify(preflight))
+    } finally {
+      fake.close()
+    }
+  }
+  // Nicht erreichbar: bleibt beim bisherigen Satz
+  const gone = { origin: `https://127.0.0.1:${await freePort()}`, trust: /** @type {const} */ ('system'), certSha256: null, deviceId: 'abcdef0123456789', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+  assert.equal(await rejectedKeyReason(gone, { ca: systemTrust(), timeoutMs: 2000 }), 'key')
+  // Gepinnt: direkt an Mietfuchs, ohne Proxy, der vergessen sein könnte; keine Anfrage
+  const pinned = { ...gone, trust: /** @type {const} */ ('pinned'), certSha256: 'a'.repeat(64) }
+  assert.equal(await rejectedKeyReason(pinned, { ca: systemTrust() }), 'key')
 })
