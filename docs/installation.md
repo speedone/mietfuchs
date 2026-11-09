@@ -186,7 +186,7 @@ Es gibt zwei Wege:
 | Was | Häkchen „Zugriff aus dem Heimnetz“ im Programm für Windows und macOS | [Docker](docker.md) auf einem NAS oder Heimserver, oder das [Linux-Paket](#linux-installationspaket-mit-startmenü-eintrag) auf einem Raspberry Pi |
 | Erreichbar | nur, solange der PC läuft und Mietfuchs geöffnet ist | jederzeit im Heimnetz |
 | Adresse | `http://<pc>:17517` | `http://<gerät>:3001`, mit [Caddy](docker.md#mit-https-im-heimnetz-composecaddyyml) auch über HTTPS |
-| Programmfenster auf einem anderen PC oder Mac | nein | ja, [verschlüsselt verbunden](#programmfenster-mit-mietfuchs-im-heimnetz-verbinden) |
+| Programmfenster auf einem anderen PC oder Mac | möglich, wenn dort „Zugriff aus dem Heimnetz“ mit Passwort an ist; gedacht ist ein Gerät, das ständig läuft | ja, [verschlüsselt verbunden](#programmfenster-mit-mietfuchs-im-heimnetz-verbinden) |
 
 Von unterwegs kommst du nur über ein VPN an Mietfuchs, nie über eine Portfreigabe am Router; siehe
 [Von unterwegs und mit HTTPS: über ein VPN](docker.md#von-unterwegs-und-mit-https-über-ein-vpn).
