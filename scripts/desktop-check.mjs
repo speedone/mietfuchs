@@ -16,6 +16,11 @@
 //      startet den eigenen Server. Dazu die Kopfzeile mit dem Geräteschlüssel unter [::1] und localhost, und ein
 //      anderes Zertifikat unter derselben Adresse: Das Laden scheitert (did-fail-load), die Rückfrage nennt den Grund
 //      und zeigt das Fenster, auch wenn es verborgen oder abgelegt war (Selbstprüfung in main.js, testGrips.js).
+//  7b. Kopplung über einen Proxy (#528): dieselbe Gegenstelle mit NKA_TRUST_PROXY hinter einem Test-Proxy wie Caddy
+//      (server/testing/proxy.ts, braucht selfsigned aus server/node_modules) mit eigener Test-CA. Ohne die Test-CA
+//      nennt das Fenster das Stammzertifikat und schickt keinen Beweis; mit ihr (Testgriff MIETFUCHS_TEST_CA, das
+//      Fenster behandelt sie wie eine des Systems) koppelt es in `system`, lädt die Seite über den Proxy, ist nach
+//      einem Neustart verbunden, und Trennen startet den eigenen Server. Dazu, ob Node den Speicher des Systems liest.
 //
 // Der Server läuft als utilityProcess des Fensters (desktop/src/main.js); seine PID nennt die Selbstprüfung. In 4. und
 // 5. muss dieser Prozess weg sein, nicht nur der Port frei.
@@ -28,7 +33,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ARCHIVE_FOLDER, extractAsarFolder } from './package-desktop.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -285,14 +290,15 @@ const { module: serverModule, extracted: extractedServer } = remoteServerModule(
  * Die Gegenstelle: frischer Datenordner, Passwort über den Einrichtungscode, Sitzung für Code und Geräteliste. Die drei
  * Angaben jedes Prüfstarts (Datenordner, CI, Update-Adresse ins Leere); CI hinter allem anderen.
  * @param {string} name
+ * @param {NodeJS.ProcessEnv} [extra] etwa NKA_TRUST_PROXY (7b)
  */
-async function startRemote(name) {
+async function startRemote(name, extra = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-gegenstelle-daten-'))
   /** @type {NodeJS.ProcessEnv} */
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NKA_') && !key.startsWith('MIETFUCHS_')))
   const child = spawn(process.execPath, [serverModule], {
     cwd: path.dirname(serverModule),
-    env: { ...env, NKA_DATA_DIR: dataDir, NKA_PORT: String(remotePort), NKA_HOST: ipv6 ? '::' : '0.0.0.0', NKA_UPDATE_URL: CLOSED_URL, CI: '1' },
+    env: { ...env, ...extra, NKA_DATA_DIR: dataDir, NKA_PORT: String(remotePort), NKA_HOST: ipv6 ? '::' : '0.0.0.0', NKA_UPDATE_URL: CLOSED_URL, CI: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
@@ -334,9 +340,10 @@ async function startRemote(name) {
  * @param {string} address
  * @param {string} code
  * @param {boolean} disconnect
+ * @param {NodeJS.ProcessEnv} [extra] etwa MIETFUCHS_TEST_CA (7b)
  */
-async function pairWindow(name, address, code, disconnect) {
-  const run = launch(name, { MIETFUCHS_SELFTEST_PAIR: JSON.stringify({ address, code }), MIETFUCHS_SELFTEST_QUIT: '1', ...(disconnect ? { MIETFUCHS_SELFTEST_DISCONNECT: '1' } : {}) })
+async function pairWindow(name, address, code, disconnect, extra = {}) {
+  const run = launch(name, { ...extra, MIETFUCHS_SELFTEST_PAIR: JSON.stringify({ address, code }), MIETFUCHS_SELFTEST_QUIT: '1', ...(disconnect ? { MIETFUCHS_SELFTEST_DISCONNECT: '1' } : {}) })
   userDirs.push(run.userData)
   const paired = await readResult(path.join(run.selftest, 'kopplung.json'), 120_000)
   const unpaired = disconnect ? await readResult(path.join(run.selftest, 'trennen.json'), 60_000) : null
@@ -352,11 +359,14 @@ const httpsOrigin = (/** @type {string} */ host) => `https://${host}:${remotePor
 const userDirs = []
 /** @type {Awaited<ReturnType<typeof startRemote>> | null} */
 let remote = null
+/** @typedef {{ port: number, requests: Array<{ method: string, path: string }>, close(): Promise<void> }} TestProxy */
+/** @type {TestProxy | null} */
+let proxy = /** @type {TestProxy | null} */ (null)
 try {
   remote = await startRemote('gegenstelle')
   check(remote.ready, `Kopplung: Gegenstelle mit HTTPS und Passwort (${serverModule}, tls ${remote.health?.tls}, Einrichtung ${remote.setupStatus})`)
   if (remote.ready) {
-    // 7a. Koppeln über die Brücke, die Seite über HTTPS mit dem Geräteschlüssel
+    // a) Koppeln über die Brücke, die Seite über HTTPS mit dem Geräteschlüssel
     const a = await pairWindow('kopplung', `127.0.0.1:${remotePort}`, await remote.pairingCode(), false)
     report.pairing = a.paired
     check(a.paired?.result?.ok === true, `Kopplung: über die Brücke gekoppelt (${JSON.stringify(a.paired?.result)})`)
@@ -368,7 +378,7 @@ try {
     check(pairedInSettings(a.userData)?.origin === httpsOrigin('127.0.0.1'), 'Kopplung: in fenster.json gemerkt')
     check((await remote.devices())?.length === 1, 'Kopplung: Der Server führt das Fenster in der Geräteliste')
 
-    // 7b. Neustart: weiter verbunden; Trennen über die Brücke der gekoppelten Seite startet den eigenen Server
+    // b) Neustart: weiter verbunden; Trennen über die Brücke der gekoppelten Seite startet den eigenen Server
     const again = launch('kopplung-neustart', { MIETFUCHS_SELFTEST_DISCONNECT: '1', MIETFUCHS_SELFTEST_QUIT: '1' }, a.userData)
     const started = await readResult(path.join(again.selftest, 'fenster.json'), 120_000)
     check(started?.origin === httpsOrigin('127.0.0.1') && started?.serverPid === null, `Neustart: verbunden mit ${started?.origin}, ohne eigenen Server`)
@@ -385,7 +395,7 @@ try {
     check(pairedInSettings(a.userData) === null, 'Trennen: Die Kopplung ist aus fenster.json entfernt')
     check((await remote.devices())?.length === 0, 'Trennen: Das Fenster hat sich am Server entfernt')
 
-    // 7c. Die Kopfzeile mit dem Geräteschlüssel unter einer IPv6-Adresse und unter einem Namen (Filter von
+    // c) Die Kopfzeile mit dem Geräteschlüssel unter einer IPv6-Adresse und unter einem Namen (Filter von
     // onBeforeSendHeaders auf den Ursprung)
     for (const [name, host, address] of /** @type {const} */ ([['kopplung-ipv6', '[::1]', `[::1]:${remotePort}`], ['kopplung-name', 'localhost', `localhost:${remotePort}`]])) {
       if (host === '[::1]' && !ipv6) {
@@ -398,7 +408,7 @@ try {
       check(v.unpaired?.loaded === true && v.code === 0, `${host}: getrennt, Fenster endet mit 0 (${v.code})`)
     }
 
-    // 7d. Ein anderes Zertifikat unter derselben Adresse (der Server neu eingerichtet): Das Laden scheitert, die
+    // d) Ein anderes Zertifikat unter derselben Adresse (der Server neu eingerichtet): Das Laden scheitert, die
     // Rückfrage nennt den Grund und zeigt das Fenster, verborgen wie abgelegt
     const d = await pairWindow('kopplung-zertifikat', `127.0.0.1:${remotePort}`, await remote.pairingCode(), false)
     check(d.paired?.loaded === true && d.code === 0, 'Zertifikat: gekoppelt')
@@ -430,7 +440,67 @@ try {
       remove(run.dataDir)
     }
   }
+
+  // ---------- 7b.: Kopplung über einen Proxy (#528) ----------
+  await remote?.stop()
+  remote = null
+  await until(portFree, 15_000)
+  /** @type {any} */
+  let proxies = null
+  try {
+    // Test-CA und Test-Proxy wie in den Tests (api-kopplung-proxy.test.ts, desktop/test/pairing.test.js)
+    proxies = await import(pathToFileURL(path.join(root, 'server', 'testing', 'proxy.ts')).href)
+  } catch (err) {
+    check(false, `Proxy: server/testing/proxy.ts lässt sich nicht laden, fehlt npm --prefix server ci? (${err})`)
+  }
+  if (proxies) {
+    remote = await startRemote('gegenstelle-proxy', { NKA_TRUST_PROXY: '127.0.0.1,::1' })
+    check(remote.ready, `Proxy: Gegenstelle mit NKA_TRUST_PROXY (tls ${remote.health?.tls}, Einrichtung ${remote.setupStatus})`)
+    if (remote.ready) {
+      const testCa = await proxies.createTestCa()
+      const caFile = path.join(out, 'proxy-ca.pem')
+      fs.writeFileSync(caFile, testCa.caCert)
+      const started0 = /** @type {TestProxy} */ (await proxies.startTestProxy({ target: remoteBase, tls: testCa.leaf }))
+      proxy = started0
+      const viaProxy = `https://localhost:${started0.port}`
+
+      // Ohne Test-CA: Das Zertifikat des Proxys kennt dieser Rechner nicht; Satz mit dem Stammzertifikat, kein Beweis
+      const foreign = await pairWindow('proxy-fremd', viaProxy, await remote.pairingCode(), false)
+      check(foreign.paired?.result?.ok !== true && /Stammzertifikat/.test(JSON.stringify(foreign.paired?.result)), `Proxy ohne Test-CA: Das Fenster nennt das Stammzertifikat (${JSON.stringify(foreign.paired?.result)})`)
+      check(!started0.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/pair'), 'Proxy ohne Test-CA: Am Proxy kommt kein Beweis an')
+      check(pairedInSettings(foreign.userData) === null && foreign.code === 0, `Proxy ohne Test-CA: nicht gekoppelt, Fenster endet mit 0 (${foreign.code})`)
+
+      // Mit Test-CA: Vertrauensart system, Bindung an den Ursprung
+      const withCa = { MIETFUCHS_TEST_CA: caFile }
+      await until(portFree, 15_000)
+      const p = await pairWindow('proxy-kopplung', viaProxy, await remote.pairingCode(), false, withCa)
+      report.proxyPairing = p.paired
+      check(p.paired?.result?.ok === true && p.paired?.trust === 'system', `Proxy: gekoppelt in system (${JSON.stringify(p.paired?.result)}, trust ${p.paired?.trust})`)
+      check(p.paired?.loaded === true && String(p.paired?.url).startsWith(`${viaProxy}/`), `Proxy: die Seite über den Proxy geladen (${p.paired?.url})`)
+      check(p.paired?.access?.signedIn === true && p.paired?.access?.device === true, `Proxy: Die Seite trägt den Geräteschlüssel (${JSON.stringify(p.paired?.access)})`)
+      const saved = pairedInSettings(p.userData)
+      check(saved?.trust === 'system' && saved?.certSha256 === null && saved?.origin === viaProxy, `Proxy: in fenster.json als system ohne Fingerabdruck (${JSON.stringify({ trust: saved?.trust, certSha256: saved?.certSha256, origin: saved?.origin })})`)
+      check(p.code === 0, `Proxy: Fenster endet mit 0 (${p.code})`)
+
+      // Neustart: verbunden ohne eigenen Server; Trennen startet ihn
+      await until(portFree, 15_000)
+      const again = launch('proxy-neustart', { ...withCa, MIETFUCHS_SELFTEST_DISCONNECT: '1', MIETFUCHS_SELFTEST_QUIT: '1' }, p.userData)
+      const started = await readResult(path.join(again.selftest, 'fenster.json'), 120_000)
+      report.systemCa = started?.systemCa ?? null
+      check(started?.origin === viaProxy && started?.serverPid === null && started?.access?.signedIn === true, `Proxy, Neustart: verbunden mit ${started?.origin}, ohne eigenen Server, angemeldet`)
+      check(typeof started?.systemCa === 'number', `Proxy: Node liest den Speicher des Systems (${started?.systemCa} Zertifikate)`)
+      const ended = await readResult(path.join(again.selftest, 'trennen.json'), 120_000)
+      check(ended?.loaded === true && ended?.remote === null && typeof ended?.serverPid === 'number', `Proxy, Trennen: zurück zur eigenen Seite mit eigenem Server (${ended?.origin})`)
+      const againCode = await exitWithin(again.exited, 30_000)
+      if (againCode === 'läuft noch') again.child.kill()
+      check(againCode === 0, `Proxy, Trennen: Fenster endet mit 0 (${againCode})`)
+      fs.writeFileSync(path.join(out, 'proxy-neustart.log'), again.output())
+      remove(again.dataDir)
+      check(pairedInSettings(p.userData) === null && (await remote.devices())?.length === 0, 'Proxy, Trennen: Kopplung in fenster.json und am Server entfernt')
+    }
+  }
 } finally {
+  await /** @type {TestProxy | null} */ (proxy)?.close()
   await remote?.stop()
   for (const dir of userDirs) remove(dir)
   // Nur den Ordner, den diese Prüfung angelegt hat

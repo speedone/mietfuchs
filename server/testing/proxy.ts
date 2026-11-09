@@ -7,7 +7,15 @@ import http from 'node:http'
 import https from 'node:https'
 import net from 'node:net'
 import { generate } from 'selfsigned'
-import { listening, portOf } from './api.ts'
+
+// Bewusst ohne api.ts: desktop-check.mjs lädt diese Datei auf dem Runner des Fensters, wo von den Abhängigkeiten des
+// Servers nur selfsigned bereitsteht (nicht Datenbank, ZIP usw.).
+const listening = (server: net.Server, host: string): Promise<void> => new Promise((resolve) => server.listen(0, host, () => resolve()))
+const portOf = (server: net.Server): number => {
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('der Test-Proxy lauscht nicht auf einem Port')
+  return address.port
+}
 
 const DEFAULT_NAMES = ['localhost', '127.0.0.1', '::1']
 

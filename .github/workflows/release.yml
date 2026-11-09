@@ -852,6 +852,9 @@ jobs:
           test ! -e "$app/Contents/Resources/mietfuchs"
           node -e "import('./scripts/package-desktop.mjs').then((m) => m.checkServerArchive(process.argv[1]))" "$app/Contents/Resources/app.asar"
           echo "APP=$app/Contents/MacOS/Mietfuchs" >> "$GITHUB_ENV"
+      # Schritt 7b (Kopplung über einen Proxy) baut Test-CA und Test-Proxy mit server/testing/proxy.ts; das braucht
+      # selfsigned aus den Abhängigkeiten des Servers, sonst nichts davon
+      - run: npm --prefix server ci --omit=dev --ignore-scripts
       - name: Starten und prüfen
         run: node scripts/desktop-check.mjs --app "${{ env.APP }}" --out fenster-pruefung
       - name: Bericht in die Zusammenfassung
