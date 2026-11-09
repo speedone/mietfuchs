@@ -671,13 +671,18 @@ export function createAccess(options: AccessOptions) {
       res.json({ id: device.id, deviceKey, version })
     })
 
+    // Geräte gibt es nur mit Passwort; ohne antworten Liste und Entfernen wie das Koppeln
     app.get('/api/auth/devices', (req, res) => {
+      checkReset()
+      if (setting === 'off' || state.mode !== 'password') return noPassword(res)
       if (!mayManage(req)) return notSignedIn(res)
       const current = deviceOf(req)
       res.json({ devices: devices.map((d) => deviceInfo(d, current)) })
     })
 
     app.delete('/api/auth/devices/:id', (req, res) => {
+      checkReset()
+      if (setting === 'off' || state.mode !== 'password') return noPassword(res)
       if (!mayManage(req)) return notSignedIn(res)
       const id = String(req.params.id)
       const removed = devices.find((d) => d.id === id)

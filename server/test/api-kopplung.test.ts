@@ -317,6 +317,36 @@ test('Kopplung: Geräte in einer Datei ohne Passwort leben bei einer späteren E
   }
 })
 
+test('Kopplung: ohne Passwort antworten Geräteliste und Entfernen wie das Koppeln, auch mit NKA_AUTH=off', async () => {
+  // Eine Datei mit Passwort und Gerät, aber die Anmeldung über NKA_AUTH=off abgeschaltet: Liste und Entfernen
+  // bleiben zu, und zugang.json bleibt, wie sie war
+  const dataDir = freshDir()
+  const { entry } = storedDevice()
+  const hash = await hashPassword(TEST_PASSWORD, { logN: 10 })
+  const stored = { version: 1, mode: 'password', instance: 'abcdef', hash, changedAt: '2026-11-09T10:00:00.000Z', devices: [entry] }
+  fs.writeFileSync(path.join(dataDir, 'zugang.json'), JSON.stringify(stored))
+  const off = await startServerIn(dataDir, { NKA_AUTH: 'off' })
+  try {
+    for (const res of [await fetch(`${off.base}/api/auth/devices`), await fetch(`${off.base}/api/auth/devices/${entry.id}`, { method: 'DELETE' })]) {
+      assert.equal(res.status, 409)
+      assert.equal((await jsonOf<{ error: string }>(res)).error, 'Die Anmeldung ist über NKA_AUTH=off abgeschaltet.')
+    }
+    assert.deepEqual(zugang(off).devices, [entry])
+  } finally {
+    off.stop()
+  }
+  // Lokal ohne Datei: nichts entschieden, kein Passwort
+  const none = await startServerIn(freshDir())
+  try {
+    for (const res of [await fetch(`${none.base}/api/auth/devices`), await fetch(`${none.base}/api/auth/devices/${entry.id}`, { method: 'DELETE' })]) {
+      assert.equal(res.status, 409)
+      assert.equal((await jsonOf<{ error: string }>(res)).error, 'Legen Sie zuerst ein Passwort fest.')
+    }
+  } finally {
+    none.stop()
+  }
+})
+
 test('Kopplung: das Neuberechnen des Hashes bei der Anmeldung lässt die Geräte stehen', async () => {
   const dataDir = freshDir()
   const { paired: device, entry } = storedDevice()
