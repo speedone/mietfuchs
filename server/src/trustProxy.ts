@@ -42,14 +42,29 @@ const KEYWORDS: Record<string, string> = {
 // IPv4 in IPv6 als IPv4, IPv6 in einer Schreibweise, ohne Zone: so vergleicht auch die Bremse (`addressKey`)
 const familyOf = (address: string): 'ipv4' | 'ipv6' | null => (net.isIPv4(address) ? 'ipv4' : net.isIPv6(address) ? 'ipv6' : null)
 
+// IPv4 in IPv6 (`::ffff:a.b.c.d`, auch in Hex `::ffff:ac12:5`) ist IPv4: Ein Peer kommt so an und wird in `trusts` zu
+// IPv4. Als IPv6-Netz `::ffff:0:0/96` vertraute es sonst jedem IPv4-Peer an der Untergrenze vorbei (Durchsicht, Minor 1).
+const MAPPED = '0:0:0:0:0:ffff:'
+function mappedV4(key: string): string | null {
+  if (!key.startsWith(MAPPED)) return null
+  const [high, low] = key.slice(MAPPED.length).split(':').map((g) => Number.parseInt(g, 16))
+  return [high >> 8, high & 255, low >> 8, low & 255].join('.')
+}
+// `addressKey` bringt IPv4 in IPv6 mit Punkten schon auf IPv4, in Hex auf die volle Schreibweise
+const plainKey = (raw: string): string => mappedV4(addressKey(raw)) ?? addressKey(raw)
+
 function subnetOf(entry: string): { network: string, prefix: number, family: 'ipv4' | 'ipv6' } | null {
   const slash = entry.indexOf('/')
   if (slash < 0) return null
-  const network = addressKey(entry.slice(0, slash))
+  const raw = entry.slice(0, slash)
   const bits = entry.slice(slash + 1)
-  const family = familyOf(network)
-  if (!family || !/^\d{1,3}$/.test(bits)) return null
+  if (!/^\d{1,3}$/.test(bits)) return null
   const prefix = Number(bits)
+  const network = plainKey(raw)
+  const family = familyOf(network)
+  if (!family) return null
+  // Ein IPv6-Netz um IPv4 in IPv6: ab /96 ein IPv4-Netz mit 96 Bit weniger
+  if (family === 'ipv4' && net.isIPv6(raw)) return prefix >= 96 && prefix <= 128 ? { network, prefix: prefix - 96, family } : null
   return prefix <= (family === 'ipv4' ? 32 : 128) ? { network, prefix, family } : null
 }
 
@@ -68,7 +83,7 @@ export function parseTrustProxy(value: string | undefined): { addresses: net.Blo
       problems.push(`NKA_TRUST_PROXY: „${entry}“ ${keyword}`)
       continue
     }
-    const address = entry.includes('/') ? null : addressKey(entry)
+    const address = entry.includes('/') ? null : plainKey(entry)
     const family = address ? familyOf(address) : null
     if (address && family) {
       addresses.addAddress(address, family)
@@ -131,7 +146,7 @@ export function createProxyTrust(value: string | undefined, options: { lookup?: 
     entry.attemptedAt = now()
     entry.pending = (async () => {
       try {
-        entry.addresses = (await withTimeout(lookup(absoluteName(name)), lookupTimeoutMs)).map(addressKey)
+        entry.addresses = (await withTimeout(lookup(absoluteName(name)), lookupTimeoutMs)).map(plainKey)
         entry.failing = false
       } catch {
         // Kein Abbruch: Der Name ergibt keine Adresse, eine Zeile beim ersten Mal und wieder nach einer Auflösung
@@ -163,7 +178,7 @@ export function createProxyTrust(value: string | undefined, options: { lookup?: 
     problems,
     async trusts(address: string | undefined): Promise<boolean> {
       if (!configured || !address) return false
-      const key = addressKey(address)
+      const key = plainKey(address)
       const family = familyOf(key)
       if (!family) return false
       if (addresses.check(key, family)) return true

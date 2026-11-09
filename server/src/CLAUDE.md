@@ -309,13 +309,17 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     nicht, ebenso Netze unter /8 (IPv4) bzw. /32 (IPv6), die übrigen Schlüsselwörter von Express (`loopback`,
     `uniquelocal`, `linklocal`, `false`; die Zeile sagt, was stattdessen gilt) und ein unbekannter Eintrag; je eine
     Zeile auf der Fehlerausgabe beim Start, kein Abbruch. Adressen
-    prüft `net.BlockList` (`::ffff:a.b.c.d` als `a.b.c.d`). **Namen** löst `dns.promises.lookup` erst bei der ersten
+    prüft `net.BlockList` (`::ffff:a.b.c.d` als `a.b.c.d`; ein Netz um IPv4 in IPv6 wie `::ffff:0:0/96` ab /96 als
+    IPv4-Netz mit 96 Bit weniger, also mit derselben Untergrenze /8). **Namen** löst `dns.promises.lookup` erst bei der ersten
     Anfrage mit Proxy-Kopfzeilen auf (Caddy startet nach Mietfuchs), nie beim Start und nie für eine Anfrage ohne; das
     Ergebnis gilt 60 s (`NAME_TTL_MS`), eine Adresse außerhalb löst höchstens alle 5 s neu auf (`MISS_RETRY_MS`, ein neu
     erstellter Container), eine Auflösung zugleich, höchstens 2 s (`LOOKUP_TIMEOUT_MS`); eine Adresse aus dem frischen
     Ergebnis wartet nicht auf eine laufende Auflösung. Ein Name ohne Punkt wird absolut gefragt (`caddy.`), damit die
     Suchliste des Systems nicht `caddy.fritz.box` daraus macht; Docker beantwortet `caddy.` in seinem DNS (127.0.0.11)
-    wie `caddy` (nachgemessen mit Docker 29, glibc und musl). Nicht auflösbar heißt keine Adresse und eine Zeile beim ersten Mal
+    wie `caddy` (nachgemessen mit Docker 29, glibc und musl). Unter musl (Alpine) löst sich ein Name ohne Punkt, der nur
+    in /etc/hosts steht (`extra_hosts`), mit dem Punkt nicht auf; dann die IP-Adresse eintragen (Docker-DNS und glibc
+    gehen). Die 2 s beenden nur das Warten: `dns.lookup` läuft im Threadpool von libuv weiter, bis das System antwortet.
+    Nicht auflösbar heißt keine Adresse und eine Zeile beim ersten Mal
     (wieder, wenn er sich dazwischen aufgelöst hatte). Warum Namen statt Netze: Docker wählt das Netz von Compose
     zufällig, ein weites CIDR schlösse Geräte im Heimnetz ein. Außerhalb von Docker IP-Adressen; ein Proxy auf
     demselben Rechner heißt `127.0.0.1,::1` (ein Wort `loopback` gibt es nicht).
@@ -349,8 +353,8 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     eigenem gültigen Zertifikat für diesen Namen, der den Nutzer dorthin lockt und den Code bekommt, könnte dann
     koppeln. Caddy überschreibt `X-Forwarded-Host` eines nicht vertrauten Clients (vor dem Entwurf gesehen: geschicktes
     `evil` kam als `localhost:8443` an). nginx braucht `proxy_set_header X-Forwarded-Host $host;` und einen
-    ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein Name, unter dem
-    Mietfuchs ohnehin antwortet (oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
+    ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein Name, den auch die
+    Host-Prüfung zulässt (eingetragene Namen, dazu IP-Adressen, Namen ohne Punkt und Endungen des Heimnetzes; oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
     `NKA_ALLOWED_HOSTS` (PR 3).
   - Geprüft in trustProxy.test.ts (Namen mit eingeschobenem `lookup` und eigener Uhr), requestGuard.test.ts
     (`hostAllowed`), access.test.ts (Tabelle des

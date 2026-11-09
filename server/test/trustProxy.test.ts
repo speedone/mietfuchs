@@ -228,3 +228,25 @@ test('NKA_TRUST_PROXY: eine hängende Auflösung bricht nach der Wartezeit ab (M
   assert.ok(Date.now() - started < 2000, 'nicht länger als die Wartezeit')
   assert.deepEqual(errors, ['NKA_TRUST_PROXY: Der Name „caddy“ lässt sich (noch) nicht auflösen.'])
 })
+
+// ---------- Durchsicht PR 1, zweite Runde (Minor 1) ----------
+
+test('NKA_TRUST_PROXY: IPv4 in IPv6 als Netz gilt als IPv4-Netz, mit derselben Untergrenze /8', async () => {
+  for (const entry of ['::ffff:0:0/96', '::ffff:0.0.0.0/96', '0:0:0:0:0:FFFF:0:0/100', '::ffff:0:0/103']) {
+    const parsed = parseTrustProxy(entry)
+    assert.equal(parsed.configured, false, entry)
+    assert.deepEqual(parsed.problems, [`NKA_TRUST_PROXY: „${entry}“ vertraut fast jedem und gilt nicht. Tragen Sie die Adresse des Proxys oder ein engeres Netz ein.`], entry)
+    const trust = createProxyTrust(entry, { lookup: async () => assert.fail('kein Name') })
+    assert.equal(await trust.trusts('8.8.8.8'), false, entry)
+  }
+  for (const entry of ['::ffff:ac12:0/112', '::ffff:172.18.0.0/112']) {
+    const trust = createProxyTrust(entry, { lookup: async () => assert.fail('kein Name') })
+    assert.equal(trust.configured, true, entry)
+    assert.equal(await trust.trusts('172.18.0.3'), true, entry)
+    assert.equal(await trust.trusts('::ffff:172.18.0.3'), true, entry)
+    assert.equal(await trust.trusts('172.19.0.3'), false, entry)
+  }
+  const single = createProxyTrust('0:0:0:0:0:ffff:ac12:5', { lookup: async () => assert.fail('kein Name') })
+  assert.equal(await single.trusts('172.18.0.5'), true)
+  assert.equal(await single.trusts('172.18.0.6'), false)
+})
