@@ -6,8 +6,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { pairingProof } from '../src/access.ts'
-import { TEST_PASSWORD, httpsFetch, jsonOf, rawRequest, signIn, startServerIn, waitForExit, type Server } from '../testing/api.ts'
+import { deviceKeyHash, hashPassword, newDeviceKey, pairingProof } from '../src/access.ts'
+import { TEST_PASSWORD, httpsFetch, jsonOf, rawRequest, sessionOf, setupCode, signIn, startServerIn, waitForExit, type Server } from '../testing/api.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-kopplung-'))
 const NETWORK = { NKA_HOST: '0.0.0.0' }
@@ -290,5 +290,74 @@ test('Kopplung: Passwort ändern und überall abmelden lassen die Geräte stehen
     assert.equal(await unitsViaHttps(again, device), 200)
   } finally {
     again.stop()
+  }
+})
+
+// Ein Gerät mit bekanntem Schlüssel, wie es in zugang.json stünde
+function storedDevice() {
+  const deviceKey = newDeviceKey()
+  const id = '0123456789abcdef'
+  return { paired: { id, deviceKey, version: '' } as Paired, entry: { id, name: 'Von Hand', keyHash: deviceKeyHash(deviceKey), pairedAt: '2026-11-09T10:00:00.000Z', lastSeen: null } }
+}
+
+test('Kopplung: Geräte in einer Datei ohne Passwort leben bei einer späteren Einrichtung nicht auf', async () => {
+  const dataDir = freshDir()
+  const { paired: device, entry } = storedDevice()
+  fs.writeFileSync(path.join(dataDir, 'zugang.json'), JSON.stringify({ version: 1, mode: 'off', instance: 'abcdef', changedAt: '2026-11-09T10:00:00.000Z', devices: [entry] }))
+  const s = await startServerIn(dataDir, NETWORK)
+  try {
+    const setup = await fetch(`${s.base}/api/auth/setup`, post({ code: setupCode(s.dataDir), password: TEST_PASSWORD }))
+    assert.equal(setup.status, 200, await setup.clone().text())
+    assert.equal(zugang(s).devices, undefined)
+    assert.equal(await unitsViaHttps(s, device), 401)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Kopplung: das Neuberechnen des Hashes bei der Anmeldung lässt die Geräte stehen', async () => {
+  const dataDir = freshDir()
+  const { paired: device, entry } = storedDevice()
+  const hash = await hashPassword(TEST_PASSWORD, { logN: 10 })
+  fs.writeFileSync(path.join(dataDir, 'zugang.json'), JSON.stringify({ version: 1, mode: 'password', instance: 'abcdef', hash, changedAt: '2026-11-09T10:00:00.000Z', devices: [entry] }))
+  const s = await startServerIn(dataDir, NETWORK)
+  try {
+    const login = await fetch(`${s.base}/api/auth/login`, post({ password: TEST_PASSWORD }))
+    assert.equal(login.status, 200, await login.clone().text())
+    sessionOf(login)
+    const stored = zugang(s) as { hash?: string, devices?: DeviceView[] }
+    assert.notEqual(stored.hash, hash, 'neu gerechnet')
+    assert.deepEqual(stored.devices?.map((d) => d.id), [entry.id])
+    assert.equal(await unitsViaHttps(s, device), 200)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Kopplung: Passwort ändern und überall abmelden verwerfen einen offenen Code', async () => {
+  const { s, cookie } = await serverWithPassword()
+  try {
+    const before = await newCode(s, cookie)
+    const all = await fetch(`${s.base}/api/auth/logout-all`, post({ current: TEST_PASSWORD }, { cookie }))
+    assert.equal(all.status, 200)
+    assert.equal((await pair(s, before.code)).status, 400)
+    const again = await newCode(s, cookie)
+    const changed = await fetch(`${s.base}/api/auth/password`, { ...post({ current: TEST_PASSWORD, password: 'ein anderes langes Passwort' }, { cookie }), method: 'PUT' })
+    assert.equal(changed.status, 200, await changed.clone().text())
+    assert.equal((await pair(s, again.code)).status, 400)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Kopplung: Steuer- und Formatzeichen im Namen fallen weg', async () => {
+  const { s, cookie } = await serverWithPassword()
+  try {
+    await paired(s, cookie, 'Lap\u202Etop\u2028 im\u200B Büro\u0007')
+    assert.deepEqual(zugang(s).devices?.map((d) => d.name), ['Laptop im Büro'])
+    await paired(s, cookie, '\u202E\u2029\u200F')
+    assert.equal(zugang(s).devices?.[1].name, 'Programmfenster')
+  } finally {
+    s.stop()
   }
 })

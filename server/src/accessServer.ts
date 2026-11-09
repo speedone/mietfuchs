@@ -211,7 +211,9 @@ export function createAccess(options: AccessOptions) {
     const initial = initialAccess({ reachable: state.reachable, setting, file, hasStock, stage })
     state = { ...initial.state, proxyStrict: resetAtStart }
     const known = initial.write ?? (file && file !== 'corrupt' ? file : null)
-    devices = known?.devices ?? []
+    // Geräte nur mit Passwort: Eine von Hand geänderte Datei mit `off` oder `setup` ließe sie sonst bei einer späteren
+    // Einrichtung wieder aufleben
+    devices = known?.mode === 'password' ? known.devices ?? [] : []
     changedAt = known?.changedAt ?? ''
     if (initial.write) {
       try {
@@ -383,7 +385,8 @@ export function createAccess(options: AccessOptions) {
   }
   // Der Name, wie ihn das Fenster schickt (Rechnername): 1 bis 60 Zeichen ohne Steuerzeichen, sonst ein fester
   const deviceName = (name: unknown): string => {
-    const clean = typeof name === 'string' ? name.replace(/[\u0000-\u001f\u007f]/g, '').trim() : ''
+    // Steuer- und Formatzeichen (auch Richtungswechsel) sowie Zeilen- und Absatztrenner fallen weg
+    const clean = typeof name === 'string' ? name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim() : ''
     return clean.length >= 1 && clean.length <= DEVICE_NAME_MAX ? clean : 'Programmfenster'
   }
   // Zeitkonstant über SHA-256 beider Werte, wie beim Code
@@ -579,6 +582,8 @@ export function createAccess(options: AccessOptions) {
       }
       // Lief parallel ein Ausschalten, gilt das Passwort; ein Code dazu wäre ein offenes Ende (Durchsicht PR 2, K2)
       if (code) dropCode()
+      // Ein offener Kopplungscode stammt aus der Zeit davor
+      pairing = null
       sessions.revokeAll()
       newSession(req, res)
       log('Das Passwort für Mietfuchs ist geändert; alle anderen Geräte sind abgemeldet.')
@@ -606,6 +611,8 @@ export function createAccess(options: AccessOptions) {
       const own = tokensOf(req).find((token) => sessions.check(token))
       if (own) sessions.revokeAllExcept(own)
       else sessions.revokeAll()
+      // Wer überall abmeldet, will auch keinen offenen Kopplungscode mehr; gekoppelte Fenster bleiben
+      pairing = null
       log('Alle anderen Geräte sind von Mietfuchs abgemeldet.')
       res.json({ ok: true })
     })
@@ -626,6 +633,7 @@ export function createAccess(options: AccessOptions) {
     })
 
     app.delete('/api/auth/pairing', (req, res) => {
+      checkReset()
       if (!mayManage(req)) return notSignedIn(res)
       pairing = null
       res.json({ ok: true })

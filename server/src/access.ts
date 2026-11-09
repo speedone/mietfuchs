@@ -304,6 +304,8 @@ function isAccessFile(value: unknown): value is AccessFile {
   if (v.mode === 'password' && (typeof v.hash !== 'string' || !v.hash.startsWith('scrypt$'))) return false
   // Ein einziges ungültiges Gerät macht die Datei verdorben (streng): Ein halber Eintrag darf nie als Schlüssel gelten
   if (v.devices !== undefined && !(Array.isArray(v.devices) && v.devices.every(isDevice))) return false
+  // Eine Kennung zweimal: Entfernen träfe beide, die Liste zeigte eine doppelt
+  if (Array.isArray(v.devices) && new Set(v.devices.map((d: Device) => d.id)).size !== v.devices.length) return false
   return v.hash === undefined || typeof v.hash === 'string'
 }
 

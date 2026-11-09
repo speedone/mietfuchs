@@ -245,7 +245,7 @@ test('Geräte: zugang.json ohne devices gilt, mit einem ungültigen Gerät ist s
     const withDevice = readAccessFile(dir).file
     assert.ok(withDevice && withDevice !== 'corrupt')
     assert.deepEqual(withDevice.devices, [device])
-    for (const devices of [[{}], [{ ...device, keyHash: 'kurz' }], [{ ...device, lastSeen: 5 }], [{ ...device, name: '' }], {}, 'x']) {
+    for (const devices of [[{}], [device, { ...device, name: 'Doppelt' }], [{ ...device, keyHash: 'kurz' }], [{ ...device, lastSeen: 5 }], [{ ...device, name: '' }], {}, 'x']) {
       fs.writeFileSync(path.join(dir, ACCESS_FILE), JSON.stringify({ ...base, devices }))
       assert.equal(readAccessFile(dir).file, 'corrupt', JSON.stringify(devices))
     }

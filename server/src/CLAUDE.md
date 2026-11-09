@@ -239,7 +239,7 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   bis **60 s** (nicht 15 min wie im Entwurf: geteilte Adressen hinter Proxy oder Docker Desktop); ab 20 Fehlversuchen
   in 15 Minuten über alle Adressen 1 s mehr je Berechnung. Code, Passwort und Koppeln zählen getrennt; dieselbe Bremse für jede
   Route, die das bisherige Passwort prüft. Protokoll mit Adresse (die ersten fünf, dann jede Zweierpotenz); die erste
-  Anmeldung danach nennt die Zahl (`failedAttempts`).
+  Anmeldung danach nennt die Zahl (`failedAttempts`, auch fehlgeschlagene Kopplungen).
 - **Sitzungen** (`createSessions`): 32 Zufallsbytes, im Speicher nur als SHA-256, höchstens 50, 30 min ohne Anfrage,
   höchstens 8 h, ein Neustart meldet alle ab, neue Kennung bei jeder Anmeldung. Cookie `mietfuchs_<instance>` mit
   `HttpOnly; SameSite=Strict; Path=/`, ohne Domain und Max-Age, `Secure` nur hinter HTTPS (`viaHttps`:
@@ -278,12 +278,14 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   Code, Nachricht `mietfuchs-kopplung:` + SHA-256 des DER); der Code wird in derselben synchronen Prüfung verbraucht
   (zwei gleichzeitige ergeben ein Gerät), falsch und abgelaufen sind dieselbe 400. Antwort `{ id, deviceKey, version }`
   (32 Zufallsbytes). In `zugang.json` `devices` (`id`, `name` 1 bis 60 Zeichen sonst „Programmfenster“, `keyHash`
-  SHA-256, `pairedAt`, `lastSeen`), höchstens 20 (sonst 409); ein ungültiges Gerät macht die Datei verdorben.
+  SHA-256, `pairedAt`, `lastSeen`; Steuer- und Formatzeichen im Namen fallen weg), höchstens 20 (sonst 409); ein
+  ungültiges Gerät oder eine doppelte Kennung macht die Datei verdorben, gelesen werden Geräte nur bei `password`.
   **Angemeldet** über `X-Mietfuchs-Device: <id>.<Schlüssel>` (`matchDevice`, zeitkonstant) nur über die eigene TLS-
   Verbindung (`req.socket.encrypted`) und bei `password`, nie über HTTP. `lastSeen` im Speicher, höchstens stündlich
   geschrieben (ohne `generation`, `changedAt` bleibt). `GET /api/auth/devices` (ohne `keyHash`, `current`),
   `DELETE …/devices/:id`; `GET /api/auth` nennt `pairing: { available, devices }` (die Zahl nur angemeldet).
-  Zurücksetzen und Ausschalten entfernen alle Geräte, Passwort ändern und „Auf allen Geräten abmelden“ nicht. Code,
+  Zurücksetzen und Ausschalten entfernen alle Geräte, Passwort ändern und „Auf allen Geräten abmelden“ nicht (sie
+  verwerfen nur einen offenen Code). Code,
   Schlüssel und Beweis stehen nie im Protokoll. Das Zertifikat entsteht oft erst nach `createAccess`; index.ts reicht
   es mit `useTls` nach. Geprüft in access.test.ts und api-kopplung.test.ts.
 - **Wettläufe** (`generation`, `changedSince`): Jede Änderung des Zustands (Speichern, Zurücksetzen) zählt hoch. Eine
