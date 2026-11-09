@@ -580,13 +580,48 @@ test('#624: der Schalter für den QR-Code steht ab Werk aus und speichert mit de
   await waitFor(() => expect(puts.find((p) => p.url === '/api/settings')?.body).toMatchObject({ printPaymentQr: true }), SLOW)
 })
 
-test('#624: ohne Vermieter oder mit IBAN außerhalb des EWR nennt das Druckfenster den Grund', async () => {
+// Durchsicht Befund 2: Der Grund kommt aus dem Anschreiben, das gedruckt wird (abgeschlossen eingefroren), nicht aus
+// den Einstellungen von heute.
+const lettersWith = (settings: Settings) => {
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+  return lettersOf(settlement, { settings, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` })
+}
+
+test('#624: ohne Vermieter oder mit IBAN außerhalb des EWR im Anschreiben nennt das Druckfenster den Grund', async () => {
+  settlement = { ...settlement, letters: lettersWith({ ...SETTINGS, iban: 'CH9300762011623852957' }) }
   show({ ...SETTINGS, iban: 'CH9300762011623852957', printPaymentQr: true })
   const drawer = await openPrintDrawer()
   expect(within(drawer).getByText('(braucht Vermieter und gültige IBAN aus dem EWR)')).toBeTruthy()
   cleanup()
+  settlement = { ...settlement, letters: lettersWith({ ...SETTINGS, landlordName: '' }) }
   show({ ...SETTINGS, landlordName: '', printPaymentQr: true })
   expect(within(await openPrintDrawer()).getByText('(braucht Vermieter und gültige IBAN aus dem EWR)')).toBeTruthy()
+})
+
+test('#624: abgeschlossen vor dieser Funktion: kein Code, und das Druckfenster sagt warum', async () => {
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  const { paymentPurpose: _gone, ...older } = l.texts
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00.000Z` } as Settlement['closed'], letters: { t1: { ...l, texts: older as typeof l.texts } } }
+  show({ ...SETTINGS, printPaymentQr: true })
+  expect(within(await openPrintDrawer()).getByText('(nicht bei Abrechnungen, die vor dieser Funktion abgeschlossen wurden)')).toBeTruthy()
+  expect(qrImg()).toBeNull()
+})
+
+test('#624: eingefroren mit gültiger IBAN, heute geändert: der Code druckt, kein falscher Grund', async () => {
+  show({ ...SETTINGS, iban: 'CH9300762011623852957', printPaymentQr: true })
+  const drawer = await openPrintDrawer()
+  expect(await screen.findByRole('img', { name: /QR-Code für die Überweisung/ }, SLOW)).toBeTruthy()
+  expect(within(drawer).queryByText(/braucht Vermieter/)).toBeNull()
+})
+
+test('#624: Satz zur Nachzahlung geleert: kein Code und der Grund im Druckfenster', async () => {
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, letters: { t1: { ...l, texts: { ...l.texts, backPayment: '' } } } }
+  show({ ...SETTINGS, printPaymentQr: true })
+  expect(within(await openPrintDrawer()).getByText('(nur mit dem Satz zur Nachzahlung im Anschreiben)')).toBeTruthy()
+  expect(qrImg()).toBeNull()
 })
 
 const qrImg = () => screen.queryByRole('img', { name: /QR-Code für die Überweisung von/ })

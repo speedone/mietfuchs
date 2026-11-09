@@ -790,6 +790,10 @@ Entwurf: [docs/superpowers/specs/2026-11-09-zahlungs-qr-design.md](../../docs/su
   Angabe am Objekt geht vor), der Betrag aus der Aufstellung; abgeschlossen also eingefroren. Ein vor #624 eingefrorenes
   Anschreiben (ohne `paymentPurpose`) bekommt keinen Code. Entschieden und gezeichnet wird im Client
   (client/src/paymentQr.ts, components/PaymentQr.tsx).
+- **Der Code hängt am Satz zur Nachzahlung**: Ist der Baustein `backPayment` geleert, entfällt der Code mit ihm. Warum
+  bei einer Nachzahlung kein Code entsteht (vor #624 abgeschlossen, Satz geleert, kein Vermieter oder keine IBAN aus dem
+  EWR), sagt das Druckfenster je gewähltem Mieter (`paymentQrReason`), immer aus dem Anschreiben, nie aus den
+  Einstellungen von heute.
 
 ## Der Schnappschuss (#55)
 

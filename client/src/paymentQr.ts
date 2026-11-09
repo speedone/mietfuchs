@@ -4,7 +4,7 @@
 // anderes als der Text daneben.
 import type { StatementLetter } from './types'
 import { renderLetterText } from '../../shared/letter.ts'
-import { epcPayload, epcText } from '../../shared/epcQr.ts'
+import { epcBlocked, epcPayload, epcText } from '../../shared/epcQr.ts'
 
 export type PaymentQrData = { payload: string; name: string; iban: string; amountCents: number; purpose: string }
 
@@ -26,4 +26,17 @@ export function paymentQrOf(
   // Neben dem Code steht, was im Code steht: der Zweck so, wie er im Code ankommt (gekürzt und bereinigt).
   const lines = payload.split('\n')
   return { payload, name: lines[5] ?? name, iban, amountCents, purpose: lines[10] ?? '' }
+}
+
+// Warum bei einer Nachzahlung kein Code entsteht, für das Druckfenster (Durchsicht Befund 2). Aus demselben Anschreiben
+// wie der Code, nie aus den Einstellungen von heute: Abgeschlossen gilt, was eingefroren ist. `sentenceShown`: Der Satz zur
+// Nachzahlung erscheint (ein geleerter Baustein nimmt den Code mit, er steht direkt nach dem Satz).
+export const QR_REASON_FROZEN = '(nicht bei Abrechnungen, die vor dieser Funktion abgeschlossen wurden)'
+export const QR_REASON_SENTENCE = '(nur mit dem Satz zur Nachzahlung im Anschreiben)'
+export const QR_REASON_ACCOUNT = '(braucht Vermieter und gültige IBAN aus dem EWR)'
+export function paymentQrReason(letter: Pick<StatementLetter, 'texts' | 'values'> | null, balanceCents: number, sentenceShown: boolean): string | null {
+  if (balanceCents >= 0) return null
+  if (letter === null || !Object.hasOwn(letter.texts, 'paymentPurpose')) return QR_REASON_FROZEN
+  if (!sentenceShown) return QR_REASON_SENTENCE
+  return epcBlocked({ landlordName: letter.values.Vermieter, iban: letter.values.IBAN }) === null ? null : QR_REASON_ACCOUNT
 }

@@ -66,3 +66,20 @@ describe('Zahlungs-QR-Code (#624)', () => {
     expect(paymentQrOf(letterWith({ landlordName: '' }), -4000, PRINT, true)).toBeNull()
   })
 })
+
+describe('Grund ohne Zahlungs-QR-Code (#624, Durchsicht Befund 2)', () => {
+  test('nennt, warum bei einer Nachzahlung kein Code entsteht, aus dem Anschreiben', async () => {
+    const { paymentQrReason, QR_REASON_FROZEN, QR_REASON_SENTENCE, QR_REASON_ACCOUNT } = await import('./paymentQr')
+    const l = letterWith()
+    expect(paymentQrReason(l, -4000, true)).toBeNull()
+    expect(paymentQrReason(l, 4000, true)).toBeNull()
+    expect(paymentQrReason(l, 0, true)).toBeNull()
+    const { paymentPurpose: _gone, ...older } = l.texts
+    expect(paymentQrReason({ ...l, texts: older } as unknown as StatementLetter, -4000, true)).toBe(QR_REASON_FROZEN)
+    expect(paymentQrReason(null, -4000, true)).toBe(QR_REASON_FROZEN)
+    expect(paymentQrReason(l, -4000, false)).toBe(QR_REASON_SENTENCE)
+    expect(paymentQrReason(letterWith({ iban: 'CH9300762011623852957' }), -4000, true)).toBe(QR_REASON_ACCOUNT)
+    expect(paymentQrReason(letterWith({ landlordName: '' }), -4000, true)).toBe(QR_REASON_ACCOUNT)
+    expect(QR_REASON_ACCOUNT).toBe('(braucht Vermieter und gültige IBAN aus dem EWR)')
+  })
+})

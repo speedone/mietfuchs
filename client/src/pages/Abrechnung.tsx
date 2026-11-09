@@ -28,7 +28,6 @@ import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../not
 import { CalcNotice, CalcNoticeGroup, NoticeBox, NoticeGroup } from '../components/Notice'
 import { groupNotices, noticePeople } from '../noticeGroups'
 import PrintDrawer, { type PrintScope } from '../components/PrintDrawer'
-import { epcBlocked } from '../../../shared/epcQr.ts'
 import { checkList, hintSummary, neighbors, resultText, tenantRows } from '../settlementOverview'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -62,7 +61,7 @@ import type { LetterDesigns } from '../../../shared/types.ts'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
 import { PAYMENT_QR_LINES, exceedsOnePage } from '../../../shared/letter.ts'
 import PaymentQr from '../components/PaymentQr'
-import { paymentQrOf } from '../paymentQr'
+import { paymentQrOf, paymentQrReason } from '../paymentQr'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
@@ -679,14 +678,17 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               } : null
               const subject = letter && !showLetter ? renderLetterText(letter.texts.subject, print) : ''
               const underTable = letter && !showLetter ? statementBlocks(letter, st.balanceCents, attachmentCount).map((b) => ({ block: b, text: renderLetterText(letter.texts[b], print) })) : []
-              // #624: der Zahlungs-QR-Code aus dem Anschreiben (abgeschlossen eingefroren), nur bei Nachzahlung und Schalter an
-              const paymentQr = paymentQrOf(letter, st.balanceCents, print, printPaymentQr)
+              // #624: der Zahlungs-QR-Code aus dem Anschreiben (abgeschlossen eingefroren), nur bei Nachzahlung und Schalter an;
+              // er steht direkt nach dem Satz zur Nachzahlung und entfällt mit ihm (Durchsicht Befund 4/5).
+              const sentenceShown = (showLetter ? paragraphs : underTable).some((p) => p.block === 'backPayment')
+              const paymentQr = sentenceShown ? paymentQrOf(letter, st.balanceCents, print, printPaymentQr) : null
+              const qrReason = printPaymentQr ? paymentQrReason(letter, st.balanceCents, sentenceShown) : null
               // Druck (#415): je Seite Abrechnung, Objekt und Wohnung; Kontakt und Bank stehen auf der Briefseite, nicht auf jeder.
               const footnote = letter ? footnoteText(letter) : null
               // #229: fehlt nach dem Auszug die neue Anschrift, oder hat sie sich nach dem Abschluss geändert? Verglichen wird
               // mit dem, was gedruckt würde (abgeschlossen also eingefroren).
               const addressState = addressCheck(st, tenancy, head?.recipient, property, localToday(), data.closed?.sentAt)
-    return { st, letterDate, draftMark, legacy, tenancy, stFiles, attachmentsReady, groups, letter, attachmentCount, paragraphs, paymentDays, lockedId, showLetter, print, footerText, head, subject, underTable, footnote, addressState, paymentQr }
+    return { st, letterDate, draftMark, legacy, tenancy, stFiles, attachmentsReady, groups, letter, attachmentCount, paragraphs, paymentDays, lockedId, showLetter, print, footerText, head, subject, underTable, footnote, addressState, paymentQr, qrReason }
   }
   const views = data ? data.statements.map((st) => viewOf(data, st)) : []
   // Mit Briefpapier hat die Seite keinen Rand und damit keine Randfelder.
@@ -1499,7 +1501,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           draftNote={PRINT_DRAFT_NOTE}
           attachmentsLoading={attachmentsLoading}
           paper={!!design.paper}
-          qrBlocked={landlord ? epcBlocked(landlord) : null}
+          qrBlocked={[...new Set(views.filter((v) => printDrawer.scope === 'all' || v.st.tenancyId === printDrawer.scope).flatMap((v) => (v.qrReason ? [v.qrReason] : [])))].join(' ') || null}
           blocked={printBlocked}
           warnings={printWarnings.length > 0 ? (
             <div className="notice-list">
