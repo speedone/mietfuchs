@@ -23,7 +23,7 @@ import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, sho
 import { loopbackUrl, testGripsAllowed } from './testGrips.js'
 import { allowed } from './bridgePolicy.js'
 import { DEVICE_HEADER, certSha256FromPem, jsonOr, pair, pinDecision, remoteFetch, versionHint } from './pairing.js'
-import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
+import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, surfaceWindow, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -435,8 +435,8 @@ async function checkRemote() {
 async function remoteTrouble(reason) {
   if (troubleOpen || quitting || !remote) return
   troubleOpen = true
-  // Eine Rückfrage an einem verborgenen Fenster sähe niemand (macOS zeigt sie als Blatt am Fenster)
-  if (mainWindow && !mainWindow.isVisible()) mainWindow.show()
+  // Eine Rückfrage an einem verborgenen oder abgelegten Fenster sähe niemand (macOS zeigt sie als Blatt am Fenster)
+  if (mainWindow) surfaceWindow(mainWindow)
   const where = new URL(remote.origin).host
   const texts = {
     unreachable: {

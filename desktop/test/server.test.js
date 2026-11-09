@@ -5,7 +5,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties, isReceipt, isAppPage, trustedSender, childWebPreferences, frameTarget, navigationTarget, readSettingsFile, writeSettingsFile } from '../src/server.js'
+import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties, isReceipt, isAppPage, trustedSender, childWebPreferences, frameTarget, navigationTarget, readSettingsFile, writeSettingsFile, surfaceWindow } from '../src/server.js'
 
 // Geänderte Erwartung: Bisher lief ausgeliefert die Programmdatei des Servers (Bun) unter resources\server bzw. in
 // Contents/MacOS, danach der Quellcode unter resources/mietfuchs/server/src, dann das Bündel offen unter
@@ -458,4 +458,35 @@ test('Einstellungen: unter Windows ein kurz gesperrtes Umbenennen erneut versuch
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// Durchsicht: Vor der Rückfrage zum Mietfuchs im Heimnetz zeigte das Fenster sich nur, wenn es verborgen war; ein ins
+// Dock oder in die Taskleiste gelegtes Fenster blieb dort, und die Rückfrage (auf dem Mac ein Blatt am Fenster) sah
+// niemand.
+test('Fenster vor einer Rückfrage zeigen: zurückholen, wenn abgelegt, und sichtbar machen, wenn verborgen', () => {
+  /** @param {{ minimized: boolean, visible: boolean }} state */
+  const fake = (state) => {
+    /** @type {string[]} */
+    const calls = []
+    return {
+      calls,
+      isMinimized: () => state.minimized,
+      isVisible: () => state.visible,
+      restore: () => { calls.push('restore'); state.minimized = false; state.visible = true },
+      show: () => { calls.push('show'); state.visible = true },
+    }
+  }
+  const minimized = fake({ minimized: true, visible: true })
+  surfaceWindow(minimized)
+  assert.deepEqual(minimized.calls, ['restore'])
+  const hidden = fake({ minimized: false, visible: false })
+  surfaceWindow(hidden)
+  assert.deepEqual(hidden.calls, ['show'])
+  // Unter Windows gilt ein abgelegtes Fenster nicht als sichtbar
+  const both = fake({ minimized: true, visible: false })
+  surfaceWindow(both)
+  assert.deepEqual(both.calls, ['restore'])
+  const shown = fake({ minimized: false, visible: true })
+  surfaceWindow(shown)
+  assert.deepEqual(shown.calls, [])
 })
