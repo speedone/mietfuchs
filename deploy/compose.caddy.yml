@@ -1,7 +1,10 @@
 # Mietfuchs hinter Caddy: HTTPS im Heimnetz mit einem eigenen Zertifikat von Caddy. Erklärung: docs/docker.md
 #
-# Neben diese Datei gehört die Datei Caddyfile aus demselben Ordner; dort den Namen oder die IP-Adresse
-# eintragen, unter der du Mietfuchs aufrufst.
+# Neben diese Datei gehört die Datei Caddyfile aus demselben Ordner. Die Adressen, unter denen du Mietfuchs
+# aufrufst, stehen in MIETFUCHS_HOSTS, mit Komma getrennt, am einfachsten in einer Datei .env neben dieser:
+#   MIETFUCHS_HOSTS=localhost, 192.168.178.23, nas.fritz.box
+# Caddy stellt für jede ein Zertifikat aus, und Mietfuchs antwortet nur unter diesen Namen (NKA_ALLOWED_HOSTS).
+# Ohne .env gilt localhost.
 #
 # Start:          docker compose -f compose.caddy.yml up -d     App: https://<name oder IP aus dem Caddyfile>
 # Aktualisieren:  docker compose -f compose.caddy.yml pull && docker compose -f compose.caddy.yml up -d
@@ -12,20 +15,32 @@
 # Mietfuchs nach einem Passwort; den Einrichtungscode nennt  docker compose -f compose.caddy.yml logs mietfuchs
 # Ports 80 und 443 trotzdem nie ins Internet freigeben. Wer die Anmeldung lieber in Caddy hat (basic_auth im
 # Caddyfile), schaltet die von Mietfuchs unten mit NKA_AUTH: "off" ab, sonst fragen beide.
+#
+# Programmfenster koppeln: Im Fenster als Adresse https://<name aus MIETFUCHS_HOSTS> eintragen. Mietfuchs vertraut
+# dafür den Angaben von Caddy (NKA_TRUST_PROXY: caddy); der Rechner mit dem Fenster braucht das Stammzertifikat
+# oben, oder Caddy liefert das Zertifikat von Mietfuchs aus (Caddyfile). Mit basic_auth geht das nicht.
 services:
   mietfuchs:
     image: ghcr.io/speedone/mietfuchs:latest
     volumes:
       - mietfuchs-data:/app/server/data
-    # Nur zusammen mit basic_auth im Caddyfile: dann fragt Caddy nach dem Passwort statt Mietfuchs
-    # environment:
-    #   NKA_AUTH: "off"
+    environment:
+      # Caddy meldet Mietfuchs, dass die Verbindung verschlüsselt ist und unter welcher Adresse; nur ihm wird das
+      # geglaubt. Gemeint ist der Dienst caddy unten, nicht ein Gerät im Heimnetz.
+      NKA_TRUST_PROXY: caddy
+      # Dieselben Adressen wie im Caddyfile; unter anderen Namen antwortet Mietfuchs nicht
+      NKA_ALLOWED_HOSTS: ${MIETFUCHS_HOSTS:-localhost}
+      # Nur zusammen mit basic_auth im Caddyfile: dann fragt Caddy nach dem Passwort statt Mietfuchs
+      # NKA_AUTH: "off"
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   caddy:
     image: caddy:2
+    environment:
+      # Die Adressen vor der Klammer im Caddyfile
+      MIETFUCHS_HOSTS: ${MIETFUCHS_HOSTS:-localhost}
     ports:
       - "80:80"
       - "443:443"
@@ -35,6 +50,9 @@ services:
       # Hier liegen das Stammzertifikat und die Schlüssel; ohne Volume gäbe es nach jedem Update ein neues
       - caddy-data:/data
       - caddy-config:/config
+      # Nur für die Variante „Caddy liefert das Zertifikat von Mietfuchs aus“ im Caddyfile: der Datenordner von
+      # Mietfuchs, nur lesbar. Beim allerersten Start startet Caddy dann einmal neu, bis das Zertifikat da ist.
+      # - mietfuchs-data:/mietfuchs:ro
     depends_on:
       - mietfuchs
     restart: unless-stopped

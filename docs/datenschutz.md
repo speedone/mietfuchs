@@ -26,8 +26,9 @@ Das Programm für Windows und macOS legt daneben einen Ordner `mietfuchs-fenster
 `~/Library/Application Support/mietfuchs-fenster`) mit seinen
 Einstellungen (gemerkter Port, Zugriff aus dem Heimnetz) und Protokollen. Haben Sie das Fenster mit
 einem Mietfuchs im Heimnetz verbunden, stehen in seiner Datei `fenster.json` zusätzlich dessen
-Adresse, der Fingerabdruck seines Zertifikats und der Geräteschlüssel, mit dem sich das Fenster dort
-anmeldet. Die Datei ist nur für Ihr Benutzerkonto lesbar, aber nicht eigens verschlüsselt, wie die
+Adresse, die Art der Prüfung (`trust`), bei einer Verbindung mit dem eigenen Zertifikat von
+Mietfuchs dessen Fingerabdruck (über einen Proxy wie Caddy mit eigenem Zertifikat keiner) und der
+Geräteschlüssel, mit dem sich das Fenster dort anmeldet. Die Datei ist nur für Ihr Benutzerkonto lesbar, aber nicht eigens verschlüsselt, wie die
 übrigen Daten in Ihrem Benutzerordner; einen Geräteschlüssel machen Sie am Server wirkungslos, indem
 Sie das Fenster dort entfernen (unten). Der Installer für Windows
 legt eine Kopie von sich unter `%LOCALAPPDATA%\mietfuchs-updater` ab, damit Updates nur die geänderten

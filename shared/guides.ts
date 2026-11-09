@@ -566,7 +566,7 @@ const GUIDE_DATA = {
       { text: 'Der Einrichtungscode gilt nur bis zur Einrichtung. Geben Sie ihn nicht weiter: Wer ihn kennt, kann bis dahin das Passwort festlegen.' },
     ],
     gaps: [
-      { text: 'Im Browser bleibt die Verbindung im Heimnetz unverschlüsselt (HTTP). Verschlüsselt geht es im Browser nur mit einem Proxy wie Caddy oder über ein VPN; ein Programmfenster auf einem anderen Rechner verbindet sich dagegen von sich aus verschlüsselt (Anleitung „Programmfenster mit einem Mietfuchs im Heimnetz verbinden“).' },
+      { text: 'Im Browser bleibt die Verbindung im Heimnetz unverschlüsselt (HTTP). Verschlüsselt geht es im Browser nur mit einem Proxy wie Caddy oder über ein VPN; ein Programmfenster auf einem anderen Rechner verbindet sich dagegen immer verschlüsselt, direkt mit dem Port von Mietfuchs oder über den Proxy (Anleitung „Programmfenster mit einem Mietfuchs im Heimnetz verbinden“).' },
     ],
     terms: ['signIn', 'setupCode'],
   },
@@ -578,7 +578,7 @@ const GUIDE_DATA = {
     steps: [
       { text: 'Auf dem Gerät im Heimnetz läuft Mietfuchs ab Version 0.17 mit einem Passwort. Ohne Passwort lässt sich kein Fenster koppeln; wie Sie eines festlegen, steht in der Anleitung zur Anmeldung mit Passwort.' },
       { page: 'einstellungen', text: 'Öffnen Sie Mietfuchs auf dem Gerät im Browser, unter Einstellungen die Karte „Anmeldung“, und klicken Sie im Abschnitt „Programmfenster koppeln“ auf „Code anzeigen“.' },
-      { page: 'einstellungen', text: 'Öffnen Sie im Programmfenster auf Ihrem PC oder Mac die Einstellungen. Tragen Sie in der Karte „Mietfuchs im Heimnetz“ unter „Adresse“ die Adresse des Geräts ein, so wie Sie Mietfuchs dort im Browser öffnen, etwa nas:3001 oder 192.168.178.23:3001, unter „Code“ den eben gezeigten Code, und klicken Sie auf „Verbinden“.' },
+      { page: 'einstellungen', text: 'Öffnen Sie im Programmfenster auf Ihrem PC oder Mac die Einstellungen. Tragen Sie in der Karte „Mietfuchs im Heimnetz“ unter „Adresse“ die Adresse des Geräts ein, so wie Sie Mietfuchs dort im Browser öffnen, etwa nas:3001, 192.168.178.23:3001 oder hinter einem Proxy wie Caddy https://nas.fritz.box, unter „Code“ den eben gezeigten Code, und klicken Sie auf „Verbinden“.' },
       { page: 'einstellungen', text: 'Zurück zu den Daten auf Ihrem Rechner geht es in derselben Karte mit „Verbindung trennen“, oder im Menü Mietfuchs, falls die Seite des Geräts nicht lädt.' },
     ],
     result: [
@@ -586,9 +586,9 @@ const GUIDE_DATA = {
       'Auf dem Gerät steht jedes gekoppelte Programmfenster in der Karte „Anmeldung“ mit dem Namen des Rechners und dem letzten Kontakt; „Entfernen …“ meldet es dort ab.',
       'Verbunden wählt das Fenster keine Ordner und schaltet keinen Zugriff aus dem Heimnetz, denn die Daten liegen auf dem Gerät. Das Menü öffnet die Adresse des Geräts auf Wunsch im Browser.',
     ],
-    example: 'Der Code hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW, und gilt 10 Minuten und nur einmal. Nennt die Adresse keinen Port, nimmt das Fenster 3001, den Port von Docker und Programmdatei. Mit einem Gerät lassen sich bis zu 20 Programmfenster koppeln.',
+    example: 'Der Code hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW, und gilt 10 Minuten und nur einmal. Nennt die Adresse keinen Port, nimmt das Fenster 3001, den Port von Docker und Programmdatei; https://nas.fritz.box heißt wie im Browser Port 443. Mit einem Gerät lassen sich bis zu 20 Programmfenster koppeln.',
     caveats: [
-      { text: 'Verbinden Sie das Fenster direkt mit dem Port von Mietfuchs, nicht über einen Proxy wie Caddy: Das Fenster prüft das eigene Zertifikat von Mietfuchs und lehnt jedes andere ab.' },
+      { text: 'Über einen Proxy wie Caddy geben Sie die Adresse mit https:// davor ein. Das Fenster koppelt dann nur, wenn dieser Rechner das Zertifikat des Proxys kennt (bei Caddy mit tls internal das installierte Stammzertifikat root.crt) oder der Proxy das Zertifikat von Mietfuchs ausliefert, und wenn Mietfuchs dem Proxy vertraut (NKA_TRUST_PROXY, in compose.caddy.yml schon gesetzt). Fehlt etwas davon, sagt das Fenster beim Verbinden, was. Fragt der Proxy selbst nach einem Passwort (basic_auth), lässt sich kein Fenster koppeln; die Anleitung zu Docker beschreibt alle Wege.' },
       { text: 'Sagt das Fenster beim Start, der Server zeige ein anderes Zertifikat als beim Koppeln, verbinden Sie sich nicht, solange Sie den Grund nicht kennen. Wurde Mietfuchs dort neu eingerichtet oder ein Backup auf einem neuen Gerät wiederhergestellt, trennen Sie die Verbindung und koppeln mit einem neuen Code neu.' },
       { text: 'Passwort ändern und „Auf allen Geräten abmelden“ lassen gekoppelte Fenster angemeldet. Ein verlorenes Notebook entfernen Sie deshalb in der Liste der gekoppelten Fenster; das Zurücksetzen des Passworts entfernt alle.' },
       { text: 'Fenster und Gerät sollten dieselbe Version haben. Weichen sie ab, sagt das Fenster es beim Start; aktualisieren Sie dann das ältere der beiden.' },

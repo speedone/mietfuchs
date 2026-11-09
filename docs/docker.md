@@ -168,13 +168,17 @@ Gerät von sich aus kennt. Du installierst es **einmal auf jedem Gerät**, das M
 warnt der Browser. Ohne diesen Schritt geht es mit einer [eigenen Domain](#eigene-domain-mit-gültigem-zertifikat)
 oder [über ein VPN](#von-unterwegs-und-mit-https-über-ein-vpn).
 
-**Einrichten:** `compose.caddy.yml` und `Caddyfile` in denselben Ordner legen. Im Caddyfile steht
-als Adresse `localhost`; trage dort zusätzlich ein, unter welchem Namen und welcher IP-Adresse du
-dein NAS aufrufst, mit Komma getrennt:
+**Einrichten:** `compose.caddy.yml` und `Caddyfile` in denselben Ordner legen. Daneben legst du
+eine Datei `.env` an und trägst dort ein, unter welchem Namen und welcher IP-Adresse du dein NAS
+aufrufst, mit Komma getrennt:
 
 ```
-localhost, 192.168.178.23, nas.fritz.box {
+MIETFUCHS_HOSTS=localhost, 192.168.178.23, nas.fritz.box
 ```
+
+Caddy stellt für jede dieser Adressen ein Zertifikat aus, und Mietfuchs antwortet nur unter ihnen
+(`NKA_ALLOWED_HOSTS` in compose.caddy.yml liest dieselbe Angabe). Ohne `.env` gilt nur `localhost`.
+Trag nur Namen und IP-Adressen ein, ohne `https://` und ohne Port.
 
 **Starten:**
 
@@ -204,14 +208,37 @@ neues Stammzertifikat, und du installierst es auf allen Geräten neu.
   einschalten.
 - **Android:** `root.crt` aufs Gerät bringen, dann unter *Einstellungen → Sicherheit → Zertifikat
   installieren* als CA-Zertifikat installieren. Je nach Hersteller heißt der Weg etwas anders.
-- **PC und Mac:** das Zertifikat in der Zertifikatsverwaltung des Systems als vertrauenswürdige
-  Stammzertifizierungsstelle aufnehmen; manche Browser führen eine eigene Liste.
+- **Windows:** `root.crt` doppelklicken → „Zertifikat installieren …“ → „Aktueller Benutzer“ →
+  „Alle Zertifikate in folgendem Speicher speichern“ → „Durchsuchen …“ → „Vertrauenswürdige
+  Stammzertifizierungsstellen“ → „Weiter“ → „Fertig stellen“, die Sicherheitswarnung mit „Ja“
+  bestätigen. Dasselbe in einer Eingabeaufforderung im Ordner der Datei, ohne Adminrechte:
+
+  ```bat
+  certutil -user -addstore Root root.crt
+  ```
+
+  Nachsehen kannst du mit `certmgr.msc` unter *Vertrauenswürdige Stammzertifizierungsstellen →
+  Zertifikate* („Caddy Local Authority“).
+- **macOS:** `root.crt` doppelklicken, die Schlüsselbundverwaltung öffnet sich; als Schlüsselbund
+  „System“ wählen. Dann das Zertifikat („Caddy Local Authority“) doppelklicken, „Vertrauen“
+  aufklappen und bei „Bei Verwendung dieses Zertifikats“ „Immer vertrauen“ wählen, Fenster schließen
+  und mit dem Passwort des Macs bestätigen. Dasselbe im Terminal im Ordner der Datei:
+
+  ```bash
+  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain root.crt
+  ```
+
+- Firefox führt eine eigene Liste; dort unter *Einstellungen → Datenschutz & Sicherheit →
+  Zertifikate anzeigen → Zertifizierungsstellen → Importieren*. Chrome, Edge, Safari und das
+  Programmfenster von Mietfuchs nehmen die des Systems.
 
 **Aktualisieren:**
 
 ```bash
 docker compose -f compose.caddy.yml pull && docker compose -f compose.caddy.yml up -d
 ```
+
+Lädst du `compose.caddy.yml` aus 0.17 neu herunter und hattest vorher Adressen von Hand im Caddyfile vor der Klammer, trag dieselben Adressen in `.env` als `MIETFUCHS_HOSTS` ein und nimm auch das neue Caddyfile (oder schreib dort `{$MIETFUCHS_HOSTS:localhost}` vor die Klammer). Sonst kennt Mietfuchs nur `localhost` und lehnt eine eigene Domain wie `mietfuchs.example.org` ab. Wer nur `pull` und `up -d` ausführt, behält seine Dateien und muss nichts tun.
 
 ### Ein Passwort davor
 
@@ -232,6 +259,10 @@ Stelle), dann `docker compose -f compose.caddy.yml up -d`. Das gilt nur, solange
 eigenen Port veröffentlicht, sonst ginge es am Proxy vorbei. Auch so ist es kein Grund, Mietfuchs ins
 Internet zu stellen.
 
+Ein [Programmfenster](#programmfenster-koppeln) lässt sich so nicht koppeln: Es kann das Passwort
+von Caddy nicht beantworten, und ohne Passwort in Mietfuchs gibt es keinen Code. Wer koppeln will,
+lässt die Anmeldung bei Mietfuchs.
+
 Schreibt ein anderer Proxy den Namen der Anfrage um und gibt den ursprünglichen nicht als
 `X-Forwarded-Host` weiter, lehnt Mietfuchs Änderungen aus älteren Browsern ab („Änderungen nimmt Mietfuchs nur von seiner eigenen Seite
 an.“). Dann den Namen in `NKA_ALLOWED_HOSTS` eintragen, siehe
@@ -245,30 +276,27 @@ Internet erreichbar sein. Das Caddyfile beschreibt diese Variante als Kommentar.
 Name zeigt im Heimnetz auf die Adresse des NAS, du hast einen API-Schlüssel deines DNS-Anbieters,
 und Caddy hat das Modul für diesen Anbieter. Im Image `caddy:2` ist keines enthalten; du baust dir
 ein eigenes Image mit dem Modul, wie es die Caddy-Dokumentation zur DNS-Challenge beschreibt.
+Den Namen trägst du in `.env` als `MIETFUCHS_HOSTS` ein.
 
 ## Programmfenster koppeln
 
 Am Windows-PC oder Mac kannst du statt im Browser im Programmfenster mit dem Mietfuchs im Container
 arbeiten, verschlüsselt und ohne jedes Mal das Passwort einzutippen. Wie das geht, steht unter
 [Programmfenster mit Mietfuchs im Heimnetz verbinden](installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden).
-Für Docker gilt:
+Gekoppelt wird entweder direkt mit dem Port von Mietfuchs oder über Caddy (oder einen anderen
+Proxy). Als Adresse gibst du im Fenster ein, was im Browser in der Adresszeile steht.
+
+### Direkt mit dem Port von Mietfuchs (`compose.yml`)
 
 - **Port 3001 spricht HTTP und HTTPS.** Mietfuchs legt dafür beim ersten Start ein eigenes
   Zertifikat im Volume an (`/app/server/data/tls/`). An `compose.yml`, Ports und Firewall änderst du
-  nichts; der Browser bleibt bei `http://<gerät>:3001`.
-- **Direkt mit dem Port von Mietfuchs koppeln, nicht über Caddy.** Das Fenster prüft das eigene
-  Zertifikat von Mietfuchs. Über Caddy sähe es dessen Zertifikat, und Mietfuchs sähe keine
-  verschlüsselte Verbindung. In `compose.caddy.yml` hat Mietfuchs keinen eigenen Port; zum Koppeln
-  gibst du ihn zusätzlich frei, unter dem Dienst `mietfuchs`:
-
-  ```yaml
-      ports:
-        - "3001:3001"
-  ```
-
-  Das geht nur mit der Anmeldung von Mietfuchs selbst: Mit `NKA_AUTH: "off"` und dem Passwort in
-  Caddy ginge der freigegebene Port am Proxy vorbei, und ohne Passwort in Mietfuchs lässt sich
-  ohnehin kein Fenster koppeln. Auch diesen Port nie ins Internet freigeben.
+  nichts; der Browser bleibt bei `http://<gerät>:3001`. Im Fenster ist die Adresse `nas:3001` oder
+  `192.168.178.23:3001`.
+- Das Fenster merkt sich beim Koppeln genau dieses Zertifikat und nimmt danach kein anderes an. Der
+  Code selbst geht nie über die Leitung: Das Fenster beweist mit ihm, welches Zertifikat es gesehen
+  hat, und Mietfuchs prüft das gegen sein eigenes. Umgekehrt bestätigt Mietfuchs mit dem Code, dass
+  es ihn kennt; fehlt diese Bestätigung, koppelt das Fenster nicht. Ein Gerät dazwischen fällt so in
+  beide Richtungen auf.
 - **Das Zertifikat bleibt**, solange das Volume `mietfuchs-data` besteht, auch über Updates des
   Containers. Das Backup über die Oberfläche nimmt es nicht mit; nach dem Wiederherstellen in einem
   neuen Volume entsteht ein neues, und du koppelst die Fenster neu. Sicherst du das ganze Volume
@@ -276,6 +304,114 @@ Für Docker gilt:
 - Im Browser zeigt `https://<gerät>:3001` nur eine Warnung, weil kein Browser dieses Zertifikat
   kennt. Für HTTPS im Browser bleibt [Caddy](#mit-https-im-heimnetz-composecaddyyml) oder
   [ein VPN](#von-unterwegs-und-mit-https-über-ein-vpn).
+
+### Über Caddy (`compose.caddy.yml`)
+
+Im Fenster ist die Adresse dann `https://nas.fritz.box` (oder ein anderer Name aus
+`MIETFUCHS_HOSTS`), mit `https://` davor: Ohne Port heißt das 443 wie im Browser. Läuft Caddy auf
+einem anderen Port, etwa `"8443:443"`, gibst du ihn mit an: `https://nas.fritz.box:8443`. An
+Mietfuchs änderst du nichts, `compose.caddy.yml` setzt schon `NKA_TRUST_PROXY: caddy` (siehe
+[unten](#der-proxy-muss-eingetragen-sein-nka_trust_proxy)). Das Fenster muss dem Zertifikat trauen,
+das Caddy zeigt. Dafür gibt es drei Wege:
+
+1. **Eigene Domain mit Let's Encrypt** ([Eigene Domain](#eigene-domain-mit-gültigem-zertifikat)):
+   Das Zertifikat ist öffentlich gültig, auf dem PC ist nichts zu tun.
+2. **`tls internal`** (die Voreinstellung im Caddyfile): Das Stammzertifikat `root.crt` von Caddy
+   muss auf dem PC oder Mac installiert sein, genau wie für den Browser, siehe
+   [Stammzertifikat holen](#mit-https-im-heimnetz-composecaddyyml) und die Schritte für Windows und
+   macOS dort. Fehlt es, sagt das Fenster beim Koppeln, dass es das Zertifikat nicht kennt.
+3. **Caddy liefert das Zertifikat von Mietfuchs aus**: Auf dem PC ist nichts zu installieren, das
+   Fenster prüft wie beim direkten Port das eigene Zertifikat von Mietfuchs. Der Browser warnt dafür
+   wie bei `https://<gerät>:3001`. In `compose.caddy.yml` beim Dienst `caddy` die Zeile
+   `- mietfuchs-data:/mietfuchs:ro` einkommentieren (Caddy liest den Datenordner, nur lesend) und im
+   Caddyfile statt `tls internal`:
+
+   ```
+   tls /mietfuchs/tls/mietfuchs.crt /mietfuchs/tls/mietfuchs.key
+   ```
+
+   Dann `docker compose -f compose.caddy.yml up -d`. Beim allerersten Start startet Caddy einmal neu,
+   bis Mietfuchs das Zertifikat angelegt hat. Nimm diese Variante nur allein in einem Caddy, nicht
+   neben anderen Blöcken.
+
+In den Wegen 1 und 2 bindet das Fenster den Code an die Adresse, die es selbst geprüft hat, und
+merkt sich kein bestimmtes Zertifikat; Caddy darf seine Zertifikate also wie gewohnt erneuern.
+Danach prüft das Fenster bei jedem Start Kette und Namen. Ist das Stammzertifikat auf dem PC
+später nicht mehr installiert, fragt das Fenster beim Start nach.
+
+**Mit `basic_auth` in Caddy** geht es nicht, siehe [Ein Passwort davor](#ein-passwort-davor).
+
+**Über ein VPN** (Tailscale, WireGuard der FRITZ!Box) koppelst du wie im Heimnetz: mit der Adresse,
+unter der du Mietfuchs über das VPN im Browser öffnest, direkt mit dem Port oder über Caddy.
+
+### Der Proxy muss eingetragen sein (`NKA_TRUST_PROXY`)
+
+Caddy spricht mit Mietfuchs über HTTP und meldet in Kopfzeilen (`X-Forwarded-Proto`,
+`X-Forwarded-Host`), dass die Verbindung zum Fenster verschlüsselt ist und unter welcher Adresse.
+Diese Angaben glaubt Mietfuchs nur einem Proxy aus `NKA_TRUST_PROXY`; jedes andere Gerät im Heimnetz
+könnte sie sonst fälschen. Fehlt der Eintrag, sagt das Fenster beim Koppeln, dass Mietfuchs die
+Verbindung nicht als verschlüsselt ansieht.
+
+- Mit Komma getrennt: IP-Adressen (`192.168.178.5`, `::1`), Netze (`10.0.0.0/24`) oder Namen
+  (`caddy`). Einen Proxy auf demselben Rechner trägst du als `127.0.0.1,::1` ein.
+- **Namen** löst Mietfuchs bei Bedarf über DNS auf, auch neu, wenn ein Container neu erstellt wurde.
+  In Docker Compose ist der Dienstname (`caddy`) der sichere Weg: Docker kennt ihn genau, aus dem
+  Heimnetz lässt er sich nicht fälschen. Außerhalb von Docker nimm IP-Adressen; ein Name hinge am
+  DNS des Routers. Schreib den Namen ohne Punkt am Ende (`caddy`, nicht `caddy.`); einen solchen
+  Eintrag nimmt Mietfuchs nicht an. Kennt dein Mietfuchs den Proxy nur über `extra_hosts` (ein selbst gebautes Image
+  auf Alpine, musl), nimm ebenfalls seine IP-Adresse.
+- **Nicht angenommen** werden, mit einer Zeile im Protokoll: `*`, `true`, Zahlen von Sprüngen, die
+  Wörter `loopback`, `uniquelocal`, `linklocal` und `false`, und Netze, die fast jedem vertrauen
+  (`0.0.0.0/0`, alles weiter als `/8` bei IPv4 und `/32` bei IPv6). Trag die Adresse oder den Namen
+  des Proxys ein, kein ganzes Heimnetz.
+
+**nginx oder ein anderer Proxy** muss beide Kopfzeilen setzen und darf die eines Clients nicht
+durchreichen. In nginx schreibst du den Namen fest hinein, nicht `$host`: nginx macht den ersten
+`server` auf einem Port zum Auffang für jeden Namen, `server_name` hin oder her, und `$host` wäre
+dann jeder Name, den ein Client schickt. Etwa:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name mietfuchs.example.org;
+    # ssl_certificate … wie gewohnt
+    # Optional: andere Namen gar nicht erst weiterleiten
+    if ($host != "mietfuchs.example.org") { return 421; }
+    location / {
+        proxy_pass http://192.168.178.23:3001;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host mietfuchs.example.org;
+    }
+}
+```
+
+Lauscht nginx nicht auf 443, gehört der Port dazu: `proxy_set_header X-Forwarded-Host
+mietfuchs.example.org:8443;`.
+
+Dazu bei Mietfuchs `NKA_TRUST_PROXY` mit der Adresse des Rechners mit nginx und
+`NKA_ALLOWED_HOSTS=mietfuchs.example.org`. Mit `proxy_pass` wie oben schickt nginx als `Host` die
+Adresse von Mietfuchs; den öffentlichen Namen erfährt Mietfuchs nur aus `X-Forwarded-Host`. Ist die
+Prüfung des Namens an (immer in der Programmdatei, im Linux-Paket und im Programmfenster, in Docker
+sobald `NKA_ALLOWED_HOSTS` gesetzt ist), muss der öffentliche Name deshalb in `NKA_ALLOWED_HOSTS`
+stehen. Sonst sagt das Fenster beim Koppeln „Mietfuchs antwortet nicht unter dem Namen …“ und nennt
+`NKA_ALLOWED_HOSTS`.
+
+**Restrisiko:** Die Bindung an die Adresse ist nur so gut wie der Name, den der Proxy meldet. Ein
+Proxy, der `X-Forwarded-Host` eines Clients durchreicht oder jede Adresse annimmt (in Caddy ein
+Block nur für `:443`, in nginx jeder Server, der als einziger oder `default_server` auf dem Port für
+jeden Namen einspringt), meldet auch einen fremden Namen. Wer dich auf eine eigene Adresse mit gültigem
+Zertifikat lockt und den Code in die Hand bekommt, könnte dann ein Fenster koppeln. Caddy
+überschreibt die Kopfzeile selbst, nginx mit dem fest eingetragenen Namen oben. Nenne die Adressen
+deshalb ausdrücklich (`MIETFUCHS_HOSTS`, in nginx im `X-Forwarded-Host`) und setze
+`NKA_ALLOWED_HOSTS`: Mietfuchs bindet einen Code dann nur an einen dort eingetragenen Namen, eine
+private IP-Adresse oder einen Namen ohne Punkt, nicht von selbst an Namen wie `irgendwas.ts.net`. `compose.caddy.yml` macht beides schon.
+
+**Proxy auf demselben Rechner:** Eine Anfrage mit einer dieser Kopfzeilen (`X-Forwarded-For`,
+`X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`, `X-Real-IP`, `Via`) gilt nie als „von diesem Rechner“, auch wenn sie von 127.0.0.1
+kommt. Über einen Proxy braucht deshalb jede Anfrage eine Anmeldung, und `/healthz` antwortet nur
+knapp (`{ "app": "mietfuchs", "status": "ok" }`, ohne Datenordner und Datenbank). Eine Überwachung,
+die mehr lesen will, fragt Mietfuchs direkt an seinem Port. Der `HEALTHCHECK` im Image tut das
+schon.
 
 ## Mit Ollama für die KI-Belegauswertung (`compose.ollama.yml`)
 

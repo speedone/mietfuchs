@@ -245,22 +245,30 @@ festgelegt (siehe [Erster Start: Passwort festlegen](docker.md#erster-start-pass
 1. **Auf dem Gerät**, im Browser: *Einstellungen → Anmeldung → Programmfenster koppeln* →
    „Code anzeigen“. Der Code gilt 10 Minuten und nur einmal.
 2. **Im Programmfenster** auf deinem PC oder Mac: *Einstellungen → Mietfuchs im Heimnetz*. Unter
-   „Adresse“ trägst du ein, wie du Mietfuchs auf dem Gerät im Browser öffnest, etwa `nas:3001` oder
-   `192.168.178.23:3001`, unter „Code“ den eben gezeigten Code, dann „Verbinden“.
+   „Adresse“ trägst du ein, wie du Mietfuchs auf dem Gerät im Browser öffnest, etwa `nas:3001`,
+   `192.168.178.23:3001` oder hinter Caddy `https://nas.fritz.box`, unter „Code“ den eben gezeigten
+   Code, dann „Verbinden“.
 3. Das Fenster lädt die Seite des Geräts. Beim nächsten Start verbindet es sich wieder, ohne
    Passwort.
 
-**Zur Adresse:** `http://` oder `https://` davor ist egal, das Fenster spricht immer HTTPS auf
-demselben Port; Mietfuchs antwortet dort auf beides. Ohne Port nimmt es 3001. Gekoppelt wird **direkt
-mit dem Port von Mietfuchs**, nicht über Caddy oder einen anderen Proxy; mit
-[`compose.caddy.yml`](docker.md#mit-https-im-heimnetz-composecaddyyml) gibst du dafür zusätzlich den
-Port von Mietfuchs frei (siehe [Docker](docker.md#programmfenster-koppeln)).
+**Zur Adresse:** Das Fenster spricht immer HTTPS, auch mit `http://` davor; Mietfuchs antwortet auf
+seinem Port auf beides. Ohne Port nimmt es 3001, mit `https://` davor 443 wie der Browser. Gekoppelt
+wird direkt mit dem Port von Mietfuchs (`nas:3001`) oder über einen Proxy wie Caddy mit der Adresse
+aus dem Browser (`https://nas.fritz.box`). Über einen Proxy muss der PC dessen Zertifikat kennen
+(Let's Encrypt, das installierte Stammzertifikat von Caddy) oder der Proxy das Zertifikat von
+Mietfuchs ausliefern, und Mietfuchs muss dem Proxy vertrauen (`NKA_TRUST_PROXY`, in
+`compose.caddy.yml` schon gesetzt). Alles dazu unter [Docker](docker.md#programmfenster-koppeln).
+Über ein VPN koppelst du wie im Heimnetz.
 
 **Warum das sicher ist:** Mietfuchs auf dem Gerät hat ein eigenes Zertifikat. Beim Koppeln beweist
-das Fenster mit dem Code, welches Zertifikat es sieht, und das Gerät prüft das gegen sein eigenes;
-der Code selbst geht nie über das Netz. Ein Gerät, das sich dazwischen schiebt, fällt so auf. Danach
+das Fenster mit dem Code, welches Zertifikat es sieht, und das Gerät prüft das gegen sein eigenes.
+Umgekehrt bestätigt das Gerät mit dem Code, dass es ihn kennt; fehlt diese Bestätigung oder stimmt
+sie nicht, koppelt das Fenster nicht und merkt sich nichts. Der Code selbst geht nie über das Netz.
+Ein Gerät, das sich dazwischen schiebt, fällt so in beide Richtungen auf. Danach
 nimmt das Fenster unter dieser Adresse nur noch genau dieses Zertifikat an und schickt seinen
-Geräteschlüssel nur dorthin.
+Geräteschlüssel nur dorthin. Über einen Proxy mit eigenem Zertifikat bindet der Code an die
+Adresse, die das Fenster mit den Stammzertifikaten des PCs geprüft hat, und der Proxy meldet
+Mietfuchs dieselbe; das Fenster prüft dann bei jedem Start Kette und Namen.
 
 **Verbunden** startet das Fenster keinen eigenen Mietfuchs. Ordner wählen und „Zugriff aus dem
 Heimnetz“ gibt es dann nicht, die Daten liegen ja auf dem Gerät. *Mietfuchs → Im Browser öffnen*
@@ -285,6 +293,13 @@ nach dem Wiederherstellen eines Backups auf einem neuen Gerät (das Zertifikat g
 Backup). Dann trennst du die Verbindung und koppelst mit einem neuen Code neu. Kennst du den Grund
 nicht, verbinde dich nicht. Haben Fenster und Gerät verschiedene Versionen (etwa 0.17 und 0.18),
 sagt das Fenster es beim Start; aktualisiere dann das ältere.
+
+Hinter einem Proxy sagt das Fenster beim Koppeln, was fehlt: ein Stammzertifikat auf dem PC, der
+Eintrag in `NKA_TRUST_PROXY`, die Adresse so, wie der Proxy sie meldet, oder ein Passwort im Proxy
+(`basic_auth`), das das Fenster nicht beantworten kann. Ist später das Zertifikat des Proxys auf dem
+PC nicht mehr gültig, fragt es beim Start wie oben nach. Vertraut Mietfuchs dem Proxy beim Start
+gerade nicht (einige Sekunden nach dem Neuerstellen von Caddy, oder `NKA_TRUST_PROXY` fehlt), sagt
+das Fenster genau das, statt neu koppeln zu lassen; die Kopplung bleibt, „Erneut versuchen“ genügt.
 
 Im Browser zeigt `https://<gerät>:3001` nur eine Warnung, weil kein Browser das eigene Zertifikat
 von Mietfuchs kennt. Für HTTPS im Browser bleibt [Caddy](docker.md#mit-https-im-heimnetz-composecaddyyml)
@@ -447,9 +462,13 @@ oder `auto` wie eben, `off` schaltet die Anmeldung ab (nur, wenn niemand außer 
 herankommt oder ein Reverse-Proxy davor selbst nach einem Passwort fragt), `on` verlangt sie auch bei
 `127.0.0.1`. Ein anderer Wert verhindert den Start. Steht ein Reverse-Proxy auf demselben Rechner vor
 einem Mietfuchs auf `127.0.0.1`, erkennt Mietfuchs ihn an seinen Kopfzeilen (`Forwarded`,
-`X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP`, `Via`): Ist ein Passwort festgelegt, brauchen
-solche Anfragen eine Anmeldung, und ohne Passwort zeigt Mietfuchs einen Hinweis. Setzt dein Proxy
-keine dieser Kopfzeilen, nimm `NKA_AUTH=on`. Alles auf demselben Rechner gilt als vertrauenswürdig:
+`X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Real-IP`, `Via`): Eine Anfrage mit
+einer davon gilt nie als „von diesem Rechner“. Ist ein Passwort festgelegt, brauchen solche Anfragen
+eine Anmeldung, und ohne Passwort zeigt Mietfuchs einen Hinweis; `/healthz` antwortet über den Proxy
+nur knapp. Setzt dein Proxy keine dieser Kopfzeilen, nimm `NKA_AUTH=on`. Soll sich ein
+Programmfenster über diesen Proxy koppeln, trag ihn als `NKA_TRUST_PROXY=127.0.0.1,::1` ein und den
+öffentlichen Namen in `NKA_ALLOWED_HOSTS` (siehe [Docker](docker.md#der-proxy-muss-eingetragen-sein-nka_trust_proxy),
+dort auch die Zeilen für nginx). Alles auf demselben Rechner gilt als vertrauenswürdig:
 Andere Dienste dort bekommen das Anmelde-Cookie mit, auch auf einem anderen Port.
 `NKA_PASSWORD_FILE` (Pfad zu einer Datei) oder `NKA_PASSWORD` geben das Passwort beim Start vor,
 solange keins festgelegt ist; Einzelheiten unter

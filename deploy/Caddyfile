@@ -1,11 +1,16 @@
 # Caddy vor Mietfuchs (compose.caddy.yml). Erklärung: docs/docker.md
 #
-# Vor der Klammer stehen die Adressen, unter denen du Mietfuchs aufrufst, mit Komma getrennt: der Name
-# und die IP-Adresse deines NAS oder Heimservers, etwa
-#   localhost, 192.168.178.23, nas.fritz.box {
+# Vor der Klammer stehen die Adressen, unter denen du Mietfuchs aufrufst. Sie kommen aus MIETFUCHS_HOSTS in
+# compose.caddy.yml (am einfachsten in einer Datei .env daneben), damit Caddy und Mietfuchs dieselben kennen: der
+# Name und die IP-Adresse deines NAS oder Heimservers, mit Komma getrennt, etwa
+#   MIETFUCHS_HOSTS=localhost, 192.168.178.23, nas.fritz.box
 # Für jede stellt Caddy ein Zertifikat aus, unterschrieben mit seinem eigenen Stammzertifikat
 # (tls internal). Das Stammzertifikat installierst du einmal auf jedem Gerät, siehe docs/docker.md.
-localhost {
+#
+# Nenne die Adressen ausdrücklich, keinen Block für jede Adresse (etwa nur :443): Caddy meldet Mietfuchs die
+# Adresse einer Anfrage, und daran bindet das Programmfenster beim Koppeln. Ein Block für alles nähme auch fremde
+# Namen an.
+{$MIETFUCHS_HOSTS:localhost} {
 	tls internal
 	reverse_proxy mietfuchs:3001
 
@@ -13,6 +18,7 @@ localhost {
 	#   docker compose -f compose.caddy.yml exec caddy caddy hash-password
 	# dann die Zeilen unten einkommentieren, Namen und Hash eintragen und Caddy neu starten. In
 	# compose.caddy.yml dazu NKA_AUTH: "off" beim Dienst mietfuchs einkommentieren, sonst fragen beide.
+	# Ein Programmfenster lässt sich dann nicht koppeln: Es kann das Passwort von Caddy nicht beantworten.
 	# basic_auth {
 	# 	vermieter <hier der Hash>
 	# }
@@ -25,11 +31,17 @@ localhost {
 # - Caddy braucht das Modul für deinen DNS-Anbieter. Im Image caddy:2 ist keines enthalten; du baust
 #   dir ein eigenes Image mit dem passenden Modul (siehe die Caddy-Dokumentation zur DNS-Challenge).
 # - Ein API-Schlüssel des DNS-Anbieters, hier als Umgebungsvariable DNS_API_TOKEN des Caddy-Containers.
-# Dann statt des Blocks oben:
+# Dann MIETFUCHS_HOSTS=mietfuchs.example.org und im Block oben statt tls internal:
 #
-# mietfuchs.example.org {
 # 	tls {
 # 		dns <anbieter> {env.DNS_API_TOKEN}
 # 	}
-# 	reverse_proxy mietfuchs:3001
-# }
+
+# Dritte Variante: Caddy liefert das eigene Zertifikat von Mietfuchs aus. Dann muss kein Gerät ein
+# Stammzertifikat installieren, damit sich ein Programmfenster koppelt; der Browser warnt allerdings wie bei
+# https://<gerät>:3001. In compose.caddy.yml dazu beim Dienst caddy die Zeile mit mietfuchs-data:/mietfuchs:ro
+# einkommentieren, dann im Block oben statt tls internal:
+#
+# 	tls /mietfuchs/tls/mietfuchs.crt /mietfuchs/tls/mietfuchs.key
+#
+# Nur eine Variante je Caddy: Er wählt das Zertifikat nach dem Namen auch für andere Blöcke.
