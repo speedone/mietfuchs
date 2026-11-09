@@ -525,21 +525,43 @@ export function readSettingsFile(file) {
   return pairing ? { ...rest, remote: pairing } : rest
 }
 
+// Unter Windows hält ein Virenscanner oder die Indexsuche eine frisch geschriebene Datei oft kurz offen, dann scheitert
+// das Umbenennen mit EPERM, EBUSY oder EACCES; zwei weitere Versuche nach kurzer Pause genügen dafür
+const RENAME_RETRIES = 2
+const RENAME_PAUSE_MS = 100
+const RENAME_BUSY = new Set(['EPERM', 'EBUSY', 'EACCES'])
+
 /**
  * fenster.json schreiben, nur für den Benutzer lesbar (0600; darin steht der Geräteschlüssel), über eine Zwischendatei
  * und Umbenennen, damit ein Absturz mittendrin keine halbe Datei hinterlässt. Unter Windows schützt der Benutzerordner.
  * @param {string} file
  * @param {WindowSettings} settings
+ * @param {{ platform?: NodeJS.Platform, rename?: (from: string, to: string) => void, pause?: (ms: number) => void }} [options] für Tests
  */
-export function writeSettingsFile(file, settings) {
+export function writeSettingsFile(file, settings, { platform = process.platform, rename = fs.renameSync, pause = sleepSync } = {}) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const temp = `${file}.${process.pid}.neu`
   try {
     fs.writeFileSync(temp, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 })
     fs.chmodSync(temp, 0o600)
-    fs.renameSync(temp, file)
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rename(temp, file)
+        break
+      } catch (err) {
+        const code = /** @type {NodeJS.ErrnoException} */ (err)?.code
+        if (platform !== 'win32' || attempt >= RENAME_RETRIES || !code || !RENAME_BUSY.has(code)) throw err
+        pause(RENAME_PAUSE_MS)
+      }
+    }
   } catch (err) {
     fs.rmSync(temp, { force: true })
     throw err
   }
+}
+
+// Kurz warten, ohne Ereignisschleife (nur beim Schreiben von fenster.json, höchstens zweimal 100 ms)
+/** @param {number} ms */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }

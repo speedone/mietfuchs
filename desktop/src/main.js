@@ -22,7 +22,7 @@ import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProce
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, trustedUpdateKeys, updaterSource } from './updater.js'
 import { loopbackUrl, testGripsAllowed } from './testGrips.js'
 import { allowed } from './bridgePolicy.js'
-import { DEVICE_HEADER, certSha256FromPem, pair, pinDecision, remoteFetch, versionHint } from './pairing.js'
+import { DEVICE_HEADER, certSha256FromPem, jsonOr, pair, pinDecision, remoteFetch, versionHint } from './pairing.js'
 import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -403,15 +403,6 @@ async function openRemote() {
   void checkRemote()
 }
 
-/** @param {string} text */
-const jsonOr = (text) => {
-  try {
-    return /** @type {any} */ (JSON.parse(text))
-  } catch {
-    return null
-  }
-}
-
 // Nach dem Laden: Gilt der Geräteschlüssel noch (entfernt oder Anmeldung zurückgesetzt, dann zeigte die Seite nur die
 // Anmeldung), und passt die Version des Servers zu der des Fensters? Über die eigene Verbindung mit dem gemerkten
 // Zertifikat (pairing.js), nicht über die Seite.
@@ -444,6 +435,8 @@ async function checkRemote() {
 async function remoteTrouble(reason) {
   if (troubleOpen || quitting || !remote) return
   troubleOpen = true
+  // Eine Rückfrage an einem verborgenen Fenster sähe niemand (macOS zeigt sie als Blatt am Fenster)
+  if (mainWindow && !mainWindow.isVisible()) mainWindow.show()
   const where = new URL(remote.origin).host
   const texts = {
     unreachable: {

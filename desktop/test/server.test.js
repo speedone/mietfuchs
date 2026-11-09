@@ -419,3 +419,43 @@ test('Einstellungen: fenster.json lesen und schreiben, eine kaputte Kopplung gil
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('Einstellungen: unter Windows ein kurz gesperrtes Umbenennen erneut versuchen, sonst nicht', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-umbenennen-'))
+  try {
+    const file = path.join(dir, 'fenster.json')
+    const busy = (/** @type {string} */ code) => Object.assign(new Error(code), { code })
+    /** @param {number} failures @param {string} code */
+    const flaky = (failures, code) => {
+      let calls = 0
+      return { rename: (/** @type {string} */ from, /** @type {string} */ to) => { calls++; if (calls <= failures) throw busy(code); fs.renameSync(from, to) }, calls: () => calls }
+    }
+    /** @type {number[]} */
+    const pauses = []
+    const pause = (/** @type {number} */ ms) => { pauses.push(ms) }
+
+    const twice = flaky(2, 'EPERM')
+    writeSettingsFile(file, { port: 1 }, { platform: 'win32', rename: twice.rename, pause })
+    assert.equal(twice.calls(), 3)
+    assert.equal(pauses.length, 2)
+    assert.deepEqual(readSettingsFile(file), { port: 1 })
+
+    // Dreimal gesperrt: Fehler, die Zwischendatei bleibt nicht liegen, die alte Datei gilt weiter
+    const always = flaky(9, 'EBUSY')
+    assert.throws(() => writeSettingsFile(file, { port: 2 }, { platform: 'win32', rename: always.rename, pause }), /EBUSY/)
+    assert.equal(always.calls(), 3)
+    assert.deepEqual(fs.readdirSync(dir), ['fenster.json'])
+    assert.deepEqual(readSettingsFile(file), { port: 1 })
+
+    // Andere Fehler und andere Systeme: kein zweiter Versuch
+    const other = flaky(1, 'ENOSPC')
+    assert.throws(() => writeSettingsFile(file, { port: 3 }, { platform: 'win32', rename: other.rename, pause }), /ENOSPC/)
+    assert.equal(other.calls(), 1)
+    const linux = flaky(1, 'EPERM')
+    assert.throws(() => writeSettingsFile(file, { port: 3 }, { platform: 'linux', rename: linux.rename, pause }), /EPERM/)
+    assert.equal(linux.calls(), 1)
+    assert.equal(pauses.length, 4)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

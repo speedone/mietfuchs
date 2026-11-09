@@ -11,6 +11,7 @@ import http from 'node:http'
 import net from 'node:net'
 import os from 'node:os'
 import tls from 'node:tls'
+import { remoteOf } from './server.js'
 
 // Der Port der Programmdatei und des Docker-Images, wenn die Adresse keinen nennt
 export const DEFAULT_REMOTE_PORT = 3001
@@ -171,8 +172,9 @@ export async function remoteFetch(remote, urlPath, { method = 'GET', body, timeo
   return requestOver(socket, { ...target, method, path: `${url.pathname}${url.search}`, headers, body, timeoutMs })
 }
 
+// Eine Antwort als JSON oder null (auch für main.js)
 /** @param {string} text */
-const jsonOr = (text) => {
+export const jsonOr = (text) => {
   try {
     return /** @type {any} */ (JSON.parse(text))
   } catch {
@@ -252,8 +254,18 @@ export async function pair({ address, code, name = os.hostname(), timeoutMs = TI
     return unreachable
   }
   const body = jsonOr(answer.body)
-  if (answer.status === 200 && typeof body?.id === 'string' && typeof body?.deviceKey === 'string') {
-    return { origin: where.origin, certSha256, deviceId: body.id, deviceKey: body.deviceKey, version: typeof body.version === 'string' ? body.version : '' }
+  if (answer.status === 200 && body && typeof body === 'object') {
+    const paired = { origin: where.origin, certSha256, deviceId: body.id, deviceKey: body.deviceKey, version: typeof body.version === 'string' ? body.version : '' }
+    // Nur, was fenster.json auch wieder liest (remoteOf); sonst wäre die Kopplung beim nächsten Start still weg. Das
+    // eben angelegte Gerät dann beste Mühe wieder entfernen, wenn sich mit ihm eine Kopfzeile bauen lässt.
+    const valid = remoteOf(paired)
+    if (valid) return valid
+    const headerSafe = (/** @type {unknown} */ v) => typeof v === 'string' && /^[A-Za-z0-9_-]+$/.test(v)
+    if (headerSafe(body.id) && headerSafe(body.deviceKey)) {
+      await remoteFetch({ origin: where.origin, certSha256, deviceId: body.id, deviceKey: body.deviceKey }, `/api/auth/devices/${encodeURIComponent(body.id)}`, { method: 'DELETE', timeoutMs })
+        .catch(() => {})
+    }
+    return { problem: 'Das Koppeln ist gescheitert: Die Antwort des Servers ließ sich nicht verwenden. Ist Mietfuchs dort auf dem neuesten Stand?' }
   }
   if (typeof body?.error === 'string' && body.error) {
     // Ohne Passwort am Server sagt die Karte, wo es festgelegt wird

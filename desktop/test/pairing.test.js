@@ -5,9 +5,10 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import https from 'node:https'
+import tls from 'node:tls'
 import os from 'node:os'
 import path from 'node:path'
-import { certSha256FromPem, normalizeAddress, pair, pinDecision, remoteFetch, versionHint } from '../src/pairing.js'
+import { certSha256FromPem, jsonOr, normalizeAddress, pair, pinDecision, remoteFetch, versionHint } from '../src/pairing.js'
 import { freePort } from '../src/server.js'
 
 // Die Helfer der Servertests. Über eine errechnete Adresse geladen: Der Server ist TypeScript mit eigener Typprüfung,
@@ -161,6 +162,90 @@ test('Koppeln: nichts lauscht, kein Mietfuchs, Mietfuchs nur über HTTP', async 
   } finally {
     old.close()
   }
+})
+
+// Ein Schlüsselpaar für nachgebaute Server, aus dem Datenordner eines Mietfuchs, damit der Test keins erzeugen muss
+async function borrowedKeyPair() {
+  const s = await api.startServerIn(freshDir(), NETWORK)
+  const key = fs.readFileSync(path.join(s.dataDir, 'tls', 'mietfuchs.key'), 'utf8')
+  const cert = api.serverCa(s.dataDir)
+  s.stop()
+  return { key, cert }
+}
+
+// Mit Frist: Ohne die Prüfung des Fingerabdrucks hinge die Anfrage am stummen Server, statt zu scheitern
+test('Pinning: Bei anderem Zertifikat geht nach dem Handschlag kein Byte hinaus, also auch kein Geräteschlüssel', { timeout: 20_000 }, async () => {
+  const { key, cert } = await borrowedKeyPair()
+  let received = 0
+  let text = ''
+  const raw = tls.createServer({ key, cert }, (socket) => {
+    socket.on('data', (chunk) => {
+      received += chunk.length
+      text += chunk.toString('latin1')
+    })
+    socket.on('error', () => {})
+  })
+  await api.listening(raw, '127.0.0.1')
+  try {
+    const origin = `https://127.0.0.1:${api.portOf(raw)}`
+    const pinned = { origin, certSha256: 'a'.repeat(64), deviceId: '0123456789abcdef', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+    assert.notEqual(certSha256FromPem(cert), pinned.certSha256)
+    await assert.rejects(remoteFetch(pinned, '/api/units', { timeoutMs: 2000 }), (err) => /** @type {any} */ (err).code === 'CERT_CHANGED')
+    await assert.rejects(remoteFetch(pinned, `/api/auth/devices/${pinned.deviceId}`, { method: 'DELETE', body: '{}', timeoutMs: 2000 }))
+    // Zeit für Bytes, die doch unterwegs wären
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.equal(received, 0)
+    assert.equal(text.includes('K'.repeat(43)), false)
+  } finally {
+    raw.close()
+  }
+})
+
+test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Gerät beste Mühe wieder entfernt', async () => {
+  const { key, cert } = await borrowedKeyPair()
+  /** @type {string[]} */
+  const seen = []
+  const fake = https.createServer({ key, cert }, (req, res) => {
+    seen.push(`${req.method} ${req.url} ${req.headers['x-mietfuchs-device'] ?? '-'}`)
+    res.setHeader('content-type', 'application/json')
+    if (req.url === '/healthz') return res.end(JSON.stringify({ app: 'mietfuchs', status: 'ok' }))
+    if (req.url === '/api/auth/pair') return res.end(JSON.stringify({ id: 'abc123', deviceKey: 'zu kurz\r\n', version: '0.17.0' }))
+    res.end('{"ok":true}')
+  })
+  await api.listening(fake, '127.0.0.1')
+  try {
+    const result = await pair({ address: `127.0.0.1:${api.portOf(fake)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
+    assert.ok('problem' in result, JSON.stringify(result))
+    assert.match(result.problem, /Koppeln/)
+    assert.deepEqual(seen.slice(0, 2), ['GET /healthz -', 'POST /api/auth/pair -'])
+    // Mit einem unbrauchbaren Schlüssel lässt sich keine Kopfzeile bauen; entfernt wird nur, was gültig aussieht
+    assert.equal(seen.length, 2)
+  } finally {
+    fake.close()
+  }
+  // Kopfzeile baubar, aber die Kennung zu lang für fenster.json: das Gerät wird entfernt, gemerkt wird nichts
+  const longId = 'a'.repeat(65)
+  const fake2 = https.createServer({ key, cert }, (req, res) => {
+    seen.push(`${req.method} ${req.url} ${req.headers['x-mietfuchs-device'] ?? '-'}`)
+    res.setHeader('content-type', 'application/json')
+    if (req.url === '/healthz') return res.end(JSON.stringify({ app: 'mietfuchs', status: 'ok' }))
+    if (req.url === '/api/auth/pair') return res.end(JSON.stringify({ id: longId, deviceKey: 'K'.repeat(43), version: '0.17.0' }))
+    res.end('{"ok":true}')
+  })
+  await api.listening(fake2, '127.0.0.1')
+  try {
+    seen.length = 0
+    const result = await pair({ address: `127.0.0.1:${api.portOf(fake2)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
+    assert.ok('problem' in result, JSON.stringify(result))
+    assert.deepEqual(seen, ['GET /healthz -', 'POST /api/auth/pair -', `DELETE /api/auth/devices/${longId} ${longId}.${'K'.repeat(43)}`])
+  } finally {
+    fake2.close()
+  }
+})
+
+test('JSON: lesbar oder null', () => {
+  assert.deepEqual(jsonOr('{"a":1}'), { a: 1 })
+  assert.equal(jsonOr('{ kaputt'), null)
 })
 
 test('Pinning: für den gekoppelten Host nur das gemerkte Zertifikat, sonst die normale Prüfung', () => {
