@@ -189,3 +189,9 @@ test('verbunden, aber der Stand lässt sich danach nicht lesen: Meldung zum Lade
   expect(screen.getByText('Verbunden mit einem Mietfuchs im Heimnetz')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Verbindung trennen …' })).toBeTruthy()
 })
+
+test('lokal: der Hinweis am Feld Adresse nennt auch die Adresse hinter einem Proxy', async () => {
+  show(bridge())
+  await screen.findByLabelText(/Adresse/)
+  expect(screen.getByText('etwa nas:3001, 192.168.1.5:3001 oder https://nas.fritz.box')).toBeTruthy()
+})
