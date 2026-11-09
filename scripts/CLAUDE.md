@@ -228,7 +228,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz, die Kopplung mit einem Mietfuchs im Heimnetz) und das Protokoll des Servers.
 - **Testgriffe im ausgelieferten Fenster nur mit zwei Schranken** ([testGrips.js](../desktop/src/testGrips.js),
   Durchsicht Daten und Sicherheit): `CI` gleich `1` oder `true` **und** `MIETFUCHS_TESTGRIFFE=1`. Nur dann gelten
-  `MIETFUCHS_SERVER_URL` und `MIETFUCHS_UPDATE_FEED` (beide nur über http auf 127.0.0.1 oder ::1), die Selbstprüfung
+  `MIETFUCHS_SERVER_URL` und `MIETFUCHS_UPDATE_FEED` (beide nur über http auf 127.0.0.1 oder ::1), ein eigener Ordner für
+  Electron (`MIETFUCHS_TEST_USERDATA`, nur absolut), die Selbstprüfung
   (`MIETFUCHS_SELFTEST_OUT`) und das Auslassen der Frage nach „Programme“ auf dem Mac, und nur dann reicht `serverEnv`
   `CI`, `NKA_TEST_*`, `NKA_ALLOWED_HOSTS` und `NKA_UPDATE_URL` an den Server weiter. Bisher genügte `CI`, das manche
   Entwicklungsumgebung für den ganzen Benutzer setzt, unter Windows auch als `CI=false`: Eine untergeschobene Variable
@@ -297,8 +298,12 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `MIETFUCHS_SELFTEST_PAIR` (JSON `{ address, code }`, nur 127.0.0.1, [::1] oder localhost), `…_DISCONNECT=1`,
   `…_QUIT=1`, `…_WINDOW` (`hidden`, `minimized`) und `…_TROUBLE` (`retry`, `disconnect`, `quit`: die Rückfrage
   nicht zeigen, ihren Zustand nach `rueckfrage.json` schreiben und so antworten); Ergebnisse in `kopplung.json`,
-  `trennen.json` und `fenster.json` (`origin`, `url`, `remote`). fenster.json des Benutzers sichert der Schritt vorher
-  und schreibt sie danach zurück. Unter Linux gibt es kein Fenster; geprüft wird auf Windows und macOS in der CI.
+  `trennen.json` und `fenster.json` (`origin`, `url`, `remote`), gelesen erst, wenn `JSON.parse` gelingt. Jedes
+  Prüffenster bekommt einen eigenen Ordner für Electron (`MIETFUCHS_TEST_USERDATA`, `testUserData` in testGrips.js,
+  hinter beiden Schranken, nur ein absoluter Pfad): Die fenster.json eines echten Fensters auf dem Rechner bleibt
+  unberührt, und dessen Sperre gegen einen zweiten Start (sie hängt an userData) gilt für die Prüffenster nicht. Wer
+  „dasselbe“ Fenster neu startet (zweiter Start in Schritt 3, Neustart nach dem Koppeln), gibt den Ordner weiter.
+  Unter Linux gibt es kein Fenster; geprüft wird auf Windows und macOS in der CI.
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.

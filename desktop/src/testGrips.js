@@ -1,6 +1,7 @@
 // Testgriffe des Programmfensters (#517): andere Adresse des Servers (MIETFUCHS_SERVER_URL), andere Quelle der Updates
 // (MIETFUCHS_UPDATE_FEED), Selbstprüfung, kein Angebot zum Verschieben auf dem Mac, und die Umgebung, die das Fenster an
-// den Server weiterreicht (CI, NKA_TEST_*, NKA_ALLOWED_HOSTS, NKA_UPDATE_URL), dazu die Selbstprüfung der Kopplung
+// den Server weiterreicht (CI, NKA_TEST_*, NKA_ALLOWED_HOSTS, NKA_UPDATE_URL), dazu ein eigener Ordner für Electron
+// (`testUserData`) und die Selbstprüfung der Kopplung
 // (`selftestPlan`, #528).
 //
 // **Zwei Schranken** (Durchsicht Daten und Sicherheit): Bisher genügte `CI`, und das setzen manche Entwicklungsumgebungen
@@ -8,6 +9,8 @@
 // Variable Updates von einem fremden Server oder eine fremde Seite mit der Druckbrücke unterjubeln, und ein beliebig
 // gesetztes CI schaltete im ausgelieferten Fenster Umzug und Verschieben ab. Jetzt gilt beides nur mit `CI` gleich `1`
 // oder `true` **und** `MIETFUCHS_TESTGRIFFE=1`, das niemand zufällig gesetzt hat; die Prüfskripte setzen beides.
+
+import path from 'node:path'
 
 /** @param {NodeJS.ProcessEnv} env @returns {boolean} */
 export function ciSet(env) {
@@ -33,6 +36,19 @@ export function loopbackUrl(value) {
   } catch {
     return null
   }
+}
+
+/**
+ * Ein eigener Ordner für Electron (userData mit fenster.json, Protokoll und Sperre gegen einen zweiten Start) je
+ * Prüfstart (`MIETFUCHS_TEST_USERDATA`, Durchsicht PR 4 von #528): So fasst desktop-check die fenster.json eines
+ * laufenden echten Fensters nie an. Nur mit beiden Schranken und als absoluter Pfad, sonst `null`.
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string | null}
+ */
+export function testUserData(env) {
+  const dir = env.MIETFUCHS_TEST_USERDATA
+  if (!dir || !testGripsAllowed(env)) return null
+  return path.isAbsolute(dir) ? dir : null
 }
 
 // Die Knöpfe der Rückfrage, wenn der gekoppelte Mietfuchs nicht lädt (main.js, remoteTrouble), in ihrer Reihenfolge

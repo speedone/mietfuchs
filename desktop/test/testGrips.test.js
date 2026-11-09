@@ -2,7 +2,7 @@
 // sie nicht mehr, und die Umgebung des Fensters gibt Testgriffe und Schalter ohne Schranke nicht an den Server weiter.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { loopbackUrl, selftestPlan, testGripsAllowed } from '../src/testGrips.js'
+import { loopbackUrl, selftestPlan, testGripsAllowed, testUserData } from '../src/testGrips.js'
 import { DEFAULT_PORT, quitDecision, serverEnv, startFailure, twinIn, rememberDataDir } from '../src/server.js'
 import { shouldOfferMove, updaterSource } from '../src/updater.js'
 
@@ -113,4 +113,18 @@ test('Selbstprüfung der Kopplung: nur mit beiden Schranken, nur auf diesen Rech
   assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_TROUBLE: 'quit' })?.trouble, 2)
   assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_TROUBLE: 'ok' })?.trouble, null)
   assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_DISCONNECT: 'true' })?.disconnect, false)
+})
+
+// Durchsicht PR 4: desktop-check schrieb in die echte fenster.json des Benutzers. Ein eigener Ordner für Electron je
+// Prüfstart, nur mit beiden Schranken und nur als absoluter Pfad.
+test('Eigener Ordner des Fensters (userData) nur mit beiden Schranken und als absoluter Pfad', () => {
+  const dir = process.platform === 'win32' ? 'C:\\Temp\\mietfuchs-fenster-pruefung' : '/tmp/mietfuchs-fenster-pruefung'
+  const grips = { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_TEST_USERDATA: dir }
+  assert.equal(testUserData(grips), dir)
+  assert.equal(testUserData({ ...grips, CI: undefined }), null)
+  assert.equal(testUserData({ ...grips, CI: 'false' }), null)
+  assert.equal(testUserData({ ...grips, MIETFUCHS_TESTGRIFFE: undefined }), null)
+  assert.equal(testUserData({ ...grips, MIETFUCHS_TEST_USERDATA: 'relativ/ordner' }), null)
+  assert.equal(testUserData({ ...grips, MIETFUCHS_TEST_USERDATA: '' }), null)
+  assert.equal(testUserData({ CI: '1', MIETFUCHS_TESTGRIFFE: '1' }), null)
 })

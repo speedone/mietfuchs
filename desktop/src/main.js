@@ -20,7 +20,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, trustedUpdateKeys, updaterSource } from './updater.js'
-import { loopbackUrl, selftestPlan, testGripsAllowed } from './testGrips.js'
+import { loopbackUrl, selftestPlan, testGripsAllowed, testUserData } from './testGrips.js'
 import { allowed } from './bridgePolicy.js'
 import { DEVICE_HEADER, certSha256FromPem, jsonOr, pair, pinDecision, remoteFetch, versionHint } from './pairing.js'
 import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, surfaceWindow, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
@@ -33,8 +33,10 @@ const selftest = selftestPlan(process.env)
 // Electrons eigener Ordner (Zwischenspeicher, Einstellungen des Fensters) nicht unter „Mietfuchs“: Auf dem Mac heißt
 // der Datenordner von Mietfuchs so (~/Library/Application Support/Mietfuchs), und beide sollen sich nie mischen. Unter
 // Windows unter Local statt Roaming, sonst wanderte der Zwischenspeicher mit dem Profil (Durchsicht K11).
+// In Prüfläufen ein eigener Ordner je Start (testUserData, hinter beiden Schranken): fenster.json, Protokoll und die
+// Sperre gegen einen zweiten Start hängen an userData, ein laufendes echtes Fenster bleibt so unberührt.
 const localAppData = process.platform === 'win32' && process.env.LOCALAPPDATA ? process.env.LOCALAPPDATA : app.getPath('appData')
-app.setPath('userData', path.join(localAppData, 'mietfuchs-fenster'))
+app.setPath('userData', testUserData(process.env) ?? path.join(localAppData, 'mietfuchs-fenster'))
 
 // Ab wann die Startseite sagt, dass es dauert. Abgebrochen wird nicht: Beim ersten Start einer neuen Version migriert
 // der Server die Datenbank und legt vorher eine Sicherung an, bei einem großen Bestand dauert das, und ein Abbruch
@@ -742,13 +744,13 @@ async function selfTestPairing(win, out) {
 
 /**
  * Die Rückfrage in der Selbstprüfung: festhalten, ob das Fenster dabei zu sehen wäre, und die bestellte Antwort geben.
- * Das Zurückholen aus dem Dock läuft auf dem Mac animiert; bis zu drei Sekunden darauf warten.
+ * Das Zurückholen aus dem Dock läuft auf dem Mac animiert; bis zu fünf Sekunden darauf warten.
  * @param {'unreachable' | 'cert' | 'key'} reason
  * @param {number} answer
  */
 async function recordTrouble(reason, answer) {
   const win = mainWindow
-  const deadline = Date.now() + 3000
+  const deadline = Date.now() + 5000
   while (win && (win.isMinimized() || !win.isVisible()) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
   if (selftest) {
     fs.mkdirSync(selftest.out, { recursive: true })
