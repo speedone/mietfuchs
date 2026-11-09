@@ -131,7 +131,7 @@ export default function AccessCard({ jump }: { jump?: JumpProps }) {
         )}>
         {form && (
           <>
-            {form.action === 'logoutAll' && <p>Alle Geräte außer diesem müssen sich danach neu anmelden.</p>}
+            {form.action === 'logoutAll' && <p>Alle Geräte außer diesem müssen sich danach neu anmelden. Gekoppelte Programmfenster bleiben verbunden; die entfernen Sie unter „Programmfenster koppeln“.</p>}
             {form.action === 'change' && <p>Alle anderen Geräte sind danach abgemeldet.</p>}
             {form.action === 'off' && <p>{`${WITHOUT_PASSWORD_WARNING} Wieder einschalten lässt sich die Anmeldung mit dem Einrichtungscode.`}</p>}
             {form.action === 'setup' && <p>Andere Geräte brauchen danach dieses Passwort.</p>}
