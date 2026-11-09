@@ -117,7 +117,8 @@ test('Rumpf 01.01.–30.04.2025: 120 Tage, vier Vorauszahlungsmonate, Vorschlag 
   assert.match(rueckstand.text, /^Von den Vorauszahlungen 01\.01\.–30\.04\.2025 von t1 \(EG\) sind 400,00 € nicht gezahlt\. /)
   // Das Mietkonto selbst bleibt beim Kalenderjahr (Entwurf 3.11).
   const konto = rentLedger(snapshotOf(src, 2025), { asOf: '2025-06-15' }).rows.find((r) => r.tenancyId === 't1') ?? assert.fail('t1 fehlt im Mietkonto')
-  assert.deepEqual([konto.months.length, konto.arrearsCents], [12, 60000])
+  // Am 15.06. ist der Juni schon Rückstand (#334, mit Feiertagen): Januar bis Juni fällig, gezahlt Januar und Februar.
+  assert.deepEqual([konto.months.length, konto.arrearsCents], [12, 80000])
 })
 
 test('Steuer: nur im Kalenderjahr; ein Schnappschuss Mai–April wird abgelehnt statt still falsch gerechnet', () => {

@@ -14,7 +14,10 @@ import {
 import type { FederalState } from '../../shared/types.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { dayAfter, LAW_AS_OF, versionAt } from '../../shared/law/register.ts'
-import { HOLIDAY_PARAMS, holidayReformation, holidayUprising1953, STATE_HOLIDAY_LAW, STATE_HOLIDAY_LAW_UNREAD } from '../../shared/law/feiertagsgesetze.ts'
+import {
+  HOLIDAY_PARAMS, holidayReformation, holidayUprising1953, isCrossCheckedStateList, STATE_HOLIDAY_LAW, STATE_HOLIDAY_LAW_CROSS_CHECKED, STATE_HOLIDAY_LAW_UNREAD,
+} from '../../shared/law/feiertagsgesetze.ts'
+import { arrearsFrom } from '../../shared/rentDue.ts'
 import { holidaysCheckedOn } from '../../shared/holidaysChecked.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -176,26 +179,35 @@ test('die Zeitzone des Rechners ändert nichts', () => {
 // an dem jede dann geltende Fassung jedes `holiday.*` amtlich gelesen (`checked`) ist. Ältere Fassungen
 // (Reformationstag 2017, Frauentag vor 2019 …) dürfen `adopted` bleiben; für sie ist `holidaysCheckedOn`
 // falsch, und wer rechnet, nimmt dort die sichere Grenze ohne Feiertage.
-test('Feiertage: jedes Land ist entweder amtlich gelesen oder mit Grund offen', () => {
+test('Feiertage: jedes Land ist amtlich gelesen, abgeglichen oder mit Grund offen', () => {
   for (const s of STATE_CODES) {
     const read = STATE_HOLIDAY_LAW[s]
+    const crossChecked = STATE_HOLIDAY_LAW_CROSS_CHECKED[s]
     const unread = STATE_HOLIDAY_LAW_UNREAD[s]
-    assert.equal((read === undefined) !== (unread === undefined), true, `${s}: genau eines von gelesen und offen`)
+    assert.equal([read, crossChecked, unread].filter((x) => x !== undefined).length, 1, `${s}: genau eines von gelesen, abgeglichen und offen`)
     if (read) {
       assert.match(read.url, /^https:\/\//, s)
       assert.doesNotMatch(read.url, /kirchenrecht|umwelt-online|lexaris|dejure|buzer|wikipedia/, `${s}: keine Sammlung als Quelle`)
       assert.match(read.cite, /§|Art\./, s)
     }
+    if (crossChecked !== undefined) {
+      // Abgeglichen heißt: Vorschrift genannt, eine amtliche Übersicht mit Adresse und beide Vergleichslisten.
+      assert.match(crossChecked, /§/, s)
+      assert.match(crossChecked, /https:\/\/www\.hamburg\.de\//, `${s}: amtliche Übersicht`)
+      assert.match(crossChecked, /python-holidays und date-holidays/, `${s}: beide Vergleichslisten`)
+    }
     if (unread !== undefined) assert.ok(unread.trim().length > 40, `${s}: Grund nennen`)
   }
 })
 
-// Solange ein Land offen ist, bleibt jede geltende Fassung `adopted` und nennt das Land; sind alle gelesen,
-// ist jede geltende Fassung von heute bis 2100 `checked`. Jede Fassung sagt etwas über alle 16 Länder (auch
-// „nur in Berlin“ heißt „in keinem anderen Land“); ausgenommen ist nur der Tag der Deutschen Einheit, den
-// der Einigungsvertrag als Bundesrecht festlegt.
-test('Feiertage: ab dem Rechtsstand bis 2100 ist jede geltende Fassung amtlich gelesen, sobald jedes Land gelesen ist', () => {
+// Solange ein Land offen ist, bleibt jede geltende Fassung `adopted` und nennt das Land. Ist keins offen, aber
+// eins nur abgeglichen, bleibt sie `adopted`, nennt die abgeglichenen Länder und zählt doch
+// (`isCrossCheckedStateList`); sind alle gelesen, ist jede geltende Fassung `checked`. Geprüft von heute bis
+// 2100. Jede Fassung sagt etwas über alle 16 Länder (auch „nur in Berlin“ heißt „in keinem anderen Land“);
+// ausgenommen ist nur der Tag der Deutschen Einheit, den der Einigungsvertrag als Bundesrecht festlegt.
+test('Feiertage: ab dem Rechtsstand bis 2100 zählt jede geltende Fassung, sobald kein Land mehr offen ist', () => {
   const unread = STATE_CODES.filter((s) => STATE_HOLIDAY_LAW_UNREAD[s] !== undefined)
+  const crossChecked = STATE_CODES.filter((s) => STATE_HOLIDAY_LAW_CROSS_CHECKED[s] !== undefined)
   const params = LAW_PARAMS.filter((p) => p.id.startsWith('holiday.'))
   assert.equal(params.length, HOLIDAY_PARAMS.length)
   // Jede Grenze einer Fassung ab dem Rechtsstand, dazu der Rechtsstand selbst und das Ende 2100: Zwischen
@@ -209,14 +221,34 @@ test('Feiertage: ab dem Rechtsstand bis 2100 ist jede geltende Fassung amtlich g
   }
   for (const day of [...days].sort()) {
     const open = params.filter((p) => versionAt(p, day).source.checked !== 'checked')
-    if (unread.length === 0) assert.deepEqual(open.map((p) => p.id), [], `am ${day} nicht amtlich gelesen`)
-    else assert.deepEqual(params.filter((p) => !open.includes(p)).map((p) => p.id), ['holiday.unity-day'], `am ${day} geprüft trotz offener Länder`)
+    const named = [...unread, ...crossChecked]
+    if (named.length === 0) assert.deepEqual(open.map((p) => p.id), [], `am ${day} nicht amtlich gelesen`)
+    else assert.deepEqual(params.filter((p) => !open.includes(p)).map((p) => p.id), ['holiday.unity-day'], `am ${day} geprüft trotz offener oder abgeglichener Länder`)
     for (const p of open) {
-      const { cite } = versionAt(p, day).source
-      for (const s of unread) assert.match(cite, new RegExp(`\\b${s}\\b`), `${p.id} am ${day} nennt das offene Land ${s}`)
+      const { source } = versionAt(p, day)
+      for (const s of named) assert.match(source.cite, new RegExp(`\\b${s}\\b`), `${p.id} am ${day} nennt das Land ${s}`)
+      assert.equal(isCrossCheckedStateList(source), unread.length === 0, `${p.id} am ${day}: zählt genau dann, wenn kein Land offen ist`)
     }
     assert.equal(holidaysCheckedOn(day), unread.length === 0, day)
   }
+})
+
+// Entscheidung vom 09.11.2026 (#334): Bremen und Hamburg sperren ihre Gesetzestexte. Ihre Listen gelten als
+// abgeglichen (STATE_HOLIDAY_LAW_CROSS_CHECKED): was amtlich lesbar war, gelesen, der Rest deckt sich mit der
+// Übersicht der Hamburger Schulbehörde und beiden Vergleichslisten. Die Fassungen bleiben im Register
+// `adopted`, das Mietkonto rechnet aber mit Feiertagen.
+test('Feiertage: heute zählen sie im Rückstand, Bremen und Hamburg abgeglichen statt offen', () => {
+  assert.deepEqual(Object.keys(STATE_HOLIDAY_LAW_UNREAD), [])
+  assert.deepEqual(Object.keys(STATE_HOLIDAY_LAW_CROSS_CHECKED).sort(), ['HB', 'HH'])
+  for (const day of ['2019-02-07', '2026-11-09', '2028-06-17', '2100-12-31']) assert.equal(holidaysCheckedOn(day), true, day)
+  // Einzug Fr 09.10.2026 in NRW: fällig Di 13.10., Eingang erwartet bis Mo 19.10., Rückstand ab 20.10.
+  assert.equal(arrearsFrom({ start: '2026-10-09', end: null }, '2026-10', 'NW'), '2026-10-20')
+  // Die Fassungen bleiben übernommen und nennen den Abgleich.
+  const v = versionAt(holidayReformation, '2026-10-31')
+  assert.equal(v.source.checked, 'adopted')
+  assert.equal(isCrossCheckedStateList(v.source), true)
+  assert.match(v.source.cite, /HB, HH/)
+  assert.match(v.source.cite, /abgeglichen/)
 })
 
 test('Feiertage: an einem Tag mit übernommener Fassung ist nichts geprüft', () => {

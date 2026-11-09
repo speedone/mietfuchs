@@ -186,11 +186,15 @@ test('Hinweis prepayment.arrears: genau bei offenen Vorauszahlungen fälliger Mo
     const asOf = `${year}-${String(1 + (seed % 12)).padStart(2, '0')}-20`
     const items = [{ id: 'g', period: calendarPeriod(year), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 73056, key: 'area' as const }]
     const snapshot = snapshotOf({ ...sourceOf(tenancy, payments), costItems: items }, year)
-    const s = computeSettlement(snapshot, { asOf })
+    // Beide Fälle des Prüfstands der Feiertage (#334); fällig ist, was nach dem Orakel am Stichtag Rückstand ist.
+    const checked = seed % 2 === 0
+    const s = computeSettlement(snapshot, { asOf, holidaysChecked: () => checked })
     const notices = s.notices.filter((n) => n.code === 'prepayment.arrears')
     const st = s.statements.find((x) => x.tenancyId === tenancy.id)
     const ledgerInUse = payments.some((p) => (p.kind ?? 'rent') === 'rent' && p.date.startsWith(`${year}-`))
-    const due = monthsBetween(`${year}-01`, `${year}-12`).filter((m) => m < asOf.slice(0, 7))
+    const due = monthsBetween(`${year}-01`, `${year}-12`)
+      .filter((m) => m >= tenancy.start.slice(0, 7) && (tenancy.end === null || m <= tenancy.end.slice(0, 7)))
+      .filter((m) => asOf >= oracleArrearsFrom(tenancy, m, null, checked))
     const tracked = ledgerTenancy(tenancy, stock.payments, year)
     const coverage = monthCoverage(tracked, allocateRentPayments(tracked, stock.payments), due, asOf)
     const openA = coverage.reduce((a, c) => a + c.soll.prepayment - c.paid.prepayment + c.soll.heatingPrepayment - c.paid.heatingPrepayment, 0)

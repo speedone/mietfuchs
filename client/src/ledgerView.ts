@@ -175,8 +175,8 @@ export function dueLine(row: Pick<RentLedgerRow, 'months'>, asOf: string | undef
 }
 
 // Die Einzelheiten zur Fälligkeit (aufklappbar unter der Zeile), nach der Regel des Mietverhältnisses (`dueRule` vom
-// Server; fehlt sie, ein älterer Server, die Regel für neue Verträge). `checked`: ob die Feiertage heute amtlich gelesen
-// sind (`holidaysCheckedOn`); sonst nennt der Text die sichere Grenze.
+// Server; fehlt sie, ein älterer Server, die Regel für neue Verträge). `checked`: ob die Feiertage am Stichtag gelesen oder
+// abgeglichen sind (`holidaysCheckedOn`, seit 07.02.2019); sonst nennt der Text die sichere Grenze.
 // Der Stichtag der alten Fälligkeit aus dem Register (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB), nicht als Text.
 const OLD_LEASE_UNTIL = germanDate(bgbRentDueAtStart.versions.find((v) => v.value === false)?.validTo ?? '')
 
@@ -199,7 +199,7 @@ export function dueDetails(state: FederalState | null | undefined, checked: bool
   const first = rule.firstRentAtStart ? ' Die erste Miete ist laut Mietvertrag schon bei Mietbeginn fällig; ob diese Klausel wirksam ist, ist nicht höchstrichterlich geklärt.' : ''
   return `${ruleText(rule)}.${first} ${where} ` +
     'Rechtzeitig ist eine Überweisung, die bis zum Fälligkeitstag bei gedecktem Konto in Auftrag gegeben ist (BGH VIII ZR 222/15). Als Rückstand zählt ein Monat deshalb erst ab dem Tag nach dem spätesten erwarteten Eingang, vier Bankgeschäftstage nach dem Fälligkeitstag (Auslegung von Mietfuchs). ' +
-    (checked ? '' : 'Für den Rückstand zählen Feiertage erst, wenn alle Feiertagsgesetze der Länder amtlich gelesen sind; bis dahin zählt Mietfuchs einen Monat vorsichtig erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einer ersten Miete, die schon bei Mietbeginn fällig ist, bei einem festen Tag nach dem 14. und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
+    (checked ? '' : 'Für den Rückstand zählen Feiertage erst, wenn Mietfuchs die Feiertagsgesetze aller Länder für diese Tage kennt; sonst zählt Mietfuchs einen Monat vorsichtig erst ab dem Ersten des Folgemonats als Rückstand, im Einzugsmonat, bei einer ersten Miete, die schon bei Mietbeginn fällig ist, bei einem festen Tag nach dem 14. und nach Ablauf des Monats ab dem Ersten des übernächsten. ') +
     'Bei einer Lastschrift holen Sie die Miete selbst ein; rechtzeitig ist der Mieter, wenn sein Konto gedeckt ist (BGH XI ZR 236/07; zur Miete nicht eigens entschieden).'
 }
 

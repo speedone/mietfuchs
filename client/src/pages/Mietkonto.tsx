@@ -202,7 +202,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     .filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
     .sort((a, b) => b.date.localeCompare(a.date))
   const markPaidBlocked = ledger ? markPaidBlockedReason(ledger.rows, year, new Date()) : null
-  // Die Einzelheiten zur Fälligkeit (#334): ob die Feiertage heute amtlich gelesen sind, entscheidet der Text.
+  // Die Einzelheiten zur Fälligkeit (#334): ob die Feiertage am Stichtag gelesen oder abgeglichen sind, entscheidet der Text.
   const dueChecked = ledger?.asOf ? holidaysCheckedOn(ledger.asOf) : false
 
   return (
