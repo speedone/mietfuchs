@@ -1,6 +1,7 @@
 // Brücke zwischen Seite und Fenster (#517). Bewusst nur das Drucken, der Zugriff aus dem Heimnetz, die Wahl des
-// alten Ordners beim Umzug der Daten und die automatischen Updates: Die Seite bleibt eine gewöhnliche Webseite
-// (contextIsolation, sandbox, kein Node), und alles, was sie sonst braucht, liefert der Server.
+// alten Ordners beim Umzug der Daten, die automatischen Updates und die Verbindung mit einem Mietfuchs im Heimnetz: Die
+// Seite bleibt eine gewöhnliche Webseite (contextIsolation, sandbox, kein Node), und alles, was sie sonst braucht,
+// liefert der Server. Was davon die Seite eines gekoppelten Servers darf, entscheidet main.js (bridgePolicy.js).
 //
 // CommonJS, weil Electron ein Preload in der Sandbox nicht als ES-Modul lädt.
 const { contextBridge, ipcRenderer, webFrame } = require('electron')
@@ -8,10 +9,19 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron')
 contextBridge.exposeInMainWorld('mietfuchsDesktop', {
   print: () => ipcRenderer.invoke('mietfuchs:print'),
   // Zugriff aus dem Heimnetz (Einstellungen): beide ergeben { enabled, port, addresses }. `set` startet den Server
-  // neu, danach lädt das Fenster die Seite neu.
+  // neu, danach lädt das Fenster die Seite neu. Mit einem Mietfuchs im Heimnetz verbunden ergibt `get` { remote: true }.
   network: {
     get: () => ipcRenderer.invoke('mietfuchs:network-get'),
     set: (/** @type {boolean} */ enabled) => ipcRenderer.invoke('mietfuchs:network-set', enabled === true),
+  },
+  // Mietfuchs im Heimnetz (#528, Schritt 2): `get` ergibt { connected, origin?, version? }, `connect` koppelt mit
+  // Adresse und Code aus den Einstellungen des Servers und ergibt { ok: true } (dann lädt das Fenster die Seite des
+  // Servers) oder { problem, field? }: `field` ist 'address' oder 'code', wenn es an einem Feld liegt, sonst fehlt es.
+  // `disconnect` führt zurück zu den Daten auf diesem Rechner.
+  remote: {
+    get: () => ipcRenderer.invoke('mietfuchs:remote-get'),
+    connect: (/** @type {{ address: string, code: string }} */ request) => ipcRenderer.invoke('mietfuchs:remote-connect', { address: String(request?.address ?? ''), code: String(request?.code ?? '') }),
+    disconnect: () => ipcRenderer.invoke('mietfuchs:remote-disconnect'),
   },
   // Umzug der Daten: der Ordner-Dialog des Systems, ergibt den gewählten Ordner oder null
   chooseFolder: () => ipcRenderer.invoke('mietfuchs:choose-folder'),

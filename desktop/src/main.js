@@ -6,8 +6,13 @@
 // weniger, die Virenscanner prüfen und die signiert wird, und rund 100 MB weniger je Architektur.
 //
 // Sicherheit nach der Checkliste von Electron: Die Seite läuft ohne Node in der Sandbox, die Brücke (preload.cjs)
-// kennt nur das Drucken, den Zugriff aus dem Heimnetz, die Wahl des alten Ordners beim Umzug und die automatischen Updates, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
+// kennt nur das Drucken, den Zugriff aus dem Heimnetz, die Wahl des alten Ordners beim Umzug, die automatischen Updates und die Verbindung mit einem
+// Mietfuchs im Heimnetz (bridgePolicy.js), Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
 // Standardbrowser, Berechtigungen (Kamera, Standort …) werden abgelehnt.
+//
+// Mit einem Mietfuchs im Heimnetz gekoppelt (#528, Schritt 2, pairing.js) startet das Fenster keinen eigenen Server: Es
+// zeigt die Seite des gekoppelten über HTTPS, nimmt für dessen Host nur das gemerkte Zertifikat an und schickt den
+// Geräteschlüssel nur dorthin.
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -16,7 +21,9 @@ import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, trustedUpdateKeys, updaterSource } from './updater.js'
 import { loopbackUrl, testGripsAllowed } from './testGrips.js'
-import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
+import { allowed } from './bridgePolicy.js'
+import { DEVICE_HEADER, certSha256FromPem, jsonOr, pair, pinDecision, remoteFetch, versionHint } from './pairing.js'
+import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -44,25 +51,14 @@ const START_QUIT_TIMEOUT_MS = 10 * 60_000
 // (QUIT_RESTORE_WAIT_MS); das Fenster etwas länger
 const BUSY_QUIT_TIMEOUT_MS = 150_000
 
-/** @typedef {{ port?: number, network?: boolean, moveDeclined?: boolean }} WindowSettings */
+/** @typedef {import('./server.js').WindowSettings} WindowSettings */
+/** @typedef {import('./server.js').RemoteSettings} RemoteSettings */
 
+// fenster.json, nur für den Benutzer lesbar (darin steht mit einer Kopplung der Geräteschlüssel, server.js)
 const settingsFile = () => path.join(app.getPath('userData'), 'fenster.json')
-
-/** @returns {WindowSettings} */
-function readSettings() {
-  try {
-    const value = JSON.parse(fs.readFileSync(settingsFile(), 'utf8'))
-    return value && typeof value === 'object' ? value : {}
-  } catch {
-    return {}
-  }
-}
-
+const readSettings = () => readSettingsFile(settingsFile())
 /** @param {WindowSettings} settings */
-function writeSettings(settings) {
-  fs.mkdirSync(path.dirname(settingsFile()), { recursive: true })
-  fs.writeFileSync(settingsFile(), `${JSON.stringify(settings, null, 2)}\n`)
-}
+const writeSettings = (settings) => writeSettingsFile(settingsFile(), settings)
 
 /** @type {Electron.UtilityProcess | null} */
 let server = null
@@ -75,6 +71,9 @@ let serverOutput = ''
 let serverDataDir = null
 /** @type {string | null} */
 let origin = null
+// Die Kopplung mit einem Mietfuchs im Heimnetz (#528, Schritt 2); dann ist `origin` dessen Adresse und `server` null
+/** @type {RemoteSettings | null} */
+let remote = null
 /** @type {BrowserWindow | null} */
 let mainWindow = null
 let quitting = false
@@ -254,13 +253,19 @@ function serverFetch(urlPath, init = {}) {
 }
 
 // Nach jedem Setzen von `origin`. Der Filter nimmt nur den eigenen Ursprung, die Prüfung im Rückruf hält auch ein
-// anderes Schema oder einen anderen Port fern; mit einem Server von außen (MIETFUCHS_SERVER_URL) gibt es keinen Schlüssel.
+// anderes Schema oder einen anderen Port fern und einen Ursprung, der inzwischen nicht mehr gilt; mit einem Server von
+// außen (MIETFUCHS_SERVER_URL) gibt es keinen Schlüssel. Gekoppelt (#528, Schritt 2) geht statt des Fensterschlüssels
+// der Geräteschlüssel mit, nur an `${origin}/*` des gekoppelten Servers, also über HTTPS.
 function attachWindowKey() {
   if (!origin) return
   const own = origin
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`] }, (details, callback) => {
     const headers = { ...details.requestHeaders }
-    if (windowKey && new URL(details.url).origin === own) headers['X-Mietfuchs-Window'] = windowKey
+    if (own === origin && new URL(details.url).origin === own) {
+      if (remote) {
+        if (remote.origin === own) headers[DEVICE_HEADER] = `${remote.deviceId}.${remote.deviceKey}`
+      } else if (windowKey) headers['X-Mietfuchs-Window'] = windowKey
+    }
     callback({ requestHeaders: headers })
   })
 }
@@ -337,6 +342,184 @@ async function setNetwork(enabled) {
   return currentNetwork()
 }
 
+// ---------- Mietfuchs im Heimnetz (#528, Schritt 2) ----------
+// Koppeln und Trennen laufen in derselben Reihe wie der Neustart für den Heimnetz-Schalter (`restarting`): Beide
+// beenden oder starten den eigenen Server, und before-quit wartet auf sie.
+
+/**
+ * @template T
+ * @param {() => Promise<T>} job
+ * @returns {Promise<T>}
+ */
+function enqueue(job) {
+  const next = restarting.then(job)
+  restarting = next.catch(() => {})
+  return next
+}
+
+// Ein Zertifikat des gekoppelten Hosts, das nicht das gemerkte ist, seit dem letzten Laden (für die Meldung)
+let certRejected = false
+// Der Versionshinweis höchstens einmal je Start
+let versionChecked = false
+// Höchstens eine Rückfrage zugleich (Laden scheitert oft mehrfach hintereinander)
+let troubleOpen = false
+
+// Für den Host des gekoppelten Servers nur das gemerkte Zertifikat (pinDecision), für alle anderen die normale Prüfung
+// von Chromium (-3). Ohne Kopplung keine eigene Prüfung.
+function pinCertificates() {
+  session.defaultSession.setCertificateVerifyProc(remote ? (request, callback) => {
+    let fingerprint = ''
+    try {
+      fingerprint = certSha256FromPem(request.certificate.data)
+    } catch { /* kein lesbares Zertifikat: gilt für den gekoppelten Host als anderes */ }
+    const decision = pinDecision(request.hostname, fingerprint, remote)
+    if (decision === 'reject') certRejected = true
+    callback(decision === 'accept' ? 0 : decision === 'reject' ? -2 : -3)
+  } : null)
+}
+
+/** @param {RemoteSettings} pairing */
+function useRemote(pairing) {
+  remote = pairing
+  origin = pairing.origin
+  windowKey = null
+  serverDataDir = null
+  pinCertificates()
+  attachWindowKey()
+  buildMenu()
+}
+
+// Die Seite des gekoppelten Servers laden. Scheitert das, fragt `did-fail-load` (createWindow) nach dem Ausweg.
+async function openRemote() {
+  const win = mainWindow
+  if (!win || !remote || quitting) return
+  certRejected = false
+  try {
+    await win.loadURL(remote.origin)
+  } catch (err) {
+    windowLog(`Laden von ${remote?.origin} gescheitert: ${err}`)
+    return
+  }
+  void checkRemote()
+}
+
+// Nach dem Laden: Gilt der Geräteschlüssel noch (entfernt oder Anmeldung zurückgesetzt, dann zeigte die Seite nur die
+// Anmeldung), und passt die Version des Servers zu der des Fensters? Über die eigene Verbindung mit dem gemerkten
+// Zertifikat (pairing.js), nicht über die Seite.
+async function checkRemote() {
+  const current = remote
+  if (!current) return
+  try {
+    const auth = await remoteFetch(current, '/api/auth')
+    const info = jsonOr(auth.body)
+    if (auth.status === 401 || (info?.required === true && info?.signedIn !== true)) return void remoteTrouble('key')
+    if (versionChecked) return
+    const version = jsonOr((await remoteFetch(current, '/healthz')).body)?.version
+    if (typeof version !== 'string' || remote !== current) return
+    versionChecked = true
+    if (version !== current.version) {
+      remote = { ...current, version }
+      writeSettings({ ...readSettings(), remote })
+    }
+    const hint = versionHint(app.getVersion(), version)
+    if (hint && mainWindow) void dialog.showMessageBox(mainWindow, { type: 'info', title: 'Mietfuchs im Heimnetz', message: hint, buttons: ['OK'] })
+  } catch (err) {
+    windowLog(`Prüfung von ${current.origin}: ${err}`)
+  }
+}
+
+/**
+ * Der gekoppelte Server lädt nicht: Grund und Ausweg in einer Rückfrage des Systems, weil die Seite selbst ja fehlt.
+ * @param {'unreachable' | 'cert' | 'key'} reason
+ */
+async function remoteTrouble(reason) {
+  if (troubleOpen || quitting || !remote) return
+  troubleOpen = true
+  // Eine Rückfrage an einem verborgenen Fenster sähe niemand (macOS zeigt sie als Blatt am Fenster)
+  if (mainWindow && !mainWindow.isVisible()) mainWindow.show()
+  const where = new URL(remote.origin).host
+  const texts = {
+    unreachable: {
+      message: `Mietfuchs unter ${where} ist nicht erreichbar.`,
+      detail: 'Prüfen Sie, ob der Rechner eingeschaltet ist und Mietfuchs dort läuft. „Verbindung trennen“ führt zurück zu den Daten auf diesem Rechner.',
+    },
+    cert: {
+      message: 'Der Server zeigt ein anderes Zertifikat als beim Koppeln. Wurde Mietfuchs dort neu eingerichtet, koppeln Sie neu; sonst verbinden Sie sich nicht.',
+      detail: `Adresse: ${where}. Zum neu Koppeln trennen Sie die Verbindung und verbinden sich in den Einstellungen unter „Mietfuchs im Heimnetz“ mit einem neuen Code.`,
+    },
+    key: {
+      message: `Mietfuchs unter ${where} kennt dieses Programmfenster nicht mehr.`,
+      detail: 'Vermutlich wurde es dort in den Einstellungen unter „Anmeldung“ entfernt, oder die Anmeldung wurde zurückgesetzt. Trennen Sie die Verbindung und koppeln Sie mit einem neuen Code neu.',
+    },
+  }[reason]
+  /** @type {Electron.MessageBoxOptions} */
+  const options = { type: 'warning', title: 'Mietfuchs im Heimnetz', ...texts, buttons: ['Erneut versuchen', 'Verbindung trennen', 'Beenden'], defaultId: 0, cancelId: 2, noLink: true }
+  windowLog(`Mietfuchs im Heimnetz: ${reason}`)
+  let response = 2
+  try {
+    response = (mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)).response
+  } finally {
+    troubleOpen = false
+  }
+  if (response === 0) void openRemote()
+  else if (response === 1) void enqueue(disconnectRemote).catch((err) => console.error(`Trennen: ${err}`))
+  else app.quit()
+}
+
+/**
+ * Koppeln (Karte „Mietfuchs im Heimnetz“ der eigenen Seite): pairing.js, merken, eigenen Server beenden, die Seite des
+ * gekoppelten laden. Ein Fehler kommt als Satz an die Karte zurück, und es bleibt beim eigenen Server.
+ * @param {string} address
+ * @param {string} code
+ * @returns {Promise<{ ok: true } | import('./pairing.js').Problem>}
+ */
+async function connectRemote(address, code) {
+  if (quitting) throw new Error('Mietfuchs wird beendet.')
+  if (remote) return { problem: 'Das Fenster ist schon mit einem Mietfuchs im Heimnetz verbunden.' }
+  const result = await pair({ address, code })
+  if ('problem' in result) return result
+  if (quitting) throw new Error('Mietfuchs wird beendet.')
+  writeSettings({ ...readSettings(), remote: result })
+  windowLog(`Gekoppelt mit ${result.origin}`)
+  await stopServer()
+  useRemote(result)
+  versionChecked = false
+  // Erst nach der Antwort an die Seite laden, sonst ginge die Antwort ins Leere
+  setImmediate(() => void openRemote())
+  return { ok: true }
+}
+
+// Trennen (Karte, Menü, Rückfrage): beste Mühe, das eigene Gerät am Server zu entfernen, Kopplung vergessen, eigenen
+// Server starten und dessen Seite laden. Erreicht das Fenster den Server nicht, bleibt das Gerät dort in der Liste.
+async function disconnectRemote() {
+  const current = remote
+  if (!current) return
+  await remoteFetch(current, `/api/auth/devices/${encodeURIComponent(current.deviceId)}`, { method: 'DELETE', timeoutMs: 3000 })
+    .then((answer) => windowLog(`Gerät am Server entfernen: ${answer.status}`))
+    .catch((err) => windowLog(`Gerät am Server entfernen gescheitert: ${err}`))
+  const { remote: _forgotten, ...settings } = readSettings()
+  writeSettings(settings)
+  windowLog(`Verbindung mit ${current.origin} getrennt`)
+  remote = null
+  origin = null
+  pinCertificates()
+  buildMenu()
+  if (quitting) return
+  if (mainWindow) await mainWindow.loadURL(page('<p>Mietfuchs startet …</p>'))
+  try {
+    origin = new URL(await startServer(settings)).origin
+    attachWindowKey()
+  } catch (err) {
+    if (quitting) return
+    showStartFailure('Mietfuchs ließ sich nicht starten', err)
+    quitting = true
+    await stopServer()
+    app.exit(1)
+    return
+  }
+  if (mainWindow && origin && !quitting) await mainWindow.loadURL(origin)
+}
+
 /** @param {string} html */
 const page = (html) => `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html lang="de"><meta charset="utf-8"><body style="font:15px system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh;color:#333">${html}</body></html>`)}`
 
@@ -358,6 +541,13 @@ function createWindow() {
     },
   })
   win.once('ready-to-show', () => win.show())
+  // Gekoppelt (#528, Schritt 2): Lädt die Seite des Servers nicht, sagt eine Rückfrage warum und wie es weitergeht.
+  // Abgebrochene Navigationen (-3, etwa eine Weiterleitung der Seite) sind kein Fehler.
+  win.webContents.on('did-fail-load', (_event, errorCode, description, url, isMainFrame) => {
+    if (!remote || !isMainFrame || errorCode === -3 || linkTarget(url, remote.origin) !== 'window') return
+    windowLog(`did-fail-load ${errorCode} ${description}`)
+    void remoteTrouble(certRejected ? 'cert' : 'unreachable')
+  })
   win.on('close', () => windowLog('Fenster: close'))
   win.on('closed', () => {
     mainWindow = null
@@ -411,6 +601,13 @@ function openReceiptWindow(url) {
   void child.loadURL(url)
 }
 
+// Dieselbe Adresse über HTTP, mit ausdrücklichem Port (https://nas wäre sonst http://nas auf Port 80)
+/** @param {string} address */
+const overHttp = (address) => {
+  const url = new URL(address)
+  return `http://${url.hostname}:${url.port || '443'}`
+}
+
 function buildMenu() {
   const mac = process.platform === 'darwin'
   /** @type {Electron.MenuItemConstructorOptions[]} */
@@ -419,8 +616,11 @@ function buildMenu() {
       label: 'Mietfuchs',
       submenu: [
         ...(mac ? [{ role: /** @type {const} */ ('about'), label: 'Über Mietfuchs' }, { type: /** @type {const} */ ('separator') }] : []),
-        { label: 'Im Browser öffnen', click: () => { if (origin) void shell.openExternal(origin) } },
-        { label: 'Datenordner zeigen', click: () => { if (serverDataDir) void shell.openPath(serverDataDir) } },
+        // Gekoppelt über HTTP auf demselben Port: Über HTTPS zeigte der Browser beim eigenen Zertifikat nur eine Warnung
+        { label: 'Im Browser öffnen', click: () => { if (origin) void shell.openExternal(remote ? overHttp(origin) : origin) } },
+        ...(remote ? [] : [{ label: 'Datenordner zeigen', click: () => { if (serverDataDir) void shell.openPath(serverDataDir) } }]),
+        // Auch wenn die Seite des gekoppelten Servers nicht lädt
+        ...(remote ? [{ label: 'Verbindung trennen', click: () => void enqueue(disconnectRemote).catch((err) => console.error(`Trennen: ${err}`)) }] : []),
         { type: 'separator' },
         { label: 'Drucken …', accelerator: 'CmdOrCtrl+P', click: (_item, win) => { if (win instanceof BrowserWindow) printPage(win.webContents) } },
         { type: 'separator' },
@@ -493,24 +693,33 @@ async function start() {
   // Nur die eigene Seite darf drucken lassen (Durchsicht K9), und zwar ihr Hauptrahmen, nie ein Beleg (#517, trustedSender)
   /** @param {Electron.IpcMainInvokeEvent} event */
   const fromOwnPage = (event) => trustedSender(event.senderFrame, origin) && event.senderFrame === event.sender.mainFrame
+  // Was die Seite darf, entscheidet bridgePolicy.js: lokal alles, gekoppelt nur Drucken, Updates und die Verbindung
+  /** @param {Electron.IpcMainInvokeEvent} event @param {string} channel */
+  const mayUse = (event, channel) => allowed(channel, { remote: remote !== null, ownPage: fromOwnPage(event) })
+  /** @param {Electron.IpcMainInvokeEvent} event @param {string} channel */
+  const permit = (event, channel) => {
+    if (!mayUse(event, channel)) throw new Error('Nicht erlaubt.')
+  }
   ipcMain.handle('mietfuchs:print', (event) => {
-    if (fromOwnPage(event)) printPage(event.sender)
+    if (mayUse(event, 'print')) printPage(event.sender)
   })
   // Zugriff aus dem Heimnetz, ebenso nur für die eigene Seite: Eine fremde könnte sonst den Server ins Netz stellen.
+  // Gekoppelt nur `{ remote: true }`, damit die Oberfläche die Karte ausblendet, ohne den Stand dieses Rechners.
   ipcMain.handle('mietfuchs:network-get', (event) => {
-    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    if (remote && fromOwnPage(event)) return { remote: true }
+    permit(event, 'network-get')
     return currentNetwork()
   })
   // Umzug der Daten (#517): „Ordner der alten Programmdatei wählen …“. Ebenso nur für die eigene Seite; sie bekommt
   // nur den Pfad, ob dort Daten liegen, prüft der Server.
   ipcMain.handle('mietfuchs:choose-folder', async (event) => {
-    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    permit(event, 'choose-folder')
     const owner = BrowserWindow.fromWebContents(event.sender)
     const options = { title: 'Alte Programmdatei, ihren Ordner oder ein Backup wählen', buttonLabel: 'Wählen', properties: folderDialogProperties(process.platform) }
     return chosenFolder(owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options))
   })
   ipcMain.handle('mietfuchs:network-set', (event, enabled) => {
-    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    permit(event, 'network-set')
     if (typeof enabled !== 'boolean') throw new Error('Erwartet wird an oder aus.')
     const next = restarting.then(() => setNetwork(enabled))
     restarting = next.catch(() => {})
@@ -520,21 +729,21 @@ async function start() {
   // Ohne Updater (Mac, Store, beim Entwickeln) ist der Stand `off`, und die Oberfläche zeigt den bisherigen Hinweis.
   const updaterState = () => updates?.state() ?? initialUpdaterState('off', app.getVersion())
   ipcMain.handle('mietfuchs:updater-get', async (event) => {
-    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    permit(event, 'updater-get')
     await Promise.race([updaterReady, new Promise((resolve) => setTimeout(resolve, 15_000))])
     return updaterState()
   })
   // „Jetzt prüfen“ und das gerade gesetzte Häkchen; geprüft wird nur mit Zustimmung, die das Fenster selbst liest
   ipcMain.handle('mietfuchs:updater-check', async (event, force) => {
-    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    permit(event, 'updater-check')
     return updates ? updates.check({ force: force === true }) : updaterState()
   })
   ipcMain.handle('mietfuchs:updater-later', (event) => {
-    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    permit(event, 'updater-later')
     return updates ? updates.later() : updaterState()
   })
   ipcMain.handle('mietfuchs:updater-restart', async (event) => {
-    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    permit(event, 'updater-restart')
     const controller = updates
     if (!controller) throw new Error('Mietfuchs aktualisiert sich hier nicht selbst.')
     // In dieselbe Reihe wie der Neustart für den Heimnetz-Schalter: before-quit wartet darauf, ein Beenden mittendrin
@@ -543,6 +752,22 @@ async function start() {
     restarting = next.catch(() => {})
     await next
     return updaterState()
+  })
+  // Mietfuchs im Heimnetz (#528, Schritt 2): Stand für die Karte, Koppeln nur von der eigenen Seite dieses Rechners
+  // (eine Seite von außen könnte das Fenster sonst auf eine andere Adresse umlenken), Trennen auch von der gekoppelten
+  ipcMain.handle('mietfuchs:remote-get', (event) => {
+    permit(event, 'remote-get')
+    return remote ? { connected: true, origin: remote.origin, version: remote.version } : { connected: false }
+  })
+  ipcMain.handle('mietfuchs:remote-connect', (event, request) => {
+    permit(event, 'remote-connect')
+    const { address, code } = /** @type {{ address?: unknown, code?: unknown }} */ (request ?? {})
+    if (typeof address !== 'string' || typeof code !== 'string' || address.length > 300 || code.length > 100) throw new Error('Erwartet werden Adresse und Code.')
+    return enqueue(() => connectRemote(address, code))
+  })
+  ipcMain.handle('mietfuchs:remote-disconnect', async (event) => {
+    permit(event, 'remote-disconnect')
+    await enqueue(disconnectRemote)
   })
 
   // Mac: einmal anbieten, Mietfuchs nach „Programme“ zu verschieben, vor dem Start des Servers (das Verschieben startet
@@ -556,8 +781,11 @@ async function start() {
   // Nur beim Entwickeln und in Prüfungen: Im ausgelieferten Fenster ließe eine untergeschobene Variable sonst eine
   // fremde Seite mit der Druckbrücke laden (Durchsicht K8).
   // Ausgeliefert nur mit beiden Schranken der Testgriffe und nur auf diesen Rechner (testGrips.js)
-  const remote = (!app.isPackaged || testGripsAllowed(process.env)) ? loopbackUrl(process.env.MIETFUCHS_SERVER_URL) : null
-  if (remote) origin = new URL(remote).origin
+  const external = (!app.isPackaged || testGripsAllowed(process.env)) ? loopbackUrl(process.env.MIETFUCHS_SERVER_URL) : null
+  // Gekoppelt (#528, Schritt 2): kein eigener Server, die Seite des gekoppelten
+  const pairing = external ? null : readSettings().remote ?? null
+  if (external) origin = new URL(external).origin
+  else if (pairing) useRemote(pairing)
   else try {
     origin = new URL(await startServer(readSettings())).origin
     attachWindowKey()
@@ -574,7 +802,8 @@ async function start() {
   if (!win) return
   // Vor dem Laden der Seite, damit sie den Stand gleich bekommt (Durchsicht S1)
   void setupUpdater().catch((err) => console.error(`Updates: ${err}`)).finally(updaterSettled)
-  await win.loadURL(origin)
+  if (remote) await openRemote()
+  else await win.loadURL(/** @type {string} */ (origin))
   void selfTest(win).catch((err) => console.error(`Selbstprüfung: ${err}`))
 }
 
@@ -623,6 +852,11 @@ async function setupUpdater() {
     // Die Zustimmung steht in den Einstellungen des Servers (das Häkchen „Beim Öffnen nach neuen Versionen schauen“)
     readConsent: async () => {
       if (!origin) return undefined
+      // Gekoppelt aus den Einstellungen des gekoppelten Servers, über die Verbindung mit dem gemerkten Zertifikat
+      if (remote) {
+        const answer = await remoteFetch(remote, '/api/settings', { timeoutMs: 5000 })
+        return answer.status === 200 ? jsonOr(answer.body)?.updateCheck : undefined
+      }
       const res = await serverFetch('/api/settings', { signal: AbortSignal.timeout(5000) })
       return res.ok ? /** @type {any} */ (await res.json())?.updateCheck : undefined
     },
@@ -634,6 +868,8 @@ async function setupUpdater() {
     },
     resumeServer: async () => {
       if (quitting) return
+      // Gekoppelt gibt es keinen eigenen Server, nur die Seite neu laden
+      if (remote) return void await openRemote()
       origin = new URL(await startServer(readSettings(), port ?? undefined)).origin
       attachWindowKey()
       if (mainWindow) await mainWindow.loadURL(origin)

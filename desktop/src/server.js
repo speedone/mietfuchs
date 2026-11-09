@@ -475,3 +475,93 @@ export function quitDecision({ quitting, exiting }) {
   if (exiting) return 'allow'
   return quitting ? 'wait' : 'begin'
 }
+
+/**
+ * Die Kopplung mit einem Mietfuchs im Heimnetz, wie fenster.json sie merkt (#528, Schritt 2, pairing.js).
+ * @typedef {{ origin: string, certSha256: string, deviceId: string, deviceKey: string, version: string }} RemoteSettings
+ */
+/**
+ * Die Einstellungen des Fensters in fenster.json (userData): gemerkter Port, Zugriff aus dem Heimnetz, die Antwort auf
+ * „Programme“ (Mac) und die Kopplung.
+ * @typedef {{ port?: number, network?: boolean, moveDeclined?: boolean, remote?: RemoteSettings }} WindowSettings
+ */
+
+/**
+ * Eine gemerkte Kopplung, nur wenn jedes Feld stimmt; sonst `null`, und das Fenster zeigt den eigenen Server. Die
+ * Prüfung hält auch Unsinn aus der Kopfzeile fern (`<id>.<Schlüssel>`, kein Zeilenumbruch, kein Punkt in der Kennung).
+ * @param {unknown} value
+ * @returns {RemoteSettings | null}
+ */
+export function remoteOf(value) {
+  if (!value || typeof value !== 'object') return null
+  const { origin, certSha256, deviceId, deviceKey, version } = /** @type {Record<string, unknown>} */ (value)
+  if (typeof origin !== 'string' || typeof certSha256 !== 'string' || typeof deviceId !== 'string' || typeof deviceKey !== 'string' || typeof version !== 'string') return null
+  try {
+    const url = new URL(origin)
+    if (url.protocol !== 'https:' || url.origin !== origin) return null
+  } catch {
+    return null
+  }
+  if (!/^[0-9a-f]{64}$/.test(certSha256) || !/^[A-Za-z0-9_-]{1,64}$/.test(deviceId) || !/^[A-Za-z0-9_-]{16,256}$/.test(deviceKey)) return null
+  return { origin, certSha256, deviceId, deviceKey, version }
+}
+
+/**
+ * fenster.json lesen. Fehlt sie oder ist sie kaputt, gilt nichts; eine kaputte Kopplung fällt allein weg.
+ * @param {string} file
+ * @returns {WindowSettings}
+ */
+export function readSettingsFile(file) {
+  /** @type {unknown} */
+  let value
+  try {
+    value = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return {}
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const { remote, ...rest } = /** @type {WindowSettings & { remote?: unknown }} */ (value)
+  const pairing = remote === undefined ? null : remoteOf(remote)
+  return pairing ? { ...rest, remote: pairing } : rest
+}
+
+// Unter Windows hält ein Virenscanner oder die Indexsuche eine frisch geschriebene Datei oft kurz offen, dann scheitert
+// das Umbenennen mit EPERM, EBUSY oder EACCES; zwei weitere Versuche nach kurzer Pause genügen dafür
+const RENAME_RETRIES = 2
+const RENAME_PAUSE_MS = 100
+const RENAME_BUSY = new Set(['EPERM', 'EBUSY', 'EACCES'])
+
+/**
+ * fenster.json schreiben, nur für den Benutzer lesbar (0600; darin steht der Geräteschlüssel), über eine Zwischendatei
+ * und Umbenennen, damit ein Absturz mittendrin keine halbe Datei hinterlässt. Unter Windows schützt der Benutzerordner.
+ * @param {string} file
+ * @param {WindowSettings} settings
+ * @param {{ platform?: NodeJS.Platform, rename?: (from: string, to: string) => void, pause?: (ms: number) => void }} [options] für Tests
+ */
+export function writeSettingsFile(file, settings, { platform = process.platform, rename = fs.renameSync, pause = sleepSync } = {}) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const temp = `${file}.${process.pid}.neu`
+  try {
+    fs.writeFileSync(temp, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 })
+    fs.chmodSync(temp, 0o600)
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rename(temp, file)
+        break
+      } catch (err) {
+        const code = /** @type {NodeJS.ErrnoException} */ (err)?.code
+        if (platform !== 'win32' || attempt >= RENAME_RETRIES || !code || !RENAME_BUSY.has(code)) throw err
+        pause(RENAME_PAUSE_MS)
+      }
+    }
+  } catch (err) {
+    fs.rmSync(temp, { force: true })
+    throw err
+  }
+}
+
+// Kurz warten, ohne Ereignisschleife (nur beim Schreiben von fenster.json, höchstens zweimal 100 ms)
+/** @param {number} ms */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}

@@ -3,7 +3,7 @@ import { deviceLine, expiresText, pairingNote } from './pairingView'
 import type { AccessInfo } from './access'
 
 const local = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi).toISOString()
-const base: AccessInfo = { mode: 'password', required: true, signedIn: true, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', pairing: { available: true, devices: 0 } }
+const base: AccessInfo = { mode: 'password', required: true, signedIn: true, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', pairing: { available: true, devices: 0 } }
 
 test('expiresText nennt die Uhrzeit', () => {
   expect(expiresText(local(2026, 11, 9, 10, 42), new Date(2020, 0, 1))).toBe('gültig bis 10:42 Uhr')

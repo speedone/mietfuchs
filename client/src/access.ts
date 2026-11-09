@@ -13,6 +13,8 @@ export type AccessInfo = {
   signedIn: boolean
   // Das Programmfenster mit seinem Fensterschlüssel: angemeldet und „am Rechner selbst“
   window: boolean
+  // Ein gekoppeltes Fenster mit seinem Geräteschlüssel (#528, Schritt 2): angemeldet, solange es gekoppelt ist
+  device: boolean
   reachable: 'local' | 'network'
   // NKA_AUTH ist gesetzt; dann entscheidet die Umgebung, nicht die Oberfläche
   envFixed: boolean
@@ -38,6 +40,7 @@ export function accessInfoOf(raw: unknown): AccessInfo | null {
     required: raw.required === true,
     signedIn: raw.signedIn === true,
     window: raw.window === true,
+    device: raw.device === true,
     reachable: raw.reachable === 'network' ? 'network' : 'local',
     envFixed: raw.envFixed === true,
     minLength: typeof raw.minLength === 'number' && raw.minLength > 0 ? raw.minLength : 15,

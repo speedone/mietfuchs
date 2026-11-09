@@ -20,6 +20,8 @@ import LetterDesignCard from '../components/LetterDesignCard'
 import NetworkCard from '../components/NetworkCard'
 import AccessCard from '../components/AccessCard'
 import { networkBridge } from '../desktopNetwork'
+import { remoteBridge } from '../desktopRemote'
+import RemoteCard from '../components/RemoteCard'
 import { useSectionJump, type FocusProps } from '../focus'
 
 const SOURCE_URL = 'https://github.com/speedone/mietfuchs'
@@ -70,6 +72,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
   const saveErrors = useFormError<'iban'>()
   // Nur im Programmfenster (#517): Im Browser und auf dem Handy fehlt die Brücke, und die Karte erscheint nicht.
   const [network] = useState(() => networkBridge())
+  const [remote] = useState(() => remoteBridge())
 
   async function restore(file: File) {
     const ok = await confirm({
@@ -227,6 +230,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
       </p>
 
       {network && <NetworkCard bridge={network} />}
+      {remote && <RemoteCard bridge={remote} />}
 
       {/* Die Anmeldung (#528): nur, wenn Mietfuchs im Netz erreichbar ist, ein Passwort hat oder im Übergang steht */}
       <AccessCard jump={jumpAt('access')} />

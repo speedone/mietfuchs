@@ -77,8 +77,13 @@ test('Kopplung: richtiger Beweis ergibt einen Schlüssel, der nur über HTTPS gi
     assert.equal((await rawRequest(s.base, { urlPath: '/api/units', headers: deviceHeader(device) })).status, 401)
     assert.equal((await tlsFetch(s, '/api/units')).status, 401)
     assert.equal((await tlsFetch(s, '/api/units', { headers: { 'x-mietfuchs-device': `${device.id}.${'A'.repeat(43)}` } })).status, 401)
-    const auth = JSON.parse((await tlsFetch(s, '/api/auth', { headers: deviceHeader(device) })).body) as { signedIn: boolean }
+    const auth = JSON.parse((await tlsFetch(s, '/api/auth', { headers: deviceHeader(device) })).body) as { signedIn: boolean, device: boolean, window: boolean }
     assert.equal(auth.signedIn, true)
+    // Über den Geräteschlüssel angemeldet: Abmelden hülfe nicht, die Oberfläche zeigt es deshalb nicht
+    assert.equal(auth.device, true)
+    assert.equal(auth.window, false)
+    const bySession = JSON.parse((await tlsFetch(s, '/api/auth', { headers: { cookie } })).body) as { signedIn: boolean, device: boolean }
+    assert.deepEqual([bySession.signedIn, bySession.device], [true, false])
 
     // Liste ohne keyHash, `current` für das anfragende Gerät, `lastSeen` gesetzt
     const own = JSON.parse((await tlsFetch(s, '/api/auth/devices', { headers: deviceHeader(device) })).body) as { devices: DeviceView[] }
@@ -90,8 +95,9 @@ test('Kopplung: richtiger Beweis ergibt einen Schlüssel, der nur über HTTPS gi
     assert.notEqual(own.devices[0].lastSeen, null)
     const fromBrowser = await jsonOf<{ devices: DeviceView[] }>(await fetch(`${s.base}/api/auth/devices`, { headers: { cookie } }))
     assert.equal(fromBrowser.devices[0].current, false)
-    const after = await jsonOf<{ pairing: { available: boolean, devices: number } }>(await fetch(`${s.base}/api/auth`, { headers: { cookie } }))
+    const after = await jsonOf<{ pairing: { available: boolean, devices: number }, device: boolean }>(await fetch(`${s.base}/api/auth`, { headers: { cookie } }))
     assert.deepEqual(after.pairing, { available: true, devices: 1 })
+    assert.equal(after.device, false)
 
     // In zugang.json nur der Hash, nie der Schlüssel
     const stored = zugang(s)
