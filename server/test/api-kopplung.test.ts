@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { deviceKeyHash, hashPassword, newDeviceKey, pairingProof } from '../src/access.ts'
+import { deviceKeyHash, hashPassword, newDeviceKey, pairingConfirmation, pairingProof } from '../src/access.ts'
 import { TEST_PASSWORD, httpsFetch, jsonOf, rawRequest, serverCa, sessionOf, setupCode, signIn, startServerIn, waitForExit, type Server } from '../testing/api.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-kopplung-'))
@@ -15,7 +15,7 @@ const post = (body: unknown, headers: Record<string, string> = {}): RequestInit 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 type Pairing = { code: string, expiresAt: string }
-type Paired = { id: string, deviceKey: string, version: string }
+type Paired = { id: string, deviceKey: string, version: string, confirm?: string }
 type DeviceView = { id: string, name: string, pairedAt: string, lastSeen: string | null, current: boolean, keyHash?: string }
 
 // Ein Server im Netz mit Passwort und Sitzung
@@ -71,6 +71,9 @@ test('Kopplung: richtiger Beweis ergibt einen Schlüssel, der nur über HTTPS gi
     assert.match(device.id, /^[0-9a-f]{16}$/)
     assert.match(device.deviceKey, /^[A-Za-z0-9_-]{43}$/)
     assert.match(device.version, /^\d+\.\d+\.\d+/)
+    // Der Server bestätigt, dass er den Code kennt (Integrationsdurchsicht I4): ein Mittelsmann ohne Code kann das nicht
+    assert.equal(device.confirm, pairingConfirmation(code, proof, device.id))
+    assert.notEqual(device.confirm, pairingConfirmation('AAAA-BBBB-CCCC', proof, device.id))
 
     // Mit dem Schlüssel über HTTPS angemeldet, über HTTP nie, ohne Kopfzeile auch über HTTPS nicht
     assert.equal(await unitsViaHttps(s, device), 200)

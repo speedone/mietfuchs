@@ -287,8 +287,11 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   „Kopplung über einen Proxy“) nimmt `{ name, proof }` mit `proof` = `pairingProof(code, certSha256)` (HMAC-SHA256,
   Schlüssel der normalisierte Code, Nachricht `mietfuchs-kopplung:` + SHA-256 des DER) oder über einen vertrauten Proxy
   `originProof(code, origin)`; der Code wird in derselben synchronen Prüfung verbraucht
-  (zwei gleichzeitige ergeben ein Gerät), falsch und abgelaufen sind dieselbe 400. Antwort `{ id, deviceKey, version }`
-  (32 Zufallsbytes). In `zugang.json` `devices` (`id`, `name` 1 bis 60 Zeichen sonst „Programmfenster“, `keyHash`
+  (zwei gleichzeitige ergeben ein Gerät), falsch und abgelaufen sind dieselbe 400. Antwort `{ id, deviceKey, version, confirm }`
+  (32 Zufallsbytes); `confirm` = `pairingConfirmation(code, proof, id)` (HMAC-SHA256 mit dem Code über
+  `mietfuchs-kopplung:bestaetigt:` + Beweis + `:` + id, hex) zeigt dem Fenster, dass der Server den Code kennt. Das
+  Fenster nimmt den Schlüssel ohne passende Bestätigung nicht an; sonst könnte ein Mittelsmann beim ersten Kontakt
+  seinen Fingerabdruck in der Vorabfrage nennen und das POST mit einem erfundenen Schlüssel beantworten. In `zugang.json` `devices` (`id`, `name` 1 bis 60 Zeichen sonst „Programmfenster“, `keyHash`
   SHA-256, `pairedAt`, `lastSeen`; Steuer- und Formatzeichen im Namen fallen weg), höchstens 20 (sonst 409); ein
   ungültiges Gerät oder eine doppelte Kennung macht die Datei verdorben, gelesen werden Geräte nur bei `password`.
   **Angemeldet** über `X-Mietfuchs-Device: <id>.<Schlüssel>` (`matchDevice`, zeitkonstant) nur über HTTPS (Kanal `tls`

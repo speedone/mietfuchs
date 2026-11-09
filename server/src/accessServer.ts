@@ -10,7 +10,7 @@ import {
   ACCESS_FILE, CODE_FILE, DEVICE_HEADER, DEVICE_NAME_MAX, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, deviceKeyHash, matchDevice, newDeviceId, newDeviceKey, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
   gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, fromThisComputer, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
   sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, proxyHeadersPresent, isLoopback, writeAccessFile, writeCodeFile,
-  channelOf, expectedProofs, type Channel, type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword, type Stage,
+  channelOf, expectedProofs, pairingConfirmation, type Channel, type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword, type Stage,
 } from './access.ts'
 import type { ProxyTrust } from './trustProxy.ts'
 
@@ -703,6 +703,8 @@ export function createAccess(options: AccessOptions) {
       const full = (): void => void res.status(409).json({ error: `Es sind schon ${MAX_DEVICES} Programmfenster gekoppelt. Entfernen Sie zuerst eines in den Einstellungen unter „Anmeldung“.` })
       if (devices.length >= MAX_DEVICES) return full()
       const { name, proof } = bodyOf(req)
+      // Der Code, der gestimmt hat, für die Bestätigung unten (er wird beim Treffer verbraucht)
+      let usedCode = ''
       const ok = await attempt(req, res, 'pair', () => {
         const open = pairing
         if (!open || now() >= open.expiresAt) return false
@@ -710,6 +712,7 @@ export function createAccess(options: AccessOptions) {
         // Ein Ursprung, dessen Name die Prüfung des Hosts nicht besteht, bindet nichts (Durchsicht I2)
         const matches = expectedProofs(open.code, channel, tls?.certSha256 ?? null, boundOrigin(channel, origin).origin).map((expected) => sameProof(proof, expected))
         if (!matches.includes(true)) return false
+        usedCode = open.code
         pairing = null
         return true
       })
@@ -731,7 +734,8 @@ export function createAccess(options: AccessOptions) {
       }
       log(`Ein Programmfenster ist gekoppelt („${device.name}“).`)
       res.setHeader('Cache-Control', 'no-store')
-      res.json({ id: device.id, deviceKey, version })
+      // `confirm`: Der Server zeigt, dass er den Code kennt; das Fenster nimmt den Schlüssel sonst nicht an (I4)
+      res.json({ id: device.id, deviceKey, version, confirm: pairingConfirmation(usedCode, String(proof), device.id) })
     })
 
     // Geräte gibt es nur mit Passwort; ohne antworten Liste und Entfernen wie das Koppeln

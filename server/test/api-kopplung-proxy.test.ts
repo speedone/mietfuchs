@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import { originProof, pairingProof } from '../src/access.ts'
+import { originProof, pairingConfirmation, pairingProof } from '../src/access.ts'
 import { httpsFetch, jsonOf, serverCa, signIn, startServerIn, type Server } from '../testing/api.ts'
 import { createTestCa, startTestProxy } from '../testing/proxy.ts'
 
@@ -23,7 +23,7 @@ const NOT_ENCRYPTED = 'Koppeln geht nur über eine verschlüsselte Verbindung.'
 const FORGED = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'nas.fritz.box', 'x-forwarded-for': '192.168.1.9' }
 
 type Preflight = { app: string, certSha256: string | null, secure: boolean, origin: string | null, problem?: string }
-type Paired = { id: string, deviceKey: string, version: string }
+type Paired = { id: string, deviceKey: string, version: string, confirm?: string }
 
 async function serverWithPassword(env: NodeJS.ProcessEnv = {}, dataDir = freshDir()) {
   const s = await startServerIn(dataDir, { ...NETWORK, ...env })
@@ -157,6 +157,7 @@ test('Proxy: Bindung an den Ursprung über einen vertrauten Proxy mit Zertifikat
     const res = await viaProxy('/api/auth/pair', { method: 'POST', body: pairBody(proof) })
     assert.equal(res.status, 200, res.body)
     const device = JSON.parse(res.body) as Paired
+    assert.equal(device.confirm, pairingConfirmation(code, proof, device.id), 'Bestätigung auch über den Proxy')
     assert.equal((await viaProxy('/api/units', { headers: deviceHeader(device) })).status, 200)
     assert.equal((await plain(s.base, '/api/units', { headers: deviceHeader(device) })).status, 401)
     assert.ok(proxy.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/pair'))

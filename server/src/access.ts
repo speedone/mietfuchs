@@ -257,6 +257,14 @@ export const pairingProof = (code: string, certSha256: string): string =>
 export const originProof = (code: string, origin: string): string =>
   crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:origin:${origin}`).digest('hex')
 
+// Die Antwort des Servers auf einen angenommenen Beweis (Integrationsdurchsicht I4): HMAC-SHA256 mit demselben Code über
+// den Beweis und die neue Geräte-ID. Damit weiß das Fenster, dass die Gegenseite den Code kennt. Ohne sie könnte ein
+// Mittelsmann beim ersten Kontakt in der Vorabfrage seinen eigenen Fingerabdruck nennen, auf das POST mit einem
+// erfundenen Schlüssel antworten, und das Fenster pinnte ihn und lüde seine Seite. Die Nachricht beginnt anders als
+// die beiden Beweise, eine Bestätigung ist nie ein Beweis und umgekehrt.
+export const pairingConfirmation = (code: string, proof: string, id: string): string =>
+  crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:bestaetigt:${proof}:${id}`).digest('hex')
+
 // 256 Bit Zufall: dafür genügt SHA-256, scrypt brauchte es nur für Passwörter, die ein Mensch wählt
 export const newDeviceKey = (): string => crypto.randomBytes(32).toString('base64url')
 export const deviceKeyHash = (key: string): string => crypto.createHash('sha256').update(key).digest('hex')
