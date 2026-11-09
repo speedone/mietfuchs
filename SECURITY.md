@@ -18,6 +18,15 @@ Tage dauern.
 Sicherheitskorrekturen gibt es nur für die jeweils neueste veröffentlichte Version, als neues
 Release. Ältere Versionen und Vorabversionen (`-rc`) werden nicht nachgebessert.
 
+## Was die Anmeldung schützt
+
+Ab 0.17 fragt Mietfuchs nach einem Passwort, sobald andere Geräte es erreichen. Das Passwort ist für
+das Heimnetz gedacht, nicht für den Betrieb im Internet. Im Browser läuft die Verbindung über
+`http://`, ein gekoppeltes Programmfenster über HTTPS mit dem eigenen Zertifikat von Mietfuchs oder
+über einen Proxy wie Caddy. Eine Anfrage mit einer Kopfzeile eines Proxys (`X-Forwarded-For`,
+`Forwarded`, `Via` …) gilt nie als „von diesem Rechner“. Einzelheiten:
+[Docker](docs/docker.md#zuerst-sicherheit).
+
 ## Was signiert ist
 
 | Fassung | Signatur |

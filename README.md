@@ -85,7 +85,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 - 📄 **Fertige Abrechnung** je Mieter mit Saldo, Zahlungsaufforderung, §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB); Druck oder PDF
 - 🔍 **Rechenweg** jeder Zeile aufklappbar; eine Abrechnung wird vor dem Versand abgeschlossen und eingefroren, der Versand danach mit Datum festgehalten, spätere Abweichungen zeigt Mietfuchs je Mieter
 - ⏰ **Fristen im Blick:** Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB)
-- 💶 **Mietkonto:** Soll/Ist je Monat, fällige Rückstände auf einen Blick, Ein- und Auszug im Lauf eines Monats nach Kalendertagen
+- 💶 **Mietkonto:** Soll/Ist je Monat, Rückstand erst ab dem Fälligkeitstag je Mietverhältnis (nach Gesetz oder Vertrag, mit den Feiertagen am Ort), pünktliche Mieten mit „Monate als bezahlt erfassen“ in einem Schritt, auch rückwirkend; Ein- und Auszug im Lauf eines Monats nach Kalendertagen
 - 🧾 **Steuer-Übersicht (Anlage V):** Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
 
 **Belege**
@@ -101,7 +101,8 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 - 💡 **Hinweise statt Rätselraten:** Mietfuchs erklärt, was auffällt, wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
 - 🧭 **Anleitungen je Vermietungsart:** vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand
 - 🔒 **100 % lokal:** keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst)
-- 🪟 **Eigenes Programm für Windows und macOS** mit eigenem Fenster; unter Linux, auf dem Raspberry Pi und in Docker im Browser
+- 🔑 **Passwort im Heimnetz:** Sobald andere Geräte Mietfuchs erreichen, fragt es nach einem Passwort; auf dem eigenen Rechner allein nicht
+- 🪟 **Eigenes Programm für Windows und macOS** mit eigenem Fenster, auf Wunsch verschlüsselt verbunden mit einem Mietfuchs auf NAS oder Raspberry Pi (direkt oder über Caddy); unter Linux, auf dem Raspberry Pi und in Docker im Browser
 - 🐳 **In Minuten startklar:** `npm run dev` oder `docker compose up`
 
 Alles im Einzelnen, samt Umlageschlüsseln: **[Funktionsweise](docs/funktionsweise.md)**.
@@ -175,6 +176,8 @@ docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs g
 
 Ein neues Volume startet mit der Einrichtung eines Passworts; den Einrichtungscode nennt
 `docker logs mietfuchs`. Mehr unter [Zuerst: Sicherheit](docs/docker.md#zuerst-sicherheit).
+Am Windows-PC oder Mac arbeitest du auf Wunsch im Programmfenster mit dem Container, direkt mit
+Port 3001 oder über Caddy: [Programmfenster koppeln](docs/docker.md#programmfenster-koppeln).
 
 ### Umzug von der bisherigen Programmdatei
 
@@ -191,9 +194,12 @@ dann muss der PC laufen. Soll Mietfuchs jederzeit erreichbar sein, läuft es auf
 immer an ist ([Docker](docs/docker.md) auf NAS oder Heimserver, Linux-Paket auf dem Raspberry Pi).
 Sobald andere Geräte Mietfuchs erreichen, fragt es nach einem Passwort: Beim Einschalten legst du es
 auf der Karte fest, Docker, Programmdatei und Linux-Paket starten mit einer Einrichtung (den Code
-nennen Protokoll bzw. Konsolenfenster). Über `http://` lässt sich im Heimnetz trotzdem mitlesen:
-Erlaube den Zugriff nur in einem Netz, dem du vertraust, und stelle Mietfuchs nie per Portfreigabe
-ins Internet.
+nennen Protokoll bzw. Konsolenfenster). Im Browser lässt sich über `http://` im Heimnetz trotzdem
+mitlesen (ein gekoppeltes Programmfenster verbindet sich dagegen verschlüsselt): Erlaube den Zugriff
+nur in einem Netz, dem du vertraust, und stelle Mietfuchs nie per Portfreigabe ins Internet.
+Läuft Mietfuchs auf einem Gerät im Heimnetz, verbindest du das Programmfenster am PC oder Mac mit
+einem Code aus dessen Einstellungen, verschlüsselt und ohne jedes Mal das Passwort, direkt oder über
+Caddy: [Programmfenster mit Mietfuchs im Heimnetz verbinden](docs/installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden).
 [Mehr dazu](docs/installation.md#zugriff-vom-handy-oder-einem-zweiten-rechner)
 
 ### Download prüfen (für Fortgeschrittene)

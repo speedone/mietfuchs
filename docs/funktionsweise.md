@@ -16,8 +16,12 @@ Kurzfassung steht im [README](../README.md#funktionen).
    **Staffel** geführt („ab X gilt Y“): Geburt, Auszug einzelner Personen oder
    Vorauszahlungs-Erhöhungen brauchen kein neues Mietverhältnis. Je Mietverhältnis lässt sich das
    **Nebenkostenmodell** wählen: Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte
-   Betriebskosten und Heizung. Am Objekt steht auch das Baujahr der Kabel- oder Antennenanlage,
-   denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind, und der
+   Betriebskosten und Heizung. Neben dem Vertragsdatum steht die **Fälligkeit der Miete**: „Wie
+   im Gesetz“ (Voreinstellung), „Zu Beginn, spätestens am 3. Werktag“, „An einem festen Tag des
+   Monats“ oder „Nach Ablauf des Monats“, dazu „Erste Miete schon bei Mietbeginn fällig“; danach
+   rechnet das Mietkonto den Rückstand, mit den Feiertagen des Bundeslands am Objekt. Am Objekt
+   steht auch das Baujahr der Kabel- oder Antennenanlage, denn davon hängt ab, ob ihre Kosten nach
+   2024 noch umlagefähig sind, und der
    **Abrechnungszeitraum** (Kalenderjahr oder etwa Mai bis April). Unter **Heizung** gibst du an,
    womit geheizt wird, wer den Vertrag hat und wer abrechnet: ein Messdienst, du selbst oder
    niemand, weil jede Wohnung ihre eigene Heizung hat. Daraus richtet Mietfuchs die Seite
@@ -108,7 +112,8 @@ mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit
 Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale oder Inklusivmiete, die
 fertige Abrechnung eines Messdienstes, CO₂-Kosten aufteilen, Heizkosten selbst abrechnen,
 Brennstoff mit Tank oder Lager, Kesseltausch und mehrere Heizungen, den Abrechnungszeitraum Mai
-bis April und den Mieterwechsel mit Leerstand. Jede nennt, ob sie auf
+bis April, den Mieterwechsel mit Leerstand, die Anmeldung mit Passwort im Netz und das
+Programmfenster, das sich mit einem Mietfuchs im Heimnetz verbindet. Jede nennt, ob sie auf
 dich zutrifft, die Schritte mit einem Knopf zur passenden Seite, ein nachgerechnetes Beispiel, die
 Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbegriffe.
 

@@ -29,7 +29,8 @@ description: |
   Nebenkostenabrechnung für private Vermieter
   Mietfuchs rechnet die Betriebskosten eines kleinen Mehrfamilienhauses ab: Umlage nach
   Fläche, Personen, Wohneinheiten oder Verbrauch, Mietkonto, Belege und eine Übersicht für
-  die Anlage V. Alles läuft auf diesem Rechner, ohne Konto und ohne Cloud.
+  die Anlage V. Alles läuft auf diesem Rechner, ohne Konto und ohne Cloud; erreichen andere
+  Geräte im Heimnetz Mietfuchs, schützt es ein Passwort.
 
 contents:
   - src: dist-bin/stage/mietfuchs

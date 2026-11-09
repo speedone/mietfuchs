@@ -1,6 +1,6 @@
 # Datenschutzerklärung für Mietfuchs
 
-Stand: 7. November 2026
+Stand: 9. November 2026
 
 Mietfuchs ist ein Programm für die Nebenkostenabrechnung, das vollständig auf Ihrem eigenen Rechner
 läuft. Diese Erklärung gilt für alle Fassungen: das Programm für Windows und macOS (aus dem Microsoft
@@ -27,7 +27,8 @@ Das Programm für Windows und macOS legt daneben einen Ordner `mietfuchs-fenster
 Einstellungen (gemerkter Port, Zugriff aus dem Heimnetz) und Protokollen. Haben Sie das Fenster mit
 einem Mietfuchs im Heimnetz verbunden, stehen in seiner Datei `fenster.json` zusätzlich dessen
 Adresse, die Art der Prüfung (`trust`), bei einer Verbindung mit dem eigenen Zertifikat von
-Mietfuchs dessen Fingerabdruck (über einen Proxy wie Caddy mit eigenem Zertifikat keiner) und der
+Mietfuchs dessen Fingerabdruck (über einen Proxy wie Caddy mit eigenem Zertifikat keiner), die
+Kennung, unter der der Server das Fenster führt, die Version des Servers beim Koppeln und der
 Geräteschlüssel, mit dem sich das Fenster dort anmeldet. Die Datei ist nur für Ihr Benutzerkonto lesbar, aber nicht eigens verschlüsselt, wie die
 übrigen Daten in Ihrem Benutzerordner; einen Geräteschlüssel machen Sie am Server wirkungslos, indem
 Sie das Fenster dort entfernen (unten). Der Installer für Windows
@@ -59,7 +60,7 @@ in den Einstellungen den „Zugriff aus dem Heimnetz“, lässt sich Mietfuchs a
 einem anderen Rechner im selben Netz öffnen. Beim Einschalten legen Sie ein Passwort fest, mit dem
 sich andere Geräte anmelden; das Programmfenster selbst braucht keines. Verzichten Sie darauf, kann
 jeder in diesem Netz Ihre Daten ansehen und ändern. Auch mit Passwort läuft die Verbindung im
-Heimnetz über `http://`, also unverschlüsselt: Wer den Verkehr in Ihrem Netz mitschneidet, kann
+Browser im Heimnetz über `http://`, also unverschlüsselt: Wer den Verkehr in Ihrem Netz mitschneidet, kann
 Daten und Passwort mitlesen. Erlauben Sie den Zugriff deshalb nur in einem Netz, dem Sie vertrauen,
 und lassen Sie unter Windows nur „Private Netzwerke“ zu. Eine Verbindung ins
 Internet entsteht dadurch nicht. Beenden, die Schlüssel für KI-Dienste, die Bestätigung eines
@@ -67,8 +68,8 @@ KI-Dienstes im Internet und die Update-Prüfung lassen sich nur am Rechner selbs
 
 Die Programmdatei, die Linux-Pakete und das Docker-Image sind dagegen von Anfang an auch aus dem
 Heimnetz erreichbar und fragen deshalb beim ersten Start nach einem Passwort; den Einrichtungscode
-dafür nennen Konsolenfenster bzw. Protokoll. Ein Bestand von vor Version 0.17 bleibt bis Version 1.0
-ohne Passwort erreichbar, mit einem Hinweis in der Oberfläche. Mit der Umgebungsvariablen
+dafür nennen Konsolenfenster bzw. Protokoll. Ein Bestand von vor Version 0.17 bleibt bis zu den
+Vorabversionen von 1.0 (ab 1.0.0-rc.1) ohne Passwort erreichbar, mit einem Hinweis in der Oberfläche. Mit der Umgebungsvariablen
 `NKA_HOST=127.0.0.1` sind Programmdatei und Pakete nur noch auf Ihrem eigenen Rechner erreichbar,
 dann ohne Anmeldung. Beim Docker-Image entscheidet das die Freigabe des Ports, etwa
 `-p 127.0.0.1:3001:3001` für nur diesen Rechner.

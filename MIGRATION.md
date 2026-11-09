@@ -26,7 +26,7 @@ aus dem Heimnetz“. Nutzen Sie das Programmfenster (auch die App aus dem Micros
 
 **Sie hatten schon Daten:** Dann bleibt zunächst alles, wie es war, Mietfuchs ist weiter ohne
 Passwort erreichbar. Unten in der Seitenleiste steht „Ohne Passwort im Netz“; ein Klick führt zur
-Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0 (schon in ihren Vorabversionen) verlangt
+Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0 (schon in ihren Vorabversionen ab 1.0.0-rc.1) verlangt
 Mietfuchs das Passwort.** An Ihren Daten ändert sich dadurch nichts.
 
 **Mietfuchs zeigt „Passwort festlegen“ und fragt nach einem Einrichtungscode:** Das geschieht bei
@@ -66,6 +66,36 @@ das Passwort dort neu fest. Ebenso bleibt das Zertifikat im Ordner `tls/` drauß
 meldet nach dem Umzug auf einen neuen Rechner ein anderes Zertifikat (über einen Proxy wie Caddy:
 dass es das Fenster nicht mehr kennt), und Sie koppeln es mit einem neuen Code neu. Eine ältere Version als 0.17 kennt das Passwort nicht; gehen Sie zu ihr
 zurück, ist Mietfuchs im Netz wieder ohne Anmeldung erreichbar.
+
+---
+
+## Docker mit Caddy: Adressen in `MIETFUCHS_HOSTS`
+
+Ab Version 0.17 nimmt `deploy/compose.caddy.yml` die Adressen aus der Angabe `MIETFUCHS_HOSTS`;
+Caddyfile und Mietfuchs lesen dieselbe. Am einfachsten steht sie in einer Datei `.env` neben der
+Compose-Datei:
+
+```
+MIETFUCHS_HOSTS=localhost, 192.168.178.23, nas.fritz.box
+```
+
+Übernehmen Sie die neue compose.caddy.yml, behalten aber Ihr bisheriges Caddyfile mit eigenen
+Adressen, tragen Sie dieselben Adressen in `MIETFUCHS_HOSTS` ein. Sonst antwortet Mietfuchs unter
+einer eigenen Domain wie `mietfuchs.example.org` nicht mehr („Mietfuchs antwortet nicht unter dem
+Namen …“). IP-Adressen, Namen ohne Punkt und Namen im Heimnetz wie `nas.fritz.box` gehen im Browser
+weiter; um ein Programmfenster über Caddy zu koppeln, muss der Name in `MIETFUCHS_HOSTS` stehen. Wer
+nur das Image aktualisiert (`docker compose pull` und `docker compose up -d`), behält seine Dateien
+und muss nichts tun. Einzelheiten: [Docker](docs/docker.md#mit-https-im-heimnetz-composecaddyyml).
+
+---
+
+## Mietkonto: Rückstand ab dem Fälligkeitstag
+
+Ab Version 0.17 zählt ein Monat ab dem Tag nach dem spätesten erwarteten Eingang der Miete als
+Rückstand, nicht mehr erst ab dem Ersten des Folgemonats. Der laufende Monat erscheint deshalb bei
+Verträgen ab dem 02.09.2001 schon ab etwa dem 10. bis 14. als Rückstand. Regelt Ihr Mietvertrag die Fälligkeit anders, tragen
+Sie das in den Stammdaten am Mietverhältnis unter „Fälligkeit der Miete“ ein. Keine Zahl einer
+Abrechnung ändert sich.
 
 ---
 

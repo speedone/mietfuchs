@@ -215,7 +215,7 @@ Daten öffnen und ändern. Auch mit Passwort lässt sich über `http://` im Heim
 Passwort eingeschlossen: Erlaube den Zugriff nur in einem Netz, dem du vertraust. Hattest du den
 Zugriff schon vor Version 0.17 an, bleibt er offen wie bisher; unten in der Seitenleiste steht dann
 „Ohne Passwort im Netz“, und unter *Einstellungen → Anmeldung* legst du ein Passwort fest. Ab
-Version 1.0 verlangt Mietfuchs dort ein Passwort.
+Version 1.0, schon in ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs dort ein Passwort.
 
 **Tipp: Mietfuchs auf den Startbildschirm legen.**
 
@@ -388,8 +388,8 @@ eingetragen; der Code steht auch im Konsolenfenster und in `einrichtungscode.txt
 `data/`. Legst du ein Passwort fest (mindestens 15 Zeichen), melden sich alle Geräte damit an, auch
 dieser Rechner. Brauchst du keinen Zugriff von anderen Geräten, starte die Datei mit
 `NKA_HOST=127.0.0.1` (unten): Dann gibt es keine Anmeldung. Ein Ordner `data/` mit Daten von vor
-Version 0.17 bleibt offen wie bisher, mit Hinweis in der Seitenleiste; ab Version 1.0 verlangt
-Mietfuchs auch dort ein Passwort. **Passwort vergessen:** Lege im Ordner `data/` eine leere Datei
+Version 0.17 bleibt offen wie bisher, mit Hinweis in der Seitenleiste; ab Version 1.0, schon in
+ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs auch dort ein Passwort. **Passwort vergessen:** Lege im Ordner `data/` eine leere Datei
 `passwort-zuruecksetzen` an und lade die Seite neu. Mietfuchs löscht das Passwort, meldet alle
 Geräte ab und nennt im Konsolenfenster einen neuen Code; die Daten bleiben.
 
