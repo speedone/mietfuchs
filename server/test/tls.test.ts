@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { TLS_DIR, certSha256, ensureCertificate } from '../src/tls.ts'
+import { TLS_DIR, certSha256, ensureCertificate, readCertificate } from '../src/tls.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-tls-'))
 const keyFile = (dir: string) => path.join(dir, TLS_DIR, 'mietfuchs.key')
@@ -119,6 +119,21 @@ test('TLS: steht an der Stelle des Ordners eine Datei, ergibt das einen Satz', a
     fs.writeFileSync(path.join(dir, TLS_DIR), 'keine Ablage')
     const result = await ensureCertificate(dir)
     assert.ok('problem' in result, 'kein Zertifikat erwartet')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('TLS: Lesen allein legt nichts an', async () => {
+  // Vor dem Binden des Ports wird nur gelesen (#244: ein zweiter Start rührt den Datenordner nicht an)
+  const dir = freshDir()
+  try {
+    assert.equal(readCertificate(dir), null)
+    assert.deepEqual(fs.readdirSync(dir), [])
+    const pair = pairOf(await ensureCertificate(dir))
+    assert.equal(readCertificate(dir)?.certSha256, pair.certSha256)
+    fs.writeFileSync(certFile(dir), 'kaputt')
+    assert.equal(readCertificate(dir), null)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

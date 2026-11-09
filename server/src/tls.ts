@@ -3,7 +3,8 @@
 // eigenes Zertifikat, und es gilt 30 Jahre (das Fenster prüft die Laufzeit nicht).
 //
 // - **Erzeugt beim ersten Start** ohne eins, auch lokal lauschend (25 ms, eine Regel statt zwei): ECDSA P-256 mit
-//   SHA-256 und CN „Mietfuchs“ über `selfsigned`, denn Node stellt selbst keine Zertifikate aus.
+//   SHA-256 und CN „Mietfuchs“ über `selfsigned`, denn Node stellt selbst keine Zertifikate aus. Vor dem Binden des
+//   Ports wird nur gelesen (`readCertificate`), erzeugt erst danach (`ensureCertificate`, siehe index.ts).
 // - **Wie `zugang.json`** nie in der Datenbank: nicht im Backup, nicht in Vorversionen, nicht im Umzug. Nach dem
 //   Wiederherstellen auf einem neuen Rechner entsteht ein neues Zertifikat, gekoppelte Fenster koppeln neu.
 // - Schlüssel 0600, beide Dateien über Zwischendatei und Umbenennen. Ist eine Datei unlesbar oder gehören Schlüssel und
@@ -36,8 +37,9 @@ function readPair(keyFile: string, certFile: string): Certificate | null {
   }
 }
 
+// Die Zwischendatei trägt die Prozessnummer: Zwei gleichzeitige erste Starts (Doppelklick) schreiben nicht in dieselbe
 function writeReplacing(file: string, content: string, mode: number): void {
-  const tmp = `${file}.tmp`
+  const tmp = `${file}.${process.pid}.tmp`
   fs.writeFileSync(tmp, content, { encoding: 'utf8', mode })
   fs.renameSync(tmp, file)
   try {
@@ -45,6 +47,13 @@ function writeReplacing(file: string, content: string, mode: number): void {
   } catch {
     // Windows kennt keine Unix-Rechte
   }
+}
+
+// Nur lesen, nichts anlegen: vor dem Binden des Ports, denn ein zweiter Start auf belegtem Port rührt den Datenordner
+// nicht an (#244), und ein umgezogener Ordner wird nur gelesen (#517)
+export function readCertificate(dataDir: string): Certificate | null {
+  const dir = path.join(dataDir, TLS_DIR)
+  return readPair(path.join(dir, KEY_FILE), path.join(dir, CERT_FILE))
 }
 
 export async function ensureCertificate(dataDir: string, now: Date = new Date()): Promise<Certificate | { problem: string }> {
