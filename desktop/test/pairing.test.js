@@ -8,13 +8,16 @@ import https from 'node:https'
 import tls from 'node:tls'
 import os from 'node:os'
 import path from 'node:path'
-import { certSha256FromPem, deviceNameOf, jsonOr, normalizeAddress, pair, pinDecision, remoteFetch, versionHint } from '../src/pairing.js'
+import { certSha256FromPem, deviceNameOf, issuedBy, jsonOr, normalizeAddress, pair, pinDecision, remoteFetch, systemTrust, versionHint } from '../src/pairing.js'
 import { freePort } from '../src/server.js'
 
 // Die Helfer der Servertests. Über eine errechnete Adresse geladen: Der Server ist TypeScript mit eigener Typprüfung,
 // die des Fensters soll ihn nicht ein zweites Mal mit ihren Einstellungen prüfen.
 /** @type {any} */
 const api = await import(new URL('../../server/testing/api.ts', import.meta.url).href)
+// Proxy wie Caddy und eigene Test-CA (#528, Kopplung über einen Proxy), ebenso über eine errechnete Adresse
+/** @type {any} */
+const proxies = await import(new URL('../../server/testing/proxy.ts', import.meta.url).href)
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-kopplung-'))
 const NETWORK = { NKA_HOST: '0.0.0.0' }
@@ -62,6 +65,8 @@ test('Koppeln: gegen einen echten Server, danach gilt der Schlüssel nur mit dem
     assert.equal(result.origin, `https://127.0.0.1:${new URL(s.base).port}`)
     // Gemerkt wird genau das Zertifikat des Servers
     assert.equal(result.certSha256, certSha256FromPem(api.serverCa(s.dataDir)))
+    // Direkt gekoppelt heißt: gepinnt
+    assert.equal(result.trust, 'pinned')
     assert.match(result.deviceId, /^[0-9a-f]{16}$/)
     assert.match(result.deviceKey, /^[A-Za-z0-9_-]{43}$/)
     assert.match(result.version, /^\d+\.\d+\.\d+/)
@@ -210,12 +215,14 @@ test('Pinning: Bei anderem Zertifikat geht nach dem Handschlag kein Byte hinaus,
 
 test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Gerät beste Mühe wieder entfernt', async () => {
   const { key, cert } = await borrowedKeyPair()
+  // Die Vorabfrage eines Mietfuchs mit genau diesem Zertifikat, direkt über TLS
+  const preflight = { app: 'mietfuchs', certSha256: certSha256FromPem(cert), secure: true, origin: null }
   /** @type {string[]} */
   const seen = []
   const fake = https.createServer({ key, cert }, (req, res) => {
     seen.push(`${req.method} ${req.url} ${req.headers['x-mietfuchs-device'] ?? '-'}`)
     res.setHeader('content-type', 'application/json')
-    if (req.url === '/healthz') return res.end(JSON.stringify({ app: 'mietfuchs', status: 'ok' }))
+    if (req.method === 'GET' && req.url === '/api/auth/pair') return res.end(JSON.stringify(preflight))
     if (req.url === '/api/auth/pair') return res.end(JSON.stringify({ id: 'abc123', deviceKey: 'zu kurz\r\n', version: '0.17.0' }))
     res.end('{"ok":true}')
   })
@@ -225,7 +232,7 @@ test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Ger
     assert.ok('problem' in result, JSON.stringify(result))
     assert.match(result.problem, /Koppeln/)
     assert.equal(result.field, undefined, 'unbrauchbare Antwort: kein Feld')
-    assert.deepEqual(seen.slice(0, 2), ['GET /healthz -', 'POST /api/auth/pair -'])
+    assert.deepEqual(seen.slice(0, 2), ['GET /api/auth/pair -', 'POST /api/auth/pair -'])
     // Mit einem unbrauchbaren Schlüssel lässt sich keine Kopfzeile bauen; entfernt wird nur, was gültig aussieht
     assert.equal(seen.length, 2)
   } finally {
@@ -236,7 +243,7 @@ test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Ger
   const fake2 = https.createServer({ key, cert }, (req, res) => {
     seen.push(`${req.method} ${req.url} ${req.headers['x-mietfuchs-device'] ?? '-'}`)
     res.setHeader('content-type', 'application/json')
-    if (req.url === '/healthz') return res.end(JSON.stringify({ app: 'mietfuchs', status: 'ok' }))
+    if (req.method === 'GET' && req.url === '/api/auth/pair') return res.end(JSON.stringify(preflight))
     if (req.url === '/api/auth/pair') return res.end(JSON.stringify({ id: longId, deviceKey: 'K'.repeat(43), version: '0.17.0' }))
     res.end('{"ok":true}')
   })
@@ -246,7 +253,7 @@ test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Ger
     const result = await pair({ address: `127.0.0.1:${api.portOf(fake2)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
     assert.ok('problem' in result, JSON.stringify(result))
     assert.equal(result.field, undefined)
-    assert.deepEqual(seen, ['GET /healthz -', 'POST /api/auth/pair -', `DELETE /api/auth/devices/${longId} ${longId}.${'K'.repeat(43)}`])
+    assert.deepEqual(seen, ['GET /api/auth/pair -', 'POST /api/auth/pair -', `DELETE /api/auth/devices/${longId} ${longId}.${'K'.repeat(43)}`])
   } finally {
     fake2.close()
   }
@@ -297,4 +304,208 @@ test('Gerätename: Rechnername ohne Domäne, höchstens 60 Zeichen', () => {
   assert.equal(deviceNameOf(long), long.slice(0, 60))
   assert.equal(deviceNameOf('  '), 'Programmfenster')
   assert.equal(deviceNameOf('.local'), 'Programmfenster')
+})
+
+// Kopplung über einen Reverse Proxy wie Caddy (#528, Erweiterung; docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md)
+const LOCAL_PROXY = { NKA_TRUST_PROXY: '127.0.0.1,::1' }
+
+/**
+ * Ein Server mit Passwort hinter einem Test-Proxy; `leaf` ist das Zertifikat des Proxys (Vorgabe: Blatt der Test-CA)
+ * @param {{ env?: NodeJS.ProcessEnv, forwarded?: { proto?: string | null, host?: string | null }, ownCert?: boolean }} [options]
+ */
+async function behindProxy({ env = LOCAL_PROXY, forwarded, ownCert = false } = {}) {
+  const s = await api.startServerIn(freshDir(), { ...NETWORK, ...env })
+  const { cookie } = await api.signIn(s)
+  const code = async () => {
+    const res = await fetch(`${s.base}/api/auth/pairing`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: '{}' })
+    assert.equal(res.status, 200, await res.clone().text())
+    return /** @type {{ code: string }} */ (await res.json()).code
+  }
+  const { caCert, leaf } = await proxies.createTestCa()
+  const tlsOf = ownCert ? { key: fs.readFileSync(path.join(s.dataDir, 'tls', 'mietfuchs.key'), 'utf8'), cert: api.serverCa(s.dataDir) } : leaf
+  const proxy = await proxies.startTestProxy({ target: s.base, tls: tlsOf, forwarded })
+  const posts = () => proxy.requests.filter((/** @type {{ method: string, path: string }} */ r) => r.method === 'POST' && r.path === '/api/auth/pair')
+  return { s, proxy, caCert, code, posts, stop: async () => { await proxy.close(); s.stop() } }
+}
+
+test('Proxy: mit vertrautem Stammzertifikat koppelt das Fenster in system, danach mit Kette und Name', async () => {
+  const p = await behindProxy()
+  try {
+    const ca = [...systemTrust(), p.caCert]
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca })
+    assert.ok(!('problem' in result), JSON.stringify(result))
+    assert.equal(result.trust, 'system')
+    assert.equal(result.certSha256, null)
+    assert.equal(result.origin, p.proxy.origin)
+    const auth = await remoteFetch(result, '/api/auth', { ca })
+    assert.equal(auth.status, 200)
+    assert.equal(JSON.parse(auth.body).signedIn, true)
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Proxy: fremdes Zertifikat ergibt den Satz mit dem Stammzertifikat, und kein Beweis geht hinaus', async () => {
+  const p = await behindProxy()
+  try {
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca: systemTrust() })
+    assert.ok('problem' in result, JSON.stringify(result))
+    assert.match(result.problem, /Stammzertifikat/)
+    assert.match(result.problem, /hinter einem Proxy/)
+    assert.equal(result.field, 'address')
+    assert.deepEqual(p.posts(), [])
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Proxy: liefert er das Zertifikat von Mietfuchs aus, koppelt das Fenster gepinnt', async () => {
+  const p = await behindProxy({ ownCert: true })
+  try {
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca: systemTrust() })
+    assert.ok(!('problem' in result), JSON.stringify(result))
+    assert.equal(result.trust, 'pinned')
+    assert.equal(result.certSha256, certSha256FromPem(api.serverCa(p.s.dataDir)))
+    assert.equal((await remoteFetch(result, '/api/auth')).status, 200)
+    assert.equal(JSON.parse((await remoteFetch(result, '/api/auth')).body).signedIn, true)
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Proxy: Mietfuchs ohne NKA_TRUST_PROXY nennt die Variable, kein Beweis geht hinaus', async () => {
+  const p = await behindProxy({ env: {} })
+  try {
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca: [...systemTrust(), p.caCert] })
+    assert.ok('problem' in result, JSON.stringify(result))
+    assert.match(result.problem, /NKA_TRUST_PROXY/)
+    assert.notEqual(result.field, 'code')
+    assert.deepEqual(p.posts(), [])
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Proxy: meldet er eine andere Adresse, sagt das Fenster welche, kein Beweis geht hinaus', async () => {
+  const p = await behindProxy({ forwarded: { host: 'andere.example' } })
+  try {
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca: [...systemTrust(), p.caCert] })
+    assert.ok('problem' in result, JSON.stringify(result))
+    assert.match(result.problem, /meldet Mietfuchs die Adresse https:\/\/andere\.example,/)
+    assert.equal(result.field, 'address')
+    assert.deepEqual(p.posts(), [])
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Proxy: verlangt er selbst ein Passwort, nennt das Fenster basic_auth', async () => {
+  const { caCert, leaf } = await proxies.createTestCa()
+  const guarded = https.createServer({ key: leaf.key, cert: leaf.cert }, (req, res) => {
+    res.writeHead(401, { 'www-authenticate': 'Basic realm="restricted"' })
+    res.end()
+  })
+  await api.listening(guarded, '127.0.0.1')
+  try {
+    const result = await pair({ address: `https://127.0.0.1:${api.portOf(guarded)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: [...systemTrust(), caCert] })
+    assert.ok('problem' in result, JSON.stringify(result))
+    assert.match(result.problem, /basic_auth/)
+    assert.equal(result.field, 'address')
+  } finally {
+    guarded.close()
+  }
+})
+
+test('Proxy: system lehnt ein Zertifikat außerhalb des Speichers vor dem ersten Byte ab', { timeout: 20_000 }, async () => {
+  const first = await proxies.createTestCa()
+  const second = await proxies.createTestCa()
+  let received = 0
+  const raw = tls.createServer({ key: second.leaf.key, cert: second.leaf.cert }, (socket) => {
+    socket.on('data', (chunk) => { received += chunk.length })
+    socket.on('error', () => {})
+  })
+  await api.listening(raw, '127.0.0.1')
+  try {
+    const remote = { origin: `https://127.0.0.1:${api.portOf(raw)}`, trust: /** @type {const} */ ('system'), certSha256: null, deviceId: '0123456789abcdef', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+    await assert.rejects(remoteFetch(remote, '/api/units', { ca: [...systemTrust(), first.caCert], timeoutMs: 2000 }), (err) => /** @type {any} */ (err).code === 'CERT_UNTRUSTED')
+    // Name passt nicht: Blatt der vertrauten CA nur für einen anderen Namen
+    const named = await proxies.createTestCa(['nas.example'])
+    const wrongName = tls.createServer({ key: named.leaf.key, cert: named.leaf.cert }, (socket) => {
+      socket.on('data', (chunk) => { received += chunk.length })
+      socket.on('error', () => {})
+    })
+    await api.listening(wrongName, '127.0.0.1')
+    try {
+      await assert.rejects(remoteFetch({ ...remote, origin: `https://127.0.0.1:${api.portOf(wrongName)}` }, '/api/units', { ca: [...systemTrust(), named.caCert], timeoutMs: 2000 }), (err) => /** @type {any} */ (err).code === 'CERT_UNTRUSTED')
+    } finally {
+      wrongName.close()
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.equal(received, 0)
+  } finally {
+    raw.close()
+  }
+})
+
+test('Proxy: remoteFetch in system gegen einen Proxy mit fremder CA, der Proxy sieht keine Anfrage', async () => {
+  const p = await behindProxy()
+  try {
+    const ca = [...systemTrust(), p.caCert]
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca })
+    assert.ok(!('problem' in result), JSON.stringify(result))
+    const other = await proxies.createTestCa()
+    const before = p.proxy.requests.length
+    await assert.rejects(remoteFetch(result, '/api/auth', { ca: [...systemTrust(), other.caCert] }), (err) => /** @type {any} */ (err).code === 'CERT_UNTRUSTED')
+    assert.equal(p.proxy.requests.length, before)
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Proxy: pinDecision lässt in system die normale Prüfung', () => {
+  assert.equal(pinDecision('nas.fritz.box', 'x', { origin: 'https://nas.fritz.box', trust: 'system', certSha256: null }), 'default')
+  // Ohne trust gilt wie bisher gepinnt
+  assert.equal(pinDecision('nas', 'b'.repeat(64), { origin: 'https://nas:3001', certSha256: 'a'.repeat(64) }), 'reject')
+})
+
+test('Adresse: https:// ohne Port heißt 443, sonst bleibt 3001 die Vorgabe', () => {
+  assert.deepEqual(normalizeAddress('https://nas.fritz.box'), { host: 'nas.fritz.box', port: 443, origin: 'https://nas.fritz.box' })
+  assert.deepEqual(normalizeAddress('https://NAS.fritz.box/einstellungen'), { host: 'nas.fritz.box', port: 443, origin: 'https://nas.fritz.box' })
+  assert.deepEqual(normalizeAddress('https://nas.fritz.box:8443'), { host: 'nas.fritz.box', port: 8443, origin: 'https://nas.fritz.box:8443' })
+  assert.deepEqual(normalizeAddress('nas'), { host: 'nas', port: 3001, origin: 'https://nas:3001' })
+  assert.deepEqual(normalizeAddress('http://nas'), { host: 'nas', port: 3001, origin: 'https://nas:3001' })
+  // Internationale Namen wie der Server (new URL): Punycode
+  assert.deepEqual(normalizeAddress('https://bücher.example'), { host: 'xn--bcher-kva.example', port: 443, origin: 'https://xn--bcher-kva.example' })
+})
+
+test('Adresse: nicht erreichbar ohne Schema und Port, der Satz nennt https://', async () => {
+  const bare = await pair({ address: 'nas.invalid', code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
+  assert.ok('problem' in bare)
+  assert.match(bare.problem, /nicht erreichbar/)
+  assert.match(bare.problem, /mit https:\/\/ davor ein, etwa https:\/\/nas\.fritz\.box\.$/)
+  assert.equal(bare.field, 'address')
+  // Mit Port oder Schema nicht
+  const port = await freePort()
+  const withPort = await pair({ address: `127.0.0.1:${port}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
+  assert.ok('problem' in withPort)
+  assert.doesNotMatch(withPort.problem, /https:\/\//)
+})
+
+test('Ausgestellt von: passende CA und Name, sonst nicht', async () => {
+  const one = await proxies.createTestCa(['nas.example', '127.0.0.1'])
+  const two = await proxies.createTestCa(['nas.example'])
+  assert.equal(issuedBy(one.leaf.cert, one.caCert, 'nas.example'), true)
+  assert.equal(issuedBy(one.leaf.cert, one.caCert, 'NAS.example'), true)
+  assert.equal(issuedBy(one.leaf.cert, one.caCert, '127.0.0.1'), true)
+  assert.equal(issuedBy(one.leaf.cert, one.caCert, 'andere.example'), false)
+  assert.equal(issuedBy(one.leaf.cert, two.caCert, 'nas.example'), false)
+  // Abgelaufen bzw. noch nicht gültig
+  assert.equal(issuedBy(one.leaf.cert, one.caCert, 'nas.example', new Date(Date.now() + 30 * 24 * 60 * 60_000)), false)
+  assert.equal(issuedBy('kein Zertifikat', one.caCert, 'nas.example'), false)
+})
+
+test('Speicher des Systems: einmal gerechnet, enthält die Vorgabe von Node', () => {
+  const trust = systemTrust()
+  assert.ok(trust.length >= tls.getCACertificates('default').length)
+  assert.equal(systemTrust(), trust)
 })
