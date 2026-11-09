@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -788,4 +789,29 @@ test('Vorschaltung: die Vorabfrage der Kopplung ist frei wie das Koppeln', () =>
   assert.equal(passes(gate(state, request({ method: 'GET', path: '/api/auth/pair' }))), true)
   assert.equal(passes(gate(state, request({ method: 'POST', path: '/api/auth/pair' }))), true)
   assert.equal(passes(gate(state, request({ method: 'DELETE', path: '/api/auth/pair' }))), false)
+})
+
+test('Vorschaltung: nur eine Anfrage mit Proxy-Kopfzeilen fragt NKA_TRUST_PROXY (und damit DNS)', async () => {
+  const dir = freshDir()
+  writeAccessFile(dir, { version: 1, mode: 'password', instance: 'abcdef', hash: await hashPassword('ein langes Testpasswort', { logN: 10 }), changedAt: '' })
+  const asked: Array<string | undefined> = []
+  const trustProxy = { configured: true, problems: [], trusts: async (address: string | undefined) => { asked.push(address); return true } }
+  const access = createAccess({ dataDir: dir, host: '0.0.0.0', setting: 'auto', allowedHosts: undefined, runtime: 'docker', tls: { certSha256: 'c'.repeat(64) }, trustProxy, log: () => {}, logError: () => {} })
+  access.start({ hasStock: true })
+  const app = express()
+  app.use(access.middleware)
+  access.install(app)
+  const server = http.createServer(app)
+  await listening(server, '127.0.0.1')
+  const base = `http://127.0.0.1:${portOf(server)}`
+  try {
+    for (const urlPath of ['/api/auth/pair', '/api/units', '/healthz', '/']) await fetch(`${base}${urlPath}`)
+    assert.deepEqual(asked, [])
+    const res = await fetch(`${base}/api/auth/pair`, { headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'nas.fritz.box' } })
+    assert.deepEqual(await res.json(), { app: 'mietfuchs', certSha256: 'c'.repeat(64), secure: true, origin: 'https://nas.fritz.box' })
+    assert.equal(asked.length, 1)
+  } finally {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

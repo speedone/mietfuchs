@@ -97,6 +97,7 @@ import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { authSetting, fromThisComputer as fromThisComputerAt, readEnvPassword } from './access.ts'
+import { createProxyTrust } from './trustProxy.ts'
 import { createAccess } from './accessServer.ts'
 import { createDualServer } from './dualPort.ts'
 import { ensureCertificate, readCertificate } from './tls.ts'
@@ -174,6 +175,10 @@ delete process.env.NKA_WINDOW_KEY
 const ENV_PASSWORD = readEnvPassword(process.env, (file) => fs.readFileSync(file, 'utf8'))
 delete process.env.NKA_PASSWORD
 delete process.env.NKA_PASSWORD_FILE
+// NKA_TRUST_PROXY (#528, Kopplung über einen Proxy): ein ungültiger Eintrag gilt nicht und steht auf der Fehlerausgabe;
+// Namen werden erst bei der ersten Anfrage mit Proxy-Kopfzeilen aufgelöst (Caddy startet nach Mietfuchs)
+const PROXY_TRUST = createProxyTrust(process.env.NKA_TRUST_PROXY, { logError: (line) => console.error(line) })
+for (const line of PROXY_TRUST.problems) console.error(line)
 const ACCESS = createAccess({
   dataDir: DATA_DIR,
   host: process.env.NKA_HOST,
@@ -184,6 +189,7 @@ const ACCESS = createAccess({
   windowKey: WINDOW_KEY,
   envPassword: ENV_PASSWORD,
   version: APP_VERSION,
+  trustProxy: PROXY_TRUST,
   // Testgriff: verkürzt die Gültigkeit eines Kopplungscodes (sonst 10 Minuten); das Fenster löscht NKA_TEST_*
   ...(Number(process.env.NKA_TEST_PAIRING_SECONDS) > 0 ? { pairingSeconds: Number(process.env.NKA_TEST_PAIRING_SECONDS) } : {}),
   // Das Zertifikat kommt erst unten (vor dem Binden gelesen oder danach erzeugt) über `useTls`
