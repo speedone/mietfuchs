@@ -189,7 +189,7 @@
 }
 
 /* Zahlungs-QR-Code bei Nachzahlung (#624): links der Code mit 30 mm Kante samt Ruhezone, rechts klein sein Inhalt.
-   Weißer Grund, damit Briefpapier den Code nicht stört; nie über einen Seitenumbruch geteilt. */
+   Der weiße Grund steht im SVG selbst (fest Schwarz auf Weiß, auch im dunklen Modus, sonst lesen Apps ihn nicht); nie über einen Seitenumbruch geteilt. */
 .payment-qr {
   display: flex;
   align-items: flex-start;
@@ -202,7 +202,6 @@
   width: 30mm;
   height: 30mm;
   flex: none;
-  background: #fff;
 }
 .payment-qr-text {
   font-size: 9pt;
