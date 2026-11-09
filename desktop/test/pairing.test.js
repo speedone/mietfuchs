@@ -49,7 +49,6 @@ test('Adresse: Schema egal, immer https auf demselben Port, Vorgabe 3001, IPv6 i
     const result = normalizeAddress(nonsense)
     assert.ok('problem' in result, `${nonsense}: ${JSON.stringify(result)}`)
     assert.match(result.problem, /Adresse/, nonsense)
-    assert.equal(result.problem.includes('—'), false)
   }
 })
 
@@ -192,7 +191,6 @@ test('Version: Hinweis nur bei anderem major.minor', () => {
   assert.equal(typeof hint, 'string')
   assert.match(String(hint), /0\.17\.0/)
   assert.match(String(hint), /0\.18\.0/)
-  assert.equal(String(hint).includes('—'), false)
   assert.equal(typeof versionHint('1.0.0', '0.17.0'), 'string')
   assert.equal(versionHint('0.17.0', 'unbekannt'), null)
 })

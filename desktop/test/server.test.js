@@ -3,7 +3,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import fs from 'node:fs'
-import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties, isReceipt, isAppPage, trustedSender, childWebPreferences, frameTarget, navigationTarget } from '../src/server.js'
+import os from 'node:os'
+import path from 'node:path'
+import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties, isReceipt, isAppPage, trustedSender, childWebPreferences, frameTarget, navigationTarget, readSettingsFile, writeSettingsFile } from '../src/server.js'
 
 // Geänderte Erwartung: Bisher lief ausgeliefert die Programmdatei des Servers (Bun) unter resources\server bzw. in
 // Contents/MacOS, danach der Quellcode unter resources/mietfuchs/server/src, dann das Bündel offen unter
@@ -371,4 +373,49 @@ test('Fenster: Abrufe des Hauptprozesses am eigenen Server nur über serverFetch
   assert.match(main, /function serverFetch\(/)
   assert.match(main, /'X-Mietfuchs-Window'/)
   assert.match(main, /onBeforeSendHeaders\(\{ urls: \[`\$\{origin\}\/\*`\] \}/)
+})
+
+// fenster.json (#528, Schritt 2): Die Kopplung steht als `remote` darin, die Datei nur für den Benutzer lesbar. Eine
+// kaputte oder unvollständige Kopplung ergibt keine (dann zeigt das Fenster wieder den eigenen Server).
+test('Einstellungen: fenster.json lesen und schreiben, eine kaputte Kopplung gilt nicht', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-einstellungen-'))
+  try {
+    const file = path.join(dir, 'unter', 'fenster.json')
+    assert.deepEqual(readSettingsFile(file), {})
+    const remote = { origin: 'https://nas:3001', certSha256: 'a'.repeat(64), deviceId: '0123456789abcdef', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+    writeSettingsFile(file, { port: 17517, network: true, remote })
+    assert.deepEqual(readSettingsFile(file), { port: 17517, network: true, remote })
+    if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    // Auch eine schon vorhandene Datei mit weiteren Rechten wird beim Schreiben eng
+    fs.chmodSync(file, 0o644)
+    writeSettingsFile(file, { port: 17517 })
+    if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    assert.deepEqual(readSettingsFile(file), { port: 17517 })
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), ['fenster.json'])
+
+    const broken = [
+      'kein Objekt',
+      null,
+      { ...remote, origin: 'http://nas:3001' },
+      { ...remote, origin: 'https://nas:3001/pfad' },
+      { ...remote, origin: 'kaputt' },
+      { ...remote, certSha256: 'A'.repeat(64) },
+      { ...remote, certSha256: 'a'.repeat(63) },
+      { ...remote, deviceId: '' },
+      { ...remote, deviceId: 'ab.cd' },
+      { ...remote, deviceKey: 'mit\r\nZeilenumbruch' },
+      { ...remote, deviceKey: undefined },
+      { ...remote, version: 17 },
+    ]
+    for (const value of broken) {
+      fs.writeFileSync(file, JSON.stringify({ port: 4000, remote: value }))
+      assert.deepEqual(readSettingsFile(file), { port: 4000 }, JSON.stringify(value))
+    }
+    fs.writeFileSync(file, '{ kaputt')
+    assert.deepEqual(readSettingsFile(file), {})
+    fs.writeFileSync(file, '[1, 2]')
+    assert.deepEqual(readSettingsFile(file), {})
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })
