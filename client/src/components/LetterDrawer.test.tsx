@@ -12,7 +12,7 @@ afterEach(cleanup)
 
 const TENANCY_SHOWN: LetterBlock[] = ['subject', 'salutation', 'intro', 'backPayment', 'receipts', 'closing', 'greeting', 'signature']
 
-function show(over: { own?: Partial<Record<LetterBlock, string | null>>, shown?: LetterBlock[], level?: 'installation' | 'tenancy' } = {}) {
+function show(over: { own?: Partial<Record<LetterBlock, string>>, shown?: LetterBlock[], level?: 'installation' | 'tenancy' } = {}) {
   render(
     <UIProvider>
       <LetterDrawer
