@@ -46,8 +46,8 @@ const check = (/** @type {boolean} */ ok, /** @type {string} */ what) => {
 }
 const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** @param {string[]} args */
-const docker = (args) => execFileSync('docker', args, { cwd: work, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+/** Ein Aufruf von docker, mit Frist (Vorgabe 5 Minuten, `compose up` kann ein Image laden) @param {string[]} args @param {number} [timeout] */
+const docker = (args, timeout = 300_000) => execFileSync('docker', args, { cwd: work, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout })
 /** @param {string[]} args */
 const compose = (args) => docker(['compose', '-p', project, '-f', 'compose.caddy.yml', '-f', 'praxis.yml', ...args])
 
@@ -131,6 +131,27 @@ function writeOverlay(ownCertificate) {
   ].join('\n'))
 }
 
+// Aufräumen nur dieses Projekts, einmal: am Ende, bei einem Fehler und bei Strg+C oder SIGTERM
+let cleaned = false
+function cleanup() {
+  if (cleaned) return
+  cleaned = true
+  spawnSync('docker', ['rm', '-f', placeholder, `${project}-faelscher`], { stdio: 'ignore', timeout: 60_000 })
+  if (fs.existsSync(path.join(work, 'praxis.yml'))) {
+    const logs = spawnSync('docker', ['compose', '-p', project, '-f', 'compose.caddy.yml', '-f', 'praxis.yml', 'logs', '--no-color'], { cwd: work, encoding: 'utf8', timeout: 60_000 })
+    fs.writeFileSync(path.join(os.tmpdir(), `${project}.log`), logs.stdout ?? '')
+    spawnSync('docker', ['compose', '-p', project, '-f', 'compose.caddy.yml', '-f', 'praxis.yml', 'down', '-v', '--remove-orphans'], { cwd: work, stdio: 'ignore', timeout: 120_000 })
+  }
+  fs.rmSync(work, { recursive: true, force: true })
+}
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+  process.on(signal, () => {
+    console.log(`\n${signal}: räume ${project} auf …`)
+    cleanup()
+    process.exit(130)
+  })
+}
+
 try {
   if (!process.argv.includes('--skip-build')) {
     console.log(`Baue ${IMAGE} …`)
@@ -184,13 +205,14 @@ try {
     const base = 'http://mietfuchs:3001'
     const forged = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'localhost:${PORT}', 'content-type': 'application/json' }
     const read = async (r) => ({ status: r.status, json: await r.json().catch(() => null) })
-    const preflight = await read(await fetch(base + '/api/auth/pair', { headers: forged }))
-    const keyed = await read(await fetch(base + '/api/settings', { headers: { ...forged, 'x-mietfuchs-device': process.env.DEVICE } }))
-    const proof = await read(await fetch(base + '/api/auth/pair', { method: 'POST', headers: forged, body: JSON.stringify({ name: 'faelschung', proof: '0'.repeat(64) }) }))
+    const limit = () => AbortSignal.timeout(10000)
+    const preflight = await read(await fetch(base + '/api/auth/pair', { headers: forged, signal: limit() }))
+    const keyed = await read(await fetch(base + '/api/settings', { headers: { ...forged, 'x-mietfuchs-device': process.env.DEVICE }, signal: limit() }))
+    const proof = await read(await fetch(base + '/api/auth/pair', { method: 'POST', headers: forged, body: JSON.stringify({ name: 'faelschung', proof: '0'.repeat(64) }), signal: limit() }))
     console.log(JSON.stringify({ preflight, keyed, proof }))
   `
   /** @type {any} */
-  const forged = JSON.parse(docker(['run', '--rm', '--name', `${project}-faelscher`, '--network', network, '--ip', oldIp, '-e', `DEVICE=${first.deviceId}.${first.deviceKey}`, '--entrypoint', 'node', IMAGE, '--input-type=module', '-e', forgery]).trim().split('\n').at(-1) ?? 'null')
+  const forged = JSON.parse(docker(['run', '--rm', '--name', `${project}-faelscher`, '--network', network, '--ip', oldIp, '-e', `DEVICE=${first.deviceId}.${first.deviceKey}`, '--entrypoint', 'node', IMAGE, '--input-type=module', '-e', forgery], 90_000).trim().split('\n').at(-1) ?? 'null')
   report.forged = { preflight: forged?.preflight, keyed: forged?.keyed?.status, proof: forged?.proof }
   check(forged?.preflight?.json?.secure === false && forged?.preflight?.json?.origin === null, `gefälscht direkt (von ${oldIp}): Vorabfrage secure ${forged?.preflight?.json?.secure}, origin ${forged?.preflight?.json?.origin}`)
   check(forged?.keyed?.status === 401, `gefälscht direkt: Geräteschlüssel über HTTP ergibt ${forged?.keyed?.status}`)
@@ -227,13 +249,7 @@ try {
 } catch (err) {
   check(false, `Abbruch: ${err instanceof Error ? err.stack : String(err)}`)
 } finally {
-  spawnSync('docker', ['rm', '-f', placeholder, `${project}-faelscher`], { stdio: 'ignore' })
-  if (fs.existsSync(path.join(work, 'praxis.yml'))) {
-    const logs = spawnSync('docker', ['compose', '-p', project, '-f', 'compose.caddy.yml', '-f', 'praxis.yml', 'logs', '--no-color'], { cwd: work, encoding: 'utf8' })
-    fs.writeFileSync(path.join(os.tmpdir(), `${project}.log`), logs.stdout ?? '')
-    spawnSync('docker', ['compose', '-p', project, '-f', 'compose.caddy.yml', '-f', 'praxis.yml', 'down', '-v', '--remove-orphans'], { cwd: work, stdio: 'ignore' })
-  }
-  fs.rmSync(work, { recursive: true, force: true })
+  cleanup()
 }
 
 report.failures = failures
