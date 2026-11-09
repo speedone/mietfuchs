@@ -19,6 +19,7 @@
 // Absichtlich ohne Abhängigkeiten: Es läuft mit dem Node, das auf dem Runner ohnehin da ist.
 import { execSync } from 'node:child_process'
 import http from 'node:http'
+import https from 'node:https'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -74,6 +75,43 @@ async function request(urlPath, init) {
 // kennt daneben noch die Zeichenkette einer Unix-Socket-Adresse und `null` vor dem Start.
 const listeningPort = (server) => /** @type {import('node:net').AddressInfo} */ (server.address()).port
 const json = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+// Das Zertifikat der geprüften Instanz (#528, Schritt 2) aus ihrem Datenordner, als einziger Vertrauensanker für die
+// Frage über HTTPS: Kette und Name werden geprüft, nichts wird abgeschaltet. Der Ordner ergibt sich aus `--cert-file`,
+// `--data-dir` oder dem Ort des Einrichtungscodes (`--code-file`, `--code-command … einrichtungscode.txt`); ohne
+// diese Angaben bleibt nur die Frage über HTTP (`tls` in /healthz).
+const CERT_FILE = opt('cert-file', '') || (opt('data-dir', '') ? path.join(opt('data-dir', ''), 'tls', 'mietfuchs.crt') : '')
+function serverCert() {
+  if (CERT_FILE) return fs.readFileSync(CERT_FILE, 'utf8')
+  if (CODE_FILE) return fs.readFileSync(path.join(path.dirname(CODE_FILE), 'tls', 'mietfuchs.crt'), 'utf8')
+  if (CODE_COMMAND.includes('einrichtungscode.txt')) {
+    return execSync(CODE_COMMAND.replace('einrichtungscode.txt', 'tls/mietfuchs.crt'), { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  }
+  return null
+}
+
+// `/healthz` über HTTPS auf demselben Port. Ein eigener Weg statt fetch, dem sich kein eigener Vertrauensanker geben
+// lässt. Unter Bun scheitert ein `https.Server` an übergebenen Verbindungen; deshalb läuft diese Frage in jeder Prüfung
+// der Programmdateien mit. Die Adresse muss 127.0.0.1, ::1 oder localhost sein (subjectAltName des Zertifikats).
+/** @param {string} ca */
+function httpsHealth(ca) {
+  const url = new URL(BASE)
+  return new Promise((resolve, reject) => {
+    const req = https.get({ host: url.hostname, port: url.port, path: '/healthz', ca, agent: false, headers: cookie ? { cookie } : {}, timeout: 10_000 }, (res) => {
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', (c) => { text += c })
+      res.on('end', () => {
+        /** @type {any} */
+        let body = null
+        try { body = JSON.parse(text) } catch { body = text }
+        resolve({ status: res.statusCode, body })
+      })
+    })
+    req.on('timeout', () => req.destroy(new Error('keine Antwort über HTTPS nach 10 s')))
+    req.on('error', reject)
+  })
+}
 
 // ---------- Nachgebautes Ollama ----------
 // `delaySeconds` lässt /api/chat so lange schweigen, wie ein langsamer Rechner zum Einlesen braucht
@@ -658,6 +696,13 @@ async function main() {
   const health = await request('/healthz')
   assert(health.body.status === 'ok', 'Zustandsprüfung meldet ok', health.body)
   assert(health.body.version === VERSION, `Version ist ${VERSION}`, health.body.version)
+  assert(health.body.tls === true, 'HTTPS auf demselben Port ist bereit', health.body.tls)
+  const ca = serverCert()
+  if (ca === null) console.log('  - /healthz über HTTPS nicht gefragt: Datenordner unbekannt (--data-dir, --cert-file oder --code-file)')
+  else {
+    const secure = await httpsHealth(ca).catch((err) => ({ status: 0, body: String(err) }))
+    assert(secure.status === 200 && secure.body?.app === 'mietfuchs' && secure.body?.tls === true, '/healthz antwortet auch über HTTPS', secure)
+  }
   // Die Datenbank (#55). Sie wird beim Start geöffnet, obwohl noch keine fachlichen Daten darin
   // liegen, und genau deshalb steht sie hier: Diese Prüfung läuft auf jeder Programmdatei und in
   // den Containern von 22 Distributionen. Ob das eingebaute SQLite dort trägt, ob Bun es in die

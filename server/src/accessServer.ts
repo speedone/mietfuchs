@@ -4,6 +4,7 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
+import type { TLSSocket } from 'node:tls'
 import {
   ACCESS_FILE, CODE_FILE, MIN_PASSWORD, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
   gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
@@ -301,7 +302,7 @@ export function createAccess(options: AccessOptions) {
   }
 
   // ---------- Hilfen der Routen ----------
-  const secure = (req: Request): boolean => viaHttps(req.headers)
+  const secure = (req: Request): boolean => viaHttps(req.headers, (req.socket as TLSSocket).encrypted === true)
   function newSession(req: Request, res: Response): void {
     const token = sessions.create()
     res.setHeader('Set-Cookie', sessionCookie(state.instance, token, secure(req)))

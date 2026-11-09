@@ -17,6 +17,7 @@ import {
   type ClientSettings, type HealthReport, type Server, type UploadBody, archive, errorFrom, errorOf, fileOf, jsonOf, listening, portOf, readStartUrl, removeDataDir, restore, serverRoot, startServer, startServerIn, startServerRaw, storedSettings, unitRowsInDatabase, waitForExit,
 } from '../testing/api.ts'
 import { craftZip, storedEntry, zeroEntry } from '../testing/zipCraft.ts'
+import { TLS_DIR, ensureCertificate } from '../src/tls.ts'
 
 // ---------- Backup und Wiederherstellung (#23) ----------
 
@@ -696,6 +697,18 @@ test('Backup: das Archiv enthält die Datenbank und sagt, woher es stammt', asyn
     for (const suffix of ['-wal', '-shm', '-journal']) {
       assert.ok(!namen.includes(`mietfuchs.sqlite${suffix}`), `${suffix} liegt im Archiv`)
     }
+  })
+})
+
+test('Backup: Schlüssel und Zertifikat für HTTPS bleiben draußen (#528)', async () => {
+  // Wie zugang.json: Nach dem Wiederherstellen auf einem anderen Rechner entsteht dort ein eigenes Zertifikat
+  await withData(async (s) => {
+    const pair = await ensureCertificate(s.dataDir)
+    assert.ok(!('problem' in pair), 'problem' in pair ? pair.problem : '')
+    assert.ok(fs.existsSync(path.join(s.dataDir, TLS_DIR, 'mietfuchs.key')))
+    const namen = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())).getEntries().map((e) => e.entryName)
+    assert.ok(namen.includes('mietfuchs.sqlite'), namen.join(', '))
+    assert.deepEqual(namen.filter((n) => n.startsWith(`${TLS_DIR}/`) || n.includes('mietfuchs.key') || n.includes('mietfuchs.crt')), [], namen.join(', '))
   })
 })
 

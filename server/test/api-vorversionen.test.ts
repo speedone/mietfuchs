@@ -72,6 +72,10 @@ test('Vorversionen: Mit Bestand entsteht beim Start eine, nicht im Backup und ni
 
     const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
     assert.ok(!zip.getEntries().some((e) => e.entryName.includes('vorversion')), zip.getEntries().map((e) => e.entryName).join(', '))
+    // Eine Vorversion ist nur die Datenbank: Schlüssel und Zertifikat für HTTPS (#528) bleiben, wo sie sind
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'tls', 'mietfuchs.key')), 'kein Zertifikat angelegt')
+    const inPrior = fs.readdirSync(path.join(s.dataDir, PRIOR_DIR), { recursive: true }).map(String)
+    assert.deepEqual(inPrior.filter((n) => !n.endsWith('.sqlite')), [], inPrior.join(', '))
 
     const health = await jsonOf<HealthReport>(await fetch(`${s.base}/healthz`))
     assert.deepEqual(Object.keys(health.checks).sort(), ['data', 'database', 'uploads'])

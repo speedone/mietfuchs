@@ -465,9 +465,11 @@ const first = (value: string | string[] | undefined): string | undefined => (Arr
 const PROXY_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'via']
 export const viaProxy = (headers: Headers): boolean => PROXY_HEADERS.some((name) => headers[name] !== undefined)
 
-// Kam die Seite über HTTPS (Proxy davor)? Dann bekommt das Cookie `Secure`. Eine gefälschte Angabe schadet nicht: Über
-// HTTP verwirft der Browser ein Cookie mit `Secure`, der Fälscher meldet nur sich selbst nicht an.
-export function viaHttps(headers: Headers): boolean {
+// Kam die Seite über HTTPS (Proxy davor oder, seit Schritt 2, die eigene Verbindung: `encrypted`)? Dann bekommt das
+// Cookie `Secure`. Eine gefälschte Angabe schadet nicht: Über HTTP verwirft der Browser ein Cookie mit `Secure`, der
+// Fälscher meldet nur sich selbst nicht an.
+export function viaHttps(headers: Headers, encrypted = false): boolean {
+  if (encrypted) return true
   if (first(headers['x-forwarded-proto'])?.split(',')[0].trim().toLowerCase() === 'https') return true
   if (/(^|[;,\s])proto=(["']?)https\2(?=[;,\s]|$)/i.test(first(headers.forwarded) ?? '')) return true
   return (first(headers.origin) ?? '').toLowerCase().startsWith('https:')

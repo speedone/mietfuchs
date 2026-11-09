@@ -6,7 +6,6 @@ import path from 'node:path'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
-import http from 'node:http'
 import { createRequire } from 'node:module'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
@@ -99,6 +98,8 @@ import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRun
 import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { authSetting, isLoopback, readEnvPassword } from './access.ts'
 import { createAccess } from './accessServer.ts'
+import { createDualServer } from './dualPort.ts'
+import { ensureCertificate, readCertificate } from './tls.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
   ADOPT_UNCHANGED, classifyChoice, damagedStockText, placeOf, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, markStock, stockChanged, memoByStamp, copyAndHash, writePending, readPending, clearPending, switchedOver, type StockMark, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
@@ -4409,8 +4410,9 @@ app.post('/api/update/check', async (req, res) => {
 // Betrieb, nicht für die Oberfläche.
 app.get('/healthz', (req, res) => {
   // `dataDir`: Daran erkennt ein Mietfuchs auf einem anderen Port, ob es denselben Ordner nimmt (instanceGuard.ts)
+  // `tls`: Antwortet derselbe Port auch über HTTPS (#528, Schritt 2)? Für die Prüfungen, das Fenster braucht es nicht
   // Ein umgezogener Ordner wird nur gelesen, auch keine Schreibprobe (Durchsicht Daten K7)
-  const report = { ...healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState(), readOnly: movedNow() }), dataDir: DATA_DIR }
+  const report = { ...healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState(), readOnly: movedNow() }), dataDir: DATA_DIR, tls: TLS_PAIR !== null }
   // Mit Anmeldung von außen ohne Sitzung nur Name und Zustand (#528): Version und Datenordner gehen niemanden im Netz an
   if (res.locals.shortHealth === true) return void res.status(report.status === 'ok' ? 200 : 503).json({ app: report.app, status: report.status })
   // Umgezogen (#517): Die Oberfläche sagt es oben auf jeder Seite (Database.tsx)
@@ -4816,7 +4818,13 @@ if (IN_WINDOW && PARENT_PORT) {
   })
 }
 
-const server = http.createServer((req, res) => {
+// HTTPS auf demselben Port (#528, Schritt 2): Ein vorhandenes Zertifikat wird vor dem Binden nur gelesen (tls.ts); ein
+// neues entsteht erst nach dem Binden, weiter unten, denn ein zweiter Start auf belegtem Port rührt den Datenordner
+// nicht an (#244).
+let TLS_PAIR = readCertificate(DATA_DIR)
+
+// Der äußere Server nimmt beide Protokolle auf einem Port an (dualPort.ts); listen, close und address gehen an ihn
+const dual = createDualServer((req, res) => {
   if (startupDone) return app(req, res)
   if ((req.url ?? '').split('?')[0] === '/healthz') {
     res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '1', 'cache-control': 'no-store' })
@@ -4828,7 +4836,8 @@ const server = http.createServer((req, res) => {
     return
   }
   void startup.then(() => app(req, res))
-})
+}, TLS_PAIR)
+const { server } = dual
 
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts), auch
 // während des Startens (oben). Dann ist ein zweiter Start kein Fehler, sondern ein zweiter Klick
@@ -4995,6 +5004,18 @@ if ((RUNTIME === 'desktop' || RUNTIME === 'store') && !MOVED_AWAY) {
   }
 }
 if (!MOVED_AWAY) cleanRestoreLeftovers(DATA_DIR)
+
+// HTTPS (#528, Schritt 2): Fehlt das Zertifikat, entsteht es jetzt, nach dem Binden und vor dem Öffnen der Datenbank. Ein
+// Problem dabei verhindert nie den Start, Mietfuchs antwortet dann nur über HTTP und sagt es einmal. Ein umgezogener
+// Ordner wird nur gelesen (#517): Dort gibt es HTTPS nur mit einem Zertifikat von vorher.
+if (!TLS_PAIR && !MOVED_AWAY) {
+  const created = await ensureCertificate(DATA_DIR)
+  if ('problem' in created) console.error(`HTTPS ist nicht verfügbar: ${created.problem} Mietfuchs antwortet nur über HTTP.`)
+  else {
+    TLS_PAIR = created
+    dual.useCertificate(created)
+  }
+}
 
 // Testgriff: hält den Start nach dem Binden und vor dem Öffnen der Datenbank fest, damit ein
 // Test das Rennen zweier gleichzeitiger Starts nachstellen kann. Ein Nutzer setzt ihn nie.
