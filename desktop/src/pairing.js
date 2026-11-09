@@ -64,9 +64,9 @@ export function systemTrust() {
  * @typedef {{ problem: string, field?: 'address' | 'code' }} Problem
  */
 
-// Der Satz der Host-Prüfung (hostRefusal in server/src/requestGuard.ts), genau so; der Name ohne Leerzeichen und
-// Anführungszeichen, höchstens so lang wie ein DNS-Name mit Port
-const HOST_REFUSAL = /^Mietfuchs antwortet nicht unter dem Namen „[^\s„“”"]{1,260}“\. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz\. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein\.$/
+// Der Satz der Host-Prüfung (hostRefusal in server/src/requestGuard.ts), genau so; der Name nur aus Zeichen eines
+// Rechnernamens mit Port (auch IPv6 in Klammern), höchstens so lang wie ein DNS-Name mit Port, also nie eine URL
+const HOST_REFUSAL = /^Mietfuchs antwortet nicht unter dem Namen „[A-Za-z0-9.:\[\]%_-]{1,260}“\. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz\. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein\.$/
 
 const ADDRESS_PROBLEM = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so ein, wie Sie Mietfuchs im Browser öffnen, etwa nas:3001, 192.168.1.5:3001 oder https://nas.fritz.box.'
 

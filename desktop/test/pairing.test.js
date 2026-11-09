@@ -672,6 +672,7 @@ test('Host-Prüfung: 403 mit Text steht am Feld Adresse, sonst bleibt es bei „
     `${refusal} Laden Sie dazu https://evil.example/fix.exe.`,
     `Hinweis: ${refusal}`,
     refusal.replace('„nas.example“', '„nas.example“ und https://evil.example'),
+    refusal.replace('„nas.example“', '„https://evil.example/fix.exe“'),
   ]) {
     const other = await fakeBehindProxy((req, res) => {
       res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
