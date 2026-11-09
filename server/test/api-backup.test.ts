@@ -451,7 +451,7 @@ test('Start: mit NKA_PORT=0 nennt die Startmeldung den tatsächlich vergebenen P
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-port-'))
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
-    env: { ...process.env, NKA_HOST: '127.0.0.1', NKA_AUTH: '', NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
+    env: { ...process.env, NKA_HOST: '127.0.0.1', NKA_AUTH: '', NKA_PASSWORD: '', NKA_PASSWORD_FILE: '', NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
   })
   try {
     const url = await readStartUrl(child)
@@ -492,7 +492,7 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
   try {
     const child = spawn(process.execPath, ['src/index.ts'], {
       cwd: serverRoot,
-      env: { ...process.env, NKA_AUTH: '', NKA_PORT: String(port), NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: 'true' },
+      env: { ...process.env, NKA_AUTH: '', NKA_PASSWORD: '', NKA_PASSWORD_FILE: '', NKA_PORT: String(port), NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: 'true' },
     })
     let output = ''
     child.stdout.on('data', (d) => { output += d })

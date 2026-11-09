@@ -8,7 +8,7 @@ import {
   ACCESS_FILE, CODE_FILE, MIN_PASSWORD, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
   gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
   sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, viaProxy, writeAccessFile, writeCodeFile,
-  type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Stage,
+  type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type EnvPassword, type Stage,
 } from './access.ts'
 
 export type AccessOptions = {
@@ -21,6 +21,8 @@ export type AccessOptions = {
   // Programmfenster (#528): Schlüssel dieses Starts aus NKA_WINDOW_KEY, wirksam nur im Fenster und nur über 127.0.0.1
   inWindow?: boolean
   windowKey?: string | null
+  // Passwort aus NKA_PASSWORD_FILE oder NKA_PASSWORD (`readEnvPassword`), übernommen mit `applyEnvPassword` nach `start`
+  envPassword?: EnvPassword | null
   stage?: Stage
   log?: (line: string) => void
   logError?: (line: string) => void
@@ -59,7 +61,7 @@ export const browserUrlFor = (url: string, mode: AccessState['mode'], code: stri
   mode === 'setup' && code ? `${url}/#einrichtung=${formatCode(code)}` : url
 
 export function createAccess(options: AccessOptions) {
-  const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, stage = 'A', log = console.log, logError = console.error, now = Date.now } = options
+  const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, envPassword = null, stage = 'A', log = console.log, logError = console.error, now = Date.now } = options
   const allowedHosts = (options.allowedHosts ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h && h !== '*')
   const codePath = path.join(dataDir, CODE_FILE)
   const sessions = createSessions({ now })
@@ -206,6 +208,59 @@ export function createAccess(options: AccessOptions) {
     } else if (state.mode === 'off' && exposed()) {
       startLines.push('Die Anmeldung ist ausgeschaltet. Mietfuchs ist im Netz ohne Passwort erreichbar.', codeLine('Einrichtungscode zum Einschalten'))
     }
+  }
+
+  // ---------- Passwort aus der Umgebung ----------
+  // Nach `start`, vor der ersten Anfrage (index.ts wartet darauf). Legt das Passwort nur fest, solange nichts entschieden
+  // ist (`setup`, Übergang, `none`), auch gleich nach einem Zurücksetzen: Ein festgelegtes Passwort und eine in der
+  // Oberfläche ausgeschaltete Anmeldung bleiben (Durchsicht S3). Ist die Angabe unbrauchbar, bleibt ein Übergang nicht
+  // offen, sondern wird zur Einrichtung (S2). Weder Passwort noch Wert stehen im Protokoll.
+  async function applyEnvPassword(): Promise<void> {
+    if (envPassword === null) return
+    const { source } = envPassword
+    const notes: string[] = []
+    if ('ignored' in envPassword && envPassword.ignored) notes.push(`${envPassword.ignored} wird neben ${source} nicht beachtet.`)
+    const skip = (reason: string): void => void startLines.push(...notes, `${source} wird nicht übernommen: ${reason}`)
+    if (setting === 'off') return skip('Die Anmeldung ist über NKA_AUTH=off abgeschaltet.')
+    if (state.mode === 'password') return skip(`Für Mietfuchs ist schon ein Passwort festgelegt. Ändern lässt es sich unter Einstellungen → Anmeldung; die Angabe ${source} können Sie entfernen.`)
+    if (state.mode === 'off') return skip('Die Anmeldung ist in der Oberfläche ausgeschaltet. Einschalten lässt sie sich unter Einstellungen → Anmeldung mit dem Einrichtungscode.')
+    const password = 'problem' in envPassword ? null : envPassword.password
+    const problem = 'problem' in envPassword ? envPassword.problem : passwordProblem(password)
+    if (problem !== null || password === null) {
+      logError(`${'problem' in envPassword ? '' : `${source}: `}${problem} Das Passwort wird nicht übernommen.`)
+      if (state.mode === 'transition') {
+        try {
+          save(fileOf('setup'))
+        } catch (err) {
+          logError(`${ACCESS_FILE} ließ sich nicht schreiben: ${(err as Error).message}`)
+          state = { ...state, mode: 'setup', required: requiredFor('setup') }
+        }
+        if (!code) issueCode()
+      }
+      if (state.mode === 'setup' && exposed()) {
+        startLines.length = 0
+        startLines.push(...notes, `Das Passwort aus ${source} ließ sich nicht übernehmen (siehe Fehlerausgabe). Mietfuchs bleibt deshalb geschützt, bis ein Passwort festgelegt ist.`, codeLine('Einrichtungscode'))
+      } else {
+        startLines.push(...notes)
+      }
+      return
+    }
+    const wasReset = state.proxyStrict === true
+    try {
+      save(fileOf('password', await hashes.run(() => hashPassword(password))))
+    } catch (err) {
+      logError(`Das Passwort aus ${source} ließ sich nicht speichern (${ACCESS_FILE}): ${(err as Error).message}`)
+      startLines.push(...notes)
+      return
+    }
+    dropCode()
+    sessions.revokeAll()
+    // Die Zeilen von `start` sprachen von Einrichtung, Übergang oder Zurücksetzen samt Code; das gilt nicht mehr
+    startLines.length = 0
+    startLines.push(
+      ...notes,
+      `${wasReset ? `Das Passwort ist zurückgesetzt (Datei passwort-zuruecksetzen) und aus ${source} neu festgelegt.` : `Das Passwort für Mietfuchs ist aus ${source} festgelegt.`} Die Angabe gilt nur, solange kein Passwort festgelegt ist; ändern lässt es sich unter Einstellungen → Anmeldung.`,
+    )
   }
 
   const tokensOf = (req: Request): string[] => cookieValues(header(req, 'cookie'), cookieName(state.instance))
@@ -488,6 +543,7 @@ export function createAccess(options: AccessOptions) {
     middleware,
     install,
     startLines: (): readonly string[] => startLines,
+    applyEnvPassword,
     state: (): AccessState => state,
   }
 }

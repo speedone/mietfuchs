@@ -97,7 +97,7 @@ import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
-import { authSetting, isLoopback } from './access.ts'
+import { authSetting, isLoopback, readEnvPassword } from './access.ts'
 import { createAccess } from './accessServer.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
@@ -169,6 +169,10 @@ const AUTH_SETTING = authSetting(process.env)
 // liest auch die Datenbank.
 const WINDOW_KEY = process.env.NKA_WINDOW_KEY?.trim() || null
 delete process.env.NKA_WINDOW_KEY
+// Passwort aus der Umgebung (#528), ebenso gelesen und aus der Umgebung genommen
+const ENV_PASSWORD = readEnvPassword(process.env, (file) => fs.readFileSync(file, 'utf8'))
+delete process.env.NKA_PASSWORD
+delete process.env.NKA_PASSWORD_FILE
 const ACCESS = createAccess({
   dataDir: DATA_DIR,
   host: process.env.NKA_HOST,
@@ -177,6 +181,7 @@ const ACCESS = createAccess({
   runtime: RUNTIME,
   inWindow: IN_WINDOW,
   windowKey: WINDOW_KEY,
+  envPassword: ENV_PASSWORD,
 })
 app.use(ACCESS.middleware)
 ACCESS.install(app)
@@ -4999,6 +5004,7 @@ if (startDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, startDe
 // Der Zugang (#528), bevor die Datenbank geöffnet wird: Danach läge in jedem Ordner ein Bestand (`hasStock`), und ein
 // neuer Datenordner im Netz soll in der Einrichtung starten (Stufe A)
 ACCESS.start({ hasStock: hasStock(DATA_DIR) })
+await ACCESS.applyEnvPassword()
 
 // Ein umgezogener Ordner (#517) wird nur gelesen: Geöffnet wird eine Kopie außerhalb, sonst migrierte dieser Start die
 // Datenbank im alten Ordner oder stiege aus einer alten db.json um. Was die Kopie zeigt, ist der Stand beim Umzug, denn

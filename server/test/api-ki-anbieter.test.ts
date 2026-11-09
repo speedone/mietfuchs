@@ -133,7 +133,7 @@ test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Me
       const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-start-'))
       const child = spawn(process.execPath, ['src/index.ts'], {
         cwd: serverRoot,
-        env: { ...process.env, NKA_HOST: '127.0.0.1', NKA_AUTH: '', NKA_AI_API_KEY: '', NKA_AI_API_KEY_FILE: '', ...env, NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
+        env: { ...process.env, NKA_HOST: '127.0.0.1', NKA_AUTH: '', NKA_PASSWORD: '', NKA_PASSWORD_FILE: '', NKA_AI_API_KEY: '', NKA_AI_API_KEY_FILE: '', ...env, NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
       })
       let output = ''
       child.stdout.on('data', (d) => { output += d })

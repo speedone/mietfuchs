@@ -11,6 +11,7 @@ import {
   hashPassword, initialAccess, needsRehash, sameKey, newInstance, newSetupCode, normalizeCode, passwordProblem, readAccessFile, reachableOf,
   removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, viaProxy, viaHttps, cookieValues, sessionCookie,
   clearedCookie, isLoopback, type AccessFile, type AccessState, type GateDecision, type GateRequest,
+  readEnvPassword,
 } from '../src/access.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-zugang-'))
@@ -538,4 +539,32 @@ test('Vorschaltung: Proxy-Kopfzeilen, Cookies und HTTPS erkennen', () => {
   assert.equal(isLoopback('::1'), true)
   assert.equal(isLoopback('192.168.1.5'), false)
   assert.equal(isLoopback(undefined), false)
+})
+
+// Passwort aus der Umgebung (#528): NKA_PASSWORD_FILE (Docker Secrets) vor NKA_PASSWORD, leer heißt nicht gesetzt, eine
+// Datei verliert nur Zeilenumbrüche am Ende.
+test('Passwort aus der Umgebung: Datei vor Variable, leer zählt nicht, Zeilenende abgeschnitten', () => {
+  const files: Record<string, string> = { '/run/secrets/pw': 'ein Satz aus vier Wörtern\r\n\n', '/leer': '', '/bom': '\uFEFFein Satz aus vier Wörtern\n' }
+  const read = (file: string): string => {
+    const content = files[file]
+    if (content === undefined) throw Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), { code: 'ENOENT' })
+    return content
+  }
+  assert.equal(readEnvPassword({}, read), null)
+  assert.equal(readEnvPassword({ NKA_PASSWORD: '', NKA_PASSWORD_FILE: '  ' }, read), null)
+  assert.deepEqual(readEnvPassword({ NKA_PASSWORD: 'ein Satz aus vier Wörtern ' }, read), { password: 'ein Satz aus vier Wörtern ', source: 'NKA_PASSWORD', ignored: null })
+  assert.deepEqual(readEnvPassword({ NKA_PASSWORD_FILE: '/run/secrets/pw' }, read), { password: 'ein Satz aus vier Wörtern', source: 'NKA_PASSWORD_FILE', ignored: null })
+  assert.deepEqual(readEnvPassword({ NKA_PASSWORD_FILE: '/run/secrets/pw', NKA_PASSWORD: 'anders' }, read), { password: 'ein Satz aus vier Wörtern', source: 'NKA_PASSWORD_FILE', ignored: 'NKA_PASSWORD' })
+  const missing = readEnvPassword({ NKA_PASSWORD_FILE: '/fehlt' }, read)
+  assert.ok(missing && 'problem' in missing)
+  assert.equal(missing.problem, 'NKA_PASSWORD_FILE: Die angegebene Datei lässt sich nicht lesen (ENOENT). Erwartet wird der Pfad zu einer Datei mit dem Passwort, etwa /run/secrets/mietfuchs_passwort.')
+  // Verwechselt mit NKA_PASSWORD: Der Wert ist dann das Passwort und erscheint in keiner Meldung (Durchsicht S1)
+  const confused = readEnvPassword({ NKA_PASSWORD_FILE: 'mein langer geheimer Satz' }, read)
+  assert.ok(confused && 'problem' in confused)
+  assert.ok(!confused.problem.includes('geheimer'), confused.problem)
+  const empty = readEnvPassword({ NKA_PASSWORD_FILE: '/leer' }, read)
+  assert.ok(empty && 'problem' in empty)
+  assert.equal(empty.problem, 'NKA_PASSWORD_FILE: Die angegebene Datei ist leer.')
+  // Ein Windows-Editor schreibt vorn ein BOM (Durchsicht K6)
+  assert.deepEqual(readEnvPassword({ NKA_PASSWORD_FILE: '/bom' }, read), { password: 'ein Satz aus vier Wörtern', source: 'NKA_PASSWORD_FILE', ignored: null })
 })
