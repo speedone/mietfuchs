@@ -127,6 +127,7 @@ const GUIDE_DATA = {
       { page: 'belege', view: 'eingang', text: 'Legen Sie Rechnungen auf der Seite Belege im Eingang ab, auch mehrere auf einmal. Ist eine KI eingerichtet, zerlegt Mietfuchs jede in Positionen; mit „Nur ablegen, ohne Auswertung“ werden sie nur gespeichert. Gespeicherte Belege stehen unter „Ohne Position“; von dort erfassen Sie jeden mit „Von Hand erfassen“ im Kostenformular, ordnen ihn einer Position zu oder lassen ihn mit „Per KI auswerten“ in Positionen zerlegen.' },
       { page: 'kosten', text: 'Erfassen Sie jede Rechnung mit Kostenart und Umlageschlüssel. Betrifft eine Rechnung nur einen Teil der Wohnungen, etwa den Aufzug im Hinterhaus, wählen Sie bei der Position „Weitere Optionen: nur bestimmte Wohnungen beteiligen“.' },
       { page: 'kosten', text: 'Ab dem zweiten Jahr übernehmen Sie die Positionen des Vorjahres mit dem Knopf über der Liste (für 2026 heißt er Aus 2025 übernehmen …). Kostenart, Beschreibung und Umlageschlüssel kommen mit, Sie tragen je Zeile nur den neuen Betrag ein.' },
+      { page: 'stammdaten', text: 'Weicht die Fälligkeit der Miete in Ihren Mietverträgen vom Gesetz ab, etwa ein fester Tag im Monat, wählen Sie sie am Mietverhältnis unter „Fälligkeit der Miete“; das Mietkonto zählt einen Rückstand danach.' },
       { page: 'mietkonto', text: 'Erfassen Sie im Mietkonto die eingegangenen Mieten. Zahlen die Mieter pünktlich und in voller Höhe, erfassen Sie mit „Monate als bezahlt erfassen …“ alle offenen Monate bis zu einem Monat in einem Schritt, auch rückwirkend; eine Teilzahlung erfassen Sie mit „+ Zahlung anlegen“.' },
       { page: 'abrechnung', text: 'Prüfen Sie die Hinweise der Abrechnung; „Hier beheben →“ führt zum betroffenen Eintrag. Vor dem Versand schließen Sie die Abrechnung mit dem Knopf mit dem Schloss ab; dann ändert sich der Stand nicht mehr. Ist sie an die Mieter gegangen, klicken Sie „Als versendet markieren“ und speichern das Datum des Versands; nach ihm richtet sich die Frist.' },
     ],
@@ -561,8 +562,8 @@ const GUIDE_DATA = {
     ],
     example: 'Ein Passwort aus vier Wörtern wie tisch-garten-wolke-ofen hat 23 Zeichen; Mietfuchs verlangt mindestens 15. Der Einrichtungscode hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW. Eine Anmeldung gilt bis 30 Minuten ohne Aktivität und höchstens 8 Stunden.',
     caveats: [
-      { text: 'Im Heimnetz geht das Passwort ohne Verschlüsselung über die Leitung (HTTP); wer den Verkehr im selben Netz mitschneidet, kann es lesen. Nutzen Sie Mietfuchs deshalb nur in einem Netz, dem Sie vertrauen, nicht in einem öffentlichen WLAN.' },
-      { text: 'Ab Version 1.0 verlangt Mietfuchs im Netz ein Passwort. Wer bis dahin bewusst „Ohne Passwort weiter“ gewählt hat, bleibt dabei; jedes Gerät in Ihrem Netz kann dann Ihre Daten sehen und ändern.' },
+      { text: 'Im Browser geht das Passwort im Heimnetz ohne Verschlüsselung über die Leitung (HTTP); wer den Verkehr im selben Netz mitschneidet, kann es lesen. Nutzen Sie Mietfuchs deshalb nur in einem Netz, dem Sie vertrauen, nicht in einem öffentlichen WLAN.' },
+      { text: 'Ab Version 1.0, schon in ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs im Netz ein Passwort. Wer bis dahin bewusst „Ohne Passwort weiter“ gewählt hat, bleibt dabei; jedes Gerät in Ihrem Netz kann dann Ihre Daten sehen und ändern.' },
       { text: 'Der Einrichtungscode gilt nur bis zur Einrichtung. Geben Sie ihn nicht weiter: Wer ihn kennt, kann bis dahin das Passwort festlegen.' },
     ],
     gaps: [
@@ -597,7 +598,7 @@ const GUIDE_DATA = {
       { text: 'Das Fenster findet Mietfuchs im Heimnetz nicht von selbst; Sie tragen die Adresse ein.' },
       { text: 'Unter Linux hat Mietfuchs kein Programmfenster; dort öffnen Sie es im Browser.' },
     ],
-    terms: ['signIn'],
+    terms: ['signIn', 'pairingCode'],
   },
 } satisfies Record<string, Guide>
 

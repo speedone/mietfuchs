@@ -1084,6 +1084,14 @@ export const GLOSSARY = {
     example: 'Der Code hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW. Er steht im Konsolenfenster von Mietfuchs, bei Docker in der Ausgabe von docker compose logs mietfuchs, und in der Datei einrichtungscode.txt im Datenordner.',
     needed: 'Einmal beim Festlegen des Passworts, wieder nach dem Zurücksetzen, und wenn Sie die Anmeldung nach dem Ausschalten wieder einschalten. Danach gilt er nicht mehr.',
   },
+  // #528, Schritt 2: das Programmfenster mit einem Mietfuchs im Heimnetz koppeln
+  pairingCode: {
+    topic: 'operation',
+    title: 'Programmfenster koppeln',
+    short: 'Ein Programmfenster auf Ihrem PC oder Mac arbeitet mit einem Mietfuchs im Heimnetz, etwa auf einem NAS. Gekoppelt wird einmal mit einem Code aus den Einstellungen des Geräts; danach verbindet sich das Fenster verschlüsselt und ohne Passwort.',
+    example: 'Der Code gilt 10 Minuten und nur einmal. Als Adresse tragen Sie ein, was im Browser steht, etwa nas:3001 oder https://nas.fritz.box.',
+    needed: 'Nur wenn Mietfuchs auf einem anderen Gerät läuft und Sie dort im Programmfenster statt im Browser arbeiten möchten. Auf dem Gerät muss ein Passwort festgelegt sein.',
+  },
 } satisfies Record<string, Term>
 
 export type TermId = keyof typeof GLOSSARY

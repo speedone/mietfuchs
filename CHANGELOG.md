@@ -6,6 +6,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- Die Karte „Anmeldung“, der Hinweis beim Start und die Anleitung zur Anmeldung nennen genauer, ab wann das Passwort im
+  Netz Pflicht ist: schon ab der Vorabversion 1.0.0-rc.1, nicht erst ab 1.0
+  ([#528](https://github.com/speedone/mietfuchs/issues/528)). Das Lexikon erklärt dazu „Programmfenster koppeln“, die
+  Anleitung zum Mehrfamilienhaus nennt die Fälligkeit der Miete am Mietverhältnis, und das leere Mietkonto weist auf
+  „Monate als bezahlt erfassen …“ hin.
+
 ## [0.17.0] – 2026-11-09
 
 ### Hinzugefügt

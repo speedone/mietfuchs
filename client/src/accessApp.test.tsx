@@ -111,7 +111,7 @@ test('im Übergang „Ohne Passwort im Netz“, führt zur Karte „Anmeldung“
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Ohne Passwort im Netz/ }))
   expect(await screen.findByRole('heading', { name: 'Anmeldung' })).toBeTruthy()
-  expect(document.body.textContent).toContain('Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.')
+  expect(document.body.textContent).toContain('Ab Version 1.0, schon in ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs hier ein Passwort.')
   expect(screen.queryByRole('button', { name: /Abmelden/ })).toBeNull()
 })
 

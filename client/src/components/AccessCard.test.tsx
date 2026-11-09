@@ -83,7 +83,7 @@ test('NKA_AUTH=off im Netz: nur Anzeige', () => {
 
 test('im Übergang: Satz zu Version 1.0, Passwort festlegen mit Code aus der Adresse, ohne Passwort weiter mit Rückfrage', async () => {
   const { calls, clearSetupCode } = setup({ ...base, mode: 'transition', required: false, signedIn: false, codeFileName: 'einrichtungscode.txt' }, 'K7QM-4XPA-9TRW')
-  expect(document.body.textContent).toContain('Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.')
+  expect(document.body.textContent).toContain('Ab Version 1.0, schon in ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs hier ein Passwort.')
   expect(screen.queryByRole('button', { name: 'Passwort ändern' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Passwort festlegen' }))
   expect((within(drawer()).getByLabelText('Einrichtungscode') as HTMLInputElement).value).toBe('K7QM-4XPA-9TRW')
