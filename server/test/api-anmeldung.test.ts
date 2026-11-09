@@ -371,7 +371,7 @@ test('Anmeldung: bestehender Bestand im Netz ist im Übergang, offen, nichts ges
     assert.equal(units.status, 200)
     assert.equal(fs.existsSync(path.join(dir, 'zugang.json')), false)
     assert.ok(fs.existsSync(path.join(dir, 'einrichtungscode.txt')))
-    await waitFor(() => /Ab Version 1\.0, schon in ihren Vorabversionen ab 1\.0\.0-rc\.1, verlangt Mietfuchs hier ein Passwort\./.test(s.output()))
+    await waitFor(() => /Ab Version 1\.0\.0-rc\.1, der ersten Testversion von 1\.0, verlangt Mietfuchs hier ein Passwort\./.test(s.output()))
     assert.equal((await fetch(`${s.base}/api/auth/setup`, post({ password: TEST_PASSWORD }))).status, 403)
     // eine fremde Seite, die der Browser als solche ausweist, schreibt auch im Übergang nicht
     assert.equal((await rawRequest(s.base, { method: 'POST', urlPath: '/api/units', headers: { 'sec-fetch-site': 'cross-site' }, body: '{}' })).status, 403)

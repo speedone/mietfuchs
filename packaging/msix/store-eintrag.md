@@ -68,7 +68,7 @@ Was Mietfuchs abdeckt:
 • Heizkosten nach Heizkostenverordnung, CO₂-Kostenaufteilung, Abrechnung eines Messdienstes
 • Mieterwechsel und Leerstand innerhalb des Jahres, auf den Tag genau
 • mehrere Häuser und vermietete Eigentumswohnungen
-• Mietkonto mit Fälligkeit der Miete je Mietverhältnis und den Feiertagen am Ort, Fristen und Hinweise,
+• Mietkonto mit Fälligkeit der Miete je Mietverhältnis und den Feiertagen des Bundeslands, Fristen und Hinweise,
   wenn etwas fehlt oder rechtlich angreifbar ist
 • Übersicht für die Anlage V der Steuererklärung
 • auf Wunsch KI-Auswertung von Belegen, auf dem eigenen Rechner oder bei einem Dienst Ihrer Wahl

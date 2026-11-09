@@ -563,7 +563,7 @@ const GUIDE_DATA = {
     example: 'Ein Passwort aus vier Wörtern wie tisch-garten-wolke-ofen hat 23 Zeichen; Mietfuchs verlangt mindestens 15. Der Einrichtungscode hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW. Eine Anmeldung gilt bis 30 Minuten ohne Aktivität und höchstens 8 Stunden.',
     caveats: [
       { text: 'Im Browser geht das Passwort im Heimnetz ohne Verschlüsselung über die Leitung (HTTP); wer den Verkehr im selben Netz mitschneidet, kann es lesen. Nutzen Sie Mietfuchs deshalb nur in einem Netz, dem Sie vertrauen, nicht in einem öffentlichen WLAN.' },
-      { text: 'Ab Version 1.0, schon in ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs im Netz ein Passwort. Wer bis dahin bewusst „Ohne Passwort weiter“ gewählt hat, bleibt dabei; jedes Gerät in Ihrem Netz kann dann Ihre Daten sehen und ändern.' },
+      { text: 'Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs im Netz ein Passwort. Wer bis dahin bewusst „Ohne Passwort weiter“ gewählt hat, bleibt dabei; jedes Gerät in Ihrem Netz kann dann Ihre Daten sehen und ändern.' },
       { text: 'Der Einrichtungscode gilt nur bis zur Einrichtung. Geben Sie ihn nicht weiter: Wer ihn kennt, kann bis dahin das Passwort festlegen.' },
     ],
     gaps: [

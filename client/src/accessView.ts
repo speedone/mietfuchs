@@ -129,7 +129,7 @@ export function accessStateText(info: AccessInfo): string {
   }
 }
 
-export const TRANSITION_NOTE = 'Ab Version 1.0, schon in ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs hier ein Passwort.'
+export const TRANSITION_NOTE = 'Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.'
 export const ENV_FIXED_NOTE = 'Von der Umgebung festgelegt (NKA_AUTH)'
 // Dieselbe Warnung an jeder Stelle, an der man ohne Passwort weitergeht oder die Anmeldung ausschaltet
 export const WITHOUT_PASSWORD_WARNING = 'Ohne Passwort kann jedes Gerät in Ihrem Netz Ihre Daten sehen und ändern. Wählen Sie das nur in einem Netz, dem Sie vertrauen, nicht in einem öffentlichen WLAN.'

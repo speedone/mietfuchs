@@ -26,8 +26,7 @@ aus dem Heimnetz“. Nutzen Sie das Programmfenster (auch die App aus dem Micros
 
 **Sie hatten schon Daten:** Dann bleibt zunächst alles, wie es war, Mietfuchs ist weiter ohne
 Passwort erreichbar. Unten in der Seitenleiste steht „Ohne Passwort im Netz“; ein Klick führt zur
-Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0 (schon in ihren Vorabversionen ab 1.0.0-rc.1) verlangt
-Mietfuchs das Passwort.** An Ihren Daten ändert sich dadurch nichts.
+Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs das Passwort.** An Ihren Daten ändert sich dadurch nichts.
 
 **Mietfuchs zeigt „Passwort festlegen“ und fragt nach einem Einrichtungscode:** Das geschieht bei
 einem neuen Datenordner und nach dem Zurücksetzen. Der Code hat zwölf Zeichen in drei Gruppen, etwa

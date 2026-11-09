@@ -123,7 +123,7 @@ Mit `NKA_AUTH=on` oder `off` zeigt die Karte in den Einstellungen nur noch an, w
 Ein Volume, das schon Daten hatte, bleibt nach dem Update **offen wie bisher**: Unten in der
 Seitenleiste steht „Ohne Passwort im Netz“, und das Protokoll nennt einen Einrichtungscode. Mit
 ihm legst du unter *Einstellungen → Anmeldung* ein Passwort fest, ab dann gilt es. **Ab Version
-1.0, schon in ihren Vorabversionen ab 1.0.0-rc.1, verlangt Mietfuchs hier ein Passwort.** Für die Daten selbst ist nichts zu tun.
+1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.** Für die Daten selbst ist nichts zu tun.
 
 ## Welche Datei nehme ich?
 

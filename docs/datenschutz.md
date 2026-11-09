@@ -68,8 +68,7 @@ KI-Dienstes im Internet und die Update-Prüfung lassen sich nur am Rechner selbs
 
 Die Programmdatei, die Linux-Pakete und das Docker-Image sind dagegen von Anfang an auch aus dem
 Heimnetz erreichbar und fragen deshalb beim ersten Start nach einem Passwort; den Einrichtungscode
-dafür nennen Konsolenfenster bzw. Protokoll. Ein Bestand von vor Version 0.17 bleibt bis zu den
-Vorabversionen von 1.0 (ab 1.0.0-rc.1) ohne Passwort erreichbar, mit einem Hinweis in der Oberfläche. Mit der Umgebungsvariablen
+dafür nennen Konsolenfenster bzw. Protokoll. Ein Bestand von vor Version 0.17 bleibt bis zur Version 1.0.0-rc.1, der ersten Testversion von 1.0, ohne Passwort erreichbar, mit einem Hinweis in der Oberfläche. Mit der Umgebungsvariablen
 `NKA_HOST=127.0.0.1` sind Programmdatei und Pakete nur noch auf Ihrem eigenen Rechner erreichbar,
 dann ohne Anmeldung. Beim Docker-Image entscheidet das die Freigabe des Ports, etwa
 `-p 127.0.0.1:3001:3001` für nur diesen Rechner.
