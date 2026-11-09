@@ -138,3 +138,17 @@ test('TLS: Lesen allein legt nichts an', async () => {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('TLS: liegengebliebene Zwischendateien eines Absturzes werden beim Erzeugen entfernt', async () => {
+  // Zwischen Schreiben und Umbenennen abgestürzt: Die Zwischendatei kann einen privaten Schlüssel enthalten
+  const dir = freshDir()
+  try {
+    fs.mkdirSync(path.join(dir, TLS_DIR))
+    fs.writeFileSync(path.join(dir, TLS_DIR, 'mietfuchs.key.4711.tmp'), 'alter Schlüssel', { mode: 0o600 })
+    fs.writeFileSync(path.join(dir, TLS_DIR, 'mietfuchs.crt.4711.tmp'), 'altes Zertifikat')
+    pairOf(await ensureCertificate(dir))
+    assert.deepEqual(fs.readdirSync(path.join(dir, TLS_DIR)).sort(), ['mietfuchs.crt', 'mietfuchs.key'])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

@@ -14,6 +14,7 @@ import type { Db } from '../src/store.ts'
 import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { openDatabaseWithStock } from '../testing/database.ts'
 import { listening, portOf, startServerIn } from '../testing/api.ts'
+import { ensureCertificate, readCertificate } from '../src/tls.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-umzug-'))
 const programName = process.platform === 'win32' ? 'mietfuchs-win.exe' : process.platform === 'darwin' ? 'mietfuchs-macos-intel' : 'mietfuchs-linux'
@@ -114,6 +115,9 @@ test('Umzug: nur im Fenster, nicht im Browserbetrieb, nicht mit Bestand', async 
 
 test('Umzug: findet den Ordner neben der Programmdatei, kopiert, vergleicht, vermerkt, Original unverändert', async () => {
   const old = await oldFolder()
+  // Schlüssel und Zertifikat für HTTPS (#528) im alten Ordner: Sie ziehen nicht mit, der neue hat sein eigenes
+  const oldCert = await ensureCertificate(old.data)
+  if ('problem' in oldCert) assert.fail(oldCert.problem)
   const before = fingerprint(old.data)
   const locations = path.join(old.home, 'standorte', 'standorte.json')
   const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_LOCATIONS_FILE: locations }))
@@ -152,6 +156,7 @@ test('Umzug: findet den Ordner neben der Programmdatei, kopiert, vergleicht, ver
     assert.deepEqual(withoutMarker(fingerprint(old.data)), before)
     // Entscheidung im neuen Ordner, neuer Ort in der Ortsdatei, kein zweites Angebot
     assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'umzug.json'), 'utf8')).decision, 'moved')
+    assert.notEqual(readCertificate(s.dataDir)?.certSha256 ?? assert.fail('kein Zertifikat im neuen Ordner'), oldCert.certSha256)
     const remembered = JSON.parse(fs.readFileSync(locations, 'utf8'))
     assert.equal(remembered.locations[0].dataDir, s.dataDir)
     assert.deepEqual(await s.api<Offer>('/api/relocation'), { offered: false })

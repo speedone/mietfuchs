@@ -64,6 +64,8 @@ export async function ensureCertificate(dataDir: string, now: Date = new Date())
   if (existing) return existing
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    // Zwischendateien eines früheren Absturzes zwischen Schreiben und Umbenennen; sie können einen Schlüssel enthalten
+    for (const name of fs.readdirSync(dir)) if (name.endsWith('.tmp')) fs.rmSync(path.join(dir, name), { force: true })
     const notAfterDate = new Date(now)
     notAfterDate.setUTCFullYear(notAfterDate.getUTCFullYear() + VALID_YEARS)
     const pems = await generate([{ name: 'commonName', value: 'Mietfuchs' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notAfterDate })
