@@ -133,6 +133,23 @@ const proofOf = (code, certSha256) => crypto.createHmac('sha256', normalizeCode(
  */
 const originProofOf = (code, origin) => crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:origin:${origin}`).digest('hex')
 
+/**
+ * Die Bestätigung des Servers (pairingConfirmation in server/src/access.ts): HMAC-SHA256, Schlüssel der Code, über
+ * Beweis und Geräte-ID. Nur wer den Code kennt, kann sie rechnen (Integrationsdurchsicht I4).
+ * @param {string} code
+ * @param {string} proof
+ * @param {string} id
+ */
+const confirmationOf = (code, proof, id) => crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:bestaetigt:${proof}:${id}`).digest('hex')
+
+/**
+ * Stimmt die Bestätigung? Zeitkonstant über SHA-256 beider Werte; alles, was keine Zeichenkette ist, stimmt nie
+ * @param {unknown} given
+ * @param {string} expected
+ */
+const confirms = (given, expected) =>
+  typeof given === 'string' && crypto.timingSafeEqual(crypto.createHash('sha256').update(given).digest(), crypto.createHash('sha256').update(expected).digest())
+
 /** @param {Buffer} der */
 const sha256 = (der) => crypto.createHash('sha256').update(der).digest('hex')
 
@@ -455,6 +472,11 @@ export async function pair({ address, code, name = deviceNameOf(os.hostname()), 
   }
   const body = jsonOr(answer.body)
   if (answer.status === 200 && body && typeof body === 'object') {
+    // Ohne Bestätigung kennt die Gegenseite den Code nicht: ein Mittelsmann, der beim ersten Kontakt seinen eigenen
+    // Fingerabdruck genannt und einen Schlüssel erfunden hat. Nichts merken, nichts entfernen, keine Seite laden.
+    if (!confirms(body.confirm, confirmationOf(code, proof, typeof body.id === 'string' ? body.id : ''))) {
+      return { problem: `Der Server unter ${shown} hat das Koppeln nicht bestätigt; er kennt den Code nicht. Koppeln Sie nicht mit diesem Server.` }
+    }
     const paired = { origin: where.origin, trust, certSha256, deviceId: body.id, deviceKey: body.deviceKey, version: typeof body.version === 'string' ? body.version : '' }
     // Nur, was fenster.json auch wieder liest (remoteOf); sonst wäre die Kopplung beim nächsten Start still weg. Das
     // eben angelegte Gerät dann beste Mühe wieder entfernen, wenn sich mit ihm eine Kopfzeile bauen lässt.

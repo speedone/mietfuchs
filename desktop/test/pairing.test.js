@@ -18,6 +18,9 @@ const api = await import(new URL('../../server/testing/api.ts', import.meta.url)
 // Proxy wie Caddy und eigene Test-CA (#528, Kopplung über einen Proxy), ebenso über eine errechnete Adresse
 /** @type {any} */
 const proxies = await import(new URL('../../server/testing/proxy.ts', import.meta.url).href)
+// Die Bestätigung des Servers, gegen die das Fenster seinen Nachbau prüft (Integrationsdurchsicht I4)
+/** @type {any} */
+const access = await import(new URL('../../server/src/access.ts', import.meta.url).href)
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-kopplung-'))
 const NETWORK = { NKA_HOST: '0.0.0.0' }
@@ -213,6 +216,71 @@ test('Pinning: Bei anderem Zertifikat geht nach dem Handschlag kein Byte hinaus,
   }
 })
 
+/**
+ * Antwortet auf das POST wie ein Server, der den Code AAAA-AAAA-AAAA kennt: mit passender Bestätigung
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @param {{ id: string, deviceKey: string, version: string }} device
+ */
+function confirmed(req, res, device) {
+  let raw = ''
+  req.on('data', (chunk) => { raw += chunk })
+  req.on('end', () => {
+    const { proof } = JSON.parse(raw)
+    res.end(JSON.stringify({ ...device, confirm: access.pairingConfirmation('AAAA-AAAA-AAAA', proof, device.id) }))
+  })
+}
+
+// Integrationsdurchsicht I4: Ein Mittelsmann beim ersten Kontakt nennt in der Vorabfrage seinen eigenen Fingerabdruck
+// (oder hat ein gültiges Zertifikat) und antwortet auf das POST mit einem erfundenen Schlüssel. Ohne Code kann er die
+// Bestätigung nicht rechnen; das Fenster merkt sich nichts und lädt seine Seite nie.
+test('Koppeln: ohne oder mit falscher Bestätigung des Servers wird nichts gekoppelt', async () => {
+  const sentence = (/** @type {string} */ shown) => `Der Server unter ${shown} hat das Koppeln nicht bestätigt; er kennt den Code nicht. Koppeln Sie nicht mit diesem Server.`
+  const { key, cert } = await borrowedKeyPair()
+  const invented = { id: 'abcdef0123456789', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+  const answers = [
+    invented,
+    { ...invented, confirm: access.pairingConfirmation('BBBB-BBBB-BBBB', 'x', invented.id) },
+    { ...invented, confirm: 'zu kurz' },
+    { ...invented, confirm: 42 },
+  ]
+  for (const answer of answers) {
+    // Gepinnt: der Mittelsmann nennt in der Vorabfrage den Fingerabdruck, den er selbst zeigt
+    /** @type {string[]} */
+    const seen = []
+    const pinned = https.createServer({ key, cert }, (req, res) => {
+      seen.push(`${req.method} ${req.url}`)
+      res.setHeader('content-type', 'application/json')
+      if (req.method === 'GET') return res.end(JSON.stringify({ app: 'mietfuchs', certSha256: certSha256FromPem(cert), secure: true, origin: null }))
+      res.end(JSON.stringify(answer))
+    })
+    await api.listening(pinned, '127.0.0.1')
+    try {
+      const result = await pair({ address: `127.0.0.1:${api.portOf(pinned)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
+      assert.deepEqual(result, { problem: sentence(`127.0.0.1:${api.portOf(pinned)}`) }, JSON.stringify(answer))
+      assert.deepEqual(seen, ['GET /api/auth/pair', 'POST /api/auth/pair'], 'kein Entfernen, keine weitere Anfrage')
+    } finally {
+      pinned.close()
+    }
+    // system: gültige Kette, der Ursprung stimmt
+    /** @type {string} */
+    let origin = ''
+    const system = await fakeBehindProxy((req, res) => {
+      res.setHeader('content-type', 'application/json')
+      if (req.method === 'GET') return res.end(JSON.stringify({ app: 'mietfuchs', certSha256: null, secure: true, origin }))
+      res.end(JSON.stringify(answer))
+    })
+    origin = system.origin
+    try {
+      const result = await pair({ address: system.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: system.ca })
+      assert.deepEqual(result, { problem: sentence(new URL(system.origin).host) }, JSON.stringify(answer))
+      assert.equal(system.posts().length, 1)
+    } finally {
+      system.close()
+    }
+  }
+})
+
 test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Gerät beste Mühe wieder entfernt', async () => {
   const { key, cert } = await borrowedKeyPair()
   // Die Vorabfrage eines Mietfuchs mit genau diesem Zertifikat, direkt über TLS
@@ -223,7 +291,7 @@ test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Ger
     seen.push(`${req.method} ${req.url} ${req.headers['x-mietfuchs-device'] ?? '-'}`)
     res.setHeader('content-type', 'application/json')
     if (req.method === 'GET' && req.url === '/api/auth/pair') return res.end(JSON.stringify(preflight))
-    if (req.url === '/api/auth/pair') return res.end(JSON.stringify({ id: 'abc123', deviceKey: 'zu kurz\r\n', version: '0.17.0' }))
+    if (req.url === '/api/auth/pair') return confirmed(req, res, { id: 'abc123', deviceKey: 'zu kurz\r\n', version: '0.17.0' })
     res.end('{"ok":true}')
   })
   await api.listening(fake, '127.0.0.1')
@@ -244,7 +312,7 @@ test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Ger
     seen.push(`${req.method} ${req.url} ${req.headers['x-mietfuchs-device'] ?? '-'}`)
     res.setHeader('content-type', 'application/json')
     if (req.method === 'GET' && req.url === '/api/auth/pair') return res.end(JSON.stringify(preflight))
-    if (req.url === '/api/auth/pair') return res.end(JSON.stringify({ id: longId, deviceKey: 'K'.repeat(43), version: '0.17.0' }))
+    if (req.url === '/api/auth/pair') return confirmed(req, res, { id: longId, deviceKey: 'K'.repeat(43), version: '0.17.0' })
     res.end('{"ok":true}')
   })
   await api.listening(fake2, '127.0.0.1')
