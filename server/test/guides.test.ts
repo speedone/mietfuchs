@@ -36,7 +36,8 @@ import { createEntity } from '../src/db/repository.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { CALENDAR_RULES } from '../../shared/period.ts'
-import { CODE_LENGTH, MIN_PASSWORD, createSessions, formatCode, newSetupCode } from '../src/access.ts'
+import { CODE_LENGTH, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, createSessions, formatCode, newSetupCode } from '../src/access.ts'
+import { DEFAULT_PORTS } from '../src/instanceGuard.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ids = Object.keys(GUIDES) as GuideId[]
@@ -44,7 +45,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -526,6 +527,12 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     inOrder(GUIDES.network.example, [`${[...example].length} Zeichen`, String(MIN_PASSWORD), `${CODE_LENGTH} Zeichen`, '30 Minuten', '8 Stunden'], 'network')
     inOrder(GLOSSARY.signIn.example, [String(MIN_PASSWORD), `${[...example].length} Zeichen`, '30 Minuten', '8 Stunden'], 'signIn')
     inOrder(GLOSSARY.setupCode.example, [`${CODE_LENGTH} Zeichen`], 'setupCode')
+  },
+  // #528, Schritt 2: Code, Gültigkeit, Port ohne Angabe und die Zahl der Fenster aus dem Kern (server/src/access.ts)
+  pairing: () => {
+    const code = formatCode(newSetupCode())
+    assert.equal(code.split('-').length, 3)
+    inOrder(GUIDES.pairing.example, [`${CODE_LENGTH} Zeichen`, `${PAIRING_MINUTES} Minuten`, String(DEFAULT_PORTS[0]), `${MAX_DEVICES} Programmfenster`], 'pairing')
   },
 }
 

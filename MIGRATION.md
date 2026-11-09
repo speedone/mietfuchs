@@ -61,7 +61,10 @@ Code (Konsolenfenster, Terminal bzw. `docker compose logs mietfuchs`). Ihre Date
 
 Das Passwort steht in der Datei `zugang.json` im Datenordner, als Hash, nicht im Klartext. Sie geht
 nicht ins Backup und nicht in den Umzug: Nach dem Wiederherstellen auf einem neuen Rechner legen Sie
-das Passwort dort neu fest. Eine ältere Version als 0.17 kennt das Passwort nicht; gehen Sie zu ihr
+das Passwort dort neu fest. Ebenso bleibt das Zertifikat im Ordner `tls/` draußen; ein
+[gekoppeltes Programmfenster](docs/installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden)
+meldet nach dem Umzug auf einen neuen Rechner ein anderes Zertifikat, und Sie koppeln es mit einem
+neuen Code neu. Eine ältere Version als 0.17 kennt das Passwort nicht; gehen Sie zu ihr
 zurück, ist Mietfuchs im Netz wieder ohne Anmeldung erreichbar.
 
 ---

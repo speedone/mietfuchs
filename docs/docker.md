@@ -18,6 +18,7 @@ curl -O https://raw.githubusercontent.com/speedone/mietfuchs/main/deploy/compose
 - [Welche Datei nehme ich?](#welche-datei-nehme-ich)
 - [Nur Mietfuchs](#nur-mietfuchs-composeyml)
 - [Mit HTTPS im Heimnetz](#mit-https-im-heimnetz-composecaddyyml)
+- [Programmfenster koppeln](#programmfenster-koppeln)
 - [Mit Ollama für die KI-Belegauswertung](#mit-ollama-für-die-ki-belegauswertung-composeollamayml)
 - [Von unterwegs und mit HTTPS: über ein VPN](#von-unterwegs-und-mit-https-über-ein-vpn)
 - [Daten sichern](#daten-sichern)
@@ -244,6 +245,37 @@ Internet erreichbar sein. Das Caddyfile beschreibt diese Variante als Kommentar.
 Name zeigt im Heimnetz auf die Adresse des NAS, du hast einen API-Schlüssel deines DNS-Anbieters,
 und Caddy hat das Modul für diesen Anbieter. Im Image `caddy:2` ist keines enthalten; du baust dir
 ein eigenes Image mit dem Modul, wie es die Caddy-Dokumentation zur DNS-Challenge beschreibt.
+
+## Programmfenster koppeln
+
+Am Windows-PC oder Mac kannst du statt im Browser im Programmfenster mit dem Mietfuchs im Container
+arbeiten, verschlüsselt und ohne jedes Mal das Passwort einzutippen. Wie das geht, steht unter
+[Programmfenster mit Mietfuchs im Heimnetz verbinden](installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden).
+Für Docker gilt:
+
+- **Port 3001 spricht HTTP und HTTPS.** Mietfuchs legt dafür beim ersten Start ein eigenes
+  Zertifikat im Volume an (`/app/server/data/tls/`). An `compose.yml`, Ports und Firewall änderst du
+  nichts; der Browser bleibt bei `http://<gerät>:3001`.
+- **Direkt mit dem Port von Mietfuchs koppeln, nicht über Caddy.** Das Fenster prüft das eigene
+  Zertifikat von Mietfuchs. Über Caddy sähe es dessen Zertifikat, und Mietfuchs sähe keine
+  verschlüsselte Verbindung. In `compose.caddy.yml` hat Mietfuchs keinen eigenen Port; zum Koppeln
+  gibst du ihn zusätzlich frei, unter dem Dienst `mietfuchs`:
+
+  ```yaml
+      ports:
+        - "3001:3001"
+  ```
+
+  Das geht nur mit der Anmeldung von Mietfuchs selbst: Mit `NKA_AUTH: "off"` und dem Passwort in
+  Caddy ginge der freigegebene Port am Proxy vorbei, und ohne Passwort in Mietfuchs lässt sich
+  ohnehin kein Fenster koppeln. Auch diesen Port nie ins Internet freigeben.
+- **Das Zertifikat bleibt**, solange das Volume `mietfuchs-data` besteht, auch über Updates des
+  Containers. Das Backup über die Oberfläche nimmt es nicht mit; nach dem Wiederherstellen in einem
+  neuen Volume entsteht ein neues, und du koppelst die Fenster neu. Sicherst du das ganze Volume
+  ([Daten sichern](#daten-sichern)), kommt es mit.
+- Im Browser zeigt `https://<gerät>:3001` nur eine Warnung, weil kein Browser dieses Zertifikat
+  kennt. Für HTTPS im Browser bleibt [Caddy](#mit-https-im-heimnetz-composecaddyyml) oder
+  [ein VPN](#von-unterwegs-und-mit-https-über-ein-vpn).
 
 ## Mit Ollama für die KI-Belegauswertung (`compose.ollama.yml`)
 

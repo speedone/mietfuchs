@@ -24,7 +24,12 @@ einem Ordner auf Ihrem Rechner:
 Das Programm für Windows und macOS legt daneben einen Ordner `mietfuchs-fenster` an (Windows
 `%LOCALAPPDATA%\mietfuchs-fenster`, aus dem Microsoft Store im Paketordner der App, macOS
 `~/Library/Application Support/mietfuchs-fenster`) mit seinen
-Einstellungen (gemerkter Port, Zugriff aus dem Heimnetz) und Protokollen. Der Installer für Windows
+Einstellungen (gemerkter Port, Zugriff aus dem Heimnetz) und Protokollen. Haben Sie das Fenster mit
+einem Mietfuchs im Heimnetz verbunden, stehen in seiner Datei `fenster.json` zusätzlich dessen
+Adresse, der Fingerabdruck seines Zertifikats und der Geräteschlüssel, mit dem sich das Fenster dort
+anmeldet. Die Datei ist nur für Ihr Benutzerkonto lesbar, aber nicht eigens verschlüsselt, wie die
+übrigen Daten in Ihrem Benutzerordner; einen Geräteschlüssel machen Sie am Server wirkungslos, indem
+Sie das Fenster dort entfernen (unten). Der Installer für Windows
 legt eine Kopie von sich unter `%LOCALAPPDATA%\mietfuchs-updater` ab, damit Updates nur die geänderten
 Teile laden, und schreibt beim Installieren ein Zeitprotokoll nach `%TEMP%\mietfuchs-installation.log`.
 Auch diese Dateien verlassen Ihren Rechner nicht.
@@ -73,6 +78,20 @@ Beide gehen nicht in Backups, Vorversionen und den Umzug ein. Angemeldete Gerät
 an einem Cookie, das nur für die Sitzung gilt; es endet nach 30 Minuten ohne Aktivität, spätestens
 nach 8 Stunden und mit jedem Neustart von Mietfuchs. Fehlgeschlagene Anmeldungen schreibt Mietfuchs
 mit der Adresse des Geräts in sein Protokoll auf Ihrem Rechner.
+
+Seit Version 0.17 spricht Mietfuchs auf demselben Port auch HTTPS, mit einem eigenen Zertifikat, das
+es im Datenordner unter `tls/` anlegt (der Schlüssel nur für Ihr Benutzerkonto lesbar). Darüber
+verbindet sich ein Programmfenster auf einem anderen Rechner verschlüsselt mit einem Mietfuchs im
+Heimnetz, etwa auf einem NAS. Beim Koppeln beweist ein Code aus den Einstellungen des Servers, dass
+das Fenster mit dem richtigen Server spricht; der Code selbst geht nicht über das Netz. Je
+gekoppeltem Fenster merkt sich der Server in `zugang.json` den Namen des Rechners, wann es gekoppelt
+wurde und wann es sich zuletzt gemeldet hat (höchstens stündlich gespeichert), dazu einen Hash des
+Geräteschlüssels, nie den Schlüssel selbst. Unter *Einstellungen → Anmeldung* sehen und entfernen Sie
+gekoppelte Fenster; Zurücksetzen und Ausschalten der Anmeldung entfernen alle. Wie `zugang.json` geht
+`tls/` nicht in Backups, Vorversionen und den Umzug ein: Nach dem Wiederherstellen auf einem anderen
+Rechner entsteht ein neues Zertifikat, und gekoppelte Fenster koppeln Sie neu. Im Browser bleibt die
+Verbindung über `http://`; die Adresse mit `https://` zeigt dort nur eine Warnung, weil kein Browser
+dieses Zertifikat kennt.
 
 ## Verbindungen ins Internet
 

@@ -28,11 +28,19 @@ Cloud oder auf einem USB-Stick soll niemanden zum Raten einladen. Nach dem Wiede
 anderen Rechner gilt dessen Anmeldung; auf demselben Rechner bleibt dein Passwort. Kopierst du den
 ganzen Ordner von Hand, kommt `zugang.json` mit.
 
+Ebenso draußen bleibt der Ordner `tls/` mit dem Zertifikat, über das Mietfuchs seit Version 0.17 auch
+HTTPS spricht (für ein [gekoppeltes Programmfenster](installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden)):
+nicht im Backup, nicht in den Vorversionen, nicht im Umzug. Nach dem Wiederherstellen auf einem
+anderen Rechner legt Mietfuchs ein neues Zertifikat an; ein gekoppeltes Fenster meldet dann ein
+anderes Zertifikat als beim Koppeln, und du koppelst es mit einem neuen Code neu. Mit dem ganzen
+Ordner von Hand kommt auch `tls/` mit.
+
 Daneben legt das Programm für Windows und macOS einen eigenen kleinen Ordner `mietfuchs-fenster` an
 (unter Windows in `%LOCALAPPDATA%`, bei der Store-Fassung von Windows in deren Paketordner umgelenkt,
 auf dem Mac in `~/Library/Application Support`): gemerkter Port,
-der Schalter für den Zugriff aus dem Heimnetz und Protokolle. Deine Abrechnungsdaten stehen dort nicht,
-fürs Backup brauchst du ihn nicht.
+der Schalter für den Zugriff aus dem Heimnetz, die Verbindung mit einem Mietfuchs im Heimnetz samt
+Geräteschlüssel und Protokolle. Deine Abrechnungsdaten stehen dort nicht, fürs Backup brauchst du ihn
+nicht.
 
 Bis einschließlich Version 0.7.1 lag alles in einer Datei `db.json`. Kommst du von dort, ziehen
 deine Daten beim ersten Start von selbst in

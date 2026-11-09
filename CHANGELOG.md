@@ -28,6 +28,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Start vor, solange keins festgelegt ist; ein später in der Oberfläche geändertes überschreiben sie nicht
   ([Docker](docs/docker.md#passwort-beim-ersten-start-vorgeben-nka_password_file)). Passwort und Code gehen nicht ins Backup. Über `http://` lässt sich im Heimnetz weiter
   mitlesen; HTTPS gibt es mit einem Proxy oder VPN ([Docker](docs/docker.md#zuerst-sicherheit)).
+- **Programmfenster mit einem Mietfuchs im Heimnetz verbinden**
+  ([#528](https://github.com/speedone/mietfuchs/issues/528)): Läuft Mietfuchs in Docker auf einem NAS, als Paket auf
+  einem Raspberry Pi oder als Programmdatei auf einem anderen Rechner, arbeiten Sie am Windows-PC oder Mac jetzt auch im
+  Programmfenster damit statt im Browser, verschlüsselt und ohne jedes Mal das Passwort einzutippen. Der Server zeigt
+  unter *Einstellungen → Anmeldung → Programmfenster koppeln* einen Code, der 10 Minuten gilt; das Fenster nimmt unter
+  *Einstellungen → Mietfuchs im Heimnetz* Adresse und Code und bleibt danach verbunden, auch über einen Neustart.
+  Mietfuchs spricht dafür auf demselben Port auch HTTPS, mit einem eigenen Zertifikat im Datenordner (`tls/`, nicht im
+  Backup); an Docker, Ports und Firewall ändert sich nichts. Der Code beweist beim ersten Verbinden, dass das Fenster
+  mit dem richtigen Server spricht, und geht selbst nie über das Netz; danach nimmt das Fenster nur noch dessen
+  Zertifikat an. Gekoppelte Fenster stehen am Server mit dem letzten Kontakt in einer Liste und lassen sich dort
+  einzeln entfernen. Gekoppelt wird direkt mit dem Port von Mietfuchs, nicht über Caddy oder einen anderen Proxy
+  ([Anleitung](docs/installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden)). „Verbindung trennen“ führt
+  zurück zu den Daten auf Ihrem Rechner. Voraussetzung ist ein Passwort am Server und Version 0.17 auf beiden Seiten.
 - **Mietkonto: Monate als bezahlt erfassen, auch rückwirkend**
   ([#608](https://github.com/speedone/mietfuchs/issues/608)): „Monate als bezahlt erfassen …“ legt für ein oder alle
   Mietverhältnisse je offenem, schon fälligem Monat bis zum gewählten Monat eine Mietzahlung über den offenen Rest an, für diesen Monat
