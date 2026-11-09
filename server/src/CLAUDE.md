@@ -280,28 +280,70 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   richtet ohne Code ein und ändert ohne bisheriges Passwort. Über die Adresse einer Netzwerkkarte wirkungslos; dafür
   gibt es die Kopplung mit Geräteschlüssel (nächster Punkt).
 - **Programmfenster koppeln** (Schritt 2, Entwurf docs/superpowers/specs/2026-11-09-kopplung-fenster-design.md, Abschnitt
-  2): nur bei `password` mit HTTPS (sonst 409 „Legen Sie zuerst ein Passwort fest.“). `POST /api/auth/pairing`
+  2): nur bei `password` mit HTTPS, also eigenem Zertifikat oder gesetztem `NKA_TRUST_PROXY` (sonst 409 „Legen Sie
+  zuerst ein Passwort fest.“). `POST /api/auth/pairing`
   (angemeldet) gibt `{ code, expiresAt }`: Code wie der Einrichtungscode, 10 Minuten (`PAIRING_MINUTES`), nur im
-  Speicher, einer zugleich, `DELETE` verwirft ihn. `POST /api/auth/pair` (frei, Bremse Art `pair`, nur über TLS, sonst
-  400) nimmt `{ name, proof }` mit `proof` = `pairingProof(code, certSha256)` (HMAC-SHA256, Schlüssel der normalisierte
-  Code, Nachricht `mietfuchs-kopplung:` + SHA-256 des DER); der Code wird in derselben synchronen Prüfung verbraucht
+  Speicher, einer zugleich, `DELETE` verwirft ihn. `POST /api/auth/pair` (frei, Bremse Art `pair`, nur über HTTPS, siehe
+  „Kopplung über einen Proxy“) nimmt `{ name, proof }` mit `proof` = `pairingProof(code, certSha256)` (HMAC-SHA256,
+  Schlüssel der normalisierte Code, Nachricht `mietfuchs-kopplung:` + SHA-256 des DER) oder über einen vertrauten Proxy
+  `originProof(code, origin)`; der Code wird in derselben synchronen Prüfung verbraucht
   (zwei gleichzeitige ergeben ein Gerät), falsch und abgelaufen sind dieselbe 400. Antwort `{ id, deviceKey, version }`
   (32 Zufallsbytes). In `zugang.json` `devices` (`id`, `name` 1 bis 60 Zeichen sonst „Programmfenster“, `keyHash`
   SHA-256, `pairedAt`, `lastSeen`; Steuer- und Formatzeichen im Namen fallen weg), höchstens 20 (sonst 409); ein
   ungültiges Gerät oder eine doppelte Kennung macht die Datei verdorben, gelesen werden Geräte nur bei `password`.
-  **Angemeldet** über `X-Mietfuchs-Device: <id>.<Schlüssel>` (`matchDevice`, zeitkonstant) nur über die eigene TLS-
-  Verbindung (`req.socket.encrypted`) und bei `password`, nie über HTTP. `lastSeen` im Speicher, höchstens stündlich
+  **Angemeldet** über `X-Mietfuchs-Device: <id>.<Schlüssel>` (`matchDevice`, zeitkonstant) nur über HTTPS (Kanal `tls`
+  oder `proxy`) und bei `password`, nie über HTTP, auch nicht mit gefälschten Proxy-Kopfzeilen. `lastSeen` im Speicher, höchstens stündlich
   geschrieben (ohne `generation`, `changedAt` bleibt). `GET /api/auth/devices` (ohne `keyHash`, `current`),
   `DELETE …/devices/:id`; `GET /api/auth` nennt `pairing: { available, devices }` (die Zahl nur angemeldet).
   Zurücksetzen und Ausschalten entfernen alle Geräte, Passwort ändern und „Auf allen Geräten abmelden“ nicht (sie
   verwerfen nur einen offenen Code). Code,
   Schlüssel und Beweis stehen nie im Protokoll. Das Zertifikat entsteht oft erst nach `createAccess`; index.ts reicht
   es mit `useTls` nach. **Entscheidungen**: Ein gekoppeltes Fenster zählt als Sitzung (`signedIn`, dieselbe Vorschaltung,
-  Origin-Prüfung und Bremse wie im Browser), es gibt keine zweite Anmeldelogik. Gekoppelt wird **direkt mit dem Port von
-  Mietfuchs**, nie über Caddy oder einen anderen Proxy: Das Fenster pinnt das eigene Zertifikat des Servers, hinter
-  einem Proxy sähe es dessen Zertifikat, und der Server sähe keine eigene TLS-Verbindung (`trust proxy` bleibt aus;
-  docs/docker.md sagt es den Nutzern). Geprüft in access.test.ts (auch `lastSeen` mit der Uhr von `createAccess`) und
-  api-kopplung.test.ts, das Fenster in desktop/test/pairing.test.js und desktop-check.mjs (Schritt 7).
+  Origin-Prüfung und Bremse wie im Browser), es gibt keine zweite Anmeldelogik. Gekoppelt wird direkt mit dem Port von
+  Mietfuchs oder über einen Proxy aus `NKA_TRUST_PROXY` (nächster Punkt). Geprüft in access.test.ts (auch `lastSeen`
+  mit der Uhr von `createAccess`) und api-kopplung.test.ts, das Fenster in desktop/test/pairing.test.js und
+  desktop-check.mjs (Schritt 7).
+- **Kopplung über einen Proxy** (Entwurf docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md, Abschnitt 3):
+  - **`NKA_TRUST_PROXY`** ([trustProxy.ts](trustProxy.ts)): mit Komma getrennt IP-Adressen (v4, v6), Netze in CIDR und
+    Namen (`caddy` in compose.caddy.yml). `*`, `true` und Zahlen (Sprünge wie bei Express) vertrauen jedem und gelten
+    nicht, ein unbekannter Eintrag ebenso; beides eine Zeile auf der Fehlerausgabe beim Start, kein Abbruch. Adressen
+    prüft `net.BlockList` (`::ffff:a.b.c.d` als `a.b.c.d`). **Namen** löst `dns.promises.lookup` erst bei der ersten
+    Anfrage mit Proxy-Kopfzeilen auf (Caddy startet nach Mietfuchs), nie beim Start und nie für eine Anfrage ohne; das
+    Ergebnis gilt 60 s (`NAME_TTL_MS`), eine Adresse außerhalb löst höchstens alle 5 s neu auf (`MISS_RETRY_MS`, ein neu
+    erstellter Container), eine Auflösung zugleich. Nicht auflösbar heißt keine Adresse und eine Zeile beim ersten Mal
+    (wieder, wenn er sich dazwischen aufgelöst hatte). Warum Namen statt Netze: Docker wählt das Netz von Compose
+    zufällig, ein weites CIDR schlösse Geräte im Heimnetz ein. Außerhalb von Docker IP-Adressen; ein Proxy auf
+    demselben Rechner heißt `127.0.0.1,::1` (ein Wort `loopback` gibt es nicht).
+  - **Kanal** (`channelOf` in access.ts, einmal je Anfrage in der Vorschaltung, gemerkt in einer `WeakMap`, gelesen mit
+    `channelFor`): `proxy`, wenn der Peer in `NKA_TRUST_PROXY` steht und **genau ein** `X-Forwarded-Proto: https`
+    meldet; der Ursprung ist `https://` + `X-Forwarded-Host` (genau ein Wert), sonst `Host`, über `new URL(…).origin`
+    (ohne Benutzer, Pfad, Suche; `:443` fällt weg), sonst `plain`. Ein vertrauter Peer mit anderem oder doppeltem
+    `X-Forwarded-Proto` ist `plain`, auch über TLS. Ohne `X-Forwarded-Proto` und von jedem anderen Peer entscheidet
+    die eigene Verbindung (`tls` oder `plain`). **Das ist die einzige Stelle, an der eine Proxy-Kopfzeile etwas
+    erlaubt**; sonst machen sie nur strenger (`viaHttps`, `proxyHeadersPresent`, `X-Forwarded-Host` in der
+    Origin-Prüfung). `app.set('trust proxy')` bleibt aus: Es änderte `req.ip`, `req.protocol` und `req.hostname` für
+    alles. Auch ein vertrauter Proxy ist nie „vom Rechner selbst“ (oben). Die Bremse zählt weiter je Peer, also je
+    Proxy; `X-Forwarded-For` wertet Mietfuchs nicht aus.
+  - **Vorabfrage** `GET /api/auth/pair` (frei, ohne Bremse, `no-store`): `PairPreflight` = `{ app: 'mietfuchs',
+    certSha256, secure, origin }`; `certSha256` des eigenen Zertifikats (`null` ohne), `secure` = Kanal `tls` oder
+    `proxy`, `origin` nur im Kanal `proxy`. Sie entscheidet nie über Vertrauen (der Fingerabdruck ist öffentlich); das
+    Fenster wählt `pinned` oder `system` aus seiner eigenen Prüfung des Zertifikats (PR 2, desktop/src/pairing.js).
+  - **Zwei Bindungen** (`expectedProofs`): im Kanal `tls` nur der Fingerabdruck, im Kanal `proxy` der Fingerabdruck
+    (der Proxy liefert das Zertifikat von Mietfuchs aus) **oder** der Ursprung gleich dem weitergereichten
+    (`originProof`, Nachricht `mietfuchs-kopplung:origin:` + Ursprung, getrennt von der des Fingerabdrucks), im Kanal
+    `plain` keiner: 400 mit `transport: true` und „Mietfuchs steht hinter einem Proxy, dem es nicht vertraut, oder der
+    Proxy meldet kein HTTPS. Tragen Sie den Proxy in NKA_TRUST_PROXY ein.“ (mit Proxy-Kopfzeilen) bzw. „Koppeln geht
+    nur über eine verschlüsselte Verbindung.“ Jeder erwartete Beweis wird verglichen (`sameProof`, zeitkonstant), auch
+    wenn einer schon passt. Ein Beweis mit Ursprung gilt nie direkt über TLS, und nie für einen anderen Ursprung als
+    den weitergereichten. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
+  - **Restrisiko**: Ein Caddy, der jede Adresse annimmt (ein Block `:443` für alles, `on_demand`), reicht auch einen
+    fremden Namen als `X-Forwarded-Host` weiter; ein Angreifer mit eigenem gültigen Zertifikat für diesen Namen, der
+    den Nutzer dorthin lockt und den Code bekommt, könnte dann koppeln. Das Caddyfile im Repo nennt die Adressen
+    ausdrücklich; die Doku für Nutzer sagt, es so zu halten.
+  - Geprüft in trustProxy.test.ts (Namen mit eingeschobenem `lookup` und eigener Uhr), access.test.ts (Tabelle des
+    Kanals, Beweise, kein `trusts` ohne Proxy-Kopfzeilen) und api-kopplung-proxy.test.ts gegen einen Proxy wie Caddy
+    mit eigener CA ([server/testing/proxy.ts](../testing/proxy.ts): `createTestCa`, `startTestProxy`; `forwarded`
+    überschreibt `X-Forwarded-Proto`/`-Host`, `null` lässt weg).
 - **Wettläufe** (`generation`, `changedSince`): Jede Änderung des Zustands (Speichern, Zurücksetzen) zählt hoch. Eine
   Anmeldung, Einrichtung oder Änderung, deren scrypt über eine solche Änderung hinweg lief, schreibt nichts und
   antwortet 401 bzw. 409 „Der Zugang hat sich eben geändert.“ Ein Neuberechnen nach `needsRehash` schreibt nur, wenn
