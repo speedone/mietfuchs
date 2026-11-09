@@ -41,7 +41,7 @@ test('Name: Pflicht und höchstens 70 Zeichen', () => {
 })
 
 test('Zeichen: SEPA-Zeichensatz mit Umlauten', () => {
-  assert.equal(epcText('Müller–Lüdenscheidt „Haus“ · é—x\n\ty 🏠'), "Müller-Lüdenscheidt 'Haus' , e-x y")
+  assert.equal(epcText('Müller–Lüdenscheidt „Haus“ · é\u2014x\n\ty 🏠'), "Müller-Lüdenscheidt 'Haus' , e-x y")
   assert.equal(epcText('Straße {Ä} <Ö> Ü_ä#ö~ü'), 'Straße Ä Ö Üäöü')
 })
 

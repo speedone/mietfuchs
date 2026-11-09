@@ -24,9 +24,9 @@ export const EEA_COUNTRIES: readonly string[] = [
 // abgebildet: Striche zu „-“ (sonst wird aus „01.05.2025–30.04.2026“ eine Ziffernkette), Anführungszeichen zu „'“.
 const ALLOWED = /^[A-Za-z0-9 ':?,\-(+.)/&*$%ÄÖÜäöüß]$/u
 const MAP: Readonly<Record<string, string>> = {
-  '–': '-', '—': '-', '‑': '-', '−': '-', '‐': '-',
-  '„': "'", '“': "'", '”': "'", '‚': "'", '‘': "'", '’': "'", '«': "'", '»': "'", '"': "'",
-  '·': ',', '|': ',',
+  '\u2013': '-', '\u2014': '-', '\u2011': '-', '\u2212': '-', '\u2010': '-',
+  '\u201E': "'", '\u201C': "'", '\u201D': "'", '\u201A': "'", '\u2018': "'", '\u2019': "'", '\u00AB': "'", '\u00BB': "'", '"': "'",
+  '\u00B7': ',', '|': ',',
 }
 
 export function epcText(text: string): string {
