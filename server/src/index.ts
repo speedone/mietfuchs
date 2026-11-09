@@ -21,12 +21,13 @@ import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAss
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
-import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement, type LedgerOptions } from './calc.ts'
+import { markPaidRequestOf, markPaidTitle, markPaidToken, markPaidWrites, planMarkPaid, type LedgerView, type MarkPaidRequest } from './markPaid.ts'
 import { taxOverview } from './taxOverview.ts'
 import { ledgerStatementsFor } from './ledgerStatements.ts'
-import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
+import { heatingSnapshotFor, narrowToProperty, snapshotFor, type Snapshot } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, Notice, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
@@ -62,7 +63,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -1742,26 +1743,71 @@ app.get('/api/consumption/:period', async (req, res) => {
 // einem Objekt mit anderem Rhythmus. Es liest keine Kostenposition, der Zeitraum dient nur dem Jahr. Die
 // Abrechnungen des Objekts (Grenzen, Frist, Versand, eingefrorene Anrechnung) kommen für die Abrechnungsreife mit
 // (#281 E5, ledgerStatements.ts); calc.ts liest den Speicher nicht selbst.
-app.get('/api/rentledger/:year', async (req, res) => {
+// Schnappschuss und Optionen des Mietkontos eines Kalenderjahrs, eine Stelle für die Ansicht und „als bezahlt erfassen“.
+async function ledgerInputOf(db: Database, req: Request, year: number): Promise<{ snapshot: Snapshot, options: LedgerOptions & { asOf: string } }> {
+  const stock = await readStock(db)
+  const property = await propertyOf(db, req)
+  const span = calendarYearPeriod(year)
+  const snapshot = snapshotFor(stock, property, span)
+  const plantIds = new Set((snapshot.heatingPlants ?? []).map((p) => p.id))
+  // Ausdrücklich als Abschlüsse der Datenbank gelesen (der Bestand führt sie zugleich als Quelle des Schnappschusses).
+  const closedOfStock: readonly StoredClosedSettlement[] = stock.closedSettlements
+  const closedHeatingOfStock: readonly StoredClosedHeatingSettlement[] = stock.closedHeatingSettlements
+  const statements = ledgerStatementsFor(
+    snapshot,
+    closedOfStock.filter((c) => c.propertyId === property),
+    closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)),
+    span.to,
+  )
+  return { snapshot, options: { asOf: today(), statements } }
+}
+const ledgerYearOf = (req: Request): number => {
   const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  if (!Number.isInteger(year)) throw new RouteProblem(400, 'Ungültiges Jahr')
+  return year
+}
+
+app.get('/api/rentledger/:year', async (req, res) => {
+  const year = ledgerYearOf(req)
   res.json(await readData(async (db) => {
-    const stock = await readStock(db)
-    const property = await propertyOf(db, req)
-    const span = calendarYearPeriod(year)
-    const snapshot = snapshotFor(stock, property, span)
-    const plantIds = new Set((snapshot.heatingPlants ?? []).map((p) => p.id))
-    // Ausdrücklich als Abschlüsse der Datenbank gelesen (der Bestand führt sie zugleich als Quelle des Schnappschusses).
-    const closedOfStock: readonly StoredClosedSettlement[] = stock.closedSettlements
-    const closedHeatingOfStock: readonly StoredClosedHeatingSettlement[] = stock.closedHeatingSettlements
-    const statements = ledgerStatementsFor(
-      snapshot,
-      closedOfStock.filter((c) => c.propertyId === property),
-      closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)),
-      span.to,
-    )
-    return rentLedger(snapshot, { asOf: today(), statements })
+    const { snapshot, options } = await ledgerInputOf(db, req, year)
+    return rentLedger(snapshot, options)
   }))
+})
+
+// „Offene Monate als bezahlt erfassen“ (#608, markPaid.ts): Vorschau mit Marke, dann Anlegen in einer Transaktion, nur
+// mit der Marke der Vorschau, die der Vermieter gesehen hat; sonst 409 mit der neuen Vorschau.
+async function markPaidPlanOf(db: Database, req: Request, year: number): Promise<{ request: MarkPaidRequest, plan: MarkPaidPlan }> {
+  const { snapshot, options } = await ledgerInputOf(db, req, year)
+  const checked = markPaidRequestOf(year, bodyObject(req), options.asOf, new Set(snapshot.tenancies.map((t) => t.id)))
+  if ('error' in checked) throw new RouteProblem(400, checked.error)
+  // Die Jahre danach bis heute (Durchsicht M1), je mit Schnappschuss und Abrechnungen des Jahres wie in der Ansicht.
+  const laterViews = new Map<number, LedgerView>()
+  for (let y = year + 1; y <= Number(options.asOf.slice(0, 4)); y++) laterViews.set(y, await ledgerInputOf(db, req, y))
+  const body = planMarkPaid(snapshot, options, checked.request, (y) => {
+    const view = laterViews.get(y)
+    if (!view) throw new Error(`Mietkonto ${y} fehlt für die Nachprüfung.`)
+    return view
+  })
+  return { request: checked.request, plan: { ...body, token: markPaidToken(checked.request, body) } }
+}
+app.post('/api/rentledger/:year/mark-paid/plan', async (req, res) => {
+  const year = ledgerYearOf(req)
+  res.json((await readData((db) => markPaidPlanOf(db, req, year))).plan)
+})
+app.post('/api/rentledger/:year/mark-paid', async (req, res) => {
+  const year = ledgerYearOf(req)
+  const token: unknown = bodyObject(req).token
+  if (typeof token !== 'string' || token === '') throw new RouteProblem(400, 'Angelegt wird nur, was die Vorschau gezeigt hat. Bitte zeigen Sie zuerst die Vorschau an.')
+  // Geplant und geschrieben im selben Vorgang der Schreibschlange; dazwischen ändert niemand den Bestand.
+  const result = await writeData(async (db) => {
+    const { plan } = await markPaidPlanOf(db, req, year)
+    if (plan.token !== token) return { stale: plan }
+    const ids = await insertPayments(db, markPaidWrites(plan.payments), newId, markPaidTitle(plan.payments.length))
+    return { created: plan.payments.map((p, i) => ({ ...p, id: ids[i] ?? '' })) }
+  })
+  if ('stale' in result) return res.status(409).json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Vorschau noch einmal.', plan: result.stale })
+  res.json({ ok: true, count: result.created.length, payments: result.created })
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss.

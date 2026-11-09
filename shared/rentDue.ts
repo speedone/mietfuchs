@@ -193,6 +193,18 @@ export function rentDueOn(t: RentDueTerms, month: string, state: FederalState | 
   return states.map((s) => dueInState(t, month, s, log)).reduce(maxText)
 }
 
+// Das Datum, mit dem eine pünktlich gezahlte Miete des Monats erfasst wird (#608: Klick auf einen Monat im Mietkonto und
+// „Offene Monate als bezahlt erfassen“): der Fälligkeitstag, höchstens der letzte Tag des Monats und nie nach heute.
+// Der Monatsletzte, weil das Mietkonto eine Zahlung nach ihrem Datum führt: Eine Dezembermiete „nach Ablauf“ mit Datum im
+// Januar deckte den Dezember im Jahr nicht, und eine Januarmiete vom 01.02. als erste Zahlung des Objekts ließe die
+// Erfassung erst im Februar beginnen (server/src/rentAllocation.ts, `recordingStart`). Einen Tag vor der Fälligkeit zu
+// zahlen, ist immer pünktlich.
+export function rentPaidOn(month: string, dueOn: string, today: string): string {
+  checkMonth(month)
+  const last = `${month}-${String(lastDayOf(month)).padStart(2, '0')}`
+  return [dueOn, last, today].reduce((a, b) => (b < a ? b : a))
+}
+
 // ---------- erwarteter Eingang ----------
 
 // Bankgeschäftstag (E3, Auslegung, vorsichtig): Montag bis Freitag, kein Feiertag in irgendeinem Land oder einer

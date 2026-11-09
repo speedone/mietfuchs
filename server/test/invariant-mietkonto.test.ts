@@ -8,6 +8,9 @@
 // - Endsaldo + Rückstand = vorausbezahlte Teile und Teile ohne Forderung (die Überzahlung).
 // - `arrearsCents + notDemandableCents` = offene Teile fälliger Monate; Kaltmiete und Pauschale nie nicht
 //   einforderbar; ohne `statements` keine Klassifikation (X9 h).
+// - „Offene Monate als bezahlt erfassen“ (#608): Nach dem Anlegen des Plans bis Monat M ist kein Monat ≤ M still offen
+//   (bezahlt, oder in `unresolved`, oder das Mietverhältnis in `othersAffected`); mit M = dem letzten möglichen Monat
+//   steigt der Rückstand nie, und die Nachprüfung hängt nicht an den Kennungen der neuen Zahlungen.
 // - Hinweis `prepayment.arrears` (E6): genau dann, wenn Vorauszahlungen fälliger Monate des Zeitraums offen sind, und
 //   mit deren Summe; kein Hinweis, wenn nur Kaltmiete oder Pauschale offen ist.
 import { test } from 'node:test'
@@ -21,6 +24,7 @@ import { fifoLedgerRows } from '../testing/fifoLedger.ts'
 import { oracleArrearsFrom, oracleRule } from '../testing/dueOracle.ts'
 import { addMonths, makeRng, monthsBetween, randomRentStock, type RentStock } from '../testing/rentStock.ts'
 import type { RentLedgerRow, RentMonth } from '../../shared/types.ts'
+import { planMarkPaid } from '../src/markPaid.ts'
 
 const FROM = Number(process.env.INV_FROM ?? 1)
 const TO = Number(process.env.INV_TO ?? 200)
@@ -371,4 +375,106 @@ test('Tilgung nach § 366 BGB ohne Einfluss der Fälligkeit: dasselbe Mietverhä
     const withRule = withTerms(stock.tenancy, makeRng(seed * 5 + 1))
     assert.deepEqual(allocateRentPayments(withRule, stock.payments), allocateRentPayments(stock.tenancy, stock.payments), `Startwert ${seed}`)
   }
+})
+
+// #608: „Offene Monate als bezahlt erfassen“ über zufällige Bestände (Rückstand, Teilzahlung, Überzahlung, Rücklastschrift,
+// Monat laut Verwendungszweck, Beginn der Erfassung nach dem Mietbeginn).
+test('Monate als bezahlt erfassen: kein Monat bis M still offen, Rückstand steigt nie, Nachprüfung unabhängig von den Kennungen', () => {
+  let planned = 0
+  let resolved = 0
+  // Die Hälfte der Startwerte: Jeder Fall rechnet das Mietkonto dreimal.
+  for (const seed of seeds().slice(0, 100)) {
+    const stock = randomRentStock(makeRng(seed))
+    const payments = snapshotPayments(stock)
+    const { tenancy } = stock
+    const rnd = makeRng(seed * 13 + 5)
+    for (const year of yearsBetween(tenancy.start, lastPaidMonth(stock))) {
+      const past = rnd() < 0.4
+      const asOf = past ? `${year + 1}-02-01` : `${year}-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rnd() * 28)).padStart(2, '0')}`
+      const lastMonth = past ? 12 : Number(asOf.slice(5, 7))
+      const snap = snapshotOf(sourceOf(tenancy, payments), year)
+      const before = rentLedger(snap, { asOf }).rows.find((r) => r.tenancyId === tenancy.id)
+      if (!before) continue
+      for (const m of [1 + Math.floor(rnd() * lastMonth), lastMonth]) {
+        const through = `${year}-${String(m).padStart(2, '0')}`
+        const at = `Startwert ${seed}, ${year}, Stichtag ${asOf}, bis ${through}`
+        const plan = planMarkPaid(snap, { asOf }, { tenancyIds: [tenancy.id], through })
+        // Kennungen wie im Betrieb (16 Hexziffern), nicht die der Nachprüfung.
+        const added: SnapshotPayment[] = plan.payments.map((p, i) => ({ id: `${(seed * 7919 + i * 104729).toString(16).padStart(16, 'f')}`, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, kind: 'rent', designatedMonth: p.month }))
+        const after = rentLedger({ ...snap, payments: [...snap.payments, ...added] }, { asOf }).rows.find((r) => r.tenancyId === tenancy.id) ?? assert.fail(`${at}: keine Zeile`)
+        planned += plan.payments.length
+        const unresolved = new Set(plan.unresolved.map((u) => u.month))
+        for (const p of plan.payments) {
+          const mo = after.months[Number(p.month.slice(5, 7)) - 1]
+          assert.equal(mo?.status === 'paid', !unresolved.has(p.month), `${at}: ${p.month} wie die Nachprüfung`)
+          if (mo?.status === 'paid') resolved++
+          assert.ok(p.amountCents > 0, `${at}: Betrag`)
+          assert.ok(p.date.startsWith(p.month) && p.date <= asOf, `${at}: Datum ${p.date}`)
+        }
+        const flagged = plan.othersAffected.some((a) => a.tenancyId === tenancy.id)
+        for (const mo of after.months.slice(0, m)) {
+          const month = `${year}-${String(mo.month).padStart(2, '0')}`
+          if (mo.sollCents <= 0 || mo.paidLaterOn || (mo.status !== 'open' && mo.status !== 'partial')) continue
+          assert.ok(unresolved.has(month) || flagged, `${at}: ${month} still ${mo.status}`)
+        }
+        if (m === lastMonth) assert.ok(after.arrearsCents <= before.arrearsCents, `${at}: Rückstand ${before.arrearsCents} → ${after.arrearsCents}`)
+      }
+    }
+  }
+  // Die Zufallsbestände tragen oft einen Rückstand aus früheren Jahren und Teilzahlungen ohne Monat; dann wandert ein Teil
+  // (markPaid.test.ts, „wandert der Rest“), und der Monat steht in `unresolved`.
+  assert.ok(planned > 300, `nur ${planned} geplante Zahlungen`)
+  assert.ok(resolved > 150, `nur ${resolved} von ${planned} danach bezahlt`)
+})
+
+// #608, Durchsicht M1: zwei Mietverhältnisse in einem Objekt, Stichtag in einem späteren Jahr. Steigt danach in einem Jahr
+// bis heute ein Rückstand oder steht ein Monat außerhalb des Plans schlechter, nennt `othersAffected` das Mietverhältnis
+// mit diesem Jahr.
+test('Monate als bezahlt erfassen: mehrere Mietverhältnisse, spätere Jahre bis heute stehen in othersAffected', () => {
+  let flagged = 0
+  let laterFlagged = 0
+  for (const seed of seeds().slice(0, 80)) {
+    const one = randomRentStock(makeRng(seed))
+    const two = randomRentStock(makeRng(seed + 1000))
+    const ta = { ...one.tenancy, id: 'ta', unitId: 'ua' }
+    const tb = { ...two.tenancy, id: 'tb', unitId: 'ub' }
+    const rnd = makeRng(seed * 31 + 7)
+    const year = 2020 + Math.floor(rnd() * 5)
+    // In der Hälfte der Fälle beginnt die Erfassung erst nach dem Jahr (der Fall „rückwirkend“).
+    const from = rnd() < 0.5 ? `${year + 1}-01-01` : '0000-01-01'
+    const payments: SnapshotPayment[] = [
+      ...one.payments.map((p) => ({ ...p, id: `a${p.id}`, tenancyId: 'ta' })),
+      ...two.payments.map((p) => ({ ...p, id: `b${p.id}`, tenancyId: 'tb' })),
+    ].filter((p) => p.date >= from)
+    const source: SnapshotSource = {
+      units: [{ id: 'ua', name: 'EG', areaM2: 50, participates: true }, { id: 'ub', name: 'OG', areaM2: 50, participates: true }],
+      tenancies: [ta, tb], costItems: [], meters: [], readings: [], payments, closedSettlements: [],
+    }
+    const asOf = `${year + 1 + Math.floor(rnd() * 2)}-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-15`
+    const tenancyIds = rnd() < 0.5 ? ['ta'] : ['ta', 'tb']
+    const through = `${year}-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}`
+    const plan = planMarkPaid(snapshotOf(source, year), { asOf }, { tenancyIds, through })
+    const added: SnapshotPayment[] = plan.payments.map((p, i) => ({ id: `z${seed}-${i}`, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, kind: 'rent', designatedMonth: p.month }))
+    const planned = new Set(plan.payments.map((p) => `${p.tenancyId}/${p.month}`))
+    for (let y = year; y <= Number(asOf.slice(0, 4)); y++) {
+      const before = rentLedger(snapshotOf(source, y), { asOf })
+      const after = rentLedger(snapshotOf({ ...source, payments: [...payments, ...added] }, y), { asOf })
+      for (const row of after.rows) {
+        const prev = before.rows.find((r) => r.tenancyId === row.tenancyId)
+        const at = `Startwert ${seed}, ${year} bis ${through}, Stichtag ${asOf}, Jahr ${y}, ${row.tenancyId}`
+        const listed = plan.othersAffected.some((a) => a.tenancyId === row.tenancyId && a.year === y)
+        const worse = row.months.some((mo, k) => {
+          const was = prev?.months[k]
+          const key = `${row.tenancyId}/${y}-${String(mo.month).padStart(2, '0')}`
+          return was !== undefined && !planned.has(key) && (mo.status === 'open' || mo.status === 'partial') && was.status !== 'open' && was.status !== 'partial'
+        })
+        const risen = row.arrearsCents > (prev?.arrearsCents ?? 0) && (y > year || !tenancyIds.includes(row.tenancyId))
+        if (worse || risen) assert.ok(listed, `${at}: nicht in othersAffected`)
+        if (listed) flagged++
+        if (listed && y > year) laterFlagged++
+      }
+    }
+  }
+  assert.ok(flagged > 10, `nur ${flagged} gemeldet`)
+  assert.ok(laterFlagged > 5, `nur ${laterFlagged} in späteren Jahren gemeldet`)
 })

@@ -10,8 +10,12 @@ import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
-import type { Payment, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
-import { jsonOf, restore, startServer } from '../testing/api.ts'
+import type { MarkPaidPayment, MarkPaidPlan, Payment, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
+import { errorFrom, jsonOf, restore, startServer, withEnv, type Server } from '../testing/api.ts'
+import { journalOf, revert } from '../testing/revert.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
+import { createEntity, insertPayments } from '../src/db/repository.ts'
+import { readPayments } from '../src/db/read.ts'
 
 test('Zahlungen: Art gespeichert und geliefert, fehlend Miete, unbekannt 400, Teilrumpf lässt sie stehen', async () => {
   const s = await startServer()
@@ -159,4 +163,128 @@ test('Mietkonto über die Route: eine versandte Abrechnung macht die nicht gezah
   } finally {
     s.stop()
   }
+})
+
+// #608: „Offene Monate als bezahlt erfassen“ über die Routen. Der Server rechnet mit festem Tag (NKA_TEST_TODAY).
+const markPaidPost = (s: Server, url: string, body: unknown) =>
+  fetch(`${s.base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+test('Monate als bezahlt erfassen: Vorschau, Anlegen in einem Schritt mit einem Eintrag im Verlauf, 409 bei geänderter Marke, 400', async () => {
+  await withEnv({ NKA_TEST_TODAY: '2025-04-20' }, async (s) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    await s.api('/api/properties/objekt-1', { method: 'PUT', body: JSON.stringify({ state: 'NW' }) })
+    const eg = await post<Unit>('/api/units', { name: 'EG', areaM2: 80, participates: true })
+    const og = await post<Unit>('/api/units', { name: 'OG', areaM2: 60, participates: true })
+    const rents = { prepayments: [{ from: '2025-01', monthlyCents: 20000 }], prepaymentOverrides: {}, baseRents: [{ from: '2025-01', monthlyCents: 60000 }] }
+    const a = await post<Tenancy>('/api/tenancies', { unitId: eg.id, tenantName: 'Albers', persons: 1, start: '2025-01-01', end: null, ...rents })
+    const b = await post<Tenancy>('/api/tenancies', { unitId: og.id, tenantName: 'Brandt', persons: 1, start: '2025-01-01', end: null, ...rents })
+    await post('/api/payments', { tenancyId: a.id, date: '2025-01-03', amountCents: 80000 })
+    await post('/api/payments', { tenancyId: b.id, date: '2025-01-03', amountCents: 30000, designatedMonth: '2025-01' })
+
+    const plan = await post<MarkPaidPlan>('/api/rentledger/2025/mark-paid/plan', { tenancyIds: [a.id, b.id], through: '2025-03' })
+    assert.deepEqual(plan.payments.map((p) => [p.tenantName, p.month, p.date, p.amountCents]), [
+      ['Albers', '2025-02', '2025-02-05', 80000],
+      ['Albers', '2025-03', '2025-03-05', 80000],
+      ['Brandt', '2025-01', '2025-01-06', 50000],
+      ['Brandt', '2025-02', '2025-02-05', 80000],
+      ['Brandt', '2025-03', '2025-03-05', 80000],
+    ])
+    assert.equal(plan.totalCents, 370000)
+    assert.deepEqual(plan.unresolved, [])
+    assert.deepEqual(plan.othersAffected, [])
+    assert.match(plan.token, /^[0-9a-f]{32}$/)
+
+    // 400: kein Mietverhältnis, fremdes Mietverhältnis, Monat nach dem laufenden, anderes Jahr, keine Marke.
+    const refused = async (url: string, body: unknown, text: RegExp) => {
+      const res = await markPaidPost(s, url, body)
+      assert.equal(res.status, 400, url)
+      assert.match(await errorFrom(res), text)
+    }
+    await refused('/api/rentledger/2025/mark-paid/plan', { tenancyIds: [], through: '2025-03' }, /Wählen Sie mindestens ein Mietverhältnis/)
+    await refused('/api/rentledger/2025/mark-paid/plan', { tenancyIds: ['gibt-es-nicht'], through: '2025-03' }, /gehört nicht zu diesem Objekt/)
+    await refused('/api/rentledger/2025/mark-paid/plan', { tenancyIds: [a.id], through: '2025-05' }, /nicht nach dem laufenden Monat/)
+    await refused('/api/rentledger/2025/mark-paid/plan', { tenancyIds: [a.id], through: '2024-12' }, /im Jahr 2025/)
+    await refused('/api/rentledger/2025/mark-paid', { tenancyIds: [a.id], through: '2025-03' }, /zuerst die Vorschau/)
+
+    // Ändert sich der Bestand nach der Vorschau, 409 mit der neuen Vorschau; nichts angelegt.
+    await post('/api/payments', { tenancyId: a.id, date: '2025-02-04', amountCents: 80000 })
+    const stale = await markPaidPost(s, '/api/rentledger/2025/mark-paid', { tenancyIds: [a.id, b.id], through: '2025-03', token: plan.token })
+    assert.equal(stale.status, 409)
+    const staleBody = await jsonOf<{ error: string, plan: MarkPaidPlan }>(stale)
+    assert.match(staleBody.error, /Der Stand hat sich geändert/)
+    assert.equal(staleBody.plan.payments.length, 4, 'Februar von Albers ist inzwischen bezahlt')
+    assert.equal((await s.api<Payment[]>('/api/payments')).length, 3)
+
+    const created = await markPaidPost(s, '/api/rentledger/2025/mark-paid', { tenancyIds: [a.id, b.id], through: '2025-03', token: staleBody.plan.token })
+    assert.equal(created.status, 200, await created.clone().text())
+    const done = await jsonOf<{ ok: boolean, count: number, payments: (MarkPaidPayment & { id: string })[] }>(created)
+    assert.equal(done.count, 4)
+    const stored = await s.api<Payment[]>('/api/payments')
+    assert.equal(stored.length, 7)
+    const added = stored.filter((p) => done.payments.some((d) => d.id === p.id))
+    assert.deepEqual(added.map((p) => [p.tenancyId, p.date, p.amountCents, p.kind, p.designatedMonth, p.note]).sort(), [
+      [a.id, '2025-03-05', 80000, 'rent', '2025-03', 'als bezahlt erfasst'],
+      [b.id, '2025-01-06', 50000, 'rent', '2025-01', 'als bezahlt erfasst'],
+      [b.id, '2025-02-05', 80000, 'rent', '2025-02', 'als bezahlt erfasst'],
+      [b.id, '2025-03-05', 80000, 'rent', '2025-03', 'als bezahlt erfasst'],
+    ].sort())
+    const ledger = await s.api<RentLedger>('/api/rentledger/2025')
+    for (const row of ledger.rows) assert.deepEqual(row.months.slice(0, 3).map((m) => m.status), ['paid', 'paid', 'paid'], row.tenantName)
+
+    // Ein Eintrag im Verlauf, mit der Zahl; danach ist nichts mehr offen.
+    const [newest] = await journalOf(s)
+    assert.equal(newest?.title, '4 Mietzahlungen als bezahlt erfasst')
+    assert.equal(newest?.rows, 4)
+    const again = await post<MarkPaidPlan>('/api/rentledger/2025/mark-paid/plan', { tenancyIds: [a.id, b.id], through: '2025-03' })
+    assert.deepEqual(again.payments, [])
+    // Rückgängig nimmt alle vier zurück.
+    await revert(s, newest?.id ?? assert.fail('kein Eintrag'))
+    assert.equal((await s.api<Payment[]>('/api/payments')).length, 3)
+  })
+})
+
+test('Monate als bezahlt erfassen: Zahlungen ganz oder gar nicht; bei einem Fehler wird keine angelegt', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-als-bezahlt-'))
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u', { propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true })
+      await createEntity(db, 'tenancies', 't', { unitId: 'u', tenantName: 'Mieter', persons: 1, start: '2025-01-01' })
+    })
+    let n = 0
+    const ids = () => `p${++n}`
+    const good = { tenancyId: 't', date: '2025-01-06', amountCents: 80000, kind: 'rent', designatedMonth: '2025-01', note: 'als bezahlt erfasst' }
+    // Der zweite Rumpf nennt einen Monat außerhalb des Mietverhältnisses: `guardPayment` lehnt ab.
+    await assert.rejects(opened.write((db) => insertPayments(db, [good, { ...good, designatedMonth: '2024-12' }], ids, 'x')), /außerhalb des Mietverhältnisses/)
+    assert.deepEqual(await opened.read(readPayments), [])
+    assert.deepEqual(await opened.write((db) => insertPayments(db, [good, { ...good, date: '2025-02-05', designatedMonth: '2025-02' }], ids, 'x')), ['p3', 'p4'])
+    assert.equal((await opened.read(readPayments)).length, 2)
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('Monate als bezahlt erfassen (Durchsicht M1): die Vorschau für 2025 nennt, was sich im Mietkonto 2026 ändert', async () => {
+  await withEnv({ NKA_TEST_TODAY: '2026-11-08' }, async (s) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const eg = await post<Unit>('/api/units', { name: 'EG', areaM2: 80, participates: true })
+    const og = await post<Unit>('/api/units', { name: 'OG', areaM2: 60, participates: true })
+    const rents = (from: string) => ({ prepayments: [{ from, monthlyCents: 20000 }], prepaymentOverrides: {}, baseRents: [{ from, monthlyCents: 60000 }] })
+    const a = await post<Tenancy>('/api/tenancies', { unitId: eg.id, tenantName: 'Albers', persons: 1, start: '2020-01-01', end: null, ...rents('2020-01') })
+    const b = await post<Tenancy>('/api/tenancies', { unitId: og.id, tenantName: 'Brandt', persons: 1, start: '2026-01-01', end: null, ...rents('2026-01') })
+    for (const m of ['06', '07', '08', '09', '10']) {
+      await post('/api/payments', { tenancyId: a.id, date: `2026-${m}-03`, amountCents: 80000 })
+      await post('/api/payments', { tenancyId: b.id, date: `2026-${m}-03`, amountCents: 80000 })
+    }
+    const before = await s.api<RentLedger>('/api/rentledger/2026')
+    const plan = await post<MarkPaidPlan>('/api/rentledger/2025/mark-paid/plan', { tenancyIds: [a.id], through: '2025-12' })
+    assert.equal(plan.payments.length, 12)
+    assert.deepEqual(plan.othersAffected.map((x) => [x.tenantName, x.year, x.reason, x.beforeCents]),
+      [['Albers', 2026, 'recordingStart', before.rows.find((r) => r.tenancyId === a.id)?.arrearsCents], ['Brandt', 2026, 'recordingStart', before.rows.find((r) => r.tenancyId === b.id)?.arrearsCents]])
+    const res = await markPaidPost(s, '/api/rentledger/2025/mark-paid', { tenancyIds: [a.id], through: '2025-12', token: plan.token })
+    assert.equal(res.status, 200)
+    const after = await s.api<RentLedger>('/api/rentledger/2026')
+    assert.deepEqual(after.rows.map((r) => [r.tenantName, r.arrearsCents]), plan.othersAffected.map((x) => [x.tenantName, x.afterCents]), 'die Vorschau nannte die Beträge danach')
+  })
 })

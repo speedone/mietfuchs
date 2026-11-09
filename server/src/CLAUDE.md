@@ -1131,6 +1131,24 @@ importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die 
   in `legalBasis.values` nur, wenn `prepayment.arrears` erscheint. `holidaysChecked` an den Optionen ist ein Testgriff. Die
   Tilgung fragt weiter „am oder nach dem Monatsersten“ (bekannte Grenze E7 bei „nach Ablauf“ und späten festen Tagen).
   Orakel: server/testing/dueOracle.ts (Feiertage aus der Vergleichsliste), Invarianten in invariant-mietkonto.test.ts.
+- **Offene Monate als bezahlt erfassen** (#608, [markPaid.ts](markPaid.ts), rein): `POST /api/rentledger/:year/mark-paid/plan`
+  mit `{ tenancyIds, through }` plant aus `rentLedger` (dieselbe Zeile wie die Seite) je gewähltem Mietverhältnis und Monat
+  bis `through` mit Soll eine Mietzahlung über Soll − gezahlt (ein `notRecorded`-Monat mit dem Soll abzüglich der Mietzahlungen,
+  die ihn laut Verwendungszweck nennen; keiner mit `paidLaterOn`, keiner `notDue`), `designatedMonth` = der Monat, Datum `rentPaidOn` (shared/rentDue.ts: Fälligkeitstag aus `rentDueOn`,
+  höchstens der Monatsletzte, nie nach heute; der Monatsletzte, weil eine Dezembermiete „nach Ablauf“ sonst im Januar
+  stünde und eine erste Zahlung vom 01.02. die Erfassung erst im Februar beginnen ließe). **Nachprüfung**: `rentLedger`
+  auf dem Schnappschuss mit den neuen Zahlungen; ein geplanter Monat, der danach nicht `paid` ist, steht in `unresolved`
+  (typisch: eine Zahlung ohne Monat nach dem Fälligkeitstag hat einen Teil getilgt und geht danach an eine ältere
+  Forderung; kein Cent geht verloren). Ein Mietverhältnis, bei dem ein Monat außerhalb des Plans schlechter oder besser gedeckt
+  steht oder (nicht gewählt) der Rückstand steigt, steht in `othersAffected`, mit Jahr und Grund (`recordingStart`:
+  rückwirkende Zahlungen verlegen den Beginn der Erfassung; `shifted`: Zahlungen tilgen andere Monate). Geprüft wird das
+  Jahr der Ansicht und jedes Jahr danach bis heute, für alle Mietverhältnisse (Durchsicht M1; die Route reicht je Jahr
+  Schnappschuss und Abrechnungen herein).
+  Beides geht in die Marke (SHA-256 über Anfrage und Plan). `POST …/mark-paid` mit `token` plant in derselben
+  Schreibschlange neu, 409 mit neuer Vorschau bei Abweichung, sonst `insertPayments` (repository.ts: eine Transaktion,
+  je Rumpf Verschmelzung und `guardPayment` wie POST /api/payments) und ein Eintrag im Verlauf, dessen Satz die Zahl
+  nennt (`retitleCurrentGroup`). 400: `through` nicht im Jahr oder nach dem laufenden Monat (`today()`), keine oder fremde
+  Mietverhältnisse. Invariante in invariant-mietkonto.test.ts.
 - **Monat laut Verwendungszweck**: nur an `rent` und nur für einen Monat des Mietverhältnisses (400 in `guardPayment`,
   repository.ts); fällt er später heraus (Beginn oder Ende geändert), bleibt er stehen, wirkt wie keine Bestimmung und
   steht in `designatedOutside`. Kontoauszug-Import und KI setzen ihn nie.

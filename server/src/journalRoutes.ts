@@ -83,6 +83,9 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   // #317: die angekündigte Vorauszahlung als Stufe der Staffel. Der Plan (…/prepayment-steps/plan) liest nur.
   'POST /api/settlement/:period/prepayment-steps': s('Angekündigte Vorauszahlung in die Staffel übernommen', 'tenancies'),
   'POST /api/heating-settlement/:plant/:period/prepayment-steps': s('Angekündigte Heizvorauszahlung in die Staffel übernommen', 'tenancies'),
+  // #608: Der Satz nennt danach die Zahl („12 Mietzahlungen als bezahlt erfasst“, `retitleCurrentGroup`); die Vorschau
+  // (…/mark-paid/plan) liest nur.
+  'POST /api/rentledger/:year/mark-paid': s('Mietzahlungen als bezahlt erfasst', 'payments'),
   'POST /api/settlement/:period/close': s('Abrechnung abgeschlossen', 'closed_settlements'),
   'PUT /api/settlement/:period/close': s('Versanddatum der Abrechnung gespeichert', 'closed_settlements'),
   'DELETE /api/settlement/:period/close': s('Abrechnung wieder geöffnet', 'closed_settlements'),

@@ -354,6 +354,34 @@ export type RentLedger = {
   }
 }
 
+// „Offene Monate als bezahlt erfassen“ (#608, server/src/markPaid.ts): je offenem Monat bis `through` eine Mietzahlung
+// über den offenen Rest, für den Monat laut Verwendungszweck, am Fälligkeitstag. Die Vorschau trägt eine Marke; angelegt
+// wird nur mit ihr.
+export type MarkPaidPayment = {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  month: string // 'JJJJ-MM', zugleich der Monat laut Verwendungszweck
+  date: string // 'JJJJ-MM-TT'
+  amountCents: number
+}
+// Ein geplanter Monat, der nach der Nachprüfung (Mietkonto mit den neuen Zahlungen) nicht bezahlt ist.
+export type MarkPaidUnresolved = { tenancyId: string; tenantName: string; unitName: string; month: string; status: RentMonthStatus; openCents: number }
+// Ein Mietverhältnis, bei dem die neuen Zahlungen außerhalb der geplanten Monate etwas ändern, im Jahr der Ansicht oder
+// einem späteren bis heute (`year`). `recordingStart`: Das Konto des Objekts beginnt mit der frühesten erfassten
+// Mietzahlung, rückwirkende Zahlungen lassen bisher nicht erfasste Monate zählen. `shifted`: Zahlungen tilgen danach andere
+// Monate (§ 366 BGB), ein Monat steht schlechter oder ein späterer ist besser gedeckt (Geld wandert in die Zukunft).
+// `beforeCents`/`afterCents`: der Rückstand (`arrearsCents`) in diesem Jahr vorher und nachher.
+export type MarkPaidAffectedReason = 'recordingStart' | 'shifted'
+export type MarkPaidAffected = { tenancyId: string; tenantName: string; unitName: string; year: number; reason: MarkPaidAffectedReason; beforeCents: number; afterCents: number }
+export type MarkPaidPlan = {
+  payments: MarkPaidPayment[]
+  totalCents: number
+  unresolved: MarkPaidUnresolved[]
+  othersAffected: MarkPaidAffected[]
+  token: string
+}
+
 export type MeterType = 'kaltwasser' | 'warmwasser' | 'strom' | 'waerme' | 'hkv' | 'sonstig'
 
 // Die Skala eines Heizkostenverteilers (Heizung PR 12, Entwurf 8.1): Einheitsskala, der Ablesewert zählt

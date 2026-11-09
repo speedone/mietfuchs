@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { Payment, RentLedger, RentMonth, Tenancy, Unit } from '../types'
-import { api, errorText, fmtDate, fmtEuro } from '../api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { MarkPaidPlan, Payment, RentLedger, RentMonth, Tenancy, Unit } from '../types'
+import { api, ApiError, errorText, fmtDate, fmtEuro } from '../api'
 import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
@@ -21,9 +21,10 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
-import { MONTH_SHORT } from '../monthText'
+import { MONTH_SHORT, parseMonthText } from '../monthText'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
+import { affectedText, createdText, emptyPlanText, MARK_PAID_EXPLAIN, markPaidBlocked as markPaidBlockedReason, markPaidRequest, markPaidStart, markPaidTenancyOptions, unresolvedText, type MarkPaidField, type MarkPaidValue } from '../markPaidForm'
 
 const MONTHS = MONTH_SHORT
 
@@ -43,6 +44,14 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const [form, setForm] = useState<PaymentForm | null>(null)
   const [error, setError] = useState('')
   const formErrors = useFormError<PaymentField>()
+  // „Offene Monate als bezahlt erfassen“ (#608): Wahl im Seitenfenster, Vorschau des Servers mit Folgenummer je Anfrage.
+  const [markPaid, setMarkPaid] = useState<MarkPaidValue | null>(null)
+  const [markPaidPlan, setMarkPaidPlan] = useState<MarkPaidPlan | null>(null)
+  // Warum es keine Vorschau gibt (ein Monat außerhalb des Jahres …). Nicht am Feld: Das Feld nimmt seine Meldung bei der
+  // nächsten Eingabe selbst zurück (`onFix`), und gefragt wird bei jeder.
+  const [markPaidNote, setMarkPaidNote] = useState<string | null>(null)
+  const markPaidErrors = useFormError<MarkPaidField>()
+  const markPaidSeq = useRef(0)
   // „Hier beheben →“ aus der Abrechnung (#142): die Zeile des Mietverhältnisses hervorheben.
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const scrollToFocus = useScrollToFocus()
@@ -110,7 +119,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     toast('Zahlung gelöscht.')
   }
 
-  // Klick auf einen offenen/teilweisen Monat: Zahlung mit dem offenen Restbetrag vorbelegen
+  // Klick auf einen offenen/teilweisen Monat (#608): die Zahlung für diesen Monat, vorbelegt mit dem offenen Rest, dem
+  // Fälligkeitstag (`bookingDate`) und dem Monat laut Verwendungszweck. Gespeichert wird erst im Fenster (#309).
   function bookMonth(tenancyId: string, mo: RentMonth) {
     const open = mo.sollCents - mo.paidCents
     if (open <= 0) return
@@ -118,7 +128,68 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     setForm({
       ...emptyPaymentForm(tenancyId, bookingDate(year, mo, new Date())),
       amount: (open / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+      designatedMonth: `${year}-${String(mo.month).padStart(2, '0')}`,
     })
+  }
+
+  // Jede Änderung verwirft die Vorschau und fragt neu; eine verspätete Antwort auf eine ältere Anfrage zählt nicht.
+  function previewMarkPaid(value: MarkPaidValue) {
+    const seq = ++markPaidSeq.current
+    setMarkPaidPlan(null)
+    const built = markPaidRequest(value, ledger?.rows ?? [], year, new Date())
+    markPaidErrors.clear()
+    if ('problems' in built) {
+      // Einen Text, der kein Monat ist, meldet das Monatsfeld selbst (beim Verlassen); hier nur, was als Monat nicht passt.
+      const shown = built.problems.filter((p) => p.field !== 'through' || parseMonthText(value.through).kind === 'month')
+      setMarkPaidNote(shown.length > 0 ? shown.map((p) => p.text).join(' ') : null)
+      return
+    }
+    setMarkPaidNote(null)
+    api<MarkPaidPlan>(withProperty(`/api/rentledger/${year}/mark-paid/plan`, propertyId), { method: 'POST', body: JSON.stringify(built.body) })
+      .then((plan) => { if (seq === markPaidSeq.current) setMarkPaidPlan(plan) })
+      .catch((e: unknown) => { if (seq === markPaidSeq.current) markPaidErrors.set(errorText(e), { focus: false }) })
+  }
+  // Die Vorschau folgt dem Zustand des Fensters (Öffnen und jede Änderung); die Felder selbst setzen nur den Zustand.
+  useEffect(() => {
+    // Nur bei geänderter Wahl; ein Wechsel von Jahr oder Objekt baut die Seite neu auf.
+    if (markPaid) previewMarkPaid(markPaid)
+  }, [markPaid])
+  const changeMarkPaid = (value: MarkPaidValue) => setMarkPaid(value)
+  function closeMarkPaid() {
+    markPaidSeq.current++
+    markPaidErrors.clear()
+    setMarkPaid(null)
+    setMarkPaidPlan(null)
+    setMarkPaidNote(null)
+  }
+
+  async function createMarkPaid() {
+    if (!markPaid || !markPaidPlan || markPaidPlan.payments.length === 0) return
+    const built = markPaidRequest(markPaid, ledger?.rows ?? [], year, new Date())
+    if ('problems' in built) {
+      markPaidErrors.report(built.problems)
+      return
+    }
+    let count = 0
+    try {
+      const done = await api<{ count: number }>(withProperty(`/api/rentledger/${year}/mark-paid`, propertyId), {
+        method: 'POST', body: JSON.stringify({ ...built.body, token: markPaidPlan.token }),
+      })
+      count = done.count
+    } catch (e) {
+      // 409: Der Stand hat sich seit der Vorschau geändert; die neue Vorschau steht dann da, angelegt ist nichts.
+      if (e instanceof ApiError && e.status === 409 && e.data.plan) {
+        markPaidSeq.current++
+        setMarkPaidPlan(e.data.plan as MarkPaidPlan)
+        markPaidErrors.show('Der Stand hat sich geändert. Bitte prüfen Sie die Vorschau noch einmal; angelegt ist noch nichts.')
+        return
+      }
+      markPaidErrors.show(errorText(e))
+      return
+    }
+    closeMarkPaid()
+    await load()
+    toast(createdText(count))
   }
 
   const tenancyName = (id: string) => {
@@ -130,6 +201,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const yearPayments = payments
     .filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
     .sort((a, b) => b.date.localeCompare(a.date))
+  const markPaidBlocked = ledger ? markPaidBlockedReason(ledger.rows, year, new Date()) : null
   // Die Einzelheiten zur Fälligkeit (#334): ob die Feiertage heute amtlich gelesen sind, entscheidet der Text.
   const dueChecked = ledger?.asOf ? holidaysCheckedOn(ledger.asOf) : false
 
@@ -140,13 +212,25 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         title="Mietkonto"
         subtitle="Welche Monate sind bezahlt? Soll (Bruttomiete) gegen tatsächliche Eingänge - pro Mietverhältnis."
         actions={
-          <button
-            className="btn"
-            onClick={() => { formErrors.clear(); setForm(newPaymentForm(ledger, newPaymentDate(year, new Date()))) }}
-            disabled={tenancies.length === 0}
-          >
-            + Zahlung anlegen
-          </button>
+          <>
+            <button
+              className="btn"
+              onClick={() => { formErrors.clear(); setForm(newPaymentForm(ledger, newPaymentDate(year, new Date()))) }}
+              disabled={tenancies.length === 0}
+            >
+              + Zahlung anlegen
+            </button>
+            {/* #608: offene Monate in einem Schritt, mit Vorschau; Teilzahlungen bleiben bei „+ Zahlung anlegen“. */}
+            <button
+              className="btn secondary"
+              disabled={!ledger || markPaidBlocked !== null}
+              aria-describedby={markPaidBlocked !== null ? 'mark-paid-blocked' : undefined}
+              onClick={() => setMarkPaid(markPaidStart(year, new Date(), ledger?.rows ?? []))}
+            >
+              Monate als bezahlt erfassen …
+            </button>
+            {markPaidBlocked !== null && <span id="mark-paid-blocked" className="muted">{markPaidBlocked}</span>}
+          </>
         }
       />
       {error && <NoticeBox level="error" action={error} />}
@@ -243,6 +327,61 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         </Drawer>
       )}
 
+      {markPaid && (
+        <Drawer
+          open
+          title="Offene Monate als bezahlt erfassen"
+          onClose={closeMarkPaid}
+          onSubmit={() => void saving.run(createMarkPaid)}
+          busy={saving.busy}
+          value={markPaid}
+          errors={markPaidErrors}
+          actions={<button className="btn" disabled={saving.busy || !markPaidPlan || markPaidPlan.payments.length === 0} onClick={() => void saving.run(createMarkPaid)}>Anlegen</button>}
+        >
+          <div className="row">
+            <Field label="Mietverhältnis" {...markPaidErrors.field('tenancyId')}>
+              <select value={markPaid.tenancyId} onChange={(e) => changeMarkPaid({ ...markPaid, tenancyId: e.target.value })}>
+                {markPaidTenancyOptions(ledger?.rows ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </Field>
+            <MonthField label="Bis Monat" value={markPaid.through} start={`${year}-01-01`}
+              onChange={(through) => changeMarkPaid({ ...markPaid, through })} {...markPaidErrors.field('through')} />
+          </div>
+          <p className="muted">{MARK_PAID_EXPLAIN}</p>
+          {markPaidPlan === null ? (
+            <p className={markPaidNote ? undefined : 'muted'} role="status">{markPaidNote ?? 'Die Vorschau wird nach jeder Änderung neu berechnet.'}</p>
+          ) : markPaidPlan.payments.length === 0 ? (
+            <p role="status">{emptyPlanText(markPaid.through)}</p>
+          ) : (
+            <>
+              {affectedText(markPaidPlan) && <NoticeBox level="warning" title="Auch andere Monate ändern sich" action={affectedText(markPaidPlan)} />}
+              {unresolvedText(markPaidPlan) && <NoticeBox level="hint" action={unresolvedText(markPaidPlan)} />}
+              <Table className="stacked">
+                <thead>
+                  <tr>
+                    <th>Mietverhältnis</th>
+                    <th>Monat</th>
+                    <th>Datum</th>
+                    <th className="num">Betrag</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {markPaidPlan.payments.map((p) => (
+                    <tr key={`${p.tenancyId}/${p.month}`}>
+                      <td data-label="Mietverhältnis">{`${p.tenantName} · ${p.unitName}`}</td>
+                      <td data-label="Monat">{monthLabel(p.month)}</td>
+                      <td data-label="Datum">{fmtDate(p.date)}</td>
+                      <td className="num" data-label="Betrag">{fmtEuro(p.amountCents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              <p><strong>{`Summe: ${fmtEuro(markPaidPlan.totalCents)}`}</strong>{` in ${markPaidPlan.payments.length === 1 ? 'einer Zahlung' : `${markPaidPlan.payments.length} Zahlungen`}`}</p>
+            </>
+          )}
+        </Drawer>
+      )}
+
       {ledger?.rows.length === 0 && (
         <div className="card"><div className="empty">Für {year} gibt es keine Mietverhältnisse. Legen Sie sie unter Stammdaten an und hinterlegen Sie die Kaltmiete.</div></div>
       )}
@@ -250,7 +389,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       {/* Sichtprüfung E34: einmal über den Karten statt in jeder */}
       {ledger && ledger.rows.some((r) => r.sollYearCents > 0) && (
         <>
-          <p className="muted">Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen; gestrichelte Monate zählen noch nicht als Rückstand. Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor. Eine Zahlung ohne Monat im Verwendungszweck tilgt die älteste offene Forderung, nicht unbedingt den angeklickten Monat (§ 366 BGB).</p>
+          <p className="muted">Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen; gestrichelte Monate zählen noch nicht als Rückstand. Klick auf einen roten oder gelben Monat öffnet die Zahlung für diesen Monat, vorbelegt mit dem offenen Rest, dem Fälligkeitstag und dem Monat laut Verwendungszweck. Eine Zahlung ohne Monat im Verwendungszweck tilgt die älteste offene Forderung, nicht unbedingt den angeklickten Monat (§ 366 BGB).</p>
           {/* #281: Das Konto läuft ab Beginn des Mietverhältnisses, verteilt nach § 366 BGB (Entwurf E4). */}
           <NoticeBox level="hint"
             action={<>Das Mietkonto rechnet ab Beginn des Mietverhältnisses: Ein Rückstand aus dem Vorjahr steht als Übertrag da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen verteilt Mietfuchs nach der <Term id="paymentOrder">Tilgungsreihenfolge</Term>.</>}
