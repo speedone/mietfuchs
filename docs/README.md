@@ -4,8 +4,8 @@ Die Kurzfassung mit Funktionen und Downloads steht im [README](../README.md). Hi
 
 | Seite | Inhalt |
 | --- | --- |
-| [Installation](installation.md) | Windows (Microsoft Store, Installer), macOS, Umzug von der bisherigen Programmdatei, Zugriff vom Handy mit Passwort, Download prüfen, Programmdatei ohne Installation, Linux-Pakete, `NKA_HOST` und `NKA_AUTH` |
-| [Docker](docker.md) | Passwort und Anmeldung, fertiges Image, Compose-Dateien, HTTPS, VPN, Aktualisieren, selbst bauen |
+| [Installation](installation.md) | Windows (Microsoft Store, Installer), macOS, Umzug von der bisherigen Programmdatei, Zugriff vom Handy mit Passwort, Programmfenster mit Mietfuchs im Heimnetz verbinden, Download prüfen, Programmdatei ohne Installation, Linux-Pakete, `NKA_HOST`, `NKA_AUTH` und `NKA_TRUST_PROXY` |
+| [Docker](docker.md) | Passwort und Anmeldung, fertiges Image, Compose-Dateien, HTTPS mit Caddy, Programmfenster koppeln (direkt oder über Caddy), VPN, Aktualisieren, selbst bauen |
 | [Funktionsweise](funktionsweise.md) | Die Bereiche von den Stammdaten bis zur Steuer, Umlageschlüssel, Ansichten |
 | [KI-Belegauswertung](ki-belegauswertung.md) | Einrichten mit Ollama, Dienste im Internet, Datenschutz, Modellwahl, Umgebungsvariablen |
 | [Daten & Backup](daten-backup.md) | Wo der Datenordner liegt, Backup, Wiederherstellen, Umzug aus `db.json` |

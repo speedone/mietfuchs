@@ -123,14 +123,14 @@ Mit `NKA_AUTH=on` oder `off` zeigt die Karte in den Einstellungen nur noch an, w
 Ein Volume, das schon Daten hatte, bleibt nach dem Update **offen wie bisher**: Unten in der
 Seitenleiste steht „Ohne Passwort im Netz“, und das Protokoll nennt einen Einrichtungscode. Mit
 ihm legst du unter *Einstellungen → Anmeldung* ein Passwort fest, ab dann gilt es. **Ab Version
-1.0 verlangt Mietfuchs hier ein Passwort.** Für die Daten selbst ist nichts zu tun.
+1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.** Für die Daten selbst ist nichts zu tun.
 
 ## Welche Datei nehme ich?
 
 | Datei | Wann nehme ich das? |
 | --- | --- |
 | [`deploy/compose.yml`](../deploy/compose.yml) | Mietfuchs auf einem NAS oder Heimserver, aufgerufen im Browser unter `http://<gerät>:3001`. Der einfachste Weg. |
-| [`deploy/compose.caddy.yml`](../deploy/compose.caddy.yml) mit [`deploy/Caddyfile`](../deploy/Caddyfile) | Du willst HTTPS im Heimnetz, etwa um Mietfuchs auf einem Android-Handy als App zu installieren, oder die Anmeldung im Proxy statt in Mietfuchs. |
+| [`deploy/compose.caddy.yml`](../deploy/compose.caddy.yml) mit [`deploy/Caddyfile`](../deploy/Caddyfile) | Du willst HTTPS im Heimnetz, etwa um Mietfuchs auf einem Android-Handy als App zu installieren, ein Programmfenster über eine Adresse wie `https://nas.fritz.box` zu koppeln oder die Anmeldung im Proxy statt in Mietfuchs. |
 | [`deploy/compose.ollama.yml`](../deploy/compose.ollama.yml) | Du willst die [KI-Belegauswertung](ki-belegauswertung.md) mit Ollama als eigenem Container, ohne Ollama auf dem Gerät zu installieren. |
 
 ## Nur Mietfuchs (`compose.yml`)

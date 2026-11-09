@@ -36,7 +36,9 @@ Standort. Ergibt „ab 3“ (USK 0).
 > user interface in its own application window; no browser is needed. Inside the app, a helper
 > process of Mietfuchs.exe runs a local server on 127.0.0.1 that the window displays. Only if the
 > user enables "access from the home network" in the settings is it reachable from other devices
-> in the local network. It needs runFullTrust to run as a regular desktop process with this helper
+> in the local network. Optionally, the user can pair the window with a Mietfuchs server in the home
+> network (for example on a NAS); the window then connects to that server over HTTPS, pinned to the
+> certificate it verified during pairing. It needs runFullTrust to run as a regular desktop process with this helper
 > process, to bind a local port and to store the user's data in %USERPROFILE%\Mietfuchs, outside
 > the package, so the data survives uninstalling. It does not install drivers or services and
 > does not modify other applications.
@@ -58,14 +60,16 @@ Mietfuchs läuft vollständig auf Ihrem Rechner, in einem eigenen Programmfenste
 kein Konto und keine Cloud, und solange nur Ihr Rechner Mietfuchs erreicht, auch keine Anmeldung. Schalten Sie
 den Zugriff aus dem Heimnetz ein, schützt ein Passwort Ihre Daten vor anderen Geräten.
 Ihre Daten liegen im Ordner Mietfuchs in Ihrem Benutzerordner und bleiben auch bei einer Deinstallation
-erhalten.
+erhalten. Läuft Mietfuchs schon auf einem NAS oder einem anderen Rechner im Heimnetz, verbinden Sie das
+Programmfenster auf Wunsch mit einem Code damit und arbeiten verschlüsselt mit denselben Daten.
 
 Was Mietfuchs abdeckt:
 • Verteilung nach Wohnfläche, Personen, Wohneinheiten, Verbrauch oder vereinbarten Anteilen
 • Heizkosten nach Heizkostenverordnung, CO₂-Kostenaufteilung, Abrechnung eines Messdienstes
 • Mieterwechsel und Leerstand innerhalb des Jahres, auf den Tag genau
 • mehrere Häuser und vermietete Eigentumswohnungen
-• Mietkonto, Fristen und Hinweise, wenn etwas fehlt oder rechtlich angreifbar ist
+• Mietkonto mit Fälligkeit der Miete je Mietverhältnis und den Feiertagen des Bundeslands, Fristen und Hinweise,
+  wenn etwas fehlt oder rechtlich angreifbar ist
 • Übersicht für die Anlage V der Steuererklärung
 • auf Wunsch KI-Auswertung von Belegen, auf dem eigenen Rechner oder bei einem Dienst Ihrer Wahl
 
@@ -82,10 +86,11 @@ erhalten. Findet es sie nicht, wählen Sie den Ordner der alten Programmdatei od
 - Nebenkostenabrechnung mit Anschreiben für jeden Mieter
 - Heizkosten nach Heizkostenverordnung und CO₂-Aufteilung
 - Belege mit optionaler KI-Auswertung
-- Mietkonto, Fristen und Hinweise
+- Mietkonto mit Fälligkeit je Mietverhältnis, Fristen und Hinweise
 - Übersicht für die Anlage V
 - Läuft lokal, ohne Konto und ohne Cloud
 - Eigenes Programmfenster, kein Browser nötig
+- Auf Wunsch verschlüsselt verbunden mit Mietfuchs auf NAS oder Heimserver
 
 **Suchbegriffe**: Nebenkostenabrechnung, Betriebskostenabrechnung, Nebenkosten, Vermieter,
 Heizkostenabrechnung, Mieter, Anlage V

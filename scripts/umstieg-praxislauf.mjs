@@ -893,7 +893,7 @@ fall(19, 'Anmeldung: alter Bestand im Netz bleibt offen mit Hinweis, neuer Ordne
     const zugang = await holen(base, '/api/auth')
     gleich([zugang.mode, zugang.required], ['transition', false], 'alter Bestand im Netz: Übergang, keine Anmeldung nötig')
     gleich((await fetch(`${base}/api/units`)).status, 200, 'alter Bestand im Netz: die Daten sind ohne Anmeldung lesbar wie bisher')
-    enthaelt(log(), 'Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.', 'alter Bestand im Netz: das Protokoll nennt die Pflicht ab 1.0')
+    enthaelt(log(), 'Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.', 'alter Bestand im Netz: das Protokoll nennt die Pflicht ab 1.0.0-rc.1')
     enthaelt(log(), `Einrichtungscode zum Festlegen eines Passworts: ${codeIn(alt)}`, 'alter Bestand im Netz: das Protokoll nennt den Code')
     gleich(fs.existsSync(path.join(alt, 'zugang.json')), false, 'alter Bestand im Netz: es wird nichts entschieden (keine zugang.json)')
   }, IM_NETZ)

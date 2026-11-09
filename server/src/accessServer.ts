@@ -262,7 +262,7 @@ export function createAccess(options: AccessOptions) {
       startLines.push(exposed() ? 'Mietfuchs ist im Netz erreichbar und noch ohne Passwort.' : 'Mietfuchs ist noch ohne Passwort.', codeLine('Einrichtungscode'))
     } else if (state.mode === 'transition') {
       startLines.push(
-        'Mietfuchs ist im Netz erreichbar, aber ohne Passwort: Jedes Gerät in Ihrem Netz kann Ihre Daten sehen. Ab Version 1.0 verlangt Mietfuchs hier ein Passwort.',
+        'Mietfuchs ist im Netz erreichbar, aber ohne Passwort: Jedes Gerät in Ihrem Netz kann Ihre Daten sehen. Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.',
         codeLine('Einrichtungscode zum Festlegen eines Passworts'),
       )
     } else if (state.mode === 'off' && exposed()) {

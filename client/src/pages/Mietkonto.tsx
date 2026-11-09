@@ -584,7 +584,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
       <Card title={<>Zahlungseingänge {year}</>}>
         {yearPayments.length === 0 ? (
-          <div className="empty">Noch keine Zahlungen für {year} erfasst.</div>
+          <div className="empty">Noch keine Zahlungen für {year} erfasst. Zahlen die Mieter pünktlich, erfassen Sie alle Monate mit „Monate als bezahlt erfassen …“ in einem Schritt.</div>
         ) : (
           <>
           {/* „Für Monat“ (#281): leer heißt nach gesetzlicher Reihenfolge; die Hilfe steht einmal über der Tabelle. */}

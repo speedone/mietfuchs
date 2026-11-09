@@ -3,7 +3,7 @@
   "version": "0.17.0",
   "private": true,
   "type": "module",
-  "description": "Mietfuchs: eigenes Programmfenster unter Windows und macOS",
+  "description": "Mietfuchs: eigenes Programmfenster unter Windows und macOS, auf Wunsch mit einem Mietfuchs im Heimnetz verbunden",
   "author": "speedone",
   "license": "AGPL-3.0-only",
   "homepage": "https://mietfuchs-app.de",

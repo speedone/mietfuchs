@@ -533,6 +533,7 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     const code = formatCode(newSetupCode())
     assert.equal(code.split('-').length, 3)
     inOrder(GUIDES.pairing.example, [`${CODE_LENGTH} Zeichen`, `${PAIRING_MINUTES} Minuten`, String(DEFAULT_PORTS[0]), `${MAX_DEVICES} Programmfenster`], 'pairing')
+    inOrder(GLOSSARY.pairingCode.example, [`${PAIRING_MINUTES} Minuten`, String(DEFAULT_PORTS[0])], 'pairingCode')
   },
 }
 
