@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { deviceKeyHash, hashPassword, newDeviceKey, pairingProof } from '../src/access.ts'
-import { TEST_PASSWORD, httpsFetch, jsonOf, rawRequest, sessionOf, setupCode, signIn, startServerIn, waitForExit, type Server } from '../testing/api.ts'
+import { TEST_PASSWORD, httpsFetch, jsonOf, rawRequest, serverCa, sessionOf, setupCode, signIn, startServerIn, waitForExit, type Server } from '../testing/api.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-kopplung-'))
 const NETWORK = { NKA_HOST: '0.0.0.0' }
@@ -32,12 +32,14 @@ async function newCode(s: Server, cookie: string): Promise<Pairing> {
   return jsonOf<Pairing>(res)
 }
 
-const certOf = async (s: Server): Promise<string> => (await httpsFetch(s.base, '/healthz')).certSha256
+// Über HTTPS mit dem Zertifikat des Servers als einzigem Vertrauensanker (CodeQL: nie die Prüfung abschalten)
+const tlsFetch = (s: Server, urlPath: string, init: Parameters<typeof httpsFetch>[2] = {}) => httpsFetch(s.base, urlPath, { ...init, ca: serverCa(s.dataDir) })
+const certOf = async (s: Server): Promise<string> => (await tlsFetch(s, '/healthz')).certSha256
 
 // Wie das Fenster: Fingerabdruck lesen, Beweis rechnen, über HTTPS koppeln
 async function pair(s: Server, code: string, { cert, name = 'Laptop im Büro' }: { cert?: string, name?: unknown } = {}) {
   const proof = pairingProof(code, cert ?? await certOf(s))
-  return httpsFetch(s.base, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name, proof }) })
+  return tlsFetch(s, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name, proof }) })
 }
 
 async function paired(s: Server, cookie: string, name?: string): Promise<Paired & { code: string }> {
@@ -49,7 +51,7 @@ async function paired(s: Server, cookie: string, name?: string): Promise<Paired 
 }
 
 const deviceHeader = (p: Paired) => ({ 'x-mietfuchs-device': `${p.id}.${p.deviceKey}` })
-const unitsViaHttps = async (s: Server, p: Paired) => (await httpsFetch(s.base, '/api/units', { headers: deviceHeader(p) })).status
+const unitsViaHttps = async (s: Server, p: Paired) => (await tlsFetch(s, '/api/units', { headers: deviceHeader(p) })).status
 const zugang = (s: Server) => JSON.parse(fs.readFileSync(path.join(s.dataDir, 'zugang.json'), 'utf8')) as { mode: string, devices?: DeviceView[] }
 
 test('Kopplung: richtiger Beweis ergibt einen Schlüssel, der nur über HTTPS gilt', async () => {
@@ -63,7 +65,7 @@ test('Kopplung: richtiger Beweis ergibt einen Schlüssel, der nur über HTTPS gi
     assert.ok(minutes > 9 && minutes <= 10, expiresAt)
     const cert = await certOf(s)
     const proof = pairingProof(code, cert)
-    const res = await httpsFetch(s.base, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name: 'Laptop im Büro', proof }) })
+    const res = await tlsFetch(s, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name: 'Laptop im Büro', proof }) })
     assert.equal(res.status, 200, res.body)
     const device = JSON.parse(res.body) as Paired
     assert.match(device.id, /^[0-9a-f]{16}$/)
@@ -73,13 +75,13 @@ test('Kopplung: richtiger Beweis ergibt einen Schlüssel, der nur über HTTPS gi
     // Mit dem Schlüssel über HTTPS angemeldet, über HTTP nie, ohne Kopfzeile auch über HTTPS nicht
     assert.equal(await unitsViaHttps(s, device), 200)
     assert.equal((await rawRequest(s.base, { urlPath: '/api/units', headers: deviceHeader(device) })).status, 401)
-    assert.equal((await httpsFetch(s.base, '/api/units')).status, 401)
-    assert.equal((await httpsFetch(s.base, '/api/units', { headers: { 'x-mietfuchs-device': `${device.id}.${'A'.repeat(43)}` } })).status, 401)
-    const auth = JSON.parse((await httpsFetch(s.base, '/api/auth', { headers: deviceHeader(device) })).body) as { signedIn: boolean }
+    assert.equal((await tlsFetch(s, '/api/units')).status, 401)
+    assert.equal((await tlsFetch(s, '/api/units', { headers: { 'x-mietfuchs-device': `${device.id}.${'A'.repeat(43)}` } })).status, 401)
+    const auth = JSON.parse((await tlsFetch(s, '/api/auth', { headers: deviceHeader(device) })).body) as { signedIn: boolean }
     assert.equal(auth.signedIn, true)
 
     // Liste ohne keyHash, `current` für das anfragende Gerät, `lastSeen` gesetzt
-    const own = JSON.parse((await httpsFetch(s.base, '/api/auth/devices', { headers: deviceHeader(device) })).body) as { devices: DeviceView[] }
+    const own = JSON.parse((await tlsFetch(s, '/api/auth/devices', { headers: deviceHeader(device) })).body) as { devices: DeviceView[] }
     assert.equal(own.devices.length, 1)
     assert.equal(own.devices[0].id, device.id)
     assert.equal(own.devices[0].name, 'Laptop im Büro')
@@ -116,7 +118,7 @@ test('Kopplung: Beweis für ein anderes Zertifikat, ein zweites Mal und nach dem
     const wrong = await pair(s, code, { cert: 'c'.repeat(64) })
     assert.equal(wrong.status, 400)
     assert.equal(JSON.parse(wrong.body).error, 'Der Code stimmt nicht oder ist abgelaufen.')
-    const unknown = await httpsFetch(s.base, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name: 'x', proof: 'kein Beweis' }) })
+    const unknown = await tlsFetch(s, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name: 'x', proof: 'kein Beweis' }) })
     assert.equal(unknown.status, 400)
     // Ein Fehlversuch verbraucht den Code nicht, der richtige gilt einmal
     assert.equal((await pair(s, code)).status, 200)
@@ -188,7 +190,7 @@ test('Kopplung: ohne Passwort gibt es keinen Code', async () => {
     assert.equal((await jsonOf<{ error: string }>(res)).error, 'Legen Sie zuerst ein Passwort fest.')
     const auth = await jsonOf<{ pairing: { available: boolean } }>(await fetch(`${s.base}/api/auth`))
     assert.equal(auth.pairing.available, false)
-    const tried = await httpsFetch(s.base, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name: 'x', proof: '0'.repeat(64) }) })
+    const tried = await tlsFetch(s, '/api/auth/pair', { method: 'POST', body: JSON.stringify({ name: 'x', proof: '0'.repeat(64) }) })
     assert.equal(tried.status, 409)
   } finally {
     s.stop()
@@ -207,8 +209,8 @@ test('Kopplung: ein entferntes Gerät ist abgemeldet, die übrigen bleiben', asy
     assert.equal((await fetch(`${s.base}/api/auth/devices/${a.id}`, { method: 'DELETE', headers: { cookie } })).status, 404)
     assert.deepEqual(zugang(s).devices?.map((d) => d.name), ['Zweites'])
     // Ohne Anmeldung weder Liste noch Entfernen
-    assert.equal((await httpsFetch(s.base, '/api/auth/devices')).status, 401)
-    assert.equal((await httpsFetch(s.base, `/api/auth/devices/${b.id}`, { method: 'DELETE' })).status, 401)
+    assert.equal((await tlsFetch(s, '/api/auth/devices')).status, 401)
+    assert.equal((await tlsFetch(s, `/api/auth/devices/${b.id}`, { method: 'DELETE' })).status, 401)
   } finally {
     s.stop()
   }
