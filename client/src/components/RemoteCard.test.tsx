@@ -163,10 +163,19 @@ test('Trennen scheitert: Meldung ohne Vorspann, Knopf wieder frei; ein alter Feh
 })
 
 test('Sätze aus pairing.js landen am richtigen Feld', async () => {
-  const address = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so ein, wie Sie Mietfuchs im Browser öffnen, etwa nas:3001 oder 192.168.1.5:3001.'
+  const address = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so ein, wie Sie Mietfuchs im Browser öffnen, etwa nas:3001, 192.168.1.5:3001 oder https://nas.fritz.box.'
   show(bridge({ connect: vi.fn(async () => ({ problem: address, field: 'address' as const })) }))
   await fill()
   await waitFor(() => expect(screen.getByLabelText(/Adresse/).getAttribute('aria-invalid')).toBe('true'))
+})
+
+// Kopplung über einen Proxy (#528, Durchsicht PR 2): Die neuen Sätze landen an der Adresse, nie am Code
+test('Sätze zum Proxy: am Feld Adresse oder als Meldung der Karte, nie am Code', () => {
+  const refusal = 'Mietfuchs antwortet nicht unter dem Namen „andere.example“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.'
+  expect(problemField(refusal, 'address')).toBe('address')
+  expect(problemField('Der Code bleibt gültig, aber der Proxy meldet kein HTTPS.', 'address')).toBe('address')
+  expect(problemField('Mietfuchs unter nas.fritz.box vertraut dem Proxy davor nicht und erfährt deshalb nicht, unter welcher Adresse Sie es aufrufen. Tragen Sie den Proxy bei Mietfuchs in NKA_TRUST_PROXY ein; in compose.caddy.yml steht das schon.')).toBe('address')
+  expect(problemField('Mietfuchs unter nas.fritz.box sieht die Verbindung nicht als verschlüsselt an, weil es dem Proxy davor nicht vertraut. Tragen Sie den Proxy bei Mietfuchs in NKA_TRUST_PROXY ein; in compose.caddy.yml steht das schon.')).toBeNull()
 })
 
 test('Brücke fehlt oder ist unvollständig: keine Karte', () => {

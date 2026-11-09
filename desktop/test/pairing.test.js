@@ -509,3 +509,145 @@ test('Speicher des Systems: einmal gerechnet, enthält die Vorgabe von Node', ()
   assert.ok(trust.length >= tls.getCACertificates('default').length)
   assert.equal(systemTrust(), trust)
 })
+
+// Durchsicht PR 2, Runde 1: Fehler kommen am richtigen Feld an, ohne dass ein Beweis hinausgeht
+/**
+ * Ein nachgebauter Mietfuchs hinter einem Proxy mit Blatt einer Test-CA; `answer` beantwortet jede Anfrage
+ * @param {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void} answer
+ * @param {string[]} [names]
+ */
+async function fakeBehindProxy(answer, names) {
+  const { caCert, leaf } = await proxies.createTestCa(names)
+  /** @type {string[]} */
+  const seen = []
+  const server = https.createServer({ key: leaf.key, cert: leaf.cert }, (req, res) => {
+    seen.push(`${req.method} ${req.url}`)
+    answer(req, res)
+  })
+  await api.listening(server, '127.0.0.1')
+  const origin = `https://127.0.0.1:${api.portOf(server)}`
+  return { origin, ca: [...systemTrust(), caCert], posts: () => seen.filter((line) => line.startsWith('POST')), close: () => server.close() }
+}
+
+/** @param {object} body */
+const preflightAnswer = (body) => (/** @type {import('node:http').IncomingMessage} */ req, /** @type {import('node:http').ServerResponse} */ res) => {
+  res.setHeader('content-type', 'application/json')
+  if (req.method === 'GET' && req.url === '/api/auth/pair') return res.end(JSON.stringify(body))
+  res.end(JSON.stringify({ id: 'abcdef0123456789', deviceKey: 'K'.repeat(43), version: '0.17.0' }))
+}
+
+test('Proxy: lehnt Mietfuchs den weitergereichten Namen ab, steht der Grund am Feld Adresse, kein Beweis geht hinaus', async () => {
+  const p = await behindProxy({ env: { ...LOCAL_PROXY, NKA_ALLOWED_HOSTS: 'nas.example' }, forwarded: { host: 'andere.example' } })
+  try {
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca: [...systemTrust(), p.caCert] })
+    assert.deepEqual(result, { problem: 'Mietfuchs antwortet nicht unter dem Namen „andere.example“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.', field: 'address' })
+    assert.deepEqual(p.posts(), [])
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Proxy: liefert er das Zertifikat von Mietfuchs aus, koppelt das Fenster auch mit abgelehntem Namen gepinnt', async () => {
+  const p = await behindProxy({ env: { ...LOCAL_PROXY, NKA_ALLOWED_HOSTS: 'nas.example' }, forwarded: { host: 'andere.example' }, ownCert: true })
+  try {
+    const result = await pair({ address: p.proxy.origin, code: await p.code(), name: 'Laptop', ca: systemTrust() })
+    assert.ok(!('problem' in result), JSON.stringify(result))
+    assert.equal(result.trust, 'pinned')
+  } finally {
+    await p.stop()
+  }
+})
+
+test('Host-Prüfung: 403 mit Text steht am Feld Adresse, sonst bleibt es bei „kein Mietfuchs“', async () => {
+  const refusal = 'Mietfuchs antwortet nicht unter dem Namen „nas.example“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.'
+  const guarded = await fakeBehindProxy((req, res) => {
+    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end(refusal)
+  })
+  try {
+    assert.deepEqual(await pair({ address: guarded.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: guarded.ca }), { problem: refusal, field: 'address' })
+    assert.deepEqual(guarded.posts(), [])
+  } finally {
+    guarded.close()
+  }
+  const html = await fakeBehindProxy((req, res) => {
+    res.writeHead(403, { 'content-type': 'text/html' })
+    res.end('<h1>Forbidden</h1>')
+  })
+  try {
+    const result = await pair({ address: html.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: html.ca })
+    assert.ok('problem' in result)
+    assert.match(result.problem, /kein Mietfuchs/)
+    assert.equal(result.field, 'address')
+  } finally {
+    html.close()
+  }
+})
+
+test('Koppeln: 400 mit transport gehört nie zum Feld Code', async () => {
+  const sentence = 'Mietfuchs steht hinter einem Proxy, dem es nicht vertraut, oder der Proxy meldet kein HTTPS. Tragen Sie den Proxy in NKA_TRUST_PROXY ein. Der Code bleibt gültig.'
+  /** @type {string} */
+  let origin = ''
+  const fake = await fakeBehindProxy((req, res) => {
+    res.setHeader('content-type', 'application/json')
+    if (req.method === 'GET') return res.end(JSON.stringify({ app: 'mietfuchs', certSha256: null, secure: true, origin }))
+    res.writeHead(400)
+    res.end(JSON.stringify({ error: sentence, transport: true }))
+  })
+  origin = fake.origin
+  try {
+    const result = await pair({ address: fake.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: fake.ca })
+    assert.ok('problem' in result)
+    assert.equal(result.problem, sentence)
+    // An der Verbindung liegt es, also an der Adresse (auch problemField in der Karte ordnet dann nicht nach Stichwort)
+    assert.equal(result.field, 'address')
+    assert.equal(fake.posts().length, 1)
+  } finally {
+    fake.close()
+  }
+})
+
+test('Proxy: verschlüsselt, aber ohne Ursprung, sagt das Fenster, dass Mietfuchs dem Proxy nicht vertraut', async () => {
+  const fake = await fakeBehindProxy(preflightAnswer({ app: 'mietfuchs', certSha256: 'a'.repeat(64), secure: true, origin: null }))
+  try {
+    const result = await pair({ address: fake.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: fake.ca })
+    assert.ok('problem' in result)
+    assert.equal(result.problem, `Mietfuchs unter 127.0.0.1:${new URL(fake.origin).port} vertraut dem Proxy davor nicht und erfährt deshalb nicht, unter welcher Adresse Sie es aufrufen. Tragen Sie den Proxy bei Mietfuchs in NKA_TRUST_PROXY ein; in compose.caddy.yml steht das schon.`)
+    assert.deepEqual(fake.posts(), [])
+  } finally {
+    fake.close()
+  }
+  // secure: false bleibt beim Satz der Spec
+  const plain = await fakeBehindProxy(preflightAnswer({ app: 'mietfuchs', certSha256: 'a'.repeat(64), secure: false, origin: null }))
+  try {
+    const result = await pair({ address: plain.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: plain.ca })
+    assert.ok('problem' in result)
+    assert.match(result.problem, /sieht die Verbindung nicht als verschlüsselt an/)
+    assert.deepEqual(plain.posts(), [])
+  } finally {
+    plain.close()
+  }
+})
+
+test('Proxy: vertraute Kette, aber ein anderer Name im Zertifikat, ergibt keinen Beweis', async () => {
+  /** @type {string} */
+  let origin = ''
+  const fake = await fakeBehindProxy((req, res) => preflightAnswer({ app: 'mietfuchs', certSha256: 'a'.repeat(64), secure: true, origin })(req, res), ['nas.example'])
+  origin = fake.origin
+  try {
+    const result = await pair({ address: fake.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: fake.ca })
+    assert.ok('problem' in result, JSON.stringify(result))
+    assert.match(result.problem, /Stammzertifikat/)
+    assert.match(result.problem, /anderen Namen/)
+    assert.equal(result.field, 'address')
+    assert.deepEqual(fake.posts(), [])
+  } finally {
+    fake.close()
+  }
+})
+
+test('Adresse: der Satz zu einer unlesbaren Adresse nennt auch https://', () => {
+  const result = normalizeAddress('ftp://nas')
+  assert.ok('problem' in result)
+  assert.match(result.problem, /etwa nas:3001, 192\.168\.1\.5:3001 oder https:\/\/nas\.fritz\.box\.$/)
+})

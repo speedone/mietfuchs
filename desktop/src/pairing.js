@@ -64,7 +64,7 @@ export function systemTrust() {
  * @typedef {{ problem: string, field?: 'address' | 'code' }} Problem
  */
 
-const ADDRESS_PROBLEM = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so ein, wie Sie Mietfuchs im Browser öffnen, etwa nas:3001 oder 192.168.1.5:3001.'
+const ADDRESS_PROBLEM = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so ein, wie Sie Mietfuchs im Browser öffnen, etwa nas:3001, 192.168.1.5:3001 oder https://nas.fritz.box.'
 
 /**
  * Die Adresse aus der Karte „Mietfuchs im Heimnetz“: `nas`, `nas:3001`, `http://192.168.1.5:3001/`,
@@ -347,8 +347,9 @@ function mietfuchsOverHttp({ host, port }, timeoutMs) {
  */
 
 /**
- * Die Vorabfrage `GET /api/auth/pair` (PairPreflight in server/src/accessServer.ts)
- * @typedef {{ app: string, certSha256: string | null, secure: boolean, origin: string | null }} Preflight
+ * Die Vorabfrage `GET /api/auth/pair` (PairPreflight in server/src/accessServer.ts); `problem`, wenn der Server den
+ * weitergereichten Namen ablehnt
+ * @typedef {{ app: string, certSha256: string | null, secure: boolean, origin: string | null, problem?: string }} Preflight
  */
 
 /**
@@ -409,6 +410,10 @@ export async function pair({ address, code, name = deviceNameOf(os.hostname()), 
   }
   /** @type {Preflight | null} */
   const preflight = answer.status === 200 ? jsonOr(answer.body) : null
+  // Die Host-Prüfung von Mietfuchs (requestGuard.ts) lehnt den Namen ab: 403 mit ihrem Satz als Text
+  if (answer.status === 403 && /^text\/plain\b/i.test(String(answer.headers['content-type'] ?? '')) && answer.body.trim()) {
+    return { problem: answer.body.trim().slice(0, 500), field: 'address' }
+  }
   if (!preflight || typeof preflight !== 'object' || preflight.app !== 'mietfuchs') return notMietfuchs
 
   // Die Vertrauensart: das Zertifikat von Mietfuchs vor jedem Urteil des Systems (eine direkte Verbindung ist nie `system`)
@@ -417,13 +422,19 @@ export async function pair({ address, code, name = deviceNameOf(os.hostname()), 
   if (typeof preflight.certSha256 === 'string' && preflight.certSha256 === seen.certSha256) trust = 'pinned'
   else if (seen.authorized) trust = 'system'
   else {
-    return { problem: `Unter ${shown} antwortet Mietfuchs hinter einem Proxy, dessen Zertifikat dieser Rechner nicht kennt. Installieren Sie das Stammzertifikat des Proxys auf diesem Rechner (bei Caddy die Datei root.crt), oder lassen Sie den Proxy das Zertifikat von Mietfuchs ausliefern. Die Anleitung zu Docker beschreibt beides.`, field: 'address' }
+    // `authorized` schließt den Namen ein (checkServerIdentity): Eine vertraute Kette für einen anderen Namen gilt nicht
+    return { problem: `Unter ${shown} antwortet Mietfuchs hinter einem Proxy, dessen Zertifikat dieser Rechner nicht kennt oder das einen anderen Namen nennt. Installieren Sie das Stammzertifikat des Proxys auf diesem Rechner (bei Caddy die Datei root.crt), oder lassen Sie den Proxy das Zertifikat von Mietfuchs ausliefern. Die Anleitung zu Docker beschreibt beides.`, field: 'address' }
   }
   // Ohne HTTPS aus Sicht des Servers nähme er keinen Beweis an; in `system` ohne Ursprung ebenso (der Proxy ist nicht
-  // vertraut, spricht aber selbst TLS zu Mietfuchs)
+  // vertraut, spricht aber selbst TLS zu Mietfuchs, eigener Satz unten)
   if (preflight.secure !== true) return notTrusted
   if (trust === 'system') {
-    if (typeof preflight.origin !== 'string') return notTrusted
+    // Der Server lehnt den weitergereichten Namen ab (NKA_ALLOWED_HOSTS); ein Beweis mit Ursprung gälte nie. Gepinnt
+    // zählt der Name nicht, der Beweis bindet an den Fingerabdruck.
+    if (typeof preflight.problem === 'string' && preflight.problem) return { problem: preflight.problem, field: 'address' }
+    if (typeof preflight.origin !== 'string') {
+      return { problem: `Mietfuchs unter ${shown} vertraut dem Proxy davor nicht und erfährt deshalb nicht, unter welcher Adresse Sie es aufrufen. Tragen Sie den Proxy bei Mietfuchs in NKA_TRUST_PROXY ein; in compose.caddy.yml steht das schon.` }
+    }
     if (preflight.origin !== where.origin) {
       return { problem: `Der Proxy meldet Mietfuchs die Adresse ${preflight.origin}, eingegeben ist ${shown}. Geben Sie die Adresse so ein, wie Sie Mietfuchs im Browser öffnen, mit https:// davor.`, field: 'address' }
     }
@@ -461,7 +472,7 @@ export async function pair({ address, code, name = deviceNameOf(os.hostname()), 
     // 400 heißt an dieser Route: Der Code stimmt nicht oder ist abgelaufen. Mit `transport: true` liegt es an der
     // Verbindung (Proxy nicht vertraut, kein HTTPS), nicht am Code. 409 (kein Passwort, zu viele Geräte) und 429
     // (Bremse) betreffen kein Feld.
-    if (answer.status === 400 && body.transport === true) return { problem: body.error }
+    if (answer.status === 400 && body.transport === true) return { problem: body.error, field: 'address' }
     return answer.status === 400 ? { problem: body.error, field: 'code' } : { problem: body.error }
   }
   return { problem: `Das Koppeln ist gescheitert (Antwort ${answer.status}).` }
