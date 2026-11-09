@@ -28,6 +28,10 @@ der richtige Server ist. Keine Domain, kein Let's Encrypt, nichts am Router, kei
 
 ## Nicht-Ziele
 
+- **Koppeln über einen Reverse Proxy** (Caddy aus deploy/compose.caddy.yml, nginx). **Entscheidung (Prüfung des
+  Entwurfs, Frage 1):** TLS endet dort, der Server sähe keine verschlüsselte Verbindung, und `trust proxy` bleibt aus.
+  Wer Caddy davor hat, nutzt den Browser über HTTPS; docs/docker.md sagt das. Gekoppelt wird direkt mit dem Port von
+  Mietfuchs.
 - HTTPS für **Browser** ohne Proxy (ein eigenes Zertifikat ergibt dort nur eine Warnseite; dafür bleibt Caddy, docs/docker.md).
 - Mehrere Benutzer oder Rollen (#91).
 - Automatisches Finden des Servers im Netz (mDNS). Die Adresse wird eingetippt.
@@ -50,20 +54,24 @@ der richtige Server ist. Keine Domain, kein Let's Encrypt, nichts am Router, kei
 
 - Beim Start (vor dem Binden) liest der Server `tls/mietfuchs.key` und `tls/mietfuchs.crt` im Datenordner oder erzeugt
   sie: ECDSA P-256, SHA-256, CN „Mietfuchs“, über die Bibliothek **`selfsigned`** (MIT, ohne Laufzeitdaten, prüft
-  ECDSA in 25 ms; Node erzeugt keine Zertifikate selbst). Schlüssel 0600, über Zwischendatei und Umbenennen wie
-  `zugang.json`. Lange Gültigkeit (das Fenster pinnt und prüft die Laufzeit nicht; die Option der Bibliothek dafür
-  nachsehen, `days` wirkt in 5.5.0 nicht). **Nicht im Backup, nicht in Vorversionen, nicht im Umzug** (wie `zugang.json`):
+  ECDSA in 25 ms unter Node, 29 ms unter Bun; Node erzeugt keine Zertifikate selbst). Schlüssel 0600, über
+  Zwischendatei und Umbenennen wie `zugang.json`. Gültig 30 Jahre über `notAfterDate` (das Fenster pinnt und prüft die
+  Laufzeit nicht). **Nicht im Backup, nicht in Vorversionen, nicht im Umzug** (wie `zugang.json`):
   Nach dem Wiederherstellen auf einem neuen Rechner entsteht ein neues Zertifikat, gekoppelte Fenster koppeln neu.
-- **Ein Port**: `net.createServer` liest das erste Byte jeder Verbindung (`0x16` = TLS-Handshake) und reicht die
-  Verbindung an `https.Server` oder `http.Server` weiter (`emit('connection', socket)`, Byte zurück mit `unshift`).
-  Beide nutzen denselben Handler wie heute (`startup`, `/healthz`, `app`). Alles, was heute `server` heißt (listen,
+- **Ein Port**: `net.createServer` liest das erste Byte jeder Verbindung (`0x16` = TLS-Handshake, Byte zurück mit
+  `unshift`). TLS: `new tls.TLSSocket(socket, { isServer: true, key, cert })` und diesen an **denselben** `http.Server`
+  (`emit('connection', tlsSocket)`); sonst die rohe Verbindung. **Nicht** `https.Server.emit('connection')`: Das scheitert
+  unter Bun 1.4.4 (`WRONG_VERSION_NUMBER`, Prüfung vor dem Entwurf), und die Programmdatei und die Linux-Pakete laufen
+  unter Bun. Ein Test mit HTTPS gehört deshalb auch in die Prüfung der Programmdateien (scripts/CLAUDE.md). Derselbe
+  Handler wie heute (`startup`, `/healthz`, `app`). Alles, was heute `server` heißt (listen,
   close, Lauf-Datei, instanceGuard, Abschalten), bleibt am äußeren Server.
 - `viaHttps` (Secure-Cookie) zählt zusätzlich `req.socket.encrypted`. Der Cookie-Name bleibt `mietfuchs_<id>` (`__Host-`
   nur bei Bedarf; über HTTP und HTTPS denselben Namen zu tragen ist einfacher, und das Fenster nutzt Geräteschlüssel).
 - Fehlt der Ordner oder ist er nicht beschreibbar, startet der Server ohne HTTPS (Zeile auf der Fehlerausgabe), nie
   ein Abbruch. Verbindungen mit TLS werden dann geschlossen.
-- Lauscht der Server nur lokal (Fenster, Store ohne Heimnetz), entsteht trotzdem ein Zertifikat (einfacher, schadet
-  nicht); **entschieden vom Umsetzenden**, falls die Startzeit im Fenster leidet: dann erst bei `network`.
+- Das Zertifikat entsteht bei jedem Start ohne eins, auch lokal lauschend (25 ms; eine Regel statt zwei). **Entscheidung
+  (Prüfung des Entwurfs, Frage 3):** Ein Fenster mit „Zugriff aus dem Heimnetz“ ist technisch ein mögliches Ziel, wird
+  aber nicht beworben und nicht eigens geprüft; die Doku nennt NAS, Raspberry Pi und Docker.
 - `/healthz` nennt zusätzlich `tls: true|false` (das Fenster braucht es nicht, die Prüfungen schon).
 
 ### 2. Kopplung und Geräteschlüssel (Server, access.ts / accessServer.ts)
@@ -77,7 +85,7 @@ der richtige Server ist. Keine Domain, kein Let's Encrypt, nichts am Router, kei
   sonst 400 „Koppeln geht nur über eine verschlüsselte Verbindung.“). Rumpf `{ name, proof }`. `proof` =
   HMAC-SHA256, Schlüssel = normalisierter Code (`normalizeCode`), Nachricht = `mietfuchs-kopplung:` + SHA-256 des
   DER-Zertifikats in Kleinbuchstaben-Hex, das der Server ausliefert; zeitkonstant verglichen. Erfolg: Code verbraucht,
-  Gerät angelegt, Antwort `{ id, deviceKey }` (32 Zufallsbytes base64url), `Cache-Control: no-store`. Fehler: 400
+  Gerät angelegt, Antwort `{ id, deviceKey, version }` (32 Zufallsbytes base64url), `Cache-Control: no-store`. Fehler: 400
   „Der Code stimmt nicht oder ist abgelaufen.“ (kein Unterschied zwischen beidem). Ein Mittelsmann, der ein eigenes
   Zertifikat zeigt, bekommt einen Beweis für sein Zertifikat und kann ihn ohne Code nicht auf das echte umrechnen.
 - **Geräte** in `zugang.json` als `devices: [{ id, name, keyHash, pairedAt, lastSeen }]` (`keyHash` SHA-256 des
@@ -103,8 +111,12 @@ der richtige Server ist. Keine Domain, kein Let's Encrypt, nichts am Router, kei
   verbinden, Zertifikat lesen (`getPeerCertificate(true).raw` → SHA-256 hex), `/healthz` lesen (`app === 'mietfuchs'`,
   `version`), `proof` rechnen, `POST /api/auth/pair` mit Rechnername als `name`. Fehler als Sätze: nicht erreichbar,
   kein Mietfuchs, Mietfuchs ohne HTTPS (ältere Fassung), Code falsch oder abgelaufen, Server ohne Passwort.
-- **Gespeichert** in `fenster.json`: `remote: { url, certSha256, deviceId, deviceKey, serverVersion }`; `deviceKey`
-  über `safeStorage.encryptString` (Keychain, DPAPI), ohne verfügbares safeStorage wird nicht gekoppelt (Meldung).
+- **Gespeichert** in `fenster.json` (userData, Rechte 0600): `remote: { url, certSha256, deviceId, deviceKey,
+  serverVersion }`. **Entscheidung (Prüfung des Entwurfs, Frage 2): ohne `safeStorage`.** Das Fenster auf dem Mac ist
+  nur ad hoc signiert; der Schlüsselbund bindet seinen Eintrag an die Signatur, die sich mit jedem Build ändert, und
+  fragte nach jedem Update erneut (oder hinge im desktop-check). Der Schutz wäre klein: Der Datenordner des Fensters
+  auf demselben Rechner liegt ebenso unverschlüsselt im Benutzerkonto, und ein Geräteschlüssel lässt sich am Server in
+  der Liste entfernen. datenschutz.md nennt die Datei.
 - **Betrieb verbunden**: kein eigener Server. `origin` = `https://host:port`. `session.setCertificateVerifyProc`: für
   genau diesen Host und Port nur das gemerkte Zertifikat (SHA-256 des DER, aus `request.certificate.data` PEM
   gerechnet), sonst die normale Prüfung (`callback(-3)`). Geräteschlüssel per `onBeforeSendHeaders` nur an `${origin}/*`
@@ -113,13 +125,17 @@ der richtige Server ist. Keine Domain, kein Let's Encrypt, nichts am Router, kei
 - **Brücke verbunden**: erlaubt `print`, `updater.*` (das Fenster selbst), `remote.get`, `remote.disconnect`; verboten
   `network.*` und `chooseFolder` (Fehler „Nicht erlaubt.“). `network.get` meldet dort `{ remote: true }`, damit die
   Oberfläche die Karte „Zugriff aus dem Heimnetz“ ausblendet. `remote.connect` nur von der lokalen Seite.
+- **Pinning je Host**: `setCertificateVerifyProc` bekommt nur den Hostnamen, nicht den Port. Gepinnt wird deshalb je
+  Host (für ihn gilt nur das gemerkte Zertifikat, auf jedem Port); der Geräteschlüssel geht trotzdem nur an
+  `${origin}/*`. Die Entscheidung ist eine reine Funktion (`pinDecision(hostname, certSha256, remote)`), getestet.
 - **Seite des Servers im Fenster**: Karte „Mietfuchs im Heimnetz“ zeigt „Verbunden mit nas:3001 (Mietfuchs 0.17.0)“ und
   „Verbindung trennen“. Zusätzlich Menüeintrag „Verbindung trennen“ (falls die Seite nicht lädt).
 - **Nicht erreichbar / Zertifikat geändert / Geräteschlüssel abgelehnt (401 nach Entfernen)**: native Rückfrage
   (`dialog.showMessageBox`) mit Grund und „Erneut versuchen“, „Verbindung trennen“ (zurück zum eigenen Server,
   Kopplung vergessen), „Beenden“. Zertifikat geändert sagt: „Der Server zeigt ein anderes Zertifikat als beim Koppeln.
   Wurde Mietfuchs dort neu eingerichtet, koppeln Sie neu; sonst verbinden Sie sich nicht.“
-- **Version**: Weicht `major.minor` von `/healthz` von der des Fensters ab, einmal je Start ein Hinweis (verbunden wird
+- **Version**: Die Antwort von `pair` nennt `version` (von außen ohne Anmeldung nennt `/healthz` keine); bei jedem
+  Start liest das Fenster sie aus `/healthz` mit Geräteschlüssel. Weicht `major.minor` von der des Fensters ab, einmal je Start ein Hinweis (verbunden wird
   trotzdem).
 - **Trennen**: `remote` aus `fenster.json`, Server des Fensters starten, eigene Seite laden. Das Gerät bleibt in der
   Liste des Servers, bis es dort entfernt wird (der Hinweis sagt es); wenn erreichbar, ruft das Fenster vorher
