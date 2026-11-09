@@ -26,8 +26,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `NKA_AUTH=off` schaltet die Anmeldung ab, etwa hinter einem Proxy mit eigener Anmeldung, `NKA_AUTH=on` verlangt sie
   auch auf `127.0.0.1`. `NKA_PASSWORD_FILE` (etwa ein Docker Secret) oder `NKA_PASSWORD` geben das Passwort beim
   Start vor, solange keins festgelegt ist; ein später in der Oberfläche geändertes überschreiben sie nicht
-  ([Docker](docs/docker.md#passwort-beim-ersten-start-vorgeben-nka_password_file)). Passwort und Code gehen nicht ins Backup. Über `http://` lässt sich im Heimnetz weiter
-  mitlesen; HTTPS gibt es mit einem Proxy oder VPN ([Docker](docs/docker.md#zuerst-sicherheit)).
+  ([Docker](docs/docker.md#passwort-beim-ersten-start-vorgeben-nka_password_file)). Passwort und Code gehen nicht ins Backup. Im Browser bleibt die Verbindung im Heimnetz
+  unverschlüsselt (`http://`), dort lässt sich weiter mitlesen; verschlüsselt geht es im Browser nur mit einem Proxy
+  oder VPN ([Docker](docs/docker.md#zuerst-sicherheit)). Ein Programmfenster auf einem anderen Rechner verbindet sich
+  dagegen verschlüsselt, über das eigene Zertifikat von Mietfuchs (nächster Punkt).
 - **Programmfenster mit einem Mietfuchs im Heimnetz verbinden**
   ([#528](https://github.com/speedone/mietfuchs/issues/528)): Läuft Mietfuchs in Docker auf einem NAS, als Paket auf
   einem Raspberry Pi oder als Programmdatei auf einem anderen Rechner, arbeiten Sie am Windows-PC oder Mac jetzt auch im

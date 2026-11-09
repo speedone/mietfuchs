@@ -103,7 +103,9 @@ zugestimmt haben:
    mitbringt). Mit Ihrer Zustimmung fragt Mietfuchs höchstens einmal am Tag bei GitHub nach der neuesten
    Version und lädt die Liste empfohlener KI-Modelle. Im eigenen Programmfenster unter Windows lädt
    Mietfuchs eine neue Version dann auch gleich von GitHub herunter; installiert wird sie erst, wenn Sie
-   das bestätigen („Jetzt neu starten“ oder „Beim nächsten Start“). GitHub sieht dabei Ihre IP-Adresse und die
+   das bestätigen („Jetzt neu starten“ oder „Beim nächsten Start“). Ein gekoppeltes Programmfenster übernimmt die
+   Zustimmung aus den Einstellungen des Mietfuchs, mit dem es gekoppelt ist: Wer dort die Einstellungen ändern darf,
+   entscheidet damit auch, ob das Fenster neue Versionen herunterlädt. GitHub sieht dabei Ihre IP-Adresse und die
    installierte Versionsnummer. Es gilt die
    [Datenschutzerklärung von GitHub](https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement).
 2. **KI-Belegauswertung über einen Dienst im Internet.** Wenn Sie in den Einstellungen einen Dienst
