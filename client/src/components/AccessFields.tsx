@@ -12,8 +12,10 @@ export type NewPassword = { password: string; repeat: string }
 
 // Zwei Felder und ein Vorschlag. Der Vorschlag steht im Klartext daneben, damit man ihn notieren kann; die Felder
 // bleiben verdeckt.
-export function NewPasswordFields({ label = 'Passwort', repeatLabel = 'Passwort wiederholen', value, onChange, minLength, errors }: {
+export function NewPasswordFields({ label = 'Passwort', repeatLabel = 'Passwort wiederholen', value, onChange, minLength, errors, width = 'l' }: {
   label?: string
+  // In der schmalen Karte der Einrichtung `full`, damit Code und Passwort gleich breit stehen
+  width?: 'l' | 'full'
   repeatLabel?: string
   value: NewPassword
   onChange: (next: NewPassword) => void
@@ -30,10 +32,10 @@ export function NewPasswordFields({ label = 'Passwort', repeatLabel = 'Passwort 
   }
   return (
     <>
-      <Field label={label} width="l" hint={`Mindestens ${minLength} Zeichen. Ein Satz aus drei, vier Wörtern lässt sich gut merken.`} {...errors.field('password')}>
+      <Field label={label} width={width} hint={`Mindestens ${minLength} Zeichen. Ein Satz aus drei, vier Wörtern lässt sich gut merken.`} {...errors.field('password')}>
         <input type="password" autoComplete="new-password" value={value.password} onChange={(e) => onChange({ ...value, password: e.target.value })} />
       </Field>
-      <Field label={repeatLabel} width="l" {...errors.field('repeat')}>
+      <Field label={repeatLabel} width={width} {...errors.field('repeat')}>
         <input type="password" autoComplete="new-password" value={value.repeat} onChange={(e) => onChange({ ...value, repeat: e.target.value })} />
       </Field>
       <p className="muted">
@@ -49,14 +51,15 @@ export function NewPasswordFields({ label = 'Passwort', repeatLabel = 'Passwort 
   )
 }
 
-export function CodeField({ value, onChange, info, errors }: {
+export function CodeField({ value, onChange, info, errors, width = 'm' }: {
+  width?: 'm' | 'full'
   value: string
   onChange: (code: string) => void
   info: AccessInfo
   errors: FormErrors<AccessField>
 }) {
   return (
-    <Field label="Einrichtungscode" width="m" hint={`Zwölf Zeichen wie K7QM-4XPA-9TRW. ${codePlaces(info).join(' ')}`} {...errors.field('code')}>
+    <Field label="Einrichtungscode" width={width} hint={`Zwölf Zeichen wie K7QM-4XPA-9TRW. ${codePlaces(info).join(' ')}`} {...errors.field('code')}>
       <input autoComplete="one-time-code" autoCapitalize="characters" spellCheck={false} value={value} onChange={(e) => onChange(e.target.value)} />
     </Field>
   )

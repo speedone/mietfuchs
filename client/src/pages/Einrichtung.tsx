@@ -70,17 +70,17 @@ export default function Einrichtung({ info, code: initialCode, onDone }: { info:
           <h1 className="m-0">Mietfuchs einrichten</h1>
         </div>
         <p>Mietfuchs ist von anderen Geräten in Ihrem Netz erreichbar. Legen Sie ein Passwort fest, damit nur Sie Ihre Daten sehen.</p>
-        <form noValidate onSubmit={(e) => void submit(e)}>
+        {/* `stack` gibt den Feldern denselben Abstand wie in jeder Karte; die beiden Wege stehen in einer Zeile,
+            der Hauptweg vorn (UI-Durchsicht 0.17.0) */}
+        <form noValidate onSubmit={(e) => void submit(e)} className="stack">
           <ErrorSummary errors={errors} />
-          {!info.window && <CodeField value={code} onChange={setCode} info={info} errors={errors} />}
-          <NewPasswordFields value={value} onChange={setValue} minLength={info.minLength} errors={errors} />
-          <div className="row mt-3">
+          {!info.window && <CodeField value={code} onChange={setCode} info={info} errors={errors} width="full" />}
+          <NewPasswordFields value={value} onChange={setValue} minLength={info.minLength} errors={errors} width="full" />
+          <div className="row center justify-between pt-2">
             <button type="submit" className="btn" disabled={busy}>{busy && <span className="spinner" />}Passwort festlegen</button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void withoutPassword()}>Ohne Passwort weiter …</button>
           </div>
         </form>
-        <p className="muted mt-4">
-          <button type="button" className="btn ghost small" disabled={busy} onClick={() => void withoutPassword()}>Ohne Passwort weiter …</button>
-        </p>
       </div>
     </main>
   )
