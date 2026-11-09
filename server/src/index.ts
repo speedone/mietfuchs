@@ -96,7 +96,7 @@ import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
-import { authSetting, isLoopback, readEnvPassword } from './access.ts'
+import { authSetting, fromThisComputer as fromThisComputerAt, readEnvPassword } from './access.ts'
 import { createAccess } from './accessServer.ts'
 import { createDualServer } from './dualPort.ts'
 import { ensureCertificate, readCertificate } from './tls.ts'
@@ -3432,12 +3432,12 @@ async function findCandidates(fresh = false): Promise<{ candidates: RelocationCa
   return value
 }
 
-// Die Anfrage kommt von diesem Rechner (Loopback). Die Umzugsrouten nehmen Pfade an, suchen im Benutzerordner und
-// kopieren. Mit „Zugriff aus dem Heimnetz“ (NKA_HOST=0.0.0.0) erreichten Handy und andere Rechner sie sonst und könnten
-// beliebige Pfade auf diesem Rechner lesen lassen (CodeQL js/path-injection). Deshalb antwortet jede dieser Routen nur
-// auf 127.0.0.1, ::1 und ::ffff:127.0.0.1, sonst 403 (`localOnly`). Die Oberfläche bietet den Umzug ohnehin nur im
-// Fenster an (`inWindow`), nie auf dem Handy.
-const fromThisComputer = (req: Request): boolean => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '')
+// Die Anfrage kommt von diesem Rechner (Loopback ohne Proxy-Kopfzeilen, access.ts). Die Umzugsrouten nehmen Pfade an,
+// suchen im Benutzerordner und kopieren. Mit „Zugriff aus dem Heimnetz“ (NKA_HOST=0.0.0.0) erreichten Handy und andere
+// Rechner sie sonst und könnten beliebige Pfade auf diesem Rechner lesen lassen (CodeQL js/path-injection). Deshalb
+// antwortet jede dieser Routen nur auf Loopback, sonst 403 (`localOnly`); ein Proxy auf demselben Rechner zählt nicht
+// (#528). Die Oberfläche bietet den Umzug ohnehin nur im Fenster an (`inWindow`), nie auf dem Handy.
+const fromThisComputer = (req: Request): boolean => fromThisComputerAt(req.socket.remoteAddress, req.headers)
 const NOT_HERE = 'Daten übernehmen geht nur am Rechner, auf dem Mietfuchs läuft.'
 // Vor jeder Umzugsroute außer der schnellen Frage `GET /api/relocation` (sie antwortet von außen nur `offered: false`)
 // und dem Fortschritt (ohne Pfade)
@@ -4835,7 +4835,7 @@ const dual = createDualServer((req, res) => {
   if ((req.url ?? '').split('?')[0] === '/healthz') {
     res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '1', 'cache-control': 'no-store' })
     // Von außen nur Name und Zustand (#528): Der Zustand des Zugangs steht erst nach dem Start fest
-    if (!isLoopback(req.socket.remoteAddress)) return void res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
+    if (!fromThisComputerAt(req.socket.remoteAddress, req.headers)) return void res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
     // Datenordner, Prozess und Zeitpunkt des Bindens: Daran erkennt ein zweiter Start auf einem anderen Port, ob er
     // demselben Ordner weichen muss (instanceGuard.ts, Durchsicht M2)
     res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting', version: APP_VERSION, dataDir: DATA_DIR, pid: process.pid, boundAt, ...(MOVED_AWAY ? { moved: true } : {}) }))

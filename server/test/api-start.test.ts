@@ -375,6 +375,36 @@ test('Belegter Port (#244): ein zweiter Start, während der erste noch die Daten
   }
 })
 
+// Während des Startens nennt /healthz den Datenordner nur dem Rechner selbst. Ein Proxy auf demselben Rechner (Peer
+// 127.0.0.1) mit einer Kopfzeile eines Proxys gilt nicht als der Rechner selbst (#528).
+test('Start: /healthz während des Startens über einen Proxy auf demselben Rechner nur mit Name und Zustand', async () => {
+  const port = String(await freePort())
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-start-proxy-'))
+  const start = startServerRaw(dataDir, { NKA_PORT: port, NKA_TEST_START_DELAY_MS: '3000' })
+  try {
+    const deadline = Date.now() + 15000
+    let res: Response | null = null
+    while (Date.now() < deadline) {
+      try {
+        res = await fetch(`http://127.0.0.1:${port}/healthz`, { headers: { 'x-forwarded-for': '192.168.1.9' } })
+        break
+      } catch {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+    }
+    if (!res) return assert.fail(start.out())
+    assert.equal(res.status, 503, start.out())
+    assert.deepEqual(await res.json(), { app: 'mietfuchs', status: 'starting' })
+    const here = await jsonOf<{ status: string, dataDir?: string }>(await fetch(`http://127.0.0.1:${port}/healthz`))
+    assert.equal(here.status, 'starting', 'noch im Start')
+    assert.equal(here.dataDir, dataDir)
+  } finally {
+    start.child.kill()
+    await waitForExit(start.child).catch(() => null)
+    removeDataDir(dataDir)
+  }
+})
+
 test('Belegter Port (#244): antwortet Mietfuchs dort erst nach Sekunden, wartet der zweite Start und erkennt es', async () => {
   // Rechnet der erste Start gerade einen langen Abschnitt, der die Ereignisschleife blockiert
   // (die Regression des Umstiegs über viele Jahre, ein großer Migrationsschritt), antwortet sein

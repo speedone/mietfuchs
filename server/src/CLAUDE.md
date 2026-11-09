@@ -220,14 +220,23 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   Pfaden, solange die Anmeldung gilt.
 - **Wann sie gilt** (`gateActive`): nicht bei `NKA_AUTH=off`, `off`, Übergang und `none`; sonst bei `required` (Netz
   oder `on`). Lokal lauschend mit Passwort nur für Anfragen mit **Proxy-Kopfzeilen** (`Forwarded`, `X-Forwarded-For`,
-  `X-Forwarded-Host`, `X-Real-IP`, `Via`; eine gefälschte macht nur strenger). Lokal ohne Passwort schreibt der erste
+  `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Real-IP`, `Via`, `proxyHeadersPresent`; eine gefälschte macht nur strenger). Lokal ohne Passwort schreibt der erste
   Abruf über einen Proxy einmal je Start ins Protokoll und schaltet auf den Hinweis des Übergangs mit Code
   (`noticeProxy`); nach dem Zurücksetzen gilt lokal über Proxy auch die Einrichtung (`proxyStrict`). Ein Proxy ohne
   solche Kopfzeilen bleibt unerkannt (hingenommen, dafür `NKA_AUTH=on`). `trust proxy` bleibt aus.
-- **`/healthz`** von 127.0.0.1/::1 oder mit Sitzung voll (HEALTHCHECK, `instanceGuard`), sonst nur `{ app, status }`
-  mit demselben Statuscode (`res.locals.shortHealth`). **Beenden vom Rechner**: `POST /api/quit` von Loopback ohne
-  Proxy-Kopfzeilen geht ohne Sitzung (Fenster aus dem Hauptprozess, `quit-old` des Umzugs, Server eines früheren
-  Starts), mehr nicht. `fromThisComputer`, `AT_THIS_COMPUTER` und der Umzug bleiben zusätzlich (siehe „API“).
+- **Vom Rechner selbst** heißt Loopback **und keine Proxy-Kopfzeile**, gleich welcher Peer (`fromThisComputer` in
+  access.ts, die eine Stelle): Ein Proxy auf demselben Rechner (Caddy, nginx; Peer 127.0.0.1) reichte sonst jede Anfrage
+  aus dem Netz als „von hier“ weiter. Das gilt für den vollen `/healthz` (auch während des Startens), `POST /api/quit`
+  ohne Sitzung, den Fensterschlüssel, `codeFile` in `GET /api/auth`, `AT_THIS_COMPUTER`, den Update-Stand und die
+  Umzugsrouten (index.ts, `fromThisComputer(req)`). Auch ein vertrauter Proxy (`NKA_TRUST_PROXY`) ist nie der Rechner
+  selbst. **`npm run dev`**: Der Proxy von Vite (http-proxy-3) setzt `X-Forwarded-*` nur mit `xfwd: true`, das
+  client/vite.config.ts nicht setzt (nachgemessen mit Vite 8.3.5: am Server kommen nur die Kopfzeilen des Browsers an);
+  so bleibt der Dev-Server „vom Rechner selbst“. Wer dort `xfwd` einschaltet, bekommt den gekürzten `/healthz` und die
+  Anmeldung auch lokal.
+- **`/healthz`** vom Rechner selbst oder mit Sitzung voll (HEALTHCHECK, `instanceGuard`), sonst nur `{ app, status }`
+  mit demselben Statuscode (`res.locals.shortHealth`). **Beenden vom Rechner**: `POST /api/quit` vom Rechner selbst
+  geht ohne Sitzung (Fenster aus dem Hauptprozess, `quit-old` des Umzugs, Server eines früheren Starts), mehr nicht.
+  `AT_THIS_COMPUTER` und der Umzug bleiben zusätzlich (siehe „API“).
 - **Origin bei Schreibzugriffen**, solange die Anmeldung gilt, auch bei abgeschalteter Host-Prüfung (Docker, npm) und
   für login/setup/logout: Ist `Sec-Fetch-Site` da, geht nur `same-origin` (oder `none`); sonst `Origin` gegen `Host`,
   den ersten `X-Forwarded-Host` oder `NKA_ALLOWED_HOSTS` (`null` abgelehnt); fehlt beides, ist es kein Browser, und
@@ -267,7 +276,7 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
 - **Fensterschlüssel**: Das Fenster erzeugt je Start 32 Bytes und reicht sie als `NKA_WINDOW_KEY`; index.ts liest und
   löscht ihn aus `process.env`, kein Kindprozess erbt ihn. Die Seite trägt `X-Mietfuchs-Window` über
   `onBeforeSendHeaders`, der Hauptprozess über `serverFetch` (scripts/CLAUDE.md, Programmfenster). Wirksam nur bei
-  `IN_WINDOW`, über Loopback ohne Proxy-Kopfzeilen, zeitkonstant (`atWindow`): Das Fenster gilt als angemeldet,
+  `IN_WINDOW`, vom Rechner selbst (`fromThisComputer`), zeitkonstant (`atWindow`): Das Fenster gilt als angemeldet,
   richtet ohne Code ein und ändert ohne bisheriges Passwort. Über die Adresse einer Netzwerkkarte wirkungslos; dafür
   gibt es die Kopplung mit Geräteschlüssel (nächster Punkt).
 - **Programmfenster koppeln** (Schritt 2, Entwurf docs/superpowers/specs/2026-11-09-kopplung-fenster-design.md, Abschnitt

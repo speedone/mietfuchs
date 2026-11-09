@@ -91,9 +91,12 @@ test('Anmeldung: /healthz vom Rechner selbst voll, über die Netzwerkkarte gekü
     const here = await jsonOf<{ app: string, status: string, version?: string, dataDir?: string }>(await fetch(`${s.base}/healthz`))
     assert.equal(here.status, 'ok')
     assert.equal(here.dataDir, s.dataDir)
-    // ein Proxy auf demselben Rechner bekommt den vollen Bericht (hingenommen)
-    const proxied = JSON.parse((await rawRequest(s.base, { urlPath: '/healthz', headers: { 'x-forwarded-for': '192.168.1.9' } })).body)
-    assert.equal(proxied.dataDir, s.dataDir)
+    // ein Proxy auf demselben Rechner kommt nicht vom Rechner selbst: gekürzt, mit jeder Kopfzeile eines Proxys
+    for (const name of ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded', 'via', 'x-real-ip']) {
+      const proxied = await rawRequest(s.base, { urlPath: '/healthz', headers: { [name]: name === 'x-forwarded-proto' ? 'https' : '192.168.1.9' } })
+      assert.equal(proxied.status, 200, name)
+      assert.deepEqual(JSON.parse(proxied.body), { app: 'mietfuchs', status: 'ok' }, name)
+    }
     const lan = viaLan(s.base)
     if (!lan) return t.skip('keine Netzwerkkarte')
     for (const urlPath of ['/healthz', '/HEALTHZ', '/healthz/', '/Healthz?x=1']) {
@@ -110,6 +113,7 @@ test('Anmeldung: Beenden vom Rechner selbst ohne Sitzung, über Proxy oder Netzw
   const first = await startServerIn(freshDir(), { ...NETWORK, NKA_RUNTIME: 'binary' })
   try {
     assert.equal((await rawRequest(first.base, { method: 'POST', urlPath: '/api/quit', headers: { 'x-forwarded-for': '1.2.3.4' }, body: '{}' })).status, 401)
+    assert.equal((await rawRequest(first.base, { method: 'POST', urlPath: '/api/quit', headers: { 'x-forwarded-proto': 'https' }, body: '{}' })).status, 401)
     const lan = viaLan(first.base)
     if (lan) assert.equal((await rawRequest(lan, { method: 'POST', urlPath: '/api/quit', body: '{}' })).status, 401)
     else t.diagnostic('keine Netzwerkkarte, Beenden von außen nicht geprüft')
@@ -409,6 +413,9 @@ test('Anmeldung: lokal nichts nötig und keine Datei; mit Passwort und Proxy-Kop
     assert.equal((await fetch(`${again.base}/api/units`)).status, 200)
     assert.equal((await rawRequest(again.base, { urlPath: '/api/units', headers: { 'x-forwarded-for': '192.168.1.9' } })).status, 401)
     assert.equal((await authOf(again.base, { 'x-forwarded-for': '192.168.1.9' })).required, true)
+    // auch allein mit X-Forwarded-Proto: jede Kopfzeile eines Proxys zählt
+    assert.equal((await rawRequest(again.base, { urlPath: '/api/units', headers: { 'x-forwarded-proto': 'https' } })).status, 401)
+    assert.equal((await authOf(again.base, { 'x-forwarded-proto': 'https' })).required, true)
   } finally {
     again.stop()
   }

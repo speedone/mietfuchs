@@ -49,6 +49,8 @@ export default defineConfig({
     // betroffen, dort bündelt Rollup die Datei ohnehin.
     fs: { allow: [searchForWorkspaceRoot(process.cwd()), '..'] },
     proxy: {
+      // Ohne `xfwd`: Mit X-Forwarded-* gälte eine Anfrage am Server nicht mehr als vom Rechner selbst
+      // (fromThisComputer in server/src/access.ts, #528), /healthz wäre gekürzt und die Anmeldung gälte.
       // 127.0.0.1 statt localhost: Auf Windows löst "localhost" zuerst zu IPv6 (::1)
       // auf - dort kann eine WSL-Portweiterleitung (wslrelay) Port 3001 belegen und
       // liefert dann 404 für alle /api-Routen. Die explizite IPv4-Adresse trifft

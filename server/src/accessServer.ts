@@ -8,8 +8,8 @@ import path from 'node:path'
 import type { TLSSocket } from 'node:tls'
 import {
   ACCESS_FILE, CODE_FILE, DEVICE_HEADER, DEVICE_NAME_MAX, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, deviceKeyHash, matchDevice, newDeviceId, newDeviceKey, pairingProof, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
-  gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
-  sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, viaProxy, writeAccessFile, writeCodeFile,
+  gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, fromThisComputer, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
+  sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, proxyHeadersPresent, isLoopback, writeAccessFile, writeCodeFile,
   type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword, type Stage,
 } from './access.ts'
 
@@ -301,11 +301,11 @@ export function createAccess(options: AccessOptions) {
 
   const tokensOf = (req: Request): string[] => cookieValues(header(req, 'cookie'), cookieName(state.instance))
   const hasSession = (req: Request): boolean => tokensOf(req).some((token) => sessions.check(token))
-  // Das Fenster gilt als angemeldet und als „am Rechner“ (Einrichtung ohne Code): nur im Fenster, nur über eine
-  // Verbindung von 127.0.0.1/::1 ohne Proxy-Kopfzeilen, zeitkonstant verglichen. Über die Adresse einer Netzwerkkarte
-  // ist der Schlüssel wirkungslos; von dort meldet sich ein gekoppeltes Fenster mit Geräteschlüssel über HTTPS an.
+  // Das Fenster gilt als angemeldet und als „am Rechner“ (Einrichtung ohne Code): nur im Fenster, nur vom Rechner selbst
+  // (127.0.0.1/::1 ohne jede Proxy-Kopfzeile, `fromThisComputer`), zeitkonstant verglichen. Über die Adresse einer
+  // Netzwerkkarte ist der Schlüssel wirkungslos; von dort meldet sich ein gekoppeltes Fenster mit Geräteschlüssel über HTTPS an.
   const atWindow = (req: Request): boolean =>
-    inWindow && windowKey !== null && isLoopback(req.socket.remoteAddress) && !viaProxy(req.headers) && sameKey(header(req, 'x-mietfuchs-window'), windowKey)
+    inWindow && windowKey !== null && fromThisComputer(req.socket.remoteAddress, req.headers) && sameKey(header(req, 'x-mietfuchs-window'), windowKey)
   // Ein gekoppeltes Fenster (#528, Schritt 2): Kopfzeile `X-Mietfuchs-Device`, nur über die eigene TLS-Verbindung und
   // nur mit Passwort. Über HTTP gilt der Schlüssel nie, auch nicht hinter einem Proxy mit HTTPS davor.
   function deviceOf(req: Request): Device | null {
@@ -319,7 +319,7 @@ export function createAccess(options: AccessOptions) {
   // ---------- Vorschaltung ----------
   function middleware(req: Request, res: Response, next: NextFunction): void {
     checkReset(true)
-    const proxied = viaProxy(req.headers)
+    const proxied = proxyHeadersPresent(req.headers)
     if (proxied) noticeProxy()
     const signed = signedIn(req)
     const decision = gate(state, {
@@ -430,15 +430,15 @@ export function createAccess(options: AccessOptions) {
 
   // Darf diese Anfrage das Passwort ändern oder die Anmeldung ausschalten? Mit Sitzung, oder wo die Anmeldung für sie
   // gar nicht gilt (lokal ohne Proxy); das bisherige Passwort braucht sie trotzdem.
-  const mayManage = (req: Request): boolean => signedIn(req) || !gateActive(state, viaProxy(req.headers))
+  const mayManage = (req: Request): boolean => signedIn(req) || !gateActive(state, proxyHeadersPresent(req.headers))
 
   function info(req: Request): AccessInfo {
-    const here = isLoopback(req.socket.remoteAddress) && !viaProxy(req.headers)
+    const here = fromThisComputer(req.socket.remoteAddress, req.headers)
     const window = atWindow(req)
     const device = deviceOf(req) !== null
     return {
       mode: state.mode,
-      required: gateActive(state, viaProxy(req.headers)),
+      required: gateActive(state, proxyHeadersPresent(req.headers)),
       signedIn: window || device || hasSession(req),
       window,
       device,

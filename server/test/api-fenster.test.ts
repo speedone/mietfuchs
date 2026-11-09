@@ -209,6 +209,32 @@ test('Fenster: Beenden, KI-Schlüssel, Zustimmungen und Update-Prüfung nur vom 
   }
 })
 
+// Ein Proxy auf demselben Rechner (Peer 127.0.0.1) reicht Anfragen aus dem Netz weiter. Mit einer Kopfzeile eines Proxys
+// kommt eine Anfrage deshalb nie „vom Rechner selbst“, auch ohne Netzwerkkarte nachzustellen.
+test('Fenster: über einen Proxy auf demselben Rechner gelten Beenden, Zustimmungen, Update und Umzug als von außen', async () => {
+  const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '127.0.0.1', NKA_AUTH: 'off' })
+  try {
+    for (const [name, value] of [['x-forwarded-for', '192.168.1.9'], ['x-forwarded-proto', 'https'], ['via', '1.1 caddy']]) {
+      const proxied = { [name]: value }
+      const call = async (method: string, urlPath: string, body?: unknown) => {
+        const res = await fetch(`${s.base}${urlPath}`, { method, headers: { ...proxied, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+        return { status: res.status, body: await res.json() as Record<string, unknown> }
+      }
+      const quit = await call('POST', '/api/quit', {})
+      assert.equal(quit.status, 403, name)
+      assert.match(String(quit.body.error), /^Beenden geht nur am Rechner/, name)
+      assert.equal((await call('POST', '/api/ai/consent', { slot: 'text' })).status, 403, name)
+      assert.equal((await call('PUT', '/api/settings', { updateCheck: 'on' })).status, 403, name)
+      assert.equal((await call('GET', '/api/update')).body.otherDevice, true, name)
+      assert.equal((await call('GET', '/api/relocation')).body.offered, false, name)
+      assert.equal((await call('GET', '/api/relocation/candidates')).status, 403, name)
+    }
+    assert.equal(s.child.exitCode, null, 'läuft noch')
+  } finally {
+    s.stop()
+  }
+})
+
 test('Heimnetz im Browserbetrieb (Docker, npm): Beenden und Zustimmungen bleiben, wie sie waren', async (t) => {
   const lan = someLanAddress()
   if (!lan) return t.skip('Dieser Rechner hat keine Adresse außer Loopback.')
@@ -270,6 +296,10 @@ test('Fensterschlüssel: angemeldet ohne Cookie, Einrichtung ohne Code, nur übe
     assert.equal(change.status, 200)
     // der Schlüssel steht nicht mehr in der Umgebung des Servers und geht in keine Antwort
     assert.doesNotMatch(await (await fetch(`${s.base}/api/settings`, { headers: windowHeaders() })).text(), new RegExp(WINDOW_KEY))
+    // über einen Proxy auf demselben Rechner wirkungslos, mit jeder Kopfzeile eines Proxys
+    for (const name of ['x-forwarded-for', 'x-forwarded-proto']) {
+      assert.equal((await fetch(`${s.base}/api/units`, { headers: { ...windowHeaders(), [name]: name === 'x-forwarded-proto' ? 'https' : '192.168.1.9' } })).status, 401, name)
+    }
     const lan = someLanAddress()
     if (!lan) return t.skip('keine Netzwerkkarte')
     const fromLan = await send(`http://${lan}:${new URL(s.base).port}`, { urlPath: '/api/units', headers: windowHeaders() })

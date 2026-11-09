@@ -508,7 +508,8 @@ export type Brake = ReturnType<typeof createBrake>
 
 // ---------- Vorschaltung ----------
 
-// Vom Rechner selbst: die Adresse der Verbindung, nie eine Kopfzeile (`trust proxy` bleibt aus)
+// Eine Loopback-Adresse der Verbindung, nie eine Kopfzeile (`trust proxy` bleibt aus). Allein heißt das noch nicht „vom
+// Rechner selbst“: Ein Proxy auf demselben Rechner verbindet sich auch von hier (`fromThisComputer`).
 export function isLoopback(address: string | undefined): boolean {
   const a = address?.trim().toLowerCase() ?? ''
   if (!a) return false
@@ -518,9 +519,15 @@ export function isLoopback(address: string | undefined): boolean {
 type Headers = Record<string, string | string[] | undefined>
 const first = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value)
 
-// Kopfzeilen, die ein Reverse-Proxy setzt. Eine gefälschte macht nur strenger, nie lockerer.
-const PROXY_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'via']
-export const viaProxy = (headers: Headers): boolean => PROXY_HEADERS.some((name) => headers[name] !== undefined)
+// Kopfzeilen, die ein Reverse-Proxy setzt. Eine gefälschte macht nur strenger, nie lockerer: Sie schaltet die Anmeldung
+// lokal ein und nimmt einer Anfrage das „vom Rechner selbst“.
+const PROXY_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'via']
+export const proxyHeadersPresent = (headers: Headers): boolean => PROXY_HEADERS.some((name) => headers[name] !== undefined)
+
+// Vom Rechner selbst: Loopback **und** keine Kopfzeile eines Proxys, gleich welcher Peer. Ein Proxy auf demselben Rechner
+// (Caddy, nginx; Peer 127.0.0.1) reicht sonst jede Anfrage aus dem Netz als „von hier“ weiter: vollen /healthz, Beenden,
+// Zustimmungen im Fenster, den Fensterschlüssel und die Umzugsrouten. Die eine Stelle für alle diese Fragen.
+export const fromThisComputer = (address: string | undefined, headers: Headers): boolean => isLoopback(address) && !proxyHeadersPresent(headers)
 
 // Kam die Seite über HTTPS (Proxy davor oder, seit Schritt 2, die eigene Verbindung: `encrypted`)? Dann bekommt das
 // Cookie `Secure`. Eine gefälschte Angabe schadet nicht: Über HTTP verwirft der Browser ein Cookie mit `Secure`, der
@@ -551,6 +558,7 @@ export type GateRequest = {
   method: string
   // `req.path` von Express, roh (nicht entschlüsselt)
   path: string
+  // Loopback-Adresse der Verbindung; vom Rechner selbst ist die Anfrage nur ohne `viaProxy` (`fromThisComputer`)
   loopback: boolean
   viaProxy: boolean
   // gültige Sitzung (oder Fensterschlüssel)
@@ -642,6 +650,7 @@ export function gate(state: AccessState, req: GateRequest): GateDecision {
   const method = req.method.toUpperCase()
   const writes = !READ_ONLY.has(method)
   const { key, guarded } = pathOf(req.path)
+  const here = req.loopback && !req.viaProxy
   if (!gateActive(state, req.viaProxy)) {
     if (writes && exposedOpen(state, req.viaProxy) && (req.secFetchSite === 'cross-site' || req.secFetchSite === 'same-site')) {
       return { pass: false, status: 403, body: { error: FOREIGN } }
@@ -655,11 +664,11 @@ export function gate(state: AccessState, req: GateRequest): GateDecision {
   if (!guarded) {
     if (method === 'GET' || method === 'HEAD') return { pass: true, noStore: false, shortHealth: false }
   } else if (FREE[key]?.includes(method)) {
-    return { pass: true, noStore: true, shortHealth: key === '/healthz' && !req.loopback && !req.signedIn }
+    return { pass: true, noStore: true, shortHealth: key === '/healthz' && !here && !req.signedIn }
   }
   // Beenden vom Rechner selbst: das Fenster aus dem Hauptprozess, der Umzug bei einer alten Fassung, ein Server mit einem
   // Fensterschlüssel, den niemand mehr kennt. Mehr erlaubt die Ausnahme nicht.
-  if (key === '/api/quit' && method === 'POST' && req.loopback && !req.viaProxy) return { pass: true, noStore: true, shortHealth: false }
+  if (key === '/api/quit' && method === 'POST' && here) return { pass: true, noStore: true, shortHealth: false }
   if (req.signedIn) return { pass: true, noStore: guarded, shortHealth: false }
   return state.mode === 'setup'
     ? { pass: false, status: 401, body: { error: 'Bitte legen Sie zuerst ein Passwort für Mietfuchs fest.', setup: true } }

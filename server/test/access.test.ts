@@ -10,7 +10,7 @@ import path from 'node:path'
 import {
   ACCESS_FILE, CODE_ALPHABET, CODE_FILE, addressKey, authSetting, createBrake, createHashQueue, createSessions, formatCode,
   hashPassword, initialAccess, needsRehash, sameKey, newInstance, newSetupCode, normalizeCode, passwordProblem, readAccessFile, reachableOf,
-  removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, viaProxy, viaHttps, cookieValues, sessionCookie,
+  removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, proxyHeadersPresent, fromThisComputer, viaHttps, cookieValues, sessionCookie,
   clearedCookie, isLoopback, pairingProof, newDeviceKey, deviceKeyHash, matchDevice, MAX_DEVICES, PAIRING_MINUTES, DEVICE_HEADER,
   readEnvPassword, type AccessFile, type Device, type AccessState, type GateDecision, type GateRequest,
 } from '../src/access.ts'
@@ -501,9 +501,9 @@ test('Vorschaltung: /healthz gekürzt ohne Sitzung von außen, voll vom Rechner 
   assert.equal(outside.pass && outside.shortHealth, true)
   const here = gate(state, request({ path: '/healthz', loopback: true }))
   assert.equal(here.pass && here.shortHealth, false)
-  // ein Proxy auf demselben Rechner bekommt den vollen Bericht (hingenommen, keine Mieterdaten)
+  // ein Proxy auf demselben Rechner kommt nicht vom Rechner selbst: gekürzt wie von außen
   const proxied = gate(state, request({ path: '/healthz', loopback: true, viaProxy: true }))
-  assert.equal(proxied.pass && proxied.shortHealth, false)
+  assert.equal(proxied.pass && proxied.shortHealth, true)
   const signedIn = gate(state, request({ path: '/healthz/', signedIn: true }))
   assert.equal(signedIn.pass && signedIn.shortHealth, false)
   // ohne Anmeldung wie bisher voll
@@ -601,8 +601,8 @@ test('Vorschaltung: im Übergang und bei off weist Sec-Fetch-Site fremde Seiten 
 })
 
 test('Vorschaltung: Proxy-Kopfzeilen, Cookies und HTTPS erkennen', () => {
-  assert.equal(viaProxy({}), false)
-  for (const name of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'via']) assert.equal(viaProxy({ [name]: 'x' }), true, name)
+  assert.equal(proxyHeadersPresent({}), false)
+  for (const name of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'via']) assert.equal(proxyHeadersPresent({ [name]: 'x' }), true, name)
   assert.deepEqual(cookieValues('a=1; mietfuchs_abcdef=eins; b=2; mietfuchs_abcdef=zwei', 'mietfuchs_abcdef'), ['eins', 'zwei'])
   assert.deepEqual(cookieValues(undefined, 'mietfuchs_abcdef'), [])
   assert.deepEqual(cookieValues('mietfuchs_abcdefx=1', 'mietfuchs_abcdef'), [])
@@ -623,6 +623,20 @@ test('Vorschaltung: Proxy-Kopfzeilen, Cookies und HTTPS erkennen', () => {
   assert.equal(isLoopback('::1'), true)
   assert.equal(isLoopback('192.168.1.5'), false)
   assert.equal(isLoopback(undefined), false)
+})
+
+// Eine Anfrage mit irgendeiner Kopfzeile eines Proxys kommt nie vom Rechner selbst, gleich von welcher Adresse: Ein Proxy
+// auf demselben Rechner (Caddy, Peer 127.0.0.1) reicht sonst jede Anfrage aus dem Netz als „von hier“ weiter
+test('Vom Rechner selbst: Loopback ohne jede Proxy-Kopfzeile', () => {
+  assert.equal(fromThisComputer('127.0.0.1', {}), true)
+  assert.equal(fromThisComputer('::1', {}), true)
+  assert.equal(fromThisComputer('::ffff:127.0.0.1', {}), true)
+  assert.equal(fromThisComputer('192.168.1.5', {}), false)
+  assert.equal(fromThisComputer(undefined, {}), false)
+  for (const name of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'via']) {
+    assert.equal(fromThisComputer('127.0.0.1', { [name]: 'x' }), false, name)
+    assert.equal(fromThisComputer('::1', { [name]: ['x', 'y'] }), false, name)
+  }
 })
 
 // Passwort aus der Umgebung (#528): NKA_PASSWORD_FILE (Docker Secrets) vor NKA_PASSWORD, leer heißt nicht gesetzt, eine
