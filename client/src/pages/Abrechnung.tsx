@@ -28,6 +28,7 @@ import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../not
 import { CalcNotice, CalcNoticeGroup, NoticeBox, NoticeGroup } from '../components/Notice'
 import { groupNotices, noticePeople } from '../noticeGroups'
 import PrintDrawer, { type PrintScope } from '../components/PrintDrawer'
+import { epcBlocked } from '../../../shared/epcQr.ts'
 import { checkList, hintSummary, neighbors, resultText, tenantRows } from '../settlementOverview'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -121,7 +122,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const checksId = useId()
   // Das Fenster „Drucken“ und der Stand der Häkchen beim Öffnen, den „Abbrechen“ wiederherstellt.
   const [printDrawer, setPrintDrawer] = useState<{ scope: PrintScope } | null>(null)
-  const printBefore = useRef<{ letterChoice: boolean | null, settings: { printFoldMarks: boolean, printAttachments: boolean, printFooter: boolean }, dirty: boolean } | null>(null)
+  const printBefore = useRef<{ letterChoice: boolean | null, settings: { printFoldMarks: boolean, printAttachments: boolean, printFooter: boolean, printPaymentQr: boolean }, dirty: boolean } | null>(null)
   // `error` ist die Meldung am Feld (UI-Durchsicht H4): Eine ungültige Eingabe wurde vorher stumm verworfen.
   const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string; error?: string } | null>(null)
   const ppErrorId = useId()
@@ -182,6 +183,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     printFoldMarks: settings?.printFoldMarks === true, // Standard: aus
     printAttachments: settings?.printAttachments === true, // Standard: aus
     printFooter: settings?.printFooter === true, // Teil 2: Fußzeile mit Kontakt und Bank, Standard: aus
+    printPaymentQr: settings?.printPaymentQr === true, // #624: QR-Code zum Bezahlen bei Nachzahlung, Standard: aus
   })
   const printFoldMarks = printDraft.value.printFoldMarks
   const printAttachments = printDraft.value.printAttachments
@@ -1487,6 +1489,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           draftNote={PRINT_DRAFT_NOTE}
           attachmentsLoading={attachmentsLoading}
           paper={!!design.paper}
+          qrBlocked={landlord ? epcBlocked(landlord) : null}
           blocked={printBlocked}
           warnings={printWarnings.length > 0 ? (
             <div className="notice-list">

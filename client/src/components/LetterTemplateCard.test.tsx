@@ -27,7 +27,7 @@ afterEach(() => {
 test('Vorlage: Vorgabe der Anpassung, eigener Text, zurücksetzen und Vorschau mit Beispielwerten', async () => {
   const reload = vi.fn(async () => {})
   render(<UIProvider><LetterTemplateCard reload={reload} /></UIProvider>)
-  expect(await screen.findByText(/1 von 13 Bausteinen mit eigenem Text/, {}, SLOW)).toBeTruthy()
+  expect(await screen.findByText(/1 von 14 Bausteinen mit eigenem Text/, {}, SLOW)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }))
   const dialog = await screen.findByRole('dialog', {}, SLOW)
   // Ohne eigenen Betrag: den gibt es nur je Mieter.

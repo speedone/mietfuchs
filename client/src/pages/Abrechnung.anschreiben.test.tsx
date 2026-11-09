@@ -566,3 +566,25 @@ test('mit Namen des Vermieters: kein „Absender fehlt“', async () => {
   await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
   expect(screen.queryByText('Absender fehlt')).toBeNull()
 })
+
+// ---------- Zahlungs-QR-Code (#624) ----------
+
+test('#624: der Schalter für den QR-Code steht ab Werk aus und speichert mit den Druckeinstellungen', async () => {
+  show()
+  const drawer = await openPrintDrawer()
+  const box = within(drawer).getByRole('checkbox', { name: /QR-Code zum Bezahlen bei Nachzahlung/ }) as HTMLInputElement
+  expect(box.checked).toBe(false)
+  expect(within(drawer).queryByText('(braucht Vermieter und gültige IBAN aus dem EWR)')).toBeNull()
+  fireEvent.click(box)
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
+  await waitFor(() => expect(puts.find((p) => p.url === '/api/settings')?.body).toMatchObject({ printPaymentQr: true }), SLOW)
+})
+
+test('#624: ohne Vermieter oder mit IBAN außerhalb des EWR nennt das Druckfenster den Grund', async () => {
+  show({ ...SETTINGS, iban: 'CH9300762011623852957', printPaymentQr: true })
+  const drawer = await openPrintDrawer()
+  expect(within(drawer).getByText('(braucht Vermieter und gültige IBAN aus dem EWR)')).toBeTruthy()
+  cleanup()
+  show({ ...SETTINGS, landlordName: '', printPaymentQr: true })
+  expect(within(await openPrintDrawer()).getByText('(braucht Vermieter und gültige IBAN aus dem EWR)')).toBeTruthy()
+})
