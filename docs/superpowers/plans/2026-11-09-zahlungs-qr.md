@@ -15,7 +15,7 @@
 - Worktree `/home/agent/projects/mietfuchs-zahlungs-qr`, Zweig `feat/zahlungs-qr`. Commits mit `Refs #624`, nie `Fixes`/`Closes`; Commit-Nachrichten deutsch, Ende `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Commit nur nach grünem Exit-Status von Test **und** `npm run typecheck` (einzige statische Prüfung).
 - Bezeichner englisch, Kommentare/Oberfläche/Testnamen deutsch; Oberfläche siezt, Entwicklerdoku duzt.
-- **Kein Geviertstrich** im Repo (`server/test/geviertstrich.test.ts`); wo das Zeichen Daten ist, `'—'` schreiben.
+- **Kein Geviertstrich** im Repo (`server/test/geviertstrich.test.ts`); wo das Zeichen Daten ist, `'\u2014'` schreiben.
 - Geld in Cent als Integer. Server-Importe mit `.ts`, Client-Importe endungslos außer aus `shared/` (`.ts`). `import type` für reine Typen; kein `enum`.
 - Neue Angabe ergibt ohne Einstellung das bisherige Verhalten; Golden-Tests bleiben unverändert grün.
 - Migration nur mit `npm --prefix server run db:generate`, nie von Hand (Ausnahme laut server/src/db/CLAUDE.md, Abschnitt Migrationen, lesen).
@@ -55,7 +55,7 @@
   - `Betrag an den Grenzen`: 1 → `EUR0.01`; 99999999999 → `EUR999999999.99`; 0, -5, 100000000000, 1.5 → `null`; 100 → `EUR1.00`.
   - `IBAN`: klein und mit Leerzeichen wird normalisiert; Prüfziffer falsch → `null`; gültige `CH93 0076 2011 6238 5295 7` und gültige GB-IBAN → `null`; gültige AT-, NO-, LI-IBAN → Inhalt.
   - `Name`: nur Leerraum oder nur Emoji → `null`; 80 Zeichen → 70.
-  - `Zeichen`: `epcText('Müller–Lüdenscheidt „Haus“ · é—x\n\ty 🏠')` gleich `"Müller-Lüdenscheidt 'Haus' , e-x y"` (Leerraum zusammengezogen, getrimmt).
+  - `Zeichen`: `epcText('Müller–Lüdenscheidt „Haus“ · é\u2014x\n\ty 🏠')` gleich `"Müller-Lüdenscheidt 'Haus' , e-x y"` (Leerraum zusammengezogen, getrimmt).
   - `Verwendungszweck`: leer → Inhalt endet nach Zeile 8 bzw. nach der Form, die der Builder aus EPC069-12 v3.0 belegt (im Test als Kommentar mit Abschnittsnummer festhalten); 200 Zeichen → 140; Titel `Betriebskosten 2026, darin Heiz- und Warmwasserkosten 01.05.2025–30.04.2026` mit Name vorn: Name bleibt, enthält `01.05.2025-30.04.2026`.
   - `331 Byte`: Name 70 × `ä`, Zweck 140 × `ü` → Ergebnis ≤ 331 Byte (`new TextEncoder().encode(x).length`), Zweck gekürzt, Name voll, kein halbes Zeichen; ein Fall, der genau 331 Byte ergibt, bleibt unverändert.
   - `kein Zeilenumbruch am Ende`.
