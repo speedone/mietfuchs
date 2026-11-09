@@ -471,7 +471,7 @@ async function remoteTrouble(reason) {
  * gekoppelten laden. Ein Fehler kommt als Satz an die Karte zurück, und es bleibt beim eigenen Server.
  * @param {string} address
  * @param {string} code
- * @returns {Promise<{ ok: true } | { problem: string }>}
+ * @returns {Promise<{ ok: true } | import('./pairing.js').Problem>}
  */
 async function connectRemote(address, code) {
   if (quitting) throw new Error('Mietfuchs wird beendet.')

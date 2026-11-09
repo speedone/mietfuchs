@@ -15,8 +15,9 @@ contextBridge.exposeInMainWorld('mietfuchsDesktop', {
     set: (/** @type {boolean} */ enabled) => ipcRenderer.invoke('mietfuchs:network-set', enabled === true),
   },
   // Mietfuchs im Heimnetz (#528, Schritt 2): `get` ergibt { connected, origin?, version? }, `connect` koppelt mit
-  // Adresse und Code aus den Einstellungen des Servers und ergibt { ok: true } oder { problem } (dann lädt das Fenster
-  // die Seite des Servers), `disconnect` führt zurück zu den Daten auf diesem Rechner.
+  // Adresse und Code aus den Einstellungen des Servers und ergibt { ok: true } (dann lädt das Fenster die Seite des
+  // Servers) oder { problem, field? }: `field` ist 'address' oder 'code', wenn es an einem Feld liegt, sonst fehlt es.
+  // `disconnect` führt zurück zu den Daten auf diesem Rechner.
   remote: {
     get: () => ipcRenderer.invoke('mietfuchs:remote-get'),
     connect: (/** @type {{ address: string, code: string }} */ request) => ipcRenderer.invoke('mietfuchs:remote-connect', { address: String(request?.address ?? ''), code: String(request?.code ?? '') }),

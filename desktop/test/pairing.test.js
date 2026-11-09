@@ -50,6 +50,7 @@ test('Adresse: Schema egal, immer https auf demselben Port, Vorgabe 3001, IPv6 i
     const result = normalizeAddress(nonsense)
     assert.ok('problem' in result, `${nonsense}: ${JSON.stringify(result)}`)
     assert.match(result.problem, /Adresse/, nonsense)
+    assert.equal(result.field, 'address', nonsense)
   }
 })
 
@@ -102,13 +103,15 @@ test('Koppeln: falscher Code, Server ohne Passwort, Unsinn als Adresse ergeben S
   try {
     await code()
     const wrong = await pair({ address: addressOf(s.base), code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
-    assert.deepEqual(wrong, { problem: 'Der Code stimmt nicht oder ist abgelaufen.' })
+    assert.deepEqual(wrong, { problem: 'Der Code stimmt nicht oder ist abgelaufen.', field: 'code' })
     const empty = await pair({ address: addressOf(s.base), code: ' - ', name: 'Laptop' })
     assert.ok('problem' in empty)
     assert.match(empty.problem, /Code/)
+    assert.equal(empty.field, 'code')
     const nonsense = await pair({ address: 'nas name', code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
     assert.ok('problem' in nonsense)
     assert.match(nonsense.problem, /Adresse/)
+    assert.equal(nonsense.field, 'address')
   } finally {
     s.stop()
   }
@@ -118,6 +121,7 @@ test('Koppeln: falscher Code, Server ohne Passwort, Unsinn als Adresse ergeben S
     const result = await pair({ address: addressOf(open.base), code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
     assert.ok('problem' in result)
     assert.match(result.problem, /Passwort/)
+    assert.equal(result.field, undefined, 'ohne Passwort: kein Feld')
   } finally {
     open.stop()
   }
@@ -128,6 +132,7 @@ test('Koppeln: nichts lauscht, kein Mietfuchs, Mietfuchs nur über HTTP', async 
   const nobody = await pair({ address: `127.0.0.1:${port}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
   assert.ok('problem' in nobody)
   assert.match(nobody.problem, /nicht erreichbar/)
+  assert.equal(nobody.field, 'address')
 
   // Ein fremder HTTPS-Server, mit dem Schlüsselpaar eines Mietfuchs nur, damit der Test keins erzeugen muss
   const s = await api.startServerIn(freshDir(), NETWORK)
@@ -143,6 +148,7 @@ test('Koppeln: nichts lauscht, kein Mietfuchs, Mietfuchs nur über HTTP', async 
     const result = await pair({ address: `127.0.0.1:${api.portOf(foreign)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
     assert.ok('problem' in result)
     assert.match(result.problem, /kein Mietfuchs/)
+    assert.equal(result.field, 'address')
   } finally {
     foreign.close()
   }
@@ -159,6 +165,7 @@ test('Koppeln: nichts lauscht, kein Mietfuchs, Mietfuchs nur über HTTP', async 
     assert.ok('problem' in result)
     assert.match(result.problem, /HTTPS/)
     assert.match(result.problem, /Aktualisieren/)
+    assert.equal(result.field, 'address')
   } finally {
     old.close()
   }
@@ -217,6 +224,7 @@ test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Ger
     const result = await pair({ address: `127.0.0.1:${api.portOf(fake)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
     assert.ok('problem' in result, JSON.stringify(result))
     assert.match(result.problem, /Koppeln/)
+    assert.equal(result.field, undefined, 'unbrauchbare Antwort: kein Feld')
     assert.deepEqual(seen.slice(0, 2), ['GET /healthz -', 'POST /api/auth/pair -'])
     // Mit einem unbrauchbaren Schlüssel lässt sich keine Kopfzeile bauen; entfernt wird nur, was gültig aussieht
     assert.equal(seen.length, 2)
@@ -237,6 +245,7 @@ test('Koppeln: eine Antwort mit unbrauchbarem Gerät wird nicht gemerkt, das Ger
     seen.length = 0
     const result = await pair({ address: `127.0.0.1:${api.portOf(fake2)}`, code: 'AAAA-AAAA-AAAA', name: 'Laptop' })
     assert.ok('problem' in result, JSON.stringify(result))
+    assert.equal(result.field, undefined)
     assert.deepEqual(seen, ['GET /healthz -', 'POST /api/auth/pair -', `DELETE /api/auth/devices/${longId} ${longId}.${'K'.repeat(43)}`])
   } finally {
     fake2.close()

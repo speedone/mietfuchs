@@ -20,6 +20,11 @@ export const DEVICE_HEADER = 'x-mietfuchs-device'
 // Wie lange eine Anfrage an den Server höchstens dauert
 const TIMEOUT_MS = 10_000
 
+/**
+ * Ein Satz für die Karte „Mietfuchs im Heimnetz“, mit dem Feld, an dem es liegt; ohne `field`, wenn es kein einzelnes ist.
+ * @typedef {{ problem: string, field?: 'address' | 'code' }} Problem
+ */
+
 const ADDRESS_PROBLEM = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so ein, wie Sie Mietfuchs im Browser öffnen, etwa nas:3001 oder 192.168.1.5:3001.'
 
 /**
@@ -27,28 +32,28 @@ const ADDRESS_PROBLEM = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so
  * `https://[fd00::1]:3001`. Das Schema zählt nicht, das Fenster nimmt immer `https://` auf demselben Port (der Server
  * spricht dort beides); ohne Port 3001. `host` ohne Klammern (für Node), `origin` wie `new URL(…).origin`.
  * @param {string} input
- * @returns {{ host: string, port: number, origin: string } | { problem: string }}
+ * @returns {{ host: string, port: number, origin: string } | Problem}
  */
 export function normalizeAddress(input) {
   const text = typeof input === 'string' ? input.trim() : ''
-  if (!text) return { problem: 'Geben Sie die Adresse ein, unter der Mietfuchs im Heimnetz läuft, etwa nas:3001.' }
+  if (!text) return { problem: 'Geben Sie die Adresse ein, unter der Mietfuchs im Heimnetz läuft, etwa nas:3001.', field: 'address' }
   const scheme = text.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase()
-  if (scheme !== undefined && scheme !== 'http' && scheme !== 'https') return { problem: ADDRESS_PROBLEM }
+  if (scheme !== undefined && scheme !== 'http' && scheme !== 'https') return { problem: ADDRESS_PROBLEM, field: 'address' }
   const rest = scheme === undefined ? text : text.slice(scheme.length + 3)
   // Der Teil bis zum ersten /, ? oder #; der Port wird hier gelesen, weil URL einen Port 80 oder 443 still wegließe
   const authority = rest.split(/[/?#]/)[0] ?? ''
-  if (!authority || authority.includes('@') || /\s/.test(authority)) return { problem: ADDRESS_PROBLEM }
+  if (!authority || authority.includes('@') || /\s/.test(authority)) return { problem: ADDRESS_PROBLEM, field: 'address' }
   const portText = authority.match(/^(?:\[[^\]]*\]|[^:]*):(\d*)$/)?.[1]
-  if (portText === undefined && /:/.test(authority.replace(/^\[[^\]]*\]/, ''))) return { problem: ADDRESS_PROBLEM }
+  if (portText === undefined && /:/.test(authority.replace(/^\[[^\]]*\]/, ''))) return { problem: ADDRESS_PROBLEM, field: 'address' }
   const port = portText === undefined ? DEFAULT_REMOTE_PORT : Number(portText)
-  if (!Number.isInteger(port) || port < 1 || port > 65535 || portText === '') return { problem: ADDRESS_PROBLEM }
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || portText === '') return { problem: ADDRESS_PROBLEM, field: 'address' }
   let url
   try {
     url = new URL(`https://${authority}`)
   } catch {
-    return { problem: ADDRESS_PROBLEM }
+    return { problem: ADDRESS_PROBLEM, field: 'address' }
   }
-  if (!url.hostname) return { problem: ADDRESS_PROBLEM }
+  if (!url.hostname) return { problem: ADDRESS_PROBLEM, field: 'address' }
   const host = url.hostname.replace(/^\[(.*)\]$/, '$1')
   return { host, port, origin: new URL(`https://${url.hostname}:${port}`).origin }
 }
@@ -215,15 +220,15 @@ function mietfuchsOverHttp({ host, port }, timeoutMs) {
  * Beweis rechnen und `POST /api/auth/pair` über eine Verbindung mit demselben Zertifikat schicken. Ergibt, was
  * fenster.json als `remote` merkt, oder einen Satz für die Karte.
  * @param {{ address: string, code: string, name?: string, timeoutMs?: number }} request
- * @returns {Promise<Remote | { problem: string }>}
+ * @returns {Promise<Remote | Problem>}
  */
 export async function pair({ address, code, name = os.hostname(), timeoutMs = TIMEOUT_MS }) {
   const where = normalizeAddress(address)
   if ('problem' in where) return where
-  if (!normalizeCode(code)) return { problem: 'Geben Sie den Code ein, den Mietfuchs auf dem Server unter Einstellungen, Anmeldung zeigt.' }
+  if (!normalizeCode(code)) return { problem: 'Geben Sie den Code ein, den Mietfuchs auf dem Server unter Einstellungen, Anmeldung zeigt.', field: 'code' }
   const shown = where.port === 443 ? where.host : `${where.host.includes(':') ? `[${where.host}]` : where.host}:${where.port}`
-  const unreachable = { problem: `Unter ${shown} ist Mietfuchs nicht erreichbar. Prüfen Sie die Adresse und ob Mietfuchs dort läuft.` }
-  const notMietfuchs = { problem: `Unter ${shown} antwortet kein Mietfuchs. Prüfen Sie die Adresse und den Port.` }
+  const unreachable = { problem: `Unter ${shown} ist Mietfuchs nicht erreichbar. Prüfen Sie die Adresse und ob Mietfuchs dort läuft.`, field: /** @type {const} */ ('address') }
+  const notMietfuchs = { problem: `Unter ${shown} antwortet kein Mietfuchs. Prüfen Sie die Adresse und den Port.`, field: /** @type {const} */ ('address') }
 
   /** @type {string} */
   let certSha256
@@ -238,7 +243,7 @@ export async function pair({ address, code, name = os.hostname(), timeoutMs = TI
     if (errCode && UNREACHABLE.has(errCode)) return unreachable
     // Verbunden, aber kein TLS: ein älterer Mietfuchs, der nur HTTP spricht, oder etwas ganz anderes
     if (await mietfuchsOverHttp(where, timeoutMs)) {
-      return { problem: `Mietfuchs unter ${shown} antwortet nur über HTTP, ohne HTTPS lässt sich nicht koppeln. Aktualisieren Sie Mietfuchs dort auf Version 0.17 oder neuer.` }
+      return { problem: `Mietfuchs unter ${shown} antwortet nur über HTTP, ohne HTTPS lässt sich nicht koppeln. Aktualisieren Sie Mietfuchs dort auf Version 0.17 oder neuer.`, field: 'address' }
     }
     return errCode === 'ECONNRESET' ? unreachable : notMietfuchs
   }
@@ -270,7 +275,10 @@ export async function pair({ address, code, name = os.hostname(), timeoutMs = TI
   if (typeof body?.error === 'string' && body.error) {
     // Ohne Passwort am Server sagt die Karte, wo es festgelegt wird
     if (answer.status === 409 && /Passwort/.test(body.error)) return { problem: `${body.error} Ein Programmfenster koppelt sich nur mit einem Mietfuchs, der durch ein Passwort geschützt ist (dort unter Einstellungen, Anmeldung).` }
-    return { problem: body.error }
+    // 400 heißt an dieser Route: Der Code stimmt nicht oder ist abgelaufen (die andere 400, „nur über eine verschlüsselte
+    // Verbindung“, kann hier nicht kommen, das Fenster koppelt nur über TLS). 409 (kein Passwort, zu viele Geräte) und
+    // 429 (Bremse) betreffen kein Feld.
+    return answer.status === 400 ? { problem: body.error, field: 'code' } : { problem: body.error }
   }
   return { problem: `Das Koppeln ist gescheitert (Antwort ${answer.status}).` }
 }
