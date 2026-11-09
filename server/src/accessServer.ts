@@ -34,8 +34,8 @@ export type AccessOptions = {
   // NKA_TRUST_PROXY (trustProxy.ts): Peers, deren Proxy-Kopfzeilen für den Kanal zählen. Fehlt = keinem vertraut.
   trustProxy?: ProxyTrust
   // Darf ein weitergereichter Ursprung mit diesem Namen einen Beweis binden? Dieselbe Regel wie die Prüfung des Hosts
-  // (`hostAllowed` in requestGuard.ts); fehlt = jeder Name (Durchsicht I2)
-  originAllowed?: (hostname: string) => boolean
+  // (`originHostRefusal` in requestGuard.ts): null heißt ja, sonst der Satz dazu; fehlt = jeder Name (Durchsicht I2)
+  originRefusal?: (hostname: string) => string | null
   // Version für die Antwort von `pair` (das Fenster vergleicht sie mit seiner)
   version?: string
   // Gültigkeit eines Kopplungscodes; kürzer nur im Testgriff NKA_TEST_PAIRING_SECONDS
@@ -66,7 +66,9 @@ export type AccessInfo = {
 // Die Vorabfrage der Kopplung (`GET /api/auth/pair`, #528): der Fingerabdruck des eigenen Zertifikats (öffentlich, er
 // steht in jedem TLS-Handschlag), ob die Anfrage über HTTPS kam (Kanal `tls` oder `proxy`), und im Kanal `proxy` der
 // Ursprung, den der vertraute Proxy weiterreicht. Sie entscheidet nie über Vertrauen; das tut das Fenster selbst.
-export type PairPreflight = { app: 'mietfuchs', certSha256: string | null, secure: boolean, origin: string | null }
+// `problem`: Der Proxy reicht einen Ursprung weiter, dessen Name die Prüfung des Hosts nicht besteht; dann ist `origin`
+// null, denn ein Beweis darauf gälte nie (Durchsicht PR 2, I2). Der Satz sagt, was bei Mietfuchs einzutragen ist.
+export type PairPreflight = { app: 'mietfuchs', certSha256: string | null, secure: boolean, origin: string | null, problem?: string }
 
 // Was die Liste der Geräte zeigt: nie den Hash des Schlüssels
 export type DeviceInfo = Omit<Device, 'keyHash'> & { current: boolean }
@@ -94,7 +96,13 @@ export function createAccess(options: AccessOptions) {
   const pairingMs = (options.pairingSeconds ?? PAIRING_MINUTES * 60) * 1000
   let tls = options.tls ?? null
   const trustProxy = options.trustProxy ?? NO_PROXY
-  const originAllowed = options.originAllowed ?? (() => true)
+  const originRefusalOf = options.originRefusal ?? (() => null)
+  // Der Ursprung im Kanal `proxy`, wenn er binden darf, sonst der Grund
+  const boundOrigin = (channel: Channel, origin: string | null): { origin: string | null, problem: string | null } => {
+    if (channel !== 'proxy' || origin === null) return { origin: null, problem: null }
+    const problem = originRefusalOf(new URL(origin).hostname)
+    return problem === null ? { origin, problem: null } : { origin: null, problem }
+  }
   // Kanal je Anfrage, einmal in der Vorschaltung bestimmt (dort wird ein Name aus NKA_TRUST_PROXY bei Bedarf aufgelöst)
   const channels = new WeakMap<Request, { channel: Channel, origin: string | null }>()
   const allowedHosts = (options.allowedHosts ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h && h !== '*')
@@ -671,7 +679,8 @@ export function createAccess(options: AccessOptions) {
     app.get('/api/auth/pair', (req, res) => {
       checkReset()
       const { channel, origin } = channelFor(req)
-      const body: PairPreflight = { app: 'mietfuchs', certSha256: tls?.certSha256 ?? null, secure: channel !== 'plain', origin: channel === 'proxy' ? origin : null }
+      const bound = boundOrigin(channel, origin)
+      const body: PairPreflight = { app: 'mietfuchs', certSha256: tls?.certSha256 ?? null, secure: channel !== 'plain', origin: bound.origin, ...(bound.problem ? { problem: bound.problem } : {}) }
       res.setHeader('Cache-Control', 'no-store')
       res.json(body)
     })
@@ -699,13 +708,16 @@ export function createAccess(options: AccessOptions) {
         if (!open || now() >= open.expiresAt) return false
         // Jeder erwartete Beweis wird verglichen, zeitkonstant, auch wenn schon einer passt
         // Ein Ursprung, dessen Name die Prüfung des Hosts nicht besteht, bindet nichts (Durchsicht I2)
-        const bound = origin !== null && originAllowed(new URL(origin).hostname) ? origin : null
-        const matches = expectedProofs(open.code, channel, tls?.certSha256 ?? null, bound).map((expected) => sameProof(proof, expected))
+        const matches = expectedProofs(open.code, channel, tls?.certSha256 ?? null, boundOrigin(channel, origin).origin).map((expected) => sameProof(proof, expected))
         if (!matches.includes(true)) return false
         pairing = null
         return true
       })
       if (ok === null) return
+      // Ein Ursprung, der nicht binden kann: Das liegt am Namen, nicht am Code (sonst probierte der Nutzer endlos neue Codes).
+      // Ein Beweis über den Fingerabdruck gilt trotzdem und kam oben schon durch.
+      const refused = boundOrigin(channel, origin).problem
+      if (!ok && refused) return res.status(400).json({ error: refused, transport: true })
       if (!ok) return res.status(400).json({ error: 'Der Code stimmt nicht oder ist abgelaufen.' })
       if (state.mode !== 'password') return noPassword(res)
       if (devices.length >= MAX_DEVICES) return full()

@@ -54,8 +54,17 @@ function allowedName(name: string, extraHosts: string[]): boolean {
 // Besteht ein Name die Prüfung des Hosts? Ohne Prüfung (Docker und npm ohne NKA_ALLOWED_HOSTS, „*“) jeder. Auch für den
 // Ursprung, den ein vertrauter Proxy beim Koppeln weiterreicht (#528, Durchsicht I2): Reicht ein Proxy den Wert eines
 // Clients durch oder nimmt er jede Adresse an, gilt mit einer Liste nur ein Name, unter dem Mietfuchs ohnehin antwortet.
+const plainName = (hostname: string): string => hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
 export const hostAllowed = (hostname: string, policy: GuardPolicy): boolean =>
-  !policy.enabled || allowedName(hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, ''), policy.extraHosts)
+  !policy.enabled || allowedName(plainName(hostname), policy.extraHosts)
+
+// Der Satz, wenn ein Name die Prüfung nicht besteht: am Host jeder Anfrage und beim Koppeln über einen Proxy derselbe
+export const hostRefusal = (name: string): string =>
+  `Mietfuchs antwortet nicht unter dem Namen „${name}“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.`
+
+// Für den weitergereichten Ursprung der Kopplung (#528): null, wenn er binden darf, sonst der Satz
+export const originHostRefusal = (hostname: string, policy: GuardPolicy): string | null =>
+  hostAllowed(hostname, policy) ? null : hostRefusal(plainName(hostname))
 
 const READ_ONLY = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -66,9 +75,7 @@ export function checkRequest(req: GuardRequest, policy: GuardPolicy): string | n
   if (!policy.enabled) return null
   if (req.host) {
     const name = hostnameOf(req.host)
-    if (!allowedName(name, policy.extraHosts)) {
-      return `Mietfuchs antwortet nicht unter dem Namen „${name}“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.`
-    }
+    if (!allowedName(name, policy.extraHosts)) return hostRefusal(name)
   }
   if (READ_ONLY.has(req.method.toUpperCase())) return null
   if (req.origin !== undefined) {

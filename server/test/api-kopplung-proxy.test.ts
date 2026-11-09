@@ -22,7 +22,7 @@ const NOT_ENCRYPTED = 'Koppeln geht nur über eine verschlüsselte Verbindung.'
 // Was ein Gerät im Heimnetz selbst schicken kann
 const FORGED = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'nas.fritz.box', 'x-forwarded-for': '192.168.1.9' }
 
-type Preflight = { app: string, certSha256: string | null, secure: boolean, origin: string | null }
+type Preflight = { app: string, certSha256: string | null, secure: boolean, origin: string | null, problem?: string }
 type Paired = { id: string, deviceKey: string, version: string }
 
 async function serverWithPassword(env: NodeJS.ProcessEnv = {}, dataDir = freshDir()) {
@@ -298,15 +298,39 @@ test('Proxy: mit NKA_ALLOWED_HOSTS gilt ein Beweis mit Ursprung nur für einen e
   const foreign = await startTestProxy({ target: s.base, tls: leaf, forwarded: { host: 'andere.example' } })
   const listed = await startTestProxy({ target: s.base, tls: leaf, forwarded: { host: 'nas.example' } })
   try {
+    // Durchsicht PR 2 (I2): Die Vorabfrage nennt einen Ursprung nur, wenn er binden kann, sonst den Grund. Sonst rechnete
+    // das Fenster einen Beweis, der nie gilt, und der Nutzer probierte endlos neue Codes.
+    const refusal = 'Mietfuchs antwortet nicht unter dem Namen „andere.example“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.'
+    const own = (await direct(s, '/healthz')).certSha256
+    assert.deepEqual(preflightOf((await httpsFetch(foreign.origin, '/api/auth/pair', { ca: caCert })).body), { app: 'mietfuchs', certSha256: own, secure: true, origin: null, problem: refusal })
+    assert.deepEqual(preflightOf((await httpsFetch(listed.origin, '/api/auth/pair', { ca: caCert })).body), { app: 'mietfuchs', certSha256: own, secure: true, origin: 'https://nas.example' })
     const code = await newCode(s, cookie)
     const wrong = await httpsFetch(foreign.origin, '/api/auth/pair', { method: 'POST', body: pairBody(originProof(code, 'https://andere.example')), ca: caCert })
     assert.equal(wrong.status, 400, wrong.body)
-    assert.deepEqual(JSON.parse(wrong.body), { error: WRONG_CODE })
+    assert.deepEqual(JSON.parse(wrong.body), { error: refusal, transport: true })
     const right = await httpsFetch(listed.origin, '/api/auth/pair', { method: 'POST', body: pairBody(originProof(code, 'https://nas.example')), ca: caCert })
     assert.equal(right.status, 200, right.body)
   } finally {
     await foreign.close()
     await listed.close()
+    s.stop()
+  }
+})
+
+test('Proxy: ein nicht erlaubter weitergereichter Name hindert die Bindung an den Fingerabdruck nicht', async () => {
+  const { s, cookie } = await serverWithPassword({ NKA_TRUST_PROXY: LOCAL_PROXY, NKA_ALLOWED_HOSTS: 'nas.example' })
+  const tlsDir = path.join(s.dataDir, 'tls')
+  const proxy = await startTestProxy({ target: s.base, tls: { key: fs.readFileSync(path.join(tlsDir, 'mietfuchs.key'), 'utf8'), cert: fs.readFileSync(path.join(tlsDir, 'mietfuchs.crt'), 'utf8') }, forwarded: { host: 'andere.example' } })
+  try {
+    const preflight = await httpsFetch(proxy.origin, '/api/auth/pair', { ca: serverCa(s.dataDir) })
+    const seen = preflightOf(preflight.body)
+    assert.equal(seen.origin, null)
+    assert.equal(seen.certSha256, preflight.certSha256)
+    const code = await newCode(s, cookie)
+    const res = await httpsFetch(proxy.origin, '/api/auth/pair', { method: 'POST', body: pairBody(pairingProof(code, preflight.certSha256)), ca: serverCa(s.dataDir) })
+    assert.equal(res.status, 200, res.body)
+  } finally {
+    await proxy.close()
     s.stop()
   }
 })

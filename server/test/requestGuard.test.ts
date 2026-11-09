@@ -4,7 +4,7 @@
 // Reverse-Proxy mit eigener Domain davor, der den Host auch umschreiben kann.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkRequest, guardPolicy, hostAllowed, type GuardPolicy } from '../src/requestGuard.ts'
+import { checkRequest, guardPolicy, hostAllowed, originHostRefusal, type GuardPolicy } from '../src/requestGuard.ts'
 
 const local: GuardPolicy = guardPolicy('binary', {})
 
@@ -107,4 +107,8 @@ test('Ursprung der Kopplung: dieselbe Regel wie der Host, ohne Prüfung jeder Na
   assert.equal(hostAllowed('[::1]', listed), true)
   assert.equal(hostAllowed('andere.example', guardPolicy('docker', {})), true)
   assert.equal(hostAllowed('andere.example', guardPolicy('docker', { NKA_ALLOWED_HOSTS: '*' })), true)
+  // derselbe Satz wie am Host einer Anfrage
+  assert.equal(originHostRefusal('nas.example', listed), null)
+  assert.equal(originHostRefusal('Andere.Example.', listed), checkRequest({ method: 'GET', host: 'andere.example' }, listed))
+  assert.match(originHostRefusal('andere.example', listed) ?? '', /^Mietfuchs antwortet nicht unter dem Namen „andere\.example“\./)
 })

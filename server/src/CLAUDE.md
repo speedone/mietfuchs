@@ -334,8 +334,10 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     alles. Auch ein vertrauter Proxy ist nie „vom Rechner selbst“ (oben). Die Bremse zählt weiter je Peer, also je
     Proxy; `X-Forwarded-For` wertet Mietfuchs nicht aus.
   - **Vorabfrage** `GET /api/auth/pair` (frei, ohne Bremse, `no-store`): `PairPreflight` = `{ app: 'mietfuchs',
-    certSha256, secure, origin }`; `certSha256` des eigenen Zertifikats (`null` ohne), `secure` = Kanal `tls` oder
-    `proxy`, `origin` nur im Kanal `proxy`. Sie entscheidet nie über Vertrauen (der Fingerabdruck ist öffentlich); das
+    certSha256, secure, origin, problem? }`; `certSha256` des eigenen Zertifikats (`null` ohne), `secure` = Kanal `tls`
+    oder `proxy`, `origin` nur im Kanal `proxy` und nur, wenn er binden darf (unten); sonst `origin: null` und `problem`
+    mit dem Satz der Host-Prüfung (`hostRefusal` in requestGuard.ts), etwa wenn nginx `Host $proxy_host` und einen
+    öffentlichen Namen in `X-Forwarded-Host` schickt, der nicht in `NKA_ALLOWED_HOSTS` steht. Sie entscheidet nie über Vertrauen (der Fingerabdruck ist öffentlich); das
     Fenster wählt `pinned` oder `system` aus seiner eigenen Prüfung des Zertifikats (PR 2, desktop/src/pairing.js).
   - **Zwei Bindungen** (`expectedProofs`): im Kanal `tls` nur der Fingerabdruck, im Kanal `proxy` der Fingerabdruck
     (der Proxy liefert das Zertifikat von Mietfuchs aus) **oder** der Ursprung gleich dem weitergereichten
@@ -345,8 +347,10 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     nur über eine verschlüsselte Verbindung.“ Jeder erwartete Beweis wird verglichen (`sameProof`, zeitkonstant), auch
     wenn einer schon passt. Ein Beweis mit Ursprung gilt nie direkt über TLS, und nie für einen anderen Ursprung als
     den weitergereichten. Mit einer Prüfung des Hosts (`NKA_ALLOWED_HOSTS`, im Fenster und in der Programmdatei immer)
-    bindet ein Ursprung nur, wenn sein Name sie besteht (`hostAllowed` in requestGuard.ts, `originAllowed` an
-    `createAccess`); ohne Prüfung jeder. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
+    bindet ein Ursprung nur, wenn sein Name sie besteht (`originHostRefusal` in requestGuard.ts, `originRefusal` an
+    `createAccess`); ohne Prüfung jeder. Scheitert ein Beweis und konnte der Ursprung nicht binden, antwortet
+    `POST /api/auth/pair` mit diesem Satz und `transport: true`, nicht mit dem zum Code (sonst probierte der Nutzer
+    endlos neue Codes); ein Beweis über den Fingerabdruck gilt dabei weiter. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
   - **Restrisiko**: Die Bindung an den Ursprung ist nur so gut wie der `X-Forwarded-Host`, den der Proxy meldet. Jeder
     Proxy, der den Wert eines Clients durchreicht oder einen Block für jede Adresse hat (Caddy `:443` für alles,
     `on_demand`; nginx `default_server` ohne `server_name`), reicht auch einen fremden Namen weiter; ein Angreifer mit
