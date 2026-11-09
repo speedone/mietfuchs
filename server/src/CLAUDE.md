@@ -200,7 +200,9 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   auf der Fehlerausgabe, TLS-Verbindungen werden geschlossen, nie ein Abbruch. `/healthz` nennt `tls`. **Fristen**: Der
   innere `http.Server` lauscht nie selbst; damit Node `headersTimeout`/`requestTimeout` prüft, meldet er 'listening'
   mit dem äußeren. Unabhängig von der Laufzeit (Bun prüft übergebene Verbindungen nicht) eigene Uhren: 10 s bis zum
-  ersten Byte und bis zum Ende des Handshakes, `headersTimeout` bis zu vollständigen Kopfzeilen (nach jeder Antwort neu).
+  ersten Byte und bis zum Ende des Handshakes; je Anfrage eine Uhr ab Beginn (Übergabe bzw. Ende der vorigen Antwort),
+  `headersTimeout` bis zu den Kopfzeilen, `requestTimeout` bis zum ganzen Rumpf, dann 408 bzw. Schluss. Die Antwort
+  selbst darf länger dauern (wie bei Node).
 - **Passwort** 15 bis 128 Zeichen nach NFC (Codepunkte), abgelehnt nur ein wiederholtes Zeichen und „mietfuchs“;
   scrypt N = 2^17, r = 8, p = 1, Salz 16, Schlüssel 32, Vergleich mit `timingSafeEqual`; `needsRehash` rechnet nach
   angehobenen Parametern bei der nächsten Anmeldung neu. **Höchstens eine Berechnung zugleich** (`createHashQueue`,

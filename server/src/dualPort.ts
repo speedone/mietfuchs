@@ -26,25 +26,42 @@ export function createDualServer(
   // Änderbar: Vor dem Binden liest der Start nur ein vorhandenes Zertifikat, ein neues entsteht erst danach (#244)
   let secureContext = pair ? contextOf(pair) : null
 
-  // Eigene Frist für die Kopfzeilen, unabhängig von der Laufzeit: Bun prüft headersTimeout für übergebene Verbindungen
-  // nicht (Node erst nach 'listening', siehe unten). Gestellt beim Übergeben und nach jeder Antwort (die nächste Anfrage
-  // auf derselben Verbindung), gelöscht, sobald eine Anfrage mit vollständigen Kopfzeilen da ist. Unter Node greift
+  // Eigene Fristen für das Ankommen einer Anfrage, unabhängig von der Laufzeit: Bun prüft headersTimeout und
+  // requestTimeout für übergebene Verbindungen nicht (Node erst nach 'listening', siehe unten). Eine Uhr je Verbindung:
+  // - gestellt beim Übergeben und nach jeder Antwort (die nächste Anfrage auf derselben Verbindung), auf headersTimeout;
+  // - sind die Kopfzeilen da ('request'), auf den Rest von requestTimeout, gerechnet ab demselben Beginn;
+  // - gelöscht, sobald die Anfrage vollständig angekommen ist. Die Antwort selbst darf länger dauern (KI-Auswertung,
+  //   Backup), wie bei Node, das requestTimeout ebenso nur bis zum Ende der Anfrage rechnet.
+  // Läuft sie ab: ohne begonnene Antwort 408 und Schluss, sonst wird die Verbindung geschlossen. Unter Node greift
   // zusätzlich dessen eigene Prüfung; wer zuerst kommt, schließt.
-  const headerTimers = new WeakMap<net.Socket, NodeJS.Timeout>()
-  const awaitHeaders = (socket: net.Socket): void => {
-    clearTimeout(headerTimers.get(socket))
-    if (socket.destroyed || httpServer.headersTimeout <= 0) return
-    headerTimers.set(socket, setTimeout(() => socket.destroy(), httpServer.headersTimeout))
+  const deadlines = new WeakMap<net.Socket, { timer?: NodeJS.Timeout, startedAt: number }>()
+  const stopClock = (socket: net.Socket): void => clearTimeout(deadlines.get(socket)?.timer)
+  const awaitRequest = (socket: net.Socket): void => {
+    stopClock(socket)
+    const limit = httpServer.headersTimeout > 0 ? httpServer.headersTimeout : httpServer.requestTimeout
+    if (socket.destroyed || limit <= 0) return
+    deadlines.set(socket, { startedAt: Date.now(), timer: setTimeout(() => socket.destroy(), limit) })
   }
   const hand = (socket: net.Socket): void => {
-    socket.once('close', () => clearTimeout(headerTimers.get(socket)))
-    awaitHeaders(socket)
+    socket.once('close', () => stopClock(socket))
+    awaitRequest(socket)
     httpServer.emit('connection', socket)
   }
   httpServer.on('request', (req: http.IncomingMessage, res: http.ServerResponse) => {
-    clearTimeout(headerTimers.get(req.socket))
-    res.once('finish', () => awaitHeaders(req.socket))
+    const socket = req.socket
+    stopClock(socket)
+    res.once('finish', () => awaitRequest(socket))
+    const deadline = deadlines.get(socket)
+    if (req.complete || !deadline || httpServer.requestTimeout <= 0) return
+    req.once('end', () => stopClock(socket))
+    deadline.timer = setTimeout(() => {
+      if (req.complete) return
+      if (res.headersSent) return void socket.destroy()
+      res.writeHead(408, { 'content-type': 'text/plain; charset=utf-8', connection: 'close' })
+      res.end('Die Anfrage kam nicht rechtzeitig vollständig an.', () => socket.destroy())
+    }, Math.max(0, deadline.startedAt + httpServer.requestTimeout - Date.now()))
   })
+
   const server = net.createServer({ pauseOnConnect: false }, (socket) => {
     // Bewusst früh und dauerhaft: Ein Fehler vor dem ersten Byte (abgerissene Verbindung) wäre sonst ein unbehandelter
     // Fehler des Prozesses. Danach behandelt der http.Server die Fehler zusätzlich.

@@ -146,8 +146,8 @@ test('Ein Port: ein später gesetztes Zertifikat gilt für neue Verbindungen', a
 
 // Die Fristen des http.Server (headersTimeout, requestTimeout) prüft Node nur für einen Server, der 'listening' gemeldet
 // hat; der innere lauscht nie selbst. Kurz eingestellt, damit der Test schnell ist.
-async function withShortTimeouts(fn: (port: number) => Promise<void>, firstByteMs?: number) {
-  const dual = createDualServer(handler, await certificate(), firstByteMs === undefined ? {} : { firstByteMs })
+async function withShortTimeouts(fn: (port: number) => Promise<void>, firstByteMs?: number, listener: http.RequestListener = handler) {
+  const dual = createDualServer(listener, await certificate(), firstByteMs === undefined ? {} : { firstByteMs })
   dual.http.headersTimeout = 400
   dual.http.requestTimeout = 800
   ;(dual.http as http.Server & { connectionsCheckingInterval: number }).connectionsCheckingInterval = 100
@@ -214,4 +214,58 @@ test('Ein Port: eine Verbindung mit Keep-alive überlebt die Frist für das erst
       agent.destroy()
     }
   }, { firstByteMs: 200 })
+})
+
+// Ein POST, der 100 Byte ankündigt und nur 3 schickt: Die ganze Anfrage muss nach requestTimeout (800 ms) enden. Unter
+// Bun prüft der http.Server übergebene Verbindungen nicht; vor dem eigenen Port galt die Frist auch dort.
+// Der Handler wartet auf den ganzen Rumpf wie express.json(); antwortete er sofort, endete die Verbindung aus anderem Grund
+const readsBody: http.RequestListener = (req, res) => {
+  req.resume()
+  req.on('end', () => res.end('gelesen'))
+}
+const SLOW_BODY = 'POST /rumpf HTTP/1.1\r\nHost: x\r\nContent-Type: text/plain\r\nContent-Length: 100\r\n\r\nabc'
+
+test('Ein Port: ein langsamer Rumpf über HTTP wird nach requestTimeout geschlossen', async () => {
+  await withShortTimeouts(async (port) => {
+    const socket = net.connect(port, '127.0.0.1')
+    socket.write(SLOW_BODY)
+    const ms = await closedAfter(socket)
+    assert.ok(ms >= 700, `vor requestTimeout geschlossen (${ms} ms)`)
+    assert.ok(ms < 4000, `nach ${ms} ms noch offen`)
+  }, undefined, readsBody)
+})
+
+test('Ein Port: ein langsamer Rumpf über HTTPS wird nach requestTimeout geschlossen', async () => {
+  await withShortTimeouts(async (port) => {
+    const socket = tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false })
+    await new Promise<void>((resolve, reject) => { socket.once('secureConnect', resolve); socket.once('error', reject) })
+    socket.write(SLOW_BODY)
+    const ms = await closedAfter(socket)
+    assert.ok(ms >= 700, `vor requestTimeout geschlossen (${ms} ms)`)
+    assert.ok(ms < 4000, `nach ${ms} ms noch offen`)
+  }, undefined, readsBody)
+})
+
+test('Ein Port: eine lange Antwort nach vollständiger Anfrage überschreitet requestTimeout ohne Abbruch', async () => {
+  // Die Frist gilt für das Ankommen der Anfrage, nicht für die Antwort: KI-Auswertung und Backup antworten länger
+  const late: http.RequestListener = (req, res) => {
+    req.resume()
+    res.write('a')
+    setTimeout(() => res.end('b'), 1500)
+  }
+  await withShortTimeouts(async (port) => {
+    for (const mod of [http, https] as const) {
+      const body = await new Promise<string>((resolve, reject) => {
+        const req = mod.request({ host: '127.0.0.1', port, method: 'POST', path: '/', rejectUnauthorized: false, agent: false, headers: { 'content-type': 'text/plain' } }, (res) => {
+          let text = ''
+          res.on('data', (c: Buffer) => { text += c })
+          res.on('end', () => resolve(text))
+          res.on('error', reject)
+        })
+        req.on('error', reject)
+        req.end('kurz')
+      })
+      assert.equal(body, 'ab')
+    }
+  }, undefined, late)
 })
