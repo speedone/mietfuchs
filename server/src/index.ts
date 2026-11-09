@@ -1596,7 +1596,7 @@ const sentAtOf = (req: Request): string | null | false => {
 // in UTC, und kurz nach Mitternacht in Deutschland ist es dort noch gestern. Wirft 400 mit dem Satz für den Nutzer.
 const checkSentAt = (sentAt: string | null, stored: string | null, periodTo: string): void => {
   if (sentAt === null || sentAt === stored) return
-  // Der Tag nach heute in UTC; nicht über shared/holidays.ts, das der Server erst mit amtlich gelesenen Feiertagen nutzt.
+  // Der Tag nach heute in UTC; nicht über shared/holidays.ts: ein Tag, keine Frist.
   const tomorrow = new Date(Date.parse(`${today()}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
   const problem = sentAtProblem(sentAt, periodTo, tomorrow)
   if (problem) throw new RouteProblem(400, sentAtProblemText(problem, periodTo))

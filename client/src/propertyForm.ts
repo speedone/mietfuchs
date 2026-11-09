@@ -110,7 +110,7 @@ export const TIGHT_MARKET_LABELS: Record<TightMarketAnswer, string> = {
 // Reihenfolge der Liste, die Kürzel sind die Werte, damit Auswahl und gespeicherter Wert dieselben sind.
 // Kurz, damit der Eintrag am Handy ganz zu sehen ist (#346 Schritt 7b); was dann gilt, sagt der Hinweis am Feld.
 export const STATE_UNKNOWN_LABEL = 'unbekannt'
-export const STATE_UNKNOWN_HINT = 'Ohne Bundesland zählen nur die bundesweiten Feiertage.'
+export const STATE_UNKNOWN_HINT = 'Ohne Bundesland zählen bei Fristen nur die bundesweiten Feiertage, im Mietkonto der späteste Tag aller Länder.'
 export const STATE_OPTIONS: readonly { value: FederalState | ''; label: string }[] = [
   { value: '', label: STATE_UNKNOWN_LABEL },
   ...STATES.map((s) => ({ value: s.code, label: s.name })),
@@ -126,7 +126,7 @@ export function stateNote(state: FederalState | '', year: number): string | null
   const local = localHolidaysOf(year, state)
   if (local.length === 0) return null
   const names = local.map((h) => `${h.name} (${h.where})`).join('; ')
-  return `In ${stateName(state)} gelten einige Feiertage nur in einzelnen Gemeinden: ${names}. Mietfuchs zählt sie bei Fristen nicht mit.`
+  return `In ${stateName(state)} gelten einige Feiertage nur in einzelnen Gemeinden: ${names}. Mietfuchs zählt sie bei Fristen nicht mit, im Mietkonto schon.`
 }
 
 export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>

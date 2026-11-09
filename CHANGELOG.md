@@ -63,6 +63,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     bestand (fällig nach Ablauf des Monats), zählt er einige Tage nach dem Ersten des Folgemonats. Die Feiertage stehen je
     Land mit Fundstelle im Rechtsregister, 14 Länder amtlich gelesen; Bremen und Hamburg sperren den Abruf ihrer
     Gesetzestexte, ihre Listen sind mit einer amtlichen Übersicht und zwei unabhängigen Feiertagslisten abgeglichen.
+    In der Steuerübersicht verschiebt die Zehn-Tage-Regel bei einem festen Fälligkeitstag am 9. oder 10. die Ende
+    Dezember gezahlte Januarmiete jetzt ins Folgejahr, wenn der Tag nach Wochenende und Feiertagen noch in die kurze
+    Zeit fällt.
   - **Fälligkeit am Mietverhältnis**: In den Stammdaten wählen Sie neben dem Vertragsdatum „Fälligkeit der Miete“: „Wie im
     Gesetz“ (Voreinstellung, nennt die Regel für dieses Mietverhältnis), „Zu Beginn des Monats, spätestens am dritten
     Werktag“, „An einem festen Tag des Monats“ mit dem Tag oder „Nach Ablauf des Monats“, dazu „Erste Miete schon bei

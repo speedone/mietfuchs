@@ -1,6 +1,6 @@
 // Fälligkeit der Miete je Regel und erwarteter Eingang (#334, shared/rentDue.ts). Beispiele von Hand nachgezählt, dazu
 // Abgleiche über alle Länder und Monate, Invarianten über zufällige Mietverhältnisse mit festem Startwert und die
-// Zeitzone. Die Feiertage zählen für den Rückstand nur, wo alle am Tag geltenden Fassungen amtlich gelesen sind
+// Zeitzone. Die Feiertage zählen für den Rückstand nur, wo alle am Tag geltenden Fassungen amtlich gelesen oder abgeglichen sind
 // (Entwurf E6, `holidaysCheckedOn`); die Beispiele mit Feiertagen reichen deshalb `holidaysChecked: () => true` hinein,
 // die sichere Grenze wird mit `() => false` geprüft, und die Voreinstellung folgt dem Register.
 import { test } from 'node:test'

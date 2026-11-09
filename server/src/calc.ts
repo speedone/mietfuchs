@@ -1644,9 +1644,8 @@ type ReceivedInput = {
 // (Mietverhältnis spätestens ab 01.01.), ist das in jedem Land spätestens der 07.01. (Test über alle Länder 1995 bis 2100
 // in invariant-tilgung.test.ts), also in der Frist. Beginnt das Mietverhältnis im Januar, beginnt der erste Abschnitt
 // mit ihm (Auslegung), und ob sein dritter Werktag bis zum 10.01. reicht, hängt an Wochentag und Feiertagen des Landes.
-// Mit Feiertagen darf der Server erst rechnen, wenn alle Landesgesetze amtlich gelesen sind (Auflage aus #290,
-// holidays.test.ts); bis dahin wird ein Mietverhältnis mit Beginn nach dem 01.01. **nicht** verschoben (bekannte
-// Grenze, im Zweifel nach dem Datum der Zahlung). Bei Beginn am 15.01. ist die erste Miete ohnehin erst ab dem 15.01. fällig.
+// Ein Mietverhältnis mit Beginn nach dem 01.01. wird **nicht** verschoben (bekannte Grenze aus der Zeit, als der Server
+// noch nicht mit Feiertagen rechnen durfte, Auflage aus #290; im Zweifel nach dem Datum der Zahlung). Bei Beginn am 15.01. ist die erste Miete ohnehin erst ab dem 15.01. fällig.
 // Mit vereinbarter Fälligkeit (#334): „zu Beginn“ wie § 556b, „nach Ablauf“ nie; ein fester Tag nur, wenn der Januar-Abschnitt
 // am 01.01. beginnt und sein nach § 193 BGB verschobener Tag in den ersten `days` Tagen liegt, gerechnet mit den Feiertagen
 // am Ort (ohne Land dem spätesten aller Länder) und nur, wenn jeder Tag bis dahin geprüft ist (Auflage aus #290).

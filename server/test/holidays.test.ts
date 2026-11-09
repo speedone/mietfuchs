@@ -176,7 +176,8 @@ test('die Zeitzone des Rechners ändert nichts', () => {
 })
 
 // Auflage aus #290, präzisiert in #334 (Entwurf E6): Mit Feiertagen rechnet der Server nur für einen Tag,
-// an dem jede dann geltende Fassung jedes `holiday.*` amtlich gelesen (`checked`) ist. Ältere Fassungen
+// an dem jede dann geltende Fassung jedes `holiday.*` amtlich gelesen (`checked`) oder abgeglichen
+// (`isCrossCheckedStateList`, Bremen und Hamburg) ist. Ältere Fassungen
 // (Reformationstag 2017, Frauentag vor 2019 …) dürfen `adopted` bleiben; für sie ist `holidaysCheckedOn`
 // falsch, und wer rechnet, nimmt dort die sichere Grenze ohne Feiertage.
 test('Feiertage: jedes Land ist amtlich gelesen, abgeglichen oder mit Grund offen', () => {
