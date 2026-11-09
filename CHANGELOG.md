@@ -24,7 +24,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `passwort-zuruecksetzen` im Datenordner anlegen und die Seite neu laden, dann nennt Mietfuchs einen neuen Code. Nur auf
   Ihrem Rechner (Programmfenster, auch aus dem Microsoft Store, ohne Zugriff aus dem Heimnetz; `NKA_HOST=127.0.0.1`) ändert sich nichts.
   `NKA_AUTH=off` schaltet die Anmeldung ab, etwa hinter einem Proxy mit eigener Anmeldung, `NKA_AUTH=on` verlangt sie
-  auch auf `127.0.0.1`. Passwort und Code gehen nicht ins Backup. Über `http://` lässt sich im Heimnetz weiter
+  auch auf `127.0.0.1`. `NKA_PASSWORD_FILE` (etwa ein Docker Secret) oder `NKA_PASSWORD` geben das Passwort beim
+  Start vor, solange keins festgelegt ist; ein später in der Oberfläche geändertes überschreiben sie nicht
+  ([Docker](docs/docker.md#passwort-beim-ersten-start-vorgeben-nka_password_file)). Passwort und Code gehen nicht ins Backup. Über `http://` lässt sich im Heimnetz weiter
   mitlesen; HTTPS gibt es mit einem Proxy oder VPN ([Docker](docs/docker.md#zuerst-sicherheit)).
 - **Mietkonto: Monate als bezahlt erfassen, auch rückwirkend**
   ([#608](https://github.com/speedone/mietfuchs/issues/608)): „Monate als bezahlt erfassen …“ legt für ein oder alle

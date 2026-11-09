@@ -52,6 +52,8 @@ export async function startServer(dataDir, ollamaUrl, env = {}) {
       // Nur auf diesem Rechner, ohne Anmeldung (#528)
       NKA_HOST: '127.0.0.1',
       NKA_AUTH: '',
+      NKA_PASSWORD: '',
+      NKA_PASSWORD_FILE: '',
       ...env,
       NKA_OLLAMA_URL: ollamaUrl,
       NKA_OLLAMA_MODEL: 'qwen3.5:4b',

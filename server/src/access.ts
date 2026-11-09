@@ -113,6 +113,32 @@ export function passwordProblem(password: unknown): string | null {
   return null
 }
 
+// ---------- Passwort aus der Umgebung ----------
+// `NKA_PASSWORD_FILE` (Docker Secrets) geht vor `NKA_PASSWORD`; leer heißt nicht gesetzt. Aus einer Datei fallen nur
+// Zeilenumbrüche am Ende weg (ein Secret endet meist mit einem), Leerzeichen gehören zum Passwort. Übernommen wird es
+// nur, solange keins festgelegt ist (accessServer.ts, `applyEnvPassword`).
+export type EnvPasswordSource = 'NKA_PASSWORD' | 'NKA_PASSWORD_FILE'
+export type EnvPassword =
+  | { password: string, source: EnvPasswordSource, ignored: 'NKA_PASSWORD' | null }
+  | { problem: string }
+
+export function readEnvPassword(env: NodeJS.ProcessEnv, read: (file: string) => string): EnvPassword | null {
+  const file = env.NKA_PASSWORD_FILE?.trim() ?? ''
+  const plain = env.NKA_PASSWORD ?? ''
+  if (file) {
+    let content: string
+    try {
+      content = read(file)
+    } catch (err) {
+      return { problem: `NKA_PASSWORD_FILE: Die Datei ${file} lässt sich nicht lesen (${(err as Error).message}).` }
+    }
+    const password = content.replace(/[\r\n]+$/, '')
+    if (!password) return { problem: `NKA_PASSWORD_FILE: Die Datei ${file} ist leer.` }
+    return { password, source: 'NKA_PASSWORD_FILE', ignored: plain ? 'NKA_PASSWORD' : null }
+  }
+  return plain ? { password: plain, source: 'NKA_PASSWORD', ignored: null } : null
+}
+
 // OWASP Password Storage: scrypt mit N = 2^17, r = 8, p = 1 (128 MiB), Salz 16 Bytes, Schlüssel 32 Bytes. Die Parameter
 // stehen im gespeicherten Wert, damit eine spätere Fassung sie anheben kann.
 const SCRYPT = { logN: 17, r: 8, p: 1 }

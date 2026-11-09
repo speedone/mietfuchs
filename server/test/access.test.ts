@@ -11,6 +11,7 @@ import {
   hashPassword, initialAccess, needsRehash, sameKey, newInstance, newSetupCode, normalizeCode, passwordProblem, readAccessFile, reachableOf,
   removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, viaProxy, viaHttps, cookieValues, sessionCookie,
   clearedCookie, isLoopback, type AccessFile, type AccessState, type GateDecision, type GateRequest,
+  readEnvPassword,
 } from '../src/access.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-zugang-'))
@@ -538,4 +539,26 @@ test('Vorschaltung: Proxy-Kopfzeilen, Cookies und HTTPS erkennen', () => {
   assert.equal(isLoopback('::1'), true)
   assert.equal(isLoopback('192.168.1.5'), false)
   assert.equal(isLoopback(undefined), false)
+})
+
+// Passwort aus der Umgebung (#528): NKA_PASSWORD_FILE (Docker Secrets) vor NKA_PASSWORD, leer heißt nicht gesetzt, eine
+// Datei verliert nur Zeilenumbrüche am Ende.
+test('Passwort aus der Umgebung: Datei vor Variable, leer zählt nicht, Zeilenende abgeschnitten', () => {
+  const files: Record<string, string> = { '/run/secrets/pw': 'ein Satz aus vier Wörtern\r\n\n', '/leer': '' }
+  const read = (file: string): string => {
+    const content = files[file]
+    if (content === undefined) throw new Error('ENOENT: no such file or directory')
+    return content
+  }
+  assert.equal(readEnvPassword({}, read), null)
+  assert.equal(readEnvPassword({ NKA_PASSWORD: '', NKA_PASSWORD_FILE: '  ' }, read), null)
+  assert.deepEqual(readEnvPassword({ NKA_PASSWORD: 'ein Satz aus vier Wörtern ' }, read), { password: 'ein Satz aus vier Wörtern ', source: 'NKA_PASSWORD', ignored: null })
+  assert.deepEqual(readEnvPassword({ NKA_PASSWORD_FILE: '/run/secrets/pw' }, read), { password: 'ein Satz aus vier Wörtern', source: 'NKA_PASSWORD_FILE', ignored: null })
+  assert.deepEqual(readEnvPassword({ NKA_PASSWORD_FILE: '/run/secrets/pw', NKA_PASSWORD: 'anders' }, read), { password: 'ein Satz aus vier Wörtern', source: 'NKA_PASSWORD_FILE', ignored: 'NKA_PASSWORD' })
+  const missing = readEnvPassword({ NKA_PASSWORD_FILE: '/fehlt' }, read)
+  assert.ok(missing && 'problem' in missing)
+  assert.match(missing.problem, /^NKA_PASSWORD_FILE: Die Datei \/fehlt lässt sich nicht lesen \(ENOENT/)
+  const empty = readEnvPassword({ NKA_PASSWORD_FILE: '/leer' }, read)
+  assert.ok(empty && 'problem' in empty)
+  assert.equal(empty.problem, 'NKA_PASSWORD_FILE: Die Datei /leer ist leer.')
 })

@@ -706,3 +706,90 @@ test('Zurücksetzen: ein Ordner dieses Namens zählt nicht', async () => {
     s.stop()
   }
 })
+
+// Passwort aus der Umgebung (#528): legt es beim Start fest, solange keins festgelegt ist; danach nur ein Hinweis. Der
+// Wert verschwindet aus der Umgebung des Servers.
+const ENV_PASSWORD = 'ein Satz aus der Umgebung'
+
+test('Passwort aus NKA_PASSWORD_FILE: neuer Datenordner startet mit Passwort, ohne Code; später nur ein Hinweis', async () => {
+  const dir = freshDir()
+  const secret = path.join(freshDir(), 'mietfuchs_passwort')
+  fs.writeFileSync(secret, `${ENV_PASSWORD}\n`)
+  const first = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD_FILE: secret, NKA_PASSWORD: 'wird nicht beachtet, weil die Datei vorgeht' })
+  try {
+    const auth = await authOf(first.base)
+    assert.equal(auth.mode, 'password')
+    assert.equal(auth.required, true)
+    assert.equal(auth.codeFile, undefined)
+    assert.equal(fs.existsSync(path.join(dir, 'einrichtungscode.txt')), false)
+    assert.equal((await fetch(`${first.base}/api/units`)).status, 401)
+    const ok = await fetch(`${first.base}/api/auth/login`, post({ password: ENV_PASSWORD }))
+    assert.equal(ok.status, 200)
+    await waitFor(() => first.output().includes('Das Passwort für Mietfuchs ist aus NKA_PASSWORD_FILE festgelegt.'))
+    assert.ok(first.output().includes('NKA_PASSWORD wird neben NKA_PASSWORD_FILE nicht beachtet.'), first.output())
+    assert.doesNotMatch(first.output(), /Einrichtungscode:/)
+    assert.ok(!first.output().includes(ENV_PASSWORD), 'das Passwort steht nie im Protokoll')
+  } finally {
+    // nicht `stop()`: das räumte den Datenordner weg
+    first.child.kill()
+  }
+  await waitForExit(first.child).catch(() => null)
+  // Zweiter Start mit einer anderen Angabe: Das festgelegte Passwort bleibt.
+  const second = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: 'ein ganz anderes langes Passwort' })
+  try {
+    assert.equal((await fetch(`${second.base}/api/auth/login`, post({ password: ENV_PASSWORD }))).status, 200)
+    assert.equal((await fetch(`${second.base}/api/auth/login`, post({ password: 'ein ganz anderes langes Passwort' }))).status, 401)
+    await waitFor(() => second.output().includes('NKA_PASSWORD wird nicht übernommen: Für Mietfuchs ist schon ein Passwort festgelegt.'))
+  } finally {
+    second.stop()
+  }
+})
+
+test('Passwort aus NKA_PASSWORD: beendet den Übergang eines bestehenden Bestands; zu kurz oder NKA_AUTH=off ändert nichts', async () => {
+  const dir = await stockDir()
+  const short = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: 'zu kurz' })
+  try {
+    assert.equal((await authOf(short.base)).mode, 'transition')
+    await waitFor(() => /NKA_PASSWORD: Das Passwort braucht mindestens 15 Zeichen\..* Das Passwort wird nicht übernommen\./.test(short.errorOutput()))
+  } finally {
+    short.child.kill()
+  }
+  await waitForExit(short.child).catch(() => null)
+  const off = await startServerIn(dir, { ...NETWORK, NKA_AUTH: 'off', NKA_PASSWORD: ENV_PASSWORD })
+  try {
+    await waitFor(() => off.output().includes('NKA_PASSWORD wird nicht übernommen: Die Anmeldung ist über NKA_AUTH=off abgeschaltet.'))
+    assert.equal(fs.existsSync(path.join(dir, 'zugang.json')), false, 'nichts festgelegt')
+  } finally {
+    off.child.kill()
+  }
+  await waitForExit(off.child).catch(() => null)
+  const s = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: ENV_PASSWORD })
+  try {
+    assert.equal((await authOf(s.base)).mode, 'password')
+    assert.equal((await fetch(`${s.base}/api/units`)).status, 401)
+    const ok = await fetch(`${s.base}/api/auth/login`, post({ password: ENV_PASSWORD }))
+    assert.equal(ok.status, 200)
+    const units = await fetch(`${s.base}/api/properties`, { headers: { cookie: sessionOf(ok) } })
+    assert.equal(units.status, 200)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'zugang.json'), 'utf8')).mode, 'password')
+  } finally {
+    s.stop()
+  }
+})
+
+test('Passwort aus der Umgebung: nach dem Zurücksetzen gilt es wieder, solange die Angabe steht', async () => {
+  const dir = freshDir()
+  const first = await startServerIn(dir, NETWORK)
+  await signIn(first)
+  first.child.kill()
+  await waitForExit(first.child).catch(() => null)
+  fs.writeFileSync(path.join(dir, 'passwort-zuruecksetzen'), '')
+  const s = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: ENV_PASSWORD })
+  try {
+    assert.equal((await authOf(s.base)).mode, 'password')
+    assert.equal((await fetch(`${s.base}/api/auth/login`, post({ password: ENV_PASSWORD }))).status, 200)
+    assert.equal((await fetch(`${s.base}/api/auth/login`, post({ password: TEST_PASSWORD }))).status, 401)
+  } finally {
+    s.stop()
+  }
+})

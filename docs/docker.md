@@ -57,6 +57,32 @@ nennt. Dort änderst du auch das Passwort, meldest alle anderen Geräte ab oder 
 Anmeldung aus. Nach Fehlversuchen wird Mietfuchs langsamer (ab dem fünften eine
 Sekunde Wartezeit, je weiterem doppelt so lang, höchstens eine Minute), es sperrt aber nie aus.
 
+### Passwort beim ersten Start vorgeben (`NKA_PASSWORD_FILE`)
+
+Willst du das Passwort nicht im Browser festlegen, etwa bei einer Einrichtung über Portainer, Unraid
+oder ein Skript, gib es beim Start vor. Am besten als Datei, zum Beispiel als
+[Docker Secret](https://docs.docker.com/compose/how-tos/use-secrets/):
+
+```yaml
+services:
+  mietfuchs:
+    environment:
+      NKA_PASSWORD_FILE: /run/secrets/mietfuchs_passwort
+    secrets:
+      - mietfuchs_passwort
+secrets:
+  mietfuchs_passwort:
+    file: ./mietfuchs_passwort.txt
+```
+
+`NKA_PASSWORD` nimmt das Passwort auch direkt, steht dann aber im Klartext in der `compose.yml` und
+in `docker inspect`. Es gelten dieselben Regeln wie im Browser (15 bis 128 Zeichen); ein
+Zeilenumbruch am Ende der Datei zählt nicht. Mietfuchs übernimmt es **nur, solange kein Passwort
+festgelegt ist**: beim ersten Start, bei bestehenden Daten ohne Passwort und nach dem Zurücksetzen.
+Ein Passwort, das du später unter *Einstellungen → Anmeldung* änderst, überschreibt die Angabe nicht;
+danach kannst du sie entfernen. Das Protokoll sagt bei jedem Start, ob sie übernommen wurde, nennt
+das Passwort aber nie. Mit `NKA_AUTH=off` wird es nicht übernommen.
+
 ### Passwort vergessen
 
 Zurücksetzen kann nur, wer an den Datenordner kommt:
@@ -68,7 +94,8 @@ docker compose exec mietfuchs touch /app/server/data/passwort-zuruecksetzen
 Dann die Seite im Browser neu laden (oder den Container neu starten). Mietfuchs löscht das
 Passwort, meldet alle Geräte ab, entfernt die Datei und schreibt einen neuen Einrichtungscode ins
 Protokoll: `docker compose logs mietfuchs`. Mit ihm legst du ein neues Passwort fest. Deine Daten
-bleiben unberührt.
+bleiben unberührt. Steht `NKA_PASSWORD_FILE` oder `NKA_PASSWORD` noch in der Einrichtung, gilt nach
+dem Zurücksetzen wieder dieses Passwort.
 
 ### Anmeldung ein- und ausschalten (`NKA_AUTH`)
 

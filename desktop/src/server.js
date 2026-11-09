@@ -76,12 +76,12 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
   // Ausgeliefert ohne die beiden Schranken der Testgriffe (testGrips.js) nichts davon an den Server: CI schaltete dort
   // Ortsdatei und Suche beim Umzug ab, ein NKA_TEST_* stellte Uhr, Heimatordner oder Ports um, ein NKA_ALLOWED_HOSTS mit
   // `*` aus einer Docker-Einrichtung schaltete die Prüfung von Host und Origin still ab, und NKA_UPDATE_URL lenkte den
-  // Update-Hinweis samt Download-Link auf einen fremden Server, und NKA_AUTH=off schaltete die Anmeldung still ab (#528).
+  // Update-Hinweis samt Download-Link auf einen fremden Server, NKA_AUTH=off schaltete die Anmeldung still ab, und NKA_PASSWORD(_FILE) legte ein Passwort fest, das niemand im Fenster gewählt hat (#528).
   // NKA_DATA_DIR bleibt: Den Datenordner zu verlegen ist
   // eine Einstellung, kein Testgriff.
   if (packaged && !testGripsAllowed(base)) {
     for (const name of Object.keys(env)) {
-      if (name === 'CI' || name === 'NKA_ALLOWED_HOSTS' || name === 'NKA_UPDATE_URL' || name === 'NKA_AUTH' || name.startsWith('NKA_TEST_')) delete env[name]
+      if (name === 'CI' || name === 'NKA_ALLOWED_HOSTS' || name === 'NKA_UPDATE_URL' || name === 'NKA_AUTH' || name === 'NKA_PASSWORD' || name === 'NKA_PASSWORD_FILE' || name.startsWith('NKA_TEST_')) delete env[name]
     }
   }
   if (windowsStore) env.NKA_STORE = '1'

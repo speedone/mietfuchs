@@ -389,6 +389,9 @@ einem Mietfuchs auf `127.0.0.1`, erkennt Mietfuchs ihn an seinen Kopfzeilen (`Fo
 solche Anfragen eine Anmeldung, und ohne Passwort zeigt Mietfuchs einen Hinweis. Setzt dein Proxy
 keine dieser Kopfzeilen, nimm `NKA_AUTH=on`. Alles auf demselben Rechner gilt als vertrauenswürdig:
 Andere Dienste dort bekommen das Anmelde-Cookie mit, auch auf einem anderen Port.
+`NKA_PASSWORD_FILE` (Pfad zu einer Datei) oder `NKA_PASSWORD` geben das Passwort beim Start vor,
+solange keins festgelegt ist; Einzelheiten unter
+[Docker](docker.md#passwort-beim-ersten-start-vorgeben-nka_password_file).
 
 Aus einem Paket installiert, liegen die Daten in **`~/.local/share/mietfuchs`** statt neben der
 Programmdatei; in `/usr/bin` darf niemand schreiben. Backup = diesen Ordner kopieren. Wer die

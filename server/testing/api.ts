@@ -319,6 +319,8 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       // Anmeldung. Wer das Netz oder die Anmeldung prüft, setzt `NKA_HOST: '0.0.0.0'` bzw. `NKA_AUTH`.
       NKA_HOST: '127.0.0.1',
       NKA_AUTH: '',
+      NKA_PASSWORD: '',
+      NKA_PASSWORD_FILE: '',
       ...env,
       NKA_PORT: '0',
       NKA_DATA_DIR: dataDir,
@@ -433,7 +435,7 @@ export function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}, { s
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     // CI hinter `...env`, wie in startServerIn: Kein Aufrufer kann es versehentlich abschalten.
-    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, NKA_TEST_TWIN_PORTS: '[]', NKA_HOST: '127.0.0.1', NKA_AUTH: '', ...env, CI: 'true' },
+    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, NKA_TEST_TWIN_PORTS: '[]', NKA_HOST: '127.0.0.1', NKA_AUTH: '', NKA_PASSWORD: '', NKA_PASSWORD_FILE: '', ...env, CI: 'true' },
     stdio: [stdin, 'pipe', 'pipe'],
   })
   let output = ''
