@@ -20,6 +20,16 @@ const KEY_FILE = 'mietfuchs.key'
 const CERT_FILE = 'mietfuchs.crt'
 const VALID_YEARS = 30
 
+// Wie die Voreinstellung von selfsigned, aber mit den Namen dieses Rechners: Ein Client, der dem Zertifikat ausdrücklich
+// vertraut (`ca`, Prüfungen und Smoke-Test), prüft den Namen trotzdem und braucht localhost, 127.0.0.1 oder ::1. Ein
+// älteres Zertifikat ohne sie bleibt gültig (das Fenster koppelt über den Fingerabdruck, nicht über den Namen).
+const EXTENSIONS = [
+  { name: 'basicConstraints' as const, cA: false, critical: true },
+  { name: 'keyUsage' as const, digitalSignature: true, critical: true },
+  { name: 'extKeyUsage' as const, serverAuth: true },
+  { name: 'subjectAltName' as const, altNames: [{ type: 2 as const, value: 'localhost' }, { type: 7 as const, ip: '127.0.0.1' }, { type: 7 as const, ip: '::1' }] },
+]
+
 export type Certificate = { key: string, cert: string, certSha256: string }
 
 // SHA-256 des DER, klein in Hex: so vergleicht das Fenster das Zertifikat beim Koppeln
@@ -68,7 +78,7 @@ export async function ensureCertificate(dataDir: string, now: Date = new Date())
     for (const name of fs.readdirSync(dir)) if (name.endsWith('.tmp')) fs.rmSync(path.join(dir, name), { force: true })
     const notAfterDate = new Date(now)
     notAfterDate.setUTCFullYear(notAfterDate.getUTCFullYear() + VALID_YEARS)
-    const pems = await generate([{ name: 'commonName', value: 'Mietfuchs' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notAfterDate })
+    const pems = await generate([{ name: 'commonName', value: 'Mietfuchs' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notAfterDate, extensions: EXTENSIONS })
     // Erst der Schlüssel: Bricht es dazwischen ab, passt das alte Zertifikat nicht, und der nächste Start erzeugt neu
     writeReplacing(keyFile, pems.private, 0o600)
     writeReplacing(certFile, pems.cert, 0o644)

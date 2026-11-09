@@ -540,7 +540,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **[smoke-test.mjs](smoke-test.mjs)** prüft eine laufende Instanz von außen (Oberfläche samt
   Skriptteilen und pdf.js, KI-Auswertung gegen nachgebautes Ollama, Belege, Abrechnung, Backup,
   Wiederherstellen, Datenbank aus `/healthz`, dasselbe `/healthz` über HTTPS auf demselben Port, #528) und braucht
-  einen leeren Datenordner. Läuft für jede
+  einen leeren Datenordner. Über HTTPS vertraut er nur dem Zertifikat der Instanz (`ca`, keine abgeschaltete Prüfung),
+  gelesen aus `--cert-file`, `--data-dir` oder neben dem Einrichtungscode (`--code-file`, `--code-command` mit
+  `tls/mietfuchs.crt` statt `einrichtungscode.txt`); ohne diese Angaben fragt er nur über HTTP. Läuft für jede
   Programmdatei auf ihrem System, in Containern vieler Distributionen (CentOS 7 mit glibc 2.17 bis
   Ubuntu 26.04), fürs Docker-Image und in der CI gegen den Quellcode. Lokal:
   `node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Den **gelungenen** Umstieg

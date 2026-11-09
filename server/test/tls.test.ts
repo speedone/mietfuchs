@@ -152,3 +152,35 @@ test('TLS: liegengebliebene Zwischendateien eines Absturzes werden beim Erzeugen
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('TLS: das Zertifikat nennt localhost, 127.0.0.1 und ::1, damit ein Client es ohne Abschalten der Prüfung annimmt', async () => {
+  // Wer dem Zertifikat ausdrücklich vertraut (ca), prüft den Namen trotzdem; für Prüfungen und Smoke-Test auf diesem Rechner
+  const dir = freshDir()
+  try {
+    const pair = pairOf(await ensureCertificate(dir))
+    const x509 = new crypto.X509Certificate(pair.cert)
+    assert.deepEqual((x509.subjectAltName ?? '').split(', ').sort(), ['DNS:localhost', 'IP Address:0:0:0:0:0:0:0:1', 'IP Address:127.0.0.1'])
+    assert.match(x509.subject, /CN=Mietfuchs/)
+    assert.equal(x509.checkHost('localhost'), 'localhost')
+    assert.equal(x509.checkIP('127.0.0.1'), '127.0.0.1')
+    assert.equal(x509.checkIP('::1'), '::1')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('TLS: ein vorhandenes Zertifikat ohne diese Namen bleibt gültig und wird nicht ersetzt', async () => {
+  // Gekoppelte Fenster prüfen den Fingerabdruck; ein neues Zertifikat hieße neu koppeln
+  const dir = freshDir()
+  try {
+    const { generate } = await import('selfsigned')
+    const old = await generate([{ name: 'commonName', value: 'Mietfuchs' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256' })
+    fs.mkdirSync(path.join(dir, TLS_DIR))
+    fs.writeFileSync(keyFile(dir), old.private)
+    fs.writeFileSync(certFile(dir), old.cert)
+    const pair = pairOf(await ensureCertificate(dir))
+    assert.equal(pair.certSha256, certSha256(old.cert))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

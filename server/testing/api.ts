@@ -421,13 +421,18 @@ export function rawRequest(base: string, { method = 'GET', urlPath = '/', header
   })
 }
 
-// Eine Anfrage über HTTPS an die Adresse eines Servers (`http://…`, derselbe Port), ohne Prüfung der Kette: Das
-// Zertifikat ist selbst ausgestellt, gekoppelt wird an seinen Fingerabdruck. `certSha256` ist der SHA-256 seines DER.
-export function httpsFetch(base: string, urlPath: string, { method = 'GET', headers = {}, body }: { method?: string, headers?: Record<string, string>, body?: string } = {}): Promise<{ status: number, headers: http.IncomingHttpHeaders, body: string, certSha256: string }> {
+// Das Zertifikat eines Servers aus seinem Datenordner (#528), als `ca` für httpsFetch: Die Prüfungen vertrauen genau
+// diesem einen selbst ausgestellten Zertifikat, statt die Prüfung abzuschalten.
+export const serverCa = (dataDir: string): string => fs.readFileSync(path.join(dataDir, 'tls', 'mietfuchs.crt'), 'utf8')
+
+// Eine Anfrage über HTTPS an die Adresse eines Servers (`http://…`, derselbe Port). Kette und Name werden geprüft, mit
+// `ca` als einzigem Vertrauensanker (`serverCa`); ohne `ca` scheitert sie an jedem selbst ausgestellten Zertifikat.
+// Die Adresse muss 127.0.0.1, ::1 oder localhost sein (subjectAltName). `certSha256` ist der SHA-256 des DER.
+export function httpsFetch(base: string, urlPath: string, { method = 'GET', headers = {}, body, ca }: { method?: string, headers?: Record<string, string>, body?: string, ca?: string } = {}): Promise<{ status: number, headers: http.IncomingHttpHeaders, body: string, certSha256: string }> {
   const url = new URL(base)
   return new Promise((resolve, reject) => {
     const req = https.request({
-      host: url.hostname, port: url.port, method, path: urlPath, rejectUnauthorized: false, agent: false,
+      host: url.hostname, port: url.port, method, path: urlPath, agent: false, ...(ca === undefined ? {} : { ca }),
       headers: { ...headers, ...(body !== undefined ? { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) } : {}) },
     }, (res) => {
       const raw = (res.socket as TLSSocket).getPeerCertificate(true).raw

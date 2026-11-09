@@ -193,8 +193,8 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   Unbekannte Felder in `zugang.json` gehen beim Zurückschreiben verloren (offen für Schritt 2, `devices`).
 - **HTTPS auf demselben Port** (Schritt 2, [tls.ts](tls.ts), [dualPort.ts](dualPort.ts)): `tls/mietfuchs.key` (0600) und
   `tls/mietfuchs.crt` im Datenordner, vor dem Binden nur gelesen, fehlend erst danach erzeugt (#244: ein zweiter Start
-  rührt den Ordner nicht an; ein umgezogener Ordner bekommt keins). ECDSA P-256, CN „Mietfuchs“, 30 Jahre, über
-  `selfsigned`; wie `zugang.json` nie im Backup, in Vorversionen oder im Umzug. Der äußere `net`-Server liest das erste
+  rührt den Ordner nicht an; ein umgezogener Ordner bekommt keins). ECDSA P-256, CN „Mietfuchs“, subjectAltName localhost, 127.0.0.1, ::1
+  (ältere ohne bleiben gültig), 30 Jahre, über `selfsigned`; wie `zugang.json` nie im Backup, in Vorversionen oder im Umzug. Der äußere `net`-Server liest das erste
   Byte (`0x16` = TLS) und reicht ein `tls.TLSSocket` bzw. die rohe Verbindung an **denselben** `http.Server`; nicht
   `https.Server.emit('connection')`, das scheitert unter Bun. Ohne Zertifikat eine Zeile „HTTPS ist nicht verfügbar …“
   auf der Fehlerausgabe, TLS-Verbindungen werden geschlossen, nie ein Abbruch. `/healthz` nennt `tls`. **Fristen**: Der
@@ -203,6 +203,8 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   ersten Byte und bis zum Ende des Handshakes; je Anfrage eine Uhr ab Beginn (Übergabe bzw. Ende der vorigen Antwort),
   `headersTimeout` bis zu den Kopfzeilen, `requestTimeout` bis zum ganzen Rumpf, dann 408 bzw. Schluss. Die Antwort
   selbst darf länger dauern (wie bei Node).
+  Prüfungen schalten die Zertifikatsprüfung nie ab (CodeQL): `httpsFetch(…, { ca: serverCa(dataDir) })` bzw. `ca` mit
+  dem erzeugten PEM, Adresse 127.0.0.1.
 - **Passwort** 15 bis 128 Zeichen nach NFC (Codepunkte), abgelehnt nur ein wiederholtes Zeichen und „mietfuchs“;
   scrypt N = 2^17, r = 8, p = 1, Salz 16, Schlüssel 32, Vergleich mit `timingSafeEqual`; `needsRehash` rechnet nach
   angehobenen Parametern bei der nächsten Anmeldung neu. **Höchstens eine Berechnung zugleich** (`createHashQueue`,

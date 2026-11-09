@@ -28,6 +28,10 @@ async function certificate(): Promise<Certificate> {
   }
 }
 
+// Die Clients vertrauen genau diesem Zertifikat (`ca`) und prüfen Kette und Namen (127.0.0.1 steht darin), statt die
+// Prüfung abzuschalten
+const CA = (await certificate()).cert
+
 // Antwortet mit dem Protokoll, wie es der Handler sieht
 const handler: http.RequestListener = (req, res) => {
   res.setHeader('content-type', 'text/plain')
@@ -47,7 +51,7 @@ async function withDual(tlsPair: { key: string, cert: string } | null, fn: (port
 
 function get(mod: typeof http | typeof https, port: number, urlPath: string): Promise<{ status: number, body: string }> {
   return new Promise((resolve, reject) => {
-    const req = mod.get({ host: '127.0.0.1', port, path: urlPath, rejectUnauthorized: false, agent: false }, (res) => {
+    const req = mod.get({ host: '127.0.0.1', port, path: urlPath, ca: CA, agent: false }, (res) => {
       let body = ''
       res.setEncoding('utf8')
       res.on('data', (c: string) => { body += c })
@@ -88,7 +92,7 @@ test('Ein Port: HTTP und HTTPS antworten mit demselben Handler', async () => {
 test('Ein Port: das Zertifikat ist das übergebene', async () => {
   const pairNow = await certificate()
   await withDual(pairNow, async (port) => {
-    const socket = tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false })
+    const socket = tls.connect({ host: '127.0.0.1', port, ca: CA })
     await new Promise<void>((resolve, reject) => { socket.once('secureConnect', resolve); socket.once('error', reject) })
     const peer = socket.getPeerCertificate(true)
     socket.destroy()
@@ -173,7 +177,7 @@ test('Ein Port: unvollständige Kopfzeilen über HTTP werden nach headersTimeout
 
 test('Ein Port: unvollständige Kopfzeilen über HTTPS werden nach headersTimeout geschlossen', async () => {
   await withShortTimeouts(async (port) => {
-    const socket = tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false })
+    const socket = tls.connect({ host: '127.0.0.1', port, ca: CA })
     await new Promise<void>((resolve, reject) => { socket.once('secureConnect', resolve); socket.once('error', reject) })
     socket.write('GET / HTTP/1.1\r\nHost: x\r\n')
     const ms = await closedAfter(socket)
@@ -200,7 +204,7 @@ test('Ein Port: ein stockender TLS-Handshake wird nach der eigenen Frist geschlo
 test('Ein Port: eine Verbindung mit Keep-alive überlebt die Frist für das erste Byte', async () => {
   // Die Frist gilt nur bis zum ersten Byte und bis zum Ende des Handshakes, nicht für eine ruhende Verbindung danach
   await withDual(await certificate(), async (port) => {
-    const agent = new https.Agent({ keepAlive: true, rejectUnauthorized: false })
+    const agent = new https.Agent({ keepAlive: true, ca: CA })
     try {
       const once = () => new Promise<string>((resolve, reject) => {
         https.get({ host: '127.0.0.1', port, path: '/k', agent }, (res) => {
@@ -239,7 +243,7 @@ test('Ein Port: ein langsamer Rumpf über HTTP wird nach requestTimeout geschlos
 
 test('Ein Port: ein langsamer Rumpf über HTTPS wird nach requestTimeout geschlossen', async () => {
   await withShortTimeouts(async (port) => {
-    const socket = tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false })
+    const socket = tls.connect({ host: '127.0.0.1', port, ca: CA })
     await new Promise<void>((resolve, reject) => { socket.once('secureConnect', resolve); socket.once('error', reject) })
     socket.write(SLOW_BODY)
     const ms = await closedAfter(socket)
@@ -258,7 +262,7 @@ test('Ein Port: eine lange Antwort nach vollständiger Anfrage überschreitet re
   await withShortTimeouts(async (port) => {
     for (const mod of [http, https] as const) {
       const body = await new Promise<string>((resolve, reject) => {
-        const req = mod.request({ host: '127.0.0.1', port, method: 'POST', path: '/', rejectUnauthorized: false, agent: false, headers: { 'content-type': 'text/plain' } }, (res) => {
+        const req = mod.request({ host: '127.0.0.1', port, method: 'POST', path: '/', ca: CA, agent: false, headers: { 'content-type': 'text/plain' } }, (res) => {
           let text = ''
           res.on('data', (c: Buffer) => { text += c })
           res.on('end', () => resolve(text))
@@ -282,7 +286,7 @@ test('Ein Port: nach einer frühen Antwort und spätem Rumpf gilt die Frist für
   }
   await withShortTimeouts(async (port) => {
     for (const secure of [false, true]) {
-      const socket = secure ? tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false }) : net.connect(port, '127.0.0.1')
+      const socket = secure ? tls.connect({ host: '127.0.0.1', port, ca: CA }) : net.connect(port, '127.0.0.1')
       await new Promise<void>((resolve, reject) => { socket.once(secure ? 'secureConnect' : 'connect', resolve); socket.once('error', reject) })
       socket.write('POST /api/x HTTP/1.1\r\nHost: x\r\nContent-Type: text/plain\r\nContent-Length: 10\r\n\r\n')
       const closed = closedAfter(socket)
