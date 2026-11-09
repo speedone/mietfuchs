@@ -250,6 +250,13 @@ export const DEVICE_NAME_MAX = 60
 export const pairingProof = (code: string, certSha256: string): string =>
   crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:${certSha256}`).digest('hex')
 
+// Hinter einem vertrauten Proxy mit Zertifikat aus dem Speicher des Systems (Let's Encrypt, Caddy `tls internal`) bindet
+// das Fenster den Beweis an den Ursprung, den es geprüft hat, etwa `https://nas.fritz.box`. Die Nachricht ist von der des
+// Fingerabdrucks getrennt: nach `mietfuchs-kopplung:` folgen dort 64 Hex-Zeichen, hier `origin:` (ein Hex-Zeichen ist nie
+// `o`).
+export const originProof = (code: string, origin: string): string =>
+  crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:origin:${origin}`).digest('hex')
+
 // 256 Bit Zufall: dafür genügt SHA-256, scrypt brauchte es nur für Passwörter, die ein Mensch wählt
 export const newDeviceKey = (): string => crypto.randomBytes(32).toString('base64url')
 export const deviceKeyHash = (key: string): string => crypto.createHash('sha256').update(key).digest('hex')
@@ -529,6 +536,55 @@ export const proxyHeadersPresent = (headers: Headers): boolean => PROXY_HEADERS.
 // Zustimmungen im Fenster, den Fensterschlüssel und die Umzugsrouten. Die eine Stelle für alle diese Fragen.
 export const fromThisComputer = (address: string | undefined, headers: Headers): boolean => isLoopback(address) && !proxyHeadersPresent(headers)
 
+// ---------- Kanal einer Anfrage (#528, Kopplung über einen Proxy) ----------
+// `tls`: die eigene Verbindung ist TLS. `proxy`: ein Peer aus NKA_TRUST_PROXY meldet genau ein `X-Forwarded-Proto: https`,
+// dazu der Ursprung, unter dem der Browser Mietfuchs öffnet. `plain`: alles andere. Über HTTPS heißt `tls` oder `proxy`;
+// das gilt für den Geräteschlüssel, das Koppeln und die Vorabfrage. **Die einzige Stelle, an der eine Proxy-Kopfzeile
+// etwas erlaubt**, und nur für einen vertrauten Peer (`trustedPeer`, accessServer.ts); sonst machen sie nur strenger.
+// Tabelle: docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md, Abschnitt 3.
+export type Channel = 'tls' | 'proxy' | 'plain'
+
+// Genau ein Wert: Caddy überschreibt die Kopfzeilen eines Clients und setzt je einen; zwei Werte (Komma oder doppelte
+// Kopfzeile) heißen, dass ein Client etwas angehängt hat
+const single = (value: string | string[] | undefined): string | null => {
+  if (value === undefined) return null
+  if (Array.isArray(value)) return value.length === 1 && !value[0].includes(',') ? value[0].trim() : ''
+  return value.includes(',') ? '' : value.trim()
+}
+
+// `https://` + Name mit Port, ohne Benutzer, Pfad, Suche oder Anker; sonst kein Ursprung. `:443` fällt weg.
+function originOfHost(host: string): string | null {
+  if (!host || /[\s/?#@\\]/.test(host)) return null
+  try {
+    return new URL(`https://${host}`).origin
+  } catch {
+    return null
+  }
+}
+
+export function channelOf({ encrypted, trustedPeer, headers }: { encrypted: boolean, trustedPeer: boolean, headers: Headers }): { channel: Channel, origin: string | null } {
+  const plain = { channel: 'plain' as const, origin: null }
+  const own = encrypted ? { channel: 'tls' as const, origin: null } : plain
+  if (!trustedPeer) return own
+  const proto = single(headers['x-forwarded-proto'])
+  if (proto === null) return own
+  if (proto.toLowerCase() !== 'https') return plain
+  const forwarded = single(headers['x-forwarded-host'])
+  const host = forwarded ?? single(headers.host)
+  const origin = host ? originOfHost(host) : null
+  return origin ? { channel: 'proxy', origin } : plain
+}
+
+// Welche Beweise `POST /api/auth/pair` annimmt: direkt über TLS nur den an das eigene Zertifikat gebundenen, über einen
+// vertrauten Proxy auch den an den weitergereichten Ursprung gebundenen (der Proxy kann das Zertifikat von Mietfuchs
+// ausliefern), über HTTP keinen.
+export function expectedProofs(code: string, channel: Channel, certSha256: string | null, origin: string | null): string[] {
+  if (channel === 'plain') return []
+  const proofs = certSha256 ? [pairingProof(code, certSha256)] : []
+  if (channel === 'proxy' && origin) proofs.push(originProof(code, origin))
+  return proofs
+}
+
 // Kam die Seite über HTTPS (Proxy davor oder, seit Schritt 2, die eigene Verbindung: `encrypted`)? Dann bekommt das
 // Cookie `Secure`. Eine gefälschte Angabe schadet nicht: Über HTTP verwirft der Browser ein Cookie mit `Secure`, der
 // Fälscher meldet nur sich selbst nicht an.
@@ -584,7 +640,8 @@ const FREE: Record<string, readonly string[]> = {
   '/api/auth/setup': ['POST'],
   '/api/auth/logout': ['POST'],
   // Koppeln eines Programmfensters (#528, Schritt 2): frei wie die Anmeldung, mit Code als Beweis und derselben Bremse
-  '/api/auth/pair': ['POST'],
+  // dazu die Vorabfrage (`GET`): Fingerabdruck, ob der Server HTTPS sieht, und der weitergereichte Ursprung
+  '/api/auth/pair': ['GET', 'POST'],
   '/healthz': ['GET', 'HEAD'],
 }
 
