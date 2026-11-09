@@ -531,6 +531,9 @@ test('Vorschaltung: Proxy-Kopfzeilen, Cookies und HTTPS erkennen', () => {
   assert.equal(viaHttps({ forwarded: 'for=1.2.3.4;proto=https;host=x' }), true)
   assert.equal(viaHttps({ origin: 'https://mietfuchs.example.org' }), true)
   assert.equal(viaHttps({ origin: 'http://192.168.1.5:3001' }), false)
+  // HTTPS auf dem eigenen Port (#528, Schritt 2): die Verbindung selbst ist verschlüsselt
+  assert.equal(viaHttps({}, true), true)
+  assert.equal(viaHttps({}, false), false)
   assert.match(sessionCookie('abcdef', 'tok', false), /^mietfuchs_abcdef=tok; Path=\/; HttpOnly; SameSite=Strict$/)
   assert.match(sessionCookie('abcdef', 'tok', true), /; Secure$/)
   assert.match(clearedCookie('abcdef', false), /^mietfuchs_abcdef=; Path=\/; HttpOnly; SameSite=Strict; Max-Age=0$/)

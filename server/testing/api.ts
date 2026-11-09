@@ -16,8 +16,11 @@ import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import http from 'node:http'
+import https from 'node:https'
 import os from 'node:os'
+import type { TLSSocket } from 'node:tls'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
@@ -63,6 +66,8 @@ export type HealthReport = {
     // Hat dieser Start Schritte nachgeholt, die Sicherung davor (#154), sonst null.
     migrated: { steps: number, backup: string, at: string, version?: string } | null
   }
+  // Antwortet derselbe Port auch über HTTPS (#528, Schritt 2)?
+  tls?: boolean
 }
 
 // Die Antwort von /api/upload, /api/extract und /api/intake. Welche Felder gesetzt sind, hängt
@@ -410,6 +415,27 @@ export function rawRequest(base: string, { method = 'GET', urlPath = '/', header
       let text = ''
       res.on('data', (c: Buffer) => { text += c })
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text, headers: res.headers }))
+    })
+    req.on('error', reject)
+    req.end(body)
+  })
+}
+
+// Eine Anfrage über HTTPS an die Adresse eines Servers (`http://…`, derselbe Port), ohne Prüfung der Kette: Das
+// Zertifikat ist selbst ausgestellt, gekoppelt wird an seinen Fingerabdruck. `certSha256` ist der SHA-256 seines DER.
+export function httpsFetch(base: string, urlPath: string, { method = 'GET', headers = {}, body }: { method?: string, headers?: Record<string, string>, body?: string } = {}): Promise<{ status: number, headers: http.IncomingHttpHeaders, body: string, certSha256: string }> {
+  const url = new URL(base)
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      host: url.hostname, port: url.port, method, path: urlPath, rejectUnauthorized: false, agent: false,
+      headers: { ...headers, ...(body !== undefined ? { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) } : {}) },
+    }, (res) => {
+      const raw = (res.socket as TLSSocket).getPeerCertificate(true).raw
+      const certSha256 = crypto.createHash('sha256').update(raw).digest('hex')
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', (c: string) => { text += c })
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: text, certSha256 }))
     })
     req.on('error', reject)
     req.end(body)

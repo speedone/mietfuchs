@@ -19,6 +19,7 @@
 // Absichtlich ohne Abhängigkeiten: Es läuft mit dem Node, das auf dem Runner ohnehin da ist.
 import { execSync } from 'node:child_process'
 import http from 'node:http'
+import https from 'node:https'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -74,6 +75,28 @@ async function request(urlPath, init) {
 // kennt daneben noch die Zeichenkette einer Unix-Socket-Adresse und `null` vor dem Start.
 const listeningPort = (server) => /** @type {import('node:net').AddressInfo} */ (server.address()).port
 const json = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+// `/healthz` über HTTPS auf demselben Port (#528, Schritt 2), ohne Prüfung der Kette: Das Zertifikat ist selbst
+// ausgestellt. Ein eigener Weg statt fetch, das selbst ausgestellte Zertifikate nicht annimmt. Unter Bun scheitert ein
+// `https.Server` an übergebenen Verbindungen; deshalb läuft diese Frage in jeder Prüfung der Programmdateien mit.
+function httpsHealth() {
+  const url = new URL(BASE)
+  return new Promise((resolve, reject) => {
+    const req = https.get({ host: url.hostname, port: url.port, path: '/healthz', rejectUnauthorized: false, agent: false, headers: cookie ? { cookie } : {}, timeout: 10_000 }, (res) => {
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', (c) => { text += c })
+      res.on('end', () => {
+        /** @type {any} */
+        let body = null
+        try { body = JSON.parse(text) } catch { body = text }
+        resolve({ status: res.statusCode, body })
+      })
+    })
+    req.on('timeout', () => req.destroy(new Error('keine Antwort über HTTPS nach 10 s')))
+    req.on('error', reject)
+  })
+}
 
 // ---------- Nachgebautes Ollama ----------
 // `delaySeconds` lässt /api/chat so lange schweigen, wie ein langsamer Rechner zum Einlesen braucht
@@ -658,6 +681,9 @@ async function main() {
   const health = await request('/healthz')
   assert(health.body.status === 'ok', 'Zustandsprüfung meldet ok', health.body)
   assert(health.body.version === VERSION, `Version ist ${VERSION}`, health.body.version)
+  assert(health.body.tls === true, 'HTTPS auf demselben Port ist bereit', health.body.tls)
+  const secure = await httpsHealth().catch((err) => ({ status: 0, body: String(err) }))
+  assert(secure.status === 200 && secure.body?.app === 'mietfuchs' && secure.body?.tls === true, '/healthz antwortet auch über HTTPS', secure)
   // Die Datenbank (#55). Sie wird beim Start geöffnet, obwohl noch keine fachlichen Daten darin
   // liegen, und genau deshalb steht sie hier: Diese Prüfung läuft auf jeder Programmdatei und in
   // den Containern von 22 Distributionen. Ob das eingebaute SQLite dort trägt, ob Bun es in die
