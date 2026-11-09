@@ -64,6 +64,10 @@ export function systemTrust() {
  * @typedef {{ problem: string, field?: 'address' | 'code' }} Problem
  */
 
+// Der Satz der Host-Prüfung (hostRefusal in server/src/requestGuard.ts), genau so; der Name ohne Leerzeichen und
+// Anführungszeichen, höchstens so lang wie ein DNS-Name mit Port
+const HOST_REFUSAL = /^Mietfuchs antwortet nicht unter dem Namen „[^\s„“”"]{1,260}“\. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz\. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein\.$/
+
 const ADDRESS_PROBLEM = 'Diese Adresse lässt sich nicht lesen. Geben Sie sie so ein, wie Sie Mietfuchs im Browser öffnen, etwa nas:3001, 192.168.1.5:3001 oder https://nas.fritz.box.'
 
 /**
@@ -452,10 +456,11 @@ export async function pair({ address, code, name = deviceNameOf(os.hostname()), 
   }
   /** @type {Preflight | null} */
   const preflight = answer.status === 200 ? jsonOr(answer.body) : null
-  // Die Host-Prüfung von Mietfuchs (requestGuard.ts) lehnt den Namen ab: 403 mit ihrem Satz als Text. Nur dieser Satz
-  // (er nennt NKA_ALLOWED_HOSTS) geht weiter, der Text eines fremden Servers nicht
-  if (answer.status === 403 && /^text\/plain\b/i.test(String(answer.headers['content-type'] ?? '')) && answer.body.includes('NKA_ALLOWED_HOSTS')) {
-    return { problem: answer.body.trim().slice(0, 500), field: 'address' }
+  // Die Host-Prüfung von Mietfuchs (requestGuard.ts) lehnt den Namen ab: 403 mit ihrem Satz als Text. Nur genau dieser
+  // Satz (hostRefusal) geht weiter, der Text eines fremden Servers nicht (Integrationsdurchsicht m5)
+  const refusal = answer.body.trim()
+  if (answer.status === 403 && /^text\/plain\b/i.test(String(answer.headers['content-type'] ?? '')) && HOST_REFUSAL.test(refusal)) {
+    return { problem: refusal, field: 'address' }
   }
   if (!preflight || typeof preflight !== 'object' || preflight.app !== 'mietfuchs') return notMietfuchs
 

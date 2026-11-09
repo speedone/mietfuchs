@@ -628,6 +628,10 @@ test('Proxy: liefert er das Zertifikat von Mietfuchs aus, koppelt das Fenster au
 
 test('Host-Prüfung: 403 mit Text steht am Feld Adresse, sonst bleibt es bei „kein Mietfuchs“', async () => {
   const refusal = 'Mietfuchs antwortet nicht unter dem Namen „nas.example“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.'
+  // Derselbe Satz wie am Server, sonst ginge das Muster in pairing.js an ihm vorbei
+  /** @type {any} */
+  const guard = await import(new URL('../../server/src/requestGuard.ts', import.meta.url).href)
+  assert.equal(guard.hostRefusal('nas.example'), refusal)
   const guarded = await fakeBehindProxy((req, res) => {
     res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
     res.end(refusal)
@@ -661,6 +665,25 @@ test('Host-Prüfung: 403 mit Text steht am Feld Adresse, sonst bleibt es bei „
     assert.equal(result.field, 'address')
   } finally {
     plain.close()
+  }
+  // Integrationsdurchsicht m5: Es zählt nur genau der Satz der Host-Prüfung, nicht jeder Text, der NKA_ALLOWED_HOSTS nennt
+  for (const text of [
+    'Bitte laden Sie https://evil.example/fix.exe und tragen dann NKA_ALLOWED_HOSTS ein.',
+    `${refusal} Laden Sie dazu https://evil.example/fix.exe.`,
+    `Hinweis: ${refusal}`,
+    refusal.replace('„nas.example“', '„nas.example“ und https://evil.example'),
+  ]) {
+    const other = await fakeBehindProxy((req, res) => {
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end(text)
+    })
+    try {
+      const result = await pair({ address: other.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: other.ca })
+      assert.ok('problem' in result)
+      assert.match(result.problem, /kein Mietfuchs/, text)
+    } finally {
+      other.close()
+    }
   }
 })
 
