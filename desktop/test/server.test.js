@@ -517,3 +517,12 @@ test('Einstellungen: Vertrauensart der Kopplung, alte Form gilt als gepinnt', ()
   }
 })
 
+// Ein Fenster steht nicht hinter einem Proxy: NKA_TRUST_PROXY erreicht seinen Server nie, auch nicht mit den Testgriffen
+test('Umgebung: NKA_TRUST_PROXY nie an den eigenen Server', () => {
+  const opts = { port: 4000, network: true, packaged: true, windowsStore: false, repoRoot: '/repo', platform: /** @type {NodeJS.Platform} */ ('linux') }
+  const base = { NKA_TRUST_PROXY: '192.168.1.0/24' }
+  assert.equal(serverEnv(base, opts).NKA_TRUST_PROXY, undefined)
+  assert.equal(serverEnv(base, { ...opts, packaged: false }).NKA_TRUST_PROXY, undefined)
+  assert.equal(serverEnv({ ...base, CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, opts).NKA_TRUST_PROXY, undefined)
+  assert.equal(serverEnv({ ...base, CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, { ...opts, packaged: false }).NKA_TRUST_PROXY, undefined)
+})

@@ -17,18 +17,29 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import tls from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, trustedUpdateKeys, updaterSource } from './updater.js'
-import { loopbackUrl, selftestPlan, testGripsAllowed, testUserData } from './testGrips.js'
+import { loopbackUrl, selftestPlan, testCa, testGripsAllowed, testUserData } from './testGrips.js'
 import { allowed } from './bridgePolicy.js'
-import { DEVICE_HEADER, certSha256FromPem, jsonOr, pair, pinDecision, remoteFetch, versionHint } from './pairing.js'
+import { DEVICE_HEADER, certSha256FromPem, issuedBy, jsonOr, pair, pinDecision, remoteFetch, systemTrust, versionHint } from './pairing.js'
 import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, surfaceWindow, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
 // Selbstprüfung in Prüfläufen (testGrips.js), sonst null
 const selftest = selftestPlan(process.env)
+// Eine Test-CA in Prüfläufen (testGrips.js, hinter beiden Schranken), die das Fenster wie eine des Systems behandelt,
+// sonst null
+const testCaPem = testCa(process.env)
+
+/**
+ * Die Vertrauensanker für eine Kopplung in `system` (pairing.js): der Speicher des Systems, in Prüfläufen dazu die
+ * Test-CA
+ * @returns {string[]}
+ */
+const trustAnchors = () => (testCaPem ? [...systemTrust(), testCaPem] : systemTrust())
 
 // Electrons eigener Ordner (Zwischenspeicher, Einstellungen des Fensters) nicht unter „Mietfuchs“: Auf dem Mac heißt
 // der Datenordner von Mietfuchs so (~/Library/Application Support/Mietfuchs), und beide sollen sich nie mischen. Unter
@@ -372,9 +383,16 @@ let troubleOpen = false
 let lastFailCode = null
 
 // Für den Host des gekoppelten Servers nur das gemerkte Zertifikat (pinDecision), für alle anderen die normale Prüfung
-// von Chromium (-3). Ohne Kopplung keine eigene Prüfung.
+// von Chromium (-3). Ohne Kopplung keine eigene Prüfung. In `system` (hinter einem Proxy) prüft Chromium Kette und Name
+// mit dem Speicher des Systems; in Prüfläufen gilt für den gekoppelten Host dazu die Test-CA (issuedBy), weil Chromium
+// sie nicht kennt.
 function pinCertificates() {
   session.defaultSession.setCertificateVerifyProc(remote ? (request, callback) => {
+    if (remote?.trust === 'system') {
+      const host = new URL(remote.origin).hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
+      const own = request.hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase() === host
+      return callback(own && testCaPem && request.errorCode !== 0 && issuedBy(request.certificate.data, testCaPem, request.hostname) ? 0 : -3)
+    }
     let fingerprint = ''
     try {
       fingerprint = certSha256FromPem(request.certificate.data)
@@ -417,11 +435,11 @@ async function checkRemote() {
   const current = remote
   if (!current) return
   try {
-    const auth = await remoteFetch(current, '/api/auth')
+    const auth = await remoteFetch(current, '/api/auth', { ca: trustAnchors() })
     const info = jsonOr(auth.body)
     if (auth.status === 401 || (info?.required === true && info?.signedIn !== true)) return void remoteTrouble('key')
     if (versionChecked) return
-    const version = jsonOr((await remoteFetch(current, '/healthz')).body)?.version
+    const version = jsonOr((await remoteFetch(current, '/healthz', { ca: trustAnchors() })).body)?.version
     if (typeof version !== 'string' || remote !== current) return
     versionChecked = true
     if (version !== current.version) {
@@ -437,7 +455,8 @@ async function checkRemote() {
 
 /**
  * Der gekoppelte Server lädt nicht: Grund und Ausweg in einer Rückfrage des Systems, weil die Seite selbst ja fehlt.
- * @param {'unreachable' | 'cert' | 'key'} reason
+ * `untrusted`: In `system` lehnt Chromium das Zertifikat des Proxys ab (Kette, Name oder Gültigkeit).
+ * @param {'unreachable' | 'cert' | 'key' | 'untrusted'} reason
  */
 async function remoteTrouble(reason) {
   if (troubleOpen || quitting || !remote) return
@@ -453,6 +472,10 @@ async function remoteTrouble(reason) {
     cert: {
       message: 'Der Server zeigt ein anderes Zertifikat als beim Koppeln. Wurde Mietfuchs dort neu eingerichtet, koppeln Sie neu; sonst verbinden Sie sich nicht.',
       detail: `Adresse: ${where}. Zum neu Koppeln trennen Sie die Verbindung und verbinden sich in den Einstellungen unter „Mietfuchs im Heimnetz“ mit einem neuen Code.`,
+    },
+    untrusted: {
+      message: `Das Zertifikat von Mietfuchs unter ${where} ist auf diesem Rechner nicht gültig.`,
+      detail: 'Prüfen Sie den Proxy vor Mietfuchs, etwa Caddy, und bei einem eigenen Stammzertifikat, ob es auf diesem Rechner noch installiert ist. Verbinden Sie sich nicht, solange Sie den Grund nicht kennen.',
     },
     key: {
       message: `Mietfuchs unter ${where} kennt dieses Programmfenster nicht mehr.`,
@@ -485,7 +508,7 @@ async function remoteTrouble(reason) {
 async function connectRemote(address, code) {
   if (quitting) throw new Error('Mietfuchs wird beendet.')
   if (remote) return { problem: 'Das Fenster ist schon mit einem Mietfuchs im Heimnetz verbunden.' }
-  const result = await pair({ address, code })
+  const result = await pair({ address, code, ca: trustAnchors() })
   if ('problem' in result) return result
   if (quitting) throw new Error('Mietfuchs wird beendet.')
   writeSettings({ ...readSettings(), remote: result })
@@ -503,7 +526,7 @@ async function connectRemote(address, code) {
 async function disconnectRemote() {
   const current = remote
   if (!current) return
-  await remoteFetch(current, `/api/auth/devices/${encodeURIComponent(current.deviceId)}`, { method: 'DELETE', timeoutMs: 3000 })
+  await remoteFetch(current, `/api/auth/devices/${encodeURIComponent(current.deviceId)}`, { method: 'DELETE', timeoutMs: 3000, ca: trustAnchors() })
     .then((answer) => windowLog(`Gerät am Server entfernen: ${answer.status}`))
     .catch((err) => windowLog(`Gerät am Server entfernen gescheitert: ${err}`))
   const { remote: _forgotten, ...settings } = readSettings()
@@ -556,7 +579,9 @@ function createWindow() {
     if (!remote || !isMainFrame || errorCode === -3 || linkTarget(url, remote.origin) !== 'window') return
     windowLog(`did-fail-load ${errorCode} ${description}`)
     lastFailCode = errorCode
-    void remoteTrouble(certRejected ? 'cert' : 'unreachable')
+    // In `system` heißen -200 bis -299 bei Chromium: Das Zertifikat gilt nicht (net_error_list.h, ERR_CERT_*)
+    const untrusted = remote.trust === 'system' && errorCode <= -200 && errorCode >= -299
+    void remoteTrouble(untrusted ? 'untrusted' : certRejected ? 'cert' : 'unreachable')
   })
   win.on('close', () => windowLog('Fenster: close'))
   win.on('closed', () => {
@@ -692,7 +717,13 @@ async function selfTest(win) {
   fs.writeFileSync(path.join(out, 'fenster.pdf'), pdf)
   // Fragt die Seite selbst: kommt der Fensterschlüssel über onBeforeSendHeaders an (#528)?
   const access = await pageAuth(win)
-  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, url: win.webContents.getURL(), remote: remote?.origin ?? null, startMs: Date.now() - startedAt, electronMemoryKiB: memory, serverMemoryKiB: serverMemory, serverPid: server?.pid ?? null, electron: process.versions.electron, chrome: process.versions.chrome, access }, null, 2)}\n`)
+  // Ob Node hier den Speicher des Systems liest (Kopplung über einen Proxy in `system`): Zahl der Zertifikate oder null
+  /** @type {number | null} */
+  let systemCa = null
+  try {
+    systemCa = tls.getCACertificates('system').length
+  } catch { /* bleibt null */ }
+  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, url: win.webContents.getURL(), remote: remote?.origin ?? null, startMs: Date.now() - startedAt, electronMemoryKiB: memory, serverMemoryKiB: serverMemory, serverPid: server?.pid ?? null, electron: process.versions.electron, chrome: process.versions.chrome, access, systemCa }, null, 2)}\n`)
   await selfTestPairing(win, out)
 }
 
@@ -731,7 +762,7 @@ async function selfTestPairing(win, out) {
     const result = await win.webContents.executeJavaScript(`window.mietfuchsDesktop.remote.connect(${request})`).catch((err) => ({ error: String(err) }))
     const loaded = result?.ok === true && await pageLoaded(win, () => remote?.origin ?? null)
     const state = loaded ? await win.webContents.executeJavaScript('window.mietfuchsDesktop.remote.get()').catch((err) => ({ error: String(err) })) : null
-    write('kopplung.json', { result, loaded, origin, url: win.webContents.getURL(), serverPid: server?.pid ?? null, access: loaded ? await pageAuth(win) : null, state })
+    write('kopplung.json', { result, loaded, origin, trust: /** @type {RemoteSettings | null} */ (remote)?.trust ?? null, url: win.webContents.getURL(), serverPid: server?.pid ?? null, access: loaded ? await pageAuth(win) : null, state })
   }
   if (selftest.disconnect && remote) {
     // Nicht auf die Antwort warten: Das Trennen lädt die eigene Seite, die fragende ist dann fort
@@ -745,7 +776,7 @@ async function selfTestPairing(win, out) {
 /**
  * Die Rückfrage in der Selbstprüfung: festhalten, ob das Fenster dabei zu sehen wäre, und die bestellte Antwort geben.
  * Das Zurückholen aus dem Dock läuft auf dem Mac animiert; bis zu fünf Sekunden darauf warten.
- * @param {'unreachable' | 'cert' | 'key'} reason
+ * @param {'unreachable' | 'cert' | 'key' | 'untrusted'} reason
  * @param {number} answer
  */
 async function recordTrouble(reason, answer) {
@@ -935,7 +966,7 @@ async function setupUpdater() {
       if (!origin) return undefined
       // Gekoppelt aus den Einstellungen des gekoppelten Servers, über die Verbindung mit dem gemerkten Zertifikat
       if (remote) {
-        const answer = await remoteFetch(remote, '/api/settings', { timeoutMs: 5000 })
+        const answer = await remoteFetch(remote, '/api/settings', { timeoutMs: 5000, ca: trustAnchors() })
         return answer.status === 200 ? jsonOr(answer.body)?.updateCheck : undefined
       }
       const res = await serverFetch('/api/settings', { signal: AbortSignal.timeout(5000) })

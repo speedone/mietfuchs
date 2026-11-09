@@ -71,6 +71,9 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
   delete env.NKA_STORE
   delete env.NKA_SEARCH_DIRS
   delete env.NKA_WINDOW_KEY
+  // Ein Fenster steht nicht hinter einem Proxy (#528): Eine geerbte Angabe ließe Proxy-Kopfzeilen von einem Gerät im
+  // Heimnetz gelten, auch mit den Testgriffen
+  delete env.NKA_TRUST_PROXY
   if (windowKey) env.NKA_WINDOW_KEY = windowKey
   if (searchDirs.length > 0) env.NKA_SEARCH_DIRS = JSON.stringify(searchDirs)
   // Ausgeliefert ohne die beiden Schranken der Testgriffe (testGrips.js) nichts davon an den Server: CI schaltete dort

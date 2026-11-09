@@ -2,7 +2,7 @@
 // sie nicht mehr, und die Umgebung des Fensters gibt Testgriffe und Schalter ohne Schranke nicht an den Server weiter.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { loopbackUrl, selftestPlan, testGripsAllowed, testUserData } from '../src/testGrips.js'
+import { loopbackUrl, selftestPlan, testCa, testGripsAllowed, testUserData } from '../src/testGrips.js'
 import { DEFAULT_PORT, quitDecision, serverEnv, startFailure, twinIn, rememberDataDir } from '../src/server.js'
 import { shouldOfferMove, updaterSource } from '../src/updater.js'
 
@@ -127,4 +127,38 @@ test('Eigener Ordner des Fensters (userData) nur mit beiden Schranken und als ab
   assert.equal(testUserData({ ...grips, MIETFUCHS_TEST_USERDATA: 'relativ/ordner' }), null)
   assert.equal(testUserData({ ...grips, MIETFUCHS_TEST_USERDATA: '' }), null)
   assert.equal(testUserData({ CI: '1', MIETFUCHS_TESTGRIFFE: '1' }), null)
+})
+
+// Kopplung über einen Proxy (#528, Erweiterung): desktop-check reicht eine Test-CA herein, die das Fenster wie eine des
+// Systems behandelt. Nur mit beiden Schranken, als absoluter Pfad und nur ein Zertifikat einer CA.
+test('Test-CA nur mit beiden Schranken, als absoluter Pfad und nur eine CA', async () => {
+  /** @type {any} */
+  const proxies = await import(new URL('../../server/testing/proxy.ts', import.meta.url).href)
+  const { caCert, leaf } = await proxies.createTestCa()
+  const file = process.platform === 'win32' ? 'C:\\Temp\\test-ca.crt' : '/tmp/test-ca.crt'
+  /** @type {Record<string, string>} */
+  const files = { [file]: caCert, [`${file}.blatt`]: leaf.cert, [`${file}.kaputt`]: 'kein Zertifikat' }
+  const read = (/** @type {string} */ name) => {
+    if (!(name in files)) throw new Error(`nicht da: ${name}`)
+    return files[name]
+  }
+  const grips = { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_TEST_CA: file }
+  assert.equal(testCa(grips, read), caCert)
+  assert.equal(testCa({ ...grips, CI: undefined }, read), null)
+  assert.equal(testCa({ ...grips, CI: 'false' }, read), null)
+  assert.equal(testCa({ ...grips, MIETFUCHS_TESTGRIFFE: undefined }, read), null)
+  assert.equal(testCa({ ...grips, MIETFUCHS_TEST_CA: 'relativ/test-ca.crt' }, read), null)
+  assert.equal(testCa({ ...grips, MIETFUCHS_TEST_CA: `${file}.blatt` }, read), null)
+  assert.equal(testCa({ ...grips, MIETFUCHS_TEST_CA: `${file}.kaputt` }, read), null)
+  assert.equal(testCa({ ...grips, MIETFUCHS_TEST_CA: `${file}.fehlt` }, read), null)
+  assert.equal(testCa({ CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, read), null)
+})
+
+test('Selbstprüfung der Kopplung: auch mit https://, weiter nur auf diesen Rechner', () => {
+  const grips = { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_SELFTEST_OUT: '/tmp/pruefung' }
+  const pair = (/** @type {string} */ address) => selftestPlan({ ...grips, MIETFUCHS_SELFTEST_PAIR: JSON.stringify({ address, code: 'K7QM-4XPA-9TRW' }) })?.pair ?? null
+  assert.deepEqual(pair('https://localhost:4443'), { address: 'https://localhost:4443', code: 'K7QM-4XPA-9TRW' })
+  assert.deepEqual(pair('https://127.0.0.1:4443'), { address: 'https://127.0.0.1:4443', code: 'K7QM-4XPA-9TRW' })
+  assert.deepEqual(pair('https://[::1]:4443'), { address: 'https://[::1]:4443', code: 'K7QM-4XPA-9TRW' })
+  for (const elsewhere of ['https://nas:4443', 'https://localhost.example.org:4443', 'https://nas', 'http://localhost:4443', 'https://user@localhost:4443']) assert.equal(pair(elsewhere), null, elsewhere)
 })
