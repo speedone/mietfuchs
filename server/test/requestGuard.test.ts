@@ -112,3 +112,25 @@ test('Ursprung der Kopplung: dieselbe Regel wie der Host, ohne Prüfung jeder Na
   assert.equal(originHostRefusal('Andere.Example.', listed), checkRequest({ method: 'GET', host: 'andere.example' }, listed))
   assert.match(originHostRefusal('andere.example', listed) ?? '', /^Mietfuchs antwortet nicht unter dem Namen „andere\.example“\./)
 })
+
+test('Ursprung der Kopplung mit NKA_ALLOWED_HOSTS: nur eingetragen, private IP oder Name ohne Punkt (Durchsicht m3)', () => {
+  // Fängt ein Proxy jeden Namen auf (nginx: der erste `server` am Port), reicht er auch einen fremden Namen weiter. Mit
+  // einer Liste bindet deshalb keine öffentliche IP und keine Endung des Heimnetzes von selbst, auch wenn der Host sie
+  // weiter durchlässt.
+  const listed = guardPolicy('docker', { NKA_ALLOWED_HOSTS: 'nas.example, .heim.example, nas.fritz.box' })
+  for (const name of ['nas.example', 'NAS.example.', 'a.heim.example', 'nas.fritz.box', 'nas', 'localhost',
+    '127.0.0.1', '10.1.2.3', '172.20.0.5', '192.168.178.23', '100.114.19.193', '[::1]', '[fd00::5]', '[fe80::1]', '169.254.1.1', '[::ffff:192.168.1.5]']) {
+    assert.equal(originHostRefusal(name, listed), null, name)
+  }
+  for (const name of ['andere.fritz.box', 'pi.ts.net', 'x.netbird.cloud', 'nas.local', 'nas.home.arpa', 'a.localhost',
+    '8.8.8.8', '203.0.113.7', '[2001:db8::1]', '[::ffff:8.8.8.8]', 'andere.example']) {
+    const plain = name.replace(/^\[|\]$/g, '')
+    assert.equal(originHostRefusal(name, listed), checkRequest({ method: 'GET', host: 'nicht.example' }, listed)?.replace('nicht.example', plain), name)
+  }
+  // Am Host bleibt alles beim Alten
+  for (const name of ['andere.fritz.box', 'pi.ts.net', '8.8.8.8']) assert.equal(hostAllowed(name, listed), true, name)
+  // Ohne Liste (Programmdatei, Fenster) die Regel des Hosts, ohne Prüfung jeder Name
+  assert.equal(originHostRefusal('nas.fritz.box', guardPolicy('binary', {})), null)
+  assert.equal(originHostRefusal('8.8.8.8', guardPolicy('binary', {})), null)
+  assert.equal(originHostRefusal('pi.ts.net', guardPolicy('docker', {})), null)
+})

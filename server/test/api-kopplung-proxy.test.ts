@@ -290,6 +290,27 @@ test('Proxy: ein Name in NKA_TRUST_PROXY wird bei der ersten Anfrage über den P
   }
 })
 
+// Integrationsdurchsicht m3: nginx macht den ersten `server` am Port zum Auffang für jeden Namen. Mit einer Liste bindet
+// deshalb keine Endung des Heimnetzes und keine öffentliche IP von selbst, auch wenn der Host sie durchlässt.
+test('Proxy: mit NKA_ALLOWED_HOSTS bindet ein Name im Heimnetz nur, wenn er eingetragen ist', async () => {
+  const { s, cookie } = await serverWithPassword({ NKA_TRUST_PROXY: LOCAL_PROXY, NKA_ALLOWED_HOSTS: 'nas.example' })
+  const { caCert, leaf } = await createTestCa()
+  const home = await startTestProxy({ target: s.base, tls: leaf, forwarded: { host: 'irgendwas.ts.net' } })
+  try {
+    const refusal = 'Mietfuchs antwortet nicht unter dem Namen „irgendwas.ts.net“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.'
+    const preflight = preflightOf((await httpsFetch(home.origin, '/api/auth/pair', { ca: caCert })).body)
+    assert.equal(preflight.origin, null)
+    assert.equal(preflight.problem, refusal)
+    const code = await newCode(s, cookie)
+    const res = await httpsFetch(home.origin, '/api/auth/pair', { method: 'POST', body: pairBody(originProof(code, 'https://irgendwas.ts.net')), ca: caCert })
+    assert.equal(res.status, 400, res.body)
+    assert.deepEqual(JSON.parse(res.body), { error: refusal, transport: true })
+  } finally {
+    await home.close()
+    s.stop()
+  }
+})
+
 // Durchsicht PR 1 (I2): Die Bindung an den Ursprung hängt sonst daran, dass der Proxy X-Forwarded-Host selbst setzt.
 // Ein Proxy, der den Wert eines Clients durchreicht oder jede Adresse annimmt, gäbe einen fremden Namen weiter. Mit
 // einer Liste von Namen (NKA_ALLOWED_HOSTS, dieselbe Regel wie die Host-Prüfung) gilt nur ein Ursprung, der dort besteht.

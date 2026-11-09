@@ -351,7 +351,12 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     wenn einer schon passt. Ein Beweis mit Ursprung gilt nie direkt über TLS, und nie für einen anderen Ursprung als
     den weitergereichten. Mit einer Prüfung des Hosts (`NKA_ALLOWED_HOSTS`, im Fenster und in der Programmdatei immer)
     bindet ein Ursprung nur, wenn sein Name sie besteht (`originHostRefusal` in requestGuard.ts, `originRefusal` an
-    `createAccess`); ohne Prüfung jeder. Scheitert ein Beweis und konnte der Ursprung nicht binden, antwortet
+    `createAccess`); ohne Prüfung jeder. **Mit `NKA_ALLOWED_HOSTS` strenger als der Host** (Integrationsdurchsicht m3):
+    Dann bindet nur ein dort eingetragener Name, eine private oder Loopback-Adresse (RFC 1918, ULA, Link-Local,
+    100.64.0.0/10) oder ein Name ohne Punkt; öffentliche IPs und die Endungen des Heimnetzes (`.fritz.box`, `.ts.net`,
+    `.netbird.cloud` …) nicht von selbst, auch wenn sie die Host-Prüfung weiter bestehen. Grund: ein Proxy, der jeden
+    Namen auffängt (nginx: der erste `server` am Port), reicht auch `irgendwas.ts.net` weiter. Der Satz bleibt der der
+    Host-Prüfung. Scheitert ein Beweis und konnte der Ursprung nicht binden, antwortet
     `POST /api/auth/pair` mit diesem Satz und `transport: true`, nicht mit dem zum Code (sonst probierte der Nutzer
     endlos neue Codes); ein Beweis über den Fingerabdruck gilt dabei weiter. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
   - **Restrisiko**: Die Bindung an den Ursprung ist nur so gut wie der `X-Forwarded-Host`, den der Proxy meldet. Jeder
@@ -360,11 +365,11 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     eigenem gültigen Zertifikat für diesen Namen, der den Nutzer dorthin lockt und den Code bekommt, könnte dann
     koppeln. Caddy überschreibt `X-Forwarded-Host` eines nicht vertrauten Clients (vor dem Entwurf gesehen: geschicktes
     `evil` kam als `localhost:8443` an). nginx braucht `proxy_set_header X-Forwarded-Host $host;` und einen
-    ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein Name, den auch die
-    Host-Prüfung zulässt (eingetragene Namen, dazu IP-Adressen, Namen ohne Punkt und Endungen des Heimnetzes; oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
+    ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein eingetragener Name, eine
+    private oder Loopback-Adresse oder ein Name ohne Punkt (oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
     `NKA_ALLOWED_HOSTS` (PR 3).
   - Geprüft in trustProxy.test.ts (Namen mit eingeschobenem `lookup` und eigener Uhr), requestGuard.test.ts
-    (`hostAllowed`), access.test.ts (Tabelle des
+    (`hostAllowed`, `originHostRefusal`), access.test.ts (Tabelle des
     Kanals, Beweise, kein `trusts` ohne Proxy-Kopfzeilen) und api-kopplung-proxy.test.ts gegen einen Proxy wie Caddy
     mit eigener CA ([server/testing/proxy.ts](../testing/proxy.ts): `createTestCa`, `startTestProxy`; `forwarded`
     überschreibt `X-Forwarded-Proto`/`-Host`, `null` lässt weg).
