@@ -40,8 +40,10 @@ export const REMOVE_TEXT = 'Dieses Programmfenster ist danach abgemeldet und mus
 export const REMOVE_CURRENT_TEXT = 'Sie arbeiten gerade in diesem Programmfenster. Danach ist es abgemeldet und muss neu gekoppelt werden.'
 
 // Die Adresse, die das andere Programmfenster eintragen soll: nur, wenn die Seite nicht über den eigenen Rechner
-// (localhost) geöffnet ist; dort wäre sie für den anderen Rechner wertlos.
-export function addressOf(host: string, hostname: string): string | null {
+// (localhost) geöffnet ist; dort wäre sie für den anderen Rechner wertlos. Über HTTPS mit https:// davor (#528): Hinter
+// einem Proxy wie Caddy nähme das Fenster ohne Schema und Port sonst Port 3001.
+export function addressOf(location: { protocol: string; host: string; hostname: string }): string | null {
+  const { protocol, host, hostname } = location
   if (!host || ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname)) return null
-  return host
+  return protocol === 'https:' ? `https://${host}` : host
 }

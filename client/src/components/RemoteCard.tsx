@@ -90,7 +90,7 @@ export default function RemoteCard({ bridge }: { bridge: RemoteBridge }) {
             NAS. Den Code nennt der andere Mietfuchs unter Einstellungen → Anmeldung → Programmfenster koppeln.
           </p>
           <ErrorSummary errors={errors} />
-          <Field label="Adresse" width="m" hint="etwa nas:3001 oder 192.168.1.5:3001" {...errors.field('address')}>
+          <Field label="Adresse" width="m" hint="etwa nas:3001, 192.168.1.5:3001 oder https://nas.fritz.box" {...errors.field('address')}>
             <input autoCapitalize="none" spellCheck={false} value={address} onChange={(e) => setAddress(e.target.value)} />
           </Field>
           <Field label="Code" width="m" {...errors.field('code')}>

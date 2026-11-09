@@ -10,6 +10,8 @@
 // gesetztes CI schaltete im ausgelieferten Fenster Umzug und Verschieben ab. Jetzt gilt beides nur mit `CI` gleich `1`
 // oder `true` **und** `MIETFUCHS_TESTGRIFFE=1`, das niemand zufällig gesetzt hat; die Prüfskripte setzen beides.
 
+import { X509Certificate } from 'node:crypto'
+import fs from 'node:fs'
 import path from 'node:path'
 
 /** @param {NodeJS.ProcessEnv} env @returns {boolean} */
@@ -51,6 +53,25 @@ export function testUserData(env) {
   return path.isAbsolute(dir) ? dir : null
 }
 
+/**
+ * Eine Test-CA für die Kopplung über einen Proxy (`MIETFUCHS_TEST_CA`, #528): desktop-check kann kein Stammzertifikat
+ * ins System legen, das Fenster behandelt diese CA wie eine des Systems (`ca` von pairing.js, Rückruf für Chromium in
+ * main.js). Nur mit beiden Schranken, als absoluter Pfad und nur ein Zertifikat, das eine CA ist; sonst `null`.
+ * @param {NodeJS.ProcessEnv} env
+ * @param {(file: string) => string} [read]
+ * @returns {string | null}
+ */
+export function testCa(env, read = (file) => fs.readFileSync(file, 'utf8')) {
+  const file = env.MIETFUCHS_TEST_CA
+  if (!file || !testGripsAllowed(env) || !path.isAbsolute(file)) return null
+  try {
+    const pem = read(file)
+    return new X509Certificate(pem).ca === true ? pem : null
+  } catch {
+    return null
+  }
+}
+
 // Die Knöpfe der Rückfrage, wenn der gekoppelte Mietfuchs nicht lädt (main.js, remoteTrouble), in ihrer Reihenfolge
 const TROUBLE_ANSWERS = Object.freeze(['retry', 'disconnect', 'quit'])
 // Server, mit denen sich die Selbstprüfung koppeln darf: nur dieser Rechner, als IP und als Name
@@ -60,7 +81,8 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost'])
  * Was die Selbstprüfung der Kopplung tut (#528, scripts/desktop-check.mjs), nur mit beiden Schranken und einem Ordner
  * für die Ergebnisse (`MIETFUCHS_SELFTEST_OUT`), sonst `null`:
  * - `MIETFUCHS_SELFTEST_PAIR` (JSON `{ address, code }`): über die Brücke der eigenen Seite koppeln, nur mit einem
- *   Server auf diesem Rechner (127.0.0.1, [::1] oder localhost; wie MIETFUCHS_SERVER_URL);
+ *   Server auf diesem Rechner (127.0.0.1, [::1] oder localhost; wie MIETFUCHS_SERVER_URL), ohne Schema oder mit
+ *   `https://` (ein Test-Proxy);
  * - `MIETFUCHS_SELFTEST_DISCONNECT=1`: danach über die Brücke der gekoppelten Seite trennen;
  * - `MIETFUCHS_SELFTEST_QUIT=1`: danach beenden;
  * - `MIETFUCHS_SELFTEST_WINDOW` (`hidden`, `minimized`): das Fenster vor dem Laden der gekoppelten Seite verbergen
@@ -79,7 +101,7 @@ export function selftestPlan(env) {
   try {
     const request = /** @type {unknown} */ (JSON.parse(env.MIETFUCHS_SELFTEST_PAIR ?? 'null'))
     const { address, code } = /** @type {{ address?: unknown, code?: unknown }} */ (request ?? {})
-    const host = typeof address === 'string' ? address.replace(/:\d+$/, '') : ''
+    const host = typeof address === 'string' ? address.replace(/^https:\/\//, '').replace(/:\d+$/, '') : ''
     if (typeof address === 'string' && typeof code === 'string' && code && LOOPBACK_HOSTS.has(host)) pair = { address, code }
   } catch {
     // kein JSON: keine Kopplung

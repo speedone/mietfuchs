@@ -74,7 +74,7 @@ export default function PairingSection({ info }: { info: AccessInfo }) {
     await load()
   }
 
-  const address = addressOf(window.location.host, window.location.hostname)
+  const address = addressOf(window.location)
   const again = code !== null || expired
   return (
     <section className="stack border-t pt-4" aria-labelledby="pairing-title">

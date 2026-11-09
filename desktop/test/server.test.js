@@ -5,7 +5,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties, isReceipt, isAppPage, trustedSender, childWebPreferences, frameTarget, navigationTarget, readSettingsFile, writeSettingsFile, surfaceWindow } from '../src/server.js'
+import { remoteOf, DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties, isReceipt, isAppPage, trustedSender, childWebPreferences, frameTarget, navigationTarget, readSettingsFile, writeSettingsFile, surfaceWindow } from '../src/server.js'
 
 // Geänderte Erwartung: Bisher lief ausgeliefert die Programmdatei des Servers (Bun) unter resources\server bzw. in
 // Contents/MacOS, danach der Quellcode unter resources/mietfuchs/server/src, dann das Bündel offen unter
@@ -382,7 +382,7 @@ test('Einstellungen: fenster.json lesen und schreiben, eine kaputte Kopplung gil
   try {
     const file = path.join(dir, 'unter', 'fenster.json')
     assert.deepEqual(readSettingsFile(file), {})
-    const remote = { origin: 'https://nas:3001', certSha256: 'a'.repeat(64), deviceId: '0123456789abcdef', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+    const remote = { origin: 'https://nas:3001', trust: /** @type {const} */ ('pinned'), certSha256: 'a'.repeat(64), deviceId: '0123456789abcdef', deviceKey: 'K'.repeat(43), version: '0.17.0' }
     writeSettingsFile(file, { port: 17517, network: true, remote })
     assert.deepEqual(readSettingsFile(file), { port: 17517, network: true, remote })
     if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600)
@@ -489,4 +489,40 @@ test('Fenster vor einer Rückfrage zeigen: zurückholen, wenn abgelegt, und sich
   const shown = fake({ minimized: false, visible: true })
   surfaceWindow(shown)
   assert.deepEqual(shown.calls, [])
+})
+
+// Kopplung über einen Proxy (#528, Erweiterung): `trust` in fenster.json. Eine Kopplung von vorher (ohne `trust`) gilt
+// als gepinnt und bleibt; `system` nie mit Fingerabdruck, `pinned` nie ohne.
+test('Einstellungen: Vertrauensart der Kopplung, alte Form gilt als gepinnt', () => {
+  const old = { origin: 'https://nas:3001', certSha256: 'a'.repeat(64), deviceId: '0123456789abcdef', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+  assert.deepEqual(remoteOf(old), { ...old, trust: 'pinned' })
+  const system = { origin: 'https://nas.fritz.box', trust: 'system', certSha256: null, deviceId: '0123456789abcdef', deviceKey: 'K'.repeat(43), version: '0.17.0' }
+  assert.deepEqual(remoteOf(system), system)
+  assert.deepEqual(remoteOf({ ...old, trust: 'pinned' }), { ...old, trust: 'pinned' })
+  assert.equal(remoteOf({ ...system, certSha256: 'a'.repeat(64) }), null)
+  assert.equal(remoteOf({ ...old, trust: 'pinned', certSha256: null }), null)
+  assert.equal(remoteOf({ ...old, certSha256: null }), null)
+  assert.equal(remoteOf({ ...old, trust: 'egal' }), null)
+  assert.equal(remoteOf({ ...system, origin: 'http://nas.fritz.box' }), null)
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-einstellungen-'))
+  try {
+    const file = path.join(dir, 'fenster.json')
+    fs.writeFileSync(file, JSON.stringify({ port: 17517, network: true, remote: old }))
+    assert.deepEqual(readSettingsFile(file), { port: 17517, network: true, remote: { ...old, trust: 'pinned' } })
+    writeSettingsFile(file, { remote: /** @type {any} */ (system) })
+    assert.deepEqual(readSettingsFile(file), { remote: system })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Ein Fenster steht nicht hinter einem Proxy: NKA_TRUST_PROXY erreicht seinen Server nie, auch nicht mit den Testgriffen
+test('Umgebung: NKA_TRUST_PROXY nie an den eigenen Server', () => {
+  const opts = { port: 4000, network: true, packaged: true, windowsStore: false, repoRoot: '/repo', platform: /** @type {NodeJS.Platform} */ ('linux') }
+  const base = { NKA_TRUST_PROXY: '192.168.1.0/24' }
+  assert.equal(serverEnv(base, opts).NKA_TRUST_PROXY, undefined)
+  assert.equal(serverEnv(base, { ...opts, packaged: false }).NKA_TRUST_PROXY, undefined)
+  assert.equal(serverEnv({ ...base, CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, opts).NKA_TRUST_PROXY, undefined)
+  assert.equal(serverEnv({ ...base, CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, { ...opts, packaged: false }).NKA_TRUST_PROXY, undefined)
 })

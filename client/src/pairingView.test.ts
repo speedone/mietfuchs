@@ -28,9 +28,17 @@ import { addressOf } from './pairingView'
 test('expiresText nach Ablauf', () => {
   expect(expiresText(local(2026, 11, 9, 10, 0), new Date(local(2026, 11, 9, 10, 1)))).toBe('abgelaufen')
 })
+const at = (protocol: string, host: string) => ({ protocol, host, hostname: host.replace(/:\d+$/, '') })
 test('addressOf: nur eine Adresse, die ein anderer Rechner erreicht', () => {
-  expect(addressOf('192.168.1.5:3001', '192.168.1.5')).toBe('192.168.1.5:3001')
-  expect(addressOf('localhost:3001', 'localhost')).toBeNull()
-  expect(addressOf('127.0.0.1:5173', '127.0.0.1')).toBeNull()
-  expect(addressOf('[::1]:3001', '[::1]')).toBeNull()
+  expect(addressOf(at('http:', '192.168.1.5:3001'))).toBe('192.168.1.5:3001')
+  expect(addressOf(at('http:', 'localhost:3001'))).toBeNull()
+  expect(addressOf(at('http:', '127.0.0.1:5173'))).toBeNull()
+  expect(addressOf(at('http:', '[::1]:3001'))).toBeNull()
+  expect(addressOf(at('https:', 'localhost:8443'))).toBeNull()
+})
+// Hinter einem Proxy wie Caddy (#528): mit https:// davor, sonst nähme das Fenster Port 3001
+test('addressOf: über HTTPS mit https:// davor, über HTTP wie bisher', () => {
+  expect(addressOf({ protocol: 'https:', host: 'nas.fritz.box', hostname: 'nas.fritz.box' })).toBe('https://nas.fritz.box')
+  expect(addressOf({ protocol: 'https:', host: 'nas.fritz.box:8443', hostname: 'nas.fritz.box' })).toBe('https://nas.fritz.box:8443')
+  expect(addressOf({ protocol: 'http:', host: 'nas:3001', hostname: 'nas' })).toBe('nas:3001')
 })

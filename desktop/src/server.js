@@ -71,6 +71,9 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
   delete env.NKA_STORE
   delete env.NKA_SEARCH_DIRS
   delete env.NKA_WINDOW_KEY
+  // Ein Fenster steht nicht hinter einem Proxy (#528): Eine geerbte Angabe ließe Proxy-Kopfzeilen von einem Gerät im
+  // Heimnetz gelten, auch mit den Testgriffen
+  delete env.NKA_TRUST_PROXY
   if (windowKey) env.NKA_WINDOW_KEY = windowKey
   if (searchDirs.length > 0) env.NKA_SEARCH_DIRS = JSON.stringify(searchDirs)
   // Ausgeliefert ohne die beiden Schranken der Testgriffe (testGrips.js) nichts davon an den Server: CI schaltete dort
@@ -488,8 +491,10 @@ export function surfaceWindow(win) {
 }
 
 /**
- * Die Kopplung mit einem Mietfuchs im Heimnetz, wie fenster.json sie merkt (#528, Schritt 2, pairing.js).
- * @typedef {{ origin: string, certSha256: string, deviceId: string, deviceKey: string, version: string }} RemoteSettings
+ * Die Kopplung mit einem Mietfuchs im Heimnetz, wie fenster.json sie merkt (#528, Schritt 2, pairing.js). `trust`:
+ * `pinned` mit dem Fingerabdruck des Zertifikats von Mietfuchs, `system` (hinter einem Proxy, Kette und Name gegen den
+ * Speicher des Systems) ohne.
+ * @typedef {{ origin: string, trust: 'pinned' | 'system', certSha256: string | null, deviceId: string, deviceKey: string, version: string }} RemoteSettings
  */
 /**
  * Die Einstellungen des Fensters in fenster.json (userData): gemerkter Port, Zugriff aus dem Heimnetz, die Antwort auf
@@ -500,21 +505,24 @@ export function surfaceWindow(win) {
 /**
  * Eine gemerkte Kopplung, nur wenn jedes Feld stimmt; sonst `null`, und das Fenster zeigt den eigenen Server. Die
  * Prüfung hält auch Unsinn aus der Kopfzeile fern (`<id>.<Schlüssel>`, kein Zeilenumbruch, kein Punkt in der Kennung).
+ * Eine Kopplung von vorher ohne `trust` gilt als `pinned`; `system` mit Fingerabdruck, `pinned` ohne und ein unbekanntes
+ * `trust` ergeben keine.
  * @param {unknown} value
  * @returns {RemoteSettings | null}
  */
 export function remoteOf(value) {
   if (!value || typeof value !== 'object') return null
-  const { origin, certSha256, deviceId, deviceKey, version } = /** @type {Record<string, unknown>} */ (value)
-  if (typeof origin !== 'string' || typeof certSha256 !== 'string' || typeof deviceId !== 'string' || typeof deviceKey !== 'string' || typeof version !== 'string') return null
+  const { origin, trust = 'pinned', certSha256, deviceId, deviceKey, version } = /** @type {Record<string, unknown>} */ (value)
+  if (typeof origin !== 'string' || typeof deviceId !== 'string' || typeof deviceKey !== 'string' || typeof version !== 'string') return null
+  if (trust === 'system' ? certSha256 !== null : trust !== 'pinned' || typeof certSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(certSha256)) return null
   try {
     const url = new URL(origin)
     if (url.protocol !== 'https:' || url.origin !== origin) return null
   } catch {
     return null
   }
-  if (!/^[0-9a-f]{64}$/.test(certSha256) || !/^[A-Za-z0-9_-]{1,64}$/.test(deviceId) || !/^[A-Za-z0-9_-]{16,256}$/.test(deviceKey)) return null
-  return { origin, certSha256, deviceId, deviceKey, version }
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(deviceId) || !/^[A-Za-z0-9_-]{16,256}$/.test(deviceKey)) return null
+  return trust === 'system' ? { origin, trust, certSha256: null, deviceId, deviceKey, version } : { origin, trust: 'pinned', certSha256: /** @type {string} */ (certSha256), deviceId, deviceKey, version }
 }
 
 /**
