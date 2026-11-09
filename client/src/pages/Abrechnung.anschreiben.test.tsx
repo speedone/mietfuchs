@@ -588,3 +588,65 @@ test('#624: ohne Vermieter oder mit IBAN außerhalb des EWR nennt das Druckfenst
   show({ ...SETTINGS, landlordName: '', printPaymentQr: true })
   expect(within(await openPrintDrawer()).getByText('(braucht Vermieter und gültige IBAN aus dem EWR)')).toBeTruthy()
 })
+
+const qrImg = () => screen.queryByRole('img', { name: /QR-Code für die Überweisung von/ })
+
+test('#624: QR-Code im Anschreiben direkt nach dem Satz zur Nachzahlung', async () => {
+  show({ ...SETTINGS, printPaymentQr: true })
+  const region = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  const img = await within(region).findByRole('img', { name: /QR-Code für die Überweisung von 120,00/ }, SLOW)
+  const sentence = [...region.querySelectorAll('p')].find((p) => p.textContent?.startsWith('Es ergibt sich eine Nachzahlung')) ?? null
+  if (!sentence) throw new Error('kein Satz zur Nachzahlung')
+  expect(sentence.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(plain(img.closest('.payment-qr')?.textContent)).toContain('Meier, EG, Nebenkostenabrechnung')
+})
+
+test('#624: QR-Code unter der Aufstellung, wenn das Anschreiben nicht mitgedruckt wird', async () => {
+  templates = { ...TEMPLATES, printLetter: false, propertyPrintLetter: null }
+  show({ ...SETTINGS, printPaymentQr: true })
+  const card = await statementCard()
+  await waitFor(() => expect(within(card).getByRole('img', { name: /QR-Code für die Überweisung/ })).toBeTruthy(), SLOW)
+  const img = within(card).getByRole('img', { name: /QR-Code für die Überweisung/ })
+  const sentence = card.querySelector('p.statement-letter-text')
+  if (!sentence) throw new Error('kein Satz unter der Tabelle')
+  expect(sentence.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+test('#624: kein QR-Code bei Guthaben, ausgeglichen oder ausgeschaltet', async () => {
+  show()
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(qrImg()).toBeNull()
+  cleanup()
+  for (const balanceCents of [12000, 0]) {
+    const st = { ...STATEMENT, balanceCents }
+    const base = { ...settlement, statements: [st] }
+    const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+    settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
+    show({ ...SETTINGS, printPaymentQr: true })
+    await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+    expect(qrImg()).toBeNull()
+    cleanup()
+  }
+})
+
+test('#624: Objekt mit eigener IBAN: der Kasten nennt sie', async () => {
+  const base = { ...settlement }
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: 'Erbengemeinschaft Becker', iban: 'AT611904300234573201', paymentDeadlineDays: null }
+  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
+  show({ ...SETTINGS, printPaymentQr: true })
+  const img = await screen.findByRole('img', { name: /QR-Code für die Überweisung/ }, SLOW)
+  const text = plain(img.closest('.payment-qr')?.textContent)
+  expect(text).toContain('AT61 1904 3002 3457 3201')
+  expect(text).toContain('Erbengemeinschaft Becker')
+  expect(text).not.toContain('DE02')
+})
+
+test('#624: abgeschlossen ohne eingefrorenen Verwendungszweck druckt keinen Code', async () => {
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  const { paymentPurpose: _gone, ...older } = l.texts
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00.000Z` } as Settlement['closed'], letters: { t1: { ...l, texts: older as typeof l.texts } } }
+  show({ ...SETTINGS, printPaymentQr: true })
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(qrImg()).toBeNull()
+})

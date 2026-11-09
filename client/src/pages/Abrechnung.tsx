@@ -60,7 +60,9 @@ import { PAPER_PAGE_CSS, asLetterDesigns, canPagePaper, designKey, paperVars, pr
 import { designImage } from '../letterPaper'
 import type { LetterDesigns } from '../../../shared/types.ts'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
-import { exceedsOnePage } from '../../../shared/letter.ts'
+import { PAYMENT_QR_LINES, exceedsOnePage } from '../../../shared/letter.ts'
+import PaymentQr from '../components/PaymentQr'
+import { paymentQrOf } from '../paymentQr'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
@@ -188,6 +190,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const printFoldMarks = printDraft.value.printFoldMarks
   const printAttachments = printDraft.value.printAttachments
   const printFooter = printDraft.value.printFooter
+  const printPaymentQr = printDraft.value.printPaymentQr
   // Das Anschreiben (#415): die Vorlagen der Ebenen und die Anpassungen je Mieter, zum Bearbeiten. Was
   // gedruckt wird, liefert der Server mit der Abrechnung (`letters`).
   const [templates, setTemplates] = useState<LetterTemplates | null>(null)
@@ -676,12 +679,14 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               } : null
               const subject = letter && !showLetter ? renderLetterText(letter.texts.subject, print) : ''
               const underTable = letter && !showLetter ? statementBlocks(letter, st.balanceCents, attachmentCount).map((b) => ({ block: b, text: renderLetterText(letter.texts[b], print) })) : []
+              // #624: der Zahlungs-QR-Code aus dem Anschreiben (abgeschlossen eingefroren), nur bei Nachzahlung und Schalter an
+              const paymentQr = paymentQrOf(letter, st.balanceCents, print, printPaymentQr)
               // Druck (#415): je Seite Abrechnung, Objekt und Wohnung; Kontakt und Bank stehen auf der Briefseite, nicht auf jeder.
               const footnote = letter ? footnoteText(letter) : null
               // #229: fehlt nach dem Auszug die neue Anschrift, oder hat sie sich nach dem Abschluss geändert? Verglichen wird
               // mit dem, was gedruckt würde (abgeschlossen also eingefroren).
               const addressState = addressCheck(st, tenancy, head?.recipient, property, localToday(), data.closed?.sentAt)
-    return { st, letterDate, draftMark, legacy, tenancy, stFiles, attachmentsReady, groups, letter, attachmentCount, paragraphs, paymentDays, lockedId, showLetter, print, footerText, head, subject, underTable, footnote, addressState }
+    return { st, letterDate, draftMark, legacy, tenancy, stFiles, attachmentsReady, groups, letter, attachmentCount, paragraphs, paymentDays, lockedId, showLetter, print, footerText, head, subject, underTable, footnote, addressState, paymentQr }
   }
   const views = data ? data.statements.map((st) => viewOf(data, st)) : []
   // Mit Briefpapier hat die Seite keinen Rand und damit keine Randfelder.
@@ -702,7 +707,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       const a = addressNotice(v.addressState, v.st.tenantName, v.st.unitName)
       out.push({ code: 'page.address', level: 'warning', title: a.title, text: a.text, ...(v.addressState === 'former' ? { subject: { kind: 'tenancy', id: v.st.tenancyId } } : {}) })
     }
-    if (v.showLetter && exceedsOnePage(v.paragraphs.map((p) => p.text))) {
+    if (v.showLetter && exceedsOnePage(v.paragraphs.map((p) => p.text), v.paymentQr ? PAYMENT_QR_LINES : 0)) {
       out.push({ code: 'page.letter-long', level: 'warning', title: `Anschreiben länger als eine Seite (${who})`, text: LETTER_LONG_TEXT })
     }
     if (v.head && returnLineTooLong(v.head.returnLine)) out.push({ code: 'page.return-line', level: 'warning', title: 'Rücksendeangabe zu lang', text: returnLineText(v.head.returnLine) })
@@ -1099,7 +1104,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           )}
 
           {views.map((v) => {
-            const { st, letterDate, draftMark, legacy, tenancy, stFiles, groups, letter, attachmentCount, paragraphs, paymentDays, showLetter, footerText, head, subject, underTable, footnote, addressState } = v
+            const { st, letterDate, draftMark, legacy, tenancy, stFiles, groups, letter, attachmentCount, paragraphs, paymentDays, showLetter, footerText, head, subject, underTable, footnote, addressState, paymentQr } = v
             // Auf dem Bildschirm steht nur die Abrechnung der Vorschau; gedruckt werden sie alle bzw. die gewählte.
             const hidden = preview?.st.tenancyId !== st.tenancyId
             return (
@@ -1117,8 +1122,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   aus dem Anschreiben, abgeschlossen also eingefroren (Durchsicht S2). */}
               {showLetter && head ? (
                 <>
-                  <Letter {...head} paragraphs={paragraphs} footer={footerText} />
-                  {exceedsOnePage(paragraphs.map((p) => p.text)) && (
+                  <Letter {...head} paragraphs={paragraphs} footer={footerText} paymentQr={paymentQr} />
+                  {exceedsOnePage(paragraphs.map((p) => p.text), paymentQr ? PAYMENT_QR_LINES : 0) && (
                     <NoticeBox level="warning" className="no-print" title="Anschreiben länger als eine Seite" action={LETTER_LONG_TEXT} />
                   )}
                 </>
@@ -1305,7 +1310,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {(data?.heating ?? []).filter((h) => showsStock(h, st)).map((h) => <StockBlock key={`stock:${h.plantId}:${h.period}`} view={stockBlock(h)} />)}
               {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
               {/* Ohne Anschreiben: Ergebnis, Anpassung und Belegeinsicht mit den Texten des Anschreibens (Teil 2). */}
-              {underTable.map((p) => <p key={p.block} className="statement-letter-text">{p.text}</p>)}
+              {underTable.map((p) => (
+                <Fragment key={p.block}>
+                  <p className="statement-letter-text">{p.text}</p>
+                  {p.block === 'backPayment' && paymentQr && <PaymentQr data={paymentQr} />}
+                </Fragment>
+              ))}
               {st.rows.length > 0 && (
                 <>
                   {legacy && (

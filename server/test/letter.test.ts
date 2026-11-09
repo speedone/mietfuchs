@@ -325,3 +325,11 @@ test('#624: abweichende IBAN und Vermieter am Objekt stehen im Anschreiben', () 
   assert.equal(l.values.IBAN, 'AT61 1904 3002 3457 3201')
   assert.equal(l.values.Vermieter, 'Erbengemeinschaft Becker')
 })
+
+test('#624: der QR-Kasten zählt zur Seitenlänge', async () => {
+  const { PAYMENT_QR_LINES } = await import('../../shared/letter.ts')
+  assert.equal(PAYMENT_QR_LINES, 8)
+  const paragraphs = Array.from({ length: 16 }, () => 'Kurzer Absatz.')
+  assert.equal(exceedsOnePage(paragraphs), false)
+  assert.equal(exceedsOnePage(paragraphs, PAYMENT_QR_LINES), true)
+})
