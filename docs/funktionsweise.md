@@ -69,7 +69,9 @@ Kurzfassung steht im [README](../README.md#funktionen).
 6. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
    Vorauszahlungen, Saldo, Zahlungsaufforderung (Vermieter, IBAN und Frist aus den Einstellungen
    oder abweichend am Objekt),
-   §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
+   §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Bei einer Nachzahlung
+   auf Wunsch ein QR-Code zum Bezahlen (EPC-QR-Code für die Banking-App, Verwendungszweck in der
+   Vorlage des Anschreibens einstellbar). Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
    Vor dem Versand wird die Abrechnung **abgeschlossen** und damit eingefroren; ändert sich danach
    etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf. Ist sie

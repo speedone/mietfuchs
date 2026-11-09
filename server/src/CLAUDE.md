@@ -771,6 +771,26 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   Nur Zahlen und Namen wie auf der Abrechnung, keine Anschrift, Bank oder Anschreibentexte. Nicht für die
   Heizkostenabrechnung nach Weg d. Ändert sich die Form nach der Veröffentlichung, `version` anheben.
 
+## Zahlungs-QR-Code (#624)
+
+Entwurf: [docs/superpowers/specs/2026-11-09-zahlungs-qr-design.md](../../docs/superpowers/specs/2026-11-09-zahlungs-qr-design.md).
+
+- **Inhalt** in [shared/epcQr.ts](../../shared/epcQr.ts) nach EPC069-12 v3.0: Fassung 002 (ohne BIC), UTF-8, höchstens
+  331 Byte (erst der Zweck, dann der Name gekürzt), kein Trenner nach dem letzten belegten Element. **Nur IBANs aus dem
+  EWR** (`EEA_COUNTRIES`), denn das Modell kennt keine BIC. `epcText` bildet auf den SEPA-Zeichensatz mit Umlauten ab
+  (Striche zu `-`, Anführungszeichen zu `'`, é zu e, Rest fällt weg); Sonderzeichen dort nur als `\u`-Escape
+  (Wächter Geviertstrich und Anrede).
+- **Verwendungszweck = Baustein `paymentPurpose`** des Anschreibens, Vorgabe `{Name}, {Wohnung}, {Abrechnung}` (Name
+  vorn, gekürzt wird hinten). Dieselben Ebenen und dasselbe Einfrieren wie jeder Baustein, aber **kein Absatz**:
+  `chooseLetterBlocks`/`statementBlocks` nehmen ihn nie auf. Die Liste der Bausteine steht dreimal (shared/letter.ts,
+  `LetterBlock` in shared/types.ts, schema.ts mit CHECK in drei Tabellen, Schritt 0094).
+- **Schalter `settings.printPaymentQr`** (Spalte `print_payment_qr`, ohne Angabe aus) ist nur Druck wie die Fußzeile;
+  `PUT /api/settings` lehnt eine Angabe außer ja/nein mit 400 ab.
+- **IBAN und Empfänger kommen aus dem Anschreiben** (`values.IBAN`, `values.Vermieter`, über `effectiveLandlord`, die
+  Angabe am Objekt geht vor), der Betrag aus der Aufstellung; abgeschlossen also eingefroren. Ein vor #624 eingefrorenes
+  Anschreiben (ohne `paymentPurpose`) bekommt keinen Code. Entschieden und gezeichnet wird im Client
+  (client/src/paymentQr.ts, components/PaymentQr.tsx).
+
 ## Der Schnappschuss (#55)
 
 [snapshot.ts](snapshot.ts): Die Berechnung liest den Speicher nicht selbst, sie bekommt einen
