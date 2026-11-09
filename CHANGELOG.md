@@ -24,7 +24,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `passwort-zuruecksetzen` im Datenordner anlegen und die Seite neu laden, dann nennt Mietfuchs einen neuen Code. Nur auf
   Ihrem Rechner (Programmfenster, auch aus dem Microsoft Store, ohne Zugriff aus dem Heimnetz; `NKA_HOST=127.0.0.1`) ändert sich nichts.
   `NKA_AUTH=off` schaltet die Anmeldung ab, etwa hinter einem Proxy mit eigener Anmeldung, `NKA_AUTH=on` verlangt sie
-  auch auf `127.0.0.1`. `NKA_PASSWORD_FILE` (etwa ein Docker Secret) oder `NKA_PASSWORD` geben das Passwort beim
+  auch auf `127.0.0.1`. Eine Anfrage mit einer Kopfzeile eines Proxys (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`,
+  `Via`) gilt nie als „von diesem Rechner“: Ein Proxy auf demselben Rechner braucht die Anmeldung, und `/healthz`
+  antwortet über ihn nur knapp; eine Überwachung, die mehr lesen will, fragt Mietfuchs direkt an seinem Port. `NKA_PASSWORD_FILE` (etwa ein Docker Secret) oder `NKA_PASSWORD` geben das Passwort beim
   Start vor, solange keins festgelegt ist; ein später in der Oberfläche geändertes überschreiben sie nicht
   ([Docker](docs/docker.md#passwort-beim-ersten-start-vorgeben-nka_password_file)). Passwort und Code gehen nicht ins Backup. Im Browser bleibt die Verbindung im Heimnetz
   unverschlüsselt (`http://`), dort lässt sich weiter mitlesen; verschlüsselt geht es im Browser nur mit einem Proxy
@@ -40,9 +42,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Backup); an Docker, Ports und Firewall ändert sich nichts. Der Code beweist beim ersten Verbinden, dass das Fenster
   mit dem richtigen Server spricht, und geht selbst nie über das Netz; danach nimmt das Fenster nur noch dessen
   Zertifikat an. Gekoppelte Fenster stehen am Server mit dem letzten Kontakt in einer Liste und lassen sich dort
-  einzeln entfernen. Gekoppelt wird direkt mit dem Port von Mietfuchs, nicht über Caddy oder einen anderen Proxy
-  ([Anleitung](docs/installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden)). „Verbindung trennen“ führt
-  zurück zu den Daten auf Ihrem Rechner. Voraussetzung ist ein Passwort am Server und Version 0.17 auf beiden Seiten.
+  einzeln entfernen. Gekoppelt wird direkt mit dem Port von Mietfuchs oder über einen Reverse Proxy wie Caddy, mit der
+  Adresse aus dem Browser (`https://nas.fritz.box`): mit Let's Encrypt, einem auf dem PC installierten Stammzertifikat
+  (Caddy `tls internal`) oder dem Zertifikat von Mietfuchs, das der Proxy ausliefert. `NKA_TRUST_PROXY` nennt den
+  Proxy, dem Mietfuchs glaubt, dass die Verbindung verschlüsselt ist; `deploy/compose.caddy.yml` setzt es schon und
+  nimmt die Adressen für Caddy und `NKA_ALLOWED_HOSTS` aus einer Angabe (`MIETFUCHS_HOSTS`)
+  ([Anleitung](docs/installation.md#programmfenster-mit-mietfuchs-im-heimnetz-verbinden),
+  [Docker](docs/docker.md#programmfenster-koppeln)). Über ein VPN koppeln Sie wie im Heimnetz. „Verbindung trennen“
+  führt zurück zu den Daten auf Ihrem Rechner. Voraussetzung ist ein Passwort am Server und Version 0.17 auf beiden
+  Seiten.
 - **Mietkonto: Monate als bezahlt erfassen, auch rückwirkend**
   ([#608](https://github.com/speedone/mietfuchs/issues/608)): „Monate als bezahlt erfassen …“ legt für ein oder alle
   Mietverhältnisse je offenem, schon fälligem Monat bis zum gewählten Monat eine Mietzahlung über den offenen Rest an, für diesen Monat

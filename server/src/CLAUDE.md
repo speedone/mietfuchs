@@ -367,12 +367,14 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     `evil` kam als `localhost:8443` an). nginx braucht `proxy_set_header X-Forwarded-Host $host;` und einen
     ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein eingetragener Name, eine
     private oder Loopback-Adresse oder ein Name ohne Punkt (oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
-    `NKA_ALLOWED_HOSTS` (PR 3).
+    `NKA_ALLOWED_HOSTS` aus derselben Angabe wie die Adressen des Caddyfiles (`MIETFUCHS_HOSTS`, `{$MIETFUCHS_HOSTS}`
+    vor der Klammer). Die Nutzerdoku dazu (nginx, Restrisiko, `NKA_TRUST_PROXY`) steht in docs/docker.md.
   - Geprüft in trustProxy.test.ts (Namen mit eingeschobenem `lookup` und eigener Uhr), requestGuard.test.ts
     (`hostAllowed`, `originHostRefusal`), access.test.ts (Tabelle des
     Kanals, Beweise, kein `trusts` ohne Proxy-Kopfzeilen) und api-kopplung-proxy.test.ts gegen einen Proxy wie Caddy
     mit eigener CA ([server/testing/proxy.ts](../testing/proxy.ts): `createTestCa`, `startTestProxy`; `forwarded`
-    überschreibt `X-Forwarded-Proto`/`-Host`, `null` lässt weg).
+    überschreibt `X-Forwarded-Proto`/`-Host`, `null` lässt weg), das Fenster dagegen in desktop-check.mjs Schritt 7b,
+    mit echtem Caddy in [scripts/kopplung-proxy-praxislauf.mjs](../../scripts/kopplung-proxy-praxislauf.mjs).
 - **Wettläufe** (`generation`, `changedSince`): Jede Änderung des Zustands (Speichern, Zurücksetzen) zählt hoch. Eine
   Anmeldung, Einrichtung oder Änderung, deren scrypt über eine solche Änderung hinweg lief, schreibt nichts und
   antwortet 401 bzw. 409 „Der Zugang hat sich eben geändert.“ Ein Neuberechnen nach `needsRehash` schreibt nur, wenn
