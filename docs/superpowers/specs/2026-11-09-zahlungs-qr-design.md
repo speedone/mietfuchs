@@ -57,7 +57,7 @@ Verwendungszweck endet der Inhalt nach Zeile 8 bzw. 9 (Entscheidung beim Bauen n
   bei Version 13/M nur 330 Byte; ohne ECI passen die 331 der Richtlinie, und das ist auch die verbreitete Form, die alle
   Apps lesen.
 - **Zeichen**: Erlaubt ist der SEPA-Zeichensatz mit der deutschen Erweiterung (a-z, A-Z, 0-9, Leerzeichen,
-  `' : ? , - ( + . ) / & * $ %`, Ä Ö Ü ä ö ü ß). Vorher abgebildet: Gedankenstriche und ähnliche (– — ‑ −) zu `-`,
+  `' : ? , - ( + . ) / & * $ %`, Ä Ö Ü ä ö ü ß). Vorher abgebildet: Gedankenstriche und ähnliche (– `\u2014` ‑ −; im Code als Escape, sonst schlägt geviertstrich.test.ts an) zu `-`,
   typografische Anführungszeichen („ “ ” ‚ ‘ ’ « ») zu `'`, `·` und `|` zu `,`. Andere Buchstaben verlieren ihr Zeichen über NFD (é → e), alles
   Übrige fällt weg, Zeilenumbrüche und Tabs werden zu einem Leerzeichen, Leerraum wird zusammengezogen.
   *Meine Entscheidung*: so lehnt keine Bank ab, und der Kontoabgleich (`purposeKey`) liest ohnehin nur a-z0-9. Ohne die
