@@ -19,6 +19,7 @@ import Drawer from './Drawer'
 import { useFormError } from './ErrorSummary'
 import { useConfirm, useToast } from './feedback'
 import Field from './Field'
+import PairingSection from './PairingSection'
 
 type Action = 'change' | 'setup' | 'logoutAll' | 'off'
 type Form = { action: Action; current: string; code: string; next: NewPassword }
@@ -115,6 +116,7 @@ export default function AccessCard({ jump }: { jump?: JumpProps }) {
         {password && <button type="button" className="btn secondary" onClick={() => open('logoutAll')}>Auf allen Geräten abmelden</button>}
         {password && !info.envFixed && <button type="button" className="btn ghost danger-ghost ml-auto" onClick={() => open('off')}>Anmeldung ausschalten …</button>}
       </div>
+      <PairingSection info={info} />
       <Drawer open={form !== null} title={form ? TITLES[form.action] : ''} value={form} busy={busy} errors={errors}
         onClose={() => setForm(null)} onSubmit={() => { if (form) void submit(form) }}
         actions={form && (

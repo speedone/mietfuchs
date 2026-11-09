@@ -21,6 +21,8 @@ export type AccessInfo = {
   // Wo der Einrichtungscode steht: der volle Pfad nur am Rechner selbst, von außen der Name der Datei
   codeFile?: string
   codeFileName?: string
+  // Programmfenster koppeln (#528, Schritt 2): ob der Server das kann (Passwort und HTTPS) und wie viele gekoppelt sind
+  pairing?: { available: boolean; devices: number }
 }
 
 const MODES: readonly AccessMode[] = ['setup', 'password', 'off', 'transition', 'none']
@@ -42,6 +44,7 @@ export function accessInfoOf(raw: unknown): AccessInfo | null {
     runtime: typeof raw.runtime === 'string' ? raw.runtime : '',
     ...(typeof raw.codeFile === 'string' && raw.codeFile ? { codeFile: raw.codeFile } : {}),
     ...(typeof raw.codeFileName === 'string' && raw.codeFileName ? { codeFileName: raw.codeFileName } : {}),
+    ...(isObject(raw.pairing) ? { pairing: { available: raw.pairing.available === true, devices: typeof raw.pairing.devices === 'number' ? raw.pairing.devices : 0 } } : {}),
   }
 }
 
