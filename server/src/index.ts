@@ -183,6 +183,11 @@ const ACCESS = createAccess({
   inWindow: IN_WINDOW,
   windowKey: WINDOW_KEY,
   envPassword: ENV_PASSWORD,
+  version: APP_VERSION,
+  // Testgriff: verkürzt die Gültigkeit eines Kopplungscodes (sonst 10 Minuten); das Fenster löscht NKA_TEST_*
+  ...(Number(process.env.NKA_TEST_PAIRING_SECONDS) > 0 ? { pairingSeconds: Number(process.env.NKA_TEST_PAIRING_SECONDS) } : {}),
+  // Das Zertifikat kommt erst unten (vor dem Binden gelesen oder danach erzeugt) über `useTls`
+  tls: null,
 })
 app.use(ACCESS.middleware)
 ACCESS.install(app)
@@ -4822,6 +4827,7 @@ if (IN_WINDOW && PARENT_PORT) {
 // neues entsteht erst nach dem Binden, weiter unten, denn ein zweiter Start auf belegtem Port rührt den Datenordner
 // nicht an (#244).
 let TLS_PAIR = readCertificate(DATA_DIR)
+ACCESS.useTls(TLS_PAIR)
 
 // Der äußere Server nimmt beide Protokolle auf einem Port an (dualPort.ts); listen, close und address gehen an ihn
 const dual = createDualServer((req, res) => {
@@ -5014,6 +5020,7 @@ if (!TLS_PAIR && !MOVED_AWAY) {
   else {
     TLS_PAIR = created
     dual.useCertificate(created)
+    ACCESS.useTls(created)
   }
 }
 

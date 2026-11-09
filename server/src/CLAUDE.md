@@ -190,7 +190,7 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   `scrypt$17$8$1$…`, `changedAt`; 0600, Zwischendatei und Umbenennen wie secrets.json), `einrichtungscode.txt`
   (solange `setup`, Übergang oder `off` im Netz; neu je Start, danach gelöscht), `passwort-zuruecksetzen`. **Nie in
   der Datenbank**: nicht im Backup, nicht in Vorversionen, nicht im Umzug, ein Rücksprung ändert das Passwort nicht.
-  Unbekannte Felder in `zugang.json` gehen beim Zurückschreiben verloren (offen für Schritt 2, `devices`).
+  Unbekannte Felder in `zugang.json` gehen beim Zurückschreiben verloren; `devices` trägt `fileOf` mit (Kopplung, unten).
 - **HTTPS auf demselben Port** (Schritt 2, [tls.ts](tls.ts), [dualPort.ts](dualPort.ts)): `tls/mietfuchs.key` (0600) und
   `tls/mietfuchs.crt` im Datenordner, vor dem Binden nur gelesen, fehlend erst danach erzeugt (#244: ein zweiter Start
   rührt den Ordner nicht an; ein umgezogener Ordner bekommt keins). ECDSA P-256, CN „Mietfuchs“, subjectAltName localhost, 127.0.0.1, ::1
@@ -214,8 +214,8 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   auch dort) und vor `express.json()` (ungeprüfte Rümpfe werden nicht gelesen, `req.resume()`); `/api/auth/*` mit
   eigenem `express.json({ limit: '4kb' })`. **Pfade wie Express** (Express 5, `caseSensitive: false`, `strict: false`):
   geschützt ist, was klein, ohne doppelte und ohne End-Schrägstriche, roh oder bis dreimal entschlüsselt auf
-  `/^\/(api|uploads|healthz)(\/|$)/` passt; frei nur genau `GET /api/auth`, `POST …/login`, `…/setup`, `…/logout` und
-  `GET /healthz`. Übrige `GET`/`HEAD` (Oberfläche, Skripte, Manifest) sind frei. Sonst 401 mit `login: true` bzw.
+  `/^\/(api|uploads|healthz)(\/|$)/` passt; frei nur genau `GET /api/auth`, `POST …/login`, `…/setup`, `…/logout`,
+  `…/pair` und `GET /healthz`. Übrige `GET`/`HEAD` (Oberfläche, Skripte, Manifest) sind frei. Sonst 401 mit `login: true` bzw.
   `setup: true`, auch für `/uploads`, Backup, Update und die ND-JSON-Ströme. `Cache-Control: no-store` auf geschützten
   Pfaden, solange die Anmeldung gilt.
 - **Wann sie gilt** (`gateActive`): nicht bei `NKA_AUTH=off`, `off`, Übergang und `none`; sonst bei `required` (Netz
@@ -237,7 +237,7 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   buchen, dann rechnen, bei Erfolg zurückgenommen; je Adresse ein laufender Versuch, insgesamt zwei, darüber 429 mit
   `Retry-After`. Je Adresse (IPv6 voll, nicht je /64; IPv4 in IPv6 als IPv4) ab dem fünften Versuch 1 s, verdoppelt
   bis **60 s** (nicht 15 min wie im Entwurf: geteilte Adressen hinter Proxy oder Docker Desktop); ab 20 Fehlversuchen
-  in 15 Minuten über alle Adressen 1 s mehr je Berechnung. Code und Passwort zählen getrennt; dieselbe Bremse für jede
+  in 15 Minuten über alle Adressen 1 s mehr je Berechnung. Code, Passwort und Koppeln zählen getrennt; dieselbe Bremse für jede
   Route, die das bisherige Passwort prüft. Protokoll mit Adresse (die ersten fünf, dann jede Zweierpotenz); die erste
   Anmeldung danach nennt die Zahl (`failedAttempts`).
 - **Sitzungen** (`createSessions`): 32 Zufallsbytes, im Speicher nur als SHA-256, höchstens 50, 30 min ohne Anfrage,
@@ -268,8 +268,24 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   löscht ihn aus `process.env`, kein Kindprozess erbt ihn. Die Seite trägt `X-Mietfuchs-Window` über
   `onBeforeSendHeaders`, der Hauptprozess über `serverFetch` (scripts/CLAUDE.md, Programmfenster). Wirksam nur bei
   `IN_WINDOW`, über Loopback ohne Proxy-Kopfzeilen, zeitkonstant (`atWindow`): Das Fenster gilt als angemeldet,
-  richtet ohne Code ein und ändert ohne bisheriges Passwort. Über die Adresse einer Netzwerkkarte wirkungslos; genau
-  diese Zeile lockert Schritt 2 für Geräteschlüssel über HTTPS.
+  richtet ohne Code ein und ändert ohne bisheriges Passwort. Über die Adresse einer Netzwerkkarte wirkungslos; dafür
+  gibt es die Kopplung mit Geräteschlüssel (nächster Punkt).
+- **Programmfenster koppeln** (Schritt 2, Entwurf docs/superpowers/specs/2026-11-09-kopplung-fenster-design.md, Abschnitt
+  2): nur bei `password` mit HTTPS (sonst 409 „Legen Sie zuerst ein Passwort fest.“). `POST /api/auth/pairing`
+  (angemeldet) gibt `{ code, expiresAt }`: Code wie der Einrichtungscode, 10 Minuten (`PAIRING_MINUTES`), nur im
+  Speicher, einer zugleich, `DELETE` verwirft ihn. `POST /api/auth/pair` (frei, Bremse Art `pair`, nur über TLS, sonst
+  400) nimmt `{ name, proof }` mit `proof` = `pairingProof(code, certSha256)` (HMAC-SHA256, Schlüssel der normalisierte
+  Code, Nachricht `mietfuchs-kopplung:` + SHA-256 des DER); der Code wird in derselben synchronen Prüfung verbraucht
+  (zwei gleichzeitige ergeben ein Gerät), falsch und abgelaufen sind dieselbe 400. Antwort `{ id, deviceKey, version }`
+  (32 Zufallsbytes). In `zugang.json` `devices` (`id`, `name` 1 bis 60 Zeichen sonst „Programmfenster“, `keyHash`
+  SHA-256, `pairedAt`, `lastSeen`), höchstens 20 (sonst 409); ein ungültiges Gerät macht die Datei verdorben.
+  **Angemeldet** über `X-Mietfuchs-Device: <id>.<Schlüssel>` (`matchDevice`, zeitkonstant) nur über die eigene TLS-
+  Verbindung (`req.socket.encrypted`) und bei `password`, nie über HTTP. `lastSeen` im Speicher, höchstens stündlich
+  geschrieben (ohne `generation`, `changedAt` bleibt). `GET /api/auth/devices` (ohne `keyHash`, `current`),
+  `DELETE …/devices/:id`; `GET /api/auth` nennt `pairing: { available, devices }` (die Zahl nur angemeldet).
+  Zurücksetzen und Ausschalten entfernen alle Geräte, Passwort ändern und „Auf allen Geräten abmelden“ nicht. Code,
+  Schlüssel und Beweis stehen nie im Protokoll. Das Zertifikat entsteht oft erst nach `createAccess`; index.ts reicht
+  es mit `useTls` nach. Geprüft in access.test.ts und api-kopplung.test.ts.
 - **Wettläufe** (`generation`, `changedSince`): Jede Änderung des Zustands (Speichern, Zurücksetzen) zählt hoch. Eine
   Anmeldung, Einrichtung oder Änderung, deren scrypt über eine solche Änderung hinweg lief, schreibt nichts und
   antwortet 401 bzw. 409 „Der Zugang hat sich eben geändert.“ Ein Neuberechnen nach `needsRehash` schreibt nur, wenn
@@ -865,6 +881,7 @@ Nur für Tests, ein Nutzer setzt sie nie:
   Prozess bei 1, also nur auf einem leeren, einmal gestarteten Datenordner; die Konsole nennt ihn beim Start. Unter
   `seq` gewinnt bei Gleichstand immer der zuerst angelegte Datensatz, im Betrieb ein zufälliger.
 - `NKA_TEST_START_DELAY_MS`, `NKA_TEST_FREE_BYTES`: siehe scripts/CLAUDE.md bzw. db/CLAUDE.md.
+- **`NKA_TEST_PAIRING_SECONDS`** (Kopplung, #528) verkürzt die Gültigkeit eines Kopplungscodes (sonst 10 Minuten).
 - **`NKA_TEST_STORE=1`** (Umzug, #517) neben `NKA_RUNTIME=desktop`: der Umzug wie aus dem Store (Ortsdatei nur lesen).
 - **`NKA_TEST_COPY_DELAY_MS`** (Umzug, #517) wartet nach jeder kopierten Datei, damit ein Test Fortschritt und
   Abbrechen sieht.
