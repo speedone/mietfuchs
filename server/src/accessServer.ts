@@ -3,13 +3,14 @@
 // nicht gelesen wird. Die Regeln stehen in server/src/CLAUDE.md („Anmeldung“).
 import express, { type Express, type NextFunction, type Request, type Response } from 'express'
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import path from 'node:path'
 import type { TLSSocket } from 'node:tls'
 import {
-  ACCESS_FILE, CODE_FILE, MIN_PASSWORD, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
+  ACCESS_FILE, CODE_FILE, DEVICE_HEADER, DEVICE_NAME_MAX, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, deviceKeyHash, matchDevice, newDeviceId, newDeviceKey, pairingProof, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
   gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
   sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, viaProxy, writeAccessFile, writeCodeFile,
-  type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type EnvPassword, type Stage,
+  type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword, type Stage,
 } from './access.ts'
 
 export type AccessOptions = {
@@ -25,6 +26,14 @@ export type AccessOptions = {
   // Passwort aus NKA_PASSWORD_FILE oder NKA_PASSWORD (`readEnvPassword`), übernommen mit `applyEnvPassword` nach `start`
   envPassword?: EnvPassword | null
   stage?: Stage
+  // Fingerabdruck des Zertifikats, gegen das ein Fenster seinen Beweis rechnet (#528, Schritt 2). Fehlt beim Bau oft
+  // noch: Ein neues Zertifikat entsteht erst nach dem Binden (index.ts), dann setzt `useTls` es nach. `null` heißt
+  // ohne HTTPS, dann gibt es keine Kopplung.
+  tls?: { certSha256: string } | null
+  // Version für die Antwort von `pair` (das Fenster vergleicht sie mit seiner)
+  version?: string
+  // Gültigkeit eines Kopplungscodes; kürzer nur im Testgriff NKA_TEST_PAIRING_SECONDS
+  pairingSeconds?: number
   log?: (line: string) => void
   logError?: (line: string) => void
   now?: () => number
@@ -42,7 +51,12 @@ export type AccessInfo = {
   runtime: string
   codeFile?: string
   codeFileName?: string
+  // Programmfenster koppeln: möglich (Passwort und HTTPS) und wie viele gekoppelt sind (die Zahl nur angemeldet)
+  pairing: { available: boolean, devices: number }
 }
+
+// Was die Liste der Geräte zeigt: nie den Hash des Schlüssels
+export type DeviceInfo = Omit<Device, 'keyHash'> & { current: boolean }
 
 const header = (req: Request, name: string): string | undefined => {
   const value = req.headers[name]
@@ -62,7 +76,9 @@ export const browserUrlFor = (url: string, mode: AccessState['mode'], code: stri
   mode === 'setup' && code ? `${url}/#einrichtung=${formatCode(code)}` : url
 
 export function createAccess(options: AccessOptions) {
-  const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, envPassword = null, stage = 'A', log = console.log, logError = console.error, now = Date.now } = options
+  const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, envPassword = null, stage = 'A', version = '', log = console.log, logError = console.error, now = Date.now } = options
+  const pairingMs = (options.pairingSeconds ?? PAIRING_MINUTES * 60) * 1000
+  let tls = options.tls ?? null
   const allowedHosts = (options.allowedHosts ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h && h !== '*')
   const codePath = path.join(dataDir, CODE_FILE)
   const sessions = createSessions({ now })
@@ -73,6 +89,13 @@ export function createAccess(options: AccessOptions) {
   let code: string | null = null
   let failedSinceLogin = 0
   const startLines: string[] = []
+  // Gekoppelte Programmfenster wie in zugang.json; `changedAt` der Datei bleibt beim Schreiben von `lastSeen` stehen
+  let devices: Device[] = []
+  let changedAt = ''
+  // Zuletzt gesehen, im Speicher; geschrieben höchstens einmal je Stunde und Gerät
+  const seenAt = new Map<string, number>()
+  // Der Kopplungscode, nur im Speicher: höchstens einer zugleich, ein neuer ersetzt den alten
+  let pairing: { code: string, expiresAt: number } | null = null
 
   // Nach einem `await` frisch gelesen: Eine zweite Anfrage kann den Zustand inzwischen geändert haben
   const modeNow = (): AccessState['mode'] => state.mode
@@ -132,6 +155,11 @@ export function createAccess(options: AccessOptions) {
     }
     generation++
     state = { ...state, mode: 'setup', hash: null, required: requiredFor('setup'), proxyStrict: true }
+    // Zurücksetzen heißt neu anfangen: auch gekoppelte Fenster koppeln neu
+    devices = []
+    changedAt = file.changedAt
+    seenAt.clear()
+    pairing = null
     sessions.revokeAll()
     brake.reset()
     failedSinceLogin = 0
@@ -182,6 +210,11 @@ export function createAccess(options: AccessOptions) {
     }
     const initial = initialAccess({ reachable: state.reachable, setting, file, hasStock, stage })
     state = { ...initial.state, proxyStrict: resetAtStart }
+    const known = initial.write ?? (file && file !== 'corrupt' ? file : null)
+    // Geräte nur mit Passwort: Eine von Hand geänderte Datei mit `off` oder `setup` ließe sie sonst bei einer späteren
+    // Einrichtung wieder aufleben
+    devices = known?.mode === 'password' ? known.devices ?? [] : []
+    changedAt = known?.changedAt ?? ''
     if (initial.write) {
       try {
         writeAccessFile(dataDir, initial.write)
@@ -268,10 +301,18 @@ export function createAccess(options: AccessOptions) {
   const hasSession = (req: Request): boolean => tokensOf(req).some((token) => sessions.check(token))
   // Das Fenster gilt als angemeldet und als „am Rechner“ (Einrichtung ohne Code): nur im Fenster, nur über eine
   // Verbindung von 127.0.0.1/::1 ohne Proxy-Kopfzeilen, zeitkonstant verglichen. Über die Adresse einer Netzwerkkarte
-  // ist der Schlüssel wirkungslos; Schritt 2 lockert genau diese Zeile für Geräteschlüssel über HTTPS.
+  // ist der Schlüssel wirkungslos; von dort meldet sich ein gekoppeltes Fenster mit Geräteschlüssel über HTTPS an.
   const atWindow = (req: Request): boolean =>
     inWindow && windowKey !== null && isLoopback(req.socket.remoteAddress) && !viaProxy(req.headers) && sameKey(header(req, 'x-mietfuchs-window'), windowKey)
-  const signedIn = (req: Request): boolean => atWindow(req) || hasSession(req)
+  // Ein gekoppeltes Fenster (#528, Schritt 2): Kopfzeile `X-Mietfuchs-Device`, nur über die eigene TLS-Verbindung und
+  // nur mit Passwort. Über HTTP gilt der Schlüssel nie, auch nicht hinter einem Proxy mit HTTPS davor.
+  function deviceOf(req: Request): Device | null {
+    if ((req.socket as TLSSocket).encrypted !== true || state.mode !== 'password' || setting === 'off') return null
+    const device = matchDevice(devices, header(req, DEVICE_HEADER))
+    if (device) noteSeen(device)
+    return device
+  }
+  const signedIn = (req: Request): boolean => atWindow(req) || hasSession(req) || deviceOf(req) !== null
 
   // ---------- Vorschaltung ----------
   function middleware(req: Request, res: Response, next: NextFunction): void {
@@ -313,8 +354,44 @@ export function createAccess(options: AccessOptions) {
     writeAccessFile(dataDir, file)
     generation++
     state = { ...state, mode: file.mode, hash: file.hash ?? null, required: requiredFor(file.mode), proxyStrict: false }
+    devices = file.devices ?? []
+    changedAt = file.changedAt
+    if (file.mode !== 'password') pairing = null
   }
-  const fileOf = (mode: AccessMode, hash?: string): AccessFile => ({ version: 1, mode, instance: state.instance, ...(hash ? { hash } : {}), changedAt: new Date(now()).toISOString() })
+  // `fileOf` trägt die Geräte mit (vorher gingen unbekannte Felder verloren), aber nur mit Passwort: Jeder Weg weg davon
+  // (ausschalten, zurücksetzen) entfernt sie (Entwurf, Abschnitt 2)
+  const fileOf = (mode: AccessMode, hash?: string, list: Device[] = devices): AccessFile => ({
+    version: 1, mode, instance: state.instance, ...(hash ? { hash } : {}), changedAt: new Date(now()).toISOString(),
+    ...(mode === 'password' && list.length ? { devices: list } : {}),
+  })
+  // `lastSeen` ändert den Zugang nicht: kein `generation`, `changedAt` bleibt; ein Fehler kostet nur die Angabe
+  function noteSeen(device: Device): void {
+    const at = now()
+    seenAt.set(device.id, at)
+    const written = device.lastSeen ? Date.parse(device.lastSeen) : NaN
+    if (Number.isFinite(written) && at - written < 60 * 60_000) return
+    // Im Speicher auch dann, wenn das Schreiben scheitert: sonst versuchte es jede Anfrage erneut
+    devices = devices.map((d) => (d.id === device.id ? { ...d, lastSeen: new Date(at).toISOString() } : d))
+    try {
+      writeAccessFile(dataDir, { ...fileOf('password', state.hash ?? undefined), changedAt })
+    } catch (err) {
+      logError(`Der letzte Kontakt eines Programmfensters ließ sich nicht speichern (${ACCESS_FILE}): ${(err as Error).message}`)
+    }
+  }
+  const pairingAvailable = (): boolean => setting !== 'off' && state.mode === 'password' && tls !== null
+  const deviceInfo = (device: Device, current: Device | null): DeviceInfo => {
+    const seen = seenAt.get(device.id)
+    return { id: device.id, name: device.name, pairedAt: device.pairedAt, lastSeen: seen ? new Date(seen).toISOString() : device.lastSeen, current: device.id === current?.id }
+  }
+  // Der Name, wie ihn das Fenster schickt (Rechnername): 1 bis 60 Zeichen ohne Steuerzeichen, sonst ein fester
+  const deviceName = (name: unknown): string => {
+    // Steuer- und Formatzeichen (auch Richtungswechsel) sowie Zeilen- und Absatztrenner fallen weg
+    const clean = typeof name === 'string' ? name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim() : ''
+    return clean.length >= 1 && clean.length <= DEVICE_NAME_MAX ? clean : 'Programmfenster'
+  }
+  // Zeitkonstant über SHA-256 beider Werte, wie beim Code
+  const sameProof = (given: unknown, expected: string): boolean =>
+    typeof given === 'string' && crypto.timingSafeEqual(crypto.createHash('sha256').update(given).digest(), crypto.createHash('sha256').update(expected).digest())
   const tooMany = (res: Response, retryAfter: number): void => {
     res.setHeader('Retry-After', String(retryAfter))
     res.status(429).json({ error: `Zu viele Fehlversuche. Bitte versuchen Sie es in ${minutesText(retryAfter)} erneut.`, retryAfter })
@@ -324,7 +401,8 @@ export function createAccess(options: AccessOptions) {
     const count = brake.failures(req.socket.remoteAddress ?? '', kind)
     // Zusammengefasst: die ersten fünf, danach jede Zweierpotenz, damit ein Angriff das Protokoll nicht füllt
     if (count <= 5 || (count & (count - 1)) === 0) {
-      log(`Anmeldung: ${kind === 'code' ? 'falscher Einrichtungscode' : 'falsches Passwort'} von ${req.socket.remoteAddress ?? 'unbekannt'} (${count}. Fehlversuch dieser Adresse).`)
+      const what = kind === 'code' ? 'falscher Einrichtungscode' : kind === 'pair' ? 'falscher oder abgelaufener Kopplungscode' : 'falsches Passwort'
+      log(`Anmeldung: ${what} von ${req.socket.remoteAddress ?? 'unbekannt'} (${count}. Fehlversuch dieser Adresse).`)
     }
   }
 
@@ -366,6 +444,8 @@ export function createAccess(options: AccessOptions) {
       runtime,
       // Der volle Pfad nur am Rechner selbst; von außen der Name (der Datenordner nennt den Benutzer)
       ...(code ? (here || window ? { codeFile: codePath } : { codeFileName: CODE_FILE }) : {}),
+      // Die Zahl der Geräte nur für wen, der sie auch verwalten darf
+      pairing: { available: pairingAvailable(), devices: mayManage(req) ? devices.length : 0 },
     }
   }
 
@@ -502,6 +582,8 @@ export function createAccess(options: AccessOptions) {
       }
       // Lief parallel ein Ausschalten, gilt das Passwort; ein Code dazu wäre ein offenes Ende (Durchsicht PR 2, K2)
       if (code) dropCode()
+      // Ein offener Kopplungscode stammt aus der Zeit davor
+      pairing = null
       sessions.revokeAll()
       newSession(req, res)
       log('Das Passwort für Mietfuchs ist geändert; alle anderen Geräte sind abgemeldet.')
@@ -529,7 +611,90 @@ export function createAccess(options: AccessOptions) {
       const own = tokensOf(req).find((token) => sessions.check(token))
       if (own) sessions.revokeAllExcept(own)
       else sessions.revokeAll()
+      // Wer überall abmeldet, will auch keinen offenen Kopplungscode mehr; gekoppelte Fenster bleiben
+      pairing = null
       log('Alle anderen Geräte sind von Mietfuchs abgemeldet.')
+      res.json({ ok: true })
+    })
+
+    // ---------- Programmfenster koppeln (#528, Schritt 2) ----------
+    const noPassword = (res: Response): void => void res.status(409).json({ error: setting === 'off' ? 'Die Anmeldung ist über NKA_AUTH=off abgeschaltet.' : 'Legen Sie zuerst ein Passwort fest.' })
+    const notSignedIn = (res: Response): void => void res.status(401).json({ error: 'Bitte melden Sie sich an.', login: true })
+
+    // Ein Code für das Fenster, nur im Speicher und nie im Protokoll; ein neuer ersetzt den alten
+    app.post('/api/auth/pairing', json, (req, res) => {
+      checkReset()
+      if (setting === 'off' || state.mode !== 'password') return noPassword(res)
+      if (!mayManage(req)) return notSignedIn(res)
+      if (!tls) return res.status(409).json({ error: 'Mietfuchs antwortet hier nur über HTTP. Ohne HTTPS lässt sich kein Programmfenster koppeln.' })
+      pairing = { code: newSetupCode(), expiresAt: now() + pairingMs }
+      res.setHeader('Cache-Control', 'no-store')
+      res.json({ code: formatCode(pairing.code), expiresAt: new Date(pairing.expiresAt).toISOString() })
+    })
+
+    app.delete('/api/auth/pairing', (req, res) => {
+      checkReset()
+      if (!mayManage(req)) return notSignedIn(res)
+      pairing = null
+      res.json({ ok: true })
+    })
+
+    // Frei wie login: Der Beweis über Code und Zertifikat ist die Anmeldung. Der Code wird in derselben synchronen
+    // Prüfung verbraucht, in der er stimmt; zwei gleichzeitige Versuche bekommen so höchstens ein Gerät.
+    app.post('/api/auth/pair', json, async (req, res) => {
+      checkReset()
+      if ((req.socket as TLSSocket).encrypted !== true) return res.status(400).json({ error: 'Koppeln geht nur über eine verschlüsselte Verbindung.' })
+      if (setting === 'off' || state.mode !== 'password') return noPassword(res)
+      const full = (): void => void res.status(409).json({ error: `Es sind schon ${MAX_DEVICES} Programmfenster gekoppelt. Entfernen Sie zuerst eines in den Einstellungen unter „Anmeldung“.` })
+      if (devices.length >= MAX_DEVICES) return full()
+      const { name, proof } = bodyOf(req)
+      const ok = await attempt(req, res, 'pair', () => {
+        const open = pairing
+        if (!open || !tls || now() >= open.expiresAt || !sameProof(proof, pairingProof(open.code, tls.certSha256))) return false
+        pairing = null
+        return true
+      })
+      if (ok === null) return
+      if (!ok) return res.status(400).json({ error: 'Der Code stimmt nicht oder ist abgelaufen.' })
+      if (state.mode !== 'password') return noPassword(res)
+      if (devices.length >= MAX_DEVICES) return full()
+      const deviceKey = newDeviceKey()
+      const device: Device = { id: newDeviceId(), name: deviceName(name), keyHash: deviceKeyHash(deviceKey), pairedAt: new Date(now()).toISOString(), lastSeen: null }
+      try {
+        save(fileOf('password', state.hash ?? undefined, [...devices, device]))
+      } catch (err) {
+        logError(`Das Programmfenster ließ sich nicht koppeln: ${(err as Error).message}`)
+        return res.status(500).json({ error: `Das Programmfenster ließ sich nicht koppeln (${ACCESS_FILE} im Datenordner).` })
+      }
+      log(`Ein Programmfenster ist gekoppelt („${device.name}“).`)
+      res.setHeader('Cache-Control', 'no-store')
+      res.json({ id: device.id, deviceKey, version })
+    })
+
+    // Geräte gibt es nur mit Passwort; ohne antworten Liste und Entfernen wie das Koppeln
+    app.get('/api/auth/devices', (req, res) => {
+      checkReset()
+      if (setting === 'off' || state.mode !== 'password') return noPassword(res)
+      if (!mayManage(req)) return notSignedIn(res)
+      const current = deviceOf(req)
+      res.json({ devices: devices.map((d) => deviceInfo(d, current)) })
+    })
+
+    app.delete('/api/auth/devices/:id', (req, res) => {
+      checkReset()
+      if (setting === 'off' || state.mode !== 'password') return noPassword(res)
+      if (!mayManage(req)) return notSignedIn(res)
+      const id = String(req.params.id)
+      const removed = devices.find((d) => d.id === id)
+      if (!removed) return res.status(404).json({ error: 'Dieses Programmfenster ist nicht (mehr) gekoppelt.' })
+      try {
+        save(fileOf('password', state.hash ?? undefined, devices.filter((d) => d.id !== id)))
+      } catch (err) {
+        logError(`Das Programmfenster ließ sich nicht entfernen: ${(err as Error).message}`)
+        return res.status(500).json({ error: `Das Programmfenster ließ sich nicht entfernen (${ACCESS_FILE} im Datenordner).` })
+      }
+      seenAt.delete(id)
+      log(`Das Programmfenster „${removed.name}“ ist entfernt.`)
       res.json({ ok: true })
     })
   }
@@ -545,6 +710,10 @@ export function createAccess(options: AccessOptions) {
     install,
     startLines: (): readonly string[] => startLines,
     applyEnvPassword,
+    // Das Zertifikat entsteht oft erst nach dem Bau (index.ts); ab dann lässt sich koppeln
+    useTls: (next: { certSha256: string } | null): void => {
+      tls = next
+    },
     state: (): AccessState => state,
   }
 }
