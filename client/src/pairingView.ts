@@ -11,8 +11,9 @@ const dayOf = (iso: string): string => {
 }
 
 // „gültig bis 10:42 Uhr“ in der Ortszeit des Browsers
-export function expiresText(expiresAt: string, _now: Date): string {
+export function expiresText(expiresAt: string, now: Date): string {
   const d = new Date(expiresAt)
+  if (d.getTime() <= now.getTime()) return 'abgelaufen'
   return `gültig bis ${two(d.getHours())}:${two(d.getMinutes())} Uhr`
 }
 
@@ -31,4 +32,16 @@ export function pairingNote(info: AccessInfo): PairingNote {
   if (info.mode !== 'password') return { kind: 'note', text: NO_PASSWORD_NOTE }
   if (!info.pairing?.available) return { kind: 'note', text: NO_HTTPS_NOTE }
   return { kind: 'section' }
+}
+
+export const LOAD_FAILED = 'Die Liste der gekoppelten Fenster ließ sich nicht laden.'
+export const CODE_EXPIRED = 'Der Code ist abgelaufen.'
+export const REMOVE_TEXT = 'Dieses Programmfenster ist danach abgemeldet und muss neu gekoppelt werden.'
+export const REMOVE_CURRENT_TEXT = 'Sie arbeiten gerade in diesem Programmfenster. Danach ist es abgemeldet und muss neu gekoppelt werden.'
+
+// Die Adresse, die das andere Programmfenster eintragen soll: nur, wenn die Seite nicht über den eigenen Rechner
+// (localhost) geöffnet ist; dort wäre sie für den anderen Rechner wertlos.
+export function addressOf(host: string, hostname: string): string | null {
+  if (!host || ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname)) return null
+  return host
 }
