@@ -4,7 +4,7 @@
 
 // Was das Fenster über den Zugriff meldet. `addresses` sind die Adressen fürs Handy (http://<IPv4>:<port>), auch bei
 // ausgeschaltetem Zugriff; gezeigt werden sie nur, solange er an ist.
-export type NetworkState = { enabled: boolean; port: number; addresses: string[] }
+export type NetworkState = { enabled: boolean; port: number; addresses: string[]; remote?: boolean }
 
 // `set` startet den Server mit der neuen Adresse neu und ergibt den neuen Stand; danach lädt das Fenster die Seite neu.
 export type NetworkBridge = {
@@ -15,6 +15,8 @@ export type NetworkBridge = {
 export type DesktopBridge = {
   print?: () => Promise<unknown>
   network?: NetworkBridge
+  // Mietfuchs im Heimnetz (#528, desktopRemote.ts)
+  remote?: import('./desktopRemote').RemoteBridge
   // Umzug der Daten (#517, relocation.ts): der Ordner-Dialog des Systems, ergibt den gewählten Ordner oder null
   chooseFolder?: () => Promise<string | null>
   // Automatische Updates unter Windows (#517, desktopUpdater.ts)

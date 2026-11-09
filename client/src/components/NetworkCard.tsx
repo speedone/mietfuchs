@@ -63,6 +63,8 @@ export default function NetworkCard({ bridge }: { bridge: NetworkBridge }) {
     }
   }
 
+  // Mit einem Mietfuchs im Heimnetz verbunden gibt es hier nichts einzustellen (#528, Karte RemoteCard)
+  if (saved?.remote) return null
   return (
     <Card title="Zugriff aus dem Heimnetz" ref={card}>
       <p className="muted">Öffnen Sie Mietfuchs auch auf dem Handy, Tablet oder einem anderen Rechner im selben WLAN.</p>
