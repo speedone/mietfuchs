@@ -60,17 +60,15 @@ export function checkServerFolder(dir) {
 export const ARCHIVE_FOLDER = 'mietfuchs'
 
 /**
- * Die Dateien in einem asar-Archiv, aus seinem Kopf gelesen: ein Pickle mit der Länge des Kopfs, dann der Kopf als
- * Pickle mit einer Zeichenkette (JSON, Ordner als `files`). Ohne @electron/asar, das nur desktop/node_modules hat;
- * package-msix.mjs läuft ohne.
+ * Kopf und Beginn der Daten eines asar-Archivs: ein Pickle mit der Länge des Kopfs, dann der Kopf als Pickle mit einer
+ * Zeichenkette (JSON, Ordner als `files`), danach die Dateien hintereinander (Versatz ab dem Ende des Kopfs). Ohne
+ * @electron/asar, das nur desktop/node_modules hat; package-msix.mjs und desktop-check.mjs laufen ohne.
  * @param {string} file
- * @returns {{ path: string, unpacked: boolean, integrity: boolean }[]}
+ * @returns {{ header: any, dataStart: number }}
  */
-export function asarFiles(file) {
+function readAsar(file) {
   if (!fs.existsSync(file)) throw new Error(`${file} fehlt`)
   const fd = fs.openSync(file, 'r')
-  /** @type {any} */
-  let header
   try {
     const size = Buffer.alloc(8)
     const read = fs.readSync(fd, size, 0, 8, 0)
@@ -80,24 +78,77 @@ export function asarFiles(file) {
     fs.readSync(fd, pickle, 0, headerSize, 8)
     const length = pickle.readUInt32LE(4)
     if (length + 8 > headerSize) throw new Error('Kopf')
-    header = JSON.parse(pickle.toString('utf8', 8, 8 + length))
+    return { header: JSON.parse(pickle.toString('utf8', 8, 8 + length)), dataStart: 8 + headerSize }
   } catch {
     throw new Error(`${file} ist kein asar-Archiv`)
   } finally {
     fs.closeSync(fd)
   }
-  /** @type {{ path: string, unpacked: boolean, integrity: boolean }[]} */
+}
+
+/**
+ * Die Einträge eines asar-Kopfs als flache Liste
+ * @param {any} header
+ * @returns {{ path: string, unpacked: boolean, integrity: boolean, offset: number, size: number }[]}
+ */
+function asarEntries(header) {
+  /** @type {{ path: string, unpacked: boolean, integrity: boolean, offset: number, size: number }[]} */
   const files = []
   /** @param {any} dir @param {string} rel */
   const walk = (dir, rel) => {
     for (const [name, entry] of Object.entries(dir.files ?? {})) {
       const child = rel ? `${rel}/${name}` : name
-      if (/** @type {any} */ (entry).files) walk(entry, child)
-      else files.push({ path: child, unpacked: /** @type {any} */ (entry).unpacked === true, integrity: Boolean(/** @type {any} */ (entry).integrity) })
+      /** @type {any} */
+      const e = entry
+      if (e.files) walk(e, child)
+      else files.push({ path: child, unpacked: e.unpacked === true, integrity: Boolean(e.integrity), offset: Number(e.offset), size: Number(e.size) })
     }
   }
   walk(header, '')
   return files
+}
+
+/**
+ * Die Dateien in einem asar-Archiv, aus seinem Kopf gelesen.
+ * @param {string} file
+ * @returns {{ path: string, unpacked: boolean, integrity: boolean }[]}
+ */
+export function asarFiles(file) {
+  return asarEntries(readAsar(file).header).map(({ path: p, unpacked, integrity }) => ({ path: p, unpacked, integrity }))
+}
+
+/**
+ * Einen Ordner aus einem asar-Archiv holen, in derselben Anordnung (#528): desktop-check.mjs startet so den Server, den
+ * das installierte Fenster mitbringt, als Mietfuchs im Heimnetz. Gibt die geschriebenen Pfade relativ zu `target`
+ * zurück. Bricht ab bei einem entpackten Eintrag (er liegt nicht im Archiv), bei einem Namen, der aus dem Ordner führte,
+ * und wenn der Ordner fehlt.
+ * @param {string} archive
+ * @param {string} folder
+ * @param {string} target
+ * @returns {string[]}
+ */
+export function extractAsarFolder(archive, folder, target) {
+  const { header, dataStart } = readAsar(archive)
+  const prefix = `${folder}/`
+  const entries = asarEntries(header).filter((e) => e.path.startsWith(prefix))
+  if (!entries.length) throw new Error(`${folder}/ fehlt in ${archive}`)
+  const fd = fs.openSync(archive, 'r')
+  try {
+    return entries.map((entry) => {
+      const rel = entry.path.slice(prefix.length)
+      if (rel.split('/').some((part) => !part || part === '.' || part === '..' || part.includes('\\'))) throw new Error(`Unerlaubter Name im Archiv: ${entry.path}`)
+      if (entry.unpacked) throw new Error(`${entry.path} liegt entpackt neben ${archive}, nicht im Archiv`)
+      if (!Number.isSafeInteger(entry.offset) || !Number.isSafeInteger(entry.size) || entry.offset < 0 || entry.size < 0) throw new Error(`${entry.path}: kein Versatz im Archiv`)
+      const data = Buffer.alloc(entry.size)
+      if (fs.readSync(fd, data, 0, entry.size, dataStart + entry.offset) !== entry.size) throw new Error(`${entry.path}: Archiv zu kurz`)
+      const file = path.join(target, ...rel.split('/'))
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, data)
+      return rel
+    })
+  } finally {
+    fs.closeSync(fd)
+  }
 }
 
 /**

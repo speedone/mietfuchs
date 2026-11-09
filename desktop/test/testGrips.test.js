@@ -2,7 +2,7 @@
 // sie nicht mehr, und die Umgebung des Fensters gibt Testgriffe und Schalter ohne Schranke nicht an den Server weiter.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { loopbackUrl, testGripsAllowed } from '../src/testGrips.js'
+import { loopbackUrl, selftestPlan, testGripsAllowed } from '../src/testGrips.js'
 import { DEFAULT_PORT, quitDecision, serverEnv, startFailure, twinIn, rememberDataDir } from '../src/server.js'
 import { shouldOfferMove, updaterSource } from '../src/updater.js'
 
@@ -83,4 +83,34 @@ test('Beenden: ein zweites before-quit während des Beendens wartet, statt Elect
   assert.equal(quitDecision({ quitting: false, exiting: false }), 'begin')
   assert.equal(quitDecision({ quitting: true, exiting: false }), 'wait')
   assert.equal(quitDecision({ quitting: true, exiting: true }), 'allow')
+})
+
+// Die Selbstprüfung der Kopplung (#528, scripts/desktop-check.mjs): koppeln über die Brücke, trennen, beenden, das
+// Fenster verbergen oder ablegen und die Rückfrage beantworten. Alles nur mit beiden Schranken und einem Ordner für
+// die Ergebnisse, gekoppelt wird nur mit einem Server auf diesem Rechner.
+test('Selbstprüfung der Kopplung: nur mit beiden Schranken, nur auf diesen Rechner, Unbekanntes gilt nicht', () => {
+  const grips = { CI: '1', MIETFUCHS_TESTGRIFFE: '1', MIETFUCHS_SELFTEST_OUT: '/tmp/pruefung' }
+  const none = { out: '/tmp/pruefung', pair: null, disconnect: false, quit: false, window: null, trouble: null }
+  assert.deepEqual(selftestPlan(grips), none)
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_TESTGRIFFE: undefined }), null)
+  assert.equal(selftestPlan({ ...grips, CI: 'false' }), null)
+  assert.equal(selftestPlan({ CI: '1', MIETFUCHS_TESTGRIFFE: '1' }), null)
+
+  const pair = (/** @type {string} */ address) => selftestPlan({ ...grips, MIETFUCHS_SELFTEST_PAIR: JSON.stringify({ address, code: 'K7QM-4XPA-9TRW' }) })?.pair ?? null
+  assert.deepEqual(pair('127.0.0.1:4100'), { address: '127.0.0.1:4100', code: 'K7QM-4XPA-9TRW' })
+  assert.deepEqual(pair('[::1]:4100'), { address: '[::1]:4100', code: 'K7QM-4XPA-9TRW' })
+  assert.deepEqual(pair('localhost:4100'), { address: 'localhost:4100', code: 'K7QM-4XPA-9TRW' })
+  for (const elsewhere of ['nas:3001', '192.168.1.5:3001', 'localhost.example.org:3001', '127.0.0.1.example.org:3001', '']) assert.equal(pair(elsewhere), null, elsewhere)
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_PAIR: 'kein JSON' })?.pair, null)
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_PAIR: JSON.stringify({ address: '127.0.0.1:4100' }) })?.pair, null)
+
+  const full = selftestPlan({ ...grips, MIETFUCHS_SELFTEST_DISCONNECT: '1', MIETFUCHS_SELFTEST_QUIT: '1', MIETFUCHS_SELFTEST_WINDOW: 'minimized', MIETFUCHS_SELFTEST_TROUBLE: 'disconnect' })
+  assert.deepEqual(full, { ...none, disconnect: true, quit: true, window: 'minimized', trouble: 1 })
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_WINDOW: 'hidden' })?.window, 'hidden')
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_WINDOW: 'fullscreen' })?.window, null)
+  // Die Knöpfe der Rückfrage: Erneut versuchen, Verbindung trennen, Beenden
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_TROUBLE: 'retry' })?.trouble, 0)
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_TROUBLE: 'quit' })?.trouble, 2)
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_TROUBLE: 'ok' })?.trouble, null)
+  assert.equal(selftestPlan({ ...grips, MIETFUCHS_SELFTEST_DISCONNECT: 'true' })?.disconnect, false)
 })

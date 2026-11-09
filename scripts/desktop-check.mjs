@@ -10,6 +10,12 @@
 //   6. Umzug der Daten: Der Bestand aus 1. liegt wie bei der bisherigen Programmdatei in `data/` neben ihr im
 //      Download-Ordner eines nachgestellten Benutzerordners; das Fenster findet ihn mit leerem Datenordner über die
 //      Suche dieses Systems und übernimmt ihn.
+//   7. Mietfuchs im Heimnetz (#528): Der Server, den das Fenster in seiner app.asar mitbringt, läuft als Gegenstelle
+//      mit Passwort und HTTPS (unter Node, auf `::`). Das Fenster koppelt über die Brücke seiner Seite, wie die Karte,
+//      und lädt die Seite über HTTPS mit dem Geräteschlüssel; nach einem Neustart ist es weiter verbunden, Trennen
+//      startet den eigenen Server. Dazu die Kopfzeile mit dem Geräteschlüssel unter [::1] und localhost, und ein
+//      anderes Zertifikat unter derselben Adresse: Das Laden scheitert (did-fail-load), die Rückfrage nennt den Grund
+//      und zeigt das Fenster, auch wenn es verborgen oder abgelegt war (Selbstprüfung in main.js, testGrips.js).
 //
 // Der Server läuft als utilityProcess des Fensters (desktop/src/main.js); seine PID nennt die Selbstprüfung. In 4. und
 // 5. muss dieser Prozess weg sein, nicht nur der Port frei.
@@ -23,6 +29,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ARCHIVE_FOLDER, extractAsarFolder } from './package-desktop.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -116,7 +123,8 @@ if (ready) {
 
   let smoke = 0
   try {
-    execFileSync(process.execPath, [path.join(root, 'scripts', 'smoke-test.mjs'), '--url', `http://127.0.0.1:${PORT}`, '--mode', 'desktop'], { stdio: 'inherit' })
+    // Mit dem Datenordner fragt smoke-test.mjs /healthz auch über HTTPS, gegen das Zertifikat dort (#528)
+    execFileSync(process.execPath, [path.join(root, 'scripts', 'smoke-test.mjs'), '--url', `http://127.0.0.1:${PORT}`, '--mode', 'desktop', '--data-dir', first.dataDir], { stdio: 'inherit' })
   } catch (err) {
     smoke = /** @type {any} */ (err).status ?? 1
   }
@@ -194,6 +202,200 @@ if (await until(() => fs.existsSync(path.join(moving.selftest, 'fenster.json')),
 }
 fs.writeFileSync(path.join(out, 'umzug.log'), moving.output())
 for (const dir of [first.dataDir, crash.dataDir, moving.dataDir, home]) fs.rmSync(dir, { recursive: true, force: true })
+
+// ---------- 7.: Mietfuchs im Heimnetz (#528) ----------
+const CLOSED_URL = 'http://127.0.0.1:9/kein-internet-im-test'
+const PASSWORD = 'ein langes Prüfpasswort'
+/** @param {string} file */
+const readJson = (file) => /** @type {any} */ (JSON.parse(fs.readFileSync(file, 'utf8')))
+/** @param {string} file @param {number} ms */
+const appears = (file, ms) => until(() => fs.existsSync(file), ms)
+
+// fenster.json des Fensters (userData, main.js): Die Kopplung steht dort; was vorher darin stand, kommt am Ende zurück
+const settingsPath = path.join(
+  process.platform === 'win32' ? process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
+    : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support')
+      : process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'),
+  'mietfuchs-fenster', 'fenster.json')
+const settingsBefore = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath) : null
+const pairedInSettings = () => (fs.existsSync(settingsPath) ? readJson(settingsPath).remote ?? null : null)
+
+// Der Server des Fensters aus seiner app.asar (Windows resources, macOS Contents/Resources), sonst der aus dem Repo
+// (ein Fenster aus den Quellen, dann braucht server/ seine Abhängigkeiten)
+function remoteServerModule() {
+  const appPath = /** @type {string} */ (app)
+  const archive = [path.join(path.dirname(appPath), 'resources', 'app.asar'), path.join(path.dirname(appPath), '..', 'Resources', 'app.asar')].find((f) => fs.existsSync(f))
+  if (!archive) return path.join(root, 'server', 'src', 'index.ts')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-gegenstelle-'))
+  extractAsarFolder(archive, ARCHIVE_FOLDER, dir)
+  return path.join(dir, 'server', 'server.mjs')
+}
+
+// Lauscht dieser Rechner unter ::1? Dann auch die Gegenstelle auf `::` (beide Familien), sonst nur IPv4
+const ipv6 = await new Promise((resolve) => {
+  const probe = net.createServer()
+  probe.once('error', () => resolve(false))
+  probe.listen(0, '::1', () => probe.close(() => resolve(true)))
+})
+const remotePort = await new Promise((resolve) => {
+  const probe = net.createServer()
+  probe.listen(0, '127.0.0.1', () => {
+    const { port } = /** @type {net.AddressInfo} */ (probe.address())
+    probe.close(() => resolve(port))
+  })
+})
+const remoteBase = `http://127.0.0.1:${remotePort}`
+const serverModule = remoteServerModule()
+
+/**
+ * Die Gegenstelle: frischer Datenordner, Passwort über den Einrichtungscode, Sitzung für Code und Geräteliste. Die drei
+ * Angaben jedes Prüfstarts (Datenordner, CI, Update-Adresse ins Leere); CI hinter allem anderen.
+ * @param {string} name
+ */
+async function startRemote(name) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-gegenstelle-daten-'))
+  /** @type {NodeJS.ProcessEnv} */
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NKA_') && !key.startsWith('MIETFUCHS_')))
+  const child = spawn(process.execPath, [serverModule], {
+    cwd: path.dirname(serverModule),
+    env: { ...env, NKA_DATA_DIR: dataDir, NKA_PORT: String(remotePort), NKA_HOST: ipv6 ? '::' : '0.0.0.0', NKA_UPDATE_URL: CLOSED_URL, CI: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  child.stdout.on('data', (c) => { output += c })
+  child.stderr.on('data', (c) => { output += c })
+  const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)))
+  const stop = async () => {
+    child.kill()
+    await exitWithin(exited, 15_000)
+    fs.writeFileSync(path.join(out, `${name}.log`), output)
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+  /** @type {any} */
+  let health = null
+  await until(async () => {
+    health = await fetch(`${remoteBase}/healthz`).then((r) => r.json()).catch(() => null)
+    return health?.tls === true
+  }, 60_000)
+  const codeFile = path.join(dataDir, 'einrichtungscode.txt')
+  const setup = health?.tls === true && fs.existsSync(codeFile)
+    ? await fetch(`${remoteBase}/api/auth/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: fs.readFileSync(codeFile, 'utf8').trim(), password: PASSWORD }) })
+    : null
+  const cookie = setup?.headers.get('set-cookie')?.split(';')[0] ?? ''
+  const ready = health?.tls === true && setup?.status === 200 && cookie.startsWith('mietfuchs_')
+  /** @param {string} urlPath @param {RequestInit} [init] */
+  const signed = (urlPath, init = {}) => fetch(`${remoteBase}${urlPath}`, { ...init, headers: { ...(/** @type {Record<string, string>} */ (init.headers ?? {})), cookie } })
+  const pairingCode = async () => /** @type {any} */ (await (await signed('/api/auth/pairing', { method: 'POST' })).json())?.code ?? ''
+  const devices = async () => /** @type {any} */ (await (await signed('/api/auth/devices')).json())?.devices ?? null
+  return { ready, health, setupStatus: setup?.status ?? null, dataDir, pairingCode, devices, stop }
+}
+
+/**
+ * Ein Fenster, das koppelt (über die Brücke seiner Seite) und auf Wunsch gleich wieder trennt, dann endet es selbst.
+ * @param {string} name
+ * @param {string} address
+ * @param {string} code
+ * @param {boolean} disconnect
+ */
+async function pairWindow(name, address, code, disconnect) {
+  const run = launch(name, { MIETFUCHS_SELFTEST_PAIR: JSON.stringify({ address, code }), MIETFUCHS_SELFTEST_QUIT: '1', ...(disconnect ? { MIETFUCHS_SELFTEST_DISCONNECT: '1' } : {}) })
+  const file = path.join(run.selftest, 'kopplung.json')
+  const paired = (await appears(file, 120_000)) ? readJson(file) : null
+  const unpaired = disconnect && (await appears(path.join(run.selftest, 'trennen.json'), 60_000)) ? readJson(path.join(run.selftest, 'trennen.json')) : null
+  const code0 = await exitWithin(run.exited, 30_000)
+  if (code0 === 'läuft noch') run.child.kill()
+  fs.writeFileSync(path.join(out, `${name}.log`), run.output())
+  fs.rmSync(run.dataDir, { recursive: true, force: true })
+  return { paired, unpaired, code: code0 }
+}
+
+const httpsOrigin = (/** @type {string} */ host) => `https://${host}:${remotePort}`
+try {
+  let remote = await startRemote('gegenstelle')
+  check(remote.ready, `Kopplung: Gegenstelle mit HTTPS und Passwort (${serverModule}, tls ${remote.health?.tls}, Einrichtung ${remote.setupStatus})`)
+  if (remote.ready) {
+    // 7a. Koppeln über die Brücke, die Seite über HTTPS mit dem Geräteschlüssel
+    const a = await pairWindow('kopplung', `127.0.0.1:${remotePort}`, await remote.pairingCode(), false)
+    report.pairing = a.paired
+    check(a.paired?.result?.ok === true, `Kopplung: über die Brücke gekoppelt (${JSON.stringify(a.paired?.result)})`)
+    check(a.paired?.loaded === true && String(a.paired?.url).startsWith(`${httpsOrigin('127.0.0.1')}/`), `Kopplung: die Seite des Servers über HTTPS geladen (${a.paired?.url})`)
+    check(a.paired?.access?.signedIn === true && a.paired?.access?.mode === 'password', 'Kopplung: Die Seite trägt den Geräteschlüssel (angemeldet mit Passwort am Server)')
+    check(a.paired?.serverPid === null, 'Kopplung: Der eigene Server ist beendet')
+    check(a.paired?.state?.connected === true && a.paired?.state?.origin === httpsOrigin('127.0.0.1'), `Kopplung: Die Karte sieht die Verbindung (${JSON.stringify(a.paired?.state)})`)
+    check(a.code === 0, `Kopplung: Fenster endet mit 0 (${a.code})`)
+    check(pairedInSettings()?.origin === httpsOrigin('127.0.0.1'), 'Kopplung: in fenster.json gemerkt')
+    check((await remote.devices())?.length === 1, 'Kopplung: Der Server führt das Fenster in der Geräteliste')
+
+    // 7b. Neustart: weiter verbunden; Trennen über die Brücke der gekoppelten Seite startet den eigenen Server
+    const again = launch('kopplung-neustart', { MIETFUCHS_SELFTEST_DISCONNECT: '1', MIETFUCHS_SELFTEST_QUIT: '1' })
+    const startFile = path.join(again.selftest, 'fenster.json')
+    const started = (await appears(startFile, 120_000)) ? readJson(startFile) : null
+    check(started?.origin === httpsOrigin('127.0.0.1') && started?.serverPid === null, `Neustart: verbunden mit ${started?.origin}, ohne eigenen Server`)
+    check(started?.access?.signedIn === true, 'Neustart: Die Seite trägt den Geräteschlüssel')
+    const endFile = path.join(again.selftest, 'trennen.json')
+    const ended = (await appears(endFile, 120_000)) ? readJson(endFile) : null
+    check(ended?.loaded === true && ended?.origin === `http://127.0.0.1:${PORT}` && ended?.remote === null, `Trennen: zurück zur eigenen Seite (${ended?.origin})`)
+    check(typeof ended?.serverPid === 'number' && ended?.access?.window === true, `Trennen: Der eigene Server läuft wieder (PID ${ended?.serverPid}, Fensterschlüssel)`)
+    const againCode = await exitWithin(again.exited, 30_000)
+    check(againCode === 0, `Trennen: Fenster endet mit 0 (${againCode})`)
+    if (againCode === 'läuft noch') again.child.kill()
+    check(await until(portFree, 15_000), 'Trennen: Danach ist der Port des eigenen Servers frei')
+    fs.writeFileSync(path.join(out, 'kopplung-neustart.log'), again.output())
+    fs.rmSync(again.dataDir, { recursive: true, force: true })
+    check(pairedInSettings() === null, 'Trennen: Die Kopplung ist aus fenster.json entfernt')
+    check((await remote.devices())?.length === 0, 'Trennen: Das Fenster hat sich am Server entfernt')
+
+    // 7c. Die Kopfzeile mit dem Geräteschlüssel unter einer IPv6-Adresse und unter einem Namen (Filter von
+    // onBeforeSendHeaders auf den Ursprung)
+    for (const [name, host, address] of /** @type {const} */ ([['kopplung-ipv6', '[::1]', `[::1]:${remotePort}`], ['kopplung-name', 'localhost', `localhost:${remotePort}`]])) {
+      if (host === '[::1]' && !ipv6) {
+        console.log('  - IPv6 übersprungen: Dieser Rechner lauscht nicht unter ::1')
+        continue
+      }
+      const v = await pairWindow(name, address, await remote.pairingCode(), true)
+      check(v.paired?.loaded === true && String(v.paired?.url).startsWith(`${httpsOrigin(host)}/`), `${host}: Seite über HTTPS geladen (${v.paired?.url ?? JSON.stringify(v.paired?.result)})`)
+      check(v.paired?.access?.signedIn === true, `${host}: Die Seite trägt den Geräteschlüssel`)
+      check(v.unpaired?.loaded === true && v.code === 0, `${host}: getrennt, Fenster endet mit 0 (${v.code})`)
+    }
+
+    // 7d. Ein anderes Zertifikat unter derselben Adresse (der Server neu eingerichtet): Das Laden scheitert, die
+    // Rückfrage nennt den Grund und zeigt das Fenster, verborgen wie abgelegt
+    const d = await pairWindow('kopplung-zertifikat', `127.0.0.1:${remotePort}`, await remote.pairingCode(), false)
+    check(d.paired?.loaded === true && d.code === 0, 'Zertifikat: gekoppelt')
+    await remote.stop()
+    remote = await startRemote('gegenstelle-neu')
+    check(remote.ready, 'Zertifikat: Gegenstelle mit neuem Zertifikat unter derselben Adresse')
+    for (const [name, windowState, answer] of /** @type {const} */ ([['zertifikat-verborgen', 'hidden', 'quit'], ['zertifikat-abgelegt', 'minimized', 'disconnect']])) {
+      // „Verbindung trennen“ startet den eigenen Server auf seinem Port; der muss frei sein
+      await until(portFree, 15_000)
+      const run = launch(name, { MIETFUCHS_SELFTEST_WINDOW: windowState, MIETFUCHS_SELFTEST_TROUBLE: answer })
+      const file = path.join(run.selftest, 'rueckfrage.json')
+      const trouble = (await appears(file, 120_000)) ? readJson(file) : null
+      report[name] = trouble
+      check(trouble?.reason === 'cert', `${name}: Die Rückfrage nennt das andere Zertifikat (${JSON.stringify(trouble)})`)
+      check(typeof trouble?.errorCode === 'number' && trouble.errorCode !== -3, `${name}: Das Laden scheitert mit did-fail-load (${trouble?.errorCode}), nicht als Abbruch`)
+      check(trouble?.visible === true && trouble?.minimized === false, `${name}: Das Fenster ist zur Rückfrage zu sehen`)
+      if (answer === 'disconnect') {
+        // „Verbindung trennen“: zurück zum eigenen Server, beendet aus der Oberfläche
+        const own = await until(async () => /** @type {any} */ (await fetch(`http://127.0.0.1:${PORT}/healthz`).then((r) => r.json()).catch(() => null))?.app === 'mietfuchs', 60_000)
+        check(own, `${name}: „Verbindung trennen“ startet den eigenen Server`)
+        await fetch(`http://127.0.0.1:${PORT}/api/quit`, { method: 'POST' }).catch(() => {})
+        check(pairedInSettings() === null, `${name}: Die Kopplung ist aus fenster.json entfernt`)
+      }
+      const code = await exitWithin(run.exited, 30_000)
+      check(code === 0, `${name}: Fenster endet mit 0 (${code})`)
+      if (code === 'läuft noch') run.child.kill()
+      fs.writeFileSync(path.join(out, `${name}.log`), run.output())
+      fs.rmSync(run.dataDir, { recursive: true, force: true })
+    }
+  }
+  await remote.stop()
+} finally {
+  // Was vorher in fenster.json stand, ohne Kopplung aus dieser Prüfung
+  if (settingsBefore) fs.writeFileSync(settingsPath, settingsBefore)
+  else fs.rmSync(settingsPath, { force: true })
+  if (serverModule.startsWith(os.tmpdir())) fs.rmSync(path.dirname(path.dirname(serverModule)), { recursive: true, force: true })
+}
 
 report.failures = failures
 fs.writeFileSync(path.join(out, 'bericht.json'), `${JSON.stringify(report, null, 2)}\n`)

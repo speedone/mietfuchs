@@ -222,7 +222,8 @@ async function fingerprint() {
 async function prepareData(label, dataDir) {
   let smoke = 0
   try {
-    execFileSync(process.execPath, [path.join(root, 'scripts', 'smoke-test.mjs'), '--url', BASE, '--mode', 'desktop', '--version', v1], { stdio: 'inherit' })
+    // Mit dem Datenordner fragt smoke-test.mjs /healthz auch über HTTPS, gegen das Zertifikat dort (#528)
+    execFileSync(process.execPath, [path.join(root, 'scripts', 'smoke-test.mjs'), '--url', BASE, '--mode', 'desktop', '--version', v1, '--data-dir', dataDir], { stdio: 'inherit' })
   } catch (err) {
     smoke = /** @type {any} */ (err).status ?? 1
   }
