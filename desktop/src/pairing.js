@@ -410,8 +410,9 @@ export async function pair({ address, code, name = deviceNameOf(os.hostname()), 
   }
   /** @type {Preflight | null} */
   const preflight = answer.status === 200 ? jsonOr(answer.body) : null
-  // Die Host-Prüfung von Mietfuchs (requestGuard.ts) lehnt den Namen ab: 403 mit ihrem Satz als Text
-  if (answer.status === 403 && /^text\/plain\b/i.test(String(answer.headers['content-type'] ?? '')) && answer.body.trim()) {
+  // Die Host-Prüfung von Mietfuchs (requestGuard.ts) lehnt den Namen ab: 403 mit ihrem Satz als Text. Nur dieser Satz
+  // (er nennt NKA_ALLOWED_HOSTS) geht weiter, der Text eines fremden Servers nicht
+  if (answer.status === 403 && /^text\/plain\b/i.test(String(answer.headers['content-type'] ?? '')) && answer.body.includes('NKA_ALLOWED_HOSTS')) {
     return { problem: answer.body.trim().slice(0, 500), field: 'address' }
   }
   if (!preflight || typeof preflight !== 'object' || preflight.app !== 'mietfuchs') return notMietfuchs

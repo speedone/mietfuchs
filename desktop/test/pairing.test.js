@@ -581,6 +581,18 @@ test('Host-Prüfung: 403 mit Text steht am Feld Adresse, sonst bleibt es bei „
     assert.equal(result.field, 'address')
   } finally {
     html.close()
+  }  // Ein fremder Server mit „Forbidden“ als Text: dessen Text gibt das Fenster nicht weiter
+  const plain = await fakeBehindProxy((req, res) => {
+    res.writeHead(403, { 'content-type': 'text/plain' })
+    res.end('Forbidden')
+  })
+  try {
+    const result = await pair({ address: plain.origin, code: 'AAAA-AAAA-AAAA', name: 'Laptop', ca: plain.ca })
+    assert.ok('problem' in result)
+    assert.match(result.problem, /kein Mietfuchs/)
+    assert.equal(result.field, 'address')
+  } finally {
+    plain.close()
   }
 })
 
