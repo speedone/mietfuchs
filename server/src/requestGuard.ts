@@ -51,6 +51,12 @@ function allowedName(name: string, extraHosts: string[]): boolean {
   return listed(name, extraHosts)
 }
 
+// Besteht ein Name die Prüfung des Hosts? Ohne Prüfung (Docker und npm ohne NKA_ALLOWED_HOSTS, „*“) jeder. Auch für den
+// Ursprung, den ein vertrauter Proxy beim Koppeln weiterreicht (#528, Durchsicht I2): Reicht ein Proxy den Wert eines
+// Clients durch oder nimmt er jede Adresse an, gilt mit einer Liste nur ein Name, unter dem Mietfuchs ohnehin antwortet.
+export const hostAllowed = (hostname: string, policy: GuardPolicy): boolean =>
+  !policy.enabled || allowedName(hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, ''), policy.extraHosts)
+
 const READ_ONLY = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 export type GuardRequest = { method: string, host?: string, origin?: string, secFetchSite?: string }

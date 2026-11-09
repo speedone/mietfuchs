@@ -95,7 +95,7 @@ import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './vers
 import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
-import { checkRequest, guardPolicy } from './requestGuard.ts'
+import { checkRequest, guardPolicy, hostAllowed } from './requestGuard.ts'
 import { authSetting, fromThisComputer as fromThisComputerAt, readEnvPassword } from './access.ts'
 import { createProxyTrust } from './trustProxy.ts'
 import { createAccess } from './accessServer.ts'
@@ -190,6 +190,7 @@ const ACCESS = createAccess({
   envPassword: ENV_PASSWORD,
   version: APP_VERSION,
   trustProxy: PROXY_TRUST,
+  originAllowed: (hostname) => hostAllowed(hostname, GUARD),
   // Testgriff: verkürzt die Gültigkeit eines Kopplungscodes (sonst 10 Minuten); das Fenster löscht NKA_TEST_*
   ...(Number(process.env.NKA_TEST_PAIRING_SECONDS) > 0 ? { pairingSeconds: Number(process.env.NKA_TEST_PAIRING_SECONDS) } : {}),
   // Das Zertifikat kommt erst unten (vor dem Binden gelesen oder danach erzeugt) über `useTls`

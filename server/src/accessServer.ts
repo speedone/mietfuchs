@@ -33,6 +33,9 @@ export type AccessOptions = {
   tls?: { certSha256: string } | null
   // NKA_TRUST_PROXY (trustProxy.ts): Peers, deren Proxy-Kopfzeilen für den Kanal zählen. Fehlt = keinem vertraut.
   trustProxy?: ProxyTrust
+  // Darf ein weitergereichter Ursprung mit diesem Namen einen Beweis binden? Dieselbe Regel wie die Prüfung des Hosts
+  // (`hostAllowed` in requestGuard.ts); fehlt = jeder Name (Durchsicht I2)
+  originAllowed?: (hostname: string) => boolean
   // Version für die Antwort von `pair` (das Fenster vergleicht sie mit seiner)
   version?: string
   // Gültigkeit eines Kopplungscodes; kürzer nur im Testgriff NKA_TEST_PAIRING_SECONDS
@@ -91,6 +94,7 @@ export function createAccess(options: AccessOptions) {
   const pairingMs = (options.pairingSeconds ?? PAIRING_MINUTES * 60) * 1000
   let tls = options.tls ?? null
   const trustProxy = options.trustProxy ?? NO_PROXY
+  const originAllowed = options.originAllowed ?? (() => true)
   // Kanal je Anfrage, einmal in der Vorschaltung bestimmt (dort wird ein Name aus NKA_TRUST_PROXY bei Bedarf aufgelöst)
   const channels = new WeakMap<Request, { channel: Channel, origin: string | null }>()
   const allowedHosts = (options.allowedHosts ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h && h !== '*')
@@ -694,7 +698,9 @@ export function createAccess(options: AccessOptions) {
         const open = pairing
         if (!open || now() >= open.expiresAt) return false
         // Jeder erwartete Beweis wird verglichen, zeitkonstant, auch wenn schon einer passt
-        const matches = expectedProofs(open.code, channel, tls?.certSha256 ?? null, origin).map((expected) => sameProof(proof, expected))
+        // Ein Ursprung, dessen Name die Prüfung des Hosts nicht besteht, bindet nichts (Durchsicht I2)
+        const bound = origin !== null && originAllowed(new URL(origin).hostname) ? origin : null
+        const matches = expectedProofs(open.code, channel, tls?.certSha256 ?? null, bound).map((expected) => sameProof(proof, expected))
         if (!matches.includes(true)) return false
         pairing = null
         return true

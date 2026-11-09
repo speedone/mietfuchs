@@ -306,11 +306,16 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
 - **Kopplung über einen Proxy** (Entwurf docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md, Abschnitt 3):
   - **`NKA_TRUST_PROXY`** ([trustProxy.ts](trustProxy.ts)): mit Komma getrennt IP-Adressen (v4, v6), Netze in CIDR und
     Namen (`caddy` in compose.caddy.yml). `*`, `true` und Zahlen (Sprünge wie bei Express) vertrauen jedem und gelten
-    nicht, ein unbekannter Eintrag ebenso; beides eine Zeile auf der Fehlerausgabe beim Start, kein Abbruch. Adressen
+    nicht, ebenso Netze unter /8 (IPv4) bzw. /32 (IPv6), die übrigen Schlüsselwörter von Express (`loopback`,
+    `uniquelocal`, `linklocal`, `false`; die Zeile sagt, was stattdessen gilt) und ein unbekannter Eintrag; je eine
+    Zeile auf der Fehlerausgabe beim Start, kein Abbruch. Adressen
     prüft `net.BlockList` (`::ffff:a.b.c.d` als `a.b.c.d`). **Namen** löst `dns.promises.lookup` erst bei der ersten
     Anfrage mit Proxy-Kopfzeilen auf (Caddy startet nach Mietfuchs), nie beim Start und nie für eine Anfrage ohne; das
     Ergebnis gilt 60 s (`NAME_TTL_MS`), eine Adresse außerhalb löst höchstens alle 5 s neu auf (`MISS_RETRY_MS`, ein neu
-    erstellter Container), eine Auflösung zugleich. Nicht auflösbar heißt keine Adresse und eine Zeile beim ersten Mal
+    erstellter Container), eine Auflösung zugleich, höchstens 2 s (`LOOKUP_TIMEOUT_MS`); eine Adresse aus dem frischen
+    Ergebnis wartet nicht auf eine laufende Auflösung. Ein Name ohne Punkt wird absolut gefragt (`caddy.`), damit die
+    Suchliste des Systems nicht `caddy.fritz.box` daraus macht; Docker beantwortet `caddy.` in seinem DNS (127.0.0.11)
+    wie `caddy` (nachgemessen mit Docker 29, glibc und musl). Nicht auflösbar heißt keine Adresse und eine Zeile beim ersten Mal
     (wieder, wenn er sich dazwischen aufgelöst hatte). Warum Namen statt Netze: Docker wählt das Netz von Compose
     zufällig, ein weites CIDR schlösse Geräte im Heimnetz ein. Außerhalb von Docker IP-Adressen; ein Proxy auf
     demselben Rechner heißt `127.0.0.1,::1` (ein Wort `loopback` gibt es nicht).
@@ -335,12 +340,20 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     Proxy meldet kein HTTPS. Tragen Sie den Proxy in NKA_TRUST_PROXY ein.“ (mit Proxy-Kopfzeilen) bzw. „Koppeln geht
     nur über eine verschlüsselte Verbindung.“ Jeder erwartete Beweis wird verglichen (`sameProof`, zeitkonstant), auch
     wenn einer schon passt. Ein Beweis mit Ursprung gilt nie direkt über TLS, und nie für einen anderen Ursprung als
-    den weitergereichten. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
-  - **Restrisiko**: Ein Caddy, der jede Adresse annimmt (ein Block `:443` für alles, `on_demand`), reicht auch einen
-    fremden Namen als `X-Forwarded-Host` weiter; ein Angreifer mit eigenem gültigen Zertifikat für diesen Namen, der
-    den Nutzer dorthin lockt und den Code bekommt, könnte dann koppeln. Das Caddyfile im Repo nennt die Adressen
-    ausdrücklich; die Doku für Nutzer sagt, es so zu halten.
-  - Geprüft in trustProxy.test.ts (Namen mit eingeschobenem `lookup` und eigener Uhr), access.test.ts (Tabelle des
+    den weitergereichten. Mit einer Prüfung des Hosts (`NKA_ALLOWED_HOSTS`, im Fenster und in der Programmdatei immer)
+    bindet ein Ursprung nur, wenn sein Name sie besteht (`hostAllowed` in requestGuard.ts, `originAllowed` an
+    `createAccess`); ohne Prüfung jeder. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
+  - **Restrisiko**: Die Bindung an den Ursprung ist nur so gut wie der `X-Forwarded-Host`, den der Proxy meldet. Jeder
+    Proxy, der den Wert eines Clients durchreicht oder einen Block für jede Adresse hat (Caddy `:443` für alles,
+    `on_demand`; nginx `default_server` ohne `server_name`), reicht auch einen fremden Namen weiter; ein Angreifer mit
+    eigenem gültigen Zertifikat für diesen Namen, der den Nutzer dorthin lockt und den Code bekommt, könnte dann
+    koppeln. Caddy überschreibt `X-Forwarded-Host` eines nicht vertrauten Clients (vor dem Entwurf gesehen: geschicktes
+    `evil` kam als `localhost:8443` an). nginx braucht `proxy_set_header X-Forwarded-Host $host;` und einen
+    ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein Name, unter dem
+    Mietfuchs ohnehin antwortet (oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
+    `NKA_ALLOWED_HOSTS` (PR 3).
+  - Geprüft in trustProxy.test.ts (Namen mit eingeschobenem `lookup` und eigener Uhr), requestGuard.test.ts
+    (`hostAllowed`), access.test.ts (Tabelle des
     Kanals, Beweise, kein `trusts` ohne Proxy-Kopfzeilen) und api-kopplung-proxy.test.ts gegen einen Proxy wie Caddy
     mit eigener CA ([server/testing/proxy.ts](../testing/proxy.ts): `createTestCa`, `startTestProxy`; `forwarded`
     überschreibt `X-Forwarded-Proto`/`-Host`, `null` lässt weg).

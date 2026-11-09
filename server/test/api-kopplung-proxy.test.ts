@@ -288,3 +288,25 @@ test('Proxy: ein Name in NKA_TRUST_PROXY wird bei der ersten Anfrage über den P
     s.stop()
   }
 })
+
+// Durchsicht PR 1 (I2): Die Bindung an den Ursprung hängt sonst daran, dass der Proxy X-Forwarded-Host selbst setzt.
+// Ein Proxy, der den Wert eines Clients durchreicht oder jede Adresse annimmt, gäbe einen fremden Namen weiter. Mit
+// einer Liste von Namen (NKA_ALLOWED_HOSTS, dieselbe Regel wie die Host-Prüfung) gilt nur ein Ursprung, der dort besteht.
+test('Proxy: mit NKA_ALLOWED_HOSTS gilt ein Beweis mit Ursprung nur für einen erlaubten Namen', async () => {
+  const { s, cookie } = await serverWithPassword({ NKA_TRUST_PROXY: LOCAL_PROXY, NKA_ALLOWED_HOSTS: 'nas.example' })
+  const { caCert, leaf } = await createTestCa()
+  const foreign = await startTestProxy({ target: s.base, tls: leaf, forwarded: { host: 'andere.example' } })
+  const listed = await startTestProxy({ target: s.base, tls: leaf, forwarded: { host: 'nas.example' } })
+  try {
+    const code = await newCode(s, cookie)
+    const wrong = await httpsFetch(foreign.origin, '/api/auth/pair', { method: 'POST', body: pairBody(originProof(code, 'https://andere.example')), ca: caCert })
+    assert.equal(wrong.status, 400, wrong.body)
+    assert.deepEqual(JSON.parse(wrong.body), { error: WRONG_CODE })
+    const right = await httpsFetch(listed.origin, '/api/auth/pair', { method: 'POST', body: pairBody(originProof(code, 'https://nas.example')), ca: caCert })
+    assert.equal(right.status, 200, right.body)
+  } finally {
+    await foreign.close()
+    await listed.close()
+    s.stop()
+  }
+})

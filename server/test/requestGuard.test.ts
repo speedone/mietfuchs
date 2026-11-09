@@ -4,7 +4,7 @@
 // Reverse-Proxy mit eigener Domain davor, der den Host auch umschreiben kann.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkRequest, guardPolicy, type GuardPolicy } from '../src/requestGuard.ts'
+import { checkRequest, guardPolicy, hostAllowed, type GuardPolicy } from '../src/requestGuard.ts'
 
 const local: GuardPolicy = guardPolicy('binary', {})
 
@@ -95,4 +95,16 @@ test('Host: ein Schlusspunkt am Namen ändert nichts', () => {
   assert.equal(checkRequest({ method: 'GET', host: 'localhost.:3001' }, local), null)
   assert.equal(checkRequest({ method: 'GET', host: 'pi.fritz.box.:3001' }, local), null)
   assert.ok(checkRequest({ method: 'GET', host: 'angreifer.example.com.' }, local))
+})
+
+// Der Ursprung, den ein vertrauter Proxy beim Koppeln weiterreicht, besteht dieselbe Regel wie der Host (#528, I2)
+test('Ursprung der Kopplung: dieselbe Regel wie der Host, ohne Prüfung jeder Name', () => {
+  const listed = guardPolicy('docker', { NKA_ALLOWED_HOSTS: 'nas.example' })
+  assert.equal(hostAllowed('nas.example', listed), true)
+  assert.equal(hostAllowed('NAS.example.', listed), true)
+  assert.equal(hostAllowed('andere.example', listed), false)
+  assert.equal(hostAllowed('nas.fritz.box', listed), true)
+  assert.equal(hostAllowed('[::1]', listed), true)
+  assert.equal(hostAllowed('andere.example', guardPolicy('docker', {})), true)
+  assert.equal(hostAllowed('andere.example', guardPolicy('docker', { NKA_ALLOWED_HOSTS: '*' })), true)
 })
