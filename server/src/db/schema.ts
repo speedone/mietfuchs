@@ -125,7 +125,7 @@ const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
 const AI_SLOT_NAMES = exactly<AiSlotName>()(['text', 'images'] as const)
 // Die Bausteine des Anschreibens und die Wahl der Anpassung (#415); Beschriftungen in shared/letter.ts.
-export const LETTER_BLOCKS = exactly<LetterBlock>()(['subject', 'salutation', 'intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing', 'greeting', 'signature'] as const)
+export const LETTER_BLOCKS = exactly<LetterBlock>()(['subject', 'salutation', 'intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing', 'greeting', 'signature', 'paymentPurpose'] as const)
 export const LETTER_ADJUSTMENT_MODES = exactly<LetterAdjustmentMode>()(['none', 'suggestion', 'custom'] as const)
 // Die Regel, nach der eine aufgeteilte Rechnung ihre Teile ergibt (#455); weitere kommen in 1.x mit eigener Bedingung.
 export const SOURCE_RULES = exactly<SourceRule>()(['days'] as const)
@@ -1776,6 +1776,8 @@ export const settings = sqliteTable(
     // Angabe nein), Anschrift und Kontakt des Vermieters für Rücksendeangabe und Fußzeile.
     printLetter: integer('print_letter', { mode: 'boolean' }),
     printFooter: integer('print_footer', { mode: 'boolean' }),
+    // #624: QR-Code zum Bezahlen bei Nachzahlung; ohne Angabe aus.
+    printPaymentQr: integer('print_payment_qr', { mode: 'boolean' }),
     landlordAddress: text('landlord_address'),
     landlordContact: text('landlord_contact'),
     // Ohne Wert wurde noch nicht gefragt; 'on' erlaubt die Abfrage bei GitHub.

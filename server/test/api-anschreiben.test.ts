@@ -414,3 +414,34 @@ test('Anschreiben (#415, Teil 2): Anschrift des Vermieters, Anrede und „mitdru
     s.stop()
   }
 })
+
+test('Zahlungs-QR (#624): Verwendungszweck je Ebene speicherbar, eingefroren; Schalter ja oder nein', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await house(s)
+    const propertyId = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    assert.equal(letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id).texts.paymentPurpose, 'Erika Mustermann, EG, Nebenkostenabrechnung 2025')
+    assert.equal((await send(s, '/api/letter-texts', 'PUT', { texts: { paymentPurpose: 'NK {Wohnung}' } })).status, 200)
+    assert.equal(letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id).texts.paymentPurpose, 'NK EG')
+    assert.equal((await send(s, `/api/properties/${propertyId}/letter-texts`, 'PUT', { texts: { paymentPurpose: 'Haus {Name}' } })).status, 200)
+    assert.equal((await send(s, `/api/settlement/2025/letters/${tenancy.id}`, 'PUT', { texts: { paymentPurpose: 'Kd 4711 {Name}' } })).status, 200)
+    assert.equal(letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id).texts.paymentPurpose, 'Kd 4711 Erika Mustermann')
+    const bad = await send(s, '/api/letter-texts', 'PUT', { texts: { paymentPurpose: '{Unbekannt}' } })
+    assert.equal(bad.status, 400)
+    assert.match((await jsonOf<{ error: string }>(bad)).error, /Verwendungszweck \(QR-Code\)/)
+    // Mit dem Abschluss eingefroren
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', {})).status, 201)
+    await send(s, '/api/letter-texts', 'PUT', { texts: { paymentPurpose: 'Später' } })
+    assert.equal(letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id).texts.paymentPurpose, 'Kd 4711 Erika Mustermann')
+
+    // Schalter: ab Werk ohne Angabe, nur ja oder nein
+    assert.equal((await s.api<Settings>('/api/settings')).printPaymentQr, undefined)
+    const wrong = await send(s, '/api/settings', 'PUT', { printPaymentQr: 'ja' })
+    assert.equal(wrong.status, 400)
+    assert.equal((await jsonOf<{ error: string }>(wrong)).error, '„QR-Code zum Bezahlen bei Nachzahlung“ ist ja oder nein.')
+    assert.equal((await send(s, '/api/settings', 'PUT', { printPaymentQr: true })).status, 200)
+    assert.equal((await s.api<Settings>('/api/settings')).printPaymentQr, true)
+  } finally {
+    s.stop()
+  }
+})
