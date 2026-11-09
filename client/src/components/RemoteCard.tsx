@@ -35,13 +35,20 @@ export default function RemoteCard({ bridge }: { bridge: RemoteBridge }) {
         setBusy(false)
         return
       }
-      // Erfolg: die Karte zeigt den neuen Stand (das Fenster lädt die Seite des anderen Mietfuchs)
-      setState(await bridge.get())
-      setBusy(false)
     } catch (e) {
       errors.show(remoteErrorText(e))
       setBusy(false)
+      return
     }
+    // Erfolg: die Karte zeigt den neuen Stand (das Fenster lädt die Seite des anderen Mietfuchs). Lässt er sich nicht
+    // lesen, ist das ein Fehler beim Laden, nicht beim Verbinden: Gekoppelt ist das Fenster schon.
+    try {
+      setState(await bridge.get())
+    } catch (e) {
+      setState({ connected: true })
+      setLoadError(remoteErrorText(e))
+    }
+    setBusy(false)
   }
 
   async function disconnect() {

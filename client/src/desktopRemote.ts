@@ -30,8 +30,11 @@ export function remoteHost(origin: string): string {
   }
 }
 
+// Ohne Ursprung (der Stand ließ sich nach dem Koppeln nicht lesen) ohne Adresse
 export const connectedLine = (state: RemoteState): string =>
-  `Verbunden mit ${remoteHost(state.origin ?? '')}${state.version ? ` (Mietfuchs ${state.version})` : ''}`
+  state.origin
+    ? `Verbunden mit ${remoteHost(state.origin)}${state.version ? ` (Mietfuchs ${state.version})` : ''}`
+    : 'Verbunden mit einem Mietfuchs im Heimnetz'
 
 
 // Zu welchem Feld ein Satz der Brücke gehört: das Feld, das die Brücke nennt; ältere Fenster nennen keines, dann

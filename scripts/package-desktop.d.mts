@@ -11,5 +11,6 @@ export function packClient(clientDist: string, stageDir: string): number
 export const ARCHIVE_FOLDER: string
 export function asarFiles(file: string): { path: string, unpacked: boolean, integrity: boolean }[]
 export function checkServerArchive(archive: string): void
+export function extractAsarFolder(archive: string, folder: string, target: string): string[]
 /** Module, die im Bündel des Fensters nicht vorkommen dürfen (v0.15.1, Virenscanner) */
 export function loaderLikeImports(code: string): string[]

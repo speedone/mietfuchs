@@ -20,19 +20,23 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, trustedUpdateKeys, updaterSource } from './updater.js'
-import { loopbackUrl, testGripsAllowed } from './testGrips.js'
+import { loopbackUrl, selftestPlan, testGripsAllowed, testUserData } from './testGrips.js'
 import { allowed } from './bridgePolicy.js'
 import { DEVICE_HEADER, certSha256FromPem, jsonOr, pair, pinDecision, remoteFetch, versionHint } from './pairing.js'
-import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
+import { readSettingsFile, writeSettingsFile, DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, surfaceWindow, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
+// Selbstprüfung in Prüfläufen (testGrips.js), sonst null
+const selftest = selftestPlan(process.env)
 
 // Electrons eigener Ordner (Zwischenspeicher, Einstellungen des Fensters) nicht unter „Mietfuchs“: Auf dem Mac heißt
 // der Datenordner von Mietfuchs so (~/Library/Application Support/Mietfuchs), und beide sollen sich nie mischen. Unter
 // Windows unter Local statt Roaming, sonst wanderte der Zwischenspeicher mit dem Profil (Durchsicht K11).
+// In Prüfläufen ein eigener Ordner je Start (testUserData, hinter beiden Schranken): fenster.json, Protokoll und die
+// Sperre gegen einen zweiten Start hängen an userData, ein laufendes echtes Fenster bleibt so unberührt.
 const localAppData = process.platform === 'win32' && process.env.LOCALAPPDATA ? process.env.LOCALAPPDATA : app.getPath('appData')
-app.setPath('userData', path.join(localAppData, 'mietfuchs-fenster'))
+app.setPath('userData', testUserData(process.env) ?? path.join(localAppData, 'mietfuchs-fenster'))
 
 // Ab wann die Startseite sagt, dass es dauert. Abgebrochen wird nicht: Beim ersten Start einer neuen Version migriert
 // der Server die Datenbank und legt vorher eine Sicherung an, bei einem großen Bestand dauert das, und ein Abbruch
@@ -363,6 +367,9 @@ let certRejected = false
 let versionChecked = false
 // Höchstens eine Rückfrage zugleich (Laden scheitert oft mehrfach hintereinander)
 let troubleOpen = false
+// Der Fehler des letzten gescheiterten Ladens (did-fail-load), für die Selbstprüfung
+/** @type {number | null} */
+let lastFailCode = null
 
 // Für den Host des gekoppelten Servers nur das gemerkte Zertifikat (pinDecision), für alle anderen die normale Prüfung
 // von Chromium (-3). Ohne Kopplung keine eigene Prüfung.
@@ -435,8 +442,8 @@ async function checkRemote() {
 async function remoteTrouble(reason) {
   if (troubleOpen || quitting || !remote) return
   troubleOpen = true
-  // Eine Rückfrage an einem verborgenen Fenster sähe niemand (macOS zeigt sie als Blatt am Fenster)
-  if (mainWindow && !mainWindow.isVisible()) mainWindow.show()
+  // Eine Rückfrage an einem verborgenen oder abgelegten Fenster sähe niemand (macOS zeigt sie als Blatt am Fenster)
+  if (mainWindow) surfaceWindow(mainWindow)
   const where = new URL(remote.origin).host
   const texts = {
     unreachable: {
@@ -457,7 +464,9 @@ async function remoteTrouble(reason) {
   windowLog(`Mietfuchs im Heimnetz: ${reason}`)
   let response = 2
   try {
-    response = (mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)).response
+    // In der Selbstprüfung festhalten, in welchem Zustand die Rückfrage erschiene, und sie wie bestellt beantworten
+    if (selftest?.trouble != null) response = await recordTrouble(reason, selftest.trouble)
+    else response = (mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)).response
   } finally {
     troubleOpen = false
   }
@@ -546,6 +555,7 @@ function createWindow() {
   win.webContents.on('did-fail-load', (_event, errorCode, description, url, isMainFrame) => {
     if (!remote || !isMainFrame || errorCode === -3 || linkTarget(url, remote.origin) !== 'window') return
     windowLog(`did-fail-load ${errorCode} ${description}`)
+    lastFailCode = errorCode
     void remoteTrouble(certRejected ? 'cert' : 'unreachable')
   })
   win.on('close', () => windowLog('Fenster: close'))
@@ -669,8 +679,8 @@ function printPage(contents) {
 // Beendet wird von außen über /api/quit, wie aus der Oberfläche.
 /** @param {BrowserWindow} win */
 async function selfTest(win) {
-  const out = process.env.MIETFUCHS_SELFTEST_OUT
-  if (!out || !testGripsAllowed(process.env)) return
+  if (!selftest) return
+  const { out } = selftest
   fs.mkdirSync(out, { recursive: true })
   // Der Server ist ein Prozess des Fensters und steht mit in den Metriken; getrennt gezählt, damit der Speicher des
   // Fensters mit dem früherer Läufe vergleichbar bleibt
@@ -681,8 +691,73 @@ async function selfTest(win) {
   const pdf = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true })
   fs.writeFileSync(path.join(out, 'fenster.pdf'), pdf)
   // Fragt die Seite selbst: kommt der Fensterschlüssel über onBeforeSendHeaders an (#528)?
-  const access = await win.webContents.executeJavaScript("fetch('/api/auth').then((r) => r.json()).catch(() => null)").catch(() => null)
-  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, startMs: Date.now() - startedAt, electronMemoryKiB: memory, serverMemoryKiB: serverMemory, serverPid: server?.pid ?? null, electron: process.versions.electron, chrome: process.versions.chrome, access }, null, 2)}\n`)
+  const access = await pageAuth(win)
+  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, url: win.webContents.getURL(), remote: remote?.origin ?? null, startMs: Date.now() - startedAt, electronMemoryKiB: memory, serverMemoryKiB: serverMemory, serverPid: server?.pid ?? null, electron: process.versions.electron, chrome: process.versions.chrome, access }, null, 2)}\n`)
+  await selfTestPairing(win, out)
+}
+
+// Was `/api/auth` der Seite selbst sagt: Kommt der Fenster- bzw. Geräteschlüssel über onBeforeSendHeaders an?
+/** @param {BrowserWindow} win */
+const pageAuth = (win) => win.webContents.executeJavaScript("fetch('/api/auth').then((r) => r.json()).catch(() => null)").catch(() => null)
+
+/**
+ * Bis das Fenster eine Seite unter `wanted` fertig geladen hat (`wanted` als Funktion, weil sich der Ursprung beim
+ * Trennen erst mit dem Start des eigenen Servers ergibt)
+ * @param {BrowserWindow} win
+ * @param {() => string | null} wanted
+ * @param {number} [timeoutMs]
+ */
+async function pageLoaded(win, wanted, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const target = wanted()
+    if (target && !win.webContents.isLoading() && win.webContents.getURL().startsWith(`${target}/`)) return true
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return false
+}
+
+/**
+ * Selbstprüfung der Kopplung (#528, scripts/desktop-check.mjs): koppeln und trennen über die Brücke der Seite, wie die
+ * Karte „Mietfuchs im Heimnetz“, dann beenden. Ergebnisse in kopplung.json und trennen.json.
+ * @param {BrowserWindow} win
+ * @param {string} out
+ */
+async function selfTestPairing(win, out) {
+  if (!selftest) return
+  const write = (/** @type {string} */ name, /** @type {unknown} */ value) => fs.writeFileSync(path.join(out, name), `${JSON.stringify(value, null, 2)}\n`)
+  if (selftest.pair && !remote) {
+    const request = JSON.stringify(selftest.pair)
+    const result = await win.webContents.executeJavaScript(`window.mietfuchsDesktop.remote.connect(${request})`).catch((err) => ({ error: String(err) }))
+    const loaded = result?.ok === true && await pageLoaded(win, () => remote?.origin ?? null)
+    const state = loaded ? await win.webContents.executeJavaScript('window.mietfuchsDesktop.remote.get()').catch((err) => ({ error: String(err) })) : null
+    write('kopplung.json', { result, loaded, origin, url: win.webContents.getURL(), serverPid: server?.pid ?? null, access: loaded ? await pageAuth(win) : null, state })
+  }
+  if (selftest.disconnect && remote) {
+    // Nicht auf die Antwort warten: Das Trennen lädt die eigene Seite, die fragende ist dann fort
+    await win.webContents.executeJavaScript('void window.mietfuchsDesktop.remote.disconnect(); true').catch(() => null)
+    const loaded = await pageLoaded(win, () => (remote || !server ? null : origin))
+    write('trennen.json', { loaded, origin, url: win.webContents.getURL(), remote: remote?.origin ?? null, serverPid: server?.pid ?? null, access: loaded ? await pageAuth(win) : null })
+  }
+  if (selftest.quit) app.quit()
+}
+
+/**
+ * Die Rückfrage in der Selbstprüfung: festhalten, ob das Fenster dabei zu sehen wäre, und die bestellte Antwort geben.
+ * Das Zurückholen aus dem Dock läuft auf dem Mac animiert; bis zu fünf Sekunden darauf warten.
+ * @param {'unreachable' | 'cert' | 'key'} reason
+ * @param {number} answer
+ */
+async function recordTrouble(reason, answer) {
+  const win = mainWindow
+  const deadline = Date.now() + 5000
+  while (win && (win.isMinimized() || !win.isVisible()) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
+  if (selftest) {
+    fs.mkdirSync(selftest.out, { recursive: true })
+    const state = { reason, errorCode: lastFailCode, visible: win?.isVisible() ?? null, minimized: win?.isMinimized() ?? null, answer }
+    fs.writeFileSync(path.join(selftest.out, 'rueckfrage.json'), `${JSON.stringify(state, null, 2)}\n`)
+  }
+  return answer
 }
 
 async function start() {
@@ -802,6 +877,12 @@ async function start() {
   if (!win) return
   // Vor dem Laden der Seite, damit sie den Stand gleich bekommt (Durchsicht S1)
   void setupUpdater().catch((err) => console.error(`Updates: ${err}`)).finally(updaterSettled)
+  if (remote && selftest?.window) {
+    // Selbstprüfung: Die Rückfrage muss das Fenster auch dann zeigen, wenn es verborgen oder abgelegt ist
+    if (!win.isVisible()) await new Promise((resolve) => { win.once('show', () => resolve(null)); setTimeout(resolve, 5000) })
+    if (selftest.window === 'hidden') win.hide()
+    else win.minimize()
+  }
   if (remote) await openRemote()
   else await win.loadURL(/** @type {string} */ (origin))
   void selfTest(win).catch((err) => console.error(`Selbstprüfung: ${err}`))

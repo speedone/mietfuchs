@@ -549,7 +549,7 @@ const GUIDE_DATA = {
       { text: 'Tragen Sie unter „Passwort“ und „Passwort wiederholen“ ein Passwort mit mindestens 15 Zeichen ein; „Passwort vorschlagen“ trägt vier zufällige Wörter ein, die Sie sich aufschreiben. Klicken Sie auf „Passwort festlegen“.' },
       { text: 'Auf jedem anderen Gerät melden Sie sich mit diesem Passwort und „Anmelden“ an. Am Ende melden Sie sich unten in der Seitenleiste mit „Abmelden“ ab.' },
       { page: 'einstellungen', text: 'Läuft Mietfuchs schon länger ohne Passwort im Netz, steht unten in der Seitenleiste „Ohne Passwort im Netz“. Es führt zur Karte „Anmeldung“: Klicken Sie dort auf „Passwort festlegen“, tragen Sie Einrichtungscode und Passwort ein und klicken Sie auf „Speichern“.' },
-      { page: 'einstellungen', text: 'Ändern lässt sich das Passwort in der Karte „Anmeldung“ mit „Passwort ändern“. Ist ein Handy verloren, melden Sie dort mit „Auf allen Geräten abmelden“ jedes andere Gerät ab.' },
+      { page: 'einstellungen', text: 'Ändern lässt sich das Passwort in der Karte „Anmeldung“ mit „Passwort ändern“. Ist ein Handy verloren, melden Sie dort mit „Auf allen Geräten abmelden“ jedes andere Gerät ab. Gekoppelte Programmfenster bleiben dabei angemeldet; die entfernen Sie einzeln in der Liste darunter.' },
       { text: 'Passwort vergessen: Legen Sie im Datenordner von Mietfuchs eine leere Datei mit dem Namen passwort-zuruecksetzen an, im Container mit docker compose exec mietfuchs touch /app/server/data/passwort-zuruecksetzen. Laden Sie die Seite danach neu; Mietfuchs fragt dann wie beim ersten Öffnen nach Einrichtungscode und neuem Passwort.' },
     ],
     result: [
@@ -566,9 +566,38 @@ const GUIDE_DATA = {
       { text: 'Der Einrichtungscode gilt nur bis zur Einrichtung. Geben Sie ihn nicht weiter: Wer ihn kennt, kann bis dahin das Passwort festlegen.' },
     ],
     gaps: [
-      { text: 'Eine verschlüsselte Verbindung (HTTPS) mit eigenem Zertifikat und das Koppeln eines Programmfensters auf einem zweiten Rechner kommen in einem späteren Schritt.', issue: 528 },
+      { text: 'Im Browser bleibt die Verbindung im Heimnetz unverschlüsselt (HTTP). Verschlüsselt geht es im Browser nur mit einem Proxy wie Caddy oder über ein VPN; ein Programmfenster auf einem anderen Rechner verbindet sich dagegen von sich aus verschlüsselt (Anleitung „Programmfenster mit einem Mietfuchs im Heimnetz verbinden“).' },
     ],
     terms: ['signIn', 'setupCode'],
+  },
+  // #528, Schritt 2: das Programmfenster auf einem PC oder Mac mit einem Mietfuchs im Heimnetz koppeln.
+  pairing: {
+    group: 'operation',
+    title: 'Programmfenster mit einem Mietfuchs im Heimnetz verbinden',
+    applies: 'Mietfuchs läuft bei Ihnen auf einem Gerät, das immer an ist, etwa in Docker auf einem NAS oder als Paket auf einem Raspberry Pi, und Sie möchten am Windows-PC oder Mac im Programmfenster damit arbeiten statt im Browser. Das Fenster zeigt dann die Daten dieses Geräts über eine verschlüsselte Verbindung und bleibt angemeldet.',
+    steps: [
+      { text: 'Auf dem Gerät im Heimnetz läuft Mietfuchs ab Version 0.17 mit einem Passwort. Ohne Passwort lässt sich kein Fenster koppeln; wie Sie eines festlegen, steht in der Anleitung zur Anmeldung mit Passwort.' },
+      { page: 'einstellungen', text: 'Öffnen Sie Mietfuchs auf dem Gerät im Browser, unter Einstellungen die Karte „Anmeldung“, und klicken Sie im Abschnitt „Programmfenster koppeln“ auf „Code anzeigen“.' },
+      { page: 'einstellungen', text: 'Öffnen Sie im Programmfenster auf Ihrem PC oder Mac die Einstellungen. Tragen Sie in der Karte „Mietfuchs im Heimnetz“ unter „Adresse“ die Adresse des Geräts ein, so wie Sie Mietfuchs dort im Browser öffnen, etwa nas:3001 oder 192.168.178.23:3001, unter „Code“ den eben gezeigten Code, und klicken Sie auf „Verbinden“.' },
+      { page: 'einstellungen', text: 'Zurück zu den Daten auf Ihrem Rechner geht es in derselben Karte mit „Verbindung trennen“, oder im Menü Mietfuchs, falls die Seite des Geräts nicht lädt.' },
+    ],
+    result: [
+      'Das Fenster zeigt die Seite des Geräts und startet keinen eigenen Mietfuchs. Beim nächsten Start verbindet es sich wieder, ohne nach dem Passwort zu fragen.',
+      'Auf dem Gerät steht jedes gekoppelte Programmfenster in der Karte „Anmeldung“ mit dem Namen des Rechners und dem letzten Kontakt; „Entfernen …“ meldet es dort ab.',
+      'Verbunden wählt das Fenster keine Ordner und schaltet keinen Zugriff aus dem Heimnetz, denn die Daten liegen auf dem Gerät. Das Menü öffnet die Adresse des Geräts auf Wunsch im Browser.',
+    ],
+    example: 'Der Code hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW, und gilt 10 Minuten und nur einmal. Nennt die Adresse keinen Port, nimmt das Fenster 3001, den Port von Docker und Programmdatei. Mit einem Gerät lassen sich bis zu 20 Programmfenster koppeln.',
+    caveats: [
+      { text: 'Verbinden Sie das Fenster direkt mit dem Port von Mietfuchs, nicht über einen Proxy wie Caddy: Das Fenster prüft das eigene Zertifikat von Mietfuchs und lehnt jedes andere ab.' },
+      { text: 'Sagt das Fenster beim Start, der Server zeige ein anderes Zertifikat als beim Koppeln, verbinden Sie sich nicht, solange Sie den Grund nicht kennen. Wurde Mietfuchs dort neu eingerichtet oder ein Backup auf einem neuen Gerät wiederhergestellt, trennen Sie die Verbindung und koppeln mit einem neuen Code neu.' },
+      { text: 'Passwort ändern und „Auf allen Geräten abmelden“ lassen gekoppelte Fenster angemeldet. Ein verlorenes Notebook entfernen Sie deshalb in der Liste der gekoppelten Fenster; das Zurücksetzen des Passworts entfernt alle.' },
+      { text: 'Fenster und Gerät sollten dieselbe Version haben. Weichen sie ab, sagt das Fenster es beim Start; aktualisieren Sie dann das ältere der beiden.' },
+    ],
+    gaps: [
+      { text: 'Das Fenster findet Mietfuchs im Heimnetz nicht von selbst; Sie tragen die Adresse ein.' },
+      { text: 'Unter Linux hat Mietfuchs kein Programmfenster; dort öffnen Sie es im Browser.' },
+    ],
+    terms: ['signIn'],
   },
 } satisfies Record<string, Guide>
 

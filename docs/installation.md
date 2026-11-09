@@ -6,6 +6,7 @@ Wie du Mietfuchs auf deinen Rechner bekommst, im Detail. Die Kurzfassung steht i
 - [macOS](#macos)
 - [Umzug von der bisherigen Programmdatei](#umzug-von-der-bisherigen-programmdatei)
 - [Zugriff vom Handy oder einem zweiten Rechner](#zugriff-vom-handy-oder-einem-zweiten-rechner)
+- [Programmfenster mit Mietfuchs im Heimnetz verbinden](#programmfenster-mit-mietfuchs-im-heimnetz-verbinden)
 - [Download prüfen (für Fortgeschrittene)](#download-prüfen-für-fortgeschrittene)
 - [Programmdatei ohne Installation](#bisherige-programmdatei-ohne-installation) (Windows, macOS, Linux)
 - [Linux: Installationspaket mit Startmenü-Eintrag](#linux-installationspaket-mit-startmenü-eintrag)
@@ -185,6 +186,7 @@ Es gibt zwei Wege:
 | Was | Häkchen „Zugriff aus dem Heimnetz“ im Programm für Windows und macOS | [Docker](docker.md) auf einem NAS oder Heimserver, oder das [Linux-Paket](#linux-installationspaket-mit-startmenü-eintrag) auf einem Raspberry Pi |
 | Erreichbar | nur, solange der PC läuft und Mietfuchs geöffnet ist | jederzeit im Heimnetz |
 | Adresse | `http://<pc>:17517` | `http://<gerät>:3001`, mit [Caddy](docker.md#mit-https-im-heimnetz-composecaddyyml) auch über HTTPS |
+| Programmfenster auf einem anderen PC oder Mac | möglich, wenn dort „Zugriff aus dem Heimnetz“ mit Passwort an ist; gedacht ist ein Gerät, das ständig läuft | ja, [verschlüsselt verbunden](#programmfenster-mit-mietfuchs-im-heimnetz-verbinden) |
 
 Von unterwegs kommst du nur über ein VPN an Mietfuchs, nie über eine Portfreigabe am Router; siehe
 [Von unterwegs und mit HTTPS: über ein VPN](docker.md#von-unterwegs-und-mit-https-über-ein-vpn).
@@ -228,6 +230,66 @@ Version 1.0 verlangt Mietfuchs dort ein Passwort.
   nichts.
 - Das Programm ab Version 0.15 nutzt Port 17517, die bisherige Programmdatei und die Store-Fassung
   bis 0.14 nutzten 3001. Eine ältere Verknüpfung auf dem Startbildschirm legst du deshalb neu an.
+
+### Programmfenster mit Mietfuchs im Heimnetz verbinden
+
+Läuft Mietfuchs auf einem Gerät, das immer an ist ([Docker](docker.md) auf einem NAS, das
+[Linux-Paket](#linux-installationspaket-mit-startmenü-eintrag) auf einem Raspberry Pi), kannst du
+am Windows-PC oder Mac im Programmfenster damit arbeiten statt im Browser. Das Fenster zeigt dann
+die Daten dieses Geräts, **verschlüsselt über HTTPS**, und bleibt angemeldet. Du brauchst dafür
+weder eine Domain noch ein Zertifikat zum Installieren, und am Router änderst du nichts.
+
+Voraussetzungen: Mietfuchs ab Version 0.17 auf beiden Seiten, und auf dem Gerät ist ein Passwort
+festgelegt (siehe [Erster Start: Passwort festlegen](docker.md#erster-start-passwort-festlegen)).
+
+1. **Auf dem Gerät**, im Browser: *Einstellungen → Anmeldung → Programmfenster koppeln* →
+   „Code anzeigen“. Der Code gilt 10 Minuten und nur einmal.
+2. **Im Programmfenster** auf deinem PC oder Mac: *Einstellungen → Mietfuchs im Heimnetz*. Unter
+   „Adresse“ trägst du ein, wie du Mietfuchs auf dem Gerät im Browser öffnest, etwa `nas:3001` oder
+   `192.168.178.23:3001`, unter „Code“ den eben gezeigten Code, dann „Verbinden“.
+3. Das Fenster lädt die Seite des Geräts. Beim nächsten Start verbindet es sich wieder, ohne
+   Passwort.
+
+**Zur Adresse:** `http://` oder `https://` davor ist egal, das Fenster spricht immer HTTPS auf
+demselben Port; Mietfuchs antwortet dort auf beides. Ohne Port nimmt es 3001. Gekoppelt wird **direkt
+mit dem Port von Mietfuchs**, nicht über Caddy oder einen anderen Proxy; mit
+[`compose.caddy.yml`](docker.md#mit-https-im-heimnetz-composecaddyyml) gibst du dafür zusätzlich den
+Port von Mietfuchs frei (siehe [Docker](docker.md#programmfenster-koppeln)).
+
+**Warum das sicher ist:** Mietfuchs auf dem Gerät hat ein eigenes Zertifikat. Beim Koppeln beweist
+das Fenster mit dem Code, welches Zertifikat es sieht, und das Gerät prüft das gegen sein eigenes;
+der Code selbst geht nie über das Netz. Ein Gerät, das sich dazwischen schiebt, fällt so auf. Danach
+nimmt das Fenster unter dieser Adresse nur noch genau dieses Zertifikat an und schickt seinen
+Geräteschlüssel nur dorthin.
+
+**Verbunden** startet das Fenster keinen eigenen Mietfuchs. Ordner wählen und „Zugriff aus dem
+Heimnetz“ gibt es dann nicht, die Daten liegen ja auf dem Gerät. *Mietfuchs → Im Browser öffnen*
+öffnet die Adresse des Geräts über `http://` im Browser. Ob das Fenster nach Updates schaut, folgt
+der Einstellung auf dem Gerät.
+
+**Trennen:** in derselben Karte mit „Verbindung trennen“, oder im Menü *Mietfuchs → Verbindung
+trennen*, falls die Seite des Geräts nicht lädt. Danach zeigt das Fenster wieder die Daten auf
+deinem Rechner. Erreicht es das Gerät dabei, entfernt es sich dort aus der Liste; sonst entfernst du
+es auf dem Gerät unter *Einstellungen → Anmeldung*.
+
+**Gekoppelte Fenster** stehen auf dem Gerät unter *Einstellungen → Anmeldung* mit dem Namen des
+Rechners und dem letzten Kontakt, höchstens 20. „Entfernen …“ meldet eines ab. Passwort ändern und
+„Auf allen Geräten abmelden“ lassen gekoppelte Fenster angemeldet; ein verlorenes Notebook entfernst
+du deshalb in dieser Liste. Das Zurücksetzen des Passworts (`passwort-zuruecksetzen`) und das
+Ausschalten der Anmeldung entfernen alle.
+
+**Wenn es hakt:** Ist das Gerät nicht erreichbar, kennt es das Fenster nicht mehr oder zeigt es ein
+anderes Zertifikat als beim Koppeln, fragt das Fenster nach „Erneut versuchen“, „Verbindung trennen“
+oder „Beenden“. Ein anderes Zertifikat entsteht, wenn Mietfuchs dort neu eingerichtet wurde, etwa
+nach dem Wiederherstellen eines Backups auf einem neuen Gerät (das Zertifikat geht nicht ins
+Backup). Dann trennst du die Verbindung und koppelst mit einem neuen Code neu. Kennst du den Grund
+nicht, verbinde dich nicht. Haben Fenster und Gerät verschiedene Versionen (etwa 0.17 und 0.18),
+sagt das Fenster es beim Start; aktualisiere dann das ältere.
+
+Im Browser zeigt `https://<gerät>:3001` nur eine Warnung, weil kein Browser das eigene Zertifikat
+von Mietfuchs kennt. Für HTTPS im Browser bleibt [Caddy](docker.md#mit-https-im-heimnetz-composecaddyyml)
+oder [ein VPN](docker.md#von-unterwegs-und-mit-https-über-ein-vpn). Unter Linux gibt es kein
+Programmfenster.
 
 ### Download prüfen (für Fortgeschrittene)
 

@@ -1324,7 +1324,8 @@ jobs:
             Start-Process -FilePath $alias
             # Betriebsart store: Das Fenster sagt es dem Server (NKA_STORE aus process.windowsStore), zur
             # Sicherheit erkennt er auch den Paketordner; im Protokoll steht, was das Fenster sah (Store ja/nein)
-            node scripts/smoke-test.mjs --url $url --mode store
+            # Mit dem Datenordner fragt smoke-test.mjs /healthz auch über HTTPS, gegen das Zertifikat dort (#528)
+            node scripts/smoke-test.mjs --url $url --mode store --data-dir $data
             if ($LASTEXITCODE -ne 0) { throw 'Prüfung des Store-Pakets fehlgeschlagen' }
 
             # Fenster und Server laufen aus dem Paket: beide sind Mietfuchs.exe oben im Paket, der Server als

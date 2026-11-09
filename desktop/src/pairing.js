@@ -58,13 +58,18 @@ export function normalizeAddress(input) {
   return { host, port, origin: new URL(`https://${url.hostname}:${port}`).origin }
 }
 
-// Wie der Server den Code liest (normalizeCode in server/src/access.ts): groß, nur Buchstaben und Ziffern. Der Server
-// liegt im Fenster nur gebündelt vor, deshalb hier nachgebaut; pairing.test.js koppelt gegen den echten Server.
-/** @param {string} code */
+/**
+ * Wie der Server den Code liest (normalizeCode in server/src/access.ts): groß, nur Buchstaben und Ziffern. Der Server
+ * liegt im Fenster nur gebündelt vor, deshalb hier nachgebaut; pairing.test.js koppelt gegen den echten Server.
+ * @param {string} code
+ */
 const normalizeCode = (code) => (typeof code === 'string' ? code.toUpperCase().replace(/[^A-Z0-9]/g, '') : '')
 
-// Der Beweis (pairingProof in server/src/access.ts): HMAC-SHA256, Schlüssel der Code, über den Fingerabdruck
-/** @param {string} code @param {string} certSha256 */
+/**
+ * Der Beweis (pairingProof in server/src/access.ts): HMAC-SHA256, Schlüssel der Code, über den Fingerabdruck
+ * @param {string} code
+ * @param {string} certSha256
+ */
 const proofOf = (code, certSha256) => crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:${certSha256}`).digest('hex')
 
 /** @param {Buffer} der */
@@ -177,8 +182,10 @@ export async function remoteFetch(remote, urlPath, { method = 'GET', body, timeo
   return requestOver(socket, { ...target, method, path: `${url.pathname}${url.search}`, headers, body, timeoutMs })
 }
 
-// Eine Antwort als JSON oder null (auch für main.js)
-/** @param {string} text */
+/**
+ * Eine Antwort als JSON oder null (auch für main.js)
+ * @param {string} text
+ */
 export const jsonOr = (text) => {
   try {
     return /** @type {any} */ (JSON.parse(text))

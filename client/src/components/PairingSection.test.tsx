@@ -111,3 +111,17 @@ test('Entfernen scheitert: Meldung des Servers', async () => {
   fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Entfernen' }))
   expect(await screen.findByText('Dieses Programmfenster ist nicht (mehr) gekoppelt.')).toBeTruthy()
 })
+
+test('der Bereich für Code und Ablauf steht von Anfang an leer da und wird danach gefüllt', async () => {
+  setup()
+  // Manche Bildschirmleser sagen nichts an, wenn ein Live-Bereich mit seinem Inhalt erscheint
+  const region = screen.getByRole('status', { name: 'Kopplungscode' })
+  expect(region.textContent).toBe('')
+  fireEvent.click(screen.getByRole('button', { name: 'Code anzeigen' }))
+  await screen.findByText('K7QM-4XPA')
+  expect(screen.getByRole('status', { name: 'Kopplungscode' })).toBe(region)
+  expect(region.textContent).toContain('K7QM-4XPA')
+  await vi.advanceTimersByTimeAsync(601000)
+  await waitFor(() => expect(region.textContent).toContain('Der Code ist abgelaufen.'))
+  expect(screen.getByRole('status', { name: 'Kopplungscode' })).toBe(region)
+})

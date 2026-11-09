@@ -176,3 +176,16 @@ test('Brücke fehlt oder ist unvollständig: keine Karte', () => {
   expect(remoteBridge({ mietfuchsDesktop: { remote: part as unknown as RemoteBridge } })).toBeNull()
   expect(remoteBridge({ mietfuchsDesktop: { remote: { ...part, disconnect: async () => ({}) } } })).not.toBeNull()
 })
+
+test('verbunden, aber der Stand lässt sich danach nicht lesen: Meldung zum Laden, kein Fehler beim Verbinden', async () => {
+  const get = vi.fn()
+    .mockResolvedValueOnce({ connected: false })
+    .mockRejectedValue(new Error(`${IPC.replace('connect', 'get')}Stand nicht lesbar.`))
+  show(bridge({ get }))
+  await fill()
+  expect(await screen.findByText('Das ließ sich nicht erledigen: Stand nicht lesbar.')).toBeTruthy()
+  // Gekoppelt ist das Fenster trotzdem: kein Satz am Formular, kein Formular mehr, Trennen bleibt möglich
+  expect(screen.queryByLabelText(/Adresse/)).toBeNull()
+  expect(screen.getByText('Verbunden mit einem Mietfuchs im Heimnetz')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Verbindung trennen …' })).toBeTruthy()
+})

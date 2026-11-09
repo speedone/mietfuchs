@@ -477,6 +477,17 @@ export function quitDecision({ quitting, exiting }) {
 }
 
 /**
+ * Das Fenster vor einer Rückfrage des Systems zeigen (Mietfuchs im Heimnetz nicht erreichbar, main.js): aus Dock oder
+ * Taskleiste zurückholen, wenn es dort liegt, und sichtbar machen, wenn es verborgen ist. Sonst sähe niemand die
+ * Rückfrage, auf dem Mac ein Blatt am Fenster.
+ * @param {{ isMinimized: () => boolean, restore: () => void, isVisible: () => boolean, show: () => void }} win
+ */
+export function surfaceWindow(win) {
+  if (win.isMinimized()) win.restore()
+  if (!win.isVisible()) win.show()
+}
+
+/**
  * Die Kopplung mit einem Mietfuchs im Heimnetz, wie fenster.json sie merkt (#528, Schritt 2, pairing.js).
  * @typedef {{ origin: string, certSha256: string, deviceId: string, deviceKey: string, version: string }} RemoteSettings
  */

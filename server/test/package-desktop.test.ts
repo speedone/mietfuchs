@@ -9,7 +9,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { migrationsFromDisk } from '../src/db/client.ts'
-import { ARCHIVE_FOLDER, REQUIRED_SERVER_FILES, asarFiles, bundleServer, checkServerArchive, checkServerFolder, loaderLikeImports, packClient, rewriteImportMeta, userFileName } from '../../scripts/package-desktop.mjs'
+import { ARCHIVE_FOLDER, REQUIRED_SERVER_FILES, asarFiles, extractAsarFolder, bundleServer, checkServerArchive, checkServerFolder, loaderLikeImports, packClient, rewriteImportMeta, userFileName } from '../../scripts/package-desktop.mjs'
 import { writeAsar } from '../testing/asar.ts'
 
 test('Programmfenster: .dmg heißen nach Apple Silicon und Intel', () => {
@@ -73,6 +73,35 @@ test('Programmfenster: der Server in der app.asar, vollständig, gepackt und mit
   fs.writeFileSync(path.join(dir, 'kaputt.asar'), 'kein Archiv')
   assert.throws(() => checkServerArchive(path.join(dir, 'kaputt.asar')), /kein asar-Archiv/)
   assert.throws(() => checkServerArchive(path.join(dir, 'fehlt.asar')), /fehlt\.asar fehlt/)
+})
+
+// Die Kopplung im desktop-check (#528) startet den Server, den das installierte Fenster mitbringt, als Gegenstelle: Die
+// drei Dateien unter mietfuchs/ kommen aus der app.asar in einen Ordner, in derselben Anordnung
+test('Programmfenster: der Server-Ordner lässt sich aus der app.asar holen', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-asar-holen-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const file = path.join(dir, 'app.asar')
+  writeAsar(file, {
+    'package.json': { content: '{}' },
+    'mietfuchs/server/server.mjs': { content: 'console.log("Server")' },
+    'mietfuchs/server/THIRD-PARTY-LICENSES.txt': { content: 'MIT' },
+    'mietfuchs/client/dist.pack': { content: 'Päckchen' },
+    'src/main.js': { content: 'Fenster' },
+  })
+  const target = path.join(dir, 'server')
+  assert.deepEqual(extractAsarFolder(file, ARCHIVE_FOLDER, target).sort(), ['client/dist.pack', 'server/THIRD-PARTY-LICENSES.txt', 'server/server.mjs'])
+  assert.equal(fs.readFileSync(path.join(target, 'server', 'server.mjs'), 'utf8'), 'console.log("Server")')
+  assert.equal(fs.readFileSync(path.join(target, 'client', 'dist.pack'), 'utf8'), 'Päckchen')
+  assert.equal(fs.existsSync(path.join(target, 'package.json')), false)
+  assert.equal(fs.existsSync(path.join(target, 'src')), false)
+  // Ein entpackter Eintrag liegt nicht im Archiv; ein Name, der aus dem Ordner führt, wird nie geschrieben
+  writeAsar(file, { 'mietfuchs/server/server.mjs': { unpacked: true } })
+  assert.throws(() => extractAsarFolder(file, ARCHIVE_FOLDER, path.join(dir, 'entpackt')), /entpackt/)
+  writeAsar(file, { 'mietfuchs/../boese.js': { content: 'x' } })
+  assert.throws(() => extractAsarFolder(file, ARCHIVE_FOLDER, path.join(dir, 'boese')), /Name/)
+  assert.equal(fs.existsSync(path.join(dir, 'boese.js')), false)
+  writeAsar(file, { 'package.json': { content: '{}' } })
+  assert.throws(() => extractAsarFolder(file, ARCHIVE_FOLDER, path.join(dir, 'leer')), /mietfuchs/)
 })
 
 // Im Bündel zeigt `import.meta.url` auf die eine Datei. Der Server rechnet von dort aus zu client/dist, server/drizzle

@@ -225,10 +225,11 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `mietfuchs-fenster\protokoll`, das Schließen, before-quit, `/api/quit` und das Ende des Servers mit Zeit festhält). Hart beendet
   wird nach acht Sekunden, während des Starts erst nach zehn Minuten (eine Migration soll zu Ende laufen). Servertests
   stellen den utilityProcess mit [fakeUtilityProcess.ts](../server/testing/fakeUtilityProcess.ts) nach (`--import`). Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
-  mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz) und das Protokoll des Servers.
+  mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz, die Kopplung mit einem Mietfuchs im Heimnetz) und das Protokoll des Servers.
 - **Testgriffe im ausgelieferten Fenster nur mit zwei Schranken** ([testGrips.js](../desktop/src/testGrips.js),
   Durchsicht Daten und Sicherheit): `CI` gleich `1` oder `true` **und** `MIETFUCHS_TESTGRIFFE=1`. Nur dann gelten
-  `MIETFUCHS_SERVER_URL` und `MIETFUCHS_UPDATE_FEED` (beide nur über http auf 127.0.0.1 oder ::1), die Selbstprüfung
+  `MIETFUCHS_SERVER_URL` und `MIETFUCHS_UPDATE_FEED` (beide nur über http auf 127.0.0.1 oder ::1), ein eigener Ordner für
+  Electron (`MIETFUCHS_TEST_USERDATA`, nur absolut), die Selbstprüfung
   (`MIETFUCHS_SELFTEST_OUT`) und das Auslassen der Frage nach „Programme“ auf dem Mac, und nur dann reicht `serverEnv`
   `CI`, `NKA_TEST_*`, `NKA_ALLOWED_HOSTS` und `NKA_UPDATE_URL` an den Server weiter. Bisher genügte `CI`, das manche
   Entwicklungsumgebung für den ganzen Benutzer setzt, unter Windows auch als `CI=false`: Eine untergeschobene Variable
@@ -242,7 +243,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
 - **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
-  kennt nur das Drucken, den Zugriff aus dem Heimnetz, den Ordner-Dialog des Umzugs und die Updates; alles nimmt der Hauptprozess nur von der eigenen Seite an
+  kennt nur das Drucken, den Zugriff aus dem Heimnetz, den Ordner-Dialog des Umzugs, die Updates und die Verbindung mit einem Mietfuchs im Heimnetz (unten); alles nimmt der Hauptprozess nur von der eigenen Seite an
   (`linkTarget(event.senderFrame.url, origin) === 'window'`). Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
   Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`):
   `runAsNode`, `NODE_OPTIONS` und Inspect aus, Asar-Integrität und `onlyLoadAppFromAsar` an; sein Modul lädt der
@@ -273,6 +274,36 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   angemeldet; der Server nimmt ihn nur im Fenster und nur über 127.0.0.1 an. Die Selbstprüfung schreibt die Antwort
   von `/api/auth` aus der Seite nach fenster.json (`access`), desktop-check.mjs verlangt `window: true` dort und
   `window: false` für einen Abruf von außen.
+- **Mietfuchs im Heimnetz** (#528, Schritt 2, Entwurf docs/superpowers/specs/2026-11-09-kopplung-fenster-design.md):
+  Das Fenster koppelt sich mit einem Mietfuchs auf NAS, Raspberry Pi oder in Docker ([pairing.js](../desktop/src/pairing.js),
+  ohne Electron geprüft in desktop/test/pairing.test.js gegen einen echten Server). Karte „Mietfuchs im Heimnetz“
+  ([RemoteCard.tsx](../client/src/components/RemoteCard.tsx), Logik in [desktopRemote.ts](../client/src/desktopRemote.ts))
+  nur im Fenster; der Code kommt vom Server (Einstellungen → Anmeldung, PairingSection.tsx). `fenster.json` (0600)
+  merkt `remote: { origin, certSha256, deviceId, deviceKey, version }` ohne `safeStorage` (der Schlüsselbund des Macs
+  fragte nach jedem Update erneut). Verbunden startet das Fenster keinen eigenen Server; `setCertificateVerifyProc`
+  nimmt für den Host nur das gemerkte Zertifikat (`pinDecision`, je Host, Electron nennt keinen Port), der
+  Geräteschlüssel geht nur an `${origin}/*` (`attachWindowKey`). Die Brücke ist eingeschränkt ([bridgePolicy.js](../desktop/src/bridgePolicy.js):
+  Drucken, Updates, `remote.get`, `remote.disconnect`), die Zustimmung zu Updates kommt aus den Einstellungen des
+  Servers, „Im Browser öffnen“ öffnet die http-Adresse. Lädt die Seite nicht (nicht erreichbar, anderes Zertifikat,
+  Schlüssel abgelehnt), fragt eine Rückfrage des Systems nach „Erneut versuchen“, „Verbindung trennen“ oder „Beenden“;
+  vorher holt `surfaceWindow` (server.js) das Fenster aus Dock oder Taskleiste und zeigt es. Gekoppelt wird **direkt
+  mit dem Port von Mietfuchs**, nie über Caddy oder einen anderen Proxy (das Fenster pinnt das eigene Zertifikat).
+  **Prüfung** in desktop-check.mjs, Schritt 7: Gegenstelle ist der Server aus der `app.asar` des geprüften Fensters
+  (`extractAsarFolder` in package-desktop.mjs, gestartet mit dem Node des Runners auf `::`, Passwort über den
+  Einrichtungscode), das Fenster koppelt über die Brücke seiner Seite, lädt sie über HTTPS mit Geräteschlüssel,
+  bleibt nach einem Neustart verbunden, und Trennen startet den eigenen Server. Dazu die Kopfzeile unter `[::1]` und
+  `localhost` (Filter von `onBeforeSendHeaders`) und ein anderes Zertifikat unter derselben Adresse: `did-fail-load`
+  mit einem Fehler außer -3, Rückfrage mit Grund `cert`, das Fenster sichtbar, auch wenn es verborgen oder abgelegt
+  war. Gesteuert über die Selbstprüfung (`selftestPlan` in testGrips.js, hinter beiden Schranken):
+  `MIETFUCHS_SELFTEST_PAIR` (JSON `{ address, code }`, nur 127.0.0.1, [::1] oder localhost), `…_DISCONNECT=1`,
+  `…_QUIT=1`, `…_WINDOW` (`hidden`, `minimized`) und `…_TROUBLE` (`retry`, `disconnect`, `quit`: die Rückfrage
+  nicht zeigen, ihren Zustand nach `rueckfrage.json` schreiben und so antworten); Ergebnisse in `kopplung.json`,
+  `trennen.json` und `fenster.json` (`origin`, `url`, `remote`), gelesen erst, wenn `JSON.parse` gelingt. Jedes
+  Prüffenster bekommt einen eigenen Ordner für Electron (`MIETFUCHS_TEST_USERDATA`, `testUserData` in testGrips.js,
+  hinter beiden Schranken, nur ein absoluter Pfad): Die fenster.json eines echten Fensters auf dem Rechner bleibt
+  unberührt, und dessen Sperre gegen einen zweiten Start (sie hängt an userData) gilt für die Prüffenster nicht. Wer
+  „dasselbe“ Fenster neu startet (zweiter Start in Schritt 3, Neustart nach dem Koppeln), gibt den Ordner weiter.
+  Unter Linux gibt es kein Fenster; geprüft wird auf Windows und macOS in der CI.
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
@@ -425,7 +456,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
   „Programmfenster prüfen auf …“, in jedem Prüfumfang): Der Bau hängt an keinem Bun-Artefakt und beginnt sofort; er
   baut das Frontend selbst. Installiert wie ein Nutzer und geprüft mit [desktop-check.mjs](desktop-check.mjs) (Start,
-  smoke-test, zweiter Start, Beenden, Absturz des Fensters, jeweils auch über die PID des Servers) auf Windows x64 und
+  smoke-test mit HTTPS, zweiter Start, Beenden, Absturz des Fensters, jeweils auch über die PID des Servers, Umzug,
+  Kopplung mit einem Mietfuchs im Heimnetz) auf Windows x64 und
   ARM64, macOS Apple Silicon und Intel; Größen, Dauer der Installation, Startzeit und Speicher von Fenster und Server
   in der Zusammenfassung. **Kein eigener Workflow mehr**: Das frühere desktop.yml ist in release.yml
   aufgegangen, weil ein PR dort so lange läuft wie desktop.yml allein (rund sechs Minuten), weil eine Änderung am

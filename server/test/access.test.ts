@@ -14,6 +14,11 @@ import {
   clearedCookie, isLoopback, pairingProof, newDeviceKey, deviceKeyHash, matchDevice, MAX_DEVICES, PAIRING_MINUTES, DEVICE_HEADER,
   readEnvPassword, type AccessFile, type Device, type AccessState, type GateDecision, type GateRequest,
 } from '../src/access.ts'
+import express from 'express'
+import { createAccess } from '../src/accessServer.ts'
+import { createDualServer } from '../src/dualPort.ts'
+import { ensureCertificate } from '../src/tls.ts'
+import { httpsFetch, listening, portOf } from '../testing/api.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-zugang-'))
 
@@ -646,4 +651,52 @@ test('Passwort aus der Umgebung: Datei vor Variable, leer zählt nicht, Zeilenen
   assert.equal(empty.problem, 'NKA_PASSWORD_FILE: Die angegebene Datei ist leer.')
   // Ein Windows-Editor schreibt vorn ein BOM (Durchsicht K6)
   assert.deepEqual(readEnvPassword({ NKA_PASSWORD_FILE: '/bom' }, read), { password: 'ein Satz aus vier Wörtern', source: 'NKA_PASSWORD_FILE', ignored: null })
+})
+
+test('Geräte: „zuletzt gesehen“ steht sofort in der Liste, in zugang.json höchstens einmal je Stunde', async () => {
+  const dir = freshDir()
+  let clock = Date.parse('2026-11-09T10:00:00.000Z')
+  const key = newDeviceKey()
+  const device: Device = { id: '0123456789abcdef', name: 'Laptop', keyHash: deviceKeyHash(key), pairedAt: '2026-11-09T09:00:00.000Z', lastSeen: null }
+  const changedAt = '2026-11-09T09:00:00.000Z'
+  writeAccessFile(dir, { version: 1, mode: 'password', instance: 'abcdef', hash: await hashPassword('ein langes Testpasswort', { logN: 10 }), changedAt, devices: [device] })
+  const certificate = await ensureCertificate(dir)
+  if ('problem' in certificate) return assert.fail(certificate.problem)
+  const access = createAccess({ dataDir: dir, host: '0.0.0.0', setting: 'auto', allowedHosts: undefined, runtime: 'docker', tls: { certSha256: certificate.certSha256 }, now: () => clock, log: () => {}, logError: () => {} })
+  access.start({ hasStock: true })
+  const app = express()
+  app.use(access.middleware)
+  access.install(app)
+  const { server } = createDualServer(app, certificate)
+  await listening(server, '127.0.0.1')
+  const base = `http://127.0.0.1:${portOf(server)}`
+  const headers = { [DEVICE_HEADER]: `${device.id}.${key}` }
+  const stored = (): string | null => {
+    const file = readAccessFile(dir).file
+    if (!file || file === 'corrupt') return assert.fail('zugang.json fehlt oder ist beschädigt')
+    assert.equal(file.changedAt, changedAt, '„zuletzt gesehen“ ändert den Zugang nicht')
+    return file.devices?.[0]?.lastSeen ?? assert.fail('kein Gerät in zugang.json')
+  }
+  const listed = async (): Promise<string | null> => {
+    const res = await httpsFetch(base, '/api/auth/devices', { headers, ca: certificate.cert })
+    assert.equal(res.status, 200, res.body)
+    const body = JSON.parse(res.body) as { devices: { lastSeen: string | null }[] }
+    return body.devices[0]?.lastSeen ?? assert.fail('kein Gerät in der Liste')
+  }
+  try {
+    const first = new Date(clock).toISOString()
+    assert.equal(await listed(), first)
+    assert.equal(stored(), first, 'der erste Kontakt wird geschrieben')
+
+    clock += 59 * 60_000
+    assert.equal(await listed(), new Date(clock).toISOString(), 'die Liste zeigt den Stand aus dem Speicher')
+    assert.equal(stored(), first, 'innerhalb einer Stunde wird nicht geschrieben')
+
+    clock += 2 * 60_000
+    assert.equal(await listed(), new Date(clock).toISOString())
+    assert.equal(stored(), new Date(clock).toISOString(), 'nach einer Stunde wieder')
+  } finally {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

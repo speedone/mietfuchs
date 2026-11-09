@@ -287,7 +287,12 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   Zurücksetzen und Ausschalten entfernen alle Geräte, Passwort ändern und „Auf allen Geräten abmelden“ nicht (sie
   verwerfen nur einen offenen Code). Code,
   Schlüssel und Beweis stehen nie im Protokoll. Das Zertifikat entsteht oft erst nach `createAccess`; index.ts reicht
-  es mit `useTls` nach. Geprüft in access.test.ts und api-kopplung.test.ts.
+  es mit `useTls` nach. **Entscheidungen**: Ein gekoppeltes Fenster zählt als Sitzung (`signedIn`, dieselbe Vorschaltung,
+  Origin-Prüfung und Bremse wie im Browser), es gibt keine zweite Anmeldelogik. Gekoppelt wird **direkt mit dem Port von
+  Mietfuchs**, nie über Caddy oder einen anderen Proxy: Das Fenster pinnt das eigene Zertifikat des Servers, hinter
+  einem Proxy sähe es dessen Zertifikat, und der Server sähe keine eigene TLS-Verbindung (`trust proxy` bleibt aus;
+  docs/docker.md sagt es den Nutzern). Geprüft in access.test.ts (auch `lastSeen` mit der Uhr von `createAccess`) und
+  api-kopplung.test.ts, das Fenster in desktop/test/pairing.test.js und desktop-check.mjs (Schritt 7).
 - **Wettläufe** (`generation`, `changedSince`): Jede Änderung des Zustands (Speichern, Zurücksetzen) zählt hoch. Eine
   Anmeldung, Einrichtung oder Änderung, deren scrypt über eine solche Änderung hinweg lief, schreibt nichts und
   antwortet 401 bzw. 409 „Der Zugang hat sich eben geändert.“ Ein Neuberechnen nach `needsRehash` schreibt nur, wenn
@@ -297,7 +302,10 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   `signIn` an (`TEST_PASSWORD`, `setupCode`, `sessionOf` in server/testing/api.ts). `hashPassword` nimmt in
   access.test.ts ein kleineres `logN`, `createAccess`, `createBrake` und `createSessions` eine Uhr (`now`). Geprüft in
   access.test.ts, api-anmeldung.test.ts, api-fenster.test.ts (Fensterschlüssel), smoke-test.mjs mit `--code-file` bzw.
-  `--code-command` (ci, docker, release) und desktop-check.mjs (`window: true`).
+  `--code-command` (ci, docker, release) und desktop-check.mjs (`window: true`). **HTTPS in den Prüfläufen**:
+  smoke-test.mjs fragt `/healthz` auch über HTTPS, sobald es den Datenordner kennt (`--data-dir`, `--cert-file` oder
+  den Ort des Einrichtungscodes), mit dem Zertifikat dort als einzigem Vertrauensanker; desktop-check, updater-check
+  und der Store-Job in release.yml reichen `--data-dir` mit.
 
 ## Objekte (#92)
 
@@ -884,6 +892,8 @@ Nur für Tests, ein Nutzer setzt sie nie:
   `seq` gewinnt bei Gleichstand immer der zuerst angelegte Datensatz, im Betrieb ein zufälliger.
 - `NKA_TEST_START_DELAY_MS`, `NKA_TEST_FREE_BYTES`: siehe scripts/CLAUDE.md bzw. db/CLAUDE.md.
 - **`NKA_TEST_PAIRING_SECONDS`** (Kopplung, #528) verkürzt die Gültigkeit eines Kopplungscodes (sonst 10 Minuten).
+  Koppeln, Trennen und die Rückfrage des Fensters steuert dessen Selbstprüfung (`MIETFUCHS_SELFTEST_PAIR` und
+  Geschwister, scripts/CLAUDE.md, Programmfenster).
 - **`NKA_TEST_STORE=1`** (Umzug, #517) neben `NKA_RUNTIME=desktop`: der Umzug wie aus dem Store (Ortsdatei nur lesen).
 - **`NKA_TEST_COPY_DELAY_MS`** (Umzug, #517) wartet nach jeder kopierten Datei, damit ein Test Fortschritt und
   Abbrechen sieht.
