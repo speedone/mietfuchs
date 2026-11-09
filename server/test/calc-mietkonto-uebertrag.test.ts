@@ -300,9 +300,9 @@ test('Durchsicht (B): Nachmieter ab Oktober 2025 zahlt erst ab Januar 2026: Okto
   assert.equal(monthOf(y2025, 10).paidLaterOn, '2026-02-03')
   const y2026 = rowOf(ledger(s, 2026, { asOf: '2026-10-31' }))
   assert.equal(y2026.openingBalanceCents, -240000, 'Übertrag = Endsaldo 2025')
-  // Fällig sind Oktober 2025 bis September 2026 (9.600 €), gezahlt 8.000 €; die Zahlung vom 03.10. tilgt zuerst die
-  // Vorauszahlung Oktober 2026 (200 €, noch nicht fällig), also bleiben 1.800 € Rückstand.
-  assert.equal(y2026.arrearsCents, 180000)
+  // Fällig sind am 31.10.2026 Oktober 2025 bis Oktober 2026 (10.400 €; der Oktober seit dem Tag nach dem erwarteten
+  // Eingang, #334 mit Feiertagen), gezahlt 8.000 €, also 2.400 € Rückstand.
+  assert.equal(y2026.arrearsCents, 240000)
 })
 
 test('Durchsicht (C): Auszug Juni 2025 ohne Zahlung, Teilzahlung 1.000 € im März 2026: der Rest steht 2026 in carriedOnly', () => {

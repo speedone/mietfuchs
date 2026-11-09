@@ -84,7 +84,7 @@ test('Bundesland: die Auswahl hat leer und die 16 Länder, und jeder gespeichert
 test('Bundesland: Feiertage einzelner Gemeinden werden genannt und nicht mitgezählt', () => {
   expect(stateNote('', 2026)).toBeNull()
   expect(stateNote('NW', 2026)).toBeNull()
-  expect(stateNote('BY', 2026)).toMatch(/^In Bayern gelten einige Feiertage nur in einzelnen Gemeinden: Augsburger Friedensfest \(nur im Stadtgebiet Augsburg\); Mariä Himmelfahrt .*Mietfuchs zählt sie bei Fristen nicht mit\.$/)
+  expect(stateNote('BY', 2026)).toMatch(/^In Bayern gelten einige Feiertage nur in einzelnen Gemeinden: Augsburger Friedensfest \(nur im Stadtgebiet Augsburg\); Mariä Himmelfahrt .*Mietfuchs zählt sie bei Fristen nicht mit, im Mietkonto schon\.$/)
   expect(stateNote('SN', 2026)).toMatch(/Fronleichnam/)
   expect(stateNote('TH', 2026)).toMatch(/Fronleichnam \(nur in Gemeinden, in denen er 1994 gesetzlicher Feiertag war/)
 })

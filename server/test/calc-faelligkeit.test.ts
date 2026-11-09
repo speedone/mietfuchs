@@ -1,6 +1,6 @@
 // Mietkonto und Hinweis `prepayment.arrears` mit der Fälligkeit am Mietverhältnis (#334, Entwurf E3, E6, E7): Ein Monat
 // zählt ab dem Tag nach dem spätesten erwarteten Eingang als Rückstand. Die Beispiele mit Feiertagen reichen
-// `holidaysChecked: () => true` hinein (so rechnet Mietfuchs, sobald alle Landesgesetze amtlich gelesen sind), die sichere
+// `holidaysChecked: () => true` hinein (so rechnet Mietfuchs, seit alle Landeslisten gelesen oder abgeglichen sind), die sichere
 // Grenze `() => false`; die Voreinstellung folgt dem Register (rent-due.test.ts).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

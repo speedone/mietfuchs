@@ -25,7 +25,7 @@
 // wenn sie als Fassung im Register stehen; die Jahre davor bleiben richtig.
 //
 // Gefragt wird das Register ohne Protokoll (`versionAt`). Wo der Server mit Feiertagen rechnet (Rückstand im
-// Mietkonto, shared/rentDue.ts), zählen sie nur an Tagen, an denen jede geltende Fassung amtlich gelesen ist
+// Mietkonto, shared/rentDue.ts), zählen sie nur an Tagen, an denen jede geltende Fassung amtlich gelesen oder abgeglichen ist
 // (`holidaysCheckedOn`); protokolliert werden dort die Fristregeln, nicht jeder einzelne Feiertag.
 //
 // Daten sind ISO-Zeichenketten 'JJJJ-MM-TT' und werden in UTC gerechnet wie im übrigen Projekt; die

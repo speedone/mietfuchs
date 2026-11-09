@@ -1,6 +1,6 @@
 // Fälligkeit der Miete je Regel und erwarteter Eingang (#334, shared/rentDue.ts). Beispiele von Hand nachgezählt, dazu
 // Abgleiche über alle Länder und Monate, Invarianten über zufällige Mietverhältnisse mit festem Startwert und die
-// Zeitzone. Die Feiertage zählen für den Rückstand nur, wo alle am Tag geltenden Fassungen amtlich gelesen sind
+// Zeitzone. Die Feiertage zählen für den Rückstand nur, wo alle am Tag geltenden Fassungen amtlich gelesen oder abgeglichen sind
 // (Entwurf E6, `holidaysCheckedOn`); die Beispiele mit Feiertagen reichen deshalb `holidaysChecked: () => true` hinein,
 // die sichere Grenze wird mit `() => false` geprüft, und die Voreinstellung folgt dem Register.
 import { test } from 'node:test'
@@ -16,7 +16,7 @@ import {
 import { addDays, holidaysOf, localHolidaysOf, STATE_CODES, weekdayOf } from '../../shared/holidays.ts'
 import { rentDueDate } from '../../shared/deadlines.ts'
 import { createLawLog, dayAfter } from '../../shared/law/register.ts'
-import { HOLIDAY_PARAMS } from '../../shared/law/feiertagsgesetze.ts'
+import { HOLIDAY_PARAMS, isCrossCheckedStateList } from '../../shared/law/feiertagsgesetze.ts'
 import type { FederalState } from '../../shared/types.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -295,8 +295,8 @@ test('Sichere Grenze ohne geprüfte Feiertage: voller Monat zu Beginn ab dem Ers
   assert.equal(arrearsFrom(late, '2026-10', 'NW', CHECKED), '2026-11-10')
 })
 
-test('holidaysCheckedOn: wahr genau dann, wenn jede am Tag geltende Fassung jedes Feiertags amtlich gelesen ist', () => {
-  const expected = (d: string): boolean => HOLIDAY_PARAMS.every((p) => p.versions.filter((v) => (v.validFrom ?? '') <= d && (v.validTo ?? '9999') >= d).every((v) => v.source.checked === 'checked'))
+test('holidaysCheckedOn: wahr genau dann, wenn jede am Tag geltende Fassung jedes Feiertags amtlich gelesen oder abgeglichen ist', () => {
+  const expected = (d: string): boolean => HOLIDAY_PARAMS.every((p) => p.versions.filter((v) => (v.validFrom ?? '') <= d && (v.validTo ?? '9999') >= d).every((v) => v.source.checked === 'checked' || isCrossCheckedStateList(v.source)))
   for (const d of ['1995-01-01', '2017-10-31', '2018-06-29', '2019-02-07', '2022-07-13', '2025-05-08', '2026-11-07', '2028-06-17', '2100-12-31']) {
     assert.equal(holidaysCheckedOn(d), expected(d), d)
   }

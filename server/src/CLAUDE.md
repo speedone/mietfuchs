@@ -403,9 +403,12 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
   (§ 193 BGB), je Feiertag `holiday.*` in [shared/law/feiertagsgesetze.ts](../../shared/law/feiertagsgesetze.ts).
   `checked` nur, wo der Wortlaut amtlich gelesen ist, sonst `adopted` mit Angabe. Die geltenden
   Fassungen werden erst `checked`, wenn die Liste jedes Landes gelesen ist: je Land Fundstelle in
-  `STATE_HOLIDAY_LAW`, offene Länder mit Grund in `STATE_HOLIDAY_LAW_UNREAD` (Stand 08.11.2026: HB, HH;
-  RP und ST über die Landtagsdrucksachen gelesen). `holidaysCheckedOn(date)` ([shared/holidaysChecked.ts](../../shared/holidaysChecked.ts)) sagt, ob
-  an einem Tag jede geltende Fassung `checked` ist. Wer im Server mit Feiertagen rechnet, steht mit Grund
+  `STATE_HOLIDAY_LAW` (14 Länder, RP und ST über die Landtagsdrucksachen), **abgeglichene** Länder in
+  `STATE_HOLIDAY_LAW_CROSS_CHECKED` (HB, HH: Gesetzestext nicht amtlich abrufbar; gelesen, was lesbar war, der Rest
+  gegen die Übersicht der Hamburger Schulbehörde und beide Vergleichslisten; Entscheidung vom 09.11.2026), offene mit
+  Grund in `STATE_HOLIDAY_LAW_UNREAD` (leer). Mit abgeglichenen Ländern bleiben die geltenden Fassungen `adopted`,
+  zählen aber (`isCrossCheckedStateList`). `holidaysCheckedOn(date)` ([shared/holidaysChecked.ts](../../shared/holidaysChecked.ts)) sagt, ob
+  an einem Tag jede geltende Fassung `checked` oder abgeglichen ist (wahr ab 07.02.2019). Wer im Server mit Feiertagen rechnet, steht mit Grund
   in `HOLIDAY_USERS` in holidays.test.ts, und shared/rentDue.ts fragt `holidaysCheckedOn` (#334, Entwurf E6). Gerechnet wird
   mit Osterformel ohne Laufzeitbibliothek (date-holidays: Daten unter CC BY-SA 3.0, mit AGPL nicht
   verträglich).

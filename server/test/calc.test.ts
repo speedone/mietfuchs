@@ -2644,8 +2644,9 @@ test('Invariante: jeder Betrag in Cent ist eine ganze Zahl, in allen vier Rechnu
   assert.ok(gezaehlt > 50000, `nur ${gezaehlt} Beträge geprüft`)
 })
 
-// Mietkonto im laufenden Jahr (Refs #133, zweite Browserabnahme): Monate ab dem laufenden sind noch
-// nicht fällig und kein Rückstand. Dieselbe Regel wie beim Hinweis auf einen Rückstand.
+// Mietkonto im laufenden Jahr (Refs #133, zweite Browserabnahme): Monate, deren erwarteter Eingang noch nicht
+// verstrichen ist, sind noch nicht fällig und kein Rückstand (#334: Oktober 2026 ohne Bundesland fällig Mo 05.10.,
+// erwartet bis Fr 09.10.). Dieselbe Regel wie beim Hinweis auf einen Rückstand.
 test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und kein Rückstand', () => {
   const db: Db = {
     ...emptyDb(),
@@ -2655,15 +2656,15 @@ test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und
     payments: [{ id: 'p', tenancyId: 't', date: '2026-01-03', amountCents: 900000 }],
   }
   const snapshot = snapshotFromDb(db, 2026)
-  const heute = rentLedger(snapshot, { asOf: '2026-10-15' })
+  const heute = rentLedger(snapshot, { asOf: '2026-10-09' })
   const row = heute.rows[0]
   if (!row) return assert.fail('keine Zeile')
   assert.deepEqual(row.months.map((m) => m.status), [...Array(9).fill('paid'), 'notDue', 'notDue', 'notDue'])
   assert.equal(row.arrearsCents, 0)
   assert.equal(row.openMonths, 0)
   assert.equal(heute.totals.openCents, 0)
-  // Ein fälliger Monat ohne Zahlung bleibt offen: Stichtag November, Oktober fehlt.
-  const spaeter = rentLedger(snapshot, { asOf: '2026-11-15' })
+  // Ein fälliger Monat ohne Zahlung ist offen: am Tag nach dem erwarteten Eingang fehlt der Oktober.
+  const spaeter = rentLedger(snapshot, { asOf: '2026-10-10' })
   assert.equal(spaeter.rows[0]?.arrearsCents, 100000)
   assert.equal(spaeter.totals.openCents, 100000)
   // Ohne Stichtag ist das ganze Jahr fällig, wie bisher.

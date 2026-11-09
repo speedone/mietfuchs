@@ -24,7 +24,8 @@
 // **Die Feiertagslisten der Länder (#334).** Jede geltende Fassung sagt etwas über alle 16 Länder: wo der
 // Tag gilt und wo nicht. `checked` wird sie deshalb erst, wenn die Liste jedes Landes in der geltenden
 // Fassung amtlich gelesen ist. `STATE_HOLIDAY_LAW` hält je Land fest, was gelesen ist (Vorschrift, Fundstelle,
-// Kette der Änderungen, Quelle), `STATE_HOLIDAY_LAW_UNREAD`, was fehlt und warum. Die geltenden Fassungen
+// Kette der Änderungen, Quelle), `STATE_HOLIDAY_LAW_CROSS_CHECKED`, welche Länder nur abgeglichen sind (Gesetzestext
+// nicht amtlich abrufbar; die Fassungen bleiben dann `adopted`, zählen aber), `STATE_HOLIDAY_LAW_UNREAD`, was fehlt und warum. Die geltenden Fassungen
 // holen ihre Quelle über `fromStateLists`, auch die nur eines Landes („nur in Berlin“ heißt „in keinem
 // anderen Land“); ausgenommen ist der Tag der Deutschen Einheit (Einigungsvertrag, Bundesrecht). Ältere
 // Fassungen (bis 2018, Frauentag vor 2019) bleiben, wie sie sind. Gelesen am 07.11.2026. Die juris-Portale der Länder liefern einem Browser ohne Fenster nichts
@@ -32,7 +33,7 @@
 // des Landtags) oder in einem anderen amtlichen Portal. Rheinland-Pfalz und Sachsen-Anhalt sind am 08.11.2026
 // nachgelesen, über Regierungsentwurf, Beschlussempfehlung und Plenarprotokoll im Landtag (Wortlaut der
 // beschlossenen Fassung) und die Änderungsgesetze; `retrieved` der geltenden Fassungen bleibt der Rechtsstand
-// vom 07.11.2026, solange Bremen und Hamburg offen sind und die Fassungen `adopted` bleiben.
+// vom 07.11.2026, solange Bremen und Hamburg nur abgeglichen sind und die Fassungen `adopted` bleiben.
 import type { LawParam, Source } from './register.ts'
 import type { FederalState } from '../types.ts'
 import { isFederalState, STATE_CODES, stateName } from '../states.ts'
@@ -90,20 +91,47 @@ export const STATE_HOLIDAY_LAW: { readonly [S in FederalState]?: StateHolidayLaw
   TH: { cite: '§ 2 Abs. 1 ThürFGtG i. d. F. des Dritten Änderungsgesetzes vom 19.03.2019 (GVBl. S. 22); Fronleichnam § 2 Abs. 2, § 10 Abs. 1 ThürFtG vom 21.12.1994 (GVBl. S. 1221, https://parldok.thueringer-landtag.de/ParlDok/dokument/11487); zuletzt geändert 2019 nach der Eingangsformel von Drs. 8/4465', url: 'https://parldok.thueringer-landtag.de/ParlDok/dokument/70512' },
 }
 
-// Länder, deren Liste in der geltenden Fassung nicht amtlich im Wortlaut gelesen ist, mit Grund. Solange
-// hier ein Land steht, bleiben die geltenden Fassungen `adopted`, und `holidaysCheckedOn` ist falsch.
-export const STATE_HOLIDAY_LAW_UNREAD: { readonly [S in FederalState]?: string } = {
-  HB: 'Wortlaut von § 2 Abs. 1 Buchst. a bis f, h und i FeiertG BR vom 12.11.1954 (Brem.GBl. S. 115) nicht amtlich lesbar: gesetzblatt.bremen.de, transparenz.bremen.de und inneres.bremen.de antworten mit 403, und die von der Staats- und Universitätsbibliothek mit der Bürgerschaft digitalisierten Drucksachen enthalten für 1953 bis 1955 nur die Anträge, nicht die Mitteilung des Senats mit dem Entwurf. Amtlich gelesen sind Buchst. g „der 3. Oktober - Tag der deutschen Einheit -“ (Drs. 13/475, G v. 23.03.1993), die Aufhebung von Buchst. h (Buß- und Bettag), die aus i und j h und i macht, mit der Liste a bis j in der Mitteilung des Senats nur zusammengefasst (Drs. 13/1034, 1994) und Buchst. j „der Reformationstag“ (Drs. 19/939, G v. 26.06.2018, Brem.GBl. S. 302)',
-  HH: 'Wortlaut von § 1 Nr. 1 bis 7, 9 und 10 FeiertagsG vom 16.10.1953 nicht amtlich lesbar: landesrecht-hamburg.de liefert einem Browser nichts, die Parlamentsdatenbank der Bürgerschaft sperrt den Zugriff („Web Page Blocked“), das Archiv des Gesetzblatts beim Verlag beginnt 1995. Amtlich gelesen sind die Nr. 8 „31. Oktober“ (Fünftes Änderungsgesetz vom 12.03.2018, HmbGVBl. S. 63: hinter Nr. 7 eingefügt, die bisherigen Nr. 8 und 9 werden Nr. 9 und 10) und dass die späteren Änderungen nur § 2a betreffen',
+// Länder, deren Liste in der geltenden Fassung nicht amtlich im Wortlaut gelesen und auch nicht abgeglichen
+// ist, mit Grund. Solange hier ein Land steht, bleiben die geltenden Fassungen `adopted`, und
+// `holidaysCheckedOn` ist falsch.
+export const STATE_HOLIDAY_LAW_UNREAD: { readonly [S in FederalState]?: string } = {}
+
+const URL_HH_OVERVIEW = 'https://www.hamburg.de/resource/blob/134374/7a4a9de67fd46caec0947c11bf23316d/bsb-feiertage-data.pdf'
+const HH_OVERVIEW = `Übersicht über die gesetzlichen Feiertage in der Bundesrepublik Deutschland der Hamburger Behörde für Schule und Berufsbildung, Stand September 2018 (${URL_HH_OVERVIEW}, gelesen am 09.11.2026; den Reformationstag führt sie für Hamburg und Bremen nicht, obwohl beide ihn im März und Juni 2018 eingefügt hatten; für die übrigen Tage, unverändert seit den Stammgesetzen, deckt sie sich mit beiden Vergleichslisten)`
+
+// Länder, deren Gesetzestext nicht amtlich lesbar ist (die Portale sperren den Zugriff), deren Liste aber
+// abgeglichen ist (Entscheidung vom 09.11.2026, #334): Was amtlich lesbar war, ist gelesen; die übrigen Tage
+// decken sich mit einer amtlichen Übersicht und mit beiden Vergleichslisten. Die geltenden Fassungen bleiben
+// dann `adopted` und nennen diese Länder, das Mietkonto rechnet aber mit ihren Feiertagen
+// (`isCrossCheckedStateList`, shared/holidaysChecked.ts). Wird ein Gesetz später gelesen, wandert das Land
+// nach `STATE_HOLIDAY_LAW`.
+export const STATE_HOLIDAY_LAW_CROSS_CHECKED: { readonly [S in FederalState]?: string } = {
+  HB: `§ 2 Abs. 1 FeiertG BR vom 12.11.1954 (Brem.GBl. S. 115). Amtlich gelesen sind Buchst. g „der 3. Oktober - Tag der deutschen Einheit -“ (Drs. 13/475, G v. 23.03.1993), die Aufhebung von Buchst. h (Buß- und Bettag), die aus i und j h und i macht (Drs. 13/1034, 1994), und Buchst. j „der Reformationstag“ (Drs. 19/939, G v. 26.06.2018, Brem.GBl. S. 302). Der Wortlaut der übrigen Buchstaben ist nicht amtlich lesbar (gesetzblatt.bremen.de, transparenz.bremen.de, inneres.bremen.de und bremen.de antworten mit 403; die digitalisierten Drucksachen 1953 bis 1955 enthalten den Entwurf nicht). Nach der ${HH_OVERVIEW} gelten in Bremen Neujahr, Karfreitag, Ostermontag, 1. Mai, Christi Himmelfahrt, Pfingstmontag, 3. Oktober und beide Weihnachtstage, sonst keiner; mit dem Reformationstag (Buchst. j) sind das zehn Tage, so viele wie heute Buchst. a bis j; ebenso nach beiden Vergleichslisten (python-holidays und date-holidays)`,
+  HH: `§ 1 FeiertagsG vom 16.10.1953. Amtlich gelesen ist Nr. 8 „31. Oktober“ (Fünftes Änderungsgesetz vom 12.03.2018, HmbGVBl. S. 63: hinter Nr. 7 eingefügt, die bisherigen Nr. 8 und 9 werden Nr. 9 und 10) und dass die späteren Änderungen nur § 2a betreffen. Der Wortlaut von Nr. 1 bis 7, 9 und 10 ist nicht amtlich lesbar (landesrecht-hamburg.de liefert einem Browser nichts, die Parlamentsdatenbank sperrt den Zugriff, das Archiv des Gesetzblatts beim Verlag beginnt 1995). Nr. 1 bis 7, 9 und 10 sind Neujahr, Karfreitag, Ostermontag, 1. Mai, Christi Himmelfahrt, Pfingstmontag, 3. Oktober und beide Weihnachtstage, sonst keiner, nach der ${HH_OVERVIEW} und nach beiden Vergleichslisten (python-holidays und date-holidays)`,
 }
 
-// Die Quelle einer geltenden Fassung: `checked`, wenn jede Landesliste gelesen ist, sonst `adopted` mit
-// den offenen Ländern.
+// Die Quellen der geltenden Fassungen, die nur wegen der abgeglichenen Länder `adopted` sind.
+const CROSS_CHECKED_SOURCES = new WeakSet<Source>()
+
+// Ob eine Quelle eine Landesliste ist, die bis auf abgeglichene Länder amtlich gelesen ist.
+export function isCrossCheckedStateList(source: Source): boolean {
+  return CROSS_CHECKED_SOURCES.has(source)
+}
+
+// Die Quelle einer geltenden Fassung: `checked`, wenn jede Landesliste gelesen ist; sonst `adopted` mit den
+// offenen oder abgeglichenen Ländern.
 function fromStateLists(cite: string, url: string): Source {
   const open = STATE_CODES.filter((s) => STATE_HOLIDAY_LAW_UNREAD[s] !== undefined)
-  return open.length === 0
-    ? { rank: 'law', cite: `${cite}; Liste der Feiertage in allen 16 Ländern amtlich gelesen (STATE_HOLIDAY_LAW)`, url, retrieved: READ_STATE_LISTS, checked: 'checked' }
-    : { rank: 'law', cite: `${cite}; Liste der Feiertage amtlich gelesen außer in ${open.join(', ')} (STATE_HOLIDAY_LAW_UNREAD); ${CROSS_CHECK}`, url, retrieved: READ_STATE_LISTS, checked: 'adopted' }
+  const crossChecked = STATE_CODES.filter((s) => STATE_HOLIDAY_LAW_CROSS_CHECKED[s] !== undefined)
+  if (open.length > 0) {
+    return { rank: 'law', cite: `${cite}; Liste der Feiertage amtlich gelesen außer in ${[...open, ...crossChecked].join(', ')} (STATE_HOLIDAY_LAW_UNREAD, STATE_HOLIDAY_LAW_CROSS_CHECKED); ${CROSS_CHECK}`, url, retrieved: READ_STATE_LISTS, checked: 'adopted' }
+  }
+  if (crossChecked.length > 0) {
+    const source: Source = { rank: 'law', cite: `${cite}; Liste der Feiertage amtlich gelesen außer in ${crossChecked.join(', ')}, dort abgeglichen mit einer amtlichen Übersicht und den Vergleichslisten (STATE_HOLIDAY_LAW_CROSS_CHECKED)`, url, retrieved: READ_STATE_LISTS, checked: 'adopted' }
+    CROSS_CHECKED_SOURCES.add(source)
+    return source
+  }
+  return { rank: 'law', cite: `${cite}; Liste der Feiertage in allen 16 Ländern amtlich gelesen (STATE_HOLIDAY_LAW)`, url, retrieved: READ_STATE_LISTS, checked: 'checked' }
 }
 
 // Für die Tage, die in allen Ländern gelten.

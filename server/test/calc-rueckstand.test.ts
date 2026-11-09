@@ -128,17 +128,22 @@ test('Zwei Monate offen, dann eine Teilzahlung: offen ist, was die älteste Vora
 })
 
 // Laufendes Jahr (#133, Durchsicht): Das Mietkonto führt das Soll für alle zwölf Monate, auch für
-// die noch nicht fälligen. Mit Stichtag zählen nur die Monate vor dem Monat des Stichtags.
+// die noch nicht fälligen. Mit Stichtag zählt ein Monat ab dem Tag nach dem erwarteten Eingang (#334): Der Oktober 2025
+// ist ohne Bundesland am Mo 06.10. fällig (Fr 03.10. Feiertag), erwartet bis Fr 10.10., Rückstand ab Sa 11.10.
 const paidMarchTo = (lastMonth: number): SnapshotPayment[] =>
   Array.from({ length: lastMonth - 2 }, (_, i) => ({ id: pid(), tenancyId: 't', date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
 
 test('Laufendes Jahr, bis zum Vormonat pünktlich gezahlt: kein Hinweis', () => {
-  const s = settle({ payments: paidMarchTo(9) }, '2025-10-15')
+  const s = settle({ payments: paidMarchTo(9) }, '2025-10-10')
   assert.equal(arrears(s).length, 0, s.notices.map((n) => n.text).join(' | '))
+  // Einen Tag später ist der Oktober Rückstand, offen davon nach § 366 BGB die Vorauszahlung.
+  const [n] = arrears(settle({ payments: paidMarchTo(9) }, '2025-10-11'))
+  if (!n) return assert.fail('kein Hinweis am 11.10.')
+  assert.match(n.text, /sind 80,00 € nicht gezahlt/)
 })
 
 test('Laufendes Jahr, ein fälliger Monat fehlt: Hinweis mit genau diesem Betrag', () => {
-  const s = settle({ payments: paidMarchTo(8) }, '2025-10-15')
+  const s = settle({ payments: paidMarchTo(8) }, '2025-10-10')
   const [n] = arrears(s)
   if (!n) return assert.fail('kein Hinweis')
   // September fehlt; offen davon nach § 366 BGB die Vorauszahlung.

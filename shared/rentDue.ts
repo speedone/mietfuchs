@@ -29,7 +29,7 @@
 //
 // **Auflage aus #290** (E6): Mit Feiertagen rechnet der Rückstand nur, wenn jeder Tag vom Beginn des Abschnitts bis zum
 // erwarteten Eingang geprüft ist (`holidaysCheckedOn`: jede am Tag geltende Fassung jedes `holiday.*` ist amtlich
-// gelesen). Sonst gilt je Regel eine sichere obere Grenze ohne Feiertage (`safeArrearsFrom`): ein voller Monat, der zu
+// gelesen oder, für Bremen und Hamburg, abgeglichen; seit 07.02.2019). Sonst gilt je Regel eine sichere obere Grenze ohne Feiertage (`safeArrearsFrom`): ein voller Monat, der zu
 // Beginn oder an einem festen Tag bis zum 14. fällig ist, ab dem Ersten des Folgemonats (wie #133; der dritte Werktag liegt
 // nie nach dem 7., und vier Bankgeschäftstage später ist es noch derselbe Monat, Invariante in rent-due.test.ts), jeder
 // andere Monat (späterer fester Tag, nach Ablauf, Einzugsmonat, erste Miete bei Beginn) ab dem Ersten des übernächsten. Fälligkeitstag und
@@ -84,7 +84,7 @@ const maxText = (a: string, b: string): string => (a >= b ? a : b)
 
 // ---------- Prüfstand der Feiertage ----------
 
-// Ob an einem Tag jede dann geltende Fassung jedes Feiertags amtlich gelesen ist (Auflage aus #290, E6), aus
+// Ob an einem Tag jede dann geltende Fassung jedes Feiertags amtlich gelesen oder abgeglichen ist (Auflage aus #290, E6), aus
 // shared/holidaysChecked.ts; weitergereicht für Server und Tests.
 export { holidaysCheckedOn }
 
