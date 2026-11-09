@@ -279,15 +279,23 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   ohne Electron geprüft in desktop/test/pairing.test.js gegen einen echten Server). Karte „Mietfuchs im Heimnetz“
   ([RemoteCard.tsx](../client/src/components/RemoteCard.tsx), Logik in [desktopRemote.ts](../client/src/desktopRemote.ts))
   nur im Fenster; der Code kommt vom Server (Einstellungen → Anmeldung, PairingSection.tsx). `fenster.json` (0600)
-  merkt `remote: { origin, certSha256, deviceId, deviceKey, version }` ohne `safeStorage` (der Schlüsselbund des Macs
+  merkt `remote: { origin, trust, certSha256, deviceId, deviceKey, version }` ohne `safeStorage` (der Schlüsselbund des Macs
   fragte nach jedem Update erneut). Verbunden startet das Fenster keinen eigenen Server; `setCertificateVerifyProc`
   nimmt für den Host nur das gemerkte Zertifikat (`pinDecision`, je Host, Electron nennt keinen Port), der
   Geräteschlüssel geht nur an `${origin}/*` (`attachWindowKey`). Die Brücke ist eingeschränkt ([bridgePolicy.js](../desktop/src/bridgePolicy.js):
   Drucken, Updates, `remote.get`, `remote.disconnect`), die Zustimmung zu Updates kommt aus den Einstellungen des
   Servers, „Im Browser öffnen“ öffnet die http-Adresse. Lädt die Seite nicht (nicht erreichbar, anderes Zertifikat,
   Schlüssel abgelehnt), fragt eine Rückfrage des Systems nach „Erneut versuchen“, „Verbindung trennen“ oder „Beenden“;
-  vorher holt `surfaceWindow` (server.js) das Fenster aus Dock oder Taskleiste und zeigt es. Gekoppelt wird **direkt
-  mit dem Port von Mietfuchs**, nie über Caddy oder einen anderen Proxy (das Fenster pinnt das eigene Zertifikat).
+  vorher holt `surfaceWindow` (server.js) das Fenster aus Dock oder Taskleiste und zeigt es. **Zwei Vertrauensarten**
+  (Entwurf docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md): `pinned` direkt mit dem Port von Mietfuchs
+  oder über einen Proxy, der dessen Zertifikat ausliefert (das Fenster pinnt es), `system` über einen Proxy mit einem
+  Zertifikat, dem der Speicher des Systems traut (Let's Encrypt, installiertes Stammzertifikat von Caddy); dann
+  prüfen Chromium (`setCertificateVerifyProc` gibt `-3`) und `remoteFetch` Kette und Namen bei jeder Verbindung, und
+  ein abgelehntes Zertifikat (`did-fail-load` -200 bis -299) ergibt die Rückfrage mit Grund `untrusted`. Ein
+  `remote` ohne `trust` (Entwicklungsstände) gilt als `pinned`. **Testgriff `MIETFUCHS_TEST_CA`** (`testCa` in
+  testGrips.js, hinter beiden Schranken, absoluter Pfad, nur ein CA-Zertifikat): Das Fenster behandelt diese CA wie
+  eine des Systems (`trustAnchors` für Node, `issuedBy` im Rückruf von Chromium nur für den gekoppelten Host), weil
+  desktop-check kein Stammzertifikat ins System legen kann.
   **Prüfung** in desktop-check.mjs, Schritt 7: Gegenstelle ist der Server aus der `app.asar` des geprüften Fensters
   (`extractAsarFolder` in package-desktop.mjs, gestartet mit dem Node des Runners auf `::`, Passwort über den
   Einrichtungscode), das Fenster koppelt über die Brücke seiner Seite, lädt sie über HTTPS mit Geräteschlüssel,
@@ -303,7 +311,25 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   hinter beiden Schranken, nur ein absoluter Pfad): Die fenster.json eines echten Fensters auf dem Rechner bleibt
   unberührt, und dessen Sperre gegen einen zweiten Start (sie hängt an userData) gilt für die Prüffenster nicht. Wer
   „dasselbe“ Fenster neu startet (zweiter Start in Schritt 3, Neustart nach dem Koppeln), gibt den Ordner weiter.
-  Unter Linux gibt es kein Fenster; geprüft wird auf Windows und macOS in der CI.
+  **Schritt 7b** (Kopplung über einen Proxy): eine zweite Gegenstelle mit `NKA_TRUST_PROXY=127.0.0.1,::1`, davor
+  `startTestProxy` aus server/testing/proxy.ts mit einer Test-CA (`createTestCa`, nach `<out>/proxy-ca.pem`). Das
+  Fenster koppelt über `https://localhost:<Port des Proxys>`: ohne `MIETFUCHS_TEST_CA` der Satz mit
+  „Stammzertifikat“ und kein `POST /api/auth/pair` am Proxy, mit ihm `trust: 'system'`, `certSha256: null` in
+  fenster.json, die Seite über den Proxy mit Geräteschlüssel, Neustart verbunden, Trennen startet den eigenen
+  Server. Dazu schreibt das Fenster `systemCa` (Zahl der Zertifikate aus `tls.getCACertificates('system')`), ein
+  Beleg, dass Node unter Windows und macOS den Speicher des Systems liest. proxy.ts hängt deshalb an nichts außer
+  `selfsigned` (nicht an api.ts); der Job „Programmfenster prüfen auf …“ installiert dafür
+  `npm --prefix server ci --omit=dev`. Unter Linux gibt es kein Fenster für Nutzer; geprüft wird auf Windows und
+  macOS in der CI. Aus den Quellen läuft desktop-check unter Linux mit `xvfb-run` und einem Startskript, das
+  `desktop/node_modules/electron/dist/electron --no-sandbox <repo>/desktop` aufruft (`--app`).
+- **Praxislauf der Kopplung mit echtem Caddy** ([kopplung-proxy-praxislauf.mjs](kopplung-proxy-praxislauf.mjs),
+  braucht Docker, nicht in der CI): baut das Image aus dem Zweig (`mietfuchs:praxis`), startet
+  deploy/compose.caddy.yml mit einer Überlagerung in einem Wegwerf-Ordner (Projektname mit Präfix
+  `mfpraxis`, Caddy auf `127.0.0.1:18443`) und koppelt mit `pair` aus desktop/src/pairing.js: `tls internal` mit
+  `root.crt` als `ca` ergibt `system`, ohne ihn den Satz mit „Stammzertifikat“; ein neu erstellter Caddy gilt nach
+  höchstens 5 s wieder; gefälschte Kopfzeilen direkt an den Container `mietfuchs` ergeben 401 und `secure: false`;
+  zweiter Lauf mit dem Zertifikat von Mietfuchs (Volume ro) ergibt `pinned`. Räumt mit `down -v` nur sein eigenes
+  Projekt auf, auch bei einem Fehler. Einmal vor dem Merge einer Änderung an Kopplung, Proxy oder compose.caddy.yml.
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
@@ -650,4 +676,6 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   seines Server-Bündels mit den Quellen und das Store-Paket laufen in jedem Umfang. Am PR läuft release.yml nur,
   wenn er Server, Oberfläche, Programmfenster, Skripte, Paketierung oder die Datei selbst anfasst. **Eine leere
   Matrix erzeugt keinen Job und keinen Fehler**, deshalb bricht „Prüfumfang festlegen“ bei einer
-  leeren Liste ab. „Ans Release anhängen“ wartet auf alles, auch auf den Browserlauf.
+  leeren Liste ab. „Ans Release anhängen“ wartet auf alles, auch auf den Browserlauf. Von Hand und nicht in der CI: der
+  [Praxislauf der Kopplung mit Caddy](#programmfenster-517) einmal vor dem Merge einer Änderung an Kopplung, Proxy oder
+  compose.caddy.yml (braucht Docker).
