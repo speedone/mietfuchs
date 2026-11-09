@@ -146,8 +146,10 @@ test('Ein Port: ein später gesetztes Zertifikat gilt für neue Verbindungen', a
 
 // Die Fristen des http.Server (headersTimeout, requestTimeout) prüft Node nur für einen Server, der 'listening' gemeldet
 // hat; der innere lauscht nie selbst. Kurz eingestellt, damit der Test schnell ist.
-async function withShortTimeouts(fn: (port: number) => Promise<void>, firstByteMs?: number, listener: http.RequestListener = handler) {
+async function withShortTimeouts(fn: (port: number) => Promise<void>, firstByteMs?: number, listener: http.RequestListener = handler, { keepAliveTimeout }: { keepAliveTimeout?: number } = {}) {
   const dual = createDualServer(listener, await certificate(), firstByteMs === undefined ? {} : { firstByteMs })
+  // Lang, wo ein Test die eigene Frist sehen will und nicht das Ende einer ruhenden Verbindung
+  if (keepAliveTimeout !== undefined) dual.http.keepAliveTimeout = keepAliveTimeout
   dual.http.headersTimeout = 400
   dual.http.requestTimeout = 800
   ;(dual.http as http.Server & { connectionsCheckingInterval: number }).connectionsCheckingInterval = 100
@@ -268,4 +270,27 @@ test('Ein Port: eine lange Antwort nach vollständiger Anfrage überschreitet re
       assert.equal(body, 'ab')
     }
   }, undefined, late)
+})
+
+test('Ein Port: nach einer frühen Antwort und spätem Rumpf gilt die Frist für die nächsten Kopfzeilen', async () => {
+  // Die Vorschaltung der Anmeldung antwortet 401, bevor der Rumpf da ist (req.resume()). Kommt der Rumpf danach, darf
+  // sein Ende nicht die Uhr der nächsten Anfrage löschen, sonst bliebe die ruhende Verbindung unter Bun ohne Frist.
+  const early: http.RequestListener = (req, res) => {
+    req.resume()
+    res.statusCode = 401
+    res.end('anmelden')
+  }
+  await withShortTimeouts(async (port) => {
+    for (const secure of [false, true]) {
+      const socket = secure ? tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false }) : net.connect(port, '127.0.0.1')
+      await new Promise<void>((resolve, reject) => { socket.once(secure ? 'secureConnect' : 'connect', resolve); socket.once('error', reject) })
+      socket.write('POST /api/x HTTP/1.1\r\nHost: x\r\nContent-Type: text/plain\r\nContent-Length: 10\r\n\r\n')
+      const closed = closedAfter(socket)
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      socket.write('0123456789')
+      // Danach keine neue Anfrage: Die Verbindung ruht und muss nach headersTimeout (400 ms) enden
+      const ms = await closed
+      assert.ok(ms < 3000, `${secure ? 'HTTPS' : 'HTTP'}: nach ${ms} ms noch offen`)
+    }
+  }, undefined, early, { keepAliveTimeout: 60_000 })
 })

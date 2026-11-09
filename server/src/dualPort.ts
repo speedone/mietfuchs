@@ -53,13 +53,15 @@ export function createDualServer(
     res.once('finish', () => awaitRequest(socket))
     const deadline = deadlines.get(socket)
     if (req.complete || !deadline || httpServer.requestTimeout <= 0) return
-    req.once('end', () => stopClock(socket))
-    deadline.timer = setTimeout(() => {
+    const own = setTimeout(() => {
       if (req.complete) return
       if (res.headersSent) return void socket.destroy()
       res.writeHead(408, { 'content-type': 'text/plain; charset=utf-8', connection: 'close' })
       res.end('Die Anfrage kam nicht rechtzeitig vollständig an.', () => socket.destroy())
     }, Math.max(0, deadline.startedAt + httpServer.requestTimeout - Date.now()))
+    deadline.timer = own
+    // Nur die eigene Uhr: Kam die Antwort vor dem Rumpf (401 der Anmeldung), läuft schon die Uhr der nächsten Anfrage
+    req.once('end', () => clearTimeout(own))
   })
 
   const server = net.createServer({ pauseOnConnect: false }, (socket) => {
