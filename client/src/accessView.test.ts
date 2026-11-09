@@ -9,7 +9,7 @@ import { ApiError } from './api'
 import { passphrase, PASSPHRASE_WORDS } from './passphrase'
 
 const info = (over: Partial<AccessInfo> = {}): AccessInfo => ({
-  mode: 'password', required: true, signedIn: false, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', ...over,
+  mode: 'password', required: true, signedIn: false, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', ...over,
 })
 
 describe('Ansicht', () => {
@@ -30,6 +30,8 @@ describe('Ansicht', () => {
     expect(showsTransitionHint(null)).toBe(false)
     expect(showsSignOut(info({ signedIn: true }))).toBe(true)
     expect(showsSignOut(info({ signedIn: true, window: true }))).toBe(false)
+    // Ein gekoppeltes Fenster bleibt über seinen Geräteschlüssel angemeldet; Abmelden bewirkte nichts
+    expect(showsSignOut(info({ signedIn: true, device: true }))).toBe(false)
     expect(showsSignOut(info({ signedIn: false }))).toBe(false)
   })
   test('die Karte in den Einstellungen: im Netz, mit Passwort oder im Übergang', () => {

@@ -12,7 +12,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const base: AccessInfo = { mode: 'setup', required: true, signedIn: false, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'binary', codeFile: '/home/v/mietfuchs/data/einrichtungscode.txt' }
+const base: AccessInfo = { mode: 'setup', required: true, signedIn: false, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'binary', codeFile: '/home/v/mietfuchs/data/einrichtungscode.txt' }
 
 function setup(info: AccessInfo = base, code = '', answer: { status: number; body: unknown } = { status: 200, body: { ok: true, mode: 'password' } }) {
   const calls: { url: string; body: unknown }[] = []

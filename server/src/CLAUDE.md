@@ -246,7 +246,7 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   `X-Forwarded-Proto`, `Forwarded: proto=https`, `Origin` mit `https:` oder die eigene Verbindung, `req.socket.encrypted`). Bei mehreren Cookies gleichen Namens zählt
   jeder Wert (`cookieValues`). Passwort ändern, ausschalten und „Auf allen Geräten abmelden“ verlangen das bisherige
   Passwort; danach sind alle anderen Sitzungen weg, die eigene ist erneuert.
-- **Routen**: `GET /api/auth` (`mode`, `required`, `signedIn`, `window`, `reachable`, `envFixed`, `minLength`,
+- **Routen**: `GET /api/auth` (`mode`, `required`, `signedIn`, `window`, `device` (gekoppeltes Fenster), `reachable`, `envFixed`, `minLength`,
   `runtime`; `codeFile` mit vollem Pfad nur für Loopback und Fenster, von außen `codeFileName`), `POST …/setup`
   (`{ code, password }` oder `withoutPassword`, nur in `setup`, Übergang und `off`; falscher Code 400, fehlender 403,
   bei `password` 409; „ohne Passwort“ ergibt `off` und sofort einen neuen Code, zurück nur mit Code oder Fenster),

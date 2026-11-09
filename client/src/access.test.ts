@@ -48,7 +48,8 @@ test('der Zustand wird nur aus einer passenden Antwort gelesen', () => {
   expect(accessInfoOf([])).toBeNull()
   expect(accessInfoOf({ mode: 'irgendwas' })).toBeNull()
   expect(accessInfoOf({ mode: 'password', required: true, signedIn: false, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' }))
-    .toEqual({ mode: 'password', required: true, signedIn: false, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' })
+    .toEqual({ mode: 'password', required: true, signedIn: false, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' })
+  expect(accessInfoOf({ mode: 'password', signedIn: true, device: true })?.device).toBe(true)
 })
 
 // Wächter: Ein roher `fetch(` ginge an der Anmeldung vorbei; die Seite bliebe dann stumm bei einem Fehler stehen.

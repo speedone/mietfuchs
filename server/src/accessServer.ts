@@ -45,6 +45,8 @@ export type AccessInfo = {
   required: boolean
   signedIn: boolean
   window: boolean
+  // Über die Kopfzeile eines gekoppelten Fensters angemeldet; Abmelden bewirkt dort nichts
+  device: boolean
   reachable: AccessState['reachable']
   envFixed: boolean
   minLength: number
@@ -433,11 +435,13 @@ export function createAccess(options: AccessOptions) {
   function info(req: Request): AccessInfo {
     const here = isLoopback(req.socket.remoteAddress) && !viaProxy(req.headers)
     const window = atWindow(req)
+    const device = deviceOf(req) !== null
     return {
       mode: state.mode,
       required: gateActive(state, viaProxy(req.headers)),
-      signedIn: signedIn(req),
+      signedIn: window || device || hasSession(req),
       window,
+      device,
       reachable: state.reachable,
       envFixed: setting !== 'auto',
       minLength: MIN_PASSWORD,

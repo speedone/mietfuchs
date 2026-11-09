@@ -9,7 +9,7 @@ import type { AccessInfo } from './access'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const info = (over: Partial<AccessInfo> = {}): AccessInfo => ({
-  mode: 'password', required: true, signedIn: true, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', ...over,
+  mode: 'password', required: true, signedIn: true, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', ...over,
 })
 
 let auth: AccessInfo

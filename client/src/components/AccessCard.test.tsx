@@ -12,7 +12,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const base: AccessInfo = { mode: 'password', required: true, signedIn: true, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' }
+const base: AccessInfo = { mode: 'password', required: true, signedIn: true, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' }
 
 function setup(info: AccessInfo = base, setupCode = '', answer: { status: number; body: unknown } = { status: 200, body: { ok: true } }) {
   const calls: { url: string; method: string; body: unknown }[] = []

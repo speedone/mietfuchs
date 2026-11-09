@@ -18,8 +18,9 @@ export function accessView(info: AccessInfo | null): AccessViewKind {
 
 // Im Übergang (bestehender Bestand im Netz, noch nichts entschieden) ein ruhiger Hinweis in der Seitenleiste
 export const showsTransitionHint = (info: AccessInfo | null): boolean => info?.mode === 'transition'
-// „Abmelden“ nur mit einer Sitzung; das Fenster ist über seinen Schlüssel angemeldet und hat keine
-export const showsSignOut = (info: AccessInfo | null): boolean => !!info && info.signedIn && !info.window && info.mode === 'password'
+// „Abmelden“ nur mit einer Sitzung; das Fenster ist über seinen Schlüssel angemeldet, ein gekoppeltes Fenster über
+// seinen Geräteschlüssel, und beide bleiben es auch nach dem Abmelden
+export const showsSignOut = (info: AccessInfo | null): boolean => !!info && info.signedIn && !info.window && !info.device && info.mode === 'password'
 // Die Karte „Anmeldung“: im Netz erreichbar, mit Passwort oder im Übergang
 export const showsAccessCard = (info: AccessInfo | null): boolean =>
   !!info && (info.reachable === 'network' || info.mode === 'password' || info.mode === 'transition')

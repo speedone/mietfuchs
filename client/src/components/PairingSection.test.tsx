@@ -13,7 +13,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const base: AccessInfo = { mode: 'password', required: true, signedIn: true, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', pairing: { available: true, devices: 1 } }
+const base: AccessInfo = { mode: 'password', required: true, signedIn: true, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker', pairing: { available: true, devices: 1 } }
 const devices = [
   { id: 'a1', name: 'Büro-PC', pairedAt: '2026-11-09T09:00:00.000Z', lastSeen: '2026-11-09T09:30:00.000Z', current: false },
   { id: 'b2', name: 'Laptop', pairedAt: '2026-11-08T09:00:00.000Z', lastSeen: null, current: true },
