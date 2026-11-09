@@ -76,12 +76,14 @@ secrets:
 ```
 
 `NKA_PASSWORD` nimmt das Passwort auch direkt, steht dann aber im Klartext in der `compose.yml` und
-in `docker inspect`. Es gelten dieselben Regeln wie im Browser (15 bis 128 Zeichen); ein
-Zeilenumbruch am Ende der Datei zählt nicht. Mietfuchs übernimmt es **nur, solange kein Passwort
-festgelegt ist**: beim ersten Start, bei bestehenden Daten ohne Passwort und nach dem Zurücksetzen.
-Ein Passwort, das du später unter *Einstellungen → Anmeldung* änderst, überschreibt die Angabe nicht;
-danach kannst du sie entfernen. Das Protokoll sagt bei jedem Start, ob sie übernommen wurde, nennt
-das Passwort aber nie. Mit `NKA_AUTH=off` wird es nicht übernommen.
+in `docker inspect`; sind beide gesetzt, gilt die Datei. Es gelten dieselben Regeln wie im Browser
+(15 bis 128 Zeichen); ein Zeilenumbruch am Ende der Datei zählt nicht. Mietfuchs übernimmt es **nur,
+solange nichts entschieden ist**: beim ersten Start, bei bestehenden Daten ohne Passwort und nach dem
+Zurücksetzen. Ein Passwort, das du später unter *Einstellungen → Anmeldung* änderst, und eine dort
+ausgeschaltete Anmeldung bleiben; die Angabe kannst du danach entfernen. Mit `NKA_AUTH=off` wird es
+nicht übernommen. Ist die Angabe unbrauchbar (Datei fehlt, Passwort zu kurz), startet Mietfuchs
+geschützt in der Einrichtung mit Code, auch mit bestehenden Daten. Das Protokoll sagt bei jedem
+Start, was mit der Angabe geschehen ist, nennt das Passwort aber nie.
 
 ### Passwort vergessen
 

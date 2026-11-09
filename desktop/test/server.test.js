@@ -352,6 +352,13 @@ test('Umgebung: Fensterschlüssel immer vom Fenster, NKA_AUTH nur mit den Schran
   assert.equal(serverEnv(base, opts).NKA_AUTH, undefined)
   assert.equal(serverEnv({ ...base, CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, opts).NKA_AUTH, 'off')
   assert.equal(serverEnv(base, { ...opts, packaged: false }).NKA_AUTH, 'off')
+  // Ein Passwort aus der Umgebung legte im Fenster eines fest, das niemand dort gewählt hat
+  const secret = { NKA_PASSWORD: 'ein Satz aus der Shell', NKA_PASSWORD_FILE: '/run/secrets/pw' }
+  const packaged = serverEnv(secret, opts)
+  assert.equal(packaged.NKA_PASSWORD, undefined)
+  assert.equal(packaged.NKA_PASSWORD_FILE, undefined)
+  assert.equal(serverEnv(secret, { ...opts, packaged: false }).NKA_PASSWORD, 'ein Satz aus der Shell')
+  assert.equal(serverEnv({ ...secret, CI: '1', MIETFUCHS_TESTGRIFFE: '1' }, opts).NKA_PASSWORD_FILE, '/run/secrets/pw')
 })
 
 // Der Hauptprozess fragt den Server nur über serverFetch, das den Schlüssel mitschickt; ein anderes fetch an den eigenen

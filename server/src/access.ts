@@ -115,12 +115,14 @@ export function passwordProblem(password: unknown): string | null {
 
 // ---------- Passwort aus der Umgebung ----------
 // `NKA_PASSWORD_FILE` (Docker Secrets) geht vor `NKA_PASSWORD`; leer heißt nicht gesetzt. Aus einer Datei fallen nur
-// Zeilenumbrüche am Ende weg (ein Secret endet meist mit einem), Leerzeichen gehören zum Passwort. Übernommen wird es
-// nur, solange keins festgelegt ist (accessServer.ts, `applyEnvPassword`).
+// Zeilenumbrüche am Ende und ein BOM am Anfang weg (ein Secret endet meist mit einem Umbruch, ein Windows-Editor schreibt
+// ein BOM), Leerzeichen gehören zum Passwort. Übernommen wird es nur, solange nichts entschieden ist (accessServer.ts,
+// `applyEnvPassword`). **Keine Meldung nennt den Wert**: Wer NKA_PASSWORD_FILE mit NKA_PASSWORD verwechselt, hat dort das
+// Passwort stehen, und Pfad wie Fehlertext von Node enthielten es (Durchsicht S1).
 export type EnvPasswordSource = 'NKA_PASSWORD' | 'NKA_PASSWORD_FILE'
 export type EnvPassword =
   | { password: string, source: EnvPasswordSource, ignored: 'NKA_PASSWORD' | null }
-  | { problem: string }
+  | { problem: string, source: EnvPasswordSource }
 
 export function readEnvPassword(env: NodeJS.ProcessEnv, read: (file: string) => string): EnvPassword | null {
   const file = env.NKA_PASSWORD_FILE?.trim() ?? ''
@@ -130,10 +132,11 @@ export function readEnvPassword(env: NodeJS.ProcessEnv, read: (file: string) => 
     try {
       content = read(file)
     } catch (err) {
-      return { problem: `NKA_PASSWORD_FILE: Die Datei ${file} lässt sich nicht lesen (${(err as Error).message}).` }
+      const code = (err as NodeJS.ErrnoException).code ?? 'unbekannter Fehler'
+      return { problem: `NKA_PASSWORD_FILE: Die angegebene Datei lässt sich nicht lesen (${code}). Erwartet wird der Pfad zu einer Datei mit dem Passwort, etwa /run/secrets/mietfuchs_passwort.`, source: 'NKA_PASSWORD_FILE' }
     }
-    const password = content.replace(/[\r\n]+$/, '')
-    if (!password) return { problem: `NKA_PASSWORD_FILE: Die Datei ${file} ist leer.` }
+    const password = content.replace(/^\uFEFF/, '').replace(/[\r\n]+$/, '')
+    if (!password) return { problem: 'NKA_PASSWORD_FILE: Die angegebene Datei ist leer.', source: 'NKA_PASSWORD_FILE' }
     return { password, source: 'NKA_PASSWORD_FILE', ignored: plain ? 'NKA_PASSWORD' : null }
   }
   return plain ? { password: plain, source: 'NKA_PASSWORD', ignored: null } : null

@@ -745,16 +745,8 @@ test('Passwort aus NKA_PASSWORD_FILE: neuer Datenordner startet mit Passwort, oh
   }
 })
 
-test('Passwort aus NKA_PASSWORD: beendet den Übergang eines bestehenden Bestands; zu kurz oder NKA_AUTH=off ändert nichts', async () => {
+test('Passwort aus NKA_PASSWORD: beendet den Übergang eines bestehenden Bestands; NKA_AUTH=off ändert nichts', async () => {
   const dir = await stockDir()
-  const short = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: 'zu kurz' })
-  try {
-    assert.equal((await authOf(short.base)).mode, 'transition')
-    await waitFor(() => /NKA_PASSWORD: Das Passwort braucht mindestens 15 Zeichen\..* Das Passwort wird nicht übernommen\./.test(short.errorOutput()))
-  } finally {
-    short.child.kill()
-  }
-  await waitForExit(short.child).catch(() => null)
   const off = await startServerIn(dir, { ...NETWORK, NKA_AUTH: 'off', NKA_PASSWORD: ENV_PASSWORD })
   try {
     await waitFor(() => off.output().includes('NKA_PASSWORD wird nicht übernommen: Die Anmeldung ist über NKA_AUTH=off abgeschaltet.'))
@@ -777,6 +769,42 @@ test('Passwort aus NKA_PASSWORD: beendet den Übergang eines bestehenden Bestand
   }
 })
 
+// Durchsicht S2: Wer ein Passwort vorgibt, will Schutz. Ist die Angabe unbrauchbar, bleibt ein bestehender Bestand nicht
+// offen im Übergang, sondern startet in der Einrichtung mit Code.
+test('Passwort aus der Umgebung unbrauchbar: bestehender Bestand im Netz startet streng in der Einrichtung', async () => {
+  const dir = await stockDir()
+  const short = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: 'zu kurz' })
+  try {
+    const auth = await authOf(short.base)
+    assert.equal(auth.mode, 'setup')
+    assert.equal(auth.required, true)
+    assert.equal((await fetch(`${short.base}/api/units`)).status, 401)
+    await waitFor(() => /NKA_PASSWORD: Das Passwort braucht mindestens 15 Zeichen\..* Das Passwort wird nicht übernommen\./.test(short.errorOutput()))
+    await waitFor(() => short.output().includes('Das Passwort aus NKA_PASSWORD ließ sich nicht übernehmen (siehe Fehlerausgabe). Mietfuchs bleibt deshalb geschützt'))
+    await waitFor(() => short.output().includes(`Einrichtungscode: ${setupCode(dir)}`))
+    assert.ok(!short.output().includes('zu kurz') && !short.errorOutput().includes('zu kurz'), 'der Wert steht nicht im Protokoll')
+  } finally {
+    short.stop()
+  }
+})
+
+// Durchsicht S3: In der Oberfläche ausgeschaltet bleibt ausgeschaltet; die Angabe gilt nur, solange nichts entschieden ist.
+test('Passwort aus der Umgebung: eine in der Oberfläche ausgeschaltete Anmeldung bleibt aus', async () => {
+  const dir = freshDir()
+  const first = await startServerIn(dir, NETWORK)
+  assert.equal((await fetch(`${first.base}/api/auth/setup`, post({ code: setupCode(dir), withoutPassword: true }))).status, 200)
+  first.child.kill()
+  await waitForExit(first.child).catch(() => null)
+  const s = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: ENV_PASSWORD })
+  try {
+    assert.equal((await authOf(s.base)).mode, 'off')
+    assert.equal((await fetch(`${s.base}/api/units`)).status, 200)
+    await waitFor(() => s.output().includes('NKA_PASSWORD wird nicht übernommen: Die Anmeldung ist in der Oberfläche ausgeschaltet.'))
+  } finally {
+    s.stop()
+  }
+})
+
 test('Passwort aus der Umgebung: nach dem Zurücksetzen gilt es wieder, solange die Angabe steht', async () => {
   const dir = freshDir()
   const first = await startServerIn(dir, NETWORK)
@@ -789,6 +817,8 @@ test('Passwort aus der Umgebung: nach dem Zurücksetzen gilt es wieder, solange 
     assert.equal((await authOf(s.base)).mode, 'password')
     assert.equal((await fetch(`${s.base}/api/auth/login`, post({ password: ENV_PASSWORD }))).status, 200)
     assert.equal((await fetch(`${s.base}/api/auth/login`, post({ password: TEST_PASSWORD }))).status, 401)
+    // Durchsicht K5: Wer zurückgesetzt hat, sieht, dass es geklappt hat und welches Passwort jetzt gilt
+    await waitFor(() => s.output().includes('Das Passwort ist zurückgesetzt (Datei passwort-zuruecksetzen) und aus NKA_PASSWORD neu festgelegt.'))
   } finally {
     s.stop()
   }

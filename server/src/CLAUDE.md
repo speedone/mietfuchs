@@ -240,9 +240,11 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
 - **Passwort aus der Umgebung** (`readEnvPassword` in access.ts, `applyEnvPassword` in accessServer.ts): `NKA_PASSWORD_FILE`
   (Docker Secrets, Zeilenumbrüche am Ende fallen weg) vor `NKA_PASSWORD`, leer heißt nicht gesetzt. index.ts liest beide
   und löscht sie aus `process.env` (wie den Fensterschlüssel) und übernimmt nach `start`, vor der ersten Anfrage. Nur
-  solange kein Passwort festgelegt ist (`setup`, Übergang, `none`, `off`; auch gleich nach einem Zurücksetzen beim Start),
-  nie bei `NKA_AUTH=off`; geprüft wie in der Oberfläche (`passwordProblem`), sonst eine Zeile auf der Fehlerausgabe. Das
-  Protokoll nennt die Quelle, nie das Passwort. Das installierte Fenster löscht beide (`serverEnv`); Tests und Skripte
+  solange nichts entschieden ist (`setup`, Übergang, `none`; auch gleich nach einem Zurücksetzen beim Start), nicht bei
+  `password` und `off` aus `zugang.json` und nie bei `NKA_AUTH=off`; geprüft wie in der Oberfläche (`passwordProblem`).
+  **Unbrauchbar** (Datei fehlt oder leer, zu kurz …): eine Zeile auf der Fehlerausgabe, und ein Übergang wird zur
+  Einrichtung mit Code (wer ein Passwort vorgibt, will Schutz). Keine Meldung nennt den Wert, auch nicht den Pfad (wer
+  die Variablen verwechselt, hätte dort das Passwort); ein BOM am Anfang fällt weg. Das installierte Fenster löscht beide (`serverEnv`); Tests und Skripte
   leeren sie (`startServerIn`/`startServerRaw`). Geprüft in access.test.ts und api-anmeldung.test.ts.
 - **Zurücksetzen** über die Datei `passwort-zuruecksetzen` (nur eine Datei zählt, nie ihr Inhalt): geprüft beim
   Start, vor Anmeldung und Einrichtung und höchstens einmal je Sekunde bei einer Anfrage (`checkReset`). Ergibt `setup`

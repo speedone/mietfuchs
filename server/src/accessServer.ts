@@ -211,42 +211,56 @@ export function createAccess(options: AccessOptions) {
   }
 
   // ---------- Passwort aus der Umgebung ----------
-  // Nach `start`, vor der ersten Anfrage (index.ts wartet darauf). Legt das Passwort nur fest, solange keins festgelegt
-  // ist: Ein in der Oberfläche geändertes überschreibt die Angabe nie. Nach dem Zurücksetzen gilt sie wieder. Das
-  // Passwort selbst steht nie im Protokoll.
+  // Nach `start`, vor der ersten Anfrage (index.ts wartet darauf). Legt das Passwort nur fest, solange nichts entschieden
+  // ist (`setup`, Übergang, `none`), auch gleich nach einem Zurücksetzen: Ein festgelegtes Passwort und eine in der
+  // Oberfläche ausgeschaltete Anmeldung bleiben (Durchsicht S3). Ist die Angabe unbrauchbar, bleibt ein Übergang nicht
+  // offen, sondern wird zur Einrichtung (S2). Weder Passwort noch Wert stehen im Protokoll.
   async function applyEnvPassword(): Promise<void> {
     if (envPassword === null) return
-    if ('problem' in envPassword) {
-      logError(`${envPassword.problem} Das Passwort wird nicht übernommen.`)
+    const { source } = envPassword
+    const notes: string[] = []
+    if ('ignored' in envPassword && envPassword.ignored) notes.push(`${envPassword.ignored} wird neben ${source} nicht beachtet.`)
+    const skip = (reason: string): void => void startLines.push(...notes, `${source} wird nicht übernommen: ${reason}`)
+    if (setting === 'off') return skip('Die Anmeldung ist über NKA_AUTH=off abgeschaltet.')
+    if (state.mode === 'password') return skip(`Für Mietfuchs ist schon ein Passwort festgelegt. Ändern lässt es sich unter Einstellungen → Anmeldung; die Angabe ${source} können Sie entfernen.`)
+    if (state.mode === 'off') return skip('Die Anmeldung ist in der Oberfläche ausgeschaltet. Einschalten lässt sie sich unter Einstellungen → Anmeldung mit dem Einrichtungscode.')
+    const password = 'problem' in envPassword ? null : envPassword.password
+    const problem = 'problem' in envPassword ? envPassword.problem : passwordProblem(password)
+    if (problem !== null || password === null) {
+      logError(`${'problem' in envPassword ? '' : `${source}: `}${problem} Das Passwort wird nicht übernommen.`)
+      if (state.mode === 'transition') {
+        try {
+          save(fileOf('setup'))
+        } catch (err) {
+          logError(`${ACCESS_FILE} ließ sich nicht schreiben: ${(err as Error).message}`)
+          state = { ...state, mode: 'setup', required: requiredFor('setup') }
+        }
+        if (!code) issueCode()
+      }
+      if (state.mode === 'setup' && exposed()) {
+        startLines.length = 0
+        startLines.push(...notes, `Das Passwort aus ${source} ließ sich nicht übernehmen (siehe Fehlerausgabe). Mietfuchs bleibt deshalb geschützt, bis ein Passwort festgelegt ist.`, codeLine('Einrichtungscode'))
+      } else {
+        startLines.push(...notes)
+      }
       return
     }
-    const { password, source, ignored } = envPassword
-    if (ignored) startLines.push(`${ignored} wird neben ${source} nicht beachtet.`)
-    if (setting === 'off') {
-      startLines.push(`${source} wird nicht übernommen: Die Anmeldung ist über NKA_AUTH=off abgeschaltet.`)
-      return
-    }
-    if (state.mode === 'password') {
-      startLines.push(`${source} wird nicht übernommen: Für Mietfuchs ist schon ein Passwort festgelegt. Ändern lässt es sich unter Einstellungen → Anmeldung; die Angabe ${source} können Sie entfernen.`)
-      return
-    }
-    const problem = passwordProblem(password)
-    if (problem) {
-      logError(`${source}: ${problem} Das Passwort wird nicht übernommen.`)
-      return
-    }
+    const wasReset = state.proxyStrict === true
     try {
       save(fileOf('password', await hashes.run(() => hashPassword(password))))
     } catch (err) {
       logError(`Das Passwort aus ${source} ließ sich nicht speichern (${ACCESS_FILE}): ${(err as Error).message}`)
+      startLines.push(...notes)
       return
     }
     dropCode()
     sessions.revokeAll()
-    // Die Zeilen von `start` sprachen von Einrichtung oder Übergang samt Code; beides gilt nicht mehr
-    const kept = startLines.filter((line) => line.endsWith('nicht beachtet.'))
+    // Die Zeilen von `start` sprachen von Einrichtung, Übergang oder Zurücksetzen samt Code; das gilt nicht mehr
     startLines.length = 0
-    startLines.push(...kept, `Das Passwort für Mietfuchs ist aus ${source} festgelegt. Die Angabe gilt nur, solange kein Passwort festgelegt ist; ändern lässt es sich unter Einstellungen → Anmeldung.`)
+    startLines.push(
+      ...notes,
+      `${wasReset ? `Das Passwort ist zurückgesetzt (Datei passwort-zuruecksetzen) und aus ${source} neu festgelegt.` : `Das Passwort für Mietfuchs ist aus ${source} festgelegt.`} Die Angabe gilt nur, solange kein Passwort festgelegt ist; ändern lässt es sich unter Einstellungen → Anmeldung.`,
+    )
   }
 
   const tokensOf = (req: Request): string[] => cookieValues(header(req, 'cookie'), cookieName(state.instance))
