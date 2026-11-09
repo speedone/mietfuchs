@@ -441,7 +441,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 {due && (
                   <details className={`no-print rent-due ${due.tone === 'red' ? 'text-red' : 'muted'}`}>
                     <summary>{due.text}</summary>
-                    <p>{dueDetails(property?.state, dueChecked, r.dueRule)}</p>
+                    {/* Rot ist nur die Zeile „offen seit …“, die Erklärung bleibt ruhig lesbar (UI-Durchsicht 0.17.0) */}
+                    <p className="muted">{dueDetails(property?.state, dueChecked, r.dueRule)}</p>
                   </details>
                 )}
                 <div className="rent-grid">
