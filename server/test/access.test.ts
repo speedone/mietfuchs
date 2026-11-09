@@ -3,6 +3,7 @@
 // die Bremse nach Fehlversuchen. Die Routen prüft api-anmeldung.test.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -10,8 +11,8 @@ import {
   ACCESS_FILE, CODE_ALPHABET, CODE_FILE, addressKey, authSetting, createBrake, createHashQueue, createSessions, formatCode,
   hashPassword, initialAccess, needsRehash, sameKey, newInstance, newSetupCode, normalizeCode, passwordProblem, readAccessFile, reachableOf,
   removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, viaProxy, viaHttps, cookieValues, sessionCookie,
-  clearedCookie, isLoopback, type AccessFile, type AccessState, type GateDecision, type GateRequest,
-  readEnvPassword,
+  clearedCookie, isLoopback, pairingProof, newDeviceKey, deviceKeyHash, matchDevice, MAX_DEVICES, PAIRING_MINUTES, DEVICE_HEADER,
+  readEnvPassword, type AccessFile, type Device, type AccessState, type GateDecision, type GateRequest,
 } from '../src/access.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-zugang-'))
@@ -181,6 +182,77 @@ test('Zugang: verdorbene oder fremde Datei gilt als Einrichtung, mit Satz', () =
       assert.equal(read.file, 'corrupt', content)
       assert.match(read.problem ?? '', /zugang\.json/, content)
     }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------- Geräte (#528, Schritt 2: Programmfenster koppeln) ----------
+
+const CERT_A = 'a'.repeat(64)
+const CERT_B = 'b'.repeat(64)
+
+test('Geräte: der Beweis hängt an Code und Zertifikat, nicht an der Schreibweise des Codes', () => {
+  const proof = pairingProof('K7QM-4XPA-9TRW', CERT_A)
+  assert.match(proof, /^[0-9a-f]{64}$/)
+  assert.equal(pairingProof('K7QM-4XPA-9TRW', CERT_A), proof)
+  assert.equal(pairingProof('k7qm 4xpa9trw', CERT_A), proof)
+  assert.notEqual(pairingProof('K7QM-4XPA-9TRX', CERT_A), proof)
+  assert.notEqual(pairingProof('K7QM-4XPA-9TRW', CERT_B), proof)
+  // HMAC-SHA256 mit dem normalisierten Code als Schlüssel über „mietfuchs-kopplung:“ und den Fingerabdruck
+  const expected = crypto.createHmac('sha256', 'K7QM4XPA9TRW').update(`mietfuchs-kopplung:${CERT_A}`).digest('hex')
+  assert.equal(proof, expected)
+})
+
+test('Geräte: Schlüssel aus 32 Zufallsbytes, gespeichert nur als SHA-256', () => {
+  const key = newDeviceKey()
+  assert.match(key, /^[A-Za-z0-9_-]{43}$/)
+  assert.notEqual(newDeviceKey(), key)
+  assert.equal(deviceKeyHash(key), crypto.createHash('sha256').update(key).digest('hex'))
+  assert.equal(MAX_DEVICES, 20)
+  assert.equal(PAIRING_MINUTES, 10)
+  assert.equal(DEVICE_HEADER, 'x-mietfuchs-device')
+})
+
+test('Geräte: die Kopfzeile <id>.<Schlüssel> findet genau das Gerät mit passendem Schlüssel', () => {
+  const key = newDeviceKey()
+  const other = newDeviceKey()
+  const devices: Device[] = [
+    { id: 'abcdef0123456789', name: 'Büro', keyHash: deviceKeyHash(other), pairedAt: '2026-11-09T10:00:00.000Z', lastSeen: null },
+    { id: '0123456789abcdef', name: 'Laptop', keyHash: deviceKeyHash(key), pairedAt: '2026-11-09T10:00:00.000Z', lastSeen: null },
+  ]
+  assert.equal(matchDevice(devices, `0123456789abcdef.${key}`)?.name, 'Laptop')
+  assert.equal(matchDevice(devices, `0123456789abcdef.${other}`), null, 'falscher Schlüssel')
+  assert.equal(matchDevice(devices, `ffffffffffffffff.${key}`), null, 'unbekannte Kennung')
+  assert.equal(matchDevice(devices, `0123456789abcdef${key}`), null, 'ohne Punkt')
+  assert.equal(matchDevice(devices, ''), null)
+  assert.equal(matchDevice(devices, '.'), null)
+  assert.equal(matchDevice(devices, '0123456789abcdef.'), null)
+  assert.equal(matchDevice(devices, undefined), null)
+  assert.equal(matchDevice([], `0123456789abcdef.${key}`), null)
+})
+
+test('Geräte: zugang.json ohne devices gilt, mit einem ungültigen Gerät ist sie beschädigt', () => {
+  const dir = freshDir()
+  try {
+    const base = { version: 1, mode: 'password', instance: 'abcdef', hash: 'scrypt$17$8$1$x$y', changedAt: '2026-11-09T10:00:00.000Z' }
+    fs.writeFileSync(path.join(dir, ACCESS_FILE), JSON.stringify(base))
+    const plain = readAccessFile(dir).file
+    assert.ok(plain && plain !== 'corrupt')
+    assert.deepEqual(plain.devices ?? [], [])
+    const device: Device = { id: '0123456789abcdef', name: 'Laptop', keyHash: 'c'.repeat(64), pairedAt: '2026-11-09T10:00:00.000Z', lastSeen: null }
+    fs.writeFileSync(path.join(dir, ACCESS_FILE), JSON.stringify({ ...base, devices: [device] }))
+    const withDevice = readAccessFile(dir).file
+    assert.ok(withDevice && withDevice !== 'corrupt')
+    assert.deepEqual(withDevice.devices, [device])
+    for (const devices of [[{}], [{ ...device, keyHash: 'kurz' }], [{ ...device, lastSeen: 5 }], [{ ...device, name: '' }], {}, 'x']) {
+      fs.writeFileSync(path.join(dir, ACCESS_FILE), JSON.stringify({ ...base, devices }))
+      assert.equal(readAccessFile(dir).file, 'corrupt', JSON.stringify(devices))
+    }
+    // Der Rundweg trägt die Geräte mit
+    const file: AccessFile = { version: 1, mode: 'password', instance: 'abcdef', hash: 'scrypt$17$8$1$x$y', changedAt: '2026-11-09T10:00:00.000Z', devices: [device] }
+    writeAccessFile(dir, file)
+    assert.deepEqual(readAccessFile(dir).file, file)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -404,7 +476,7 @@ test('Vorschaltung: geschützt ist /api, /uploads und /healthz in jeder Schreibw
 test('Vorschaltung: frei sind die Oberfläche und die Routen der Anmeldung', () => {
   const state = stateOf()
   for (const [method, p] of [['GET', '/'], ['GET', '/assets/index-abc.js'], ['HEAD', '/manifest.webmanifest'], ['GET', '/einstellungen'], ['GET', '/apiary'],
-    ['GET', '/api/auth'], ['GET', '/API/Auth/'], ['HEAD', '/api/auth'], ['POST', '/api/auth/login'], ['POST', '/api/auth/setup'], ['POST', '/API/AUTH/LOGOUT/'], ['GET', '/healthz'], ['GET', '/HEALTHZ'], ['GET', '/healthz/']]) {
+    ['GET', '/api/auth'], ['GET', '/API/Auth/'], ['HEAD', '/api/auth'], ['POST', '/api/auth/login'], ['POST', '/api/auth/setup'], ['POST', '/API/AUTH/LOGOUT/'], ['POST', '/api/auth/pair'], ['GET', '/healthz'], ['GET', '/HEALTHZ'], ['GET', '/healthz/']]) {
     assert.equal(passes(gate(state, request({ method, path: p }))), true, `${method} ${p}`)
   }
   // nur lesend: ein POST auf die Oberfläche braucht eine Sitzung
@@ -412,6 +484,10 @@ test('Vorschaltung: frei sind die Oberfläche und die Routen der Anmeldung', () 
   assert.equal(passes(gate(state, request({ method: 'GET', path: '/api/auth/login' }))), false)
   assert.equal(passes(gate(state, request({ method: 'PUT', path: '/api/auth/password' }))), false)
   assert.equal(passes(gate(state, request({ method: 'POST', path: '/healthz' }))), false)
+  // Koppeln ist frei wie die Anmeldung; einen Code verlangen und Geräte verwalten nicht
+  for (const [method, p] of [['GET', '/api/auth/pair'], ['POST', '/api/auth/pairing'], ['DELETE', '/api/auth/pairing'], ['GET', '/api/auth/devices'], ['DELETE', '/api/auth/devices/abc']]) {
+    assert.equal(passes(gate(state, request({ method, path: p }))), false, `${method} ${p}`)
+  }
 })
 
 test('Vorschaltung: /healthz gekürzt ohne Sitzung von außen, voll vom Rechner selbst und mit Sitzung', () => {

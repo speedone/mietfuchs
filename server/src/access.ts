@@ -23,7 +23,11 @@ export type AuthSetting = 'auto' | 'on' | 'off'
 export type AccessView = AccessMode | 'transition' | 'none'
 export type Stage = 'A' | 'B'
 
-export type AccessFile = { version: 1, mode: AccessMode, instance: string, hash?: string, changedAt: string }
+// Ein gekoppeltes Programmfenster (#528, Schritt 2): vom Schlüssel nur sein SHA-256, `lastSeen` höchstens stündlich
+export type Device = { id: string, name: string, keyHash: string, pairedAt: string, lastSeen: string | null }
+
+// `devices` fehlt in Dateien von vorher und heißt dann: keine Geräte
+export type AccessFile = { version: 1, mode: AccessMode, instance: string, hash?: string, changedAt: string, devices?: Device[] }
 
 export type AccessState = {
   reachable: Reachable
@@ -233,6 +237,40 @@ export function sameCode(input: unknown, code: string | null): boolean {
   return crypto.timingSafeEqual(digest(given), digest(normalizeCode(code)))
 }
 
+// ---------- Geräte: Programmfenster koppeln (#528, Schritt 2) ----------
+
+export const MAX_DEVICES = 20
+export const PAIRING_MINUTES = 10
+export const DEVICE_HEADER = 'x-mietfuchs-device'
+export const DEVICE_NAME_MAX = 60
+
+// Der Beweis des Fensters: HMAC-SHA256 mit dem normalisierten Code als Schlüssel über den Fingerabdruck des Zertifikats,
+// das es gesehen hat. Ein Mittelsmann mit eigenem Zertifikat bekommt einen Beweis für seins und kann ihn ohne Code nicht
+// auf das echte umrechnen; der Code selbst geht nie über die Leitung.
+export const pairingProof = (code: string, certSha256: string): string =>
+  crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:${certSha256}`).digest('hex')
+
+// 256 Bit Zufall: dafür genügt SHA-256, scrypt brauchte es nur für Passwörter, die ein Mensch wählt
+export const newDeviceKey = (): string => crypto.randomBytes(32).toString('base64url')
+export const deviceKeyHash = (key: string): string => crypto.createHash('sha256').update(key).digest('hex')
+export const newDeviceId = (): string => crypto.randomBytes(8).toString('hex')
+
+// Kopfzeile `<id>.<Schlüssel>`. Jedes Gerät wird verglichen, zeitkonstant über die Hashes, damit die Dauer weder
+// Kennung noch Schlüssel verrät.
+export function matchDevice(devices: readonly Device[], header: string | undefined): Device | null {
+  if (typeof header !== 'string' || header.length > 200) return null
+  const dot = header.indexOf('.')
+  if (dot <= 0 || dot === header.length - 1) return null
+  const id = header.slice(0, dot)
+  const given = digest(header.slice(dot + 1))
+  let found: Device | null = null
+  for (const device of devices) {
+    const keyOk = crypto.timingSafeEqual(given, Buffer.from(device.keyHash, 'hex'))
+    if (keyOk && device.id === id) found = device
+  }
+  return found
+}
+
 // ---------- Dateien im Datenordner ----------
 
 // Über Zwischendatei und Umbenennen wie secrets.json, nur für den eigenen Benutzer lesbar (0600)
@@ -249,12 +287,23 @@ function writePrivate(file: string, content: string): void {
 
 const MODES: readonly string[] = ['setup', 'password', 'off']
 
+function isDevice(value: unknown): value is Device {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const d = value as Record<string, unknown>
+  return typeof d.id === 'string' && /^[0-9a-f]{16}$/.test(d.id) &&
+    typeof d.name === 'string' && d.name.length >= 1 && d.name.length <= DEVICE_NAME_MAX &&
+    typeof d.keyHash === 'string' && /^[0-9a-f]{64}$/.test(d.keyHash) &&
+    typeof d.pairedAt === 'string' && (d.lastSeen === null || typeof d.lastSeen === 'string')
+}
+
 function isAccessFile(value: unknown): value is AccessFile {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const v = value as Record<string, unknown>
   if (v.version !== 1 || typeof v.mode !== 'string' || !MODES.includes(v.mode)) return false
   if (typeof v.instance !== 'string' || !/^[0-9a-f]{6}$/.test(v.instance)) return false
   if (v.mode === 'password' && (typeof v.hash !== 'string' || !v.hash.startsWith('scrypt$'))) return false
+  // Ein einziges ungültiges Gerät macht die Datei verdorben (streng): Ein halber Eintrag darf nie als Schlüssel gelten
+  if (v.devices !== undefined && !(Array.isArray(v.devices) && v.devices.every(isDevice))) return false
   return v.hash === undefined || typeof v.hash === 'string'
 }
 
@@ -270,8 +319,14 @@ export function readAccessFile(dataDir: string): { file: AccessFile | 'corrupt' 
   try {
     const parsed: unknown = JSON.parse(text)
     if (isAccessFile(parsed)) {
-      const { version, mode, instance, hash, changedAt } = parsed
-      return { file: { version, mode, instance, ...(hash !== undefined ? { hash } : {}), changedAt: typeof changedAt === 'string' ? changedAt : '' }, problem: null }
+      const { version, mode, instance, hash, changedAt, devices } = parsed
+      return {
+        file: {
+          version, mode, instance, ...(hash !== undefined ? { hash } : {}), changedAt: typeof changedAt === 'string' ? changedAt : '',
+          ...(devices !== undefined ? { devices: devices.map(({ id, name, keyHash, pairedAt, lastSeen }) => ({ id, name, keyHash, pairedAt, lastSeen })) } : {}),
+        },
+        problem: null,
+      }
     }
   } catch {
     /* unten */
@@ -346,7 +401,7 @@ export type Sessions = ReturnType<typeof createSessions>
 
 // ---------- Bremse nach Fehlversuchen ----------
 
-export type AttemptKind = 'password' | 'code'
+export type AttemptKind = 'password' | 'code' | 'pair'
 export type Ticket = { ok: true, key: string, kind: AttemptKind, delayMs: number }
 export type Refusal = { ok: false, retryAfter: number }
 
@@ -375,11 +430,11 @@ export function addressKey(address: string | undefined): string {
 // **Verlangsamen, nie sperren** (Entwurf, „Bremse nach Fehlversuchen“): Jeder Versuch zählt als Fehlversuch, bevor
 // gerechnet wird, und wird bei Erfolg zurückgenommen. Je Adresse ein laufender Versuch, insgesamt zwei; je Adresse ab
 // dem fünften Versuch nach vier Fehlversuchen 1 s Wartezeit, je weiterem verdoppelt bis 60 Sekunden; für das Konto ab 20
-// Fehlversuchen in 15 Minuten nur 1 s mehr je Berechnung. Code und Passwort zählen getrennt. Im Arbeitsspeicher.
+// Fehlversuchen in 15 Minuten nur 1 s mehr je Berechnung. Code, Passwort und Koppeln zählen getrennt. Im Arbeitsspeicher.
 export function createBrake({ now = Date.now, maxAddresses = 10_000 }: { now?: () => number, maxAddresses?: number } = {}) {
   type Entry = { failures: number, lastAt: number, running: boolean }
   let entries = new Map<string, Entry>()
-  let recent: Record<AttemptKind, number[]> = { password: [], code: [] }
+  let recent: Record<AttemptKind, number[]> = { password: [], code: [], pair: [] }
   let running = 0
 
   const entryOf = (key: string): Entry => {
@@ -442,7 +497,7 @@ export function createBrake({ now = Date.now, maxAddresses = 10_000 }: { now?: (
     // Datei `passwort-zuruecksetzen` und Neustart: Das Zurücksetzen bleibt auch während eines Angriffs nutzbar
     reset(): void {
       entries = new Map()
-      recent = { password: [], code: [] }
+      recent = { password: [], code: [], pair: [] }
       running = 0
     },
   }
@@ -518,6 +573,8 @@ const FREE: Record<string, readonly string[]> = {
   '/api/auth/login': ['POST'],
   '/api/auth/setup': ['POST'],
   '/api/auth/logout': ['POST'],
+  // Koppeln eines Programmfensters (#528, Schritt 2): frei wie die Anmeldung, mit Code als Beweis und derselben Bremse
+  '/api/auth/pair': ['POST'],
   '/healthz': ['GET', 'HEAD'],
 }
 
