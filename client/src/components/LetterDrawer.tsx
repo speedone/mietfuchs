@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts } from '../types'
 import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS } from '../../../shared/letter.ts'
+import { EPC_PURPOSE_MAX, epcText } from '../../../shared/epcQr.ts'
 import MonthField from './MonthField'
 import { monthLabel } from '../monthText'
 import { localToday } from '../periodForm'
@@ -73,7 +74,9 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
   const fromHint = level === 'tenancy' && draft.adjust !== 'none' ? adjustFromHint(shownFrom, localToday()) : null
   const lacksMonth = monthlessAdjustTexts(draft, base, level).length > 0
   const previewValues = level === 'tenancy' ? { ...values, VorauszahlungNeu: draftNewCents(draft, suggested), AnpassungAb: /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : '' } : values
+  // #624: Der Verwendungszweck ist kein Absatz des Briefs, er steht nur im QR-Code.
   const longLetter = exceedsOnePage(LETTER_BLOCKS
+    .filter((b) => b.id !== 'paymentPurpose')
     .filter((b) => (shown ? shown.includes(b.id) : !['backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'attachments'].includes(b.id)))
     .map((b) => previewOf(shownText(draft, base, b.id), previewValues)))
 
@@ -187,7 +190,9 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
       {lacksMonth && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt den Monat nicht. Mit dem Platzhalter {AnpassungAb} steht ${level === 'tenancy' && /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : 'der Monat'} im Brief, und „In die Staffel übernehmen“ nimmt nach dem Abschluss denselben Monat.`} />}
       {LETTER_BLOCKS.map((b) => {
         const text = shownText(draft, base, b.id)
-        const appears = shown ? shown.includes(b.id) : true
+        // #624: Der Verwendungszweck erscheint, wo die Nachzahlung erscheint (im Code neben ihrem Satz).
+        const appears = shown ? shown.includes(b.id === 'paymentPurpose' ? 'backPayment' : b.id) : true
+        const cut = b.id === 'paymentPurpose' && [...epcText(previewOf(text, previewValues))].length > EPC_PURPOSE_MAX
         const inherited = draft.own[b.id] === null
         return (
           <div key={b.id} className="letter-edit">
@@ -215,6 +220,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
               )}
             </div>
             {text.trim() !== '' && <p className="letter-preview"><span className="muted">Vorschau: </span>{previewOf(text, previewValues)}</p>}
+            {cut && <p className="muted m-0">{`Wird im QR-Code auf ${EPC_PURPOSE_MAX} Zeichen gekürzt.`}</p>}
             {b.id === 'salutation' && salutations && salutationHint(salutations.names, salutations.total, text) && (
               <NoticeBox level="hint" action={salutationHint(salutations.names, salutations.total, text)} fix={salutations.fix ?? null} />
             )}
