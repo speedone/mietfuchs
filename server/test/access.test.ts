@@ -5,14 +5,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import {
   ACCESS_FILE, CODE_ALPHABET, CODE_FILE, addressKey, authSetting, createBrake, createHashQueue, createSessions, formatCode,
   hashPassword, initialAccess, needsRehash, sameKey, newInstance, newSetupCode, normalizeCode, passwordProblem, readAccessFile, reachableOf,
-  removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, viaProxy, viaHttps, cookieValues, sessionCookie,
+  removeCodeFile, sameCode, verifyPassword, writeAccessFile, writeCodeFile, gate, proxyHeadersPresent, fromThisComputer, viaHttps, cookieValues, sessionCookie,
   clearedCookie, isLoopback, pairingProof, newDeviceKey, deviceKeyHash, matchDevice, MAX_DEVICES, PAIRING_MINUTES, DEVICE_HEADER,
-  readEnvPassword, type AccessFile, type Device, type AccessState, type GateDecision, type GateRequest,
+  readEnvPassword, channelOf, originProof, expectedProofs, type AccessFile, type Device, type AccessState, type GateDecision, type GateRequest,
 } from '../src/access.ts'
 import express from 'express'
 import { createAccess } from '../src/accessServer.ts'
@@ -315,6 +316,14 @@ test('Zugang: die Adresse der Bremse, IPv4 in IPv6 und IPv6 je /64', () => {
   assert.equal(addressKey(undefined), 'unbekannt')
 })
 
+test('Zugang: die Adresse der Bremse mit eingebetteter IPv4 in IPv6 (Durchsicht M1)', () => {
+  assert.equal(addressKey('::1.2.3.4'), '0:0:0:0:0:0:102:304')
+  assert.equal(addressKey('64:ff9b::192.0.2.5'), '64:ff9b:0:0:0:0:c000:205')
+  assert.notEqual(addressKey('::1.2.3.4'), addressKey('::1'))
+  assert.equal(addressKey('::ffff:192.0.2.5'), '192.0.2.5')
+  assert.equal(addressKey('fe80::1%eth0'), 'fe80:0:0:0:0:0:0:1')
+})
+
 test('Zugang: Bremse bucht vor dem Ergebnis und nimmt bei Erfolg zurück', () => {
   let now = 0
   const brake = createBrake({ now: () => now })
@@ -490,7 +499,7 @@ test('Vorschaltung: frei sind die Oberfläche und die Routen der Anmeldung', () 
   assert.equal(passes(gate(state, request({ method: 'PUT', path: '/api/auth/password' }))), false)
   assert.equal(passes(gate(state, request({ method: 'POST', path: '/healthz' }))), false)
   // Koppeln ist frei wie die Anmeldung; einen Code verlangen und Geräte verwalten nicht
-  for (const [method, p] of [['GET', '/api/auth/pair'], ['POST', '/api/auth/pairing'], ['DELETE', '/api/auth/pairing'], ['GET', '/api/auth/devices'], ['DELETE', '/api/auth/devices/abc']]) {
+  for (const [method, p] of [['PUT', '/api/auth/pair'], ['POST', '/api/auth/pairing'], ['DELETE', '/api/auth/pairing'], ['GET', '/api/auth/devices'], ['DELETE', '/api/auth/devices/abc']]) {
     assert.equal(passes(gate(state, request({ method, path: p }))), false, `${method} ${p}`)
   }
 })
@@ -501,9 +510,9 @@ test('Vorschaltung: /healthz gekürzt ohne Sitzung von außen, voll vom Rechner 
   assert.equal(outside.pass && outside.shortHealth, true)
   const here = gate(state, request({ path: '/healthz', loopback: true }))
   assert.equal(here.pass && here.shortHealth, false)
-  // ein Proxy auf demselben Rechner bekommt den vollen Bericht (hingenommen, keine Mieterdaten)
+  // ein Proxy auf demselben Rechner kommt nicht vom Rechner selbst: gekürzt wie von außen
   const proxied = gate(state, request({ path: '/healthz', loopback: true, viaProxy: true }))
-  assert.equal(proxied.pass && proxied.shortHealth, false)
+  assert.equal(proxied.pass && proxied.shortHealth, true)
   const signedIn = gate(state, request({ path: '/healthz/', signedIn: true }))
   assert.equal(signedIn.pass && signedIn.shortHealth, false)
   // ohne Anmeldung wie bisher voll
@@ -601,8 +610,8 @@ test('Vorschaltung: im Übergang und bei off weist Sec-Fetch-Site fremde Seiten 
 })
 
 test('Vorschaltung: Proxy-Kopfzeilen, Cookies und HTTPS erkennen', () => {
-  assert.equal(viaProxy({}), false)
-  for (const name of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'via']) assert.equal(viaProxy({ [name]: 'x' }), true, name)
+  assert.equal(proxyHeadersPresent({}), false)
+  for (const name of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'via']) assert.equal(proxyHeadersPresent({ [name]: 'x' }), true, name)
   assert.deepEqual(cookieValues('a=1; mietfuchs_abcdef=eins; b=2; mietfuchs_abcdef=zwei', 'mietfuchs_abcdef'), ['eins', 'zwei'])
   assert.deepEqual(cookieValues(undefined, 'mietfuchs_abcdef'), [])
   assert.deepEqual(cookieValues('mietfuchs_abcdefx=1', 'mietfuchs_abcdef'), [])
@@ -623,6 +632,20 @@ test('Vorschaltung: Proxy-Kopfzeilen, Cookies und HTTPS erkennen', () => {
   assert.equal(isLoopback('::1'), true)
   assert.equal(isLoopback('192.168.1.5'), false)
   assert.equal(isLoopback(undefined), false)
+})
+
+// Eine Anfrage mit irgendeiner Kopfzeile eines Proxys kommt nie vom Rechner selbst, gleich von welcher Adresse: Ein Proxy
+// auf demselben Rechner (Caddy, Peer 127.0.0.1) reicht sonst jede Anfrage aus dem Netz als „von hier“ weiter
+test('Vom Rechner selbst: Loopback ohne jede Proxy-Kopfzeile', () => {
+  assert.equal(fromThisComputer('127.0.0.1', {}), true)
+  assert.equal(fromThisComputer('::1', {}), true)
+  assert.equal(fromThisComputer('::ffff:127.0.0.1', {}), true)
+  assert.equal(fromThisComputer('192.168.1.5', {}), false)
+  assert.equal(fromThisComputer(undefined, {}), false)
+  for (const name of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'via']) {
+    assert.equal(fromThisComputer('127.0.0.1', { [name]: 'x' }), false, name)
+    assert.equal(fromThisComputer('::1', { [name]: ['x', 'y'] }), false, name)
+  }
 })
 
 // Passwort aus der Umgebung (#528): NKA_PASSWORD_FILE (Docker Secrets) vor NKA_PASSWORD, leer heißt nicht gesetzt, eine
@@ -695,6 +718,106 @@ test('Geräte: „zuletzt gesehen“ steht sofort in der Liste, in zugang.json h
     clock += 2 * 60_000
     assert.equal(await listed(), new Date(clock).toISOString())
     assert.equal(stored(), new Date(clock).toISOString(), 'nach einer Stunde wieder')
+  } finally {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------- Kanal einer Anfrage (#528, Kopplung über einen Proxy) ----------
+// Tabelle in docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md, Abschnitt 3: Proxy-Kopfzeilen zählen nur von
+// einem Peer aus NKA_TRUST_PROXY, und nur ein einziges `X-Forwarded-Proto: https` macht daraus den Kanal `proxy`.
+
+const PROXIED = { host: 'mietfuchs:3001', 'x-forwarded-proto': 'https', 'x-forwarded-host': 'nas.fritz.box', 'x-forwarded-for': '192.168.1.9' }
+
+test('Kanal: die Tabelle des Entwurfs, Zeile für Zeile', () => {
+  // vertrauter Peer, genau ein https: proxy mit Ursprung aus X-Forwarded-Host, über TLS wie über HTTP
+  for (const encrypted of [false, true]) {
+    assert.deepEqual(channelOf({ encrypted, trustedPeer: true, headers: PROXIED }), { channel: 'proxy', origin: 'https://nas.fritz.box' }, String(encrypted))
+  }
+  // vertrauter Peer, anderes Protokoll: plain, auch über TLS
+  for (const encrypted of [false, true]) {
+    assert.deepEqual(channelOf({ encrypted, trustedPeer: true, headers: { ...PROXIED, 'x-forwarded-proto': 'http' } }), { channel: 'plain', origin: null }, String(encrypted))
+  }
+  // vertrauter Peer ohne X-Forwarded-Proto: die eigene Verbindung entscheidet
+  const noProto = { ...PROXIED, 'x-forwarded-proto': undefined }
+  assert.deepEqual(channelOf({ encrypted: true, trustedPeer: true, headers: noProto }), { channel: 'tls', origin: null })
+  assert.deepEqual(channelOf({ encrypted: false, trustedPeer: true, headers: noProto }), { channel: 'plain', origin: null })
+  // nicht vertraut: keine Proxy-Kopfzeile zählt
+  assert.deepEqual(channelOf({ encrypted: true, trustedPeer: false, headers: PROXIED }), { channel: 'tls', origin: null })
+  assert.deepEqual(channelOf({ encrypted: false, trustedPeer: false, headers: PROXIED }), { channel: 'plain', origin: null })
+  assert.deepEqual(channelOf({ encrypted: true, trustedPeer: false, headers: {} }), { channel: 'tls', origin: null })
+  assert.deepEqual(channelOf({ encrypted: false, trustedPeer: false, headers: {} }), { channel: 'plain', origin: null })
+})
+
+test('Kanal: mehrere Werte gelten nicht, Groß und Klein bei https egal', () => {
+  for (const proto of ['https, https', 'https,http', ['https', 'https'], '', 'httpss']) {
+    assert.deepEqual(channelOf({ encrypted: false, trustedPeer: true, headers: { ...PROXIED, 'x-forwarded-proto': proto } }), { channel: 'plain', origin: null }, JSON.stringify(proto))
+  }
+  assert.equal(channelOf({ encrypted: false, trustedPeer: true, headers: { ...PROXIED, 'x-forwarded-proto': ' HTTPS ' } }).channel, 'proxy')
+})
+
+test('Kanal: der Ursprung aus X-Forwarded-Host, sonst aus Host, nur Name und Port', () => {
+  const originOf = (headers: Record<string, string | string[] | undefined>) => channelOf({ encrypted: false, trustedPeer: true, headers: { 'x-forwarded-proto': 'https', ...headers } })
+  assert.deepEqual(originOf({ host: 'mietfuchs:3001', 'x-forwarded-host': 'NAS.fritz.box:443' }), { channel: 'proxy', origin: 'https://nas.fritz.box' })
+  assert.deepEqual(originOf({ host: 'mietfuchs:3001', 'x-forwarded-host': 'nas.fritz.box:8443' }), { channel: 'proxy', origin: 'https://nas.fritz.box:8443' })
+  assert.deepEqual(originOf({ host: 'localhost:8443' }), { channel: 'proxy', origin: 'https://localhost:8443' })
+  assert.deepEqual(originOf({ host: '[::1]:8443' }), { channel: 'proxy', origin: 'https://[::1]:8443' })
+  for (const forwarded of ['a, b', 'user@nas', 'nas/pfad', 'nas?x=1', 'nas#x', ' ', 'nas:99999', ['a', 'b']]) {
+    assert.deepEqual(originOf({ host: 'mietfuchs:3001', 'x-forwarded-host': forwarded }), { channel: 'plain', origin: null }, JSON.stringify(forwarded))
+  }
+  assert.deepEqual(originOf({}), { channel: 'plain', origin: null })
+})
+
+test('Beweis mit Ursprung: hängt an Code und Ursprung, nicht an der Schreibweise des Codes', () => {
+  const proof = originProof('ABCD-EFGH-JKMN', 'https://nas.fritz.box')
+  assert.match(proof, /^[0-9a-f]{64}$/)
+  assert.equal(originProof('abcd efgh jkmn', 'https://nas.fritz.box'), proof)
+  assert.notEqual(originProof('ABCD-EFGH-JKMP', 'https://nas.fritz.box'), proof)
+  assert.notEqual(originProof('ABCD-EFGH-JKMN', 'https://nas.fritz.box:8443'), proof)
+  // getrennte Nachrichten: derselbe Text als Fingerabdruck ergibt einen anderen Beweis
+  assert.notEqual(pairingProof('ABCD-EFGH-JKMN', 'https://nas.fritz.box'), proof)
+  assert.equal(proof, crypto.createHmac('sha256', 'ABCDEFGHJKMN').update('mietfuchs-kopplung:origin:https://nas.fritz.box').digest('hex'))
+})
+
+test('Erwartete Beweise je Kanal', () => {
+  const code = 'ABCD-EFGH-JKMN'
+  const cert = 'a'.repeat(64)
+  const origin = 'https://nas.fritz.box'
+  assert.deepEqual(expectedProofs(code, 'tls', cert, null), [pairingProof(code, cert)])
+  assert.deepEqual(expectedProofs(code, 'tls', cert, origin), [pairingProof(code, cert)])
+  assert.deepEqual(expectedProofs(code, 'tls', null, null), [])
+  assert.deepEqual(expectedProofs(code, 'proxy', cert, origin), [pairingProof(code, cert), originProof(code, origin)])
+  assert.deepEqual(expectedProofs(code, 'proxy', null, origin), [originProof(code, origin)])
+  assert.deepEqual(expectedProofs(code, 'plain', cert, origin), [])
+})
+
+test('Vorschaltung: die Vorabfrage der Kopplung ist frei wie das Koppeln', () => {
+  const state = stateOf()
+  assert.equal(passes(gate(state, request({ method: 'GET', path: '/api/auth/pair' }))), true)
+  assert.equal(passes(gate(state, request({ method: 'POST', path: '/api/auth/pair' }))), true)
+  assert.equal(passes(gate(state, request({ method: 'DELETE', path: '/api/auth/pair' }))), false)
+})
+
+test('Vorschaltung: nur eine Anfrage mit Proxy-Kopfzeilen fragt NKA_TRUST_PROXY (und damit DNS)', async () => {
+  const dir = freshDir()
+  writeAccessFile(dir, { version: 1, mode: 'password', instance: 'abcdef', hash: await hashPassword('ein langes Testpasswort', { logN: 10 }), changedAt: '' })
+  const asked: Array<string | undefined> = []
+  const trustProxy = { configured: true, problems: [], trusts: async (address: string | undefined) => { asked.push(address); return true } }
+  const access = createAccess({ dataDir: dir, host: '0.0.0.0', setting: 'auto', allowedHosts: undefined, runtime: 'docker', tls: { certSha256: 'c'.repeat(64) }, trustProxy, log: () => {}, logError: () => {} })
+  access.start({ hasStock: true })
+  const app = express()
+  app.use(access.middleware)
+  access.install(app)
+  const server = http.createServer(app)
+  await listening(server, '127.0.0.1')
+  const base = `http://127.0.0.1:${portOf(server)}`
+  try {
+    for (const urlPath of ['/api/auth/pair', '/api/units', '/healthz', '/']) await fetch(`${base}${urlPath}`)
+    assert.deepEqual(asked, [])
+    const res = await fetch(`${base}/api/auth/pair`, { headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'nas.fritz.box' } })
+    assert.deepEqual(await res.json(), { app: 'mietfuchs', certSha256: 'c'.repeat(64), secure: true, origin: 'https://nas.fritz.box' })
+    assert.equal(asked.length, 1)
   } finally {
     server.close()
     fs.rmSync(dir, { recursive: true, force: true })

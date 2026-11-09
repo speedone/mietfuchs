@@ -95,8 +95,9 @@ import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './vers
 import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
-import { checkRequest, guardPolicy } from './requestGuard.ts'
-import { authSetting, isLoopback, readEnvPassword } from './access.ts'
+import { checkRequest, guardPolicy, originHostRefusal } from './requestGuard.ts'
+import { authSetting, fromThisComputer as fromThisComputerAt, readEnvPassword } from './access.ts'
+import { createProxyTrust } from './trustProxy.ts'
 import { createAccess } from './accessServer.ts'
 import { createDualServer } from './dualPort.ts'
 import { ensureCertificate, readCertificate } from './tls.ts'
@@ -174,6 +175,10 @@ delete process.env.NKA_WINDOW_KEY
 const ENV_PASSWORD = readEnvPassword(process.env, (file) => fs.readFileSync(file, 'utf8'))
 delete process.env.NKA_PASSWORD
 delete process.env.NKA_PASSWORD_FILE
+// NKA_TRUST_PROXY (#528, Kopplung über einen Proxy): ein ungültiger Eintrag gilt nicht und steht auf der Fehlerausgabe;
+// Namen werden erst bei der ersten Anfrage mit Proxy-Kopfzeilen aufgelöst (Caddy startet nach Mietfuchs)
+const PROXY_TRUST = createProxyTrust(process.env.NKA_TRUST_PROXY, { logError: (line) => console.error(line) })
+for (const line of PROXY_TRUST.problems) console.error(line)
 const ACCESS = createAccess({
   dataDir: DATA_DIR,
   host: process.env.NKA_HOST,
@@ -184,6 +189,8 @@ const ACCESS = createAccess({
   windowKey: WINDOW_KEY,
   envPassword: ENV_PASSWORD,
   version: APP_VERSION,
+  trustProxy: PROXY_TRUST,
+  originRefusal: (hostname) => originHostRefusal(hostname, GUARD),
   // Testgriff: verkürzt die Gültigkeit eines Kopplungscodes (sonst 10 Minuten); das Fenster löscht NKA_TEST_*
   ...(Number(process.env.NKA_TEST_PAIRING_SECONDS) > 0 ? { pairingSeconds: Number(process.env.NKA_TEST_PAIRING_SECONDS) } : {}),
   // Das Zertifikat kommt erst unten (vor dem Binden gelesen oder danach erzeugt) über `useTls`
@@ -3432,12 +3439,12 @@ async function findCandidates(fresh = false): Promise<{ candidates: RelocationCa
   return value
 }
 
-// Die Anfrage kommt von diesem Rechner (Loopback). Die Umzugsrouten nehmen Pfade an, suchen im Benutzerordner und
-// kopieren. Mit „Zugriff aus dem Heimnetz“ (NKA_HOST=0.0.0.0) erreichten Handy und andere Rechner sie sonst und könnten
-// beliebige Pfade auf diesem Rechner lesen lassen (CodeQL js/path-injection). Deshalb antwortet jede dieser Routen nur
-// auf 127.0.0.1, ::1 und ::ffff:127.0.0.1, sonst 403 (`localOnly`). Die Oberfläche bietet den Umzug ohnehin nur im
-// Fenster an (`inWindow`), nie auf dem Handy.
-const fromThisComputer = (req: Request): boolean => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '')
+// Die Anfrage kommt von diesem Rechner (Loopback ohne Proxy-Kopfzeilen, access.ts). Die Umzugsrouten nehmen Pfade an,
+// suchen im Benutzerordner und kopieren. Mit „Zugriff aus dem Heimnetz“ (NKA_HOST=0.0.0.0) erreichten Handy und andere
+// Rechner sie sonst und könnten beliebige Pfade auf diesem Rechner lesen lassen (CodeQL js/path-injection). Deshalb
+// antwortet jede dieser Routen nur auf Loopback, sonst 403 (`localOnly`); ein Proxy auf demselben Rechner zählt nicht
+// (#528). Die Oberfläche bietet den Umzug ohnehin nur im Fenster an (`inWindow`), nie auf dem Handy.
+const fromThisComputer = (req: Request): boolean => fromThisComputerAt(req.socket.remoteAddress, req.headers)
 const NOT_HERE = 'Daten übernehmen geht nur am Rechner, auf dem Mietfuchs läuft.'
 // Vor jeder Umzugsroute außer der schnellen Frage `GET /api/relocation` (sie antwortet von außen nur `offered: false`)
 // und dem Fortschritt (ohne Pfade)
@@ -4835,7 +4842,7 @@ const dual = createDualServer((req, res) => {
   if ((req.url ?? '').split('?')[0] === '/healthz') {
     res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '1', 'cache-control': 'no-store' })
     // Von außen nur Name und Zustand (#528): Der Zustand des Zugangs steht erst nach dem Start fest
-    if (!isLoopback(req.socket.remoteAddress)) return void res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
+    if (!fromThisComputerAt(req.socket.remoteAddress, req.headers)) return void res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
     // Datenordner, Prozess und Zeitpunkt des Bindens: Daran erkennt ein zweiter Start auf einem anderen Port, ob er
     // demselben Ordner weichen muss (instanceGuard.ts, Durchsicht M2)
     res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting', version: APP_VERSION, dataDir: DATA_DIR, pid: process.pid, boundAt, ...(MOVED_AWAY ? { moved: true } : {}) }))

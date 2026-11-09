@@ -220,14 +220,23 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   Pfaden, solange die Anmeldung gilt.
 - **Wann sie gilt** (`gateActive`): nicht bei `NKA_AUTH=off`, `off`, Übergang und `none`; sonst bei `required` (Netz
   oder `on`). Lokal lauschend mit Passwort nur für Anfragen mit **Proxy-Kopfzeilen** (`Forwarded`, `X-Forwarded-For`,
-  `X-Forwarded-Host`, `X-Real-IP`, `Via`; eine gefälschte macht nur strenger). Lokal ohne Passwort schreibt der erste
+  `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Real-IP`, `Via`, `proxyHeadersPresent`; eine gefälschte macht nur strenger). Lokal ohne Passwort schreibt der erste
   Abruf über einen Proxy einmal je Start ins Protokoll und schaltet auf den Hinweis des Übergangs mit Code
   (`noticeProxy`); nach dem Zurücksetzen gilt lokal über Proxy auch die Einrichtung (`proxyStrict`). Ein Proxy ohne
   solche Kopfzeilen bleibt unerkannt (hingenommen, dafür `NKA_AUTH=on`). `trust proxy` bleibt aus.
-- **`/healthz`** von 127.0.0.1/::1 oder mit Sitzung voll (HEALTHCHECK, `instanceGuard`), sonst nur `{ app, status }`
-  mit demselben Statuscode (`res.locals.shortHealth`). **Beenden vom Rechner**: `POST /api/quit` von Loopback ohne
-  Proxy-Kopfzeilen geht ohne Sitzung (Fenster aus dem Hauptprozess, `quit-old` des Umzugs, Server eines früheren
-  Starts), mehr nicht. `fromThisComputer`, `AT_THIS_COMPUTER` und der Umzug bleiben zusätzlich (siehe „API“).
+- **Vom Rechner selbst** heißt Loopback **und keine Proxy-Kopfzeile**, gleich welcher Peer (`fromThisComputer` in
+  access.ts, die eine Stelle): Ein Proxy auf demselben Rechner (Caddy, nginx; Peer 127.0.0.1) reichte sonst jede Anfrage
+  aus dem Netz als „von hier“ weiter. Das gilt für den vollen `/healthz` (auch während des Startens), `POST /api/quit`
+  ohne Sitzung, den Fensterschlüssel, `codeFile` in `GET /api/auth`, `AT_THIS_COMPUTER`, den Update-Stand und die
+  Umzugsrouten (index.ts, `fromThisComputer(req)`). Auch ein vertrauter Proxy (`NKA_TRUST_PROXY`) ist nie der Rechner
+  selbst. **`npm run dev`**: Der Proxy von Vite (http-proxy-3) setzt `X-Forwarded-*` nur mit `xfwd: true`, das
+  client/vite.config.ts nicht setzt (nachgemessen mit Vite 8.3.5: am Server kommen nur die Kopfzeilen des Browsers an);
+  so bleibt der Dev-Server „vom Rechner selbst“. Wer dort `xfwd` einschaltet, bekommt den gekürzten `/healthz` und die
+  Anmeldung auch lokal.
+- **`/healthz`** vom Rechner selbst oder mit Sitzung voll (HEALTHCHECK, `instanceGuard`), sonst nur `{ app, status }`
+  mit demselben Statuscode (`res.locals.shortHealth`). **Beenden vom Rechner**: `POST /api/quit` vom Rechner selbst
+  geht ohne Sitzung (Fenster aus dem Hauptprozess, `quit-old` des Umzugs, Server eines früheren Starts), mehr nicht.
+  `AT_THIS_COMPUTER` und der Umzug bleiben zusätzlich (siehe „API“).
 - **Origin bei Schreibzugriffen**, solange die Anmeldung gilt, auch bei abgeschalteter Host-Prüfung (Docker, npm) und
   für login/setup/logout: Ist `Sec-Fetch-Site` da, geht nur `same-origin` (oder `none`); sonst `Origin` gegen `Host`,
   den ersten `X-Forwarded-Host` oder `NKA_ALLOWED_HOSTS` (`null` abgelehnt); fehlt beides, ist es kein Browser, und
@@ -267,32 +276,103 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
 - **Fensterschlüssel**: Das Fenster erzeugt je Start 32 Bytes und reicht sie als `NKA_WINDOW_KEY`; index.ts liest und
   löscht ihn aus `process.env`, kein Kindprozess erbt ihn. Die Seite trägt `X-Mietfuchs-Window` über
   `onBeforeSendHeaders`, der Hauptprozess über `serverFetch` (scripts/CLAUDE.md, Programmfenster). Wirksam nur bei
-  `IN_WINDOW`, über Loopback ohne Proxy-Kopfzeilen, zeitkonstant (`atWindow`): Das Fenster gilt als angemeldet,
+  `IN_WINDOW`, vom Rechner selbst (`fromThisComputer`), zeitkonstant (`atWindow`): Das Fenster gilt als angemeldet,
   richtet ohne Code ein und ändert ohne bisheriges Passwort. Über die Adresse einer Netzwerkkarte wirkungslos; dafür
   gibt es die Kopplung mit Geräteschlüssel (nächster Punkt).
 - **Programmfenster koppeln** (Schritt 2, Entwurf docs/superpowers/specs/2026-11-09-kopplung-fenster-design.md, Abschnitt
-  2): nur bei `password` mit HTTPS (sonst 409 „Legen Sie zuerst ein Passwort fest.“). `POST /api/auth/pairing`
+  2): nur bei `password` mit HTTPS, also eigenem Zertifikat oder gesetztem `NKA_TRUST_PROXY` (sonst 409 „Legen Sie
+  zuerst ein Passwort fest.“). `POST /api/auth/pairing`
   (angemeldet) gibt `{ code, expiresAt }`: Code wie der Einrichtungscode, 10 Minuten (`PAIRING_MINUTES`), nur im
-  Speicher, einer zugleich, `DELETE` verwirft ihn. `POST /api/auth/pair` (frei, Bremse Art `pair`, nur über TLS, sonst
-  400) nimmt `{ name, proof }` mit `proof` = `pairingProof(code, certSha256)` (HMAC-SHA256, Schlüssel der normalisierte
-  Code, Nachricht `mietfuchs-kopplung:` + SHA-256 des DER); der Code wird in derselben synchronen Prüfung verbraucht
-  (zwei gleichzeitige ergeben ein Gerät), falsch und abgelaufen sind dieselbe 400. Antwort `{ id, deviceKey, version }`
-  (32 Zufallsbytes). In `zugang.json` `devices` (`id`, `name` 1 bis 60 Zeichen sonst „Programmfenster“, `keyHash`
+  Speicher, einer zugleich, `DELETE` verwirft ihn. `POST /api/auth/pair` (frei, Bremse Art `pair`, nur über HTTPS, siehe
+  „Kopplung über einen Proxy“) nimmt `{ name, proof }` mit `proof` = `pairingProof(code, certSha256)` (HMAC-SHA256,
+  Schlüssel der normalisierte Code, Nachricht `mietfuchs-kopplung:` + SHA-256 des DER) oder über einen vertrauten Proxy
+  `originProof(code, origin)`; der Code wird in derselben synchronen Prüfung verbraucht
+  (zwei gleichzeitige ergeben ein Gerät), falsch und abgelaufen sind dieselbe 400. Antwort `{ id, deviceKey, version, confirm }`
+  (32 Zufallsbytes); `confirm` = `pairingConfirmation(code, proof, id)` (HMAC-SHA256 mit dem Code über
+  `mietfuchs-kopplung:bestaetigt:` + Beweis + `:` + id, hex) zeigt dem Fenster, dass der Server den Code kennt. Das
+  Fenster nimmt den Schlüssel ohne passende Bestätigung nicht an; sonst könnte ein Mittelsmann beim ersten Kontakt
+  seinen Fingerabdruck in der Vorabfrage nennen und das POST mit einem erfundenen Schlüssel beantworten. In `zugang.json` `devices` (`id`, `name` 1 bis 60 Zeichen sonst „Programmfenster“, `keyHash`
   SHA-256, `pairedAt`, `lastSeen`; Steuer- und Formatzeichen im Namen fallen weg), höchstens 20 (sonst 409); ein
   ungültiges Gerät oder eine doppelte Kennung macht die Datei verdorben, gelesen werden Geräte nur bei `password`.
-  **Angemeldet** über `X-Mietfuchs-Device: <id>.<Schlüssel>` (`matchDevice`, zeitkonstant) nur über die eigene TLS-
-  Verbindung (`req.socket.encrypted`) und bei `password`, nie über HTTP. `lastSeen` im Speicher, höchstens stündlich
+  **Angemeldet** über `X-Mietfuchs-Device: <id>.<Schlüssel>` (`matchDevice`, zeitkonstant) nur über HTTPS (Kanal `tls`
+  oder `proxy`) und bei `password`, nie über HTTP, auch nicht mit gefälschten Proxy-Kopfzeilen. `lastSeen` im Speicher, höchstens stündlich
   geschrieben (ohne `generation`, `changedAt` bleibt). `GET /api/auth/devices` (ohne `keyHash`, `current`),
   `DELETE …/devices/:id`; `GET /api/auth` nennt `pairing: { available, devices }` (die Zahl nur angemeldet).
   Zurücksetzen und Ausschalten entfernen alle Geräte, Passwort ändern und „Auf allen Geräten abmelden“ nicht (sie
   verwerfen nur einen offenen Code). Code,
   Schlüssel und Beweis stehen nie im Protokoll. Das Zertifikat entsteht oft erst nach `createAccess`; index.ts reicht
   es mit `useTls` nach. **Entscheidungen**: Ein gekoppeltes Fenster zählt als Sitzung (`signedIn`, dieselbe Vorschaltung,
-  Origin-Prüfung und Bremse wie im Browser), es gibt keine zweite Anmeldelogik. Gekoppelt wird **direkt mit dem Port von
-  Mietfuchs**, nie über Caddy oder einen anderen Proxy: Das Fenster pinnt das eigene Zertifikat des Servers, hinter
-  einem Proxy sähe es dessen Zertifikat, und der Server sähe keine eigene TLS-Verbindung (`trust proxy` bleibt aus;
-  docs/docker.md sagt es den Nutzern). Geprüft in access.test.ts (auch `lastSeen` mit der Uhr von `createAccess`) und
-  api-kopplung.test.ts, das Fenster in desktop/test/pairing.test.js und desktop-check.mjs (Schritt 7).
+  Origin-Prüfung und Bremse wie im Browser), es gibt keine zweite Anmeldelogik. Gekoppelt wird direkt mit dem Port von
+  Mietfuchs oder über einen Proxy aus `NKA_TRUST_PROXY` (nächster Punkt). Geprüft in access.test.ts (auch `lastSeen`
+  mit der Uhr von `createAccess`) und api-kopplung.test.ts, das Fenster in desktop/test/pairing.test.js und
+  desktop-check.mjs (Schritt 7).
+- **Kopplung über einen Proxy** (Entwurf docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md, Abschnitt 3):
+  - **`NKA_TRUST_PROXY`** ([trustProxy.ts](trustProxy.ts)): mit Komma getrennt IP-Adressen (v4, v6), Netze in CIDR und
+    Namen (`caddy` in compose.caddy.yml). `*`, `true` und Zahlen (Sprünge wie bei Express) vertrauen jedem und gelten
+    nicht, ebenso Netze unter /8 (IPv4) bzw. /32 (IPv6), die übrigen Schlüsselwörter von Express (`loopback`,
+    `uniquelocal`, `linklocal`, `false`; die Zeile sagt, was stattdessen gilt) und ein unbekannter Eintrag; je eine
+    Zeile auf der Fehlerausgabe beim Start, kein Abbruch. Adressen
+    prüft `net.BlockList` (`::ffff:a.b.c.d` als `a.b.c.d`; ein Netz um IPv4 in IPv6 wie `::ffff:0:0/96` ab /96 als
+    IPv4-Netz mit 96 Bit weniger, also mit derselben Untergrenze /8). **Namen** löst `dns.promises.lookup` erst bei der ersten
+    Anfrage mit Proxy-Kopfzeilen auf (Caddy startet nach Mietfuchs), nie beim Start und nie für eine Anfrage ohne; das
+    Ergebnis gilt 60 s (`NAME_TTL_MS`), eine Adresse außerhalb löst höchstens alle 5 s neu auf (`MISS_RETRY_MS`, ein neu
+    erstellter Container), eine Auflösung zugleich, höchstens 2 s (`LOOKUP_TIMEOUT_MS`); eine Adresse aus dem frischen
+    Ergebnis wartet nicht auf eine laufende Auflösung. Ein Name ohne Punkt wird absolut gefragt (`caddy.`), damit die
+    Suchliste des Systems nicht `caddy.fritz.box` daraus macht; Docker beantwortet `caddy.` in seinem DNS (127.0.0.11)
+    wie `caddy` (nachgemessen mit Docker 29, glibc und musl). Unter musl (Alpine) löst sich ein Name ohne Punkt, der nur
+    in /etc/hosts steht (`extra_hosts`), mit dem Punkt nicht auf; dann die IP-Adresse eintragen (Docker-DNS und glibc
+    gehen). Die 2 s beenden nur das Warten: `dns.lookup` läuft im Threadpool von libuv weiter, bis das System antwortet.
+    Nicht auflösbar heißt keine Adresse und eine Zeile beim ersten Mal
+    (wieder, wenn er sich dazwischen aufgelöst hatte). Warum Namen statt Netze: Docker wählt das Netz von Compose
+    zufällig, ein weites CIDR schlösse Geräte im Heimnetz ein. Außerhalb von Docker IP-Adressen; ein Proxy auf
+    demselben Rechner heißt `127.0.0.1,::1` (ein Wort `loopback` gibt es nicht).
+  - **Kanal** (`channelOf` in access.ts, einmal je Anfrage in der Vorschaltung, gemerkt in einer `WeakMap`, gelesen mit
+    `channelFor`): `proxy`, wenn der Peer in `NKA_TRUST_PROXY` steht und **genau ein** `X-Forwarded-Proto: https`
+    meldet; der Ursprung ist `https://` + `X-Forwarded-Host` (genau ein Wert), sonst `Host`, über `new URL(…).origin`
+    (ohne Benutzer, Pfad, Suche; `:443` fällt weg), sonst `plain`. Ein vertrauter Peer mit anderem oder doppeltem
+    `X-Forwarded-Proto` ist `plain`, auch über TLS. Ohne `X-Forwarded-Proto` und von jedem anderen Peer entscheidet
+    die eigene Verbindung (`tls` oder `plain`). **Das ist die einzige Stelle, an der eine Proxy-Kopfzeile etwas
+    erlaubt**; sonst machen sie nur strenger (`viaHttps`, `proxyHeadersPresent`, `X-Forwarded-Host` in der
+    Origin-Prüfung). `app.set('trust proxy')` bleibt aus: Es änderte `req.ip`, `req.protocol` und `req.hostname` für
+    alles. Auch ein vertrauter Proxy ist nie „vom Rechner selbst“ (oben). Die Bremse zählt weiter je Peer, also je
+    Proxy; `X-Forwarded-For` wertet Mietfuchs nicht aus.
+  - **Vorabfrage** `GET /api/auth/pair` (frei, ohne Bremse, `no-store`): `PairPreflight` = `{ app: 'mietfuchs',
+    certSha256, secure, origin, problem? }`; `certSha256` des eigenen Zertifikats (`null` ohne), `secure` = Kanal `tls`
+    oder `proxy`, `origin` nur im Kanal `proxy` und nur, wenn er binden darf (unten); sonst `origin: null` und `problem`
+    mit dem Satz der Host-Prüfung (`hostRefusal` in requestGuard.ts), etwa wenn nginx `Host $proxy_host` und einen
+    öffentlichen Namen in `X-Forwarded-Host` schickt, der nicht in `NKA_ALLOWED_HOSTS` steht. Sie entscheidet nie über Vertrauen (der Fingerabdruck ist öffentlich); das
+    Fenster wählt `pinned` oder `system` aus seiner eigenen Prüfung des Zertifikats (PR 2, desktop/src/pairing.js).
+  - **Zwei Bindungen** (`expectedProofs`): im Kanal `tls` nur der Fingerabdruck, im Kanal `proxy` der Fingerabdruck
+    (der Proxy liefert das Zertifikat von Mietfuchs aus) **oder** der Ursprung gleich dem weitergereichten
+    (`originProof`, Nachricht `mietfuchs-kopplung:origin:` + Ursprung, getrennt von der des Fingerabdrucks), im Kanal
+    `plain` keiner: 400 mit `transport: true` und „Mietfuchs steht hinter einem Proxy, dem es nicht vertraut, oder der
+    Proxy meldet kein HTTPS. Tragen Sie den Proxy in NKA_TRUST_PROXY ein.“ (mit Proxy-Kopfzeilen) bzw. „Koppeln geht
+    nur über eine verschlüsselte Verbindung.“ Jeder erwartete Beweis wird verglichen (`sameProof`, zeitkonstant), auch
+    wenn einer schon passt. Ein Beweis mit Ursprung gilt nie direkt über TLS, und nie für einen anderen Ursprung als
+    den weitergereichten. Mit einer Prüfung des Hosts (`NKA_ALLOWED_HOSTS`, im Fenster und in der Programmdatei immer)
+    bindet ein Ursprung nur, wenn sein Name sie besteht (`originHostRefusal` in requestGuard.ts, `originRefusal` an
+    `createAccess`); ohne Prüfung jeder. **Mit `NKA_ALLOWED_HOSTS` strenger als der Host** (Integrationsdurchsicht m3):
+    Dann bindet nur ein dort eingetragener Name, eine private oder Loopback-Adresse (RFC 1918, ULA, Link-Local,
+    100.64.0.0/10) oder ein Name ohne Punkt; öffentliche IPs und die Endungen des Heimnetzes (`.fritz.box`, `.ts.net`,
+    `.netbird.cloud` …) nicht von selbst, auch wenn sie die Host-Prüfung weiter bestehen. Grund: ein Proxy, der jeden
+    Namen auffängt (nginx: der erste `server` am Port), reicht auch `irgendwas.ts.net` weiter. Der Satz bleibt der der
+    Host-Prüfung. Scheitert ein Beweis und konnte der Ursprung nicht binden, antwortet
+    `POST /api/auth/pair` mit diesem Satz und `transport: true`, nicht mit dem zum Code (sonst probierte der Nutzer
+    endlos neue Codes); ein Beweis über den Fingerabdruck gilt dabei weiter. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
+  - **Restrisiko**: Die Bindung an den Ursprung ist nur so gut wie der `X-Forwarded-Host`, den der Proxy meldet. Jeder
+    Proxy, der den Wert eines Clients durchreicht oder einen Block für jede Adresse hat (Caddy `:443` für alles,
+    `on_demand`; nginx `default_server` ohne `server_name`), reicht auch einen fremden Namen weiter; ein Angreifer mit
+    eigenem gültigen Zertifikat für diesen Namen, der den Nutzer dorthin lockt und den Code bekommt, könnte dann
+    koppeln. Caddy überschreibt `X-Forwarded-Host` eines nicht vertrauten Clients (vor dem Entwurf gesehen: geschicktes
+    `evil` kam als `localhost:8443` an). nginx braucht `proxy_set_header X-Forwarded-Host $host;` und einen
+    ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein eingetragener Name, eine
+    private oder Loopback-Adresse oder ein Name ohne Punkt (oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
+    `NKA_ALLOWED_HOSTS` (PR 3).
+  - Geprüft in trustProxy.test.ts (Namen mit eingeschobenem `lookup` und eigener Uhr), requestGuard.test.ts
+    (`hostAllowed`, `originHostRefusal`), access.test.ts (Tabelle des
+    Kanals, Beweise, kein `trusts` ohne Proxy-Kopfzeilen) und api-kopplung-proxy.test.ts gegen einen Proxy wie Caddy
+    mit eigener CA ([server/testing/proxy.ts](../testing/proxy.ts): `createTestCa`, `startTestProxy`; `forwarded`
+    überschreibt `X-Forwarded-Proto`/`-Host`, `null` lässt weg).
 - **Wettläufe** (`generation`, `changedSince`): Jede Änderung des Zustands (Speichern, Zurücksetzen) zählt hoch. Eine
   Anmeldung, Einrichtung oder Änderung, deren scrypt über eine solche Änderung hinweg lief, schreibt nichts und
   antwortet 401 bzw. 409 „Der Zugang hat sich eben geändert.“ Ein Neuberechnen nach `needsRehash` schreibt nur, wenn

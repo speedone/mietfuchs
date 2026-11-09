@@ -7,11 +7,12 @@ import crypto from 'node:crypto'
 import path from 'node:path'
 import type { TLSSocket } from 'node:tls'
 import {
-  ACCESS_FILE, CODE_FILE, DEVICE_HEADER, DEVICE_NAME_MAX, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, deviceKeyHash, matchDevice, newDeviceId, newDeviceKey, pairingProof, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
-  gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, isLoopback, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
-  sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, viaProxy, writeAccessFile, writeCodeFile,
-  type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword, type Stage,
+  ACCESS_FILE, CODE_FILE, DEVICE_HEADER, DEVICE_NAME_MAX, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, deviceKeyHash, matchDevice, newDeviceId, newDeviceKey, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
+  gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, fromThisComputer, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
+  sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, proxyHeadersPresent, isLoopback, writeAccessFile, writeCodeFile,
+  channelOf, expectedProofs, pairingConfirmation, type Channel, type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword, type Stage,
 } from './access.ts'
+import type { ProxyTrust } from './trustProxy.ts'
 
 export type AccessOptions = {
   dataDir: string
@@ -30,6 +31,11 @@ export type AccessOptions = {
   // noch: Ein neues Zertifikat entsteht erst nach dem Binden (index.ts), dann setzt `useTls` es nach. `null` heißt
   // ohne HTTPS, dann gibt es keine Kopplung.
   tls?: { certSha256: string } | null
+  // NKA_TRUST_PROXY (trustProxy.ts): Peers, deren Proxy-Kopfzeilen für den Kanal zählen. Fehlt = keinem vertraut.
+  trustProxy?: ProxyTrust
+  // Darf ein weitergereichter Ursprung mit diesem Namen einen Beweis binden? Dieselbe Regel wie die Prüfung des Hosts
+  // (`originHostRefusal` in requestGuard.ts): null heißt ja, sonst der Satz dazu; fehlt = jeder Name (Durchsicht I2)
+  originRefusal?: (hostname: string) => string | null
   // Version für die Antwort von `pair` (das Fenster vergleicht sie mit seiner)
   version?: string
   // Gültigkeit eines Kopplungscodes; kürzer nur im Testgriff NKA_TEST_PAIRING_SECONDS
@@ -57,6 +63,13 @@ export type AccessInfo = {
   pairing: { available: boolean, devices: number }
 }
 
+// Die Vorabfrage der Kopplung (`GET /api/auth/pair`, #528): der Fingerabdruck des eigenen Zertifikats (öffentlich, er
+// steht in jedem TLS-Handschlag), ob die Anfrage über HTTPS kam (Kanal `tls` oder `proxy`), und im Kanal `proxy` der
+// Ursprung, den der vertraute Proxy weiterreicht. Sie entscheidet nie über Vertrauen; das tut das Fenster selbst.
+// `problem`: Der Proxy reicht einen Ursprung weiter, dessen Name die Prüfung des Hosts nicht besteht; dann ist `origin`
+// null, denn ein Beweis darauf gälte nie (Durchsicht PR 2, I2). Der Satz sagt, was bei Mietfuchs einzutragen ist.
+export type PairPreflight = { app: 'mietfuchs', certSha256: string | null, secure: boolean, origin: string | null, problem?: string }
+
 // Was die Liste der Geräte zeigt: nie den Hash des Schlüssels
 export type DeviceInfo = Omit<Device, 'keyHash'> & { current: boolean }
 
@@ -67,6 +80,7 @@ const header = (req: Request, name: string): string | undefined => {
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
 const bodyOf = (req: Request): Record<string, unknown> => (isObject(req.body) ? req.body : {})
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+const NO_PROXY: ProxyTrust = { configured: false, problems: [], trusts: async () => false }
 
 const minutesText = (seconds: number): string => {
   if (seconds < 60) return seconds === 1 ? 'einer Sekunde' : `${seconds} Sekunden`
@@ -81,6 +95,16 @@ export function createAccess(options: AccessOptions) {
   const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, envPassword = null, stage = 'A', version = '', log = console.log, logError = console.error, now = Date.now } = options
   const pairingMs = (options.pairingSeconds ?? PAIRING_MINUTES * 60) * 1000
   let tls = options.tls ?? null
+  const trustProxy = options.trustProxy ?? NO_PROXY
+  const originRefusalOf = options.originRefusal ?? (() => null)
+  // Der Ursprung im Kanal `proxy`, wenn er binden darf, sonst der Grund
+  const boundOrigin = (channel: Channel, origin: string | null): { origin: string | null, problem: string | null } => {
+    if (channel !== 'proxy' || origin === null) return { origin: null, problem: null }
+    const problem = originRefusalOf(new URL(origin).hostname)
+    return problem === null ? { origin, problem: null } : { origin: null, problem }
+  }
+  // Kanal je Anfrage, einmal in der Vorschaltung bestimmt (dort wird ein Name aus NKA_TRUST_PROXY bei Bedarf aufgelöst)
+  const channels = new WeakMap<Request, { channel: Channel, origin: string | null }>()
   const allowedHosts = (options.allowedHosts ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h && h !== '*')
   const codePath = path.join(dataDir, CODE_FILE)
   const sessions = createSessions({ now })
@@ -301,15 +325,18 @@ export function createAccess(options: AccessOptions) {
 
   const tokensOf = (req: Request): string[] => cookieValues(header(req, 'cookie'), cookieName(state.instance))
   const hasSession = (req: Request): boolean => tokensOf(req).some((token) => sessions.check(token))
-  // Das Fenster gilt als angemeldet und als „am Rechner“ (Einrichtung ohne Code): nur im Fenster, nur über eine
-  // Verbindung von 127.0.0.1/::1 ohne Proxy-Kopfzeilen, zeitkonstant verglichen. Über die Adresse einer Netzwerkkarte
-  // ist der Schlüssel wirkungslos; von dort meldet sich ein gekoppeltes Fenster mit Geräteschlüssel über HTTPS an.
+  // Das Fenster gilt als angemeldet und als „am Rechner“ (Einrichtung ohne Code): nur im Fenster, nur vom Rechner selbst
+  // (127.0.0.1/::1 ohne jede Proxy-Kopfzeile, `fromThisComputer`), zeitkonstant verglichen. Über die Adresse einer
+  // Netzwerkkarte ist der Schlüssel wirkungslos; von dort meldet sich ein gekoppeltes Fenster mit Geräteschlüssel über HTTPS an.
   const atWindow = (req: Request): boolean =>
-    inWindow && windowKey !== null && isLoopback(req.socket.remoteAddress) && !viaProxy(req.headers) && sameKey(header(req, 'x-mietfuchs-window'), windowKey)
-  // Ein gekoppeltes Fenster (#528, Schritt 2): Kopfzeile `X-Mietfuchs-Device`, nur über die eigene TLS-Verbindung und
-  // nur mit Passwort. Über HTTP gilt der Schlüssel nie, auch nicht hinter einem Proxy mit HTTPS davor.
+    inWindow && windowKey !== null && fromThisComputer(req.socket.remoteAddress, req.headers) && sameKey(header(req, 'x-mietfuchs-window'), windowKey)
+  // Ohne Eintrag (eine Route vor der Vorschaltung) zählt keine Proxy-Kopfzeile
+  const channelFor = (req: Request): { channel: Channel, origin: string | null } =>
+    channels.get(req) ?? channelOf({ encrypted: (req.socket as TLSSocket).encrypted === true, trustedPeer: false, headers: req.headers })
+  // Ein gekoppeltes Fenster (#528, Schritt 2): Kopfzeile `X-Mietfuchs-Device`, nur über HTTPS (Kanal `tls` oder `proxy`)
+  // und nur mit Passwort. Über HTTP gilt der Schlüssel nie, auch nicht mit gefälschten Proxy-Kopfzeilen.
   function deviceOf(req: Request): Device | null {
-    if ((req.socket as TLSSocket).encrypted !== true || state.mode !== 'password' || setting === 'off') return null
+    if (channelFor(req).channel === 'plain' || state.mode !== 'password' || setting === 'off') return null
     const device = matchDevice(devices, header(req, DEVICE_HEADER))
     if (device) noteSeen(device)
     return device
@@ -317,9 +344,12 @@ export function createAccess(options: AccessOptions) {
   const signedIn = (req: Request): boolean => atWindow(req) || hasSession(req) || deviceOf(req) !== null
 
   // ---------- Vorschaltung ----------
-  function middleware(req: Request, res: Response, next: NextFunction): void {
+  async function middleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     checkReset(true)
-    const proxied = viaProxy(req.headers)
+    const proxied = proxyHeadersPresent(req.headers)
+    // NKA_TRUST_PROXY nur bei Proxy-Kopfzeilen fragen: Eine Anfrage ohne fragt nie DNS
+    const trustedPeer = proxied && await trustProxy.trusts(req.socket.remoteAddress)
+    channels.set(req, channelOf({ encrypted: (req.socket as TLSSocket).encrypted === true, trustedPeer, headers: req.headers }))
     if (proxied) noticeProxy()
     const signed = signedIn(req)
     const decision = gate(state, {
@@ -380,7 +410,9 @@ export function createAccess(options: AccessOptions) {
       logError(`Der letzte Kontakt eines Programmfensters ließ sich nicht speichern (${ACCESS_FILE}): ${(err as Error).message}`)
     }
   }
-  const pairingAvailable = (): boolean => setting !== 'off' && state.mode === 'password' && tls !== null
+  // HTTPS heißt hier: eigenes Zertifikat oder ein vertrauter Proxy davor (dann nur die Bindung an den Ursprung)
+  const httpsPossible = (): boolean => tls !== null || trustProxy.configured
+  const pairingAvailable = (): boolean => setting !== 'off' && state.mode === 'password' && httpsPossible()
   const deviceInfo = (device: Device, current: Device | null): DeviceInfo => {
     const seen = seenAt.get(device.id)
     return { id: device.id, name: device.name, pairedAt: device.pairedAt, lastSeen: seen ? new Date(seen).toISOString() : device.lastSeen, current: device.id === current?.id }
@@ -430,15 +462,15 @@ export function createAccess(options: AccessOptions) {
 
   // Darf diese Anfrage das Passwort ändern oder die Anmeldung ausschalten? Mit Sitzung, oder wo die Anmeldung für sie
   // gar nicht gilt (lokal ohne Proxy); das bisherige Passwort braucht sie trotzdem.
-  const mayManage = (req: Request): boolean => signedIn(req) || !gateActive(state, viaProxy(req.headers))
+  const mayManage = (req: Request): boolean => signedIn(req) || !gateActive(state, proxyHeadersPresent(req.headers))
 
   function info(req: Request): AccessInfo {
-    const here = isLoopback(req.socket.remoteAddress) && !viaProxy(req.headers)
+    const here = fromThisComputer(req.socket.remoteAddress, req.headers)
     const window = atWindow(req)
     const device = deviceOf(req) !== null
     return {
       mode: state.mode,
-      required: gateActive(state, viaProxy(req.headers)),
+      required: gateActive(state, proxyHeadersPresent(req.headers)),
       signedIn: window || device || hasSession(req),
       window,
       device,
@@ -630,7 +662,7 @@ export function createAccess(options: AccessOptions) {
       checkReset()
       if (setting === 'off' || state.mode !== 'password') return noPassword(res)
       if (!mayManage(req)) return notSignedIn(res)
-      if (!tls) return res.status(409).json({ error: 'Mietfuchs antwortet hier nur über HTTP. Ohne HTTPS lässt sich kein Programmfenster koppeln.' })
+      if (!httpsPossible()) return res.status(409).json({ error: 'Mietfuchs antwortet hier nur über HTTP. Ohne HTTPS lässt sich kein Programmfenster koppeln.' })
       pairing = { code: newSetupCode(), expiresAt: now() + pairingMs }
       res.setHeader('Cache-Control', 'no-store')
       res.json({ code: formatCode(pairing.code), expiresAt: new Date(pairing.expiresAt).toISOString() })
@@ -643,22 +675,52 @@ export function createAccess(options: AccessOptions) {
       res.json({ ok: true })
     })
 
-    // Frei wie login: Der Beweis über Code und Zertifikat ist die Anmeldung. Der Code wird in derselben synchronen
-    // Prüfung verbraucht, in der er stimmt; zwei gleichzeitige Versuche bekommen so höchstens ein Gerät.
+    // Die Vorabfrage: frei wie das Koppeln, ohne Bremse (sie prüft nichts), nie zwischengespeichert
+    app.get('/api/auth/pair', (req, res) => {
+      checkReset()
+      const { channel, origin } = channelFor(req)
+      const bound = boundOrigin(channel, origin)
+      const body: PairPreflight = { app: 'mietfuchs', certSha256: tls?.certSha256 ?? null, secure: channel !== 'plain', origin: bound.origin, ...(bound.problem ? { problem: bound.problem } : {}) }
+      res.setHeader('Cache-Control', 'no-store')
+      res.json(body)
+    })
+
+    // Frei wie login: Der Beweis über Code und Zertifikat bzw. Ursprung ist die Anmeldung. Der Code wird in derselben
+    // synchronen Prüfung verbraucht, in der er stimmt; zwei gleichzeitige Versuche bekommen so höchstens ein Gerät.
+    // `transport: true`: Der Fehler liegt an der Verbindung, nicht am Code (das Fenster ordnet ihn nicht dem Feld Code zu).
     app.post('/api/auth/pair', json, async (req, res) => {
       checkReset()
-      if ((req.socket as TLSSocket).encrypted !== true) return res.status(400).json({ error: 'Koppeln geht nur über eine verschlüsselte Verbindung.' })
+      const { channel, origin } = channelFor(req)
+      if (channel === 'plain') {
+        return res.status(400).json({
+          error: proxyHeadersPresent(req.headers)
+            ? 'Mietfuchs steht hinter einem Proxy, dem es nicht vertraut, oder der Proxy meldet kein HTTPS. Tragen Sie den Proxy in NKA_TRUST_PROXY ein.'
+            : 'Koppeln geht nur über eine verschlüsselte Verbindung.',
+          transport: true,
+        })
+      }
       if (setting === 'off' || state.mode !== 'password') return noPassword(res)
       const full = (): void => void res.status(409).json({ error: `Es sind schon ${MAX_DEVICES} Programmfenster gekoppelt. Entfernen Sie zuerst eines in den Einstellungen unter „Anmeldung“.` })
       if (devices.length >= MAX_DEVICES) return full()
       const { name, proof } = bodyOf(req)
+      // Der Code, der gestimmt hat, für die Bestätigung unten (er wird beim Treffer verbraucht)
+      let usedCode = ''
       const ok = await attempt(req, res, 'pair', () => {
         const open = pairing
-        if (!open || !tls || now() >= open.expiresAt || !sameProof(proof, pairingProof(open.code, tls.certSha256))) return false
+        if (!open || now() >= open.expiresAt) return false
+        // Jeder erwartete Beweis wird verglichen, zeitkonstant, auch wenn schon einer passt
+        // Ein Ursprung, dessen Name die Prüfung des Hosts nicht besteht, bindet nichts (Durchsicht I2)
+        const matches = expectedProofs(open.code, channel, tls?.certSha256 ?? null, boundOrigin(channel, origin).origin).map((expected) => sameProof(proof, expected))
+        if (!matches.includes(true)) return false
+        usedCode = open.code
         pairing = null
         return true
       })
       if (ok === null) return
+      // Ein Ursprung, der nicht binden kann: Das liegt am Namen, nicht am Code (sonst probierte der Nutzer endlos neue Codes).
+      // Ein Beweis über den Fingerabdruck gilt trotzdem und kam oben schon durch.
+      const refused = boundOrigin(channel, origin).problem
+      if (!ok && refused) return res.status(400).json({ error: refused, transport: true })
       if (!ok) return res.status(400).json({ error: 'Der Code stimmt nicht oder ist abgelaufen.' })
       if (state.mode !== 'password') return noPassword(res)
       if (devices.length >= MAX_DEVICES) return full()
@@ -672,7 +734,8 @@ export function createAccess(options: AccessOptions) {
       }
       log(`Ein Programmfenster ist gekoppelt („${device.name}“).`)
       res.setHeader('Cache-Control', 'no-store')
-      res.json({ id: device.id, deviceKey, version })
+      // `confirm`: Der Server zeigt, dass er den Code kennt; das Fenster nimmt den Schlüssel sonst nicht an (I4)
+      res.json({ id: device.id, deviceKey, version, confirm: pairingConfirmation(usedCode, String(proof), device.id) })
     })
 
     // Geräte gibt es nur mit Passwort; ohne antworten Liste und Entfernen wie das Koppeln

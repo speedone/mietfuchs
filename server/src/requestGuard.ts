@@ -51,6 +51,50 @@ function allowedName(name: string, extraHosts: string[]): boolean {
   return listed(name, extraHosts)
 }
 
+// Besteht ein Name die Prüfung des Hosts? Ohne Prüfung (Docker und npm ohne NKA_ALLOWED_HOSTS, „*“) jeder. Auch für den
+// Ursprung, den ein vertrauter Proxy beim Koppeln weiterreicht (#528, Durchsicht I2): Reicht ein Proxy den Wert eines
+// Clients durch oder nimmt er jede Adresse an, gilt mit einer Liste nur ein Name, unter dem Mietfuchs ohnehin antwortet.
+const plainName = (hostname: string): string => hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+export const hostAllowed = (hostname: string, policy: GuardPolicy): boolean =>
+  !policy.enabled || allowedName(plainName(hostname), policy.extraHosts)
+
+// Der Satz, wenn ein Name die Prüfung nicht besteht: am Host jeder Anfrage und beim Koppeln über einen Proxy derselbe
+export const hostRefusal = (name: string): string =>
+  `Mietfuchs antwortet nicht unter dem Namen „${name}“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.`
+
+// Adressen, die niemand außerhalb des eigenen Netzes auf sich lenken kann: Loopback, private Netze (RFC 1918, ULA),
+// Link-Local und der Bereich, aus dem Tailscale und NetBird vergeben (100.64.0.0/10)
+const PRIVATE = new net.BlockList()
+for (const [address, prefix] of [['127.0.0.0', 8], ['10.0.0.0', 8], ['172.16.0.0', 12], ['192.168.0.0', 16], ['169.254.0.0', 16], ['100.64.0.0', 10]] as const) {
+  PRIVATE.addSubnet(address, prefix, 'ipv4')
+}
+for (const [address, prefix] of [['::1', 128], ['fc00::', 7], ['fe80::', 10]] as const) PRIVATE.addSubnet(address, prefix, 'ipv6')
+
+function privateAddress(name: string): boolean {
+  const family = net.isIP(name)
+  if (family === 0) return false
+  // IPv4 in IPv6 (`::ffff:192.168.1.5`, als URL `::ffff:c0a8:105`) zählt als IPv4
+  const mapped = family === 6 ? /^::ffff:(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/i.exec(name) : null
+  if (mapped) {
+    const v4 = mapped[1] ?? [mapped[2], mapped[3]].flatMap((group) => { const n = parseInt(group ?? '0', 16); return [n >> 8, n & 255] }).join('.')
+    return PRIVATE.check(v4, 'ipv4')
+  }
+  return PRIVATE.check(name, family === 4 ? 'ipv4' : 'ipv6')
+}
+
+// Für den weitergereichten Ursprung der Kopplung (#528): null, wenn er binden darf, sonst der Satz. Mit NKA_ALLOWED_HOSTS
+// strenger als der Host (Integrationsdurchsicht m3): Fängt ein Proxy jeden Namen auf (in nginx der erste `server` am
+// Port), reicht er auch einen fremden weiter, etwa `irgendwas.ts.net` oder eine öffentliche IP, auf die ein Angreifer
+// ein gültiges Zertifikat hat. Dann bindet nur ein eingetragener Name, eine private oder Loopback-Adresse oder ein Name
+// ohne Punkt. Ohne Liste (Programmdatei, Fenster) gilt die Regel des Hosts, ohne Prüfung jeder Name.
+export function originHostRefusal(hostname: string, policy: GuardPolicy): string | null {
+  const name = plainName(hostname)
+  if (!hostAllowed(name, policy)) return hostRefusal(name)
+  if (policy.extraHosts.length === 0) return null
+  const binds = listed(name, policy.extraHosts) || privateAddress(name) || (net.isIP(name) === 0 && !name.includes('.'))
+  return binds ? null : hostRefusal(name)
+}
+
 const READ_ONLY = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 export type GuardRequest = { method: string, host?: string, origin?: string, secFetchSite?: string }
@@ -60,9 +104,7 @@ export function checkRequest(req: GuardRequest, policy: GuardPolicy): string | n
   if (!policy.enabled) return null
   if (req.host) {
     const name = hostnameOf(req.host)
-    if (!allowedName(name, policy.extraHosts)) {
-      return `Mietfuchs antwortet nicht unter dem Namen „${name}“. Erreichbar ist es unter seiner IP-Adresse, unter localhost und unter Namen im Heimnetz. Einen eigenen Namen tragen Sie in NKA_ALLOWED_HOSTS ein.`
-    }
+    if (!allowedName(name, policy.extraHosts)) return hostRefusal(name)
   }
   if (READ_ONLY.has(req.method.toUpperCase())) return null
   if (req.origin !== undefined) {

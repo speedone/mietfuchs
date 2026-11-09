@@ -250,6 +250,21 @@ export const DEVICE_NAME_MAX = 60
 export const pairingProof = (code: string, certSha256: string): string =>
   crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:${certSha256}`).digest('hex')
 
+// Hinter einem vertrauten Proxy mit Zertifikat aus dem Speicher des Systems (Let's Encrypt, Caddy `tls internal`) bindet
+// das Fenster den Beweis an den Ursprung, den es geprüft hat, etwa `https://nas.fritz.box`. Die Nachricht ist von der des
+// Fingerabdrucks getrennt: nach `mietfuchs-kopplung:` folgen dort 64 Hex-Zeichen, hier `origin:` (ein Hex-Zeichen ist nie
+// `o`).
+export const originProof = (code: string, origin: string): string =>
+  crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:origin:${origin}`).digest('hex')
+
+// Die Antwort des Servers auf einen angenommenen Beweis (Integrationsdurchsicht I4): HMAC-SHA256 mit demselben Code über
+// den Beweis und die neue Geräte-ID. Damit weiß das Fenster, dass die Gegenseite den Code kennt. Ohne sie könnte ein
+// Mittelsmann beim ersten Kontakt in der Vorabfrage seinen eigenen Fingerabdruck nennen, auf das POST mit einem
+// erfundenen Schlüssel antworten, und das Fenster pinnte ihn und lüde seine Seite. Die Nachricht beginnt anders als
+// die beiden Beweise, eine Bestätigung ist nie ein Beweis und umgekehrt.
+export const pairingConfirmation = (code: string, proof: string, id: string): string =>
+  crypto.createHmac('sha256', normalizeCode(code)).update(`mietfuchs-kopplung:bestaetigt:${proof}:${id}`).digest('hex')
+
 // 256 Bit Zufall: dafür genügt SHA-256, scrypt brauchte es nur für Passwörter, die ein Mensch wählt
 export const newDeviceKey = (): string => crypto.randomBytes(32).toString('base64url')
 export const deviceKeyHash = (key: string): string => crypto.createHash('sha256').update(key).digest('hex')
@@ -418,10 +433,17 @@ const MAX_RUNNING = 2
 // Die Adresse für die Bremse: IPv4 in IPv6 als IPv4, IPv6 als volle Adresse in einer Schreibweise. Nicht je /64
 // (Durchsicht): Im Heimnetz teilen sich alle Geräte ein /64, und der Fernseher bremste sonst das Handy des Vermieters.
 export function addressKey(address: string | undefined): string {
-  const a = address?.trim().toLowerCase().split('%')[0] ?? ''
+  let a = address?.trim().toLowerCase().split('%')[0] ?? ''
   if (!a) return 'unbekannt'
   if (a.startsWith('::ffff:') && net.isIPv4(a.slice(7))) return a.slice(7)
   if (!net.isIPv6(a)) return a
+  // Eine eingebettete IPv4 am Ende (`::1.2.3.4`, `64:ff9b::192.0.2.5`) sind zwei Gruppen, nicht eine (Durchsicht M1)
+  const lastColon = a.lastIndexOf(':')
+  const embedded = a.slice(lastColon + 1)
+  if (net.isIPv4(embedded)) {
+    const [b1, b2, b3, b4] = embedded.split('.').map(Number)
+    a = `${a.slice(0, lastColon + 1)}${((b1 << 8) | b2).toString(16)}:${((b3 << 8) | b4).toString(16)}`
+  }
   const [head, tail = ''] = a.split('::')
   const left = head ? head.split(':') : []
   const right = tail ? tail.split(':') : []
@@ -508,7 +530,8 @@ export type Brake = ReturnType<typeof createBrake>
 
 // ---------- Vorschaltung ----------
 
-// Vom Rechner selbst: die Adresse der Verbindung, nie eine Kopfzeile (`trust proxy` bleibt aus)
+// Eine Loopback-Adresse der Verbindung, nie eine Kopfzeile (`trust proxy` bleibt aus). Allein heißt das noch nicht „vom
+// Rechner selbst“: Ein Proxy auf demselben Rechner verbindet sich auch von hier (`fromThisComputer`).
 export function isLoopback(address: string | undefined): boolean {
   const a = address?.trim().toLowerCase() ?? ''
   if (!a) return false
@@ -518,9 +541,64 @@ export function isLoopback(address: string | undefined): boolean {
 type Headers = Record<string, string | string[] | undefined>
 const first = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value)
 
-// Kopfzeilen, die ein Reverse-Proxy setzt. Eine gefälschte macht nur strenger, nie lockerer.
-const PROXY_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'via']
-export const viaProxy = (headers: Headers): boolean => PROXY_HEADERS.some((name) => headers[name] !== undefined)
+// Kopfzeilen, die ein Reverse-Proxy setzt. Eine gefälschte macht nur strenger, nie lockerer: Sie schaltet die Anmeldung
+// lokal ein und nimmt einer Anfrage das „vom Rechner selbst“.
+const PROXY_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'via']
+export const proxyHeadersPresent = (headers: Headers): boolean => PROXY_HEADERS.some((name) => headers[name] !== undefined)
+
+// Vom Rechner selbst: Loopback **und** keine Kopfzeile eines Proxys, gleich welcher Peer. Ein Proxy auf demselben Rechner
+// (Caddy, nginx; Peer 127.0.0.1) reicht sonst jede Anfrage aus dem Netz als „von hier“ weiter: vollen /healthz, Beenden,
+// Zustimmungen im Fenster, den Fensterschlüssel und die Umzugsrouten. Die eine Stelle für alle diese Fragen.
+export const fromThisComputer = (address: string | undefined, headers: Headers): boolean => isLoopback(address) && !proxyHeadersPresent(headers)
+
+// ---------- Kanal einer Anfrage (#528, Kopplung über einen Proxy) ----------
+// `tls`: die eigene Verbindung ist TLS. `proxy`: ein Peer aus NKA_TRUST_PROXY meldet genau ein `X-Forwarded-Proto: https`,
+// dazu der Ursprung, unter dem der Browser Mietfuchs öffnet. `plain`: alles andere. Über HTTPS heißt `tls` oder `proxy`;
+// das gilt für den Geräteschlüssel, das Koppeln und die Vorabfrage. **Die einzige Stelle, an der eine Proxy-Kopfzeile
+// etwas erlaubt**, und nur für einen vertrauten Peer (`trustedPeer`, accessServer.ts); sonst machen sie nur strenger.
+// Tabelle: docs/superpowers/specs/2026-11-09-kopplung-proxy-design.md, Abschnitt 3.
+export type Channel = 'tls' | 'proxy' | 'plain'
+
+// Genau ein Wert: Caddy überschreibt die Kopfzeilen eines Clients und setzt je einen; zwei Werte (Komma oder doppelte
+// Kopfzeile) heißen, dass ein Client etwas angehängt hat
+const single = (value: string | string[] | undefined): string | null => {
+  if (value === undefined) return null
+  if (Array.isArray(value)) return value.length === 1 && !value[0].includes(',') ? value[0].trim() : ''
+  return value.includes(',') ? '' : value.trim()
+}
+
+// `https://` + Name mit Port, ohne Benutzer, Pfad, Suche oder Anker; sonst kein Ursprung. `:443` fällt weg.
+function originOfHost(host: string): string | null {
+  if (!host || /[\s/?#@\\]/.test(host)) return null
+  try {
+    return new URL(`https://${host}`).origin
+  } catch {
+    return null
+  }
+}
+
+export function channelOf({ encrypted, trustedPeer, headers }: { encrypted: boolean, trustedPeer: boolean, headers: Headers }): { channel: Channel, origin: string | null } {
+  const plain = { channel: 'plain' as const, origin: null }
+  const own = encrypted ? { channel: 'tls' as const, origin: null } : plain
+  if (!trustedPeer) return own
+  const proto = single(headers['x-forwarded-proto'])
+  if (proto === null) return own
+  if (proto.toLowerCase() !== 'https') return plain
+  const forwarded = single(headers['x-forwarded-host'])
+  const host = forwarded ?? single(headers.host)
+  const origin = host ? originOfHost(host) : null
+  return origin ? { channel: 'proxy', origin } : plain
+}
+
+// Welche Beweise `POST /api/auth/pair` annimmt: direkt über TLS nur den an das eigene Zertifikat gebundenen, über einen
+// vertrauten Proxy auch den an den weitergereichten Ursprung gebundenen (der Proxy kann das Zertifikat von Mietfuchs
+// ausliefern), über HTTP keinen.
+export function expectedProofs(code: string, channel: Channel, certSha256: string | null, origin: string | null): string[] {
+  if (channel === 'plain') return []
+  const proofs = certSha256 ? [pairingProof(code, certSha256)] : []
+  if (channel === 'proxy' && origin) proofs.push(originProof(code, origin))
+  return proofs
+}
 
 // Kam die Seite über HTTPS (Proxy davor oder, seit Schritt 2, die eigene Verbindung: `encrypted`)? Dann bekommt das
 // Cookie `Secure`. Eine gefälschte Angabe schadet nicht: Über HTTP verwirft der Browser ein Cookie mit `Secure`, der
@@ -551,6 +629,7 @@ export type GateRequest = {
   method: string
   // `req.path` von Express, roh (nicht entschlüsselt)
   path: string
+  // Loopback-Adresse der Verbindung; vom Rechner selbst ist die Anfrage nur ohne `viaProxy` (`fromThisComputer`)
   loopback: boolean
   viaProxy: boolean
   // gültige Sitzung (oder Fensterschlüssel)
@@ -576,7 +655,8 @@ const FREE: Record<string, readonly string[]> = {
   '/api/auth/setup': ['POST'],
   '/api/auth/logout': ['POST'],
   // Koppeln eines Programmfensters (#528, Schritt 2): frei wie die Anmeldung, mit Code als Beweis und derselben Bremse
-  '/api/auth/pair': ['POST'],
+  // dazu die Vorabfrage (`GET`): Fingerabdruck, ob der Server HTTPS sieht, und der weitergereichte Ursprung
+  '/api/auth/pair': ['GET', 'POST'],
   '/healthz': ['GET', 'HEAD'],
 }
 
@@ -642,6 +722,7 @@ export function gate(state: AccessState, req: GateRequest): GateDecision {
   const method = req.method.toUpperCase()
   const writes = !READ_ONLY.has(method)
   const { key, guarded } = pathOf(req.path)
+  const here = req.loopback && !req.viaProxy
   if (!gateActive(state, req.viaProxy)) {
     if (writes && exposedOpen(state, req.viaProxy) && (req.secFetchSite === 'cross-site' || req.secFetchSite === 'same-site')) {
       return { pass: false, status: 403, body: { error: FOREIGN } }
@@ -655,11 +736,11 @@ export function gate(state: AccessState, req: GateRequest): GateDecision {
   if (!guarded) {
     if (method === 'GET' || method === 'HEAD') return { pass: true, noStore: false, shortHealth: false }
   } else if (FREE[key]?.includes(method)) {
-    return { pass: true, noStore: true, shortHealth: key === '/healthz' && !req.loopback && !req.signedIn }
+    return { pass: true, noStore: true, shortHealth: key === '/healthz' && !here && !req.signedIn }
   }
   // Beenden vom Rechner selbst: das Fenster aus dem Hauptprozess, der Umzug bei einer alten Fassung, ein Server mit einem
   // Fensterschlüssel, den niemand mehr kennt. Mehr erlaubt die Ausnahme nicht.
-  if (key === '/api/quit' && method === 'POST' && req.loopback && !req.viaProxy) return { pass: true, noStore: true, shortHealth: false }
+  if (key === '/api/quit' && method === 'POST' && here) return { pass: true, noStore: true, shortHealth: false }
   if (req.signedIn) return { pass: true, noStore: guarded, shortHealth: false }
   return state.mode === 'setup'
     ? { pass: false, status: 401, body: { error: 'Bitte legen Sie zuerst ein Passwort für Mietfuchs fest.', setup: true } }
