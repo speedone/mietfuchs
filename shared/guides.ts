@@ -557,6 +557,7 @@ const GUIDE_DATA = {
       'Eine Anmeldung endet nach 30 Minuten ohne Aktivität, spätestens nach 8 Stunden. Läuft sie mitten in der Arbeit ab, fragt Mietfuchs in einem Fenster über der Seite nach dem Passwort; was Sie eingegeben haben, bleibt stehen.',
       'Nach mehreren falschen Passwörtern wartet Mietfuchs mit dem nächsten Versuch; nach der Anmeldung nennt es die Zahl der Fehlversuche seit Ihrer letzten Anmeldung.',
       'Läuft Mietfuchs nur auf Ihrem Rechner, etwa im Programmfenster ohne Zugriff aus dem Heimnetz, fragt es nicht nach einem Passwort.',
+      'Richten Sie Mietfuchs in Docker ohne Browser ein, etwa über Portainer oder ein Skript, lässt sich das Passwort beim Start vorgeben: mit NKA_PASSWORD_FILE, dem Pfad zu einer Datei mit dem Passwort (etwa ein Docker Secret). Es gilt nur, solange noch kein Passwort festgelegt ist; die Anleitung zu Docker beschreibt es.',
     ],
     example: 'Ein Passwort aus vier Wörtern wie tisch-garten-wolke-ofen hat 23 Zeichen; Mietfuchs verlangt mindestens 15. Der Einrichtungscode hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW. Eine Anmeldung gilt bis 30 Minuten ohne Aktivität und höchstens 8 Stunden.',
     caveats: [

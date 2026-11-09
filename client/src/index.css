@@ -891,3 +891,5 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
 
 /* Fälligkeit des laufenden Monats im Mietkonto (#290): eine Zeile, Einzelheiten zum Aufklappen */
 .rent-due p { margin: 4px 0 0; }
+/* Rot ist nur die Zeile „offen seit …“; die Erklärung darunter bleibt ruhig lesbar */
+.rent-due.text-red p { color: var(--muted); font-size: var(--text-s); }
