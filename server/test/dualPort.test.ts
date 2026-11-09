@@ -57,12 +57,20 @@ function get(mod: typeof http | typeof https, port: number, urlPath: string): Pr
   })
 }
 
-// Wartet, bis die Gegenseite die Verbindung schließt; liefert die Zeit bis dahin
-function closedAfter(socket: net.Socket): Promise<number> {
+// Wartet, bis die Gegenseite die Verbindung schließt; liefert die Zeit bis dahin. Nach zehn Sekunden gibt der Test auf
+// (Infinity) und schließt selbst, sonst hinge der Lauf an einer Verbindung, die der Server offen lässt.
+function closedAfter(socket: net.Socket, giveUpMs = 10_000): Promise<number> {
   const started = Date.now()
   return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      resolve(Infinity)
+      socket.destroy()
+    }, giveUpMs)
     socket.on('error', () => undefined)
-    socket.on('close', () => resolve(Date.now() - started))
+    socket.on('close', () => {
+      clearTimeout(timer)
+      resolve(Date.now() - started)
+    })
     socket.resume()
   })
 }
@@ -134,4 +142,76 @@ test('Ein Port: ein später gesetztes Zertifikat gilt für neue Verbindungen', a
     dual.http.closeAllConnections()
     await new Promise<void>((resolve) => dual.server.close(() => resolve()))
   }
+})
+
+// Die Fristen des http.Server (headersTimeout, requestTimeout) prüft Node nur für einen Server, der 'listening' gemeldet
+// hat; der innere lauscht nie selbst. Kurz eingestellt, damit der Test schnell ist.
+async function withShortTimeouts(fn: (port: number) => Promise<void>, firstByteMs?: number) {
+  const dual = createDualServer(handler, await certificate(), firstByteMs === undefined ? {} : { firstByteMs })
+  dual.http.headersTimeout = 400
+  dual.http.requestTimeout = 800
+  ;(dual.http as http.Server & { connectionsCheckingInterval: number }).connectionsCheckingInterval = 100
+  await new Promise<void>((resolve) => dual.server.listen(0, '127.0.0.1', resolve))
+  try {
+    await fn(portOf(dual.server))
+  } finally {
+    dual.http.closeAllConnections()
+    await new Promise<void>((resolve) => dual.server.close(() => resolve()))
+  }
+}
+
+test('Ein Port: unvollständige Kopfzeilen über HTTP werden nach headersTimeout geschlossen', async () => {
+  await withShortTimeouts(async (port) => {
+    const socket = net.connect(port, '127.0.0.1')
+    socket.write('GET / HTTP/1.1\r\nHost: x\r\n')
+    const ms = await closedAfter(socket)
+    assert.ok(ms < 4000, `nach ${ms} ms noch offen`)
+  })
+})
+
+test('Ein Port: unvollständige Kopfzeilen über HTTPS werden nach headersTimeout geschlossen', async () => {
+  await withShortTimeouts(async (port) => {
+    const socket = tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false })
+    await new Promise<void>((resolve, reject) => { socket.once('secureConnect', resolve); socket.once('error', reject) })
+    socket.write('GET / HTTP/1.1\r\nHost: x\r\n')
+    const ms = await closedAfter(socket)
+    assert.ok(ms < 4000, `nach ${ms} ms noch offen`)
+  })
+})
+
+test('Ein Port: ein stockender TLS-Handshake wird nach der eigenen Frist geschlossen', async () => {
+  // Unabhängig von den Fristen des http.Server und der Laufzeit (Bun)
+  const dual = createDualServer(handler, await certificate(), { firstByteMs: 300 })
+  await new Promise<void>((resolve) => dual.server.listen(0, '127.0.0.1', resolve))
+  try {
+    const socket = net.connect(portOf(dual.server), '127.0.0.1')
+    socket.write(Buffer.from([0x16, 0x03, 0x01]))
+    const ms = await closedAfter(socket)
+    assert.ok(ms >= 250, `zu früh geschlossen (${ms} ms)`)
+    assert.ok(ms < 4000, `nach ${ms} ms noch offen`)
+  } finally {
+    dual.http.closeAllConnections()
+    await new Promise<void>((resolve) => dual.server.close(() => resolve()))
+  }
+})
+
+test('Ein Port: eine Verbindung mit Keep-alive überlebt die Frist für das erste Byte', async () => {
+  // Die Frist gilt nur bis zum ersten Byte und bis zum Ende des Handshakes, nicht für eine ruhende Verbindung danach
+  await withDual(await certificate(), async (port) => {
+    const agent = new https.Agent({ keepAlive: true, rejectUnauthorized: false })
+    try {
+      const once = () => new Promise<string>((resolve, reject) => {
+        https.get({ host: '127.0.0.1', port, path: '/k', agent }, (res) => {
+          let body = ''
+          res.on('data', (c: Buffer) => { body += c })
+          res.on('end', () => resolve(body))
+        }).on('error', reject)
+      })
+      assert.equal(await once(), 'verschlüsselt /k')
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      assert.equal(await once(), 'verschlüsselt /k')
+    } finally {
+      agent.destroy()
+    }
+  }, { firstByteMs: 200 })
 })

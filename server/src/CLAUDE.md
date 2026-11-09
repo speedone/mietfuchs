@@ -197,7 +197,10 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   `selfsigned`; wie `zugang.json` nie im Backup, in Vorversionen oder im Umzug. Der äußere `net`-Server liest das erste
   Byte (`0x16` = TLS) und reicht ein `tls.TLSSocket` bzw. die rohe Verbindung an **denselben** `http.Server`; nicht
   `https.Server.emit('connection')`, das scheitert unter Bun. Ohne Zertifikat eine Zeile „HTTPS ist nicht verfügbar …“
-  auf der Fehlerausgabe, TLS-Verbindungen werden geschlossen, nie ein Abbruch. `/healthz` nennt `tls`.
+  auf der Fehlerausgabe, TLS-Verbindungen werden geschlossen, nie ein Abbruch. `/healthz` nennt `tls`. **Fristen**: Der
+  innere `http.Server` lauscht nie selbst; damit Node `headersTimeout`/`requestTimeout` prüft, meldet er 'listening'
+  mit dem äußeren. Unabhängig von der Laufzeit (Bun prüft übergebene Verbindungen nicht) eigene Uhren: 10 s bis zum
+  ersten Byte und bis zum Ende des Handshakes, `headersTimeout` bis zu vollständigen Kopfzeilen (nach jeder Antwort neu).
 - **Passwort** 15 bis 128 Zeichen nach NFC (Codepunkte), abgelehnt nur ein wiederholtes Zeichen und „mietfuchs“;
   scrypt N = 2^17, r = 8, p = 1, Salz 16, Schlüssel 32, Vergleich mit `timingSafeEqual`; `needsRehash` rechnet nach
   angehobenen Parametern bei der nächsten Anmeldung neu. **Höchstens eine Berechnung zugleich** (`createHashQueue`,
