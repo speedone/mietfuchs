@@ -24,8 +24,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `passwort-zuruecksetzen` im Datenordner anlegen und die Seite neu laden, dann nennt Mietfuchs einen neuen Code. Nur auf
   Ihrem Rechner (Programmfenster, auch aus dem Microsoft Store, ohne Zugriff aus dem Heimnetz; `NKA_HOST=127.0.0.1`) ändert sich nichts.
   `NKA_AUTH=off` schaltet die Anmeldung ab, etwa hinter einem Proxy mit eigener Anmeldung, `NKA_AUTH=on` verlangt sie
-  auch auf `127.0.0.1`. Eine Anfrage mit einer Kopfzeile eines Proxys (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`,
-  `Via`) gilt nie als „von diesem Rechner“: Ein Proxy auf demselben Rechner braucht die Anmeldung, und `/healthz`
+  auch auf `127.0.0.1`. Eine Anfrage mit einer Kopfzeile eines Proxys (`X-Forwarded-For`, `X-Forwarded-Host`,
+  `X-Forwarded-Proto`, `Forwarded`, `X-Real-IP`, `Via`) gilt nie als „von diesem Rechner“: Ein Proxy auf demselben Rechner braucht die Anmeldung, und `/healthz`
   antwortet über ihn nur knapp; eine Überwachung, die mehr lesen will, fragt Mietfuchs direkt an seinem Port. `NKA_PASSWORD_FILE` (etwa ein Docker Secret) oder `NKA_PASSWORD` geben das Passwort beim
   Start vor, solange keins festgelegt ist; ein später in der Oberfläche geändertes überschreiben sie nicht
   ([Docker](docs/docker.md#passwort-beim-ersten-start-vorgeben-nka_password_file)). Passwort und Code gehen nicht ins Backup. Im Browser bleibt die Verbindung im Heimnetz
@@ -39,9 +39,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   unter *Einstellungen → Anmeldung → Programmfenster koppeln* einen Code, der 10 Minuten gilt; das Fenster nimmt unter
   *Einstellungen → Mietfuchs im Heimnetz* Adresse und Code und bleibt danach verbunden, auch über einen Neustart.
   Mietfuchs spricht dafür auf demselben Port auch HTTPS, mit einem eigenen Zertifikat im Datenordner (`tls/`, nicht im
-  Backup); an Docker, Ports und Firewall ändert sich nichts. Der Code beweist beim ersten Verbinden, dass das Fenster
-  mit dem richtigen Server spricht, und geht selbst nie über das Netz; danach nimmt das Fenster nur noch dessen
-  Zertifikat an. Gekoppelte Fenster stehen am Server mit dem letzten Kontakt in einer Liste und lassen sich dort
+  Backup); an Docker, Ports und Firewall ändert sich nichts. Beim ersten Verbinden prüfen sich beide Seiten mit dem Code,
+  der selbst nie über das Netz geht: Das Fenster zeigt damit, welches Zertifikat oder welche Adresse es geprüft hat,
+  und der Server bestätigt damit, dass er den Code kennt; ohne diese Bestätigung koppelt das Fenster nicht. Danach
+  nimmt das Fenster nur noch das Zertifikat dieses Servers an, über einen Proxy mit Let's Encrypt oder eigenem
+  Stammzertifikat nur ein auf dem PC gültiges für diese Adresse. Gekoppelte Fenster stehen am Server mit dem letzten Kontakt in einer Liste und lassen sich dort
   einzeln entfernen. Gekoppelt wird direkt mit dem Port von Mietfuchs oder über einen Reverse Proxy wie Caddy, mit der
   Adresse aus dem Browser (`https://nas.fritz.box`): mit Let's Encrypt, einem auf dem PC installierten Stammzertifikat
   (Caddy `tls internal`) oder dem Zertifikat von Mietfuchs, das der Proxy ausliefert. `NKA_TRUST_PROXY` nennt den
@@ -63,6 +65,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **`deploy/compose.caddy.yml` nimmt die Adressen aus `MIETFUCHS_HOSTS`** ([#528](https://github.com/speedone/mietfuchs/issues/528)): Caddyfile und Mietfuchs (`NKA_ALLOWED_HOSTS`) lesen dieselbe Angabe, am einfachsten in einer Datei `.env` neben compose.caddy.yml (`MIETFUCHS_HOSTS=localhost, 192.168.178.23, nas.fritz.box`). Übernehmen Sie die neue compose.caddy.yml, aber behalten Ihr bisheriges Caddyfile mit eigenen Adressen, tragen Sie dieselben Adressen in `MIETFUCHS_HOSTS` ein; sonst antwortet Mietfuchs unter einer eigenen Domain wie `mietfuchs.example.org` nicht mehr („Mietfuchs antwortet nicht unter dem Namen …“). IP-Adressen, Namen ohne Punkt und Namen im Heimnetz wie `nas.fritz.box` gehen weiter. Wer nur das Image aktualisiert (`pull` und `up -d`), muss nichts tun.
 - **Neue Datenordner im Netz verlangen ein Passwort**: Ein frisches Docker-Volume, eine Programmdatei mit neuem Ordner
   `data` und ein neues Linux-Paket starten in der Einrichtung; ohne sie sieht niemand Daten. Das ist die sichere
   Voreinstellung für Docker aus der Liste für Version 1.0 ([#447](https://github.com/speedone/mietfuchs/issues/447)).

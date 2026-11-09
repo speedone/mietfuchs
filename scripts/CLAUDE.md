@@ -319,7 +319,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Server. Dazu schreibt das Fenster `systemCa` (Zahl der Zertifikate aus `tls.getCACertificates('system')`), ein
   Beleg, dass Node unter Windows und macOS den Speicher des Systems liest. proxy.ts hängt deshalb an nichts außer
   `selfsigned` (nicht an api.ts); der Job „Programmfenster prüfen auf …“ installiert dafür
-  `npm --prefix server ci --omit=dev`. Unter Linux gibt es kein Fenster für Nutzer; geprüft wird auf Windows und
+  `npm --prefix server ci --omit=dev --ignore-scripts`. Unter Linux gibt es kein Fenster für Nutzer; geprüft wird auf Windows und
   macOS in der CI. Aus den Quellen läuft desktop-check unter Linux mit `xvfb-run` und einem Startskript, das
   `desktop/node_modules/electron/dist/electron --no-sandbox <repo>/desktop` aufruft (`--app`).
 - **Praxislauf der Kopplung mit echtem Caddy** ([kopplung-proxy-praxislauf.mjs](kopplung-proxy-praxislauf.mjs),

@@ -261,8 +261,10 @@ Mietfuchs ausliefern, und Mietfuchs muss dem Proxy vertrauen (`NKA_TRUST_PROXY`,
 Über ein VPN koppelst du wie im Heimnetz.
 
 **Warum das sicher ist:** Mietfuchs auf dem Gerät hat ein eigenes Zertifikat. Beim Koppeln beweist
-das Fenster mit dem Code, welches Zertifikat es sieht, und das Gerät prüft das gegen sein eigenes;
-der Code selbst geht nie über das Netz. Ein Gerät, das sich dazwischen schiebt, fällt so auf. Danach
+das Fenster mit dem Code, welches Zertifikat es sieht, und das Gerät prüft das gegen sein eigenes.
+Umgekehrt bestätigt das Gerät mit dem Code, dass es ihn kennt; fehlt diese Bestätigung oder stimmt
+sie nicht, koppelt das Fenster nicht und merkt sich nichts. Der Code selbst geht nie über das Netz.
+Ein Gerät, das sich dazwischen schiebt, fällt so in beide Richtungen auf. Danach
 nimmt das Fenster unter dieser Adresse nur noch genau dieses Zertifikat an und schickt seinen
 Geräteschlüssel nur dorthin. Über einen Proxy mit eigenem Zertifikat bindet der Code an die
 Adresse, die das Fenster mit den Stammzertifikaten des PCs geprüft hat, und der Proxy meldet
@@ -295,7 +297,9 @@ sagt das Fenster es beim Start; aktualisiere dann das ältere.
 Hinter einem Proxy sagt das Fenster beim Koppeln, was fehlt: ein Stammzertifikat auf dem PC, der
 Eintrag in `NKA_TRUST_PROXY`, die Adresse so, wie der Proxy sie meldet, oder ein Passwort im Proxy
 (`basic_auth`), das das Fenster nicht beantworten kann. Ist später das Zertifikat des Proxys auf dem
-PC nicht mehr gültig, fragt es beim Start wie oben nach.
+PC nicht mehr gültig, fragt es beim Start wie oben nach. Vertraut Mietfuchs dem Proxy beim Start
+gerade nicht (einige Sekunden nach dem Neuerstellen von Caddy, oder `NKA_TRUST_PROXY` fehlt), sagt
+das Fenster genau das, statt neu koppeln zu lassen; die Kopplung bleibt, „Erneut versuchen“ genügt.
 
 Im Browser zeigt `https://<gerät>:3001` nur eine Warnung, weil kein Browser das eigene Zertifikat
 von Mietfuchs kennt. Für HTTPS im Browser bleibt [Caddy](docker.md#mit-https-im-heimnetz-composecaddyyml)
