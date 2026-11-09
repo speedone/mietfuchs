@@ -41,6 +41,7 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import AdmZip from '../server/node_modules/adm-zip/adm-zip.js'
+import { copyDirRetrying } from '../server/testing/copyDir.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SERVER = path.join(ROOT, 'server', 'src', 'index.ts')
@@ -388,9 +389,12 @@ async function runVersion(version, binary) {
     // Wer /api/quit kennt (ab 0.7), bleibt offen: Das beendet der neue Bildschirm. Die anderen schließt der Nutzer.
     const knowsQuit = !/^0\.[0-6]\./.test(version)
 
-    // Zum Vergleich: der Server von heute auf einer Kopie des alten Ordners, wie bei einem Update an Ort und Stelle
+    // Zum Vergleich: der Server von heute auf einer Kopie des alten Ordners, wie bei einem Update an Ort und Stelle.
+    // Die alte Fassung löscht ihren Schnappschuss des Backups erst nach der Antwort; verschwindet er mitten im
+    // Kopieren, kopiert copyDirRetrying noch einmal (server/testing/copyDir.ts).
     const inPlace = path.join(work, 'an-ort-und-stelle')
-    fs.cpSync(oldData, inPlace, { recursive: true })
+    const copied = await copyDirRetrying(oldData, inPlace)
+    if (copied.attempts > 1) info(`${version}: Kopie im ${copied.attempts}. Versuch, verschwunden: ${copied.vanished.join(', ')}`)
     const today = await startNew(inPlace, home)
     running.push(today)
     const todaySettlement = settlementCore(await get(today.base, '/api/settlement/2024'))
