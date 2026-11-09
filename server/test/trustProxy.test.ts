@@ -77,7 +77,7 @@ test('NKA_TRUST_PROXY: ein Name wird bei Bedarf aufgelöst, höchstens alle 5 s 
   assert.equal(trust.configured, true)
   // Caddy startet nach Mietfuchs: beim ersten Mal nicht auflösbar, eine Zeile
   assert.equal(await trust.trusts('172.18.0.5'), false)
-  assert.deepEqual(asked, ['caddy'])
+  assert.deepEqual(asked, ['caddy.'], 'absolut gefragt, ohne Suchliste')
   assert.deepEqual(errors, ['NKA_TRUST_PROXY: Der Name „caddy“ lässt sich (noch) nicht auflösen.'])
   // vor Ablauf der 5 s keine zweite Auflösung
   clock += MISS_RETRY_MS - 1
@@ -151,4 +151,80 @@ test('NKA_TRUST_PROXY: Zeile erneut, wenn ein aufgelöster Name wieder nicht auf
   clock += NAME_TTL_MS
   assert.equal(await trust.trusts('172.18.0.5'), false)
   assert.equal(errors.length, 2)
+})
+
+// ---------- Durchsicht PR 1 (I1, M1, M2) ----------
+
+test('NKA_TRUST_PROXY: ein Netz, das fast jedem vertraute (IPv4 unter /8, IPv6 unter /32), gilt nicht', () => {
+  for (const entry of ['0.0.0.0/0', '10.0.0.0/7', '128.0.0.0/1', '::/0', '2000::/3', 'fc00::/31']) {
+    const parsed = parseTrustProxy(entry)
+    assert.equal(parsed.configured, false, entry)
+    assert.deepEqual(parsed.problems, [`NKA_TRUST_PROXY: „${entry}“ vertraut fast jedem und gilt nicht. Tragen Sie die Adresse des Proxys oder ein engeres Netz ein.`], entry)
+  }
+  for (const entry of ['10.0.0.0/8', 'fd00::/32', '172.16.0.0/12']) assert.equal(parseTrustProxy(entry).configured, true, entry)
+})
+
+test('NKA_TRUST_PROXY: Schlüsselwörter von Express sind keine Namen und sagen, was stattdessen gilt', () => {
+  const lines: Record<string, string> = {
+    loopback: 'NKA_TRUST_PROXY: „loopback“ ist kein Name eines Rechners und gilt nicht. Für einen Proxy auf demselben Rechner tragen Sie 127.0.0.1,::1 ein.',
+    uniquelocal: 'NKA_TRUST_PROXY: „uniquelocal“ vertraut jedem Gerät im Heimnetz und gilt nicht. Tragen Sie die Adresse oder den Namen des Proxys ein, in Docker Compose etwa caddy.',
+    linklocal: 'NKA_TRUST_PROXY: „linklocal“ vertraut jedem Gerät im Heimnetz und gilt nicht. Tragen Sie die Adresse oder den Namen des Proxys ein, in Docker Compose etwa caddy.',
+    false: 'NKA_TRUST_PROXY: „false“ ist kein Name eines Rechners und gilt nicht. Wer keinem Proxy vertraut, lässt NKA_TRUST_PROXY leer.',
+  }
+  for (const [entry, line] of Object.entries(lines)) {
+    for (const spelled of [entry, entry.toUpperCase()]) {
+      const parsed = parseTrustProxy(spelled)
+      assert.equal(parsed.configured, false, spelled)
+      assert.deepEqual(parsed.names, [], spelled)
+      assert.deepEqual(parsed.problems, [line.replace(`„${entry}“`, `„${spelled}“`)], spelled)
+    }
+  }
+})
+
+test('NKA_TRUST_PROXY: ein Name ohne Punkt wird absolut aufgelöst, ohne die Suchliste des Systems', async () => {
+  const asked: string[] = []
+  const trust = createProxyTrust('caddy, proxy.fritz.box', { lookup: async (name) => { asked.push(name); return ['172.18.0.5'] } })
+  assert.equal(await trust.trusts('172.18.0.5'), true)
+  assert.deepEqual(asked.sort(), ['caddy.', 'proxy.fritz.box'])
+})
+
+test('NKA_TRUST_PROXY: IPv6 mit eingebetteter IPv4 wird nicht verkürzt (M1)', async () => {
+  const trust = createProxyTrust('::1.2.3.4, 64:ff9b::192.0.2.0/120', { lookup: async () => assert.fail('kein Name') })
+  assert.equal(trust.configured, true)
+  assert.equal(await trust.trusts('::1'), false)
+  assert.equal(await trust.trusts('::102:304'), true)
+  assert.equal(await trust.trusts('64:ff9b::c000:205'), true)
+  assert.equal(await trust.trusts('64:ff9b::c000:305'), false)
+})
+
+test('NKA_TRUST_PROXY: eine vertraute Adresse wartet nicht auf eine laufende Auflösung (M2)', async () => {
+  let clock = 0
+  const pendingAnswers: Array<(value: string[]) => void> = []
+  let lookups = 0
+  const trust = createProxyTrust('caddy', {
+    now: () => clock,
+    lookup: () => {
+      lookups++
+      if (lookups === 1) return Promise.resolve(['172.18.0.5'])
+      return new Promise<string[]>((resolve) => { pendingAnswers.push(resolve) })
+    },
+  })
+  assert.equal(await trust.trusts('172.18.0.5'), true)
+  clock += MISS_RETRY_MS
+  // eine unbekannte Adresse löst neu auf, die Antwort lässt auf sich warten
+  const unknown = trust.trusts('172.18.0.9')
+  // die bekannte Adresse aus dem frischen Ergebnis gilt sofort
+  const known = await Promise.race([trust.trusts('172.18.0.5'), new Promise<string>((resolve) => setTimeout(() => resolve('wartet'), 200))])
+  assert.equal(known, true)
+  pendingAnswers.forEach((resolve) => resolve(['172.18.0.5']))
+  assert.equal(await unknown, false)
+})
+
+test('NKA_TRUST_PROXY: eine hängende Auflösung bricht nach der Wartezeit ab (M2)', async () => {
+  const errors: string[] = []
+  const trust = createProxyTrust('caddy', { lookupTimeoutMs: 50, logError: (line) => errors.push(line), lookup: () => new Promise<string[]>(() => {}) })
+  const started = Date.now()
+  assert.equal(await trust.trusts('172.18.0.5'), false)
+  assert.ok(Date.now() - started < 2000, 'nicht länger als die Wartezeit')
+  assert.deepEqual(errors, ['NKA_TRUST_PROXY: Der Name „caddy“ lässt sich (noch) nicht auflösen.'])
 })

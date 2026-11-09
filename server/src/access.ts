@@ -425,10 +425,17 @@ const MAX_RUNNING = 2
 // Die Adresse für die Bremse: IPv4 in IPv6 als IPv4, IPv6 als volle Adresse in einer Schreibweise. Nicht je /64
 // (Durchsicht): Im Heimnetz teilen sich alle Geräte ein /64, und der Fernseher bremste sonst das Handy des Vermieters.
 export function addressKey(address: string | undefined): string {
-  const a = address?.trim().toLowerCase().split('%')[0] ?? ''
+  let a = address?.trim().toLowerCase().split('%')[0] ?? ''
   if (!a) return 'unbekannt'
   if (a.startsWith('::ffff:') && net.isIPv4(a.slice(7))) return a.slice(7)
   if (!net.isIPv6(a)) return a
+  // Eine eingebettete IPv4 am Ende (`::1.2.3.4`, `64:ff9b::192.0.2.5`) sind zwei Gruppen, nicht eine (Durchsicht M1)
+  const lastColon = a.lastIndexOf(':')
+  const embedded = a.slice(lastColon + 1)
+  if (net.isIPv4(embedded)) {
+    const [b1, b2, b3, b4] = embedded.split('.').map(Number)
+    a = `${a.slice(0, lastColon + 1)}${((b1 << 8) | b2).toString(16)}:${((b3 << 8) | b4).toString(16)}`
+  }
   const [head, tail = ''] = a.split('::')
   const left = head ? head.split(':') : []
   const right = tail ? tail.split(':') : []

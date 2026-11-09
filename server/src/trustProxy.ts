@@ -13,6 +13,11 @@ import { addressKey } from './access.ts'
 
 export const NAME_TTL_MS = 60_000
 export const MISS_RETRY_MS = 5_000
+// Höchstens so lange wartet eine Anfrage auf DNS (Durchsicht M2): Ein hängender Resolver hielte sonst jede Anfrage mit
+// Proxy-Kopfzeilen fest. Danach gilt der Name als nicht auflösbar, bis zum nächsten Versuch nach 5 Sekunden.
+export const LOOKUP_TIMEOUT_MS = 2_000
+// Engere Netze als diese vertrauten fast jedem (Durchsicht I1): IPv4 unter /8, IPv6 unter /32
+const MIN_PREFIX = { ipv4: 8, ipv6: 32 } as const
 
 const NAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i
 // `true` und eine Zahl von Sprüngen versteht Express als „jedem vertrauen“ bzw. „den letzten n“; beides ist fälschbar
@@ -23,6 +28,16 @@ const everyoneLine = (entry: string): string =>
 const invalidLine = (entry: string): string =>
   `NKA_TRUST_PROXY: „${entry}“ ist weder eine IP-Adresse noch ein Netz noch ein Name und gilt nicht.`
 const unresolvedLine = (name: string): string => `NKA_TRUST_PROXY: Der Name „${name}“ lässt sich (noch) nicht auflösen.`
+const tooWideLine = (entry: string): string =>
+  `NKA_TRUST_PROXY: „${entry}“ vertraut fast jedem und gilt nicht. Tragen Sie die Adresse des Proxys oder ein engeres Netz ein.`
+// Weitere Schlüsselwörter von Express: Sie sähen aus wie Namen, sind aber Gruppen von Netzen bzw. „aus“ (Durchsicht I1)
+const HOME_NETWORK = 'vertraut jedem Gerät im Heimnetz und gilt nicht. Tragen Sie die Adresse oder den Namen des Proxys ein, in Docker Compose etwa caddy.'
+const KEYWORDS: Record<string, string> = {
+  loopback: 'ist kein Name eines Rechners und gilt nicht. Für einen Proxy auf demselben Rechner tragen Sie 127.0.0.1,::1 ein.',
+  uniquelocal: HOME_NETWORK,
+  linklocal: HOME_NETWORK,
+  false: 'ist kein Name eines Rechners und gilt nicht. Wer keinem Proxy vertraut, lässt NKA_TRUST_PROXY leer.',
+}
 
 // IPv4 in IPv6 als IPv4, IPv6 in einer Schreibweise, ohne Zone: so vergleicht auch die Bremse (`addressKey`)
 const familyOf = (address: string): 'ipv4' | 'ipv6' | null => (net.isIPv4(address) ? 'ipv4' : net.isIPv6(address) ? 'ipv6' : null)
@@ -48,6 +63,11 @@ export function parseTrustProxy(value: string | undefined): { addresses: net.Blo
       problems.push(everyoneLine(entry))
       continue
     }
+    const keyword = KEYWORDS[entry.toLowerCase()]
+    if (keyword) {
+      problems.push(`NKA_TRUST_PROXY: „${entry}“ ${keyword}`)
+      continue
+    }
     const address = entry.includes('/') ? null : addressKey(entry)
     const family = address ? familyOf(address) : null
     if (address && family) {
@@ -56,6 +76,10 @@ export function parseTrustProxy(value: string | undefined): { addresses: net.Blo
       continue
     }
     const subnet = subnetOf(entry)
+    if (subnet && subnet.prefix < MIN_PREFIX[subnet.family]) {
+      problems.push(tooWideLine(entry))
+      continue
+    }
     if (subnet) {
       addresses.addSubnet(subnet.network, subnet.prefix, subnet.family)
       configured = true
@@ -85,8 +109,21 @@ type NameEntry = { addresses: string[], resolvedAt: number, attemptedAt: number,
 
 const systemLookup = async (name: string): Promise<string[]> => (await dns.promises.lookup(name, { all: true })).map((a) => a.address)
 
-export function createProxyTrust(value: string | undefined, options: { lookup?: (name: string) => Promise<string[]>, now?: () => number, logError?: (line: string) => void } = {}): ProxyTrust {
-  const { lookup = systemLookup, now = Date.now, logError = console.error } = options
+// Ein Name ohne Punkt (`caddy`) wird absolut gefragt (`caddy.`): Sonst hängte der Resolver die Suchliste des Systems an
+// (`caddy.fritz.box`), und ein Gerät dieses Namens im Heimnetz gälte als Proxy. Docker beantwortet `caddy.` in seinem DNS
+// (127.0.0.11) wie `caddy` (nachgemessen mit Docker 29, glibc und musl).
+const absoluteName = (name: string): string => (name.includes('.') ? name : `${name}.`)
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), ms)
+  })
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer))
+}
+
+export function createProxyTrust(value: string | undefined, options: { lookup?: (name: string) => Promise<string[]>, now?: () => number, logError?: (line: string) => void, lookupTimeoutMs?: number } = {}): ProxyTrust {
+  const { lookup = systemLookup, now = Date.now, logError = console.error, lookupTimeoutMs = LOOKUP_TIMEOUT_MS } = options
   const { addresses, names, problems, configured } = parseTrustProxy(value)
   const entries = new Map<string, NameEntry>(names.map((name) => [name, { addresses: [], resolvedAt: -Infinity, attemptedAt: -Infinity, failing: false, pending: null }]))
 
@@ -94,7 +131,7 @@ export function createProxyTrust(value: string | undefined, options: { lookup?: 
     entry.attemptedAt = now()
     entry.pending = (async () => {
       try {
-        entry.addresses = (await lookup(name)).map(addressKey)
+        entry.addresses = (await withTimeout(lookup(absoluteName(name)), lookupTimeoutMs)).map(addressKey)
         entry.failing = false
       } catch {
         // Kein Abbruch: Der Name ergibt keine Adresse, eine Zeile beim ersten Mal und wieder nach einer Auflösung
@@ -110,6 +147,8 @@ export function createProxyTrust(value: string | undefined, options: { lookup?: 
   }
 
   async function viaName(name: string, entry: NameEntry, key: string): Promise<boolean> {
+    // Im frischen Ergebnis: sofort, ohne auf eine laufende Auflösung für eine andere Adresse zu warten (Durchsicht M2)
+    if (now() - entry.resolvedAt < NAME_TTL_MS && entry.addresses.includes(key)) return true
     if (entry.pending) await entry.pending
     const at = now()
     const fresh = at - entry.resolvedAt < NAME_TTL_MS

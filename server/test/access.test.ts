@@ -316,6 +316,14 @@ test('Zugang: die Adresse der Bremse, IPv4 in IPv6 und IPv6 je /64', () => {
   assert.equal(addressKey(undefined), 'unbekannt')
 })
 
+test('Zugang: die Adresse der Bremse mit eingebetteter IPv4 in IPv6 (Durchsicht M1)', () => {
+  assert.equal(addressKey('::1.2.3.4'), '0:0:0:0:0:0:102:304')
+  assert.equal(addressKey('64:ff9b::192.0.2.5'), '64:ff9b:0:0:0:0:c000:205')
+  assert.notEqual(addressKey('::1.2.3.4'), addressKey('::1'))
+  assert.equal(addressKey('::ffff:192.0.2.5'), '192.0.2.5')
+  assert.equal(addressKey('fe80::1%eth0'), 'fe80:0:0:0:0:0:0:1')
+})
+
 test('Zugang: Bremse bucht vor dem Ergebnis und nimmt bei Erfolg zurück', () => {
   let now = 0
   const brake = createBrake({ now: () => now })
