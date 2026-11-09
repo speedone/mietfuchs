@@ -8,7 +8,7 @@ import https from 'node:https'
 import tls from 'node:tls'
 import os from 'node:os'
 import path from 'node:path'
-import { certSha256FromPem, jsonOr, normalizeAddress, pair, pinDecision, remoteFetch, versionHint } from '../src/pairing.js'
+import { certSha256FromPem, deviceNameOf, jsonOr, normalizeAddress, pair, pinDecision, remoteFetch, versionHint } from '../src/pairing.js'
 import { freePort } from '../src/server.js'
 
 // Die Helfer der Servertests. Über eine errechnete Adresse geladen: Der Server ist TypeScript mit eigener Typprüfung,
@@ -92,7 +92,7 @@ test('Koppeln: ohne Name nimmt das Fenster den Rechnernamen', async () => {
     const result = await pair({ address: addressOf(s.base), code: await code() })
     assert.ok(!('problem' in result), JSON.stringify(result))
     const devices = /** @type {{ devices: { name: string }[] }} */ (await (await fetch(`${s.base}/api/auth/devices`, { headers: { cookie } })).json()).devices
-    assert.equal(devices[0].name, os.hostname())
+    assert.equal(devices[0].name, deviceNameOf(os.hostname()))
   } finally {
     s.stop()
   }
@@ -287,4 +287,14 @@ test('Version: Hinweis nur bei anderem major.minor', () => {
   assert.match(String(hint), /0\.18\.0/)
   assert.equal(typeof versionHint('1.0.0', '0.17.0'), 'string')
   assert.equal(versionHint('0.17.0', 'unbekannt'), null)
+})
+
+test('Gerätename: Rechnername ohne Domäne, höchstens 60 Zeichen', () => {
+  assert.equal(deviceNameOf('Martins-MacBook-Pro.local'), 'Martins-MacBook-Pro')
+  assert.equal(deviceNameOf('nas.fritz.box'), 'nas')
+  assert.equal(deviceNameOf('BUERO-PC'), 'BUERO-PC')
+  const long = 'sjc22-bt151-5e394292-5b7a-4de3-981b-b88b33ef1e43-BECDB73ED975.local'
+  assert.equal(deviceNameOf(long), long.slice(0, 60))
+  assert.equal(deviceNameOf('  '), 'Programmfenster')
+  assert.equal(deviceNameOf('.local'), 'Programmfenster')
 })

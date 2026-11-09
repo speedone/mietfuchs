@@ -216,13 +216,25 @@ function mietfuchsOverHttp({ host, port }, timeoutMs) {
  */
 
 /**
+ * Name des Fensters in der Geräteliste: der Rechnername ohne Domäne („Martins-MacBook-Pro.local“ wird
+ * „Martins-MacBook-Pro“), gekürzt auf die 60 Zeichen, die der Server annimmt (DEVICE_NAME_MAX); sonst nähme er für
+ * einen langen Namen nur „Programmfenster“
+ * @param {string} hostname
+ * @returns {string}
+ */
+export function deviceNameOf(hostname) {
+  const short = hostname.trim().split('.')[0].slice(0, 60).trim()
+  return short || 'Programmfenster'
+}
+
+/**
  * Koppeln: TLS verbinden und den Fingerabdruck lesen, an `/healthz` erkennen, dass dort Mietfuchs antwortet, den
  * Beweis rechnen und `POST /api/auth/pair` über eine Verbindung mit demselben Zertifikat schicken. Ergibt, was
  * fenster.json als `remote` merkt, oder einen Satz für die Karte.
  * @param {{ address: string, code: string, name?: string, timeoutMs?: number }} request
  * @returns {Promise<Remote | Problem>}
  */
-export async function pair({ address, code, name = os.hostname(), timeoutMs = TIMEOUT_MS }) {
+export async function pair({ address, code, name = deviceNameOf(os.hostname()), timeoutMs = TIMEOUT_MS }) {
   const where = normalizeAddress(address)
   if ('problem' in where) return where
   if (!normalizeCode(code)) return { problem: 'Geben Sie den Code ein, den Mietfuchs auf dem Server unter Einstellungen, Anmeldung zeigt.', field: 'code' }
