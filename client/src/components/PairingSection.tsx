@@ -83,17 +83,21 @@ export default function PairingSection({ info }: { info: AccessInfo }) {
       <div className="row">
         <button type="button" className="btn secondary" disabled={busy} onClick={() => void show()}>{again ? 'Neuen Code anzeigen' : 'Code anzeigen'}</button>
       </div>
-      {expired && !code && <p className="muted" role="status">{CODE_EXPIRED}</p>}
-      {code && (
-        <div className="stack" role="status" aria-label="Kopplungscode">
-          <div className="row">
-            <strong className="font-mono text-2xl tracking-widest select-all">{code.code}</strong>
-            <button type="button" className="btn ghost" aria-label="Kopplungscode kopieren" onClick={() => void copy(code.code)}>Kopieren</button>
-          </div>
-          <p className="muted">{expiresText(code.expiresAt, new Date())}</p>
-          <p>Öffnen Sie im Programmfenster auf dem anderen Rechner Einstellungen → Mietfuchs im Heimnetz, und tragen Sie Adresse und Code ein. {address ? <>Die Adresse ist <code>{address}</code>.</> : 'Die Adresse ist die, unter der Sie Mietfuchs hier im Heimnetz erreichen.'}</p>
-        </div>
-      )}
+      {/* Ein Live-Bereich, der von Anfang an leer dasteht und erst danach gefüllt wird: Erscheint er mit seinem
+          Inhalt, sagen manche Bildschirmleser nichts an */}
+      <div className="stack" role="status" aria-label="Kopplungscode">
+        {expired && !code && <p className="muted">{CODE_EXPIRED}</p>}
+        {code && (
+          <>
+            <div className="row">
+              <strong className="font-mono text-2xl tracking-widest select-all">{code.code}</strong>
+              <button type="button" className="btn ghost" aria-label="Kopplungscode kopieren" onClick={() => void copy(code.code)}>Kopieren</button>
+            </div>
+            <p className="muted">{expiresText(code.expiresAt, new Date())}</p>
+            <p>Öffnen Sie im Programmfenster auf dem anderen Rechner Einstellungen → Mietfuchs im Heimnetz, und tragen Sie Adresse und Code ein. {address ? <>Die Adresse ist <code>{address}</code>.</> : 'Die Adresse ist die, unter der Sie Mietfuchs hier im Heimnetz erreichen.'}</p>
+          </>
+        )}
+      </div>
       {loadFailed && <p className="muted">{LOAD_FAILED}</p>}
       {list.length > 0 && (
         <ul className="stack">
