@@ -361,11 +361,14 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
     endlos neue Codes); ein Beweis über den Fingerabdruck gilt dabei weiter. Ohne eigenes Zertifikat geht über den Proxy nur die Bindung an den Ursprung.
   - **Restrisiko**: Die Bindung an den Ursprung ist nur so gut wie der `X-Forwarded-Host`, den der Proxy meldet. Jeder
     Proxy, der den Wert eines Clients durchreicht oder einen Block für jede Adresse hat (Caddy `:443` für alles,
-    `on_demand`; nginx `default_server` ohne `server_name`), reicht auch einen fremden Namen weiter; ein Angreifer mit
+    `on_demand`; in nginx jeder Server, der als einziger oder `default_server` auf dem Port für jeden Namen einspringt),
+    reicht auch einen fremden Namen weiter; ein Angreifer mit
     eigenem gültigen Zertifikat für diesen Namen, der den Nutzer dorthin lockt und den Code bekommt, könnte dann
     koppeln. Caddy überschreibt `X-Forwarded-Host` eines nicht vertrauten Clients (vor dem Entwurf gesehen: geschicktes
-    `evil` kam als `localhost:8443` an). nginx braucht `proxy_set_header X-Forwarded-Host $host;` und einen
-    ausdrücklichen `server_name`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein eingetragener Name, eine
+    `evil` kam als `localhost:8443` an). nginx macht den ersten `server` am Port zum Auffang für
+    jeden Namen, `$host` ist dort also, was der Client schickt; deshalb den Namen fest eintragen:
+    `proxy_set_header X-Forwarded-Host mietfuchs.example.org;` (anderer Port: `mietfuchs.example.org:8443`) und
+    `proxy_set_header X-Forwarded-Proto https;`, wahlweise `if ($host != "mietfuchs.example.org") { return 421; }`. **`NKA_ALLOWED_HOSTS` schließt die Lücke**: Dann bindet nur ein eingetragener Name, eine
     private oder Loopback-Adresse oder ein Name ohne Punkt (oben). Das Caddyfile im Repo nennt die Adressen ausdrücklich; compose.caddy.yml setzt
     `NKA_ALLOWED_HOSTS` aus derselben Angabe wie die Adressen des Caddyfiles (`MIETFUCHS_HOSTS`, `{$MIETFUCHS_HOSTS}`
     vor der Klammer). Die Nutzerdoku dazu (nginx, Restrisiko, `NKA_TRUST_PROXY`) steht in docs/docker.md.

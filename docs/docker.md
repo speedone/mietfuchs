@@ -238,6 +238,8 @@ neues Stammzertifikat, und du installierst es auf allen Geräten neu.
 docker compose -f compose.caddy.yml pull && docker compose -f compose.caddy.yml up -d
 ```
 
+Lädst du `compose.caddy.yml` aus 0.17 neu herunter und hattest vorher Adressen von Hand im Caddyfile vor der Klammer, trag dieselben Adressen in `.env` als `MIETFUCHS_HOSTS` ein und nimm auch das neue Caddyfile (oder schreib dort `{$MIETFUCHS_HOSTS:localhost}` vor die Klammer). Sonst kennt Mietfuchs nur `localhost` und lehnt eine eigene Domain wie `mietfuchs.example.org` ab. Wer nur `pull` und `up -d` ausführt, behält seine Dateien und muss nichts tun.
+
 ### Ein Passwort davor
 
 Mietfuchs fragt selbst nach einem Passwort (siehe [Zuerst: Sicherheit](#zuerst-sicherheit)), hinter
@@ -290,8 +292,11 @@ Proxy). Als Adresse gibst du im Fenster ein, was im Browser in der Adresszeile s
   Zertifikat im Volume an (`/app/server/data/tls/`). An `compose.yml`, Ports und Firewall änderst du
   nichts; der Browser bleibt bei `http://<gerät>:3001`. Im Fenster ist die Adresse `nas:3001` oder
   `192.168.178.23:3001`.
-- Das Fenster merkt sich beim Koppeln genau dieses Zertifikat und nimmt danach kein anderes an. Den
-  Code prüft Mietfuchs gegen sein eigenes Zertifikat; ein Gerät dazwischen fällt so auf.
+- Das Fenster merkt sich beim Koppeln genau dieses Zertifikat und nimmt danach kein anderes an. Der
+  Code selbst geht nie über die Leitung: Das Fenster beweist mit ihm, welches Zertifikat es gesehen
+  hat, und Mietfuchs prüft das gegen sein eigenes. Umgekehrt bestätigt Mietfuchs mit dem Code, dass
+  es ihn kennt; fehlt diese Bestätigung, koppelt das Fenster nicht. Ein Gerät dazwischen fällt so in
+  beide Richtungen auf.
 - **Das Zertifikat bleibt**, solange das Volume `mietfuchs-data` besteht, auch über Updates des
   Containers. Das Backup über die Oberfläche nimmt es nicht mit; nach dem Wiederherstellen in einem
   neuen Volume entsteht ein neues, und du koppelst die Fenster neu. Sicherst du das ganze Volume
@@ -352,7 +357,8 @@ Verbindung nicht als verschlüsselt ansieht.
 - **Namen** löst Mietfuchs bei Bedarf über DNS auf, auch neu, wenn ein Container neu erstellt wurde.
   In Docker Compose ist der Dienstname (`caddy`) der sichere Weg: Docker kennt ihn genau, aus dem
   Heimnetz lässt er sich nicht fälschen. Außerhalb von Docker nimm IP-Adressen; ein Name hinge am
-  DNS des Routers. Kennt dein Mietfuchs den Proxy nur über `extra_hosts` (ein selbst gebautes Image
+  DNS des Routers. Schreib den Namen ohne Punkt am Ende (`caddy`, nicht `caddy.`); einen solchen
+  Eintrag nimmt Mietfuchs nicht an. Kennt dein Mietfuchs den Proxy nur über `extra_hosts` (ein selbst gebautes Image
   auf Alpine, musl), nimm ebenfalls seine IP-Adresse.
 - **Nicht angenommen** werden, mit einer Zeile im Protokoll: `*`, `true`, Zahlen von Sprüngen, die
   Wörter `loopback`, `uniquelocal`, `linklocal` und `false`, und Netze, die fast jedem vertrauen
@@ -360,20 +366,27 @@ Verbindung nicht als verschlüsselt ansieht.
   des Proxys ein, kein ganzes Heimnetz.
 
 **nginx oder ein anderer Proxy** muss beide Kopfzeilen setzen und darf die eines Clients nicht
-durchreichen, etwa:
+durchreichen. In nginx schreibst du den Namen fest hinein, nicht `$host`: nginx macht den ersten
+`server` auf einem Port zum Auffang für jeden Namen, `server_name` hin oder her, und `$host` wäre
+dann jeder Name, den ein Client schickt. Etwa:
 
 ```nginx
 server {
     listen 443 ssl;
     server_name mietfuchs.example.org;
     # ssl_certificate … wie gewohnt
+    # Optional: andere Namen gar nicht erst weiterleiten
+    if ($host != "mietfuchs.example.org") { return 421; }
     location / {
         proxy_pass http://192.168.178.23:3001;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host mietfuchs.example.org;
     }
 }
 ```
+
+Lauscht nginx nicht auf 443, gehört der Port dazu: `proxy_set_header X-Forwarded-Host
+mietfuchs.example.org:8443;`.
 
 Dazu bei Mietfuchs `NKA_TRUST_PROXY` mit der Adresse des Rechners mit nginx und
 `NKA_ALLOWED_HOSTS=mietfuchs.example.org`. Mit `proxy_pass` wie oben schickt nginx als `Host` die
@@ -381,20 +394,20 @@ Adresse von Mietfuchs; den öffentlichen Namen erfährt Mietfuchs nur aus `X-For
 Prüfung des Namens an (immer in der Programmdatei, im Linux-Paket und im Programmfenster, in Docker
 sobald `NKA_ALLOWED_HOSTS` gesetzt ist), muss der öffentliche Name deshalb in `NKA_ALLOWED_HOSTS`
 stehen. Sonst sagt das Fenster beim Koppeln „Mietfuchs antwortet nicht unter dem Namen …“ und nennt
-`NKA_ALLOWED_HOSTS`. Lauscht nginx
-nicht auf 443, nimm `$host:$server_port` statt `$host`.
+`NKA_ALLOWED_HOSTS`.
 
 **Restrisiko:** Die Bindung an die Adresse ist nur so gut wie der Name, den der Proxy meldet. Ein
 Proxy, der `X-Forwarded-Host` eines Clients durchreicht oder jede Adresse annimmt (in Caddy ein
-Block nur für `:443`, in nginx ein Server ohne eigenen `server_name`, der für jeden Namen
-einspringt), meldet auch einen fremden Namen. Wer dich auf eine eigene Adresse mit gültigem
+Block nur für `:443`, in nginx jeder Server, der als einziger oder `default_server` auf dem Port für
+jeden Namen einspringt), meldet auch einen fremden Namen. Wer dich auf eine eigene Adresse mit gültigem
 Zertifikat lockt und den Code in die Hand bekommt, könnte dann ein Fenster koppeln. Caddy
-überschreibt die Kopfzeile selbst, nginx mit der Zeile oben. Nenne die Adressen deshalb
-ausdrücklich (`MIETFUCHS_HOSTS`, `server_name`) und setze `NKA_ALLOWED_HOSTS`: Mietfuchs bindet
-einen Code dann nur an einen erlaubten Namen. `compose.caddy.yml` macht beides schon.
+überschreibt die Kopfzeile selbst, nginx mit dem fest eingetragenen Namen oben. Nenne die Adressen
+deshalb ausdrücklich (`MIETFUCHS_HOSTS`, in nginx im `X-Forwarded-Host`) und setze
+`NKA_ALLOWED_HOSTS`: Mietfuchs bindet einen Code dann nur an einen dort eingetragenen Namen, eine
+private IP-Adresse oder einen Namen ohne Punkt, nicht von selbst an Namen wie `irgendwas.ts.net`. `compose.caddy.yml` macht beides schon.
 
-**Proxy auf demselben Rechner:** Eine Anfrage mit einer dieser Kopfzeilen (`X-Forwarded-*`,
-`Forwarded`, `X-Real-IP`, `Via`) gilt nie als „von diesem Rechner“, auch wenn sie von 127.0.0.1
+**Proxy auf demselben Rechner:** Eine Anfrage mit einer dieser Kopfzeilen (`X-Forwarded-For`,
+`X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`, `X-Real-IP`, `Via`) gilt nie als „von diesem Rechner“, auch wenn sie von 127.0.0.1
 kommt. Über einen Proxy braucht deshalb jede Anfrage eine Anmeldung, und `/healthz` antwortet nur
 knapp (`{ "app": "mietfuchs", "status": "ok" }`, ohne Datenordner und Datenbank). Eine Überwachung,
 die mehr lesen will, fragt Mietfuchs direkt an seinem Port. Der `HEALTHCHECK` im Image tut das
