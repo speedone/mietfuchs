@@ -55,3 +55,18 @@ test('geht beides nicht: false', async () => {
   expect(await copyText('x')).toBe(false)
   expect(document.querySelector('textarea')).toBeNull()
 })
+
+// Durchsicht: iOS Safari markiert mit select() allein nichts, dann kopiert execCommand nichts (iPhone über http im Heimnetz)
+test('markiert den ganzen Text auch mit setSelectionRange', async () => {
+  vi.stubGlobal('navigator', {})
+  const ranges: [number | null, number | null][] = []
+  const original = HTMLTextAreaElement.prototype.setSelectionRange
+  HTMLTextAreaElement.prototype.setSelectionRange = function (start: number | null, end: number | null) { ranges.push([start, end]); return original.call(this, start, end) }
+  try {
+    stubExec(true)
+    expect(await copyText('ABCD-EFGH')).toBe(true)
+  } finally {
+    HTMLTextAreaElement.prototype.setSelectionRange = original
+  }
+  expect(ranges).toContainEqual([0, 9])
+})

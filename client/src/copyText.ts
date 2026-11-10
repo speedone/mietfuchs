@@ -31,6 +31,8 @@ function copyWithField(text: string): boolean {
   try {
     field.focus()
     field.select()
+    // iOS Safari markiert mit select() allein nichts (Durchsicht)
+    field.setSelectionRange(0, text.length)
     return document.execCommand('copy')
   } catch {
     return false
