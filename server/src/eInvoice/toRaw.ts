@@ -24,7 +24,8 @@ const DESCRIPTION_MAX = 200
 // Zeiteinheiten nach UN/ECE Rec. 20. Nicht DAY: Versorger rechnen den Grundpreis in Tagen ab.
 const TIME_UNITS = new Set(['HUR', 'MIN'])
 const WORK = /arbeitszeit|arbeitslohn|\blohn|monteur|gesellen|meisterstunde|maschinenstunde|anfahrt|fahrtkosten|fahrtzeit/i
-const NOT_WORK = /material|gutachten|planung|miete/i
+// `miete\b`: Gerätemiete ja, „Mieter“ nicht (eine Zeile nennt oft die Wohnung des Mieters).
+const NOT_WORK = /material|gutachten|planung|miete\b/i
 
 const keyOf = (v: VatKey) => `${v.category}|${v.rateBasisPoints}`
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
@@ -50,8 +51,9 @@ function spread(gross: number, members: { index: number, line: EInvoiceLine }[],
   const sign = Math.sign(gross)
   const same = members.map((m, i) => i).filter((i) => Math.sign(members[i].line.netCents) === sign)
   const pool = same.length > 0 ? same : members.map((_, i) => i)
+  const inPool = new Set(pool)
   const out = new Map<number, number>()
-  members.forEach((m, i) => { if (!pool.includes(i)) out.set(m.index, Math.round(raw[i])) })
+  members.forEach((m, i) => { if (!inPool.has(i)) out.set(m.index, Math.round(raw[i])) })
   const rest = gross - sum([...out.values()])
   const shares = largestRemainder(rest, pool.map((i) => raw[i]), pool.map((i) => indexKey(members[i].index)))
   pool.forEach((i, k) => out.set(members[i].index, shares[k]))
@@ -138,8 +140,10 @@ export function toRawExtraction(inv: EInvoice): { raw: RawExtraction, laborGuess
     raw: {
       vendor: inv.seller,
       invoiceDate: inv.issueDate,
-      periodStart: inv.periodStart ?? inv.deliveryDate,
-      periodEnd: inv.periodEnd ?? inv.deliveryDate,
+      // Das Lieferdatum gilt nur, wenn kein Ende des Rechnungszeitraums dasteht; gemischt ergäbe
+      // es einen Zeitraum, den die Rechnung nicht nennt.
+      periodStart: inv.periodStart === null && inv.periodEnd === null ? inv.deliveryDate : inv.periodStart,
+      periodEnd: inv.periodStart === null && inv.periodEnd === null ? inv.deliveryDate : inv.periodEnd,
       totalGrossEur: toEur(sign * total),
       positions,
     },

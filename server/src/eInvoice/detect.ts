@@ -10,7 +10,9 @@
 import { at, attr, isNode, makeParser, refuseUnsafe, text, tryParse } from '../xml.ts'
 import type { EInvoiceSyntax, Refusal } from './model.ts'
 
-export const E_INVOICE_MAX_BYTES = 10 * 1024 * 1024
+// Wie die Grenze für hochgeladene Belege (index.ts): Eine XRechnung kann Anhänge (Stundenzettel,
+// Fotos) in base64 tragen und so groß werden wie ein PDF.
+export const E_INVOICE_MAX_BYTES = 25 * 1024 * 1024
 
 const ROOTS: Record<string, { local: string, syntax: EInvoiceSyntax }> = {
   'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2': { local: 'Invoice', syntax: 'ubl-invoice' },
@@ -19,7 +21,7 @@ const ROOTS: Record<string, { local: string, syntax: EInvoiceSyntax }> = {
 }
 const ZUGFERD_1 = 'urn:ferd:CrossIndustryDocument:invoice:1p0'
 const UNPARSABLE = 'Die Datei ließ sich nicht als XML lesen (zu tief verschachtelt oder mit unzulässigen Namen).'
-const NO_POSITIONS = ['urn:factur-x.eu:1p0:minimum', 'urn:factur-x.eu:1p0:basicwl']
+const NO_POSITIONS = ['urn:factur-x.eu:1p0:minimum', 'urn:factur-x.eu:1p0:basicwl', 'urn:zugferd.de:2p0:minimum', 'urn:zugferd.de:2p0:basicwl']
 
 // Wurzel und ihr Namensraum. Dafür wird mit Präfixen gelesen, denn ohne sie verwirft der Parser
 // auch die `xmlns`-Angaben.

@@ -52,7 +52,7 @@ Folgen für Mietfuchs:
   übernimmt, weil sonst die Schlussrechnung doppelt zählte. Eine korrigierte Rechnung (384) wird übernommen, ihre
   Auswertung ist aber rot mit dem Satz, dass sie die Rechnung BG-3 (Nummer und Datum) ersetzt und diese nicht zusätzlich
   gebucht sein darf.
-- **Nicht** übernommen werden die Profile MINIMUM und BASIC WL (BT-24 `urn:factur-x.eu:1p0:minimum` bzw. `…:basicwl`)
+- **Nicht** übernommen werden die Profile MINIMUM und BASIC WL (BT-24 `urn:factur-x.eu:1p0:minimum` bzw. `…:basicwl`, in ZUGFeRD 2.0 `urn:zugferd.de:2p0:minimum` bzw. `…:basicwl`)
   und ZUGFeRD 1.0 (`urn:ferd:…`): Sie sind keine E-Rechnung, MINIMUM und BASIC WL tragen keine Positionen. Ein solches
   PDF geht den bisherigen Weg (KI oder von Hand).
 
@@ -62,7 +62,8 @@ Folgen für Mietfuchs:
   ([client/src/pdfIntake.ts](../../../client/src/pdfIntake.ts)): `getAttachments()` nennt die Anhänge (der Inhalt ist
   dort optional), `getAttachmentContent(id)` lädt ihn, nachdem die Größe geprüft ist. Geschickt wird es als
   **Datei-Feld** `eInvoiceXml` (im Arbeitsspeicher wie `pages`; ein Textfeld scheiterte an multers `fieldSize` von 1 MB),
-  höchstens **10 MB**, denn XRechnungen betten über BG-24 oft PDFs in base64 ein. So bleibt es dabei, dass der Server
+  höchstens **25 MB** wie jeder Beleg, denn XRechnungen betten über BG-24 oft PDFs in base64 ein; diese Anhänge schneidet
+  der Server vor dem Lesen aus (24 MB in Millisekunden statt Sekunden). So bleibt es dabei, dass der Server
   keine PDFs öffnet (#21), und es kommt keine Abhängigkeit hinzu. Für den Server ist das Feld so unzuverlässig wie jede
   Eingabe. Erneutes Auswerten aus dem Posteingang geht, weil die Warteschlange den Upload aus der Datei neu baut
   (client/src/evaluationQueue.ts).
@@ -88,7 +89,7 @@ Abbildung:
 | --- | --- |
 | `vendor` | BT-27 Verkäufer |
 | `invoiceDate` | BT-2 Rechnungsdatum |
-| `periodStart`/`periodEnd` | BT-73/74 Rechnungszeitraum, sonst BT-72 Lieferdatum als beides |
+| `periodStart`/`periodEnd` | BT-73/74 Rechnungszeitraum; fehlen beide, BT-72 Lieferdatum als beides |
 | `totalGrossEur` | **BT-112 Gesamtbetrag einschließlich Umsatzsteuer** (nicht BT-115 Zahlbetrag) |
 | Positionen | BG-25, Beschreibung aus BT-153 (BT-154 angehängt, gekürzt) |
 
@@ -114,10 +115,11 @@ Abbildung:
   rot („Kategorie unklar“, `scorePosition`). **Keine KI**,
   auch nicht zur Einordnung, wenn eine eingerichtet ist: Der Weg soll ohne Netz gleich arbeiten, und die Positionstexte
   bleiben auf dem Rechner. Die Einordnung per KI ist eine mögliche spätere Ergänzung.
-- **§35a-Lohnanteil**: Eine Position gilt als Arbeit, wenn ihre Einheit eine Zeit ist (UN/ECE-Codes `HUR`, `MIN`,
-  `DAY`) oder ihre Bezeichnung eindeutig Arbeit nennt (Arbeitszeit, Arbeitslohn, Lohn, Monteur- oder Gesellenstunde,
+- **§35a-Lohnanteil**: Eine Position gilt als Arbeit, wenn ihre Einheit eine Zeit ist (UN/ECE-Codes `HUR`, `MIN`;
+  nicht `DAY`, weil Versorger den Grundpreis in Tagen abrechnen) oder ihre Bezeichnung eindeutig Arbeit nennt (Arbeitszeit, Arbeitslohn, Lohn, Monteur- oder Gesellenstunde,
   Maschinenstunde, Anfahrt bzw. Fahrtkosten; Rn. 39), **und** die Bezeichnung keines der Ausschlusswörter trägt
-  (Material, Gutachten, Planung, Miete). Vorgeschlagen wird als `labor35aEur` ihr Netto plus die eigene Steuer
+  (Material, Gutachten, Planung, Miete, aber nicht „Mieter“). Gutschriften und negative Positionen bekommen nie einen
+  Vorschlag. Vorgeschlagen wird als `labor35aEur` ihr Netto plus die eigene Steuer
   (Netto × Satz), abzüglich ihres Anteils an Abschlägen auf Dokumentebene (BG-20), **ohne** Zuschläge (BG-21): Eine
   Entsorgungspauschale als Zuschlag ist keine ausgewiesene Arbeit, sie anteilig einzurechnen wäre eine verdeckte Schätzung.
   Die Zeile ist gelb, nicht vorab angehakt, mit dem Satz „Lohnanteil aus der Position übernommen; prüfen Sie, ob der
@@ -151,7 +153,7 @@ den E-Rechnungs-Weg, bevor er die KI braucht. Scheitert das Lesen, wird der Bele
 ### Reine XML-Datei als Beleg
 
 - **Annehmen statt ablehnen**, aber nur, wenn der Inhalt eine E-Rechnung ist (Wurzel und Namensraum wie oben, kein DOCTYPE,
-  höchstens 10 MB). Jede andere XML-, SVG- oder HTML-Datei wird wie heute abgelehnt; `SCRIPT_REFUSAL` nennt die
+  höchstens 25 MB). Jede andere XML-, SVG- oder HTML-Datei wird wie heute abgelehnt; `SCRIPT_REFUSAL` nennt die
   Ausnahme. Hier wird **ausnahmsweise der Inhalt geprüft** (Schicht 1 in uploads.ts prüfte bisher nur Endung und Typ).
   Weil multers `fileFilter` vor dem Schreiben ohne Inhalt entscheidet, lässt er `.xml` nur auf den Routen durch, die es
   dürfen (`/api/upload`, `/api/intake`, `/api/extract`; nicht die Heizrouten); nach dem Speichern wird der Inhalt

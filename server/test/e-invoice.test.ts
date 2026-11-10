@@ -303,6 +303,7 @@ const positionsOf = (inv: EInvoice): Pos[] => {
   if (!Array.isArray(raw.positions)) return assert.fail('keine Positionen')
   return raw.positions.map((p) => (isPos(p) ? p : assert.fail(`keine Position: ${JSON.stringify(p)}`)))
 }
+const positionsOfRaw = (raw: { positions?: unknown }): Pos[] => (Array.isArray(raw.positions) ? raw.positions.filter(isPos) : assert.fail('keine Positionen'))
 const centsOf = (inv: EInvoice) => positionsOf(inv).map((p) => Math.round(p.amountEur * 100))
 const totalOf = (inv: EInvoice) => inv.totals.taxInclusive ?? assert.fail('BT-112 fehlt')
 
@@ -508,9 +509,9 @@ test('E-Rechnung Eingang: abgelehnt werden MINIMUM, Abschlagsrechnung und Überg
   const minimum = Buffer.from(ciiOf({ ...invoice(), syntax: 'cii' }).replace(/<ram:ID>urn:cen\.eu[^<]*<\/ram:ID>/, '<ram:ID>urn:factur-x.eu:1p0:minimum</ram:ID>'))
   assert.equal(readEInvoice(minimum).kind, 'refused')
   assert.equal(readEInvoice(Buffer.from(xmlOf(invoice({ typeCode: '386' })))).kind, 'refused')
-  const big = Buffer.concat([Buffer.from(xmlOf(invoice())), Buffer.alloc(10 * 1024 * 1024, 0x20)])
+  const big = Buffer.concat([Buffer.from(xmlOf(invoice())), Buffer.alloc(25 * 1024 * 1024, 0x20)])
   const r = readEInvoice(big)
-  assert.ok(r.kind === 'refused' && /10 MB/.test(r.reason))
+  assert.ok(r.kind === 'refused' && /25 MB/.test(r.reason))
 })
 
 // ---------- Durchsicht: Befunde ----------
@@ -541,4 +542,46 @@ test('E-Rechnung prüfen: ein gewöhnlicher Nachlass ist kein Abzug einer Abschl
   assert.deepEqual(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-500, 'Preisabschlag', { id: '2' })] })), [])
   assert.equal(notesOf(invoice({ charges: [docCharge(false, 500, 'Abschlagszahlung vom 01.03.')] })).length, 1)
   assert.equal(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-500, 'Anzahlung', { id: '2' })] })).length, 1)
+})
+
+// ---------- Kleine Punkte der Durchsicht ----------
+
+test('E-Rechnung Lohnanteil: „Mieter“ in der Bezeichnung ist keine Miete', () => {
+  assert.equal(laborOf(invoice({ lines: [line(5000, 'Monteurstunden Wohnung Mieter Müller', { unitCode: 'HUR' })] }))[0][1], true)
+  assert.equal(laborOf(invoice({ lines: [line(5000, 'Gerätemiete', { unitCode: 'HUR' })] }))[0][1], false)
+})
+
+test('E-Rechnung abbilden: steht nur ein Ende des Zeitraums da, wird es nicht mit dem Lieferdatum gemischt', () => {
+  const { raw } = toRawExtraction(invoice({ periodStart: '2025-01-01', periodEnd: null, deliveryDate: '2024-12-15' }))
+  assert.equal(raw.periodStart, '2025-01-01')
+  assert.equal(raw.periodEnd, null)
+})
+
+test('E-Rechnung erkennen: auch die Kennungen aus ZUGFeRD 2.0 für MINIMUM und BASIC WL', () => {
+  for (const id of ['urn:zugferd.de:2p0:minimum', 'urn:zugferd.de:2p0:basicwl']) {
+    const found = detectEInvoice(ciiWithGuideline(id))
+    assert.ok(found && 'refused' in found, id)
+    assert.match(found.refused, /keine Positionen/)
+  }
+})
+
+test('E-Rechnung Eingang: eine XRechnung mit großem eingebettetem Anhang wird gelesen (bis zur Upload-Grenze)', () => {
+  const xml = fixture('03.01a-INVOICE_ubl.xml')
+  const blob = />([A-Za-z0-9+/=]{1000,})</.exec(xml)?.[1] ?? assert.fail('kein Anhang im Beispiel')
+  const big = xml.replace(blob, blob.repeat(Math.ceil(12e6 / blob.length)))
+  assert.ok(big.length > 12e6)
+  const r = readOf(readEInvoice(Buffer.from(big)))
+  assert.equal(r.invoiceNumber, '123456789')
+})
+
+test('E-Rechnung Eingang: über 25 MB wird abgelehnt', () => {
+  const r = readEInvoice(Buffer.concat([Buffer.from(xmlOf(invoice())), Buffer.alloc(25 * 1024 * 1024, 0x20)]))
+  assert.ok(r.kind === 'refused' && /25 MB/.test(r.reason))
+})
+
+test('E-Rechnung Eingang: ISO-8859-1 mit Umlauten über den ganzen Eingang', () => {
+  const xml = ublOf(invoice({ seller: 'Müller Sanitär', lines: [line(10000, 'Wärmepumpe prüfen')] })).replace('encoding="UTF-8"', 'encoding="ISO-8859-1"')
+  const r = readOf(readEInvoice(Buffer.from(xml, 'latin1')))
+  assert.equal(r.raw.vendor, 'Müller Sanitär')
+  assert.equal(positionsOfRaw(r.raw)[0].description, 'Wärmepumpe prüfen')
 })
