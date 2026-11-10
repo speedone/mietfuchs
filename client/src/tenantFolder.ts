@@ -15,6 +15,7 @@ import type { CostItem, Settlement, UploadInfo } from './types'
 import { isNotAllocable } from './types'
 import { fmtEuro } from './api'
 import type { ReceiptUpload } from './receipts'
+import { isXmlReceipt } from './eInvoiceXml'
 
 export type FolderEntryStatus =
   | 'ok' // Beleg liegt bei
@@ -184,7 +185,7 @@ async function addImagePage(out: PDFDocument, bytes: Uint8Array, kind: 'jpg' | '
 async function appendDocument(lib: PdfLib, out: PDFDocument, u: UploadInfo, source: FolderSource): Promise<number> {
   const before = out.getPageCount()
   // Eine XML-Datei hat keine Seiten: Die Rechnungsansicht wird gesetzt, die Datei selbst braucht es dafür nicht.
-  const xml = u.mimeType === 'application/xml'
+  const xml = isXmlReceipt(u.file, u.mimeType)
   const bytes = xml ? null : await source.load(u)
   try {
     if (xml) {

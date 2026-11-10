@@ -49,6 +49,8 @@ test('Ablage: eine XML-Datei kommt mit (E-Rechnung, #189); ob sie eine ist, prü
   expect(ok.map((f) => f.name)).toEqual(['x.xml', 'y.xml', 'Z.XML'])
   expect(skipped).toBe(1)
   expect(SKIPPED_FILES).toMatch(/E-Rechnungen/)
+  // Nur mit Endung .xml, wie der Server (Durchsicht): sonst stünde eine Ablehnung statt „übergangen“
+  expect(splitFiles([new File(['x'], 'a.txt', { type: 'text/xml' })]).skipped).toBe(1)
   expect(RECEIPT_ACCEPT).toMatch(/\.xml/)
 })
 

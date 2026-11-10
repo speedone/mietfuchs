@@ -163,8 +163,9 @@ const storedFiles = (s: Server) => fs.readdirSync(path.join(s.dataDir, 'uploads'
 test('XML-Datei: eine XRechnung wird als Beleg angenommen, gespeichert als application/xml und nur als Download ausgeliefert', async () => {
   const s = await startServer()
   try {
-    for (const [name, type, content] of [['xrechnung.xml', 'application/xml', KOSIT_UBL], ['RECHNUNG.XML', 'text/xml', KOSIT_CII], ['ohne-typ.xml', '', KOSIT_UBL]] as const) {
-      const r = await sendXml(s, '/api/upload', content, name, type)
+    // Express nimmt die Route auch in anderer Schreibweise und mit Schrägstrich am Ende (Durchsicht)
+    for (const [name, type, content, route] of [['xrechnung.xml', 'application/xml', KOSIT_UBL, '/api/upload'], ['RECHNUNG.XML', 'text/xml', KOSIT_CII, '/API/Upload'], ['ohne-typ.xml', '', KOSIT_UBL, '/api/upload/']] as const) {
+      const r = await sendXml(s, route, content, name, type)
       assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.body)}`)
       const file = fileOf(r.body)
       assert.ok(fs.readFileSync(path.join(s.dataDir, 'uploads', file)).equals(content), 'bytegenau abgelegt')

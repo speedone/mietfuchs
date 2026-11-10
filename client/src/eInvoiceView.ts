@@ -73,7 +73,8 @@ function addressLines(a: EInvoiceAddress | null): string[] {
 export function eInvoiceDocument({ invoice: inv, notes, refusal }: EInvoiceView): EInvoiceDocument {
   // Beträge mit gewöhnlichem Leerzeichen vor der Währung (im PDF wie am Bildschirm); fremde Währungen mit ihrem Code
   const unit = inv.currency === 'EUR' || inv.currency === null ? '€' : inv.currency
-  const money = (cents: number): string => `${decimal(cents / 100, 2, 2)} ${unit}`
+  // `+ 0` macht aus -0 eine 0: Ein Abschlag oder „bereits gezahlt“ von 0,00 stünde sonst als „-0,00 €“ da
+  const money = (cents: number): string => `${decimal(cents / 100 + 0, 2, 2)} ${unit}`
   const known = inv.typeCode === null ? undefined : TYPE_LABELS[inv.typeCode]
   const kind = known ?? (inv.syntax === 'ubl-credit-note' ? 'Gutschrift' : 'Rechnung')
   const kindWithCode = known || inv.typeCode === null ? kind : `${kind} (Art ${inv.typeCode})`

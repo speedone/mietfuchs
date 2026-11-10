@@ -100,7 +100,8 @@ describe('Belegmappe für Mieter: die PDF', () => {
     const dreiSeiten = await PDFDocument.create()
     for (let i = 0; i < 3; i++) dreiSeiten.addPage([300, 400])
     const gesetzt = await dreiSeiten.save()
-    const plan = planTenantFolder(settlement([['a']]), [item('a', { invoiceFile: 'r.xml' })], [upload('r.xml', 'application/xml')], { includeIndividual: false })
+    // Auch mit einer älteren Art aus der Zeile (`text/xml`) entscheidet die Endung (Durchsicht)
+    const plan = planTenantFolder(settlement([['a']]), [item('a', { invoiceFile: 'r.xml' })], [upload('r.xml', 'text/xml')], { includeIndividual: false })
     const geladen: string[] = []
     const bytes = await buildTenantFolderPdf(plan, {
       title: 't', subtitle: 's',

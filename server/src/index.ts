@@ -290,7 +290,8 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     // `eInvoiceXml` ist XML, wird aber nie gespeichert oder ausgeliefert, nur gelesen (eInvoice/, ohne Entitäten).
     // Eine E-Rechnung als XML-Datei lässt der Filter nur auf den Routen der Belege durch; den Inhalt prüft `checkXmlReceipt`.
-    const eInvoiceXml = file.fieldname === 'file' && E_INVOICE_XML_ROUTES.has(req.path)
+    // `routePath`: Express nimmt die Route auch als /API/Upload oder /api/upload/ an (#585)
+    const eInvoiceXml = file.fieldname === 'file' && E_INVOICE_XML_ROUTES.has(routePath(req.path))
     if (!IN_MEMORY_FIELDS.has(file.fieldname) && carriesScript(file.originalname, file.mimetype, { eInvoiceXml })) cb(new RouteProblem(400, SCRIPT_REFUSAL))
     else cb(null, true)
   },
@@ -333,7 +334,9 @@ const checkPageSizes = (req: Request, res: Response, next: NextFunction): void =
 async function checkXmlReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
   const file = storedUpload(req.file ?? filesOf(req).file?.[0])
   if (!file || path.extname(file.filename).toLowerCase() !== '.xml') return next()
-  if (isEInvoiceDocument(await fs.promises.readFile(file.path))) return next()
+  // Lässt sich die Datei nicht lesen, bleibt sie nicht ohne Zeile im Ordner liegen
+  const content = await fs.promises.readFile(file.path).catch(() => null)
+  if (content !== null && isEInvoiceDocument(content)) return next()
   fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: SCRIPT_REFUSAL })
 }

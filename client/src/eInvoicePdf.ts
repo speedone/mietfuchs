@@ -141,4 +141,4 @@ export async function eInvoicePdfOf(file: string, load: (file: string) => Promis
   return eInvoicePdf(await load(file))
 }
 
-export const isXmlReceipt = (file: string, mimeType?: string): boolean => mimeType === 'application/xml' || /\.xml$/i.test(file)
+export { isXmlReceipt } from './eInvoiceXml'

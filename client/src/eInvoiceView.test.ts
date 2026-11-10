@@ -76,6 +76,14 @@ test('Rechnungsansicht: Gutschrift, Steuerbefreiung, fremde Währung, Lieferdatu
   expect(eInvoiceDocument(view({ invoice: invoice({ typeCode: '999', number: null }) })).title).toBe('Rechnung (Art 999)')
 })
 
+test('Rechnungsansicht: null als Abschlag oder bereits gezahlt steht ohne Vorzeichen (Durchsicht)', () => {
+  const inv = invoice({ charges: [{ charge: false, cents: 0, reason: 'Rabatt', vat: { category: 'S', rateBasisPoints: 1900 } }] })
+  const d = eInvoiceDocument(view({ invoice: { ...inv, totals: { ...inv.totals, allowances: 0, prepaid: 0 } } }))
+  expect(d.charges[0].amount).toBe('0,00 €')
+  expect(d.totals).toContainEqual(['Abschläge', '0,00 €'])
+  expect(d.totals).toContainEqual(['Bereits gezahlt', '0,00 €'])
+})
+
 test('Rechnungsansicht: Grund, Hinweise und Unlesbares stehen da', () => {
   const d = eInvoiceDocument(view({ refusal: 'Abschlagsrechnungen übernimmt Mietfuchs nicht.', notes: ['Bereits gezahlt: 36,85 €.'], invoice: invoice({ unreadable: ['BT-131 Position 2'] }) }))
   expect(d.refusal).toBe('Abschlagsrechnungen übernimmt Mietfuchs nicht.')
