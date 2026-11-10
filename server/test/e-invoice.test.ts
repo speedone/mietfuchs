@@ -11,6 +11,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { detectEInvoice } from '../src/eInvoice/detect.ts'
 import { readModel } from '../src/eInvoice/read.ts'
+import { checkEInvoice } from '../src/eInvoice/check.ts'
 import type { EInvoice, EInvoiceSyntax } from '../src/eInvoice/model.ts'
 import { ciiOf, consistent, docCharge, invoice, line, S7, ublOf } from '../testing/eInvoiceXml.ts'
 
@@ -212,4 +213,78 @@ test('E-Rechnung lesen: Umlaute aus ISO-8859-1 über decodeXml', async () => {
   const decoded = decodeXml(Buffer.from(xml, 'latin1'))
   assert.ok('xml' in decoded)
   assert.equal(readModel(decoded.xml, 'ubl-invoice').seller, 'Müller Sanitär')
+})
+
+// ---------- Prüfen ----------
+
+const notesOf = (inv: EInvoice): string[] => {
+  const r = checkEInvoice(inv)
+  if ('refused' in r) return assert.fail(`abgelehnt: ${r.refused}`)
+  return r.notes
+}
+const refusalOf = (inv: EInvoice): string => {
+  const r = checkEInvoice(inv)
+  if (!('refused' in r)) return assert.fail('nicht abgelehnt')
+  return r.refused
+}
+
+test('E-Rechnung prüfen: Rechnung, Gutschrift und Schlussrechnung ohne Notiz', () => {
+  for (const typeCode of ['380', '381', '875', '876', '877']) assert.deepEqual(notesOf(invoice({ typeCode })), [], typeCode)
+})
+
+test('E-Rechnung prüfen: Abschlags- und Teilrechnungen werden nicht übernommen (sonst zählte die Schlussrechnung doppelt)', () => {
+  for (const typeCode of ['386', '326']) assert.match(refusalOf(invoice({ typeCode })), /Schlussrechnung doppelt/, typeCode)
+})
+
+test('E-Rechnung prüfen: andere Rechnungsarten werden mit ihrer Nummer abgelehnt', () => {
+  assert.match(refusalOf(invoice({ typeCode: '389' })), /389/)
+  assert.match(refusalOf(invoice({ typeCode: null })), /Rechnungsart/)
+})
+
+test('E-Rechnung prüfen: korrigierte Rechnung nennt die ersetzte', () => {
+  const notes = notesOf(invoice({ typeCode: '384', precedingInvoice: { number: 'R-2025-0041', date: '2025-02-01' } }))
+  assert.equal(notes.length, 1)
+  assert.match(notes[0], /korrigiert die Rechnung R-2025-0041 vom 01\.02\.2025/)
+  assert.match(notes[0], /nicht zusätzlich gebucht/)
+})
+
+test('E-Rechnung prüfen: fremde Währung wird abgelehnt', () => {
+  assert.match(refusalOf(invoice({ currency: 'CHF' })), /CHF/)
+})
+
+test('E-Rechnung prüfen: Unlesbares, fehlendes Datum, fehlender Gesamtbetrag, keine Position', () => {
+  assert.match(refusalOf({ ...invoice(), unreadable: ['BT-131 Position 1'] }), /BT-131 Position 1/)
+  assert.match(refusalOf(invoice({ issueDate: null })), /Rechnungsdatum/)
+  const noTotal = invoice()
+  assert.match(refusalOf({ ...noTotal, totals: { ...noTotal.totals, taxInclusive: null } }), /Gesamtbetrag/)
+  assert.match(refusalOf(invoice({ lines: [] })), /keine Positionen/)
+})
+
+test('E-Rechnung prüfen: bereits bezahlte Abschläge werden genannt, der Gesamtbetrag zählt', () => {
+  const inv = consistent(invoice({ totals: { ...invoice().totals, prepaid: 5000 } }))
+  const notes = notesOf(inv)
+  assert.equal(notes.length, 1)
+  assert.match(notes[0], /Abschläge über 50,00\s€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 119,00\s€/)
+})
+
+test('E-Rechnung prüfen: Summenregeln BR-CO mit einem Cent Spielraum', () => {
+  const inv = invoice()
+  const total = inv.totals.taxInclusive ?? assert.fail('BT-112 fehlt')
+  assert.deepEqual(notesOf({ ...inv, totals: { ...inv.totals, taxInclusive: total + 1 } }), [])
+  const off = notesOf({ ...inv, totals: { ...inv.totals, taxInclusive: total + 2 } })
+  assert.equal(off.length, 1)
+  assert.match(off[0], /Gesamtbetrag/)
+  assert.equal(notesOf({ ...inv, lines: [{ ...inv.lines[0], netCents: 9000 }] }).filter((n) => /Positionen/.test(n)).length, 1)
+  assert.equal(notesOf({ ...inv, totals: { ...inv.totals, taxExclusive: 5000 } }).length >= 1, true)
+  assert.equal(notesOf({ ...inv, vatGroups: [{ ...inv.vatGroups[0], taxCents: 1000 }] }).filter((n) => /Steuer/.test(n)).length, 1)
+})
+
+test('E-Rechnung prüfen: Abzug mit Bezug auf eine Vorgängerrechnung', () => {
+  const byText = notesOf(invoice({ lines: [line(100000, 'Jahresverbrauch', { id: '1' }), line(-60000, 'abzüglich geleisteter Abschlag', { id: '2' })] }))
+  assert.equal(byText.length, 1)
+  assert.match(byText[0], /zieht 600,00\s€ für „abzüglich geleisteter Abschlag“ ab/)
+  const byReference = notesOf(invoice({ typeCode: '875', precedingInvoice: { number: 'A-1', date: null }, charges: [docCharge(false, 20000, 'Verrechnung')] }))
+  assert.ok(byReference.some((n) => /zieht 200,00\s€ für „Verrechnung“ ab/.test(n)))
+  // Eine negative Position ohne Abschlagstext und ohne Bezug ist nur eine Gutschriftzeile.
+  assert.deepEqual(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-2500, 'Altteil', { id: '2' })] })), [])
 })
