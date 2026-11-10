@@ -18,6 +18,8 @@ import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
 import { UpdaterReadyHint } from './components/DesktopUpdater'
 import NetworkHint from './components/NetworkHint'
+import RemoteHint from './components/RemoteHint'
+import { remoteBridge } from './desktopRemote'
 import { networkBridge } from './desktopNetwork'
 import { serverHintAllowed } from './desktopUpdater'
 import DatabaseNotice from './components/Database'
@@ -181,6 +183,7 @@ function Shell() {
   const [relocation, setRelocation] = useState<'checking' | 'offered' | 'none'>(() => (inWindow() ? 'checking' : 'none'))
   // Die Brücke des Fensters für den Zugriff aus dem Heimnetz (#517); im Browser und auf dem Handy fehlt sie
   const [network] = useState(() => networkBridge())
+  const [remote] = useState(() => remoteBridge())
   // Nach dem Umzug im bisherigen Mietfuchs noch etwas geändert (Ergänzung 2)
   const [newerStock, setNewerStock] = useState<NewerStockInfo | null>(null)
   // Nach Umzug, Backup oder neuerem Stand einmal „Ihre Daten sind da“ (Praxistest B-04): Der Anlass kommt in der Adresse
@@ -529,6 +532,8 @@ function Shell() {
 
       <div className="foot">
         {/* Im Programmfenster, solange der Zugriff aus dem Heimnetz an ist (#517, K5); führt zur Karte in den Einstellungen */}
+        {/* Im Programmfenster, solange es mit einem Mietfuchs im Heimnetz verbunden ist (#528); führt zur Karte in den Einstellungen */}
+        {remote && <RemoteHint bridge={remote} onOpen={() => { void navigateFromNav('einstellungen').then((done) => { if (done) close?.() }) }} />}
         {network && <NetworkHint bridge={network} onOpen={() => { void navigateFromNav('einstellungen').then((done) => { if (done) close?.() }) }} />}
         {/* Im Übergang (#528, Stufe A): ohne Passwort im Netz erreichbar; führt zur Karte „Anmeldung“ */}
         {showsTransitionHint(access?.info ?? null) && <AccessHint onOpen={() => { void navigate('einstellungen', ACCESS_TARGET, null).then((done) => { if (done) close?.() }) }} />}
