@@ -245,7 +245,15 @@ export type DescribeContext = {
   // (`openTargets`). Sie rechnen mit den eigenen gemeinsam (#170, Abnahme): Kommt die Wasserrechnung
   // in zwei Belegen, ersetzen beide zusammen dieselbe Schätzung.
   peerTargets?: readonly OpenTarget[]
+  // Rechnungsnummern anderer Auswertungen (E-Rechnung, #189), um dieselbe Rechnung in einem zweiten Beleg zu erkennen
+  // (etwa als ZUGFeRD-PDF und später als anderes PDF). Fehlt die Liste, wird nicht verglichen.
+  otherInvoices?: readonly OtherInvoice[]
 }
+
+export type OtherInvoice = { file: string, vendor: string | null, invoiceNumber: string, originalName: string }
+
+export const LABOR_GUESSED = 'Lohnanteil aus der Position übernommen; prüfen Sie, ob der Stundensatz Material enthält.'
+const sameVendor = (a: string | null, b: string | null) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase()
 
 // Eine offene Zeile, die beim Verknüpfen genau eine Schätzung ersetzte (`replacedByLinking`).
 export type OpenTarget = { assessmentId: string, idx: number, costItemId: string, amountCents: number }
@@ -333,6 +341,22 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     level = 'rot'
     reasons.push(`gleicher Inhalt wie „${ctx.twinOf}“ - dieser Beleg ist schon gebucht`)
   }
+  // E-Rechnung (#189): Was check.ts notiert hat, sieht der Vermieter vor dem Buchen, nie ungesehen.
+  if (a.eInvoiceNotes.length > 0) {
+    level = 'rot'
+    reasons.push(...a.eInvoiceNotes)
+  }
+  const twinInvoice = a.invoiceNumber === null ? undefined
+    : (ctx.otherInvoices ?? []).find((o) => o.file !== a.file && o.invoiceNumber === a.invoiceNumber && sameVendor(o.vendor, a.vendor))
+  if (twinInvoice) {
+    level = 'rot'
+    reasons.push(`Rechnung Nr. ${a.invoiceNumber} von ${a.vendor ?? 'demselben Steller'} ist schon ausgewertet (Beleg „${twinInvoice.originalName}“)`)
+  }
+  // Der §35a-Anteil ist nur aus der Art der Position vorgeschlagen (eInvoice/toRaw.ts): nie grün, nie vorab angehakt.
+  if (line.laborGuessed) {
+    if (level === 'gruen') level = 'gelb'
+    reasons.push(LABOR_GUESSED)
+  }
   return {
     fields,
     candidates: candidates.map((c) => ({
@@ -343,7 +367,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     })),
     level,
     reasons,
-    preselected: ctx.twinOf === null && !otherYear && aiRowPreselected({ category: line.category, preselect: aiPositionPreselect(defaults), problem, level, candidates }),
+    preselected: ctx.twinOf === null && !otherYear && !line.laborGuessed && aiRowPreselected({ category: line.category, preselect: aiPositionPreselect(defaults), problem, level, candidates }),
   }
 }
 

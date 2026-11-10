@@ -126,3 +126,14 @@ test('E-Rechnung: anderes XML im Feld ist keine E-Rechnung, der KI-Weg bleibt un
     assert.ok(chatRequests(ollama).length > 0)
   })
 })
+
+test('E-Rechnung: dieselbe Rechnung als zweites PDF wird erkannt (gleiche Nummer, gleicher Steller)', async () => {
+  await withOllama(async (s) => {
+    const first = await send(s, '/api/intake', { xml: KOSIT_CII })
+    const second = await send(s, '/api/intake', { xml: KOSIT_CII })
+    assert.notEqual(fileOf(first.body), fileOf(second.body))
+    const reasons = assessmentOf(second.body).lines.flatMap((l) => l.suggestion?.reasons ?? [])
+    assert.ok(reasons.some((r) => /Rechnung Nr\. 112233 von Testverkäufer ist schon ausgewertet/.test(r)), reasons.join(' | '))
+    assert.ok(assessmentOf(second.body).lines.every((l) => l.suggestion?.level === 'rot'))
+  })
+})

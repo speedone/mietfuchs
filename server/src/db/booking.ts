@@ -10,12 +10,12 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AssessmentView, BookingPreview, CostItem, LineDecision } from '../../../shared/types.ts'
-import { describeAssessment, openTargets, type BookedLine, type OpenTarget } from '../assessment.ts'
+import { describeAssessment, openTargets, type BookedLine, type OpenTarget, type OtherInvoice } from '../assessment.ts'
 import { planBooking, previewWith, settle, tokenSource, type BookingOutcome, type Planned } from '../bookingPlan.ts'
 import { narrowToProperty } from '../snapshot.ts'
 import { rulesOf } from '../../../shared/period.ts'
 import type { Database } from './client.ts'
-import { bookedLines, listAssessments, readAssessment, writeLine, type AssessmentRecord } from './assessments.ts'
+import { bookedLines, invoiceNumbers, listAssessments, readAssessment, writeLine, type AssessmentRecord } from './assessments.ts'
 import { readStock, type Stock } from './read.ts'
 import { insertCostItemIn, patchCostItemIn } from './repository.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
@@ -35,10 +35,10 @@ const NOT_FOUND = 'Diese Auswertung gibt es nicht (mehr). Bitte laden Sie die Se
 const fileGone = (name: string): string =>
   `Den Beleg „${name}“ gibt es unter „Belege“ nicht mehr. Die Auswertung lässt sich deshalb nicht buchen; laden Sie den Beleg bitte erneut hoch.`
 
-type Context = { stock: Stock; booked: BookedLine[]; uploads: Map<string, UploadRow> }
+type Context = { stock: Stock; booked: BookedLine[]; uploads: Map<string, UploadRow>; invoices: Omit<OtherInvoice, 'originalName'>[] }
 
 async function contextOf(db: Database): Promise<Context> {
-  return { stock: await readStock(db), booked: await bookedLines(db), uploads: await uploadRows(db) }
+  return { stock: await readStock(db), booked: await bookedLines(db), uploads: await uploadRows(db), invoices: await invoiceNumbers(db) }
 }
 
 const exists = (uploadDir: string, file: string): boolean => {
@@ -124,6 +124,7 @@ function viewOf(record: AssessmentRecord, ctx: Context, peers: readonly Peer[]):
     booked: ctx.booked,
     peerTargets: peerTargetsFor(record, peers, ctx),
     rules: rulesFor(ctx, a.propertyId),
+    otherInvoices: ctx.invoices.map((o) => ({ ...o, originalName: nameOf(ctx, o.file) })),
   })
 }
 

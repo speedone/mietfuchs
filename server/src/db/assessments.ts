@@ -47,6 +47,14 @@ export async function readAssessmentOfFile(db: Executor, file: string): Promise<
   return assessment ? { assessment, lines: await linesOf(db, assessment.id) } : null
 }
 
+// Die Rechnungsnummern aller Auswertungen, die eine tragen (E-Rechnung, #189): Dieselbe Rechnung in einem zweiten
+// Beleg erkennt die Ampel daran, über alle Objekte, denn eine Rechnung gehört nur einmal in die Kosten.
+export async function invoiceNumbers(db: Executor): Promise<{ file: string, vendor: string | null, invoiceNumber: string }[]> {
+  const rows = await db.select({ file: assessments.file, vendor: assessments.vendor, invoiceNumber: assessments.invoiceNumber })
+    .from(assessments).where(isNotNull(assessments.invoiceNumber))
+  return rows.flatMap((r) => (r.invoiceNumber === null ? [] : [{ file: r.file, vendor: r.vendor, invoiceNumber: r.invoiceNumber }]))
+}
+
 // Die Auswertungen eines Objekts, älteste zuerst.
 export async function listAssessments(db: Executor, propertyId: string): Promise<AssessmentRecord[]> {
   const rows = await db.select().from(assessments).where(eq(assessments.propertyId, propertyId)).orderBy(asc(assessments.createdAt), asc(sql`rowid`))

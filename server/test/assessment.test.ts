@@ -301,3 +301,43 @@ test('#455: ein Teil mit Quelle in einem Zeitraum ist formOnly und kein Ziel von
   assert.equal(c.part, true)
   assert.equal(replacedByLinking([teil], line, calendarPeriod(2026), [], CALENDAR_RULES), null)
 })
+
+// ---------- E-Rechnung (#189): Notizen rot, vorgeschlagener Lohnanteil gelb, dieselbe Rechnung zweimal ----------
+
+const eInvoiceView = (assessment: Partial<StoredAssessment>, linePatch: Partial<StoredAssessmentLine> = {}, more: Partial<DescribeContext> = {}) => {
+  const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 51240, ...linePatch })
+  const view = describeAssessment({ assessment: assessmentOf(assessment), lines: [line] }, {
+    items: [], units: UNITS3, meters: [], propertyKind: null, rules: CALENDAR_RULES, originalName: 'zugferd.pdf', twinOf: null, twinNames: new Map(), booked: [], ...more,
+  })
+  return view.lines[0]?.suggestion ?? assert.fail('Die offene Zeile hat keinen Vorschlag')
+}
+
+test('E-Rechnung: ohne Notizen und Vermutungen bleibt die Zeile grün und vorab angehakt', () => {
+  const s = eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' })
+  assert.equal(s.level, 'gruen', s.reasons.join(' | '))
+  assert.equal(s.preselected, true)
+})
+
+test('E-Rechnung: jede Notiz macht die Zeile rot und steht in den Gründen', () => {
+  const s = eInvoiceView({ source: 'e-rechnung', eInvoiceNotes: ['Diese Rechnung korrigiert die Rechnung A-1. Diese darf nicht zusätzlich gebucht sein.'] })
+  assert.equal(s.level, 'rot')
+  assert.ok(s.reasons.includes('Diese Rechnung korrigiert die Rechnung A-1. Diese darf nicht zusätzlich gebucht sein.'), s.reasons.join(' | '))
+  assert.equal(s.preselected, false)
+})
+
+test('E-Rechnung: ein nur vorgeschlagener Lohnanteil macht die Zeile gelb und nicht vorab angehakt', () => {
+  const s = eInvoiceView({ source: 'e-rechnung' }, { labor35aCents: 30000, laborGuessed: true })
+  assert.equal(s.level, 'gelb')
+  assert.ok(s.reasons.includes('Lohnanteil aus der Position übernommen; prüfen Sie, ob der Stundensatz Material enthält.'), s.reasons.join(' | '))
+  assert.equal(s.preselected, false)
+})
+
+test('E-Rechnung: dieselbe Rechnungsnummer vom selben Steller in einem anderen Beleg ist rot', () => {
+  const others = [{ file: 'andere.pdf', vendor: ' stadt musterstadt ', invoiceNumber: 'R-1', originalName: 'Rechnung als PDF.pdf' }]
+  const s = eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: others })
+  assert.equal(s.level, 'rot')
+  assert.ok(s.reasons.includes('Rechnung Nr. R-1 von Stadt Musterstadt ist schon ausgewertet (Beleg „Rechnung als PDF.pdf“)'), s.reasons.join(' | '))
+  // Anderer Steller oder dieselbe Datei: kein Doppel
+  assert.equal(eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: [{ ...others[0], vendor: 'Stadtwerke' }] }).level, 'gruen')
+  assert.equal(eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: [{ ...others[0], file: 'grundsteuer.pdf' }] }).level, 'gruen')
+})
