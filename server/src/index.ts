@@ -2264,9 +2264,10 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
 // lesbar. Die Datei selbst geht unter /uploads nur als Download hinaus (uploads.ts). Gelesen wird nur ein reiner
 // Dateiname im Belegordner.
 app.get('/api/e-invoice/:file', async (req, res) => {
-  const name = req.params.file
+  // Wie PUT und DELETE /api/uploads/:file: der Pfad nur aus dem reinen Dateinamen (CodeQL js/path-injection)
+  const name = path.basename(req.params.file)
   const full = path.join(UPLOAD_DIR, name)
-  if (path.basename(name) !== name || name === '.' || name === '..' || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
+  if (name !== req.params.file || name === '.' || name === '..' || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
     return res.status(404).json({ error: 'Diesen Beleg gibt es unter „Belege“ nicht (mehr).' })
   }
   const view = path.extname(name).toLowerCase() === '.xml' ? viewEInvoice(await fs.promises.readFile(full)) : null
