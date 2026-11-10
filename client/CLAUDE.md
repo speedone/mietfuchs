@@ -247,6 +247,12 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   (`useSectionJump`, `.focus-target`) und setzt den Fokus auf ihr `data-jump-focus` oder ihre Überschrift, `property`
   öffnet „Objekt bearbeiten“ mit dem Teil. Genau ein betroffener Eintrag öffnet sich selbst; ohne eindeutige Stelle
   (Eingang, Kostenvergleich, „Zur Abrechnung“) bleibt es bei der Seite.
+- **Zahlungs-QR-Code** (#624, [paymentQr.ts](src/paymentQr.ts), [PaymentQr.tsx](src/components/PaymentQr.tsx)): `paymentQrOf`
+  entscheidet (Nachzahlung, Schalter, Baustein im Anschreiben vorhanden, gültiger Inhalt), der Kasten steht direkt nach
+  dem Absatz `backPayment`, im Brief wie unter der Aufstellung. Gezeichnet mit lean-qr als SVG, **Byte-Modus ohne
+  ECI** (mit ECI 26 passen bei Version 13/M nur 330 statt 331 Byte), Fehlerkorrektur M; der weiße Grund steht im SVG,
+  nicht in CSS (S17). Der Kasten kostet `PAYMENT_QR_LINES` (8) Zeilen in `exceedsOnePage`. Ein Test liest den
+  gezeichneten Code mit jsqr byte-gleich zurück.
 - **Anschreiben als Seite 1** (#415, [Letter.tsx](src/components/Letter.tsx), Logik in
   [letterView.ts](src/letterView.ts)): ein Brief nach DIN 5008 Form B vor jeder Aufstellung. Die Druckmaße stehen in
   [letter.css](src/letter.css) (Schicht `components` wie fields.css, weil index.css nur kleiner wird; S4, S17 und S20

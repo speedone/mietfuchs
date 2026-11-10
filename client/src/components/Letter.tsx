@@ -10,6 +10,8 @@
 // und Datum (`infoRows` in letterView.ts), wie ein Geschäftsbrief ihn trägt.
 import { Fragment, type ReactNode } from 'react'
 import type { LabeledRow, LetterParagraph } from '../letterView'
+import PaymentQr from './PaymentQr'
+import type { PaymentQrData } from '../paymentQr'
 
 type HeadProps = {
   sender: string // der Absender oben, meist der Name des Vermieters
@@ -26,6 +28,7 @@ type HeadProps = {
 type Props = HeadProps & {
   paragraphs: LetterParagraph[]
   footer?: string | null // Teil 2: Fußzeile mit Kontakt und Bank, nur auf Wunsch
+  paymentQr?: PaymentQrData | null // #624: der Zahlungs-QR-Code, direkt nach dem Satz zur Nachzahlung
 }
 
 // Eine E-Mail darf nach dem @ umbrechen, statt über den rechten Rand zu ragen (Druck in Safari, #286); was dann noch zu
@@ -78,7 +81,7 @@ function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMa
   )
 }
 
-export default function Letter({ paragraphs, footer, ...head }: Props) {
+export default function Letter({ paragraphs, footer, paymentQr = null, ...head }: Props) {
   const text = (b: LetterParagraph['block']) => paragraphs.find((p) => p.block === b)?.text ?? null
   const subject = text('subject')
   const salutation = text('salutation')
@@ -91,7 +94,12 @@ export default function Letter({ paragraphs, footer, ...head }: Props) {
       <div className="letter-body">
         {subject && <p className="letter-subject">{subject}</p>}
         {salutation && <p>{salutation}</p>}
-        {paragraphs.filter((p) => FLOW.includes(p.block)).map((p) => <p key={p.block}>{p.text}</p>)}
+        {paragraphs.filter((p) => FLOW.includes(p.block)).map((p) => (
+          <Fragment key={p.block}>
+            <p>{p.text}</p>
+            {p.block === 'backPayment' && paymentQr && <PaymentQr data={paymentQr} />}
+          </Fragment>
+        ))}
         {greeting && <p className="letter-greeting">{greeting}</p>}
         {signature && <p className="letter-signature">{signature}</p>}
       </div>

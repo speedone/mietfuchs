@@ -282,3 +282,54 @@ test('M1: die Vorgabe des Monats liegt nach dem abgerechneten Zeitraum', () => {
   assert.equal(lettersOf(st, { ...base, asOf: '2025-03-01' }).t1?.adjustment.from, '2026-01')
   assert.equal(lettersOf(st, { ...base, asOf: '2025-12-15' }).t1?.adjustment.from, '2026-02')
 })
+
+// ---------- Zahlungs-QR-Code (#624) ----------
+
+test('#624: der Verwendungszweck ist ein Baustein mit Vorgabe {Name}, {Wohnung}, {Abrechnung}', async () => {
+  const { LETTER_BLOCKS } = await import('../../shared/letter.ts')
+  assert.equal(DEFAULT_LETTER_TEXTS.paymentPurpose, '{Name}, {Wohnung}, {Abrechnung}')
+  const block = LETTER_BLOCKS.find((b) => b.id === 'paymentPurpose') ?? assert.fail('Baustein fehlt')
+  assert.equal(block.label, 'Verwendungszweck (QR-Code)')
+  assert.equal(block.multiline, false)
+  assert.deepEqual(templateProblems('paymentPurpose', DEFAULT_LETTER_TEXTS.paymentPurpose), [])
+})
+
+test('#624: der Verwendungszweck ist kein Absatz', () => {
+  for (const balance of [-4000, 4000, 0]) {
+    const l = letter({ balanceCents: balance })
+    assert.ok(!chooseLetterBlocks(l, balance, 0).includes('paymentPurpose'), String(balance))
+    assert.ok(!statementBlocks(l, balance, 0).includes('paymentPurpose'), String(balance))
+  }
+})
+
+test('#624: lettersOf setzt den Verwendungszweck ein, Ebenen wie jeder Baustein', () => {
+  const src = (installation = {}, propertyTexts = {}, own = {}) => lettersOf(oneStatement, {
+    settings: { landlordName: 'Max', iban: 'DE02120300000000202051', paymentDeadlineDays: 30 },
+    property: house,
+    tenancies: [{ id: 't1', end: null, prepayments: [], correspondenceAddress: '' }],
+    installation, propertyTexts, own, asOf: '2026-03-15',
+  }).t1 ?? assert.fail('kein Anschreiben')
+  assert.equal(src().texts.paymentPurpose, 'Erika, EG, Nebenkostenabrechnung 2025')
+  assert.equal(src({ paymentPurpose: 'NK {Wohnung}' }).texts.paymentPurpose, 'NK EG')
+  assert.equal(src({ paymentPurpose: 'NK {Wohnung}' }, { paymentPurpose: 'Haus {Name}' }).texts.paymentPurpose, 'Haus Erika')
+  assert.equal(src({ paymentPurpose: 'NK {Wohnung}' }, { paymentPurpose: 'Haus {Name}' }, { t1: { texts: { paymentPurpose: 'Kd 4711' } } }).texts.paymentPurpose, 'Kd 4711')
+})
+
+test('#624: abweichende IBAN und Vermieter am Objekt stehen im Anschreiben', () => {
+  const l = lettersOf(oneStatement, {
+    settings: { landlordName: 'Max', iban: 'DE02120300000000202051', paymentDeadlineDays: 30 },
+    property: { ...house, iban: 'AT611904300234573201', landlordName: 'Erbengemeinschaft Becker' },
+    tenancies: [{ id: 't1', end: null, prepayments: [], correspondenceAddress: '' }],
+    installation: {}, propertyTexts: {}, own: {}, asOf: '2026-03-15',
+  }).t1 ?? assert.fail('kein Anschreiben')
+  assert.equal(l.values.IBAN, 'AT61 1904 3002 3457 3201')
+  assert.equal(l.values.Vermieter, 'Erbengemeinschaft Becker')
+})
+
+test('#624: der QR-Kasten zählt zur Seitenlänge', async () => {
+  const { PAYMENT_QR_LINES } = await import('../../shared/letter.ts')
+  assert.equal(PAYMENT_QR_LINES, 8)
+  const paragraphs = Array.from({ length: 16 }, () => 'Kurzer Absatz.')
+  assert.equal(exceedsOnePage(paragraphs), false)
+  assert.equal(exceedsOnePage(paragraphs, PAYMENT_QR_LINES), true)
+})

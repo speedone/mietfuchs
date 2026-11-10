@@ -807,6 +807,7 @@ export type Settings = {
   printFoldMarks?: boolean // Falz- und Lochmarken auf dem Anschreiben (#415, Standard: nein)
   printLetter?: boolean // das Anschreiben mitdrucken (#415, Teil 2, Standard: ja); am Objekt abweichend
   printFooter?: boolean // Fußzeile mit Kontakt und Bank (#415, Teil 2, Standard: nein)
+  printPaymentQr?: boolean // QR-Code zum Bezahlen bei Nachzahlung (#624, Standard: nein); nur Druck, nicht eingefroren
   // Anschrift („Straße, PLZ Ort“) und Kontakt (Telefon, E-Mail) des Vermieters (#415, Teil 2): Rücksendeangabe
   // und Fußzeile des Briefs. Ohne Anschrift steht dort wie bisher die Adresse des Objekts.
   landlordAddress?: string
@@ -1214,6 +1215,8 @@ export type LetterBlock =
   | 'credit' | 'backPayment' | 'balanced'
   | 'adjustSuggestion' | 'adjustCustom'
   | 'receipts' | 'attachments'
+  // Verwendungszweck des Zahlungs-QR-Codes (#624): kein Absatz, nur im Code und im Kasten daneben
+  | 'paymentPurpose'
   | 'closing' | 'greeting' | 'signature'
 // Die Platzhalter, die ein Baustein enthalten darf, geschrieben als `{Name}`.
 export type LetterField =

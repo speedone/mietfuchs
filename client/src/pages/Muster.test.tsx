@@ -24,3 +24,12 @@ test('die Musterseite zeigt jeden Baustein und fragt den Server nicht', () => {
   expect(screen.getByText(/Bitte prüfen Sie 1 Angabe/)).toBeTruthy()
   expect(fetch).not.toHaveBeenCalled()
 })
+
+test('#624: das Anschreiben der Musterseite zeigt den Zahlungs-QR-Code nach dem Satz zur Nachzahlung', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { headers: { 'content-type': 'application/json' } })))
+  render(<UIProvider><Muster /></UIProvider>)
+  const img = screen.getByRole('img', { name: /QR-Code für die Überweisung von 40,00/ })
+  const sentence = [...document.querySelectorAll('.letter p')].find((p) => p.textContent?.startsWith('Es ergibt sich eine Nachzahlung')) ?? null
+  if (!sentence) throw new Error('kein Satz zur Nachzahlung')
+  expect(sentence.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})

@@ -6,6 +6,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- QR-Code zum Bezahlen bei einer Nachzahlung: Auf Wunsch (Druckfenster, „QR-Code zum Bezahlen bei Nachzahlung“)
+  steht neben dem Satz zur Nachzahlung ein QR-Code, den der Mieter mit seiner Banking-App scannt. Empfänger und IBAN
+  kommen aus dem Anschreiben, eine abweichende IBAN am Objekt gilt also auch im Code. Der Verwendungszweck ist ein
+  neuer Baustein der Vorlage, für alle Objekte, ein Objekt oder einen Mieter; Vorgabe ist „Name, Wohnung, Abrechnung“
+  ([#624](https://github.com/speedone/mietfuchs/issues/624)).
+
 ### Geändert
 
 - Programmfenster und Kopplung ([#528](https://github.com/speedone/mietfuchs/issues/528)): Ist das Fenster mit einem

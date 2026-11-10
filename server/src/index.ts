@@ -463,7 +463,7 @@ app.put('/api/settings', async (req, res) => {
     for (const [key, label] of [['landlordAddress', 'Die Anschrift des Vermieters'], ['landlordContact', 'Der Kontakt des Vermieters']] as const) {
       if (Object.hasOwn(changes, key)) changes[key] = nullableLine(changes[key], label) ?? ''
     }
-    for (const [key, label] of [['printLetter', '„Anschreiben mitdrucken“'], ['printFooter', '„Fußzeile mit Kontakt und Bank“']] as const) {
+    for (const [key, label] of [['printLetter', '„Anschreiben mitdrucken“'], ['printFooter', '„Fußzeile mit Kontakt und Bank“'], ['printPaymentQr', '„QR-Code zum Bezahlen bei Nachzahlung“']] as const) {
       if (Object.hasOwn(changes, key) && changes[key] !== null && typeof changes[key] !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
     }
   } catch (err) {

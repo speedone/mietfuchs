@@ -1,0 +1,57 @@
+// @vitest-environment jsdom
+// Der Kasten mit dem Zahlungs-QR-Code (#624): Der gezeichnete Code liest sich byte-gleich zurück, und daneben steht als
+// Text, was im Code steht.
+import { afterEach, expect, test } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import jsQR from 'jsqr'
+import { epcPayload } from '../../../shared/epcQr.ts'
+import PaymentQr, { qrMatrix } from './PaymentQr'
+
+afterEach(cleanup)
+
+function decode(payload: string): string {
+  const m = qrMatrix(payload)
+  const quiet = 4
+  const scale = 4
+  const side = (m.size + 2 * quiet) * scale
+  const data = new Uint8ClampedArray(side * side * 4).fill(255)
+  for (let y = 0; y < m.size; y++) {
+    for (let x = 0; x < m.size; x++) {
+      if (!m.get(x, y)) continue
+      for (let dy = 0; dy < scale; dy++) {
+        for (let dx = 0; dx < scale; dx++) {
+          const i = (((y + quiet) * scale + dy) * side + (x + quiet) * scale + dx) * 4
+          data[i] = 0; data[i + 1] = 0; data[i + 2] = 0
+        }
+      }
+    }
+  }
+  const found = jsQR(data, side, side)
+  if (!found) throw new Error('Code nicht lesbar')
+  return new TextDecoder().decode(new Uint8Array(found.binaryData))
+}
+
+test('der gezeichnete Code liest sich byte-gleich zurück, auch mit Umlauten und an der Grenze von 331 Byte', () => {
+  for (const input of [
+    { name: 'Max Vermieter', iban: 'DE02120300000000202051', amountCents: 4000, purpose: 'Erika Müller, EG links, Nebenkostenabrechnung 2025' },
+    { name: 'ä'.repeat(70), iban: 'DE02120300000000202051', amountCents: 12345, purpose: 'ü'.repeat(70) },
+  ]) {
+    const payload = epcPayload(input)
+    if (payload === null) throw new Error('kein Inhalt')
+    expect(decode(payload)).toBe(payload)
+  }
+})
+
+test('der Kasten nennt Empfänger, IBAN, Betrag und Verwendungszweck', () => {
+  const payload = epcPayload({ name: 'Max Vermieter', iban: 'DE02120300000000202051', amountCents: 4000, purpose: 'Erika, EG' }) ?? ''
+  render(<PaymentQr data={{ payload, name: 'Max Vermieter', iban: 'DE02 1203 0000 0000 2020 51', amountCents: 4000, purpose: 'Erika, EG' }} />)
+  const img = screen.getByRole('img', { name: /QR-Code für die Überweisung von 40,00/ })
+  expect(img.querySelector('path')?.getAttribute('d')).toBeTruthy()
+  const box = img.closest('.payment-qr')
+  const text = (box?.textContent ?? '').replace(/ /g, ' ')
+  expect(text).toContain('Mit Ihrer Banking-App scannen')
+  expect(text).toContain('Max Vermieter')
+  expect(text).toContain('DE02 1203 0000 0000 2020 51')
+  expect(text).toContain('40,00 €')
+  expect(text).toContain('Erika, EG')
+})

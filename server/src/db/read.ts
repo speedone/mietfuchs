@@ -714,6 +714,7 @@ export async function readSettings(db: Executor): Promise<MigratedSettings> {
     ...(row.printFoldMarks == null ? {} : { printFoldMarks: row.printFoldMarks }),
     ...(row.printLetter == null ? {} : { printLetter: row.printLetter }),
     ...(row.printFooter == null ? {} : { printFooter: row.printFooter }),
+    ...(row.printPaymentQr == null ? {} : { printPaymentQr: row.printPaymentQr }),
     ...(row.landlordAddress == null ? {} : { landlordAddress: row.landlordAddress }),
     ...(row.landlordContact == null ? {} : { landlordContact: row.landlordContact }),
     ...(row.updateCheck == null ? {} : { updateCheck: row.updateCheck }),
