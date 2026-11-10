@@ -2166,7 +2166,11 @@ const ASSESSMENT_DELAY_MS = Math.max(0, Number(process.env.NKA_TEST_ASSESSMENT_D
 // (eine Rechnung von 2026, hochgeladen auf der Seite des Jahres 2024). Ist etwas gebucht, ergibt
 // sich beides aus der Position und die Angabe am Beleg sagt nichts mehr.
 // `origin` (#189): Herkunft E-Rechnung mit Rechnungsnummer, Notizen und je Zeile, ob der Lohnanteil nur vorgeschlagen ist.
-type AssessmentOrigin = { source: 'e-rechnung', invoiceNumber: string | null, eInvoiceNotes: string[], laborGuessed: boolean[] }
+// Eine abgelehnte E-Rechnung, die danach die KI ausgewertet hat, trägt den Grund als Notiz (`source: 'ki'`): Die Zeilen sind
+// rot, und eine Abschlagsrechnung lässt sich nicht ungesehen neben der Schlussrechnung buchen.
+type AssessmentOrigin = { source: 'e-rechnung' | 'ki', invoiceNumber: string | null, eInvoiceNotes: string[], laborGuessed: boolean[] }
+const refusedOrigin = (e: EInvoiceResult | null): AssessmentOrigin | undefined =>
+  (e?.kind === 'refused' ? { source: 'ki', invoiceNumber: null, eInvoiceNotes: [e.reason], laborGuessed: [] } : undefined)
 async function rememberAssessment(req: Request, file: DocumentSource, extraction: Extraction, signal: AbortSignal, origin?: AssessmentOrigin): Promise<AssessmentView | null> {
   const body = bodyObject(req)
   const sent = yearOf(body.year)
@@ -2219,7 +2223,7 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         ...(origin ? { source: origin.source, invoiceNumber: origin.invoiceNumber, eInvoiceNotes: origin.eInvoiceNotes } : {}),
         lines: linesFromExtraction(extraction).map((l, i) => ({ ...l, laborGuessed: origin?.laborGuessed[i] ?? false })),
       }, { id: newId(), now: new Date().toISOString() })
-      if (origin) await retitleCurrentGroup(db, 'Beleg aus der E-Rechnung übernommen')
+      if (origin?.source === 'e-rechnung') await retitleCurrentGroup(db, 'Beleg aus der E-Rechnung übernommen')
       if (!record.lines.some((l) => l.costItemId !== null)) {
         const placement: Placement = row?.propertyId ? { year: record.assessment.year } : { year: record.assessment.year, propertyId: record.assessment.propertyId }
         await placeUpload(db, file.filename, placement, () => describeFile(UPLOAD_DIR, file.filename, undefined, sha256))
@@ -2247,7 +2251,7 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
     }
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     await rememberInvoiceDate(file.filename, result.invoiceDate)
-    const assessment = await rememberAssessment(req, file, result, signal)
+    const assessment = await rememberAssessment(req, file, result, signal, refusedOrigin(eInvoice))
     answer.done({ file: file.filename, extraction: result, assessment, stats, ...refusalOf(eInvoice) })
   } catch (err) {
     answer.fail(failureOf(file, err, stats, refusalOf(eInvoice)))
@@ -2299,7 +2303,7 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
       await unmarkMeterPhoto(req, file.filename)
       const extraction = await extractFromFile(file.path, file.mimetype, settings, material)
       await rememberInvoiceDate(file.filename, extraction.invoiceDate)
-      const assessment = await rememberAssessment(req, file, extraction, signal)
+      const assessment = await rememberAssessment(req, file, extraction, signal, refusedOrigin(eInvoice))
       answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats, ...refusalOf(eInvoice) })
     }
   } catch (err) {

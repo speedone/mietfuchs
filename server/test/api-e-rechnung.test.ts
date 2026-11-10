@@ -92,8 +92,12 @@ test('E-Rechnung: eine Abschlagsrechnung geht an die KI, die Antwort nennt den G
     const r = await send(s, '/api/intake', { xml: xmlOf(invoice({ typeCode: '386' })), text: LONG_TEXT })
     assert.equal(r.status, 200)
     assert.match(r.body.eInvoiceRefusal ?? '', /Schlussrechnung doppelt/)
-    assert.equal(assessmentOf(r.body).source, 'ki')
+    const a = assessmentOf(r.body)
+    assert.equal(a.source, 'ki')
     assert.ok(chatRequests(ollama).length > 0)
+    // Der Grund steht an der Auswertung, auch nach dem Neuladen, und keine Zeile ist grün.
+    assert.ok(a.eInvoiceNotes.some((n) => /Schlussrechnung doppelt/.test(n)), JSON.stringify(a.eInvoiceNotes))
+    assert.ok(a.lines.every((l) => l.suggestion?.level === 'rot'))
   })
 })
 

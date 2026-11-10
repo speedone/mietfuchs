@@ -33,7 +33,8 @@ import { useConfirm, useToast } from '../components/feedback'
 import { renderThumbnail } from '../pdfPreview'
 import { useFocusFirstNew } from '../focusNew'
 import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
-import { aiMode, elsewhereGroups, periodKeyOfYear, SKIPPED_FILES, splitFiles, withoutPosition } from '../belegeView'
+import { aiMode, elsewhereGroups, periodKeyOfYear, SKIPPED_FILES, splitFiles, splitForStore, withoutPosition } from '../belegeView'
+import { hasEInvoice } from '../pdfIntake'
 import type { ReceiptStock } from '../receiptStock'
 import type { NavTarget } from '../nav'
 import type { ReceiptStart } from '../receiptForm'
@@ -392,7 +393,16 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     const list = [...files]
     if (list.length === 0) return
     // Ohne KI erst noch einmal fragen: Läuft sie inzwischen, wird ausgewertet
-    if (mode === 'ohne' && aiMode(await checkAi(), external, busy) === 'ohne') { void storeOnly(list); return }
+    if (mode === 'ohne' && aiMode(await checkAi(), external, busy) === 'ohne') {
+      // E-Rechnungen wertet der Server auch ohne KI aus (#189); nur die übrigen werden abgelegt.
+      const { ok, skipped } = splitFiles(list)
+      const { evaluate, store } = await splitForStore(ok, (f) => hasEInvoice(f))
+      if (evaluate.length === 0) { void storeOnly(list); return }
+      addFiles(evaluate, target)
+      if (store.length > 0) await storeOnly(store)
+      setError(skipped > 0 ? SKIPPED_FILES : '')
+      return
+    }
     setError(addFiles(list, target) > 0 ? SKIPPED_FILES : '')
   }
 

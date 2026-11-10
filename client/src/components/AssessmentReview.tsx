@@ -189,6 +189,13 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         <div className="warn">Zu welchem Objekt gehört dieser Beleg? Wählen Sie es bitte am Beleg unter „Ohne Position“; gebucht wird nur innerhalb eines Objekts.</div>
       )}
       {a.sumWarning && <div className="warn">⚠ {a.sumWarning}</div>}
+      {/* E-Rechnung (#189): woher die Angaben stammen und was dazu zu wissen ist */}
+      {a.source === 'e-rechnung' && (
+        <NoticeBox level="hint" action={<>Aus der E-Rechnung übernommen: Betrag, Datum und Positionen stehen maschinenlesbar in der Rechnung, die KI wurde nicht gefragt.</>} />
+      )}
+      {a.eInvoiceNotes.length > 0 && (
+        <NoticeBox level="warning" action={<>{a.eInvoiceNotes.map((n) => <span key={n} className="block">{n}</span>)}</>} />
+      )}
       {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
       {a.amountsAdjusted === 'netto' && (
         <NoticeBox level="warning" action={<>

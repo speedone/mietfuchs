@@ -2,7 +2,7 @@
 // Entscheidungslogik der Seite „Belege“ (#490): gemerkte Ansicht, Ablage, „Ohne Position“, Zeile für anderswo
 // Offenes, Ort eines Treffers der Suche.
 import { afterEach, expect, test, vi } from 'vitest'
-import { aiMode, elsewhereGroups, hitPlace, readView, SKIPPED_FILES, splitFiles, VIEW_KEY, withoutPosition, writeView } from './belegeView'
+import { aiMode, elsewhereGroups, hitPlace, readView, SKIPPED_FILES, splitFiles, splitForStore, VIEW_KEY, withoutPosition, writeView } from './belegeView'
 import { receiptCards, type ReceiptUpload } from './receipts'
 import type { QueueEntry } from './evaluationQueue'
 import type { CostItem } from './types'
@@ -110,4 +110,13 @@ test('anderswo: ein Beleg mit gezeigter Auswertung zählt nicht', () => {
     up('2_vorjahr.pdf', { propertyId: 'p1', year: 2024 }),
   ], [])
   expect(elsewhereGroups(cards, { propertyId: 'p1', year: 2025 }, new Set(['a1']))).toEqual([{ propertyId: null, year: 2024, count: 1 }])
+})
+
+test('ohne KI: E-Rechnungen werden ausgewertet, alles andere nur abgelegt (#189)', async () => {
+  const zugferd = new File(['%PDF'], 'zugferd.pdf', { type: 'application/pdf' })
+  const plain = new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' })
+  const photo = new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' })
+  const split = await splitForStore([zugferd, plain, photo], async (f) => f === zugferd)
+  expect(split.evaluate.map((f) => f.name)).toEqual(['zugferd.pdf'])
+  expect(split.store.map((f) => f.name)).toEqual(['scan.pdf', 'foto.jpg'])
 })

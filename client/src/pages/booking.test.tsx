@@ -665,3 +665,18 @@ test('Eingang: nach dem Buchen führen „→ Kosten ansehen“ und „→ Zur A
   fireEvent.click(screen.getByRole('button', { name: '→ Zur Abrechnung' }))
   expect(onNavigate).toHaveBeenLastCalledWith('abrechnung')
 })
+
+// ---------- E-Rechnung (#189): Herkunft und Notizen an der Auswertung ----------
+
+test('E-Rechnung: die Prüfung sagt, woher die Angaben stammen, und nennt die Notizen', () => {
+  render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), source: 'e-rechnung', invoiceNumber: 'R-1', eInvoiceNotes: ['Abschläge über 50,00 € sind bereits bezahlt.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getByText(/Aus der E-Rechnung übernommen/)).toBeTruthy()
+  expect(screen.getByText(/Abschläge über 50,00 € sind bereits bezahlt\./)).toBeTruthy()
+  expect(screen.queryByText(/Mietfuchs hat sie auf den Rechnungsbetrag hochgerechnet/)).toBeNull()
+})
+
+test('E-Rechnung: abgelehnt und von der KI ausgewertet, die Prüfung nennt den Grund, nicht „aus der E-Rechnung“', () => {
+  render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), eInvoiceNotes: ['Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht als Kosten.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getByText(/Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht als Kosten\./)).toBeTruthy()
+  expect(screen.queryByText(/Aus der E-Rechnung übernommen/)).toBeNull()
+})

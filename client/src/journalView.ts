@@ -102,6 +102,10 @@ const TABLE_LABELS: Record<string, string> = {
 
 // Die Beschriftungen der Felder, wie sie in den Formularen stehen.
 const FIELD_LABELS: Record<string, string> = {
+  // E-Rechnung (#189)
+  invoice_number: 'Rechnungsnummer',
+  e_invoice_notes: 'Hinweise zur E-Rechnung',
+  labor_guessed: 'Lohnanteil nur vorgeschlagen',
   print_payment_qr: 'QR-Code zum Bezahlen bei Nachzahlung',
   name: 'Bezeichnung',
   address: 'Adresse',

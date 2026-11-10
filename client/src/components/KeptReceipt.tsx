@@ -15,7 +15,8 @@ type Props = {
 
 export function KeptReceipt({ failure, onManual, onRetry, onOpenSettings }: Props) {
   return (
-    <NoticeBox level="hint" title={KEPT_TITLE} action={`${failureSentence(failure)} ${KEPT_NEXT}`}
+    <NoticeBox level="hint" title={KEPT_TITLE}
+      action={`${failure.eInvoiceRefusal ? `Die E-Rechnung im PDF wird nicht übernommen: ${failure.eInvoiceRefusal} ` : ''}${failureSentence(failure)} ${KEPT_NEXT}`}
       more={failure.error ? <p className="muted">{failure.error}</p> : null}>
       <div className="flex flex-wrap items-center gap-2">
         {onManual && <button type="button" className="btn" onClick={() => onManual(failure.file)}>Von Hand erfassen</button>}
