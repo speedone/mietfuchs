@@ -129,3 +129,15 @@ test('Verlauf: erste Miete bei Mietbeginn und an Angehörige vermietet als ja od
   expect(formatValue('relative', 0)).toBe('nein')
   expect(formatValue('rent_due', 'dayOfMonth')).toBe('An einem festen Tag des Monats')
 })
+
+test('Verlauf: die Angaben der E-Rechnung stehen lesbar da (#189)', () => {
+  // Nur an der Auswertung: `source` heißt an anderen Tabellen die Quelle eines Werts (Durchsicht)
+  expect(fieldLabel('source', 'assessments')).toBe('Herkunft')
+  expect(fieldLabel('source', 'law_overrides')).toBe('source')
+  expect(formatValue('source', 'e-rechnung', 'assessments')).toBe('E-Rechnung')
+  expect(formatValue('source', 'ki', 'assessments')).toBe('KI')
+  expect(formatValue('labor_guessed', 1, 'assessment_lines')).toBe('ja')
+  expect(formatValue('labor_guessed', 0, 'assessment_lines')).toBe('nein')
+  expect(formatValue('e_invoice_notes', '["Bereits gezahlt: 10,00 €.","Korrigiert Rechnung R-1."]', 'assessments')).toBe('Bereits gezahlt: 10,00 €. Korrigiert Rechnung R-1.')
+  expect(formatValue('e_invoice_notes', '[]', 'assessments')).toBe('keine')
+})

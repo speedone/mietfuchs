@@ -2,7 +2,7 @@
 // Entscheidungslogik der Seite „Belege“ (#490): gemerkte Ansicht, Ablage, „Ohne Position“, Zeile für anderswo
 // Offenes, Ort eines Treffers der Suche.
 import { afterEach, expect, test, vi } from 'vitest'
-import { aiMode, elsewhereGroups, hitPlace, readView, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, VIEW_KEY, withoutPosition, writeView } from './belegeView'
+import { aiMode, discardQuestion, elsewhereGroups, hitPlace, readView, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, VIEW_KEY, withoutPosition, writeView } from './belegeView'
 import { receiptCards, type ReceiptUpload } from './receipts'
 import type { QueueEntry } from './evaluationQueue'
 import type { CostItem } from './types'
@@ -130,4 +130,9 @@ test('ohne KI: E-Rechnungen werden ausgewertet, alles andere nur abgelegt (#189)
   const split = await splitForStore([zugferd, plain, photo], async (f) => f === zugferd)
   expect(split.evaluate.map((f) => f.name)).toEqual(['zugferd.pdf'])
   expect(split.store.map((f) => f.name)).toEqual(['scan.pdf', 'foto.jpg'])
+})
+
+test('Zuordnen statt Buchen: die Rückfrage nennt, woher die Vorschläge kommen (#189)', () => {
+  expect(discardQuestion('ki')).toEqual({ title: 'Vorschläge der KI verwerfen?', message: 'Die Vorschläge der KI zu diesem Beleg werden verworfen; der Beleg kommt an die gewählte Position.' })
+  expect(discardQuestion('e-rechnung')).toEqual({ title: 'Vorschläge aus der E-Rechnung verwerfen?', message: 'Die Vorschläge aus der E-Rechnung zu diesem Beleg werden verworfen; der Beleg kommt an die gewählte Position.' })
 })

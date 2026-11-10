@@ -18,6 +18,7 @@ import { useOptionalPeriod } from '../period'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import { receiptHref } from '../eInvoiceView'
+import Term from './Term'
 
 type Props = {
   assessment: AssessmentView
@@ -192,7 +193,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       {a.sumWarning && <div className="warn">⚠ {a.sumWarning}</div>}
       {/* E-Rechnung (#189): woher die Angaben stammen und was dazu zu wissen ist */}
       {a.source === 'e-rechnung' && (
-        <NoticeBox level="hint" action={<>Aus der E-Rechnung übernommen: Betrag, Datum und Positionen stehen maschinenlesbar in der Rechnung, die KI wurde nicht gefragt.</>} />
+        <NoticeBox level="hint" action={<>Aus der <Term id="eInvoice">E-Rechnung</Term> übernommen: Betrag, Datum und Positionen stehen maschinenlesbar in der Rechnung, die KI wurde nicht gefragt.</>} />
       )}
       {a.eInvoiceNotes.length > 0 && (
         <NoticeBox level="warning" action={<>{a.eInvoiceNotes.map((n) => <span key={n} className="block">{n}</span>)}</>} />
