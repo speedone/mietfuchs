@@ -1864,17 +1864,18 @@ export type MeterReadingExtraction = {
 // die Art des Anbieters, damit der Satz Ollama nur nennt, wo es um Ollama geht.
 export type AiFailureReason = 'unreachable' | 'address' | 'model' | 'key' | 'quota' | 'consent' | 'timeout' | 'other'
 // `meterPhoto`: Der Schuhkarton hat ein Zählerfoto erkannt und ist am Ablesen gescheitert.
-export type AiFailure = { error: string; file: string; reason: AiFailureReason; kept: true; service?: string; provider?: 'ollama' | 'openai'; meterPhoto?: true }
+// `eInvoiceRefusal` (#189): Das PDF trug eine E-Rechnung, die Mietfuchs nicht übernimmt, und warum.
+export type AiFailure = { error: string; file: string; reason: AiFailureReason; kept: true; service?: string; provider?: 'ollama' | 'openai'; meterPhoto?: true; eInvoiceRefusal?: string }
 
 // Antwort von /api/extract. `assessment` ist die gespeicherte Auswertung (Belegbuchung, #170);
 // `null`, wenn sie sich nicht speichern ließ.
-export type ExtractResult = { file: string; extraction: Extraction; assessment: AssessmentView | null }
+export type ExtractResult = { file: string; extraction: Extraction; assessment: AssessmentView | null; eInvoiceRefusal?: string }
 
 // Antwort von /api/intake: erkennt automatisch Rechnung vs. Zählerfoto
 export type IntakeResult = { file: string } & (
   | { kind: 'rechnung'; extraction: Extraction; assessment: AssessmentView | null }
   | { kind: 'zaehler'; reading: MeterReadingExtraction }
-)
+) & { eInvoiceRefusal?: string }
 
 // ---------- KI: Messdienstabrechnung und Lieferantenrechnung (Heizung PR 20, #103) ----------
 //

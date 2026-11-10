@@ -32,7 +32,9 @@ import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type Step
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
 import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
-import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
+import { extractFromFile, classifyDocType, extractMeterReading, toExtraction, type AskProgressEvent, type AskStats } from './extract.ts'
+import { readEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
+import { normalizeAmounts } from './invoiceAmounts.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -115,7 +117,7 @@ import { exportFilename, frozenExportable, settlementExportCsv, settlementExport
 import { derivedTaxLines, incomeCsv, partsBySource, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { carriesStock, createPriorVersion, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked } from './db/priorVersions.ts'
 import { changeGroups, costItems as costItemsTable, properties as propertiesTable, tenancies as tenanciesTable } from './db/schema.ts'
-import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
+import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, retitleCurrentGroup, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
 import { applyRevert, consentSnapshot, isRevertMode, previewRevert, restoreConsent, RevertRefused, type ConsentSnapshot, type RevertPreview } from './db/revert.ts'
 import { cleanSnapshots, interleaveSnapshots, listSnapshots, parseSnapshotName, snapshotFile, snapshotLastGroup, type SnapshotNotice, type SnapshotPoint } from './db/snapshots.ts'
 import { previewSnapshot, snapshotToken, type SnapshotPreview } from './db/snapshotPreview.ts'
@@ -270,7 +272,9 @@ const diskStore = multer.diskStorage({
   },
 })
 const memoryStore = multer.memoryStorage()
-const storageFor = (file: Express.Multer.File): multer.StorageEngine => (file.fieldname === 'pages' ? memoryStore : diskStore)
+// Seitenbilder und das XML einer E-Rechnung aus einem PDF (#189) braucht nur die Auswertung: Arbeitsspeicher, nie der Ordner.
+const IN_MEMORY_FIELDS = new Set(['pages', 'eInvoiceXml'])
+const storageFor = (file: Express.Multer.File): multer.StorageEngine => (IN_MEMORY_FIELDS.has(file.fieldname) ? memoryStore : diskStore)
 const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 const upload = multer({
   storage: {
@@ -282,7 +286,8 @@ const upload = multer({
   // (Feld `pages`) bleiben im Arbeitsspeicher und werden nie ausgeliefert; was kein Bild ist, übergeht die Auswertung
   // wie bisher (api-ki-beleg.test.ts).
   fileFilter: (req, file, cb) => {
-    if (file.fieldname !== 'pages' && carriesScript(file.originalname, file.mimetype)) cb(new RouteProblem(400, SCRIPT_REFUSAL))
+    // `eInvoiceXml` ist XML, wird aber nie gespeichert oder ausgeliefert, nur gelesen (eInvoice/, ohne Entitäten).
+    if (!IN_MEMORY_FIELDS.has(file.fieldname) && carriesScript(file.originalname, file.mimetype)) cb(new RouteProblem(400, SCRIPT_REFUSAL))
     else cb(null, true)
   },
   // Browser schicken Dateinamen als UTF-8. Mit dem Standard latin1 zerfiel „Müll.pdf“ zu
@@ -319,7 +324,14 @@ const checkPageSizes = (req: Request, res: Response, next: NextFunction): void =
   if (file) fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
 }
-const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }]), checkPageSizes, inRequest]
+const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, inRequest]
+
+// Die E-Rechnung aus dem PDF (#189), wenn der Browser eine mitgeschickt hat. `null`: keine mitgeschickt.
+const eInvoiceOf = (req: Request): EInvoiceResult | null => {
+  const xml = filesOf(req).eInvoiceXml?.[0]?.buffer
+  return xml ? readEInvoice(xml) : null
+}
+const refusalOf = (e: EInvoiceResult | null): { eInvoiceRefusal?: string } => (e?.kind === 'refused' ? { eInvoiceRefusal: e.reason } : {})
 const uploadedFile = (req: Request): StoredUpload | null => storedUpload(filesOf(req).file?.[0])
 
 // Ein Beleg, der schon im Belegordner liegt (#170, Posteingang), statt eines neu hochgeladenen:
@@ -2054,10 +2066,10 @@ function aiResponse(req: Request, res: Response): AiAnswer {
 // seinem Namen fragt ein neuer Versuch als `existingFile`, ohne eine Kopie anzulegen.
 // `meterPhoto`: Der Schuhkarton hatte ein Zählerfoto erkannt und ist am Ablesen gescheitert; „Von Hand erfassen“
 // führt dann zur Ablesung statt in den Belegordner.
-function failureOf(file: DocumentSource, err: unknown, stats: AskStats[], { meterPhoto = false } = {}): AiFailure & { stats: AskStats[] } {
+function failureOf(file: DocumentSource, err: unknown, stats: AskStats[], { meterPhoto = false, eInvoiceRefusal }: { meterPhoto?: boolean, eInvoiceRefusal?: string } = {}): AiFailure & { stats: AskStats[] } {
   const service = isProviderError(err) ? err.service : undefined
   const provider = isProviderError(err) ? err.provider : undefined
-  return { file: file.filename, error: messageOf(err), reason: reasonOf(err), kept: true, ...(service ? { service } : {}), ...(provider ? { provider } : {}), ...(meterPhoto ? { meterPhoto: true as const } : {}), stats }
+  return { file: file.filename, error: messageOf(err), reason: reasonOf(err), kept: true, ...(service ? { service } : {}), ...(provider ? { provider } : {}), ...(meterPhoto ? { meterPhoto: true as const } : {}), ...(eInvoiceRefusal ? { eInvoiceRefusal } : {}), stats }
 }
 
 app.post('/api/ai/cancel/:id', (req, res) => {
@@ -2153,7 +2165,9 @@ const ASSESSMENT_DELAY_MS = Math.max(0, Number(process.env.NKA_TEST_ASSESSMENT_D
 // zeigt den Beleg sonst im Jahr des Formulars, obwohl die Auswertung ihn einem anderen zuordnet
 // (eine Rechnung von 2026, hochgeladen auf der Seite des Jahres 2024). Ist etwas gebucht, ergibt
 // sich beides aus der Position und die Angabe am Beleg sagt nichts mehr.
-async function rememberAssessment(req: Request, file: DocumentSource, extraction: Extraction, signal: AbortSignal): Promise<AssessmentView | null> {
+// `origin` (#189): Herkunft E-Rechnung mit Rechnungsnummer, Notizen und je Zeile, ob der Lohnanteil nur vorgeschlagen ist.
+type AssessmentOrigin = { source: 'e-rechnung', invoiceNumber: string | null, eInvoiceNotes: string[], laborGuessed: boolean[] }
+async function rememberAssessment(req: Request, file: DocumentSource, extraction: Extraction, signal: AbortSignal, origin?: AssessmentOrigin): Promise<AssessmentView | null> {
   const body = bodyObject(req)
   const sent = yearOf(body.year)
   try {
@@ -2202,8 +2216,10 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,
         amountsAdjusted: extraction.amountsAdjusted ?? null,
         laborFromTotal: extraction.laborFromTotal === true,
-        lines: linesFromExtraction(extraction),
+        ...(origin ? { source: origin.source, invoiceNumber: origin.invoiceNumber, eInvoiceNotes: origin.eInvoiceNotes } : {}),
+        lines: linesFromExtraction(extraction).map((l, i) => ({ ...l, laborGuessed: origin?.laborGuessed[i] ?? false })),
       }, { id: newId(), now: new Date().toISOString() })
+      if (origin) await retitleCurrentGroup(db, 'Beleg aus der E-Rechnung übernommen')
       if (!record.lines.some((l) => l.costItemId !== null)) {
         const placement: Placement = row?.propertyId ? { year: record.assessment.year } : { year: record.assessment.year, propertyId: record.assessment.propertyId }
         await placeUpload(db, file.filename, placement, () => describeFile(UPLOAD_DIR, file.filename, undefined, sha256))
@@ -2223,15 +2239,31 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   if (!file) return
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
+  const eInvoice = eInvoiceOf(req)
   try {
+    if (eInvoice?.kind === 'read') {
+      const { extraction, assessment } = await takeEInvoice(req, file, eInvoice, signal)
+      return answer.done({ file: file.filename, extraction, assessment, stats })
+    }
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     await rememberInvoiceDate(file.filename, result.invoiceDate)
     const assessment = await rememberAssessment(req, file, result, signal)
-    answer.done({ file: file.filename, extraction: result, assessment, stats })
+    answer.done({ file: file.filename, extraction: result, assessment, stats, ...refusalOf(eInvoice) })
   } catch (err) {
-    answer.fail(failureOf(file, err, stats))
+    answer.fail(failureOf(file, err, stats, refusalOf(eInvoice)))
   }
 })
+
+// Eine E-Rechnung aus dem PDF (#189): Die Angaben stehen im XML, gefragt wird kein Modell. Danach derselbe Weg wie
+// eine KI-Antwort (normalizeAmounts → toExtraction → Belegbuchung), mit Herkunft, Rechnungsnummer und Notizen.
+async function takeEInvoice(req: Request, file: DocumentSource, read: Extract<EInvoiceResult, { kind: 'read' }>, signal: AbortSignal): Promise<{ extraction: Extraction, assessment: AssessmentView | null }> {
+  const extraction = toExtraction(normalizeAmounts(read.raw))
+  await rememberInvoiceDate(file.filename, extraction.invoiceDate)
+  const assessment = await rememberAssessment(req, file, extraction, signal, {
+    source: 'e-rechnung', invoiceNumber: read.invoiceNumber, eInvoiceNotes: read.notes, laborGuessed: read.laborGuessed,
+  })
+  return { extraction, assessment }
+}
 
 // Universeller Eingang (Schuhkarton): erkennt automatisch, ob die Datei eine Rechnung oder
 // ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
@@ -2244,7 +2276,13 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
   let meterPhoto = false
+  const eInvoice = eInvoiceOf(req)
   try {
+    if (eInvoice?.kind === 'read') {
+      await unmarkMeterPhoto(req, file.filename)
+      const { extraction, assessment } = await takeEInvoice(req, file, eInvoice, signal)
+      return answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
+    }
     const settings = effectiveSettings()
     const material = { ...aiInput(req), signal, stats, onProgress }
     // Sagt der Browser, dass es eine Rechnung ist (Seite Kosten, „Als Rechnung auswerten“; #490), fragt der Server das
@@ -2256,16 +2294,16 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
       meterPhoto = true
       await markMeterPhoto(file.filename)
       const reading = await extractMeterReading(file.path, file.mimetype, settings, material)
-      answer.done({ file: file.filename, kind: 'zaehler', reading, stats })
+      answer.done({ file: file.filename, kind: 'zaehler', reading, stats, ...refusalOf(eInvoice) })
     } else {
       await unmarkMeterPhoto(req, file.filename)
       const extraction = await extractFromFile(file.path, file.mimetype, settings, material)
       await rememberInvoiceDate(file.filename, extraction.invoiceDate)
       const assessment = await rememberAssessment(req, file, extraction, signal)
-      answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
+      answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats, ...refusalOf(eInvoice) })
     }
   } catch (err) {
-    answer.fail(failureOf(file, err, stats, { meterPhoto }))
+    answer.fail(failureOf(file, err, stats, { meterPhoto, ...refusalOf(eInvoice) }))
   }
 })
 
