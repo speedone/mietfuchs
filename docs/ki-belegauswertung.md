@@ -17,7 +17,9 @@ keine KI eingerichtet ist. Die Auswertung steht dann wie jede andere unter „Zu
 E-Rechnung übernommen“. Einen Lohnanteil nach § 35a EStG schlägt Mietfuchs nur für Positionen vor, die erkennbar
 Arbeit sind (Stunden, Arbeitszeit, Anfahrt), und lässt ihn dich bestätigen. Abschlags- und Teilrechnungen übernimmt
 Mietfuchs nicht als Kosten, sonst zählte die Schlussrechnung doppelt; kommt dieselbe Rechnung zweimal, ist die zweite
-rot.
+rot. Eine XRechnung als reine XML-Datei kannst du genauso ablegen: Mietfuchs liest sie ohne KI und zeigt sie geöffnet
+lesbar an, mit „Drucken / PDF“; die XML-Datei selbst bleibt unverändert der Beleg. Andere XML-Dateien nimmt Mietfuchs
+nicht an, weil sie Programmcode enthalten können.
 
 Zwei Wege stehen zur Wahl:
 

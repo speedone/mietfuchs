@@ -36,6 +36,16 @@ function rootOf(xml: string): { local: string, namespace: string | null } | 'unp
   return { local: name.slice(colon + 1), namespace: attr(doc[name], prefix === null ? 'xmlns' : `xmlns:${prefix}`) }
 }
 
+// Ist das XML eine E-Rechnung, gleich ob Mietfuchs sie übernimmt? Wurzel samt Namensraum, keine Dokumenttyp-Erklärung,
+// vollständig. Danach entscheidet sich, ob eine reine XML-Datei als Beleg liegen bleiben darf (index.ts).
+export function eInvoiceSyntaxOf(xml: string): EInvoiceSyntax | null {
+  if (refuseUnsafe(xml) !== null) return null
+  const root = rootOf(xml)
+  if (root === 'unparsable' || root === null || root.namespace === null) return null
+  const known = ROOTS[root.namespace]
+  return known && known.local === root.local ? known.syntax : null
+}
+
 // `null`: keine E-Rechnung (anderes XML). `Refusal`: eine E-Rechnung, die nicht übernommen wird,
 // oder eine Datei, die sich nicht sicher lesen lässt.
 export function detectEInvoice(xml: string): { syntax: EInvoiceSyntax, profile: string | null } | Refusal | null {

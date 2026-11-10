@@ -103,7 +103,7 @@ import Table from '../components/Table'
 import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
 import { openBadgeClass } from '../assessment'
-import { SKIPPED_FILES } from '../belegeView'
+import { RECEIPT_ACCEPT, SKIPPED_FILES } from '../belegeView'
 import { focusOpener, useFocusTarget, useNewTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
@@ -117,6 +117,7 @@ import { invoiceDateFromText } from '../invoiceDateText'
 import { adoptPrevious, receiptItemForm, vendorPrevious, type ReceiptStart } from '../receiptForm'
 import { receiptName } from '../receipts'
 import { compareName } from '../../../shared/compareName.ts'
+import { receiptHref } from '../eInvoiceView'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 // `onOpenReceipt`, `onOpenAiSettings`: Auswege eines gespeicherten, nicht ausgewerteten Belegs (#487)
@@ -1032,7 +1033,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,image/*"
+            accept={RECEIPT_ACCEPT}
             multiple
             aria-label="Belege auswählen"
             className="sr-only"
@@ -1123,7 +1124,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 <tr className="group-head">
                   <td colSpan={5}>
                     {g.label}
-                    <a href={`/uploads/${g.invoiceFile}`} target="_blank" rel="noreferrer">📎 Beleg</a>
+                    <a href={receiptHref(g.invoiceFile)} target="_blank" rel="noreferrer">📎 Beleg</a>
                   </td>
                 </tr>
               )}
@@ -1568,7 +1569,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
               {form.invoiceFile ? (
                 <>
                 <div className="row center">
-                  <a href={`/uploads/${form.invoiceFile}`} target="_blank" rel="noreferrer">
+                  <a href={receiptHref(form.invoiceFile)} target="_blank" rel="noreferrer">
                     📎 {form.invoiceFile.replace(/^\d+_/, '')}
                   </a>
                   <button className="btn small ghost" onClick={() => setForm({ ...form, invoiceFile: undefined })}>
@@ -1603,7 +1604,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                   <div className="row center">
                     <label className="btn secondary small">
                       Beleg hochladen …
-                      <input type="file" className="sr-only" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
+                      <input type="file" className="sr-only" accept={RECEIPT_ACCEPT} onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
                     </label>
                     <span className="muted">PDF oder Foto</span>
                   </div>

@@ -51,8 +51,17 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.tiff': 'image/tiff',
 }
 
+// Die Art eines gespeicherten Belegs (Spalte `uploads.mime_type` und Rückfall ohne Zeile). Eine E-Rechnung als XML-Datei
+// (#189) hat ihre Art, wird aber nie als XML ausgeliefert: `.xml` steht nicht in der Liste oben (`servedTypeOf`).
+const isXmlName = (file: string): boolean => path.extname(file).toLowerCase() === '.xml'
 export function mimeTypeOf(file: string): string {
+  if (isXmlName(file)) return 'application/xml'
   return MIME_BY_EXTENSION[path.extname(file).toLowerCase()] ?? 'application/octet-stream'
+}
+
+// Die Art, die in `uploads` steht: bei XML immer `application/xml`, gleich was der Browser angab (`text/xml` oder nichts).
+export function storedTypeOf(file: string, declaredType: string): string {
+  return isXmlName(file) ? 'application/xml' : declaredType || mimeTypeOf(file)
 }
 
 // ---------- Belege ohne Skript (#517) ----------
@@ -65,7 +74,11 @@ export function mimeTypeOf(file: string): string {
 //    Fachlich braucht sie niemand: Ein Beleg ist ein PDF oder ein Foto, und die KI-Auswertung liest auch nur diese
 //    (extract.ts). Geprüft werden Endung **und** angegebener Typ; der Inhalt nicht, denn ausgeliefert wird nach der
 //    Endung (Schicht 2), und eine getarnte Datei („rechnung.png“ mit SVG darin) zeigt der Browser dank `nosniff`
-//    höchstens als kaputtes Bild an.
+//    höchstens als kaputtes Bild an. **Eine Ausnahme: die E-Rechnung als XML-Datei** (#189). Sie lässt `carriesScript`
+//    mit `eInvoiceXml` nur mit Endung `.xml` und einem Typ ohne Skript durch (leer, `application/octet-stream`,
+//    `application/xml`, `text/xml`), und nur auf den Routen der Belege (index.ts); nach dem Speichern prüft der Server
+//    **ausnahmsweise den Inhalt** (`isEInvoiceDocument`) und löscht alles, was keine E-Rechnung ist. Ausgeliefert wird
+//    sie nach Schicht 2 nur als Download; lesbar zeigt sie die Oberfläche aus GET /api/e-invoice/:file.
 // 2. **Beim Ausliefern** (index.ts) trägt jede Antwort `X-Content-Type-Options: nosniff` und
 //    `Content-Security-Policy: sandbox`: eigener, undurchsichtiger Ursprung, kein Skript. Das gilt auch für PDF, denn
 //    die Betrachter von Chromium (also auch des Programmfensters) und Firefox zeigen ein PDF unter diesem Header
@@ -76,13 +89,16 @@ export function mimeTypeOf(file: string): string {
 //    Liste oben (`servedTypeOf`); alles andere, auch eine SVG-Datei aus einem alten Backup, geht als Download hinaus.
 const SCRIPT_EXTENSIONS = new Set(['.svg', '.svgz', '.html', '.htm', '.shtml', '.xhtml', '.xht', '.xml', '.xsl', '.xslt', '.mht', '.mhtml'])
 
-export function carriesScript(name: string, declaredType: string): boolean {
-  if (SCRIPT_EXTENSIONS.has(path.extname(name).toLowerCase())) return true
+const E_INVOICE_TYPES = new Set(['', 'application/octet-stream', 'application/xml', 'text/xml'])
+
+export function carriesScript(name: string, declaredType: string, { eInvoiceXml = false }: { eInvoiceXml?: boolean } = {}): boolean {
   const type = declaredType.split(';')[0].trim().toLowerCase()
+  if (eInvoiceXml && isXmlName(name) && E_INVOICE_TYPES.has(type)) return false
+  if (SCRIPT_EXTENSIONS.has(path.extname(name).toLowerCase())) return true
   return type === 'text/html' || type.endsWith('/xml') || type.endsWith('+xml') || type === 'multipart/related' || type === 'message/rfc822'
 }
 
-export const SCRIPT_REFUSAL = 'Belege nimmt Mietfuchs als PDF oder Bild an (etwa JPG oder PNG). SVG-, HTML- und XML-Dateien können Programmcode enthalten und werden deshalb nicht gespeichert.'
+export const SCRIPT_REFUSAL = 'Belege nimmt Mietfuchs als PDF oder Bild an (etwa JPG oder PNG), dazu E-Rechnungen als XML-Datei (XRechnung). SVG- und HTML-Dateien und anderes XML können Programmcode enthalten und werden deshalb nicht gespeichert.'
 
 // Der Typ, unter dem ein Beleg ausgeliefert wird: einer aus der Liste oben oder `null`, dann nur als Download.
 export function servedTypeOf(file: string): string | null {

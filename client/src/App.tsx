@@ -6,6 +6,7 @@ import { api, errorText } from './api'
 import { AccessContext, announceSignedIn, loadAccess, onAccessDemand, onSignedInAgain, useAccess, type AccessInfo } from './access'
 import { accessView, failedAttemptsText, showsSignOut, showsTransitionHint, takeSetupCode } from './accessView'
 import AccessHint from './components/AccessHint'
+import { EInvoicePage } from './components/EInvoicePage'
 import LoginDialog, { type LoginResult } from './components/LoginDialog'
 import Anmeldung from './pages/Anmeldung'
 import Einrichtung from './pages/Einrichtung'
@@ -650,6 +651,12 @@ function musterTheme(): 'light' | 'dark' | null {
   return params.get('muster') === 'dunkel' ? 'dark' : 'light'
 }
 
+// Die Rechnungsansicht einer E-Rechnung als XML-Datei (#189) unter `?e-rechnung=<Datei>`: Dorthin führen die Links auf
+// solche Belege (`receiptHref`). Eigene Seite ohne Schale, aber hinter der Anmeldung, denn sie fragt den Server.
+function eInvoiceParam(): string | null {
+  return new URLSearchParams(window.location.search).get('e-rechnung')
+}
+
 // Die Anmeldung vor der Schale (#528): Erst `GET /api/auth`, dann die Anmeldeseite, die Einrichtung oder die App. Die
 // Schale hängt erst danach ein, denn sie fragt gleich den Server; ohne Anmeldung bekäme jede Frage ein 401. Läuft
 // während der Arbeit die Sitzung ab, meldet ein Abruf das Ereignis (access.ts), und die Anmeldung erscheint als Dialog
@@ -709,6 +716,8 @@ export default function App() {
   useEffect(() => { if (muster) document.documentElement.dataset.theme = muster }, [muster])
   // Ohne Objekt- und Zeitraum-Provider: die fragen den Server, die Musterseite kommt ohne aus (Durchsicht)
   if (muster) return <UIProvider><main><Muster /></main></UIProvider>
+  const eInvoiceFile = eInvoiceParam()
+  if (eInvoiceFile) return <UIProvider><AccessGate><EInvoicePage file={eInvoiceFile} /></AccessGate></UIProvider>
   // Rückfragen und Mitteilungen ganz außen, damit auch Anmeldung und Einrichtung sie haben und eine Mitteilung nach dem
   // Anmelden den Wechsel zur App überlebt
   return (

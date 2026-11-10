@@ -108,7 +108,25 @@ for (const [file, syntax] of [['03.06a-INVOICE_ubl.xml', 'ubl-invoice'], ['03.06
     ])
     assert.deepEqual(inv.totals, { lineNet: 150000, allowances: null, charges: null, taxExclusive: 150000, tax: 30400, taxInclusive: 180400, prepaid: null, rounding: null, payable: 180400 })
   })
+
+  test(`E-Rechnung lesen: KoSIT 03.06a (${syntax}), Angaben der Rechnungsansicht`, () => {
+    const inv = readModel(fixture(file), syntax)
+    // In der UBL-Datei der KoSIT stehen Ort und PLZ vertauscht (CityName 12345); gelesen wird, was dasteht.
+    const address = syntax === 'cii'
+      ? { lines: ['Teststraße'], postcode: '12345', city: 'Testhausen', country: 'DE' }
+      : { lines: ['Teststraße'], postcode: 'Testhausen', city: '12345', country: 'DE' }
+    assert.deepEqual(inv.sellerAddress, address)
+    assert.deepEqual(inv.buyerAddress, address)
+    assert.equal(inv.sellerVatId, 'DE12345464867')
+    assert.deepEqual(inv.lines.map((l) => [l.quantity, l.unitPrice]), [['1.00', '1000.00'], ['1.00', '100.00'], ['-1.00', '100.00'], ['1.00', '500.00']])
+  })
 }
+
+test('E-Rechnung lesen: Zahlungsbedingungen (BT-20) in UBL und CII', () => {
+  const inv = invoice({ paymentTerms: 'Zahlbar innerhalb von 14 Tagen ohne Abzug.' })
+  assert.equal(readModel(ublOf(inv), 'ubl-invoice').paymentTerms, 'Zahlbar innerhalb von 14 Tagen ohne Abzug.')
+  assert.equal(readModel(ciiOf({ ...inv, syntax: 'cii' }), 'cii').paymentTerms, 'Zahlbar innerhalb von 14 Tagen ohne Abzug.')
+})
 
 for (const [file, syntax] of [['03.01a-INVOICE_ubl.xml', 'ubl-invoice'], ['03.01a-INVOICE_uncefact.xml', 'cii']] as const) {
   test(`E-Rechnung lesen: KoSIT 03.01a (${syntax}), Versorger mit Abschlägen und Lastschrift`, () => {

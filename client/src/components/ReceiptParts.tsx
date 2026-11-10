@@ -18,6 +18,7 @@ import { useDraft } from '../useDraft'
 import DraftActions from './DraftActions'
 import { NoticeBox } from './Notice'
 import { useConfirm, useToast } from './feedback'
+import { receiptHref } from '../eInvoiceView'
 
 export const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -62,7 +63,7 @@ export function Thumb({ upload, render }: { upload: UploadInfo; render: typeof r
   const ref = useRef<HTMLAnchorElement>(null)
   const { src, failed } = useThumbSrc(upload, render, ref)
   return (
-    <a ref={ref} className="receipt-thumb" href={`/uploads/${encodeURIComponent(upload.file)}`} target="_blank" rel="noreferrer" aria-label={`${receiptName(upload)} öffnen`}>
+    <a ref={ref} className="receipt-thumb" href={receiptHref(upload.file)} target="_blank" rel="noreferrer" aria-label={`${receiptName(upload)} öffnen`}>
       {src ? <img src={src} alt="" loading="lazy" /> : <span aria-hidden="true">{failed ? '📄' : '…'}</span>}
     </a>
   )
@@ -74,7 +75,7 @@ export function ReceiptPreview({ upload, render }: { upload: Pick<UploadInfo, 'f
   const ref = useRef<HTMLAnchorElement>(null)
   const { src, failed } = useThumbSrc(upload, render, ref)
   return (
-    <a ref={ref} className="flex items-center gap-3 min-w-0" href={`/uploads/${encodeURIComponent(upload.file)}`} target="_blank" rel="noreferrer" data-receipt-preview>
+    <a ref={ref} className="flex items-center gap-3 min-w-0" href={receiptHref(upload.file)} target="_blank" rel="noreferrer" data-receipt-preview>
       <span className="receipt-thumb">{src ? <img src={src} alt="" /> : <span aria-hidden="true">{failed ? '📄' : '…'}</span>}</span>
       <span className="min-w-0 break-words">
         <span className="block font-strong">{receiptName(upload)}</span>
@@ -107,7 +108,7 @@ export function ReceiptItem({ card, renderThumb, jumped, place, hint, onDelete, 
       <Thumb upload={upload} render={renderThumb} />
       <div className="receipt-body">
         <div className="receipt-title">
-          <a href={`/uploads/${encodeURIComponent(upload.file)}`} target="_blank" rel="noreferrer">{card.vendor || receiptName(upload)}</a>
+          <a href={receiptHref(upload.file)} target="_blank" rel="noreferrer">{card.vendor || receiptName(upload)}</a>
           {card.items.length > 0 && <strong className="num">{fmtEuro(card.amountCents)}</strong>}
         </div>
         <div className="muted">
@@ -313,7 +314,7 @@ export function AmountCheckBox({ attach, properties, onOpenItem }: {
       {check.closed && <div>{closedPeriodNotice(labelOfKey(rules, check.item.period))}</div>}
       {/* Ein Teil trägt nur den Anteil seines Zeitraums; mit dem Beleg verglichen, lüde der Satz zum Fehler ein (#455). */}
       {!isPart && <>{' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.</>}{' '}
-      <a href={`/uploads/${encodeURIComponent(check.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
+      <a href={receiptHref(check.file)} target="_blank" rel="noreferrer">Beleg ansehen</a>
       {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
       {(check.item.labor35aCents ?? 0) > 0 && (
         <div>

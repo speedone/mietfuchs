@@ -7,9 +7,10 @@
 //   Position, ob der Lohnanteil nur vorgeschlagen ist, die Notizen aus check.ts und BT-1.
 
 import type { RawExtraction } from '../invoiceAmounts.ts'
+import type { EInvoiceView } from './model.ts'
 import { decodeXml } from '../xml.ts'
 import { checkEInvoice } from './check.ts'
-import { detectEInvoice, E_INVOICE_MAX_BYTES } from './detect.ts'
+import { detectEInvoice, eInvoiceSyntaxOf, E_INVOICE_MAX_BYTES } from './detect.ts'
 import { readModel } from './read.ts'
 import { toRawExtraction } from './toRaw.ts'
 
@@ -26,6 +27,45 @@ function withoutAttachments(xml: string): string {
   return xml.replace(/(<(?:[\w.-]+:)?(?:EmbeddedDocumentBinaryObject|AttachmentBinaryObject)\b[^>]*>)[^<]*/g, '$1')
 }
 
+// Das XML, aufbereitet zum Erkennen: `null`, wenn es kein XML ist oder zu groß.
+function xmlOf(data: Buffer): string | null {
+  if (data.length > E_INVOICE_MAX_BYTES) return null
+  const decoded = decodeXml(data)
+  if ('problem' in decoded) return null
+  // Was nicht wie XML anfängt, ist keine E-Rechnung.
+  if (!/^\s*(?:\uFEFF)?\s*</.test(decoded.xml)) return null
+  return withoutAttachments(decoded.xml)
+}
+
+// Darf eine reine XML-Datei als Beleg liegen bleiben (#189, PR 3)? Nur eine E-Rechnung (UBL oder CII, ohne
+// Dokumenttyp-Erklärung, höchstens 25 MB), auch eine, die Mietfuchs nicht übernimmt. Wirft nie.
+export function isEInvoiceDocument(data: Buffer): boolean {
+  try {
+    const xml = xmlOf(data)
+    return xml !== null && eInvoiceSyntaxOf(xml) !== null
+  } catch {
+    return false
+  }
+}
+
+// Die Rechnungsansicht einer reinen XML-Datei (GET /api/e-invoice/:file): das Modell, die Hinweise und, wenn sie nicht
+// übernommen wird, warum. Auch eine nicht übernommene E-Rechnung (MINIMUM, Abschlagsrechnung) wird gezeigt; sie ist der
+// Beleg. `null`: keine E-Rechnung. Wirft nie.
+export function viewEInvoice(data: Buffer): EInvoiceView | null {
+  try {
+    const xml = xmlOf(data)
+    const syntax = xml === null ? null : eInvoiceSyntaxOf(xml)
+    if (xml === null || syntax === null) return null
+    const invoice = readModel(xml, syntax)
+    const found = detectEInvoice(xml)
+    const checked = checkEInvoice(invoice)
+    const refusal = found !== null && 'refused' in found ? found.refused : 'refused' in checked ? checked.refused : null
+    return { invoice, notes: 'notes' in checked ? checked.notes : [], refusal }
+  } catch {
+    return null
+  }
+}
+
 // Wirft nie: Eine Datei von außen ist im schlimmsten Fall „nicht übernommen“.
 export function readEInvoice(data: Buffer): EInvoiceResult {
   try {
@@ -37,12 +77,8 @@ export function readEInvoice(data: Buffer): EInvoiceResult {
 
 function readUnguarded(data: Buffer): EInvoiceResult {
   if (data.length > E_INVOICE_MAX_BYTES) return { kind: 'refused', reason: 'Die E-Rechnung ist größer als 25 MB; Mietfuchs liest sie nicht.' }
-  const decoded = decodeXml(data)
-  if ('problem' in decoded) return { kind: 'none' }
-  // Was nicht wie XML anfängt, ist keine E-Rechnung, und die Prüfung auf Vollständigkeit soll es
-  // nicht als abgeschnittenes XML melden.
-  if (!/^\s*(?:﻿)?\s*</.test(decoded.xml)) return { kind: 'none' }
-  const xml = withoutAttachments(decoded.xml)
+  const xml = xmlOf(data)
+  if (xml === null) return { kind: 'none' }
   const found = detectEInvoice(xml)
   if (found === null) return { kind: 'none' }
   if ('refused' in found) return { kind: 'refused', reason: found.refused }

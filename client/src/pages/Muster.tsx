@@ -32,6 +32,29 @@ import { PaperPreview } from '../components/LetterDesignDrawer'
 import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES } from '../../../shared/letter.ts'
 import { epcPayload } from '../../../shared/epcQr.ts'
 import type { PaymentQrData } from '../paymentQr'
+import { EInvoiceView } from '../components/EInvoiceView'
+import type { EInvoiceView as EInvoiceViewData } from '../types'
+
+// Eine erfundene E-Rechnung für die Rechnungsansicht (#189)
+const E_INVOICE: EInvoiceViewData = {
+  invoice: {
+    syntax: 'cii', typeCode: '380', number: 'R-2025-0042', issueDate: '2025-03-14', currency: 'EUR',
+    seller: 'Haustechnik Beispiel GmbH', sellerAddress: { lines: ['Werkstraße 7'], postcode: '12345', city: 'Musterstadt', country: 'DE' }, sellerVatId: 'DE123456789',
+    buyer: 'Erika Mustermann', buyerAddress: { lines: ['Am Hang 3'], postcode: '54321', city: 'Beispieldorf', country: 'DE' },
+    periodStart: null, periodEnd: null, deliveryDate: '2025-03-10', dueDate: '2025-03-28', paymentTerms: 'Zahlbar innerhalb von 14 Tagen ohne Abzug.',
+    iban: 'DE02120300000000202051', precedingInvoice: null,
+    lines: [
+      { id: '1', name: 'Wartung Heizung', description: 'Jahreswartung Gasbrennwerttherme', netCents: 12000, unitCode: 'HUR', vat: { category: 'S', rateBasisPoints: 1900 }, quantity: '1.5', unitPrice: '80.00' },
+      { id: '2', name: 'Dichtungssatz', description: null, netCents: 1850, unitCode: 'C62', vat: { category: 'S', rateBasisPoints: 1900 }, quantity: '1', unitPrice: '18.50' },
+    ],
+    charges: [],
+    vatGroups: [{ vat: { category: 'S', rateBasisPoints: 1900 }, basisCents: 13850, taxCents: 2632 }],
+    totals: { lineNet: 13850, allowances: null, charges: null, taxExclusive: 13850, tax: 2632, taxInclusive: 16482, prepaid: null, rounding: null, payable: 16482 },
+    unreadable: [],
+  },
+  notes: ['Beispielhinweis der Prüfung.'],
+  refusal: null,
+}
 
 // Der Zahlungs-QR-Code (#624) mit den Beispielwerten des Anschreibens: 40,00 € Nachzahlung.
 const SAMPLE_PURPOSE = resolveTemplate(DEFAULT_LETTER_TEXTS.paymentPurpose, SAMPLE_LETTER_VALUES)
@@ -261,6 +284,9 @@ export default function Muster() {
       <Card title="Vorschau des Briefpapiers">
         <PaperPreview paper={null} logo={null} margins={{ top: 40, right: 20, bottom: 30, left: 25 }} />
       </Card>
+
+      {/* Rechnungsansicht einer E-Rechnung als XML-Datei (#189) */}
+      <EInvoiceView view={E_INVOICE} />
 
       <Card title="Umschalter und Leerzustand">
         <Switcher label="Wohnung" className="switcher-field width-s" value={unit} options={UNITS} onChange={setUnit} />

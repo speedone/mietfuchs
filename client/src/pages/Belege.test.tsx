@@ -274,7 +274,7 @@ test('Eingang: „Nur ablegen, ohne Auswertung“ speichert mehrere Belege, mit 
     { file: 'zwei.jpg', propertyId: 'p1', year: String(YEAR) },
   ])
   // Was weder PDF noch Bild ist, fällt nicht still weg (#490: überall derselbe Satz)
-  expect(screen.getByText(/Nur PDFs und Bilder lassen sich als Beleg hochladen/)).toBeTruthy()
+  expect(screen.getByText(/Nur PDFs, Bilder und E-Rechnungen \(XML\) lassen sich als Beleg hochladen/)).toBeTruthy()
 })
 
 // Regel 5 (#490): Sagt die KI, dass sie nicht erreichbar ist, speichert die Ablage nur; jeder Beleg steht danach unter

@@ -173,4 +173,13 @@ describe('E-Rechnung im PDF finden', () => {
     expect(await hasEInvoice(pdf(), fakeReader('x').reader)).toBe(false)
     expect(await hasEInvoice(photo(), fakeReader('x', 1, CII).reader)).toBe(false)
   })
+
+  test('hasEInvoice: eine XML-Datei am Anfang ihres Inhalts, ohne pdf.js; buildUpload schickt nur die Datei', async () => {
+    const { reader } = fakeReader('x', 1, CII)
+    expect(await hasEInvoice(new File([CII], 'xrechnung.xml', { type: 'text/xml' }), reader)).toBe(true)
+    expect(await hasEInvoice(new File([CII], 'RECHNUNG.XML', { type: '' }), reader)).toBe(true)
+    expect(await hasEInvoice(new File(['<notiz/>'], 'daten.xml', { type: 'application/xml' }), reader)).toBe(false)
+    expect(reader.open).not.toHaveBeenCalled()
+    expect(fieldNames(await buildUpload(new File([CII], 'xrechnung.xml', { type: 'application/xml' }), reader))).toEqual(['file'])
+  })
 })

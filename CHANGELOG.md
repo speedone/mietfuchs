@@ -13,6 +13,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ohne Netz, auch wenn keine KI erreichbar ist. Ein Lohnanteil nach § 35a EStG wird nur für erkennbare Arbeit
   vorgeschlagen und will bestätigt sein; Abschlags- und Teilrechnungen, korrigierte Rechnungen und dieselbe Rechnung in
   einem zweiten Beleg sind rot ([#189](https://github.com/speedone/mietfuchs/issues/189)).
+- E-Rechnungen als XML-Datei (XRechnung): Belege nehmen jetzt auch eine reine XML-Datei an, wenn sie eine E-Rechnung
+  ist, und werten sie ohne KI aus. Geöffnet zeigt Mietfuchs sie lesbar (Kopf, Verkäufer, Käufer, Positionen, Steuer,
+  Summen, Zahlung) mit „Drucken / PDF“ und dem Original als Download; Vorschaubild, Belegkopien der Abrechnung und
+  Belegmappe enthalten diese Darstellung. Jedes andere XML wird weiter abgelehnt
+  ([#189](https://github.com/speedone/mietfuchs/issues/189)).
 - QR-Code zum Bezahlen bei einer Nachzahlung: Auf Wunsch (Druckfenster, „QR-Code zum Bezahlen bei Nachzahlung“)
   steht neben dem Satz zur Nachzahlung ein QR-Code, den der Mieter mit seiner Banking-App scannt. Empfänger und IBAN
   kommen aus dem Anschreiben, eine abweichende IBAN am Objekt gilt also auch im Code. Der Verwendungszweck ist ein

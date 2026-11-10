@@ -17,6 +17,7 @@ import { useDraft, useOpenWhenDiffers } from '../useDraft'
 import { useOptionalPeriod } from '../period'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
+import { receiptHref } from '../eInvoiceView'
 
 type Props = {
   assessment: AssessmentView
@@ -317,7 +318,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       {/* Ein Erfolg, kein Hinweis (Durchsicht der Hinweiskästen): grün, als Statusmeldung; das aria-label braucht die Rolle */}
       {booked && <div className="ok" role="status" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
       <div className="row center">
-        <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
+        <a href={receiptHref(a.file)} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />
         {/* Sichtprüfung E30: Was fehlt, steht neben den gesperrten Knöpfen */}
         {!busy && year.dirty && <span className="muted">Erst das Jahr speichern oder verwerfen.</span>}

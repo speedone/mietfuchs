@@ -12,9 +12,10 @@ import { appFetch } from '../access'
 // einem Zeitraum des Objekts.
 import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
+import { eInvoicePdfOf } from '../eInvoicePdf'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { buildFolder, coverage, filesByItem, duplicateHints, inboxFor, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard } from '../receipts'
-import { hitPlace } from '../belegeView'
+import { hitPlace, RECEIPT_ACCEPT } from '../belegeView'
 import { useEvaluationQueue } from '../evaluationQueue'
 import type { ReceiptStock } from '../receiptStock'
 import Field from '../components/Field'
@@ -56,6 +57,7 @@ async function downloadTenantFolder(plan: TenantFolderPlan, meta: FolderMeta): P
       return new Uint8Array(await res.arrayBuffer())
     },
     rasterize: async (u) => Promise.all((await renderInvoicePages(u.file)).map(jpegBytes)),
+    renderEInvoice: (u) => eInvoicePdfOf(u.file),
     onUnreadable: (u) => unreadable.push(receiptName(u)),
   })
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }))
@@ -337,7 +339,7 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
                     <input
                       type="file"
                       className="sr-only"
-                      accept="application/pdf,image/*"
+                      accept={RECEIPT_ACCEPT}
                       aria-label={`Beleg für ${c.description} hochladen`}
                       onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void attach.uploadFor(c, f) }}
                     />

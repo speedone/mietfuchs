@@ -33,7 +33,7 @@ import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
 import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, toExtraction, type AskProgressEvent, type AskStats } from './extract.ts'
-import { readEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
+import { isEInvoiceDocument, readEInvoice, viewEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
 import { normalizeAmounts } from './invoiceAmounts.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -109,7 +109,7 @@ import {
   readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders, searchRoots, stockKind,
   writeDecision, writeMovedMarker, type CandidateInfo, type FileSize, type MovedMarker,
 } from './relocation.ts'
-import { SCRIPT_REFUSAL, carriesScript, describeFile, describeFolder, hashFile, mimeTypeOf, servedTypeOf, uploadedAtOf } from './uploads.ts'
+import { SCRIPT_REFUSAL, carriesScript, describeFile, describeFolder, hashFile, mimeTypeOf, servedTypeOf, storedTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import { roomView } from '../../shared/rooms.ts'
@@ -276,6 +276,8 @@ const memoryStore = multer.memoryStorage()
 const IN_MEMORY_FIELDS = new Set(['pages', 'eInvoiceXml'])
 const storageFor = (file: Express.Multer.File): multer.StorageEngine => (IN_MEMORY_FIELDS.has(file.fieldname) ? memoryStore : diskStore)
 const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+// Die Routen, auf denen ein Beleg eine E-Rechnung als XML-Datei sein darf (#189). Die Heizrouten nicht: Dort liest nur die KI.
+const E_INVOICE_XML_ROUTES = new Set(['/api/upload', '/api/intake', '/api/extract'])
 const upload = multer({
   storage: {
     _handleFile: (req, file, cb) => storageFor(file)._handleFile(req, file, cb),
@@ -287,7 +289,10 @@ const upload = multer({
   // wie bisher (api-ki-beleg.test.ts).
   fileFilter: (req, file, cb) => {
     // `eInvoiceXml` ist XML, wird aber nie gespeichert oder ausgeliefert, nur gelesen (eInvoice/, ohne Entitäten).
-    if (!IN_MEMORY_FIELDS.has(file.fieldname) && carriesScript(file.originalname, file.mimetype)) cb(new RouteProblem(400, SCRIPT_REFUSAL))
+    // Eine E-Rechnung als XML-Datei lässt der Filter nur auf den Routen der Belege durch; den Inhalt prüft `checkXmlReceipt`.
+    // `routePath`: Express nimmt die Route auch als /API/Upload oder /api/upload/ an (#585)
+    const eInvoiceXml = file.fieldname === 'file' && E_INVOICE_XML_ROUTES.has(routePath(req.path))
+    if (!IN_MEMORY_FIELDS.has(file.fieldname) && carriesScript(file.originalname, file.mimetype, { eInvoiceXml })) cb(new RouteProblem(400, SCRIPT_REFUSAL))
     else cb(null, true)
   },
   // Browser schicken Dateinamen als UTF-8. Mit dem Standard latin1 zerfiel „Müll.pdf“ zu
@@ -324,12 +329,31 @@ const checkPageSizes = (req: Request, res: Response, next: NextFunction): void =
   if (file) fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
 }
-const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, inRequest]
+// Eine XML-Datei als Beleg (#189) bleibt nur liegen, wenn sie eine E-Rechnung ist. multer entscheidet vor dem Schreiben
+// ohne Inhalt; hier wird der Inhalt gelesen und alles andere wieder gelöscht, bevor eine Zeile in `uploads` entsteht.
+async function checkXmlReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const file = storedUpload(req.file ?? filesOf(req).file?.[0])
+  if (!file || path.extname(file.filename).toLowerCase() !== '.xml') return next()
+  // Lässt sich die Datei nicht lesen, bleibt sie nicht ohne Zeile im Ordner liegen
+  const content = await fs.promises.readFile(file.path).catch(() => null)
+  if (content !== null && isEInvoiceDocument(content)) return next()
+  fs.rmSync(file.path, { force: true })
+  res.status(400).json({ error: SCRIPT_REFUSAL })
+}
+const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, checkXmlReceipt, inRequest]
 
-// Die E-Rechnung aus dem PDF (#189), wenn der Browser eine mitgeschickt hat. `null`: keine mitgeschickt.
-const eInvoiceOf = (req: Request): EInvoiceResult | null => {
+// Die E-Rechnung zum Beleg (#189): die Datei selbst, wenn sie eine XML-Datei ist (PR 3), sonst das XML, das der Browser
+// aus dem PDF mitgeschickt hat. `null`: keine mitgeschickt.
+const isXmlDocument = (file: DocumentSource): boolean => path.extname(file.filename).toLowerCase() === '.xml'
+async function eInvoiceOf(req: Request, file: DocumentSource): Promise<EInvoiceResult | null> {
+  if (isXmlDocument(file)) return readEInvoice(await fs.promises.readFile(file.path))
   const xml = filesOf(req).eInvoiceXml?.[0]?.buffer
   return xml ? readEInvoice(xml) : null
+}
+// Eine XML-Datei, die Mietfuchs nicht übernimmt: Sie bleibt gespeichert, die KI liest kein XML. Der Grund steht im Satz.
+function notTaken(file: DocumentSource, e: EInvoiceResult | null, stats: AskStats[]): AiFailure & { stats: AskStats[] } {
+  const reason = e?.kind === 'refused' ? e.reason : 'Die Datei ließ sich nicht als E-Rechnung lesen.'
+  return { file: file.filename, error: `Die E-Rechnung wird nicht übernommen. ${reason}`, reason: 'e-invoice', kept: true, eInvoiceRefusal: reason, stats }
 }
 const refusalOf = (e: EInvoiceResult | null): { eInvoiceRefusal?: string } => (e?.kind === 'refused' ? { eInvoiceRefusal: e.reason } : {})
 const uploadedFile = (req: Request): StoredUpload | null => storedUpload(filesOf(req).file?.[0])
@@ -1909,7 +1933,7 @@ async function recordNewUpload(req: Request, file: StoredUpload): Promise<void> 
   const row: UploadRow = {
     file: file.filename,
     originalName: file.originalname.normalize('NFC'),
-    mimeType: file.mimetype || mimeTypeOf(file.filename),
+    mimeType: storedTypeOf(file.filename, file.mimetype),
     size: file.size,
     sha256: await hashFile(file.path),
     uploadedAt: uploadedAtOf(file.filename, new Date()),
@@ -1939,7 +1963,7 @@ async function recordOrRefuse(req: Request, res: Response, file: StoredUpload): 
   }
 }
 
-app.post('/api/upload', upload.single('file'), inRequest, async (req, res) => {
+app.post('/api/upload', upload.single('file'), checkXmlReceipt, inRequest, async (req, res) => {
   const file = storedUpload(req.file)
   if (!file) return res.status(400).json({ error: 'Keine Datei' })
   if (!(await recordOrRefuse(req, res, file))) return
@@ -2236,6 +2260,21 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
   }
 }
 
+// Die Rechnungsansicht einer E-Rechnung als XML-Datei (#189, PR 3): das gelesene Modell als JSON, die Oberfläche zeigt es
+// lesbar. Die Datei selbst geht unter /uploads nur als Download hinaus (uploads.ts). Gelesen wird nur ein reiner
+// Dateiname im Belegordner.
+app.get('/api/e-invoice/:file', async (req, res) => {
+  // Wie PUT und DELETE /api/uploads/:file: der Pfad nur aus dem reinen Dateinamen (CodeQL js/path-injection)
+  const name = path.basename(req.params.file)
+  const full = path.join(UPLOAD_DIR, name)
+  if (name !== req.params.file || name === '.' || name === '..' || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
+    return res.status(404).json({ error: 'Diesen Beleg gibt es unter „Belege“ nicht (mehr).' })
+  }
+  const view = path.extname(name).toLowerCase() === '.xml' ? viewEInvoice(await fs.promises.readFile(full)) : null
+  if (!view) return res.status(415).json({ error: 'Dieser Beleg ist keine E-Rechnung als XML-Datei.' })
+  res.json(view)
+})
+
 // Nur Rechnungen. Die Oberfläche nutzt die Route seit #490 nicht mehr (Schnellerfassung und Kosten werten über
 // /api/intake aus); sie bleibt für Tabs aus älteren Fassungen und wird später entfernt.
 app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
@@ -2243,12 +2282,14 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   if (!file) return
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
-  const eInvoice = eInvoiceOf(req)
+  let eInvoice: EInvoiceResult | null = null
   try {
+    eInvoice = await eInvoiceOf(req, file)
     if (eInvoice?.kind === 'read') {
       const { extraction, assessment } = await takeEInvoice(req, file, eInvoice, signal)
       return answer.done({ file: file.filename, extraction, assessment, stats })
     }
+    if (isXmlDocument(file)) return answer.fail(notTaken(file, eInvoice, stats))
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     await rememberInvoiceDate(file.filename, result.invoiceDate)
     const assessment = await rememberAssessment(req, file, result, signal, refusedOrigin(eInvoice))
@@ -2280,13 +2321,15 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
   let meterPhoto = false
-  const eInvoice = eInvoiceOf(req)
+  let eInvoice: EInvoiceResult | null = null
   try {
+    eInvoice = await eInvoiceOf(req, file)
     if (eInvoice?.kind === 'read') {
       await unmarkMeterPhoto(req, file.filename)
       const { extraction, assessment } = await takeEInvoice(req, file, eInvoice, signal)
       return answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
+    if (isXmlDocument(file)) return answer.fail(notTaken(file, eInvoice, stats))
     const settings = effectiveSettings()
     const material = { ...aiInput(req), signal, stats, onProgress }
     // Sagt der Browser, dass es eine Rechnung ist (Seite Kosten, „Als Rechnung auswerten“; #490), fragt der Server das
