@@ -12,8 +12,12 @@ import { fileURLToPath } from 'node:url'
 import { detectEInvoice } from '../src/eInvoice/detect.ts'
 import { readModel } from '../src/eInvoice/read.ts'
 import { checkEInvoice } from '../src/eInvoice/check.ts'
+import { toRawExtraction } from '../src/eInvoice/toRaw.ts'
+import { readEInvoice, type EInvoiceResult } from '../src/eInvoice/index.ts'
+import { normalizeAmounts } from '../src/invoiceAmounts.ts'
+import { toExtraction } from '../src/extract.ts'
 import type { EInvoice, EInvoiceSyntax } from '../src/eInvoice/model.ts'
-import { ciiOf, consistent, docCharge, invoice, line, S7, ublOf } from '../testing/eInvoiceXml.ts'
+import { ciiOf, consistent, docCharge, invoice, line, S7, ublOf, vat, xmlOf } from '../testing/eInvoiceXml.ts'
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'e-invoice')
 const fixture = (name: string) => fs.readFileSync(path.join(FIXTURES, name), 'utf8')
@@ -287,4 +291,222 @@ test('E-Rechnung prüfen: Abzug mit Bezug auf eine Vorgängerrechnung', () => {
   assert.ok(byReference.some((n) => /zieht 200,00\s€ für „Verrechnung“ ab/.test(n)))
   // Eine negative Position ohne Abschlagstext und ohne Bezug ist nur eine Gutschriftzeile.
   assert.deepEqual(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-2500, 'Altteil', { id: '2' })] })), [])
+})
+
+// ---------- Abbilden: Brutto je Position ----------
+
+type Pos = { description: string, amountEur: number, labor35aEur: number | null }
+const positionsOf = (inv: EInvoice): Pos[] => {
+  const { raw } = toRawExtraction(inv)
+  if (!Array.isArray(raw.positions)) return assert.fail('keine Positionen')
+  return raw.positions as Pos[]
+}
+const centsOf = (inv: EInvoice) => positionsOf(inv).map((p) => Math.round(p.amountEur * 100))
+const totalOf = (inv: EInvoice) => inv.totals.taxInclusive ?? assert.fail('BT-112 fehlt')
+
+test('E-Rechnung abbilden: Kopf und eine Position 100,00 netto zu 19 %', () => {
+  const inv = invoice({ periodStart: '2025-01-01', periodEnd: '2025-12-31' })
+  const { raw } = toRawExtraction(inv)
+  assert.deepEqual(raw, {
+    vendor: 'Haustechnik Beispiel GmbH', invoiceDate: '2025-03-14', periodStart: '2025-01-01', periodEnd: '2025-12-31',
+    totalGrossEur: 119, positions: [{ description: 'Wartung Heizung', amountEur: 119, labor35aEur: null }],
+  })
+})
+
+test('E-Rechnung abbilden: ohne Rechnungszeitraum gilt das Lieferdatum als Zeitraum', () => {
+  const { raw } = toRawExtraction(invoice())
+  assert.equal(raw.periodStart, '2025-03-10')
+  assert.equal(raw.periodEnd, '2025-03-10')
+  const { raw: none } = toRawExtraction(invoice({ deliveryDate: null }))
+  assert.equal(none.periodStart, null)
+  assert.equal(none.periodEnd, null)
+})
+
+test('E-Rechnung abbilden: Beschreibung aus Name und abweichender Beschreibung', () => {
+  assert.equal(positionsOf(invoice({ lines: [line(10000, 'Wartung', { description: 'Gastherme, jährlich' })] }))[0].description, 'Wartung - Gastherme, jährlich')
+  assert.equal(positionsOf(invoice({ lines: [line(10000, 'Wartung', { description: 'Wartung' })] }))[0].description, 'Wartung')
+  assert.equal(positionsOf(invoice({ lines: [line(10000, 'x'.repeat(300))] }))[0].description.length, 200)
+})
+
+test('E-Rechnung abbilden: zwei Steuersätze, Zuschlag nur in seiner Gruppe', () => {
+  const inv = invoice({
+    lines: [line(10000, 'Wartung', { id: '1' }), line(5000, 'Streusalz', { id: '2', vat: S7 })],
+    charges: [docCharge(true, 1000, 'Anfahrt pauschal')],
+  })
+  assert.deepEqual(centsOf(inv), [13090, 5350])
+  assert.equal(centsOf(inv).reduce((a, b) => a + b, 0), totalOf(inv))
+})
+
+test('E-Rechnung abbilden: eine Gruppe nur aus einem Zuschlag wird eine eigene Position', () => {
+  const inv = invoice({ charges: [docCharge(true, 1000, 'Verpackung', S7)] })
+  const ps = positionsOf(inv)
+  assert.deepEqual(ps.map((p) => [p.description, p.amountEur]), [['Wartung Heizung', 119], ['Verpackung', 10.7]])
+  assert.equal(Math.round(ps.reduce((a, p) => a + p.amountEur * 100, 0)), totalOf(inv))
+})
+
+test('E-Rechnung abbilden: Gutschrift in UBL und CII mit negativen Beträgen', () => {
+  for (const syntax of ['ubl-credit-note', 'cii'] as const) {
+    const inv = invoice({ syntax, typeCode: '381' })
+    const { raw } = toRawExtraction(inv)
+    assert.equal(raw.totalGrossEur, -119, syntax)
+    assert.deepEqual(centsOf(inv), [-11900], syntax)
+  }
+})
+
+test('E-Rechnung abbilden: KoSIT 03.06a, negative Position bleibt negativ, Summe stimmt', () => {
+  const inv = readModel(fixture('03.06a-INVOICE_ubl.xml'), 'ubl-invoice')
+  assert.deepEqual(centsOf(inv), [119000, 11900, -10000, 59500])
+})
+
+test('E-Rechnung abbilden: normalizeAmounts verändert nichts, toExtraction behält jede Position', () => {
+  const inv = invoice({ lines: [line(10000, 'Arbeitszeit', { id: '1', unitCode: 'HUR' }), line(5000, 'Material', { id: '2' })] })
+  const { raw } = toRawExtraction(inv)
+  const normalized = normalizeAmounts(raw, '2025-06-01')
+  assert.deepEqual(normalized, raw)
+  assert.equal(normalized.amountsAdjusted, undefined)
+  assert.equal(normalized.laborFromTotal, undefined)
+  assert.equal(toExtraction(normalized).positions?.length, 2)
+})
+
+// ---------- Abbilden: §35a-Lohnanteil, nie geschätzt ----------
+
+const laborOf = (inv: EInvoice) => {
+  const { laborGuessed } = toRawExtraction(inv)
+  return positionsOf(inv).map((p, i) => [p.labor35aEur, laborGuessed[i]])
+}
+
+test('E-Rechnung Lohnanteil: Stunden zu 19 % als Vorschlag, brutto', () => {
+  assert.deepEqual(laborOf(invoice({ lines: [line(11000, 'Fehlersuche', { unitCode: 'HUR' })] })), [[130.9, true]])
+  assert.deepEqual(laborOf(invoice({ lines: [line(3000, 'Kleinreparatur', { unitCode: 'MIN' })] })), [[35.7, true]])
+})
+
+test('E-Rechnung Lohnanteil: ein Zuschlag auf Dokumentebene fließt nicht ein', () => {
+  const inv = invoice({ lines: [line(11000, 'Fehlersuche', { unitCode: 'HUR' })], charges: [docCharge(true, 2000, 'Entsorgung')] })
+  assert.deepEqual(laborOf(inv), [[130.9, true]])
+  assert.equal(positionsOf(inv)[0].amountEur, 154.7)
+})
+
+test('E-Rechnung Lohnanteil: ein Abschlag auf Dokumentebene mindert ihn anteilig', () => {
+  const inv = invoice({
+    lines: [line(10000, 'Arbeitszeit', { id: '1', unitCode: 'HUR' }), line(10000, 'Thermostatkopf', { id: '2' })],
+    charges: [docCharge(false, 2000, 'Rabatt')],
+  })
+  // Abschlag 20,00 netto auf 200,00: der Arbeit fallen 10,00 netto zu, brutto 11,90.
+  assert.deepEqual(laborOf(inv), [[107.1, true], [null, false]])
+})
+
+test('E-Rechnung Lohnanteil: Bezeichnungen, die Arbeit nennen, und solche, die es nicht tun', () => {
+  const one = (name: string, unitCode: string | null = 'C62') => laborOf(invoice({ lines: [line(5000, name, { unitCode })] }))[0][1]
+  assert.equal(one('Anfahrtspauschale'), true)
+  assert.equal(one('Fahrtkosten'), true)
+  assert.equal(one('Arbeitslohn Geselle'), true)
+  assert.equal(one('Monteurstunde'), true)
+  assert.equal(one('Maschinenstunde Hubsteiger'), true)
+  assert.equal(one('Stundensatz inkl. Material', 'HUR'), false)
+  assert.equal(one('Gutachten Feuchteschaden', 'HUR'), false)
+  assert.equal(one('Gerätemiete', 'HUR'), false)
+  assert.equal(one('Kupferrohr 15 mm', 'MTR'), false)
+  assert.equal(one('Arbeitspreis Strom', 'KWH'), false)
+  // Versorger rechnen den Grundpreis in Tagen ab (KoSIT 03.01a); ein Tag ist keine Arbeitszeit.
+  assert.equal(one('Grundpreis Strom', 'DAY'), false)
+})
+
+test('E-Rechnung Lohnanteil: keine Vorschläge für negative Positionen und Gutschriften', () => {
+  assert.deepEqual(laborOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-5000, 'Arbeitszeit Gutschrift', { id: '2', unitCode: 'HUR' })] }))[1], [null, false])
+  assert.deepEqual(laborOf(invoice({ syntax: 'ubl-credit-note', typeCode: '381', lines: [line(5000, 'Arbeitszeit', { unitCode: 'HUR' })] })), [[null, false]])
+})
+
+test('E-Rechnung Lohnanteil: KoSIT 03.01a schlägt beim Versorger nichts vor', () => {
+  const inv = readModel(fixture('03.01a-INVOICE_ubl.xml'), 'ubl-invoice')
+  assert.deepEqual(toRawExtraction(inv).laborGuessed.filter(Boolean), [])
+})
+
+// ---------- Invariante über zufällige Rechnungen ----------
+
+// mulberry32 wie in period.test.ts: klein, mit festem Startwert reproduzierbar.
+function rng(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function randomInvoice(seed: number): EInvoice {
+  const r = rng(seed)
+  const int = (lo: number, hi: number) => lo + Math.floor(r() * (hi - lo + 1))
+  const rates = [vat('S', 19), vat('S', 7), vat('Z', 0)]
+  const names = ['Arbeitszeit', 'Material', 'Anfahrt', 'Wartung', 'Ersatzteil', 'Entsorgung']
+  const lines = Array.from({ length: int(1, 8) }, (_, i) => line(
+    r() < 0.15 ? -int(1, 50000) : int(1, 500000),
+    names[int(0, names.length - 1)],
+    { id: String(i + 1), unitCode: r() < 0.3 ? 'HUR' : 'C62', vat: rates[int(0, 2)] },
+  ))
+  // Ein Abschlag bleibt unter einem Zehntel des Nettos seiner Gruppe; größer kehrte er das
+  // Vorzeichen der Gruppe um, und keine Verteilung könnte dann jedes Vorzeichen halten.
+  const netByGroup = (v: typeof rates[number]) => lines.filter((l) => l.vat === v).reduce((s, l) => s + l.netCents, 0)
+  const charges = Array.from({ length: int(0, 2) }, () => {
+    const v = rates[int(0, 2)]
+    const room = Math.floor(netByGroup(v) / 20)
+    const hasLines = lines.some((l) => l.vat === v)
+    if (hasLines && netByGroup(v) <= 0) return null
+    return r() < 0.5 || room < 1 ? docCharge(true, int(1, 10000), 'Zuschlag', v) : docCharge(false, int(1, room), 'Rabatt', v)
+  }).filter((c) => c !== null)
+  return invoice({ syntax: r() < 0.2 ? 'ubl-credit-note' : r() < 0.5 ? 'cii' : 'ubl-invoice', typeCode: '380', lines, charges })
+}
+
+test('E-Rechnung Invariante: Summe = BT-112, kein Vorzeichenwechsel, Lohn in [0, Betrag] (Startwerte 1 bis 300)', () => {
+  for (let seed = 1; seed <= 300; seed++) {
+    const inv0 = randomInvoice(seed)
+    const inv = inv0.syntax === 'ubl-credit-note' ? { ...inv0, typeCode: '381' } : inv0
+    const sign = inv.syntax === 'ubl-credit-note' || inv.typeCode === '381' ? -1 : 1
+    const ps = positionsOf(inv)
+    const cents = ps.map((p) => Math.round(p.amountEur * 100))
+    assert.equal(cents.reduce((a, b) => a + b, 0), sign * totalOf(inv), `Startwert ${seed}: Summe`)
+    inv.lines.forEach((l, i) => {
+      if (l.netCents !== 0) assert.ok(Math.sign(cents[i]) === sign * Math.sign(l.netCents) || cents[i] === 0, `Startwert ${seed}: Vorzeichen Position ${i + 1}`)
+    })
+    ps.forEach((p, i) => {
+      if (p.labor35aEur !== null) assert.ok(p.labor35aEur >= 0 && Math.round(p.labor35aEur * 100) <= cents[i], `Startwert ${seed}: Lohn Position ${i + 1}: ${p.labor35aEur} zu ${cents[i]}`)
+    })
+    assert.equal(toExtraction(normalizeAmounts(toRawExtraction(inv).raw, '2025-06-01')).positions?.length, ps.length, `Startwert ${seed}: Positionen`)
+  }
+})
+
+// ---------- Eingang ----------
+
+const readOf = (r: EInvoiceResult) => (r.kind === 'read' ? r : assert.fail(`nicht gelesen: ${JSON.stringify(r)}`))
+
+test('E-Rechnung Eingang: jede KoSIT-Datei wird gelesen, Positionen ergeben BT-112', () => {
+  for (const [file, total] of [['03.06a-INVOICE_ubl.xml', 180400], ['03.06a-INVOICE_uncefact.xml', 180400], ['03.01a-INVOICE_ubl.xml', 80486], ['03.01a-INVOICE_uncefact.xml', 80486], ['02.03a-INVOICE_ubl.xml', 1282969], ['01.18a-INVOICE_ubl.xml', 1055530]] as const) {
+    const r = readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, file))))
+    const ps = Array.isArray(r.raw.positions) ? r.raw.positions as Pos[] : assert.fail('keine Positionen')
+    assert.equal(Math.round(ps.reduce((a, p) => a + p.amountEur * 100, 0)), total, file)
+    assert.equal(r.laborGuessed.length, ps.length, file)
+  }
+})
+
+test('E-Rechnung Eingang: Rechnungsnummer und Notizen kommen mit', () => {
+  const r = readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, '03.01a-INVOICE_ubl.xml'))))
+  assert.equal(r.invoiceNumber, '123456789')
+  assert.equal(r.notes.length, 1)
+  assert.match(r.notes[0], /Abschläge über 1\.030,00\s€ sind bereits bezahlt/)
+  assert.match(readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, '01.18a-INVOICE_ubl.xml')))).notes[0], /korrigiert die Rechnung PRG1502168/)
+})
+
+test('E-Rechnung Eingang: anderes XML ist keine E-Rechnung', () => {
+  assert.deepEqual(readEInvoice(fs.readFileSync(path.join(path.dirname(FIXTURES), 'camt', fs.readdirSync(path.join(path.dirname(FIXTURES), 'camt')).find((f) => f.endsWith('.xml')) ?? assert.fail('kein camt-Beispiel')))), { kind: 'none' })
+  assert.deepEqual(readEInvoice(Buffer.from('kein XML')), { kind: 'none' })
+})
+
+test('E-Rechnung Eingang: abgelehnt werden MINIMUM, Abschlagsrechnung und Übergröße', () => {
+  const minimum = Buffer.from(ciiOf({ ...invoice(), syntax: 'cii' }).replace(/<ram:ID>urn:cen\.eu[^<]*<\/ram:ID>/, '<ram:ID>urn:factur-x.eu:1p0:minimum</ram:ID>'))
+  assert.equal(readEInvoice(minimum).kind, 'refused')
+  assert.equal(readEInvoice(Buffer.from(xmlOf(invoice({ typeCode: '386' })))).kind, 'refused')
+  const big = Buffer.concat([Buffer.from(xmlOf(invoice())), Buffer.alloc(10 * 1024 * 1024, 0x20)])
+  const r = readEInvoice(big)
+  assert.ok(r.kind === 'refused' && /10 MB/.test(r.reason))
 })
