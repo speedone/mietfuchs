@@ -55,3 +55,29 @@ test('der Kasten nennt Empfänger, IBAN, Betrag und Verwendungszweck', () => {
   expect(text).toContain('40,00 €')
   expect(text).toContain('Erika, EG')
 })
+
+// Rückmeldung zum Satz (#624): Die Angaben neben dem Code standen ohne Beschriftung untereinander, der Code rückte durch
+// seine weiße Ruhezone sichtbar ein. Jetzt beschriftet wie der Informationsblock des Briefs, und die Ruhezone ist immer
+// ein Zehntel der Kante, damit letter.css sie mit einem festen Maß in den Rand schieben kann (Code bündig mit dem Text).
+test('Angaben beschriftet: Empfänger, IBAN, Betrag, Verwendungszweck', () => {
+  const payload = epcPayload({ name: 'Max Vermieter', iban: 'DE02120300000000202051', amountCents: 4000, purpose: 'Erika, EG' }) ?? ''
+  render(<PaymentQr data={{ payload, name: 'Max Vermieter', iban: 'DE02 1203 0000 0000 2020 51', amountCents: 4000, purpose: 'Erika, EG' }} />)
+  const rows = [...document.querySelectorAll('.payment-qr-facts dt')].map((dt) => `${dt.textContent}=${dt.nextElementSibling?.textContent?.replace(/\u00A0/g, ' ')}`)
+  expect(rows).toEqual(['Empfänger=Max Vermieter', 'IBAN=DE02 1203 0000 0000 2020 51', 'Betrag=40,00 €', 'Verwendungszweck=Erika, EG'])
+  cleanup()
+  render(<PaymentQr data={{ payload, name: 'Max Vermieter', iban: 'DE02 1203 0000 0000 2020 51', amountCents: 4000, purpose: '' }} />)
+  expect([...document.querySelectorAll('.payment-qr-facts dt')].map((dt) => dt.textContent)).toEqual(['Empfänger', 'IBAN', 'Betrag'])
+})
+
+test('die Ruhezone ist ein Zehntel der Kante, mindestens vier Module', () => {
+  for (const purpose of ['', 'ü'.repeat(70)]) {
+    const payload = epcPayload({ name: 'Max Vermieter', iban: 'DE02120300000000202051', amountCents: 4000, purpose }) ?? ''
+    render(<PaymentQr data={{ payload, name: 'Max Vermieter', iban: 'DE02', amountCents: 4000, purpose }} />)
+    const [x, , w] = (screen.getByRole('img').getAttribute('viewBox') ?? '').split(' ').map(Number)
+    const size = qrMatrix(payload).size
+    expect(-x).toBeGreaterThanOrEqual(4)
+    expect(-x / w).toBeCloseTo(0.1, 6)
+    expect(w).toBeCloseTo(size - 2 * x, 6)
+    cleanup()
+  }
+})

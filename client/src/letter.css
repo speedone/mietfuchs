@@ -188,27 +188,46 @@
   .statement-footnote { margin-top: 3mm; padding-top: 1mm; border-top: 0.2mm solid var(--line); font-size: 7.5pt; color: var(--text); }
 }
 
-/* Zahlungs-QR-Code bei Nachzahlung (#624): links der Code mit 30 mm Kante samt Ruhezone, rechts klein sein Inhalt.
-   Der weiße Grund steht im SVG selbst (fest Schwarz auf Weiß, auch im dunklen Modus, sonst lesen Apps ihn nicht); nie über einen Seitenumbruch geteilt. */
+/* Zahlungs-QR-Code bei Nachzahlung (#624): links der Code, rechts sein Inhalt, beschriftet wie der Informationsblock.
+   Der weiße Grund steht im SVG selbst (fest Schwarz auf Weiß, auch im dunklen Modus, sonst lesen Apps ihn nicht); nie
+   über einen Seitenumbruch geteilt. Die Ruhezone ist immer ein Zehntel der Kante (PaymentQr.tsx): Der negative Rand
+   von 3,3 mm bei 33 mm Kante schiebt sie nach links und oben aus dem Satzspiegel, der sichtbare Code (26,4 mm) steht
+   bündig mit dem Fließtext und oben auf der Höhe der ersten Textzeile; rechts trennt sie Code und Text. */
 .payment-qr {
   display: flex;
   align-items: flex-start;
-  gap: 4mm;
-  margin: 2mm 0 3mm;
+  gap: 1.7mm;
+  margin: 1mm 0 4mm;
   break-inside: avoid;
   page-break-inside: avoid;
 }
 .payment-qr-code {
-  width: 30mm;
-  height: 30mm;
+  width: 33mm;
+  height: 33mm;
+  margin: -3.3mm 0 -3.3mm -3.3mm;
   flex: none;
 }
 .payment-qr-text {
+  min-width: 0;
   font-size: 9pt;
   line-height: 1.35;
-  overflow-wrap: anywhere;
 }
 .payment-qr-hint {
-  font-weight: 600;
-  margin-bottom: 1mm;
+  font-weight: var(--weight-bold);
+  margin-bottom: 1.5mm;
+}
+.payment-qr-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.5mm 3mm;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.payment-qr-facts dt { color: var(--muted); }
+.payment-qr-facts dd { margin: 0; }
+@media print { .payment-qr-facts dt { color: var(--text); font-size: 7.5pt; align-self: baseline; } .payment-qr-facts dd { align-self: baseline; } }
+/* Am Handy bleibt neben dem Code rund ein halbes Fenster: Beschriftung über dem Wert wie im Ergebniskasten (Durchsicht) */
+@media screen and (max-width: 640px) {
+  .payment-qr-facts { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .payment-qr-facts dd { margin-bottom: var(--space-1); }
 }

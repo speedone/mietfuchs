@@ -102,3 +102,11 @@ test('im Druck ist das Dokument in WebKit so breit wie die Seite ohne Rand, sons
 test('der Informationsblock bricht lange Angaben um, statt über den Rand zu ragen', () => {
   expect(css).toMatch(/\.letter-info \{[^}]*overflow-wrap: anywhere/)
 })
+
+// Zahlungs-QR-Code (#624, Durchsicht zum Satz): Am Handy bleibt neben dem Code rund ein halbes Fenster; zwei Spalten mit
+// „Verwendungszweck“ ließen dem Wert wenige Pixel, und IBAN und Zweck brachen fast je Zeichen um. Bis 640 px steht die
+// Beschriftung über dem Wert wie im Ergebniskasten; der Druck bleibt zweispaltig.
+test('Zahlungs-QR am Handy: Beschriftung über dem Wert', () => {
+  const phone = [...css.matchAll(/@media screen and \(max-width: 640px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '').join('\n')
+  expect(phone).toMatch(/\.payment-qr-facts \{[^}]*grid-template-columns: minmax\(0, 1fr\)/)
+})
