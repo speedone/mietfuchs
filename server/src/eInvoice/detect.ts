@@ -7,7 +7,7 @@
 // MINIMUM und BASIC WL und ZUGFeRD 1.0: Sie gelten nicht als E-Rechnung (UStAE 14.1 Abs. 14), und
 // MINIMUM und BASIC WL tragen keine Positionen. Ein solches PDF geht den bisherigen Weg.
 
-import { at, attr, isNode, makeParser, refuseUnsafe, text } from '../xml.ts'
+import { at, attr, isNode, makeParser, refuseUnsafe, text, tryParse } from '../xml.ts'
 import type { EInvoiceSyntax, Refusal } from './model.ts'
 
 export const E_INVOICE_MAX_BYTES = 10 * 1024 * 1024
@@ -18,12 +18,14 @@ const ROOTS: Record<string, { local: string, syntax: EInvoiceSyntax }> = {
   'urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100': { local: 'CrossIndustryInvoice', syntax: 'cii' },
 }
 const ZUGFERD_1 = 'urn:ferd:CrossIndustryDocument:invoice:1p0'
+const UNPARSABLE = 'Die Datei ließ sich nicht als XML lesen (zu tief verschachtelt oder mit unzulässigen Namen).'
 const NO_POSITIONS = ['urn:factur-x.eu:1p0:minimum', 'urn:factur-x.eu:1p0:basicwl']
 
 // Wurzel und ihr Namensraum. Dafür wird mit Präfixen gelesen, denn ohne sie verwirft der Parser
 // auch die `xmlns`-Angaben.
-function rootOf(xml: string): { local: string, namespace: string | null } | null {
-  const doc: unknown = makeParser({ keepPrefixes: true }).parse(xml)
+function rootOf(xml: string): { local: string, namespace: string | null } | 'unparsable' | null {
+  const doc = tryParse(makeParser({ keepPrefixes: true }), xml)
+  if (doc === undefined) return 'unparsable'
   if (!isNode(doc)) return null
   const name = Object.keys(doc).find((k) => !k.startsWith('?') && !k.startsWith('#'))
   if (name === undefined) return null
@@ -39,11 +41,14 @@ export function detectEInvoice(xml: string): { syntax: EInvoiceSyntax, profile: 
   if (unsafe === 'doctype') return { refused: 'Die Datei enthält eine Dokumenttyp-Erklärung. Eine E-Rechnung braucht keine, deshalb liest Mietfuchs sie nicht.' }
   if (unsafe === 'incomplete') return { refused: 'Die Datei ist kein vollständiges XML; vielleicht wurde sie beim Herunterladen abgeschnitten.' }
   const root = rootOf(xml)
+  if (root === 'unparsable') return { refused: UNPARSABLE }
   if (!root || root.namespace === null) return null
   if (root.namespace === ZUGFERD_1) return { refused: 'Die Rechnung ist im veralteten Format ZUGFeRD 1.0 geschrieben, das nicht als E-Rechnung gilt. Mietfuchs liest sie wie ein gewöhnliches PDF.' }
   const known = ROOTS[root.namespace]
   if (!known || known.local !== root.local) return null
-  const body = at(makeParser({ keepPrefixes: false }).parse(xml), known.local)
+  const parsed = tryParse(makeParser({ keepPrefixes: false }), xml)
+  if (parsed === undefined) return { refused: UNPARSABLE }
+  const body = at(parsed, known.local)
   const profile = text(known.syntax === 'cii'
     ? at(body, 'ExchangedDocumentContext', 'GuidelineSpecifiedDocumentContextParameter', 'ID')
     : at(body, 'CustomizationID'))

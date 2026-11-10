@@ -19,7 +19,8 @@ import type { EInvoice } from './model.ts'
 
 const TAKEN = new Set(['380', '381', '384', '875', '876', '877'])
 const ADVANCE = new Set(['386', '326'])
-const ADVANCE_TEXT = /abschlag|anzahlung|vorauszahlung|bereits (gezahlt|bezahlt)/i
+// „Abschlag“ heißt auch Nachlass (Mengenabschlag, Preisabschlag); gemeint ist hier nur die Abschlagszahlung.
+const ADVANCE_TEXT = /\babschlag\b|abschlagsrechnung|abschlagszahlung|anzahlung|vorauszahlung|bereits (gezahlt|bezahlt)/i
 const SLACK_CENTS = 1
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
@@ -58,7 +59,7 @@ function deductionNotes(inv: EInvoice): string[] {
   const referenced = inv.precedingInvoice !== null
   const deductions = [
     ...inv.lines.filter((l) => l.netCents < 0).map((l) => ({ cents: -l.netCents, label: l.name })),
-    ...inv.charges.filter((c) => !c.charge && c.cents > 0).map((c) => ({ cents: c.cents, label: c.reason ?? 'Abschlag' })),
+    ...inv.charges.filter((c) => !c.charge && c.cents > 0).map((c) => ({ cents: c.cents, label: c.reason ?? 'Nachlass' })),
   ]
   return deductions
     .filter((d) => referenced || ADVANCE_TEXT.test(d.label))

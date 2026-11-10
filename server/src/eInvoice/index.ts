@@ -18,7 +18,16 @@ export type EInvoiceResult =
   | { kind: 'refused', reason: string }
   | { kind: 'read', raw: RawExtraction, laborGuessed: boolean[], notes: string[], invoiceNumber: string | null }
 
+// Wirft nie: Eine Datei von außen ist im schlimmsten Fall „nicht übernommen“.
 export function readEInvoice(data: Buffer): EInvoiceResult {
+  try {
+    return readUnguarded(data)
+  } catch {
+    return { kind: 'refused', reason: 'Die E-Rechnung ließ sich nicht lesen.' }
+  }
+}
+
+function readUnguarded(data: Buffer): EInvoiceResult {
   if (data.length > E_INVOICE_MAX_BYTES) return { kind: 'refused', reason: 'Die E-Rechnung ist größer als 10 MB; Mietfuchs liest sie nicht.' }
   const decoded = decodeXml(data)
   if ('problem' in decoded) return { kind: 'none' }

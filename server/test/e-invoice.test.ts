@@ -296,10 +296,12 @@ test('E-Rechnung prüfen: Abzug mit Bezug auf eine Vorgängerrechnung', () => {
 // ---------- Abbilden: Brutto je Position ----------
 
 type Pos = { description: string, amountEur: number, labor35aEur: number | null }
+const isPos = (p: unknown): p is Pos => typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).description === 'string'
+  && typeof (p as Record<string, unknown>).amountEur === 'number'
 const positionsOf = (inv: EInvoice): Pos[] => {
   const { raw } = toRawExtraction(inv)
   if (!Array.isArray(raw.positions)) return assert.fail('keine Positionen')
-  return raw.positions as Pos[]
+  return raw.positions.map((p) => (isPos(p) ? p : assert.fail(`keine Position: ${JSON.stringify(p)}`)))
 }
 const centsOf = (inv: EInvoice) => positionsOf(inv).map((p) => Math.round(p.amountEur * 100))
 const totalOf = (inv: EInvoice) => inv.totals.taxInclusive ?? assert.fail('BT-112 fehlt')
@@ -483,7 +485,7 @@ const readOf = (r: EInvoiceResult) => (r.kind === 'read' ? r : assert.fail(`nich
 test('E-Rechnung Eingang: jede KoSIT-Datei wird gelesen, Positionen ergeben BT-112', () => {
   for (const [file, total] of [['03.06a-INVOICE_ubl.xml', 180400], ['03.06a-INVOICE_uncefact.xml', 180400], ['03.01a-INVOICE_ubl.xml', 80486], ['03.01a-INVOICE_uncefact.xml', 80486], ['02.03a-INVOICE_ubl.xml', 1282969], ['01.18a-INVOICE_ubl.xml', 1055530]] as const) {
     const r = readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, file))))
-    const ps = Array.isArray(r.raw.positions) ? r.raw.positions as Pos[] : assert.fail('keine Positionen')
+    const ps = Array.isArray(r.raw.positions) ? r.raw.positions.filter(isPos) : assert.fail('keine Positionen')
     assert.equal(Math.round(ps.reduce((a, p) => a + p.amountEur * 100, 0)), total, file)
     assert.equal(r.laborGuessed.length, ps.length, file)
   }
@@ -509,4 +511,34 @@ test('E-Rechnung Eingang: abgelehnt werden MINIMUM, Abschlagsrechnung und Überg
   const big = Buffer.concat([Buffer.from(xmlOf(invoice())), Buffer.alloc(10 * 1024 * 1024, 0x20)])
   const r = readEInvoice(big)
   assert.ok(r.kind === 'refused' && /10 MB/.test(r.reason))
+})
+
+// ---------- Durchsicht: Befunde ----------
+
+test('E-Rechnung Eingang: feindliches XML wird abgelehnt statt zu werfen (Verschachtelung, __proto__)', () => {
+  const deep = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">${'<a>'.repeat(200000)}${'</a>'.repeat(200000)}</Invoice>`
+  assert.equal(readEInvoice(Buffer.from(deep)).kind, 'refused')
+  const proto = '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"><__proto__>1</__proto__></Invoice>'
+  assert.equal(readEInvoice(Buffer.from(proto)).kind, 'refused')
+  assert.ok('refused' in (detectEInvoice('<__proto__ xmlns="urn:x"/>') ?? { refused: 'null ist auch recht' }))
+})
+
+test('E-Rechnung abbilden: Arbeit und Abzug, die sich aufheben, bleiben als Positionen sichtbar', () => {
+  const inv = invoice({ typeCode: '875', lines: [line(100000, 'Arbeitszeit', { id: '1', unitCode: 'HUR' }), line(-100000, 'abzgl. Abschlagsrechnung 1', { id: '2' })] })
+  assert.equal(totalOf(inv), 0)
+  assert.deepEqual(centsOf(inv), [119000, -119000])
+  assert.deepEqual(laborOf(inv)[0], [1190, true])
+})
+
+test('E-Rechnung abbilden: Zuschlag in einer Gruppe, deren Positionen sich aufheben, wird eigene Position', () => {
+  const inv = invoice({ lines: [line(5000, 'Leistung', { id: '1' }), line(-5000, 'Storno Leistung', { id: '2' })], charges: [docCharge(true, 1000, 'Verpackung')] })
+  assert.deepEqual(positionsOf(inv).map((p) => [p.description, Math.round(p.amountEur * 100)]), [['Leistung', 5950], ['Storno Leistung', -5950], ['Verpackung', 1190]])
+})
+
+test('E-Rechnung prüfen: ein gewöhnlicher Nachlass ist kein Abzug einer Abschlagsrechnung', () => {
+  assert.deepEqual(notesOf(invoice({ charges: [docCharge(false, 500, null)] })), [])
+  assert.deepEqual(notesOf(invoice({ charges: [docCharge(false, 500, 'Mengenabschlag')] })), [])
+  assert.deepEqual(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-500, 'Preisabschlag', { id: '2' })] })), [])
+  assert.equal(notesOf(invoice({ charges: [docCharge(false, 500, 'Abschlagszahlung vom 01.03.')] })).length, 1)
+  assert.equal(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-500, 'Anzahlung', { id: '2' })] })).length, 1)
 })

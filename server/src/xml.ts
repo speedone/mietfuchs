@@ -40,6 +40,17 @@ export function refuseUnsafe(xml: string): 'doctype' | 'incomplete' | null {
   return null
 }
 
+// Parsen, ohne zu werfen. fast-xml-parser wirft bei Dingen, die der Validator durchlässt: sehr tiefe
+// Verschachtelung und Namen wie `__proto__` (Schutz vor Prototyp-Verschmutzung). Für eine Datei von
+// außen heißt das nur „nicht lesbar“, nie einen Absturz der Anfrage.
+export function tryParse(parser: XMLParser, xml: string): unknown {
+  try {
+    return parser.parse(xml)
+  } catch {
+    return undefined
+  }
+}
+
 export const isNode = (v: unknown): v is XmlNode => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 // Ein Element, das einmal vorkommt, liest der Parser als Objekt, mehrfach als Liste.

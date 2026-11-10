@@ -10,7 +10,7 @@
 //   Buchungswährung nennen (BT-111); die zählt nicht.
 // - **Keine IBAN bei Lastschrift** (BT-81 = 59): Dann steht dort das Konto des Käufers.
 
-import { all, at, attr, isNode, makeParser, signedDecimalToCents, text } from '../xml.ts'
+import { all, at, attr, isNode, makeParser, signedDecimalToCents, text, tryParse } from '../xml.ts'
 import type { EInvoice, EInvoiceDocCharge, EInvoiceLine, EInvoiceSyntax, EInvoiceTotals, EInvoiceVatGroup, VatKey } from './model.ts'
 
 const DIRECT_DEBIT = '59'
@@ -221,8 +221,9 @@ function readCii(root: unknown): EInvoice {
 
 // Das Modell einer erkannten E-Rechnung (`detectEInvoice` hat Schreibweise und Sicherheit geprüft).
 export function readModel(xml: string, syntax: EInvoiceSyntax): EInvoice {
-  const doc: unknown = makeParser({ keepPrefixes: false }).parse(xml)
+  const doc = tryParse(makeParser({ keepPrefixes: false }), xml)
   const rootName = syntax === 'cii' ? 'CrossIndustryInvoice' : syntax === 'ubl-credit-note' ? 'CreditNote' : 'Invoice'
   const root = isNode(doc) ? at(doc, rootName) : undefined
-  return syntax === 'cii' ? readCii(root) : readUbl(root, syntax)
+  const inv = syntax === 'cii' ? readCii(root) : readUbl(root, syntax)
+  return doc === undefined ? { ...inv, unreadable: ['XML', ...inv.unreadable] } : inv
 }

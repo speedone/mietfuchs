@@ -78,14 +78,21 @@ export function toRawExtraction(inv: EInvoice): { raw: RawExtraction, laborGuess
   for (const [k, g] of groups) {
     const members = inv.lines.map((line, index) => ({ index, line })).filter((m) => keyOf(m.line.vat) === k)
     const gross = g.gross ?? Math.round(sum(members.map((m) => m.line.netCents)) * (10000 + g.vat.rateBasisPoints) / 10000)
-    const weightSum = sum(members.map((m) => m.line.netCents))
-    if (members.length === 0 || weightSum === 0) {
-      if (gross !== 0) {
-        const charges = inv.charges.filter((c) => keyOf(c.vat) === k)
-        const reasons = charges.map((c) => c.reason).filter((r) => r !== null)
-        extra.push({ description: reasons.length > 0 ? reasons.join(', ') : gross > 0 ? 'Zuschlag' : 'Abschlag', cents: gross })
-      }
-      members.forEach((m) => { amounts[m.index] = 0 })
+    const chargeOnly = (cents: number) => {
+      if (cents === 0) return
+      const reasons = inv.charges.filter((c) => keyOf(c.vat) === k).map((c) => c.reason).filter((r) => r !== null)
+      extra.push({ description: reasons.length > 0 ? reasons.join(', ') : cents > 0 ? 'Zuschlag' : 'Nachlass', cents })
+    }
+    if (members.length === 0) {
+      chargeOnly(gross)
+      continue
+    }
+    // Heben sich die Positionen einer Gruppe auf (Arbeit und Abzug einer Abschlagsrechnung) oder
+    // ist ihr Brutto 0, gibt es nichts anteilig zu verteilen: Jede Position bekommt ihr eigenes
+    // Brutto, und was die Gruppe darüber hinaus trägt, ist ein Zu- oder Abschlag für sich.
+    if (sum(members.map((m) => m.line.netCents)) === 0 || gross === 0) {
+      for (const m of members) amounts[m.index] = Math.round(m.line.netCents * (10000 + g.vat.rateBasisPoints) / 10000)
+      chargeOnly(gross - sum(members.map((m) => amounts[m.index])))
       continue
     }
     for (const [index, cents] of spread(gross, members, g.vat.rateBasisPoints)) amounts[index] = cents
