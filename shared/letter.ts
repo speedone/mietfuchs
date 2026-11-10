@@ -310,7 +310,7 @@ export function renderLetterText(text: string, print: { date: string; attachment
 // Absatz kostet eine Dreiviertelzeile Abstand, die Unterschrift zwei. Ein längerer Brief druckt weiter, nur
 // auf der zweiten Seite; die Oberfläche warnt dann.
 export const LETTER_PAGE_LINES = 33
-// #624: Der Kasten mit dem Zahlungs-QR-Code (30 mm) kostet rund acht Zeilen.
+// #624: Der Kasten mit dem Zahlungs-QR-Code (sichtbar 26,4 mm, mit Abständen 31 bis 38 mm) kostet rund acht Zeilen.
 export const PAYMENT_QR_LINES = 8
 export function exceedsOnePage(paragraphs: readonly string[], extraLines = 0): boolean {
   let lines = 2 + extraLines
