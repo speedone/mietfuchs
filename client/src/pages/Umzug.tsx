@@ -5,6 +5,8 @@ import Card from '../components/Card'
 import { NoticeBox } from '../components/Notice'
 import { useConfirm } from '../components/feedback'
 import { MOBILE_QUERY, useMediaQuery } from '../components/MobileNav'
+import RemoteCard from '../components/RemoteCard'
+import { remoteBridge, type RemoteBridge } from '../desktopRemote'
 import {
   adoptedText, candidateFacts, candidateProblem, folderBridge, progressText, rankCandidates, reloadWithArrival,
   type AdoptProgress, type AdoptResult, type Arrival, type RankedCandidate, type RelocationCandidate, type RelocationCandidates,
@@ -13,7 +15,8 @@ import {
 // Erster Start im Programmfenster (#517), genau einmal bei leerem Bestand: gefunden („Wir haben Ihre bisherigen
 // Mietfuchs-Daten gefunden“, Hauptknopf „Daten übernehmen“, klein „Nicht übernehmen, neu beginnen“ mit Rückfrage) oder
 // nicht („Willkommen bei Mietfuchs. Haben Sie Mietfuchs schon einmal benutzt?“, „Nein, neu beginnen“ ohne Rückfrage,
-// „Ja, Daten übernehmen“ zeigt Backup, Ordnerwahl und neue Suche). Von Hand aus den Einstellungen (`manual`) dieselben
+// „Ja, Daten übernehmen“ zeigt Backup, Ordnerwahl und neue Suche; im Fenster dazu „Mit Mietfuchs im Heimnetz verbinden“
+// mit der Karte aus den Einstellungen, #528). Von Hand aus den Einstellungen (`manual`) dieselben
 // Wege mit „Zurück“. Die Entscheidungen stehen in relocation.ts, der Ablauf im Server (index.ts, „Umzug ins
 // Programmfenster“). Übernehmen heißt kopieren; der alte Ordner bleibt, wie er ist, und bekommt nur einen Vermerk.
 
@@ -29,7 +32,7 @@ const CANCELLED_TEXT = 'Abgebrochen. Es wurde nichts übernommen; im alten Ordne
 // Mit eigenem Bestand (von Hand) sagt das Ergebnis, dass der Stand vorher gesichert ist (Praxistest P)
 const REPLACED_NOTE = 'Ihr bisheriger Stand hier ist gesichert; er steht im Verlauf als „Vor dem Einspielen eines Backups“.'
 
-export default function Umzug({ manual = false, onFresh, onClose, reloadPage = reloadWithArrival, chooseFolder = folderBridge() }: {
+export default function Umzug({ manual = false, onFresh, onClose, reloadPage = reloadWithArrival, chooseFolder = folderBridge(), remote = remoteBridge() }: {
   // Von Hand aus den Einstellungen geöffnet statt beim ersten Start; dann „Zurück“ statt „neu beginnen“, und mit eigenem
   // Bestand fragt jede Übernahme vorher, ob sie ihn ersetzen darf
   manual?: boolean
@@ -40,6 +43,8 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = r
   // Neu laden, mit dem Anlass für die Bestätigung danach (relocation.ts, „Ankunft“)
   reloadPage?: (arrival: Arrival) => void
   chooseFolder?: (() => Promise<string | null>) | null
+  // Im Programmfenster: der dritte Weg beim ersten Start, mit einem Mietfuchs im Heimnetz verbinden (#528)
+  remote?: RemoteBridge | null
 }) {
   const confirm = useConfirm()
   const mobile = useMediaQuery(MOBILE_QUERY)
@@ -53,6 +58,11 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = r
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   // Die Wege ohne Fund (Backup, Ordner wählen); beim ersten Start nach „Ja, Daten übernehmen“
   const [importWays, setImportWays] = useState(false)
+  // Beim ersten Start im Fenster: statt neu zu beginnen oder zu übernehmen mit einem Mietfuchs im Heimnetz verbinden
+  // (Rückmeldung zur Kopplung, #528). Gelingt es, lädt das Fenster dessen Seite; die Frage hier bleibt offen und kommt
+  // nach dem Trennen wieder.
+  const [pairing, setPairing] = useState(false)
+  const pairWay = !manual && remote !== null
   const [dragOver, setDragOver] = useState(false)
   const [progress, setProgress] = useState<AdoptProgress | null>(null)
   const busy = phase.kind === 'busy'
@@ -259,6 +269,18 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = r
     )
   }
 
+  if (pairWay && pairing) {
+    return (
+      <>
+        <PageHeader title="Mit Mietfuchs im Heimnetz verbinden" context="none" />
+        <RemoteCard bridge={remote} />
+        <div className="row">
+          <button type="button" className="btn ghost small" onClick={() => setPairing(false)}>Zurück</button>
+        </div>
+      </>
+    )
+  }
+
   const showFound = candidates.length > 0 && !importWays
   // Beim ersten Start ohne Fund zuerst die eine Frage
   const welcome = !manual && list !== null && candidates.length === 0 && !importWays
@@ -288,6 +310,7 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = r
           <div className="row">
             <button type="button" className="btn secondary" disabled={busy} onClick={() => void startFresh(false)}>Nein, neu beginnen</button>
             <button type="button" className="btn secondary" disabled={busy} onClick={() => setImportWays(true)}>Ja, Daten übernehmen</button>
+            {pairWay && <button type="button" className="btn secondary" disabled={busy} onClick={() => { clearMessages(); setPairing(true) }}>Mit Mietfuchs im Heimnetz verbinden</button>}
           </div>
         </>
       )}
@@ -301,6 +324,7 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = r
           ))}
           <div className="row">
             <button type="button" className="btn ghost small" disabled={busy} onClick={() => { clearMessages(); setImportWays(true) }}>Andere Daten wählen …</button>
+            {pairWay && <button type="button" className="btn ghost small" disabled={busy} onClick={() => { clearMessages(); setPairing(true) }}>Mit Mietfuchs im Heimnetz verbinden …</button>}
             {manual
               ? <button type="button" className="btn ghost small" disabled={busy} onClick={onClose}>Zurück</button>
               : <button type="button" className="btn ghost small" disabled={busy} onClick={() => void startFresh(true)}>Nicht übernehmen, neu beginnen</button>}
