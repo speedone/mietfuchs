@@ -33,7 +33,7 @@ import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
 import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, toExtraction, type AskProgressEvent, type AskStats } from './extract.ts'
-import { readEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
+import { isEInvoiceDocument, readEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
 import { normalizeAmounts } from './invoiceAmounts.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -109,7 +109,7 @@ import {
   readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders, searchRoots, stockKind,
   writeDecision, writeMovedMarker, type CandidateInfo, type FileSize, type MovedMarker,
 } from './relocation.ts'
-import { SCRIPT_REFUSAL, carriesScript, describeFile, describeFolder, hashFile, mimeTypeOf, servedTypeOf, uploadedAtOf } from './uploads.ts'
+import { SCRIPT_REFUSAL, carriesScript, describeFile, describeFolder, hashFile, mimeTypeOf, servedTypeOf, storedTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import { roomView } from '../../shared/rooms.ts'
@@ -276,6 +276,8 @@ const memoryStore = multer.memoryStorage()
 const IN_MEMORY_FIELDS = new Set(['pages', 'eInvoiceXml'])
 const storageFor = (file: Express.Multer.File): multer.StorageEngine => (IN_MEMORY_FIELDS.has(file.fieldname) ? memoryStore : diskStore)
 const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+// Die Routen, auf denen ein Beleg eine E-Rechnung als XML-Datei sein darf (#189). Die Heizrouten nicht: Dort liest nur die KI.
+const E_INVOICE_XML_ROUTES = new Set(['/api/upload', '/api/intake', '/api/extract'])
 const upload = multer({
   storage: {
     _handleFile: (req, file, cb) => storageFor(file)._handleFile(req, file, cb),
@@ -287,7 +289,9 @@ const upload = multer({
   // wie bisher (api-ki-beleg.test.ts).
   fileFilter: (req, file, cb) => {
     // `eInvoiceXml` ist XML, wird aber nie gespeichert oder ausgeliefert, nur gelesen (eInvoice/, ohne Entitäten).
-    if (!IN_MEMORY_FIELDS.has(file.fieldname) && carriesScript(file.originalname, file.mimetype)) cb(new RouteProblem(400, SCRIPT_REFUSAL))
+    // Eine E-Rechnung als XML-Datei lässt der Filter nur auf den Routen der Belege durch; den Inhalt prüft `checkXmlReceipt`.
+    const eInvoiceXml = file.fieldname === 'file' && E_INVOICE_XML_ROUTES.has(req.path)
+    if (!IN_MEMORY_FIELDS.has(file.fieldname) && carriesScript(file.originalname, file.mimetype, { eInvoiceXml })) cb(new RouteProblem(400, SCRIPT_REFUSAL))
     else cb(null, true)
   },
   // Browser schicken Dateinamen als UTF-8. Mit dem Standard latin1 zerfiel „Müll.pdf“ zu
@@ -324,7 +328,16 @@ const checkPageSizes = (req: Request, res: Response, next: NextFunction): void =
   if (file) fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
 }
-const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, inRequest]
+// Eine XML-Datei als Beleg (#189) bleibt nur liegen, wenn sie eine E-Rechnung ist. multer entscheidet vor dem Schreiben
+// ohne Inhalt; hier wird der Inhalt gelesen und alles andere wieder gelöscht, bevor eine Zeile in `uploads` entsteht.
+async function checkXmlReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const file = storedUpload(req.file ?? filesOf(req).file?.[0])
+  if (!file || path.extname(file.filename).toLowerCase() !== '.xml') return next()
+  if (isEInvoiceDocument(await fs.promises.readFile(file.path))) return next()
+  fs.rmSync(file.path, { force: true })
+  res.status(400).json({ error: SCRIPT_REFUSAL })
+}
+const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, checkXmlReceipt, inRequest]
 
 // Die E-Rechnung aus dem PDF (#189), wenn der Browser eine mitgeschickt hat. `null`: keine mitgeschickt.
 const eInvoiceOf = (req: Request): EInvoiceResult | null => {
@@ -1909,7 +1922,7 @@ async function recordNewUpload(req: Request, file: StoredUpload): Promise<void> 
   const row: UploadRow = {
     file: file.filename,
     originalName: file.originalname.normalize('NFC'),
-    mimeType: file.mimetype || mimeTypeOf(file.filename),
+    mimeType: storedTypeOf(file.filename, file.mimetype),
     size: file.size,
     sha256: await hashFile(file.path),
     uploadedAt: uploadedAtOf(file.filename, new Date()),
@@ -1939,7 +1952,7 @@ async function recordOrRefuse(req: Request, res: Response, file: StoredUpload): 
   }
 }
 
-app.post('/api/upload', upload.single('file'), inRequest, async (req, res) => {
+app.post('/api/upload', upload.single('file'), checkXmlReceipt, inRequest, async (req, res) => {
   const file = storedUpload(req.file)
   if (!file) return res.status(400).json({ error: 'Keine Datei' })
   if (!(await recordOrRefuse(req, res, file))) return

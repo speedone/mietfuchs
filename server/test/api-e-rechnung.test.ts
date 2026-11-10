@@ -146,3 +146,78 @@ test('E-Rechnung: dieselbe Rechnung als zweites PDF wird erkannt (gleiche Nummer
     assert.ok(!reasonsFirst.some((r) => /schon ausgewertet/.test(r)), reasonsFirst.join(' | '))
   })
 })
+
+// ---------- Reine XML-Datei (PR 3) ----------
+
+const KOSIT_UBL = fs.readFileSync(path.join(FIXTURES, '03.06a-INVOICE_ubl.xml'))
+const SVG_MIT_SKRIPT = '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/uploads")</script></svg>'
+
+async function sendXml(s: Server, route: string, content: Buffer | string, name = 'xrechnung.xml', type = 'application/xml') {
+  const fd = new FormData()
+  fd.append('file', new Blob([content], { type }), name)
+  const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd })
+  return { status: res.status, body: await jsonOf<UploadBody & { error?: string }>(res) }
+}
+const storedFiles = (s: Server) => fs.readdirSync(path.join(s.dataDir, 'uploads'))
+
+test('XML-Datei: eine XRechnung wird als Beleg angenommen, gespeichert als application/xml und nur als Download ausgeliefert', async () => {
+  const s = await startServer()
+  try {
+    for (const [name, type, content] of [['xrechnung.xml', 'application/xml', KOSIT_UBL], ['RECHNUNG.XML', 'text/xml', KOSIT_CII], ['ohne-typ.xml', '', KOSIT_UBL]] as const) {
+      const r = await sendXml(s, '/api/upload', content, name, type)
+      assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.body)}`)
+      const file = fileOf(r.body)
+      assert.ok(fs.readFileSync(path.join(s.dataDir, 'uploads', file)).equals(content), 'bytegenau abgelegt')
+      const info = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file) ?? assert.fail(`${file} fehlt`)
+      assert.equal(info.mimeType, 'application/xml')
+      const res = await fetch(`${s.base}/uploads/${encodeURIComponent(file)}`)
+      assert.equal(res.headers.get('content-type'), 'application/octet-stream')
+      assert.equal(res.headers.get('content-disposition'), 'attachment')
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+      assert.equal(res.headers.get('content-security-policy'), 'sandbox')
+    }
+  } finally {
+    s.stop()
+  }
+})
+
+test('XML-Datei: anderes XML, eine Dokumenttyp-Erklärung und getarnte Typen bleiben abgelehnt, nichts bleibt liegen', async () => {
+  const s = await startServer()
+  try {
+    const doctype = `<!DOCTYPE x [<!ENTITY a "b">]>${KOSIT_UBL.toString('utf8').replace(/^<\?xml[^>]*>/, '')}`
+    const cases: Array<[string, string, Buffer | string]> = [
+      ['Daten.xml', 'application/xml', SVG_MIT_SKRIPT],
+      ['Daten.xml', 'application/xml', '<notiz>hallo</notiz>'],
+      ['Daten.xml', 'application/xml', doctype],
+      ['Daten.xml', 'application/xml', 'kein XML'],
+      ['Rechnung.xml', 'image/svg+xml', KOSIT_UBL],
+      ['Rechnung.svg', 'application/xml', KOSIT_UBL],
+      ['Rechnung.xsl', 'application/xml', KOSIT_UBL],
+    ]
+    for (const route of ['/api/upload', '/api/intake', '/api/extract']) {
+      for (const [name, type, content] of cases) {
+        const r = await sendXml(s, route, content, name, type)
+        assert.equal(r.status, 400, `${route} ${name} (${type})`)
+        assert.match(r.body.error ?? '', /PDF oder Bild/, `${route} ${name}`)
+      }
+    }
+    assert.deepEqual(storedFiles(s), [], 'nichts davon liegt im Belegordner')
+    assert.equal((await s.api<UploadInfo[]>('/api/uploads')).length, 0)
+  } finally {
+    s.stop()
+  }
+})
+
+test('XML-Datei: die Routen der Heizung nehmen auch eine E-Rechnung nicht als Datei an', async () => {
+  const s = await startServer()
+  try {
+    for (const route of ['/api/heating-plants/x/service-statement', '/api/heating-plants/x/fuel-invoice']) {
+      const r = await sendXml(s, route, KOSIT_UBL)
+      assert.equal(r.status, 400, route)
+      assert.match(r.body.error ?? '', /PDF oder Bild/, route)
+    }
+    assert.deepEqual(storedFiles(s), [])
+  } finally {
+    s.stop()
+  }
+})
