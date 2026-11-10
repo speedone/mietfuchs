@@ -6,7 +6,16 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { detectEInvoice } from '../src/eInvoice/detect.ts'
+import { readModel } from '../src/eInvoice/read.ts'
+import type { EInvoice, EInvoiceSyntax } from '../src/eInvoice/model.ts'
+import { ciiOf, consistent, docCharge, invoice, line, S7, ublOf } from '../testing/eInvoiceXml.ts'
+
+const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'e-invoice')
+const fixture = (name: string) => fs.readFileSync(path.join(FIXTURES, name), 'utf8')
 
 const UBL_NS = 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'
 const UBL_CN_NS = 'urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'
@@ -61,4 +70,146 @@ test('E-Rechnung erkennen: Dokumenttyp-Erklärung und abgeschnittenes XML werden
   assert.ok(doctype && 'refused' in doctype)
   const cut = detectEInvoice(`<Invoice xmlns="${UBL_NS}"><cbc:ID>1`)
   assert.ok(cut && 'refused' in cut)
+})
+
+// ---------- Lesen: KoSIT-Testsuite (Werte von Hand aus dem XML abgeschrieben) ----------
+
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+
+for (const [file, syntax] of [['03.06a-INVOICE_ubl.xml', 'ubl-invoice'], ['03.06a-INVOICE_uncefact.xml', 'cii']] as const) {
+  test(`E-Rechnung lesen: KoSIT 03.06a (${syntax}), negative Position und Gruppe Z`, () => {
+    const inv = readModel(fixture(file), syntax)
+    assert.deepEqual(inv.unreadable, [])
+    assert.equal(inv.typeCode, '380')
+    assert.equal(inv.number, '112233')
+    assert.equal(inv.issueDate, '2021-04-23')
+    assert.equal(inv.dueDate, '2021-04-28')
+    assert.equal(inv.deliveryDate, '2020-11-23')
+    assert.equal(inv.currency, 'EUR')
+    assert.equal(inv.seller, 'Testverkäufer')
+    assert.equal(inv.buyer, 'Testkäufer')
+    assert.equal(inv.iban, 'DE79000000001234567890')
+    assert.equal(inv.precedingInvoice, null)
+    assert.deepEqual(inv.lines.map((l) => [l.id, l.name, l.netCents, l.unitCode, l.vat.category, l.vat.rateBasisPoints]), [
+      ['1', 'Neumotor', 100000, 'C62', 'S', 1900],
+      ['2', 'Bemessungsgrundlage und Umsatzsteuer auf Altteil', 10000, 'C62', 'S', 1900],
+      ['3', 'Korrektur/Stornierung Bemessungsgrundlage der Umsatzsteuer auf Altteil', -10000, 'C62', 'Z', 0],
+      ['4', 'Montage', 50000, 'HUR', 'S', 1900],
+    ])
+    assert.deepEqual(inv.charges, [])
+    assert.deepEqual(inv.vatGroups, [
+      { vat: { category: 'S', rateBasisPoints: 1900 }, basisCents: 160000, taxCents: 30400 },
+      { vat: { category: 'Z', rateBasisPoints: 0 }, basisCents: -10000, taxCents: 0 },
+    ])
+    assert.deepEqual(inv.totals, { lineNet: 150000, allowances: null, charges: null, taxExclusive: 150000, tax: 30400, taxInclusive: 180400, prepaid: null, rounding: null, payable: 180400 })
+  })
+}
+
+for (const [file, syntax] of [['03.01a-INVOICE_ubl.xml', 'ubl-invoice'], ['03.01a-INVOICE_uncefact.xml', 'cii']] as const) {
+  test(`E-Rechnung lesen: KoSIT 03.01a (${syntax}), Versorger mit Abschlägen und Lastschrift`, () => {
+    const inv = readModel(fixture(file), syntax)
+    assert.deepEqual(inv.unreadable, [])
+    assert.equal(inv.number, '123456789')
+    assert.equal(inv.issueDate, '2019-02-28')
+    assert.equal(inv.dueDate, '2019-03-14')
+    assert.equal(inv.periodStart, '2018-05-01')
+    assert.equal(inv.periodEnd, '2019-01-31')
+    assert.equal(inv.seller, '[Seller name]')
+    // Lastschrift (59): Die Kontoverbindung ist die des Käufers, keine IBAN des Empfängers.
+    assert.equal(inv.iban, null)
+    assert.equal(inv.lines.length, 14)
+    assert.deepEqual([inv.lines[0].id, inv.lines[0].name, inv.lines[0].netCents, inv.lines[0].unitCode], ['1.1', 'Arbeitspreis Strom', 20430, 'KWH'])
+    assert.equal(inv.lines[2].unitCode, 'DAY')
+    // Unabhängig vom Kopf: Die Summe der gelesenen Positionen ergibt BT-106 aus der Datei.
+    assert.equal(sum(inv.lines.map((l) => l.netCents)), 68728)
+    assert.deepEqual(inv.vatGroups, [
+      { vat: { category: 'S', rateBasisPoints: 1900 }, basisCents: 57889, taxCents: 10999 },
+      { vat: { category: 'S', rateBasisPoints: 700 }, basisCents: 10839, taxCents: 759 },
+    ])
+    assert.deepEqual(inv.totals, { lineNet: 68728, allowances: null, charges: null, taxExclusive: 68728, tax: 11758, taxInclusive: 80486, prepaid: 103000, rounding: null, payable: -22514 })
+  })
+}
+
+test('E-Rechnung lesen: KoSIT 02.03a, Zu- und Abschlag auf Dokumentebene, BT-110 nur in Rechnungswährung', () => {
+  const inv = readModel(fixture('02.03a-INVOICE_ubl.xml'), 'ubl-invoice')
+  assert.deepEqual(inv.unreadable, [])
+  assert.equal(inv.number, '1234567')
+  assert.equal(inv.issueDate, '2018-04-13')
+  assert.equal(inv.seller, '[Seller name]')
+  assert.equal(inv.iban, 'DE79000000001234567890')
+  assert.deepEqual(inv.charges, [
+    { charge: true, cents: 0, reason: 'Testing', vat: { category: 'E', rateBasisPoints: 0 } },
+    { charge: false, cents: 0, reason: 'Fixed long term', vat: { category: 'E', rateBasisPoints: 0 } },
+  ])
+  assert.equal(inv.totals.tax, 204844)
+  assert.equal(inv.totals.taxInclusive, 1282969)
+  assert.equal(inv.totals.prepaid, 1282969)
+  assert.equal(inv.totals.payable, 0)
+  assert.equal(inv.totals.allowances, 0)
+  assert.equal(inv.totals.charges, 0)
+  assert.equal(sum(inv.lines.map((l) => l.netCents)), 1078125)
+  assert.equal(inv.lines[0].name, 'Beratung')
+})
+
+test('E-Rechnung lesen: KoSIT 01.18a, korrigierte Rechnung mit Bezug auf die Vorgängerrechnung', () => {
+  const inv = readModel(fixture('01.18a-INVOICE_ubl.xml'), 'ubl-invoice')
+  assert.equal(inv.typeCode, '384')
+  assert.equal(inv.number, 'PRG1502112')
+  assert.deepEqual(inv.precedingInvoice, { number: 'PRG1502168', date: null })
+  assert.equal(inv.totals.taxInclusive, 1055530)
+})
+
+// ---------- Lesen: Rundlauf über den Testbauer ----------
+
+function roundTrip(inv: EInvoice, xml: string, syntax: EInvoiceSyntax) {
+  assert.deepEqual(readModel(xml, syntax), inv)
+}
+
+const SAMPLES: [string, EInvoice][] = [
+  ['zwei Steuersätze', invoice({ lines: [line(10000, 'Wartung', { id: '1' }), line(5000, 'Ersatzteil ermäßigt', { id: '2', vat: S7 })] })],
+  ['Zu- und Abschlag auf Dokumentebene', invoice({ charges: [docCharge(true, 2000, 'Entsorgung'), docCharge(false, 500, 'Rabatt')] })],
+  ['negative Position', invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-2500, 'Gutschrift Altteil', { id: '2' })] })],
+  ['bereits bezahlte Abschläge', invoice({ totals: { lineNet: null, allowances: null, charges: null, taxExclusive: null, tax: null, taxInclusive: null, prepaid: 5000, rounding: null, payable: null } })],
+  ['Vorgängerrechnung und Zeitraum', invoice({ typeCode: '384', precedingInvoice: { number: 'R-2025-0041', date: '2025-02-01' }, periodStart: '2025-01-01', periodEnd: '2025-12-31' })],
+  ['Lastschrift ohne IBAN', invoice({ iban: null })],
+  ['Beschreibung und Einheit', invoice({ lines: [line(11000, 'Arbeitszeit', { description: 'Monteur, 2 Stunden', unitCode: 'HUR' })] })],
+]
+
+for (const [name, inv0] of SAMPLES) {
+  // Die Vorausgezahlten stehen erst nach `consistent` in den Summen; `invoice` mit `totals` rechnet nicht nach.
+  const inv = inv0.totals.lineNet === null ? consistent(inv0) : inv0
+  test(`E-Rechnung lesen: Rundlauf UBL, ${name}`, () => roundTrip(inv, ublOf(inv), 'ubl-invoice'))
+  test(`E-Rechnung lesen: Rundlauf CII, ${name}`, () => roundTrip({ ...inv, syntax: 'cii' }, ciiOf({ ...inv, syntax: 'cii' }), 'cii'))
+}
+
+test('E-Rechnung lesen: Rundlauf UBL-Gutschrift, Beträge stehen positiv', () => {
+  const inv = invoice({ syntax: 'ubl-credit-note', typeCode: '381' })
+  roundTrip(inv, ublOf(inv), 'ubl-credit-note')
+  assert.ok(inv.lines[0].netCents > 0)
+})
+
+test('E-Rechnung lesen: ein zweites BT-110 in fremder Währung zählt nicht', () => {
+  const inv = invoice()
+  assert.equal(readModel(ublOf(inv, { foreignTaxTotal: true }), 'ubl-invoice').totals.tax, inv.totals.tax)
+})
+
+test('E-Rechnung lesen: ein Betrag mit drei Nachkommastellen ist unlesbar, nicht gerundet', () => {
+  const xml = ublOf(invoice()).replace('<cbc:LineExtensionAmount currencyID="EUR">100.00</cbc:LineExtensionAmount><cac:Item>', '<cbc:LineExtensionAmount currencyID="EUR">100.005</cbc:LineExtensionAmount><cac:Item>')
+  const inv = readModel(xml, 'ubl-invoice')
+  assert.deepEqual(inv.unreadable, ['BT-131 Position 1'])
+})
+
+test('E-Rechnung lesen: ein CII-Datum in fremdem Format ist unlesbar', () => {
+  const xml = ciiOf({ ...invoice(), syntax: 'cii' }).replace('<udt:DateTimeString format="102">20250314</udt:DateTimeString>', '<udt:DateTimeString format="610">202503</udt:DateTimeString>')
+  const inv = readModel(xml, 'cii')
+  assert.equal(inv.issueDate, null)
+  assert.deepEqual(inv.unreadable, ['BT-2'])
+})
+
+test('E-Rechnung lesen: Umlaute aus ISO-8859-1 über decodeXml', async () => {
+  const { decodeXml } = await import('../src/xml.ts')
+  const xml = ublOf(invoice({ seller: 'Müller Sanitär' })).replace('encoding="UTF-8"', 'encoding="ISO-8859-1"')
+  const decoded = decodeXml(Buffer.from(xml, 'latin1'))
+  assert.ok('xml' in decoded)
+  assert.equal(readModel(decoded.xml, 'ubl-invoice').seller, 'Müller Sanitär')
 })
