@@ -459,3 +459,12 @@ test('camt: nennen beide Seiten nur das eigene Konto, gibt es keine Gegenseite',
   assert.equal(e.counterpartyIban, null)
   assert.equal(e.counterpartyName, null)
 })
+
+test('camt: feindliches XML (tiefe Verschachtelung, __proto__) ergibt einen Befund statt zu werfen', () => {
+  const deep = `<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">${'<a>'.repeat(200000)}${'</a>'.repeat(200000)}</Document>`
+  for (const xml of [deep, '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><__proto__>1</__proto__></Document>']) {
+    const r = readCamt(xml, 'feindlich.xml')
+    assert.equal(r.statements.length, 0)
+    assert.equal(r.problems.length, 1)
+  }
+})

@@ -24,7 +24,7 @@
 //   gleiche Zahlung enthalten, die kein Doppel ist. Entscheiden kann das nur der Import gegen den
 //   Bestand, und wo es offen bleibt, der Vermieter: Ein Umsatz wird nie still als Doppel verworfen.
 
-import { XMLParser, XMLValidator } from 'fast-xml-parser'
+import { all, at, decodeXml, isNode, list, makeParser, refuseUnsafe, text } from '../xml.ts'
 import {
   checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, ibanOrNull, normalizeIban, problemOnly, squash, TEXT_LIMITS,
   type BankBatch, type BankEntry, type BankProblem, type BankReadResult, type BankStatement,
@@ -39,75 +39,8 @@ const DOCUMENT_KINDS = [
   { root: 'BkToCstmrDbtCdtNtfctn', item: 'Ntfctn', kind: 'camt.054' },
 ] as const
 
-type Node = Record<string, unknown>
-
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@',
-  textNodeName: '#text',
-  // Namensräume unterscheiden sich je Fassung (camt.053.001.02 bis .08), die Elemente nicht.
-  removeNSPrefix: true,
-  // Alles bleibt Text: Eine IBAN, eine Referenz mit führender Null oder ein Betrag darf nicht
-  // als Zahl gelesen werden.
-  parseTagValue: false,
-  parseAttributeValue: false,
-  trimValues: true,
-  // Keine Entitäten auflösen: Ein Kontoauszug braucht keine eigenen, und die fünf vordefinierten
-  // samt Zeichenreferenzen löst decodeEntities selbst auf (Wunsch aus #188).
-  processEntities: false,
-  htmlEntities: false,
-})
-
-// ---------- kleine Leser ----------
-
-const isNode = (v: unknown): v is Node => typeof v === 'object' && v !== null && !Array.isArray(v)
-
-// Ein Element, das einmal vorkommt, liest der Parser als Objekt, mehrfach als Liste.
-function list(v: unknown): unknown[] {
-  if (v === undefined || v === null) return []
-  return Array.isArray(v) ? v : [v]
-}
-
-// Das erste Vorkommen am Ende eines Pfads.
-function at(node: unknown, ...path: string[]): unknown {
-  let cur: unknown = node
-  for (const key of path) {
-    if (Array.isArray(cur)) cur = cur[0]
-    if (!isNode(cur)) return undefined
-    cur = cur[key]
-  }
-  return Array.isArray(cur) ? cur[0] : cur
-}
-
-// Alle Vorkommen eines Pfads, über jede Ebene, die sich wiederholen darf: `all(ntry, 'NtryDtls',
-// 'TxDtls')` liefert die Posten aller `NtryDtls`-Blöcke, nicht nur die des ersten.
-function all(node: unknown, ...path: string[]): unknown[] {
-  let level: unknown[] = list(node)
-  for (const key of path) level = level.flatMap((n) => (isNode(n) ? list(n[key]) : []))
-  return level
-}
-
-// Der Parser löst keine Entitäten auf (siehe oben). Hier werden genau die fünf vordefinierten
-// (&amp; &lt; &gt; &quot; &apos;) und Zeichenreferenzen (&#228; &#xE4;) aufgelöst, in einem
-// Durchgang, damit „&amp;lt;“ als „&lt;“ stehen bleibt und nicht zu „<“ wird.
-const PREDEFINED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
-
-function decodeEntities(s: string): string {
-  return s.replace(/&(?:#x([0-9a-f]+)|#(\d+)|(amp|lt|gt|quot|apos));/gi, (whole, hex: string | undefined, dec: string | undefined, name: string | undefined) => {
-    if (name !== undefined) return PREDEFINED[name.toLowerCase()] ?? whole
-    const code = hex !== undefined ? parseInt(hex, 16) : Number(dec)
-    return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole
-  })
-}
-
-function text(v: unknown): string | null {
-  if (typeof v === 'string') {
-    const s = decodeEntities(v).trim()
-    return s === '' ? null : s
-  }
-  if (isNode(v) && typeof v['#text'] === 'string') return text(v['#text'])
-  return null
-}
+// Der Parser und die kleinen Leser stehen in ../xml.ts (gemeinsam mit der E-Rechnung, #189).
+const parser = makeParser({ keepPrefixes: false })
 
 function iban(v: unknown): string | null {
   const s = text(v)
@@ -330,13 +263,14 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
   const result: BankReadResult = { statements: [], problems: [], pendingSkipped: 0 }
   // camt kennt keine Dokumenttyp-Erklärung. Eine Datei mit DOCTYPE oder eigenen Entitäten ist
   // kein Kontoauszug und könnte beim Auflösen beliebig wachsen.
-  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) {
+  const unsafe = refuseUnsafe(xml)
+  if (unsafe === 'doctype') {
     result.problems.push({ where: name, message: 'Die Datei enthält eine Dokumenttyp-Erklärung und ist kein Kontoauszug im Format camt.' })
     return result
   }
   // Erst prüfen, ob das XML vollständig ist: Der Parser liest auch eine abgeschnittene Datei
   // nachsichtig ein, und aus einem halben Auszug würde still ein leerer.
-  if (XMLValidator.validate(xml) !== true) {
+  if (unsafe === 'incomplete') {
     result.problems.push({ where: name, message: 'Die Datei ist kein vollständiges XML; vielleicht wurde sie beim Herunterladen abgeschnitten.' })
     return result
   }
@@ -406,23 +340,6 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
 }
 
 // ---------- eine hochgeladene Datei ----------
-
-// Die Kodierung steht in der XML-Erklärung. UTF-8 ist der Normalfall; ältere Exporte kommen in
-// ISO-8859-1 oder Windows-1252, und als UTF-8 gelesen würde aus „März“ „M�rz“, und der
-// Verwendungszweck stimmte mit dem desselben Umsatzes aus einer anderen Datei nicht mehr überein.
-function decodeXml(data: Buffer): { xml: string } | { problem: string } {
-  const head = data.subarray(0, 200).toString('latin1')
-  const declared = /^(?:\xEF\xBB\xBF)?<\?xml[^>]*encoding=["']([^"']+)["']/i.exec(head)?.[1].toLowerCase() ?? 'utf-8'
-  // ISO-8859-1 wird wie Windows-1252 gelesen, wie es auch Browser tun: Die beiden unterscheiden
-  // sich nur in Steuerzeichen, die in einem Kontoauszug nicht vorkommen, dafür steht das €-Zeichen
-  // aus Windows-Exporten dann richtig da.
-  const label = declared === 'iso-8859-1' || declared === 'latin1' ? 'windows-1252' : declared
-  try {
-    return { xml: new TextDecoder(label).decode(data) }
-  } catch {
-    return { problem: `Die Datei ist in der Kodierung „${declared}“ geschrieben, die Mietfuchs nicht lesen kann.` }
-  }
-}
 
 // Eine camt-Datei als Bytes: Kodierung aus der XML-Erklärung, dann lesen.
 export function readCamtFile(data: Buffer, where: string): BankReadResult {
