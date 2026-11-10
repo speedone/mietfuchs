@@ -413,11 +413,11 @@ test('„grüne Vorschläge bereit“ zählt nur, was „Alle grünen übernehme
 // erzeugt (eine Kostenart aus dem Altbestand, ein grüner Vorschlag ohne Vorauswahl).
 const crafted = (fields: Partial<LineFields>, extra: Partial<LineSuggestion> = {}): AssessmentView => ({
   id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, requestedYear: YEAR, requestedPeriod: calendarPeriod(YEAR), vendor: 'Hausmeisterdienst', invoiceDate: null,
-  totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
+  totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, source: 'ki', invoiceNumber: null, eInvoiceNotes: [], nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'alt.pdf', open: true, sumWarning: null,
   lines: [{
     idx: 0, description: 'Hausmeister', category: 'Hauswart', categoryGuessed: false, amountCents: 30000, labor35aCents: null,
-    booking: null, costItemId: null, dismissed: false, reassessed: false, state: 'open', itemDescription: null,
+    booking: null, costItemId: null, dismissed: false, reassessed: false, laborGuessed: false, state: 'open', itemDescription: null,
     suggestion: {
       fields: { description: 'Hausmeister', category: 'Hauswart', amountCents: 30000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null, ...fields },
       candidates: [], level: 'gelb', reasons: [], preselected: false, ...extra,
@@ -664,4 +664,19 @@ test('Eingang: nach dem Buchen führen „→ Kosten ansehen“ und „→ Zur A
   expect(onNavigate).toHaveBeenLastCalledWith('kosten')
   fireEvent.click(screen.getByRole('button', { name: '→ Zur Abrechnung' }))
   expect(onNavigate).toHaveBeenLastCalledWith('abrechnung')
+})
+
+// ---------- E-Rechnung (#189): Herkunft und Notizen an der Auswertung ----------
+
+test('E-Rechnung: die Prüfung sagt, woher die Angaben stammen, und nennt die Notizen', () => {
+  render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), source: 'e-rechnung', invoiceNumber: 'R-1', eInvoiceNotes: ['Abschläge über 50,00 € sind bereits bezahlt.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getByText(/Aus der E-Rechnung übernommen/)).toBeTruthy()
+  expect(screen.getByText(/Abschläge über 50,00 € sind bereits bezahlt\./)).toBeTruthy()
+  expect(screen.queryByText(/Mietfuchs hat sie auf den Rechnungsbetrag hochgerechnet/)).toBeNull()
+})
+
+test('E-Rechnung: abgelehnt und von der KI ausgewertet, die Prüfung nennt den Grund, nicht „aus der E-Rechnung“', () => {
+  render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), eInvoiceNotes: ['Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht als Kosten.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getByText(/Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht als Kosten\./)).toBeTruthy()
+  expect(screen.queryByText(/Aus der E-Rechnung übernommen/)).toBeNull()
 })

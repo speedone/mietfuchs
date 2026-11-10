@@ -14,7 +14,10 @@ export type AssessmentRecord = { assessment: StoredAssessment; lines: StoredAsse
 // Der gewählte Zeitraum entsteht hier aus dem gewählten Jahr und dem Objekt. Der Aufrufer darf einen
 // Zeitraum mitschicken (die Seite, von der aus ausgewertet wurde, #208); er gilt nur, wenn es ihn für
 // das Objekt gibt.
-export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt' | 'nextIdx' | 'requestedPeriod'> & { lines: NewLine[]; requestedPeriod?: PeriodKey | null }
+// Herkunft, Rechnungsnummer und Notizen (#189) sind freiwillig; ohne sie ist es eine KI-Auswertung.
+export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt' | 'nextIdx' | 'requestedPeriod' | 'source' | 'invoiceNumber' | 'eInvoiceNotes'>
+  & Partial<Pick<StoredAssessment, 'source' | 'invoiceNumber' | 'eInvoiceNotes'>>
+  & { lines: NewLine[]; requestedPeriod?: PeriodKey | null }
 
 // Der gewählte Zeitraum (#208): aus dem gewählten Kalenderjahr nach den Regeln des Objekts
 // (`periodForYear`, beim Kalenderobjekt der Kalenderzeitraum), sobald es ein Objekt gibt (G-B7).
@@ -44,6 +47,18 @@ export async function readAssessmentOfFile(db: Executor, file: string): Promise<
   return assessment ? { assessment, lines: await linesOf(db, assessment.id) } : null
 }
 
+// Die Rechnungsnummern aller Auswertungen, die eine tragen (E-Rechnung, #189): Dieselbe Rechnung in einem zweiten
+// Beleg erkennt die Ampel daran, über alle Objekte, denn eine Rechnung gehört nur einmal in die Kosten.
+// `order` ist die rowid: Doppel ist nur die später ausgewertete (erneutes Auswerten ändert sie nicht, anders als `createdAt`).
+export type InvoiceNumberRow = { file: string, vendor: string | null, invoiceNumber: string, invoiceDate: string | null, order: number }
+export async function invoiceNumbers(db: Executor): Promise<InvoiceNumberRow[]> {
+  const rows = await db.select({
+    file: assessments.file, vendor: assessments.vendor, invoiceNumber: assessments.invoiceNumber, invoiceDate: assessments.invoiceDate,
+    order: sql<number>`rowid`,
+  }).from(assessments).where(isNotNull(assessments.invoiceNumber))
+  return rows.flatMap((r) => (r.invoiceNumber === null ? [] : [{ ...r, invoiceNumber: r.invoiceNumber, order: Number(r.order) }]))
+}
+
 // Die Auswertungen eines Objekts, älteste zuerst.
 export async function listAssessments(db: Executor, propertyId: string): Promise<AssessmentRecord[]> {
   const rows = await db.select().from(assessments).where(eq(assessments.propertyId, propertyId)).orderBy(asc(assessments.createdAt), asc(sql`rowid`))
@@ -66,7 +81,10 @@ async function insertLines(db: Executor, assessmentId: string, lines: readonly N
 // meint. Objekt und Jahr folgen der neuen Auswertung nur, solange nichts gebucht ist.
 export async function saveAssessment(db: Database, input: NewAssessment, ids: { id: string; now: string }): Promise<AssessmentRecord> {
   const { lines, requestedPeriod: sent, ...fields } = input
-  const head = { ...fields, requestedPeriod: await requestedPeriodOf(db, fields.propertyId, fields.requestedYear, sent) }
+  const head = {
+    ...fields, source: fields.source ?? 'ki', invoiceNumber: fields.invoiceNumber ?? null, eInvoiceNotes: fields.eInvoiceNotes ?? [],
+    requestedPeriod: await requestedPeriodOf(db, fields.propertyId, fields.requestedYear, sent),
+  }
   const current = await readAssessmentOfFile(db, input.file)
   await db.transaction(async (tx) => {
     if (!current) {
@@ -88,7 +106,8 @@ export async function saveAssessment(db: Database, input: NewAssessment, ids: { 
     const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year, requestedYear: head.requestedYear, requestedPeriod: head.requestedPeriod }
     await tx.update(assessments).set({
       detectedYear: head.detectedYear, vendor: head.vendor, invoiceDate: head.invoiceDate, totalGrossCents: head.totalGrossCents,
-      amountsAdjusted: head.amountsAdjusted, laborFromTotal: head.laborFromTotal, createdAt: ids.now, nextIdx: next + added.length, ...placement,
+      amountsAdjusted: head.amountsAdjusted, laborFromTotal: head.laborFromTotal, source: head.source, invoiceNumber: head.invoiceNumber,
+      eInvoiceNotes: head.eInvoiceNotes, createdAt: ids.now, nextIdx: next + added.length, ...placement,
     }).where(eq(assessments.id, id))
   })
   const saved = await readAssessmentOfFile(db, input.file)

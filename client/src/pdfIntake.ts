@@ -14,6 +14,8 @@ export const MAX_PAGES = 4
 // `pages` bekommt die lange Kante der Seitenbilder in Bildpunkten (#35).
 export type OpenedPdf = {
   text(): Promise<string>
+  // Das XML einer E-Rechnung im PDF (ZUGFeRD, Factur-X, #189), sonst `null`
+  eInvoiceXml(): Promise<Blob | null>
   pages(max: number, edge: number): Promise<Blob[]>
   close(): void
 }
@@ -50,6 +52,10 @@ export const pdfReader: PdfReader = {
         }
         return text
       },
+      async eInvoiceXml() {
+        const found = await eInvoiceFromAttachments(await doc.getAttachments(), (id) => doc.getAttachmentContent(id))
+        return found === null ? null : new Blob([found.slice()], { type: 'application/xml' })
+      },
       async pages(max, edge) {
         const pages: Blob[] = []
         // Kleiner als für den Druck: Das Modell braucht die Auflösung nicht, und jedes Bild
@@ -71,17 +77,60 @@ function messageFor(err: unknown): string {
   return `Das PDF ließ sich nicht lesen (${message ?? String(err)}).`
 }
 
+// ---------- E-Rechnung im PDF (#189) ----------
+
+// Das XML einer E-Rechnung unter den Anhängen eines PDFs. Erkannt am Anfang des Inhalts (CII oder UBL), nicht am Namen;
+// bei mehreren gilt die Reihenfolge der üblichen Namen, dann das Alphabet. Den Inhalt liefert pdf.js manchmal erst auf
+// Nachfrage (`load`, `getAttachmentContent`). Größer als ein Beleg sein darf (25 MB), wird nie geschickt.
+const E_INVOICE_NAMES = ['factur-x.xml', 'xrechnung.xml', 'zugferd-invoice.xml']
+const E_INVOICE_MAX_BYTES = 25 * 1024 * 1024
+const E_INVOICE_ROOT = /CrossIndustryInvoice|urn:oasis:names:specification:ubl:schema:xsd:(Invoice|CreditNote)-2/
+type Attachment = { filename: string, content?: Uint8Array | null }
+
+export async function eInvoiceFromAttachments(
+  attachments: ReadonlyMap<string, Attachment> | null, load: (id: string) => Promise<Uint8Array | null>,
+): Promise<Uint8Array | null> {
+  if (!attachments) return null
+  const rank = (name: string) => { const i = E_INVOICE_NAMES.indexOf(name.toLowerCase()); return i < 0 ? E_INVOICE_NAMES.length : i }
+  const candidates = [...attachments].filter(([, a]) => /\.xml$/i.test(a.filename))
+    .sort(([, a], [, b]) => rank(a.filename) - rank(b.filename) || (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0))
+  for (const [id, a] of candidates) {
+    const content = a.content ?? await load(id)
+    if (!content || content.length > E_INVOICE_MAX_BYTES) continue
+    if (E_INVOICE_ROOT.test(new TextDecoder('latin1').decode(content.subarray(0, 4096)))) return content
+  }
+  return null
+}
+
+// Trägt das PDF eine E-Rechnung? Für den Eingang ohne KI (#189): Solche Belege wertet der Server ohne KI aus.
+export async function hasEInvoice(file: File, reader: PdfReader = pdfReader): Promise<boolean> {
+  if (file.type !== 'application/pdf') return false
+  let doc: OpenedPdf | undefined
+  try {
+    doc = await reader.open(file)
+    return (await doc.eInvoiceXml()) !== null
+  } catch {
+    return false
+  } finally {
+    doc?.close()
+  }
+}
+
 export async function buildUpload(file: File, reader: PdfReader = pdfReader, pageEdge = INTAKE_EDGE): Promise<FormData> {
   const fd = new FormData()
   fd.append('file', file)
   if (file.type !== 'application/pdf') return fd
 
   let text = ''
+  let xml: Blob | null = null
   let pages: Blob[] = []
   let doc: OpenedPdf | undefined
   try {
     doc = await reader.open(file)
     text = (await doc.text()).trim().slice(0, PDF_TEXT_MAX)
+    // Ein PDF mit E-Rechnung (#189): Das XML liest der Server ohne KI. Ein Fehler beim Lesen der Anhänge ist nur
+    // „keine E-Rechnung“, Text und Seitenbilder gehen wie bisher mit (der Server fällt bei Ablehnung auf die KI zurück).
+    xml = await doc.eInvoiceXml().catch(() => null)
     if (text.length < PDF_TEXT_MIN) pages = (await doc.pages(MAX_PAGES, pageEdge)).slice(0, MAX_PAGES)
   } catch (err) {
     throw new Error(messageFor(err))
@@ -90,6 +139,7 @@ export async function buildUpload(file: File, reader: PdfReader = pdfReader, pag
   }
   if (text.length < PDF_TEXT_MIN && pages.length === 0) throw new Error('Das PDF enthält keine Seiten.')
 
+  if (xml) fd.append('eInvoiceXml', xml, 'e-rechnung.xml')
   if (text) fd.append('pdfText', text)
   pages.forEach((s, i) => fd.append('pages', s, `seite-${i + 1}.jpg`))
   return fd

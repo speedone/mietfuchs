@@ -1,15 +1,16 @@
 // Was der Browser vor dem Hochladen aus einem Beleg macht (#21). pdf.js ersetzt hier ein
 // Leser mit festen Antworten; das echte Lesen und Rendern prüft der Durchlauf im Browser.
 import { describe, expect, test, vi } from 'vitest'
-import { buildUpload, MAX_PAGES, PDF_TEXT_MAX, PDF_TEXT_MIN, type OpenedPdf, type PdfReader } from './pdfIntake'
+import { buildUpload, eInvoiceFromAttachments, hasEInvoice, MAX_PAGES, PDF_TEXT_MAX, PDF_TEXT_MIN, type OpenedPdf, type PdfReader } from './pdfIntake'
 import { INTAKE_EDGE } from './pdf'
 
 const pdf = () => new File(['%PDF-1.4'], 'rechnung.pdf', { type: 'application/pdf' })
 const photo = () => new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' })
 
-function fakeReader(text: string, pageCount = 1) {
+function fakeReader(text: string, pageCount = 1, xml: string | null = null) {
   const doc: OpenedPdf = {
     text: vi.fn(async () => text),
+    eInvoiceXml: vi.fn(async () => (xml === null ? null : new Blob([xml], { type: 'application/xml' }))),
     pages: vi.fn(async (max: number) =>
       Array.from({ length: Math.min(pageCount, max) }, (_, i) => new Blob([`Seite ${i + 1}`], { type: 'image/jpeg' })),
     ),
@@ -24,6 +25,7 @@ function failingReader(name: string, message: string, failAt: 'open' | 'text' | 
   const error = Object.assign(new Error(message), { name })
   const doc: OpenedPdf = {
     text: vi.fn(async () => { if (failAt === 'text') throw error; return '' }),
+    eInvoiceXml: vi.fn(async () => null),
     pages: vi.fn(async () => { throw error }),
     close: vi.fn(),
   }
@@ -116,5 +118,59 @@ describe('Meldungen, wenn ein PDF nicht lesbar ist', () => {
     const { reader, doc } = failingReader('UnknownErrorException', 'Worker was destroyed', 'text')
     await expect(buildUpload(pdf(), reader)).rejects.toThrow('Das PDF ließ sich nicht lesen (Worker was destroyed).')
     expect(doc.close).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------- E-Rechnung im PDF (#189) ----------
+
+const CII = '<?xml version="1.0"?><rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>'
+const UBL = '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>'
+const bytes = (s: string) => new TextEncoder().encode(s)
+const attachments = (files: Record<string, string>) => new Map(Object.entries(files).map(([name, content]) => [name, { filename: name, content: bytes(content) }]))
+const loadNever = async (): Promise<Uint8Array | null> => { throw new Error('nicht nachladen') }
+const text = (b: Uint8Array | null) => (b === null ? null : new TextDecoder().decode(b))
+
+describe('E-Rechnung im PDF finden', () => {
+  test('nimmt das XML einer E-Rechnung, gleich unter welchem Namen', async () => {
+    expect(text(await eInvoiceFromAttachments(attachments({ 'factur-x.xml': CII }), loadNever))).toBe(CII)
+    expect(text(await eInvoiceFromAttachments(attachments({ 'beliebig.XML': UBL }), loadNever))).toBe(UBL)
+  })
+
+  test('übergeht andere Anhänge und anderes XML', async () => {
+    expect(await eInvoiceFromAttachments(attachments({ 'notiz.xml': '<notiz/>', 'bild.png': CII }), loadNever)).toBeNull()
+    expect(await eInvoiceFromAttachments(null, loadNever)).toBeNull()
+  })
+
+  test('bei mehreren gilt factur-x.xml vor den übrigen', async () => {
+    const found = await eInvoiceFromAttachments(attachments({ 'a.xml': UBL, 'factur-x.xml': CII }), loadNever)
+    expect(text(found)).toBe(CII)
+  })
+
+  test('lädt den Inhalt nach, wenn pdf.js ihn nicht mitliefert', async () => {
+    const load = vi.fn(async (id: string) => (id === 'zugferd-invoice.xml' ? bytes(CII) : null))
+    const found = await eInvoiceFromAttachments(new Map([['zugferd-invoice.xml', { filename: 'zugferd-invoice.xml' }]]), load)
+    expect(text(found)).toBe(CII)
+    expect(load).toHaveBeenCalledWith('zugferd-invoice.xml')
+  })
+
+  test('schickt das XML als Feld eInvoiceXml mit, Text und Seiten wie bisher', async () => {
+    const { reader } = fakeReader('x'.repeat(PDF_TEXT_MIN), 1, CII)
+    const fd = await buildUpload(pdf(), reader)
+    expect(fieldNames(fd)).toEqual(['eInvoiceXml', 'file', 'pdfText'])
+    const xml = fd.get('eInvoiceXml')
+    expect(xml instanceof Blob ? await xml.text() : null).toBe(CII)
+  })
+
+  test('ohne E-Rechnung kein Feld, und ein Fehler beim Lesen der Anhänge hält das Hochladen nicht auf', async () => {
+    expect(fieldNames(await buildUpload(pdf(), fakeReader('x'.repeat(PDF_TEXT_MIN)).reader))).toEqual(['file', 'pdfText'])
+    const { reader, doc } = fakeReader('x'.repeat(PDF_TEXT_MIN))
+    doc.eInvoiceXml = vi.fn(async () => { throw new Error('kaputt') })
+    expect(fieldNames(await buildUpload(pdf(), reader))).toEqual(['file', 'pdfText'])
+  })
+
+  test('hasEInvoice: nur ein PDF mit E-Rechnung', async () => {
+    expect(await hasEInvoice(pdf(), fakeReader('x', 1, CII).reader)).toBe(true)
+    expect(await hasEInvoice(pdf(), fakeReader('x').reader)).toBe(false)
+    expect(await hasEInvoice(photo(), fakeReader('x', 1, CII).reader)).toBe(false)
   })
 })

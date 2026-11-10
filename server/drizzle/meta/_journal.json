@@ -666,6 +666,20 @@
       "when": 1794262779428,
       "tag": "0094_zahlungs_qr",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "6",
+      "when": 1794312795566,
+      "tag": "0095_e_rechnung_herkunft",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "6",
+      "when": 1794312801389,
+      "tag": "0096_e_rechnung_herkunft_bedingungen",
+      "breakpoints": true
     }
   ]
 }

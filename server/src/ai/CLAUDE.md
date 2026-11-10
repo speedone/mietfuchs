@@ -1,6 +1,7 @@
 # KI-Belegauswertung
 
-Optional, gegen **Ollama** oder einen **OpenAI-kompatiblen Dienst** (#18). **Die KI macht nur
+Optional, gegen **Ollama** oder einen **OpenAI-kompatiblen Dienst** (#18). **Eine E-Rechnung im PDF geht vorher und ohne
+Modell** (`eInvoiceXml`, server/src/CLAUDE.md unter „Belegbuchung“). **Die KI macht nur
 Vorschläge**, übernommen wird erst nach Prüfung durch den Menschen. Gilt auch für
 [../extract.ts](../extract.ts), [../extractHeating.ts](../extractHeating.ts) und
 [../invoiceAmounts.ts](../invoiceAmounts.ts).

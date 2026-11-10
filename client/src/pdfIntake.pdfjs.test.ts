@@ -4,7 +4,7 @@
 // moderne Fassung zum Einsatz, die nur die allerneuesten Browser kennt, fiele das hier auf.
 import { describe, expect, test } from 'vitest'
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { pageText } from './pdfIntake'
+import { eInvoiceFromAttachments, pageText } from './pdfIntake'
 import { invoiceDateFromText } from './invoiceDateText'
 
 // Für die Textebene braucht pdf.js keine Schriftdateien. Die Warnung, dass sie fehlen, bleibt
@@ -63,5 +63,45 @@ describe('Textebene mit echtem pdf.js (legacy-Fassung)', () => {
     const task = openDocument(new TextEncoder().encode('%PDF-1.4\nkaputt\n'))
     await expect(task.promise).rejects.toMatchObject({ name: 'InvalidPDFException' })
     await task.destroy()
+  })
+})
+
+// #189: Das XML einer E-Rechnung im PDF findet das echte pdf.js (getAttachments, getAttachmentContent). Das PDF baut
+// pdf-lib wie ein Erzeuger von ZUGFeRD: Anhang im Namensbaum EmbeddedFiles und in /AF mit AFRelationship.
+describe('E-Rechnung im PDF mit echtem pdf.js', () => {
+  const CII = '<?xml version="1.0" encoding="UTF-8"?><rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"><rsm:ExchangedDocument/></rsm:CrossIndustryInvoice>'
+
+  async function pdfWith(files: Record<string, string>): Promise<Uint8Array> {
+    const { AFRelationship, PDFDocument } = await import('pdf-lib')
+    const doc = await PDFDocument.create()
+    doc.addPage([595, 842])
+    for (const [name, content] of Object.entries(files)) {
+      await doc.attach(new TextEncoder().encode(content), name, { mimeType: 'application/xml', afRelationship: AFRelationship.Alternative })
+    }
+    return doc.save()
+  }
+
+  test('findet factur-x.xml und liefert den Inhalt byte-gleich', async () => {
+    const task = openDocument(await pdfWith({ 'factur-x.xml': CII }))
+    try {
+      const doc = await task.promise
+      const found = await eInvoiceFromAttachments(await doc.getAttachments(), (id) => doc.getAttachmentContent(id))
+      expect(found === null ? null : new TextDecoder().decode(found)).toBe(CII)
+    } finally {
+      await task.destroy()
+    }
+  })
+
+  test('ein PDF ohne Anhang und eines mit fremdem XML ergeben keine E-Rechnung', async () => {
+    const cases: Record<string, string>[] = [{}, { 'notiz.xml': '<notiz/>' }]
+    for (const files of cases) {
+      const task = openDocument(await pdfWith(files))
+      try {
+        const doc = await task.promise
+        expect(await eInvoiceFromAttachments(await doc.getAttachments(), (id) => doc.getAttachmentContent(id))).toBeNull()
+      } finally {
+        await task.destroy()
+      }
+    }
   })
 })

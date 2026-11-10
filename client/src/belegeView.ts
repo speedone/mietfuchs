@@ -35,6 +35,15 @@ export function writeView(view: BelegeView): void {
 export const SKIPPED_FILES = 'Nur PDFs und Bilder lassen sich als Beleg hochladen; die übrigen Dateien wurden übergangen.'
 export const isAcceptedFile = (f: Pick<File, 'type'>): boolean => /^(application\/pdf|image\/)/.test(f.type)
 
+// Ohne KI (#189): Eine E-Rechnung im PDF wertet der Server ohne KI aus, sie geht also in die Auswertung; alles andere
+// wird nur abgelegt. `hasEInvoice` aus pdfIntake.ts, hineingereicht, damit es sich ohne pdf.js prüfen lässt.
+export async function splitForStore(files: readonly File[], hasEInvoice: (f: File) => Promise<boolean>): Promise<{ evaluate: File[], store: File[] }> {
+  const evaluate: File[] = []
+  const store: File[] = []
+  for (const f of files) (await hasEInvoice(f) ? evaluate : store).push(f)
+  return { evaluate, store }
+}
+
 export function splitFiles(files: Iterable<File>): { ok: File[]; skipped: number } {
   const all = [...files]
   const ok = all.filter(isAcceptedFile)

@@ -19,6 +19,7 @@ import type {
   AiSlotName,
   AreaBasisHeat,
   AssessmentBooking,
+  AssessmentSource,
   ChangeSplit,
   Co2Method,
   Co2Restriction,
@@ -1903,6 +1904,7 @@ export const uploads = sqliteTable(
 // `property_id` ist `SET NULL` wie bei `uploads`: Ein Objekt wird nur leer gelöscht, und eine
 // Auswertung ohne Objekt lässt sich nicht buchen, bis jemand eines wählt.
 export const ASSESSMENT_BOOKINGS = exactly<AssessmentBooking>()(['created', 'linked'] as const)
+export const ASSESSMENT_SOURCES = exactly<AssessmentSource>()(['ki', 'e-rechnung'] as const)
 const AMOUNTS_ADJUSTED = exactly<NonNullable<StoredAssessment['amountsAdjusted']>>()(['netto'] as const)
 
 export const assessments = sqliteTable(
@@ -1926,6 +1928,10 @@ export const assessments = sqliteTable(
     totalGrossCents: integer('total_gross_cents'),
     amountsAdjusted: text('amounts_adjusted', { enum: AMOUNTS_ADJUSTED }),
     laborFromTotal: integer('labor_from_total', { mode: 'boolean' }).notNull().default(false),
+    // Herkunft, Rechnungsnummer und Notizen einer E-Rechnung (#189); ohne Angabe eine KI-Auswertung.
+    source: text('source', { enum: ASSESSMENT_SOURCES }).notNull().default('ki'),
+    invoiceNumber: text('invoice_number'),
+    eInvoiceNotes: text('e_invoice_notes', { mode: 'json' }).$type<string[]>().notNull().default([]),
     // Hochwassermarke der Zeilennummern: die nächste Nummer, die es in dieser Auswertung noch nie gab.
     nextIdx: integer('next_idx').notNull().default(0),
     createdAt: text('created_at').notNull(),
@@ -1940,6 +1946,7 @@ export const assessments = sqliteTable(
     periodKeyCheck('assessments_requested_period_valid', 'requested_period'),
     notNegative('assessments_next_idx_not_negative', 'next_idx'),
     oneOf('assessments_amounts_adjusted_known', 'amounts_adjusted', AMOUNTS_ADJUSTED),
+    oneOf('assessments_source_known', 'source', ASSESSMENT_SOURCES),
   ],
 )
 
@@ -1963,6 +1970,8 @@ export const assessmentLines = sqliteTable(
     // (Integrationsdurchsicht, H1). Für sie sind die schon gebuchten Positionen dieses Belegs
     // mögliche Doppelungen; für die Zeilen der ersten Auswertung nicht (Frischwasser und Abwasser).
     reassessed: integer('reassessed', { mode: 'boolean' }).notNull().default(false),
+    // Lohnanteil nur aus der Art der Position vorgeschlagen (E-Rechnung, #189)
+    laborGuessed: integer('labor_guessed', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [
     primaryKey({ columns: [t.assessmentId, t.idx] }),

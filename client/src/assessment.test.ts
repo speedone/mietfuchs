@@ -11,11 +11,11 @@ const suggestion = (patch: Partial<LineSuggestion> = {}): LineSuggestion => ({
 })
 const line = (idx: number, patch: Partial<AssessmentLine> = {}): AssessmentLine => ({
   idx, description: 'Frischwasser', category: 'Wasser/Abwasser', categoryGuessed: false, amountCents: 70000, labor35aCents: null,
-  booking: null, costItemId: null, dismissed: false, reassessed: false, state: 'open', itemDescription: null, suggestion: suggestion(), ...patch,
+  booking: null, costItemId: null, dismissed: false, reassessed: false, laborGuessed: false, state: 'open', itemDescription: null, suggestion: suggestion(), ...patch,
 })
 const view = (lines: AssessmentLine[]): AssessmentView => ({
   id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, requestedPeriod: calendarPeriod(2025), vendor: 'Stadtwerke', invoiceDate: null,
-  totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: lines.length, createdAt: '2026-10-02T00:00:00.000Z',
+  totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, source: 'ki', invoiceNumber: null, eInvoiceNotes: [], nextIdx: lines.length, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'w.pdf', lines, open: true, sumWarning: null,
 })
 const KANDIDAT: LineCandidate = { id: 'wa', description: 'Wasser 2025', amountCents: 150000, invoiceFile: null, key: 'area', formOnly: false }

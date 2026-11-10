@@ -8,6 +8,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- E-Rechnungen ohne KI: Trägt ein hochgeladenes PDF eine E-Rechnung (ZUGFeRD oder Factur-X), übernimmt Mietfuchs
+  Betrag, Datum, Rechnungssteller und Positionen direkt aus dem XML in die Prüfung unter „Zu prüfen“, ohne Modell und
+  ohne Netz, auch wenn keine KI erreichbar ist. Ein Lohnanteil nach § 35a EStG wird nur für erkennbare Arbeit
+  vorgeschlagen und will bestätigt sein; Abschlags- und Teilrechnungen, korrigierte Rechnungen und dieselbe Rechnung in
+  einem zweiten Beleg sind rot ([#189](https://github.com/speedone/mietfuchs/issues/189)).
 - QR-Code zum Bezahlen bei einer Nachzahlung: Auf Wunsch (Druckfenster, „QR-Code zum Bezahlen bei Nachzahlung“)
   steht neben dem Satz zur Nachzahlung ein QR-Code, den der Mieter mit seiner Banking-App scannt. Empfänger und IBAN
   kommen aus dem Anschreiben, eine abweichende IBAN am Objekt gilt also auch im Code. Der Verwendungszweck ist ein

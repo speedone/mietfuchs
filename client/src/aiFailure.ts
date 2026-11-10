@@ -44,6 +44,7 @@ export function readFailure(data: unknown): AiFailure | null {
     ...(typeof data.service === 'string' && data.service ? { service: data.service } : {}),
     ...(provider ? { provider } : {}),
     ...(data.meterPhoto === true ? { meterPhoto: true as const } : {}),
+    ...(typeof data.eInvoiceRefusal === 'string' && data.eInvoiceRefusal ? { eInvoiceRefusal: data.eInvoiceRefusal } : {}),
   }
 }
 

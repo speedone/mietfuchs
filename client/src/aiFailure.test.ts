@@ -1,7 +1,7 @@
 // Fehler mit Ausweg (#487): je Grund ein Satz, danach immer derselbe Ausweg; die Einstellungen werden nur
 // angeboten, wo sie helfen.
 import { expect, test } from 'vitest'
-import { failureSentence, offersAiSettings } from './aiFailure'
+import { failureSentence, offersAiSettings, readFailure } from './aiFailure'
 import type { AiFailureReason } from './types'
 
 test('je Grund ein Satz in der Sprache der Oberfläche', () => {
@@ -22,4 +22,10 @@ test('je Grund ein Satz in der Sprache der Oberfläche', () => {
 test('„KI-Einstellungen öffnen“ nur bei Adresse, Schlüssel, Guthaben, Bestätigung und Modell', () => {
   const all: AiFailureReason[] = ['unreachable', 'address', 'model', 'key', 'quota', 'consent', 'timeout', 'other']
   expect(all.filter(offersAiSettings)).toEqual(['address', 'model', 'key', 'quota', 'consent'])
+})
+
+test('der Grund einer abgelehnten E-Rechnung (#189) kommt mit dem gespeicherten Beleg mit', () => {
+  const f = readFailure({ kept: true, file: 'a.pdf', reason: 'unreachable', error: 'x', eInvoiceRefusal: 'Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht.' })
+  expect(f?.eInvoiceRefusal).toBe('Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht.')
+  expect(readFailure({ kept: true, file: 'a.pdf', reason: 'unreachable' })?.eInvoiceRefusal).toBeUndefined()
 })

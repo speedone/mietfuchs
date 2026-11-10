@@ -88,6 +88,9 @@ export type UploadBody = {
   service?: string
   provider?: string
   meterPhoto?: boolean
+  // Belegbuchung (#170) und E-Rechnung (#189)
+  assessment?: AssessmentView | null
+  eInvoiceRefusal?: string
 }
 
 // Eine Zeile des Stroms (Accept: application/x-ndjson): `type` sagt, was sie bedeutet, die

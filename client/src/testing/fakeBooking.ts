@@ -67,10 +67,10 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
           id, file, propertyId, year: detected ?? opts.year, detectedYear: detected,
           requestedYear: opts.year, requestedPeriod: propertyId === null ? null : calendarPeriod(opts.year), vendor: ex.vendor ?? null,
           invoiceDate: ex.invoiceDate ?? null, totalGrossCents: typeof ex.totalGrossEur === 'number' ? Math.round(ex.totalGrossEur * 100) : null,
-          amountsAdjusted: ex.amountsAdjusted ?? null, laborFromTotal: ex.laborFromTotal === true, nextIdx: fresh.length,
+          amountsAdjusted: ex.amountsAdjusted ?? null, laborFromTotal: ex.laborFromTotal === true, source: 'ki', invoiceNumber: null, eInvoiceNotes: [], nextIdx: fresh.length,
           createdAt: new Date(Date.UTC(2026, 9, 2, 0, 0, next)).toISOString(),
         },
-        lines: fresh.map((l, idx) => ({ ...l, assessmentId: id, idx, booking: null, costItemId: null, dismissed: false, reassessed: false })),
+        lines: fresh.map((l, idx) => ({ ...l, assessmentId: id, idx, booking: null, costItemId: null, dismissed: false, reassessed: false, laborGuessed: l.laborGuessed ?? false })),
       }
       records.push(r)
       return view(r)
@@ -84,7 +84,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       const added = withoutBooked(linesFromExtraction(ex), kept)
       const start = r.assessment.nextIdx
       r.lines = [...kept, ...added.map((l, i) => ({
-        ...l, assessmentId: r.assessment.id, idx: start + i, booking: null, costItemId: null, dismissed: false, reassessed: kept.length > 0,
+        ...l, assessmentId: r.assessment.id, idx: start + i, booking: null, costItemId: null, dismissed: false, reassessed: kept.length > 0, laborGuessed: l.laborGuessed ?? false,
       }))]
       r.assessment = { ...r.assessment, nextIdx: start + added.length }
       return view(r)

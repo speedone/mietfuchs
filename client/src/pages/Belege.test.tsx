@@ -13,6 +13,9 @@ import { UIProvider } from '../components/feedback'
 import { useState } from 'react'
 import type { ReceiptUpload } from '../receipts'
 import Belege from './Belege'
+
+// Eine E-Rechnung im PDF erkennt pdf.js; hier steht der Dateiname dafür (#189).
+vi.mock('../pdfIntake', async (importOriginal) => ({ ...(await importOriginal<typeof import('../pdfIntake')>()), hasEInvoice: async (f: File) => f.name === 'zugferd.pdf' }))
 import { PLACEMENT_FIRST } from '../components/ReceiptParts'
 import { PeriodSelect } from '../components/PeriodSelect'
 
@@ -54,6 +57,8 @@ let propsOverride: Property[] | null = null
 let aiStatus: { ok: boolean; error?: string; reason?: string } = { ok: true }
 // Eine Auswertung, die nicht antwortet (läuft, bis der Test endet)
 let holdIntake = false
+// Dieses Hochladen über /api/upload scheitert (Durchsicht PR 2 zu #189)
+let failUpload: string | null = null
 // Die Antwort einer gescheiterten Auswertung, wo der Test sie vorgibt
 let intakeFailure: Record<string, unknown> | null = null
 // Die Pfade aller GET-Anfragen
@@ -79,6 +84,7 @@ beforeEach(() => {
   propsOverride = null
   aiStatus = { ok: true }
   holdIntake = false
+  failUpload = null
   intakeFailure = null
   fetched = []
   deleted = new Set()
@@ -94,6 +100,7 @@ beforeEach(() => {
       if (u.pathname === '/api/intake' && holdIntake) return new Promise<Response>(() => {})
       if (u.pathname === '/api/intake' && intakeFailure) return new Response(JSON.stringify(intakeFailure), { status: 502, headers: { 'content-type': 'application/json' } })
       if (u.pathname === '/api/intake') return new Response(JSON.stringify({ error: 'Ollama antwortet nicht.', file: String(body.existingFile ?? '4_lose.pdf'), reason: 'unreachable', kept: true }), { status: 502, headers: { 'content-type': 'application/json' } })
+      if (u.pathname === '/api/upload' && failUpload !== null && (body as Record<string, unknown>).file === failUpload) return new Response(JSON.stringify({ error: 'Kein Platz mehr auf dem Datenträger.' }), { status: 503, headers: { 'content-type': 'application/json' } })
       if (method === 'DELETE' && u.pathname.startsWith('/api/uploads/')) deleted.add(decodeURIComponent(u.pathname.slice('/api/uploads/'.length)))
       const answer = u.pathname === '/api/upload' ? { file: '99_nachgereicht.pdf' } : { ok: true }
       return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -1363,4 +1370,19 @@ test('Ohne Position: mit KI steht „Von Hand erfassen“ neben „Per KI auswer
   fireEvent.change(within(card as HTMLElement).getByLabelText(/Objekt/), { target: { value: 'p2' } })
   expect((screen.getByRole('button', { name: 'lose.pdf von Hand erfassen' }) as HTMLButtonElement).disabled).toBe(true)
   expect((screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+// #189, Durchsicht PR 2: Ohne KI geht eine E-Rechnung in die Auswertung, der Rest wird abgelegt; scheitert dabei ein
+// Hochladen, bleibt die Meldung stehen.
+test('Eingang ohne KI: E-Rechnung wird ausgewertet, der Scan abgelegt, und ein gescheitertes Hochladen bleibt gemeldet', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  failUpload = 'scan.pdf'
+  const { container } = renderInboxWith(LOCAL)
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  dropInto(container, [new File(['%PDF'], 'zugferd.pdf', { type: 'application/pdf' }), new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' })])
+  // In die Warteschlange (das Lesen des Test-PDFs mit pdf.js scheitert hier, die Karte nennt den Beleg trotzdem)
+  expect((await screen.findAllByText(/zugferd\.pdf/)).length).toBeGreaterThan(0)
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/upload' && (r.body as Record<string, unknown>).file === 'scan.pdf')).toBe(true))
+  expect(sent.some((r) => r.url === '/api/upload' && (r.body as Record<string, unknown>).file === 'zugferd.pdf')).toBe(false)
+  expect(await screen.findByText(/„scan\.pdf“ wurde nicht hochgeladen/)).toBeTruthy()
 })
