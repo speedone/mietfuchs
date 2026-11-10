@@ -3,7 +3,7 @@
 import type { BelegeView } from './nav'
 import type { QueueEntry } from './evaluationQueue'
 import { isReceipt, type FolderFilter, type ReceiptCard } from './receipts'
-import type { AiStatus, PeriodRules, UploadInfo } from './types'
+import type { AiStatus, AssessmentSource, PeriodRules, UploadInfo } from './types'
 import { calendarPeriod, periodsBetween } from '../../shared/period.ts'
 
 // ---------- Zuletzt benutzte Ansicht ----------
@@ -130,4 +130,13 @@ export function placeOf(u: Pick<UploadInfo, 'propertyId' | 'year'>, here: { prop
 // Der Zeitraum, der im Kalenderjahr beginnt (wie die Mappe des Ordners), beim Kalenderobjekt das Jahr selbst
 export function periodKeyOfYear(rules: PeriodRules, year: number): string {
   return periodsBetween(rules, `${year}-01-01`, `${year}-12-31`).find((p) => p.from.startsWith(`${year}-`))?.key ?? calendarPeriod(year)
+}
+
+// ---------- Zuordnen statt Buchen ----------
+
+// Die Rückfrage, wenn ein Beleg mit offener Auswertung an eine Position kommt: Sie nennt, woher die Vorschläge
+// stammen, aus der KI oder aus einer E-Rechnung (#189).
+export function discardQuestion(source: AssessmentSource): { title: string; message: string } {
+  const from = source === 'e-rechnung' ? 'aus der E-Rechnung' : 'der KI'
+  return { title: `Vorschläge ${from} verwerfen?`, message: `Die Vorschläge ${from} zu diesem Beleg werden verworfen; der Beleg kommt an die gewählte Position.` }
 }

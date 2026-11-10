@@ -106,6 +106,7 @@ const FIELD_LABELS: Record<string, string> = {
   invoice_number: 'Rechnungsnummer',
   e_invoice_notes: 'Hinweise zur E-Rechnung',
   labor_guessed: 'Lohnanteil nur vorgeschlagen',
+  source: 'Herkunft',
   print_payment_qr: 'QR-Code zum Bezahlen bei Nachzahlung',
   name: 'Bezeichnung',
   address: 'Adresse',
@@ -240,6 +241,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
   cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
   cost_items: { room_split: { area: 'Fläche', persons: 'Personentagen' } },
+  assessments: { source: { ki: 'KI', 'e-rechnung': 'E-Rechnung' } },
   // Bezugszähler und Rest (#98): der Rest hat zusätzlich zwei Ziele beim Vermieter.
   cost_item_meter_rest: { key: { area: KEY_LABELS.area, persons: KEY_LABELS.persons, units: KEY_LABELS.units, meter: 'im Verhältnis der Zähler', landlord: 'Vermieter trägt (abziehbar)', selfUse: 'Eigenanteil des Vermieters (privat)', standard: 'wie bisher (wie ohne Bezugszähler)' } },
   cost_item_meter_rest_subs: {
@@ -248,7 +250,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   },
 }
 
-const BOOLEAN_COLUMNS = new Set(['participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start'])
+const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
 export const fieldLabel = (column: string): string => FIELD_LABELS[column] ?? column
@@ -264,6 +266,17 @@ const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
 const isOmitted = (value: unknown): boolean => value !== null && typeof value === 'object' && '$omitted' in value
 const isBlob = (value: unknown): boolean => value !== null && typeof value === 'object' && '$blob' in value
 
+// Die Hinweise einer E-Rechnung (#189) stehen als JSON-Liste in der Spalte; gezeigt werden die Sätze.
+function notesText(raw: string): string {
+  try {
+    const list: unknown = JSON.parse(raw)
+    if (Array.isArray(list)) return list.length === 0 ? 'keine' : list.map(String).join(' ')
+  } catch {
+    // kein JSON: wie es dasteht
+  }
+  return raw
+}
+
 // `table` und `refs` sind optional, damit sich ein einzelner Wert auch ohne Zusammenhang lesen lässt.
 export function formatValue(column: string, value: unknown, table?: string, refs?: Record<string, string>): string {
   if (value === null || value === undefined || value === '') return 'leer'
@@ -273,6 +286,7 @@ export function formatValue(column: string, value: unknown, table?: string, refs
   if (ref) return ref
   if (typeof value === 'number' && column.endsWith('_cents')) return fmtEuro(value)
   if (typeof value === 'number' && BOOLEAN_COLUMNS.has(column)) return value ? 'ja' : 'nein'
+  if (column === 'e_invoice_notes' && typeof value === 'string') return notesText(value)
   if (typeof value === 'string') {
     const labels = (table ? TABLE_ENUM_LABELS[table]?.[column] : undefined) ?? ENUM_LABELS[column]
     const label = labels?.[value]

@@ -33,7 +33,7 @@ import { useConfirm, useToast } from '../components/feedback'
 import { renderThumbnail } from '../pdfPreview'
 import { useFocusFirstNew } from '../focusNew'
 import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
-import { aiMode, elsewhereGroups, periodKeyOfYear, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, withoutPosition } from '../belegeView'
+import { aiMode, discardQuestion, elsewhereGroups, periodKeyOfYear, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, withoutPosition } from '../belegeView'
 import { hasEInvoice } from '../pdfIntake'
 import type { ReceiptStock } from '../receiptStock'
 import type { NavTarget } from '../nav'
@@ -544,8 +544,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Nach der Rückfrage werden die offenen Zeilen verworfen (wie „Verwerfen“ in der Prüfung), dann wird zugeordnet.
   async function attachInstead(v: AssessmentView, itemId: string): Promise<unknown> {
     const ok = await confirm({
-      title: 'Vorschläge der KI verwerfen?',
-      message: 'Die Vorschläge der KI zu diesem Beleg werden verworfen; der Beleg kommt an die gewählte Position.',
+      ...discardQuestion(v.source),
       confirmLabel: 'Zuordnen',
       cancelLabel: 'Abbrechen',
     })
