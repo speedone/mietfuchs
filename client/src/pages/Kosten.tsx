@@ -117,6 +117,7 @@ import { invoiceDateFromText } from '../invoiceDateText'
 import { adoptPrevious, receiptItemForm, vendorPrevious, type ReceiptStart } from '../receiptForm'
 import { receiptName } from '../receipts'
 import { compareName } from '../../../shared/compareName.ts'
+import { receiptHref } from '../eInvoiceView'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 // `onOpenReceipt`, `onOpenAiSettings`: Auswege eines gespeicherten, nicht ausgewerteten Belegs (#487)
@@ -1123,7 +1124,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 <tr className="group-head">
                   <td colSpan={5}>
                     {g.label}
-                    <a href={`/uploads/${g.invoiceFile}`} target="_blank" rel="noreferrer">📎 Beleg</a>
+                    <a href={receiptHref(g.invoiceFile)} target="_blank" rel="noreferrer">📎 Beleg</a>
                   </td>
                 </tr>
               )}
@@ -1568,7 +1569,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
               {form.invoiceFile ? (
                 <>
                 <div className="row center">
-                  <a href={`/uploads/${form.invoiceFile}`} target="_blank" rel="noreferrer">
+                  <a href={receiptHref(form.invoiceFile)} target="_blank" rel="noreferrer">
                     📎 {form.invoiceFile.replace(/^\d+_/, '')}
                   </a>
                   <button className="btn small ghost" onClick={() => setForm({ ...form, invoiceFile: undefined })}>

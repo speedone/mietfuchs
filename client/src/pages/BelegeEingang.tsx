@@ -39,6 +39,7 @@ import type { ReceiptStock } from '../receiptStock'
 import type { NavTarget } from '../nav'
 import type { ReceiptStart } from '../receiptForm'
 import { AmountCheckBox, AttachPicker, InboxPlacement, PLACEMENT_FIRST, ReceiptItem, useAttach, useDeleteReceipt, useHighlight } from '../components/ReceiptParts'
+import { receiptHref } from '../eInvoiceView'
 
 type Props = {
   stock: ReceiptStock
@@ -733,9 +734,10 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           {shown && (
             // Ein Bild abgeschottet (#517). Ein PDF nicht: In einem Rahmen mit `sandbox` zeigen die Betrachter von Chromium,
             // dem Programmfenster und Firefox nichts an (nachgemessen). Ein PDF führt kein Skript mit Zugriff auf die
-            // Seite aus und schickt keine Formulare ab (nachgemessen, server/src/uploads.ts).
+            // Seite aus und schickt keine Formulare ab (nachgemessen, server/src/uploads.ts). Eine E-Rechnung als XML-Datei
+            // (#189) zeigt die Rechnungsansicht der App (`receiptHref`), also eigener Code, der laufen muss.
             <iframe id={`beleg-${v.id}`} className="w-full xl:w-96 h-112 shrink-0 border border-line bg-card"
-              src={`/uploads/${encodeURIComponent(v.file)}`} title={`Beleg ${v.originalName}`} sandbox={/\.pdf$/i.test(v.file) ? undefined : ''} />
+              src={receiptHref(v.file)} title={`Beleg ${v.originalName}`} sandbox={/\.(pdf|xml)$/i.test(v.file) ? undefined : ''} />
           )}
           <div className="min-w-0 flex-1">
             <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v)}
