@@ -250,7 +250,7 @@ export type DescribeContext = {
   otherInvoices?: readonly OtherInvoice[]
 }
 
-export type OtherInvoice = { file: string, vendor: string | null, invoiceNumber: string, originalName: string }
+export type OtherInvoice = { file: string, vendor: string | null, invoiceNumber: string, invoiceDate: string | null, originalName: string }
 
 export const LABOR_GUESSED = 'Lohnanteil aus der Position übernommen; prüfen Sie, ob der Stundensatz Material enthält.'
 const sameVendor = (a: string | null, b: string | null) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase()
@@ -347,7 +347,10 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     reasons.push(...a.eInvoiceNotes)
   }
   const twinInvoice = a.invoiceNumber === null ? undefined
-    : (ctx.otherInvoices ?? []).find((o) => o.file !== a.file && o.invoiceNumber === a.invoiceNumber && sameVendor(o.vendor, a.vendor))
+    // Dieselbe Rechnung: gleiche Nummer, gleicher Steller und, wo beide eines tragen, gleiches Rechnungsdatum (manche
+    // Steller vergeben Nummern jedes Jahr neu). Welche Auswertungen in Frage kommen (nur frühere), wählt der Aufrufer.
+    : (ctx.otherInvoices ?? []).find((o) => o.file !== a.file && o.invoiceNumber === a.invoiceNumber && sameVendor(o.vendor, a.vendor)
+      && (o.invoiceDate === null || a.invoiceDate === null || o.invoiceDate === a.invoiceDate))
   if (twinInvoice) {
     level = 'rot'
     reasons.push(`Rechnung Nr. ${a.invoiceNumber} von ${a.vendor ?? 'demselben Steller'} ist schon ausgewertet (Beleg „${twinInvoice.originalName}“)`)

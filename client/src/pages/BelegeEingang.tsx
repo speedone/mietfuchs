@@ -367,9 +367,10 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Nur ablegen, ohne Auswertung (und ohne erreichbare KI immer): Die Belege bekommen Objekt und Jahr der Auswahl mit
   // und stehen danach unter „Ohne Position“. Nacheinander hochgeladen.
   const [uploading, setUploading] = useState(0)
-  async function storeOnly(files: File[]) {
+  // `skippedBefore`: schon vorher übergangene Dateien (Ablage ohne KI mit E-Rechnungen, #189), damit der Satz dazu bleibt
+  async function storeOnly(files: File[], skippedBefore = 0) {
     const { ok, skipped } = splitFiles(files)
-    setError(skipped > 0 ? SKIPPED_FILES : '')
+    setError(skipped + skippedBefore > 0 ? SKIPPED_FILES : '')
     let done = 0
     for (const f of ok) {
       setUploading(ok.length - done)
@@ -399,8 +400,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
       const { evaluate, store } = await splitForStore(ok, (f) => hasEInvoice(f))
       if (evaluate.length === 0) { void storeOnly(list); return }
       addFiles(evaluate, target)
-      if (store.length > 0) await storeOnly(store)
-      setError(skipped > 0 ? SKIPPED_FILES : '')
+      // Danach nichts mehr setzen: storeOnly meldet ein gescheitertes Hochladen selbst (Durchsicht PR 2).
+      if (store.length > 0) void storeOnly(store, skipped)
+      else setError(skipped > 0 ? SKIPPED_FILES : '')
       return
     }
     setError(addFiles(list, target) > 0 ? SKIPPED_FILES : '')

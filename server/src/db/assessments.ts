@@ -49,10 +49,14 @@ export async function readAssessmentOfFile(db: Executor, file: string): Promise<
 
 // Die Rechnungsnummern aller Auswertungen, die eine tragen (E-Rechnung, #189): Dieselbe Rechnung in einem zweiten
 // Beleg erkennt die Ampel daran, über alle Objekte, denn eine Rechnung gehört nur einmal in die Kosten.
-export async function invoiceNumbers(db: Executor): Promise<{ file: string, vendor: string | null, invoiceNumber: string }[]> {
-  const rows = await db.select({ file: assessments.file, vendor: assessments.vendor, invoiceNumber: assessments.invoiceNumber })
-    .from(assessments).where(isNotNull(assessments.invoiceNumber))
-  return rows.flatMap((r) => (r.invoiceNumber === null ? [] : [{ file: r.file, vendor: r.vendor, invoiceNumber: r.invoiceNumber }]))
+// `order` ist die rowid: Doppel ist nur die später ausgewertete (erneutes Auswerten ändert sie nicht, anders als `createdAt`).
+export type InvoiceNumberRow = { file: string, vendor: string | null, invoiceNumber: string, invoiceDate: string | null, order: number }
+export async function invoiceNumbers(db: Executor): Promise<InvoiceNumberRow[]> {
+  const rows = await db.select({
+    file: assessments.file, vendor: assessments.vendor, invoiceNumber: assessments.invoiceNumber, invoiceDate: assessments.invoiceDate,
+    order: sql<number>`rowid`,
+  }).from(assessments).where(isNotNull(assessments.invoiceNumber))
+  return rows.flatMap((r) => (r.invoiceNumber === null ? [] : [{ ...r, invoiceNumber: r.invoiceNumber, order: Number(r.order) }]))
 }
 
 // Die Auswertungen eines Objekts, älteste zuerst.

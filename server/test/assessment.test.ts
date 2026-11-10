@@ -333,11 +333,18 @@ test('E-Rechnung: ein nur vorgeschlagener Lohnanteil macht die Zeile gelb und ni
 })
 
 test('E-Rechnung: dieselbe Rechnungsnummer vom selben Steller in einem anderen Beleg ist rot', () => {
-  const others = [{ file: 'andere.pdf', vendor: ' stadt musterstadt ', invoiceNumber: 'R-1', originalName: 'Rechnung als PDF.pdf' }]
+  const others = [{ file: 'andere.pdf', vendor: ' stadt musterstadt ', invoiceNumber: 'R-1', invoiceDate: null, originalName: 'Rechnung als PDF.pdf' }]
   const s = eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: others })
   assert.equal(s.level, 'rot')
   assert.ok(s.reasons.includes('Rechnung Nr. R-1 von Stadt Musterstadt ist schon ausgewertet (Beleg „Rechnung als PDF.pdf“)'), s.reasons.join(' | '))
   // Anderer Steller oder dieselbe Datei: kein Doppel
   assert.equal(eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: [{ ...others[0], vendor: 'Stadtwerke' }] }).level, 'gruen')
   assert.equal(eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: [{ ...others[0], file: 'grundsteuer.pdf' }] }).level, 'gruen')
+})
+
+test('E-Rechnung: gleiche Nummer mit anderem Rechnungsdatum ist keine Doppelung (Nummer im nächsten Jahr wieder vergeben)', () => {
+  const others = [{ file: 'andere.pdf', vendor: 'Stadt Musterstadt', invoiceNumber: 'R-1', invoiceDate: '2025-02-15', originalName: 'alt.pdf' }]
+  assert.equal(eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: others }).level, 'gruen')
+  // ohne Datum an der anderen zählt die Nummer allein
+  assert.equal(eInvoiceView({ source: 'e-rechnung', invoiceNumber: 'R-1' }, {}, { otherInvoices: [{ ...others[0], invoiceDate: null }] }).level, 'rot')
 })

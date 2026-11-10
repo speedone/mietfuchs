@@ -15,7 +15,7 @@ import { planBooking, previewWith, settle, tokenSource, type BookingOutcome, typ
 import { narrowToProperty } from '../snapshot.ts'
 import { rulesOf } from '../../../shared/period.ts'
 import type { Database } from './client.ts'
-import { bookedLines, invoiceNumbers, listAssessments, readAssessment, writeLine, type AssessmentRecord } from './assessments.ts'
+import { bookedLines, invoiceNumbers, listAssessments, readAssessment, writeLine, type AssessmentRecord, type InvoiceNumberRow } from './assessments.ts'
 import { readStock, type Stock } from './read.ts'
 import { insertCostItemIn, patchCostItemIn } from './repository.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
@@ -35,7 +35,7 @@ const NOT_FOUND = 'Diese Auswertung gibt es nicht (mehr). Bitte laden Sie die Se
 const fileGone = (name: string): string =>
   `Den Beleg „${name}“ gibt es unter „Belege“ nicht mehr. Die Auswertung lässt sich deshalb nicht buchen; laden Sie den Beleg bitte erneut hoch.`
 
-type Context = { stock: Stock; booked: BookedLine[]; uploads: Map<string, UploadRow>; invoices: Omit<OtherInvoice, 'originalName'>[] }
+type Context = { stock: Stock; booked: BookedLine[]; uploads: Map<string, UploadRow>; invoices: InvoiceNumberRow[] }
 
 async function contextOf(db: Database): Promise<Context> {
   return { stock: await readStock(db), booked: await bookedLines(db), uploads: await uploadRows(db), invoices: await invoiceNumbers(db) }
@@ -52,6 +52,13 @@ function twinFilesOf(ctx: Context, file: string): string[] {
   const sha = ctx.uploads.get(file)?.sha256
   if (!sha) return []
   return [...ctx.uploads.values()].filter((u) => u.file !== file && u.sha256 === sha).map((u) => u.file)
+}
+
+// Die Rechnungsnummern der Auswertungen, die vor dieser angelegt wurden (Durchsicht PR 2): Doppel ist nur die spätere,
+// das Original bleibt ohne diesen Grund.
+function earlierInvoices(ctx: Context, file: string): OtherInvoice[] {
+  const own = ctx.invoices.find((o) => o.file === file)?.order ?? Number.POSITIVE_INFINITY
+  return ctx.invoices.filter((o) => o.order < own).map(({ order: _order, ...o }) => ({ ...o, originalName: nameOf(ctx, o.file) }))
 }
 
 const scopeOf = (ctx: Context, propertyId: string | null) => (propertyId ? narrowToProperty(ctx.stock, propertyId) : null)
@@ -124,7 +131,7 @@ function viewOf(record: AssessmentRecord, ctx: Context, peers: readonly Peer[]):
     booked: ctx.booked,
     peerTargets: peerTargetsFor(record, peers, ctx),
     rules: rulesFor(ctx, a.propertyId),
-    otherInvoices: ctx.invoices.map((o) => ({ ...o, originalName: nameOf(ctx, o.file) })),
+    otherInvoices: earlierInvoices(ctx, a.file),
   })
 }
 

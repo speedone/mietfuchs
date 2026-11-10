@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { UploadInfo } from '../../shared/types.ts'
+import type { AssessmentView, UploadInfo } from '../../shared/types.ts'
 import type { JournalGroupView } from '../src/db/journal.ts'
 import { type ClientSettings, LONG_TEXT, PDF, type UploadBody, chatRequests, fileOf, jsonOf, startServer, withOllama, type Server } from '../testing/api.ts'
 import { invoice, xmlOf } from '../testing/eInvoiceXml.ts'
@@ -139,5 +139,10 @@ test('E-Rechnung: dieselbe Rechnung als zweites PDF wird erkannt (gleiche Nummer
     const reasons = assessmentOf(second.body).lines.flatMap((l) => l.suggestion?.reasons ?? [])
     assert.ok(reasons.some((r) => /Rechnung Nr\. 112233 von Testverkäufer ist schon ausgewertet/.test(r)), reasons.join(' | '))
     assert.ok(assessmentOf(second.body).lines.every((l) => l.suggestion?.level === 'rot'))
+    // Das Original bleibt ohne diesen Grund: Doppel ist nur die später ausgewertete.
+    const all = await s.api<AssessmentView[]>('/api/assessments')
+    const original = all.find((v) => v.file === fileOf(first.body)) ?? assert.fail('Original fehlt')
+    const reasonsFirst = original.lines.flatMap((l) => l.suggestion?.reasons ?? [])
+    assert.ok(!reasonsFirst.some((r) => /schon ausgewertet/.test(r)), reasonsFirst.join(' | '))
   })
 })
