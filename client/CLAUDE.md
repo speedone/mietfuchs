@@ -148,6 +148,10 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   `envFixed` nur Anzeige. Im Übergang steht unten in der Seitenleiste „Ohne Passwort im Netz“
   ([AccessHint.tsx](src/components/AccessHint.tsx), wie NetworkHint), „⎋ Abmelden“ nur mit Sitzung, nie im Fenster
   (`showsSignOut`). Die Heimnetz-Karte fragt beim Einschalten nach dem Passwort (scripts/CLAUDE.md, Programmfenster).
+  Verbunden mit einem Mietfuchs im Heimnetz steht „🔗 Verbunden mit …“ ([RemoteHint.tsx](src/components/RemoteHint.tsx),
+  wie NetworkHint), beim ersten Start im Fenster bietet Umzug.tsx dazu den dritten Weg mit RemoteCard. Kopieren in die
+  Zwischenablage immer über `copyText` ([copyText.ts](src/copyText.ts)): `navigator.clipboard` fehlt ohne sicheren
+  Kontext (http im Heimnetz, nicht vertrautes Zertifikat).
 - Tests: access.test.ts, accessView.test.ts, accessApp.test.tsx, Anmeldung.test.tsx, Einrichtung.test.tsx,
   AccessCard.test.tsx, Einstellungen.heimnetz.test.tsx. Beschriftungen zitiert die Anleitung (shared/guides.ts), Begriffe
   „Anmeldung“ und „Einrichtungscode“ im Lexikon.

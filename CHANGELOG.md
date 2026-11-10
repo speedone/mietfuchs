@@ -8,6 +8,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Programmfenster und Kopplung ([#528](https://github.com/speedone/mietfuchs/issues/528)): Ist das Fenster mit einem
+  Mietfuchs im Heimnetz verbunden, steht in der Seitenleiste „Verbunden mit …“. Beim ersten Start fragt das Fenster
+  neben „neu beginnen“ und „Daten übernehmen“ auch nach „Mit Mietfuchs im Heimnetz verbinden“.
+
+### Behoben
+
+- „Kopieren“ beim Kopplungscode, bei den Befehlen für ein Update und beim Befehl für Ollama ging nicht, wenn Mietfuchs
+  über http im Heimnetz oder mit einem Zertifikat geöffnet war, dem der Browser nicht traut
+  ([#528](https://github.com/speedone/mietfuchs/issues/528)).
+
 - Die Karte „Anmeldung“, der Hinweis beim Start und die Anleitung zur Anmeldung nennen genauer, ab wann das Passwort im
   Netz Pflicht ist: schon ab der Vorabversion 1.0.0-rc.1, nicht erst ab 1.0
   ([#528](https://github.com/speedone/mietfuchs/issues/528)). Das Lexikon erklärt dazu „Programmfenster koppeln“, die

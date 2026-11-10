@@ -6,6 +6,7 @@
 // Vorlagen belegen nur vor: Adresse, Modell und Schlüssel bleiben frei änderbar, und „Eigener
 // OpenAI-kompatibler Dienst“ nimmt jede Adresse.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { copyText } from '../copyText'
 import type { JumpProps } from '../focus'
 import type { AiPreset, AiRecommendations, AiSettings as AiSettingsValues, AiSlot, AiSlotName, AiStatus, Settings } from '../types'
 import { api, fmtDate } from '../api'
@@ -608,12 +609,8 @@ function PullHint({ model, url, onPull, busy }: { model: string; url: string; on
   const toast = useToast()
   const { text, command } = pullInstructions(model, url)
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command)
-      toast('Befehl kopiert.')
-    } catch {
-      toast('Kopieren ging nicht. Bitte den Befehl von Hand markieren.', 'error')
-    }
+    if (await copyText(command)) toast('Befehl kopiert.')
+    else toast('Kopieren ging nicht. Bitte den Befehl von Hand markieren.', 'error')
   }
   return (
     <>

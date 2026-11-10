@@ -404,3 +404,45 @@ test('Suche scheitert beim ersten Start: Neu beginnen bleibt möglich', async ()
   await vi.waitFor(() => expect(onFresh).toHaveBeenCalled())
   expect(calls.some((c) => c.url === '/api/relocation/decline' && c.method === 'POST')).toBe(true)
 })
+
+// Rückmeldung zur Kopplung (#528): Beim ersten Start im Programmfenster auf einem zweiten Rechner will man oft weder
+// neu beginnen noch Daten übernehmen, sondern den Mietfuchs im Heimnetz öffnen. Ein dritter Weg, nur im Fenster.
+test('Erster Start im Fenster: „Mit Mietfuchs im Heimnetz verbinden“ zeigt Adresse und Code', async () => {
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([]) }) })
+  const connect = vi.fn(async () => ({ ok: true as const }))
+  const remote = { get: vi.fn(async () => ({ connected: false })), connect, disconnect: vi.fn(async () => ({})) }
+  renderScreen({ remote })
+  expect(await screen.findByText('Haben Sie Mietfuchs schon einmal benutzt?')).toBeTruthy()
+  const pair = screen.getByRole('button', { name: 'Mit Mietfuchs im Heimnetz verbinden' })
+  expect(pair.className).toBe(screen.getByRole('button', { name: 'Nein, neu beginnen' }).className)
+  fireEvent.click(pair)
+  expect(await screen.findByRole('heading', { level: 1, name: 'Mit Mietfuchs im Heimnetz verbinden' })).toBeTruthy()
+  fireEvent.change(await screen.findByRole('textbox', { name: /Adresse/ }), { target: { value: 'nas:3001' } })
+  fireEvent.change(screen.getByRole('textbox', { name: /Code/ }), { target: { value: 'K7QM-4XPA' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Verbinden' }))
+  await vi.waitFor(() => expect(connect).toHaveBeenCalledWith({ address: 'nas:3001', code: 'K7QM-4XPA' }))
+})
+
+test('Erster Start im Fenster: „Zurück“ führt vom Verbinden zur Frage', async () => {
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([]) }) })
+  const remote = { get: vi.fn(async () => ({ connected: false })), connect: vi.fn(), disconnect: vi.fn() }
+  renderScreen({ remote })
+  fireEvent.click(await screen.findByRole('button', { name: 'Mit Mietfuchs im Heimnetz verbinden' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Zurück' }))
+  expect(await screen.findByText('Haben Sie Mietfuchs schon einmal benutzt?')).toBeTruthy()
+})
+
+test('Im Browser (ohne Brücke des Fensters) kein dritter Weg, auch nicht bei gefundenen Daten', async () => {
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([]) }) })
+  renderScreen({ remote: null })
+  expect(await screen.findByText('Haben Sie Mietfuchs schon einmal benutzt?')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Heimnetz/ })).toBeNull()
+})
+
+test('Gefundene Daten im Fenster: klein „Mit Mietfuchs im Heimnetz verbinden …“', async () => {
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([FOUND]) }) })
+  const remote = { get: vi.fn(async () => ({ connected: false })), connect: vi.fn(), disconnect: vi.fn() }
+  renderScreen({ remote })
+  fireEvent.click(await screen.findByRole('button', { name: 'Mit Mietfuchs im Heimnetz verbinden …' }))
+  expect(await screen.findByRole('textbox', { name: /Adresse/ })).toBeTruthy()
+})
