@@ -125,3 +125,16 @@ test('der Bereich für Code und Ablauf steht von Anfang an leer da und wird dana
   await waitFor(() => expect(region.textContent).toContain('Der Code ist abgelaufen.'))
   expect(screen.getByRole('status', { name: 'Kopplungscode' })).toBe(region)
 })
+
+// Rückmeldung zur Kopplung: Über http im Heimnetz (oder mit einem Zertifikat, dem der Browser nicht traut) fehlt
+// navigator.clipboard; „Kopieren“ ging dann nirgends.
+test('„Kopieren“ geht auch ohne Zwischenablage des Browsers', async () => {
+  vi.stubGlobal('navigator', {})
+  const exec = vi.fn(() => true)
+  Object.defineProperty(document, 'execCommand', { value: exec, configurable: true })
+  setup()
+  fireEvent.click(screen.getByRole('button', { name: 'Code anzeigen' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Kopplungscode kopieren' }))
+  expect(await screen.findByText('Code kopiert.')).toBeTruthy()
+  expect(exec).toHaveBeenCalledWith('copy')
+})
