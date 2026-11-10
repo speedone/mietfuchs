@@ -103,7 +103,7 @@ import Table from '../components/Table'
 import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
 import { openBadgeClass } from '../assessment'
-import { SKIPPED_FILES } from '../belegeView'
+import { RECEIPT_ACCEPT, SKIPPED_FILES } from '../belegeView'
 import { focusOpener, useFocusTarget, useNewTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
@@ -1032,7 +1032,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,image/*"
+            accept={RECEIPT_ACCEPT}
             multiple
             aria-label="Belege auswählen"
             className="sr-only"
@@ -1603,7 +1603,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                   <div className="row center">
                     <label className="btn secondary small">
                       Beleg hochladen …
-                      <input type="file" className="sr-only" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
+                      <input type="file" className="sr-only" accept={RECEIPT_ACCEPT} onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
                     </label>
                     <span className="muted">PDF oder Foto</span>
                   </div>

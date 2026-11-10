@@ -2,7 +2,7 @@
 // Entscheidungslogik der Seite „Belege“ (#490): gemerkte Ansicht, Ablage, „Ohne Position“, Zeile für anderswo
 // Offenes, Ort eines Treffers der Suche.
 import { afterEach, expect, test, vi } from 'vitest'
-import { aiMode, elsewhereGroups, hitPlace, readView, SKIPPED_FILES, splitFiles, splitForStore, VIEW_KEY, withoutPosition, writeView } from './belegeView'
+import { aiMode, elsewhereGroups, hitPlace, readView, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, VIEW_KEY, withoutPosition, writeView } from './belegeView'
 import { receiptCards, type ReceiptUpload } from './receipts'
 import type { QueueEntry } from './evaluationQueue'
 import type { CostItem } from './types'
@@ -41,6 +41,15 @@ test('Ablage: nur PDF und Bilder, die übrigen werden gezählt und mit einem Sat
   expect(ok.map((f) => f.name)).toEqual(['a.pdf', 'b.jpg'])
   expect(skipped).toBe(1)
   expect(SKIPPED_FILES).toMatch(/übergangen/)
+})
+
+test('Ablage: eine XML-Datei kommt mit (E-Rechnung, #189); ob sie eine ist, prüft der Server', () => {
+  const files = [new File(['x'], 'x.xml', { type: 'text/xml' }), new File(['x'], 'y.xml', { type: 'application/xml' }), new File(['x'], 'Z.XML', { type: '' }), new File(['x'], 'g.svg', { type: 'image/svg+xml' })]
+  const { ok, skipped } = splitFiles(files)
+  expect(ok.map((f) => f.name)).toEqual(['x.xml', 'y.xml', 'Z.XML'])
+  expect(skipped).toBe(1)
+  expect(SKIPPED_FILES).toMatch(/E-Rechnungen/)
+  expect(RECEIPT_ACCEPT).toMatch(/\.xml/)
 })
 
 test('Ablage: nur „nicht erreichbar“ ohne laufende Auswertung heißt ohne KI; ein Dienst im Internet wird nicht gefragt', () => {

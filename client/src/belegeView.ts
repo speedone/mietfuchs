@@ -30,10 +30,14 @@ export function writeView(view: BelegeView): void {
 
 // ---------- Ablage ----------
 
-// Als Beleg lässt sich nur ein PDF oder ein Bild ablegen. Was sonst dabei ist, wird übergangen, und die Seite sagt es
-// mit demselben Satz, gleich wo abgelegt wird (Eingang, Kosten, „Nur ablegen“).
-export const SKIPPED_FILES = 'Nur PDFs und Bilder lassen sich als Beleg hochladen; die übrigen Dateien wurden übergangen.'
-export const isAcceptedFile = (f: Pick<File, 'type'>): boolean => /^(application\/pdf|image\/)/.test(f.type)
+// Als Beleg lässt sich ein PDF, ein Bild oder eine E-Rechnung als XML-Datei (#189) ablegen. Was sonst dabei ist, wird
+// übergangen, und die Seite sagt es mit demselben Satz, gleich wo abgelegt wird (Eingang, Kosten, „Nur ablegen“). Ob eine
+// XML-Datei eine E-Rechnung ist, prüft der Server am Inhalt; jedes andere XML lehnt er ab.
+export const SKIPPED_FILES = 'Nur PDFs, Bilder und E-Rechnungen (XML) lassen sich als Beleg hochladen; die übrigen Dateien wurden übergangen.'
+export const isXmlFile = (f: Pick<File, 'type' | 'name'>): boolean => /^(application|text)\/xml$/.test(f.type) || /\.xml$/i.test(f.name)
+export const isAcceptedFile = (f: Pick<File, 'type' | 'name'>): boolean => /^(application\/pdf|image\/(?!svg))/.test(f.type) || isXmlFile(f)
+// Die Dateiauswahl jeder Ablage für Belege (nicht der Heizung: Dort liest nur die KI).
+export const RECEIPT_ACCEPT = 'application/pdf,image/*,.xml,application/xml,text/xml'
 
 // Ohne KI (#189): Eine E-Rechnung im PDF wertet der Server ohne KI aus, sie geht also in die Auswertung; alles andere
 // wird nur abgelegt. `hasEInvoice` aus pdfIntake.ts, hineingereicht, damit es sich ohne pdf.js prüfen lässt.

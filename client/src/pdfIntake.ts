@@ -3,6 +3,7 @@
 // ersten Seiten als JPEG im Feld `pages`. Der Server öffnet keine PDFs mehr, deshalb braucht
 // die Programmdatei kein natives Modul (server/src/extract.ts).
 import { INTAKE_EDGE, openPdf, renderPage } from './pdf'
+import { isXmlFile } from './belegeView'
 
 // Ab dieser Länge gilt die Textebene als brauchbar (dieselbe Schwelle wie im Server).
 export const PDF_TEXT_MIN = 80
@@ -102,8 +103,16 @@ export async function eInvoiceFromAttachments(
   return null
 }
 
-// Trägt das PDF eine E-Rechnung? Für den Eingang ohne KI (#189): Solche Belege wertet der Server ohne KI aus.
+// Ist der Beleg eine E-Rechnung oder trägt das PDF eine? Für den Eingang ohne KI (#189): Solche Belege wertet der Server
+// ohne KI aus. Eine XML-Datei wird am Anfang ihres Inhalts erkannt, ohne pdf.js.
 export async function hasEInvoice(file: File, reader: PdfReader = pdfReader): Promise<boolean> {
+  if (isXmlFile(file)) {
+    try {
+      return E_INVOICE_ROOT.test(new TextDecoder('latin1').decode(await file.slice(0, 4096).arrayBuffer()))
+    } catch {
+      return false
+    }
+  }
   if (file.type !== 'application/pdf') return false
   let doc: OpenedPdf | undefined
   try {

@@ -89,6 +89,6 @@ test('Kosten: eine Datei, die weder PDF noch Bild ist, wird übergangen und gena
   const { container } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
   const input = await waitFor(() => container.querySelector('input[type="file"][multiple]') as HTMLInputElement ?? expect.fail('kein Dateifeld'))
   fireEvent.change(input, { target: { files: [new File(['x'], 'brief.docx', { type: 'application/msword' })] } })
-  expect(await screen.findByText('Nur PDFs und Bilder lassen sich als Beleg hochladen; die übrigen Dateien wurden übergangen.')).toBeTruthy()
+  expect(await screen.findByText('Nur PDFs, Bilder und E-Rechnungen (XML) lassen sich als Beleg hochladen; die übrigen Dateien wurden übergangen.')).toBeTruthy()
   expect(sent).toHaveLength(0)
 })

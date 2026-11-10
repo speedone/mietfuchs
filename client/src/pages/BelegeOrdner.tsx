@@ -14,7 +14,7 @@ import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { buildFolder, coverage, filesByItem, duplicateHints, inboxFor, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard } from '../receipts'
-import { hitPlace } from '../belegeView'
+import { hitPlace, RECEIPT_ACCEPT } from '../belegeView'
 import { useEvaluationQueue } from '../evaluationQueue'
 import type { ReceiptStock } from '../receiptStock'
 import Field from '../components/Field'
@@ -337,7 +337,7 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
                     <input
                       type="file"
                       className="sr-only"
-                      accept="application/pdf,image/*"
+                      accept={RECEIPT_ACCEPT}
                       aria-label={`Beleg für ${c.description} hochladen`}
                       onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void attach.uploadFor(c, f) }}
                     />
