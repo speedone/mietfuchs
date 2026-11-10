@@ -1862,7 +1862,8 @@ export type MeterReadingExtraction = {
 // an den die Belege gingen. Gilt für /api/extract, /api/intake und die beiden Routen der Heizung.
 // 'address': Unter der eingestellten Adresse antwortet keine passende Schnittstelle. `provider`: bei 'unreachable'
 // die Art des Anbieters, damit der Satz Ollama nur nennt, wo es um Ollama geht.
-export type AiFailureReason = 'unreachable' | 'address' | 'model' | 'key' | 'quota' | 'consent' | 'timeout' | 'other'
+// `e-invoice` (#189): eine E-Rechnung als XML-Datei, die Mietfuchs nicht übernimmt; gefragt wurde keine KI.
+export type AiFailureReason = 'unreachable' | 'address' | 'model' | 'key' | 'quota' | 'consent' | 'timeout' | 'other' | 'e-invoice'
 // `meterPhoto`: Der Schuhkarton hat ein Zählerfoto erkannt und ist am Ablesen gescheitert.
 // `eInvoiceRefusal` (#189): Das PDF trug eine E-Rechnung, die Mietfuchs nicht übernimmt, und warum.
 export type AiFailure = { error: string; file: string; reason: AiFailureReason; kept: true; service?: string; provider?: 'ollama' | 'openai'; meterPhoto?: true; eInvoiceRefusal?: string }

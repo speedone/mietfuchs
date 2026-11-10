@@ -7,6 +7,7 @@
 //   Position, ob der Lohnanteil nur vorgeschlagen ist, die Notizen aus check.ts und BT-1.
 
 import type { RawExtraction } from '../invoiceAmounts.ts'
+import type { EInvoiceView } from './model.ts'
 import { decodeXml } from '../xml.ts'
 import { checkEInvoice } from './check.ts'
 import { detectEInvoice, eInvoiceSyntaxOf, E_INVOICE_MAX_BYTES } from './detect.ts'
@@ -44,6 +45,24 @@ export function isEInvoiceDocument(data: Buffer): boolean {
     return xml !== null && eInvoiceSyntaxOf(xml) !== null
   } catch {
     return false
+  }
+}
+
+// Die Rechnungsansicht einer reinen XML-Datei (GET /api/e-invoice/:file): das Modell, die Hinweise und, wenn sie nicht
+// übernommen wird, warum. Auch eine nicht übernommene E-Rechnung (MINIMUM, Abschlagsrechnung) wird gezeigt; sie ist der
+// Beleg. `null`: keine E-Rechnung. Wirft nie.
+export function viewEInvoice(data: Buffer): EInvoiceView | null {
+  try {
+    const xml = xmlOf(data)
+    const syntax = xml === null ? null : eInvoiceSyntaxOf(xml)
+    if (xml === null || syntax === null) return null
+    const invoice = readModel(xml, syntax)
+    const found = detectEInvoice(xml)
+    const checked = checkEInvoice(invoice)
+    const refusal = found !== null && 'refused' in found ? found.refused : 'refused' in checked ? checked.refused : null
+    return { invoice, notes: 'notes' in checked ? checked.notes : [], refusal }
+  } catch {
+    return null
   }
 }
 

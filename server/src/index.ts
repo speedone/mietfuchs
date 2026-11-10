@@ -33,7 +33,7 @@ import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
 import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, toExtraction, type AskProgressEvent, type AskStats } from './extract.ts'
-import { isEInvoiceDocument, readEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
+import { isEInvoiceDocument, readEInvoice, viewEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
 import { normalizeAmounts } from './invoiceAmounts.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -339,10 +339,18 @@ async function checkXmlReceipt(req: Request, res: Response, next: NextFunction):
 }
 const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, checkXmlReceipt, inRequest]
 
-// Die E-Rechnung aus dem PDF (#189), wenn der Browser eine mitgeschickt hat. `null`: keine mitgeschickt.
-const eInvoiceOf = (req: Request): EInvoiceResult | null => {
+// Die E-Rechnung zum Beleg (#189): die Datei selbst, wenn sie eine XML-Datei ist (PR 3), sonst das XML, das der Browser
+// aus dem PDF mitgeschickt hat. `null`: keine mitgeschickt.
+const isXmlDocument = (file: DocumentSource): boolean => path.extname(file.filename).toLowerCase() === '.xml'
+async function eInvoiceOf(req: Request, file: DocumentSource): Promise<EInvoiceResult | null> {
+  if (isXmlDocument(file)) return readEInvoice(await fs.promises.readFile(file.path))
   const xml = filesOf(req).eInvoiceXml?.[0]?.buffer
   return xml ? readEInvoice(xml) : null
+}
+// Eine XML-Datei, die Mietfuchs nicht übernimmt: Sie bleibt gespeichert, die KI liest kein XML. Der Grund steht im Satz.
+function notTaken(file: DocumentSource, e: EInvoiceResult | null, stats: AskStats[]): AiFailure & { stats: AskStats[] } {
+  const reason = e?.kind === 'refused' ? e.reason : 'Die Datei ließ sich nicht als E-Rechnung lesen.'
+  return { file: file.filename, error: `Die E-Rechnung wird nicht übernommen. ${reason}`, reason: 'e-invoice', kept: true, eInvoiceRefusal: reason, stats }
 }
 const refusalOf = (e: EInvoiceResult | null): { eInvoiceRefusal?: string } => (e?.kind === 'refused' ? { eInvoiceRefusal: e.reason } : {})
 const uploadedFile = (req: Request): StoredUpload | null => storedUpload(filesOf(req).file?.[0])
@@ -2249,6 +2257,20 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
   }
 }
 
+// Die Rechnungsansicht einer E-Rechnung als XML-Datei (#189, PR 3): das gelesene Modell als JSON, die Oberfläche zeigt es
+// lesbar. Die Datei selbst geht unter /uploads nur als Download hinaus (uploads.ts). Gelesen wird nur ein reiner
+// Dateiname im Belegordner.
+app.get('/api/e-invoice/:file', async (req, res) => {
+  const name = req.params.file
+  const full = path.join(UPLOAD_DIR, name)
+  if (path.basename(name) !== name || name === '.' || name === '..' || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
+    return res.status(404).json({ error: 'Diesen Beleg gibt es unter „Belege“ nicht (mehr).' })
+  }
+  const view = path.extname(name).toLowerCase() === '.xml' ? viewEInvoice(await fs.promises.readFile(full)) : null
+  if (!view) return res.status(415).json({ error: 'Dieser Beleg ist keine E-Rechnung als XML-Datei.' })
+  res.json(view)
+})
+
 // Nur Rechnungen. Die Oberfläche nutzt die Route seit #490 nicht mehr (Schnellerfassung und Kosten werten über
 // /api/intake aus); sie bleibt für Tabs aus älteren Fassungen und wird später entfernt.
 app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
@@ -2256,12 +2278,14 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   if (!file) return
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
-  const eInvoice = eInvoiceOf(req)
+  let eInvoice: EInvoiceResult | null = null
   try {
+    eInvoice = await eInvoiceOf(req, file)
     if (eInvoice?.kind === 'read') {
       const { extraction, assessment } = await takeEInvoice(req, file, eInvoice, signal)
       return answer.done({ file: file.filename, extraction, assessment, stats })
     }
+    if (isXmlDocument(file)) return answer.fail(notTaken(file, eInvoice, stats))
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     await rememberInvoiceDate(file.filename, result.invoiceDate)
     const assessment = await rememberAssessment(req, file, result, signal, refusedOrigin(eInvoice))
@@ -2293,13 +2317,15 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
   let meterPhoto = false
-  const eInvoice = eInvoiceOf(req)
+  let eInvoice: EInvoiceResult | null = null
   try {
+    eInvoice = await eInvoiceOf(req, file)
     if (eInvoice?.kind === 'read') {
       await unmarkMeterPhoto(req, file.filename)
       const { extraction, assessment } = await takeEInvoice(req, file, eInvoice, signal)
       return answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
+    if (isXmlDocument(file)) return answer.fail(notTaken(file, eInvoice, stats))
     const settings = effectiveSettings()
     const material = { ...aiInput(req), signal, stats, onProgress }
     // Sagt der Browser, dass es eine Rechnung ist (Seite Kosten, „Als Rechnung auswerten“; #490), fragt der Server das

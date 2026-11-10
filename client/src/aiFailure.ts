@@ -6,8 +6,10 @@ import type { AiFailure, AiFailureReason } from './types'
 
 export const KEPT_TITLE = 'Gespeichert, nicht ausgewertet'
 export const KEPT_NEXT = 'Ihr Beleg ist gespeichert und steht auf der Seite Belege. Sie können ihn jetzt von Hand erfassen oder es später erneut versuchen.'
+// Bei einer nicht übernommenen XML-Datei hilft ein neuer Versuch nicht: Sie ändert sich nicht.
+export const KEPT_NEXT_E_INVOICE = 'Ihr Beleg ist gespeichert und steht auf der Seite Belege. Sie können ihn von Hand erfassen.'
 
-const REASONS: readonly AiFailureReason[] = ['unreachable', 'address', 'model', 'key', 'quota', 'consent', 'timeout', 'other']
+const REASONS: readonly AiFailureReason[] = ['unreachable', 'address', 'model', 'key', 'quota', 'consent', 'timeout', 'other', 'e-invoice']
 
 // Ollama nennt der Satz nur, wenn der Server sagt, dass es um Ollama geht (`provider`).
 export function failureSentence({ reason, service, provider }: { reason: AiFailureReason; service?: string; provider?: AiFailure['provider'] }): string {
@@ -22,6 +24,8 @@ export function failureSentence({ reason, service, provider }: { reason: AiFailu
     case 'timeout': return 'Die Auswertung hat zu lange gedauert.'
     case 'model': return 'Das eingestellte KI-Modell steht nicht bereit oder kann diesen Beleg nicht lesen.'
     case 'other': return 'Die KI konnte den Beleg nicht auswerten.'
+    // Eine E-Rechnung als XML-Datei, die Mietfuchs nicht übernimmt (#189); gefragt wurde keine KI.
+    case 'e-invoice': return 'Die E-Rechnung wird nicht übernommen.'
   }
 }
 
