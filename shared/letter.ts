@@ -30,6 +30,8 @@ export const LETTER_BLOCKS: readonly LetterBlockInfo[] = [
   { id: 'closing', label: 'Schluss', when: 'immer', multiline: true },
   { id: 'greeting', label: 'Gruß', when: 'immer', multiline: false },
   { id: 'signature', label: 'Unterschrift', when: 'immer, unter dem Gruß', multiline: true },
+  // #624: kein Absatz; steht im Zahlungs-QR-Code und im Kasten daneben (chooseLetterBlocks nimmt ihn nie auf)
+  { id: 'paymentPurpose', label: 'Verwendungszweck (QR-Code)', when: 'nur bei einer Nachzahlung, im QR-Code; steht nicht im Brieftext', multiline: false },
 ]
 export const LETTER_BLOCK_IDS: readonly LetterBlock[] = LETTER_BLOCKS.map((b) => b.id)
 export const isLetterBlock = (x: unknown): x is LetterBlock => typeof x === 'string' && (LETTER_BLOCK_IDS as readonly string[]).includes(x)
@@ -90,6 +92,8 @@ export const DEFAULT_LETTER_TEXTS: Record<LetterBlock, string> = {
   closing: 'Für Rückfragen stehe ich Ihnen gern zur Verfügung.',
   greeting: 'Mit freundlichen Grüßen',
   signature: '{Vermieter}',
+  // #624: Name vorn, denn gekürzt wird vom Ende her (höchstens 140 Zeichen im Code)
+  paymentPurpose: '{Name}, {Wohnung}, {Abrechnung}',
 }
 
 export const LETTER_TEXT_MAX = 2000
@@ -306,8 +310,10 @@ export function renderLetterText(text: string, print: { date: string; attachment
 // Absatz kostet eine Dreiviertelzeile Abstand, die Unterschrift zwei. Ein längerer Brief druckt weiter, nur
 // auf der zweiten Seite; die Oberfläche warnt dann.
 export const LETTER_PAGE_LINES = 33
-export function exceedsOnePage(paragraphs: readonly string[]): boolean {
-  let lines = 2
+// #624: Der Kasten mit dem Zahlungs-QR-Code (30 mm) kostet rund acht Zeilen.
+export const PAYMENT_QR_LINES = 8
+export function exceedsOnePage(paragraphs: readonly string[], extraLines = 0): boolean {
+  let lines = 2 + extraLines
   for (const p of paragraphs) {
     if (p.trim() === '') continue
     for (const part of p.split('\n')) lines += Math.max(1, Math.ceil(part.length / 90))

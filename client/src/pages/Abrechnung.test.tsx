@@ -651,7 +651,7 @@ test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide 
   fireEvent.click(speichern)
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
   // Die Fußzeile (#415, Teil 2) gehört zu denselben Druckeinstellungen und geht unverändert mit.
-  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false }])
+  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false, printPaymentQr: false }])
   expect(reload).toHaveBeenCalledTimes(1)
 })
 
@@ -1018,7 +1018,7 @@ test('Drucken: nach „Speichern“ schließt „Abbrechen“ ohne Rückfrage un
   await openPrintSettings()
   fireEvent.click(attachBox())
   fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
-  await waitFor(() => expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false }]), SLOW)
+  await waitFor(() => expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false, printPaymentQr: false }]), SLOW)
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
   fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)

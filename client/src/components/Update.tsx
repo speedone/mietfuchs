@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Settings, UpdateStatus } from '../types'
+import { copyText } from '../copyText'
 import { api } from '../api'
 import { desktopLinks, RELEASES_URL, STORE_URL, statusText, updatedByStore, updateGuide, type UpdateGuide } from '../update'
 import { useToast } from './feedback'
@@ -378,12 +379,8 @@ function Commands({ lines, status }: { lines: string[]; status: UpdateStatus }) 
   const toast = useToast()
   const text = lines.join('\n')
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast('Befehle kopiert.')
-    } catch {
-      toast('Kopieren ging nicht. Bitte die Befehle von Hand markieren.', 'error')
-    }
+    if (await copyText(text)) toast('Befehle kopiert.')
+    else toast('Kopieren ging nicht. Bitte die Befehle von Hand markieren.', 'error')
   }
   return (
     <>

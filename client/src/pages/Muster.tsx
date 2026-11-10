@@ -30,6 +30,15 @@ import type { Meter, Notice, Property, Tenancy, Unit } from '../types'
 import Letter from '../components/Letter'
 import { PaperPreview } from '../components/LetterDesignDrawer'
 import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES } from '../../../shared/letter.ts'
+import { epcPayload } from '../../../shared/epcQr.ts'
+import type { PaymentQrData } from '../paymentQr'
+
+// Der Zahlungs-QR-Code (#624) mit den Beispielwerten des Anschreibens: 40,00 € Nachzahlung.
+const SAMPLE_PURPOSE = resolveTemplate(DEFAULT_LETTER_TEXTS.paymentPurpose, SAMPLE_LETTER_VALUES)
+const SAMPLE_PAYMENT_QR: PaymentQrData | null = (() => {
+  const payload = epcPayload({ name: SAMPLE_LETTER_VALUES.Vermieter, iban: SAMPLE_LETTER_VALUES.IBAN, amountCents: 4000, purpose: SAMPLE_PURPOSE })
+  return payload === null ? null : { payload, name: SAMPLE_LETTER_VALUES.Vermieter, iban: SAMPLE_LETTER_VALUES.IBAN, amountCents: 4000, purpose: SAMPLE_PURPOSE }
+})()
 
 // Musterseite (#346 Schritt 12, Spezifikation Abschnitt 9): alle Bausteine der Oberfläche auf einer Seite, mit festen
 // Werten und ohne Anfrage an den Server. Aufgerufen mit `?muster`, nicht in der Navigation. `npm run screenshots`
@@ -233,6 +242,7 @@ export default function Muster() {
           recipient={['Erika Mustermann', 'Lindenweg 12', '12345 Musterstadt']}
           info={[{ label: 'Ansprechpartner', value: 'Max Vermieter' }, { label: 'Telefon', value: '0123 456789' }, { label: null, value: 'Musterstadt, 15.03.2026' }]}
           foldMarks={false}
+          paymentQr={SAMPLE_PAYMENT_QR}
         />
         <dl className="statement-facts">
           <dt>Mieter</dt><dd>Erika Mustermann</dd>

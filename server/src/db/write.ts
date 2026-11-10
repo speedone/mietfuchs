@@ -38,6 +38,7 @@ export function settingsRow(s: MigratedSettings) {
     printFoldMarks: orNull(s.printFoldMarks),
     printLetter: orNull(s.printLetter),
     printFooter: orNull(s.printFooter),
+    printPaymentQr: orNull(s.printPaymentQr),
     landlordAddress: orNull(s.landlordAddress),
     landlordContact: orNull(s.landlordContact),
     updateCheck: orNull(s.updateCheck),

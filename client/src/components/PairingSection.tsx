@@ -1,6 +1,7 @@
 // Abschnitt „Programmfenster koppeln“ in der Karte „Anmeldung“ (#528, Schritt 2): ein Code, den das Programmfenster auf
 // einem anderen Rechner eintippt, und die Liste der gekoppelten Fenster. Entscheidungen in pairingView.ts.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { copyText } from '../copyText'
 import { api, errorText } from '../api'
 import type { AccessInfo } from '../access'
 import { addressOf, CODE_EXPIRED, deviceLine, expiresText, LOAD_FAILED, pairingNote, REMOVE_CURRENT_TEXT, REMOVE_TEXT, type PairingDevice } from '../pairingView'
@@ -55,12 +56,8 @@ export default function PairingSection({ info }: { info: AccessInfo }) {
     setBusy(false)
   }
   async function copy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast('Code kopiert.')
-    } catch {
-      toast('Kopieren ging nicht. Bitte den Code von Hand markieren.', 'error')
-    }
+    if (await copyText(text)) toast('Code kopiert.')
+    else toast('Kopieren ging nicht. Bitte den Code von Hand markieren.', 'error')
   }
   async function remove(d: PairingDevice) {
     const ok = await confirm({ title: `„${d.name}“ entfernen?`, message: d.current ? REMOVE_CURRENT_TEXT : REMOVE_TEXT, confirmLabel: 'Entfernen', danger: true })

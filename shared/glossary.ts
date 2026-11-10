@@ -1092,6 +1092,15 @@ export const GLOSSARY = {
     example: 'Der Code gilt 10 Minuten und nur einmal. Als Adresse tragen Sie ein, was im Browser steht, etwa nas:3001 oder https://nas.fritz.box.',
     needed: 'Nur wenn Mietfuchs auf einem anderen Gerät läuft und Sie dort im Programmfenster statt im Browser arbeiten möchten. Auf dem Gerät muss ein Passwort festgelegt sein.',
   },
+  // #624: der QR-Code zum Bezahlen bei einer Nachzahlung
+  paymentQr: {
+    topic: 'tenants',
+    title: 'QR-Code zum Bezahlen',
+    short: 'Bei einer Nachzahlung druckt Mietfuchs auf Wunsch einen QR-Code neben den Satz zur Zahlung. Der Mieter scannt ihn mit seiner Banking-App und hat Empfänger, IBAN, Betrag und Verwendungszweck ausgefüllt.',
+    example: 'Nachzahlung 120,00 €: Der Code enthält Max Vermieter, DE02 1203 0000 0000 2020 51, 120,00 € und den Verwendungszweck „Erika Mustermann, EG links, Nebenkostenabrechnung 2025“. Ein Verwendungszweck über 140 Zeichen wird im Code gekürzt.',
+    norm: 'Format nach der Richtlinie EPC069-12 des European Payments Council (SEPA-Überweisung)',
+    needed: 'Nein, er ist eine Erleichterung für den Mieter. Sie schalten ihn beim Drucken ein („QR-Code zum Bezahlen bei Nachzahlung“). Er erscheint nur bei einer Nachzahlung und nur mit Vermieter und einer IBAN aus dem Europäischen Wirtschaftsraum; hat das Objekt eine eigene IBAN, steht diese im Code. Den Verwendungszweck ändern Sie in der Vorlage des Anschreibens, für alle Objekte, ein Objekt oder einen Mieter. Der Code entsteht auf Ihrem Rechner, nichts geht ins Netz. Abrechnungen, die vor dieser Funktion abgeschlossen wurden, bekommen keinen Code.',
+  },
 } satisfies Record<string, Term>
 
 export type TermId = keyof typeof GLOSSARY

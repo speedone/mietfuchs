@@ -10,11 +10,11 @@ import Field from './Field'
 import DraftActions from './DraftActions'
 import type { Draft } from '../useDraft'
 
-export type PrintSettings = { printFoldMarks: boolean; printAttachments: boolean; printFooter: boolean }
+export type PrintSettings = { printFoldMarks: boolean; printAttachments: boolean; printFooter: boolean; printPaymentQr: boolean }
 // `all` druckt alle Mieter, sonst die Kennung eines Mietverhältnisses.
 export type PrintScope = 'all' | string
 
-export default function PrintDrawer({ scope, onScope, tenants, withLetter, onLetter, letterNote, draft, onSaveDraft, draftNote, attachmentsLoading, paper, blocked, warnings, onPrint, onClose, busy }: {
+export default function PrintDrawer({ scope, onScope, tenants, withLetter, onLetter, letterNote, draft, onSaveDraft, draftNote, attachmentsLoading, paper, qrBlocked, blocked, warnings, onPrint, onClose, busy }: {
   scope: PrintScope
   onScope: (scope: PrintScope) => void
   tenants: { id: string; label: string }[]
@@ -28,6 +28,8 @@ export default function PrintDrawer({ scope, onScope, tenants, withLetter, onLet
   attachmentsLoading: boolean
   // Mit Briefpapier entfällt die Fußzeile von Mietfuchs
   paper: boolean
+  // #624: warum der QR-Code zum Bezahlen nicht entstehen kann (kein Vermieter, keine IBAN aus dem EWR), sonst null
+  qrBlocked: string | null
   // Warum gerade nicht gedruckt werden kann (Belegkopien, Briefpapier werden vorbereitet), sonst null
   blocked: string | null
   // Was vor dem Druck zu prüfen ist (Anschrift, Länge des Anschreibens), für die gewählten Mieter
@@ -84,6 +86,13 @@ export default function PrintDrawer({ scope, onScope, tenants, withLetter, onLet
           {settings.printFooter && paper && <span className="muted"> (mit Briefpapier nicht)</span>}
           {/* Druck (#415): Kontakt und Bank stehen im Fuß des Anschreibens, nicht auf jeder Seite der Aufstellung. */}
           {settings.printFooter && !paper && !withLetter && <span className="muted"> (nur mit Anschreiben)</span>}
+        </span>
+      </label>
+      <label className="checkline" title="Bei einer Nachzahlung ein QR-Code, den der Mieter mit seiner Banking-App scannt: Empfänger, IBAN, Betrag und Verwendungszweck sind dann ausgefüllt. Den Verwendungszweck legen Sie in der Vorlage des Anschreibens fest">
+        <input type="checkbox" checked={settings.printPaymentQr} onChange={(e) => draft.set({ ...settings, printPaymentQr: e.target.checked })} />
+        <span>
+          QR-Code zum Bezahlen bei Nachzahlung
+          {settings.printPaymentQr && qrBlocked && <span className="muted"> {qrBlocked}</span>}
         </span>
       </label>
       </div>

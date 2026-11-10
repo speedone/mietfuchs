@@ -187,3 +187,28 @@
   .labor-35a h3 { color: var(--text); }
   .statement-footnote { margin-top: 3mm; padding-top: 1mm; border-top: 0.2mm solid var(--line); font-size: 7.5pt; color: var(--text); }
 }
+
+/* Zahlungs-QR-Code bei Nachzahlung (#624): links der Code mit 30 mm Kante samt Ruhezone, rechts klein sein Inhalt.
+   Der weiße Grund steht im SVG selbst (fest Schwarz auf Weiß, auch im dunklen Modus, sonst lesen Apps ihn nicht); nie über einen Seitenumbruch geteilt. */
+.payment-qr {
+  display: flex;
+  align-items: flex-start;
+  gap: 4mm;
+  margin: 2mm 0 3mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.payment-qr-code {
+  width: 30mm;
+  height: 30mm;
+  flex: none;
+}
+.payment-qr-text {
+  font-size: 9pt;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.payment-qr-hint {
+  font-weight: 600;
+  margin-bottom: 1mm;
+}

@@ -102,6 +102,7 @@ const TABLE_LABELS: Record<string, string> = {
 
 // Die Beschriftungen der Felder, wie sie in den Formularen stehen.
 const FIELD_LABELS: Record<string, string> = {
+  print_payment_qr: 'QR-Code zum Bezahlen bei Nachzahlung',
   name: 'Bezeichnung',
   address: 'Adresse',
   kind: 'Art',
