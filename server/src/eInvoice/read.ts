@@ -11,7 +11,7 @@
 // - **Keine IBAN bei Lastschrift** (BT-81 = 59): Dann steht dort das Konto des Käufers.
 
 import { all, at, attr, isNode, makeParser, signedDecimalToCents, text, tryParse } from '../xml.ts'
-import type { EInvoice, EInvoiceDocCharge, EInvoiceLine, EInvoiceSyntax, EInvoiceTotals, EInvoiceVatGroup, VatKey } from './model.ts'
+import type { EInvoice, EInvoiceAddress, EInvoiceDocCharge, EInvoiceLine, EInvoiceSyntax, EInvoiceTotals, EInvoiceVatGroup, VatKey } from './model.ts'
 
 const DIRECT_DEBIT = '59'
 
@@ -72,12 +72,23 @@ function inCurrency(nodes: unknown[], currency: string | null): unknown {
   return nodes.find((n) => { const c = attr(n, 'currencyID'); return c === null || c === currency })
 }
 
+// Eine Anschrift nur zum Anzeigen. `null`, wenn nichts davon dasteht.
+function address(lines: unknown[], postcode: unknown, city: unknown, country: unknown): EInvoiceAddress | null {
+  const a = { lines: lines.map(text).filter((l): l is string => l !== null), postcode: text(postcode), city: text(city), country: text(country) }
+  return a.lines.length === 0 && a.postcode === null && a.city === null && a.country === null ? null : a
+}
+
 // ---------- UBL ----------
 
 function readUbl(root: unknown, syntax: EInvoiceSyntax): EInvoice {
   const r = new Reader()
   const credit = syntax === 'ubl-credit-note'
   const currency = text(at(root, 'DocumentCurrencyCode'))
+  const ublAddress = (role: string) => {
+    const a = at(root, role, 'Party', 'PostalAddress')
+    return address([at(a, 'StreetName'), at(a, 'AdditionalStreetName'), at(a, 'AddressLine', 'Line')], at(a, 'PostalZone'), at(a, 'CityName'), at(a, 'Country', 'IdentificationCode'))
+  }
+  const sellerVat = all(at(root, 'AccountingSupplierParty', 'Party'), 'PartyTaxScheme').find((t) => text(at(t, 'TaxScheme', 'ID'))?.toUpperCase() === 'VAT')
   const partyName = (role: string) => text(at(root, role, 'Party', 'PartyLegalEntity', 'RegistrationName')) ?? text(at(root, role, 'Party', 'PartyName', 'Name'))
   const means = all(root, 'PaymentMeans')
   const transfer = means.find((m) => text(at(m, 'PaymentMeansCode')) !== DIRECT_DEBIT && text(at(m, 'PayeeFinancialAccount', 'ID')) !== null)
@@ -94,6 +105,8 @@ function readUbl(root: unknown, syntax: EInvoiceSyntax): EInvoice {
       netCents: r.required(at(l, 'LineExtensionAmount'), `BT-131 ${label}`),
       unitCode: attr(at(l, credit ? 'CreditedQuantity' : 'InvoicedQuantity'), 'unitCode'),
       vat: r.vat(at(tax, 'ID'), at(tax, 'Percent'), `BT-152 ${label}`),
+      quantity: text(at(l, credit ? 'CreditedQuantity' : 'InvoicedQuantity')),
+      unitPrice: text(at(l, 'Price', 'PriceAmount')),
     }
   })
 
@@ -133,11 +146,15 @@ function readUbl(root: unknown, syntax: EInvoiceSyntax): EInvoice {
     issueDate: r.isoDate(at(root, 'IssueDate'), 'BT-2'),
     currency,
     seller: partyName('AccountingSupplierParty'),
+    sellerAddress: ublAddress('AccountingSupplierParty'),
+    sellerVatId: text(at(sellerVat, 'CompanyID')),
     buyer: partyName('AccountingCustomerParty'),
+    buyerAddress: ublAddress('AccountingCustomerParty'),
     periodStart: r.isoDate(at(root, 'InvoicePeriod', 'StartDate'), 'BT-73'),
     periodEnd: r.isoDate(at(root, 'InvoicePeriod', 'EndDate'), 'BT-74'),
     deliveryDate: r.isoDate(at(root, 'Delivery', 'ActualDeliveryDate'), 'BT-72'),
     dueDate: r.isoDate(at(root, 'DueDate') ?? means.map((x) => at(x, 'PaymentDueDate')).find((x) => x !== undefined), 'BT-9'),
+    paymentTerms: text(at(root, 'PaymentTerms', 'Note')),
     iban: transfer ? text(at(transfer, 'PayeeFinancialAccount', 'ID')) : null,
     precedingInvoice: precedingNumber === null ? null : { number: precedingNumber, date: r.isoDate(at(preceding, 'IssueDate'), 'BT-26') },
     lines, charges, vatGroups, totals,
@@ -159,6 +176,13 @@ function readCii(root: unknown): EInvoice {
   const transfer = means.find((m) => text(at(m, 'TypeCode')) !== DIRECT_DEBIT && text(at(m, 'PayeePartyCreditorFinancialAccount', 'IBANID')) !== null)
   const preceding = at(settlement, 'InvoiceReferencedDocument')
   const precedingNumber = text(at(preceding, 'IssuerAssignedID'))
+  const ciiAddress = (party: unknown) => {
+    const a = at(party, 'PostalTradeAddress')
+    return address([at(a, 'LineOne'), at(a, 'LineTwo'), at(a, 'LineThree')], at(a, 'PostcodeCode'), at(a, 'CityName'), at(a, 'CountryID'))
+  }
+  const seller = at(agreement, 'SellerTradeParty')
+  const buyer = at(agreement, 'BuyerTradeParty')
+  const sellerVat = all(seller, 'SpecifiedTaxRegistration').map((t) => at(t, 'ID')).find((id) => attr(id, 'schemeID')?.toUpperCase() === 'VA')
 
   const lines: EInvoiceLine[] = all(trade, 'IncludedSupplyChainTradeLineItem').map((l, i) => {
     const label = `Position ${i + 1}`
@@ -171,6 +195,8 @@ function readCii(root: unknown): EInvoice {
       netCents: r.required(at(lineSettlement, 'SpecifiedTradeSettlementLineMonetarySummation', 'LineTotalAmount'), `BT-131 ${label}`),
       unitCode: attr(at(l, 'SpecifiedLineTradeDelivery', 'BilledQuantity'), 'unitCode'),
       vat: r.vat(at(tax, 'CategoryCode'), at(tax, 'RateApplicablePercent'), `BT-152 ${label}`),
+      quantity: text(at(l, 'SpecifiedLineTradeDelivery', 'BilledQuantity')),
+      unitPrice: text(at(l, 'SpecifiedLineTradeAgreement', 'NetPriceProductTradePrice', 'ChargeAmount')),
     }
   })
 
@@ -206,12 +232,16 @@ function readCii(root: unknown): EInvoice {
     number: text(at(doc, 'ID')),
     issueDate: r.ciiDate(at(doc, 'IssueDateTime'), 'BT-2'),
     currency,
-    seller: text(at(agreement, 'SellerTradeParty', 'Name')),
-    buyer: text(at(agreement, 'BuyerTradeParty', 'Name')),
+    seller: text(at(seller, 'Name')),
+    sellerAddress: ciiAddress(seller),
+    sellerVatId: text(sellerVat),
+    buyer: text(at(buyer, 'Name')),
+    buyerAddress: ciiAddress(buyer),
     periodStart: r.ciiDate(at(settlement, 'BillingSpecifiedPeriod', 'StartDateTime'), 'BT-73'),
     periodEnd: r.ciiDate(at(settlement, 'BillingSpecifiedPeriod', 'EndDateTime'), 'BT-74'),
     deliveryDate: r.ciiDate(at(delivery, 'ActualDeliverySupplyChainEvent', 'OccurrenceDateTime'), 'BT-72'),
     dueDate: r.ciiDate(at(settlement, 'SpecifiedTradePaymentTerms', 'DueDateDateTime'), 'BT-9'),
+    paymentTerms: text(at(settlement, 'SpecifiedTradePaymentTerms', 'Description')),
     iban: transfer ? text(at(transfer, 'PayeePartyCreditorFinancialAccount', 'IBANID')) : null,
     precedingInvoice: precedingNumber === null ? null : { number: precedingNumber, date: r.ciiDate(at(preceding, 'FormattedIssueDateTime'), 'BT-26') },
     lines, charges, vatGroups, totals,
