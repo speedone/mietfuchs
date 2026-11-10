@@ -670,7 +670,8 @@ test('Eingang: nach dem Buchen führen „→ Kosten ansehen“ und „→ Zur A
 
 test('E-Rechnung: die Prüfung sagt, woher die Angaben stammen, und nennt die Notizen', () => {
   render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), source: 'e-rechnung', invoiceNumber: 'R-1', eInvoiceNotes: ['Abschläge über 50,00 € sind bereits bezahlt.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)
-  expect(screen.getByText(/Aus der E-Rechnung übernommen/)).toBeTruthy()
+  // Der Begriff ist verlinkt (Lexikon „E-Rechnung“), der Satz steht also in mehreren Elementen
+  expect(document.body.textContent).toMatch(/Aus der E-Rechnung\s*übernommen/)
   expect(screen.getByText(/Abschläge über 50,00 € sind bereits bezahlt\./)).toBeTruthy()
   expect(screen.queryByText(/Mietfuchs hat sie auf den Rechnungsbetrag hochgerechnet/)).toBeNull()
 })
@@ -678,5 +679,5 @@ test('E-Rechnung: die Prüfung sagt, woher die Angaben stammen, und nennt die No
 test('E-Rechnung: abgelehnt und von der KI ausgewertet, die Prüfung nennt den Grund, nicht „aus der E-Rechnung“', () => {
   render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), eInvoiceNotes: ['Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht als Kosten.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)
   expect(screen.getByText(/Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht als Kosten\./)).toBeTruthy()
-  expect(screen.queryByText(/Aus der E-Rechnung übernommen/)).toBeNull()
+  expect(document.body.textContent).not.toMatch(/Aus der E-Rechnung\s*übernommen/)
 })
