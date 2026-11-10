@@ -91,6 +91,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 **Belege**
 
 - 📥 **Eingang:** den ganzen Stapel ablegen, Rechnungen und Zählerfotos gemischt, prüfen und übernehmen
+- 🧾 **E-Rechnungen ohne KI:** XRechnung, ZUGFeRD und Factur-X liest Mietfuchs direkt aus der Rechnung, eine XML-Datei zeigt er lesbar an
 - 🗂️ **Ordner** je Objekt, Jahr und Kostenart, mit Suche über alle Jahre und Belegabdeckung („85 % der Kosten belegt“); denselben Beleg erkennt Mietfuchs am Inhalt
 - 📦 **Belegmappe für Mieter** als PDF (Belegeinsicht nach § 556 Abs. 4 BGB) und alle Belege für die Steuer als ZIP
 - 🧷 **Eine Rechnung landet genau einmal in den Kosten:** jede Zeile neu anlegen, verknüpfen oder verwerfen, mit Vorschau vor dem Buchen

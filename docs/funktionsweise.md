@@ -40,7 +40,9 @@ Kurzfassung steht im [README](../README.md#funktionen).
 3. **Belege**: eine Seite mit zwei Ansichten. Im **Eingang** legst du neue Belege ab, auch den
    ganzen Stapel mit Rechnungen und Zählerfotos gemischt. Mit KI wertet Mietfuchs jeden aus (die
    Auswertung läuft weiter, wenn du die Seite wechselst), ohne KI oder mit „Nur ablegen“ speichert er
-   sie nur. Darunter steht, was zu prüfen ist, und unter „Ohne Position“ jeder gespeicherte Beleg,
+   sie nur. **E-Rechnungen** (XRechnung als XML-Datei, ZUGFeRD oder Factur-X im PDF) liest Mietfuchs
+   auch ohne KI, Betrag, Datum und Positionen kommen direkt aus der Rechnung; eine XML-Datei zeigt er
+   geöffnet lesbar an und druckt sie in Belegkopien und Belegmappe mit. Darunter steht, was zu prüfen ist, und unter „Ohne Position“ jeder gespeicherte Beleg,
    den du einer Position zuordnest oder per KI auswerten lässt. Der **Ordner** zeigt alle Belege je
    Objekt und Jahr, mit einem Register je Kostenart, Vorschaubild, Betrag und den Positionen, an
    denen ein Beleg hängt; seine Suche durchsucht alle Objekte und Jahre. Die **Belegabdeckung**
