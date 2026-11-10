@@ -978,6 +978,16 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   (Posteingang, Abdeckung, Mappe, Steuer-ZIP, Löschsperre, Belegkopien der Abrechnung über
   `filesOfItem` in client/src/costPeriods.ts, #470). Fehlt die Datei einer Auswertung, fehlt
   sie in der Liste, und `plan`, `book`, `PUT` antworten 404.
+- **E-Rechnung** (#189, Entwurf docs/superpowers/specs/2026-11-09-e-rechnung-design.md, Leser in
+  [eInvoice/](eInvoice)): Der Browser schickt das XML aus einem ZUGFeRD-PDF als Datei-Feld `eInvoiceXml` (Arbeitsspeicher,
+  nie gespeichert, `IN_MEMORY_FIELDS`); `/api/intake` und `/api/extract` lesen es mit `readEInvoice` **vor** jeder Frage an
+  ein Modell. `read`: `toExtraction(normalizeAmounts(raw))` und `rememberAssessment` mit `source: 'e-rechnung'`,
+  `invoiceNumber`, `eInvoiceNotes`, je Zeile `laborGuessed`; Verlauf „Beleg aus der E-Rechnung übernommen“. `refused`: der
+  KI-Weg wie bisher, der Grund in `eInvoiceRefusal` der Antwort und als Notiz an der Auswertung (`source: 'ki'`). Spalten
+  `assessments.source`/`invoice_number`/`e_invoice_notes`, `assessment_lines.labor_guessed` (Schritte 0095/0096, ohne
+  Angabe eine KI-Auswertung). Ampel in `suggestLine`: jede Notiz rot, `laborGuessed` gelb und nie vorab angehakt, gleiche
+  Nummer und gleicher Steller in einem anderen Beleg rot (`otherInvoices`, über alle Objekte). Reine XML-Dateien nimmt
+  der Server noch nicht an (PR 3).
 - **Oberfläche**: eine Komponente für den Eingang der Seite Belege und die Kostenseite
   ([AssessmentReview.tsx](../../client/src/components/AssessmentReview.tsx), Logik in
   [client/src/assessment.ts](../../client/src/assessment.ts), Warteschlange `useEvaluationQueue`).

@@ -11,6 +11,14 @@ Vorjahr übernommenen mit geschätztem Betrag) oder verwerfen. Eine Ampel markie
 erfasst sein könnte, die Vorschau zeigt, was mit jeder Position geschieht, und „Buchen“ tut genau
 das. Doppelt klicken oder neu laden bucht nichts zweimal.
 
+**E-Rechnungen brauchen keine KI.** Trägt ein PDF eine E-Rechnung (ZUGFeRD oder Factur-X, das XML steckt im PDF),
+liest Mietfuchs Betrag, Datum, Rechnungssteller und Positionen direkt daraus, ohne Modell und ohne Netz, auch wenn
+keine KI eingerichtet ist. Die Auswertung steht dann wie jede andere unter „Zu prüfen“, mit dem Satz „Aus der
+E-Rechnung übernommen“. Einen Lohnanteil nach § 35a EStG schlägt Mietfuchs nur für Positionen vor, die erkennbar
+Arbeit sind (Stunden, Arbeitszeit, Anfahrt), und lässt ihn dich bestätigen. Abschlags- und Teilrechnungen übernimmt
+Mietfuchs nicht als Kosten, sonst zählte die Schlussrechnung doppelt; kommt dieselbe Rechnung zweimal, ist die zweite
+rot.
+
 Zwei Wege stehen zur Wahl:
 
 - **Auf dem eigenen Rechner** mit [Ollama](https://ollama.com) oder LM Studio. Die Belege
