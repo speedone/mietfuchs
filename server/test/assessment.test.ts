@@ -33,7 +33,7 @@ test('Jahr aus dem Beleg: erst der Leistungszeitraum, dann das Rechnungsdatum, s
 
 const stored = (patch: Partial<StoredAssessmentLine>): StoredAssessmentLine => ({
   assessmentId: 'a1', idx: 0, description: 'Frischwasser', category: 'Wasser/Abwasser', categoryGuessed: false,
-  amountCents: 70000, labor35aCents: null, booking: null, costItemId: null, dismissed: false, reassessed: false, ...patch,
+  amountCents: 70000, labor35aCents: null, booking: null, costItemId: null, dismissed: false, reassessed: false, laborGuessed: false, ...patch,
 })
 
 test('Zustand einer Zeile: abgeleitet aus Position, Art und Verwerfen', () => {
@@ -105,7 +105,7 @@ test('Entwurf einer KI-Zeile „Nicht umlagefähig“: ein gemerkter Schlüssel 
 
 const assessmentOf = (patch: Partial<StoredAssessment> = {}): StoredAssessment => ({
   id: 'a1', file: 'grundsteuer.pdf', propertyId: 'objekt-1', year: 2026, detectedYear: 2026, requestedYear: 2026, requestedPeriod: calendarPeriod(2026), vendor: 'Stadt Musterstadt',
-  invoiceDate: '2026-02-15', totalGrossCents: 51240, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-02-20T10:00:00Z', ...patch,
+  invoiceDate: '2026-02-15', totalGrossCents: 51240, amountsAdjusted: null, laborFromTotal: false, source: 'ki', invoiceNumber: null, eInvoiceNotes: [], nextIdx: 1, createdAt: '2026-02-20T10:00:00Z', ...patch,
 })
 const grundsteuer = (patch: Partial<CostItem>): CostItem => ({
   id: 'x', propertyId: 'objekt-1', period: calendarPeriod(2026), category: 'Grundsteuer', description: 'Grundsteuer', vendor: 'Stadt Musterstadt', amountCents: 49800, key: 'area', ...patch,

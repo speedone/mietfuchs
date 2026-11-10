@@ -413,11 +413,11 @@ test('„grüne Vorschläge bereit“ zählt nur, was „Alle grünen übernehme
 // erzeugt (eine Kostenart aus dem Altbestand, ein grüner Vorschlag ohne Vorauswahl).
 const crafted = (fields: Partial<LineFields>, extra: Partial<LineSuggestion> = {}): AssessmentView => ({
   id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, requestedYear: YEAR, requestedPeriod: calendarPeriod(YEAR), vendor: 'Hausmeisterdienst', invoiceDate: null,
-  totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
+  totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, source: 'ki', invoiceNumber: null, eInvoiceNotes: [], nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'alt.pdf', open: true, sumWarning: null,
   lines: [{
     idx: 0, description: 'Hausmeister', category: 'Hauswart', categoryGuessed: false, amountCents: 30000, labor35aCents: null,
-    booking: null, costItemId: null, dismissed: false, reassessed: false, state: 'open', itemDescription: null,
+    booking: null, costItemId: null, dismissed: false, reassessed: false, laborGuessed: false, state: 'open', itemDescription: null,
     suggestion: {
       fields: { description: 'Hausmeister', category: 'Hauswart', amountCents: 30000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null, ...fields },
       candidates: [], level: 'gelb', reasons: [], preselected: false, ...extra,

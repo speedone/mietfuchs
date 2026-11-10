@@ -14,7 +14,7 @@ import { isInvoicePart } from '../../shared/splitPart.ts'
 import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, bookingPeriod, bookingTaxYear, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
 
 // Eine Zeile, wie sie aus der KI kommt, noch ohne Nummer und ohne Buchung.
-export type NewLine = Pick<StoredAssessmentLine, 'description' | 'category' | 'categoryGuessed' | 'amountCents' | 'labor35aCents'>
+export type NewLine = Pick<StoredAssessmentLine, 'description' | 'category' | 'categoryGuessed' | 'amountCents' | 'labor35aCents'> & { laborGuessed?: boolean }
 // Eine gebuchte Zeile samt dem Beleg, aus dem sie stammt (für die Summenregel über alle Belege).
 export type BookedLine = StoredAssessmentLine & { file: string }
 // Was eine Buchung an einer Zeile schreibt. Immer vollständig, damit nichts als `undefined` an

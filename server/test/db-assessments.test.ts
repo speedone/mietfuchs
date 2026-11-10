@@ -14,6 +14,7 @@ import {
 } from '../src/db/assessments.ts'
 import { changeOf, lineState, type NewLine } from '../src/assessment.ts'
 import { assessmentLines } from '../src/db/schema.ts'
+import { sql } from 'drizzle-orm'
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-auswertung-'))
@@ -142,5 +143,49 @@ test('Erneut auswerten vergibt nie eine Nummer zweimal, auch wenn die letzte Zei
     await opened.write((db) => saveAssessment(db, head('w.pdf', [line('A', 70000)]), ids()))
     const third = await opened.write((db) => saveAssessment(db, head('w.pdf', [line('A', 70000), line('C', 90000)]), ids()))
     assert.deepEqual(third.lines.map((l) => [l.idx, l.description]), [[0, 'A'], [2, 'C']], 'C darf nicht die frühere Nummer von B erben')
+  })
+})
+
+// ---------- E-Rechnung (#189): Herkunft, Rechnungsnummer, Notizen, vorgeschlagener Lohnanteil ----------
+
+test('E-Rechnung: Auswertung ohne neue Angaben ist eine KI-Auswertung ohne Nummer und Notizen', async () => {
+  await withDatabase(async (opened) => {
+    const saved = await opened.write((db) => saveAssessment(db, head('ki.pdf', [line('Frischwasser', 70000)]), ids()))
+    assert.equal(saved.assessment.source, 'ki')
+    assert.equal(saved.assessment.invoiceNumber, null)
+    assert.deepEqual(saved.assessment.eInvoiceNotes, [])
+    assert.equal(lineOf(saved, 0).laborGuessed, false)
+  })
+})
+
+test('E-Rechnung: Herkunft, Nummer, Notizen und Lohn-Vermutung werden gespeichert und gelesen', async () => {
+  await withDatabase(async (opened) => {
+    const saved = await opened.write((db) => saveAssessment(db, head('zugferd.pdf', [line('Arbeitszeit', 13090, { labor35aCents: 13090, laborGuessed: true }), line('Material', 5000)], {
+      source: 'e-rechnung', invoiceNumber: 'R-2025-0042', eInvoiceNotes: ['Abschläge über 50,00 € sind bereits bezahlt.'],
+    }), ids()))
+    const read = await reread(opened, 'zugferd.pdf')
+    for (const r of [saved, read]) {
+      assert.equal(r.assessment.source, 'e-rechnung')
+      assert.equal(r.assessment.invoiceNumber, 'R-2025-0042')
+      assert.deepEqual(r.assessment.eInvoiceNotes, ['Abschläge über 50,00 € sind bereits bezahlt.'])
+      assert.deepEqual(r.lines.map((l) => l.laborGuessed), [true, false])
+    }
+  })
+})
+
+test('E-Rechnung: erneutes Auswerten ersetzt Herkunft, Nummer und Notizen', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => saveAssessment(db, head('beleg.pdf', [line('Wartung', 11900)], { source: 'e-rechnung', invoiceNumber: 'A-1', eInvoiceNotes: ['alt'] }), ids()))
+    const again = await opened.write((db) => saveAssessment(db, head('beleg.pdf', [line('Wartung', 11900)]), ids()))
+    assert.equal(again.assessment.source, 'ki')
+    assert.equal(again.assessment.invoiceNumber, null)
+    assert.deepEqual(again.assessment.eInvoiceNotes, [])
+  })
+})
+
+test('E-Rechnung: die Datenbank nimmt nur bekannte Herkünfte an', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => saveAssessment(db, head('x.pdf', [line('Wartung', 11900)]), ids()))
+    await assert.rejects(opened.write(async (db) => { await db.run(sql`UPDATE assessments SET source = 'raten'`) }), (err: unknown) => /CHECK/.test(causes(err)))
   })
 })
