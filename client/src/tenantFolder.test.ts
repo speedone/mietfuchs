@@ -96,6 +96,22 @@ describe('Belegmappe für Mieter: die PDF', () => {
     expect(doc.getPageCount()).toBe(1 + 2 + 1)
   })
 
+  it('eine E-Rechnung als XML-Datei kommt als gesetztes PDF hinein, die Datei selbst wird nicht geladen (#189)', async () => {
+    const dreiSeiten = await PDFDocument.create()
+    for (let i = 0; i < 3; i++) dreiSeiten.addPage([300, 400])
+    const gesetzt = await dreiSeiten.save()
+    const plan = planTenantFolder(settlement([['a']]), [item('a', { invoiceFile: 'r.xml' })], [upload('r.xml', 'application/xml')], { includeIndividual: false })
+    const geladen: string[] = []
+    const bytes = await buildTenantFolderPdf(plan, {
+      title: 't', subtitle: 's',
+      load: async (u) => { geladen.push(u.file); return new TextEncoder().encode('<Invoice/>') },
+      rasterize: async () => { throw new Error('nicht gebraucht') },
+      renderEInvoice: async (u) => { expect(u.file).toBe('r.xml'); return gesetzt },
+    })
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1 + 3)
+    expect(geladen).toEqual([])
+  })
+
   it('ein PDF, das sich nicht kopieren lässt, kommt als Bild hinein', async () => {
     const jpeg = Uint8Array.from(atob('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/APn+iiigD//Z'), (c) => c.charCodeAt(0))
     const plan = planTenantFolder(settlement([['a']]), [item('a', { invoiceFile: 'kaputt.pdf' })], [upload('kaputt.pdf')], { includeIndividual: false })

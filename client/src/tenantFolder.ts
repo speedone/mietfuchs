@@ -160,6 +160,9 @@ export type FolderSource = {
   load: (u: UploadInfo) => Promise<Uint8Array>
   // Seiten eines Belegs als JPEG, wenn pdf-lib ihn nicht übernehmen kann
   rasterize: (u: UploadInfo) => Promise<Uint8Array[]>
+  // Eine E-Rechnung als XML-Datei (#189) als gesetztes PDF der Rechnungsansicht (eInvoicePdf.ts). Fehlt es, kommt sie
+  // über `rasterize` hinein (renderInvoicePages setzt sie ebenso).
+  renderEInvoice?: (u: UploadInfo) => Promise<Uint8Array>
   // Meldet einen Beleg, der nicht in die Mappe kam
   onUnreadable?: (u: UploadInfo) => void
 }
@@ -180,9 +183,18 @@ async function addImagePage(out: PDFDocument, bytes: Uint8Array, kind: 'jpg' | '
 // Hängt einen Beleg an und gibt zurück, wie viele Seiten er belegt.
 async function appendDocument(lib: PdfLib, out: PDFDocument, u: UploadInfo, source: FolderSource): Promise<number> {
   const before = out.getPageCount()
-  const bytes = await source.load(u)
+  // Eine XML-Datei hat keine Seiten: Die Rechnungsansicht wird gesetzt, die Datei selbst braucht es dafür nicht.
+  const xml = u.mimeType === 'application/xml'
+  const bytes = xml ? null : await source.load(u)
   try {
-    if (u.mimeType === 'application/pdf') {
+    if (xml) {
+      if (!source.renderEInvoice) throw new Error('Keine Seiten für die E-Rechnung')
+      const doc = await lib.PDFDocument.load(await source.renderEInvoice(u))
+      const pages = await out.copyPages(doc, doc.getPageIndices())
+      for (const p of pages) out.addPage(p)
+    } else if (bytes === null) {
+      throw new Error('Beleg nicht geladen')
+    } else if (u.mimeType === 'application/pdf') {
       // Ohne `ignoreEncryption`: Ein verschlüsseltes PDF soll scheitern und als Bild hineinkommen,
       // statt unlesbar kopiert zu werden (Durchsicht).
       const doc = await lib.PDFDocument.load(bytes)
