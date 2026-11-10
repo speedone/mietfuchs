@@ -986,8 +986,14 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   KI-Weg wie bisher, der Grund in `eInvoiceRefusal` der Antwort und als Notiz an der Auswertung (`source: 'ki'`). Spalten
   `assessments.source`/`invoice_number`/`e_invoice_notes`, `assessment_lines.labor_guessed` (Schritte 0095/0096, ohne
   Angabe eine KI-Auswertung). Ampel in `suggestLine`: jede Notiz rot, `laborGuessed` gelb und nie vorab angehakt, gleiche
-  Nummer und gleicher Steller in einem anderen Beleg rot (`otherInvoices`, über alle Objekte). Reine XML-Dateien nimmt
-  der Server noch nicht an (PR 3).
+  Nummer und gleicher Steller in einem anderen Beleg rot (`otherInvoices`, über alle Objekte). **Reine XML-Datei** (PR 3):
+  Der Filter lässt `.xml` nur auf `/api/upload`, `/api/intake`, `/api/extract` durch (`E_INVOICE_XML_ROUTES`,
+  `carriesScript` mit `eInvoiceXml`), `checkXmlReceipt` liest danach den Inhalt (`isEInvoiceDocument`) und löscht alles
+  andere vor der Zeile in `uploads`; gespeichert als `application/xml` (`storedTypeOf`), ausgeliefert nur als Download.
+  Eingang und Extract lesen eine XML-Datei selbst (`eInvoiceOf`), nie die KI; nicht übernommen antworten sie mit
+  `kept: true` und Grund `e-invoice`. `GET /api/e-invoice/:file` liefert `EInvoiceView` (Modell in shared/types.ts) für
+  die Rechnungsansicht `?e-rechnung=` der Oberfläche (client/src/eInvoiceView.ts, Links über `receiptHref`), die auch die
+  Seiten für Vorschau, Belegkopien und Mappe setzt (client/src/eInvoicePdf.ts).
 - **Oberfläche**: eine Komponente für den Eingang der Seite Belege und die Kostenseite
   ([AssessmentReview.tsx](../../client/src/components/AssessmentReview.tsx), Logik in
   [client/src/assessment.ts](../../client/src/assessment.ts), Warteschlange `useEvaluationQueue`).
