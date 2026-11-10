@@ -1096,9 +1096,9 @@ export const GLOSSARY = {
   eInvoice: {
     topic: 'costs',
     title: 'E-Rechnung',
-    short: 'Eine Rechnung, deren Angaben in einer XML-Datei nach der europäischen Norm EN 16931 stehen: als reine XML-Datei (XRechnung) oder eingebettet in ein PDF (ZUGFeRD, Factur-X). Mietfuchs liest Betrag, Datum, Rechnungssteller und Positionen daraus ohne KI.',
+    short: 'Eine Rechnung, deren Angaben in einer XML-Datei nach der europäischen Norm EN 16931 stehen: als reine XML-Datei (XRechnung) oder eingebettet in ein PDF (ZUGFeRD ab 2.0.1 oder Factur-X, nicht in den Profilen MINIMUM und BASIC WL). Mietfuchs liest Betrag, Datum, Rechnungssteller und Positionen daraus ohne KI.',
     example: 'Eine XRechnung des Heizungsbauers mit den Positionen „Dichtungssatz“ 50,00 € und „Arbeitszeit, 1 Std.“ 50,00 €, je netto zu 19 %, zusammen 119,00 €, legen Sie unter „Belege“ ab: Mietfuchs übernimmt 119,00 € als Vorschlag unter „Zu prüfen“ und schlägt für die Arbeitszeit 50,00 € + 9,50 € = 59,50 € als Lohnanteil nach § 35a vor; Sie bestätigen ihn.',
-    norm: '§ 14 Abs. 1 UStG; § 27 Abs. 38 UStG; BMF-Schreiben vom 15.10.2025 (BStBl I S. 1806) Rn. 17; UStAE 14.4 Abs. 3',
+    norm: '§ 27 Abs. 38 UStG; § 14b UStG; BMF-Schreiben vom 15.10.2025 (BStBl I S. 1806) Rn. 17; UStAE 14.1 Abs. 14, 14.4 Abs. 3, 14b.1 Abs. 1 und 5',
     needed: 'Wenn ein Handwerker oder Versorger Ihnen eine schickt. Auch wer nur Wohnungen vermietet, muss seit 01.01.2025 E-Rechnungen empfangen können; ein eigenes Postfach braucht es dafür nicht. Bis Ende 2026 (bei kleinen Ausstellern bis Ende 2027) dürfen weiter Papier- und PDF-Rechnungen kommen. Bei einem PDF mit eingebetteter E-Rechnung gelten die Angaben der XML-Datei. Heben Sie die Datei so auf, wie sie kam; Mietfuchs legt sie unverändert ab und zeigt sie lesbar an. Abschlags- und Teilrechnungen übernimmt Mietfuchs nicht als Kosten, sonst zählte die Schlussrechnung doppelt. Den Lohnanteil schlägt Mietfuchs nur für Positionen vor, die erkennbar Arbeit sind; geschätzt wird er nie.',
   },
   // #624: der QR-Code zum Bezahlen bei einer Nachzahlung

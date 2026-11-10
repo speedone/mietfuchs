@@ -106,7 +106,6 @@ const FIELD_LABELS: Record<string, string> = {
   invoice_number: 'Rechnungsnummer',
   e_invoice_notes: 'Hinweise zur E-Rechnung',
   labor_guessed: 'Lohnanteil nur vorgeschlagen',
-  source: 'Herkunft',
   print_payment_qr: 'QR-Code zum Bezahlen bei Nachzahlung',
   name: 'Bezeichnung',
   address: 'Adresse',
@@ -253,7 +252,12 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
 const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
-export const fieldLabel = (column: string): string => FIELD_LABELS[column] ?? column
+// Spalten, die je Tabelle etwas anderes bedeuten: `source` ist an der Auswertung die Herkunft (KI oder E-Rechnung, #189),
+// an Rechtswert und ortsüblicher Miete die Quelle des Werts.
+const TABLE_FIELD_LABELS: Record<string, Record<string, string>> = {
+  assessments: { source: 'Herkunft' },
+}
+export const fieldLabel = (column: string, table?: string): string => (table ? TABLE_FIELD_LABELS[table]?.[column] : undefined) ?? FIELD_LABELS[column] ?? column
 
 const OP_LABELS: Record<JournalChange['op'], string> = { insert: 'angelegt', update: 'geändert', delete: 'gelöscht' }
 export const opLabel = (op: JournalChange['op']): string => OP_LABELS[op]
@@ -311,7 +315,7 @@ export function fieldLines(change: JournalChange): FieldLine[] {
     if (change.op !== 'update' && (before ?? after) === null) continue
     lines.push({
       column,
-      label: fieldLabel(column),
+      label: fieldLabel(column, change.table),
       before: change.op === 'insert' ? null : formatValue(column, before, change.table, change.refs),
       after: change.op === 'delete' ? null : formatValue(column, after, change.table, change.refs),
     })

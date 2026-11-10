@@ -55,7 +55,7 @@ const BACKLOG: readonly string[] = [
   'service_area_m2', 'service_cost_item_id', 'service_emissions_kg', 'service_fuel_gross_cents',
   'service_fuel_net_cents', 'service_kg_per_m2', 'service_landlord_cents', 'service_landlord_permille',
   'service_self_landlord_cents', 'service_total_cents', 'service_units_count', 'service_users_total_approx',
-  'service_users_total_cents', 'settle_period', 'settlement', 'sha256', 'share_permille', 'size_bytes',
+  'service_users_total_cents', 'settle_period', 'settlement', 'sha256', 'share_permille', 'size_bytes', 'source',
   'source_date', 'statement_id', 'status', 'stock_unit', 'subject_table', 'supplier_billed_at', 'supply',
   'switch_announced_on', 'table_name', 'takes_over_stock', 'tight_market', 'tight_market_from', 'tight_market_to',
   'to', 'to_month', 'total_gross_cents', 'total_heat_kwh', 'units_limited', 'until_period', 'update_check',
@@ -131,7 +131,9 @@ test('Verlauf: erste Miete bei Mietbeginn und an Angehörige vermietet als ja od
 })
 
 test('Verlauf: die Angaben der E-Rechnung stehen lesbar da (#189)', () => {
-  expect(fieldLabel('source')).toBe('Herkunft')
+  // Nur an der Auswertung: `source` heißt an anderen Tabellen die Quelle eines Werts (Durchsicht)
+  expect(fieldLabel('source', 'assessments')).toBe('Herkunft')
+  expect(fieldLabel('source', 'law_overrides')).toBe('source')
   expect(formatValue('source', 'e-rechnung', 'assessments')).toBe('E-Rechnung')
   expect(formatValue('source', 'ki', 'assessments')).toBe('KI')
   expect(formatValue('labor_guessed', 1, 'assessment_lines')).toBe('ja')
