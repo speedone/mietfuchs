@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest'
 import { depositState } from '../../shared/deposit.ts'
 import type { DepositEntry } from './types'
-import { DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, depositEntryBody, depositStateText, depositStatusLabel, emptyDepositForm, signedCents } from './depositForm'
+import { DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, depositEntryBody, depositPurposeHint, depositStateText, depositStatusLabel, emptyDepositForm, signedCents } from './depositForm'
 
 // fmtEuro setzt ein geschütztes Leerzeichen vor das Eurozeichen; die Erwartungen stehen mit gewöhnlichem da.
 const text = (...args: Parameters<typeof depositStateText>): string => depositStateText(...args).replace(/\u00a0/g, ' ')
@@ -41,9 +41,16 @@ describe('Rumpf einer Buchung', () => {
     expect(depositEntryBody({ ...form, kind: 'refunded', purpose: 'damage' }, 't')).toMatchObject({ body: { kind: 'refunded', purpose: null } })
   })
 
-  test('die Optionen: vier Arten, in Teil 1 nur Schaden und Sonstiges als Zweck', () => {
+  test('die Optionen: vier Arten, vier Zwecke, Mietrückstand zuerst', () => {
     expect(DEPOSIT_KIND_OPTIONS.map((o) => o.label)).toEqual(['Eingang', 'Ertrag (Zinsen)', 'Verrechnung', 'Rückzahlung an den Mieter'])
-    expect(DEPOSIT_PURPOSE_OPTIONS.map((o) => o.value)).toEqual(['damage', 'other'])
+    expect(DEPOSIT_PURPOSE_OPTIONS.map((o) => o.value)).toEqual(['rent', 'settlement', 'damage', 'other'])
+  })
+
+  test('der Satz unter dem Zweck sagt, was eine Verrechnung mit Miete oder Abrechnung anlegt', () => {
+    expect(depositPurposeHint('rent')).toBe('Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie tilgt den ältesten offenen Monat.')
+    expect(depositPurposeHint('settlement')).toBe('Mietfuchs legt dazu im Mietkonto eine Zahlung aus der Abrechnung an diesem Tag an.')
+    expect(depositPurposeHint('damage')).toBe('Die Steuerübersicht zählt diesen Betrag nicht als Einnahme.')
+    expect(depositPurposeHint('')).toBeNull()
   })
 })
 

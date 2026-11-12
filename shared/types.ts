@@ -261,6 +261,11 @@ export type Payment = {
   designatedMonth?: string | null
 }
 
+// Eine Zahlung, wie GET /api/payments sie liefert (#228): `fromDeposit` heißt, sie stammt aus einer Verrechnung der
+// Kaution und ist gebunden; Betrag, Datum und Art ändert nur die Kautionsbuchung. Keine Spalte, gelesen aus dem Verweis
+// der Buchung; deshalb nicht am Modell `Payment`, das die Berechnung liest.
+export type PaymentListItem = Payment & { fromDeposit?: true }
+
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 
 // `notDue`: noch nicht Rückstand, bis zum spätesten erwarteten Eingang der Miete (#334, vorher #133: ab dem aktuellen Monat).

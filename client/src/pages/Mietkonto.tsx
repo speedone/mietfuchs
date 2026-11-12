@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { MarkPaidPlan, Payment, RentLedger, RentMonth, Tenancy, Unit } from '../types'
+import type { MarkPaidPlan, Payment, PaymentListItem, RentLedger, RentMonth, Tenancy, Unit } from '../types'
 import { api, ApiError, errorText, fmtDate, fmtEuro } from '../api'
 import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
@@ -40,7 +40,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const [ledger, setLedger] = useState<RentLedger | null>(null)
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [units, setUnits] = useState<Unit[]>([])
-  const [payments, setPayments] = useState<Payment[]>([])
+  const [payments, setPayments] = useState<PaymentListItem[]>([])
   const [form, setForm] = useState<PaymentForm | null>(null)
   const [error, setError] = useState('')
   const formErrors = useFormError<PaymentField>()
@@ -61,7 +61,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     return Promise.all([
       api<RentLedger>(withProperty(`/api/rentledger/${year}`, propertyId)),
       api<Tenancy[]>(withProperty('/api/tenancies', propertyId)),
-      api<Payment[]>(withProperty('/api/payments', propertyId)),
+      api<PaymentListItem[]>(withProperty('/api/payments', propertyId)),
       api<Unit[]>(withProperty('/api/units', propertyId)),
     ])
       .then(([l, t, p, u]) => { setLedger(l); setTenancies(t); setPayments(p); setUnits(u); setError('') })
@@ -101,10 +101,11 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     toast(savedText(built.body))
   }
 
-  async function deletePayment(p: Payment) {
+  async function deletePayment(p: PaymentListItem) {
     const ok = await confirm({
       title: 'Zahlung löschen?',
-      message: `Zahlung vom ${fmtDate(p.date)} über ${fmtEuro(p.amountCents)} wird gelöscht.`,
+      // Eine Zahlung aus der Kaution (#228) nimmt ihre Verrechnung mit; der Stand der Kaution steigt wieder.
+      message: `Zahlung vom ${fmtDate(p.date)} über ${fmtEuro(p.amountCents)} wird gelöscht.${p.fromDeposit ? ' Die Verrechnung in der Kaution fällt mit weg.' : ''}`,
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -620,12 +621,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 // Speichern (kindChangeQuestion), denn sie verschiebt den Betrag zwischen den Monaten und „gesondert“. Gesendet wird nur,
 // was sich geändert hat (paymentChangeBody).
 function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
-  payment: Payment
+  payment: PaymentListItem
   tenancyName: string
   // Der Monat laut Verwendungszweck liegt außerhalb des Mietverhältnisses (wirkt wie keine Bestimmung).
   outside: boolean
   onSaved: () => Promise<unknown>
-  onDelete: (p: Payment) => void
+  onDelete: (p: PaymentListItem) => void
 }) {
   const confirm = useConfirm()
   const toast = useToast()
@@ -656,6 +657,8 @@ function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
       <td data-label="Mietverhältnis">{tenancyName}</td>
       <td data-label="Art">
         {/* Der Wert ist der gezeigte; ein unbekannter stünde sonst als erster Eintrag da. */}
+        {/* Eine Zahlung aus der Kaution (#228): Die Art ändert nur die Kautionsbuchung, hier steht sie als Text. */}
+        {p.fromDeposit ? <span>{PAYMENT_KIND_LABELS[p.kind]}</span> : <>
         <span className="print-only">{PAYMENT_KIND_LABELS[p.kind]}</span>
         <select
           className="no-print"
@@ -668,6 +671,7 @@ function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
         >
           {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{PAYMENT_KIND_LABELS[o.value]}</option>)}
         </select>
+        </>}
       </td>
       <td data-label="Für Monat">
         {value.kind === 'rent' ? (
@@ -682,7 +686,10 @@ function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
         <DraftActions draft={draft} onSave={save} what={what} />
       </td>
       <td className="muted" data-label="Notiz">{p.note ?? ''}</td>
-      <td className="num" data-label="Betrag">{fmtEuro(p.amountCents)}</td>
+      <td className="num" data-label="Betrag">
+        {fmtEuro(p.amountCents)}
+        {p.fromDeposit && <div><small className="muted">aus der Kaution, ändern unter Stammdaten</small></div>}
+      </td>
       <td className="actions no-print">
         <button className="icon-btn danger" title="Löschen" aria-label="Zahlung löschen" onClick={() => onDelete(p)}>🗑</button>
       </td>

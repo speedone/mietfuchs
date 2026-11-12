@@ -3,7 +3,7 @@
 // Steuer bleiben unberührt.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { DepositEntry, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
+import type { DepositEntry, PaymentListItem, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
 import { errorFrom, startServer, type Server } from '../testing/api.ts'
 import { journalOf, newest, revert } from '../testing/revert.ts'
 
@@ -69,8 +69,6 @@ test('Kautionsbuchung: abgelehnt wird, was keine Buchung ist', async () => {
     await refused({ kind: 'applied' }, 400, /^Bitte geben Sie an, womit Sie verrechnen\.$/)
     await refused({ kind: 'applied', purpose: 'foo' }, 400, /^Bitte geben Sie an, womit Sie verrechnen\.$/)
     await refused({ purpose: 'damage' }, 400, /Zweck/)
-    await refused({ kind: 'applied', purpose: 'rent' }, 400, /^Zweck der Verrechnung ist Schaden oder Sonstiges\.$/)
-    await refused({ kind: 'applied', purpose: 'settlement' }, 400, /^Zweck der Verrechnung ist Schaden oder Sonstiges\.$/)
     await refused({ tenancyId: 'gibt-es-nicht' }, 404, /Mietverhältnis/)
     await refused({ note: 'x'.repeat(501) }, 400, /Notiz/)
     assert.deepEqual(await entries(s), [])
@@ -182,6 +180,149 @@ test('Kautionsbuchung: Mietkonto und Steuer bleiben, wie sie sind', async () => 
     assert.equal((await entries(s)).length, 4)
     assert.deepEqual(await s.api<RentLedger>('/api/rentledger/2025'), ledger)
     assert.deepEqual(await s.api<TaxReport>('/api/taxreport/2025'), tax)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Teil 2: Verrechnung mit Miete oder Abrechnung als gebundene Zahlung ----------
+
+const BOUND = 'Diese Zahlung stammt aus der Kaution. Ändern Sie sie bitte dort.'
+
+// Ausgezogen am 31.12.2025; Januar bis November je 950 € (Soll 800 € kalt + 150 € Vorauszahlung), Dezember offen;
+// 2.400 € Kaution eingegangen. Der übliche Fall der Verrechnung: nach dem Auszug, mit dem letzten offenen Monat.
+async function withArrears(s: Server): Promise<{ tenancy: Tenancy }> {
+  const { tenancy: running } = await stock(s)
+  const tenancy = await s.api<Tenancy>(`/api/tenancies/${running.id}`, { method: 'PUT', body: JSON.stringify({ end: '2025-12-31' }) })
+  for (let m = 1; m <= 11; m++) await post(s, '/api/payments', { tenancyId: tenancy.id, date: `2025-${String(m).padStart(2, '0')}-03`, amountCents: 95000 })
+  await post(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2025-01-05', kind: 'received', amountCents: 240000 })
+  return { tenancy }
+}
+const paymentsOf = (s: Server) => s.api<PaymentListItem[]>('/api/payments')
+
+test('Verrechnung mit Mietrückstand legt eine Mietzahlung an', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await withArrears(s)
+    const tax2025 = await s.api<TaxReport>('/api/taxreport/2025')
+    const tax2026 = await s.api<TaxReport>('/api/taxreport/2026')
+    const entry = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    const payment = (await paymentsOf(s)).find((p) => p.id === entry.paymentId) ?? assert.fail('keine Zahlung zur Verrechnung')
+    assert.deepEqual({ ...payment, id: '' }, { id: '', tenancyId: tenancy.id, date: '2026-02-10', amountCents: 95000, kind: 'rent', note: 'Aus der Kaution verrechnet', fromDeposit: true })
+    const december = (await s.api<RentLedger>('/api/rentledger/2025')).rows[0]?.months[11] ?? assert.fail('kein Dezember')
+    assert.equal(december.paidLaterOn, '2026-02-10')
+    const after2026 = await s.api<TaxReport>('/api/taxreport/2026')
+    assert.equal((after2026.income.received?.formerYearsCents ?? 0) - (tax2026.income.received?.formerYearsCents ?? 0), 95000)
+    assert.equal(after2026.income.paidCents - tax2026.income.paidCents, 95000)
+    assert.deepEqual(await s.api<TaxReport>('/api/taxreport/2025'), tax2025)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Verrechnung mit der Nachzahlung legt eine Abrechnungszahlung an', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await withArrears(s)
+    const before = await s.api<TaxReport>('/api/taxreport/2026')
+    const entry = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-03-01', kind: 'applied', purpose: 'settlement', amountCents: 18000 })
+    const payment = (await paymentsOf(s)).find((p) => p.id === entry.paymentId) ?? assert.fail('keine Zahlung zur Verrechnung')
+    assert.equal(payment.kind, 'settlement')
+    const after = await s.api<TaxReport>('/api/taxreport/2026')
+    assert.equal(after.income.settlementBackPaymentsCents - before.income.settlementBackPaymentsCents, 18000)
+  } finally {
+    s.stop()
+  }
+})
+
+test('die gebundene Zahlung ist geschützt', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await withArrears(s)
+    const entry = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    const url = `/api/payments/${entry.paymentId}`
+    for (const patch of [{ amountCents: 1 }, { date: '2026-02-11' }, { kind: 'settlement' }]) {
+      const res = await send(s, 'PUT', url, patch)
+      assert.equal(res.status, 409, JSON.stringify(patch))
+      assert.equal(await errorFrom(res), BOUND)
+    }
+    const other = await post<Tenancy>(s, '/api/tenancies', { unitId: tenancy.unitId, tenantName: 'Zweiter', persons: 1, start: '2026-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+    assert.equal((await send(s, 'PUT', url, { tenancyId: other.id })).status, 409)
+    assert.equal((await send(s, 'PUT', url, { note: 'Kaution verrechnet, Dezember 2025' })).status, 200)
+    assert.equal((await send(s, 'PUT', url, { designatedMonth: '2025-12' })).status, 200)
+    // Unverändert gesendet ist keine Änderung.
+    assert.equal((await send(s, 'PUT', url, { amountCents: 95000, date: '2026-02-10', kind: 'rent' })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+test('gebundene Zahlung und Verrechnung fallen gemeinsam weg, von beiden Seiten', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await withArrears(s)
+    const a = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    assert.equal((await send(s, 'DELETE', `/api/payments/${a.paymentId}`)).status, 200)
+    assert.deepEqual((await entries(s)).map((e) => e.kind), ['received'])
+    const b = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    assert.equal((await send(s, 'DELETE', `/api/deposit-entries/${b.id}`)).status, 200)
+    assert.equal((await paymentsOf(s)).some((p) => p.id === b.paymentId), false)
+    assert.equal((await paymentsOf(s)).length, 11)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Ändern der Verrechnung zieht die Zahlung mit', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await withArrears(s)
+    const entry = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    const changed = await s.api<DepositEntry>(`/api/deposit-entries/${entry.id}`, { method: 'PUT', body: JSON.stringify({ amountCents: 50000, date: '2026-02-12' }) })
+    assert.equal(changed.paymentId, entry.paymentId)
+    const p = (await paymentsOf(s)).find((x) => x.id === entry.paymentId) ?? assert.fail('Zahlung fehlt')
+    assert.deepEqual([p.amountCents, p.date, p.kind], [50000, '2026-02-12', 'rent'])
+    // Zweck Abrechnung: dieselbe Zahlung wird zur Abrechnungszahlung.
+    await s.api(`/api/deposit-entries/${entry.id}`, { method: 'PUT', body: JSON.stringify({ purpose: 'settlement' }) })
+    assert.equal((await paymentsOf(s)).find((x) => x.id === entry.paymentId)?.kind, 'settlement')
+    // Zweck Schaden: Die Zahlung fällt weg, die Buchung bleibt.
+    const damage = await s.api<DepositEntry>(`/api/deposit-entries/${entry.id}`, { method: 'PUT', body: JSON.stringify({ purpose: 'damage' }) })
+    assert.equal(damage.paymentId, undefined)
+    assert.equal((await paymentsOf(s)).length, 11)
+    // Zurück auf Mietrückstand: eine neue Zahlung.
+    const again = await s.api<DepositEntry>(`/api/deposit-entries/${entry.id}`, { method: 'PUT', body: JSON.stringify({ purpose: 'rent' }) })
+    assert.ok(again.paymentId)
+    assert.equal((await paymentsOf(s)).find((x) => x.id === again.paymentId)?.amountCents, 50000)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Rücksprung über eine Verrechnung nimmt Buchung und Zahlung gemeinsam', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await withArrears(s)
+    const entry = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    const top = await newest(s)
+    assert.match(top.title, /^Kautionsbuchung angelegt/)
+    await revert(s, top.id)
+    assert.deepEqual((await entries(s)).map((e) => e.kind), ['received'])
+    assert.equal((await paymentsOf(s)).some((p) => p.id === entry.paymentId), false)
+    await revert(s, (await newest(s)).id)
+    assert.equal((await entries(s)).find((e) => e.id === entry.id)?.paymentId, entry.paymentId)
+    assert.equal((await paymentsOf(s)).some((p) => p.id === entry.paymentId), true)
+  } finally {
+    s.stop()
+  }
+})
+
+test('eine Verrechnung mit Miete braucht Geld in der Kaution wie jede andere', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await stock(s)
+    const res = await send(s, 'POST', '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    assert.equal(res.status, 400)
+    assert.deepEqual(await paymentsOf(s), [])
   } finally {
     s.stop()
   }

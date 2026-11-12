@@ -18,8 +18,8 @@ export const DEPOSIT_KIND_LABELS: Record<DepositEntryKind, string> = {
 export const DEPOSIT_KIND_OPTIONS: readonly { value: DepositEntryKind; label: string }[] =
   (['received', 'interest', 'applied', 'refunded'] as const).map((value) => ({ value, label: DEPOSIT_KIND_LABELS[value] }))
 
-// Alle vier Zwecke haben eine Beschriftung (Verlauf, Tabelle); wählbar sind in Teil 1 nur die beiden, die keine
-// Zahlung im Mietkonto anlegen. Die Verrechnung mit Miete oder Abrechnung kommt mit Teil 2.
+// Die Zwecke einer Verrechnung. Mietrückstand und Nachzahlung legen eine gebundene Zahlung im Mietkonto an
+// (server/src/db/deposits.ts); Schaden und Sonstiges nicht.
 export const DEPOSIT_PURPOSE_LABELS: Record<DepositPurpose, string> = {
   rent: 'Mietrückstand',
   settlement: 'Nachzahlung aus der Abrechnung',
@@ -27,7 +27,19 @@ export const DEPOSIT_PURPOSE_LABELS: Record<DepositPurpose, string> = {
   other: 'Sonstiges',
 }
 export const DEPOSIT_PURPOSE_OPTIONS: readonly { value: DepositPurpose; label: string }[] =
-  (['damage', 'other'] as const).map((value) => ({ value, label: DEPOSIT_PURPOSE_LABELS[value] }))
+  (['rent', 'settlement', 'damage', 'other'] as const).map((value) => ({ value, label: DEPOSIT_PURPOSE_LABELS[value] }))
+
+// Der Satz unter dem Zweck: was die Verrechnung anlegt, und was sie für die Steuer heißt. Zum Schaden steht nur, was
+// Mietfuchs tut; ob und wo ein einbehaltener Schadensersatz anzugeben ist, ist nicht belegt (Entwurf, Abschnitt Recht).
+export function depositPurposeHint(purpose: DepositPurpose | ''): string | null {
+  switch (purpose) {
+    case 'rent': return 'Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie tilgt den ältesten offenen Monat.'
+    case 'settlement': return 'Mietfuchs legt dazu im Mietkonto eine Zahlung aus der Abrechnung an diesem Tag an.'
+    case 'damage':
+    case 'other': return 'Die Steuerübersicht zählt diesen Betrag nicht als Einnahme.'
+    case '': return null
+  }
+}
 
 export const emptyDepositForm = (today: string): DepositFormState => ({ date: today, kind: 'received', purpose: '', amount: '', note: '' })
 

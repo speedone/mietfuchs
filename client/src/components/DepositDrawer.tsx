@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { depositState } from '../../../shared/deposit.ts'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
 import {
-  DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, NO_MONEY_FORM_TEXT, depositEntryBody, depositKindText, depositStateText, emptyDepositForm, formWithoutMoney,
+  DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, NO_MONEY_FORM_TEXT, depositEntryBody, depositKindText, depositPurposeHint, depositStateText, emptyDepositForm, formWithoutMoney,
   signedCents, withKind, type DepositField,
 } from '../depositForm'
 import { localToday } from '../periodForm'
@@ -109,8 +109,7 @@ export default function DepositDrawer({ tenancy, entries, onChanged, onClose }: 
           </select>
         </Field>
         {form.kind === 'applied' && (
-          <Field label="Verrechnet mit" required {...errors.field('purpose')}
-            hint="Die Verrechnung mit einem Mietrückstand oder einer Nachzahlung aus der Abrechnung folgt mit einer späteren Version.">
+          <Field label="Verrechnet mit" required {...errors.field('purpose')} hint={depositPurposeHint(form.purpose) ?? undefined}>
             <select value={form.purpose} onChange={(e) => {
               const purpose = DEPOSIT_PURPOSE_OPTIONS.find((o) => o.value === e.target.value)?.value
               if (purpose) setForm({ ...form, purpose })

@@ -70,8 +70,10 @@ test('das Feld Zweck erscheint nur bei Verrechnung, sein angezeigter Wert ist de
   fireEvent.change(select('Art'), { target: { value: 'applied' } })
   const purpose = select('Verrechnet mit')
   // Vorbelegt mit der ersten Option, und genau die wird gesendet.
-  expect(purpose.value).toBe('damage')
-  expect([...purpose.options].map((o) => o.value)).toEqual(['damage', 'other'])
+  expect(purpose.value).toBe('rent')
+  expect([...purpose.options].map((o) => o.value)).toEqual(['rent', 'settlement', 'damage', 'other'])
+  fireEvent.change(purpose, { target: { value: 'damage' } })
+  expect(select('Verrechnet mit').value).toBe('damage')
   fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '50,00' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(sent.at(-1)?.method).toBe('POST'))

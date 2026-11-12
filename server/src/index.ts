@@ -53,7 +53,7 @@ import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverR
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import { connect, loadMigrations, type Database, type Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readCostItems, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './db/read.ts'
+import { readCostItems, readDepositEntries, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
 import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
 import { DEFAULT_LETTER_TEXTS, isMonthKey, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
@@ -707,6 +707,12 @@ for (const coll of COLLECTIONS) {
       const propertyId = await propertyOf(db, req)
       const stock = await readStock(db)
       const scoped = narrowToProperty(stock, propertyId)
+      // Zahlungen aus einer Verrechnung der Kaution (#228) tragen `fromDeposit`, damit das Mietkonto sie sperrt. Gelesen
+      // aus dem Verweis der Buchung, keine Spalte; Berechnung und Schnappschuss sehen es nicht.
+      if (coll === 'payments') {
+        const bound = new Set((await readDepositEntries(db)).flatMap((e) => (e.paymentId ? [e.paymentId] : [])))
+        return scoped.payments.map((p) => (bound.has(p.id) ? { ...p, fromDeposit: true } : p))
+      }
       if (coll !== 'costItems' && coll !== 'tenancies') return scoped[coll]
       // Ein Tab von vor dem Update filtert die Kostenpositionen nach `year` (#208). Bei einem reinen
       // Kalenderobjekt bekommt er es weiter; sonst sähe er eine leere Liste und erfasste alles noch
@@ -1032,7 +1038,7 @@ app.post('/api/deposit-entries', async (req, res) => {
   res.status(201).json(await writeData((db) => createDepositEntry(db, bodyObject(req), newId)))
 })
 app.put('/api/deposit-entries/:id', async (req, res) => {
-  const entry = await writeData((db) => updateDepositEntry(db, req.params.id, bodyObject(req)))
+  const entry = await writeData((db) => updateDepositEntry(db, req.params.id, bodyObject(req), newId))
   if (!entry) return res.status(404).json({ error: NO_DEPOSIT_ENTRY })
   res.json(entry)
 })
