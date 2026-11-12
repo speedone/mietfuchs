@@ -91,16 +91,16 @@ test('Kautionsbuchung: der Stand fällt an keinem Tag unter null', async () => {
     // Rückdatiert vor den Eingang: abgelehnt, obwohl die Summe am Ende aufginge.
     const early = await send(s, 'POST', '/api/deposit-entries', { tenancyId: tenancy.id, date: '2025-02-01', kind: 'refunded', amountCents: 100000 })
     assert.equal(early.status, 400)
-    assert.equal(await errorFrom(early), 'Mehr als die Kaution hergibt: Am 01.02.2025 lägen -1.000,00 € bei Ihnen.')
+    assert.equal(await errorFrom(early), 'Mehr als die Kaution hergibt: Am 01.02.2025 fehlten 1.000,00 €.')
 
     const refunded = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2025-06-01', kind: 'refunded', amountCents: 100000 })
     // Den Eingang löschen oder kürzen, nachdem zurückgezahlt ist.
     const remove = await send(s, 'DELETE', `/api/deposit-entries/${received.id}`)
     assert.equal(remove.status, 400)
-    assert.equal(await errorFrom(remove), 'Mehr als die Kaution hergibt: Am 01.06.2025 lägen -1.000,00 € bei Ihnen.')
+    assert.equal(await errorFrom(remove), 'Mehr als die Kaution hergibt: Am 01.06.2025 fehlten 1.000,00 €.')
     const cut = await send(s, 'PUT', `/api/deposit-entries/${received.id}`, { amountCents: 50000 })
     assert.equal(cut.status, 400)
-    assert.equal(await errorFrom(cut), 'Mehr als die Kaution hergibt: Am 01.06.2025 lägen -500,00 € bei Ihnen.')
+    assert.equal(await errorFrom(cut), 'Mehr als die Kaution hergibt: Am 01.06.2025 fehlten 500,00 €.')
     // Die Rückzahlung vor den Eingang ziehen.
     assert.equal((await send(s, 'PUT', `/api/deposit-entries/${refunded.id}`, { date: '2025-01-15' })).status, 400)
     assert.deepEqual((await entries(s)).map((e) => [e.id, e.date, e.amountCents]), [[received.id, '2025-03-01', 100000], [refunded.id, '2025-06-01', 100000]])
@@ -129,8 +129,14 @@ test('Kautionsbuchung: sie folgt ihrem Mietverhältnis, je Objekt gelistet', asy
     assert.equal(moved.status, 400)
     assert.match(await errorFrom(moved), /anderes Mietverhältnis/)
 
-    assert.equal((await send(s, 'DELETE', `/api/tenancies/${tenancy.id}`)).status, 200)
+    // Ein Mietverhältnis, das in eine Wohnung eines anderen Objekts wechselt, nimmt seine Buchungen mit: Das alte Objekt
+    // liefert sie nicht mehr (Review Focus 5).
+    assert.equal((await send(s, 'PUT', `/api/tenancies/${tenancy.id}`, { unitId: other.unit.id })).status, 200)
     assert.deepEqual(await entries(s, '?property=objekt-1'), [])
+    assert.deepEqual((await entries(s, `?property=${b.id}`)).map((e) => e.id), [first.id, second.id])
+
+    // Mit dem Mietverhältnis fallen seine Buchungen weg, die des anderen bleiben.
+    assert.equal((await send(s, 'DELETE', `/api/tenancies/${tenancy.id}`)).status, 200)
     assert.deepEqual((await entries(s, `?property=${b.id}`)).map((e) => e.id), [second.id])
   } finally {
     s.stop()

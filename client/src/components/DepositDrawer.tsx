@@ -24,11 +24,16 @@ export default function DepositDrawer({ tenancy, entries, onChanged, onClose }: 
   onClose: () => void
 }) {
   const [form, setForm] = useState(() => emptyDepositForm(localToday()))
+  // Nach dem Anlegen baut sich das Fenster neu auf (Durchsicht G1): Das stehen gebliebene Datum ist dann der neue
+  // Ausgangsstand, und „Schließen“ fragt nicht nach Änderungen, die keine sind.
+  const [round, setRound] = useState(0)
   const errors = useFormError<DepositField>()
   const saving = useSaving()
   const toast = useToast()
   const confirm = useConfirm()
   const state = depositState(tenancy, entries)
+  // Angezeigt nach Datum, am selben Tag in Einfügereihenfolge: Eine nachgetragene alte Rate steht an ihrem Platz.
+  const shown = [...entries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 
   async function create() {
     const result = depositEntryBody(form, tenancy.id)
@@ -40,6 +45,7 @@ export default function DepositDrawer({ tenancy, entries, onChanged, onClose }: 
       await api('/api/deposit-entries', { method: 'POST', body: JSON.stringify(result.body) })
       // Das Fenster bleibt offen: Raten und Zinsen kommen oft in einem Zug. Das Datum bleibt stehen.
       setForm({ ...emptyDepositForm(localToday()), date: form.date })
+      setRound((r) => r + 1)
       errors.set('')
       toast('Kautionsbuchung angelegt.')
       onChanged()
@@ -66,7 +72,7 @@ export default function DepositDrawer({ tenancy, entries, onChanged, onClose }: 
   }
 
   return (
-    <Drawer key={tenancy.id} open title={`Kaution von ${tenancy.tenantName}`} width={620} cancelLabel="Schließen"
+    <Drawer key={`${tenancy.id}-${round}`} open title={`Kaution von ${tenancy.tenantName}`} width={620} cancelLabel="Schließen"
       onClose={onClose} value={form} busy={saving.busy} errors={errors} onSubmit={() => void saving.run(create)}
       actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(create)}>Anlegen</button>}>
       <p className="m-0">{depositStateText(state, tenancy)}</p>
@@ -77,13 +83,13 @@ export default function DepositDrawer({ tenancy, entries, onChanged, onClose }: 
             <tr><th>Datum</th><th>Art</th><th className="num">Betrag</th><th>Notiz</th><th><span className="sr-only">Aktion</span></th></tr>
           </thead>
           <tbody>
-            {entries.map((e) => (
+            {shown.map((e) => (
               <tr key={e.id}>
                 <td>{fmtDate(e.date)}</td>
                 <td>{depositKindText(e)}</td>
                 <td className="num">{fmtEuro(signedCents(e))}</td>
                 <td>{e.note ?? ''}</td>
-                <td><button className="btn small ghost danger-ghost" disabled={saving.busy} onClick={() => void remove(e)}>Löschen …</button></td>
+                <td><button className="btn small ghost danger-ghost" disabled={saving.busy} onClick={() => void saving.run(() => remove(e))}>Löschen …</button></td>
               </tr>
             ))}
           </tbody>

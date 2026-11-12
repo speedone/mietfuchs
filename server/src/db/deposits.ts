@@ -85,7 +85,7 @@ function mergeEntry(current: DepositEntry | null, id: string, body: unknown): De
 // Nie negativ: an keinem Tag kann mehr verrechnet oder ausgezahlt sein, als bis dahin eingegangen ist.
 function guardBalance(after: readonly DepositEntry[]): void {
   const problem = depositProblem(after)
-  if (problem) throw new DepositError(400, `Mehr als die Kaution hergibt: Am ${germanDate(problem.date)} lägen ${euro(problem.balanceCents)} bei Ihnen.`)
+  if (problem) throw new DepositError(400, `Mehr als die Kaution hergibt: Am ${germanDate(problem.date)} fehlten ${euro(-problem.balanceCents)}.`)
 }
 
 const rowOf = (e: DepositEntry) => ({

@@ -916,6 +916,8 @@ test('Kaution: mit Buchungen ergibt sich der Stand, das Auswahlfeld ist gesperrt
   fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis bearbeiten'))
   await screen.findByText('Mietverhältnis bearbeiten', undefined, SLOW)
   expect(selectOf('Kautionsstatus').disabled).toBe(true)
+  // Das gesperrte Feld zeigt den Stand aus den Buchungen, wie die Zeile der Liste, nicht den gespeicherten (Durchsicht W1).
+  expect(selectOf('Kautionsstatus').value).toBe('teilweise')
   expect(within(screen.getByRole('dialog')).getByText(/ergibt sich aus den Kautionsbuchungen/)).toBeTruthy()
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
   await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
@@ -930,10 +932,32 @@ test('Kaution: der Knopf „Kaution führen“ öffnet das Seitenfenster', async
   expect(await screen.findByRole('dialog', { name: 'Kaution von Erika' }, SLOW)).toBeTruthy()
 })
 
-test('Kaution: ohne vereinbarte Kaution und ohne Buchung steht in der Zeile nichts dazu', async () => {
+test('Kaution: auch ohne vereinbarte Höhe lässt sich die Kaution führen', async () => {
   page([tenancy('t1', 'Erika')])
   await screen.findByText('Erika', undefined, SLOW)
-  expect(rowOf('Erika').queryByRole('button', { name: 'Kaution führen' })).toBeNull()
+  // Ohne Höhe und ohne Buchung keine Marke, aber der Knopf: Sonst ließe sich die erste Buchung nicht anlegen (Durchsicht G4).
+  expect(rowOf('Erika').queryByText('offen')).toBeNull()
+  fireEvent.click(rowOf('Erika').getByRole('button', { name: 'Kaution führen' }))
+  expect(await screen.findByRole('dialog', { name: 'Kaution von Erika' }, SLOW)).toBeTruthy()
+})
+
+test('Kaution: die Rückfrage beim Löschen nennt die Kautionsbuchungen', async () => {
+  page([tenancy('t1', 'Erika', { depositCents: 240000 })])
+  await screen.findByText('Erika', undefined, SLOW)
+  fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis löschen'))
+  expect(await screen.findByText('Das Mietverhältnis, zugehörige Zahlungen und Kautionsbuchungen werden gelöscht.', undefined, SLOW)).toBeTruthy()
+})
+
+test('Kaution: wer die Höhe leert, leert auch den gespeicherten Stand, auch mit Buchungen', async () => {
+  depositEntries = [{ id: 'd1', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 80000 }]
+  page([tenancy('t1', 'Erika', { depositCents: 240000, depositStatus: 'offen' })])
+  await screen.findByText('Erika', undefined, SLOW)
+  fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByText('Mietverhältnis bearbeiten', undefined, SLOW)
+  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Kaution €'), { target: { value: '' } })
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
+  await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
+  expect(tenancyBody()).toMatchObject({ depositCents: null, depositStatus: null })
 })
 
 test('Kaution: Form der Sicherheit zeigt den gespeicherten Wert, „keine Angabe“ leert', async () => {

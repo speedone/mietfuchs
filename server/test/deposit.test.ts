@@ -105,7 +105,15 @@ test('Stand der Kaution, Invariante: der Stand ist die Summe der Buchungen', () 
     const sum = (k: DepositEntryKind) => entries.filter((e) => e.kind === k).reduce((a, e) => a + e.amountCents, 0)
     assert.equal(s.receivedCents, sum('received'), `Lauf ${run}`)
     assert.equal(s.refundedCents, sum('refunded'), `Lauf ${run}`)
-    // Was depositProblem durchlässt, ist an keinem Tag negativ, also auch am Ende nicht.
-    if (depositProblem(entries) === null) assert.ok(s.balanceCents >= 0, `Lauf ${run}`)
+    // Was depositProblem durchlässt, ist an keinem Tag negativ: Jeder Anfang der nach Datum geordneten Folge (am selben
+    // Tag in Listenreihenfolge) hat einen Stand ab 0. Was es meldet, ist der erste Tag, an dem einer darunter fällt.
+    const ordered = [...entries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    let running = 0
+    let firstNegative: { date: string; balanceCents: number } | null = null
+    for (const e of ordered) {
+      running += e.kind === 'received' || e.kind === 'interest' ? e.amountCents : -e.amountCents
+      if (running < 0 && firstNegative === null) firstNegative = { date: e.date, balanceCents: running }
+    }
+    assert.deepEqual(depositProblem(entries), firstNegative, `Lauf ${run}`)
   }
 })

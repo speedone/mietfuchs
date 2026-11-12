@@ -403,8 +403,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       ...rentDueBody(tenForm.rentDue, tenancies.find((t) => t.id === tenForm.id)),
       depositCents,
       // Mit Kautionsbuchungen ergibt sich der Stand aus ihnen (#228): Der gespeicherte bleibt dann, wie er ist, und
-      // gilt wieder, falls alle Buchungen gelöscht werden.
-      ...(tenForm.id !== undefined && depositEntries.some((e) => e.tenancyId === tenForm.id) ? {} : { depositStatus: depositCents !== null ? tenForm.depositStatus : null }),
+      // gilt wieder, falls alle Buchungen gelöscht werden. Ohne Höhe gibt es keinen Stand, wie vor #228 (Durchsicht G10).
+      ...(depositCents !== null && tenForm.id !== undefined && depositEntries.some((e) => e.tenancyId === tenForm.id) ? {} : { depositStatus: depositCents !== null ? tenForm.depositStatus : null }),
       depositForm: tenForm.depositForm || null,
       notes: tenForm.notes.trim() || null,
       ...costModelBody(tenForm.costModel, tenForm.heatingModel),
@@ -436,7 +436,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   async function deleteTenancy(t: Tenancy) {
     const ok = await confirm({
       title: `Mietverhältnis „${t.tenantName}“ löschen?`,
-      message: 'Das Mietverhältnis und zugehörige Zahlungen werden gelöscht.',
+      message: 'Das Mietverhältnis, zugehörige Zahlungen und Kautionsbuchungen werden gelöscht.',
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -469,6 +469,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // Kaution (#228): die Buchungen je Mietverhältnis, und ob das Formular eines mit Buchungen zeigt.
   const entriesOf = (tenancyId: string): DepositEntry[] => depositEntries.filter((e) => e.tenancyId === tenancyId)
   const hasDepositEntries = tenForm?.id !== undefined && entriesOf(tenForm.id).length > 0
+  // Das gesperrte Auswahlfeld zeigt den Stand aus den Buchungen, wie die Zeile der Liste (Durchsicht W1); gespeichert
+  // wird er nicht.
+  const formTenancy = tenForm?.id === undefined ? undefined : tenancies.find((t) => t.id === tenForm.id)
   const depositTenancy = depositFor === null ? undefined : tenancies.find((t) => t.id === depositFor)
 
   // Eine Zeile der Tabelle der Mietverhältnisse, für laufende und frühere gleich.
@@ -494,8 +497,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <span className="muted">{t.depositCents != null ? `Kaution ${fmtEuro(t.depositCents)}` : 'Kaution'}</span>{' '}
             <span className={`badge ${depositState(t, entriesOf(t.id)).status === 'erhalten' ? 'green' : 'gray'}`}>
               {depositStatusLabel(depositState(t, entriesOf(t.id)))}
-            </span>{' '}
-            <button className="btn small secondary no-print" onClick={() => setDepositFor(t.id)}>Kaution führen</button>
+            </span>
           </div>
         )}
       </td>
@@ -552,6 +554,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             Mieterwechsel
           </button>
         )}
+        {/* Immer, auch ohne vereinbarte Höhe (Durchsicht G4): Sonst ließe sich die erste Buchung nicht anlegen. */}
+        <button className="btn small secondary" onClick={() => setDepositFor(t.id)}>Kaution führen</button>
         </div>
       </td>
     </tr>
@@ -933,7 +937,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <input value={tenForm.deposit} inputMode="decimal" placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
                 </Field>
                 <Field label="Kautionsstatus" hint={hasDepositEntries ? 'Der Stand ergibt sich aus den Kautionsbuchungen („Kaution führen“ in der Liste).' : undefined}>
-                  <select value={tenForm.depositStatus} disabled={!tenForm.deposit.trim() || hasDepositEntries} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
+                  <select value={formTenancy && hasDepositEntries ? depositState(formTenancy, entriesOf(formTenancy.id)).status : tenForm.depositStatus} disabled={!tenForm.deposit.trim() || hasDepositEntries} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
                     {(Object.keys(DEPOSIT_STATUS_LABELS) as DepositStatus[]).map((s) => (
                       <option key={s} value={s}>{DEPOSIT_STATUS_LABELS[s]}</option>
                     ))}
