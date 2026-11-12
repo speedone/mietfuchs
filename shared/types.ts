@@ -210,6 +210,9 @@ export type Tenancy = {
   firstRentAtStart?: boolean
   depositCents?: number // vereinbarte Kaution
   depositStatus?: DepositStatus // Stand der Kaution
+  // Form der Sicherheit (#228). Eine Auskunft: Sie steuert nur einen Satz im Seitenfenster der Kaution. Fehlt sie, ist
+  // nichts angegeben.
+  depositForm?: DepositForm
   notes?: string // freie Notiz zum Mietverhältnis
 }
 

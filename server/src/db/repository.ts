@@ -68,7 +68,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_DUE_RULES, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_DUE_RULES, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
@@ -501,6 +501,8 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     contractDate: merged(body, 'contractDate', current.contractDate, asOptionalText),
     depositCents: merged(body, 'depositCents', current.depositCents, asOptionalNumber),
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
+    // Form der Sicherheit (#228): null oder ein unbekannter Wert heißt keine Angabe.
+    depositForm: merged(body, 'depositForm', current.depositForm, (v) => oneOfOrUndefined(DEPOSIT_FORMS, v)),
     // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
     costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
     heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(HEATING_MODELS, v)),
@@ -2499,7 +2501,7 @@ const tenancyRow = (t: Tenancy) => ({
   email: orNull(t.email), phone: orNull(t.phone), correspondenceAddress: orNull(t.correspondenceAddress),
   letterSalutation: orNull(t.letterSalutation),
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
-  depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
+  depositStatus: orNull(t.depositStatus), depositForm: orNull(t.depositForm), notes: orNull(t.notes),
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
   selfSupplyKind: t.heatingModel === 'selfSupply' ? orNull(t.selfSupplyKind) : null,
   halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),

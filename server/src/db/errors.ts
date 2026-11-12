@@ -72,6 +72,8 @@ const FIELD_NAMES: Record<string, string> = {
   target_key: 'den Schlüssel des Ziels',
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
+  deposit_form: 'Form der Sicherheit',
+  purpose: 'Zweck der Verrechnung',
   state: 'Bundesland',
   block: 'den Baustein des Anschreibens',
   mode: 'die Anpassung der Vorauszahlung',
@@ -257,6 +259,11 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   tenancy_letter_texts_doc_complete: 'Zu welcher Abrechnung das Anschreiben gehört, fehlt. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
   tenancy_letter_adjustments_doc_complete: 'Zu welcher Abrechnung die Anpassung der Vorauszahlung gehört, fehlt. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
   tenancy_letter_adjustments_cents_valid: 'Einen eigenen Betrag für die Vorauszahlung gibt es nur bei „Eigenen Betrag ankündigen“, und er ist nicht negativ.',
+  // Kautionsbuchungen (#228); db/deposits.ts prüft vorher.
+  deposit_entries_amount_positive: 'Betrag der Kautionsbuchung ist ein Betrag größer als 0.',
+  deposit_entries_purpose_valid: 'Womit verrechnet wurde, gehört zu einer Verrechnung und nur zu ihr. Bitte geben Sie an, womit Sie verrechnen.',
+  deposit_entries_payment_valid: 'Eine Zahlung gehört nur zu einer Verrechnung mit Miete oder Abrechnung. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  deposit_entries_date_valid: 'Der Tag der Kautionsbuchung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
   // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19); db/co2Refunds.ts prüft vorher.
   tenancies_self_supply_kind_valid: 'Welche Heizung der Mieter selbst betreibt, gibt es nur bei „Mieter heizt selbst“. Bitte laden Sie die Seite neu.',
   co2_refunds_settled_or_paid_valid: 'Eine CO₂-Erstattung wird entweder in einer Abrechnung verrechnet oder ausgezahlt, nicht beides.',
