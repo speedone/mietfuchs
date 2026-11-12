@@ -187,7 +187,7 @@ test('Kautionsbuchung: Mietkonto und Steuer bleiben, wie sie sind', async () => 
 
 // ---------- Teil 2: Verrechnung mit Miete oder Abrechnung als gebundene Zahlung ----------
 
-const BOUND = 'Diese Zahlung stammt aus der Kaution. Ändern Sie sie bitte dort.'
+const BOUND = 'Diese Zahlung stammt aus der Kaution. Löschen Sie die Verrechnung unter Stammdaten bei „Kaution führen“ und legen Sie sie neu an.'
 
 // Ausgezogen am 31.12.2025; Januar bis November je 950 € (Soll 800 € kalt + 150 € Vorauszahlung), Dezember offen;
 // 2.400 € Kaution eingegangen. Der übliche Fall der Verrechnung: nach dem Auszug, mit dem letzten offenen Monat.
@@ -440,4 +440,22 @@ test('Umbuchen mit langer Notiz kürzt sie auf die Länge einer Kautionsbuchung'
   } finally {
     s.stop()
   }
+})
+
+// Abschlussdurchsicht W1: Bei Pauschale oder Inklusivmiete für Kaltes und Heizung ist keine Abrechnung geschuldet; auf dem
+// Blatt für den Mieter läse sich „steht noch aus“ wie eine offene Forderung.
+test('Auskunft zur Aufstellung: nichts steht aus, wenn der Mieter keine Abrechnung bekommt', async () => {
+  await withEnv({ NKA_TEST_TODAY: '2026-01-15' }, async (s) => {
+    const unit = await post<Unit>(s, '/api/units', { name: 'EG', areaM2: 80, participates: true })
+    const base = { unitId: unit.id, persons: 1, prepayments: [], prepaymentOverrides: {}, baseRents: [{ from: '2024-01', monthlyCents: 80000 }] }
+    const flat = await post<Tenancy>(s, '/api/tenancies', { ...base, tenantName: 'Pauschal', start: '2024-01-01', end: '2025-06-30', costModel: 'flatRate', heatingModel: 'flatRate', flatRates: [{ from: '2024-01', monthlyCents: 15000 }] })
+    const warm = await post<Tenancy>(s, '/api/tenancies', { ...base, tenantName: 'Warm', start: '2025-07-01', end: '2025-12-31', costModel: 'inclusive', heatingModel: 'inclusive', baseRents: [{ from: '2025-07', monthlyCents: 95000 }] })
+    const mixed = await post<Tenancy>(s, '/api/tenancies', { ...base, tenantName: 'Gemischt', unitId: (await post<Unit>(s, '/api/units', { name: 'OG', areaM2: 60, participates: true })).id, start: '2025-01-01', end: '2025-12-31', costModel: 'flatRate', flatRates: [{ from: '2025-01', monthlyCents: 5000 }], prepayments: [{ from: '2025-01', monthlyCents: 9000 }] })
+    const info = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
+    const of = (id: string) => info.find((i) => i.tenancyId === id)?.pending
+    assert.deepEqual(of(flat.id), [])
+    assert.deepEqual(of(warm.id), [])
+    // Kaltes pauschal, Heizung abgerechnet: Die Heizkosten werden abgerechnet, also steht 2025 aus.
+    assert.deepEqual(of(mixed.id), ['2025'])
+  })
 })

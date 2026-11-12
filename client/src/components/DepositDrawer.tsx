@@ -71,8 +71,9 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
       await api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
       holdErrors.set('')
       toast('Einbehalt gespeichert.')
-      // Wie nach dem Anlegen: Der gespeicherte Stand ist der neue Ausgangsstand, „Schließen“ fragt nicht nach.
-      setRound((r) => r + 1)
+      // Wie nach dem Anlegen: Der gespeicherte Stand ist der neue Ausgangsstand, „Schließen“ fragt nicht nach. Nicht, wenn
+      // im Formular einer Buchung schon etwas steht (Abschlussdurchsicht G5).
+      if (form.amount.trim() === '' && form.note.trim() === '' && form.kind === 'received') setRound((r) => r + 1)
       onChanged()
     } catch (e) {
       holdErrors.show(errorText(e))
@@ -91,7 +92,10 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
       await api('/api/deposit-entries', { method: 'POST', body: JSON.stringify(result.body) })
       // Das Fenster bleibt offen: Raten und Zinsen kommen oft in einem Zug. Das Datum bleibt stehen.
       setForm({ ...emptyDepositForm(localToday()), date: form.date })
-      setRound((r) => r + 1)
+      // Neu aufbauen nur, wenn der Einbehalt nichts Ungespeichertes trägt; sonst ginge er beim Schließen ohne Rückfrage
+      // verloren (Abschlussdurchsicht G5).
+      const savedHold = holdFormOf(tenancy)
+      if (hold.amount === savedHold.amount && hold.note === savedHold.note) setRound((r) => r + 1)
       errors.set('')
       toast('Kautionsbuchung angelegt.')
       onChanged()
@@ -128,7 +132,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
           <h3>Aufstellung zum Auszug</h3>
           <SettlementView settlement={settlement} />
           <ErrorSummary errors={holdErrors} />
-          <Field label="Einbehalt €" {...holdErrors.field('holdAmount')} hint="Was Sie vorerst zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung. Leer heißt keiner.">
+          <Field label="Einbehalt €" {...holdErrors.field('holdAmount')} hint="Was Sie vorerst zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung. Leer heißt keiner. Mehr als der Stand der Kaution zählt nicht.">
             <input value={hold.amount} inputMode="decimal" placeholder="z. B. 300,00" onChange={(e) => setHold({ ...hold, amount: e.target.value })} />
           </Field>
           <Field label="Grund" {...holdErrors.field('holdNote')}>
@@ -143,7 +147,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
       {printing && settlement && createPortal(
         <div className="deposit-print">
           <h2>Aufstellung zum Auszug</h2>
-          <p>Kaution von {tenancy.tenantName}{tenancy.end ? `, ausgezogen am ${fmtDate(tenancy.end)}` : ''}</p>
+          <p>Kaution von {tenancy.tenantName}{tenancy.end ? `, ausgezogen am ${fmtDate(tenancy.end)}` : ''}. Stand vom {fmtDate(localToday())}.</p>
           <SettlementView settlement={settlement} printed />
         </div>,
         document.body,
@@ -202,22 +206,23 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
 }
 
 // Die Aufstellung selbst, gleich am Bildschirm und im Druck.
-// Gedruckt geht das Blatt an den Mieter; „Ihnen“ hieße dort ihn (Durchsicht G2).
+// Gedruckt geht das Blatt an den Mieter; „Ihnen“ hieße dort ihn (Durchsicht G2). Freie Notizen, die letzte Abrechnung
+// und Ausstehendes sind Orientierung für den Vermieter und stehen nicht darauf (Abschlussdurchsicht G4).
 function SettlementView({ settlement: s, printed = false }: { settlement: DepositSettlement; printed?: boolean }) {
   return (
     <>
       <Table aria-label="Buchungen der Kaution">
         <tbody>
           {s.rows.map((r, i) => (
-            <tr key={i}><td>{fmtDate(r.date)}</td><td>{r.label}{r.note ? ` (${r.note})` : ''}</td><td className="num">{fmtEuro(r.cents)}</td></tr>
+            <tr key={i}><td>{fmtDate(r.date)}</td><td>{r.label}{r.note && !printed ? ` (${r.note})` : ''}</td><td className="num">{fmtEuro(r.cents)}</td></tr>
           ))}
         </tbody>
       </Table>
       <p className="m-0">{printed ? 'Beim Vermieter liegen' : 'Bei Ihnen liegen'} {fmtEuro(s.balanceCents)}.</p>
       {s.hold && <p className="m-0">Einbehalten: {fmtEuro(s.hold.cents)} ({s.hold.note})</p>}
       <p className="m-0"><strong>Bleibt auszuzahlen: {fmtEuro(s.payoutCents)}</strong></p>
-      {s.lastStatement && <p className="muted m-0">{s.lastStatement}</p>}
-      {s.pending.map((line) => <p key={line} className="muted m-0">{line}</p>)}
+      {!printed && s.lastStatement && <p className="muted m-0">{s.lastStatement}</p>}
+      {!printed && s.pending.map((line) => <p key={line} className="muted m-0">{line}</p>)}
     </>
   )
 }

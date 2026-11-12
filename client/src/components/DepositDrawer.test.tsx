@@ -220,6 +220,9 @@ test('Drucken druckt nur die Aufstellung', async () => {
   // Das Blatt geht an den Mieter: „Ihnen“ hieße dort ihn (Durchsicht G2).
   expect(flat(sheet)).toContain('Beim Vermieter liegen 2.412,34 €')
   expect(flat(sheet)).not.toMatch(/Bei Ihnen/)
+  // Abschlussdurchsicht G4: Orientierung und freie Notizen sind für den Vermieter, nicht für das Blatt; das Datum gehört drauf.
+  expect(flat(sheet)).not.toMatch(/Nebenkostenabrechnung 2024|steht noch aus/)
+  expect(flat(sheet)).toMatch(/Stand vom \d{2}\.\d{2}\.\d{4}/)
   window.dispatchEvent(new Event('afterprint'))
   await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
 })
@@ -248,4 +251,23 @@ test('Löschen einer Verrechnung mit Miete sagt, dass die Zahlung im Mietkonto m
   fireEvent.click(within(row).getByRole('button', { name: 'Löschen …' }))
   const question = await screen.findByRole('alertdialog')
   expect(question.textContent).toContain('Die Zahlung im Mietkonto fällt mit weg.')
+})
+
+test('ein angefangener Einbehalt bleibt nach dem Anlegen einer Buchung eine offene Änderung', async () => {
+  const onClose = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={{ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined }} entries={MOVED_ENTRIES} info={INFO} onChanged={vi.fn()} onClose={onClose} /></UIProvider>)
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '10' } })
+  fireEvent.change(select('Art'), { target: { value: 'refunded' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(sent.filter((s) => s.method === 'POST')).toHaveLength(1))
+  const footerClose = screen.getAllByRole('button', { name: 'Schließen' }).find((b) => b.textContent === 'Schließen') ?? expect.fail('kein Schließen')
+  fireEvent.click(footerClose)
+  expect(await screen.findByRole('alertdialog')).toBeTruthy()
+  expect(onClose).not.toHaveBeenCalled()
+})
+
+test('am Einbehalt steht, dass mehr als der Stand nicht zählt', () => {
+  openMoved()
+  expect(screen.getByText(/Mehr als der Stand der Kaution zählt nicht\./)).toBeTruthy()
 })

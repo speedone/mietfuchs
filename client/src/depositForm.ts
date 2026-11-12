@@ -33,7 +33,8 @@ export const DEPOSIT_PURPOSE_OPTIONS: readonly { value: DepositPurpose; label: s
 // Mietfuchs tut; ob und wo ein einbehaltener Schadensersatz anzugeben ist, ist nicht belegt (Entwurf, Abschnitt Recht).
 export function depositPurposeHint(purpose: DepositPurpose | ''): string | null {
   switch (purpose) {
-    case 'rent': return 'Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie tilgt den ältesten offenen Monat.'
+    // Ohne Bestimmung verteilt rentAllocation.ts nach § 366 Abs. 2 BGB, zuerst Vorauszahlungen (Abschlussdurchsicht G1).
+    case 'rent': return 'Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie wird wie jede Mietzahlung auf die offenen Monate verteilt. Den Monat können Sie im Mietkonto bestimmen.'
     case 'settlement': return 'Mietfuchs legt dazu im Mietkonto eine Zahlung aus der Abrechnung an diesem Tag an.'
     case 'damage':
     case 'other': return 'Die Steuerübersicht zählt diesen Betrag nicht als Einnahme.'

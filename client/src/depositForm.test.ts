@@ -47,7 +47,7 @@ describe('Rumpf einer Buchung', () => {
   })
 
   test('der Satz unter dem Zweck sagt, was eine Verrechnung mit Miete oder Abrechnung anlegt', () => {
-    expect(depositPurposeHint('rent')).toBe('Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie tilgt den ältesten offenen Monat.')
+    expect(depositPurposeHint('rent')).toBe('Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie wird wie jede Mietzahlung auf die offenen Monate verteilt. Den Monat können Sie im Mietkonto bestimmen.')
     expect(depositPurposeHint('settlement')).toBe('Mietfuchs legt dazu im Mietkonto eine Zahlung aus der Abrechnung an diesem Tag an.')
     expect(depositPurposeHint('damage')).toBe('Die Steuerübersicht zählt diesen Betrag nicht als Einnahme.')
     expect(depositPurposeHint('')).toBeNull()

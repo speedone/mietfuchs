@@ -767,7 +767,7 @@ function mergePayment(current: Payment, body: unknown): Payment {
 async function guardPayment(db: Executor, before: Payment | null, after: Payment): Promise<void> {
   if (before !== null && (before.amountCents !== after.amountCents || before.date !== after.date || before.kind !== after.kind || before.tenancyId !== after.tenancyId)) {
     const [bound] = await db.select({ id: depositEntries.id }).from(depositEntries).where(eq(depositEntries.paymentId, before.id))
-    if (bound) throw new BoundPaymentError('Diese Zahlung stammt aus der Kaution. Ändern Sie sie bitte dort.')
+    if (bound) throw new BoundPaymentError('Diese Zahlung stammt aus der Kaution. Löschen Sie die Verrechnung unter Stammdaten bei „Kaution führen“ und legen Sie sie neu an.')
   }
   await guardPaymentFields(db, before, after)
 }

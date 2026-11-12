@@ -209,16 +209,19 @@ export async function removeDepositEntry(db: Database, id: string): Promise<bool
 export async function depositStatements(db: Executor, propertyId: string, today: string): Promise<DepositStatementInfo[]> {
   const rules = await rulesForProperty(db, propertyId)
   const closed = (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId)
-  const rows = await db.select({ id: tenancies.id, start: tenancies.start, end: tenancies.end }).from(tenancies)
+  const rows = await db.select({ id: tenancies.id, start: tenancies.start, end: tenancies.end, costModel: tenancies.costModel, heatingModel: tenancies.heatingModel }).from(tenancies)
     .innerJoin(units, eq(tenancies.unitId, units.id)).where(eq(units.propertyId, propertyId))
   return rows.map((t) => {
+    // Bekommt der Mieter gar keine Abrechnung (Pauschale oder Inklusivmiete für Kaltes und Heizung, Heizung auch
+    // „heizt selbst“), steht nichts aus (Abschlussdurchsicht W1). Ohne Angabe gilt Abrechnung, wie in calc.ts.
+    const settles = (t.costModel ?? 'settlement') === 'settlement' || (t.heatingModel ?? 'settlement') === 'settlement'
     const periods = periodsBetween(rules, t.start, t.end ?? today)
     let last: DepositStatementInfo['last'] = null
     const pending: string[] = []
     for (const p of periods) {
       const frozen = closed.find((c) => c.period === p.key)
       if (!frozen) {
-        if (settlementDeadline(p) >= today) pending.push(periodLabel(p))
+        if (settles && settlementDeadline(p) >= today) pending.push(periodLabel(p))
         continue
       }
       const balance = balanceOf(frozen.settlement, t.id)
