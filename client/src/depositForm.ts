@@ -97,3 +97,22 @@ export function depositStateText(state: DepositState, tenancy: Pick<Tenancy, 'de
 // Bei einer Sicherheit, die nicht beim Vermieter liegt, fließt kein Geld; der Satz erklärt, wozu die Buchungen dann sind.
 export const NO_MONEY_FORM_TEXT = 'Bei dieser Form fließt kein Geld an Sie; Buchungen brauchen Sie nur, wenn Sie die Sicherheit in Anspruch nehmen.'
 export const formWithoutMoney = (tenancy: Pick<Tenancy, 'depositForm'>): boolean => tenancy.depositForm === 'pledged' || tenancy.depositForm === 'guarantee'
+
+// Der Einbehalt beim Auszug (#228, Teil 2) als Formular: Betrag und Grund, am Mietverhältnis gespeichert. Beide leer
+// heißt keiner; ein Betrag braucht einen Grund (wie der Server).
+export type DepositHoldForm = { amount: string; note: string }
+export type DepositHoldField = 'holdAmount' | 'holdNote'
+export const holdFormOf = (t: Pick<Tenancy, 'depositHoldCents' | 'depositHoldNote'>): DepositHoldForm => ({
+  amount: t.depositHoldCents !== undefined ? (t.depositHoldCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+  note: t.depositHoldNote ?? '',
+})
+export function holdBody(form: DepositHoldForm): Checked<{ depositHoldCents: number | null; depositHoldNote: string | null }, DepositHoldField> {
+  const note = form.note.trim()
+  if (form.amount.trim() === '') return { body: { depositHoldCents: null, depositHoldNote: note === '' ? null : note } }
+  const cents = parseEuro(form.amount)
+  const problems: Problem<DepositHoldField>[] = []
+  if (cents === null || cents <= 0) problems.push({ field: 'holdAmount', short: 'Betrag größer als 0', text: 'Einbehalt: Geben Sie einen Betrag größer als 0 ein oder lassen Sie das Feld leer.' })
+  if (note === '') problems.push({ field: 'holdNote', short: 'Grund fehlt', text: 'Einbehalt: Nennen Sie den Grund, etwa „Nebenkosten 2025“.' })
+  if (problems.length > 0 || cents === null) return { problems }
+  return { body: { depositHoldCents: cents, depositHoldNote: note } }
+}

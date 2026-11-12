@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, PeriodKey, Settings, Settlement, Tenancy, Unit, UpdateStatus, UploadEntry } from '../types'
+import type { CostItem, DepositEntry, HeatingPlant, HeatingSettlementInfo, Meter, Notice, PeriodKey, Settings, Settlement, Tenancy, Unit, UpdateStatus, UploadEntry } from '../types'
 import type { NavTarget } from '../nav'
 import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
@@ -27,6 +27,7 @@ import { ibanHintTitle, invalidIbans } from '../ibanCheck'
 import { addressCheckDetail, addressFindings } from '../landlord'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
+import { depositsAfterMoveOut } from '../depositSettlement'
 import { isSubject, type JumpTarget } from '../focus'
 import { CHECKS_TARGET, NEW_COST_ITEM_TARGET, SENT_AT_TARGET, TENANCIES_TARGET, soleSubject, unitsTarget } from '../jumpTargets'
 
@@ -108,6 +109,12 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([]))
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
   }, [propertyId])
+  // Kaution nach Auszug (#228): die Kautionsbuchungen des Objekts.
+  const [deposits, setDeposits] = useState<DepositEntry[]>([])
+  useEffect(() => {
+    api<DepositEntry[]>(withProperty('/api/deposit-entries', propertyId)).then((d) => setDeposits(Array.isArray(d) ? d : [])).catch(() => setDeposits([]))
+  }, [propertyId])
+  const afterMoveOut = depositsAfterMoveOut(tenancies, deposits, localToday())
   useEffect(() => {
     api<UploadEntry[]>('/api/uploads').then((list) => { setUploadFiles(new Set(list.map((u) => u.file))); setBookedFiles(filesByItem(list)) }, () => setUploadFiles(null))
   }, [param, propertyId])
@@ -498,6 +505,19 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
             </Card>
           )}
         </>
+      )}
+
+      {afterMoveOut.length > 0 && (
+        <Card title="Kaution nach Auszug">
+          <ul>
+            {afterMoveOut.map((d) => (
+              <li key={d.tenancyId}>
+                Bei Ihnen liegen noch {fmtEuro(d.balanceCents)} von {d.tenantName} (ausgezogen am {fmtDate(d.end)}).{' '}
+                <button type="button" className="btn small secondary" onClick={() => onNavigate('stammdaten', { kind: 'deposit', tenancyId: d.tenancyId })}>Kaution öffnen</button>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
       {ibanFindings.length > 0 && (

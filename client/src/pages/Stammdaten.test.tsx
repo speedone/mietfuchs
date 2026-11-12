@@ -985,3 +985,19 @@ test('Kaution: Hinweis über drei Monatsmieten am Feld, bis zur Grenze keiner', 
   fireEvent.change(dialog.getByLabelText('Kaution €'), { target: { value: '2.400,00' } })
   expect(dialog.queryByText(/Mehr als drei Monatsmieten/)).toBeNull()
 })
+
+test('Kaution: der Sprung aus dem Cockpit öffnet das Seitenfenster des Mietverhältnisses', async () => {
+  const done = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Stammdaten units={UNITS} tenancies={[tenancy('t1', 'Erika', { end: '2020-06-30' })]} settings={null} reload={async () => {}}
+            focus={{ kind: 'deposit', tenancyId: 't1' }} onFocusDone={done} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  expect(await screen.findByRole('dialog', { name: 'Kaution von Erika' }, SLOW)).toBeTruthy()
+  expect(done).toHaveBeenCalled()
+})

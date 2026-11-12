@@ -4,7 +4,7 @@
 // Seite, damit eine vertauschte Zuordnung (etwa die Karte „Mietverhältnisse“ statt der Wohnung) auffällt.
 import { afterEach, assert, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { CostItem, Meter, Notice, Settings, Settlement, Statement, Tenancy, Unit } from '../types'
+import type { CostItem, DepositEntry, Meter, Notice, Settings, Settlement, Statement, Tenancy, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 import { PropertyProvider } from '../property'
@@ -31,7 +31,7 @@ const item = (id: string, patch: Partial<CostItem> = {}, year = YEAR): CostItem 
 const meter = (id: string): Meter => ({ id, propertyId: 'objekt-1', name: `Wasser ${id}`, unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
-type Stock = { units: Unit[]; tenancies: Tenancy[]; settlement?: Partial<Settlement>; items?: CostItem[]; meters?: Meter[]; consumption?: Consumption[] }
+type Stock = { units: Unit[]; tenancies: Tenancy[]; settlement?: Partial<Settlement>; items?: CostItem[]; meters?: Meter[]; consumption?: Consumption[]; deposits?: DepositEntry[] }
 
 function page(stock: Stock): ReturnType<typeof vi.fn> {
   const settlement: Settlement = {
@@ -47,6 +47,7 @@ function page(stock: Stock): ReturnType<typeof vi.fn> {
     if (path === '/api/costItems') return json(stock.items ?? [item('k1')])
     if (path === '/api/meters') return json(stock.meters ?? [])
     if (path === `/api/consumption/${YEAR}`) return json(stock.consumption ?? [])
+    if (path === '/api/deposit-entries') return json(stock.deposits ?? [])
     return json([])
   })
   const navigate = vi.fn()
@@ -183,4 +184,24 @@ test('Versanddatum vor dem Ende des Zeitraums: gelb, ohne „gewahrt“, „Vers
   expect(screen.getByText('versendet').className).toBe('badge')
   fireEvent.click(screen.getByRole('button', { name: /Versanddatum prüfen/ }))
   expect(navigate).toHaveBeenCalledWith('abrechnung', { kind: 'section', section: 'sentAt' })
+})
+
+// ---------- Kaution nach Auszug (#228, Teil 2) ----------
+
+test('Kaution nach Auszug: eine Zeile je ausgezogenem Mieter mit Stand, der Sprung öffnet sein Seitenfenster', async () => {
+  const gone = tenancy('t1', 'u1', { end: '2020-06-30' })
+  const navigate = page({ units: [unit('u1')], tenancies: [gone, tenancy('t2', 'u1', { start: '2020-07-01' })], deposits: [
+    { id: 'd1', tenancyId: 't1', date: '2020-01-05', kind: 'received', amountCents: 160000 },
+    { id: 'd2', tenancyId: 't2', date: '2020-07-05', kind: 'received', amountCents: 160000 },
+  ] })
+  const line = await screen.findByText(/Bei Ihnen liegen noch 1\.600,00\s€ von Mieter t1 \(ausgezogen am 30\.06\.2020\)\./, undefined, SLOW)
+  expect(screen.queryByText(/von Mieter t2/)).toBeNull()
+  fireEvent.click(line.closest('li')?.querySelector('button') ?? assert.fail('kein Knopf'))
+  expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'deposit', tenancyId: 't1' })
+})
+
+test('Kaution nach Auszug: ohne Buchungen keine Karte', async () => {
+  page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1', { end: '2020-06-30', depositCents: 160000 })] })
+  await screen.findAllByText('Mietverhältnisse & Flächen', { selector: '.check-title' }, SLOW)
+  expect(screen.queryByText('Kaution nach Auszug')).toBeNull()
 })

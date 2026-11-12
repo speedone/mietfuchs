@@ -110,6 +110,9 @@ Kurzfassung steht im [README](../README.md#funktionen).
    nennen, was nicht gerechnet wird (etwa AfA und Schuldzinsen). Bei Inklusivmiete und Pauschale
    gibt es Hinweise zu den Zeilen 24 und 20. Druckbar als PDF. Erweiterte Stammdaten (Kontakt,
    Kaution, Vertragsdatum, Zimmer/Etage) lassen sich optional je Mieter und Wohnung hinterlegen.
+   Die Kaution lässt sich am Mietverhältnis führen („Kaution führen“): Eingänge auch in Raten, Zinsen,
+   Verrechnungen und Rückzahlungen ergeben den Stand. Eine Verrechnung mit Mietrückstand oder Nachzahlung
+   legt eine Zahlung im Mietkonto an; nach dem Auszug gibt es eine Aufstellung mit dem, was auszuzahlen bleibt.
 
 Wie du deine Lage anlegst, steht in Mietfuchs unter **Hilfe & Begriffe**: Anleitungen für das Haus
 mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit

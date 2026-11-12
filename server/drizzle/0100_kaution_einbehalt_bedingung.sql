@@ -1,0 +1,49 @@
+PRAGMA foreign_keys=OFF;--> statement-breakpoint
+CREATE TABLE `__new_tenancies` (
+	`id` text PRIMARY KEY NOT NULL,
+	`unit_id` text NOT NULL,
+	`tenant_name` text NOT NULL,
+	`persons` integer NOT NULL,
+	`start` text NOT NULL,
+	`end` text,
+	`email` text,
+	`phone` text,
+	`correspondence_address` text,
+	`letter_salutation` text,
+	`iban` text,
+	`contract_date` text,
+	`deposit_cents` integer,
+	`deposit_status` text,
+	`deposit_form` text,
+	`deposit_hold_cents` integer,
+	`deposit_hold_note` text,
+	`notes` text,
+	`cost_model` text,
+	`heating_model` text,
+	`self_supply_kind` text,
+	`half_split_notice_on` text,
+	`relative` integer,
+	`rent_due` text,
+	`rent_due_day` integer,
+	`first_rent_at_start` integer,
+	FOREIGN KEY (`unit_id`) REFERENCES `units`(`id`) ON UPDATE no action ON DELETE cascade,
+	CONSTRAINT "tenancies_persons_not_negative" CHECK("persons" >= 0),
+	CONSTRAINT "tenancies_deposit_not_negative" CHECK("deposit_cents" >= 0),
+	CONSTRAINT "tenancies_deposit_status_known" CHECK("deposit_status" IN ('offen', 'erhalten', 'teilweise', 'zurückgezahlt')),
+	CONSTRAINT "tenancies_deposit_form_known" CHECK("deposit_form" IN ('account', 'pledged', 'guarantee', 'other')),
+	CONSTRAINT "tenancies_deposit_hold_positive" CHECK("deposit_hold_cents" IS NULL OR "deposit_hold_cents" > 0),
+	CONSTRAINT "tenancies_cost_model_known" CHECK("cost_model" IN ('settlement', 'flatRate', 'inclusive')),
+	CONSTRAINT "tenancies_heating_model_known" CHECK("heating_model" IN ('settlement', 'flatRate', 'inclusive', 'selfSupply')),
+	CONSTRAINT "tenancies_self_supply_kind_known" CHECK("self_supply_kind" IN ('perUnit', 'central')),
+	CONSTRAINT "tenancies_self_supply_kind_valid" CHECK("self_supply_kind" IS NULL OR "heating_model" IS 'selfSupply'),
+	CONSTRAINT "tenancies_half_split_notice_valid" CHECK("half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+	CONSTRAINT "tenancies_relative_known" CHECK("relative" IS NULL OR "relative" IN (0, 1)),
+	CONSTRAINT "tenancies_rent_due_known" CHECK("rent_due" IS NULL OR "rent_due" IN ('startWorkday', 'dayOfMonth', 'inArrears')),
+	CONSTRAINT "tenancies_rent_due_day_valid" CHECK(("rent_due" IS 'dayOfMonth') = ("rent_due_day" IS NOT NULL) AND ("rent_due_day" IS NULL OR (typeof("rent_due_day") = 'integer' AND "rent_due_day" BETWEEN 1 AND 31))),
+	CONSTRAINT "tenancies_first_rent_at_start_valid" CHECK("first_rent_at_start" IS NULL OR "first_rent_at_start" IS 1)
+);
+--> statement-breakpoint
+INSERT INTO `__new_tenancies`("id", "unit_id", "tenant_name", "persons", "start", "end", "email", "phone", "correspondence_address", "letter_salutation", "iban", "contract_date", "deposit_cents", "deposit_status", "deposit_form", "deposit_hold_cents", "deposit_hold_note", "notes", "cost_model", "heating_model", "self_supply_kind", "half_split_notice_on", "relative", "rent_due", "rent_due_day", "first_rent_at_start") SELECT "id", "unit_id", "tenant_name", "persons", "start", "end", "email", "phone", "correspondence_address", "letter_salutation", "iban", "contract_date", "deposit_cents", "deposit_status", "deposit_form", "deposit_hold_cents", "deposit_hold_note", "notes", "cost_model", "heating_model", "self_supply_kind", "half_split_notice_on", "relative", "rent_due", "rent_due_day", "first_rent_at_start" FROM `tenancies`;--> statement-breakpoint
+DROP TABLE `tenancies`;--> statement-breakpoint
+ALTER TABLE `__new_tenancies` RENAME TO `tenancies`;--> statement-breakpoint
+PRAGMA foreign_keys=ON;

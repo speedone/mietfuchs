@@ -256,6 +256,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     depositStatus: orUndefined(t.depositStatus),
     // Nur mit Angabe (#228): Ein Mietverhältnis ohne liest sich wie vor der Spalte.
     ...(t.depositForm !== null ? { depositForm: t.depositForm } : {}),
+    ...(t.depositHoldCents !== null ? { depositHoldCents: t.depositHoldCents } : {}),
+    ...(t.depositHoldNote !== null ? { depositHoldNote: t.depositHoldNote } : {}),
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
     ...(t.costModel === null ? {} : { costModel: t.costModel }),
     ...(t.heatingModel === null ? {} : { heatingModel: t.heatingModel }),

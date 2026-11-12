@@ -2,7 +2,8 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { startPrint, type PrintJob } from '../printJob'
 import type { JumpTarget } from '../focus'
 import { TAX_HEADER_TARGET } from '../jumpTargets'
-import type { Settings, TaxExpenseItem, TaxOverview, TaxReceived, TaxReport } from '../types'
+import type { DepositEntry, Settings, TaxExpenseItem, TaxOverview, TaxReceived, TaxReport } from '../types'
+import { depositAppliedText } from '../depositSettlement'
 import { api, errorText, fmtArea, fmtDate, fmtEuro } from '../api'
 import { useConfirm, useToast } from '../components/feedback'
 import { useSaving } from '../useSaving'
@@ -53,6 +54,12 @@ export default function Steuer({ settings, onNavigate }: Props) {
   }, [year, propertyId])
 
   useEffect(() => { void load() }, [load])
+  // Aus Kautionen einbehalten (#228): nicht in den Einnahmen, nur ein Hinweis mit Betrag.
+  const [deposits, setDeposits] = useState<DepositEntry[]>([])
+  useEffect(() => {
+    api<DepositEntry[]>(withProperty('/api/deposit-entries', propertyId)).then((d) => setDeposits(Array.isArray(d) ? d : [])).catch(() => setDeposits([]))
+  }, [propertyId])
+  const depositApplied = depositAppliedText(deposits, year)
 
   // Der Seitentitel wird zum Dateinamen beim „Als PDF speichern“; zurückgesetzt wird er erst bei der
   // nächsten Bedienung (Safari, siehe printJob.ts).
@@ -246,6 +253,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 more="Der Vermieter hat die Kaution getrennt von seinem Vermögen anzulegen (§ 551 Abs. 3 BGB)."
               />
             )}
+            {depositApplied && <NoticeBox level="hint" title="Einbehaltene Kaution" action={depositApplied} />}
             {hints.includes('formerYears') && (
               <NoticeBox
                 level="hint"

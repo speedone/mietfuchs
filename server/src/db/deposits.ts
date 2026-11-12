@@ -12,12 +12,13 @@
 import { eq } from 'drizzle-orm'
 import type { Database, Executor } from './client.ts'
 import { retitleCurrentGroup } from './journal.ts'
-import { readDepositEntries } from './read.ts'
-import { insertEntityIn, isCalendarDay, replaceBoundPaymentIn } from './repository.ts'
+import { readClosedSettlements, readDepositEntries } from './read.ts'
+import { insertEntityIn, isCalendarDay, replaceBoundPaymentIn, rulesForProperty } from './repository.ts'
 import { DEPOSIT_ENTRY_KINDS, DEPOSIT_PURPOSES, depositEntries, payments, tenancies, units } from './schema.ts'
 import { depositProblem } from '../../../shared/deposit.ts'
+import { periodLabel, periodsBetween } from '../../../shared/period.ts'
 import { germanDate } from '../../../shared/law/register.ts'
-import type { DepositEntry, DepositEntryKind, DepositPurpose } from '../../../shared/types.ts'
+import type { DepositEntry, DepositEntryKind, DepositPurpose, DepositStatementInfo } from '../../../shared/types.ts'
 
 // Eine Ablehnung, deren Satz schon für den Nutzer geschrieben ist; die Fehlerbehandlung in index.ts gibt Status und
 // Satz weiter.
@@ -194,4 +195,42 @@ export async function removeDepositEntry(db: Database, id: string): Promise<bool
   if (before.paymentId) await db.delete(payments).where(eq(payments.id, before.paymentId))
   else await db.delete(depositEntries).where(eq(depositEntries.id, id))
   return true
+}
+
+// Für die Aufstellung zum Auszug (#228): je Mietverhältnis des Objekts die jüngste abgeschlossene Abrechnung, in der es
+// steht, mit ihrem Saldo, und die Zeiträume seiner Wohnzeit, die noch nicht abgeschlossen sind. Gelesen aus dem
+// eingefrorenen Stand, also das, was der Mieter bekommen hat; nichts wird neu gerechnet.
+export async function depositStatements(db: Executor, propertyId: string, today: string): Promise<DepositStatementInfo[]> {
+  const rules = await rulesForProperty(db, propertyId)
+  const closed = (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId)
+  const rows = await db.select({ id: tenancies.id, start: tenancies.start, end: tenancies.end }).from(tenancies)
+    .innerJoin(units, eq(tenancies.unitId, units.id)).where(eq(units.propertyId, propertyId))
+  return rows.map((t) => {
+    const periods = periodsBetween(rules, t.start, t.end ?? today)
+    let last: DepositStatementInfo['last'] = null
+    const pending: string[] = []
+    for (const p of periods) {
+      const frozen = closed.find((c) => c.period === p.key)
+      if (!frozen) {
+        pending.push(periodLabel(p))
+        continue
+      }
+      const balance = balanceOf(frozen.settlement, t.id)
+      if (balance !== null) last = { label: periodLabel(p), balanceCents: balance }
+    }
+    return { tenancyId: t.id, last, pending }
+  })
+}
+
+// Der Saldo eines Mietverhältnisses im eingefrorenen Stand, vorsichtig gelesen: Er kann aus einer älteren Version stammen.
+function balanceOf(settlement: unknown, tenancyId: string): number | null {
+  const statements = settlement !== null && typeof settlement === 'object' ? Reflect.get(settlement, 'statements') : null
+  if (!Array.isArray(statements)) return null
+  let sum: number | null = null
+  for (const st of statements) {
+    if (st === null || typeof st !== 'object' || Reflect.get(st, 'tenancyId') !== tenancyId) continue
+    const b = Reflect.get(st, 'balanceCents')
+    if (typeof b === 'number') sum = (sum ?? 0) + b
+  }
+  return sum
 }

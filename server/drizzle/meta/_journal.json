@@ -694,6 +694,20 @@
       "when": 1794496187276,
       "tag": "0098_kaution_form_bedingung",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "6",
+      "when": 1794504513950,
+      "tag": "0099_kaution_einbehalt",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "6",
+      "when": 1794504526400,
+      "tag": "0100_kaution_einbehalt_bedingung",
+      "breakpoints": true
     }
   ]
 }

@@ -503,6 +503,9 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
     // Form der Sicherheit (#228): null oder ein unbekannter Wert heißt keine Angabe.
     depositForm: merged(body, 'depositForm', current.depositForm, (v) => oneOfOrUndefined(DEPOSIT_FORMS, v)),
+    // Einbehalt beim Auszug (#228): null oder leer heißt keiner; dass ein Betrag einen Grund hat, prüft guardTenancy.
+    depositHoldCents: merged(body, 'depositHoldCents', current.depositHoldCents, holdCentsOf),
+    depositHoldNote: merged(body, 'depositHoldNote', current.depositHoldNote, holdNoteOf),
     // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
     costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
     heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(HEATING_MODELS, v)),
@@ -2031,7 +2034,26 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   )
 }
 
+// Der Einbehalt beim Auszug (#228): ein Betrag über 0, ein Grund bis 200 Zeichen. Abgelehnt mit Satz statt still verworfen.
+export class DepositHoldError extends Error {
+  status = 400
+}
+const HOLD_NOTE_MAX = 200
+function holdCentsOf(v: unknown): number | undefined {
+  if (v === null || v === undefined) return undefined
+  if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) throw new DepositHoldError('Der Einbehalt ist ein Betrag größer als 0.')
+  return v
+}
+function holdNoteOf(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined
+  if (typeof v !== 'string') throw new DepositHoldError('Der Grund für den Einbehalt ist kein Text.')
+  const note = v.trim()
+  if (note.length > HOLD_NOTE_MAX) throw new DepositHoldError(`Der Grund für den Einbehalt ist zu lang (höchstens ${HOLD_NOTE_MAX} Zeichen).`)
+  return note === '' ? undefined : note
+}
+
 async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  if (after.depositHoldCents !== undefined && after.depositHoldNote === undefined) throw new DepositHoldError('Bitte nennen Sie den Grund für den Einbehalt.')
   // Laienprobe B1: Schickt das Formular die Marke des Stands, den es geladen hat, muss sie noch
   // stimmen. Ein Rumpf ohne Marke (Mieterwechsel, Jahreskorrektur aus der Abrechnung, ein alter Tab)
   // ändert nur, was er nennt, und braucht sie nicht.
@@ -2527,6 +2549,7 @@ const tenancyRow = (t: Tenancy) => ({
   letterSalutation: orNull(t.letterSalutation),
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
   depositStatus: orNull(t.depositStatus), depositForm: orNull(t.depositForm), notes: orNull(t.notes),
+  depositHoldCents: orNull(t.depositHoldCents), depositHoldNote: orNull(t.depositHoldNote),
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
   selfSupplyKind: t.heatingModel === 'selfSupply' ? orNull(t.selfSupplyKind) : null,
   halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),

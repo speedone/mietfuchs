@@ -134,6 +134,8 @@ const FIELD_LABELS: Record<string, string> = {
   deposit_cents: 'Kaution',
   deposit_status: 'Stand der Kaution',
   deposit_form: 'Form der Sicherheit',
+  deposit_hold_cents: 'Einbehalt',
+  deposit_hold_note: 'Grund für den Einbehalt',
   purpose: 'Verrechnet mit',
   payment_id: 'Zahlung im Mietkonto',
   cost_model: 'Nebenkosten',

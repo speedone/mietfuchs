@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DepositDrawer from './DepositDrawer'
 import { UIProvider } from './feedback'
-import type { DepositEntry, Tenancy } from '../types'
+import type { DepositEntry, DepositStatementInfo, Tenancy } from '../types'
 
 const TENANCY: Tenancy = {
   id: 't', unitId: 'u', tenantName: 'Erika Mustermann', persons: 1, personHistory: [], start: '2025-01-01', end: null,
@@ -155,4 +155,68 @@ test('während eine Buchung gelöscht wird, sind Anlegen und Löschen gesperrt',
   expect(anlegen instanceof HTMLButtonElement && anlegen.disabled).toBe(true)
   expect(within(drawer).getAllByRole('button', { name: 'Löschen …' }).every((b) => b instanceof HTMLButtonElement && b.disabled)).toBe(true)
   release()
+})
+
+// ---------- Teil 2: Aufstellung zum Auszug ----------
+
+const MOVED: Tenancy = { ...TENANCY, end: '2025-12-31', depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' }
+const MOVED_ENTRIES: DepositEntry[] = [
+  { id: 'a', tenancyId: 't', date: '2022-01-05', kind: 'received', amountCents: 240000 },
+  { id: 'b', tenancyId: 't', date: '2025-12-31', kind: 'interest', amountCents: 1234 },
+]
+const INFO: DepositStatementInfo = { tenancyId: 't', last: { label: '2024', balanceCents: -18000 }, pending: ['2025'] }
+
+function openMoved(tenancy: Tenancy = MOVED) {
+  const onChanged = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={tenancy} entries={MOVED_ENTRIES} info={INFO} onChanged={onChanged} onClose={vi.fn()} /></UIProvider>)
+  return { onChanged, drawer: screen.getByRole('dialog', { name: 'Kaution von Erika Mustermann' }) }
+}
+const flat = (el: Element) => (el.textContent ?? '').replace(/\u00a0/g, ' ')
+
+test('nach dem Auszug: Aufstellung mit Einbehalt, was auszuzahlen bleibt, letzter Abrechnung und Ausstehendem', () => {
+  const { drawer } = openMoved()
+  const section = within(drawer).getByRole('region', { name: 'Aufstellung zum Auszug' })
+  expect(flat(section)).toContain('Bei Ihnen liegen 2.412,34 €')
+  expect(flat(section)).toContain('Einbehalten: 300,00 € (Nebenkosten 2025)')
+  expect(flat(section)).toContain('Bleibt auszuzahlen: 2.112,34 €')
+  expect(flat(section)).toContain('Nebenkostenabrechnung 2024: Nachzahlung 180,00 €')
+  expect(flat(section)).toContain('Abrechnung für 2025 steht noch aus')
+  // Kein Vorschlag, kein Prozentsatz.
+  expect(flat(section)).not.toMatch(/Vorschlag|%/)
+})
+
+test('vor dem Auszug gibt es keine Aufstellung', () => {
+  const { drawer } = openMoved({ ...MOVED, end: null })
+  expect(within(drawer).queryByRole('region', { name: 'Aufstellung zum Auszug' })).toBeNull()
+})
+
+test('Einbehalt speichern schickt Betrag und Grund ans Mietverhältnis', async () => {
+  const { onChanged } = openMoved({ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined })
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  fireEvent.change(screen.getByLabelText(/^Grund/), { target: { value: 'Nebenkosten 2025' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Einbehalt speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(sent.at(-1)).toMatchObject({ url: '/api/tenancies/t', method: 'PUT', body: { depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' } })
+})
+
+test('ein Einbehalt ohne Grund wird nicht gesendet', async () => {
+  openMoved({ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined })
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Einbehalt speichern' }))
+  expect(await screen.findAllByText(/Grund fehlt|Nennen Sie den Grund/)).not.toHaveLength(0)
+  expect(sent).toEqual([])
+})
+
+test('Drucken druckt nur die Aufstellung', async () => {
+  const print = vi.fn()
+  vi.stubGlobal('print', print)
+  openMoved()
+  fireEvent.click(screen.getByRole('button', { name: 'Aufstellung drucken' }))
+  await waitFor(() => expect(print).toHaveBeenCalledTimes(1))
+  expect(document.body.classList.contains('print-deposit')).toBe(true)
+  const sheet = document.body.querySelector(':scope > .deposit-print') ?? expect.fail('kein Druckblatt am Ende von body')
+  expect(flat(sheet)).toContain('Aufstellung zum Auszug')
+  expect(flat(sheet)).toContain('Erika Mustermann')
+  window.dispatchEvent(new Event('afterprint'))
+  await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
 })

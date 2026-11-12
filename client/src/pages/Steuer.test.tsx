@@ -1022,3 +1022,17 @@ test('Mögliche Kaution: „Als Kaution umbuchen“ fragt mit Betrag, Datum und 
   fireEvent.click(within(question).getByRole('button', { name: 'Umbuchen' }))
   await waitFor(() => expect(posted).toEqual(['/api/deposit-entries/from-payment/pay1']))
 })
+
+test('Einbehaltene Kaution: Hinweis mit Betrag, ohne Einordnung', async () => {
+  const report = MIT(RECEIVED([MIETER()]))
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = url.split('?')[0] ?? url
+    const body = path === '/api/properties' ? [] : path === '/api/deposit-entries'
+      ? [{ id: 'd', tenancyId: 't1', date: `${JAHR}-04-01`, kind: 'applied', purpose: 'damage', amountCents: 35000 }]
+      : report
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<PeriodProvider><PropertyProvider><UIProvider><Steuer settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+  const text = await screen.findByText(/Aus Kautionen einbehalten, nicht in den Einnahmen enthalten: 350,00\s€\./)
+  expect(text.textContent).toContain('Ob und wo das anzugeben ist, hängt vom Grund ab.')
+})

@@ -73,6 +73,8 @@ const FIELD_NAMES: Record<string, string> = {
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
   deposit_form: 'Form der Sicherheit',
+  deposit_hold_cents: 'Einbehalt',
+  deposit_hold_note: 'Grund für den Einbehalt',
   purpose: 'Zweck der Verrechnung',
   state: 'Bundesland',
   block: 'den Baustein des Anschreibens',
@@ -260,6 +262,7 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   tenancy_letter_adjustments_doc_complete: 'Zu welcher Abrechnung die Anpassung der Vorauszahlung gehört, fehlt. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
   tenancy_letter_adjustments_cents_valid: 'Einen eigenen Betrag für die Vorauszahlung gibt es nur bei „Eigenen Betrag ankündigen“, und er ist nicht negativ.',
   // Kautionsbuchungen (#228); db/deposits.ts prüft vorher.
+  tenancies_deposit_hold_positive: 'Der Einbehalt ist ein Betrag größer als 0.',
   deposit_entries_amount_positive: 'Betrag der Kautionsbuchung ist ein Betrag größer als 0.',
   deposit_entries_purpose_valid: 'Womit verrechnet wurde, gehört zu einer Verrechnung und nur zu ihr. Bitte geben Sie an, womit Sie verrechnen.',
   deposit_entries_payment_valid: 'Eine Zahlung gehört nur zu einer Verrechnung mit Miete oder Abrechnung. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',

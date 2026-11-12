@@ -3,7 +3,7 @@
 // Steuer bleiben unberührt.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { DepositEntry, PaymentListItem, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
+import type { DepositEntry, DepositStatementInfo, PaymentListItem, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
 import { errorFrom, startServer, type Server } from '../testing/api.ts'
 import { journalOf, newest, revert } from '../testing/revert.ts'
 
@@ -371,6 +371,50 @@ test('Umbuchen geht nur mit einem Mieteingang', async () => {
     }
     const unknown = await send(s, 'POST', '/api/deposit-entries/from-payment/gibt-es-nicht')
     assert.equal(unknown.status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Teil 2: Einbehalt und Auskunft für die Aufstellung zum Auszug ----------
+
+test('Einbehalt am Mietverhältnis: Betrag nur mit Grund, größer 0, Grund begrenzt', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await stock(s)
+    const url = `/api/tenancies/${tenancy.id}`
+    const saved = await s.api<Tenancy>(url, { method: 'PUT', body: JSON.stringify({ depositHoldCents: 30000, depositHoldNote: '  Nebenkosten 2025  ' }) })
+    assert.deepEqual([saved.depositHoldCents, saved.depositHoldNote], [30000, 'Nebenkosten 2025'])
+    const noReason = await send(s, 'PUT', url, { depositHoldCents: 30000, depositHoldNote: '' })
+    assert.equal(noReason.status, 400)
+    assert.equal(await errorFrom(noReason), 'Bitte nennen Sie den Grund für den Einbehalt.')
+    for (const depositHoldCents of [0, -1, 12.5]) assert.equal((await send(s, 'PUT', url, { depositHoldCents })).status, 400, String(depositHoldCents))
+    assert.equal((await send(s, 'PUT', url, { depositHoldNote: 'x'.repeat(201) })).status, 400)
+    // Leeren: beide null.
+    const cleared = await s.api<Tenancy>(url, { method: 'PUT', body: JSON.stringify({ depositHoldCents: null, depositHoldNote: null }) })
+    assert.deepEqual([cleared.depositHoldCents, cleared.depositHoldNote], [undefined, undefined])
+    // Ein Grund ohne Betrag ist erlaubt (etwa „Schlüssel fehlt noch“).
+    assert.equal((await send(s, 'PUT', url, { depositHoldNote: 'Schlüssel fehlt noch' })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Auskunft zur Aufstellung: letzte abgeschlossene Abrechnung des Mieters und ausstehende Zeiträume', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await stock(s)
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ end: '2025-06-30' }) })
+    await post(s, '/api/costItems', { period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer 2024', amountCents: 60000, key: 'area' })
+    const before = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
+    // Ohne Abschluss: keine letzte Abrechnung; 2025 steht aus. 2024 liegt vor dem Einzug (2025-01-01) und zählt nicht.
+    assert.deepEqual(before, [{ tenancyId: tenancy.id, last: null, pending: ['2025'] }])
+    await post(s, '/api/costItems', { period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 60000, key: 'area' })
+    assert.equal((await send(s, 'POST', '/api/settlement/2025-01/close', {})).status, 201)
+    const [after] = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
+    assert.equal(after?.last?.label, '2025')
+    assert.equal(typeof after?.last?.balanceCents, 'number')
+    assert.deepEqual(after?.pending, [])
   } finally {
     s.stop()
   }
