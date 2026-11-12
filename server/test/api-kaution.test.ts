@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { DepositEntry, DepositStatementInfo, PaymentListItem, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
-import { errorFrom, startServer, type Server } from '../testing/api.ts'
+import { errorFrom, startServer, withEnv, type Server } from '../testing/api.ts'
 import { journalOf, newest, revert } from '../testing/revert.ts'
 
 const send = (s: Server, method: string, url: string, body?: unknown) =>
@@ -401,8 +401,7 @@ test('Einbehalt am Mietverhältnis: Betrag nur mit Grund, größer 0, Grund begr
 })
 
 test('Auskunft zur Aufstellung: letzte abgeschlossene Abrechnung des Mieters und ausstehende Zeiträume', async () => {
-  const s = await startServer()
-  try {
+  await withEnv({ NKA_TEST_TODAY: '2026-01-15' }, async (s) => {
     const { tenancy } = await stock(s)
     await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ end: '2025-06-30' }) })
     await post(s, '/api/costItems', { period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer 2024', amountCents: 60000, key: 'area' })
@@ -415,6 +414,29 @@ test('Auskunft zur Aufstellung: letzte abgeschlossene Abrechnung des Mieters und
     assert.equal(after?.last?.label, '2025')
     assert.equal(typeof after?.last?.balanceCents, 'number')
     assert.deepEqual(after?.pending, [])
+  })
+})
+
+// Durchsicht W1: Ein langes Mietverhältnis, erst seit Kurzem mit Mietfuchs abgerechnet. „Steht noch aus“ nennt nur
+// Zeiträume, deren Abrechnungsfrist (§ 556 Abs. 3 Satz 2 BGB) noch läuft; für ältere ist eine Nachforderung ausgeschlossen.
+test('Auskunft zur Aufstellung: ausstehend nur, solange die Abrechnungsfrist läuft', async () => {
+  await withEnv({ NKA_TEST_TODAY: '2026-01-15' }, async (s) => {
+    const { tenancy } = await stock(s)
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ start: '2015-01-01', end: '2025-06-30', baseRents: [{ from: '2015-01', monthlyCents: 80000 }], prepayments: [{ from: '2015-01', monthlyCents: 15000 }] }) })
+    const [info] = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
+    // 2024 endet am 31.12.2024, Frist bis 31.12.2025: vorbei. 2025 läuft bis 31.12.2026.
+    assert.deepEqual(info?.pending, ['2025'])
+  })
+})
+
+test('Umbuchen mit langer Notiz kürzt sie auf die Länge einer Kautionsbuchung', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await stock(s)
+    const p = await post<PaymentListItem>(s, '/api/payments', { tenancyId: tenancy.id, date: '2025-01-02', amountCents: 240000, note: 'K'.repeat(600) })
+    const res = await send(s, 'POST', `/api/deposit-entries/from-payment/${p.id}`)
+    assert.equal(res.status, 201, await res.clone().text())
+    assert.equal((await res.json() as DepositEntry).note?.length, 500)
   } finally {
     s.stop()
   }

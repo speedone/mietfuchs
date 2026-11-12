@@ -217,6 +217,35 @@ test('Drucken druckt nur die Aufstellung', async () => {
   const sheet = document.body.querySelector(':scope > .deposit-print') ?? expect.fail('kein Druckblatt am Ende von body')
   expect(flat(sheet)).toContain('Aufstellung zum Auszug')
   expect(flat(sheet)).toContain('Erika Mustermann')
+  // Das Blatt geht an den Mieter: „Ihnen“ hieße dort ihn (Durchsicht G2).
+  expect(flat(sheet)).toContain('Beim Vermieter liegen 2.412,34 €')
+  expect(flat(sheet)).not.toMatch(/Bei Ihnen/)
   window.dispatchEvent(new Event('afterprint'))
   await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
+})
+
+test('nach „Einbehalt speichern“ schließt das Fenster ohne Rückfrage, Strg+S im Einbehalt speichert ihn', async () => {
+  const onClose = vi.fn()
+  const onChanged = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={{ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined }} entries={MOVED_ENTRIES} info={INFO} onChanged={onChanged} onClose={onClose} /></UIProvider>)
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  const note = screen.getByLabelText(/^Grund/)
+  fireEvent.change(note, { target: { value: 'Nebenkosten 2025' } })
+  note.focus()
+  fireEvent.keyDown(note, { key: 's', ctrlKey: true })
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(sent.at(-1)).toMatchObject({ url: '/api/tenancies/t', method: 'PUT' })
+  const footerClose = screen.getAllByRole('button', { name: 'Schließen' }).find((b) => b.textContent === 'Schließen') ?? expect.fail('kein Schließen')
+  fireEvent.click(footerClose)
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+test('Löschen einer Verrechnung mit Miete sagt, dass die Zahlung im Mietkonto mit wegfällt', async () => {
+  const bound: DepositEntry = { id: 'v', tenancyId: 't', date: '2026-01-05', kind: 'applied', purpose: 'rent', amountCents: 95000, paymentId: 'p' }
+  const { drawer } = open([...ENTRIES.slice(0, 1), bound])
+  const row = within(drawer).getAllByRole('row').find((r) => r.textContent?.includes('Mietrückstand')) ?? expect.fail('keine Zeile')
+  fireEvent.click(within(row).getByRole('button', { name: 'Löschen …' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(question.textContent).toContain('Die Zahlung im Mietkonto fällt mit weg.')
 })

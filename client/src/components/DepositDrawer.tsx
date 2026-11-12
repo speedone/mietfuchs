@@ -1,7 +1,7 @@
 // Das Seitenfenster „Kaution“ eines Mietverhältnisses (#228): Stand in einem Satz, die Kautionsbuchungen und das
 // Formular für eine neue. Logik in depositForm.ts und shared/deposit.ts; gespeichert wird je Buchung über
 // /api/deposit-entries, der Aufrufer lädt danach neu (`onChanged`).
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { depositState } from '../../../shared/deposit.ts'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
@@ -39,6 +39,8 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
   const state = depositState(tenancy, entries)
   const [hold, setHold] = useState(() => holdFormOf(tenancy))
   const holdErrors = useFormError<DepositHoldField>()
+  // Strg+S speichert, woran man gerade schreibt: im Einbehalt ihn, sonst die neue Buchung (Durchsicht G1).
+  const holdSection = useRef<HTMLElement>(null)
   const settlement = depositSettlement(tenancy, entries, info, localToday())
   const [printing, setPrinting] = useState(false)
   // Gedruckt wird nur das Blatt (index.css, `print-deposit`), wie die monatliche Verbrauchsinformation: erst nach dem
@@ -69,6 +71,8 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
       await api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
       holdErrors.set('')
       toast('Einbehalt gespeichert.')
+      // Wie nach dem Anlegen: Der gespeicherte Stand ist der neue Ausgangsstand, „Schließen“ fragt nicht nach.
+      setRound((r) => r + 1)
       onChanged()
     } catch (e) {
       holdErrors.show(errorText(e))
@@ -99,7 +103,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
   async function remove(entry: DepositEntry) {
     const ok = await confirm({
       title: 'Kautionsbuchung löschen?',
-      message: `${depositKindText(entry)} vom ${fmtDate(entry.date)} über ${fmtEuro(entry.amountCents)} wird gelöscht. Der Stand der Kaution rechnet sich neu.`,
+      message: `${depositKindText(entry)} vom ${fmtDate(entry.date)} über ${fmtEuro(entry.amountCents)} wird gelöscht. Der Stand der Kaution rechnet sich neu.${entry.paymentId ? ' Die Zahlung im Mietkonto fällt mit weg.' : ''}`,
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -115,11 +119,12 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
 
   return (
     <Drawer key={`${tenancy.id}-${round}`} open title={`Kaution von ${tenancy.tenantName}`} width={620} cancelLabel="Schließen"
-      onClose={onClose} value={{ form, hold }} busy={saving.busy} errors={errors} onSubmit={() => void saving.run(create)}
+      onClose={onClose} value={{ form, hold }} busy={saving.busy} errors={errors}
+      onSubmit={() => void saving.run(holdSection.current?.contains(document.activeElement) ? saveHold : create)}
       actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(create)}>Anlegen</button>}>
       <p className="m-0">{depositStateText(state, tenancy)}</p>
       {settlement && (
-        <section aria-label="Aufstellung zum Auszug" className="field-group">
+        <section aria-label="Aufstellung zum Auszug" className="field-group" ref={holdSection}>
           <h3>Aufstellung zum Auszug</h3>
           <SettlementView settlement={settlement} />
           <ErrorSummary errors={holdErrors} />
@@ -139,7 +144,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
         <div className="deposit-print">
           <h2>Aufstellung zum Auszug</h2>
           <p>Kaution von {tenancy.tenantName}{tenancy.end ? `, ausgezogen am ${fmtDate(tenancy.end)}` : ''}</p>
-          <SettlementView settlement={settlement} />
+          <SettlementView settlement={settlement} printed />
         </div>,
         document.body,
       )}
@@ -197,7 +202,8 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
 }
 
 // Die Aufstellung selbst, gleich am Bildschirm und im Druck.
-function SettlementView({ settlement: s }: { settlement: DepositSettlement }) {
+// Gedruckt geht das Blatt an den Mieter; „Ihnen“ hieße dort ihn (Durchsicht G2).
+function SettlementView({ settlement: s, printed = false }: { settlement: DepositSettlement; printed?: boolean }) {
   return (
     <>
       <Table aria-label="Buchungen der Kaution">
@@ -207,7 +213,7 @@ function SettlementView({ settlement: s }: { settlement: DepositSettlement }) {
           ))}
         </tbody>
       </Table>
-      <p className="m-0">Bei Ihnen liegen {fmtEuro(s.balanceCents)}.</p>
+      <p className="m-0">{printed ? 'Beim Vermieter liegen' : 'Bei Ihnen liegen'} {fmtEuro(s.balanceCents)}.</p>
       {s.hold && <p className="m-0">Einbehalten: {fmtEuro(s.hold.cents)} ({s.hold.note})</p>}
       <p className="m-0"><strong>Bleibt auszuzahlen: {fmtEuro(s.payoutCents)}</strong></p>
       {s.lastStatement && <p className="muted m-0">{s.lastStatement}</p>}

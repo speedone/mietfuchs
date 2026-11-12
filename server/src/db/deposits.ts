@@ -16,7 +16,7 @@ import { readClosedSettlements, readDepositEntries } from './read.ts'
 import { insertEntityIn, isCalendarDay, replaceBoundPaymentIn, rulesForProperty } from './repository.ts'
 import { DEPOSIT_ENTRY_KINDS, DEPOSIT_PURPOSES, depositEntries, payments, tenancies, units } from './schema.ts'
 import { depositProblem } from '../../../shared/deposit.ts'
-import { periodLabel, periodsBetween } from '../../../shared/period.ts'
+import { periodLabel, periodsBetween, settlementDeadline } from '../../../shared/period.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 import type { DepositEntry, DepositEntryKind, DepositPurpose, DepositStatementInfo } from '../../../shared/types.ts'
 
@@ -97,7 +97,10 @@ export async function moveToDeposit(db: Database, paymentId: string, newId: () =
     const [bound] = await tx.select({ id: depositEntries.id }).from(depositEntries).where(eq(depositEntries.paymentId, paymentId))
     if (p.kind !== 'rent' || p.amountCents <= 0 || bound) throw new DepositError(400, 'Umbuchen lässt sich nur ein Mieteingang.')
     await tx.delete(payments).where(eq(payments.id, paymentId))
-    return insertIn(tx, newId(), { tenancyId: p.tenancyId, date: p.date, kind: 'received', amountCents: p.amountCents, ...(p.note ? { note: p.note } : {}) }, await readDepositEntries(tx), newId)
+    // Die Notiz einer Zahlung ist unbegrenzt, die einer Buchung nicht; gekürzt statt abgelehnt, denn auf der Seite Steuer
+    // ließe sie sich nicht ändern (Durchsicht G5).
+    const note = p.note ? p.note.trim().slice(0, NOTE_MAX) : ''
+    return insertIn(tx, newId(), { tenancyId: p.tenancyId, date: p.date, kind: 'received', amountCents: p.amountCents, ...(note ? { note } : {}) }, await readDepositEntries(tx), newId)
   })
 }
 
@@ -198,7 +201,10 @@ export async function removeDepositEntry(db: Database, id: string): Promise<bool
 }
 
 // Für die Aufstellung zum Auszug (#228): je Mietverhältnis des Objekts die jüngste abgeschlossene Abrechnung, in der es
-// steht, mit ihrem Saldo, und die Zeiträume seiner Wohnzeit, die noch nicht abgeschlossen sind. Gelesen aus dem
+// steht, mit ihrem Saldo, und die Zeiträume seiner Wohnzeit, die noch nicht abgeschlossen sind und deren
+// Abrechnungsfrist (§ 556 Abs. 3 Satz 2 BGB, `settlementDeadline`) heute noch läuft. Für ältere ist eine Nachforderung
+// ausgeschlossen; sie als „steht noch aus“ zu nennen, läse sich auf dem Blatt für den Mieter wie eine offene Forderung
+// (Durchsicht W1: Einzug 2012, erst seit Kurzem mit Mietfuchs abgerechnet). Gelesen aus dem
 // eingefrorenen Stand, also das, was der Mieter bekommen hat; nichts wird neu gerechnet.
 export async function depositStatements(db: Executor, propertyId: string, today: string): Promise<DepositStatementInfo[]> {
   const rules = await rulesForProperty(db, propertyId)
@@ -212,7 +218,7 @@ export async function depositStatements(db: Executor, propertyId: string, today:
     for (const p of periods) {
       const frozen = closed.find((c) => c.period === p.key)
       if (!frozen) {
-        pending.push(periodLabel(p))
+        if (settlementDeadline(p) >= today) pending.push(periodLabel(p))
         continue
       }
       const balance = balanceOf(frozen.settlement, t.id)
