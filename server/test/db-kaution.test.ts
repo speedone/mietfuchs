@@ -10,6 +10,7 @@ import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readDepositEntries, readTenancies } from '../src/db/read.ts'
 import { createEntity, updateEntity } from '../src/db/repository.ts'
 import { depositEntries } from '../src/db/schema.ts'
+import { DepositError, insertDepositEntries } from '../src/db/deposits.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-kaution-'))
 
@@ -100,6 +101,33 @@ test('Form der Sicherheit: am Mietverhältnis gespeichert, null leert, Unbekannt
       await updateEntity(db, 'tenancies', 't', { depositForm: null })
       assert.equal(await form(), undefined)
     })
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('Kautionsbuchungen: mehrere in einem Zug, ganz oder gar nicht', async () => {
+  const dataDir = tempDir()
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u', { propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true })
+      await createEntity(db, 'tenancies', 't', { unitId: 'u', tenantName: 'Mieter', persons: 1, start: '2025-01-01' })
+    })
+    let n = 0
+    const newId = () => `k${++n}`
+    const ids = await opened.write((db) => insertDepositEntries(db, [
+      { tenancyId: 't', date: '2025-01-05', kind: 'received', amountCents: 80000 },
+      { tenancyId: 't', date: '2025-02-05', kind: 'received', amountCents: 80000 },
+    ], newId, '2 Kautionsbuchungen aus dem Kontoauszug'))
+    assert.deepEqual(ids, ['k1', 'k2'])
+    // Die zweite Buchung des Zugs ließe den Stand unter null fallen: Dann bleibt auch die erste weg.
+    await assert.rejects(opened.write((db) => insertDepositEntries(db, [
+      { tenancyId: 't', date: '2025-03-01', kind: 'refunded', amountCents: 100000 },
+      { tenancyId: 't', date: '2025-03-02', kind: 'refunded', amountCents: 100000 },
+    ], newId, 'zwei Rückzahlungen')), DepositError)
+    assert.deepEqual((await opened.write((db) => readDepositEntries(db))).map((e) => e.id), ['k1', 'k2'])
   } finally {
     opened.close()
     fs.rmSync(dataDir, { recursive: true, force: true })

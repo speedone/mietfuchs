@@ -323,6 +323,17 @@ export const STEPS: readonly Step[] = [
       if (ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/co2-refunds/${created.id}`)
     },
   },
+  {
+    name: 'Kautionsbuchung anlegen, ändern, löschen', routes: ['POST /api/deposit-entries', 'PUT /api/deposit-entries/:id', 'DELETE /api/deposit-entries/:id'],
+    run: async (ctx) => {
+      const t = pick(ctx.rng, ctx.tenancies)
+      if (!t) return
+      const created = await json<Row>(await send(ctx.s, 'POST', '/api/deposit-entries', { tenancyId: t.id, date: day(ctx.rng), kind: 'received', amountCents: int(ctx.rng, 500, 2400) * 100 }))
+      if (!created) return
+      await send(ctx.s, 'PUT', `/api/deposit-entries/${created.id}`, { amountCents: int(ctx.rng, 500, 2400) * 100, note: word(ctx.rng) })
+      if (ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/deposit-entries/${created.id}`)
+    },
+  },
   // ---------- Belege ----------
   {
     name: 'Beleg hochladen', routes: ['POST /api/upload'],
@@ -345,7 +356,10 @@ export const STEPS: readonly Step[] = [
 // ihrem Namen.
 export const CLOSING_STEPS: readonly Step[] = [
   { name: 'Abrechnung abschließen', routes: ['POST /api/settlement/:period/close'], run: ({ s }) => send(s, 'POST', `/api/settlement/2025-01/close${Q}`, {}) },
-  { name: 'Versanddatum speichern', routes: ['PUT /api/settlement/:period/close'], run: ({ s, rng }) => send(s, 'PUT', `/api/settlement/2025-01/close${Q}`, { sentAt: day(rng, 2026) }) },
+  // Das Versanddatum liegt nie in der Zukunft (shared/sentAt.ts): Januar bis September 2026 ist an jedem Tag gültig, an dem
+  // dieser Test läuft. Mit `day(rng, 2026)` hing es vom gezogenen Monat und vom heutigen Datum ab, ob die Route einen
+  // Eintrag ergab (gefunden bei #228, als ein neuer Schritt die Zufallsfolge verschob).
+  { name: 'Versanddatum speichern', routes: ['PUT /api/settlement/:period/close'], run: ({ s, rng }) => send(s, 'PUT', `/api/settlement/2025-01/close${Q}`, { sentAt: `2026-0${int(rng, 1, 9)}-${String(int(rng, 1, 28)).padStart(2, '0')}` }) },
   // Die Übernahme in die Staffel braucht eine abgeschlossene Abrechnung mit angekündigter Anpassung; der Zufallsbestand hat
   // nicht immer eine. Deshalb legt der Schritt sie für 2024 selbst an (Wohnung, Mieter mit 40 € Vorauszahlung, 600 €
   // Grundsteuer), schließt ab und übernimmt. Die Übernahme ändert Mietverhältnisse, nicht den Abschluss.

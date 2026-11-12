@@ -140,7 +140,7 @@ export const asNullableFilled = (value: unknown): string | null => {
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 // Ein Kalendertag in der Form JJJJ-MM-TT, den es gibt (Durchsicht #96 PR 2, K2): `Date` rollt den 31.02. auf den 03.03.,
 // deshalb der Vergleich mit dem Zurückgeschriebenen; ein Monat 13 ergibt kein Datum. Wie `headerDateText` im Formular.
-const isCalendarDay = (v: string): boolean => {
+export const isCalendarDay = (v: string): boolean => {
   if (!ISO_DATE.test(v)) return false
   const d = new Date(`${v}T00:00:00Z`)
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
