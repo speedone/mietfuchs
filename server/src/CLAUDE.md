@@ -795,6 +795,35 @@ Entwurf: [docs/superpowers/specs/2026-11-09-zahlungs-qr-design.md](../../docs/su
   EWR), sagt das Druckfenster je gewähltem Mieter (`paymentQrReason`), immer aus dem Anschreiben, nie aus den
   Einstellungen von heute.
 
+## Kaution (#228)
+
+Entwurf: [docs/superpowers/specs/2026-11-12-kaution-design.md](../../docs/superpowers/specs/2026-11-12-kaution-design.md).
+Teil 1 ist gebaut (Buchungen und Stand), Teil 2 steht aus (Verrechnung mit Miete oder Abrechnung als gebundene Zahlung,
+Aufstellung zum Auszug, Cockpit, Hinweis der Steuer).
+
+- **Kautionsbuchungen** stehen in `deposit_entries`, nie in `payments`: Die Kaution ist keine Einnahme, und Mietkonto
+  und Steuer lesen die Tabelle nicht (api-kaution.test.ts hält `rentLedger` und `taxReport` vor und nach vier Buchungen
+  gleich). Vier Arten, jede bewegt Geld, der Betrag ist immer größer 0: `received`, `interest` erhöhen, `applied`,
+  `refunded` mindern. `purpose` genau bei `applied`.
+- **Der Stand wird nie gespeichert**: `depositState` in [shared/deposit.ts](../../shared/deposit.ts), für Server und
+  Oberfläche. Ohne Buchung gilt der gespeicherte `depositStatus` (`derived: false`); er wird nie überschrieben und gilt
+  wieder, wenn alle Buchungen gelöscht sind. Die Oberfläche schreibt „abgerechnet“ statt „zurückgezahlt“, wenn etwas
+  verrechnet wurde; einen gespeicherten Wert dafür gibt es nicht.
+- **Nie negativ**: [db/deposits.ts](db/deposits.ts) rechnet `depositProblem` über die Buchungen des Mietverhältnisses
+  nach der gedachten Änderung, auch beim Ändern und Löschen (400 mit Tag und Betrag). Geordnet nach Datum, am selben
+  Tag nach Einfügung.
+- **Teil 1 lehnt `applied` mit `rent` oder `settlement` ab** (400). Wer Teil 2 baut, nimmt die Zeile in `mergeEntry`
+  heraus und legt die gebundene Zahlung an; `payment_id` und sein Fremdschlüssel stehen schon.
+- **Der Einbehalt beim Auszug ist keine Buchung**: Er kommt mit Teil 2 als Betrag und Grund ans Mietverhältnis.
+- **Routen** `GET/POST /api/deposit-entries`, `PUT/DELETE /api/deposit-entries/:id`; das Objekt ergibt sich aus dem
+  Mietverhältnis, eine Buchung wechselt es nicht. `insertDepositEntries` schreibt mehrere in einer Transaktion mit
+  einem Satz im Verlauf (für den Kontoauszug, #188).
+- **Höchstgrenze**: `depositLimit` mit `bgb.deposit-max-months` aus dem Register; `null` bei teilweise inklusiver Miete
+  und ohne Kaltmiete am Beginn. Nur ein Hinweis am Feld (`depositLimitHint` in client/src/tenancyModel.ts), gespeichert
+  wird trotzdem.
+- **Recht**: gelesen ist nur § 551 Abs. 1 bis 4 BGB (12.11.2026). Zum Einbehalt bis zur Nebenkostenabrechnung und zur
+  Höhe im Einzelnen sagen Oberfläche und Lexikon nichts, bis die im Entwurf genannten Entscheidungen gelesen sind.
+
 ## Der Schnappschuss (#55)
 
 [snapshot.ts](snapshot.ts): Die Berechnung liest den Speicher nicht selbst, sie bekommt einen

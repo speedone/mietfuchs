@@ -315,6 +315,17 @@ export const GLOSSARY = {
     norm: '§ 556 Abs. 2 und 3, § 560 Abs. 4 BGB; BGH, Urteil vom 18.05.2011, VIII ZR 240/10',
     needed: 'Ja, wenn der Mietvertrag Vorauszahlungen vorsieht, der Normalfall. Mietfuchs setzt die vereinbarte Staffel an, im Ein- und Auszugsmonat anteilig nach Kalendertagen. Hat der Mieter anders gezahlt, tragen Sie die gezahlte Summe in der Abrechnung mit „✎ anpassen“ ein. Nach der Abrechnung dürfen Sie die Vorauszahlung angemessen anpassen. Das Anschreiben nennt dazu den Monat, ab dem sie gilt; Vorgabe ist der übernächste Monat nach dem Tag des Briefs. Das ist eine vorsichtige Entscheidung von Mietfuchs, denn § 560 Abs. 4 BGB nennt keine Frist (nach AG Mannheim, Urteil vom 06.02.2008, 8 C 552/06, wirkt die Anpassung schon zum nächsten Fälligkeitstermin). Nach dem Abschluss trägt „In die Staffel übernehmen“ die angekündigte Vorauszahlung als Stufe ein.',
   },
+  // #228: Kaution je Mietverhältnis führen (Entwurf 2026-11-12). § 551 Abs. 1 bis 4 BGB am 12.11.2026 auf
+  // gesetze-im-internet.de gelesen; zum Einbehalt beim Auszug steht hier bewusst nichts, die Entscheidungen dazu sind
+  // nicht gelesen. Beispiel nachgerechnet in server/test/deposit.test.ts.
+  deposit: {
+    topic: 'tenants',
+    title: 'Kaution',
+    short: 'Die Sicherheit, die der Mieter für seine Pflichten aus dem Mietverhältnis leistet. Sie darf höchstens das Dreifache der Monatsmiete ohne die als Pauschale oder Vorauszahlung ausgewiesenen Betriebskosten betragen; der Mieter darf sie in drei gleichen Monatsraten zahlen, die erste zu Beginn des Mietverhältnisses. Eine Geldsumme legen Sie getrennt von Ihrem Vermögen bei einem Kreditinstitut an; die Erträge stehen dem Mieter zu und erhöhen die Sicherheit. Die Kaution ist keine Mieteinnahme: Sie steht nicht im Mietkonto und nicht in der Steuerübersicht.',
+    example: 'Kaltmiete 800 €: höchstens 2.400 € Kaution, zahlbar in drei Raten zu 800 €. Sind zwei Raten eingegangen, zeigt Mietfuchs „teilweise erhalten“ und 1.600 € bei Ihnen; mit 12,34 € Zinsen liegen nach der dritten Rate 2.412,34 € bei Ihnen.',
+    norm: '§ 551 Abs. 1 bis 4 BGB',
+    needed: 'Wenn Sie festhalten wollen, was eingegangen ist und was Sie zurückzahlen: Unter Stammdaten steht am Mietverhältnis „Kaution führen“. Dort buchen Sie Eingänge, Zinsen, Verrechnungen und Rückzahlungen; den Stand rechnet Mietfuchs daraus. Ohne Buchungen gilt der Stand, den Sie am Mietverhältnis gewählt haben.',
+  },
   // #334: Fälligkeit am Mietverhältnis und Rückstand ab dem erwarteten Eingang (Entwurf 2026-11-07, E1 bis E8). Beispiel
   // nachgerechnet in server/test/rent-due.test.ts (Einzug Fr 09.10.2026, NW).
   rentDue: {

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import type { CostItem, Meter, PropertyKind, Tenancy, Unit, UnitDependents } from '../types'
+import type { CostItem, DepositEntry, Meter, PropertyKind, Tenancy, Unit, UnitDependents } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -38,8 +38,11 @@ let spreadRestYear: number | null = null
 // Antworten auf PUT der Reihe nach (Durchsicht S4, 409 des Servers), danach die gewöhnliche; und ob die Kosten scheitern (K5).
 let putReplies: { status: number; body: unknown }[] = []
 let costItemsFail = false
+// Kautionsbuchungen des Objekts (#228).
+let depositEntries: DepositEntry[] = []
 
 beforeEach(() => {
+  depositEntries = []
   kind = 'mfh'
   propertyIban = null
   meters = []
@@ -64,6 +67,7 @@ beforeEach(() => {
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind, address: '', landlordName: null, iban: propertyIban, paymentDeadlineDays: null, spreadRestYear }])
     if (path === '/api/costItems') return costItemsFail ? new Response(JSON.stringify({ error: 'kaputt' }), { status: 500, headers: { 'content-type': 'application/json' } }) : json(costItems)
     if (path === '/api/units/u1/dependents') return json(DEPS)
+    if (path === '/api/deposit-entries') return json(depositEntries)
     return json([])
   })
 })
@@ -877,4 +881,83 @@ test('Fälligkeit: Speichern schickt nur, was sich geändert hat; ein fester Tag
   fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
   await vi.waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ rentDue: null })
+})
+
+// ---------- Kaution (#228, Teil 1) ----------
+
+const selectOf = (label: string): HTMLSelectElement => {
+  const el = within(screen.getByRole('dialog')).getByLabelText(label)
+  if (!(el instanceof HTMLSelectElement)) throw new Error(`${label} ist keine Auswahl`)
+  return el
+}
+const tenancyBody = () => sent.filter((s) => s.url.startsWith('/api/tenancies')).at(-1)?.body
+
+test('Kaution: ohne Kautionsbuchung bleibt alles wie bisher', async () => {
+  page([tenancy('t1', 'Erika', { depositCents: 240000, depositStatus: 'erhalten', baseRents: [{ from: '2025-01', monthlyCents: 80000 }] })])
+  await screen.findByText('Erika', undefined, SLOW)
+  expect(rowOf('Erika').getByText('erhalten')).toBeTruthy()
+  fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByText('Mietverhältnis bearbeiten', undefined, SLOW)
+  const status = selectOf('Kautionsstatus')
+  expect(status.disabled).toBe(false)
+  expect(status.value).toBe('erhalten')
+  fireEvent.change(status, { target: { value: 'teilweise' } })
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
+  await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
+  expect(tenancyBody()).toMatchObject({ depositCents: 240000, depositStatus: 'teilweise', depositForm: null })
+})
+
+test('Kaution: mit Buchungen ergibt sich der Stand, das Auswahlfeld ist gesperrt und wird nicht gesendet', async () => {
+  depositEntries = [{ id: 'd1', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 80000 }]
+  page([tenancy('t1', 'Erika', { depositCents: 240000, depositStatus: 'offen', baseRents: [{ from: '2025-01', monthlyCents: 80000 }] })])
+  await screen.findByText('Erika', undefined, SLOW)
+  // Die Marke kommt aus den Buchungen, nicht aus dem gespeicherten „offen“.
+  expect(await rowOf('Erika').findByText('teilweise erhalten', undefined, SLOW)).toBeTruthy()
+  fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByText('Mietverhältnis bearbeiten', undefined, SLOW)
+  expect(selectOf('Kautionsstatus').disabled).toBe(true)
+  expect(within(screen.getByRole('dialog')).getByText(/ergibt sich aus den Kautionsbuchungen/)).toBeTruthy()
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
+  await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
+  expect(tenancyBody()).toMatchObject({ depositCents: 240000 })
+  expect(Object.hasOwn(tenancyBody() ?? {}, 'depositStatus')).toBe(false)
+})
+
+test('Kaution: der Knopf „Kaution führen“ öffnet das Seitenfenster', async () => {
+  page([tenancy('t1', 'Erika', { depositCents: 240000 })])
+  await screen.findByText('Erika', undefined, SLOW)
+  fireEvent.click(rowOf('Erika').getByRole('button', { name: 'Kaution führen' }))
+  expect(await screen.findByRole('dialog', { name: 'Kaution von Erika' }, SLOW)).toBeTruthy()
+})
+
+test('Kaution: ohne vereinbarte Kaution und ohne Buchung steht in der Zeile nichts dazu', async () => {
+  page([tenancy('t1', 'Erika')])
+  await screen.findByText('Erika', undefined, SLOW)
+  expect(rowOf('Erika').queryByRole('button', { name: 'Kaution führen' })).toBeNull()
+})
+
+test('Kaution: Form der Sicherheit zeigt den gespeicherten Wert, „keine Angabe“ leert', async () => {
+  page([tenancy('t1', 'Erika', { depositCents: 240000, depositForm: 'pledged' })])
+  await screen.findByText('Erika', undefined, SLOW)
+  fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByText('Mietverhältnis bearbeiten', undefined, SLOW)
+  const form = selectOf('Form der Sicherheit')
+  expect(form.value).toBe('pledged')
+  expect([...form.options].map((o) => o.value)).toEqual(['', 'account', 'pledged', 'guarantee', 'other'])
+  expect(form.options[0]?.textContent).toBe('keine Angabe')
+  fireEvent.change(form, { target: { value: '' } })
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
+  await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
+  expect(tenancyBody()).toMatchObject({ depositForm: null })
+})
+
+test('Kaution: Hinweis über drei Monatsmieten am Feld, bis zur Grenze keiner', async () => {
+  page([tenancy('t1', 'Erika', { depositCents: 250000, baseRents: [{ from: '2025-01', monthlyCents: 80000 }] })])
+  await screen.findByText('Erika', undefined, SLOW)
+  fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByText('Mietverhältnis bearbeiten', undefined, SLOW)
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.getByText(/Mehr als drei Monatsmieten ohne Betriebskosten \(2\.400,00\s€\)\. § 551 Abs\. 1 BGB erlaubt höchstens das Dreifache\./)).toBeTruthy()
+  fireEvent.change(dialog.getByLabelText('Kaution €'), { target: { value: '2.400,00' } })
+  expect(dialog.queryByText(/Mehr als drei Monatsmieten/)).toBeNull()
 })

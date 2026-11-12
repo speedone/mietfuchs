@@ -254,7 +254,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     ...(t.firstRentAtStart === true ? { firstRentAtStart: true } : {}),
     depositCents: orUndefined(t.depositCents),
     depositStatus: orUndefined(t.depositStatus),
-    depositForm: orUndefined(t.depositForm),
+    // Nur mit Angabe (#228): Ein Mietverhältnis ohne liest sich wie vor der Spalte.
+    ...(t.depositForm !== null ? { depositForm: t.depositForm } : {}),
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
     ...(t.costModel === null ? {} : { costModel: t.costModel }),
     ...(t.heatingModel === null ? {} : { heatingModel: t.heatingModel }),
