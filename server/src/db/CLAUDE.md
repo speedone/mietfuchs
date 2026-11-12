@@ -77,7 +77,8 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `tenancies` in 0098 (Neubau, getrennt wie 0092/0093). Eine Buchung fällt mit ihrem Mietverhältnis und mit der
   Zahlung, auf die `payment_id` verweist (beide CASCADE). Keine Datenanweisung; ein Bestand von vorher hat keine
   Buchung und liest sich wie zuvor. Der Einbehalt (`tenancies.deposit_hold_cents`, `deposit_hold_note`) in 0099, die
-  Bedingung „größer 0“ in 0100 (Neubau, getrennt wie oben). Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Kaution“.
+  Bedingung „größer 0“ in 0100 (Neubau, getrennt wie oben), die Indizes auf `tenancy_id` und `payment_id` in 0101.
+  Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Kaution“.
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,
   Anteile, Teilnehmer, Einzel- und Eigenbeträge, Pauschalen, `unit_no_connection`.
   `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.
@@ -130,9 +131,10 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn
   `text({ enum })` bindet nur den Übersetzer. Bedingungen an NULL-fähigen Spalten vergleichen mit
   `IS`, weil `NULL = …` kein Verstoß ist.
-- **Indizes nur, wo der Schnappschuss filtert**: `cost_items(property_id, period)`; eindeutig
-  `closed_settlements(property_id, period)` (je Objekt und Zeitraum höchstens ein Abschluss), dazu die
-  Verläufe und Heizperioden.
+- **Indizes nur, wo der Schnappschuss filtert oder eine Wache je Zeile sucht**: `cost_items(property_id, period)`;
+  eindeutig `closed_settlements(property_id, period)` (je Objekt und Zeitraum höchstens ein Abschluss), dazu die
+  Verläufe und Heizperioden; `deposit_entries(tenancy_id)` und `(payment_id)`, weil `guardPayment` bei jeder Zahlung
+  und der Fremdschlüssel beim Löschen dort sucht.
 - **Der eingefrorene Berechnungsstand bleibt JSON**: ein Archivstück, das wortgleich bleiben soll,
   auch wenn spätere Versionen anders rechnen. Seit #415 trägt er auch das Anschreiben (`letters`).
 - **Texte des Anschreibens** (#415, [letters.ts](letters.ts)): eine Tabelle je Ebene, Zeilen je Baustein statt

@@ -1,17 +1,18 @@
 // Das Seitenfenster „Kaution“ eines Mietverhältnisses (#228): Stand in einem Satz, die Kautionsbuchungen und das
-// Formular für eine neue. Logik in depositForm.ts und shared/deposit.ts; gespeichert wird je Buchung über
-// /api/deposit-entries, der Aufrufer lädt danach neu (`onChanged`).
+// Formular für eine neue oder, nach „Ändern“ an einer Zeile, für diese. Logik in depositForm.ts und shared/deposit.ts;
+// gespeichert wird je Buchung über /api/deposit-entries, der Aufrufer lädt danach neu (`onChanged`).
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { depositState } from '../../../shared/deposit.ts'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
 import {
-  DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, NO_MONEY_FORM_TEXT, depositEntryBody, depositKindText, depositPurposeHint, depositStateText, emptyDepositForm, formWithoutMoney,
-  holdBody, holdFormOf, signedCents, withKind, type DepositField, type DepositHoldField,
+  DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, NO_MONEY_FORM_TEXT, depositEntryBody, depositFormOf, depositKindText, depositPurposeHint, depositStateText, emptyDepositForm, formWithoutMoney,
+  holdBody, holdFormOf, rentBeyondOpen, signedCents, withKind, type DepositField, type DepositHoldField,
 } from '../depositForm'
 import { depositSettlement, type DepositSettlement } from '../depositSettlement'
 import { localToday } from '../periodForm'
 import type { DepositEntry, DepositStatementInfo, Tenancy } from '../types'
+import type { DepositFormState } from '../depositForm'
 import { useSaving } from '../useSaving'
 import Drawer from './Drawer'
 import { ErrorSummary, useFormError } from './ErrorSummary'
@@ -29,6 +30,11 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
   onClose: () => void
 }) {
   const [form, setForm] = useState(() => emptyDepositForm(localToday()))
+  // Der Stand, mit dem das Formular zuletzt geladen wurde (leer, nach dem Anlegen mit stehendem Datum, oder die Buchung
+  // nach „Ändern“). Weicht `form` davon ab, ist etwas eingegeben (Durchsicht W3).
+  const [formBase, setFormBase] = useState(form)
+  // Die Buchung, die das Formular gerade ändert; `null` heißt eine neue.
+  const [editing, setEditing] = useState<DepositEntry | null>(null)
   // Nach dem Anlegen baut sich das Fenster neu auf (Durchsicht G1): Das stehen gebliebene Datum ist dann der neue
   // Ausgangsstand, und „Schließen“ fragt nicht nach Änderungen, die keine sind.
   const [round, setRound] = useState(0)
@@ -42,6 +48,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
   // Strg+S speichert, woran man gerade schreibt: im Einbehalt ihn, sonst die neue Buchung (Durchsicht G1).
   const holdSection = useRef<HTMLElement>(null)
   const settlement = depositSettlement(tenancy, entries, info, localToday())
+  const holdShown = settlement !== null && (settlement.balanceCents > 0 || tenancy.depositHoldCents !== undefined || tenancy.depositHoldNote !== undefined)
   const [printing, setPrinting] = useState(false)
   // Gedruckt wird nur das Blatt (index.css, `print-deposit`), wie die monatliche Verbrauchsinformation: erst nach dem
   // Rendern, aufgeräumt nach dem Druck.
@@ -73,7 +80,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
       toast('Einbehalt gespeichert.')
       // Wie nach dem Anlegen: Der gespeicherte Stand ist der neue Ausgangsstand, „Schließen“ fragt nicht nach. Nicht, wenn
       // im Formular einer Buchung schon etwas steht (Abschlussdurchsicht G5).
-      if (form.amount.trim() === '' && form.note.trim() === '' && form.kind === 'received') setRound((r) => r + 1)
+      if (editing === null && form.amount.trim() === '' && form.note.trim() === '' && form.kind === 'received') setRound((r) => r + 1)
       onChanged()
     } catch (e) {
       holdErrors.show(errorText(e))
@@ -82,26 +89,70 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
   // Angezeigt nach Datum, am selben Tag in Einfügereihenfolge: Eine nachgetragene alte Rate steht an ihrem Platz.
   const shown = [...entries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 
-  async function create() {
+  // Anlegen oder, nach „Ändern“, Speichern der Buchung im Formular. Vorher zwei Rückfragen: ein Datum nach heute
+  // (meist ein Tippfehler im Jahr) und eine Verrechnung mit Miete über das hinaus, was laut Mietkonto offen ist.
+  async function submit() {
     const result = depositEntryBody(form, tenancy.id)
     if ('problems' in result) {
       errors.report(result.problems)
       return
     }
+    const verb = editing ? 'Speichern' : 'Anlegen'
+    if (result.body.date > localToday()) {
+      const ok = await confirm({
+        title: 'Datum in der Zukunft?',
+        message: `Die Buchung trägt den ${fmtDate(result.body.date)}, ein Tag nach heute. Der Stand der Kaution zählt sie trotzdem gleich mit.`,
+        confirmLabel: verb,
+      })
+      if (!ok) return
+    }
+    const beyond = rentBeyondOpen(result.body, info?.openRentCents, editing)
+    if (beyond) {
+      const ok = await confirm({
+        title: 'Mehr als der Mietrückstand?',
+        message: `Laut Mietkonto sind heute ${fmtEuro(beyond.openCents)} offen. Die übrigen ${fmtEuro(beyond.beyondCents)} stehen im Mietkonto dann als Überzahlung und zählen in der Steuer als Mieteinnahme.`,
+        confirmLabel: 'Trotzdem verrechnen',
+      })
+      if (!ok) return
+    }
     try {
-      await api('/api/deposit-entries', { method: 'POST', body: JSON.stringify(result.body) })
-      // Das Fenster bleibt offen: Raten und Zinsen kommen oft in einem Zug. Das Datum bleibt stehen.
-      setForm({ ...emptyDepositForm(localToday()), date: form.date })
+      if (editing) await api(`/api/deposit-entries/${editing.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
+      else await api('/api/deposit-entries', { method: 'POST', body: JSON.stringify(result.body) })
+      // Das Fenster bleibt offen: Raten und Zinsen kommen oft in einem Zug. Das Datum bleibt nach dem Anlegen stehen.
       // Neu aufbauen nur, wenn der Einbehalt nichts Ungespeichertes trägt; sonst ginge er beim Schließen ohne Rückfrage
-      // verloren (Abschlussdurchsicht G5).
-      const savedHold = holdFormOf(tenancy)
-      if (hold.amount === savedHold.amount && hold.note === savedHold.note) setRound((r) => r + 1)
-      errors.set('')
-      toast('Kautionsbuchung angelegt.')
+      // verloren (Abschlussdurchsicht G5, in `load`).
+      load({ ...emptyDepositForm(localToday()), date: editing ? localToday() : form.date }, null)
+      toast(editing ? 'Kautionsbuchung gespeichert.' : 'Kautionsbuchung angelegt.')
       onChanged()
     } catch (e) {
       errors.show(errorText(e))
     }
+  }
+
+  // Das Formular neu laden. Trägt der Einbehalt nichts Ungespeichertes, baut sich das Fenster neu auf: Das Laden allein
+  // ist keine Änderung, „Schließen“ fragt dann nicht (Durchsicht W2).
+  function load(next: DepositFormState, entry: DepositEntry | null) {
+    setEditing(entry)
+    setForm(next)
+    setFormBase(next)
+    errors.set('')
+    const savedHold = holdFormOf(tenancy)
+    if (hold.amount === savedHold.amount && hold.note === savedHold.note) setRound((r) => r + 1)
+  }
+  async function startEdit(entry: DepositEntry) {
+    if (!sameForm(form, formBase)) {
+      const ok = await confirm({
+        title: 'Eingabe verwerfen?',
+        message: 'Im Formular steht eine Eingabe, die noch nicht gespeichert ist. Sie geht verloren, wenn Sie jetzt eine andere Buchung ändern.',
+        confirmLabel: 'Verwerfen',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    load(depositFormOf(entry), entry)
+  }
+  function stopEdit() {
+    load(emptyDepositForm(localToday()), null)
   }
 
   async function remove(entry: DepositEntry) {
@@ -114,6 +165,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
     if (!ok) return
     try {
       await api(`/api/deposit-entries/${entry.id}`, { method: 'DELETE' })
+      if (editing?.id === entry.id) stopEdit()
       errors.set('')
       onChanged()
     } catch (e) {
@@ -124,22 +176,27 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
   return (
     <Drawer key={`${tenancy.id}-${round}`} open title={`Kaution von ${tenancy.tenantName}`} width={620} cancelLabel="Schließen"
       onClose={onClose} value={{ form, hold }} busy={saving.busy} errors={errors}
-      onSubmit={() => void saving.run(holdSection.current?.contains(document.activeElement) ? saveHold : create)}
-      actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(create)}>Anlegen</button>}>
+      onSubmit={() => void saving.run(holdSection.current?.contains(document.activeElement) ? saveHold : submit)}
+      actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(submit)}>{editing ? 'Speichern' : 'Anlegen'}</button>}>
       <p className="m-0">{depositStateText(state, tenancy)}</p>
       {settlement && (
         <section aria-label="Aufstellung zum Auszug" className="field-group" ref={holdSection}>
           <h3>Aufstellung zum Auszug</h3>
           <SettlementView settlement={settlement} />
-          <ErrorSummary errors={holdErrors} />
-          <Field label="Einbehalt €" {...holdErrors.field('holdAmount')} hint="Was Sie vorerst zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung. Leer heißt keiner. Mehr als der Stand der Kaution zählt nicht.">
-            <input value={hold.amount} inputMode="decimal" placeholder="z. B. 300,00" onChange={(e) => setHold({ ...hold, amount: e.target.value })} />
-          </Field>
-          <Field label="Grund" {...holdErrors.field('holdNote')}>
-            <input value={hold.note} placeholder="z. B. Nebenkosten 2025" onChange={(e) => setHold({ ...hold, note: e.target.value })} />
-          </Field>
+          {/* Bei Stand 0 gibt es nichts zurückzuhalten; ein gespeicherter Einbehalt bleibt sichtbar, damit er sich leeren lässt. */}
+          {holdShown && (
+            <>
+              <ErrorSummary errors={holdErrors} />
+              <Field label="Einbehalt €" {...holdErrors.field('holdAmount')} hint="Was Sie vorerst zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung. Leer heißt keiner. Mehr als der Stand der Kaution zählt nicht.">
+                <input value={hold.amount} inputMode="decimal" placeholder="z. B. 300,00" onChange={(e) => setHold({ ...hold, amount: e.target.value })} />
+              </Field>
+              <Field label="Grund" {...holdErrors.field('holdNote')}>
+                <input value={hold.note} placeholder="z. B. Nebenkosten 2025" onChange={(e) => setHold({ ...hold, note: e.target.value })} />
+              </Field>
+            </>
+          )}
           <div className="flex gap-2">
-            <button className="btn secondary" disabled={saving.busy} onClick={() => void saving.run(saveHold)}>Einbehalt speichern</button>
+            {holdShown && <button className="btn secondary" disabled={saving.busy} onClick={() => void saving.run(saveHold)}>Einbehalt speichern</button>}
             <button className="btn secondary" onClick={() => setPrinting(true)}>Aufstellung drucken</button>
           </div>
         </section>
@@ -156,7 +213,7 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
       {entries.length > 0 && (
         <Table aria-label="Kautionsbuchungen">
           <thead>
-            <tr><th>Datum</th><th>Art</th><th className="num">Betrag</th><th>Notiz</th><th><span className="sr-only">Aktion</span></th></tr>
+            <tr><th>Datum</th><th>Art</th><th className="num">Betrag</th><th>Notiz</th><th><span className="sr-only">Aktionen</span></th></tr>
           </thead>
           <tbody>
             {shown.map((e) => (
@@ -165,13 +222,22 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
                 <td>{depositKindText(e)}</td>
                 <td className="num">{fmtEuro(signedCents(e))}</td>
                 <td>{e.note ?? ''}</td>
-                <td><button className="btn small ghost danger-ghost" disabled={saving.busy} onClick={() => void saving.run(() => remove(e))}>Löschen …</button></td>
+                <td>
+                  <div className="flex gap-2">
+                    <button className="btn small ghost" disabled={saving.busy || editing?.id === e.id} onClick={() => void startEdit(e)}>Ändern</button>
+                    <button className="btn small ghost danger-ghost ml-auto" disabled={saving.busy} onClick={() => void saving.run(() => remove(e))}>Löschen …</button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </Table>
       )}
-      <h3>Neue Kautionsbuchung</h3>
+      <div className="flex gap-2">
+        <h3>{editing ? 'Kautionsbuchung ändern' : 'Neue Kautionsbuchung'}</h3>
+        {editing && <button className="btn small ghost ml-auto" onClick={stopEdit}>Nicht ändern</button>}
+      </div>
+      {editing?.paymentId && <p className="muted m-0">Die Zahlung im Mietkonto folgt dieser Buchung: Datum, Betrag und Art ziehen mit.</p>}
       <div className="field-group">
         <Field label="Datum" required {...errors.field('date')}>
           <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
@@ -222,7 +288,11 @@ function SettlementView({ settlement: s, printed = false }: { settlement: Deposi
       {s.hold && <p className="m-0">Einbehalten: {fmtEuro(s.hold.cents)} ({s.hold.note})</p>}
       <p className="m-0"><strong>Bleibt auszuzahlen: {fmtEuro(s.payoutCents)}</strong></p>
       {!printed && s.lastStatement && <p className="muted m-0">{s.lastStatement}</p>}
+      {!printed && s.lastHeatingStatement && <p className="muted m-0">{s.lastHeatingStatement}</p>}
       {!printed && s.pending.map((line) => <p key={line} className="muted m-0">{line}</p>)}
     </>
   )
 }
+
+const sameForm = (a: DepositFormState, b: DepositFormState): boolean =>
+  a.date === b.date && a.kind === b.kind && a.purpose === b.purpose && a.amount === b.amount && a.note === b.note

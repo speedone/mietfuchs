@@ -164,7 +164,7 @@ const MOVED_ENTRIES: DepositEntry[] = [
   { id: 'a', tenancyId: 't', date: '2022-01-05', kind: 'received', amountCents: 240000 },
   { id: 'b', tenancyId: 't', date: '2025-12-31', kind: 'interest', amountCents: 1234 },
 ]
-const INFO: DepositStatementInfo = { tenancyId: 't', last: { label: '2024', balanceCents: -18000 }, pending: ['2025'] }
+const INFO: DepositStatementInfo = { tenancyId: 't', last: { label: '2024', balanceCents: -18000 }, lastHeating: null, pending: ['2025'], openRentCents: 0 }
 
 function openMoved(tenancy: Tenancy = MOVED) {
   const onChanged = vi.fn()
@@ -270,4 +270,130 @@ test('ein angefangener Einbehalt bleibt nach dem Anlegen einer Buchung eine offe
 test('am Einbehalt steht, dass mehr als der Stand nicht zählt', () => {
   openMoved()
   expect(screen.getByText(/Mehr als der Stand der Kaution zählt nicht\./)).toBeTruthy()
+})
+
+// ---------- Nachzügler ----------
+
+test('Ändern lädt die Buchung ins Formular und speichert mit PUT', async () => {
+  const { onChanged, drawer } = open()
+  const row = within(drawer).getAllByRole('row').find((r) => r.textContent?.includes('erste Rate')) ?? expect.fail('keine Zeile')
+  fireEvent.click(within(row).getByRole('button', { name: 'Ändern' }))
+  expect(screen.getByRole('heading', { name: 'Kautionsbuchung ändern' })).toBeTruthy()
+  const amount = screen.getByLabelText(/^Betrag/)
+  expect(amount instanceof HTMLInputElement && amount.value).toBe('1.600,00')
+  const note = screen.getByLabelText('Notiz')
+  expect(note instanceof HTMLInputElement && note.value).toBe('erste Rate')
+  expect(select('Art').value).toBe('received')
+  expect(screen.queryByRole('button', { name: 'Anlegen' })).toBeNull()
+  fireEvent.change(amount, { target: { value: '2.400' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(sent.at(-1)).toMatchObject({ url: '/api/deposit-entries/a', method: 'PUT', body: { tenancyId: 't', date: '2025-01-05', kind: 'received', amountCents: 240000, note: 'erste Rate' } })
+  // Danach steht wieder das leere Formular für eine neue Buchung da (das Fenster baut sich neu auf).
+  expect(screen.getByRole('heading', { name: 'Neue Kautionsbuchung' })).toBeTruthy()
+})
+
+test('Ändern lässt sich abbrechen, ohne zu senden', async () => {
+  const { drawer } = open()
+  fireEvent.click(within(drawer).getAllByRole('button', { name: 'Ändern' })[1] ?? drawer)
+  expect(select('Art').value).toBe('applied')
+  expect(select('Verrechnet mit').value).toBe('damage')
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht ändern' }))
+  expect(screen.getByRole('heading', { name: 'Neue Kautionsbuchung' })).toBeTruthy()
+  const amount = screen.getByLabelText(/^Betrag/)
+  expect(amount instanceof HTMLInputElement && amount.value).toBe('')
+  expect(sent).toEqual([])
+})
+
+test('ein Datum nach heute fragt nach, Nein sendet nichts', async () => {
+  open()
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2999-01-01' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '800' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(question.textContent).toContain('01.01.2999')
+  fireEvent.click(within(question).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(sent).toEqual([])
+})
+
+test('Verrechnung mit Miete über den offenen Rückstand fragt nach und nennt beide Beträge', async () => {
+  const onChanged = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={MOVED} entries={MOVED_ENTRIES} info={{ ...INFO, openRentCents: 50000 }} onChanged={onChanged} onClose={vi.fn()} /></UIProvider>)
+  fireEvent.change(select('Art'), { target: { value: 'applied' } })
+  fireEvent.change(select('Verrechnet mit'), { target: { value: 'rent' } })
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2026-01-05' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '800' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(flat(question)).toContain('500,00 €')
+  expect(flat(question)).toContain('300,00 €')
+  fireEvent.click(within(question).getByRole('button', { name: 'Trotzdem verrechnen' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(sent.at(-1)).toMatchObject({ method: 'POST', body: { kind: 'applied', purpose: 'rent', amountCents: 80000 } })
+})
+
+test('Verrechnung mit Miete bis zum offenen Rückstand fragt nicht', async () => {
+  const onChanged = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={MOVED} entries={MOVED_ENTRIES} info={{ ...INFO, openRentCents: 80000 }} onChanged={onChanged} onClose={vi.fn()} /></UIProvider>)
+  fireEvent.change(select('Art'), { target: { value: 'applied' } })
+  fireEvent.change(select('Verrechnet mit'), { target: { value: 'rent' } })
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2026-01-05' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '800' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+test('beim Ändern einer Verrechnung mit Miete zählt ihr bisheriger Betrag zum Offenen', async () => {
+  const bound: DepositEntry = { id: 'v', tenancyId: 't', date: '2026-01-05', kind: 'applied', purpose: 'rent', amountCents: 60000, paymentId: 'p' }
+  const onChanged = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={MOVED} entries={[...MOVED_ENTRIES, bound]} info={{ ...INFO, openRentCents: 20000 }} onChanged={onChanged} onClose={vi.fn()} /></UIProvider>)
+  const table = screen.getByRole('table', { name: 'Kautionsbuchungen' })
+  const row = within(table).getAllByRole('row').find((r) => r.textContent?.includes('Mietrückstand')) ?? expect.fail('keine Zeile')
+  fireEvent.click(within(row).getByRole('button', { name: 'Ändern' }))
+  // 600 € schon verrechnet, 200 € offen: bis 800 € fragt nichts.
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '800' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(sent.at(-1)).toMatchObject({ url: '/api/deposit-entries/v', method: 'PUT' })
+})
+
+test('Heizkostenabrechnung einer Anlage steht in der Aufstellung', () => {
+  render(<UIProvider><DepositDrawer tenancy={MOVED} entries={MOVED_ENTRIES} info={{ ...INFO, lastHeating: { label: '2024/2025', balanceCents: -5000 } }} onChanged={vi.fn()} onClose={vi.fn()} /></UIProvider>)
+  const section = screen.getByRole('region', { name: 'Aufstellung zum Auszug' })
+  expect(flat(section)).toContain('Heizkostenabrechnung 2024/2025: Nachzahlung 50,00 €')
+})
+
+test('bei Stand 0 ohne Einbehalt gibt es kein Feld für einen Einbehalt, die Aufstellung bleibt druckbar', () => {
+  const refunded: DepositEntry = { id: 'r', tenancyId: 't', date: '2026-01-10', kind: 'refunded', amountCents: 241234 }
+  render(<UIProvider><DepositDrawer tenancy={{ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined }} entries={[...MOVED_ENTRIES, refunded]} info={INFO} onChanged={vi.fn()} onClose={vi.fn()} /></UIProvider>)
+  const section = screen.getByRole('region', { name: 'Aufstellung zum Auszug' })
+  expect(within(section).queryByLabelText(/^Einbehalt €/)).toBeNull()
+  expect(within(section).queryByRole('button', { name: 'Einbehalt speichern' })).toBeNull()
+  expect(within(section).getByRole('button', { name: 'Aufstellung drucken' })).toBeTruthy()
+})
+
+// Durchsicht W2: „Ändern“ lädt nur; erst eine Eingabe ist eine Änderung.
+test('nach „Ändern“ ohne Eingabe schließt das Fenster ohne Rückfrage', async () => {
+  const { onClose, drawer } = open()
+  fireEvent.click(within(drawer).getAllByRole('button', { name: 'Ändern' })[0] ?? drawer)
+  const footerClose = screen.getAllByRole('button', { name: 'Schließen' }).find((b) => b.textContent === 'Schließen') ?? expect.fail('kein Schließen')
+  fireEvent.click(footerClose)
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+// Durchsicht W3: Eine angefangene Eingabe geht beim Wechsel zu „Ändern“ nicht still verloren.
+test('„Ändern“ mit angefangener Eingabe fragt nach; Abbrechen behält die Eingabe', async () => {
+  const { drawer } = open()
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '123' } })
+  fireEvent.click(within(drawer).getAllByRole('button', { name: 'Ändern' })[0] ?? drawer)
+  const question = await screen.findByRole('alertdialog')
+  fireEvent.click(within(question).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  const amount = screen.getByLabelText(/^Betrag/)
+  expect(amount instanceof HTMLInputElement && amount.value).toBe('123')
+  expect(screen.getByRole('heading', { name: 'Neue Kautionsbuchung' })).toBeTruthy()
 })

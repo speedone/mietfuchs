@@ -708,6 +708,13 @@
       "when": 1794504526400,
       "tag": "0100_kaution_einbehalt_bedingung",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "6",
+      "when": 1794515619532,
+      "tag": "0101_kaution_index",
+      "breakpoints": true
     }
   ]
 }

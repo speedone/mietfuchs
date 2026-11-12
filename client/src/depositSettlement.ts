@@ -13,6 +13,8 @@ export type DepositSettlement = {
   hold: { cents: number; note: string } | null
   payoutCents: number
   lastStatement: string | null
+  // Die jüngste getrennte Heizkostenabrechnung einer Anlage (Weg d), wenn es eine gibt.
+  lastHeatingStatement: string | null
   pending: string[]
 }
 
@@ -34,14 +36,14 @@ export function depositSettlement(
   const holdCents = Math.min(tenancy.depositHoldCents ?? 0, balanceCents)
   const hold = holdCents > 0 ? { cents: holdCents, note: tenancy.depositHoldNote ?? '' } : null
   const last = info?.last
+  const saldo = (b: number): string => (b > 0 ? `Guthaben ${fmtEuro(b)}` : b < 0 ? `Nachzahlung ${fmtEuro(-b)}` : 'ausgeglichen')
   return {
     rows,
     balanceCents,
     hold,
     payoutCents: balanceCents - holdCents,
-    lastStatement: last
-      ? `Nebenkostenabrechnung ${last.label}: ${last.balanceCents > 0 ? `Guthaben ${fmtEuro(last.balanceCents)}` : last.balanceCents < 0 ? `Nachzahlung ${fmtEuro(-last.balanceCents)}` : 'ausgeglichen'}`
-      : null,
+    lastStatement: last ? `Nebenkostenabrechnung ${last.label}: ${saldo(last.balanceCents)}` : null,
+    lastHeatingStatement: info?.lastHeating ? `Heizkostenabrechnung ${info.lastHeating.label}: ${saldo(info.lastHeating.balanceCents)}` : null,
     pending: (info?.pending ?? []).map((label) => `Abrechnung für ${label} steht noch aus`),
   }
 }

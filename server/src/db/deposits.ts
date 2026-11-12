@@ -12,13 +12,14 @@
 import { eq } from 'drizzle-orm'
 import type { Database, Executor } from './client.ts'
 import { retitleCurrentGroup } from './journal.ts'
-import { readClosedSettlements, readDepositEntries } from './read.ts'
+import { readClosedHeatingSettlements, readClosedSettlements, readDepositEntries, readHeatingPlants } from './read.ts'
 import { insertEntityIn, isCalendarDay, replaceBoundPaymentIn, rulesForProperty } from './repository.ts'
-import { DEPOSIT_ENTRY_KINDS, DEPOSIT_PURPOSES, depositEntries, payments, tenancies, units } from './schema.ts'
+import { DEPOSIT_ENTRY_KINDS, DEPOSIT_PURPOSES, depositEntries, payments, tenancies, unitNoConnection, units } from './schema.ts'
+import { plantRules, servesUnit, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import { depositProblem } from '../../../shared/deposit.ts'
 import { periodLabel, periodsBetween, settlementDeadline } from '../../../shared/period.ts'
 import { germanDate } from '../../../shared/law/register.ts'
-import type { DepositEntry, DepositEntryKind, DepositPurpose, DepositStatementInfo } from '../../../shared/types.ts'
+import type { DepositEntry, DepositEntryKind, DepositPurpose, DepositStatementInfo, TaxReport } from '../../../shared/types.ts'
 
 // Eine Ablehnung, deren Satz schon für den Nutzer geschrieben ist; die Fehlerbehandlung in index.ts gibt Status und
 // Satz weiter.
@@ -206,19 +207,28 @@ export async function removeDepositEntry(db: Database, id: string): Promise<bool
 // ausgeschlossen; sie als „steht noch aus“ zu nennen, läse sich auf dem Blatt für den Mieter wie eine offene Forderung
 // (Durchsicht W1: Einzug 2012, erst seit Kurzem mit Mietfuchs abgerechnet). Gelesen aus dem
 // eingefrorenen Stand, also das, was der Mieter bekommen hat; nichts wird neu gerechnet.
-export async function depositStatements(db: Executor, propertyId: string, today: string): Promise<DepositStatementInfo[]> {
+//
+// Getrennt abgerechnete Heizperioden einer Anlage (Weg d, docs/heizung.md) haben eigene Abrechnung, Frist und Abschluss;
+// sie stehen als „Heizkosten …“ unter dem Ausstehenden und mit ihrem Saldo in `lastHeating`, wenn die Anlage die Wohnung
+// versorgt und der Mieter die Heizung abgerechnet bekommt. `openRent`: was laut Mietkonto heute offen ist, je
+// Mietverhältnis (index.ts rechnet es mit dem Mietkonto des laufenden Jahres).
+export async function depositStatements(db: Executor, propertyId: string, today: string, openRent: ReadonlyMap<string, number> = new Map()): Promise<DepositStatementInfo[]> {
   const rules = await rulesForProperty(db, propertyId)
   const closed = (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId)
-  const rows = await db.select({ id: tenancies.id, start: tenancies.start, end: tenancies.end, costModel: tenancies.costModel, heatingModel: tenancies.heatingModel }).from(tenancies)
+  const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === propertyId)
+  const closedHeating = await readClosedHeatingSettlements(db)
+  const noHeat = new Set((await db.select({ unitId: unitNoConnection.unitId }).from(unitNoConnection).where(eq(unitNoConnection.meterType, 'waerme'))).map((r) => r.unitId))
+  const rows = await db.select({ id: tenancies.id, start: tenancies.start, end: tenancies.end, costModel: tenancies.costModel, heatingModel: tenancies.heatingModel, unitId: units.id, parentUnitId: units.parentUnitId }).from(tenancies)
     .innerJoin(units, eq(tenancies.unitId, units.id)).where(eq(units.propertyId, propertyId))
   return rows.map((t) => {
     // Bekommt der Mieter gar keine Abrechnung (Pauschale oder Inklusivmiete für Kaltes und Heizung, Heizung auch
     // „heizt selbst“), steht nichts aus (Abschlussdurchsicht W1). Ohne Angabe gilt Abrechnung, wie in calc.ts.
-    const settles = (t.costModel ?? 'settlement') === 'settlement' || (t.heatingModel ?? 'settlement') === 'settlement'
-    const periods = periodsBetween(rules, t.start, t.end ?? today)
+    const heatingSettles = (t.heatingModel ?? 'settlement') === 'settlement'
+    const settles = (t.costModel ?? 'settlement') === 'settlement' || heatingSettles
+    const to = t.end ?? today
     let last: DepositStatementInfo['last'] = null
     const pending: string[] = []
-    for (const p of periods) {
+    for (const p of periodsBetween(rules, t.start, to)) {
       const frozen = closed.find((c) => c.period === p.key)
       if (!frozen) {
         if (settles && settlementDeadline(p) >= today) pending.push(periodLabel(p))
@@ -227,8 +237,37 @@ export async function depositStatements(db: Executor, propertyId: string, today:
       const balance = balanceOf(frozen.settlement, t.id)
       if (balance !== null) last = { label: periodLabel(p), balanceCents: balance }
     }
-    return { tenancyId: t.id, last, pending }
+    let lastHeating: DepositStatementInfo['lastHeating'] = null
+    let lastHeatingTo = ''
+    const unit = { id: t.unitId, parentUnitId: t.parentUnitId, ...(noHeat.has(t.unitId) ? { noConnection: ['waerme' as const] } : {}) }
+    for (const plant of plants) {
+      if (!servesUnit(plant, unit)) continue
+      for (const h of periodsBetween(plantRules(plant, rules), t.start, to)) {
+        if (!settledSeparately(plant, rules, h)) continue
+        const frozen = closedHeating.find((c) => c.plantId === plant.id && c.period === h.key)
+        if (!frozen) {
+          if (heatingSettles && settlementDeadline(h) >= today) pending.push(`Heizkosten ${periodLabel(h)}`)
+          continue
+        }
+        const balance = balanceOf(frozen.settlement, t.id)
+        if (balance !== null && h.to > lastHeatingTo) {
+          lastHeating = { label: periodLabel(h), balanceCents: balance }
+          lastHeatingTo = h.to
+        }
+      }
+    }
+    return { tenancyId: t.id, last, lastHeating, pending, openRentCents: openRent.get(t.id) ?? 0 }
   })
+}
+
+// Der Hinweis „Ist das die Kaution?“ der Steuer (calc.ts, `possibleDeposits`) kennt die Kautionsbuchungen nicht. Eine
+// Mietzahlung, die aus einer Verrechnung stammt, ist sicher nicht die Kaution; sie fällt hier heraus, bevor die Seite
+// sie zum Umbuchen anbietet (das endete sonst mit einer Meldung).
+export async function withoutBoundDeposits(db: Executor, report: TaxReport): Promise<TaxReport> {
+  const received = report.income.received
+  if (!received || received.possibleDeposits.length === 0) return report
+  const bound = new Set((await readDepositEntries(db)).flatMap((e) => (e.paymentId ? [e.paymentId] : [])))
+  return { ...report, income: { ...report.income, received: { ...received, possibleDeposits: received.possibleDeposits.filter((d) => !bound.has(d.paymentId)) } } }
 }
 
 // Der Saldo eines Mietverhältnisses im eingefrorenen Stand, vorsichtig gelesen: Er kann aus einer älteren Version stammen.
