@@ -18,8 +18,8 @@ export const DEPOSIT_KIND_LABELS: Record<DepositEntryKind, string> = {
 export const DEPOSIT_KIND_OPTIONS: readonly { value: DepositEntryKind; label: string }[] =
   (['received', 'interest', 'applied', 'refunded'] as const).map((value) => ({ value, label: DEPOSIT_KIND_LABELS[value] }))
 
-// Alle vier Zwecke haben eine Beschriftung (Verlauf, Tabelle); wählbar sind in Teil 1 nur die beiden, die keine
-// Zahlung im Mietkonto anlegen. Die Verrechnung mit Miete oder Abrechnung kommt mit Teil 2.
+// Die Zwecke einer Verrechnung. Mietrückstand und Nachzahlung legen eine gebundene Zahlung im Mietkonto an
+// (server/src/db/deposits.ts); Schaden und Sonstiges nicht.
 export const DEPOSIT_PURPOSE_LABELS: Record<DepositPurpose, string> = {
   rent: 'Mietrückstand',
   settlement: 'Nachzahlung aus der Abrechnung',
@@ -27,7 +27,20 @@ export const DEPOSIT_PURPOSE_LABELS: Record<DepositPurpose, string> = {
   other: 'Sonstiges',
 }
 export const DEPOSIT_PURPOSE_OPTIONS: readonly { value: DepositPurpose; label: string }[] =
-  (['damage', 'other'] as const).map((value) => ({ value, label: DEPOSIT_PURPOSE_LABELS[value] }))
+  (['rent', 'settlement', 'damage', 'other'] as const).map((value) => ({ value, label: DEPOSIT_PURPOSE_LABELS[value] }))
+
+// Der Satz unter dem Zweck: was die Verrechnung anlegt, und was sie für die Steuer heißt. Zum Schaden steht nur, was
+// Mietfuchs tut; ob und wo ein einbehaltener Schadensersatz anzugeben ist, ist nicht belegt (Entwurf, Abschnitt Recht).
+export function depositPurposeHint(purpose: DepositPurpose | ''): string | null {
+  switch (purpose) {
+    // Ohne Bestimmung verteilt rentAllocation.ts nach § 366 Abs. 2 BGB, zuerst Vorauszahlungen (Abschlussdurchsicht G1).
+    case 'rent': return 'Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie wird wie jede Mietzahlung auf die offenen Monate verteilt. Den Monat können Sie im Mietkonto bestimmen.'
+    case 'settlement': return 'Mietfuchs legt dazu im Mietkonto eine Zahlung aus der Abrechnung an diesem Tag an.'
+    case 'damage':
+    case 'other': return 'Die Steuerübersicht zählt diesen Betrag nicht als Einnahme.'
+    case '': return null
+  }
+}
 
 export const emptyDepositForm = (today: string): DepositFormState => ({ date: today, kind: 'received', purpose: '', amount: '', note: '' })
 
@@ -85,3 +98,22 @@ export function depositStateText(state: DepositState, tenancy: Pick<Tenancy, 'de
 // Bei einer Sicherheit, die nicht beim Vermieter liegt, fließt kein Geld; der Satz erklärt, wozu die Buchungen dann sind.
 export const NO_MONEY_FORM_TEXT = 'Bei dieser Form fließt kein Geld an Sie; Buchungen brauchen Sie nur, wenn Sie die Sicherheit in Anspruch nehmen.'
 export const formWithoutMoney = (tenancy: Pick<Tenancy, 'depositForm'>): boolean => tenancy.depositForm === 'pledged' || tenancy.depositForm === 'guarantee'
+
+// Der Einbehalt beim Auszug (#228, Teil 2) als Formular: Betrag und Grund, am Mietverhältnis gespeichert. Beide leer
+// heißt keiner; ein Betrag braucht einen Grund (wie der Server).
+export type DepositHoldForm = { amount: string; note: string }
+export type DepositHoldField = 'holdAmount' | 'holdNote'
+export const holdFormOf = (t: Pick<Tenancy, 'depositHoldCents' | 'depositHoldNote'>): DepositHoldForm => ({
+  amount: t.depositHoldCents !== undefined ? (t.depositHoldCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+  note: t.depositHoldNote ?? '',
+})
+export function holdBody(form: DepositHoldForm): Checked<{ depositHoldCents: number | null; depositHoldNote: string | null }, DepositHoldField> {
+  const note = form.note.trim()
+  if (form.amount.trim() === '') return { body: { depositHoldCents: null, depositHoldNote: note === '' ? null : note } }
+  const cents = parseEuro(form.amount)
+  const problems: Problem<DepositHoldField>[] = []
+  if (cents === null || cents <= 0) problems.push({ field: 'holdAmount', short: 'Betrag größer als 0', text: 'Einbehalt: Geben Sie einen Betrag größer als 0 ein oder lassen Sie das Feld leer.' })
+  if (note === '') problems.push({ field: 'holdNote', short: 'Grund fehlt', text: 'Einbehalt: Nennen Sie den Grund, etwa „Nebenkosten 2025“.' })
+  if (problems.length > 0 || cents === null) return { problems }
+  return { body: { depositHoldCents: cents, depositHoldNote: note } }
+}

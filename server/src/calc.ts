@@ -1831,7 +1831,7 @@ function possibleDepositsOf(t: SnapshotTenancy, own: readonly SnapshotPayment[],
   return own
     .filter((p) => isRentPayment(p) && inYear(p.date) && p.amountCents === deposit && p.date >= from && p.date <= to)
     .filter((p) => !slices.some((s) => s.paymentId === p.id && s.month !== null && s.month >= fullMonth && s.month < p.date.slice(0, 7)))
-    .map((p) => ({ tenancyId: t.id, tenantName: t.tenantName, paidOn: p.date, cents: p.amountCents }))
+    .map((p) => ({ tenancyId: t.id, tenantName: t.tenantName, paidOn: p.date, cents: p.amountCents, paymentId: p.id }))
 }
 const nextMonthKey = (month: string): string => {
   const k = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7))

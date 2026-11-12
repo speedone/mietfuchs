@@ -330,6 +330,9 @@ export const tenancies = sqliteTable(
     depositStatus: text('deposit_status', { enum: DEPOSIT_STATUS }),
     // Form der Sicherheit (#228); NULL heißt keine Angabe.
     depositForm: text('deposit_form', { enum: DEPOSIT_FORMS }),
+    // Einbehalt beim Auszug (#228, Teil 2): Betrag und Grund, keine Buchung. NULL heißt keiner.
+    depositHoldCents: integer('deposit_hold_cents'),
+    depositHoldNote: text('deposit_hold_note'),
     notes: text('notes'),
     // Nebenkostenmodell (#93), getrennt für kalte Kosten und Heizung. NULL heißt Abrechnung.
     costModel: text('cost_model', { enum: COST_MODELS }),
@@ -355,6 +358,7 @@ export const tenancies = sqliteTable(
     notNegative('tenancies_deposit_not_negative', 'deposit_cents'),
     oneOf('tenancies_deposit_status_known', 'deposit_status', DEPOSIT_STATUS),
     oneOf('tenancies_deposit_form_known', 'deposit_form', DEPOSIT_FORMS),
+    check('tenancies_deposit_hold_positive', sql.raw('"deposit_hold_cents" IS NULL OR "deposit_hold_cents" > 0')),
     oneOf('tenancies_cost_model_known', 'cost_model', COST_MODELS),
     oneOf('tenancies_heating_model_known', 'heating_model', HEATING_MODELS),
     // Durchsicht S-2: die Art der Selbstversorgung, nur bei „Mieter heizt selbst“.

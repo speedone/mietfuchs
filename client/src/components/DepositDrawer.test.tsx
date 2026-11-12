@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DepositDrawer from './DepositDrawer'
 import { UIProvider } from './feedback'
-import type { DepositEntry, Tenancy } from '../types'
+import type { DepositEntry, DepositStatementInfo, Tenancy } from '../types'
 
 const TENANCY: Tenancy = {
   id: 't', unitId: 'u', tenantName: 'Erika Mustermann', persons: 1, personHistory: [], start: '2025-01-01', end: null,
@@ -70,8 +70,10 @@ test('das Feld Zweck erscheint nur bei Verrechnung, sein angezeigter Wert ist de
   fireEvent.change(select('Art'), { target: { value: 'applied' } })
   const purpose = select('Verrechnet mit')
   // Vorbelegt mit der ersten Option, und genau die wird gesendet.
-  expect(purpose.value).toBe('damage')
-  expect([...purpose.options].map((o) => o.value)).toEqual(['damage', 'other'])
+  expect(purpose.value).toBe('rent')
+  expect([...purpose.options].map((o) => o.value)).toEqual(['rent', 'settlement', 'damage', 'other'])
+  fireEvent.change(purpose, { target: { value: 'damage' } })
+  expect(select('Verrechnet mit').value).toBe('damage')
   fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '50,00' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(sent.at(-1)?.method).toBe('POST'))
@@ -153,4 +155,119 @@ test('während eine Buchung gelöscht wird, sind Anlegen und Löschen gesperrt',
   expect(anlegen instanceof HTMLButtonElement && anlegen.disabled).toBe(true)
   expect(within(drawer).getAllByRole('button', { name: 'Löschen …' }).every((b) => b instanceof HTMLButtonElement && b.disabled)).toBe(true)
   release()
+})
+
+// ---------- Teil 2: Aufstellung zum Auszug ----------
+
+const MOVED: Tenancy = { ...TENANCY, end: '2025-12-31', depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' }
+const MOVED_ENTRIES: DepositEntry[] = [
+  { id: 'a', tenancyId: 't', date: '2022-01-05', kind: 'received', amountCents: 240000 },
+  { id: 'b', tenancyId: 't', date: '2025-12-31', kind: 'interest', amountCents: 1234 },
+]
+const INFO: DepositStatementInfo = { tenancyId: 't', last: { label: '2024', balanceCents: -18000 }, pending: ['2025'] }
+
+function openMoved(tenancy: Tenancy = MOVED) {
+  const onChanged = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={tenancy} entries={MOVED_ENTRIES} info={INFO} onChanged={onChanged} onClose={vi.fn()} /></UIProvider>)
+  return { onChanged, drawer: screen.getByRole('dialog', { name: 'Kaution von Erika Mustermann' }) }
+}
+const flat = (el: Element) => (el.textContent ?? '').replace(/\u00a0/g, ' ')
+
+test('nach dem Auszug: Aufstellung mit Einbehalt, was auszuzahlen bleibt, letzter Abrechnung und Ausstehendem', () => {
+  const { drawer } = openMoved()
+  const section = within(drawer).getByRole('region', { name: 'Aufstellung zum Auszug' })
+  expect(flat(section)).toContain('Bei Ihnen liegen 2.412,34 €')
+  expect(flat(section)).toContain('Einbehalten: 300,00 € (Nebenkosten 2025)')
+  expect(flat(section)).toContain('Bleibt auszuzahlen: 2.112,34 €')
+  expect(flat(section)).toContain('Nebenkostenabrechnung 2024: Nachzahlung 180,00 €')
+  expect(flat(section)).toContain('Abrechnung für 2025 steht noch aus')
+  // Kein Vorschlag, kein Prozentsatz.
+  expect(flat(section)).not.toMatch(/Vorschlag|%/)
+})
+
+test('vor dem Auszug gibt es keine Aufstellung', () => {
+  const { drawer } = openMoved({ ...MOVED, end: null })
+  expect(within(drawer).queryByRole('region', { name: 'Aufstellung zum Auszug' })).toBeNull()
+})
+
+test('Einbehalt speichern schickt Betrag und Grund ans Mietverhältnis', async () => {
+  const { onChanged } = openMoved({ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined })
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  fireEvent.change(screen.getByLabelText(/^Grund/), { target: { value: 'Nebenkosten 2025' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Einbehalt speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(sent.at(-1)).toMatchObject({ url: '/api/tenancies/t', method: 'PUT', body: { depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' } })
+})
+
+test('ein Einbehalt ohne Grund wird nicht gesendet', async () => {
+  openMoved({ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined })
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Einbehalt speichern' }))
+  expect(await screen.findAllByText(/Grund fehlt|Nennen Sie den Grund/)).not.toHaveLength(0)
+  expect(sent).toEqual([])
+})
+
+test('Drucken druckt nur die Aufstellung', async () => {
+  const print = vi.fn()
+  vi.stubGlobal('print', print)
+  openMoved()
+  fireEvent.click(screen.getByRole('button', { name: 'Aufstellung drucken' }))
+  await waitFor(() => expect(print).toHaveBeenCalledTimes(1))
+  expect(document.body.classList.contains('print-deposit')).toBe(true)
+  const sheet = document.body.querySelector(':scope > .deposit-print') ?? expect.fail('kein Druckblatt am Ende von body')
+  expect(flat(sheet)).toContain('Aufstellung zum Auszug')
+  expect(flat(sheet)).toContain('Erika Mustermann')
+  // Das Blatt geht an den Mieter: „Ihnen“ hieße dort ihn (Durchsicht G2).
+  expect(flat(sheet)).toContain('Beim Vermieter liegen 2.412,34 €')
+  expect(flat(sheet)).not.toMatch(/Bei Ihnen/)
+  // Abschlussdurchsicht G4: Orientierung und freie Notizen sind für den Vermieter, nicht für das Blatt; das Datum gehört drauf.
+  expect(flat(sheet)).not.toMatch(/Nebenkostenabrechnung 2024|steht noch aus/)
+  expect(flat(sheet)).toMatch(/Stand vom \d{2}\.\d{2}\.\d{4}/)
+  window.dispatchEvent(new Event('afterprint'))
+  await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
+})
+
+test('nach „Einbehalt speichern“ schließt das Fenster ohne Rückfrage, Strg+S im Einbehalt speichert ihn', async () => {
+  const onClose = vi.fn()
+  const onChanged = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={{ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined }} entries={MOVED_ENTRIES} info={INFO} onChanged={onChanged} onClose={onClose} /></UIProvider>)
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  const note = screen.getByLabelText(/^Grund/)
+  fireEvent.change(note, { target: { value: 'Nebenkosten 2025' } })
+  note.focus()
+  fireEvent.keyDown(note, { key: 's', ctrlKey: true })
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(sent.at(-1)).toMatchObject({ url: '/api/tenancies/t', method: 'PUT' })
+  const footerClose = screen.getAllByRole('button', { name: 'Schließen' }).find((b) => b.textContent === 'Schließen') ?? expect.fail('kein Schließen')
+  fireEvent.click(footerClose)
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+test('Löschen einer Verrechnung mit Miete sagt, dass die Zahlung im Mietkonto mit wegfällt', async () => {
+  const bound: DepositEntry = { id: 'v', tenancyId: 't', date: '2026-01-05', kind: 'applied', purpose: 'rent', amountCents: 95000, paymentId: 'p' }
+  const { drawer } = open([...ENTRIES.slice(0, 1), bound])
+  const row = within(drawer).getAllByRole('row').find((r) => r.textContent?.includes('Mietrückstand')) ?? expect.fail('keine Zeile')
+  fireEvent.click(within(row).getByRole('button', { name: 'Löschen …' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(question.textContent).toContain('Die Zahlung im Mietkonto fällt mit weg.')
+})
+
+test('ein angefangener Einbehalt bleibt nach dem Anlegen einer Buchung eine offene Änderung', async () => {
+  const onClose = vi.fn()
+  render(<UIProvider><DepositDrawer tenancy={{ ...MOVED, depositHoldCents: undefined, depositHoldNote: undefined }} entries={MOVED_ENTRIES} info={INFO} onChanged={vi.fn()} onClose={onClose} /></UIProvider>)
+  fireEvent.change(screen.getByLabelText(/^Einbehalt €/), { target: { value: '300' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '10' } })
+  fireEvent.change(select('Art'), { target: { value: 'refunded' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(sent.filter((s) => s.method === 'POST')).toHaveLength(1))
+  const footerClose = screen.getAllByRole('button', { name: 'Schließen' }).find((b) => b.textContent === 'Schließen') ?? expect.fail('kein Schließen')
+  fireEvent.click(footerClose)
+  expect(await screen.findByRole('alertdialog')).toBeTruthy()
+  expect(onClose).not.toHaveBeenCalled()
+})
+
+test('am Einbehalt steht, dass mehr als der Stand nicht zählt', () => {
+  openMoved()
+  expect(screen.getByText(/Mehr als der Stand der Kaution zählt nicht\./)).toBeTruthy()
 })

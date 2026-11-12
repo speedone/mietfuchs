@@ -76,7 +76,8 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
 - **Kautionsbuchungen** (#228): `deposit_entries` in Schritt 0097 (mit `tenancies.deposit_form`), die Bedingung an
   `tenancies` in 0098 (Neubau, getrennt wie 0092/0093). Eine Buchung fällt mit ihrem Mietverhältnis und mit der
   Zahlung, auf die `payment_id` verweist (beide CASCADE). Keine Datenanweisung; ein Bestand von vorher hat keine
-  Buchung und liest sich wie zuvor. Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Kaution“.
+  Buchung und liest sich wie zuvor. Der Einbehalt (`tenancies.deposit_hold_cents`, `deposit_hold_note`) in 0099, die
+  Bedingung „größer 0“ in 0100 (Neubau, getrennt wie oben). Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Kaution“.
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,
   Anteile, Teilnehmer, Einzel- und Eigenbeträge, Pauschalen, `unit_no_connection`.
   `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.

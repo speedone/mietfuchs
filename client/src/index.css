@@ -889,5 +889,13 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
   .monthly-info-page + .monthly-info-page { break-before: page; page-break-before: always; }
 }
 
+/* Aufstellung zum Auszug (#228): Das Blatt hängt am Ende von body und erscheint nur im Druck; beim Drucken bleibt die
+   Oberfläche samt Seitenfenster weg. */
+.deposit-print { display: none; }
+@media print {
+  body.print-deposit > #root { display: none !important; }
+  body.print-deposit .deposit-print { display: block; }
+}
+
 /* Fälligkeit des laufenden Monats im Mietkonto (#290): eine Zeile, Einzelheiten zum Aufklappen */
 .rent-due p { margin: 4px 0 0; }

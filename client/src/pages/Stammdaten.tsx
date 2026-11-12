@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, DepositForm, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, DepositForm, DepositStatementInfo, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
@@ -192,6 +192,16 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [depositEntries, setDepositEntries] = useState<DepositEntry[]>([])
   const [depositVersion, setDepositVersion] = useState(0)
   const [depositFor, setDepositFor] = useState<string | null>(null)
+  // Für die Aufstellung zum Auszug: letzte Abrechnung und Ausstehendes je Mietverhältnis.
+  const [depositInfo, setDepositInfo] = useState<DepositStatementInfo[]>([])
+  useEffect(() => {
+    if (!propertyId || depositFor === null) return
+    let alive = true
+    void api<DepositStatementInfo[]>(withProperty('/api/deposit-entries/statements', propertyId))
+      .then((all) => { if (alive) setDepositInfo(Array.isArray(all) ? all : []) })
+      .catch(() => { if (alive) setDepositInfo([]) })
+    return () => { alive = false }
+  }, [propertyId, depositFor, depositVersion])
   useEffect(() => {
     if (!propertyId) return
     let alive = true
@@ -273,6 +283,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // Der Fokus vorher auf den Knopf der Karte, wie oben auf das ✎ der Wohnung
   const newUnitButton = useRef<HTMLButtonElement>(null)
   const newTenancyButton = useRef<HTMLButtonElement>(null)
+  // Sprung aus dem Cockpit (#228): das Seitenfenster der Kaution öffnen, sobald das Mietverhältnis geladen ist.
+  useEffect(() => {
+    if (focus?.kind !== 'deposit' || !tenancies.some((t) => t.id === focus.tenancyId)) return
+    setDepositFor(focus.tenancyId)
+    onFocusDone?.()
+  }, [focus, tenancies, onFocusDone])
   useNewTarget(focus, 'unit', true, () => { focusOpener(newUnitButton.current); newUnit() }, onFocusDone)
   useNewTarget(focus, 'tenancy', true, () => { if (units.length > 0) { focusOpener(newTenancyButton.current); newTenancy() } }, onFocusDone)
   // „Nutzung prüfen“, „Anteile eintragen“ (mehrere Wohnungen) und „Stammdaten prüfen“, „Anschrift eintragen“ (mehrere
@@ -1078,8 +1094,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       )}
 
       {depositTenancy && (
-        <DepositDrawer tenancy={depositTenancy} entries={entriesOf(depositTenancy.id)}
-          onChanged={() => setDepositVersion((v) => v + 1)} onClose={() => setDepositFor(null)} />
+        <DepositDrawer tenancy={depositTenancy} entries={entriesOf(depositTenancy.id)} info={depositInfo.find((i) => i.tenancyId === depositTenancy.id)}
+          onChanged={() => { setDepositVersion((v) => v + 1); void reload() }} onClose={() => setDepositFor(null)} />
       )}
 
       {wizardFor && (

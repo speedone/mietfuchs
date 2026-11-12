@@ -334,6 +334,15 @@ export const STEPS: readonly Step[] = [
       if (ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/deposit-entries/${created.id}`)
     },
   },
+  {
+    name: 'Mietzahlung als Kaution umbuchen', routes: ['POST /api/deposit-entries/from-payment/:paymentId'],
+    run: async (ctx) => {
+      const t = pick(ctx.rng, ctx.tenancies)
+      if (!t) return
+      const created = await json<Row>(await send(ctx.s, 'POST', '/api/payments', { tenancyId: t.id, date: day(ctx.rng), amountCents: int(ctx.rng, 500, 2400) * 100 }))
+      if (created) await send(ctx.s, 'POST', `/api/deposit-entries/from-payment/${created.id}`)
+    },
+  },
   // ---------- Belege ----------
   {
     name: 'Beleg hochladen', routes: ['POST /api/upload'],

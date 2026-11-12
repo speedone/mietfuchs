@@ -21,6 +21,8 @@ export type JumpTarget =
   | { kind: 'new'; what: NewForm }
   | { kind: 'section'; section: SectionId }
   | { kind: 'property'; part: PropertyPart }
+  // Das Seitenfenster der Kaution eines Mietverhältnisses (#228), aus der Cockpit-Zeile „Kaution nach Auszug“.
+  | { kind: 'deposit'; tenancyId: string }
 
 // Ein Eintrag des Servers, kein Ziel der Oberfläche
 export const isSubject = (t: JumpTarget): t is NoticeSubject => 'id' in t

@@ -940,6 +940,41 @@ fall(19, 'Anmeldung: alter Bestand im Netz bleibt offen mit Hinweis, neuer Ordne
   }, IM_NETZ)
 })
 
+fall(20, 'Backup mit Kautionsbuchungen und einer Verrechnung als Zahlung (#228)', async () => {
+  // Eine Kaution in Raten, Zinsen, eine Verrechnung mit Mietrückstand (legt eine gebundene Zahlung an) und der Einbehalt
+  // am Mietverhältnis. Nach Backup, einer Änderung und Wiederherstellen sind Buchungen, Zahlung, Verweis und Einbehalt
+  // wieder da, und die Zahlung ist weiter gebunden.
+  const dataDir = tempDir()
+  const senden = (base, pfad, method, body) => fetch(`${base}${pfad}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+  await withServer(dataDir, async ({ base }) => {
+    const unit = await jsonOf(await senden(base, '/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true }))
+    const tenancy = await jsonOf(await senden(base, '/api/tenancies', 'POST', {
+      unitId: unit.id, tenantName: 'Erika Mustermann', persons: 1, start: '2024-01-01', end: '2025-12-31', depositCents: 240000,
+      prepayments: [{ from: '2024-01', monthlyCents: 15000 }], prepaymentOverrides: {}, baseRents: [{ from: '2024-01', monthlyCents: 80000 }],
+    }))
+    for (const [date, kind, amountCents] of [['2024-01-05', 'received', 80000], ['2024-02-05', 'received', 80000], ['2024-03-05', 'received', 80000], ['2025-12-31', 'interest', 1234]]) {
+      gleich((await senden(base, '/api/deposit-entries', 'POST', { tenancyId: tenancy.id, date, kind, amountCents })).status, 201, `Kaution: ${kind} am ${date} gebucht`)
+    }
+    const verrechnet = await jsonOf(await senden(base, '/api/deposit-entries', 'POST', { tenancyId: tenancy.id, date: '2026-01-20', kind: 'applied', purpose: 'rent', amountCents: 95000 }))
+    gleich(typeof verrechnet.paymentId, 'string', 'Kaution: die Verrechnung mit Mietrückstand legt eine Zahlung an')
+    gleich((await senden(base, `/api/tenancies/${tenancy.id}`, 'PUT', { depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' })).status, 200, 'Kaution: Einbehalt gespeichert')
+    const vorher = { buchungen: await holen(base, '/api/deposit-entries'), zahlungen: await holen(base, '/api/payments') }
+    const zip = await backupHolen(base)
+
+    await senden(base, `/api/deposit-entries/${verrechnet.id}`, 'DELETE')
+    gleich((await holen(base, '/api/payments')).length, 0, 'Kaution: mit der Verrechnung ist die Zahlung weg')
+
+    const antwort = await backupEinspielen(base, zip)
+    gleich(antwort.status, 200, 'Kaution: die Route nimmt das Archiv an')
+    gleich(await holen(base, '/api/deposit-entries'), vorher.buchungen, 'Kaution: die Buchungen kommen samt Verweis zurück')
+    gleich(await holen(base, '/api/payments'), vorher.zahlungen, 'Kaution: die gebundene Zahlung kommt zurück und ist gekennzeichnet')
+    const t = (await holen(base, '/api/tenancies')).find((x) => x.id === tenancy.id)
+    gleich([t?.depositHoldCents, t?.depositHoldNote], [30000, 'Nebenkosten 2025'], 'Kaution: der Einbehalt kommt zurück')
+    const gesperrt = await senden(base, `/api/payments/${verrechnet.paymentId}`, 'PUT', { amountCents: 1 })
+    gleich(gesperrt.status, 409, 'Kaution: die Zahlung ist nach dem Wiederherstellen weiter gebunden')
+  })
+})
+
 // ---------- Lauf ----------
 
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete

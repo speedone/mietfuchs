@@ -184,8 +184,10 @@ test('Dezembermiete am 05.01.2026 (Beginn 1999): Zeile 25 in 2026, beziffert als
 
 test('Kaution als Miete erfasst: Hinweis, außer der Betrag ist die Monatsmiete oder die Zahlung tilgt einen Rückstand', () => {
   const t = tenancy('t', 'eg', { start: '2025-03-01', depositCents: 180000, prepayments: [{ from: '2025-03', monthlyCents: 20000 }], baseRents: [{ from: '2025-03', monthlyCents: 60000 }] })
-  const s = source([t], [pay('t', '2025-02-20', 180000), ...monthly('t', '2025-03', '2025-12', 80000)])
-  assert.deepEqual(received(s, 2025).possibleDeposits, [{ tenancyId: 't', tenantName: 'Mieter t', paidOn: '2025-02-20', cents: 180000 }])
+  const deposit = pay('t', '2025-02-20', 180000)
+  const s = source([t], [deposit, ...monthly('t', '2025-03', '2025-12', 80000)])
+  // Mit der Kennung der Zahlung (#228): Die Seite Steuer bucht sie damit als Kaution um.
+  assert.deepEqual(received(s, 2025).possibleDeposits, [{ tenancyId: 't', tenantName: 'Mieter t', paidOn: '2025-02-20', cents: 180000, paymentId: deposit.id }])
   // 32 Tage vor Beginn: nicht mehr nah genug.
   assert.deepEqual(received(source([t], [pay('t', '2025-01-28', 180000)]), 2025).possibleDeposits, [])
   // Kaution gleich der Monatsmiete: nicht zu unterscheiden, kein Hinweis.
@@ -309,8 +311,9 @@ test('Warmmiete inklusiv: inclusiveRentCents = gezahlte Kaltmiete, rentCents unv
 test('Kaution bei Beginn am 15.02., als Miete am 05.03. erfasst: Hinweis, obwohl sie den anteiligen Februar deckt', () => {
   const t = tenancy('t', 'eg', { start: '2025-02-15', depositCents: 180000, prepayments: [{ from: '2025-02', monthlyCents: 20000 }], baseRents: [{ from: '2025-02', monthlyCents: 60000 }] })
   const nachbarin = tenancy('n', 'og', { start: '2025-01-01' })
-  const s = source([t, nachbarin], [pay('n', '2025-01-03', 80000), pay('t', '2025-03-05', 180000)])
-  assert.deepEqual(received(s, 2025).possibleDeposits, [{ tenancyId: 't', tenantName: 'Mieter t', paidOn: '2025-03-05', cents: 180000 }])
+  const deposit = pay('t', '2025-03-05', 180000)
+  const s = source([t, nachbarin], [pay('n', '2025-01-03', 80000), deposit])
+  assert.deepEqual(received(s, 2025).possibleDeposits, [{ tenancyId: 't', tenantName: 'Mieter t', paidOn: '2025-03-05', cents: 180000, paymentId: deposit.id }])
 })
 
 // Durchsicht K5: `estg.short-period-days` hat die Zeitregel `periodStart`. Gefragt wird die Fassung des Kalenderjahres, zu

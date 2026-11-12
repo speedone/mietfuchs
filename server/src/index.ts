@@ -53,7 +53,7 @@ import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverR
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import { connect, loadMigrations, type Database, type Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readCostItems, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './db/read.ts'
+import { readCostItems, readDepositEntries, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
 import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
 import { DEFAULT_LETTER_TEXTS, isMonthKey, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
@@ -64,7 +64,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, DepositHoldError, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -73,7 +73,7 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
-import { createDepositEntry, DepositError, listDepositEntries, removeDepositEntry, updateDepositEntry } from './db/deposits.ts'
+import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
@@ -707,6 +707,12 @@ for (const coll of COLLECTIONS) {
       const propertyId = await propertyOf(db, req)
       const stock = await readStock(db)
       const scoped = narrowToProperty(stock, propertyId)
+      // Zahlungen aus einer Verrechnung der Kaution (#228) tragen `fromDeposit`, damit das Mietkonto sie sperrt. Gelesen
+      // aus dem Verweis der Buchung, keine Spalte; Berechnung und Schnappschuss sehen es nicht.
+      if (coll === 'payments') {
+        const bound = new Set((await readDepositEntries(db)).flatMap((e) => (e.paymentId ? [e.paymentId] : [])))
+        return scoped.payments.map((p) => (bound.has(p.id) ? { ...p, fromDeposit: true } : p))
+      }
       if (coll !== 'costItems' && coll !== 'tenancies') return scoped[coll]
       // Ein Tab von vor dem Update filtert die Kostenpositionen nach `year` (#208). Bei einem reinen
       // Kalenderobjekt bekommt er es weiter; sonst sähe er eine leere Liste und erfasste alles noch
@@ -1028,11 +1034,20 @@ const NO_DEPOSIT_ENTRY = 'Diese Kautionsbuchung gibt es nicht (mehr). Bitte lade
 app.get('/api/deposit-entries', async (req, res) => {
   res.json(await readData(async (db) => listDepositEntries(db, await propertyOf(db, req))))
 })
+// Für die Aufstellung zum Auszug: je Mietverhältnis des Objekts die letzte abgeschlossene Abrechnung und was aussteht.
+app.get('/api/deposit-entries/statements', async (req, res) => {
+  res.json(await readData(async (db) => depositStatements(db, await propertyOf(db, req), today())))
+})
 app.post('/api/deposit-entries', async (req, res) => {
   res.status(201).json(await writeData((db) => createDepositEntry(db, bodyObject(req), newId)))
 })
+app.post('/api/deposit-entries/from-payment/:paymentId', async (req, res) => {
+  const entry = await writeData((db) => moveToDeposit(db, req.params.paymentId, newId))
+  if (!entry) return res.status(404).json({ error: 'Diese Zahlung gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.status(201).json(entry)
+})
 app.put('/api/deposit-entries/:id', async (req, res) => {
-  const entry = await writeData((db) => updateDepositEntry(db, req.params.id, bodyObject(req)))
+  const entry = await writeData((db) => updateDepositEntry(db, req.params.id, bodyObject(req), newId))
   if (!entry) return res.status(404).json({ error: NO_DEPOSIT_ENTRY })
   res.json(entry)
 })
@@ -4670,7 +4685,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Die Verteilung nach § 82b EStDV (#262, E-9): dieselbe Gestalt, bestätigt mit `confirmSpread`.
   if (err instanceof SpreadQuestion) return res.status(409).json({ error: err.message, question: 'spread' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

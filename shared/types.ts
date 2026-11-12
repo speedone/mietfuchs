@@ -213,6 +213,11 @@ export type Tenancy = {
   // Form der Sicherheit (#228). Eine Auskunft: Sie steuert nur einen Satz im Seitenfenster der Kaution. Fehlt sie, ist
   // nichts angegeben.
   depositForm?: DepositForm
+  // Einbehalt beim Auszug (#228, Teil 2): Betrag und Grund, den der Vermieter von der Kaution vorerst zurückhält, etwa
+  // bis zur nächsten Nebenkostenabrechnung. Keine Buchung, denn es fließt kein Geld; die Aufstellung zum Auszug zieht ihn
+  // vom Stand ab. Betrag nur mit Grund.
+  depositHoldCents?: number
+  depositHoldNote?: string
   notes?: string // freie Notiz zum Mietverhältnis
 }
 
@@ -229,6 +234,10 @@ export type DepositPurpose = 'rent' | 'settlement' | 'damage' | 'other'
 // `account`: Kautionskonto oder Sparbuch auf den Namen des Vermieters; `pledged`: verpfändetes Sparbuch des Mieters;
 // `guarantee`: Bürgschaft oder Versicherung.
 export type DepositForm = 'account' | 'pledged' | 'guarantee' | 'other'
+// Für die Aufstellung zum Auszug (#228, GET /api/deposit-entries/statements): die jüngste abgeschlossene Abrechnung
+// des Mietverhältnisses mit ihrem Saldo (über 0 Guthaben) und die Zeiträume, in denen es wohnte und die noch nicht
+// abgeschlossen sind, je als Bezeichnung des Zeitraums.
+export type DepositStatementInfo = { tenancyId: string; last: { label: string; balanceCents: number } | null; pending: string[] }
 export type DepositEntry = {
   id: string
   tenancyId: string
@@ -260,6 +269,11 @@ export type Payment = {
   // im Rumpf eines PUT entfernt ihn.
   designatedMonth?: string | null
 }
+
+// Eine Zahlung, wie GET /api/payments sie liefert (#228): `fromDeposit` heißt, sie stammt aus einer Verrechnung der
+// Kaution und ist gebunden; Betrag, Datum und Art ändert nur die Kautionsbuchung. Keine Spalte, gelesen aus dem Verweis
+// der Buchung; deshalb nicht am Modell `Payment`, das die Berechnung liest.
+export type PaymentListItem = Payment & { fromDeposit?: true }
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 
@@ -1437,7 +1451,8 @@ export type TaxReceived = {
   // enthalten, aber in keiner Zeile von `byTenancy`); nach `snapshotFor` immer 0.
   unassignedCents: number
   // Mietzahlungen, die die Kaution sein könnten (Entwurf E9): Betrag gleich der vereinbarten Kaution, nah am Beginn.
-  possibleDeposits: { tenancyId: string; tenantName: string; paidOn: string; cents: number }[]
+  // `paymentId` (#228): die Zahlung, damit die Seite Steuer sie als Kaution umbuchen kann.
+  possibleDeposits: { tenancyId: string; tenantName: string; paidOn: string; cents: number; paymentId: string }[]
 }
 export type TaxReceivedRelatives = {
   rentCents: number; allocationsCents: number; settlementCents: number

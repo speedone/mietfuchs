@@ -68,7 +68,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_DUE_RULES, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, depositEntries, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_DUE_RULES, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
@@ -503,6 +503,9 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
     // Form der Sicherheit (#228): null oder ein unbekannter Wert heißt keine Angabe.
     depositForm: merged(body, 'depositForm', current.depositForm, (v) => oneOfOrUndefined(DEPOSIT_FORMS, v)),
+    // Einbehalt beim Auszug (#228): null oder leer heißt keiner; dass ein Betrag einen Grund hat, prüft guardTenancy.
+    depositHoldCents: merged(body, 'depositHoldCents', current.depositHoldCents, holdCentsOf),
+    depositHoldNote: merged(body, 'depositHoldNote', current.depositHoldNote, holdNoteOf),
     // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
     costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
     heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(HEATING_MODELS, v)),
@@ -758,7 +761,18 @@ function mergePayment(current: Payment, body: unknown): Payment {
 // besteht (#281, Entwurf E3). Geprüft wird beim Setzen und beim Umstellen von Art oder Mietverhältnis; ändern sich
 // später Beginn oder Ende so, dass der Monat herausfällt, bleibt er stehen (krumm, nicht kaputt): Die Tilgung
 // behandelt ihn wie keine Bestimmung, und das Mietkonto nennt die Zahlung (`designatedOutside`).
+// Eine Zahlung, die eine Verrechnung der Kaution angelegt hat (#228), ist gebunden: Betrag, Datum, Art und
+// Mietverhältnis ändert nur die Kautionsbuchung (db/deposits.ts, über `replaceBoundPaymentIn`). Notiz und Monat laut
+// Verwendungszweck bleiben frei. Unverändert gesendet ist keine Änderung.
 async function guardPayment(db: Executor, before: Payment | null, after: Payment): Promise<void> {
+  if (before !== null && (before.amountCents !== after.amountCents || before.date !== after.date || before.kind !== after.kind || before.tenancyId !== after.tenancyId)) {
+    const [bound] = await db.select({ id: depositEntries.id }).from(depositEntries).where(eq(depositEntries.paymentId, before.id))
+    if (bound) throw new BoundPaymentError('Diese Zahlung stammt aus der Kaution. Löschen Sie die Verrechnung unter Stammdaten bei „Kaution führen“ und legen Sie sie neu an.')
+  }
+  await guardPaymentFields(db, before, after)
+}
+
+async function guardPaymentFields(db: Executor, before: Payment | null, after: Payment): Promise<void> {
   const month = after.designatedMonth
   if (month === undefined || month === null) return
   if (after.kind === 'settlement') throw new PaymentError('Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat laut Verwendungszweck oder stellen Sie die Art auf Miete.')
@@ -778,6 +792,20 @@ const germanDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7
 // geschrieben; die Route gibt sie mit 400 weiter wie `CrossPropertyError`.
 export class PaymentError extends Error {
   status = 400
+}
+// Ein Eingriff in eine gebundene Zahlung (#228): kein Fehler in der Eingabe, sondern der falsche Ort dafür.
+export class BoundPaymentError extends PaymentError {
+  status = 409
+}
+
+// Die gebundene Zahlung einer Verrechnung nachziehen (#228), innerhalb der Transaktion der Kautionsbuchung: dieselbe
+// Verschmelzung und dieselben Prüfungen wie PUT /api/payments, nur ohne die Sperre für gebundene Zahlungen.
+export async function replaceBoundPaymentIn(tx: Executor, id: string, patch: Partial<Pick<Payment, 'date' | 'amountCents' | 'kind' | 'designatedMonth'>>): Promise<void> {
+  const current = (await readPayments(tx)).find((p) => p.id === id)
+  if (!current) throw new Error(`Die Zahlung ${id} der Verrechnung fehlt.`)
+  const next = mergePayment(current, patch)
+  await guardPaymentFields(tx, current, next)
+  await paymentCollection.replace(tx, next)
 }
 
 // Eine Umlagevereinbarung je Mietverhältnis (#258), die nicht passt: verbotene Kostenart, unbekanntes
@@ -2006,7 +2034,26 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   )
 }
 
+// Der Einbehalt beim Auszug (#228): ein Betrag über 0, ein Grund bis 200 Zeichen. Abgelehnt mit Satz statt still verworfen.
+export class DepositHoldError extends Error {
+  status = 400
+}
+const HOLD_NOTE_MAX = 200
+function holdCentsOf(v: unknown): number | undefined {
+  if (v === null || v === undefined) return undefined
+  if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) throw new DepositHoldError('Der Einbehalt ist ein Betrag größer als 0.')
+  return v
+}
+function holdNoteOf(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined
+  if (typeof v !== 'string') throw new DepositHoldError('Der Grund für den Einbehalt ist kein Text.')
+  const note = v.trim()
+  if (note.length > HOLD_NOTE_MAX) throw new DepositHoldError(`Der Grund für den Einbehalt ist zu lang (höchstens ${HOLD_NOTE_MAX} Zeichen).`)
+  return note === '' ? undefined : note
+}
+
 async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  if (after.depositHoldCents !== undefined && after.depositHoldNote === undefined) throw new DepositHoldError('Bitte nennen Sie den Grund für den Einbehalt.')
   // Laienprobe B1: Schickt das Formular die Marke des Stands, den es geladen hat, muss sie noch
   // stimmen. Ein Rumpf ohne Marke (Mieterwechsel, Jahreskorrektur aus der Abrechnung, ein alter Tab)
   // ändert nur, was er nennt, und braucht sie nicht.
@@ -2502,6 +2549,7 @@ const tenancyRow = (t: Tenancy) => ({
   letterSalutation: orNull(t.letterSalutation),
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
   depositStatus: orNull(t.depositStatus), depositForm: orNull(t.depositForm), notes: orNull(t.notes),
+  depositHoldCents: orNull(t.depositHoldCents), depositHoldNote: orNull(t.depositHoldNote),
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
   selfSupplyKind: t.heatingModel === 'selfSupply' ? orNull(t.selfSupplyKind) : null,
   halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),

@@ -3,7 +3,7 @@
 // Mieter ist nur für die Abrechnung wählbar, und die gesonderten Beträge stehen auf der Seite.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { Payment, RentLedger, RentMonth, Tenancy, Unit } from '../types'
+import type { Payment, PaymentListItem, RentLedger, RentMonth, Tenancy, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -35,7 +35,7 @@ const PAYMENTS: Payment[] = [
 
 let sent: { url: string; method: string; body: unknown }[]
 let ledger: RentLedger
-let payments: Payment[]
+let payments: PaymentListItem[]
 
 beforeEach(() => {
   sent = []
@@ -270,4 +270,21 @@ test('Durchsicht Befund 4: ein später bezahlter Monat ist kein Buchungsknopf; d
   expect(await screen.findByText(`bezahlt am 05.01.${YEAR + 1}`)).toBeTruthy()
   expect(screen.queryByRole('button', { name: /^Dez/ })).toBeNull()
   expect(screen.getByText(/Eine Zahlung ohne Monat im Verwendungszweck tilgt die älteste offene Forderung/)).toBeTruthy()
+})
+
+// ---------- Kaution (#228, Teil 2): die gebundene Zahlung einer Verrechnung ----------
+
+test('eine Zahlung aus der Kaution: Art nicht wählbar, Vermerk am Betrag, Löschen nennt die Kaution', async () => {
+  payments = [{ id: 'pk', tenancyId: 't1', date: `${YEAR}-12-20`, amountCents: 80000, kind: 'rent', note: 'Aus der Kaution verrechnet', fromDeposit: true }]
+  shell()
+  const row = (await screen.findByText('Aus der Kaution verrechnet')).closest('tr') ?? expect.fail('keine Zeile')
+  // Die Art steht als Text da, ohne Auswahl: Betrag, Datum und Art ändert nur die Kautionsbuchung.
+  expect(within(row).queryByRole('combobox', { name: /Art der Zahlung/ })).toBeNull()
+  expect(within(row).getByText('Miete')).toBeTruthy()
+  expect(within(row).getByText('aus der Kaution; ändern Sie sie unter Stammdaten bei „Kaution führen“ (löschen und neu anlegen)')).toBeTruthy()
+  // Der Monat laut Verwendungszweck bleibt änderbar.
+  expect(within(row).getByLabelText(/Für Monat/)).toBeTruthy()
+  fireEvent.click(within(row).getByRole('button', { name: 'Zahlung löschen' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(within(question).getByText(/Die Verrechnung in der Kaution fällt mit weg\./)).toBeTruthy()
 })

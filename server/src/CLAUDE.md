@@ -798,12 +798,12 @@ Entwurf: [docs/superpowers/specs/2026-11-09-zahlungs-qr-design.md](../../docs/su
 ## Kaution (#228)
 
 Entwurf: [docs/superpowers/specs/2026-11-12-kaution-design.md](../../docs/superpowers/specs/2026-11-12-kaution-design.md).
-Teil 1 ist gebaut (Buchungen und Stand), Teil 2 steht aus (Verrechnung mit Miete oder Abrechnung als gebundene Zahlung,
-Aufstellung zum Auszug, Cockpit, Hinweis der Steuer).
+Gebaut in zwei Teilen: Buchungen und Stand; Verrechnung als gebundene Zahlung, Umbuchen, Aufstellung zum Auszug,
+Cockpit und Hinweis der Steuer.
 
 - **Kautionsbuchungen** stehen in `deposit_entries`, nie in `payments`: Die Kaution ist keine Einnahme, und Mietkonto
   und Steuer lesen die Tabelle nicht (api-kaution.test.ts hält `rentLedger` und `taxReport` vor und nach vier Buchungen
-  gleich). Vier Arten, jede bewegt Geld, der Betrag ist immer größer 0: `received`, `interest` erhöhen, `applied`,
+  ohne Verrechnung mit Miete gleich). Vier Arten, jede bewegt Geld, der Betrag ist immer größer 0: `received`, `interest` erhöhen, `applied`,
   `refunded` mindern. `purpose` genau bei `applied`.
 - **Der Stand wird nie gespeichert**: `depositState` in [shared/deposit.ts](../../shared/deposit.ts), für Server und
   Oberfläche. Ohne Buchung gilt der gespeicherte `depositStatus` (`derived: false`); er wird nie überschrieben und gilt
@@ -812,17 +812,33 @@ Aufstellung zum Auszug, Cockpit, Hinweis der Steuer).
 - **Nie negativ**: [db/deposits.ts](db/deposits.ts) rechnet `depositProblem` über die Buchungen des Mietverhältnisses
   nach der gedachten Änderung, auch beim Ändern und Löschen (400 mit Tag und Betrag). Geordnet nach Datum, am selben
   Tag nach Einfügung.
-- **Teil 1 lehnt `applied` mit `rent` oder `settlement` ab** (400). Wer Teil 2 baut, nimmt die Zeile in `mergeEntry`
-  heraus und legt die gebundene Zahlung an; `payment_id` und sein Fremdschlüssel stehen schon.
-- **Der Einbehalt beim Auszug ist keine Buchung**: Er kommt mit Teil 2 als Betrag und Grund ans Mietverhältnis.
+- **Gebundene Zahlung**: `applied` mit `rent` oder `settlement` legt in derselben Transaktion eine Zahlung an (Notiz
+  „Aus der Kaution verrechnet“) und merkt sie in `payment_id`. Mietkonto und Steuer zählen sie über den Weg der
+  Zahlungen, keine eigene Regel: Ein Rückstand aus dem Vorjahr landet so bei „Mieten für frühere Jahre“, die
+  Nachzahlung bei den Zahlungen aus der Abrechnung. Betrag, Datum, Art und Mietverhältnis der Zahlung ändert nur die
+  Buchung (`guardPayment` → `BoundPaymentError`, 409); `replaceBoundPaymentIn` zieht sie nach. Wechselt der Zweck
+  weg von Miete/Abrechnung, wird der Verweis erst geleert und dann die Zahlung gelöscht (sonst nähme der Fremdschlüssel
+  die Buchung mit). `GET /api/payments` kennzeichnet sie mit `fromDeposit` (`PaymentListItem`, keine Spalte); das
+  Mietkonto sperrt dann Art und zeigt den Vermerk.
+- **Umbuchen** (`POST /api/deposit-entries/from-payment/:paymentId`): aus einer Mietzahlung über 0, die nicht gebunden
+  ist, wird ein Eingang; `possibleDeposits` der Steuer trägt dafür `paymentId`.
+- **Der Einbehalt beim Auszug ist keine Buchung**: `tenancies.deposit_hold_cents`/`deposit_hold_note` (Betrag nur mit
+  Grund, `DepositHoldError`). Die Aufstellung zum Auszug (client/src/depositSettlement.ts) zieht ihn vom Stand ab,
+  höchstens bis 0. `GET /api/deposit-entries/statements` liefert je Mietverhältnis die letzte abgeschlossene Abrechnung
+  (aus dem eingefrorenen Stand) und die Zeiträume seiner Wohnzeit ohne Abschluss.
+- **Cockpit und Steuer**: „Kaution nach Auszug“ je Mietverhältnis mit erreichtem Ende, Buchungen und Stand über 0,
+  ohne Frist; der Sprung öffnet das Seitenfenster (`{ kind: 'deposit' }` in client/src/focus.ts). Die Steuer nennt,
+  was mit Schaden oder Sonstigem verrechnet wurde, nur mit Betrag.
 - **Routen** `GET/POST /api/deposit-entries`, `PUT/DELETE /api/deposit-entries/:id`; das Objekt ergibt sich aus dem
   Mietverhältnis, eine Buchung wechselt es nicht. `insertDepositEntries` schreibt mehrere in einer Transaktion mit
   einem Satz im Verlauf (für den Kontoauszug, #188).
 - **Höchstgrenze**: `depositLimit` mit `bgb.deposit-max-months` aus dem Register; `null` bei teilweise inklusiver Miete
   und ohne Kaltmiete am Beginn. Nur ein Hinweis am Feld (`depositLimitHint` in client/src/tenancyModel.ts), gespeichert
   wird trotzdem.
-- **Recht**: gelesen ist nur § 551 Abs. 1 bis 4 BGB (12.11.2026). Zum Einbehalt bis zur Nebenkostenabrechnung und zur
-  Höhe im Einzelnen sagen Oberfläche und Lexikon nichts, bis die im Entwurf genannten Entscheidungen gelesen sind.
+- **Recht**: gelesen ist nur § 551 Abs. 1 bis 4 BGB (12.11.2026). BGH VIII ZR 71/05 und die Anleitung zur Anlage V
+  zur verrechneten Kaution ließen sich am 12.11.2026 nicht abrufen (BGH 403, ELSTER nur die Hülle). Deshalb kein
+  Lexikon „Einbehalt“, kein Vorschlag und keine Frist für den Einbehalt, und die mit der Kaution verrechnete
+  Nachzahlung steht in der Zeile der Abrechnung.
 
 ## Der Schnappschuss (#55)
 

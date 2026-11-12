@@ -114,7 +114,8 @@ const unnamed = (x: TaxReceived): unknown => ({
   relatives: { rentCents: x.relatives.rentCents, allocationsCents: x.relatives.allocationsCents, settlementCents: x.relatives.settlementCents },
   byUnit: x.byUnit.map(({ unitName: _, ...rest }) => rest),
   byTenancy: x.byTenancy.map(({ tenantName: _, unitName: __, flatRateCents: _f, fromPreviousCents: _p, ...rest }) => rest),
-  possibleDeposits: x.possibleDeposits.map(({ tenantName: _, ...rest }) => rest),
+  // Die Kennung der Zahlung (#228) ist keine Zahl und bleibt aus der Prüfsumme.
+  possibleDeposits: x.possibleDeposits.map(({ tenantName: _, paymentId: _p, ...rest }) => rest),
 })
 
 const receivedOf = (r: TaxReport): TaxReceived => r.income.received ?? assert.fail('received fehlt')
