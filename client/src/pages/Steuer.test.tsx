@@ -18,11 +18,12 @@
 // einen Satz umformuliert, zieht den Ausdruck hier mit.
 
 import { afterEach, assert, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property, PropertyKind, TaxExpenseItem, TaxOverview, TaxOverviewSums, TaxReceived, TaxReceivedTenancy, TaxReport } from '../types'
 import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
+import { UIProvider } from '../components/feedback'
 import Steuer from './Steuer'
 import { periodKey } from '../../../shared/period.ts'
 import { fmtEuro } from '../api'
@@ -236,7 +237,7 @@ const LAGEN: Record<TaxHint, Lage> = {
     text: /sind ohne vereinbarte Miete eingegangen/,
   },
   possibleDeposit: {
-    report: MIT(RECEIVED([MIETER()], { possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: `${JAHR}-03-05`, cents: 240000 }] })),
+    report: MIT(RECEIVED([MIETER()], { possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: `${JAHR}-03-05`, cents: 240000, paymentId: 'pay1' }] })),
     text: /Ist das die Kaution\?/,
   },
   formerYears: {
@@ -674,7 +675,7 @@ test('Mieten für frühere Jahre negativ: der Satz zur Rücklastschrift', async 
 })
 
 test('Mögliche Kaution: Datum, Betrag und Mieter im Hinweis, auch im Druck', async () => {
-  await zeige(MIT(RECEIVED([MIETER()], { possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: `${JAHR}-03-05`, cents: 240000 }] })))
+  await zeige(MIT(RECEIVED([MIETER()], { possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: `${JAHR}-03-05`, cents: 240000, paymentId: 'pay1' }] })))
   const box = screen.getByText(/Ist das die Kaution\?/).closest('.notice-item')
   expect(box?.textContent).toMatch(new RegExp(`Zahlung vom 05\\.03\\.${JAHR} über 2\\.400,00\\s€ \\(Meyer\\)`))
   expect(box?.closest('.no-print')).toBeNull()
@@ -1001,4 +1002,23 @@ test('Gesamtsicht: der Sprung wechselt in das Objekt und lädt dessen Steuerübe
   await waitFor(() => expect(requests).toContain(`/api/taxreport/${JAHR}?property=q`))
   // Danach ist Haus B das gewählte, und der Sprung zurück steht beim ersten Objekt.
   expect(await screen.findByRole('button', { name: 'Öffnen Objekt' })).toBeTruthy()
+})
+
+// ---------- Kaution (#228, Teil 2): als Miete gebuchte Kaution umbuchen ----------
+
+test('Mögliche Kaution: „Als Kaution umbuchen“ fragt mit Betrag, Datum und Mieter und bucht dann um', async () => {
+  const report = MIT(RECEIVED([MIETER()], { possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: `${JAHR}-03-05`, cents: 240000, paymentId: 'pay1' }] }))
+  const posted: string[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') === 'POST') posted.push(url)
+    const body = url === '/api/properties' ? [] : url.startsWith('/api/deposit-entries') ? { id: 'k1' } : report
+    return new Response(JSON.stringify(body), { status: url.startsWith('/api/deposit-entries') ? 201 : 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<PeriodProvider><PropertyProvider><UIProvider><Steuer settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Als Kaution umbuchen' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(question.textContent?.replace(/\u00a0/g, ' ')).toContain(`Zahlung vom 05.03.${JAHR} über 2.400,00 € (Meyer)`)
+  expect(question.textContent).toContain('Die Zahlung zählt danach nicht mehr als Miete; Monate, die sie gedeckt hat, sind wieder offen.')
+  fireEvent.click(within(question).getByRole('button', { name: 'Umbuchen' }))
+  await waitFor(() => expect(posted).toEqual(['/api/deposit-entries/from-payment/pay1']))
 })

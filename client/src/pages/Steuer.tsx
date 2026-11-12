@@ -2,8 +2,10 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { startPrint, type PrintJob } from '../printJob'
 import type { JumpTarget } from '../focus'
 import { TAX_HEADER_TARGET } from '../jumpTargets'
-import type { Settings, TaxExpenseItem, TaxOverview, TaxReport } from '../types'
-import { api, fmtArea, fmtDate, fmtEuro } from '../api'
+import type { Settings, TaxExpenseItem, TaxOverview, TaxReceived, TaxReport } from '../types'
+import { api, errorText, fmtArea, fmtDate, fmtEuro } from '../api'
+import { useConfirm, useToast } from '../components/feedback'
+import { useSaving } from '../useSaving'
 import { localToday } from '../periodForm'
 import { usePeriod } from '../period'
 import { CalendarYearSelect } from '../components/PeriodSelect'
@@ -237,8 +239,9 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 title="Ist das die Kaution?"
                 context={possibleDepositText(data)}
                 action={<>
-                  Prüfen Sie im <em>Mietkonto</em> Art und Betrag. Ist es die Kaution, löschen Sie die Zahlung dort; die Kaution
-                  steht am Mietverhältnis.
+                  Prüfen Sie im <em>Mietkonto</em> Art und Betrag. Ist es die Kaution, buchen Sie die Zahlung hier um; sie steht
+                  dann unter <em>Stammdaten</em> bei „Kaution führen“.
+                  <DepositMoveButtons deposits={data.income.received?.possibleDeposits ?? []} onMoved={load} />
                 </>}
                 more="Der Vermieter hat die Kaution getrennt von seinem Vermögen anzulegen (§ 551 Abs. 3 BGB)."
               />
@@ -1228,5 +1231,37 @@ function OverviewCard({ year, basis, refresh }: { year: number; basis: Basis; re
         </>
       )}
     </Card>
+  )
+}
+
+// Je Zahlung, die wie die Kaution aussieht, ein Knopf zum Umbuchen (#228): Die Mietzahlung wird zum Eingang der
+// Kaution. Die Rückfrage sagt, dass die Monate, die sie gedeckt hat, wieder offen sind.
+function DepositMoveButtons({ deposits, onMoved }: { deposits: TaxReceived['possibleDeposits']; onMoved: () => Promise<unknown> }) {
+  const confirm = useConfirm()
+  const toast = useToast()
+  const saving = useSaving()
+  async function move(d: TaxReceived['possibleDeposits'][number]) {
+    const ok = await confirm({
+      title: 'Als Kaution umbuchen?',
+      message: `Zahlung vom ${fmtDate(d.paidOn)} über ${fmtEuro(d.cents)} (${d.tenantName}). Die Zahlung zählt danach nicht mehr als Miete; Monate, die sie gedeckt hat, sind wieder offen.`,
+      confirmLabel: 'Umbuchen',
+    })
+    if (!ok) return
+    try {
+      await api(`/api/deposit-entries/from-payment/${d.paymentId}`, { method: 'POST' })
+    } catch (e) {
+      toast(errorText(e), 'error')
+      return
+    }
+    await onMoved()
+    toast('Zahlung als Kaution umgebucht.')
+  }
+  return (
+    <span className="no-print">
+      {deposits.map((d) => (
+        <span key={d.paymentId}>{' '}<button className="btn small secondary" disabled={saving.busy} onClick={() => void saving.run(() => move(d))}
+          {...(deposits.length > 1 ? { 'aria-label': `Als Kaution umbuchen: Zahlung vom ${fmtDate(d.paidOn)}` } : {})}>Als Kaution umbuchen</button></span>
+      ))}
+    </span>
   )
 }

@@ -259,7 +259,7 @@ describe('Hinweise zum Zugeflossenen (#312 PR 3)', () => {
   })
 
   test('mögliche Kaution: Datum, Betrag, Mieter', () => {
-    const rep = withReceived({ possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: '2025-03-05', cents: 240000 }] })
+    const rep = withReceived({ possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: '2025-03-05', cents: 240000, paymentId: 'pay1' }] })
     expect(taxHints(rep, 'ist')).toContain('possibleDeposit')
     expect(possibleDepositText(rep)).toBe(`Zahlung vom 05.03.2025 über ${fmtEuro(240000)} (Meyer)`)
     expect(taxHints(withReceived({}), 'ist')).not.toContain('possibleDeposit')

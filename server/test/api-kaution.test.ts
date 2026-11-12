@@ -327,3 +327,51 @@ test('eine Verrechnung mit Miete braucht Geld in der Kaution wie jede andere', a
     s.stop()
   }
 })
+
+// ---------- Teil 2: als Miete gebuchte Kaution umbuchen ----------
+
+test('Umbuchen macht aus der Mietzahlung einen Kautionseingang', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await stock(s)
+    // Die Kaution kam als Zahlung über 2.400 € am Einzug; daneben die Januarmiete.
+    const deposit = await post<PaymentListItem>(s, '/api/payments', { tenancyId: tenancy.id, date: '2025-01-02', amountCents: 240000, note: 'Kaution Erika' })
+    await post(s, '/api/payments', { tenancyId: tenancy.id, date: '2025-01-03', amountCents: 95000 })
+    const before = await s.api<TaxReport>('/api/taxreport/2025')
+    assert.deepEqual(before.income.received?.possibleDeposits.map((d) => d.paymentId), [deposit.id])
+    const res = await send(s, 'POST', `/api/deposit-entries/from-payment/${deposit.id}`)
+    assert.equal(res.status, 201)
+    const entry = await res.json() as DepositEntry
+    assert.deepEqual({ ...entry, id: '' }, { id: '', tenancyId: tenancy.id, date: '2025-01-02', kind: 'received', amountCents: 240000, note: 'Kaution Erika' })
+    assert.deepEqual((await paymentsOf(s)).map((p) => p.amountCents), [95000])
+    const after = await s.api<TaxReport>('/api/taxreport/2025')
+    assert.equal(before.income.paidCents - after.income.paidCents, 240000)
+    assert.deepEqual(after.income.received?.possibleDeposits, [])
+    assert.match((await newest(s)).title, /^Mietzahlung als Kaution umgebucht/)
+    // Ein Rücksprung bringt die Zahlung zurück und nimmt die Buchung weg.
+    await revert(s, (await newest(s)).id)
+    assert.deepEqual(await entries(s), [])
+    assert.equal((await paymentsOf(s)).length, 2)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Umbuchen geht nur mit einem Mieteingang', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await withArrears(s)
+    const settlement = await post<PaymentListItem>(s, '/api/payments', { tenancyId: tenancy.id, date: '2025-06-01', amountCents: 18000, kind: 'settlement' })
+    const negative = await post<PaymentListItem>(s, '/api/payments', { tenancyId: tenancy.id, date: '2025-06-02', amountCents: -95000 })
+    const applied = await post<DepositEntry>(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 95000 })
+    for (const id of [settlement.id, negative.id, applied.paymentId ?? '']) {
+      const res = await send(s, 'POST', `/api/deposit-entries/from-payment/${id}`)
+      assert.equal(res.status, 400, id)
+      assert.equal(await errorFrom(res), 'Umbuchen lässt sich nur ein Mieteingang.')
+    }
+    const unknown = await send(s, 'POST', '/api/deposit-entries/from-payment/gibt-es-nicht')
+    assert.equal(unknown.status, 404)
+  } finally {
+    s.stop()
+  }
+})

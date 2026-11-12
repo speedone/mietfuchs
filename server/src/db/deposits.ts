@@ -86,6 +86,20 @@ function mergeEntry(current: DepositEntry | null, id: string, body: unknown): De
   }
 }
 
+// Eine als Miete gebuchte Kaution umbuchen (#228, Hinweis „Ist das die Kaution?“ der Seite Steuer): Die Mietzahlung
+// fällt weg, ein Eingang mit Datum, Betrag und Notiz entsteht, in einer Transaktion. Nur ein Mieteingang (Art Miete,
+// Betrag über 0, nicht aus einer Verrechnung); `null`, wenn es die Zahlung nicht gibt.
+export async function moveToDeposit(db: Database, paymentId: string, newId: () => string): Promise<DepositEntry | null> {
+  return db.transaction(async (tx) => {
+    const [p] = await tx.select().from(payments).where(eq(payments.id, paymentId))
+    if (!p) return null
+    const [bound] = await tx.select({ id: depositEntries.id }).from(depositEntries).where(eq(depositEntries.paymentId, paymentId))
+    if (p.kind !== 'rent' || p.amountCents <= 0 || bound) throw new DepositError(400, 'Umbuchen lässt sich nur ein Mieteingang.')
+    await tx.delete(payments).where(eq(payments.id, paymentId))
+    return insertIn(tx, newId(), { tenancyId: p.tenancyId, date: p.date, kind: 'received', amountCents: p.amountCents, ...(p.note ? { note: p.note } : {}) }, await readDepositEntries(tx), newId)
+  })
+}
+
 // Nie negativ: an keinem Tag kann mehr verrechnet oder ausgezahlt sein, als bis dahin eingegangen ist.
 function guardBalance(after: readonly DepositEntry[]): void {
   const problem = depositProblem(after)

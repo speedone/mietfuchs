@@ -60,6 +60,7 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'PUT /api/units/:id/interim-gaps/:date': s('Antwort zu einer fehlenden Zwischenablesung gespeichert'),
   'DELETE /api/units/:id/interim-gaps/:date': s('Antwort zu einer fehlenden Zwischenablesung entfernt'),
   'POST /api/deposit-entries': s('Kautionsbuchung angelegt', 'deposit_entries'),
+  'POST /api/deposit-entries/from-payment/:paymentId': s('Mietzahlung als Kaution umgebucht', 'deposit_entries'),
   'PUT /api/deposit-entries/:id': s('Kautionsbuchung geändert', 'deposit_entries'),
   'DELETE /api/deposit-entries/:id': s('Kautionsbuchung gelöscht', 'deposit_entries'),
   'POST /api/co2-refunds': s('CO₂-Erstattung angelegt'),

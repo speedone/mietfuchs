@@ -73,7 +73,7 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
-import { createDepositEntry, DepositError, listDepositEntries, removeDepositEntry, updateDepositEntry } from './db/deposits.ts'
+import { createDepositEntry, DepositError, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
@@ -1036,6 +1036,11 @@ app.get('/api/deposit-entries', async (req, res) => {
 })
 app.post('/api/deposit-entries', async (req, res) => {
   res.status(201).json(await writeData((db) => createDepositEntry(db, bodyObject(req), newId)))
+})
+app.post('/api/deposit-entries/from-payment/:paymentId', async (req, res) => {
+  const entry = await writeData((db) => moveToDeposit(db, req.params.paymentId, newId))
+  if (!entry) return res.status(404).json({ error: 'Diese Zahlung gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.status(201).json(entry)
 })
 app.put('/api/deposit-entries/:id', async (req, res) => {
   const entry = await writeData((db) => updateDepositEntry(db, req.params.id, bodyObject(req), newId))
