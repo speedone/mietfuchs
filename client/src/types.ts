@@ -1,7 +1,7 @@
 // Oberflächenseite des Datenmodells: Beschriftungen und Helfer. Die Typen selbst stehen in
 // shared/types.ts und werden hier weitergereicht, damit die Importe im Client unverändert
 // bleiben (#48).
-import type { CostKey, DepositStatus, PropertyKind, Unit, UnitUsage } from '../../shared/types.ts'
+import type { CostKey, DepositForm, DepositStatus, PropertyKind, Unit, UnitUsage } from '../../shared/types.ts'
 export type * from '../../shared/types.ts'
 
 // Die Arten eines Objekts (#92), wie sie die Oberfläche nennt.
@@ -29,6 +29,14 @@ export const DEPOSIT_STATUS_LABELS: Record<DepositStatus, string> = {
   erhalten: 'erhalten',
   teilweise: 'teilweise erhalten',
   'zurückgezahlt': 'zurückgezahlt',
+}
+
+// Form der Sicherheit (#228), im Auswahlfeld der Stammdaten und im Verlauf.
+export const DEPOSIT_FORM_LABELS: Record<DepositForm, string> = {
+  account: 'Kautionskonto oder Sparbuch auf Ihren Namen',
+  pledged: 'verpfändetes Sparbuch des Mieters',
+  guarantee: 'Bürgschaft oder Kautionsversicherung',
+  other: 'andere Form',
 }
 
 // Die Beschriftungen der Zählerarten braucht auch die Berechnung für ihre Hinweise (#180).
