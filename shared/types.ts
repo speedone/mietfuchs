@@ -215,6 +215,29 @@ export type Tenancy = {
 
 export type DepositStatus = 'offen' | 'erhalten' | 'teilweise' | 'zurückgezahlt'
 
+// Kautionsbuchungen (#228): was mit der Sicherheit eines Mietverhältnisses geschehen ist. Jede Buchung bewegt Geld,
+// der Betrag ist immer größer 0, die Richtung ergibt die Art: `received` (vom Mieter eingegangen, auch jede Rate) und
+// `interest` (Ertrag der Anlage, § 551 Abs. 3 Satz 3 BGB) erhöhen den Stand, `applied` (mit einer eigenen Forderung
+// verrechnet) und `refunded` (an den Mieter ausgezahlt) mindern ihn. Die Kaution ist keine Einnahme und steht deshalb
+// nie in `payments`; der Stand ist `depositState` (shared/deposit.ts).
+export type DepositEntryKind = 'received' | 'interest' | 'applied' | 'refunded'
+// Womit verrechnet wurde, nur bei `applied`.
+export type DepositPurpose = 'rent' | 'settlement' | 'damage' | 'other'
+// `account`: Kautionskonto oder Sparbuch auf den Namen des Vermieters; `pledged`: verpfändetes Sparbuch des Mieters;
+// `guarantee`: Bürgschaft oder Versicherung.
+export type DepositForm = 'account' | 'pledged' | 'guarantee' | 'other'
+export type DepositEntry = {
+  id: string
+  tenancyId: string
+  date: string // 'JJJJ-MM-TT'
+  kind: DepositEntryKind
+  amountCents: number
+  purpose?: DepositPurpose
+  // Die Zahlung, die eine Verrechnung mit Miete oder Abrechnung erzeugt hat (Teil 2 von #228).
+  paymentId?: string
+  note?: string
+}
+
 // Die Art einer Zahlung (#280). `rent`: Miete (Kaltmiete, Vorauszahlungen, Pauschale), die das
 // Mietkonto von Januar an auf das Monats-Soll verteilt. `settlement`: Nachzahlung oder Guthaben aus
 // der Nebenkostenabrechnung, ein Guthaben negativ; das Mietkonto führt sie gesondert. Die Kaution

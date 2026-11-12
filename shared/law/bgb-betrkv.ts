@@ -206,3 +206,20 @@ export const bgbTransferExecutionDays: LawParam<TransferDays, 'eventDate'> = {
   }],
   describe: (v) => `höchstens ${v.afterCutoff + v.execution + v.paper} Geschäftstage bis zum Eingang bei der Bank des Empfängers (${v.afterCutoff} für einen Auftrag nach Annahmeschluss, ${v.execution} für die Ausführung, ${v.paper} bei Papierform)`,
 }
+
+// Die Mietsicherheit darf höchstens das Dreifache der auf einen Monat entfallenden Miete ohne die als Pauschale oder
+// als Vorauszahlung ausgewiesenen Betriebskosten betragen (§ 551 Abs. 1 BGB, gelesen am 12.11.2026; #228). Mit dem
+// Wert wird nur geprüft: Liegt die vereinbarte Kaution darüber, steht ein Hinweis am Feld (shared/deposit.ts).
+export const bgbDepositMaxMonths: LawParam<number, 'eventDate'> = {
+  id: 'bgb.deposit-max-months',
+  title: 'Höchstbetrag der Mietkaution in Monatsmieten',
+  norm: '§ 551 Abs. 1 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: 3,
+    source: { rank: 'law', cite: '§ 551 Abs. 1 BGB', url: 'https://www.gesetze-im-internet.de/bgb/__551.html', retrieved: '2026-11-12', checked: 'checked' },
+    enacted: '§ 551 BGB',
+  }],
+  describe: (v) => `höchstens ${v} Monatsmieten ohne Betriebskosten`,
+  checkOnly: true,
+}
