@@ -281,7 +281,7 @@ test('eine Zahlung aus der Kaution: Art nicht wählbar, Vermerk am Betrag, Lösc
   // Die Art steht als Text da, ohne Auswahl: Betrag, Datum und Art ändert nur die Kautionsbuchung.
   expect(within(row).queryByRole('combobox', { name: /Art der Zahlung/ })).toBeNull()
   expect(within(row).getByText('Miete')).toBeTruthy()
-  expect(within(row).getByText('aus der Kaution; ändern Sie sie unter Stammdaten bei „Kaution führen“ (löschen und neu anlegen)')).toBeTruthy()
+  expect(within(row).getByText('aus der Kaution; ändern Sie sie unter Stammdaten bei „Kaution führen“')).toBeTruthy()
   // Der Monat laut Verwendungszweck bleibt änderbar.
   expect(within(row).getByLabelText(/Für Monat/)).toBeTruthy()
   fireEvent.click(within(row).getByRole('button', { name: 'Zahlung löschen' }))

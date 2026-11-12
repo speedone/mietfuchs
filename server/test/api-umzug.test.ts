@@ -375,10 +375,11 @@ test('Vermerk: ein umgezogener Ordner öffnet nur lesend, Schreibrouten sagen wa
 // dort zu Recht nicht läuft. Gezeigt wird jetzt eine Kopie außerhalb des Ordners; der Ordner selbst bleibt, wie er ist,
 // auch eine Datenbank wird darin nicht migriert.
 // Der letzte Schritt der Kette (Index im Journal) und wie seine Wirkung zurückgenommen wird; siehe den Test darunter.
-const LAST_STEP_INDEX = 100
-// Der letzte Schritt (0096, Bedingungen der E-Rechnung, #189) baut `assessments` mit der Bedingung an `source` neu;
-// das lässt sich wiederholen, zurückzunehmen ist nichts.
-const undoLastStep = (_db: { exec: (sql: string) => void }): void => {}
+const LAST_STEP_INDEX = 101
+// Der letzte Schritt (0101, Indizes der Kautionsbuchungen) legt zwei Indizes an; ein zweites CREATE INDEX scheiterte.
+const undoLastStep = (db: { exec: (sql: string) => void }): void => {
+  db.exec('DROP INDEX deposit_entries_tenancy_idx; DROP INDEX deposit_entries_payment_idx;')
+}
 
 test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner etwas ändert', async () => {
   for (const kind of ['json', 'database'] as const) {
@@ -387,7 +388,7 @@ test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner e
     if (kind === 'database') {
       // Eine Datenbank aus einer früheren Fassung: Der letzte Schritt der Kette fehlt noch, Marke und Wirkung. Fügt ein
       // neuer letzter Schritt eine Spalte an, scheiterte er sonst an der schon vorhandenen; seine Wirkung nimmt
-      // `undoLastStep` zurück (heute 0100_kaution_einbehalt_bedingung, ein Neubau von `tenancies` ohne neue Spalte: nichts zurückzunehmen).
+      // `undoLastStep` zurück (heute 0101_kaution_index: die beiden Indizes).
       const { DatabaseSync } = await import('node:sqlite')
       const db = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
       const last = db.prepare('SELECT max(id) AS id FROM __drizzle_migrations').get()

@@ -821,11 +821,15 @@ Cockpit und Hinweis der Steuer.
   die Buchung mit). `GET /api/payments` kennzeichnet sie mit `fromDeposit` (`PaymentListItem`, keine Spalte); das
   Mietkonto sperrt dann Art und zeigt den Vermerk.
 - **Umbuchen** (`POST /api/deposit-entries/from-payment/:paymentId`): aus einer Mietzahlung über 0, die nicht gebunden
-  ist, wird ein Eingang; `possibleDeposits` der Steuer trägt dafür `paymentId`.
+  ist, wird ein Eingang; `possibleDeposits` der Steuer trägt dafür `paymentId`. Gebundene Zahlungen nimmt
+  `withoutBoundDeposits` in der Route `/api/taxreport/:year` heraus (calc.ts kennt die Buchungen nicht).
 - **Der Einbehalt beim Auszug ist keine Buchung**: `tenancies.deposit_hold_cents`/`deposit_hold_note` (Betrag nur mit
   Grund, `DepositHoldError`). Die Aufstellung zum Auszug (client/src/depositSettlement.ts) zieht ihn vom Stand ab,
   höchstens bis 0. `GET /api/deposit-entries/statements` liefert je Mietverhältnis die letzte abgeschlossene Abrechnung
-  (aus dem eingefrorenen Stand) und die Zeiträume seiner Wohnzeit ohne Abschluss.
+  (aus dem eingefrorenen Stand) und die Zeiträume seiner Wohnzeit ohne Abschluss, deren Frist noch läuft; getrennt
+  abgerechnete Heizperioden einer Anlage, die die Wohnung versorgt (Weg d), als `lastHeating` und „Heizkosten …“.
+  Dazu `openRentCents` aus dem Mietkonto des laufenden Jahres (Endsaldo zum 31.12. als Schuld, auch noch nicht Fälliges): Das
+  Seitenfenster fragt nach, bevor eine Verrechnung mit Miete darüber hinausgeht.
 - **Cockpit und Steuer**: „Kaution nach Auszug“ je Mietverhältnis mit erreichtem Ende, Buchungen und Stand über 0,
   ohne Frist; der Sprung öffnet das Seitenfenster (`{ kind: 'deposit' }` in client/src/focus.ts). Die Steuer nennt,
   was mit Schaden oder Sonstigem verrechnet wurde, nur mit Betrag.

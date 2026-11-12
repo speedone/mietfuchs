@@ -1718,7 +1718,11 @@ export const depositEntries = sqliteTable('deposit_entries', {
   // die Buchung mit ihr: Sonst wäre die Kaution verrechnet, ohne dass das Mietkonto den Betrag bekommen hätte.
   paymentId: text('payment_id').references(() => payments.id, { onDelete: 'cascade' }),
   note: text('note'),
-}, () => [
+}, (t) => [
+  // Gelesen wird je Mietverhältnis (Stand, Aufstellung) und je Zahlung (gebundene Zahlung, `guardPayment`); beides ist
+  // auch der Weg der Fremdschlüssel beim Löschen.
+  index('deposit_entries_tenancy_idx').on(t.tenancyId),
+  index('deposit_entries_payment_idx').on(t.paymentId),
   check('deposit_entries_amount_positive', sql.raw('"amount_cents" > 0')),
   oneOf('deposit_entries_kind_known', 'kind', DEPOSIT_ENTRY_KINDS),
   oneOf('deposit_entries_purpose_known', 'purpose', DEPOSIT_PURPOSES),

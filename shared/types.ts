@@ -235,9 +235,18 @@ export type DepositPurpose = 'rent' | 'settlement' | 'damage' | 'other'
 // `guarantee`: Bürgschaft oder Versicherung.
 export type DepositForm = 'account' | 'pledged' | 'guarantee' | 'other'
 // Für die Aufstellung zum Auszug (#228, GET /api/deposit-entries/statements): die jüngste abgeschlossene Abrechnung
-// des Mietverhältnisses mit ihrem Saldo (über 0 Guthaben) und die Zeiträume, in denen es wohnte und die noch nicht
-// abgeschlossen sind, je als Bezeichnung des Zeitraums.
-export type DepositStatementInfo = { tenancyId: string; last: { label: string; balanceCents: number } | null; pending: string[] }
+// des Mietverhältnisses mit ihrem Saldo (über 0 Guthaben), ebenso die jüngste getrennte Heizkostenabrechnung einer
+// Anlage (Weg d, docs/heizung.md), und die Zeiträume, in denen es wohnte und die noch nicht abgeschlossen sind, je als
+// Bezeichnung des Zeitraums (getrennte Heizperioden als „Heizkosten …“). `openRentCents`: was laut Mietkonto des laufenden
+// Jahres bis zu seinem Ende geschuldet ist, auch noch nicht Fälliges (Endsaldo als Schuld), für die Warnung vor einer
+// Verrechnung mit Miete darüber hinaus.
+export type DepositStatementInfo = {
+  tenancyId: string
+  last: { label: string; balanceCents: number } | null
+  lastHeating: { label: string; balanceCents: number } | null
+  pending: string[]
+  openRentCents: number
+}
 export type DepositEntry = {
   id: string
   tenancyId: string

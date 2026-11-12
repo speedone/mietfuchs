@@ -51,6 +51,28 @@ export function withKind(form: DepositFormState, kind: DepositEntryKind): Deposi
   return { ...form, kind, purpose: kind === 'applied' ? (form.purpose === '' ? first : form.purpose) : '' }
 }
 
+// Eine gespeicherte Buchung als Formular, zum Ändern im Seitenfenster.
+export const depositFormOf = (entry: DepositEntry): DepositFormState => ({
+  date: entry.date,
+  kind: entry.kind,
+  purpose: entry.purpose ?? '',
+  amount: (entry.amountCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+  note: entry.note ?? '',
+})
+
+// Wie viel einer Verrechnung mit Miete über das hinausgeht, was laut Mietkonto heute offen ist (`openCents`). Beim
+// Ändern einer solchen Verrechnung ist ihr bisheriger Betrag schon als Zahlung gebucht und zählt zum Offenen. Darüber
+// hinaus wird die gebundene Zahlung eine Mietzahlung ohne offene Forderung, also eine Überzahlung im Mietkonto.
+export function rentBeyondOpen(
+  body: Pick<DepositEntryBody, 'kind' | 'purpose' | 'amountCents'>,
+  openCents: number | undefined,
+  before: Pick<DepositEntry, 'kind' | 'purpose' | 'amountCents'> | null,
+): { openCents: number; beyondCents: number } | null {
+  if (openCents === undefined || body.kind !== 'applied' || body.purpose !== 'rent') return null
+  const open = Math.max(0, openCents) + (before && before.kind === 'applied' && before.purpose === 'rent' ? before.amountCents : 0)
+  return body.amountCents > open ? { openCents: open, beyondCents: body.amountCents - open } : null
+}
+
 export type DepositEntryBody = { tenancyId: string; date: string; kind: DepositEntryKind; amountCents: number; purpose: DepositPurpose | null; note: string }
 
 export function depositEntryBody(form: DepositFormState, tenancyId: string): Checked<DepositEntryBody, DepositField> {

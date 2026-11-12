@@ -73,7 +73,7 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
-import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry } from './db/deposits.ts'
+import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry, withoutBoundDeposits } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
@@ -1036,7 +1036,18 @@ app.get('/api/deposit-entries', async (req, res) => {
 })
 // Für die Aufstellung zum Auszug: je Mietverhältnis des Objekts die letzte abgeschlossene Abrechnung und was aussteht.
 app.get('/api/deposit-entries/statements', async (req, res) => {
-  res.json(await readData(async (db) => depositStatements(db, await propertyOf(db, req), today())))
+  res.json(await readData(async (db) => {
+    // Was laut Mietkonto des laufenden Jahres geschuldet ist, auch Monate, die heute noch nicht fällig sind (Durchsicht
+    // W1: Wer im November den November abwohnen lässt, überzahlt nicht): der Endsaldo zum 31.12., als Schuld. Ausgezogene
+    // aus Vorjahren stehen unter `carriedOnly`.
+    const { snapshot, options } = await ledgerInputOf(db, req, Number(today().slice(0, 4)))
+    const ledger = rentLedger(snapshot, options)
+    const openRent = new Map<string, number>([
+      ...ledger.rows.map((r): [string, number] => [r.tenancyId, Math.max(0, -r.closingBalanceCents)]),
+      ...ledger.carriedOnly.map((c): [string, number] => [c.tenancyId, c.openCents + c.notDemandableCents]),
+    ])
+    return depositStatements(db, await propertyOf(db, req), today(), openRent)
+  }))
 })
 app.post('/api/deposit-entries', async (req, res) => {
   res.status(201).json(await writeData((db) => createDepositEntry(db, bodyObject(req), newId)))
@@ -1907,7 +1918,7 @@ app.post('/api/rentledger/:year/mark-paid', async (req, res) => {
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => taxReportFor(await readStock(db), await propertyOf(db, req), year)))
+  res.json(await readData(async (db) => withoutBoundDeposits(db, taxReportFor(await readStock(db), await propertyOf(db, req), year))))
 })
 
 // Gesamtsicht über alle Objekte (#96 PR 3): installationsweit wie Belege und Backup, ohne `?property=`. Je Objekt

@@ -12,7 +12,7 @@ const ENTRIES: DepositEntry[] = [
   { id: 'a', tenancyId: 't', date: '2022-01-05', kind: 'received', amountCents: 240000 },
   { id: 'b', tenancyId: 't', date: '2025-12-31', kind: 'interest', amountCents: 1234, note: 'Zinsen 2022 bis 2025' },
 ]
-const INFO: DepositStatementInfo = { tenancyId: 't', last: { label: '2024', balanceCents: -18000 }, pending: ['2025'] }
+const INFO: DepositStatementInfo = { tenancyId: 't', last: { label: '2024', balanceCents: -18000 }, lastHeating: null, pending: ['2025'], openRentCents: 0 }
 const TODAY = '2026-01-15'
 
 test('bleibt auszuzahlen ist Stand minus Einbehalt', () => {
@@ -94,4 +94,39 @@ test('Hinweis der Steuer: einbehalten für Schaden oder Sonstiges im Jahr, nicht
   expect(depositAppliedText(entries, 2026)?.replace(/\u00a0/g, ' ')).toBe('Aus Kautionen einbehalten, nicht in den Einnahmen enthalten: 350,00 €. Ob und wo das anzugeben ist, hängt vom Grund ab.')
   expect(depositAppliedText(entries.slice(2, 3), 2026)).toBeNull()
   expect(depositAppliedText(entries, 2024)).toBeNull()
+})
+
+// Nachzügler: Die getrennte Heizkostenabrechnung einer Anlage (Weg d) steht als eigene Zeile unter der Orientierung.
+test('letzte Heizkostenabrechnung einer Anlage als eigene Zeile', () => {
+  const s = depositSettlement(TENANCY, ENTRIES, { ...INFO, lastHeating: { label: '2024/2025', balanceCents: 4200 }, pending: ['2025', 'Heizkosten 2025/2026'] }, TODAY)
+  expect(s?.lastHeatingStatement?.replace(/\u00a0/g, ' ')).toBe('Heizkostenabrechnung 2024/2025: Guthaben 42,00 €')
+  expect(s?.pending).toEqual(['Abrechnung für 2025 steht noch aus', 'Abrechnung für Heizkosten 2025/2026 steht noch aus'])
+  expect(depositSettlement(TENANCY, ENTRIES, INFO, TODAY)?.lastHeatingStatement).toBeNull()
+})
+
+// Nachzügler: Invariante über zufällige Buchungen und Einbehalte (fester Startwert). Was auszuzahlen bleibt und der
+// Einbehalt ergeben zusammen den Stand; keiner ist negativ; der Einbehalt übersteigt den Stand nie; die Zeilen summieren
+// sich zum Stand, solange er nicht unter 0 liegt.
+test('Invariante: Auszahlung plus Einbehalt ist der Stand, nichts negativ', () => {
+  let seed = 228
+  const rand = (n: number) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed % n
+  }
+  const kinds = ['received', 'interest', 'applied', 'refunded'] as const
+  for (let run = 0; run < 500; run++) {
+    const entries: DepositEntry[] = Array.from({ length: 1 + rand(6) }, (_, i) => {
+      const kind = kinds[rand(4)] ?? 'received'
+      return { id: `e${i}`, tenancyId: 't', date: `2025-0${1 + rand(9)}-1${rand(10)}`, kind, amountCents: 1 + rand(300000), ...(kind === 'applied' ? { purpose: 'damage' as const } : {}) }
+    })
+    const hold = rand(3) === 0 ? {} : { depositHoldCents: 1 + rand(400000), depositHoldNote: 'Grund' }
+    const s = depositSettlement({ ...TENANCY, ...hold }, entries, INFO, TODAY) ?? expect.fail('keine Aufstellung')
+    const held = s.hold?.cents ?? 0
+    expect(s.payoutCents + held).toBe(s.balanceCents)
+    expect(s.payoutCents).toBeGreaterThanOrEqual(0)
+    expect(held).toBeGreaterThanOrEqual(0)
+    expect(held).toBeLessThanOrEqual(s.balanceCents)
+    const sum = s.rows.reduce((a, r) => a + r.cents, 0)
+    expect(s.balanceCents).toBe(Math.max(0, sum))
+  }
 })

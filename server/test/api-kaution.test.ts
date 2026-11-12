@@ -3,7 +3,7 @@
 // Steuer bleiben unberührt.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { DepositEntry, DepositStatementInfo, PaymentListItem, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
+import type { DepositEntry, DepositStatementInfo, HeatingPlant, PaymentListItem, RentLedger, Settlement, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
 import { errorFrom, startServer, withEnv, type Server } from '../testing/api.ts'
 import { journalOf, newest, revert } from '../testing/revert.ts'
 
@@ -187,7 +187,7 @@ test('Kautionsbuchung: Mietkonto und Steuer bleiben, wie sie sind', async () => 
 
 // ---------- Teil 2: Verrechnung mit Miete oder Abrechnung als gebundene Zahlung ----------
 
-const BOUND = 'Diese Zahlung stammt aus der Kaution. Löschen Sie die Verrechnung unter Stammdaten bei „Kaution führen“ und legen Sie sie neu an.'
+const BOUND = 'Diese Zahlung stammt aus der Kaution. Ändern oder löschen Sie die Verrechnung unter Stammdaten bei „Kaution führen“.'
 
 // Ausgezogen am 31.12.2025; Januar bis November je 950 € (Soll 800 € kalt + 150 € Vorauszahlung), Dezember offen;
 // 2.400 € Kaution eingegangen. Der übliche Fall der Verrechnung: nach dem Auszug, mit dem letzten offenen Monat.
@@ -407,7 +407,7 @@ test('Auskunft zur Aufstellung: letzte abgeschlossene Abrechnung des Mieters und
     await post(s, '/api/costItems', { period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer 2024', amountCents: 60000, key: 'area' })
     const before = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
     // Ohne Abschluss: keine letzte Abrechnung; 2025 steht aus. 2024 liegt vor dem Einzug (2025-01-01) und zählt nicht.
-    assert.deepEqual(before, [{ tenancyId: tenancy.id, last: null, pending: ['2025'] }])
+    assert.deepEqual(before, [{ tenancyId: tenancy.id, last: null, lastHeating: null, pending: ['2025'], openRentCents: before[0]?.openRentCents ?? -1 }])
     await post(s, '/api/costItems', { period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 60000, key: 'area' })
     assert.equal((await send(s, 'POST', '/api/settlement/2025-01/close', {})).status, 201)
     const [after] = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
@@ -458,4 +458,72 @@ test('Auskunft zur Aufstellung: nichts steht aus, wenn der Mieter keine Abrechnu
     // Kaltes pauschal, Heizung abgerechnet: Die Heizkosten werden abgerechnet, also steht 2025 aus.
     assert.deepEqual(of(mixed.id), ['2025'])
   })
+})
+
+// Nachzügler der Kaution: Heizkostenabrechnung je Anlage (Weg d) in der Auskunft zur Aufstellung.
+test('Auskunft zur Aufstellung: getrennte Heizkostenabrechnung je Anlage, abgeschlossen und ausstehend', async () => {
+  await withEnv({ NKA_TEST_TODAY: '2026-07-15' }, async (s) => {
+    const { tenancy } = await stock(s)
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ end: '2026-06-30' }) })
+    const json = async <T>(res: Response): Promise<T> => {
+      assert.ok(res.ok, `${res.status} ${await res.clone().text()}`)
+      return await res.json() as T
+    }
+    const { plant } = await json<{ plant: HeatingPlant }>(await send(s, 'POST', '/api/heating-plants', { energy: 'gas', method: 'service' }))
+    const token = async (url: string, body: unknown) => (await json<{ token: string }>(await send(s, 'POST', url, body))).token
+    const rules = { startMonth: 5, changes: [] }
+    await json(await send(s, 'PUT', `/api/heating-plants/${plant.id}/period`, { rules, answers: { understood: true, token: await token(`/api/heating-plants/${plant.id}/period/preview`, { rules }) } }))
+    const separate = { separate: true, month: '2025-05' }
+    const preview = await json<{ token: string; steps: { tenancyId: string; rows: { from: string }[] }[] }>(await send(s, 'POST', `/api/heating-plants/${plant.id}/separate/preview`, separate))
+    const steps = Object.fromEntries(preview.steps.map((st) => [st.tenancyId, Object.fromEntries(st.rows.map((r) => [r.from, 5000]))]))
+    await json(await send(s, 'PUT', `/api/heating-plants/${plant.id}/separate`, { ...separate, answers: { understood: true, steps, token: preview.token } }))
+
+    const [open] = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
+    assert.deepEqual(open?.pending, ['2025', '2026', 'Heizkosten 2025/2026', 'Heizkosten 2026/2027'])
+    assert.equal(open?.lastHeating, null)
+
+    await post(s, '/api/costItems', { period: '2025-05', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 150000, key: 'area', heatingPlantId: plant.id, taxYear: 2026 })
+    const url = `/api/heating-settlement/${plant.id}/2025-05`
+    const live = await s.api<Settlement>(url)
+    const asked = await send(s, 'POST', `${url}/close`, {})
+    if (asked.status === 409) {
+      const q = await asked.json() as { errorToken?: string }
+      assert.equal((await send(s, 'POST', `${url}/close`, { despiteErrors: q.errorToken })).status, 201)
+    } else assert.equal(asked.status, 201)
+    const [closed] = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
+    assert.deepEqual(closed?.pending, ['2025', '2026', 'Heizkosten 2026/2027'])
+    const statement = live.statements.find((st) => st.tenancyId === tenancy.id) ?? assert.fail('keine Abrechnung des Mieters')
+    assert.deepEqual(closed?.lastHeating, { label: '2025/2026', balanceCents: statement.balanceCents })
+  })
+})
+
+// Nachzügler der Kaution (G2): Was laut Mietkonto bis zum Jahresende geschuldet ist, auch noch nicht Fälliges (Durchsicht
+// W1: das Abwohnen des letzten Monats vor seinem Fälligkeitstag ist keine Überzahlung), damit das Fenster vor einer
+// Verrechnung darüber hinaus warnen kann.
+test('Auskunft zur Aufstellung: offen laut Mietkonto bis zum Ende, auch noch nicht Fälliges', async () => {
+  await withEnv({ NKA_TEST_TODAY: '2025-03-01' }, async (s) => {
+    const { tenancy } = await stock(s)
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ end: '2025-03-31' }) })
+    await post(s, '/api/payments', { tenancyId: tenancy.id, date: '2025-01-02', amountCents: 95000 })
+    const [info] = await s.api<DepositStatementInfo[]>('/api/deposit-entries/statements')
+    // Februar und März zu je 950 €, der März am 01.03. noch nicht fällig.
+    assert.equal(info?.openRentCents, 190000)
+  })
+})
+
+// Nachzügler der Kaution: Eine Mietzahlung aus der Kaution ist keine „vielleicht die Kaution“.
+test('Steuer: eine gebundene Zahlung steht nicht unter „Ist das die Kaution?“', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await stock(s)
+    await post(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2025-01-02', kind: 'received', amountCents: 240000 })
+    await post(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2025-01-05', kind: 'applied', purpose: 'rent', amountCents: 240000 })
+    const report = await s.api<TaxReport>('/api/taxreport/2025')
+    assert.deepEqual(report.income.received?.possibleDeposits, [])
+    // Eine gewöhnliche Mietzahlung in Höhe der Kaution steht weiter dort.
+    await post(s, '/api/payments', { tenancyId: tenancy.id, date: '2025-01-06', amountCents: 240000 })
+    assert.equal((await s.api<TaxReport>('/api/taxreport/2025')).income.received?.possibleDeposits.length, 1)
+  } finally {
+    s.stop()
+  }
 })
