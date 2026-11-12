@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, DepositForm, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
-import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
+import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
 import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -17,13 +17,16 @@ import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, EMPTY_RENT_DUE, overlapQuestion, partialMonthNote, prepaymentColumn, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyRequired, type RentDueChoice, type RentDueForm, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, EMPTY_RENT_DUE, overlapQuestion, partialMonthNote, prepaymentColumn, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyRequired, type RentDueChoice, type RentDueForm, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, contactForm, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type ContactForm, type NewTenantForm, type TenantChangeField } from '../tenantChange'
 import { DEADLINE_SENTENCE, ownAddressWarning } from '../landlord'
 import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
 import Card from '../components/Card'
+import DepositDrawer from '../components/DepositDrawer'
+import { depositState } from '../../../shared/deposit.ts'
+import { depositStatusLabel } from '../depositForm'
 import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
@@ -70,6 +73,8 @@ type TenancyForm = {
   rentDue: RentDueForm
   deposit: string
   depositStatus: DepositStatus
+  // Form der Sicherheit (#228); '' keine Angabe.
+  depositForm: DepositForm | ''
   notes: string
   // Nebenkostenmodell (#93)
   costModel: CostModel
@@ -82,9 +87,15 @@ type TenancyForm = {
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
+// Form der Sicherheit (#228) als Auswahl: jeder Wert, den das Formular halten kann, steht in der Liste.
+const DEPOSIT_FORM_OPTIONS: readonly { value: DepositForm | ''; label: string }[] = [
+  { value: '', label: 'keine Angabe' },
+  ...(['account', 'pledged', 'guarantee', 'other'] as const).map((value) => ({ value, label: DEPOSIT_FORM_LABELS[value] })),
+]
+
 // Leere erweiterte Mieter-Felder - bei „neu“ und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = {
-  email: '', phone: '', correspondenceAddress: '', letterSalutation: '', iban: '', contractDate: '', relative: false, deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
+  email: '', phone: '', correspondenceAddress: '', letterSalutation: '', iban: '', contractDate: '', relative: false, deposit: '', depositStatus: 'offen' as DepositStatus, depositForm: '' as DepositForm | '', notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel, selfSupplyKind: '' as SelfSupplyKind | '',
   flatRates: [] as { from: string; amount: string }[],
   heatingPrepayments: [] as { from: string; amount: string }[],
@@ -132,6 +143,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     rentDue: rentDueFormOf(t),
     deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
     depositStatus: t.depositStatus ?? 'offen',
+    depositForm: t.depositForm ?? '',
     notes: t.notes ?? '',
     costModel: t.costModel ?? 'settlement',
     heatingModel: t.heatingModel ?? 'settlement',
@@ -176,6 +188,18 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       .catch(() => { if (alive) setObjectMeters([]) })
     return () => { alive = false }
   }, [propertyId])
+  // Die Kautionsbuchungen des Objekts (#228), einmal geladen und je Mietverhältnis gefiltert; nach jeder Buchung neu.
+  const [depositEntries, setDepositEntries] = useState<DepositEntry[]>([])
+  const [depositVersion, setDepositVersion] = useState(0)
+  const [depositFor, setDepositFor] = useState<string | null>(null)
+  useEffect(() => {
+    if (!propertyId) return
+    let alive = true
+    void api<DepositEntry[]>(withProperty('/api/deposit-entries', propertyId))
+      .then((all) => { if (alive) setDepositEntries(Array.isArray(all) ? all : []) })
+      .catch(() => { if (alive) setDepositEntries([]) })
+    return () => { alive = false }
+  }, [propertyId, depositVersion, tenancies])
   // Die Kostenpositionen des Objekts: Eine Wohnung, die eine als Empfänger nennt, kann kein Zimmer bekommen (#573).
   const [objectCosts, setObjectCosts] = useState<CostItem[]>([])
   useEffect(() => {
@@ -378,7 +402,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       // #334: nur, was sich an der Fälligkeit geändert hat.
       ...rentDueBody(tenForm.rentDue, tenancies.find((t) => t.id === tenForm.id)),
       depositCents,
-      depositStatus: depositCents !== null ? tenForm.depositStatus : null,
+      // Mit Kautionsbuchungen ergibt sich der Stand aus ihnen (#228): Der gespeicherte bleibt dann, wie er ist, und
+      // gilt wieder, falls alle Buchungen gelöscht werden. Ohne Höhe gibt es keinen Stand, wie vor #228 (Durchsicht G10).
+      ...(depositCents !== null && tenForm.id !== undefined && depositEntries.some((e) => e.tenancyId === tenForm.id) ? {} : { depositStatus: depositCents !== null ? tenForm.depositStatus : null }),
+      depositForm: tenForm.depositForm || null,
       notes: tenForm.notes.trim() || null,
       ...costModelBody(tenForm.costModel, tenForm.heatingModel),
       selfSupplyKind: tenForm.heatingModel === 'selfSupply' && tenForm.selfSupplyKind !== '' ? tenForm.selfSupplyKind : null,
@@ -409,7 +436,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   async function deleteTenancy(t: Tenancy) {
     const ok = await confirm({
       title: `Mietverhältnis „${t.tenantName}“ löschen?`,
-      message: 'Das Mietverhältnis und zugehörige Zahlungen werden gelöscht.',
+      message: 'Das Mietverhältnis, zugehörige Zahlungen und Kautionsbuchungen werden gelöscht.',
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -439,6 +466,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
   const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)
 
+  // Kaution (#228): die Buchungen je Mietverhältnis, und ob das Formular eines mit Buchungen zeigt.
+  const entriesOf = (tenancyId: string): DepositEntry[] => depositEntries.filter((e) => e.tenancyId === tenancyId)
+  const hasDepositEntries = tenForm?.id !== undefined && entriesOf(tenForm.id).length > 0
+  // Das gesperrte Auswahlfeld zeigt den Stand aus den Buchungen, wie die Zeile der Liste (Durchsicht W1); gespeichert
+  // wird er nicht.
+  const formTenancy = tenForm?.id === undefined ? undefined : tenancies.find((t) => t.id === tenForm.id)
+  const depositTenancy = depositFor === null ? undefined : tenancies.find((t) => t.id === depositFor)
+
   // Eine Zeile der Tabelle der Mietverhältnisse, für laufende und frühere gleich.
   const tenancyRow = (t: Tenancy) => (
     <tr key={t.id} data-tenancy-id={t.id} className={jump?.id === t.id ? 'focus-target' : undefined}>
@@ -457,11 +492,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             {t.email}{t.email && t.phone && ' · '}{t.phone && <span className="nowrap">{t.phone}</span>}
           </div>
         )}
-        {t.depositCents != null && (
+        {(t.depositCents != null || entriesOf(t.id).length > 0) && (
           <div className="cell-sub">
-            <span className="muted">Kaution {fmtEuro(t.depositCents)}</span>{' '}
-            <span className={`badge ${t.depositStatus === 'erhalten' ? 'green' : t.depositStatus === 'offen' ? 'gray' : 'gray'}`}>
-              {DEPOSIT_STATUS_LABELS[t.depositStatus ?? 'offen']}
+            <span className="muted">{t.depositCents != null ? `Kaution ${fmtEuro(t.depositCents)}` : 'Kaution'}</span>{' '}
+            <span className={`badge ${depositState(t, entriesOf(t.id)).status === 'erhalten' ? 'green' : 'gray'}`}>
+              {depositStatusLabel(depositState(t, entriesOf(t.id)))}
             </span>
           </div>
         )}
@@ -519,6 +554,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             Mieterwechsel
           </button>
         )}
+        {/* Immer, auch ohne vereinbarte Höhe (Durchsicht G4): Sonst ließe sich die erste Buchung nicht anlegen. */}
+        <button className="btn small secondary" onClick={() => setDepositFor(t.id)}>Kaution führen</button>
         </div>
       </td>
     </tr>
@@ -896,14 +933,19 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <input type="checkbox" checked={tenForm.relative} onChange={(e) => setTenForm({ ...tenForm, relative: e.target.checked })} />
                   <span>An Angehörige zu Wohnzwecken vermietet (für die Steuer, siehe <Term id="cheapRent">verbilligte Vermietung</Term>)</span>
                 </label>
-                <Field label="Kaution €" {...tenErrors.field('deposit')}>
+                <Field label="Kaution €" hint={depositLimitHint(tenForm) ?? undefined} {...tenErrors.field('deposit')}>
                   <input value={tenForm.deposit} inputMode="decimal" placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
                 </Field>
-                <Field label="Kautionsstatus">
-                  <select value={tenForm.depositStatus} disabled={!tenForm.deposit.trim()} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
+                <Field label="Kautionsstatus" hint={hasDepositEntries ? 'Der Stand ergibt sich aus den Kautionsbuchungen („Kaution führen“ in der Liste).' : undefined}>
+                  <select value={formTenancy && hasDepositEntries ? depositState(formTenancy, entriesOf(formTenancy.id)).status : tenForm.depositStatus} disabled={!tenForm.deposit.trim() || hasDepositEntries} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
                     {(Object.keys(DEPOSIT_STATUS_LABELS) as DepositStatus[]).map((s) => (
                       <option key={s} value={s}>{DEPOSIT_STATUS_LABELS[s]}</option>
                     ))}
+                  </select>
+                </Field>
+                <Field label="Form der Sicherheit">
+                  <select value={tenForm.depositForm} onChange={(e) => setTenForm({ ...tenForm, depositForm: DEPOSIT_FORM_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                    {DEPOSIT_FORM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </Field>
                 <Field label="Notiz">
@@ -1033,6 +1075,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             )}
           </div>
         </Drawer>
+      )}
+
+      {depositTenancy && (
+        <DepositDrawer tenancy={depositTenancy} entries={entriesOf(depositTenancy.id)}
+          onChanged={() => setDepositVersion((v) => v + 1)} onClose={() => setDepositFor(null)} />
       )}
 
       {wizardFor && (

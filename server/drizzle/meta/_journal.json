@@ -680,6 +680,20 @@
       "when": 1794312801389,
       "tag": "0096_e_rechnung_herkunft_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "6",
+      "when": 1794496185858,
+      "tag": "0097_kaution_buchungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "6",
+      "when": 1794496187276,
+      "tag": "0098_kaution_form_bedingung",
+      "breakpoints": true
     }
   ]
 }

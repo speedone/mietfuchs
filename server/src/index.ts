@@ -73,6 +73,7 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
+import { createDepositEntry, DepositError, listDepositEntries, removeDepositEntry, updateDepositEntry } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
@@ -1017,6 +1018,27 @@ app.put('/api/co2-refunds/:id', async (req, res) => {
 app.delete('/api/co2-refunds/:id', async (req, res) => {
   const removed = await writeData((db) => removeRefund(db, req.params.id))
   if (!removed) return res.status(404).json({ error: NO_REFUND })
+  res.json({ ok: true })
+})
+
+// ---------- Kautionsbuchungen (#228) ----------
+// Das Objekt ergibt sich beim Schreiben aus dem Mietverhältnis; gelistet wird je Objekt. Die Prüfungen stehen in
+// db/deposits.ts; DepositError gibt die Fehlerbehandlung mit seinem Status weiter.
+const NO_DEPOSIT_ENTRY = 'Diese Kautionsbuchung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/deposit-entries', async (req, res) => {
+  res.json(await readData(async (db) => listDepositEntries(db, await propertyOf(db, req))))
+})
+app.post('/api/deposit-entries', async (req, res) => {
+  res.status(201).json(await writeData((db) => createDepositEntry(db, bodyObject(req), newId)))
+})
+app.put('/api/deposit-entries/:id', async (req, res) => {
+  const entry = await writeData((db) => updateDepositEntry(db, req.params.id, bodyObject(req)))
+  if (!entry) return res.status(404).json({ error: NO_DEPOSIT_ENTRY })
+  res.json(entry)
+})
+app.delete('/api/deposit-entries/:id', async (req, res) => {
+  const removed = await writeData((db) => removeDepositEntry(db, req.params.id))
+  if (!removed) return res.status(404).json({ error: NO_DEPOSIT_ENTRY })
   res.json({ ok: true })
 })
 
@@ -4648,7 +4670,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Die Verteilung nach § 82b EStDV (#262, E-9): dieselbe Gestalt, bestätigt mit `confirmSpread`.
   if (err instanceof SpreadQuestion) return res.status(409).json({ error: err.message, question: 'spread' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

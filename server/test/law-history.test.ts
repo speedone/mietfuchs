@@ -161,6 +161,8 @@ const SHIPPED: readonly string[] = [
   'bgb.transfer-execution-days|||{"afterCutoff":1,"execution":1,"paper":1}',
   'practice.credit-booking-days|||1',
   'practice.bank-closed-days|||["12-24","12-31"]',
+  // Mietkaution (#228)
+  'bgb.deposit-max-months|||3',
 ]
 
 const current = (): string[] =>

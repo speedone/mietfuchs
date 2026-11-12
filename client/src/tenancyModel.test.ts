@@ -1,7 +1,7 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
 import { parseMonthText } from './monthText'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, partialMonthNote, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule, EMPTY_RENT_DUE, legalRentDue, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, partialMonthNote, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule, EMPTY_RENT_DUE, legalRentDue, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -335,4 +335,26 @@ test('Fälligkeit: gesendet wird nur, was sich geändert hat', () => {
   expect(rentDueBody(EMPTY_RENT_DUE, undefined)).toEqual({})
   expect(rentDueBody({ rentDue: 'dayOfMonth', rentDueDay: '3', firstRentAtStart: false }, undefined)).toEqual({ rentDue: 'dayOfMonth', rentDueDay: 3 })
   expect(rentDueFormOf({})).toEqual(EMPTY_RENT_DUE)
+})
+
+// ---------- Kaution (#228): Hinweis zur Höhe nach § 551 Abs. 1 BGB ----------
+
+test('Hinweis über drei Monatsmieten: über der Grenze der Satz mit Betrag, sonst nichts', () => {
+  const form = { deposit: '2.500,00', start: '2025-03-01', baseRents: [{ from: '', amount: '800,00' }], costModel: 'settlement' as const, heatingModel: 'settlement' as const }
+  expect(depositLimitHint(form)?.replace(/\u00a0/g, ' ')).toBe('Mehr als drei Monatsmieten ohne Betriebskosten (2.400,00 €). § 551 Abs. 1 BGB erlaubt höchstens das Dreifache.')
+  expect(depositLimitHint({ ...form, deposit: '2.400,00' })).toBeNull()
+  expect(depositLimitHint({ ...form, deposit: '' })).toBeNull()
+  expect(depositLimitHint({ ...form, deposit: 'viel' })).toBeNull()
+  // Eine spätere Staffel ändert die Grenze nicht; maßgeblich ist die Miete am Beginn.
+  expect(depositLimitHint({ ...form, baseRents: [{ from: '', amount: '800,00' }, { from: '03/2026', amount: '900,00' }] })).not.toBeNull()
+  expect(depositLimitHint({ ...form, deposit: '2.700,00', baseRents: [{ from: '', amount: '900,00' }] })).toBeNull()
+})
+
+test('Hinweis über drei Monatsmieten: kein Hinweis bei teilweise inklusiver Miete oder ohne Kaltmiete', () => {
+  const form = { deposit: '9.000,00', start: '2025-03-01', baseRents: [{ from: '', amount: '800,00' }], costModel: 'inclusive' as const, heatingModel: 'settlement' as const }
+  expect(depositLimitHint(form)).toBeNull()
+  expect(depositLimitHint({ ...form, costModel: 'settlement', baseRents: [] })).toBeNull()
+  expect(depositLimitHint({ ...form, costModel: 'settlement', baseRents: [{ from: '', amount: 'x' }] })).toBeNull()
+  // Inklusivmiete: die ganze Miete zählt.
+  expect(depositLimitHint({ ...form, deposit: '2.500,00', heatingModel: 'inclusive' })).not.toBeNull()
 })

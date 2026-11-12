@@ -10,6 +10,7 @@ import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { monthShare, rateAtMonth, rateInMonth } from '../../shared/monthRate.ts'
+import { depositLimit } from '../../shared/deposit.ts'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
 // Die Regeln der Berechnung stehen in calc.ts, die Monatsregel in shared/monthRate.ts; hier steht nur, wie
@@ -357,4 +358,33 @@ export function rentDueBody(form: RentDueForm, stored: Pick<Tenancy, 'rentDue' |
   if (rule === 'dayOfMonth' && day !== null && day !== (stored?.rentDueDay ?? null)) body.rentDueDay = day
   if (form.firstRentAtStart !== (stored?.firstRentAtStart === true)) body.firstRentAtStart = form.firstRentAtStart
   return body
+}
+
+// Der Hinweis am Feld „Kaution“ (#228): Liegt die vereinbarte Kaution über dem Dreifachen der Monatsmiete ohne
+// Betriebskosten, sagt das Formular es ruhig; gespeichert wird trotzdem, denn die Vereinbarung ist dann nur insoweit
+// unwirksam, und Mietfuchs kennt den Vertrag nicht. Die Grenze rechnet `depositLimit` (shared/deposit.ts) aus den
+// Angaben des Formulars; was sich nicht lesen lässt, ergibt keinen Hinweis (die Prüfung der Staffel meldet es selbst).
+// „drei“ und „Dreifache“ stehen im Wortlaut von § 551 Abs. 1 BGB; die Zahl zum Rechnen kommt aus dem Register.
+export function depositLimitHint(form: {
+  deposit: string
+  start: string
+  baseRents: readonly { from: string; amount: string }[]
+  costModel: CostModel
+  heatingModel: HeatingModel
+}): string | null {
+  const depositCents = parseEuro(form.deposit)
+  if (form.deposit.trim() === '' || depositCents === null || !/^\d{4}-\d{2}-\d{2}$/.test(form.start)) return null
+  const baseRents: { from: string; monthlyCents: number }[] = []
+  let first = true
+  for (const row of form.baseRents) {
+    if (row.from.trim() === '' && row.amount.trim() === '') continue
+    const month = parseMonthText(row.from)
+    const from = month.kind === 'month' ? month.key : first ? form.start.slice(0, 7) : null
+    first = false
+    const monthlyCents = parseEuro(row.amount)
+    if (from !== null && monthlyCents !== null) baseRents.push({ from, monthlyCents })
+  }
+  const limit = depositLimit({ start: form.start, baseRents, costModel: form.costModel, heatingModel: form.heatingModel })
+  if (limit === null || depositCents <= limit) return null
+  return `Mehr als drei Monatsmieten ohne Betriebskosten (${fmtEuro(limit)}). § 551 Abs. 1 BGB erlaubt höchstens das Dreifache.`
 }

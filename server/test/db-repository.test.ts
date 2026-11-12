@@ -397,7 +397,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       body: {
         unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: '2024-12-31',
         email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', letterSalutation: 'Sehr geehrte Frau A', iban: 'DE89370400440532013000',
-        contractDate: '2023-12-01', depositCents: 1000, depositStatus: 'erhalten', notes: 'Notiz',
+        contractDate: '2023-12-01', depositCents: 1000, depositStatus: 'erhalten', depositForm: 'pledged', notes: 'Notiz',
         costModel: 'flatRate', heatingModel: 'selfSupply', selfSupplyKind: 'central', halfSplitNoticeOn: '2023-12-01',
         // #96 PR 2: an Angehörige vermietet.
         relative: true,

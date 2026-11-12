@@ -3,7 +3,7 @@
 // Konstanten, die hier fehlen.
 import type { LawParam, Timing } from './register.ts'
 import type { LawValue } from '../types.ts'
-import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbRentDueAtStart, bgbRentDueSaturday, bgbRentDueWorkday, bgbTransferExecutionDays } from './bgb-betrkv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDepositMaxMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbRentDueAtStart, bgbRentDueSaturday, bgbRentDueWorkday, bgbTransferExecutionDays } from './bgb-betrkv.ts'
 import { HOLIDAY_PARAMS } from './feiertagsgesetze.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable } from './co2kostaufg.ts'
 import { estgAcquisitionRelated, estgCheapRent, estgShortPeriodDays } from './estg.ts'
@@ -87,4 +87,6 @@ export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   bgbTransferExecutionDays,
   practiceCreditBookingDays,
   practiceBankClosedDays,
+  // Mietkaution (#228)
+  bgbDepositMaxMonths,
 ]

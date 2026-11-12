@@ -8,6 +8,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Kaution führen: Am Mietverhältnis (Stammdaten, „Kaution führen“) buchen Sie Eingänge, auch in Raten, Zinsen,
+  Verrechnungen mit Schaden oder Sonstigem und Rückzahlungen. Den Stand rechnet Mietfuchs aus den Buchungen; ohne
+  Buchungen gilt weiter der gewählte Stand. Mehr auszahlen oder verrechnen, als bis zu dem Tag eingegangen ist, lässt
+  sich nicht buchen. Neu ist die Angabe der Form der Sicherheit, und am Feld „Kaution“ steht ein Hinweis, wenn sie
+  über drei Monatsmieten ohne Betriebskosten liegt (§ 551 Abs. 1 BGB). Mietkonto und Steuerübersicht bleiben
+  unberührt; die Verrechnung mit Mietrückstand oder Nachzahlung und die Aufstellung zum Auszug folgen
+  ([#228](https://github.com/speedone/mietfuchs/issues/228)).
 - E-Rechnungen ohne KI: Trägt ein hochgeladenes PDF eine E-Rechnung (ZUGFeRD oder Factur-X), übernimmt Mietfuchs
   Betrag, Datum, Rechnungssteller und Positionen direkt aus dem XML in die Prüfung unter „Zu prüfen“, ohne Modell und
   ohne Netz, auch wenn keine KI erreichbar ist. Ein Lohnanteil nach § 35a EStG wird nur für erkennbare Arbeit

@@ -3,9 +3,10 @@
 // Spaltenname da. Logik ohne DOM, geprüft in journalView.test.ts.
 
 import { fmtDate, fmtEuro } from './api'
-import { DEPOSIT_STATUS_LABELS, KEY_LABELS, METER_TYPE_LABELS, PROPERTY_KIND_LABELS } from './types'
+import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, KEY_LABELS, METER_TYPE_LABELS, PROPERTY_KIND_LABELS } from './types'
 import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, RENT_DUE_LABELS } from './tenancyModel'
 import { PAYMENT_KIND_LABELS } from './paymentForm'
+import { DEPOSIT_KIND_LABELS, DEPOSIT_PURPOSE_LABELS } from './depositForm'
 import { STATES } from '../../shared/states.ts'
 
 export type JournalGroup = {
@@ -54,6 +55,7 @@ const TABLE_LABELS: Record<string, string> = {
   meters: 'Zähler',
   readings: 'Ablesung',
   payments: 'Zahlung',
+  deposit_entries: 'Kautionsbuchung',
   person_history: 'Personenzahl',
   prepayments: 'Vorauszahlung',
   base_rents: 'Kaltmiete',
@@ -131,6 +133,9 @@ const FIELD_LABELS: Record<string, string> = {
   contract_date: 'Mietvertrag vom',
   deposit_cents: 'Kaution',
   deposit_status: 'Stand der Kaution',
+  deposit_form: 'Form der Sicherheit',
+  purpose: 'Verrechnet mit',
+  payment_id: 'Zahlung im Mietkonto',
   cost_model: 'Nebenkosten',
   heating_model: 'Heizkosten',
   category: 'Kostenart',
@@ -231,12 +236,15 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   heating_model: asLabels(HEATING_MODEL_LABELS),
   rent_due: asLabels(RENT_DUE_LABELS),
   deposit_status: asLabels(DEPOSIT_STATUS_LABELS),
+  deposit_form: asLabels(DEPOSIT_FORM_LABELS),
+  purpose: asLabels(DEPOSIT_PURPOSE_LABELS),
   state: STATE_LABELS,
   scope: { common: 'einen Teil des Hauses', property: 'das ganze Haus' },
 }
 // Spalten, deren Aufzählung je Tabelle verschieden ist.
 const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> = {
   payments: { kind: asLabels(PAYMENT_KIND_LABELS) },
+  deposit_entries: { kind: asLabels(DEPOSIT_KIND_LABELS) },
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
   cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
   cost_items: { room_split: { area: 'Fläche', persons: 'Personentagen' } },

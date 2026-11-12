@@ -19,7 +19,7 @@
 
 import { isSpreadYears } from '../../../shared/spread.ts'
 import { asc, eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, DepositEntry, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
@@ -27,7 +27,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemMeterRest, costItemMeterRestBehind, costItemMeterRestSubs, costItemMeterRestUnits, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitLocalRents, unitNoConnection, unitUsageChanges, meters, payments,
+  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemMeterRest, costItemMeterRestBehind, costItemMeterRestSubs, costItemMeterRestUnits, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, depositEntries, unitLocalRents, unitNoConnection, unitUsageChanges, meters, payments,
   flatRates, tenancyDirectCharges, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
@@ -254,6 +254,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     ...(t.firstRentAtStart === true ? { firstRentAtStart: true } : {}),
     depositCents: orUndefined(t.depositCents),
     depositStatus: orUndefined(t.depositStatus),
+    // Nur mit Angabe (#228): Ein Mietverhältnis ohne liest sich wie vor der Spalte.
+    ...(t.depositForm !== null ? { depositForm: t.depositForm } : {}),
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
     ...(t.costModel === null ? {} : { costModel: t.costModel }),
     ...(t.heatingModel === null ? {} : { heatingModel: t.heatingModel }),
@@ -568,6 +570,22 @@ export async function readReadings(db: Executor): Promise<Reading[]> {
     ...(r.interimFor !== null ? { interimFor: r.interimFor } : {}),
     // Geschätzte Ablesung (#98), nur wenn gesetzt.
     ...(r.estimated === true ? { estimated: true, ...(r.estimateReason !== null ? { estimateReason: r.estimateReason } : {}) } : {}),
+  }))
+}
+
+// Die Kautionsbuchungen (#228) in Einfügereihenfolge: Am selben Tag entscheidet sie, was zuerst geschah
+// (depositProblem in shared/deposit.ts).
+export async function readDepositEntries(db: Executor): Promise<DepositEntry[]> {
+  const rows = await db.select().from(depositEntries).orderBy(INSERTION_ORDER)
+  return rows.map((d) => ({
+    id: d.id,
+    tenancyId: d.tenancyId,
+    date: d.date,
+    kind: d.kind,
+    amountCents: d.amountCents,
+    ...(d.purpose !== null ? { purpose: d.purpose } : {}),
+    ...(d.paymentId !== null ? { paymentId: d.paymentId } : {}),
+    ...(d.note !== null ? { note: d.note } : {}),
   }))
 }
 

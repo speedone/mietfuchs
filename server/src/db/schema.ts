@@ -28,6 +28,9 @@ import type {
   CostModel,
   HeatingModel,
   SelfSupplyKind,
+  DepositEntryKind,
+  DepositForm,
+  DepositPurpose,
   DepositStatus,
   PaymentKind,
   DevicesInstalledAfter,
@@ -122,6 +125,10 @@ export const PAYMENT_KINDS = exactly<PaymentKind>()(['rent', 'settlement'] as co
 // Die Fälligkeit der Miete laut Vertrag (#334); NULL heißt gesetzlich. Beschriftungen in client/src/tenancyModel.ts.
 export const RENT_DUE_RULES = exactly<RentDueRule>()(['startWorkday', 'dayOfMonth', 'inArrears'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
+// Kautionsbuchungen (#228): Art, Zweck einer Verrechnung und Form der Sicherheit; Beschriftungen im Client.
+export const DEPOSIT_ENTRY_KINDS = exactly<DepositEntryKind>()(['received', 'interest', 'applied', 'refunded'] as const)
+export const DEPOSIT_PURPOSES = exactly<DepositPurpose>()(['rent', 'settlement', 'damage', 'other'] as const)
+export const DEPOSIT_FORMS = exactly<DepositForm>()(['account', 'pledged', 'guarantee', 'other'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
 const AI_SLOT_NAMES = exactly<AiSlotName>()(['text', 'images'] as const)
@@ -321,6 +328,8 @@ export const tenancies = sqliteTable(
     contractDate: text('contract_date'),
     depositCents: integer('deposit_cents'),
     depositStatus: text('deposit_status', { enum: DEPOSIT_STATUS }),
+    // Form der Sicherheit (#228); NULL heißt keine Angabe.
+    depositForm: text('deposit_form', { enum: DEPOSIT_FORMS }),
     notes: text('notes'),
     // Nebenkostenmodell (#93), getrennt für kalte Kosten und Heizung. NULL heißt Abrechnung.
     costModel: text('cost_model', { enum: COST_MODELS }),
@@ -345,6 +354,7 @@ export const tenancies = sqliteTable(
     // keinen Sinn.
     notNegative('tenancies_deposit_not_negative', 'deposit_cents'),
     oneOf('tenancies_deposit_status_known', 'deposit_status', DEPOSIT_STATUS),
+    oneOf('tenancies_deposit_form_known', 'deposit_form', DEPOSIT_FORMS),
     oneOf('tenancies_cost_model_known', 'cost_model', COST_MODELS),
     oneOf('tenancies_heating_model_known', 'heating_model', HEATING_MODELS),
     // Durchsicht S-2: die Art der Selbstversorgung, nur bei „Mieter heizt selbst“.
@@ -1681,6 +1691,36 @@ export const payments = sqliteTable('payments', {
   oneOf('payments_kind_known', 'kind', PAYMENT_KINDS),
   // NULL GLOB … ist NULL und damit kein Verstoß: ohne Bestimmung erlaubt.
   periodKeyCheck('payments_designated_month_valid', 'designated_month'),
+])
+
+// ---------- Kautionsbuchungen (#228) ----------
+// Was mit der Sicherheit eines Mietverhältnisses geschehen ist: eingegangen, Ertrag, verrechnet, ausgezahlt. Eine
+// eigene Tabelle und keine Art in `payments`: Die Kaution ist keine Einnahme, und jeder Leser von `payments`
+// (Mietkonto, Steuer) müsste sie sonst herausfiltern. Der Stand wird nie gespeichert, sondern aus den Buchungen
+// gerechnet (shared/deposit.ts); dass er an keinem Tag unter 0 fällt, prüft db/deposits.ts vor dem Schreiben, denn
+// eine Bedingung über mehrere Zeilen kann die Tabelle nicht halten.
+export const depositEntries = sqliteTable('deposit_entries', {
+  id: text('id').primaryKey().notNull(),
+  tenancyId: text('tenancy_id')
+    .notNull()
+    .references(() => tenancies.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(),
+  kind: text('kind', { enum: DEPOSIT_ENTRY_KINDS }).notNull(),
+  // Immer größer 0: Die Richtung ergibt die Art, nie das Vorzeichen.
+  amountCents: integer('amount_cents').notNull(),
+  // Womit verrechnet wurde, genau bei `applied`.
+  purpose: text('purpose', { enum: DEPOSIT_PURPOSES }),
+  // Die Zahlung, die eine Verrechnung mit Miete oder Abrechnung erzeugt hat (Teil 2). Fällt die Zahlung weg, fällt
+  // die Buchung mit ihr: Sonst wäre die Kaution verrechnet, ohne dass das Mietkonto den Betrag bekommen hätte.
+  paymentId: text('payment_id').references(() => payments.id, { onDelete: 'cascade' }),
+  note: text('note'),
+}, () => [
+  check('deposit_entries_amount_positive', sql.raw('"amount_cents" > 0')),
+  oneOf('deposit_entries_kind_known', 'kind', DEPOSIT_ENTRY_KINDS),
+  oneOf('deposit_entries_purpose_known', 'purpose', DEPOSIT_PURPOSES),
+  check('deposit_entries_purpose_valid', sql.raw(`("kind" = 'applied') = ("purpose" IS NOT NULL)`)),
+  check('deposit_entries_payment_valid', sql.raw(`"payment_id" IS NULL OR "purpose" IN ('rent', 'settlement')`)),
+  isoDate('deposit_entries_date_valid', 'date'),
 ])
 
 // ---------- Abgeschlossene Abrechnungen ----------

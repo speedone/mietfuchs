@@ -588,7 +588,7 @@ export const TABLE_KINDS: Readonly<Record<string, JournalKind>> = {
   cost_item_contract: 'costs', cost_item_self_amounts: 'costs', cost_sources: 'costs',
   cost_item_meter_rest: 'costs', cost_item_meter_rest_units: 'costs', cost_item_meter_rest_behind: 'costs', cost_item_meter_rest_subs: 'costs',
   meters: 'meters', readings: 'meters', interim_reading_gaps: 'meters',
-  payments: 'payments',
+  payments: 'payments', deposit_entries: 'payments',
   heating_plants: 'heating', heating_plant_units: 'heating', heating_periods: 'heating', heating_period_changes: 'heating',
   heating_separate_spans: 'heating', heating_self_spans: 'heating', heating_service_values: 'heating',
   heating_estimates: 'heating', heating_prepayments: 'heating', heating_prepayment_overrides: 'heating',
