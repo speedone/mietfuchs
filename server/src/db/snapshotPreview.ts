@@ -78,6 +78,9 @@ async function consentSentences(db: Executor | null): Promise<string[]> {
   }
   const [update] = await db.all<[string | null]>(sql`SELECT update_check FROM settings LIMIT 1`)
   if (update?.[0] === 'on') granted.push('die Abfrage nach Updates')
+  for (const [label] of await db.all<[string]>(sql`SELECT label FROM bank_accounts WHERE kind = 'rental' ORDER BY rowid`)) {
+    granted.push(`dass jeder Umsatz des Kontos „${label}“ einzeln gespeichert wird`)
+  }
   return [
     granted.length === 0
       ? 'Zustimmungen bringt die Sicherung nicht mit: Es bleibt dabei, dass Sie zurzeit keiner Übermittlung an einen KI-Dienst und keiner Abfrage nach Updates zugestimmt haben.'

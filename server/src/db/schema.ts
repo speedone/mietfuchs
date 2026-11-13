@@ -1731,6 +1731,133 @@ export const depositEntries = sqliteTable('deposit_entries', {
   isoDate('deposit_entries_date_valid', 'date'),
 ])
 
+// ---------- Kontoauszug (#188) ----------
+// Eingelesene Kontoauszüge, getrennt von den Zahlungen: Ein Umsatz wird erst durch eine bestätigte Zuordnung zur
+// Zahlung (`bank_transaction_links`). Keine Tabelle hat einen Objektbezug, denn ein Konto empfängt Mieten mehrerer
+// Häuser. **Auf einem Mischkonto steht kein privater Umsatz einzeln in einer Tabelle**, nur in der Tagessumme
+// (`bank_days`); welcher Umsatz gespeichert wird, entscheidet bank/importPlan.ts.
+
+export const BANK_ACCOUNT_KINDS = ['mixed', 'rental'] as const
+export const BANK_SET_ASIDE = ['transfer', 'notRental', 'other'] as const
+export const BANK_FORMATS = ['camt.052', 'camt.053', 'camt.054', 'mt940'] as const
+
+// Ein Konto des Vermieters. `mixed` (Voreinstellung) heißt: Privates kann darauf stehen und wird nie einzeln
+// gespeichert. `rental` gilt erst nach ausdrücklicher Bestätigung, deren Zeitpunkt hier steht.
+export const bankAccounts = sqliteTable('bank_accounts', {
+  id: text('id').primaryKey().notNull(),
+  iban: text('iban'),
+  // Kontokennung ohne IBAN (camt `Othr/Id`, MT940 `BLZ/Konto`).
+  otherId: text('other_id'),
+  label: text('label').notNull(),
+  kind: text('kind', { enum: BANK_ACCOUNT_KINDS }).notNull().default('mixed'),
+  rentalConfirmedAt: text('rental_confirmed_at'),
+}, (t) => [
+  uniqueIndex('bank_accounts_iban_idx').on(t.iban),
+  uniqueIndex('bank_accounts_other_id_idx').on(t.otherId),
+  oneOf('bank_accounts_kind_known', 'kind', BANK_ACCOUNT_KINDS),
+  check('bank_accounts_rental_valid', sql.raw(`"kind" <> 'rental' OR "rental_confirmed_at" IS NOT NULL`)),
+  check('bank_accounts_identity_complete', sql.raw(`"iban" IS NOT NULL OR "other_id" IS NOT NULL`)),
+])
+
+// Ein übernommener Auszug, nicht eine Datei: Eine Datei kann mehrere Auszüge tragen. Eine Aufschlüsselung (camt.054)
+// legt keinen Import an, ihre Posten gehören zum Import der zerlegten Sammelbuchung.
+export const bankImports = sqliteTable('bank_imports', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  fileSha256: text('file_sha256').notNull(),
+  fileName: text('file_name').notNull(),
+  format: text('format', { enum: BANK_FORMATS }).notNull(),
+  statementId: text('statement_id'),
+  fromDate: text('from_date').notNull(),
+  toDate: text('to_date').notNull(),
+  openingBalanceCents: integer('opening_balance_cents'),
+  closingBalanceCents: integer('closing_balance_cents'),
+  importedAt: text('imported_at').notNull(),
+  // Die Fassung der Normierung des Fingerabdrucks (bank/statement.ts, FINGERPRINT_VERSION), mit der die Umsätze
+  // dieses Imports gespeichert sind.
+  fingerprintVersion: integer('fingerprint_version').notNull(),
+}, (t) => [
+  uniqueIndex('bank_imports_file_idx').on(t.accountId, t.fileSha256, t.fromDate, t.toDate),
+  oneOf('bank_imports_format_known', 'format', BANK_FORMATS),
+  isoDate('bank_imports_from_valid', 'from_date'),
+  isoDate('bank_imports_to_valid', 'to_date'),
+])
+
+// Ein abgeschlossener Buchungstag eines Kontos laut Auszug: Anzahl der Umsätze und ihre Summen, private eingeschlossen.
+// Er ist die Einheit des Abgleichs beim zweiten Einlesen. Nur Tage mit Umsätzen haben eine Zeile.
+export const bankDays = sqliteTable('bank_days', {
+  accountId: text('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(),
+  importId: text('import_id').notNull().references(() => bankImports.id, { onDelete: 'cascade' }),
+  entryCount: integer('entry_count').notNull(),
+  creditCents: integer('credit_cents').notNull(),
+  debitCents: integer('debit_cents').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.accountId, t.date] }),
+  check('bank_days_entry_count_not_negative', sql.raw('"entry_count" >= 0')),
+  check('bank_days_credit_not_negative', sql.raw('"credit_cents" >= 0')),
+  check('bank_days_debit_not_negative', sql.raw('"debit_cents" >= 0')),
+  isoDate('bank_days_date_valid', 'date'),
+])
+
+// Ein gespeicherter Umsatz: auf einem Mischkonto nur einer der Vermietung, auf einem Mietkonto jeder.
+export const bankTransactions = sqliteTable('bank_transactions', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  importId: text('import_id').notNull().references(() => bankImports.id, { onDelete: 'cascade' }),
+  bookingDate: text('booking_date').notNull(),
+  valueDate: text('value_date'),
+  amountCents: integer('amount_cents').notNull(),
+  counterpartyName: text('counterparty_name'),
+  counterpartyIban: text('counterparty_iban'),
+  ultimatePartyName: text('ultimate_party_name'),
+  purpose: text('purpose').notNull(),
+  bankReference: text('bank_reference'),
+  endToEndId: text('end_to_end_id'),
+  reversal: integer('reversal', { mode: 'boolean' }).notNull().default(false),
+  fingerprint: text('fingerprint').notNull(),
+  batchReference: text('batch_reference'),
+  batchPart: integer('batch_part'),
+  batchParts: integer('batch_parts'),
+  batchTotalCents: integer('batch_total_cents'),
+  // NULL: offen oder zugeordnet. Sonst der Grund, warum der Umsatz keiner Zahlung zugeordnet wird.
+  setAside: text('set_aside', { enum: BANK_SET_ASIDE }),
+}, (t) => [
+  index('bank_transactions_account_date_idx').on(t.accountId, t.bookingDate),
+  index('bank_transactions_fingerprint_idx').on(t.fingerprint),
+  check('bank_transactions_amount_valid', sql.raw('"amount_cents" <> 0')),
+  oneOf('bank_transactions_set_aside_known', 'set_aside', BANK_SET_ASIDE),
+  isoDate('bank_transactions_booking_date_valid', 'booking_date'),
+  isoDate('bank_transactions_value_date_valid', 'value_date'),
+])
+
+// Die Zuordnung eines Umsatzes zu einer Zahlung oder einer Kautionsbuchung. **Der Link trägt keinen Betrag**: Der
+// zugeordnete Betrag ist der seines Ziels. Jede Zahlung und jede Kautionsbuchung hängt an höchstens einem Umsatz.
+// `created`: Das Ziel entstand aus dem Umsatz (1) oder war schon erfasst und wurde nur verknüpft (0).
+export const bankTransactionLinks = sqliteTable('bank_transaction_links', {
+  id: text('id').primaryKey().notNull(),
+  transactionId: text('transaction_id').notNull().references(() => bankTransactions.id, { onDelete: 'cascade' }),
+  paymentId: text('payment_id').references(() => payments.id, { onDelete: 'cascade' }),
+  depositEntryId: text('deposit_entry_id').references(() => depositEntries.id, { onDelete: 'cascade' }),
+  created: integer('created', { mode: 'boolean' }).notNull(),
+}, (t) => [
+  index('bank_transaction_links_transaction_idx').on(t.transactionId),
+  uniqueIndex('bank_transaction_links_payment_idx').on(t.paymentId),
+  uniqueIndex('bank_transaction_links_deposit_idx').on(t.depositEntryId),
+  check('bank_transaction_links_target_valid', sql.raw(`("payment_id" IS NULL) <> ("deposit_entry_id" IS NULL)`)),
+])
+
+// Weitere Zahler eines Mietverhältnisses neben `tenancies.iban`, etwa das Jobcenter oder ein Elternteil.
+export const tenancyPayers = sqliteTable('tenancy_payers', {
+  id: text('id').primaryKey().notNull(),
+  tenancyId: text('tenancy_id').notNull().references(() => tenancies.id, { onDelete: 'cascade' }),
+  iban: text('iban').notNull(),
+  name: text('name'),
+}, (t) => [
+  uniqueIndex('tenancy_payers_tenancy_iban_idx').on(t.tenancyId, t.iban),
+  index('tenancy_payers_iban_idx').on(t.iban),
+])
+
 // ---------- Abgeschlossene Abrechnungen ----------
 
 export const closedSettlements = sqliteTable(

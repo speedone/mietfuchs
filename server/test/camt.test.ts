@@ -468,3 +468,22 @@ test('camt: feindliches XML (tiefe Verschachtelung, __proto__) ergibt einen Befu
     assert.equal(r.problems.length, 1)
   }
 })
+
+// Durchsicht #188 PR 1, W5: Ein Bericht (camt.052), der mitten am Tag beginnt, deckt seinen ersten Tag nicht ganz ab.
+test('camt: ob der Zeitraum mit dem ganzen ersten Tag beginnt, steht am Auszug', () => {
+  const report = (from: string | null) => `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.02">
+  <BkToCstmrAcctRpt><Rpt><Id>R1</Id><CreDtTm>2025-06-03T08:00:00+02:00</CreDtTm>
+    ${from === null ? '' : `<FrToDt><FrDtTm>${from}</FrDtTm><ToDtTm>2025-06-03T08:00:00+02:00</ToDtTm></FrToDt>`}
+    <Acct><Id><IBAN>${ACCOUNT}</IBAN></Id></Acct>
+    ${ntry({ date: '2025-06-02' })}
+  </Rpt></BkToCstmrAcctRpt>
+</Document>`
+  const whole = (from: string | null) => readCamt(report(from), 'r.xml').statements[0]?.fromWholeDay
+  assert.equal(whole('2025-06-02T14:00:00+02:00'), false)
+  assert.equal(whole('2025-06-02T12:00:00Z'), false)
+  assert.equal(whole('2025-06-02T00:00:00+02:00'), true)
+  assert.equal(whole('2025-06-01T22:00:00Z'), true, 'Mitternacht in Deutschland')
+  assert.equal(whole('2025-06-02T00:00:00'), true)
+  assert.equal(whole(null), true)
+})

@@ -63,6 +63,10 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'POST /api/deposit-entries/from-payment/:paymentId': s('Mietzahlung als Kaution umgebucht', 'deposit_entries'),
   'PUT /api/deposit-entries/:id': s('Kautionsbuchung geändert', 'deposit_entries'),
   'DELETE /api/deposit-entries/:id': s('Kautionsbuchung gelöscht', 'deposit_entries'),
+  // Kontoauszug (#188); die Vorschau (…/import/plan) liest nur.
+  'POST /api/bank/import': s('Kontoauszug eingelesen', 'bank_imports'),
+  'PUT /api/bank/accounts/:id': s('Konto geändert', 'bank_accounts'),
+  'DELETE /api/bank/imports/:id': s('Import zurückgenommen', 'bank_imports'),
   'POST /api/co2-refunds': s('CO₂-Erstattung angelegt'),
   'PUT /api/co2-refunds/:id': s('CO₂-Erstattung geändert'),
   'DELETE /api/co2-refunds/:id': s('CO₂-Erstattung gelöscht'),
@@ -113,6 +117,8 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
 // Sie haben bewusst keinen Satz, und `journalMeta` übergeht sie still. Dieselbe Liste nimmt der Wächter
 // in journal-routes.test.ts aus.
 export const DRY_RUN_ROUTES: ReadonlySet<string> = new Set([
+  // #188: Vorschau eines Kontoauszugs; schreibt nichts.
+  'POST /api/bank/import/plan',
   'POST /api/heating-plants/:id/period/preview',
   'POST /api/heating-plants/:id/separate/preview',
   'POST /api/properties/:id/period/preview',

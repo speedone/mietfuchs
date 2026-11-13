@@ -56,6 +56,12 @@ const TABLE_LABELS: Record<string, string> = {
   readings: 'Ablesung',
   payments: 'Zahlung',
   deposit_entries: 'Kautionsbuchung',
+  bank_accounts: 'Bankkonto',
+  bank_imports: 'Kontoauszug',
+  bank_days: 'Buchungstag',
+  bank_transactions: 'Kontoumsatz',
+  bank_transaction_links: 'Zuordnung eines Kontoumsatzes',
+  tenancy_payers: 'Zahler',
   person_history: 'Personenzahl',
   prepayments: 'Vorauszahlung',
   base_rents: 'Kaltmiete',
@@ -224,6 +230,40 @@ const FIELD_LABELS: Record<string, string> = {
   consent_url: 'Bestätigt für die Adresse',
   consent_model: 'Bestätigt für das Modell',
   consent_date: 'Bestätigt am',
+  // Kontoauszug (#188)
+  other_id: 'Kontokennung',
+  rental_confirmed_at: 'Nur für die Vermietung bestätigt am',
+  account_id: 'Konto',
+  file_sha256: 'Prüfsumme der Datei',
+  file_name: 'Dateiname',
+  format: 'Format',
+  from_date: 'Von',
+  to_date: 'Bis',
+  opening_balance_cents: 'Anfangssaldo',
+  closing_balance_cents: 'Endsaldo',
+  imported_at: 'Eingelesen am',
+  fingerprint_version: 'Fassung des Fingerabdrucks',
+  import_id: 'Import',
+  entry_count: 'Anzahl der Umsätze',
+  credit_cents: 'Eingänge',
+  debit_cents: 'Ausgänge',
+  booking_date: 'Buchungstag',
+  value_date: 'Wertstellung',
+  counterparty_name: 'Gegenseite',
+  counterparty_iban: 'IBAN der Gegenseite',
+  ultimate_party_name: 'Abweichender Zahler',
+  bank_reference: 'Bankreferenz',
+  end_to_end_id: 'Ende-zu-Ende-Referenz',
+  reversal: 'Rücklastschrift',
+  fingerprint: 'Fingerabdruck',
+  batch_reference: 'Referenz der Sammelbuchung',
+  batch_part: 'Posten der Sammelbuchung',
+  batch_parts: 'Posten insgesamt',
+  batch_total_cents: 'Betrag der Sammelbuchung',
+  set_aside: 'Beiseitegelegt',
+  transaction_id: 'Kontoumsatz',
+  deposit_entry_id: 'Kautionsbuchung',
+  created: 'Aus dem Umsatz angelegt',
 }
 
 // Werte von Aufzählungen mit den Beschriftungen der Oberfläche (K4). Je Spalte, denn „settlement“ heißt bei
@@ -247,6 +287,8 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
 const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> = {
   payments: { kind: asLabels(PAYMENT_KIND_LABELS) },
   deposit_entries: { kind: asLabels(DEPOSIT_KIND_LABELS) },
+  bank_accounts: { kind: { mixed: 'Mischkonto', rental: 'nur für die Vermietung' } },
+  bank_transactions: { purpose: {}, set_aside: { transfer: 'Umbuchung zwischen eigenen Konten', notRental: 'gehört nicht zur Vermietung', other: 'anderer Grund' } },
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
   cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
   cost_items: { room_split: { area: 'Fläche', persons: 'Personentagen' } },
@@ -259,13 +301,14 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   },
 }
 
-const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start'])
+const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start', 'reversal', 'created'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
 // Spalten, die je Tabelle etwas anderes bedeuten: `source` ist an der Auswertung die Herkunft (KI oder E-Rechnung, #189),
 // an Rechtswert und ortsüblicher Miete die Quelle des Werts.
 const TABLE_FIELD_LABELS: Record<string, Record<string, string>> = {
   assessments: { source: 'Herkunft' },
+  bank_transactions: { purpose: 'Verwendungszweck' },
 }
 export const fieldLabel = (column: string, table?: string): string => (table ? TABLE_FIELD_LABELS[table]?.[column] : undefined) ?? FIELD_LABELS[column] ?? column
 

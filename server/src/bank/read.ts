@@ -151,6 +151,33 @@ const CANNOT_OPEN = `Das ZIP-Archiv lässt sich nicht öffnen. ${REPACK}`
 const ZIP_WITH_COMMENT = 'Das ZIP-Archiv trägt einen Kommentar, wie ihn kein Export von Kontoauszügen schreibt, '
   + `und wird deshalb nicht gelesen. ${REPACK}`
 
+// Sieht die Datei aus wie ein Kontoauszug? Schnellerfassung und Posteingang fragen das **vor** jeder Auswertung, damit
+// Bankdaten nie an eine KI gehen (#188). Gelesen wird nur der Anfang: die Wurzel eines camt-Dokuments, der Kopf eines
+// MT940 oder im ZIP ein Eintrag, der so beginnt. Der Name zählt nicht, Banken benennen ihre Dateien beliebig.
+const CAMT_ROOT = /<(?:[A-Za-z0-9_]+:)?(?:BkToCstmrStmt|BkToCstmrAcctRpt|BkToCstmrDbtCdtNtfctn)[\s>]/
+const SNIFF_BYTES = 4096
+
+function looksLikeSingle(data: Buffer): boolean {
+  const head = data.subarray(0, SNIFF_BYTES).toString('latin1').replace(/^\xEF\xBB\xBF/, '').trimStart()
+  if (head.startsWith('<')) return CAMT_ROOT.test(head)
+  return /^:(20|25|60F|61):/m.test(head)
+}
+
+export function looksLikeBankFile(data: Buffer, _name: string): boolean {
+  const isZip = data.length >= 4 && data.readUInt32LE(0) === 0x04034b50
+  if (!isZip) return looksLikeSingle(data)
+  const directory = zipDirectory(data)
+  if (directory === null || directory === 'comment' || directory.longName || directory.tooDeep
+    || directory.objects > MAX_ZIP_ENTRIES || directory.totalBytes > MAX_ZIP_TOTAL_BYTES) return false
+  try {
+    return new AdmZip(data).getEntries()
+      .filter((e) => !e.isDirectory && !isMacJunk(e.entryName) && /\.(xml|sta|txt|940|mt940)$/i.test(e.entryName) && e.header.size <= MAX_FILE_BYTES)
+      .some((e) => looksLikeSingle(e.getData()))
+  } catch {
+    return false
+  }
+}
+
 export function readBankFile(data: Buffer, uploadedName: string): BankReadResult {
   // Der Name steht in jedem Befund; ein überlanger stünde dort tausendfach.
   const fileName = clip(uploadedName, MAX_ZIP_NAME_BYTES)
