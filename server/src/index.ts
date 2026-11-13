@@ -73,7 +73,8 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
-import { applyBankImport, BankError, readBankAccounts, readBankStock, removeBankImport, updateBankAccount } from './db/bank.ts'
+import { applyBankImport, applyBankLinks, BankError, readBankAccounts, readBankState, readBankStock, removeBankImport, removeBankLink, setTransactionAside, updateBankAccount } from './db/bank.ts'
+import { linkToken, parseLinkDecisions, planBankLinks, type LinkDecision, type LinkPlan } from './bank/linkPlan.ts'
 import { decisionsOf, importToken, planBankImport, type ImportDecision, type ImportPlan } from './bank/importPlan.ts'
 import { MAX_ZIP_TOTAL_BYTES, readBankFile } from './bank/read.ts'
 import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry, withoutBoundDeposits } from './db/deposits.ts'
@@ -120,7 +121,7 @@ import { roomView } from '../../shared/rooms.ts'
 import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
 import { derivedTaxLines, incomeCsv, partsBySource, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { carriesStock, createPriorVersion, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked } from './db/priorVersions.ts'
-import { changeGroups, costItems as costItemsTable, properties as propertiesTable, tenancies as tenanciesTable } from './db/schema.ts'
+import { BANK_SET_ASIDE, bankTransactionLinks, bankTransactions as bankTransactionsTable, changeGroups, costItems as costItemsTable, properties as propertiesTable, tenancies as tenanciesTable } from './db/schema.ts'
 import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, retitleCurrentGroup, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
 import { applyRevert, consentSnapshot, isRevertMode, previewRevert, restoreConsent, RevertRefused, type ConsentSnapshot, type RevertPreview } from './db/revert.ts'
 import { cleanSnapshots, interleaveSnapshots, listSnapshots, parseSnapshotName, snapshotFile, snapshotLastGroup, type SnapshotNotice, type SnapshotPoint } from './db/snapshots.ts'
@@ -714,7 +715,9 @@ for (const coll of COLLECTIONS) {
       // aus dem Verweis der Buchung, keine Spalte; Berechnung und Schnappschuss sehen es nicht.
       if (coll === 'payments') {
         const bound = new Set((await readDepositEntries(db)).flatMap((e) => (e.paymentId ? [e.paymentId] : [])))
-        return scoped.payments.map((p) => (bound.has(p.id) ? { ...p, fromDeposit: true } : p))
+        // Einem Kontoumsatz zugeordnet (#188): Vermerk „aus dem Kontoauszug“.
+        const linked = new Set((await db.select({ id: bankTransactionLinks.paymentId }).from(bankTransactionLinks)).flatMap((l) => (l.id ? [l.id] : [])))
+        return scoped.payments.map((p) => ({ ...p, ...(bound.has(p.id) ? { fromDeposit: true as const } : {}), ...(linked.has(p.id) ? { fromBank: true as const } : {}) }))
       }
       if (coll !== 'costItems' && coll !== 'tenancies') return scoped[coll]
       // Ein Tab von vor dem Update filtert die Kostenpositionen nach `year` (#208). Bei einem reinen
@@ -1074,6 +1077,65 @@ app.put('/api/bank/accounts/:id', async (req, res) => {
 })
 app.delete('/api/bank/imports/:id', async (req, res) => {
   await writeData((db) => removeBankImport(db, req.params.id))
+  res.json({ ok: true })
+})
+
+// Zuordnen und Buchen (#188, Teil 2). Das Monats-Soll für den Vorschlag kommt aus dem Mietkonto jedes Objekts und jedes
+// Jahres, in dem ein Umsatz liegt; neu gerechnet wird es nie.
+async function bankSollOf(db: Database): Promise<(tenancyId: string, month: string) => number | null> {
+  const stock = await readStock(db)
+  const years = new Set((await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).map((r) => Number(r.date.slice(0, 4))))
+  const soll = new Map<string, number>()
+  for (const property of stock.properties) {
+    for (const year of years) {
+      const ledger = rentLedger(snapshotFor(stock, property.id, calendarYearPeriod(year)), { asOf: today() })
+      for (const row of ledger.rows) for (const m of row.months) soll.set(`${row.tenancyId}|${year}-${String(m.month).padStart(2, '0')}`, m.sollCents)
+    }
+  }
+  return (tenancyId, month) => soll.get(`${tenancyId}|${month}`) ?? null
+}
+app.get('/api/bank/transactions', async (req, res) => {
+  const state = req.query.state === 'done' ? 'done' : 'open'
+  res.json(await readData(async (db) => {
+    const { views } = await readBankState(db, await bankSollOf(db))
+    return views.filter((v) => (state === 'open' ? v.openCents !== 0 : v.openCents === 0))
+  }))
+})
+type LinkPlanned = { plan: LinkPlan, decisions: LinkDecision[], token: string }
+async function linkPlanOf(db: Database, req: Request): Promise<LinkPlanned> {
+  const parsed = parseLinkDecisions(bodyObject(req).decisions)
+  if ('error' in parsed) throw new RouteProblem(400, parsed.error)
+  const { ctx, views } = await readBankState(db, await bankSollOf(db))
+  const plan = planBankLinks(parsed.decisions, views.filter((v) => v.openCents !== 0).map((v) => ({ tx: v, openCents: v.openCents })), ctx)
+  return { plan, decisions: parsed.decisions, token: linkToken(plan, parsed.decisions) }
+}
+const linkPreview = ({ plan, token }: LinkPlanned) => ({ problems: plan.problems, sentence: plan.sentence, token })
+app.post('/api/bank/links/plan', async (req, res) => {
+  res.json(linkPreview(await readData((db) => linkPlanOf(db, req))))
+})
+app.post('/api/bank/links', async (req, res) => {
+  const token: unknown = bodyObject(req).token
+  if (typeof token !== 'string' || token === '') throw new RouteProblem(400, 'Gebucht wird nur, was die Vorschau gezeigt hat. Bitte zeigen Sie zuerst die Vorschau an.')
+  const result = await writeData(async (db): Promise<{ stale: LinkPlanned } | { done: LinkPlanned }> => {
+    const planned = await linkPlanOf(db, req)
+    if (planned.token !== token) return { stale: planned }
+    if (planned.plan.problems.length > 0) throw new RouteProblem(400, planned.plan.problems.map((p) => p.message).join(' '))
+    await applyBankLinks(db, planned.plan.writes, newId)
+    return { done: planned }
+  })
+  if ('stale' in result) return res.status(409).json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Vorschau noch einmal.', preview: linkPreview(result.stale) })
+  res.json({ ok: true, sentence: result.done.plan.sentence })
+})
+app.delete('/api/bank/links/:id', async (req, res) => {
+  await writeData((db) => removeBankLink(db, req.params.id, req.query.payment === 'delete'))
+  res.json({ ok: true })
+})
+app.put('/api/bank/transactions/:id', async (req, res) => {
+  const raw: unknown = bodyObject(req).setAside
+  if (raw !== null && !(typeof raw === 'string' && (BANK_SET_ASIDE as readonly string[]).includes(raw))) {
+    throw new RouteProblem(400, 'Ein Umsatz wird als Umbuchung, als nicht zur Vermietung gehörend oder aus anderem Grund beiseitegelegt.')
+  }
+  await writeData((db) => setTransactionAside(db, req.params.id, raw as (typeof BANK_SET_ASIDE)[number] | null))
   res.json({ ok: true })
 })
 

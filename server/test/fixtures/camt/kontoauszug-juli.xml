@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Erfundener Tagesauszug (camt.053.001.08) für das Zuordnen (#188, Teil 2): eine Rücklastschrift der Miete vom
+     Mieter. Namen sind ausgedacht; die IBANs sind die bekannten Beispiel-IBANs mit gültiger Prüfziffer. -->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <GrpHdr><MsgId>MSG-2025-07</MsgId><CreDtTm>2025-08-01T06:00:00+02:00</CreDtTm></GrpHdr>
+    <Stmt>
+      <Id>2025-07</Id>
+      <FrToDt><FrDtTm>2025-07-01T00:00:00+02:00</FrDtTm><ToDtTm>2025-07-31T23:59:59+02:00</ToDtTm></FrToDt>
+      <Acct><Id><IBAN>DE89370400440532013000</IBAN></Id></Acct>
+      <Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">2650.01</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2025-07-01</Dt></Dt></Bal>
+      <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">1800.01</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2025-07-31</Dt></Dt></Bal>
+      <Ntry>
+        <Amt Ccy="EUR">850.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>true</RvslInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2025-07-04</Dt></BookgDt>
+        <AcctSvcrRef>RUECK-0704</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <RltdPties>
+            <Dbtr><Pty><Nm>Erika Beispiel</Nm></Pty></Dbtr>
+            <DbtrAcct><Id><IBAN>DE02120300000000202051</IBAN></Id></DbtrAcct>
+          </RltdPties>
+          <RmtInf><Ustrd>Ruecklastschrift Nachzahlung Miete Juni</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
