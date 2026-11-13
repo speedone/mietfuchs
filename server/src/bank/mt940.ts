@@ -50,7 +50,9 @@ function fieldsOf(text: string): Field[] {
       if (body < 0) continue
       line = line.slice(body + 3)
     }
-    const m = /^:(\d{2}[A-Z]?):(.*)$/.exec(line)
+    // „:NS:“ (Zusatzangaben mancher Banken, etwa Anschrift) ist ein eigenes Feld, das niemand liest;
+    // als Folgezeile hinge es sonst am :86: und landete in Name oder Zweck.
+    const m = /^:(\d{2}[A-Z]?|NS):(.*)$/.exec(line)
     if (m) {
       fields.push({ tag: m[1], value: m[2] })
     } else if (/^-\s*$/.test(line) || line.trim() === '') {

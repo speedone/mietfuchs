@@ -487,3 +487,39 @@ test('camt: ob der Zeitraum mit dem ganzen ersten Tag beginnt, steht am Auszug',
   assert.equal(whole('2025-06-02T00:00:00'), true)
   assert.equal(whole(null), true)
 })
+
+test('camt: eine Gutschrift mit abgezogenen Spesen behält Name, IBAN und Zweck', () => {
+  // Die Bank bucht netto (985 €), der Posten nennt brutto (1.000 €) und die Spesen (15 €)
+  const entry = `<Ntry>
+    <Amt Ccy="EUR">985.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts>
+    <BookgDt><Dt>2025-12-01</Dt></BookgDt>
+    <NtryDtls><TxDtls>
+      <Amt Ccy="EUR">1000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+      <Chrgs><TtlChrgsAndTaxAmt Ccy="EUR">15.00</TtlChrgsAndTaxAmt><Rcrd><Amt Ccy="EUR">15.00</Amt><CdtDbtInd>DBIT</CdtDbtInd></Rcrd></Chrgs>
+      <RltdPties><Dbtr><Nm>Lukas Zürcher</Nm></Dbtr><DbtrAcct><Id><IBAN>CH0000762011623852957</IBAN></Id></DbtrAcct></RltdPties>
+      <RmtInf><Ustrd>Miete Dezember</Ustrd></RmtInf>
+    </TxDtls></NtryDtls>
+  </Ntry>`
+  const r = readCamt(camt053([entry]))
+  const e = onlyEntry(r)
+  assert.equal(e.amountCents, 98500)
+  assert.equal(e.counterpartyName, 'Lukas Zürcher')
+  assert.equal(e.counterpartyIban, 'CH0000762011623852957')
+  assert.equal(e.purpose, 'Miete Dezember')
+  assert.deepEqual(r.problems, [])
+})
+
+test('camt: ein Posten, der um mehr als die Spesen abweicht, bleibt ein Ausschnitt', () => {
+  const entry = `<Ntry>
+    <Amt Ccy="EUR">985.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts>
+    <BookgDt><Dt>2025-12-01</Dt></BookgDt>
+    <NtryDtls><TxDtls>
+      <Amt Ccy="EUR">1000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+      <Chrgs><TtlChrgsAndTaxAmt Ccy="EUR">10.00</TtlChrgsAndTaxAmt></Chrgs>
+      <RltdPties><Dbtr><Nm>Lukas Zürcher</Nm></Dbtr></RltdPties>
+    </TxDtls></NtryDtls>
+  </Ntry>`
+  const r = readCamt(camt053([entry]))
+  assert.equal(onlyEntry(r).counterpartyName, null)
+  assert.equal(r.problems.length, 1)
+})
