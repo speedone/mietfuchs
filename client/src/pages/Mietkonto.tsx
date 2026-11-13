@@ -105,7 +105,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     const ok = await confirm({
       title: 'Zahlung löschen?',
       // Eine Zahlung aus der Kaution (#228) nimmt ihre Verrechnung mit; der Stand der Kaution steigt wieder.
-      message: `Zahlung vom ${fmtDate(p.date)} über ${fmtEuro(p.amountCents)} wird gelöscht.${p.fromDeposit ? ' Die Verrechnung in der Kaution fällt mit weg.' : ''}`,
+      // Eine aus dem Kontoauszug gebuchte Zahlung (#644): Ihr Umsatz steht danach wieder unter „Offene Umsätze“.
+      message: `Zahlung vom ${fmtDate(p.date)} über ${fmtEuro(p.amountCents)} wird gelöscht.${p.fromDeposit ? ' Die Verrechnung in der Kaution fällt mit weg.' : ''}${p.fromBank ? ` Der Umsatz vom ${fmtDate(p.date)} aus dem Kontoauszug ist danach wieder offen.` : ''}`,
       confirmLabel: 'Löschen',
       danger: true,
     })

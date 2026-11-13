@@ -12,7 +12,7 @@ import type { ImportWrite } from '../bank/importPlan.ts'
 import type { LinkWrite, SetAsideReason } from '../bank/linkPlan.ts'
 import { linkedCents, openCents, suggest, type MatchContext, type Suggestion } from '../bank/match.ts'
 import type { BankTransaction } from '../bank/model.ts'
-import type { BankLinkView, BankTransactionView as SharedTransactionView } from '../../../shared/types.ts'
+import type { BankLinkView, BankPayerView, BankTransactionView as SharedTransactionView } from '../../../shared/types.ts'
 import { compareText } from '../apportion.ts'
 import { retitleCurrentGroup } from './journal.ts'
 import { readDepositEntries, readPayments } from './read.ts'
@@ -106,6 +106,19 @@ export async function removeBankImport(db: Database, id: string): Promise<void> 
 }
 
 const INSERTION_ORDER = sql`rowid`
+
+// Gemerkte Zahler für die Karte auf der Seite Kontoauszug, je Mietverhältnis in der Reihenfolge des Merkens.
+export async function readTenancyPayers(db: Executor): Promise<BankPayerView[]> {
+  const rows = await db.select().from(tenancyPayers).orderBy(INSERTION_ORDER)
+  return rows.map((p) => ({ id: p.id, tenancyId: p.tenancyId, iban: normalizeIban(p.iban), name: p.name }))
+}
+
+// Einen gemerkten Zahler vergessen: Das nächste Einlesen fragt bei seiner IBAN wieder nach (auf einem Mischkonto
+// bleibt ein privater Eingang dann wieder nur in der Tagessumme). Gespeicherte Umsätze und Zuordnungen bleiben.
+export async function removeTenancyPayer(db: Database, id: string): Promise<void> {
+  const removed = await db.delete(tenancyPayers).where(eq(tenancyPayers.id, id)).returning({ id: tenancyPayers.id })
+  if (removed.length === 0) throw new BankError(404, 'Diesen gemerkten Zahler gibt es nicht mehr. Bitte laden Sie die Seite neu.')
+}
 
 const ibanSet = (values: readonly (string | null)[]): string[] =>
   [...new Set(values.filter((v): v is string => v !== null && v.trim() !== '').map(normalizeIban))]

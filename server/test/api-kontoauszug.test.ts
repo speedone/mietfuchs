@@ -224,3 +224,46 @@ test('Integration D3: „nur für die Vermietung“ ist eine Zustimmung; Rücksp
   assert.equal((await restore(s, backup)).status, 200)
   assert.equal((await accounts(s))[0]?.kind, 'mixed')
 }))
+
+// Nachtrag 13.11.: Vorschlag nach Name und Betrag, gemerkte Zahler ansehen und entfernen.
+async function tenancyWithoutIban(s: Server): Promise<Tenancy> {
+  const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+  return s.api<Tenancy>('/api/tenancies', {
+    method: 'POST',
+    body: JSON.stringify({ unitId: unit.id, tenantName: 'Erika Beispiel', persons: 1, start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 15000 }], prepaymentOverrides: {}, baseRents: [{ from: '2025-01', monthlyCents: 70000 }] }),
+  })
+}
+type EntryQuestion = { type: 'entry'; key: string; suggestion?: { tenancyId: string; reason: string } }
+
+test('Kontoauszug: die Rückfrage schlägt das Mietverhältnis vor, wenn Name und Betrag passen; die Marke bleibt dieselbe', () => withServer(async (s) => {
+  const t = await tenancyWithoutIban(s)
+  const p = await plan(s)
+  const entries = p.questions.filter((q): q is EntryQuestion => (q as EntryQuestion).type === 'entry')
+  assert.equal(entries.length, 2)
+  for (const q of entries) assert.deepEqual(q.suggestion, { tenancyId: t.id, reason: 'Name und Betrag passen zu Erika Beispiel.' })
+  assert.equal((await plan(s)).token, p.token)
+}))
+
+test('Kontoauszug: ein gemerkter Zahler lässt sich ansehen und entfernen; danach fragt das Einlesen wieder', () => withServer(async (s) => {
+  const t = await tenancyWithoutIban(s)
+  const first = await plan(s)
+  const keys = first.questions.filter((q): q is EntryQuestion => (q as EntryQuestion).type === 'entry').map((q) => q.key)
+  const decisions = [...ACCEPT, ...keys.map((key) => ({ type: 'entry', key, as: 'rent', tenancyId: t.id, rememberPayer: true }))]
+  const ready = await plan(s, decisions)
+  assert.equal(ready.ready, true)
+  assert.equal((await importRaw(s, ready.token, decisions)).status, 200)
+  const payers = await s.api<{ id: string; tenancyId: string; iban: string; name: string | null }[]>('/api/bank/payers')
+  assert.deepEqual(payers.map(({ id: _id, ...rest }) => rest), [{ tenancyId: t.id, iban: TENANT, name: 'Erika Beispiel' }])
+
+  assert.equal((await fetch(`${s.base}/api/bank/payers/${payers[0].id}`, { method: 'DELETE' })).status, 200)
+  assert.deepEqual(await s.api('/api/bank/payers'), [])
+  assert.equal((await newest(s)).description, 'Gemerkten Zahler entfernt')
+  assert.equal((await fetch(`${s.base}/api/bank/payers/${payers[0].id}`, { method: 'DELETE' })).status, 404)
+
+  // Gespeicherte Umsätze bleiben; ein neuer Auszug mit dieser IBAN fragt wieder
+  assert.equal((await accounts(s))[0].imports.length, 1)
+  const imp = (await accounts(s))[0].imports[0].id
+  assert.equal((await fetch(`${s.base}/api/bank/imports/${imp}`, { method: 'DELETE' })).status, 200)
+  assert.equal((await plan(s, ACCEPT)).questions.filter((q) => (q as EntryQuestion).type === 'entry').length, 2)
+}))

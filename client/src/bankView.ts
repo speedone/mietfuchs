@@ -91,6 +91,12 @@ export const isUntouched = (row: BankRow): boolean => row.setAside === null && J
 // abweichende Wahl, etwa „gehört nicht zur Vermietung“, übergeht der Sammelknopf nie.
 export const untouchedGreen = (rows: readonly BankRow[]): BankRow[] => rows.filter((r) => r.tx.suggestion?.light === 'green' && isUntouched(r))
 
+// „Alle Ausgänge ohne Vorschlag beiseitelegen“ (Nachtrag 13.11.): nur Ausgänge ohne Vorschlag, die noch unberührt und
+// nicht teilweise zugeordnet sind. Gedacht für das Konto nur für die Vermietung, auf dem jeder Ausgang einzeln steht. Ein
+// Eingang ohne Vorschlag (etwa die erste Miete eines neuen Zahlers) bleibt offen, den soll jemand ansehen (Durchsicht).
+export const untouchedWithoutSuggestion = (rows: readonly BankRow[]): BankRow[] =>
+  rows.filter((r) => r.tx.suggestion === null && r.tx.openCents < 0 && r.tx.links.length === 0 && isUntouched(r))
+
 export const greenRows = (txs: readonly BankTransactionView[]): BankTransactionView[] => txs.filter((t) => t.suggestion?.light === 'green')
 
 // Die Arten, die zur Richtung des Umsatzes passen; „verknüpfen“ nur, wenn der Server eine erfasste Buchung vorschlägt.
@@ -114,7 +120,7 @@ export function coverageText(a: Pick<BankAccountInfo, 'coverage'>): string {
   return `Zwischen ${germanDay(c.gapAfter)} und ${germanDay(c.gapBefore)} fehlt ein Auszug oder die Salden schließen nicht an.`
 }
 
-export type QuestionAnswer = { accept?: boolean; as?: 'rent' | 'deposit' | 'private'; tenancyId?: string; rememberPayer?: boolean }
+export type QuestionAnswer = { accept?: boolean; rental?: boolean; as?: 'rent' | 'deposit' | 'private'; tenancyId?: string; rememberPayer?: boolean }
 export const questionKey = (q: BankImportQuestion): string => (q.type === 'account' ? `account:${q.iban ?? q.otherId ?? ''}` : `entry:${q.key}`)
 
 // Jede Rückfrage braucht eine Antwort; „Mieteingang“ und „Kaution“ brauchen ein Mietverhältnis.
@@ -138,8 +144,8 @@ export function questionProblems(questions: readonly BankImportQuestion[], answe
 export function importDecisionsOf(questions: readonly BankImportQuestion[], answers: Readonly<Record<string, QuestionAnswer>>): BankImportDecision[] {
   return questions.flatMap((q): BankImportDecision[] => {
     const a = answers[questionKey(q)]
-    if (q.type === 'account') return a?.accept === undefined ? [] : [{ type: 'account' as const, iban: q.iban ?? q.otherId ?? '', accept: a.accept }]
+    if (q.type === 'account') return a?.accept === undefined ? [] : [{ type: 'account' as const, iban: q.iban ?? q.otherId ?? '', accept: a.accept, ...(a.accept && a.rental ? { rental: true } : {}) }]
     if (!a?.as) return []
-    return [{ type: 'entry' as const, key: q.key, as: a.as, ...(a.tenancyId ? { tenancyId: a.tenancyId } : {}), ...(a.rememberPayer && a.as === 'rent' ? { rememberPayer: true } : {}) }]
+    return [{ type: 'entry' as const, key: q.key, as: a.as, ...(a.tenancyId ? { tenancyId: a.tenancyId } : {}), ...(a.rememberPayer && (a.as === 'rent' || a.as === 'deposit') ? { rememberPayer: true } : {}) }]
   })
 }

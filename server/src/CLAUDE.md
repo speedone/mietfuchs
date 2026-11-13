@@ -861,6 +861,13 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   unverknüpfte Sammelbuchung desselben Tags, vollständig und auf dem Mischkonto nur mit Mieter-Posten. Routen
   `POST /api/bank/import/plan` (Trockenlauf) und `POST /api/bank/import` (neu geplant in der Schreibschlange, Marke,
   409 mit neuer Vorschau); die Datei bleibt im Arbeitsspeicher (eigener multer, 20 MB).
+  **Vorschlag zur Rückfrage** (`bank/importSuggest.ts`, Nachtrag 13.11.): Passen Name (Wörter des Mieternamens ohne
+  Anrede, Umlaute umschrieben, in beliebiger Reihenfolge) und Betrag (Monats-Soll des Buchungsmonats, des Vor- oder
+  Folgemonats) zu genau einem Mietverhältnis, trägt die Frage `suggestion`; der Client belegt die Antwort damit vor.
+  Nur der Name ist kein Beleg. Der Vorschlag kommt erst in der Route dazu (`withSuggestions`), Plan und Marke bleiben.
+  **Gemerkte Zahler** (`tenancy_payers`): `GET /api/bank/payers`, `DELETE /api/bank/payers/:id` (Verlauf „Gemerkten
+  Zahler entfernt“); entfernt fragt das nächste Einlesen wieder, Gespeichertes bleibt. Karte „Gemerkte Zahler“ auf der
+  Seite Kontoauszug.
 - **Lückenlos** (`bank/coverage.ts`): nur über Auszüge mit Salden, ein enthaltener Auszug zählt nicht; Wortlaut nie
   „Einnahmen vollständig“.
 - **Zuordnen** (`bank/match.ts`, `bank/linkPlan.ts`): Vorschlag nur über die IBAN; erfasste Zahlung oder

@@ -153,6 +153,9 @@ Regeln je Auszug der Datei, in dieser Reihenfolge:
      Ausgang an eine solche. Ein **Eingang unbekannter Herkunft** ist eine Rückfrage je Umsatz: „Mieteingang“ (mit
      Mietverhältnis, auf Wunsch IBAN als Zahler merken), „Kaution“, „privat“. Ein **Ausgang an Unbekannt** gilt ohne
      Frage als privat. Privates geht nur in die Tagessumme.
+   - Nachtrag 13.11. (Klicktest): Passen Name und Betrag (Soll des Buchungs-, Vor- oder Folgemonats) zu genau einem
+     Mietverhältnis, trägt die Rückfrage einen Vorschlag, den das Fenster vorbelegt; bestätigt wird mit „Einlesen“.
+     Gemerkte Zahler stehen in einer eigenen Karte und lassen sich entfernen, danach fragt das Einlesen wieder.
    - Die Vorschau zeigt private Umsätze nicht. Ausnahme sind die Rückfragen; sie leben nur im Arbeitsspeicher der
      Anfrage und des Browsers.
 8. **Schreiben** in einer Transaktion: Konto (falls neu), `bank_imports`, `bank_days`, `bank_transactions`,

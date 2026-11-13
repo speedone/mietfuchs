@@ -74,10 +74,11 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
-import { applyBankImport, applyBankLinks, BankError, readBankAccounts, readBankState, readBankStock, removeBankImport, removeBankLink, setTransactionAside, updateBankAccount } from './db/bank.ts'
+import { applyBankImport, applyBankLinks, BankError, readBankAccounts, readBankState, readBankStock, readTenancyPayers, removeBankImport, removeBankLink, removeTenancyPayer, setTransactionAside, updateBankAccount } from './db/bank.ts'
 import { linkToken, parseLinkDecisions, planBankLinks, type LinkDecision, type LinkPlan } from './bank/linkPlan.ts'
 import { decisionsOf, importToken, planBankImport, type ImportDecision, type ImportPlan } from './bank/importPlan.ts'
 import { looksLikeBankFile, MAX_ZIP_TOTAL_BYTES, readBankFile } from './bank/read.ts'
+import { suggestForQuestion } from './bank/importSuggest.ts'
 import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry, withoutBoundDeposits } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
@@ -1066,8 +1067,30 @@ async function bankPlanOf(db: Database, req: Request): Promise<BankPlan> {
 }
 const bankPreview = ({ plan, token }: BankPlan) =>
   ({ questions: plan.questions, findings: plan.findings, summary: plan.summary, sentence: plan.sentence, ready: plan.ready, token })
+// Zu jeder Rückfrage nach einem Eingang ein Vorschlag, wenn Name und Betrag zu genau einem Mietverhältnis passen
+// (bank/importSuggest.ts). Nur in der Antwort der Vorschau; Plan und Prüfmarke bleiben, wie sie sind.
+async function withSuggestions(db: Database, preview: ReturnType<typeof bankPreview>): Promise<ReturnType<typeof bankPreview>> {
+  const entries = preview.questions.filter((q) => q.type === 'entry')
+  if (entries.length === 0) return preview
+  const years = new Set(entries.flatMap((q) => {
+    const y = Number(q.bookingDate.slice(0, 4))
+    return [y - 1, y, y + 1]
+  }))
+  const [soll, rows] = await Promise.all([
+    bankSollOf(db, years),
+    db.select({ id: tenanciesTable.id, tenantName: tenanciesTable.tenantName, start: tenanciesTable.start, end: tenanciesTable.end }).from(tenanciesTable),
+  ])
+  return {
+    ...preview,
+    questions: preview.questions.map((q) => {
+      if (q.type !== 'entry') return q
+      const suggestion = suggestForQuestion(q, rows, soll)
+      return suggestion ? { ...q, suggestion } : q
+    }),
+  }
+}
 app.post('/api/bank/import/plan', bankUpload.single('statement'), inRequest, async (req, res) => {
-  res.json(bankPreview(await readData((db) => bankPlanOf(db, req))))
+  res.json(await readData(async (db) => withSuggestions(db, bankPreview(await bankPlanOf(db, req)))))
 })
 app.post('/api/bank/import', bankUpload.single('statement'), inRequest, async (req, res) => {
   const token: unknown = bodyObject(req).token
@@ -1088,6 +1111,15 @@ app.get('/api/bank/accounts', async (_req, res) => {
 app.put('/api/bank/accounts/:id', async (req, res) => {
   res.json(await writeData((db) => updateBankAccount(db, req.params.id, bodyObject(req), new Date().toISOString())))
 })
+// Gemerkte Zahler (Rückfrage beim Einlesen): ansehen und entfernen. Entfernt fragt das nächste Einlesen wieder nach;
+// schon gespeicherte Umsätze und Zuordnungen bleiben.
+app.get('/api/bank/payers', async (_req, res) => {
+  res.json(await readData((db) => readTenancyPayers(db)))
+})
+app.delete('/api/bank/payers/:id', async (req, res) => {
+  await writeData((db) => removeTenancyPayer(db, req.params.id))
+  res.json({ ok: true })
+})
 app.delete('/api/bank/imports/:id', async (req, res) => {
   await writeData((db) => removeBankImport(db, req.params.id))
   res.json({ ok: true })
@@ -1095,9 +1127,9 @@ app.delete('/api/bank/imports/:id', async (req, res) => {
 
 // Zuordnen und Buchen (#188, Teil 2). Das Monats-Soll für den Vorschlag kommt aus dem Mietkonto jedes Objekts und jedes
 // Jahres, in dem ein Umsatz liegt; neu gerechnet wird es nie.
-async function bankSollOf(db: Database): Promise<(tenancyId: string, month: string) => number | null> {
+async function bankSollOf(db: Database, onlyYears?: ReadonlySet<number>): Promise<(tenancyId: string, month: string) => number | null> {
   const stock = await readStock(db)
-  const years = new Set((await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).map((r) => Number(r.date.slice(0, 4))))
+  const years = onlyYears ?? new Set((await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).map((r) => Number(r.date.slice(0, 4))))
   const soll = new Map<string, number>()
   for (const property of stock.properties) {
     for (const year of years) {

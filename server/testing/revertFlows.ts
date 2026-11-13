@@ -347,8 +347,8 @@ export const STEPS: readonly Step[] = [
   },
   // ---------- Kontoauszug (#188) ----------
   {
-    name: 'Kontoauszug einlesen, Konto ändern, Import zurücknehmen',
-    routes: ['POST /api/bank/import', 'PUT /api/bank/accounts/:id', 'DELETE /api/bank/imports/:id'],
+    name: 'Kontoauszug einlesen, Konto ändern, Import zurücknehmen, gemerkten Zahler entfernen',
+    routes: ['POST /api/bank/import', 'PUT /api/bank/accounts/:id', 'DELETE /api/bank/imports/:id', 'DELETE /api/bank/payers/:id'],
     run: async (ctx) => {
       const file = fs.readFileSync(path.join(import.meta.dirname, '..', 'test', 'fixtures', 'camt', 'kontoauszug-juni.xml'))
       const form = (fields: Record<string, string>): FormData => {
@@ -382,6 +382,8 @@ export const STEPS: readonly Step[] = [
       await send(ctx.s, 'PUT', `/api/bank/accounts/${account.id}`, ctx.rng() < 0.3 ? { kind: 'rental', confirm: true } : { label: `Konto ${word(ctx.rng)}` })
       const last = account.imports[account.imports.length - 1]
       if (last && ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/bank/imports/${last.id}`)
+      const payer = pick(ctx.rng, await json<{ id: string }[]>(await send(ctx.s, 'GET', '/api/bank/payers')) ?? [])
+      if (payer) await send(ctx.s, 'DELETE', `/api/bank/payers/${payer.id}`)
     },
   },
   {
