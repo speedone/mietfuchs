@@ -101,7 +101,10 @@ Rechner. Die Datei selbst wird nicht gespeichert. Gespeichert werden je Auszug Z
 Dateiname, je Buchungstag Anzahl und Summen der Umsätze und die einzelnen Umsätze, die zur Vermietung
 gehören, mit Name und IBAN der Gegenseite und Verwendungszweck. Auf einem Konto, das Sie nicht
 ausdrücklich als Konto nur für die Vermietung bestätigt haben, speichert Mietfuchs private Umsätze nicht
-einzeln, auch nicht im Verlauf oder in einer Sicherung; sie stehen nur in der Summe des Tages. Rückfragen
+einzeln, auch nicht im Verlauf oder in einer Sicherung; sie stehen nur in der Summe des Tages. Hat ein Tag nur
+einen Umsatz, zeigt diese Summe seinen Betrag, ohne Gegenseite und Zweck. Stellen Sie ein Konto nur für die
+Vermietung wieder auf Mischkonto zurück, bleiben die bis dahin einzeln gespeicherten Umsätze, auch in Verlauf und
+Sicherungen; ein Rücksprung oder ein Backup stellt die Bestätigung nicht wieder her. Rückfragen
 der Vorschau zu einzelnen Eingängen bleiben bis zu Ihrer Antwort im Arbeitsspeicher. Kontoauszüge gehen
 nie an einen Dienst für die Belegauswertung, auch nicht an einen auf Ihrem Rechner: Der Eingang der Belege
 weist sie ab. Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.

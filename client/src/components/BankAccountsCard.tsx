@@ -7,6 +7,7 @@ import type { BankAccountInfo } from '../types'
 import Card from './Card'
 import { useConfirm, useToast } from './feedback'
 
+export const MIXED_QUESTION = 'Künftige Auszüge speichern private Umsätze wieder nur als Tagessumme. Bisher einzeln gespeicherte Umsätze bleiben, auch in Verlauf und Sicherungen; ein Rücksprung oder ein Backup stellt die Bestätigung nicht wieder her.'
 export const RENTAL_QUESTION = 'Ab jetzt wird jeder Umsatz dieses Kontos einzeln gespeichert, auch ein privater. Das gilt für künftige Auszüge; was bisher nur als Tagessumme steht, bleibt so.'
 
 export default function BankAccountsCard({ accounts, onChanged }: { accounts: readonly BankAccountInfo[]; onChanged: () => void }) {
@@ -35,7 +36,7 @@ export default function BankAccountsCard({ accounts, onChanged }: { accounts: re
                 <button type="button" className="btn ghost danger-ghost ml-auto" onClick={() => void (async () => {
                   const ok = await confirm({
                     title: 'Import zurücknehmen?',
-                    message: 'Die Umsätze und Tagessummen dieses Auszugs werden entfernt; danach lässt er sich neu einlesen. Zahlungen im Mietkonto bleiben.',
+                    message: 'Die Umsätze und Tagessummen dieses Auszugs werden entfernt; danach lässt er sich neu einlesen. Sind Umsätze daraus schon Zahlungen zugeordnet, lösen Sie zuerst diese Zuordnungen.',
                     confirmLabel: 'Zurücknehmen',
                     danger: true,
                   })
@@ -44,6 +45,16 @@ export default function BankAccountsCard({ accounts, onChanged }: { accounts: re
               </li>
             ))}
           </ul>
+          {a.kind === 'rental' && (
+            <div>
+              {/* Ein Widerruf (Integrationsdurchsicht D3): ab dann wieder Mischkonto; Rücksprung und Backup holen die
+                  Bestätigung nicht zurück. */}
+              <button type="button" className="btn secondary" onClick={() => void (async () => {
+                const ok = await confirm({ title: 'Zurück zum Mischkonto?', message: MIXED_QUESTION, confirmLabel: 'Zurückstellen' })
+                if (ok) await run(() => api(`/api/bank/accounts/${a.id}`, { method: 'PUT', body: JSON.stringify({ kind: 'mixed' }) }), 'Das Konto gilt wieder als Mischkonto.')
+              })()}>Zurück zum Mischkonto …</button>
+            </div>
+          )}
           {a.kind === 'mixed' && (
             <div>
               <button type="button" className="btn secondary" onClick={() => void (async () => {

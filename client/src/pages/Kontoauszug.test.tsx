@@ -230,3 +230,12 @@ test('Durchsicht W4: wer das Konto doch ablehnt, wird nicht mehr nach seinen Ein
   await waitFor(() => expect(within(drawer).queryByLabelText(/Was ist der Eingang/)).toBeNull())
   await waitFor(() => expect((within(drawer).getByRole('button', { name: 'Einlesen' }) as HTMLButtonElement).disabled).toBe(false))
 })
+
+test('Integration D3: ein Konto nur für die Vermietung lässt sich zum Mischkonto zurückstellen', async () => {
+  accounts = [account({ kind: 'rental', rentalConfirmedAt: '2025-07-01T08:00:00Z' })]
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: 'Zurück zum Mischkonto …' }))
+  const dialog = await confirmDialog('Zurückstellen')
+  expect(dialog.textContent).toMatch(/Bisher einzeln gespeicherte Umsätze bleiben/)
+  await waitFor(() => expect(sent.find((s) => s.method === 'PUT' && s.url === '/api/bank/accounts/a1')?.body).toEqual({ kind: 'mixed' }))
+})
