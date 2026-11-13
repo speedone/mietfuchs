@@ -865,8 +865,9 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   „Einnahmen vollständig“.
 - **Zuordnen** (`bank/match.ts`, `bank/linkPlan.ts`): Vorschlag nur über die IBAN; erfasste Zahlung oder
   Kautionsbuchung gleichen Betrags in 7 Tagen wird verknüpft (eine Verrechnung aus der Kaution nie), eine erfasste
-  Zahlung gleichen Betrags bis 20 Tage entfernt macht gelb; eine Rate der Kaution (ein Drittel in den ersten 100 Tagen
-  oder „Kaution“ im Zweck, solange Kaution offen ist) wird gelb als Kaution vorgeschlagen. Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
+  Zahlung gleichen Betrags bis 15 Tage entfernt macht gelb und geht vor; eine Rate der Kaution (ein Drittel oder
+  „Kaution“ im Zweck, in den ersten 100 Tagen, solange Kaution laut Buchungen offen und nicht laut Stammdaten erhalten,
+  Betrag ungleich dem Soll dieses und des Folgemonats, nicht bei Bürgschaft oder Verpfändung) wird gelb als Kaution vorgeschlagen. Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
   Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft. `applyBankLinks` geht über
   `insertEntityIn` bzw. `insertDepositEntriesIn`, ein Eintrag im Verlauf je Lauf. Das Monats-Soll liefert
   `bankSollOf` aus dem Mietkonto; `GET /api/bank/open-count` zählt ohne es (Cockpit).

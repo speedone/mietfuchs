@@ -143,7 +143,7 @@ export type BankTransactionView = BankTransaction & SharedTransactionView
 export async function readBankState(db: Executor, monthlySollCents: MatchContext['monthlySollCents']): Promise<{ ctx: MatchContext; views: BankTransactionView[] }> {
   const stock = await readBankStock(db)
   const [tenancyRows, paymentList, deposits] = await Promise.all([
-    db.select({ id: tenancies.id, iban: tenancies.iban, start: tenancies.start, end: tenancies.end, depositCents: tenancies.depositCents }).from(tenancies).orderBy(INSERTION_ORDER),
+    db.select({ id: tenancies.id, iban: tenancies.iban, start: tenancies.start, end: tenancies.end, depositCents: tenancies.depositCents, depositStatus: tenancies.depositStatus, depositForm: tenancies.depositForm }).from(tenancies).orderBy(INSERTION_ORDER),
     readPayments(db),
     readDepositEntries(db),
   ])
@@ -153,7 +153,7 @@ export async function readBankState(db: Executor, monthlySollCents: MatchContext
   // (Durchsicht C1): Sonst verschwände eine echte Überweisung hinter der Verrechnung.
   const bound = new Set(deposits.flatMap((d) => (d.paymentId ? [d.paymentId] : [])))
   const ctx: MatchContext = {
-    tenancies: tenancyRows.map((t) => ({ id: t.id, iban: t.iban, start: t.start, end: t.end, ...(t.depositCents !== null ? { depositCents: t.depositCents } : {}) })),
+    tenancies: tenancyRows.map((t) => ({ id: t.id, iban: t.iban, start: t.start, end: t.end, ...(t.depositCents !== null ? { depositCents: t.depositCents } : {}), ...(t.depositStatus !== null ? { depositStatus: t.depositStatus } : {}), ...(t.depositForm !== null ? { depositForm: t.depositForm } : {}) })),
     payers: stock.payers,
     payments: paymentList.filter((p) => !bound.has(p.id)),
     linkedPaymentIds: new Set(stock.links.flatMap((l) => (l.paymentId ? [l.paymentId] : []))),
