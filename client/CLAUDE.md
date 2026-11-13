@@ -89,6 +89,15 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   der Belegordner ohne Posteingang; die Suche gilt immer allen Objekten und Jahren, Treffer ohne Position stehen unter
   „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. Die Seite Kosten behält ihre eigene Ablage und Prüfung
   (Regel 4). sessionStorage leert vitestSetup.ts vor jedem Test.
+- **Seite „Kontoauszug“** (#188, [pages/Kontoauszug.tsx](src/pages/Kontoauszug.tsx), Logik in [bankView.ts](src/bankView.ts)):
+  unabhängig vom gewählten Objekt (`context="none"`), denn ein Konto empfängt Mieten mehrerer Häuser; die
+  Mietverhältnisse aller Objekte liefert `GET /api/bank/tenancies`. Einlesen im Seitenfenster
+  [BankImportDrawer.tsx](src/components/BankImportDrawer.tsx) (Primärknopf „Einlesen“, Ausnahme in S16): jede Antwort plant
+  neu, 409 zeigt die neue Vorschau. Offene Umsätze in [BankOpenTable.tsx](src/components/BankOpenTable.tsx) (`stacked`,
+  Ampel immer mit Grund als Text), „Alle grünen übernehmen (n)“ mit einer Rückfrage; eine vom Vorschlag abweichende Wahl
+  meldet die Seite als offenes Formular. Konten in [BankAccountsCard.tsx](src/components/BankAccountsCard.tsx). **Nichts
+  davon geht in den Browserspeicher**: Rückfragen der Vorschau nennen private Umsätze. Der Eingang der Belege setzt an
+  die Ablehnung eines Auszugs (`isBankFileError`) den Knopf „Zur Seite Kontoauszug“.
 - **Von Hand erfassen aus dem Beleg** (#490 PR 3, #487 Teil 2, Logik in [receiptForm.ts](src/receiptForm.ts)): „Von Hand
   erfassen“ steht an jedem Beleg unter „Ohne Position“ (nicht neben „Weiter prüfen“; ohne KI als Primärknopf, gesperrt
   bei ungespeichertem Objekt oder Jahr) und an `KeptReceipt` in Eingang und Kosten; Zählerfoto (Seite Zähler) und

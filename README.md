@@ -85,6 +85,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 - 📄 **Fertige Abrechnung** je Mieter mit Saldo, Zahlungsaufforderung, §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB); Druck oder PDF
 - 🔍 **Rechenweg** jeder Zeile aufklappbar; eine Abrechnung wird vor dem Versand abgeschlossen und eingefroren, der Versand danach mit Datum festgehalten, spätere Abweichungen zeigt Mietfuchs je Mieter
 - ⏰ **Fristen im Blick:** Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB)
+- 🏦 **Kontoauszug einlesen:** camt oder MT940 der Bank, Mieteingänge per IBAN vorgeschlagen und mit einer Bestätigung gebucht; auf einem Mischkonto bleibt Privates nur Tagessumme, und Kontoauszüge gehen nie an eine KI
 - 💶 **Mietkonto:** Soll/Ist je Monat, Rückstand erst ab dem Fälligkeitstag je Mietverhältnis (nach Gesetz oder Vertrag, mit den Feiertagen des Bundeslands am Objekt), pünktliche Mieten mit „Monate als bezahlt erfassen“ in einem Schritt, auch rückwirkend; Ein- und Auszug im Lauf eines Monats nach Kalendertagen
 - 🧾 **Steuer-Übersicht (Anlage V):** Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
 

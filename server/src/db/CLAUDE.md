@@ -87,7 +87,7 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   kaskadieren auf Tage, Umsätze und Links; mit der Zahlung fällt nur der Link, der Umsatz ist dann wieder offen.
   Indizes: `bank_transactions(account_id, booking_date)` und `(fingerprint)` für den Abgleich, `tenancy_payers(iban)`
   und `bank_transaction_links(transaction_id)` für Vorschlag und Summe je Umsatz. Beschreibung in
-  [../CLAUDE.md](../CLAUDE.md) unter „Kontoauszug“ (mit PR 3).
+  [../CLAUDE.md](../CLAUDE.md) unter „Kontoauszug“.
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,
   Anteile, Teilnehmer, Einzel- und Eigenbeträge, Pauschalen, `unit_no_connection`.
   `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.

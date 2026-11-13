@@ -21,6 +21,10 @@ Wo der Datenordner liegt, hängt davon ab, wie du Mietfuchs nutzt:
 Im Programm für Windows und macOS öffnet das Menü *Mietfuchs → Datenordner zeigen* den Ordner.
 Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
 
+Eingelesene Kontoauszüge (Seite „Kontoauszug“) stehen in der Datenbank und kommen mit ins Backup:
+Konten, Importe, Tagessummen, die Umsätze der Vermietung, die Zuordnungen und gemerkte Zahler. Die Datei
+der Bank selbst speichert Mietfuchs nicht; bewahre sie selbst auf.
+
 Das Passwort der Anmeldung steht nur als Hash in `zugang.json` im Datenordner, daneben, solange kein
 Passwort festgelegt ist, `einrichtungscode.txt`. Beides geht **nicht** ins Backup über die Oberfläche,
 nicht in die automatischen Vorversionen und nicht in den Umzug ins Programmfenster: Ein Backup in einer

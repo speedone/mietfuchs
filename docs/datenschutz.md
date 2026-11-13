@@ -94,6 +94,18 @@ Rechner entsteht ein neues Zertifikat, und gekoppelte Fenster koppeln Sie neu. I
 Verbindung über `http://`; die Adresse mit `https://` zeigt dort nur eine Warnung, weil kein Browser
 dieses Zertifikat kennt.
 
+## Kontoauszüge
+
+Lesen Sie auf der Seite Kontoauszug den Auszug Ihrer Bank ein, verarbeitet Mietfuchs ihn nur auf Ihrem
+Rechner. Die Datei selbst wird nicht gespeichert. Gespeichert werden je Auszug Zeitraum, Salden und
+Dateiname, je Buchungstag Anzahl und Summen der Umsätze und die einzelnen Umsätze, die zur Vermietung
+gehören, mit Name und IBAN der Gegenseite und Verwendungszweck. Auf einem Konto, das Sie nicht
+ausdrücklich als Konto nur für die Vermietung bestätigt haben, speichert Mietfuchs private Umsätze nicht
+einzeln, auch nicht im Verlauf oder in einer Sicherung; sie stehen nur in der Summe des Tages. Rückfragen
+der Vorschau zu einzelnen Eingängen bleiben bis zu Ihrer Antwort im Arbeitsspeicher. Kontoauszüge gehen
+nie an einen Dienst für die Belegauswertung, auch nicht an einen auf Ihrem Rechner: Die Schnellerfassung
+der Belege weist sie ab. Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.
+
 ## Verbindungen ins Internet
 
 Mietfuchs stellt nur in drei Fällen eine Verbindung ins Internet her, und jeweils erst, nachdem Sie

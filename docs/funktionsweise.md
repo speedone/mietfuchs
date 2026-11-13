@@ -113,6 +113,18 @@ Kurzfassung steht im [README](../README.md#funktionen).
    Die Kaution lässt sich am Mietverhältnis führen („Kaution führen“): Eingänge auch in Raten, Zinsen,
    Verrechnungen und Rückzahlungen ergeben den Stand; jede Buchung lässt sich dort ändern. Eine Verrechnung mit Mietrückstand oder Nachzahlung
    legt eine Zahlung im Mietkonto an; nach dem Auszug gibt es eine Aufstellung mit dem, was auszuzahlen bleibt.
+8. **Kontoauszug**: Den Auszug deiner Bank als Datei einlesen (camt.052, camt.053, camt.054 oder MT940,
+   auch mehrere in einem ZIP). Eine Vorschau zeigt, was gespeichert wird, und fragt nach, wo Mietfuchs es
+   nicht weiß: ein Konto, das noch nie eingelesen wurde, und ein Eingang von einer unbekannten IBAN
+   (Mieteingang, Kaution oder privat). Jedes Konto gilt als **Mischkonto**, bis du es als Konto nur für die
+   Vermietung bestätigst: Gespeichert werden dann nur Umsätze mit deinen Mietern und gemerkten Zahlern,
+   alles andere nur als Summe des Tages. Zweimal eingelesene Tage ändern nichts. Zu jedem offenen Umsatz
+   schlägt die Seite Mietverhältnis und Art vor (über die IBAN, nie über Name oder Zweck), mit Ampel und
+   Grund; „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, eine Kaution als Kautionsbuchung, und
+   eine schon von Hand erfasste Zahlung wird nur verknüpft. Ein Umsatz lässt sich auf zwei Wohnungen
+   aufteilen, beiseitelegen oder wieder lösen. Je Konto steht, ob es lückenlos eingelesen ist; über die
+   Einnahmen sagt das nichts. Das Cockpit nennt Umsätze, die noch nicht zugeordnet sind. Kontoauszüge
+   gehen nie an eine KI: Die Schnellerfassung der Belege weist sie ab.
 
 Wie du deine Lage anlegst, steht in Mietfuchs unter **Hilfe & Begriffe**: Anleitungen für das Haus
 mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit

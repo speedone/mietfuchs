@@ -326,6 +326,22 @@ export const GLOSSARY = {
     norm: '§ 551 Abs. 1 bis 4 BGB',
     needed: 'Wenn Sie festhalten wollen, was eingegangen ist und was Sie zurückzahlen: Unter Stammdaten steht am Mietverhältnis „Kaution führen“. Dort buchen Sie Eingänge, Zinsen, Verrechnungen und Rückzahlungen; den Stand rechnet Mietfuchs daraus. Ohne Buchungen gilt der Stand, den Sie am Mietverhältnis gewählt haben. Nach dem Auszug zeigt das Fenster eine Aufstellung mit dem, was auszuzahlen bleibt, und das Cockpit erinnert, solange noch Geld bei Ihnen liegt.',
   },
+  // #188: Kontoauszug einlesen (Entwurf 2026-11-12). Keine Rechtsaussage außer dem Satz zur Aufbewahrung; die Frage der
+  // Aufzeichnungspflichten privater Vermieter ist im Entwurf als offen festgehalten.
+  bankImport: {
+    topic: 'operation',
+    title: 'Kontoauszug einlesen',
+    short: 'Statt jede Mietzahlung von Hand zu erfassen, lesen Sie den Auszug Ihrer Bank als Datei ein (camt.052, camt.053, camt.054 oder MT940, auch mehrere in einem ZIP). Mietfuchs erkennt den Mieter an seiner IBAN und schlägt vor, was aus jedem Eingang wird; gebucht wird erst, wenn Sie es bestätigen. Zweimal eingelesene Tage ändern nichts. Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.',
+    example: 'Im Juni gehen 850 € von der IBAN der Mieterin und 49,99 € an eine Buchhandlung ab. Auf einem Mischkonto speichert Mietfuchs nur den Eingang der Mieterin einzeln; vom Einkauf weiß es nur, dass der Tag zwei Umsätze mit 850 € Eingang und 49,99 € Ausgang hatte. Der Eingang steht grün da, „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an.',
+    needed: 'Wenn Ihre Bank Kontoauszüge als Datei anbietet (meist beim Export der Umsätze oder beim Kontoauszug als camt oder MT940) und Sie die Mieteingänge nicht abtippen wollen. Kontoauszüge lesen Sie nur auf der Seite Kontoauszug ein; die Schnellerfassung der Belege weist sie ab, damit Bankdaten nie an eine KI gehen.',
+  },
+  mixedAccount: {
+    topic: 'operation',
+    title: 'Mischkonto',
+    short: 'Ein Konto, auf dem neben den Mieten auch Privates läuft. So behandelt Mietfuchs jedes Konto, bis Sie es ausdrücklich als Konto nur für die Vermietung bestätigen: Gespeichert werden nur Umsätze mit Ihren Mietern und gemerkten Zahlern; alles andere geht nur in die Summe des Tages und steht nirgends einzeln, auch nicht im Verlauf oder in einer Sicherung.',
+    example: 'Ein Eingang über 500 € von einer IBAN, die Mietfuchs nicht kennt: Beim Einlesen fragt Mietfuchs, ob es ein Mieteingang, eine Kaution oder privat ist. Sagen Sie „privat“, bleibt davon nur die Tagessumme.',
+    needed: 'Immer, wenn Sie nicht ein eigenes Konto nur für die Vermietung führen. Ein Kautionskonto lesen Sie nicht ein.',
+  },
   // #334: Fälligkeit am Mietverhältnis und Rückstand ab dem erwarteten Eingang (Entwurf 2026-11-07, E1 bis E8). Beispiel
   // nachgerechnet in server/test/rent-due.test.ts (Einzug Fr 09.10.2026, NW).
   rentDue: {
