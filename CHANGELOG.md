@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.18.0] – 2026-11-13
+
 ### Hinzugefügt
 
 - Kontoauszug einlesen: Auf der neuen Seite „Kontoauszug“ (unter Mietkonto) lesen Sie den Auszug Ihrer Bank als
@@ -15,8 +17,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Tages, nie einzeln.
   Zweimal eingelesene Tage ändern nichts. Zu jedem offenen Umsatz schlägt die Seite Mietverhältnis und Art vor (über
   die IBAN), mit Ampel und Grund; „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, eine Kaution als
-  Kautionsbuchung, eine schon erfasste Zahlung wird nur verknüpft. Aufteilen auf zwei Wohnungen, Beiseitelegen und
-  Lösen gehen ebenso; je Konto steht, ob es lückenlos eingelesen ist. Das Cockpit nennt nicht zugeordnete Umsätze,
+  Kautionsbuchung, eine schon erfasste Zahlung wird nur verknüpft. Aufteilen auf mehrere Mietverhältnisse, Beiseitelegen
+  und Lösen gehen ebenso; je Konto steht, ob es lückenlos eingelesen ist. Das Cockpit nennt nicht zugeordnete Umsätze,
   das Mietkonto vermerkt „aus dem Kontoauszug“, und der Eingang der Belege weist Kontoauszüge ab, damit Bankdaten nie
   an eine KI gehen ([#188](https://github.com/speedone/mietfuchs/issues/188)).
 - Kaution führen: Am Mietverhältnis (Stammdaten, „Kaution führen“) buchen Sie Eingänge, auch in Raten, Zinsen,
@@ -3674,7 +3676,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.17.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/speedone/mietfuchs/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/speedone/mietfuchs/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/speedone/mietfuchs/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/speedone/mietfuchs/compare/v0.15.2...v0.16.0
