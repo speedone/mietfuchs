@@ -71,6 +71,19 @@ function civilDate(v: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
 }
 
+const berlinTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+
+// Beginnt ein Zeitpunkt `DtTm` um Mitternacht in Deutschland? Ohne Zeitpunkt oder ohne Uhrzeit gilt ja.
+function startsAtMidnight(v: unknown): boolean {
+  const stamp = text(at(v, 'DtTm'))
+  if (!stamp || stamp.length <= 10) return true
+  if (/(Z|[+-]\d{2}:\d{2})$/.test(stamp)) {
+    const t = new Date(stamp)
+    return Number.isNaN(t.getTime()) || berlinTime.format(t) === '00:00:00'
+  }
+  return /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?$/.test(stamp)
+}
+
 // '850.00' → 85000, '850' → 85000, '850.5' → 85050. Mehr als zwei Nachkommastellen nur, wenn
 // sie Null sind: camt erlaubt fünf, ein Euro hat zwei, und gerundet wird hier nicht.
 export const amountToCents = (raw: string): number | null => decimalToCents(raw, '.')
@@ -302,6 +315,7 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
       // Ohne Zeitraum (FrToDt ist freiwillig) nennen ihn die Salden: ihr Datum.
       fromDate: civilDate({ DtTm: at(item, 'FrToDt', 'FrDtTm') }) ?? balanceDate(item, ['OPBD', 'PRCD']),
       toDate: civilDate({ DtTm: at(item, 'FrToDt', 'ToDtTm') }) ?? balanceDate(item, ['CLBD']),
+      fromWholeDay: startsAtMidnight({ DtTm: at(item, 'FrToDt', 'FrDtTm') }),
       openingBalanceCents: balanceOf(item, ['OPBD', 'PRCD']),
       closingBalanceCents: balanceOf(item, ['CLBD']),
       entries: [],

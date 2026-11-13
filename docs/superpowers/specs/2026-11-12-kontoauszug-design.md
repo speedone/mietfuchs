@@ -134,11 +134,14 @@ Regeln je Auszug der Datei, in dieser Reihenfolge:
    Konto für Mieteingänge?“ Ja legt es als `mixed` an. Sagt der Vermieter nein, wird nichts übernommen. Die Rückfrage nennt eigens: „Ein
    Kautionskonto lesen Sie hier bitte nicht ein.“
 4. **Abgeschlossene Tage**: camt.053 und MT940 sind Tagesendauszüge, jeder Tag im Auszugszeitraum gilt. Bei camt.052
-   gilt ein Tag nur, wenn er vor dem Kalendertag von `createdAt` liegt; ohne `createdAt` keiner. Übrige Umsätze zeigt
-   die Vorschau als „kommt mit dem Tagesauszug“ und speichert nichts.
+   gilt ein Tag nur, wenn er vor dem Kalendertag von `createdAt` liegt; ohne `createdAt` keiner. Beginnt der Bericht
+   mitten am Tag (`FrDtTm` nicht um 0 Uhr), gilt sein erster Tag nicht (Durchsicht PR 1, W5). Übrige Umsätze zeigt
+   die Vorschau als „kommt mit dem Tagesauszug“ und speichert nichts. Derselbe Tag auf mehreren Seiten einer Datei
+   ist ein Tag (W2).
 5. **camt.054** legt nie einen Tag an. Findet sich zu einem Posten ein gespeicherter, unverknüpfter Umsatz mit
-   derselben `batch_reference` bzw. Bankreferenz und `amount_cents` gleich `batch.totalCents`, wird er durch seine
-   Einzelposten ersetzt (Summe gleich). Ist er schon verknüpft, bleibt er, die Vorschau sagt es. Ohne Treffer: „Zu
+   derselben `batch_reference` bzw. Bankreferenz, demselben Buchungstag und `amount_cents` gleich `batch.totalCents`,
+   wird er durch seine Einzelposten ersetzt, wenn sie vollständig sind (Anzahl und Summe gleich; W3). Auf einem
+   Mischkonto nur, wenn jeder Posten von einer Mieter- oder Zahler-IBAN kommt (W4); sonst bleibt die Sammelbuchung. Ist er schon verknüpft, bleibt er, die Vorschau sagt es. Ohne Treffer: „Zu
    dieser Aufschlüsselung fehlt der Tagesauszug.“
 6. **Tagesabgleich** je abgeschlossenem Tag: unbekannt → neu. Bekannt mit gleicher Anzahl, Haben- und Sollsumme →
    übersprungen. Bekannt und abweichend → nichts geschrieben, Befund „Der TT.MM.JJJJ sieht in dieser Datei anders aus

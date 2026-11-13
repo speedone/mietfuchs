@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fingerprintOf, type BankEntry, type BankReadResult, type BankStatement } from '../src/bank/statement.ts'
+import { coverageOf } from '../src/bank/coverage.ts'
 import { importToken, MISSING_DAY_STATEMENT, planBankImport, type ImportDecision, type ImportPlan } from '../src/bank/importPlan.ts'
 import type { BankAccount, BankStock } from '../src/bank/model.ts'
 
@@ -24,7 +25,7 @@ function entry(bookingDate: string, amountCents: number, over: Partial<BankEntry
 function statement(entries: BankEntry[], over: Partial<BankStatement> = {}): BankStatement {
   const sum = entries.reduce((a, e) => a + e.amountCents, 0)
   return {
-    format: 'camt.053', statementId: null, accountIban: OWN, accountOtherId: null, createdAt: null,
+    format: 'camt.053', statementId: null, accountIban: OWN, accountOtherId: null, createdAt: null, fromWholeDay: true,
     fromDate: entries[0]?.bookingDate ?? null, toDate: entries[entries.length - 1]?.bookingDate ?? null,
     openingBalanceCents: 100000, closingBalanceCents: 100000 + sum, entries, ...over,
   }
@@ -148,7 +149,7 @@ test('6 Tagesabgleich: bekannt und gleich wird übersprungen, bekannt und abweic
   assert.equal(same.writes.imports.length, 0)
   const differing = plan(read(statement([...june, entry('2025-06-03', 100, { counterpartyIban: STRANGER })])), base, [], 'sha-3')
   assert.equal(differing.writes.transactions.length, 0)
-  assert.ok(differing.findings.some((f) => f.message === 'Der 03.06.2025 sieht in dieser Datei anders aus (2 statt 1 Umsätze). Übernommen ist der frühere Stand; nehmen Sie den früheren Import im Verlauf zurück, wenn dieser Auszug gelten soll.'))
+  assert.ok(differing.findings.some((f) => f.message === 'Der 03.06.2025 sieht in dieser Datei anders aus (2 Umsätze statt 1). Übernommen ist der frühere Stand; nehmen Sie den früheren Import im Verlauf zurück, wenn dieser Auszug gelten soll.'))
 })
 
 test('7 Mischkonto: Mieter und Zahler gespeichert, Privates nur in der Tagessumme, Unbekanntes ist eine Rückfrage', () => {
@@ -279,4 +280,71 @@ test('Invariante: Einlesen in jeder Reihenfolge, auch doppelt und überlappend, 
     if (expected === null) expected = got
     assert.equal(got, expected, `Runde ${round}`)
   }
+})
+
+// ---------- Befunde der Durchsicht (PR 1) ----------
+
+test('Durchsicht W1: März, dann Februar bis März ergibt dieselbe Lückenlosigkeit wie umgekehrt', () => {
+  const feb = entry('2025-02-10', 85000)
+  const mar = entry('2025-03-10', 85000)
+  const febMar = statement([feb, mar], { fromDate: '2025-02-01', toDate: '2025-03-31', openingBalanceCents: 100000, closingBalanceCents: 270000 })
+  const marOnly = statement([mar], { fromDate: '2025-03-01', toDate: '2025-03-31', openingBalanceCents: 185000, closingBalanceCents: 270000 })
+  const inOrder = apply(apply(stock(), plan(read(febMar), stock(), [], 'a')), plan(read(marOnly), apply(stock(), plan(read(febMar), stock(), [], 'a')), [], 'b'))
+  const first = apply(stock(), plan(read(marOnly), stock(), [], 'b'))
+  const reverse = apply(first, plan(read(febMar), first, [], 'a'))
+  assert.deepEqual(coverageOf(reverse.imports), { from: '2025-02-01', to: '2025-03-31' })
+  assert.deepEqual(coverageOf(reverse.imports), coverageOf(inOrder.imports))
+})
+
+test('Durchsicht W2: derselbe Tag auf zwei Seiten einer Datei wird ein Tag mit allen Umsätzen; ein exaktes Doppel zählt einmal', () => {
+  const a = entry('2025-03-10', 1000)
+  const b = entry('2025-03-10', 500, { purpose: 'Rest' })
+  const page1 = statement([a], { statementId: 'S/1', fromDate: '2025-03-10', toDate: '2025-03-10', openingBalanceCents: 0, closingBalanceCents: 1000 })
+  const page2 = statement([b], { statementId: 'S/2', fromDate: '2025-03-10', toDate: '2025-03-10', openingBalanceCents: 1000, closingBalanceCents: 1500 })
+  const p = plan(read(page1, page2), stock())
+  assert.deepEqual(p.writes.days.map((d) => [d.date, d.entryCount, d.creditCents]), [['2025-03-10', 2, 1500]])
+  assert.deepEqual(p.writes.transactions.map((t) => t.amountCents).sort(), [1000, 500].sort())
+  assert.ok(!p.findings.some((f) => /anders aus/.test(f.message)))
+  const twice = plan(read(page1, page1), stock())
+  assert.deepEqual(twice.writes.days.map((d) => [d.entryCount, d.creditCents]), [[1, 1000]])
+  assert.equal(twice.writes.transactions.length, 1)
+})
+
+test('Durchsicht W3: zwei Aufschlüsselungen mit gleicher Referenz und gleichem Betrag ersetzen nur die des Buchungstags', () => {
+  const s0 = stock({ accounts: [account('rental')] })
+  const sum = entry('2025-03-10', 3000, { counterpartyIban: null, counterpartyName: null, purpose: '', bankReference: 'R' })
+  const base = apply(s0, plan(read(statement([sum])), s0))
+  const parts = (date: string) => [1000, 2000].map((c, i) => entry(date, c, { batch: { reference: 'R', totalCents: 3000, part: i + 1, parts: 2 }, purpose: `P${i}` }))
+  const p = plan(read(statement([...parts('2025-03-10'), ...parts('2025-04-10')], { format: 'camt.054', openingBalanceCents: null, closingBalanceCents: null })), base)
+  assert.equal(p.writes.replaced.length, 1)
+  assert.deepEqual(p.writes.replaced[0]?.parts.map((t) => [t.bookingDate, t.amountCents]), [['2025-03-10', 1000], ['2025-03-10', 2000]])
+  assert.ok(p.findings.some((f) => f.message === MISSING_DAY_STATEMENT))
+  // Unvollständig (ein Posten fehlt): nicht ersetzt.
+  const partial = plan(read(statement([parts('2025-03-10')[0] as BankEntry], { format: 'camt.054', openingBalanceCents: null, closingBalanceCents: null })), base)
+  assert.equal(partial.writes.replaced.length, 0)
+})
+
+test('Durchsicht W4: auf dem Mischkonto zerlegt eine Aufschlüsselung mit privatem Posten nichts', () => {
+  const sum = entry('2025-03-10', 3000, { counterpartyIban: null, counterpartyName: null, purpose: '', bankReference: 'R' })
+  const first = plan(read(statement([sum])), stock(), [{ type: 'entry', key: '0:2025-03-10:1', as: 'rent', tenancyId: 't1' }])
+  const base = apply(stock(), first)
+  assert.equal(base.transactions.length, 1)
+  const batch = { reference: 'R', totalCents: 3000, parts: 2 }
+  const mixedParts = [entry('2025-03-10', 1000, { batch: { ...batch, part: 1 } }), entry('2025-03-10', 2000, { batch: { ...batch, part: 2 }, counterpartyIban: STRANGER, counterpartyName: 'Privat Person' })]
+  const p = plan(read(statement(mixedParts, { format: 'camt.054', openingBalanceCents: null, closingBalanceCents: null })), base)
+  assert.equal(p.writes.replaced.length, 0)
+  assert.ok(!JSON.stringify(p.writes).includes('Privat Person'))
+  assert.ok(p.findings.some((f) => /nicht zur Vermietung/.test(f.message)))
+  const tenantParts = [entry('2025-03-10', 1000, { batch: { ...batch, part: 1 } }), entry('2025-03-10', 2000, { batch: { ...batch, part: 2 }, counterpartyIban: PAYER })]
+  const ok = plan(read(statement(tenantParts, { format: 'camt.054', openingBalanceCents: null, closingBalanceCents: null })), { ...base, payers: [{ id: 'z', tenancyId: 't1', iban: PAYER, name: null }] })
+  assert.equal(ok.writes.replaced.length, 1)
+})
+
+test('Durchsicht W5: camt.052, der mitten am Tag beginnt, schreibt seinen ersten Tag nicht fest', () => {
+  const entries = [entry('2025-06-02', 85000), entry('2025-06-03', 70000), entry('2025-06-04', 1000)]
+  const r = read(statement(entries, { format: 'camt.052', createdAt: '2025-06-04T08:00:00+02:00', fromWholeDay: false, fromDate: '2025-06-02' }))
+  const p = plan(r, stock())
+  assert.deepEqual(p.writes.days.map((d) => d.date), ['2025-06-03'])
+  assert.equal(p.summary.pending, 2)
+  assert.equal(p.writes.imports[0]?.fromDate, '2025-06-03')
 })

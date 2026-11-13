@@ -16,8 +16,13 @@ export const addIsoDays = (date: string, days: number): string =>
 export type Coverage = { from: string; to: string } | { gapAfter: string; gapBefore: string }
 
 export function coverageOf(imports: readonly BankImport[]): Coverage | null {
-  const withBalances = imports
-    .filter((i) => i.openingBalanceCents !== null && i.closingBalanceCents !== null)
+  const balanced = imports.filter((i) => i.openingBalanceCents !== null && i.closingBalanceCents !== null)
+  // Ein Auszug, der ganz in einem anderen liegt (etwa März neben Februar bis März), sagt nichts Neues über die Lücken;
+  // bei gleichem Zeitraum bleibt der erste. Ohne diese Regel stieße die Kette auf zwei Auszüge mit gleichem Ende.
+  const contained = (i: BankImport, k: number): boolean => balanced.some((o, j) => j !== k
+    && compareText(o.fromDate, i.fromDate) <= 0 && compareText(i.toDate, o.toDate) <= 0
+    && (o.fromDate !== i.fromDate || o.toDate !== i.toDate || j < k))
+  const withBalances = balanced.filter((i, k) => !contained(i, k))
     .sort((a, b) => compareText(a.toDate, b.toDate) || compareText(a.fromDate, b.fromDate))
   let current = withBalances[withBalances.length - 1]
   if (!current) return null

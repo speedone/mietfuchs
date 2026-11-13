@@ -40,6 +40,9 @@ export type BankStatement = {
   accountOtherId: string | null // Kontokennung ohne IBAN (camt `Othr/Id`, MT940 `BLZ/Konto`)
   createdAt: string | null
   fromDate: string | null
+  // Beginnt der Zeitraum mit dem ganzen ersten Tag? Ein Bericht über die Umsätze seit dem letzten Abruf (camt.052) kann
+  // mitten am Tag beginnen; sein erster Tag ist dann nicht vollständig. Ohne Uhrzeit gilt der ganze Tag.
+  fromWholeDay: boolean
   toDate: string | null
   // Anfangs- und Endsaldo, soweit der Auszug sie nennt. Anfang + Summe der Umsätze = Ende ist die
   // Probe darauf, dass kein Umsatz fehlt oder falsch gelesen wurde.

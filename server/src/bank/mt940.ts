@@ -231,6 +231,7 @@ export function readMt940(text: string, name = 'Datei'): BankReadResult {
       accountOtherId: accountIban ? null : account || null,
       createdAt: null,
       fromDate: openingBal?.date ?? null,
+      fromWholeDay: true,
       toDate: closingBal?.date ?? null,
       openingBalanceCents: openingBal?.cents ?? null,
       closingBalanceCents: closingBal?.cents ?? null,
