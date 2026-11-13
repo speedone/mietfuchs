@@ -523,3 +523,31 @@ test('camt: ein Posten, der um mehr als die Spesen abweicht, bleibt ein Ausschni
   assert.equal(onlyEntry(r).counterpartyName, null)
   assert.equal(r.problems.length, 1)
 })
+
+// ---------- Restpunkte aus dem Formattest (#644) ----------
+
+test('camt: der Zusatztext eines strukturierten Zwecks (Strd/AddtlRmtInf) wird übernommen', () => {
+  const withRemittance = (rmtInf: string) => onlyEntry(readCamt(camt053([ntry().replace(/<RmtInf>.*<\/RmtInf>/, `<RmtInf>${rmtInf}</RmtInf>`)])))
+  assert.equal(withRemittance('<Strd><AddtlRmtInf>Miete Juni Whg 3</AddtlRmtInf></Strd>').purpose, 'Miete Juni Whg 3')
+  assert.equal(withRemittance('<Strd><CdtrRefInf><Ref>RF18539007547034</Ref></CdtrRefInf><AddtlRmtInf>Miete Juni</AddtlRmtInf><AddtlRmtInf>Whg 3</AddtlRmtInf></Strd>').purpose,
+    'RF18539007547034 Miete Juni Whg 3')
+  // Steht ein unstrukturierter Zweck daneben, kommt der Zusatztext dahinter; der Anfang bleibt.
+  assert.equal(withRemittance('<Ustrd>Miete Juni</Ustrd><Strd><AddtlRmtInf>Whg 3</AddtlRmtInf></Strd>').purpose, 'Miete Juni Whg 3')
+  // Nur die Referenz wie bisher.
+  assert.equal(withRemittance('<Strd><CdtrRefInf><Ref>RF18539007547034</Ref></CdtrRefInf></Strd>').purpose, 'RF18539007547034')
+})
+
+test('camt: ohne Zeitraum beginnt ein Auszug am Tag nach dem Datum des Vortagssaldos (PRCD)', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04"><BkToCstmrStmt><Stmt><Id>S1</Id><Acct><Id><IBAN>${ACCOUNT}</IBAN></Id></Acct>
+  <Bal><Tp><CdOrPrtry><Cd>PRCD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">0.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2025-05-30</Dt></Dt></Bal>
+  <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">850.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2025-06-02</Dt></Dt></Bal>
+  ${ntry({ date: '2025-06-02' })}
+</Stmt></BkToCstmrStmt></Document>`
+  const st = readCamt(xml).statements[0]
+  assert.equal(st?.fromDate, '2025-05-31')
+  assert.equal(st?.toDate, '2025-06-02')
+  // Datiert die Bank PRCD auf den Auszugstag selbst, bleibt es dieser Tag.
+  const sameDay = readCamt(xml.replace('2025-05-30', '2025-06-02')).statements[0]
+  assert.equal(sameDay?.fromDate, '2025-06-02')
+})

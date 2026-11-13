@@ -26,7 +26,7 @@
 
 import { all, at, decodeXml, isNode, list, makeParser, refuseUnsafe, text } from '../xml.ts'
 import {
-  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, ibanOrNull, normalizeIban, problemOnly, squash, TEXT_LIMITS,
+  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, ibanOrNull, normalizeIban, problemOnly, squash, startAfterOpening, TEXT_LIMITS,
   type BankBatch, type BankEntry, type BankProblem, type BankReadResult, type BankStatement,
 } from './statement.ts'
 
@@ -97,13 +97,15 @@ function signOf(indicator: unknown): 1 | -1 | null {
   return s === 'CRDT' ? 1 : s === 'DBIT' ? -1 : null
 }
 
+// Der Zweck: die Zeilen von `Ustrd`, je Element ein Leerzeichen dazwischen, dahinter aus jedem `Strd` die Referenz
+// des Empfängers und der Zusatztext (`AddtlRmtInf`, bis zu drei je Strd, #644). Der unstrukturierte Teil steht vorn,
+// damit der Anfang, aus dem der Fingerabdruck entsteht, bei einem Zweck ohne Strd derselbe bleibt.
 function purposeOf(tx: unknown, ntry: unknown): string {
-  const lines = all(tx, 'RmtInf', 'Ustrd')
-    .map(text)
-    .filter((s): s is string => s !== null)
+  const lines = [
+    ...all(tx, 'RmtInf', 'Ustrd'),
+    ...all(tx, 'RmtInf', 'Strd').flatMap((strd) => [...all(strd, 'CdtrRefInf', 'Ref'), ...all(strd, 'AddtlRmtInf')]),
+  ].map(text).filter((s): s is string => s !== null)
   if (lines.length) return squash(lines.join(' '))
-  const structured = text(at(tx, 'RmtInf', 'Strd', 'CdtrRefInf', 'Ref'))
-  if (structured) return squash(structured)
   const additional = text(at(tx, 'AddtlTxInf')) ?? text(at(ntry, 'AddtlNtryInf'))
   return additional ? squash(additional) : ''
 }
@@ -337,8 +339,8 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
       accountIban: ibanOrNull(iban(at(item, 'Acct', 'Id', 'IBAN'))),
       accountOtherId: clipOrNull(text(at(item, 'Acct', 'Id', 'Othr', 'Id')), TEXT_LIMITS.reference),
       createdAt: clipOrNull(text(at(item, 'CreDtTm')), TEXT_LIMITS.reference),
-      // Ohne Zeitraum (FrToDt ist freiwillig) nennen ihn die Salden: ihr Datum.
-      fromDate: civilDate({ DtTm: at(item, 'FrToDt', 'FrDtTm') }) ?? balanceDate(item, ['OPBD', 'PRCD']),
+      // Ohne Zeitraum (FrToDt ist freiwillig) nennen ihn die Salden: ihr Datum (PRCD erst nach den Umsätzen, unten).
+      fromDate: civilDate({ DtTm: at(item, 'FrToDt', 'FrDtTm') }) ?? balanceDate(item, ['OPBD']),
       toDate: civilDate({ DtTm: at(item, 'FrToDt', 'ToDtTm') }) ?? balanceDate(item, ['CLBD']),
       fromWholeDay: startsAtMidnight({ DtTm: at(item, 'FrToDt', 'FrDtTm') }),
       openingBalanceCents: balanceOf(item, ['OPBD', 'PRCD']),
@@ -373,6 +375,10 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
     // camt.052 kann vorgemerkte Umsätze im Saldo führen, die hier nicht gelesen werden; geprüft
     // wird deshalb nur der Tagesauszug.
     if (found.kind === 'camt.053') checkBalance(statement, label, result.problems)
+    // Ohne Zeitraum und ohne OPBD nennt PRCD den Beginn: das Datum des Vortagssaldos, der Auszug beginnt danach (#644).
+    if (statement.fromDate === null) {
+      statement.fromDate = startAfterOpening(balanceDate(item, ['PRCD']), statement.toDate, statement.entries.map((e) => e.bookingDate))
+    }
     result.statements.push(statement)
   })
   return result

@@ -6,6 +6,7 @@ import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { coverageOf } from '../src/bank/coverage.ts'
 import { looksLikeBankFile } from '../src/bank/read.ts'
+import { readMt940 } from '../src/bank/mt940.ts'
 import type { BankImport } from '../src/bank/model.ts'
 
 const imp = (fromDate: string, toDate: string, opening: number | null, closing: number | null): BankImport => ({
@@ -24,6 +25,18 @@ test('coverageOf: ein fehlender Tag ist eine Lücke, die jüngste zählt', () =>
 
 test('coverageOf: Salden, die nicht anschließen, sind eine Lücke', () => {
   assert.deepEqual(coverageOf([imp('2025-01-01', '2025-01-31', 100, 500), imp('2025-02-01', '2025-02-28', 501, 700)]), { gapAfter: '2025-01-31', gapBefore: '2025-02-01' })
+})
+
+test('coverageOf: zwei MT940-Auszüge einer Sparkasse sind lückenlos ab dem Tag nach dem ersten Anfangssaldo (#644)', () => {
+  const text = [
+    ':20:STARTUMSE', ':25:DE00123456789012345678', ':28C:1/1', ':60F:C250228EUR0,00', ':61:2503030303C1,00NTRFNONREF', ':62F:C250305EUR1,00', '-',
+    ':20:STARTUMSE', ':25:DE00123456789012345678', ':28C:2/1', ':60F:C250305EUR1,00', ':61:2503100310C1,00NTRFNONREF', ':62F:C250310EUR2,00', '-',
+  ].join('\n')
+  const imports = readMt940(text).statements.map((s) => {
+    if (!s.fromDate || !s.toDate) assert.fail('Zeitraum erwartet')
+    return imp(s.fromDate, s.toDate, s.openingBalanceCents, s.closingBalanceCents)
+  })
+  assert.deepEqual(coverageOf(imports), { from: '2025-03-01', to: '2025-03-10' })
 })
 
 test('coverageOf: ohne Salden ist nichts zu sagen', () => {
