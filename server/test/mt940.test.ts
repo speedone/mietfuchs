@@ -17,10 +17,10 @@ test('MT940: Auszug im Stil einer Sparkasse', () => {
   const st = r.statements[0]
   assert.equal(st.format, 'mt940')
   assert.equal(st.statementId, '3/1')
-  assert.equal(st.accountIban, null)
-  assert.equal(st.accountOtherId, '50010517/0123456789')
-  assert.match(r.problems[0].message, /ohne IBAN/)
-  assert.equal(r.problems.length, 1)
+  // :25: nennt BLZ/Konto; die IBAN ergibt sich daraus (#644).
+  assert.equal(st.accountIban, 'DE41500105170123456789')
+  assert.equal(st.accountOtherId, null)
+  assert.deepEqual(r.problems, [])
   assert.equal(st.openingBalanceCents, 100000)
   assert.equal(st.closingBalanceCents, 153760)
   assert.equal(st.entries.length, 4)
@@ -106,7 +106,7 @@ test('Fingerabdruck: camt kürzt den Zweck auf 140 Zeichen, MT940 nicht; dieselb
 })
 
 test('MT940: ein Konto ohne IBAN wird einmal gemeldet, nicht je Tagesauszug', () => {
-  const day = (d: string) => [':20:X', ':25:50010517/0123456789', `:60F:C${d}EUR0,00`, `:61:${d}${d.slice(2)}C1,00NTRFNONREF`, ':86:166?20SVWZ+a', `:62F:C${d}EUR1,00`].join('\n')
+  const day = (d: string) => [':20:X', ':25:BELADEBEXXX/0123456789', `:60F:C${d}EUR0,00`, `:61:${d}${d.slice(2)}C1,00NTRFNONREF`, ':86:166?20SVWZ+a', `:62F:C${d}EUR1,00`].join('\n')
   const r = readMt940([day('250101'), day('250102'), day('250103')].join('\n-\n'))
   assert.equal(r.statements.length, 3)
   assert.equal(r.problems.length, 1)
@@ -201,4 +201,49 @@ test('MT940: :NS:-Zeilen nach :86: landen nicht in Name oder Zweck', () => {
   assert.equal(e.counterpartyName, 'Juergen Mueller-Weiss')
   assert.equal(e.purpose, 'Miete Mai')
   assert.deepEqual(r.problems, [])
+})
+
+// ---------- Restpunkte aus dem Formattest (#644) ----------
+
+const entryOf86 = (info: string) => {
+  const e = readMt940(statement(':60F:C250110EUR0,00', ':61:2501100110C1,00NTRFNONREF', `:86:${info}`, ':62F:C250110EUR1,00')).statements[0]?.entries[0]
+  if (!e) assert.fail('ein Umsatz erwartet')
+  return e
+}
+
+test('MT940: Unterfelder werden an einer Wortgrenze mit Leerzeichen, in einem geschnittenen Wort ohne verbunden', () => {
+  // Endet ein Unterfeld vor 27 Zeichen mitten in der Zeile, hat die Bank es dort beendet: Wortgrenze.
+  assert.equal(entryOf86('051?00UEBERWEISUNGSGUTSCHRIFT?20Kaution Rate 1 Whg 2?21Schmid\n?22t?32Anna Schmidt').purpose, 'Kaution Rate 1 Whg 2 Schmidt')
+  assert.equal(entryOf86('805?00ENTGELTABSCHLUSS?20Entgeltabrechnung?21siehe Anl\n?22age').purpose, 'Entgeltabrechnung siehe Anlage')
+  // Volle 27 Zeichen: fortlaufend geschnitten, auch mitten im Wort.
+  assert.equal(entryOf86('166?20Miete Maerz 2025 Whg 1 Lind?21enweg 12').purpose, 'Miete Maerz 2025 Whg 1 Lindenweg 12')
+  // Im SEPA-Zweck ebenso; ein am Zeilenende geschnittenes Wort bleibt eins.
+  assert.equal(entryOf86('109?20EREF+MIETE-W4?21MREF+\n?22MV-W4?24SVWZ+Miete Maerz Whg 4?25RE\n?26T/AC04 Konto erloschen?27Entgelt 3,00 EUR').purpose,
+    'Miete Maerz Whg 4 RET/AC04 Konto erloschen Entgelt 3,00 EUR')
+  // Keine doppelten Leerzeichen, wenn das nächste Unterfeld mit einem beginnt.
+  assert.equal(entryOf86('166?20SVWZ+Miete April Whg\n?22 2').purpose, 'Miete April Whg 2')
+})
+
+test('MT940: der Name aus ?32 und ?33 bekommt an einer Wortgrenze ein Leerzeichen', () => {
+  assert.equal(entryOf86('166?20SVWZ+a?32Bundesagentur fuer Arbeit?33Jobcenter Musterkreis').counterpartyName, 'Bundesagentur fuer Arbeit Jobcenter Musterkreis')
+  assert.equal(entryOf86('166?20SVWZ+a?32Stadtwerke Hintertupfing Gm?33bH').counterpartyName, 'Stadtwerke Hintertupfing GmbH')
+})
+
+test('MT940: :25: als BLZ/Konto ergibt die deutsche IBAN, dasselbe Konto wie aus camt', () => {
+  const r = readMt940([':20:X', ':25:37040044/532013000', ':60F:C250110EUR0,00', ':61:2501100110C1,00NTRFNONREF', ':86:166?20SVWZ+a', ':62F:C250110EUR1,00'].join('\n'))
+  assert.equal(r.statements[0]?.accountIban, 'DE89370400440532013000')
+  assert.equal(r.statements[0]?.accountOtherId, null)
+  assert.deepEqual(r.problems, [])
+  const camt = readCamt(`<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><Stmt><Id>1</Id>
+    <Acct><Id><IBAN>DE89 3704 0044 0532 0130 00</IBAN></Id></Acct></Stmt></BkToCstmrStmt></Document>`).statements[0]
+  assert.equal(camt?.accountIban, r.statements[0]?.accountIban)
+  // Mit Währung am Ende ebenso.
+  assert.equal(readMt940([':20:X', ':25:37040044/0532013000EUR', ':60F:C250110EUR0,00', ':62F:C250110EUR0,00'].join('\n')).statements[0]?.accountIban, 'DE89370400440532013000')
+})
+
+test('MT940: eine Kontokennung, aus der sich keine IBAN ableiten lässt, bleibt und wird gemeldet', () => {
+  const r = readMt940([':20:X', ':25:COBADEFFXXX/123', ':60F:C250110EUR0,00', ':62F:C250110EUR0,00'].join('\n'))
+  assert.equal(r.statements[0]?.accountIban, null)
+  assert.equal(r.statements[0]?.accountOtherId, 'COBADEFFXXX/123')
+  assert.match(r.problems[0]?.message ?? '', /ohne IBAN/)
 })

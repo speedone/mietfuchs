@@ -523,3 +523,20 @@ test('camt: ein Posten, der um mehr als die Spesen abweicht, bleibt ein Ausschni
   assert.equal(onlyEntry(r).counterpartyName, null)
   assert.equal(r.problems.length, 1)
 })
+
+// ---------- Restpunkte aus dem Formattest (#644) ----------
+
+test('camt: der Zusatztext eines strukturierten Zwecks (Strd/AddtlRmtInf) wird übernommen', () => {
+  const withRemittance = (rmtInf: string) => onlyEntry(readCamt(camt053([ntry().replace(/<RmtInf>.*<\/RmtInf>/, `<RmtInf>${rmtInf}</RmtInf>`)])))
+  assert.equal(withRemittance('<Strd><AddtlRmtInf>Miete Juni Whg 3</AddtlRmtInf></Strd>').purpose, 'Miete Juni Whg 3')
+  assert.equal(withRemittance('<Strd><CdtrRefInf><Ref>RF18539007547034</Ref></CdtrRefInf><AddtlRmtInf>Miete Juni</AddtlRmtInf><AddtlRmtInf>Whg 3</AddtlRmtInf></Strd>').purpose,
+    'RF18539007547034 Miete Juni Whg 3')
+  // Steht ein unstrukturierter Zweck daneben, gilt nur er (Durchsicht): Sonst wiche der Fingerabdruck von derselben
+  // Buchung aus MT940 ab, die nur SVWZ kennt.
+  const both = withRemittance('<Ustrd>Miete Juni</Ustrd><Strd><AddtlRmtInf>Whg 3</AddtlRmtInf></Strd>')
+  assert.equal(both.purpose, 'Miete Juni')
+  assert.equal(both.fingerprint, withRemittance('<Ustrd>Miete Juni</Ustrd>').fingerprint)
+  // Nur die Referenz wie bisher.
+  assert.equal(withRemittance('<Strd><CdtrRefInf><Ref>RF18539007547034</Ref></CdtrRefInf></Strd>').purpose, 'RF18539007547034')
+})
+

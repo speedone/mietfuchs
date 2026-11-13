@@ -64,6 +64,19 @@ function fieldsOf(text: string): Field[] {
   return fields
 }
 
+// Die deutsche IBAN zu „BLZ/Kontonummer“ in :25: (#644), damit dasselbe Konto aus MT940 und camt eines ist: DE,
+// Prüfziffer nach ISO 13616 (mod 97), BLZ, Kontonummer auf zehn Stellen. Einige Institute haben für bestimmte
+// Konten eigene Regeln der Bundesbank (IBAN-Regeln); dort ergibt sich eine andere IBAN als die der Bank, und das Konto
+// wird wie bisher als eigenes geführt, nie mit einem fremden verwechselt. Alles andere ist nicht abzuleiten (`null`).
+function germanIbanOf(account: string): string | null {
+  const m = /^(\d{8})\/(\d{1,10})$/.exec(account)
+  if (!m) return null
+  const bban = `${m[1]}${m[2].padStart(10, '0')}`
+  // D = 13, E = 14, dazu „00“ für die Prüfziffer.
+  const check = 98n - (BigInt(`${bban}131400`) % 97n)
+  return `DE${String(check).padStart(2, '0')}${bban}`
+}
+
 // Saldo: C oder D, Datum JJMMTT, Währung, Betrag mit Komma.
 function balanceOf(value: string): { cents: number, currency: string, date: string | null } | null {
   const m = /^([CD])(\d{6})([A-Z]{3})(\d+,\d*)$/.exec(value.trim())
@@ -124,10 +137,48 @@ type Details86 = {
   ultimatePartyName: string | null
 }
 
+// Volle Breite eines Unterfelds für Zweck und Name nach DFÜ-Abkommen.
+const SUBFIELD_WIDTH = 27
+
+// Ein Zeilenende unmittelbar vor einem Unterfeld, als Merkmal am vorigen Unterfeld (siehe joinSubfields).
+const LINE_END = '\u0002'
+
+type Subfield = { text: string, lineEnd: boolean }
+
+// Wie zwei Teile des Zwecks oder des Namens zusammengehören (#644). Banken füllen die Unterfelder fortlaufend und
+// schneiden dabei mitten im Wort: nach vollen 27 Zeichen, oder am Ende einer Zeile, wenn sie jede Zeile mit einem
+// neuen Unterfeld beginnen. Dort kommt kein Leerzeichen hin. Endet ein Unterfeld vorher und mitten in der Zeile, hat
+// die Bank es an einer Wortgrenze beendet („?20Kaution Rate 1 Whg 2?21Schmidt“), dort gehört eins hin. Ebenso keins,
+// wo die Grenze eine SEPA-Kennung teilt („…SV?21WZ+…“). Der Fingerabdruck sieht keine Leerzeichen (purposeKey).
+function cutAt(previous: Subfield, next: string): boolean {
+  if (previous.lineEnd || previous.text.length >= SUBFIELD_WIDTH) return true
+  return SEPA_TAGS.some((tag) => {
+    for (let k = 1; k < tag.length + 1; k++) {
+      const head = tag.slice(0, k)
+      if (!previous.text.endsWith(head) || !next.startsWith(`${tag.slice(k)}+`)) continue
+      const before = previous.text[previous.text.length - k - 1]
+      if (before === undefined || /\s/.test(before)) return true
+    }
+    return false
+  })
+}
+
+// Verbindet Unterfelder; zwischen zwei Teilen steht `glue` und, an einer Wortgrenze, ein Leerzeichen davor.
+function joinSubfields(parts: readonly Subfield[], glue: string): string {
+  let out = ''
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      const previous = parts[i - 1]
+      out += (previous && !cutAt(previous, part.text) ? ' ' : '') + glue
+    }
+    out += part.text
+  })
+  return out
+}
+
 // Unterfelder des :86: nach DFÜ-Abkommen. Das Trennzeichen ist das Zeichen nach dem dreistelligen
-// Geschäftsvorfallcode, meist „?“. Ein Unterfeld setzt sich über Zeilenumbrüche fort, und die
-// Teile des Zwecks (?20–?29, ?60–?63) werden ohne Leerzeichen verbunden: Die Bank bricht nach
-// 27 Zeichen um, auch mitten im Wort.
+// Geschäftsvorfallcode, meist „?“. Ein Unterfeld setzt sich über Zeilenumbrüche fort; wie die
+// Teile des Zwecks (?20–?29, ?60–?63) und des Namens (?32, ?33) zusammengehören, sagt joinSubfields.
 function details86(raw: string | undefined, credit: boolean): Details86 {
   const value = (raw ?? '').replace(/\r?\n/g, '')
   // Gegliedert ist ein :86: nur, wenn auf den Geschäftsvorfallcode ein Trennzeichen und zwei
@@ -136,23 +187,29 @@ function details86(raw: string | undefined, credit: boolean): Details86 {
   const empty: Details86 = { bookingText: null, purpose: '', counterpartyName: null, counterpartyIban: null, endToEndId: null, ultimatePartyName: null }
   if (!structured) return { ...empty, purpose: squash(value) }
   const sep = structured[2].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const sub = new Map<number, string>()
-  for (const part of value.slice(4).split(new RegExp(`${sep}(?=\\d{2})`))) {
+  // Ein Zeilenende direkt vor einem Unterfeld bleibt als LINE_END stehen, jedes andere fällt weg.
+  const marked = (raw ?? '').replace(new RegExp(`\\r?\\n(?=${sep}\\d{2})`, 'g'), LINE_END).replace(/\r?\n/g, '')
+  const sub = new Map<number, Subfield>()
+  for (const part of marked.slice(4).split(new RegExp(`${sep}(?=\\d{2})`))) {
     const key = Number(part.slice(0, 2))
-    if (Number.isInteger(key)) sub.set(key, (sub.get(key) ?? '') + part.slice(2))
+    if (!Number.isInteger(key)) continue
+    const body = part.slice(2)
+    const known = sub.get(key)
+    sub.set(key, { text: (known?.text ?? '') + body.split(LINE_END).join(''), lineEnd: body.endsWith(LINE_END) })
   }
-  const joined = (keys: number[], glue = '') => keys.filter((k) => sub.has(k)).map((k) => sub.get(k) ?? '').join(glue)
+  const subText = (key: number) => sub.get(key)?.text ?? ''
+  const parts = (keys: number[]) => keys.map((k) => sub.get(k)).filter((p): p is Subfield => p !== undefined)
   // Die Grenzen der Unterfelder bleiben als BOUNDARY stehen, bis die Kennungen gefunden sind: Eine
   // Kennung beginnt meist am Anfang eines Unterfelds, direkt hinter dem Ende des vorigen
   // („?20EREF+NOTPROVIDED?21SVWZ+…“), und ohne Leerzeichen dazwischen wäre sie sonst nicht zu
   // erkennen.
-  const purposeRaw = joined([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 60, 61, 62, 63], BOUNDARY)
+  const purposeRaw = joinSubfields(parts([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 60, 61, 62, 63]), BOUNDARY)
   const tags = sepaTags(purposeRaw)
-  const account = normalizeIban(sub.get(31) ?? '')
-  const name = squash(joined([32, 33]))
+  const account = normalizeIban(subText(31))
+  const name = squash(joinSubfields(parts([32, 33]), ''))
   const purpose = tags.SVWZ ?? (tags.found ? tags.rest : unglue(purposeRaw))
   return {
-    bookingText: sub.get(0) ? squash(sub.get(0) ?? '') : null,
+    bookingText: subText(0) ? squash(subText(0)) : null,
     purpose: squash(purpose),
     counterpartyName: name || null,
     counterpartyIban: IBAN.test(account) ? account : null,
@@ -210,7 +267,7 @@ export function readMt940(text: string, name = 'Datei'): BankReadResult {
     const statementId = clipOrNull(get('28C') ?? get('28') ?? get('20') ?? null, TEXT_LIMITS.reference)
     const label = `${name}, Auszug ${statementId ?? gi + 1}`
     const account = clip((get('25') ?? '').replace(/[A-Z]{3}$/, '').replace(/\s+/g, ''), TEXT_LIMITS.reference)
-    const accountIban = IBAN.test(normalizeIban(account)) ? normalizeIban(account) : null
+    const accountIban = IBAN.test(normalizeIban(account)) ? normalizeIban(account) : germanIbanOf(account)
     const opening = group.find((f) => f.tag === '60F' || f.tag === '60M')
     const closing = [...group].reverse().find((f) => f.tag === '62F' || f.tag === '62M')
     const openingBal = opening ? balanceOf(opening.value) : null
@@ -232,6 +289,9 @@ export function readMt940(text: string, name = 'Datei'): BankReadResult {
       accountIban,
       accountOtherId: accountIban ? null : account || null,
       createdAt: null,
+      // Der Tag des Anfangssaldos. Banken datieren ihn verschieden (Vortag oder erster Tag des Auszugs); mit diesem Tag
+      // schließt die Kette in „lückenlos eingelesen“ bei beiden Arten an, schlimmstenfalls beginnt sie einen Tag zu früh.
+      // Der Tag danach (Versuch zu #644) meldete eine falsche Lücke, wenn der erste Tag ohne Buchung war (Durchsicht).
       fromDate: openingBal?.date ?? null,
       fromWholeDay: true,
       toDate: closingBal?.date ?? null,

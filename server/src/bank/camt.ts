@@ -97,13 +97,19 @@ function signOf(indicator: unknown): 1 | -1 | null {
   return s === 'CRDT' ? 1 : s === 'DBIT' ? -1 : null
 }
 
+// Der Zweck: die Zeilen von `Ustrd`, je Element ein Leerzeichen dazwischen, dahinter aus jedem `Strd` die Referenz
+// des Empfängers und der Zusatztext (`AddtlRmtInf`, bis zu drei je Strd, #644). Der unstrukturierte Teil steht vorn,
+// damit der Anfang, aus dem der Fingerabdruck entsteht, bei einem Zweck ohne Strd derselbe bleibt.
 function purposeOf(tx: unknown, ntry: unknown): string {
-  const lines = all(tx, 'RmtInf', 'Ustrd')
-    .map(text)
-    .filter((s): s is string => s !== null)
+  const lines = [
+    ...all(tx, 'RmtInf', 'Ustrd'),
+  ].map(text).filter((s): s is string => s !== null)
   if (lines.length) return squash(lines.join(' '))
-  const structured = text(at(tx, 'RmtInf', 'Strd', 'CdtrRefInf', 'Ref'))
-  if (structured) return squash(structured)
+  // Nur ohne Ustrd der strukturierte Zweck (#644): Hinter Ustrd angehängt änderte er den Fingerabdruck, und dieselbe
+  // Buchung aus MT940 (nur SVWZ) wäre eine andere (Durchsicht).
+  const structured = all(tx, 'RmtInf', 'Strd').flatMap((strd) => [...all(strd, 'CdtrRefInf', 'Ref'), ...all(strd, 'AddtlRmtInf')])
+    .map(text).filter((s): s is string => s !== null)
+  if (structured.length) return squash(structured.join(' '))
   const additional = text(at(tx, 'AddtlTxInf')) ?? text(at(ntry, 'AddtlNtryInf'))
   return additional ? squash(additional) : ''
 }
@@ -337,7 +343,6 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
       accountIban: ibanOrNull(iban(at(item, 'Acct', 'Id', 'IBAN'))),
       accountOtherId: clipOrNull(text(at(item, 'Acct', 'Id', 'Othr', 'Id')), TEXT_LIMITS.reference),
       createdAt: clipOrNull(text(at(item, 'CreDtTm')), TEXT_LIMITS.reference),
-      // Ohne Zeitraum (FrToDt ist freiwillig) nennen ihn die Salden: ihr Datum.
       fromDate: civilDate({ DtTm: at(item, 'FrToDt', 'FrDtTm') }) ?? balanceDate(item, ['OPBD', 'PRCD']),
       toDate: civilDate({ DtTm: at(item, 'FrToDt', 'ToDtTm') }) ?? balanceDate(item, ['CLBD']),
       fromWholeDay: startsAtMidnight({ DtTm: at(item, 'FrToDt', 'FrDtTm') }),

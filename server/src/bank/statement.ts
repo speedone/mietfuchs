@@ -76,7 +76,8 @@ export type BankReadResult = {
 //
 // Vom Verwendungszweck zählt nur ein genormter Anfang: Buchstaben und Ziffern, klein, die ersten
 // PURPOSE_KEY_LENGTH. camt kürzt den Zweck auf 140 Zeichen (ein Ustrd-Feld), MT940 führt ihn in bis
-// zu 14 Unterfeldern zu 27 Zeichen voll, und MT940 setzt die Unterfelder ohne Leerzeichen zusammen. Der volle Zweck ergäbe für dieselbe Buchung zwei Fingerabdrücke.
+// zu 14 Unterfeldern zu 27 Zeichen voll, und ob an einer Unterfeldgrenze ein Leerzeichen steht, ist nur eine Annahme
+// (mt940.ts, joinSubfields). Der volle Zweck ergäbe für dieselbe Buchung zwei Fingerabdrücke.
 const PURPOSE_KEY_LENGTH = 100
 
 // Umlaute werden umgeschrieben (ä → ae, ß → ss) und Akzente entfernt, bevor gefiltert wird: MT940
