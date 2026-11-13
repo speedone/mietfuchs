@@ -12,9 +12,10 @@
 import { eq } from 'drizzle-orm'
 import type { Database, Executor } from './client.ts'
 import { retitleCurrentGroup } from './journal.ts'
+import { linkedTargetRefusal, signedDeposit } from './bankGuard.ts'
 import { readClosedHeatingSettlements, readClosedSettlements, readDepositEntries, readHeatingPlants } from './read.ts'
 import { insertEntityIn, isCalendarDay, replaceBoundPaymentIn, rulesForProperty } from './repository.ts'
-import { DEPOSIT_ENTRY_KINDS, DEPOSIT_PURPOSES, depositEntries, payments, tenancies, unitNoConnection, units } from './schema.ts'
+import { bankTransactionLinks, DEPOSIT_ENTRY_KINDS, DEPOSIT_PURPOSES, depositEntries, payments, tenancies, unitNoConnection, units } from './schema.ts'
 import { plantRules, servesUnit, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import { depositProblem } from '../../../shared/deposit.ts'
 import { periodLabel, periodsBetween, settlementDeadline } from '../../../shared/period.ts'
@@ -97,11 +98,16 @@ export async function moveToDeposit(db: Database, paymentId: string, newId: () =
     if (!p) return null
     const [bound] = await tx.select({ id: depositEntries.id }).from(depositEntries).where(eq(depositEntries.paymentId, paymentId))
     if (p.kind !== 'rent' || p.amountCents <= 0 || bound) throw new DepositError(400, 'Umbuchen lässt sich nur ein Mieteingang.')
+    // Hängt die Zahlung an einem Kontoumsatz (#188), wandert die Zuordnung auf den neuen Eingang (Durchsicht C2); sonst
+    // nähme der Fremdschlüssel sie mit, und der Umsatz stünde wieder offen als Miete zum Buchen da.
+    const [link] = await tx.select().from(bankTransactionLinks).where(eq(bankTransactionLinks.paymentId, paymentId))
     await tx.delete(payments).where(eq(payments.id, paymentId))
     // Die Notiz einer Zahlung ist unbegrenzt, die einer Buchung nicht; gekürzt statt abgelehnt, denn auf der Seite Steuer
     // ließe sie sich nicht ändern (Durchsicht G5).
     const note = p.note ? p.note.trim().slice(0, NOTE_MAX) : ''
-    return insertIn(tx, newId(), { tenancyId: p.tenancyId, date: p.date, kind: 'received', amountCents: p.amountCents, ...(note ? { note } : {}) }, await readDepositEntries(tx), newId)
+    const entry = await insertIn(tx, newId(), { tenancyId: p.tenancyId, date: p.date, kind: 'received', amountCents: p.amountCents, ...(note ? { note } : {}) }, await readDepositEntries(tx), newId)
+    if (link) await tx.insert(bankTransactionLinks).values({ id: link.id, transactionId: link.transactionId, paymentId: null, depositEntryId: entry.id, created: link.created })
+    return entry
   })
 }
 
@@ -148,6 +154,13 @@ async function insertIn(db: Executor, id: string, body: unknown, pending: Deposi
   return after
 }
 
+// Buchungen mit vorgegebenen Kennungen innerhalb einer laufenden Transaktion (Kontoauszug, #188: die Kennung kommt in
+// den Link). Dieselben Prüfungen wie eine einzelne Buchung, der Stand über alle zusammen.
+export async function insertDepositEntriesIn(tx: Executor, items: readonly { id: string; body: unknown }[], newId: () => string): Promise<void> {
+  const pending = await readDepositEntries(tx)
+  for (const { id, body } of items) await insertIn(tx, id, body, pending, newId)
+}
+
 export async function createDepositEntry(db: Database, body: unknown, newId: () => string): Promise<DepositEntry> {
   return db.transaction(async (tx) => insertIn(tx, newId(), body, await readDepositEntries(tx), newId))
 }
@@ -173,6 +186,9 @@ export async function updateDepositEntry(db: Database, id: string, body: unknown
     if (!before) return null
     const merged = mergeEntry(before, id, body)
     guardBalance(all.filter((e) => e.tenancyId === merged.tenancyId).map((e) => (e.id === id ? merged : e)))
+    // Einem Kontoumsatz zugeordnet (#188): senken ja, über den Umsatz heben, die Richtung wechseln oder umhängen nicht.
+    const refusal = await linkedTargetRefusal(tx, { depositEntryId: id }, before, { tenancyId: merged.tenancyId, kind: merged.kind, cents: signedDeposit(merged.kind, merged.amountCents) })
+    if (refusal) throw new DepositError(409, refusal)
     const kind = boundKind(merged)
     let after: DepositEntry = merged
     if (before.paymentId && kind) {
@@ -190,7 +206,7 @@ export async function updateDepositEntry(db: Database, id: string, body: unknown
   })
 }
 
-export async function removeDepositEntry(db: Database, id: string): Promise<boolean> {
+export async function removeDepositEntry(db: Executor, id: string): Promise<boolean> {
   const all = await readDepositEntries(db)
   const before = all.find((e) => e.id === id)
   if (!before) return false

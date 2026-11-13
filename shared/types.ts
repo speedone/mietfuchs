@@ -282,7 +282,8 @@ export type Payment = {
 // Eine Zahlung, wie GET /api/payments sie liefert (#228): `fromDeposit` heißt, sie stammt aus einer Verrechnung der
 // Kaution und ist gebunden; Betrag, Datum und Art ändert nur die Kautionsbuchung. Keine Spalte, gelesen aus dem Verweis
 // der Buchung; deshalb nicht am Modell `Payment`, das die Berechnung liest.
-export type PaymentListItem = Payment & { fromDeposit?: true }
+// `fromBank`: einem Kontoumsatz zugeordnet (#188).
+export type PaymentListItem = Payment & { fromDeposit?: true; fromBank?: true }
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 

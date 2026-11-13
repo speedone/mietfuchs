@@ -67,6 +67,10 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'POST /api/bank/import': s('Kontoauszug eingelesen', 'bank_imports'),
   'PUT /api/bank/accounts/:id': s('Konto geändert', 'bank_accounts'),
   'DELETE /api/bank/imports/:id': s('Import zurückgenommen', 'bank_imports'),
+  // Teil 2: Der Buchungslauf nennt die Zahl (retitleCurrentGroup in db/bank.ts); die Vorschau (…/links/plan) liest nur.
+  'POST /api/bank/links': s('Umsätze aus dem Kontoauszug gebucht', 'bank_transaction_links'),
+  'DELETE /api/bank/links/:id': s('Zuordnung gelöst', 'bank_transaction_links'),
+  'PUT /api/bank/transactions/:id': s('Umsatz zurückgeholt', 'bank_transactions'),
   'POST /api/co2-refunds': s('CO₂-Erstattung angelegt'),
   'PUT /api/co2-refunds/:id': s('CO₂-Erstattung geändert'),
   'DELETE /api/co2-refunds/:id': s('CO₂-Erstattung gelöscht'),
@@ -119,6 +123,7 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
 export const DRY_RUN_ROUTES: ReadonlySet<string> = new Set([
   // #188: Vorschau eines Kontoauszugs; schreibt nichts.
   'POST /api/bank/import/plan',
+  'POST /api/bank/links/plan',
   'POST /api/heating-plants/:id/period/preview',
   'POST /api/heating-plants/:id/separate/preview',
   'POST /api/properties/:id/period/preview',

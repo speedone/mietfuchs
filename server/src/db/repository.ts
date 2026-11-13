@@ -73,6 +73,7 @@ import {
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
+import { linkedTargetRefusal } from './bankGuard.ts'
 import { RENT_DUE_TEXTS } from './errors.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 import { guardRoomMeter, guardRoomRecipients, guardRooms, guardRoomsRemoval, guardRoomTenancy, roomCount, roomSplitOf, roomViolations } from './rooms.ts'
@@ -768,6 +769,11 @@ async function guardPayment(db: Executor, before: Payment | null, after: Payment
   if (before !== null && (before.amountCents !== after.amountCents || before.date !== after.date || before.kind !== after.kind || before.tenancyId !== after.tenancyId)) {
     const [bound] = await db.select({ id: depositEntries.id }).from(depositEntries).where(eq(depositEntries.paymentId, before.id))
     if (bound) throw new BoundPaymentError('Diese Zahlung stammt aus der Kaution. Ändern oder löschen Sie die Verrechnung unter Stammdaten bei „Kaution führen“.')
+  }
+  // Einem Kontoumsatz zugeordnet (#188): senken ja, über den Umsatz heben oder umhängen nicht (db/bankGuard.ts).
+  if (before !== null && (before.amountCents !== after.amountCents || before.tenancyId !== after.tenancyId)) {
+    const refusal = await linkedTargetRefusal(db, { paymentId: before.id }, { tenancyId: before.tenancyId }, { tenancyId: after.tenancyId, cents: after.amountCents })
+    if (refusal) throw new BoundPaymentError(refusal)
   }
   await guardPaymentFields(db, before, after)
 }

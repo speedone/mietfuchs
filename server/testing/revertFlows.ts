@@ -384,6 +384,32 @@ export const STEPS: readonly Step[] = [
       if (last && ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/bank/imports/${last.id}`)
     },
   },
+  {
+    name: 'Kontoumsätze buchen, beiseitelegen, zurückholen, lösen',
+    routes: ['POST /api/bank/links', 'PUT /api/bank/transactions/:id', 'DELETE /api/bank/links/:id'],
+    run: async (ctx) => {
+      type Tx = { id: string, openCents: number, suggestion: { tenancyId: string, target: unknown } | null, links: { id: string, created: boolean }[] }
+      const open = await json<Tx[]>(await send(ctx.s, 'GET', '/api/bank/transactions?state=open')) ?? []
+      const t = pick(ctx.rng, ctx.tenancies)
+      const book = async (decisions: unknown[]) => {
+        const preview = await json<{ token: string, problems: unknown[] }>(await send(ctx.s, 'POST', '/api/bank/links/plan', { decisions }))
+        if (preview && preview.problems.length === 0) await send(ctx.s, 'POST', '/api/bank/links', { decisions, token: preview.token })
+      }
+      const first = open[0]
+      if (first) {
+        if (ctx.rng() < 0.3) {
+          await book([{ transactionId: first.id, setAside: 'other' }])
+          await send(ctx.s, 'PUT', `/api/bank/transactions/${first.id}`, { setAside: null })
+        } else {
+          const target = first.suggestion ?? (t ? { tenancyId: t.id, target: { type: 'newPayment', kind: 'rent' } } : null)
+          if (target) await book([{ transactionId: first.id, parts: [{ tenancyId: target.tenancyId, amountCents: first.openCents, target: target.target }] }])
+        }
+      }
+      const done = await json<Tx[]>(await send(ctx.s, 'GET', '/api/bank/transactions?state=done')) ?? []
+      const link = pick(ctx.rng, done.flatMap((d) => d.links))
+      if (link && ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/bank/links/${link.id}${link.created && ctx.rng() < 0.5 ? '?payment=delete' : ''}`)
+    },
+  },
   // ---------- Belege ----------
   {
     name: 'Beleg hochladen', routes: ['POST /api/upload'],
