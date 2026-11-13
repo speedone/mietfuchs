@@ -8,7 +8,7 @@ import { depositKindText, signedCents } from './depositForm'
 import type { DepositEntry, DepositStatementInfo, Tenancy } from './types'
 
 export type DepositSettlement = {
-  rows: { label: string; cents: number; date: string; note?: string }[]
+  rows: { label: string; cents: number; date: string; note?: string; printNote?: string }[]
   balanceCents: number
   hold: { cents: number; note: string } | null
   payoutCents: number
@@ -31,7 +31,8 @@ export function depositSettlement(
   const state = depositState(tenancy, entries)
   const rows = [...entries]
     .sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-    .map((e) => ({ label: depositKindText(e), cents: signedCents(e), date: e.date, ...(e.note ? { note: e.note } : {}) }))
+    // Der Grund einer Verrechnung gehört auf das Blatt an den Mieter (Praxistest vor 0.18.0); andere Notizen nicht (G4).
+    .map((e) => ({ label: depositKindText(e), cents: signedCents(e), date: e.date, ...(e.note ? { note: e.note } : {}), ...(e.note && e.kind === 'applied' ? { printNote: e.note } : {}) }))
   const balanceCents = Math.max(0, state.balanceCents)
   const holdCents = Math.min(tenancy.depositHoldCents ?? 0, balanceCents)
   const hold = holdCents > 0 ? { cents: holdCents, note: tenancy.depositHoldNote ?? '' } : null
@@ -44,7 +45,7 @@ export function depositSettlement(
     payoutCents: balanceCents - holdCents,
     lastStatement: last ? `Nebenkostenabrechnung ${last.label}: ${saldo(last.balanceCents)}` : null,
     lastHeatingStatement: info?.lastHeating ? `Heizkostenabrechnung ${info.lastHeating.label}: ${saldo(info.lastHeating.balanceCents)}` : null,
-    pending: (info?.pending ?? []).map((label) => `Abrechnung für ${label} steht noch aus`),
+    pending: (info?.pending ?? []).map((label) => `Abrechnung für ${label} ist noch nicht abgeschlossen`),
   }
 }
 

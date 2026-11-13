@@ -44,7 +44,7 @@ test('Zeilen in der Reihenfolge Eingänge, Erträge, Verrechnungen, Rückzahlung
 test('letzte Abrechnung und ausstehende Zeiträume als Orientierung', () => {
   const s = depositSettlement(TENANCY, ENTRIES, INFO, TODAY)
   expect(s?.lastStatement?.replace(/ /g, ' ')).toBe('Nebenkostenabrechnung 2024: Nachzahlung 180,00 €')
-  expect(s?.pending).toEqual(['Abrechnung für 2025 steht noch aus'])
+  expect(s?.pending).toEqual(['Abrechnung für 2025 ist noch nicht abgeschlossen'])
   const credit = depositSettlement(TENANCY, ENTRIES, { ...INFO, last: { label: '2024', balanceCents: 9500 }, pending: [] }, TODAY)
   expect(credit?.lastStatement?.replace(/ /g, ' ')).toBe('Nebenkostenabrechnung 2024: Guthaben 95,00 €')
   expect(credit?.pending).toEqual([])
@@ -100,7 +100,7 @@ test('Hinweis der Steuer: einbehalten für Schaden oder Sonstiges im Jahr, nicht
 test('letzte Heizkostenabrechnung einer Anlage als eigene Zeile', () => {
   const s = depositSettlement(TENANCY, ENTRIES, { ...INFO, lastHeating: { label: '2024/2025', balanceCents: 4200 }, pending: ['2025', 'Heizkosten 2025/2026'] }, TODAY)
   expect(s?.lastHeatingStatement?.replace(/\u00a0/g, ' ')).toBe('Heizkostenabrechnung 2024/2025: Guthaben 42,00 €')
-  expect(s?.pending).toEqual(['Abrechnung für 2025 steht noch aus', 'Abrechnung für Heizkosten 2025/2026 steht noch aus'])
+  expect(s?.pending).toEqual(['Abrechnung für 2025 ist noch nicht abgeschlossen', 'Abrechnung für Heizkosten 2025/2026 ist noch nicht abgeschlossen'])
   expect(depositSettlement(TENANCY, ENTRIES, INFO, TODAY)?.lastHeatingStatement).toBeNull()
 })
 
@@ -129,4 +129,12 @@ test('Invariante: Auszahlung plus Einbehalt ist der Stand, nichts negativ', () =
     const sum = s.rows.reduce((a, r) => a + r.cents, 0)
     expect(s.balanceCents).toBe(Math.max(0, sum))
   }
+})
+
+test('Praxistest 5: der Grund einer Verrechnung steht auch im Druck, andere Notizen nicht; Ausstehendes heißt nicht abgeschlossen', () => {
+  const applied: DepositEntry = { id: 'c', tenancyId: 't', date: '2026-01-10', kind: 'applied', amountCents: 30000, purpose: 'damage', note: 'Wand im Bad' }
+  const s = depositSettlement(TENANCY, [...ENTRIES, applied], INFO, TODAY)
+  expect(s?.rows.find((r) => r.date === '2026-01-10')?.printNote).toBe('Wand im Bad')
+  expect(s?.rows.find((r) => r.note === 'Zinsen 2022 bis 2025')?.printNote).toBeUndefined()
+  expect(s?.pending).toEqual(['Abrechnung für 2025 ist noch nicht abgeschlossen'])
 })

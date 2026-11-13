@@ -45,7 +45,7 @@ const select = (label: string): HTMLSelectElement => {
 
 test('zeigt Buchungen und Stand', () => {
   const { drawer } = open()
-  expect(within(drawer).getByText(/^Vereinbart 2\.400,00\s€, eingegangen 1\.600,00\s€, bei Ihnen liegen 1\.500,00\s€\.$/)).toBeTruthy()
+  expect(within(drawer).getByText(/^Vereinbart 2\.400,00\s€, eingegangen 1\.600,00\s€, verrechnet 100,00\s€, bei Ihnen liegen 1\.500,00\s€\.$/)).toBeTruthy()
   const rows = within(drawer).getAllByRole('row').slice(1).map((r) => (r.textContent ?? '').replace(/\u00a0/g, ' '))
   expect(rows[0]).toContain('05.01.2025')
   expect(rows[0]).toContain('Eingang')
@@ -184,7 +184,7 @@ test('nach dem Auszug: Aufstellung mit Einbehalt, was auszuzahlen bleibt, letzte
   expect(flat(section)).toContain('Einbehalten: 300,00 € (Nebenkosten 2025)')
   expect(flat(section)).toContain('Bleibt auszuzahlen: 2.112,34 €')
   expect(flat(section)).toContain('Nebenkostenabrechnung 2024: Nachzahlung 180,00 €')
-  expect(flat(section)).toContain('Abrechnung für 2025 steht noch aus')
+  expect(flat(section)).toContain('Abrechnung für 2025 ist noch nicht abgeschlossen')
   // Kein Vorschlag, kein Prozentsatz.
   expect(flat(section)).not.toMatch(/Vorschlag|%/)
 })
@@ -225,7 +225,7 @@ test('Drucken druckt nur die Aufstellung', async () => {
   expect(flat(sheet)).toContain('Beim Vermieter liegen 2.412,34 €')
   expect(flat(sheet)).not.toMatch(/Bei Ihnen/)
   // Abschlussdurchsicht G4: Orientierung und freie Notizen sind für den Vermieter, nicht für das Blatt; das Datum gehört drauf.
-  expect(flat(sheet)).not.toMatch(/Nebenkostenabrechnung 2024|steht noch aus/)
+  expect(flat(sheet)).not.toMatch(/Nebenkostenabrechnung 2024|noch nicht abgeschlossen/)
   expect(flat(sheet)).toMatch(/Stand vom \d{2}\.\d{2}\.\d{4}/)
   window.dispatchEvent(new Event('afterprint'))
   await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))

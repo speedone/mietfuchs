@@ -122,7 +122,32 @@ test('Durchsicht I3: eine erfasste Zahlung außerhalb von 7 Tagen, aber im Monat
   const s = suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-06-15', 80000)] }))
   assert.deepEqual(s?.target, { type: 'newPayment', kind: 'rent' })
   assert.equal(s?.light, 'yellow')
-  assert.equal(s?.reason, 'Am 15.06.2025 ist schon eine Zahlung über 800,00 € erfasst. Bitte prüfen Sie, ob es dieselbe ist.')
+  assert.equal(s?.reason, 'Am 15.06.2025 ist schon eine Zahlung über denselben Betrag erfasst. Bitte prüfen Sie, ob es dieselbe ist.')
   assert.equal(suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-08-15', 80000)] }))?.light, 'green')
   assert.equal(suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-06-15', 80000)], linkedPaymentIds: new Set(['p1']) }))?.light, 'green')
+})
+
+// ---------- Befunde des Praxistests vor 0.18.0 ----------
+
+test('Praxistest 1: eine Kautionsrate wird als Kaution vorgeschlagen, solange Kaution offen ist', () => {
+  const rate = suggest(tx('2025-02-04', 80000, { purpose: 'Rate 2' }), ctx({ monthlySollCents: () => 95000 }))
+  assert.deepEqual(rate?.target, { type: 'deposit', kind: 'received' }, 'ein Drittel der vereinbarten Kaution in den ersten Monaten')
+  assert.equal(rate?.light, 'yellow')
+  assert.equal(rate?.reason, 'Betrag wie eine Rate der vereinbarten Kaution (ein Drittel)')
+  const byPurpose = suggest(tx('2025-05-04', 56000, { purpose: 'Kaution Rate 2' }), ctx({ monthlySollCents: () => 95000 }))
+  assert.deepEqual(byPurpose?.target, { type: 'deposit', kind: 'received' }, '„Kaution“ im Zweck')
+  assert.equal(byPurpose?.reason, '„Kaution“ im Verwendungszweck, und die vereinbarte Kaution ist noch nicht ganz eingegangen')
+  const paid: DepositEntry = { id: 'd', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 240000 }
+  assert.deepEqual(suggest(tx('2025-02-04', 80000, { purpose: 'Kaution' }), ctx({ depositEntries: [paid], monthlySollCents: () => 95000 }))?.target, { type: 'newPayment', kind: 'rent' }, 'Kaution schon ganz da')
+  assert.deepEqual(suggest(tx('2025-02-04', 80000), ctx())?.target, { type: 'newPayment', kind: 'rent' }, 'gleich dem Soll bleibt Miete')
+  assert.deepEqual(suggest(tx('2025-09-04', 80000), ctx({ monthlySollCents: () => 95000 }))?.target, { type: 'newPayment', kind: 'rent' }, 'ein Drittel lange nach dem Beginn')
+  assert.deepEqual(suggest(tx('2025-05-04', 300000, { purpose: 'Kaution' }), ctx({ monthlySollCents: () => 95000 }))?.target, { type: 'newPayment', kind: 'rent' }, 'mehr als offen')
+})
+
+test('Praxistest 2: nur eine erfasste Zahlung gleichen Betrags in der Nähe macht gelb, mit passendem Grund', () => {
+  assert.equal(suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-06-15', 79000)] }))?.light, 'green', 'anderer Betrag')
+  assert.equal(suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-05-02', 80000)] }))?.light, 'green', 'Miete des Vormonats')
+  const near = suggest(tx('2025-05-30', 80000), ctx({ payments: [payment('p1', '2025-06-15', 80000)] }))
+  assert.equal(near?.light, 'yellow')
+  assert.equal(near?.reason, 'Am 15.06.2025 ist schon eine Zahlung über denselben Betrag erfasst. Bitte prüfen Sie, ob es dieselbe ist.')
 })

@@ -288,7 +288,7 @@ function SettlementView({ settlement: s, printed = false }: { settlement: Deposi
       <Table aria-label="Buchungen der Kaution">
         <tbody>
           {s.rows.map((r, i) => (
-            <tr key={i}><td>{fmtDate(r.date)}</td><td>{r.label}{r.note && !printed ? ` (${r.note})` : ''}</td><td className="num">{fmtEuro(r.cents)}</td></tr>
+            <tr key={i}><td>{fmtDate(r.date)}</td><td>{r.label}{printed ? (r.printNote ? ` (${r.printNote})` : '') : r.note ? ` (${r.note})` : ''}</td><td className="num">{fmtEuro(r.cents)}</td></tr>
           ))}
         </tbody>
       </Table>
