@@ -192,3 +192,13 @@ test('MT940: ohne Buchungstag in :61: gilt die Wertstellung, gekennzeichnet als 
   assert.equal(e?.bookingDate, '2025-03-01')
   assert.equal(e?.bookingDateEstimated, true)
 })
+
+test('MT940: :NS:-Zeilen nach :86: landen nicht in Name oder Zweck', () => {
+  const r = readMt940(statement(':60F:C250501EUR0,00', ':61:2505020502CR850,00NMSCNONREF',
+    ':86:166?00SEPA Gutschrift?20SVWZ+Miete Mai?31DE00500105170000000011?32Juergen Mueller-Weiss',
+    ':NS:01Lindenstrasse 5', '02Musterstadt', ':62F:C250502EUR850,00'))
+  const e = r.statements[0].entries[0]
+  assert.equal(e.counterpartyName, 'Juergen Mueller-Weiss')
+  assert.equal(e.purpose, 'Miete Mai')
+  assert.deepEqual(r.problems, [])
+})

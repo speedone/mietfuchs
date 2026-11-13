@@ -146,6 +146,26 @@ function txAmountOf(tx: unknown): { raw: string, currency: string | null } | nul
   return { raw, currency: isNode(amt) ? text(amt['@Ccy']) : null }
 }
 
+// Spesen, die die Bank vom Posten abgezogen (Eingang) oder aufgeschlagen (Ausgang) hat, in Cent:
+// die Summe (TtlChrgsAndTaxAmt), sonst die einzelnen Posten (Rcrd/Amt, in .02 Chrgs/Amt). Nur Euro
+// zählt; ohne lesbare Spesen 0.
+function chargesCentsOf(...nodes: unknown[]): number {
+  for (const node of nodes) {
+    for (const chrgs of all(node, 'Chrgs')) {
+      const total = at(chrgs, 'TtlChrgsAndTaxAmt')
+      const amounts = total !== undefined ? [total] : [...all(chrgs, 'Rcrd').map((r) => at(r, 'Amt')), at(chrgs, 'Amt')]
+      let sum = 0
+      for (const a of amounts) {
+        const raw = text(a)
+        const c = raw && isNode(a) && text(a['@Ccy']) === 'EUR' ? amountToCents(raw) : null
+        if (c !== null) sum += c
+      }
+      if (sum > 0) return sum
+    }
+  }
+  return 0
+}
+
 function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
   const amt = at(ntry, 'Amt')
   const currency = isNode(amt) ? text(amt['@Ccy']) : null
@@ -230,7 +250,12 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
     const a = txAmountOf(txs[0])
     const partCents = a && a.currency === 'EUR' ? amountToCents(a.raw) : null
     const partSign = signOf(at(txs[0], 'CdtDbtInd')) ?? sign
-    const mismatch = (a !== null && (partCents === null || partCents * partSign !== cents * sign)) || (Number.isFinite(announced) && announced > 1)
+    // Bei einer Auslandsgutschrift nennt der Posten den Betrag vor Spesen, gebucht wird netto. Geht
+    // der Unterschied genau in den Spesen auf, ist der Posten der ganze Umsatz.
+    const charges = chargesCentsOf(txs[0], ntry)
+    const afterCharges = partCents === null ? null : partCents - sign * charges
+    const sameAmount = partCents !== null && partSign === sign && (partCents === cents || (charges > 0 && afterCharges === cents))
+    const mismatch = (a !== null && !sameAmount) || (Number.isFinite(announced) && announced > 1)
     if (mismatch) {
       ctx.problems.push({
         where: ctx.where,
