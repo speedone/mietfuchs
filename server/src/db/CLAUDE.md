@@ -420,8 +420,9 @@ bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand er
   Aufbewahrung (`emptyTrash` in index.ts beim Start und täglich, `cleanTrash`): weg, was weder das Journal noch der
   Bestand nennt (`trashKeep`; Durchsicht von PR #439, M1: Nach dem Einspielen einer Vorversion nennt der Bestand einen
   Beleg, den der gealterte Verlauf nicht mehr kennt); nur Dateien unmittelbar in den Ablagen des Papierkorbs, nie Ordner.
-- **Zustimmungen** (`CONSENT_COLUMNS`: `ai_slots.consent_*`, `settings.update_check`): Ein Rücksprung setzt und entfernt
-  sie nie; jede Zeile trägt danach die Zustimmung von vorher, eine neu entstandene keine. Ein Widerruf bleibt ein
+- **Zustimmungen** (`CONSENT_COLUMNS`: `ai_slots.consent_*`, `settings.update_check`, die Kontoart `bank_accounts.kind`
+  mit `rental_confirmed_at`, #188): Ein Rücksprung setzt und entfernt sie nie; jede Zeile trägt danach die Zustimmung
+  von vorher, eine neu entstandene keine (beim Konto `fallback`: Mischkonto). Ein Widerruf bleibt ein
   Widerruf; die Vorschau sagt es in `notes`. Ein Wächter in trash.test.ts verlangt jede Spalte, die nach Zustimmung klingt.
 - **Während einer KI-Auswertung** (`runningAiRequests` in index.ts) kein Rücksprung (Satz in der Vorschau, 409): Sie
   schriebe danach zu einem Beleg, den es nicht mehr gibt. Eine Kostenposition nimmt einen neu gesetzten oder geänderten

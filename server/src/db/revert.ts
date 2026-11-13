@@ -46,9 +46,14 @@ export const FROZEN_TABLES = ['closed_settlements', 'closed_settlement_history',
 // Ausdrückliche Zustimmungen des Nutzers (Durchsicht von PR #439, M2): Ein Rücksprung setzt und entfernt sie nie, ein
 // Widerruf bleibt ein Widerruf. Eine neue Spalte, die eine Zustimmung hält, gehört hierher (Wächter in journal.test.ts:
 // jede Spalte, deren Name nach Zustimmung klingt).
-export const CONSENT_COLUMNS: Readonly<Record<string, { key: string, columns: readonly string[] }>> = {
+// `fallback`: die Werte einer Zeile, die es vorher nicht gab, wenn NULL nicht erlaubt ist. Die Kontoart (#188,
+// Integrationsdurchsicht D3) ist eine Zustimmung: „nur für die Vermietung“ heißt, dass jeder Umsatz einzeln gespeichert
+// wird, auch ein privater; ohne Bestätigung jetzt gilt das Mischkonto. Art und Zeitpunkt fallen nur zusammen zurück
+// (Bedingung `bank_accounts_rental_valid`), deshalb in einer Anweisung.
+export const CONSENT_COLUMNS: Readonly<Record<string, { key: string, columns: readonly string[], fallback?: readonly unknown[] }>> = {
   ai_slots: { key: 'slot', columns: ['consent_url', 'consent_model', 'consent_date'] },
   settings: { key: 'id', columns: ['update_check'] },
+  bank_accounts: { key: 'id', columns: ['kind', 'rental_confirmed_at'], fallback: ['mixed', null] },
 }
 
 export type ConsentSnapshot = Map<string, Map<string, unknown[]>>
@@ -67,10 +72,10 @@ export async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
 // Rücksprung nie eine Zustimmung, die gerade nicht besteht, und holt keinen Widerruf zurück. (Eine Zeile, die der
 // Rücksprung entfernt, nimmt ihre Zustimmung mit; das ist erlaubt.)
 export async function restoreConsent(db: Executor, before: ConsentSnapshot): Promise<void> {
-  for (const [table, { key, columns }] of Object.entries(CONSENT_COLUMNS)) {
+  for (const [table, { key, columns, fallback }] of Object.entries(CONSENT_COLUMNS)) {
     const rows = await db.all<unknown[]>(sql`SELECT ${sql.identifier(key)} FROM ${sql.identifier(table)}`)
     for (const [k] of rows) {
-      const values = before.get(table)?.get(String(k)) ?? columns.map(() => null)
+      const values = before.get(table)?.get(String(k)) ?? fallback ?? columns.map(() => null)
       const sets = columns.map((c, i) => sql`${sql.identifier(c)} = ${values[i] ?? null}`)
       await db.run(sql`UPDATE ${sql.identifier(table)} SET ${sql.join(sets, sql`, `)} WHERE ${sql.identifier(key)} = ${k}`)
     }

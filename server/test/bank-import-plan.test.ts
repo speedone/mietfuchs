@@ -47,7 +47,7 @@ function counter(prefix = 'id'): () => string {
 }
 
 const plan = (r: BankReadResult, s: BankStock, decisions: ImportDecision[] = [], sha = 'sha-1'): ImportPlan =>
-  planBankImport(r, s, decisions, { sha256: sha, name: 'auszug.xml' }, counter(), '2025-07-01T08:00:00Z')
+  planBankImport(r, s, decisions, { sha256: sha, name: 'auszug.xml' }, counter(sha), '2025-07-01T08:00:00Z')
 
 // Den Plan in den Bestand übernehmen, wie db/bank.ts es tut.
 function apply(s: BankStock, p: ImportPlan): BankStock {
@@ -149,7 +149,7 @@ test('6 Tagesabgleich: bekannt und gleich wird übersprungen, bekannt und abweic
   assert.equal(same.writes.imports.length, 0)
   const differing = plan(read(statement([...june, entry('2025-06-03', 100, { counterpartyIban: STRANGER })])), base, [], 'sha-3')
   assert.equal(differing.writes.transactions.length, 0)
-  assert.ok(differing.findings.some((f) => f.message === 'Der 03.06.2025 sieht in dieser Datei anders aus (2 Umsätze statt 1). Übernommen ist der frühere Stand; nehmen Sie den früheren Import im Verlauf zurück, wenn dieser Auszug gelten soll.'))
+  assert.ok(differing.findings.some((f) => f.message === 'Der 03.06.2025 sieht in dieser Datei anders aus (2 Umsätze statt 1). Übernommen ist der frühere Stand; nehmen Sie den früheren Import unter „Konten“ zurück, wenn dieser Auszug gelten soll.'))
 })
 
 test('7 Mischkonto: Mieter und Zahler gespeichert, Privates nur in der Tagessumme, Unbekanntes ist eine Rückfrage', () => {
@@ -347,4 +347,31 @@ test('Durchsicht W5: camt.052, der mitten am Tag beginnt, schreibt seinen ersten
   assert.deepEqual(p.writes.days.map((d) => d.date), ['2025-06-03'])
   assert.equal(p.summary.pending, 2)
   assert.equal(p.writes.imports[0]?.fromDate, '2025-06-03')
+})
+
+// ---------- Integrationsdurchsicht ----------
+
+test('Integration D1: zwei Seiten desselben Auszugs mit gleichem Zeitraum werden ein Import', () => {
+  const page1 = statement([entry('2025-06-02', 85000)], { statementId: 'S/1', fromDate: '2025-06-01', toDate: '2025-06-30', openingBalanceCents: 0, closingBalanceCents: 85000 })
+  const page2 = statement([entry('2025-06-20', 50000)], { statementId: 'S/2', fromDate: '2025-06-01', toDate: '2025-06-30', openingBalanceCents: 85000, closingBalanceCents: 135000 })
+  const p = plan(read(page1, page2), stock())
+  assert.equal(p.writes.imports.length, 1)
+  assert.deepEqual([p.writes.imports[0]?.openingBalanceCents, p.writes.imports[0]?.closingBalanceCents], [0, 135000])
+  assert.deepEqual(p.writes.days.map((d) => [d.date, d.importId]), [['2025-06-02', p.writes.imports[0]?.id], ['2025-06-20', p.writes.imports[0]?.id]])
+})
+
+test('Integration D2: nach dem Zurücknehmen eines älteren Imports trägt ein schon eingelesener Auszug die fehlenden Tage nach', () => {
+  const a = statement([entry('2025-06-20', 85000)], { fromDate: '2025-06-01', toDate: '2025-06-30', openingBalanceCents: null, closingBalanceCents: null })
+  const b = statement([entry('2025-06-20', 85000), entry('2025-07-03', 70000)], { fromDate: '2025-06-15', toDate: '2025-07-15', openingBalanceCents: null, closingBalanceCents: null })
+  const withA = apply(stock(), plan(read(a), stock(), [], 'sha-a'))
+  const withB = apply(withA, plan(read(b), withA, [], 'sha-b'))
+  const importA = withB.imports.find((i) => i.fileSha256 === 'sha-a') ?? assert.fail('kein Import A')
+  // Import A zurücknehmen: seine Tage und Umsätze fallen mit ihm.
+  const withoutA: BankStock = { ...withB, imports: withB.imports.filter((i) => i.id !== importA.id), days: withB.days.filter((d) => d.importId !== importA.id), transactions: withB.transactions.filter((t) => t.importId !== importA.id) }
+  const again = plan(read(b), withoutA, [], 'sha-b')
+  assert.deepEqual(again.writes.days.map((d) => d.date), ['2025-06-20'])
+  assert.equal(again.writes.imports.length, 0, 'kein zweiter Import, der Tag hängt am vorhandenen')
+  const importB = withoutA.imports.find((i) => i.fileSha256 === 'sha-b')
+  assert.equal(again.writes.days[0]?.importId, importB?.id)
+  assert.equal(again.writes.transactions.length, 1)
 })

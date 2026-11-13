@@ -206,3 +206,21 @@ test('Kontoauszug: Backup und Wiederherstellen tragen die Tabellen', () => withS
   assert.equal((await restore(s, backup)).status, 200)
   assert.deepEqual(bankRows(await dumpStock(s.dataDir)), withImport)
 }))
+
+test('Integration D3: „nur für die Vermietung“ ist eine Zustimmung; Rücksprung und Backup holen sie nach einem Widerruf nicht zurück', () => withServer(async (s) => {
+  await tenancy(s)
+  await importJune(s)
+  const [account] = await accounts(s)
+  assert.ok(account)
+  const put = (body: unknown) => s.api<AccountView>(`/api/bank/accounts/${account.id}`, { method: 'PUT', body: JSON.stringify(body) })
+  await put({ kind: 'rental', confirm: true })
+  const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+  await put({ kind: 'mixed' })
+  // Den Widerruf zurücknehmen: Die Zustimmung kommt nicht wieder.
+  await revert(s, (await newest(s)).id)
+  assert.equal((await accounts(s))[0]?.kind, 'mixed')
+  assert.equal((await accounts(s))[0]?.rentalConfirmedAt, null)
+  // Ein Backup aus der Zeit der Zustimmung bringt sie ebenso wenig zurück.
+  assert.equal((await restore(s, backup)).status, 200)
+  assert.equal((await accounts(s))[0]?.kind, 'mixed')
+}))

@@ -155,7 +155,8 @@ export function planBankImport(
   // Erster Durchgang je Auszug: Konto, Saldenprobe, abgeschlossene Tage, schon eingelesen. Was bleibt, wird nach Konto
   // und Tag gesammelt: Derselbe Tag kann auf mehreren Seiten einer Datei stehen (MT940 mit :28C: n/m, camt mit
   // mehreren Stmt), und erst alle Seiten zusammen sind der Tag (Durchsicht W2).
-  type Taken = { s: BankStatement; index: number; account: BankAccount; importId: string; fromDate: string; toDate: string; used: boolean }
+  // `existing`: die Tage hängen an einem vorhandenen Import (Integration D2), es entsteht keine neue Zeile.
+  type Taken = { s: BankStatement; index: number; account: BankAccount; importId: string; fromDate: string; toDate: string; opening: number | null; closing: number | null; used: boolean; existing: boolean }
   const taken: Taken[] = []
   const dayEntries = new Map<string, { account: BankAccount; date: string; owner: Taken; items: { e: BankEntry; key: string }[] }>()
   const seen = new Set<string>()
@@ -212,14 +213,22 @@ export function planBankImport(
     if (!fromDate || !toDate) continue
     // Regel 2: schon eingelesen.
     const accountId = account.id
+    // Nur wenn jeder abgeschlossene Tag noch gespeichert ist (Integration D2): Hat der Vermieter einen älteren,
+    // überlappenden Import zurückgenommen, fehlen dessen Tage, und dieser Auszug trägt sie am vorhandenen Import nach.
     const known = stock.imports.find((i) => i.accountId === accountId && i.fileSha256 === file.sha256 && i.fromDate === fromDate && i.toDate === toDate)
-    if (known) {
+    if (known && closed.every((e) => storedDays.has(`${accountId}|${e.bookingDate}`))) {
       alreadyImported.push(known.importedAt)
       findings.push({ where, message: `Dieser Auszug wurde am ${germanDate(known.importedAt.slice(0, 10))} schon eingelesen.` })
       continue
     }
-    const t: Taken = { s, index, account, importId: id(), fromDate, toDate, used: false }
-    taken.push(t)
+    const opening = s.format === 'camt.052' ? null : s.openingBalanceCents
+    const closing = s.format === 'camt.052' ? null : s.closingBalanceCents
+    // Mehrere Seiten desselben Auszugs (gleiches Konto, gleicher Zeitraum) sind ein Import (Integration D1): Der
+    // Schlüssel der Tabelle ließe zwei nicht zu. Der Endsaldo ist der der letzten Seite.
+    const sibling = taken.find((x) => x.account.id === accountId && x.fromDate === fromDate && x.toDate === toDate)
+    if (sibling) sibling.closing = closing
+    const t: Taken = sibling ?? { s, index, account, importId: known ? known.id : id(), fromDate, toDate, opening, closing, used: false, existing: known !== undefined }
+    if (!sibling) taken.push(t)
     const perDay = new Map<string, number>()
     for (const e of closed) {
       const n = (perDay.get(e.bookingDate) ?? 0) + 1
@@ -244,7 +253,7 @@ export function planBankImport(
         const what = stored.entryCount === sums.entryCount
           ? `Eingänge ${euro(sums.creditCents)} statt ${euro(stored.creditCents)}, Ausgänge ${euro(sums.debitCents)} statt ${euro(stored.debitCents)}`
           : `${plural(sums.entryCount, 'Umsatz', 'Umsätze')} statt ${stored.entryCount}`
-        findings.push({ where, message: `Der ${germanDate(date)} sieht in dieser Datei anders aus (${what}). Übernommen ist der frühere Stand; nehmen Sie den früheren Import im Verlauf zurück, wenn dieser Auszug gelten soll.` })
+        findings.push({ where, message: `Der ${germanDate(date)} sieht in dieser Datei anders aus (${what}). Übernommen ist der frühere Stand; nehmen Sie den früheren Import unter „Konten“ zurück, wenn dieser Auszug gelten soll.` })
       }
       continue
     }
@@ -263,12 +272,10 @@ export function planBankImport(
     for (const t of keep) writes.transactions.push({ ...t, id: id() })
   }
   for (const t of taken) {
-    if (!t.used) continue
-    const opening = t.s.format === 'camt.052' ? null : t.s.openingBalanceCents
-    const closing = t.s.format === 'camt.052' ? null : t.s.closingBalanceCents
+    if (!t.used || t.existing) continue
     writes.imports.push({
       id: t.importId, accountId: t.account.id, fileSha256: file.sha256, fileName: file.name, format: t.s.format, statementId: t.s.statementId,
-      fromDate: t.fromDate, toDate: t.toDate, openingBalanceCents: opening, closingBalanceCents: closing, importedAt: now, fingerprintVersion: FINGERPRINT_VERSION,
+      fromDate: t.fromDate, toDate: t.toDate, openingBalanceCents: t.opening, closingBalanceCents: t.closing, importedAt: now, fingerprintVersion: FINGERPRINT_VERSION,
     })
   }
   for (const b of breakdowns) planBreakdown(b.s, b.key, b.where)
