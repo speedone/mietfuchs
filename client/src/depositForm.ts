@@ -113,9 +113,15 @@ export function depositStateText(state: DepositState, tenancy: Pick<Tenancy, 'de
   if (tenancy.depositCents !== undefined) parts.push(`vereinbart ${fmtEuro(tenancy.depositCents)}`)
   parts.push(`eingegangen ${fmtEuro(state.receivedCents)}`)
   if (state.interestCents > 0) parts.push(`Erträge ${fmtEuro(state.interestCents)}`)
+  // Praxistest vor 0.18.0: Ohne Verrechnetes und Ausgezahltes ging die Zeile rechnerisch nicht auf.
+  if (state.appliedCents > 0) parts.push(`verrechnet ${fmtEuro(state.appliedCents)}`)
+  if (state.refundedCents > 0) parts.push(`ausgezahlt ${fmtEuro(state.refundedCents)}`)
   parts.push(`bei Ihnen liegen ${fmtEuro(state.balanceCents)}`)
   const text = parts.join(', ')
-  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`
+  // Mehr eingegangen als vereinbart ist meist eine doppelt erfasste Zahlung (von Hand, umgebucht, aus dem Kontoauszug).
+  const over = tenancy.depositCents !== undefined && tenancy.depositCents > 0 && state.receivedCents > tenancy.depositCents
+    ? ' Eingegangen ist mehr als vereinbart; prüfen Sie, ob ein Eingang doppelt erfasst ist.' : ''
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.${over}`
 }
 
 // Bei einer Sicherheit, die nicht beim Vermieter liegt, fließt kein Geld; der Satz erklärt, wozu die Buchungen dann sind.

@@ -185,6 +185,10 @@ künftige Importe, frühere Tage bleiben.
    - Rücklastschrift oder negativer Betrag von der Mieter-IBAN mit `reversal`: Mietzahlung mit negativem Betrag.
    - Eingang, Betrag gleich `depositCents`, höchstens 31 Tage um den Mietbeginn, nicht gleich dem Monats-Soll:
      Kautionsbuchung `received` (dieselbe Regel wie `possibleDepositsOf`).
+   - Nachtrag 13.11. (Praxistest vor 0.18.0): Eine Rate (ein Drittel von `depositCents`) oder ein Eingang mit „Kaution“
+     im Zweck, bis 100 Tage nach dem Beginn, solange die Kaution laut Buchungen offen ist (nicht laut Stammdaten erhalten,
+     keine Bürgschaft oder Verpfändung) und der Betrag weder dem Soll des Buchungs- noch des Folgemonats gleicht:
+     Kautionsbuchung `received`, gelb. Eine erfasste Zahlung gleichen Betrags bis 15 Tage entfernt geht vor (gelb, Miete).
    - Ausgang an den Mieter: nach dem Mietende und mit Kautionsstand größer 0 Kautionsbuchung `refunded`, sonst
      Abrechnungszahlung mit negativem Betrag (Guthaben). Immer gelb.
    - sonst: Mietzahlung.

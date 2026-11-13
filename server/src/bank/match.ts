@@ -5,8 +5,10 @@
 // 1. Mietverhältnis nur über die IBAN der Gegenseite (Mieter, sonst gemerkter Zahler). Name und Zweck allein reichen nie.
 // 2. Eine schon erfasste, nicht verknüpfte Zahlung gleichen Betrags innerhalb von 7 Tagen wird verknüpft statt neu
 //    angelegt.
-// 3. Art: Rücklastschrift, Kaution, Ausgang an den Mieter, sonst Miete. Der Monat wird nie gesetzt.
-// 4. Ampel: grün nur, wenn alles eindeutig ist.
+// 3. Art: Rücklastschrift, Kaution (volle Höhe nahe dem Beginn), Ausgang an den Mieter, sonst Miete. Der Monat wird nie
+//    gesetzt.
+// 4. Ampel: grün nur, wenn alles eindeutig ist; eine erfasste Zahlung gleichen Betrags bis 15 Tage entfernt macht gelb und
+//    geht einer Kautionsrate vor (ein Drittel oder „Kaution“ im Zweck, in den ersten 100 Tagen, solange Kaution offen).
 // Naht für #308 (Nachzahlung am Betrag erkennen): eine weitere Regel zwischen Kaution und Ausgang.
 
 import { depositState } from '../../../shared/deposit.ts'
@@ -16,7 +18,7 @@ import { addIsoDays } from './coverage.ts'
 import { normalizeIban } from './statement.ts'
 import type { BankTransaction, TenancyPayer } from './model.ts'
 
-export type MatchTenancy = Pick<Tenancy, 'id' | 'start' | 'end' | 'depositCents'> & { iban?: string | null }
+export type MatchTenancy = Pick<Tenancy, 'id' | 'start' | 'end' | 'depositCents' | 'depositStatus' | 'depositForm'> & { iban?: string | null }
 
 export type MatchContext = {
   tenancies: readonly MatchTenancy[]
@@ -38,10 +40,19 @@ export const SAME_PAYMENT_DAYS = 7
 export const DEPOSIT_WINDOW_DAYS = 31
 // Eine erfasste Zahlung in diesem Abstand, die nicht schon „dieselbe“ ist, macht einen sonst grünen Vorschlag gelb
 // (Durchsicht I3: Juni-Miete von Hand mit dem 15.06. erfasst, die Bank bucht am 02.06.).
-export const NEARBY_PAYMENT_DAYS = 31
+// Nur gleicher Betrag (Praxistest vor 0.18.0): Ein anderer Betrag oder die Miete des Vormonats rund 30 Tage davor ist
+// keine mögliche Dublette; der Abstand bleibt deshalb bei 15 Tagen (eine Miete vom 15. liegt 18 Tage vor dem 2. des
+// Folgemonats).
+export const NEARBY_PAYMENT_DAYS = 15
+// Raten der Kaution kommen mit den ersten Mieten (§ 551 Abs. 2 BGB); etwas Spielraum für späte Raten.
+export const DEPOSIT_RATE_DAYS = 100
 
 const euro = (cents: number): string => `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 const dayNumber = (d: string): number => Date.parse(`${d}T00:00:00Z`) / 86_400_000
+const nextMonth = (d: string): string => {
+  const [y, m] = d.slice(0, 7).split('-').map(Number) as [number, number]
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+}
 const runsOn = (t: MatchTenancy, d: string): boolean => t.start <= d && (t.end === null || d <= t.end)
 
 // Der Betrag, den ein Ziel einem Umsatz zuordnet. Der Link trägt keinen eigenen: Bei einer Zahlung ist es ihr Betrag, bei
@@ -100,23 +111,41 @@ export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | nu
   // Regel 3: Art.
   if (tx.amountCents < 0 && tx.reversal) return yellow({ type: 'newPayment', kind: 'rent' }, 'Rücklastschrift einer Miete')
   const soll = ctx.monthlySollCents(t.id, tx.bookingDate.slice(0, 7))
-  if (tx.amountCents > 0 && t.depositCents !== undefined && t.depositCents > 0 && tx.amountCents === t.depositCents && soll !== tx.amountCents
-    && Math.abs(day - dayNumber(t.start)) <= DEPOSIT_WINDOW_DAYS) {
+  const entries = ctx.depositEntries.filter((d) => d.tenancyId === t.id)
+  // Eine Kaution als Bürgschaft oder verpfändetes Sparbuch kommt nie als Geld aufs Konto (Durchsicht 642/2).
+  const moneyDeposit = t.depositCents !== undefined && t.depositCents > 0 && t.depositForm !== 'pledged' && t.depositForm !== 'guarantee'
+  const depositOpenCents = (t.depositCents ?? 0) - depositState({ depositCents: t.depositCents }, entries).receivedCents
+  if (tx.amountCents > 0 && moneyDeposit && tx.amountCents === t.depositCents && soll !== tx.amountCents
+    && tx.amountCents <= depositOpenCents && Math.abs(day - dayNumber(t.start)) <= DEPOSIT_WINDOW_DAYS) {
     return yellow({ type: 'deposit', kind: 'received' }, 'Betrag wie die vereinbarte Kaution, nahe dem Mietbeginn')
   }
   if (tx.amountCents < 0) {
-    const balance = depositState({ depositCents: t.depositCents }, ctx.depositEntries.filter((d) => d.tenancyId === t.id)).balanceCents
+    const balance = depositState({ depositCents: t.depositCents }, entries).balanceCents
     if (t.end !== null && tx.bookingDate > t.end && balance > 0) return yellow({ type: 'deposit', kind: 'refunded' }, 'Auszahlung nach dem Auszug, die Kaution liegt noch bei Ihnen')
     return yellow({ type: 'newPayment', kind: 'settlement' }, 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung')
   }
-  // Regel 4: Ampel.
+  // Regel 4, zuerst (Durchsicht 642/3): Eine erfasste Zahlung gleichen Betrags in der Nähe geht jedem weiteren Vorschlag vor.
   const nearby = ctx.payments
-    .filter((p) => p.tenancyId === t.id && Math.sign(p.amountCents) === Math.sign(tx.amountCents) && !ctx.linkedPaymentIds.has(p.id))
+    .filter((p) => p.tenancyId === t.id && p.amountCents === tx.amountCents && !ctx.linkedPaymentIds.has(p.id))
     .map((p) => ({ p, distance: Math.abs(dayNumber(p.date) - day) }))
     .filter((c) => c.distance <= NEARBY_PAYMENT_DAYS)
     .sort((a, b) => a.distance - b.distance)[0]
   if (nearby) {
-    return yellow({ type: 'newPayment', kind: 'rent' }, `Am ${germanDate(nearby.p.date)} ist schon eine Zahlung über ${euro(Math.abs(nearby.p.amountCents))} erfasst. Bitte prüfen Sie, ob es dieselbe ist.`)
+    return yellow({ type: 'newPayment', kind: 'rent' }, `Am ${germanDate(nearby.p.date)} ist schon eine Zahlung über denselben Betrag erfasst. Bitte prüfen Sie, ob es dieselbe ist.`)
+  }
+  // Eine Rate der Kaution (Praxistest vor 0.18.0): Eine Geldkaution darf in drei Raten kommen (§ 551 Abs. 2 BGB). Nur in
+  // den ersten Monaten, nur solange die vereinbarte nicht ganz eingegangen ist (laut Buchungen; ohne Buchung nicht, wenn die
+  // Stammdaten sie schon als erhalten führen) und nur, wenn der Betrag weder dem Soll dieses noch dem des Folgemonats
+  // gleicht (ohne Soll vor dem Beginn, anteilig im ersten Monat; Durchsicht 642/1). Dann ist ein Drittel oder „Kaution“
+  // im Zweck ein Vorschlag „Kaution erhalten“, gelb. Der Zweck entscheidet nur über die Art, nie über das Mietverhältnis.
+  const sinceStart = day - dayNumber(t.start)
+  const settledInStock = entries.length === 0 && (t.depositStatus === 'erhalten' || t.depositStatus === 'zurückgezahlt')
+  if (tx.amountCents > 0 && moneyDeposit && !settledInStock
+    && sinceStart >= -DEPOSIT_WINDOW_DAYS && sinceStart <= DEPOSIT_RATE_DAYS
+    && soll !== tx.amountCents && ctx.monthlySollCents(t.id, nextMonth(tx.bookingDate)) !== tx.amountCents
+    && tx.amountCents <= depositOpenCents) {
+    if (/kaution/i.test(tx.purpose ?? '')) return yellow({ type: 'deposit', kind: 'received' }, '„Kaution“ im Verwendungszweck, und die vereinbarte Kaution ist noch nicht ganz eingegangen')
+    if (Math.abs(tx.amountCents * 3 - (t.depositCents ?? 0)) <= 2) return yellow({ type: 'deposit', kind: 'received' }, 'Betrag wie eine Rate der vereinbarten Kaution (ein Drittel)')
   }
   if (soll === null) return yellow({ type: 'newPayment', kind: 'rent' }, 'Für diesen Monat kennt das Mietkonto kein Soll')
   if (soll !== tx.amountCents) return yellow({ type: 'newPayment', kind: 'rent' }, `Betrag weicht vom Soll ab (${euro(soll)})`)

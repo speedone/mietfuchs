@@ -95,3 +95,17 @@ test('Verrechnung vor dem Mietende: Hinweis nach BGH VIII ZR 234/13, nur für ei
   expect(appliedDuringTenancy(body, null, { kind: 'applied' })).toBe(false)
   expect(appliedDuringTenancy(body, null, { kind: 'received' })).toBe(true)
 })
+
+// ---------- Befunde des Praxistests vor 0.18.0 ----------
+
+test('Praxistest 3: der Kopf nennt Verrechnetes und Ausgezahltes, damit er aufgeht', () => {
+  const entries = [entry('received', 180000), entry('interest', 320), entry('applied', 20000)]
+  const t = text(depositState({ depositCents: 168000 }, entries), { depositCents: 168000 })
+  expect(t).toContain('verrechnet 200,00 €')
+  expect(t).toContain('bei Ihnen liegen 1.603,20 €')
+})
+
+test('Praxistest 4: mehr eingegangen als vereinbart wird genannt', () => {
+  expect(text(depositState({ depositCents: 168000 }, [entry('received', 180000)]), { depositCents: 168000 })).toContain('Eingegangen ist mehr als vereinbart')
+  expect(text(depositState({ depositCents: 168000 }, [entry('received', 168000)]), { depositCents: 168000 })).not.toContain('mehr als vereinbart')
+})
