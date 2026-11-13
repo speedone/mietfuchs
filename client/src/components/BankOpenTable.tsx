@@ -59,14 +59,16 @@ function PartFields({ row, part, index, tenancies, onChange, onRemove }: {
   )
 }
 
-export default function BankOpenTable({ rows, tenancies, problems, busy, onChange, onBook }: {
+export default function BankOpenTable({ rows, tenancies, problems, busy, onChange, onBook, onUnlink }: {
   rows: readonly BankRow[]
   tenancies: readonly TenancyOption[]
   problems: Readonly<Record<string, string>>
   busy: boolean
   onChange: (id: string, row: BankRow) => void
   onBook: (rows: BankRow[]) => void
+  onUnlink: (link: BankRow['tx']['links'][number]) => void
 }) {
+  const tenancyLabel = (id: string | null): string => tenancies.find((t) => t.id === id)?.label ?? 'unbekanntes Mietverhältnis'
   return (
     <Table className="stacked" aria-label="Offene Umsätze">
       <thead>
@@ -99,6 +101,13 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
               <td data-label="Gegenseite">{tx.counterpartyName ?? tx.counterpartyIban ?? ''}{tx.ultimatePartyName && <><br /><span className="muted">{`für ${tx.ultimatePartyName}`}</span></>}</td>
               <td data-label="Zweck">{tx.purpose}</td>
               <td data-label="Zuordnung">
+                {/* Teilweise zugeordnet (Klicktest B3): Der gebuchte Teil steht hier und lässt sich lösen. */}
+                {tx.links.map((l) => (
+                  <p key={l.id} className="flex flex-wrap items-baseline gap-2">
+                    <span>{`Schon zugeordnet: ${l.depositEntryId ? 'Kautionsbuchung' : 'Zahlung'} über ${fmtEuro(Math.abs(l.cents))} (${tenancyLabel(l.tenancyId)})`}</span>
+                    <button type="button" className="btn ghost danger-ghost ml-auto" onClick={() => onUnlink(l)}>Lösen …<span className="sr-only">{` ${fmtDate(tx.bookingDate)}`}</span></button>
+                  </p>
+                ))}
                 {row.setAside === null && row.parts.map((part, i) => (
                   <PartFields key={part.key} row={row} part={part} index={i} tenancies={tenancies} onChange={(patch) => setPart(i, patch)}
                     onRemove={row.parts.length > 1 ? () => onChange(tx.id, removePart(row, i)) : null} />

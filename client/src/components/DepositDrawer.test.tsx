@@ -76,6 +76,10 @@ test('das Feld Zweck erscheint nur bei Verrechnung, sein angezeigter Wert ist de
   expect(select('Verrechnet mit').value).toBe('damage')
   fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '50,00' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  // Das Mietverhältnis läuft noch: Rückfrage nach BGH VIII ZR 234/13 (Rechtsprüfung vor dem Release).
+  const question = await screen.findByRole('alertdialog')
+  expect(question.textContent).toMatch(/nur für unbestrittene oder rechtskräftig festgestellte Forderungen/)
+  fireEvent.click(within(question).getByRole('button', { name: 'Trotzdem verrechnen' }))
   await waitFor(() => expect(sent.at(-1)?.method).toBe('POST'))
   expect(sent.at(-1)?.body).toMatchObject({ tenancyId: 't', kind: 'applied', purpose: 'damage', amountCents: 5000 })
 })

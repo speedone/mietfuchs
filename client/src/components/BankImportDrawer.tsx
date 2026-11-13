@@ -102,7 +102,8 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
       {preview && (
         <>
           <p role="status">{preview.sentence}</p>
-          {preview.findings.map((f, i) => <NoticeBox key={i} level="error" context={`${f.where}:`} action={f.message} />)}
+          {/* Was der Satz zum Ergebnis schon sagt ("schon eingelesen"), steht nicht noch einmal als Befund (Klicktest B2). */}
+          {preview.findings.filter((f) => f.message !== preview.sentence).map((f, i) => <NoticeBox key={i} level="error" context={f.where} action={f.message} />)}
           {shown.map((q) => {
             const key = questionKey(q)
             const a = answers[key] ?? {}

@@ -1023,7 +1023,7 @@ test('Mögliche Kaution: „Als Kaution umbuchen“ fragt mit Betrag, Datum und 
   await waitFor(() => expect(posted).toEqual(['/api/deposit-entries/from-payment/pay1']))
 })
 
-test('Einbehaltene Kaution: Hinweis mit Betrag, ohne Einordnung', async () => {
+test('Einbehaltene Kaution: Hinweis mit Betrag und der Einordnung nach BFH IX R 48/96', async () => {
   const report = MIT(RECEIVED([MIETER()]))
   vi.stubGlobal('fetch', async (url: string) => {
     const path = url.split('?')[0] ?? url
@@ -1033,6 +1033,6 @@ test('Einbehaltene Kaution: Hinweis mit Betrag, ohne Einordnung', async () => {
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
   render(<PeriodProvider><PropertyProvider><UIProvider><Steuer settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
-  const text = await screen.findByText(/Aus Kautionen einbehalten, nicht in den Einnahmen enthalten: 350,00\s€\./)
-  expect(text.textContent).toContain('Ob und wo das anzugeben ist, hängt vom Grund ab.')
+  const text = await screen.findByText(/Aus Kautionen einbehalten: 350,00\s€\. Nach dem Bundesfinanzhof ist das eine Einnahme aus Vermietung/)
+  expect(text.textContent).toContain('Tragen Sie sie selbst ein')
 })

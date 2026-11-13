@@ -29,15 +29,16 @@ export const DEPOSIT_PURPOSE_LABELS: Record<DepositPurpose, string> = {
 export const DEPOSIT_PURPOSE_OPTIONS: readonly { value: DepositPurpose; label: string }[] =
   (['rent', 'settlement', 'damage', 'other'] as const).map((value) => ({ value, label: DEPOSIT_PURPOSE_LABELS[value] }))
 
-// Der Satz unter dem Zweck: was die Verrechnung anlegt, und was sie für die Steuer heißt. Zum Schaden steht nur, was
-// Mietfuchs tut; ob und wo ein einbehaltener Schadensersatz anzugeben ist, ist nicht belegt (Entwurf, Abschnitt Recht).
+// Der Satz unter dem Zweck: was die Verrechnung anlegt, und was sie für die Steuer heißt. Ein Einbehalt für Schaden oder
+// Sonstiges ist nach BFH, Urteil vom 11.07.2000, IX R 48/96, eine Einnahme aus Vermietung; Mietfuchs zählt ihn nicht
+// selbst (Entscheidung des Betreibers vom 13.11.2026, Rechtsprüfung vor dem Release), sagt es aber.
 export function depositPurposeHint(purpose: DepositPurpose | ''): string | null {
   switch (purpose) {
     // Ohne Bestimmung verteilt rentAllocation.ts nach § 366 Abs. 2 BGB, zuerst Vorauszahlungen (Abschlussdurchsicht G1).
     case 'rent': return 'Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie wird wie jede Mietzahlung auf die offenen Monate verteilt. Den Monat können Sie im Mietkonto bestimmen.'
     case 'settlement': return 'Mietfuchs legt dazu im Mietkonto eine Zahlung aus der Abrechnung an diesem Tag an.'
     case 'damage':
-    case 'other': return 'Die Steuerübersicht zählt diesen Betrag nicht als Einnahme.'
+    case 'other': return 'Nach dem Bundesfinanzhof ist eine einbehaltene Kaution eine Einnahme aus Vermietung (Urteil vom 11.07.2000, IX R 48/96). Die Steuerübersicht zählt sie nicht mit; tragen Sie sie selbst ein. Was Sie davon reparieren lassen, sind Werbungskosten.'
     case '': return null
   }
 }
@@ -138,4 +139,13 @@ export function holdBody(form: DepositHoldForm): Checked<{ depositHoldCents: num
   if (note === '') problems.push({ field: 'holdNote', short: 'Grund fehlt', text: 'Einbehalt: Nennen Sie den Grund, etwa „Nebenkosten 2025“.' })
   if (problems.length > 0 || cents === null) return { problems }
   return { body: { depositHoldCents: cents, depositHoldNote: note } }
+}
+
+// Solange das Mietverhältnis läuft, darf der Vermieter die Kaution nur für unbestrittene oder rechtskräftig festgestellte
+// Forderungen verwenden (BGH, Urteil vom 07.05.2014, VIII ZR 234/13). Ob eine Forderung strittig ist, weiß Mietfuchs nicht;
+// es fragt deshalb nur nach, bei einer neuen Verrechnung bis zum Mietende oder einer Buchung, die neu zur Verrechnung wird.
+export const APPLIED_DURING_TENANCY_TEXT = 'Solange das Mietverhältnis läuft, dürfen Sie die Kaution nur für unbestrittene oder rechtskräftig festgestellte Forderungen verwenden (BGH, Urteil vom 07.05.2014, VIII ZR 234/13).'
+export function appliedDuringTenancy(body: { kind: DepositEntry['kind']; date: string }, tenancyEnd: string | null, before: { kind: DepositEntry['kind'] } | null): boolean {
+  if (body.kind !== 'applied' || before?.kind === 'applied') return false
+  return tenancyEnd === null || body.date <= tenancyEnd
 }

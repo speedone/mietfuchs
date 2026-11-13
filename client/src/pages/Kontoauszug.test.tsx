@@ -239,3 +239,24 @@ test('Integration D3: ein Konto nur für die Vermietung lässt sich zum Mischkon
   expect(dialog.textContent).toMatch(/Bisher einzeln gespeicherte Umsätze bleiben/)
   await waitFor(() => expect(sent.find((s) => s.method === 'PUT' && s.url === '/api/bank/accounts/a1')?.body).toEqual({ kind: 'mixed' }))
 })
+
+test('Klicktest B2: „schon eingelesen“ steht einmal, ohne Fehlerrahmen', async () => {
+  planReply = () => preview({ questions: [], ready: true, sentence: 'Dieser Auszug wurde am 13.11.2026 schon eingelesen.', findings: [{ where: 'juni.xml, Auszug 2025-06', message: 'Dieser Auszug wurde am 13.11.2026 schon eingelesen.' }] })
+  renderPage()
+  await chooseFile()
+  const drawer = await screen.findByRole('dialog')
+  await within(drawer).findByText('Dieser Auszug wurde am 13.11.2026 schon eingelesen.')
+  expect(within(drawer).getAllByText(/schon eingelesen/).length).toBe(1)
+  expect(drawer.textContent).not.toMatch(/::/)
+})
+
+test('Klicktest B3: ein teilweise zugeordneter Umsatz zeigt seine Zuordnung mit „Lösen …“', async () => {
+  accounts = [account()]
+  open = [tx('x1', 85000, { openCents: 35000, links: [{ id: 'l1', paymentId: 'p1', depositEntryId: null, created: true, cents: 50000, tenancyId: 't1' }] })]
+  renderPage()
+  const table = await screen.findByRole('table', { name: 'Offene Umsätze' })
+  expect(within(table).getByText(/Schon zugeordnet: Zahlung über 500,00\s€ \(Erika Beispiel, EG \(Haus A\)\)/)).toBeTruthy()
+  fireEvent.click(within(table).getByRole('button', { name: /^Lösen …/ }))
+  await confirmDialog('Lösen, Zahlung behalten')
+  await waitFor(() => expect(sent.some((s) => s.method === 'DELETE' && s.url === '/api/bank/links/l1')).toBe(true))
+})

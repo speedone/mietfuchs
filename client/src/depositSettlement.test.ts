@@ -91,7 +91,7 @@ test('Hinweis der Steuer: einbehalten für Schaden oder Sonstiges im Jahr, nicht
     { id: '3', tenancyId: 't', date: '2026-03-01', kind: 'applied', purpose: 'rent', amountCents: 95000, paymentId: 'p' },
     { id: '4', tenancyId: 't', date: '2025-12-31', kind: 'applied', purpose: 'damage', amountCents: 1000 },
   ]
-  expect(depositAppliedText(entries, 2026)?.replace(/\u00a0/g, ' ')).toBe('Aus Kautionen einbehalten, nicht in den Einnahmen enthalten: 350,00 €. Ob und wo das anzugeben ist, hängt vom Grund ab.')
+  expect(depositAppliedText(entries, 2026)?.replace(/\u00a0/g, ' ')).toBe('Aus Kautionen einbehalten: 350,00 €. Nach dem Bundesfinanzhof ist das eine Einnahme aus Vermietung (Urteil vom 11.07.2000, IX R 48/96); Mietfuchs zählt sie hier nicht mit. Tragen Sie sie selbst ein; was Sie davon reparieren lassen, sind Werbungskosten.')
   expect(depositAppliedText(entries.slice(2, 3), 2026)).toBeNull()
   expect(depositAppliedText(entries, 2024)).toBeNull()
 })

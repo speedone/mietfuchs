@@ -383,7 +383,8 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
         await api('/api/upload', { method: 'POST', body: fd })
         done++
       } catch (e) {
-        setError(`„${f.name}“ wurde nicht hochgeladen: ${errorText(e)}`)
+        // Ein Kontoauszug bekommt den Satz mit Knopf zur Seite Kontoauszug (Klicktest B1).
+        setError(isBankFileError(errorText(e)) ? errorText(e) : `„${f.name}“ wurde nicht hochgeladen: ${errorText(e)}`)
       }
     }
     setUploading(0)

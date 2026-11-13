@@ -168,8 +168,8 @@ export default function Kontoauszug() {
                 onChange={(id, row) => {
                   setRows((rs) => rs.map((r) => (r.tx.id === id ? row : r)))
                   setProblems(({ [id]: _old, ...rest }) => rest)
-                }} onBook={(chosen) => void book(chosen)} />}
-          <DisclosureButton open={showDone} onToggle={() => setShowDone((v) => !v)} closedLabel="Erledigte Umsätze zeigen" openLabel="Erledigte Umsätze ausblenden" controls="bank-done" />
+                }} onBook={(chosen) => void book(chosen)} onUnlink={(l) => void unlink(l)} />}
+          <DisclosureButton open={showDone} onToggle={() => setShowDone((v) => !v)} closedLabel="Erledigte Umsätze zeigen" openLabel="Erledigte Umsätze ausblenden" controls="bank-done" className="btn ghost" />
           {showDone && (
             <div id="bank-done">
               {done === null ? <p className="muted">Wird geladen …</p> : done.length === 0 ? <p>Noch keine erledigten Umsätze.</p> : (
