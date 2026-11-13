@@ -5,6 +5,8 @@
 // **Abdeckung**: Jede Route mit Satz (journalRoutes.ts) steht in `routes` eines Schritts oder mit Grund in
 // `UNCOVERED_ROUTES`. Der Test prüft beides am Ende eines Laufs gegen die Routen, die wirklich eine Gruppe ergeben
 // haben (sie stehen im Verlauf). Die Ausnahmeliste soll nur kürzer werden (`UNCOVERED_MAX`).
+import fs from 'node:fs'
+import path from 'node:path'
 import type { Server } from './api.ts'
 import { allowsSpread, spreadRestQuestions } from '../../shared/spread.ts'
 import type { CostItem, Property } from '../../shared/types.ts'
@@ -341,6 +343,45 @@ export const STEPS: readonly Step[] = [
       if (!t) return
       const created = await json<Row>(await send(ctx.s, 'POST', '/api/payments', { tenancyId: t.id, date: day(ctx.rng), amountCents: int(ctx.rng, 500, 2400) * 100 }))
       if (created) await send(ctx.s, 'POST', `/api/deposit-entries/from-payment/${created.id}`)
+    },
+  },
+  // ---------- Kontoauszug (#188) ----------
+  {
+    name: 'Kontoauszug einlesen, Konto ändern, Import zurücknehmen',
+    routes: ['POST /api/bank/import', 'PUT /api/bank/accounts/:id', 'DELETE /api/bank/imports/:id'],
+    run: async (ctx) => {
+      const file = fs.readFileSync(path.join(import.meta.dirname, '..', 'test', 'fixtures', 'camt', 'kontoauszug-juni.xml'))
+      const form = (fields: Record<string, string>): FormData => {
+        const fd = new FormData()
+        fd.append('statement', new Blob([file]), 'juni.xml')
+        for (const [k, v] of Object.entries(fields)) fd.append(k, v)
+        return fd
+      }
+      const plan = async (decisions: unknown[]) =>
+        json<{ questions: { type: string, key?: string, iban?: string | null }[], token: string }>(
+          await fetch(`${ctx.s.base}/api/bank/import/plan`, { method: 'POST', body: form({ decisions: JSON.stringify(decisions) }) }))
+      // Jede Rückfrage beantworten: das Konto annehmen, Eingänge unbekannter Herkunft der Miete eines Mietverhältnisses
+      // zuordnen oder privat nennen.
+      let decisions: unknown[] = []
+      for (let round = 0; round < 3; round++) {
+        const preview = await plan(decisions)
+        if (!preview) return
+        if (preview.questions.length === 0) {
+          await fetch(`${ctx.s.base}/api/bank/import`, { method: 'POST', body: form({ decisions: JSON.stringify(decisions), token: preview.token }) })
+          break
+        }
+        decisions = [...decisions, ...preview.questions.map((q) => {
+          if (q.type === 'account') return { type: 'account', iban: q.iban, accept: true }
+          const t = pick(ctx.rng, ctx.tenancies)
+          return t && ctx.rng() < 0.7 ? { type: 'entry', key: q.key, as: 'rent', tenancyId: t.id, rememberPayer: ctx.rng() < 0.5 } : { type: 'entry', key: q.key, as: 'private' }
+        })]
+      }
+      const accounts = await json<{ id: string, imports: { id: string }[] }[]>(await send(ctx.s, 'GET', '/api/bank/accounts'))
+      const account = accounts?.[0]
+      if (!account) return
+      await send(ctx.s, 'PUT', `/api/bank/accounts/${account.id}`, ctx.rng() < 0.3 ? { kind: 'rental', confirm: true } : { label: `Konto ${word(ctx.rng)}` })
+      const last = account.imports[account.imports.length - 1]
+      if (last && ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/bank/imports/${last.id}`)
     },
   },
   // ---------- Belege ----------

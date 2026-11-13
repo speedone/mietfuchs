@@ -73,6 +73,9 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
+import { applyBankImport, BankError, readBankAccounts, readBankStock, removeBankImport, updateBankAccount } from './db/bank.ts'
+import { decisionsOf, importToken, planBankImport, type ImportDecision, type ImportPlan } from './bank/importPlan.ts'
+import { MAX_ZIP_TOTAL_BYTES, readBankFile } from './bank/read.ts'
 import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry, withoutBoundDeposits } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
@@ -1024,6 +1027,53 @@ app.put('/api/co2-refunds/:id', async (req, res) => {
 app.delete('/api/co2-refunds/:id', async (req, res) => {
   const removed = await writeData((db) => removeRefund(db, req.params.id))
   if (!removed) return res.status(404).json({ error: NO_REFUND })
+  res.json({ ok: true })
+})
+
+// ---------- Kontoauszug (#188) ----------
+// Einlesen in zwei Schritten wie „als bezahlt erfassen“: Die Vorschau plant und schreibt nichts, das Übernehmen plant in
+// der Schreibschlange neu und schreibt nur, wenn die Marke noch stimmt. Die Datei kommt beide Male vom Browser und wird
+// nie auf die Platte geschrieben (eigener multer im Arbeitsspeicher). Bankdaten gehen nie an eine KI (bank-waechter.test.ts).
+const bankUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_ZIP_TOTAL_BYTES, files: 1 }, defParamCharset: 'utf8' })
+const BANK_TOO_BIG = `Die Datei ist zu groß für Kontoauszüge; höchstens ${MAX_ZIP_TOTAL_BYTES / 1024 / 1024} MB sind möglich. Bitte rufen Sie bei Ihrer Bank kürzere Zeiträume ab.`
+type BankPlan = { plan: ImportPlan, decisions: ImportDecision[], token: string }
+async function bankPlanOf(db: Database, req: Request): Promise<BankPlan> {
+  const file = req.file
+  if (!file) throw new RouteProblem(400, 'Bitte wählen Sie eine Datei mit Kontoauszügen.')
+  const decisions = decisionsOf(bodyObject(req).decisions)
+  if (!decisions) throw new RouteProblem(400, 'Die Antworten auf die Rückfragen sind nicht lesbar. Bitte laden Sie die Seite neu.')
+  const read = readBankFile(file.buffer, file.originalname)
+  if (read.statements.length === 0) throw new RouteProblem(400, read.problems.map((p) => p.message).join(' ') || 'Die Datei enthält keinen Kontoauszug.')
+  const sha256 = crypto.createHash('sha256').update(file.buffer).digest('hex')
+  const plan = planBankImport(read, await readBankStock(db), decisions, { sha256, name: file.originalname }, newId, new Date().toISOString())
+  return { plan, decisions, token: importToken(plan, decisions) }
+}
+const bankPreview = ({ plan, token }: BankPlan) =>
+  ({ questions: plan.questions, findings: plan.findings, summary: plan.summary, sentence: plan.sentence, ready: plan.ready, token })
+app.post('/api/bank/import/plan', bankUpload.single('statement'), inRequest, async (req, res) => {
+  res.json(bankPreview(await readData((db) => bankPlanOf(db, req))))
+})
+app.post('/api/bank/import', bankUpload.single('statement'), inRequest, async (req, res) => {
+  const token: unknown = bodyObject(req).token
+  if (typeof token !== 'string' || token === '') throw new RouteProblem(400, 'Übernommen wird nur, was die Vorschau gezeigt hat. Bitte zeigen Sie zuerst die Vorschau an.')
+  const result = await writeData(async (db): Promise<{ stale: BankPlan } | { done: BankPlan }> => {
+    const planned = await bankPlanOf(db, req)
+    if (planned.token !== token) return { stale: planned }
+    if (!planned.plan.ready) throw new RouteProblem(400, 'Bitte beantworten Sie zuerst die Rückfragen.')
+    await applyBankImport(db, planned.plan.writes)
+    return { done: planned }
+  })
+  if ('stale' in result) return res.status(409).json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Vorschau noch einmal.', preview: bankPreview(result.stale) })
+  res.json({ ok: true, sentence: result.done.plan.sentence })
+})
+app.get('/api/bank/accounts', async (_req, res) => {
+  res.json(await readData((db) => readBankAccounts(db)))
+})
+app.put('/api/bank/accounts/:id', async (req, res) => {
+  res.json(await writeData((db) => updateBankAccount(db, req.params.id, bodyObject(req), new Date().toISOString())))
+})
+app.delete('/api/bank/imports/:id', async (req, res) => {
+  await writeData((db) => removeBankImport(db, req.params.id))
   res.json({ ok: true })
 })
 
@@ -4679,6 +4729,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   const full = diskFullMessage(err)
   if (full) return res.status(507).json({ error: full })
   if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE' && req.path.startsWith('/bank/')) return res.status(413).json({ error: BANK_TOO_BIG })
     const limit = req.path === '/restore' ? RESTORE_MAX_BYTES : req.path.includes('letter-design') ? LETTER_DESIGN_LIMITS.paper : UPLOAD_MAX_BYTES
     const message =
       err.code === 'LIMIT_FILE_SIZE' ? `Die Datei ist größer als ${limit >= 1024 ** 3 ? `${limit / 1024 ** 3} GB` : `${limit / 1024 / 1024} MB`}.`
@@ -4696,7 +4747,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Die Verteilung nach § 82b EStDV (#262, E-9): dieselbe Gestalt, bestätigt mit `confirmSpread`.
   if (err instanceof SpreadQuestion) return res.status(409).json({ error: err.message, question: 'spread' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
