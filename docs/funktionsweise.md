@@ -42,7 +42,8 @@ Kurzfassung steht im [README](../README.md#funktionen).
    Auswertung läuft weiter, wenn du die Seite wechselst), ohne KI oder mit „Nur ablegen“ speichert er
    sie nur. **E-Rechnungen** (XRechnung als XML-Datei, ZUGFeRD oder Factur-X im PDF) liest Mietfuchs
    auch ohne KI, Betrag, Datum und Positionen kommen direkt aus der Rechnung; eine XML-Datei zeigt er
-   geöffnet lesbar an und druckt sie in Belegkopien und Belegmappe mit. Darunter steht, was zu prüfen ist, und unter „Ohne Position“ jeder gespeicherte Beleg,
+   geöffnet lesbar an und druckt sie in Belegkopien und Belegmappe mit. Einen Kontoauszug der Bank weist der
+   Eingang ab und führt zur Seite Kontoauszug. Darunter steht, was zu prüfen ist, und unter „Ohne Position“ jeder gespeicherte Beleg,
    den du einer Position zuordnest oder per KI auswerten lässt. Der **Ordner** zeigt alle Belege je
    Objekt und Jahr, mit einem Register je Kostenart, Vorschaubild, Betrag und den Positionen, an
    denen ein Beleg hängt; seine Suche durchsucht alle Objekte und Jahre. Die **Belegabdeckung**
@@ -112,8 +113,11 @@ Kurzfassung steht im [README](../README.md#funktionen).
    Kaution, Vertragsdatum, Zimmer/Etage) lassen sich optional je Mieter und Wohnung hinterlegen.
    Die Kaution lässt sich am Mietverhältnis führen („Kaution führen“): Eingänge auch in Raten, Zinsen,
    Verrechnungen und Rückzahlungen ergeben den Stand; jede Buchung lässt sich dort ändern. Eine Verrechnung mit Mietrückstand oder Nachzahlung
-   legt eine Zahlung im Mietkonto an; nach dem Auszug gibt es eine Aufstellung mit dem, was auszuzahlen bleibt.
-8. **Kontoauszug**: Den Auszug deiner Bank als Datei einlesen (camt.052, camt.053, camt.054 oder MT940,
+   legt eine Zahlung im Mietkonto an; Eingang, Zinsen und Rückzahlung stehen weder im Mietkonto noch in der
+   Steuerübersicht. Eine als Miete erfasste Kaution buchst du auf der Seite Steuer mit „Als Kaution umbuchen“ um.
+   Nach dem Auszug gibt es eine druckbare Aufstellung mit Einbehalt und dem, was auszuzahlen bleibt, und das
+   Cockpit erinnert, solange noch Geld bei dir liegt.
+9. **Kontoauszug**: Den Auszug deiner Bank als Datei einlesen (camt.052, camt.053, camt.054 oder MT940,
    auch mehrere in einem ZIP). Eine Vorschau zeigt, was gespeichert wird, und fragt nach, wo Mietfuchs es
    nicht weiß: ein Konto, das noch nie eingelesen wurde, und ein Eingang von einer unbekannten IBAN
    (Mieteingang, Kaution oder privat). Jedes Konto gilt als **Mischkonto**, bis du es als Konto nur für die
@@ -122,7 +126,7 @@ Kurzfassung steht im [README](../README.md#funktionen).
    Summe des Tages. Zweimal eingelesene Tage ändern nichts. Zu jedem offenen Umsatz
    schlägt die Seite Mietverhältnis und Art vor (über die IBAN, nie über Name oder Zweck), mit Ampel und
    Grund; „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, eine Kaution als Kautionsbuchung, und
-   eine schon von Hand erfasste Zahlung wird nur verknüpft. Ein Umsatz lässt sich auf zwei Wohnungen
+   eine schon von Hand erfasste Zahlung wird nur verknüpft. Ein Umsatz lässt sich auf mehrere Mietverhältnisse
    aufteilen, beiseitelegen oder wieder lösen. Je Konto steht, ob es lückenlos eingelesen ist; über die
    Einnahmen sagt das nichts. Das Cockpit nennt Umsätze, die noch nicht zugeordnet sind. Kontoauszüge
    gehen nie an eine KI: Der Eingang der Belege weist sie ab.
@@ -132,7 +136,8 @@ mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit
 Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale oder Inklusivmiete, die
 fertige Abrechnung eines Messdienstes, CO₂-Kosten aufteilen, Heizkosten selbst abrechnen,
 Brennstoff mit Tank oder Lager, Kesseltausch und mehrere Heizungen, den Abrechnungszeitraum Mai
-bis April, den Mieterwechsel mit Leerstand, die Anmeldung mit Passwort im Netz und das
+bis April, den Mieterwechsel mit Leerstand, die Kaution vom Eingang bis zum Auszug, den Kontoauszug
+mit dem Zuordnen der Mieteingänge, die Anmeldung mit Passwort im Netz und das
 Programmfenster, das sich mit einem Mietfuchs im Heimnetz verbindet. Jede nennt, ob sie auf
 dich zutrifft, die Schritte mit einem Knopf zur passenden Seite, ein nachgerechnetes Beispiel, die
 Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbegriffe.

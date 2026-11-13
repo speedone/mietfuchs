@@ -45,6 +45,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   kommen aus dem Anschreiben, eine abweichende IBAN am Objekt gilt also auch im Code. Der Verwendungszweck ist ein
   neuer Baustein der Vorlage, für alle Objekte, ein Objekt oder einen Mieter; Vorgabe ist „Name, Wohnung, Abrechnung“
   ([#624](https://github.com/speedone/mietfuchs/issues/624)).
+- Zwei neue Anleitungen unter „Hilfe & Begriffe“: „Kaution führen: Eingang, Raten, Verrechnung und Auszug“
+  ([#228](https://github.com/speedone/mietfuchs/issues/228)) und „Kontoauszug einlesen und Mieteingänge zuordnen“
+  ([#188](https://github.com/speedone/mietfuchs/issues/188)), je mit nachgerechnetem Beispiel. Endet im gewählten
+  Zeitraum ein Mietverhältnis mit Kaution, schlägt die Hilfe die Anleitung zur Kaution vor.
 
 ### Geändert
 

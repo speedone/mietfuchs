@@ -61,6 +61,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 - 📅 **Abrechnungszeitraum wählbar:** Kalenderjahr oder etwa Mai bis April, mit Vorschau beim Wechsel
 - 📡 **Baujahr der Kabel- oder Antennenanlage** am Objekt, denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind
 - 🗃️ **Erweiterte Stammdaten** (Kontakt, Kaution, Vertragsdatum, Zimmer/Etage) optional je Mieter und Wohnung
+- 🔐 **Kaution führen:** Eingänge auch in Raten, Zinsen, Verrechnung und Rückzahlung je Mietverhältnis; nach dem Auszug eine druckbare Aufstellung mit dem, was auszuzahlen bleibt
 
 **Kosten und Verteilung**
 
@@ -82,7 +83,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 
 **Abrechnung, Mietkonto, Steuer**
 
-- 📄 **Fertige Abrechnung** je Mieter mit Saldo, Zahlungsaufforderung, §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB); Druck oder PDF
+- 📄 **Fertige Abrechnung** je Mieter mit Saldo, Zahlungsaufforderung, §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB), auf Wunsch mit QR-Code zum Bezahlen einer Nachzahlung; Druck oder PDF
 - 🔍 **Rechenweg** jeder Zeile aufklappbar; eine Abrechnung wird vor dem Versand abgeschlossen und eingefroren, der Versand danach mit Datum festgehalten, spätere Abweichungen zeigt Mietfuchs je Mieter
 - ⏰ **Fristen im Blick:** Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB)
 - 🏦 **Kontoauszug einlesen:** camt oder MT940 der Bank, Mieteingänge per IBAN vorgeschlagen und mit einer Bestätigung gebucht; auf einem Mischkonto bleibt Privates nur Tagessumme, und Kontoauszüge gehen nie an eine KI
@@ -101,7 +102,7 @@ unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 **Hilfe und Betrieb**
 
 - 💡 **Hinweise statt Rätselraten:** Mietfuchs erklärt, was auffällt, wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
-- 🧭 **Anleitungen je Vermietungsart:** vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand
+- 🧭 **Anleitungen je Vermietungsart:** vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand, zur Kaution und zum Kontoauszug
 - 🔒 **100 % lokal:** keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst)
 - 🔑 **Passwort im Heimnetz:** Sobald andere Geräte Mietfuchs erreichen, fragt es nach einem Passwort; auf dem eigenen Rechner allein nicht
 - 🪟 **Eigenes Programm für Windows und macOS** mit eigenem Fenster, auf Wunsch verschlüsselt verbunden mit einem Mietfuchs auf NAS oder Raspberry Pi (direkt oder über Caddy); unter Linux, auf dem Raspberry Pi und in Docker im Browser

@@ -109,6 +109,12 @@ der Vorschau zu einzelnen Eingängen bleiben bis zu Ihrer Antwort im Arbeitsspei
 nie an einen Dienst für die Belegauswertung, auch nicht an einen auf Ihrem Rechner: Der Eingang der Belege
 weist sie ab. Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.
 
+Für die Daten Ihrer Mieter, auch Name und IBAN aus dem Kontoauszug, sind Sie als Vermieter in der Regel
+selbst Verantwortlicher im Sinne der DSGVO; die Ausnahme für rein persönliche oder familiäre Tätigkeiten
+greift bei einer Vermietung meist nicht. Brauchen Sie die Umsätze eines Mietverhältnisses nach seinem Ende
+nicht mehr, etwa weil Abrechnung, Kaution und Steuer erledigt sind, nehmen Sie den Import zurück oder löschen
+Sie das Mietverhältnis.
+
 ## Verbindungen ins Internet
 
 Mietfuchs stellt nur in drei Fällen eine Verbindung ins Internet her, und jeweils erst, nachdem Sie

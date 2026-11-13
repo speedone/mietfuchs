@@ -31,7 +31,7 @@ const HEAT_PUMP_FROM = germanDate(hkvRenewableExemption.versions.find((v) => v.v
 
 // Die Seiten, auf die eine Anleitung springen kann. Dieselben Kennungen wie die Navigation;
 // client/src/nav.ts prüft beim Übersetzen, dass jede davon dort vorkommt.
-export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'heizkosten', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
+export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'kontoauszug', 'heizkosten', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
 export type GuidePage = (typeof GUIDE_PAGES)[number]
 
 // Die Ansichten der Seite Belege (#490); dieselben wie `BelegeView` in client/src/nav.ts.
@@ -455,6 +455,80 @@ const GUIDE_DATA = {
       { text: 'Eine Gas- oder Fernwärmerechnung über einen anderen Zeitraum nach Gradtagen auf die Heizperiode abgrenzen; bis dahin weist Mietfuchs nur darauf hin.', issue: 97 },
     ],
     terms: ['billingPeriod', 'shortPeriod', 'accrualPrinciple'],
+  },
+  // #228: Kaution je Mietverhältnis führen (Entwurf 2026-11-12). Gelesen ist nur § 551 Abs. 1 bis 4 BGB; zu Frist und
+  // Höhe des Einbehalts beim Auszug steht hier deshalb nichts, und zur Steuer nur, was Mietfuchs tut.
+  deposit: {
+    group: 'year',
+    title: 'Kaution führen: Eingang, Raten, Verrechnung und Auszug',
+    applies: 'Ihr Mieter hat eine Kaution gezahlt oder zahlt sie in Raten, und Sie möchten festhalten, was eingegangen ist, was Sie damit verrechnen und was Sie nach dem Auszug zurückzahlen.',
+    steps: [
+      { page: 'stammdaten', text: 'Öffnen Sie das Mietverhältnis, klappen Sie „Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ auf und tragen Sie die vereinbarte Höhe bei „Kaution €“ ein, dazu die „Form der Sicherheit“. Liegt die Kaution über drei Monatsmieten ohne Betriebskosten, sagt ein Hinweis am Feld es; gespeichert wird trotzdem.' },
+      { page: 'stammdaten', text: 'Klicken Sie in der Liste der Mietverhältnisse auf „Kaution führen“. Im Fenster legen Sie jede Zahlung des Mieters mit der Art „Eingang“, Datum und Betrag an; zahlt er in Raten, ist jede Rate ein eigener Eingang. Das Fenster bleibt nach „Anlegen“ offen, und das Datum bleibt stehen.' },
+      { page: 'stammdaten', text: 'Zinsen und andere Erträge der Anlage buchen Sie, wie Ihre Bank sie ausweist, mit der Art „Ertrag (Zinsen)“. Mit „Ändern“ an einer Zeile ändern Sie eine Buchung, mit „Löschen …“ entfernen Sie sie.' },
+      { page: 'stammdaten', text: 'Verrechnen Sie die Kaution mit einer eigenen Forderung, wählen Sie die Art „Verrechnung“ und unter „Verrechnet mit“ den Grund: „Mietrückstand“, „Nachzahlung aus der Abrechnung“, „Schaden“ oder „Sonstiges“.' },
+      { page: 'steuer', text: 'Haben Sie die Kaution früher als Mietzahlung erfasst, nennt die Seite Steuer sie unter „Ist das die Kaution?“. Mit „Als Kaution umbuchen“ wird aus der Mietzahlung ein Eingang der Kaution; die Monate, die sie gedeckt hat, sind danach wieder offen.' },
+      { page: 'stammdaten', text: 'Ist das Mietverhältnis beendet, zeigt das Fenster hinter „Kaution führen“ oben die „Aufstellung zum Auszug“, sobald es Buchungen gibt. Wollen Sie vorerst etwas zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung, tragen Sie „Einbehalt €“ und „Grund“ ein und klicken Sie auf „Einbehalt speichern“. „Aufstellung drucken“ druckt das Blatt für den Mieter.' },
+      { page: 'stammdaten', text: 'Zahlen Sie die Kaution aus, buchen Sie das mit der Art „Rückzahlung an den Mieter“.' },
+    ],
+    result: [
+      'Den Stand rechnet Mietfuchs aus den Buchungen: Eingänge und Erträge erhöhen ihn, Verrechnungen und Rückzahlungen mindern ihn. Ist weniger eingegangen als vereinbart, steht die Kaution als „teilweise erhalten“ da. Ohne Buchungen gilt weiter der Stand, den Sie am Mietverhältnis gewählt haben.',
+      'Mehr verrechnen oder auszahlen, als bis zu dem Tag eingegangen ist, lässt sich nicht buchen. Vor einem Datum nach heute und vor einer Verrechnung über den offenen Mietrückstand hinaus fragt das Fenster nach.',
+      'Eingang, Ertrag und Rückzahlung stehen weder im Mietkonto noch in der Steuerübersicht. Eine Verrechnung mit Mietrückstand oder Nachzahlung legt im Mietkonto eine Zahlung an diesem Tag an, die wie jede Zahlung zählt; ändern lässt sie sich nur an der Kaution. Was Sie mit einem Schaden oder Sonstigem verrechnen, zählt die Steuerübersicht nicht zu den Einnahmen und nennt es nur mit dem Betrag.',
+      'Die Aufstellung zum Auszug nennt jede Buchung, den Einbehalt mit Grund und was auszuzahlen bleibt. Darunter steht, nur für Sie und nicht im Druck, das Ergebnis der letzten Nebenkostenabrechnung, auch einer getrennten Heizkostenabrechnung, und welche Abrechnung noch aussteht.',
+      'Solange nach dem Auszug laut den Buchungen noch Geld bei Ihnen liegt, nennt das Cockpit es unter „Kaution nach Auszug“.',
+    ],
+    example: 'Kaltmiete 800 €, vereinbart sind 2.400 € Kaution, das Dreifache. Der Mieter zahlt drei Raten zu 800 €; nach der zweiten liegen 1.600 € bei Ihnen, die Kaution ist teilweise erhalten. Mit der dritten Rate und 18,20 € Zinsen sind es 2.418,20 €. Nach dem Auszug verrechnen Sie 450 € Mietrückstand, es bleiben 1.968,20 €. Halten Sie bis zur nächsten Nebenkostenabrechnung 300 € zurück, bleiben 1.668,20 € auszuzahlen.',
+    caveats: [
+      { text: 'Die Kaution darf höchstens das Dreifache der Monatsmiete ohne die als Pauschale oder als Vorauszahlung ausgewiesenen Betriebskosten betragen. Eine Vereinbarung zum Nachteil des Mieters ist unwirksam.', norm: '§ 551 Abs. 1 und 4 BGB' },
+      { text: 'Ist eine Geldsumme vereinbart, darf der Mieter sie in drei gleichen monatlichen Teilzahlungen leisten; die erste ist zu Beginn des Mietverhältnisses fällig, die weiteren mit den unmittelbar folgenden Mietzahlungen.', norm: '§ 551 Abs. 2 BGB' },
+      { text: 'Eine Geldsumme legen Sie getrennt von Ihrem Vermögen bei einem Kreditinstitut an. Die Erträge stehen dem Mieter zu und erhöhen die Sicherheit; buchen Sie sie deshalb als Ertrag der Kaution.', norm: '§ 551 Abs. 3 BGB' },
+      { text: 'Bis wann die Kaution nach dem Auszug abzurechnen ist und wie viel Sie bis zur nächsten Nebenkostenabrechnung zurückhalten dürfen, regelt § 551 BGB nicht. Die Rechtsprechung dazu hat Mietfuchs nicht ausgewertet; es schlägt deshalb weder Frist noch Betrag vor und erinnert ohne Frist.', norm: '§ 551 BGB' },
+    ],
+    gaps: [
+      { text: 'Das Kautionskonto als Kontoauszug einlesen; Zinsen buchen Sie bis dahin von Hand.', issue: 285 },
+      { text: 'Mietfuchs kennt keinen Ratenplan und erinnert nicht an eine ausstehende Rate; es rechnet auch keine Zinsen aus.' },
+      { text: 'Ein Anschreiben zur Abrechnung der Kaution fehlt noch; gedruckt wird nur die Aufstellung.' },
+    ],
+    terms: ['deposit', 'paymentOrder', 'formerYearsRent', 'separateHeatingSettlement'],
+  },
+  // #188: Kontoauszug einlesen und Zahlungen zuordnen (Entwurf 2026-11-12). Keine Rechtsaussage: Die Frage der
+  // Aufzeichnungspflichten privater Vermieter ist im Entwurf als offen festgehalten.
+  bankStatement: {
+    group: 'year',
+    title: 'Kontoauszug einlesen und Mieteingänge zuordnen',
+    applies: 'Ihre Mieter überweisen auf Ihr Konto, und Sie möchten die Eingänge nicht von Hand ins Mietkonto übertragen. Ihre Bank bietet den Kontoauszug oder die Umsätze als Datei an, im Format camt oder MT940.',
+    steps: [
+      { page: 'stammdaten', text: 'Tragen Sie an jedem Mietverhältnis unter „Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ die IBAN des Mieters bei „Mieter-IBAN (für Lastschrift / Guthaben-Rückzahlung)“ ein. Nur an ihr erkennt Mietfuchs, von wem ein Eingang kommt; Name und Verwendungszweck allein reichen nicht.' },
+      { page: 'kontoauszug', text: 'Laden Sie den Auszug im Online-Banking als Datei herunter (camt.052, camt.053, camt.054 oder MT940, auch mehrere in einem ZIP). Klicken Sie auf der Seite Kontoauszug auf „Kontoauszug einlesen“ und wählen Sie die Datei.' },
+      { page: 'kontoauszug', text: 'Das Fenster zeigt eine Vorschau und fragt nach, wo Mietfuchs es nicht weiß. Ein Konto, das noch nie eingelesen wurde, bestätigen Sie mit „Ja, mein Konto für Mieteingänge“; ein Kautionskonto lesen Sie hier nicht ein. Zu einem Eingang von einer unbekannten IBAN wählen Sie „Mieteingang“, „Kaution“ oder „privat“, bei den ersten beiden das Mietverhältnis; mit „Dieses Konto als Zahler merken“ ordnet Mietfuchs künftige Eingänge von dort demselben Mietverhältnis zu. Dann klicken Sie auf „Einlesen“.' },
+      { page: 'kontoauszug', text: 'Unter „Offene Umsätze“ steht jeder Umsatz mit Ampel und Grund und dem vorgeschlagenen Mietverhältnis und der Art. Prüfen Sie die gelben, ändern Sie wenn nötig „Mietverhältnis“ und „Art“ und klicken Sie auf „Buchen“. Grüne, die noch wie vorgeschlagen stehen, bucht „Alle grünen übernehmen“ nach einer Rückfrage in einem Schritt.' },
+      { page: 'kontoauszug', text: 'Gilt eine Überweisung für zwei Mietverhältnisse, teilen Sie sie mit „+ weiterer Teil“ auf und tragen je Teil den Betrag ein. Eine Umbuchung zwischen eigenen Konten oder einen Umsatz, der nicht zur Vermietung gehört, legen Sie unter „Beiseitelegen“ beiseite.' },
+      { page: 'kontoauszug', text: 'Eine falsche Zuordnung lösen Sie unter „Erledigte Umsätze zeigen“ mit „Lösen …“; die Rückfrage bietet an, die Zahlung im Mietkonto zu behalten oder mit zu löschen. Einen ganzen Auszug nehmen Sie in der Karte „Konten“ mit „Zurücknehmen …“ zurück, nachdem Sie seine Zuordnungen gelöst haben.' },
+      { page: 'kontoauszug', text: 'Führen Sie ein eigenes Konto nur für die Vermietung, stellen Sie es in der Karte „Konten“ mit „Nur für die Vermietung …“ um; erst dann speichert Mietfuchs jeden Umsatz dieses Kontos einzeln. „Zurück zum Mischkonto …“ macht das für künftige Auszüge rückgängig.' },
+      { page: 'mietkonto', text: 'Im Mietkonto stehen die gebuchten Eingänge am Buchungstag mit dem Vermerk „aus dem Kontoauszug“.' },
+    ],
+    result: [
+      'Jedes Konto gilt als Mischkonto, bis Sie es als Konto nur für die Vermietung bestätigen. Dort speichert Mietfuchs nur Umsätze mit Ihren Mietern und gemerkten Zahlern und Eingänge, die Sie als Mieteingang oder Kaution einordnen. Ein Ausgang an eine unbekannte IBAN gilt ohne Frage als privat; Privates steht nur in der Summe des Tages, nie einzeln.',
+      'Zweimal eingelesene Tage ändern nichts, auch nicht in überlappenden Auszügen. Sieht ein schon eingelesener Tag in einer neuen Datei anders aus, bleibt der frühere Stand, und die Vorschau sagt es.',
+      'Grün ist ein Vorschlag nur, wenn die IBAN genau ein Mietverhältnis trifft und der Betrag dem Soll des Monats im Mietkonto entspricht. Ist dieselbe Zahlung schon von Hand erfasst, gleicher Betrag und höchstens sieben Tage entfernt, wird sie nur verknüpft und nicht doppelt angelegt.',
+      '„Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, mit dem Verwendungszweck als Notiz; ein Eingang als Kaution wird eine Kautionsbuchung. Einen Monat liest Mietfuchs nie aus dem Verwendungszweck: Die Zahlung wird wie jede andere auf die offenen Monate verteilt.',
+      'Je Konto steht in der Karte „Konten“, ob es lückenlos eingelesen ist. Das lässt sich nur mit Auszügen sagen, die Anfangs- und Endsaldo nennen, und es sagt nichts darüber, ob alle Mieten gezahlt sind.',
+      'Das Cockpit nennt Umsätze, die noch nicht zugeordnet sind. Legen Sie einen Kontoauszug auf der Seite Belege ab, weist der Eingang ihn ab und führt mit „Zur Seite Kontoauszug“ hierher, damit Bankdaten nie an eine KI gehen.',
+    ],
+    example: 'Kaltmiete 650 € und Vorauszahlung 180 €: Das Soll im Juni ist 830 €. Am 02.06.2025 gehen auf Ihrem Mischkonto 830 € von der IBAN dieses Mieters ein, 1.000 € von einem zweiten Mieter, der bei Ihnen Wohnung und Stellplatz gemietet hat, und 49,99 € gehen an eine Buchhandlung. Gespeichert werden die beiden Eingänge; vom Einkauf bleibt nur die Summe des Tages: 3 Umsätze, 1.830 € Eingang, 49,99 € Ausgang. Die 830 € stehen grün da. Die 1.000 € bekommen keinen Vorschlag, weil die IBAN zwei laufende Mietverhältnisse trifft; Sie teilen sie in 900 € für die Wohnung und 100 € für den Stellplatz.',
+    caveats: [
+      { text: 'Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht: Die Datei der Bank speichert es nicht, und Zuordnungen und Importe lassen sich lösen und zurücknehmen.' },
+      { text: 'Fehlt am Mietverhältnis die IBAN oder zahlt jemand anderes, etwa das Jobcenter oder ein Angehöriger, bekommt der Eingang keinen Vorschlag. Ordnen Sie ihn einmal zu und merken Sie das Konto als Zahler; danach erkennt Mietfuchs es.' },
+      { text: 'Ein vorgemerkter Umsatz, den die Bank noch nicht gebucht hat, kommt nicht mit. Bei einem Tagesbericht (camt.052) zählen nur abgeschlossene Tage; der Rest kommt mit dem nächsten Auszug.' },
+    ],
+    gaps: [
+      { text: 'Abbuchungen mit Kostenpositionen verknüpfen; Rechnungen erfassen Sie weiter auf der Seite Kosten.', issue: 292 },
+      { text: 'Eine Nachzahlung aus der Abrechnung am Betrag erkennen; bis dahin wählen Sie die Art „Nachzahlung oder Guthaben“ selbst.', issue: 308 },
+      { text: 'Das Kautionskonto einlesen.', issue: 285 },
+      { text: 'Umsätze als CSV-Datei oder direkt bei der Bank abrufen kann Mietfuchs nicht; es liest nur Dateien im Format camt oder MT940.' },
+    ],
+    terms: ['bankImport', 'mixedAccount', 'rentDue', 'paymentOrder', 'deposit'],
   },
   // Heizung PR 7 (#97, Durchsicht von #233): eine Versorgerrechnung über die Heizperiode hinaus.
   supplierInvoice: {

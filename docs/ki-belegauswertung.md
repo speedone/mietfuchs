@@ -21,6 +21,10 @@ rot. Eine XRechnung als reine XML-Datei kannst du genauso ablegen: Mietfuchs lie
 lesbar an, mit „Drucken / PDF“; die XML-Datei selbst bleibt unverändert der Beleg. Andere XML-Dateien nimmt Mietfuchs
 nicht an, weil sie Programmcode enthalten können.
 
+**Kontoauszüge gehen nie an eine KI.** Legst du einen Auszug deiner Bank (camt oder MT940, auch als ZIP) im Eingang
+ab, weist Mietfuchs ihn ab, ohne ihn zu speichern oder auszuwerten, und führt dich zur Seite Kontoauszug. Dort liest
+er ihn ohne KI ein (siehe [Funktionsweise](funktionsweise.md)).
+
 Zwei Wege stehen zur Wahl:
 
 - **Auf dem eigenen Rechner** mit [Ollama](https://ollama.com) oder LM Studio. Die Belege
