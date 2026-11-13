@@ -27,16 +27,17 @@ test('coverageOf: Salden, die nicht anschließen, sind eine Lücke', () => {
   assert.deepEqual(coverageOf([imp('2025-01-01', '2025-01-31', 100, 500), imp('2025-02-01', '2025-02-28', 501, 700)]), { gapAfter: '2025-01-31', gapBefore: '2025-02-01' })
 })
 
-test('coverageOf: zwei MT940-Auszüge einer Sparkasse sind lückenlos ab dem Tag nach dem ersten Anfangssaldo (#644)', () => {
-  const text = [
-    ':20:STARTUMSE', ':25:DE00123456789012345678', ':28C:1/1', ':60F:C250228EUR0,00', ':61:2503030303C1,00NTRFNONREF', ':62F:C250305EUR1,00', '-',
-    ':20:STARTUMSE', ':25:DE00123456789012345678', ':28C:2/1', ':60F:C250305EUR1,00', ':61:2503100310C1,00NTRFNONREF', ':62F:C250310EUR2,00', '-',
-  ].join('\n')
-  const imports = readMt940(text).statements.map((s) => {
+test('coverageOf: MT940 schließt an, gleich ob die Bank :60F: auf den Vortag oder den ersten Tag datiert (#644, Durchsicht)', () => {
+  const chain = (...statements: string[][]) => coverageOf(readMt940(statements.flatMap((s) => [':20:STARTUMSE', ':25:DE00123456789012345678', ...s, '-']).join('\n')).statements.map((s) => {
     if (!s.fromDate || !s.toDate) assert.fail('Zeitraum erwartet')
     return imp(s.fromDate, s.toDate, s.openingBalanceCents, s.closingBalanceCents)
-  })
-  assert.deepEqual(coverageOf(imports), { from: '2025-03-01', to: '2025-03-10' })
+  }))
+  // :60F: auf den Vortag (28.02.)
+  assert.deepEqual(chain([':60F:C250131EUR0,00', ':61:2502030203C1,00NTRFNONREF', ':62F:C250228EUR1,00'], [':60F:C250228EUR1,00', ':61:2503030303C1,00NTRFNONREF', ':62F:C250310EUR2,00']),
+    { from: '2025-01-31', to: '2025-03-10' })
+  // :60F: auf den ersten Tag des Auszugs (01.03.), an dem nichts gebucht ist
+  assert.deepEqual(chain([':60F:C250201EUR0,00', ':61:2502030203C1,00NTRFNONREF', ':62F:C250228EUR1,00'], [':60F:C250301EUR1,00', ':61:2503030303C1,00NTRFNONREF', ':62F:C250310EUR2,00']),
+    { from: '2025-02-01', to: '2025-03-10' })
 })
 
 test('coverageOf: ohne Salden ist nichts zu sagen', () => {

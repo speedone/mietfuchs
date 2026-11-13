@@ -17,7 +17,7 @@
 // SEPA-Zahlungen Kennungen wie EREF+, SVWZ+ und ABWA+.
 
 import {
-  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, normalizeIban, squash, startAfterOpening, TEXT_LIMITS,
+  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, normalizeIban, squash, TEXT_LIMITS,
   type BankEntry, type BankProblem, type BankReadResult, type BankStatement,
 } from './statement.ts'
 
@@ -289,7 +289,9 @@ export function readMt940(text: string, name = 'Datei'): BankReadResult {
       accountIban,
       accountOtherId: accountIban ? null : account || null,
       createdAt: null,
-      // Der Tag des Anfangssaldos; wann der Auszug beginnt, steht erst nach den Umsätzen fest (startAfterOpening).
+      // Der Tag des Anfangssaldos. Banken datieren ihn verschieden (Vortag oder erster Tag des Auszugs); mit diesem Tag
+      // schließt die Kette in „lückenlos eingelesen“ bei beiden Arten an, schlimmstenfalls beginnt sie einen Tag zu früh.
+      // Der Tag danach (Versuch zu #644) meldete eine falsche Lücke, wenn der erste Tag ohne Buchung war (Durchsicht).
       fromDate: openingBal?.date ?? null,
       fromWholeDay: true,
       toDate: closingBal?.date ?? null,
@@ -321,7 +323,6 @@ export function readMt940(text: string, name = 'Datei'): BankReadResult {
       if (entry) statement.entries.push(entry)
     })
     checkBalance(statement, label, result.problems)
-    statement.fromDate = startAfterOpening(openingBal?.date ?? null, statement.toDate, statement.entries.map((e) => e.bookingDate))
     result.statements.push(statement)
   })
   return result

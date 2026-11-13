@@ -114,19 +114,6 @@ export const squash = (s: string) => s.replace(/\s+/g, ' ').trim()
 
 export const normalizeIban = (s: string) => s.replace(/\s+/g, '').toUpperCase()
 
-// Erster Tag eines Auszugs, dessen Beginn nur das Datum des Anfangssaldos nennt (MT940 :60F:/:60M:, camt PRCD, #644).
-// Die meisten Banken datieren den Anfangssaldo auf den Tag des vorigen Endsaldos, der Auszug beginnt also am Tag
-// danach; manche datieren ihn auf den ersten Tag des Auszugs selbst. Deshalb der Tag danach, aber nie nach dem
-// ersten Buchungstag und nie nach dem Ende: So nennt „lückenlos eingelesen“ keinen Tag zu früh, und ein Auszug, der
-// mit seinem Anfangssaldo beginnt, rückt nicht hinter seinen ersten Umsatz (eine Lücke, die es nicht gibt).
-export function startAfterOpening(openingDate: string | null, closingDate: string | null, bookingDates: readonly string[]): string | null {
-  if (!openingDate) return null
-  const next = new Date(Date.parse(`${openingDate}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
-  return [next, closingDate, ...bookingDates]
-    .filter((d): d is string => d !== null && d >= openingDate)
-    .reduce((a, b) => (b < a ? b : a))
-}
-
 export const problemOnly = (where: string, message: string): BankReadResult =>
   ({ statements: [], problems: [{ where, message }], pendingSkipped: 0 })
 

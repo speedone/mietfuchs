@@ -229,22 +229,6 @@ test('MT940: der Name aus ?32 und ?33 bekommt an einer Wortgrenze ein Leerzeiche
   assert.equal(entryOf86('166?20SVWZ+a?32Stadtwerke Hintertupfing Gm?33bH').counterpartyName, 'Stadtwerke Hintertupfing GmbH')
 })
 
-test('MT940: der Auszug beginnt am Tag nach dem Anfangssaldo, nie nach seinem ersten Umsatz', () => {
-  const first = (...lines: string[]) => {
-    const s = readMt940(statement(...lines)).statements[0]
-    if (!s) assert.fail('ein Auszug erwartet')
-    return s
-  }
-  // :60F: trägt das Datum des vorigen Endsaldos (hier Freitag, 28.02.).
-  const prior = first(':60F:C250228EUR0,00', ':61:2503030303C1,00NTRFNONREF', ':62F:C250305EUR1,00')
-  assert.equal(prior.fromDate, '2025-03-01')
-  assert.equal(prior.toDate, '2025-03-05')
-  // Manche Banken datieren :60F: auf den Tag des Auszugs selbst.
-  assert.equal(first(':60F:C250701EUR0,00', ':61:2507010701C1,00NTRFNONREF', ':62F:C250701EUR1,00').fromDate, '2025-07-01')
-  assert.equal(first(':60F:C250701EUR0,00', ':61:2507010701C1,00NTRFNONREF', ':62F:C250703EUR1,00').fromDate, '2025-07-01')
-  assert.equal(first(':60F:C250502EUR0,00', ':62F:C250505EUR0,00').fromDate, '2025-05-03')
-})
-
 test('MT940: :25: als BLZ/Konto ergibt die deutsche IBAN, dasselbe Konto wie aus camt', () => {
   const r = readMt940([':20:X', ':25:37040044/532013000', ':60F:C250110EUR0,00', ':61:2501100110C1,00NTRFNONREF', ':86:166?20SVWZ+a', ':62F:C250110EUR1,00'].join('\n'))
   assert.equal(r.statements[0]?.accountIban, 'DE89370400440532013000')
