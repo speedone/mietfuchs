@@ -3527,3 +3527,71 @@ export type EInvoice = {
 // Antwort von GET /api/e-invoice/:file: die gelesene Rechnung, die Hinweise der Prüfung (check.ts) und, wenn sie nicht
 // übernommen wird, warum.
 export type EInvoiceView = { invoice: EInvoice; notes: string[]; refusal: string | null }
+
+// ---------- Kontoauszug (#188) ----------
+// Was zwischen Server und Seite „Kontoauszug“ über die Leitung geht. Die gespeicherten Zeilen kennt nur der Server
+// (server/src/bank/model.ts).
+
+export type BankSetAside = 'transfer' | 'notRental' | 'other'
+
+export type BankLinkTarget =
+  | { type: 'newPayment'; kind: PaymentKind }
+  | { type: 'existingPayment'; paymentId: string }
+  | { type: 'deposit'; kind: 'received' | 'refunded' }
+  | { type: 'existingDeposit'; depositEntryId: string }
+
+export type BankSuggestion = { tenancyId: string; target: BankLinkTarget; light: 'green' | 'yellow'; reason: string }
+
+export type BankLinkView = { id: string; paymentId: string | null; depositEntryId: string | null; created: boolean; cents: number; tenancyId: string | null }
+
+export type BankTransactionView = {
+  id: string
+  bookingDate: string
+  valueDate: string | null
+  amountCents: number
+  counterpartyName: string | null
+  counterpartyIban: string | null
+  ultimatePartyName: string | null
+  purpose: string
+  reversal: boolean
+  setAside: BankSetAside | null
+  openCents: number
+  links: BankLinkView[]
+  suggestion: BankSuggestion | null
+}
+
+export type BankCoverage = { from: string; to: string } | { gapAfter: string; gapBefore: string }
+
+export type BankImportInfo = { id: string; fileName: string; format: string; fromDate: string; toDate: string; importedAt: string }
+
+export type BankAccountInfo = {
+  id: string
+  iban: string | null
+  otherId: string | null
+  label: string
+  kind: 'mixed' | 'rental'
+  rentalConfirmedAt: string | null
+  coverage: BankCoverage | null
+  imports: BankImportInfo[]
+}
+
+export type BankImportQuestion =
+  | { type: 'account'; iban: string | null; otherId: string | null }
+  | { type: 'entry'; key: string; bookingDate: string; amountCents: number; counterpartyName: string | null; counterpartyIban: string | null; purpose: string }
+
+export type BankImportDecision =
+  | { type: 'account'; iban: string; accept: boolean }
+  | { type: 'entry'; key: string; as: 'rent' | 'deposit' | 'private'; tenancyId?: string; rememberPayer?: boolean }
+
+export type BankImportPreview = {
+  questions: BankImportQuestion[]
+  findings: { where: string; message: string }[]
+  summary: { stored: number; knownDays: number; pending: number }
+  sentence: string
+  ready: boolean
+  token: string
+}
+
+export type BankLinkPart = { tenancyId: string; amountCents: number; target: BankLinkTarget }
+export type BankLinkDecision = { transactionId: string; parts: BankLinkPart[] } | { transactionId: string; setAside: BankSetAside }
+export type BankLinkPreview = { problems: { transactionId: string; message: string }[]; sentence: string; token: string }

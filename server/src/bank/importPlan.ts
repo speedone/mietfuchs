@@ -12,17 +12,14 @@
 import crypto from 'node:crypto'
 import { germanDate } from '../../../shared/law/register.ts'
 import { compareText } from '../apportion.ts'
+import type { BankImportDecision, BankImportQuestion } from '../../../shared/types.ts'
 import { addIsoDays } from './coverage.ts'
 import { FINGERPRINT_VERSION, type BankEntry, type BankReadResult, type BankStatement } from './statement.ts'
 import type { BankAccount, BankDay, BankImport, BankStock, BankTransaction, TenancyPayer } from './model.ts'
 
-export type ImportDecision =
-  | { type: 'account'; iban: string; accept: boolean }
-  | { type: 'entry'; key: string; as: 'rent' | 'deposit' | 'private'; tenancyId?: string; rememberPayer?: boolean }
+export type ImportDecision = BankImportDecision
 
-export type ImportQuestion =
-  | { type: 'account'; iban: string | null; otherId: string | null }
-  | { type: 'entry'; key: string; bookingDate: string; amountCents: number; counterpartyName: string | null; counterpartyIban: string | null; purpose: string }
+export type ImportQuestion = BankImportQuestion
 
 export type ImportWrite = {
   accounts: BankAccount[]
