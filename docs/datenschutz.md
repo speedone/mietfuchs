@@ -103,8 +103,8 @@ gehören, mit Name und IBAN der Gegenseite und Verwendungszweck. Auf einem Konto
 ausdrücklich als Konto nur für die Vermietung bestätigt haben, speichert Mietfuchs private Umsätze nicht
 einzeln, auch nicht im Verlauf oder in einer Sicherung; sie stehen nur in der Summe des Tages. Rückfragen
 der Vorschau zu einzelnen Eingängen bleiben bis zu Ihrer Antwort im Arbeitsspeicher. Kontoauszüge gehen
-nie an einen Dienst für die Belegauswertung, auch nicht an einen auf Ihrem Rechner: Die Schnellerfassung
-der Belege weist sie ab. Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.
+nie an einen Dienst für die Belegauswertung, auch nicht an einen auf Ihrem Rechner: Der Eingang der Belege
+weist sie ab. Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.
 
 ## Verbindungen ins Internet
 

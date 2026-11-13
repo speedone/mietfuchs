@@ -46,7 +46,7 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
       .then((p) => {
         if (mine !== seq.current) return
         setPreview(p)
-        setQuestions((qs) => [...qs, ...p.questions.filter((q) => !qs.some((x) => questionKey(x) === questionKey(q)))])
+        merge(p)
         setError(null)
       })
       .catch((e: unknown) => {
@@ -59,9 +59,19 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
 
   const answer = (key: string, patch: QuestionAnswer) => {
     setStale(null)
+    // Eine geänderte Antwort zum Konto stellt die Fragen zu seinen Eingängen neu (Durchsicht Teil 3, W4): Nach „Nein“
+    // fragt der Server nicht mehr nach ihnen, und eine alte Frage sperrte sonst „Einlesen“.
+    if (key.startsWith('account:')) {
+      setQuestions((qs) => qs.filter((q) => q.type === 'account'))
+      setAnswers((a) => ({ ...Object.fromEntries(Object.entries(a).filter(([k]) => k.startsWith('account:'))), [key]: { ...a[key], ...patch } }))
+      return
+    }
     setAnswers((a) => ({ ...a, [key]: { ...a[key], ...patch } }))
   }
-  const open = questionProblems(questions, answers)
+  const merge = (p: BankImportPreview) => setQuestions((qs) => [...qs, ...p.questions.filter((q) => !qs.some((x) => questionKey(x) === questionKey(q)))])
+  // Gezeigt und geprüft werden die Fragen, die der Server noch stellt, und die schon beantworteten.
+  const shown = questions.filter((q) => answers[questionKey(q)] !== undefined || (preview?.questions ?? []).some((p) => questionKey(p) === questionKey(q)))
+  const open = questionProblems(shown, answers)
   const ready = !planning && preview !== null && preview.ready && open.length === 0
 
   const submit = async () => {
@@ -73,7 +83,9 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
       onDone(res.sentence)
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.data.preview) {
-        setPreview(e.data.preview as BankImportPreview)
+        const fresh = e.data.preview as BankImportPreview
+        setPreview(fresh)
+        merge(fresh)
         setStale(e.message)
       } else setError(errorText(e))
     } finally {
@@ -83,7 +95,7 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
 
   return (
     <Drawer open title="Kontoauszug einlesen" subtitle={file.name} onClose={onClose} value={answers} busy={busy} onSubmit={() => void submit()}
-      actions={<button type="button" className="btn" disabled={!ready || busy} aria-describedby={ready ? undefined : 'bank-import-why'} onClick={() => void submit()}>Einlesen</button>}>
+      actions={<button type="button" className="btn" disabled={!ready || busy} aria-describedby={!ready && !planning && preview ? 'bank-import-why' : undefined} onClick={() => void submit()}>Einlesen</button>}>
       {error && <NoticeBox level="error" action={error} />}
       {stale && <NoticeBox level="warning" action={stale} />}
       {planning && !preview && <p className="muted">Die Datei wird gelesen …</p>}
@@ -91,7 +103,7 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
         <>
           <p role="status">{preview.sentence}</p>
           {preview.findings.map((f, i) => <NoticeBox key={i} level="error" context={`${f.where}:`} action={f.message} />)}
-          {questions.map((q) => {
+          {shown.map((q) => {
             const key = questionKey(q)
             const a = answers[key] ?? {}
             if (q.type === 'account') {

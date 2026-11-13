@@ -2,7 +2,7 @@
 // Entscheidungslogik der Seite „Belege“ (#490): gemerkte Ansicht, Ablage, „Ohne Position“, Zeile für anderswo
 // Offenes, Ort eines Treffers der Suche.
 import { afterEach, expect, test, vi } from 'vitest'
-import { aiMode, discardQuestion, elsewhereGroups, hitPlace, readView, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, VIEW_KEY, withoutPosition, writeView, isBankFileError } from './belegeView'
+import { aiMode, discardQuestion, elsewhereGroups, hitPlace, readView, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, VIEW_KEY, withoutPosition, writeView, isBankFileError, skippedText, BANK_FILE_TEXT } from './belegeView'
 import { receiptCards, type ReceiptUpload } from './receipts'
 import type { QueueEntry } from './evaluationQueue'
 import type { CostItem } from './types'
@@ -141,4 +141,12 @@ test('Kontoauszug (#188): die Ablehnung des Servers wird erkannt, andere Fehler 
   expect(isBankFileError('Das ist ein Kontoauszug. Kontoauszüge lesen Sie auf der Seite Kontoauszug ein.')).toBe(true)
   expect(isBankFileError('Die Datei ist zu groß.')).toBe(false)
   expect(isBankFileError(undefined)).toBe(false)
+})
+
+test('Durchsicht Teil 3, W5: übergangene Dateien eines Kontoauszugs bekommen den Satz zur Seite Kontoauszug', () => {
+  const file = (name: string, type = '') => new File(['x'], name, { type })
+  expect(skippedText([file('rechnung.pdf', 'application/pdf'), file('auszuege.zip', 'application/zip')])).toBe(BANK_FILE_TEXT)
+  expect(skippedText([file('umsaetze.sta')])).toBe(BANK_FILE_TEXT)
+  expect(skippedText([file('liste.docx')])).toBe(SKIPPED_FILES)
+  expect(skippedText([file('rechnung.pdf', 'application/pdf')])).toBe('')
 })

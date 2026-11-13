@@ -197,3 +197,36 @@ test('Erledigte Umsätze: „Lösen …“ behält die Zahlung ab Werk', async (
   await confirmDialog('Lösen, Zahlung behalten')
   await waitFor(() => expect(sent.some((s) => s.method === 'DELETE' && s.url === '/api/bank/links/l1')).toBe(true))
 })
+
+test('Durchsicht W3: eine beiseitegelegte grüne Zeile zählt nicht in „Alle grünen übernehmen“', async () => {
+  accounts = [account()]
+  open = [tx('x1', 85000), tx('x2', 30000)]
+  renderPage()
+  expect(await screen.findByRole('button', { name: 'Alle grünen übernehmen (2)' })).toBeTruthy()
+  const table = screen.getByRole('table', { name: 'Offene Umsätze' })
+  fireEvent.change(within(table).getAllByLabelText('Beiseitelegen')[1] as HTMLSelectElement, { target: { value: 'notRental' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Alle grünen übernehmen (1)' }))
+  const dialog = await confirmDialog('Buchen')
+  expect(dialog.textContent).toMatch(/1 Umsatz über 850,00\s€ wird wie vorgeschlagen gebucht/)
+  await waitFor(() => expect(posts('/api/bank/links').length).toBe(1))
+  expect((posts('/api/bank/links')[0]?.body as { decisions: { transactionId: string }[] }).decisions.map((d) => d.transactionId)).toEqual(['x1'])
+})
+
+test('Durchsicht W4: wer das Konto doch ablehnt, wird nicht mehr nach seinen Eingängen gefragt', async () => {
+  const entryQuestion = { type: 'entry' as const, key: '0:2025-06-02:1', bookingDate: '2025-06-02', amountCents: 50000, counterpartyName: 'Neues Konto', counterpartyIban: 'DE75512108001245126199', purpose: 'Miete Juni' }
+  planReply = (d) => {
+    const decisions = d as { type: string; accept?: boolean }[]
+    const account = decisions.find((x) => x.type === 'account')
+    if (!account) return preview()
+    if (account.accept === false) return preview({ questions: [], ready: true, sentence: '0 Umsätze übernommen.', token: 'marke-nein' })
+    return preview({ questions: decisions.some((x) => x.type === 'entry') ? [] : [entryQuestion], ready: decisions.some((x) => x.type === 'entry'), token: 'marke-ja' })
+  }
+  renderPage()
+  await chooseFile()
+  const drawer = await screen.findByRole('dialog')
+  fireEvent.click(within(drawer).getByLabelText('Ja, mein Konto für Mieteingänge'))
+  expect(await within(drawer).findByLabelText(/Was ist der Eingang/)).toBeTruthy()
+  fireEvent.click(within(drawer).getByLabelText('Nein, nicht einlesen'))
+  await waitFor(() => expect(within(drawer).queryByLabelText(/Was ist der Eingang/)).toBeNull())
+  await waitFor(() => expect((within(drawer).getByRole('button', { name: 'Einlesen' }) as HTMLButtonElement).disabled).toBe(false))
+})

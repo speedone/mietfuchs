@@ -1,7 +1,7 @@
 // Logik der Seite „Kontoauszug“ (#188, Teil 3): Vorauswahl aus dem Vorschlag, Entscheidungen, grüne Zeilen, Sätze.
 import { describe, expect, test } from 'vitest'
 import {
-  BANK_TARGET_OPTIONS, coverageText, decisionsOf, greenRows, initialRow, questionProblems, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor,
+  BANK_TARGET_OPTIONS, coverageText, decisionsOf, greenRows, initialRow, questionProblems, removePart, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, untouchedGreen,
   type BankRow,
 } from './bankView'
 import type { BankAccountInfo, BankSuggestion, BankTransactionView } from './types'
@@ -14,15 +14,15 @@ const green: BankSuggestion = { tenancyId: 't1', target: { type: 'newPayment', k
 
 describe('Vorauswahl', () => {
   test('Vorschlag wird zur Vorauswahl', () => {
-    expect(initialRow(tx('x', 85000, green)).parts).toEqual([{ tenancyId: 't1', target: 'rent', amountCents: 85000 }])
+    expect(initialRow(tx('x', 85000, green)).parts).toEqual([{ key: 'x:0', tenancyId: 't1', target: 'rent', amountCents: 85000 }])
     const existing = initialRow(tx('x', 85000, { ...green, target: { type: 'existingPayment', paymentId: 'p1' } }))
-    expect(existing.parts).toEqual([{ tenancyId: 't1', target: 'existingPayment', refId: 'p1', amountCents: 85000 }])
+    expect(existing.parts).toEqual([{ key: 'x:0', tenancyId: 't1', target: 'existingPayment', refId: 'p1', amountCents: 85000 }])
     const deposit = initialRow(tx('x', 85000, { ...green, target: { type: 'existingDeposit', depositEntryId: 'd1' } }))
-    expect(deposit.parts[0]).toEqual({ tenancyId: 't1', target: 'existingDeposit', refId: 'd1', amountCents: 85000 })
+    expect(deposit.parts[0]).toEqual({ key: 'x:0', tenancyId: 't1', target: 'existingDeposit', refId: 'd1', amountCents: 85000 })
   })
   test('ohne Vorschlag ist nichts gewählt und die Zeile nicht buchbar', () => {
     const row = initialRow(tx('x', 85000))
-    expect(row.parts).toEqual([{ tenancyId: null, target: null, amountCents: 85000 }])
+    expect(row.parts).toEqual([{ key: 'x:0', tenancyId: null, target: null, amountCents: 85000 }])
     expect(rowProblem(row)).toBe('Bitte wählen Sie Mietverhältnis und Art.')
   })
 })
@@ -35,14 +35,14 @@ describe('Entscheidungen', () => {
     expect(decisionsOf([a, b, c])).toEqual([{ transactionId: 'a', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent' } }] }])
   })
   test('Ziel erfasste Zahlung trägt die Kennung, Kaution die Art', () => {
-    const row: BankRow = { tx: tx('a', 85000), selected: true, setAside: null, parts: [{ tenancyId: 't1', target: 'existingPayment', refId: 'p1', amountCents: 85000 }] }
+    const row: BankRow = { tx: tx('a', 85000), selected: true, setAside: null, parts: [{ key: 'a:0', tenancyId: 't1', target: 'existingPayment', refId: 'p1', amountCents: 85000 }] }
     expect(decisionsOf([row])[0]).toEqual({ transactionId: 'a', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'existingPayment', paymentId: 'p1' } }] })
-    const refund: BankRow = { tx: tx('b', -85000), selected: true, setAside: null, parts: [{ tenancyId: 't1', target: 'depositRefunded', amountCents: -85000 }] }
+    const refund: BankRow = { tx: tx('b', -85000), selected: true, setAside: null, parts: [{ key: 'b:0', tenancyId: 't1', target: 'depositRefunded', amountCents: -85000 }] }
     expect(decisionsOf([refund])[0]).toEqual({ transactionId: 'b', parts: [{ tenancyId: 't1', amountCents: -85000, target: { type: 'deposit', kind: 'refunded' } }] })
   })
   test('aufgeteilt: zwei Teile; beiseitegelegt: der Grund', () => {
     const split: BankRow = { tx: tx('a', 150000), selected: true, setAside: null, parts: [
-      { tenancyId: 't1', target: 'rent', amountCents: 80000 }, { tenancyId: 't2', target: 'rent', amountCents: 70000 },
+      { key: 'a:0', tenancyId: 't1', target: 'rent', amountCents: 80000 }, { key: 'a:1', tenancyId: 't2', target: 'rent', amountCents: 70000 },
     ] }
     expect(decisionsOf([split])[0]).toEqual({ transactionId: 'a', parts: [
       { tenancyId: 't1', amountCents: 80000, target: { type: 'newPayment', kind: 'rent' } },
@@ -87,5 +87,28 @@ describe('Sätze', () => {
     expect(questionProblems(questions, {}).map((p) => p.field)).toEqual(['account:DE89', 'entry:k1'])
     expect(questionProblems(questions, { 'account:DE89': { accept: true }, 'entry:k1': { as: 'rent' } }).map((p) => p.text)).toEqual(['Bitte wählen Sie das Mietverhältnis zum Eingang vom 02.06.2025.'])
     expect(questionProblems(questions, { 'account:DE89': { accept: true }, 'entry:k1': { as: 'rent', tenancyId: 't1' } })).toEqual([])
+  })
+})
+
+describe('Durchsicht Teil 3', () => {
+  test('W1: nach dem Entfernen eines Teils trägt der übrige wieder den ganzen offenen Betrag', () => {
+    const row: BankRow = { tx: tx('a', 85000), selected: true, setAside: null, parts: [
+      { key: 'a:0', tenancyId: 't1', target: 'rent', amountCents: 60000 }, { key: 'a:1', tenancyId: 't2', target: 'rent', amountCents: 25000 },
+    ] }
+    expect(removePart(row, 1).parts).toEqual([{ key: 'a:0', tenancyId: 't1', target: 'rent', amountCents: 85000 }])
+    expect(removePart(row, 0).parts).toEqual([{ key: 'a:1', tenancyId: 't2', target: 'rent', amountCents: 85000 }])
+  })
+  test('W2: ein unlesbarer Betrag macht die Zeile unbuchbar', () => {
+    const row: BankRow = { tx: tx('a', 85000), selected: true, setAside: null, parts: [
+      { key: 'a:0', tenancyId: 't1', target: 'rent', amountCents: 60000, amountText: '60,0x' }, { key: 'a:1', tenancyId: 't2', target: 'rent', amountCents: 25000 },
+    ] }
+    expect(rowProblem(row)).toBe('Bitte prüfen Sie den Betrag eines Teils.')
+    expect(decisionsOf([row])).toEqual([])
+  })
+  test('W3: „Alle grünen“ nimmt nur grüne Zeilen, die noch wie vorgeschlagen stehen', () => {
+    const a = initialRow(tx('a', 85000, green))
+    const b: BankRow = { ...initialRow(tx('b', 85000, green)), setAside: 'notRental' }
+    const c: BankRow = { ...initialRow(tx('c', 85000, green)), parts: [{ ...initialRow(tx('c', 85000, green)).parts[0]!, tenancyId: 't2' }] }
+    expect(untouchedGreen([a, b, c]).map((r) => r.tx.id)).toEqual(['a'])
   })
 })

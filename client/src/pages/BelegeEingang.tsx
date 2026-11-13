@@ -33,7 +33,7 @@ import { useConfirm, useToast } from '../components/feedback'
 import { renderThumbnail } from '../pdfPreview'
 import { useFocusFirstNew } from '../focusNew'
 import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
-import { aiMode, discardQuestion, elsewhereGroups, periodKeyOfYear, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, withoutPosition, isBankFileError } from '../belegeView'
+import { aiMode, discardQuestion, elsewhereGroups, periodKeyOfYear, RECEIPT_ACCEPT, splitFiles, splitForStore, withoutPosition, isBankFileError, skippedText } from '../belegeView'
 import { hasEInvoice } from '../pdfIntake'
 import type { ReceiptStock } from '../receiptStock'
 import type { NavTarget } from '../nav'
@@ -368,10 +368,10 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Nur ablegen, ohne Auswertung (und ohne erreichbare KI immer): Die Belege bekommen Objekt und Jahr der Auswahl mit
   // und stehen danach unter „Ohne Position“. Nacheinander hochgeladen.
   const [uploading, setUploading] = useState(0)
-  // `skippedBefore`: schon vorher übergangene Dateien (Ablage ohne KI mit E-Rechnungen, #189), damit der Satz dazu bleibt
-  async function storeOnly(files: File[], skippedBefore = 0) {
-    const { ok, skipped } = splitFiles(files)
-    setError(skipped + skippedBefore > 0 ? SKIPPED_FILES : '')
+  // `skippedNote`: der Satz zu schon vorher übergangenen Dateien (Ablage ohne KI mit E-Rechnungen, #189), damit er bleibt
+  async function storeOnly(files: File[], skippedNote = '') {
+    const { ok } = splitFiles(files)
+    setError(skippedNote || skippedText(files))
     let done = 0
     for (const f of ok) {
       setUploading(ok.length - done)
@@ -397,16 +397,17 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     // Ohne KI erst noch einmal fragen: Läuft sie inzwischen, wird ausgewertet
     if (mode === 'ohne' && aiMode(await checkAi(), external, busy) === 'ohne') {
       // E-Rechnungen wertet der Server auch ohne KI aus (#189); nur die übrigen werden abgelegt.
-      const { ok, skipped } = splitFiles(list)
+      const { ok } = splitFiles(list)
       const { evaluate, store } = await splitForStore(ok, (f) => hasEInvoice(f))
       if (evaluate.length === 0) { void storeOnly(list); return }
       addFiles(evaluate, target)
       // Danach nichts mehr setzen: storeOnly meldet ein gescheitertes Hochladen selbst (Durchsicht PR 2).
-      if (store.length > 0) void storeOnly(store, skipped)
-      else setError(skipped > 0 ? SKIPPED_FILES : '')
+      if (store.length > 0) void storeOnly(store, skippedText(list))
+      else setError(skippedText(list))
       return
     }
-    setError(addFiles(list, target) > 0 ? SKIPPED_FILES : '')
+    addFiles(list, target)
+    setError(skippedText(list))
   }
 
   // ---------- Ohne Position ----------
@@ -754,7 +755,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
 
   return (
     <>
-      {(error || stock.error) && <NoticeBox level="error" action={error || stock.error} />}
+      {(error || stock.error) && (isBankFileError(error)
+        ? <NoticeBox level="error" action={error}><button type="button" className="btn small secondary" onClick={() => onNavigate('kontoauszug')}>Zur Seite Kontoauszug</button></NoticeBox>
+        : <NoticeBox level="error" action={error || stock.error} />)}
       {pending && <div className="warn">{pending}</div>}
       <AmountCheckBox attach={attach} properties={properties} onOpenItem={onOpenItem} />
 

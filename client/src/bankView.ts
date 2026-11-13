@@ -8,7 +8,9 @@ import type { BankAccountInfo, BankImportDecision, BankImportQuestion, BankLinkD
 export type RowTarget = 'rent' | 'settlement' | 'depositReceived' | 'depositRefunded' | 'existingPayment' | 'existingDeposit'
 
 // Ein Teil einer Zeile: ein Umsatz lässt sich auf mehrere Mietverhältnisse aufteilen.
-export type RowPart = { tenancyId: string | null; target: RowTarget | null; refId?: string; amountCents: number }
+// `key` ist fest je Teil (Durchsicht Teil 3, W2: ein Feld darf beim Entfernen nicht den Text eines anderen Teils
+// behalten); `amountText` ist die Eingabe im Betragsfeld, solange sie nicht als Betrag lesbar ist.
+export type RowPart = { key: string; tenancyId: string | null; target: RowTarget | null; refId?: string; amountCents: number; amountText?: string }
 export type BankRow = { tx: BankTransactionView; parts: RowPart[]; selected: boolean; setAside: BankSetAside | null }
 
 export const BANK_TARGET_OPTIONS: readonly { value: RowTarget; label: string }[] = [
@@ -49,13 +51,15 @@ function linkTargetOf(part: RowPart): BankLinkTarget | null {
 
 export function initialRow(tx: BankTransactionView): BankRow {
   const s = tx.suggestion
-  const part: RowPart = s ? { tenancyId: s.tenancyId, ...rowTargetOf(s.target), amountCents: tx.openCents } : { tenancyId: null, target: null, amountCents: tx.openCents }
+  const key = `${tx.id}:0`
+  const part: RowPart = s ? { key, tenancyId: s.tenancyId, ...rowTargetOf(s.target), amountCents: tx.openCents } : { key, tenancyId: null, target: null, amountCents: tx.openCents }
   return { tx, parts: [part], selected: false, setAside: null }
 }
 
 // Warum eine Zeile so nicht buchbar ist, oder null. Ob die Teile den Umsatz übersteigen, sagt der Server.
 export function rowProblem(row: BankRow): string | null {
   if (row.setAside) return null
+  if (row.parts.some((p) => p.amountText !== undefined)) return 'Bitte prüfen Sie den Betrag eines Teils.'
   if (row.parts.some((p) => p.tenancyId === null || linkTargetOf(p) === null)) return 'Bitte wählen Sie Mietverhältnis und Art.'
   if (row.parts.some((p) => p.amountCents === 0)) return 'Ein Teil über 0 € lässt sich nicht buchen.'
   return null
@@ -67,6 +71,25 @@ export function decisionsOf(rows: readonly BankRow[]): BankLinkDecision[] {
     return { transactionId: r.tx.id, parts: r.parts.map((p) => ({ tenancyId: p.tenancyId ?? '', amountCents: p.amountCents, target: linkTargetOf(p) ?? { type: 'newPayment', kind: 'rent' } })) }
   })
 }
+
+// Einen Teil entfernen; bleibt nur einer, trägt er wieder den ganzen offenen Betrag (Durchsicht Teil 3, W1): Sonst sähe die
+// Zeile aus wie vor dem Aufteilen und buchte doch nur einen Teil.
+export function removePart(row: BankRow, index: number): BankRow {
+  const parts = row.parts.filter((_, k) => k !== index)
+  const only = parts.length === 1 ? parts[0] : undefined
+  if (only) {
+    const { amountText: _drop, ...rest } = only
+    return { ...row, parts: [{ ...rest, amountCents: row.tx.openCents }] }
+  }
+  return { ...row, parts }
+}
+
+// Ob eine Zeile noch genau so steht, wie der Server sie vorschlägt.
+export const isUntouched = (row: BankRow): boolean => row.setAside === null && JSON.stringify(row.parts) === JSON.stringify(initialRow(row.tx).parts)
+
+// „Alle grünen übernehmen“ nimmt nur grüne Zeilen, die noch wie vorgeschlagen stehen (Durchsicht Teil 3, W3): Eine
+// abweichende Wahl, etwa „gehört nicht zur Vermietung“, übergeht der Sammelknopf nie.
+export const untouchedGreen = (rows: readonly BankRow[]): BankRow[] => rows.filter((r) => r.tx.suggestion?.light === 'green' && isUntouched(r))
 
 export const greenRows = (txs: readonly BankTransactionView[]): BankTransactionView[] => txs.filter((t) => t.suggestion?.light === 'green')
 

@@ -3,7 +3,7 @@
 // Sätze kommen vom Server, die Entscheidungen der Zeilen aus bankView.ts. Nichts davon geht in den Browserspeicher.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, errorText, fmtDate, fmtEuro } from '../api'
-import { decisionsOf, greenRows, initialRow, type BankRow } from '../bankView'
+import { decisionsOf, initialRow, isUntouched, untouchedGreen, type BankRow } from '../bankView'
 import type { BankAccountInfo, BankLinkPreview, BankTransactionView } from '../types'
 import BankAccountsCard from '../components/BankAccountsCard'
 import BankImportDrawer, { type TenancyOption } from '../components/BankImportDrawer'
@@ -15,7 +15,6 @@ import { NoticeBox } from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
 import { useConfirm, useToast } from '../components/feedback'
-import { sameDraft } from '../draft'
 import { useOpenForm } from '../property'
 
 export const RETENTION_SENTENCE = 'Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.'
@@ -93,15 +92,16 @@ export default function Kontoauszug() {
   }
 
   // Eine Wahl, die vom Vorschlag abweicht, ist ein offenes Formular: Ein Wechsel von Seite oder Objekt fragt nach.
-  useOpenForm(rows.some((r) => r.setAside !== null || !sameDraft(r.parts, initialRow(r.tx).parts)))
+  useOpenForm(rows.some((r) => !isUntouched(r)))
 
-  const green = greenRows(rows.map((r) => r.tx))
+  // Nur Zeilen, die noch wie vorgeschlagen stehen (Durchsicht Teil 3, W3).
+  const green = untouchedGreen(rows)
   const bookGreen = async () => {
-    const chosen = rows.filter((r) => green.includes(r.tx))
+    const chosen = green
     const sum = chosen.reduce((a, r) => a + r.tx.openCents, 0)
     const ok = await confirm({
       title: 'Alle grünen übernehmen?',
-      message: `${plural(chosen.length, 'Umsatz', 'Umsätze')} über ${fmtEuro(sum)} werden wie vorgeschlagen gebucht.`,
+      message: `${plural(chosen.length, 'Umsatz', 'Umsätze')} über ${fmtEuro(sum)} ${chosen.length === 1 ? 'wird' : 'werden'} wie vorgeschlagen gebucht.`,
       confirmLabel: 'Buchen',
     })
     if (ok) await book(chosen.map((r) => initialRow(r.tx)))
@@ -165,7 +165,10 @@ export default function Kontoauszug() {
           {rows.length === 0
             ? <p>Alle eingelesenen Umsätze sind zugeordnet oder beiseitegelegt.</p>
             : <BankOpenTable rows={rows} tenancies={tenancies} problems={problems} busy={busy}
-                onChange={(id, row) => setRows((rs) => rs.map((r) => (r.tx.id === id ? row : r)))} onBook={(chosen) => void book(chosen)} />}
+                onChange={(id, row) => {
+                  setRows((rs) => rs.map((r) => (r.tx.id === id ? row : r)))
+                  setProblems(({ [id]: _old, ...rest }) => rest)
+                }} onBook={(chosen) => void book(chosen)} />}
           <DisclosureButton open={showDone} onToggle={() => setShowDone((v) => !v)} closedLabel="Erledigte Umsätze zeigen" openLabel="Erledigte Umsätze ausblenden" controls="bank-done" />
           {showDone && (
             <div id="bank-done">

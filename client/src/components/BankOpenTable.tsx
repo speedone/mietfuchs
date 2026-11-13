@@ -2,13 +2,15 @@
 // Zweck, Mietverhältnis und Art (vorbelegt aus dem Vorschlag), Aufteilen, Beiseitelegen und „Buchen“. Die Zeilen hält die
 // Seite (Auswahl bleibt nach einer 409). Geld rechnet nur der Server; hier steht nur der Rest der Teile zur Anzeige.
 import { fmtDate, fmtEuro, parseEuro } from '../api'
-import { rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, type BankRow, type RowPart, type RowTarget } from '../bankView'
+import { removePart, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, type BankRow, type RowPart, type RowTarget } from '../bankView'
 import type { BankSetAside } from '../types'
 import type { TenancyOption } from './BankImportDrawer'
 import { FieldMessage } from './Field'
 import Table from './Table'
 
 const LIGHT_TEXT = { green: '● grün', yellow: '● gelb' } as const
+// Kennung neuer Teile, fest je Teil (W2).
+let partSeq = 0
 
 function PartFields({ row, part, index, tenancies, onChange, onRemove }: {
   row: BankRow
@@ -33,17 +35,23 @@ function PartFields({ row, part, index, tenancies, onChange, onRemove }: {
         <span>Art</span>
         <select aria-label="Art" value={part.target ?? ''} onChange={(e) => onChange({ target: (e.target.value || null) as RowTarget | null })}>
           <option value="">Bitte wählen</option>
-          {targetOptionsFor(row.tx, part.target).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {/* Verknüpfen gibt es nur am Teil, der die erfasste Buchung trägt (Durchsicht Teil 3, M5). */}
+          {targetOptionsFor(row.tx, part.target).filter((o) => part.refId !== undefined || (o.value !== 'existingPayment' && o.value !== 'existingDeposit')).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
       {row.parts.length > 1 && (
         <label className="field">
           <span>Betrag</span>
-          <input inputMode="decimal" aria-label={`Betrag Teil ${index + 1}`} defaultValue={fmtEuro(Math.abs(part.amountCents)).replace(/\s?€$/, '')}
-            onBlur={(e) => {
+          <input inputMode="decimal" aria-label={`Betrag Teil ${index + 1}`} aria-invalid={part.amountText !== undefined || undefined}
+            value={part.amountText ?? fmtEuro(Math.abs(part.amountCents)).replace(/\s?€$/, '')}
+            onChange={(e) => {
+              // Gesteuert (Durchsicht Teil 3, W2): Lesbar wird der Betrag sofort übernommen, sonst bleibt der Text stehen,
+              // die Zeile ist nicht buchbar, und eine Meldung sagt es.
               const cents = parseEuro(e.target.value)
-              if (cents !== null) onChange({ amountCents: Math.sign(row.tx.openCents) * Math.abs(cents) })
+              const { amountText: _old, ...rest } = part
+              onChange(cents !== null && cents !== 0 ? { ...rest, amountCents: Math.sign(row.tx.openCents) * Math.abs(cents), amountText: undefined } : { amountText: e.target.value })
             }} />
+          {part.amountText !== undefined && <FieldMessage error="Bitte geben Sie einen Betrag ein, etwa 250,00." />}
         </label>
       )}
       {onRemove && <button type="button" className="btn ghost" onClick={onRemove}>Teil entfernen</button>}
@@ -68,7 +76,12 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
         {rows.map((row) => {
           const { tx } = row
           const s = tx.suggestion
-          const setPart = (i: number, patch: Partial<RowPart>) => onChange(tx.id, { ...row, parts: row.parts.map((p, k) => (k === i ? { ...p, ...patch } : p)) })
+          const setPart = (i: number, patch: Partial<RowPart>) => onChange(tx.id, { ...row, parts: row.parts.map((p, k) => {
+            if (k !== i) return p
+            const next = { ...p, ...patch }
+            if (next.amountText === undefined) delete next.amountText
+            return next
+          }) })
           const rest = tx.openCents - row.parts.reduce((a, p) => a + p.amountCents, 0)
           const reason = rowProblem(row)
           const problem = problems[tx.id]
@@ -87,11 +100,11 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
               <td data-label="Zweck">{tx.purpose}</td>
               <td data-label="Zuordnung">
                 {row.setAside === null && row.parts.map((part, i) => (
-                  <PartFields key={i} row={row} part={part} index={i} tenancies={tenancies} onChange={(patch) => setPart(i, patch)}
-                    onRemove={row.parts.length > 1 ? () => onChange(tx.id, { ...row, parts: row.parts.filter((_, k) => k !== i) }) : null} />
+                  <PartFields key={part.key} row={row} part={part} index={i} tenancies={tenancies} onChange={(patch) => setPart(i, patch)}
+                    onRemove={row.parts.length > 1 ? () => onChange(tx.id, removePart(row, i)) : null} />
                 ))}
                 {row.setAside === null && (
-                  <button type="button" className="btn ghost" onClick={() => onChange(tx.id, { ...row, parts: [...row.parts, { tenancyId: null, target: null, amountCents: rest }] })}>+ weiterer Teil</button>
+                  <button type="button" className="btn ghost" onClick={() => onChange(tx.id, { ...row, parts: [...row.parts, { key: `${tx.id}:${++partSeq}`, tenancyId: null, target: null, amountCents: rest }] })}>+ weiterer Teil</button>
                 )}
                 {row.parts.length > 1 && rest !== 0 && <p className="muted">{`Rest ${fmtEuro(rest)} bleibt offen.`}</p>}
                 <label className="field">
@@ -103,7 +116,7 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
                 </label>
                 {problem && <FieldMessage error={problem} announce />}
               </td>
-              <td data-label="Aktion">
+              <td className="actions">
                 <button type="button" className="btn secondary" disabled={busy || reason !== null} aria-describedby={reason ? `why-${tx.id}` : undefined}
                   onClick={() => onBook([{ ...row, selected: true }])}>
                   Buchen<span className="sr-only">{` ${fmtDate(tx.bookingDate)} ${fmtEuro(tx.openCents)}`}</span>

@@ -49,6 +49,17 @@ export async function splitForStore(files: readonly File[], hasEInvoice: (f: Fil
   return { evaluate, store }
 }
 
+// Kontoauszug (#188): Endungen, die nur ein Kontoauszug trägt (ZIP mit Auszügen, MT940). Solche Dateien übergeht die
+// Ablage wie jede andere, aber der Satz dazu führt auf die Seite Kontoauszug (Durchsicht Teil 3, W5). camt kommt als
+// .xml an den Server und wird dort am Inhalt erkannt.
+const BANK_FILE_NAME = /\.(zip|sta|940|mt940)$/i
+// Der Satz zu übergangenen Dateien, leer, wenn keine übergangen wurde.
+export function skippedText(files: Iterable<File>): string {
+  const skipped = [...files].filter((f) => !isAcceptedFile(f))
+  if (skipped.length === 0) return ''
+  return skipped.some((f) => BANK_FILE_NAME.test(f.name)) ? BANK_FILE_TEXT : SKIPPED_FILES
+}
+
 export function splitFiles(files: Iterable<File>): { ok: File[]; skipped: number } {
   const all = [...files]
   const ok = all.filter(isAcceptedFile)
