@@ -24,6 +24,8 @@ export type MatchContext = {
   payments: readonly Payment[]
   linkedPaymentIds: ReadonlySet<string>
   depositEntries: readonly DepositEntry[]
+  // Kautionsbuchungen, die schon an einem Umsatz hängen.
+  linkedDepositEntryIds: ReadonlySet<string>
   // Soll des Monats laut Mietkonto ('JJJJ-MM'); null, wenn das Mietkonto für den Monat keines kennt.
   monthlySollCents: (tenancyId: string, month: string) => number | null
 }
@@ -32,11 +34,15 @@ export type LinkTarget =
   | { type: 'newPayment'; kind: PaymentKind }
   | { type: 'existingPayment'; paymentId: string }
   | { type: 'deposit'; kind: 'received' | 'refunded' }
+  | { type: 'existingDeposit'; depositEntryId: string }
 
 export type Suggestion = { tenancyId: string; target: LinkTarget; light: 'green' | 'yellow'; reason: string }
 
 export const SAME_PAYMENT_DAYS = 7
 export const DEPOSIT_WINDOW_DAYS = 31
+// Eine erfasste Zahlung in diesem Abstand, die nicht schon „dieselbe“ ist, macht einen sonst grünen Vorschlag gelb
+// (Durchsicht I3: Juni-Miete von Hand mit dem 15.06. erfasst, die Bank bucht am 02.06.).
+export const NEARBY_PAYMENT_DAYS = 31
 
 const euro = (cents: number): string => `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 const dayNumber = (d: string): number => Date.parse(`${d}T00:00:00Z`) / 86_400_000
@@ -84,6 +90,17 @@ export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | nu
   }
   const yellow = (target: LinkTarget, reason: string): Suggestion => ({ tenancyId: t.id, target, light: 'yellow', reason })
   if (tie) return yellow({ type: 'newPayment', kind: 'rent' }, 'Zwei erfasste Zahlungen passen. Bitte wählen Sie.')
+  // Regel 2 für die Kaution (Durchsicht I2): eine von Hand erfasste Kautionsbuchung gleicher Richtung und gleichen Betrags.
+  const depositKind = tx.amountCents > 0 ? 'received' : 'refunded'
+  const deposits = ctx.depositEntries
+    .filter((d) => d.tenancyId === t.id && d.kind === depositKind && d.amountCents === Math.abs(tx.amountCents) && !ctx.linkedDepositEntryIds.has(d.id))
+    .map((d) => ({ d, distance: Math.abs(dayNumber(d.date) - day) }))
+    .filter((c) => c.distance <= SAME_PAYMENT_DAYS)
+    .sort((a, b) => a.distance - b.distance)
+  const [nearestDeposit, secondDeposit] = deposits
+  if (nearestDeposit && !(secondDeposit && secondDeposit.distance === nearestDeposit.distance)) {
+    return { tenancyId: t.id, target: { type: 'existingDeposit', depositEntryId: nearestDeposit.d.id }, light: 'green', reason: `Kautionsbuchung vom ${germanDate(nearestDeposit.d.date)} schon erfasst` }
+  }
   // Regel 3: Art.
   if (tx.amountCents < 0 && tx.reversal) return yellow({ type: 'newPayment', kind: 'rent' }, 'Rücklastschrift einer Miete')
   const soll = ctx.monthlySollCents(t.id, tx.bookingDate.slice(0, 7))
@@ -97,6 +114,14 @@ export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | nu
     return yellow({ type: 'newPayment', kind: 'settlement' }, 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung')
   }
   // Regel 4: Ampel.
+  const nearby = ctx.payments
+    .filter((p) => p.tenancyId === t.id && Math.sign(p.amountCents) === Math.sign(tx.amountCents) && !ctx.linkedPaymentIds.has(p.id))
+    .map((p) => ({ p, distance: Math.abs(dayNumber(p.date) - day) }))
+    .filter((c) => c.distance <= NEARBY_PAYMENT_DAYS)
+    .sort((a, b) => a.distance - b.distance)[0]
+  if (nearby) {
+    return yellow({ type: 'newPayment', kind: 'rent' }, `Am ${germanDate(nearby.p.date)} ist schon eine Zahlung über ${euro(Math.abs(nearby.p.amountCents))} erfasst. Bitte prüfen Sie, ob es dieselbe ist.`)
+  }
   if (soll === null) return yellow({ type: 'newPayment', kind: 'rent' }, 'Für diesen Monat kennt das Mietkonto kein Soll')
   if (soll !== tx.amountCents) return yellow({ type: 'newPayment', kind: 'rent' }, `Betrag weicht vom Soll ab (${euro(soll)})`)
   return { tenancyId: t.id, target: { type: 'newPayment', kind: 'rent' }, light: 'green', reason: 'IBAN bekannt, Betrag wie Monatsmiete' }

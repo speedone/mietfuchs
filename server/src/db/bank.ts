@@ -149,12 +149,16 @@ export async function readBankState(db: Executor, monthlySollCents: MatchContext
   ])
   const paymentById = new Map(paymentList.map((p) => [p.id, p]))
   const depositById = new Map(deposits.map((d) => [d.id, d]))
+  // Eine Zahlung aus einer Verrechnung der Kaution (#228) ist kein Geldeingang und nie die erfasste Zahlung eines Umsatzes
+  // (Durchsicht C1): Sonst verschwände eine echte Überweisung hinter der Verrechnung.
+  const bound = new Set(deposits.flatMap((d) => (d.paymentId ? [d.paymentId] : [])))
   const ctx: MatchContext = {
     tenancies: tenancyRows.map((t) => ({ id: t.id, iban: t.iban, start: t.start, end: t.end, ...(t.depositCents !== null ? { depositCents: t.depositCents } : {}) })),
     payers: stock.payers,
-    payments: paymentList,
+    payments: paymentList.filter((p) => !bound.has(p.id)),
     linkedPaymentIds: new Set(stock.links.flatMap((l) => (l.paymentId ? [l.paymentId] : []))),
     depositEntries: deposits,
+    linkedDepositEntryIds: new Set(stock.links.flatMap((l) => (l.depositEntryId ? [l.depositEntryId] : []))),
     monthlySollCents,
   }
   const linksOf = new Map<string, BankLinkView[]>()
@@ -184,7 +188,7 @@ export const bookedTitle = (count: number): string =>
 // Schreibt einen geplanten Buchungslauf (bank/linkPlan.ts) in einer Transaktion: Zahlungen über denselben Weg wie
 // POST /api/payments (mit `guardPayment`), Kautionsbuchungen mit den Prüfungen der Kaution, je Ziel ein Link.
 export async function applyBankLinks(db: Database, writes: LinkWrite, newId: () => string): Promise<void> {
-  const touched = new Set([...writes.payments, ...writes.depositEntries, ...writes.existing, ...writes.setAside].map((w) => w.transactionId))
+  const touched = new Set([...writes.payments, ...writes.depositEntries, ...writes.existing, ...writes.existingDeposits, ...writes.setAside].map((w) => w.transactionId))
   await db.transaction(async (tx) => {
     for (const { transactionId, ...body } of writes.payments) {
       const paymentId = newId()
@@ -195,12 +199,14 @@ export async function applyBankLinks(db: Database, writes: LinkWrite, newId: () 
     await insertDepositEntriesIn(tx, deposits, newId)
     for (const d of deposits) await tx.insert(bankTransactionLinks).values({ id: newId(), transactionId: d.transactionId, paymentId: null, depositEntryId: d.id, created: true })
     for (const e of writes.existing) await tx.insert(bankTransactionLinks).values({ id: newId(), transactionId: e.transactionId, paymentId: e.paymentId, depositEntryId: null, created: false })
+    for (const e of writes.existingDeposits) await tx.insert(bankTransactionLinks).values({ id: newId(), transactionId: e.transactionId, paymentId: null, depositEntryId: e.depositEntryId, created: false })
     for (const a of writes.setAside) await tx.update(bankTransactions).set({ setAside: a.reason }).where(eq(bankTransactions.id, a.transactionId))
     if (touched.size > 0) await retitleCurrentGroup(tx, bookedTitle(touched.size))
   })
 }
 
 export const OWN_PAYMENT_TEXT = 'Diese Zahlung haben Sie selbst erfasst. Löschen Sie sie bitte im Mietkonto.'
+export const OWN_DEPOSIT_TEXT = 'Diese Kautionsbuchung haben Sie selbst erfasst. Löschen Sie sie bitte unter Stammdaten bei „Kaution führen“.'
 
 // Löst eine Zuordnung; der Umsatz ist danach wieder offen. Mit `deleteTarget` fällt auch die Zahlung bzw. Kautionsbuchung,
 // aber nur, wenn sie aus dem Umsatz entstand: Eine selbst erfasste gehört ins Mietkonto.
@@ -208,7 +214,7 @@ export async function removeBankLink(db: Database, id: string, deleteTarget: boo
   await db.transaction(async (tx) => {
     const [link] = await tx.select().from(bankTransactionLinks).where(eq(bankTransactionLinks.id, id))
     if (!link) throw new BankError(404, 'Diese Zuordnung gibt es nicht mehr. Bitte laden Sie die Seite neu.')
-    if (deleteTarget && !link.created) throw new BankError(400, OWN_PAYMENT_TEXT)
+    if (deleteTarget && !link.created) throw new BankError(400, link.depositEntryId ? OWN_DEPOSIT_TEXT : OWN_PAYMENT_TEXT)
     await tx.delete(bankTransactionLinks).where(eq(bankTransactionLinks.id, id))
     if (!deleteTarget) return
     if (link.paymentId) await tx.delete(payments).where(eq(payments.id, link.paymentId))

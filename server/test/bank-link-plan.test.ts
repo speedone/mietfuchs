@@ -18,7 +18,7 @@ const payment = (id: string, amountCents: number, tenancyId = 't1'): Payment => 
 
 const ctx = (over: Partial<MatchContext> = {}): MatchContext => ({
   tenancies: [{ id: 't1', start: '2025-01-01', end: null }, { id: 't2', start: '2025-01-01', end: null }],
-  payers: [], payments: [], linkedPaymentIds: new Set(), depositEntries: [], monthlySollCents: () => 80000, ...over,
+  payers: [], payments: [], linkedPaymentIds: new Set(), depositEntries: [], linkedDepositEntryIds: new Set(), monthlySollCents: () => 80000, ...over,
 })
 
 const rent = (transactionId: string, amountCents: number, tenancyId = 't1'): LinkDecision =>
@@ -56,7 +56,7 @@ test('Zuordnung: eine Kaution wird Kautionsbuchung mit positivem Betrag, auch di
   const received = planBankLinks([{ transactionId: 'x', parts: [{ tenancyId: 't1', amountCents: 240000, target: { type: 'deposit', kind: 'received' } }] }], open(tx('x', 240000)), ctx())
   assert.deepEqual(received.writes.depositEntries, [{ transactionId: 'x', tenancyId: 't1', date: '2025-03-03', kind: 'received', amountCents: 240000, note: 'Miete März' }])
   assert.deepEqual(received.writes.payments, [])
-  const refunded = planBankLinks([{ transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: -240000, target: { type: 'deposit', kind: 'refunded' } }] }], open(tx('y', -240000)), ctx())
+  const refunded = planBankLinks([{ transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: -240000, target: { type: 'deposit', kind: 'refunded' } }] }], open(tx('y', -240000)), ctx({ depositEntries: [{ id: 'd0', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 240000 }] }))
   assert.equal(refunded.writes.depositEntries[0]?.amountCents, 240000)
   assert.equal(refunded.writes.depositEntries[0]?.kind, 'refunded')
   const wrong = planBankLinks([{ transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: -240000, target: { type: 'deposit', kind: 'received' } }] }], open(tx('y', -240000)), ctx())
@@ -116,4 +116,28 @@ test('parseLinkDecisions: lehnt alles ab, was nicht der Form entspricht, mit ein
     assert.ok('error' in r, JSON.stringify(bad))
     assert.match(r.error, /^Die Zuordnungen /)
   }
+})
+
+// ---------- Befunde der Durchsicht (Teil 2) ----------
+
+test('Durchsicht I2: Verknüpfen mit einer erfassten Kautionsbuchung, nur passend und unverknüpft', () => {
+  const d = { id: 'd1', tenancyId: 't1', date: '2025-03-01', kind: 'received' as const, amountCents: 240000 }
+  const link = (depositEntryId: string, amountCents = 240000): LinkDecision => ({ transactionId: 'x', parts: [{ tenancyId: 't1', amountCents, target: { type: 'existingDeposit', depositEntryId } }] })
+  const ok = planBankLinks([link('d1')], open(tx('x', 240000)), ctx({ depositEntries: [d] }))
+  assert.deepEqual(ok.problems, [])
+  assert.deepEqual(ok.writes.existingDeposits, [{ transactionId: 'x', depositEntryId: 'd1' }])
+  assert.equal(ok.sentence, '1 Umsatz mit erfasster Kautionsbuchung verknüpft.')
+  assert.equal(planBankLinks([link('d1', 200000)], open(tx('x', 200000)), ctx({ depositEntries: [d] })).problems.length, 1, 'anderer Betrag')
+  assert.equal(planBankLinks([link('d1')], open(tx('x', 240000)), ctx({ depositEntries: [d], linkedDepositEntryIds: new Set(['d1']) })).problems.length, 1)
+  assert.equal(planBankLinks([link('d1', -240000)], open(tx('x', -240000)), ctx({ depositEntries: [d] })).problems.length, 1, 'Eingang an Ausgang')
+})
+
+test('Durchsicht I4: eine Rückzahlung über den Kautionsstand ist schon in der Vorschau ein Problem dieses Umsatzes', () => {
+  const refund: LinkDecision = { transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: -85000, target: { type: 'deposit', kind: 'refunded' } }] }
+  const p = planBankLinks([rent('x', 80000), refund], open(tx('x', 80000), tx('y', -85000)), ctx())
+  assert.deepEqual(p.problems.map((x) => x.transactionId), ['y'])
+  assert.match(p.problems[0]?.message ?? '', /Mehr als die Kaution hergibt/)
+  assert.equal(p.writes.payments.length, 1, 'der andere Umsatz bleibt buchbar')
+  const enough = planBankLinks([refund], open(tx('y', -85000)), ctx({ depositEntries: [{ id: 'd', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 240000 }] }))
+  assert.deepEqual(enough.problems, [])
 })

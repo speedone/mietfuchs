@@ -251,3 +251,56 @@ test('Zuordnen: ein Eintrag im Verlauf je Buchungslauf; der Rücksprung nimmt Za
   assert.deepEqual(await s.api<DepositEntry[]>('/api/deposit-entries'), [])
   assert.equal((await transactions(s)).length, 2)
 }))
+
+// ---------- Befunde der Durchsicht (Teil 2) ----------
+
+test('Durchsicht C1: eine Verrechnung aus der Kaution ist keine erfasste Zahlung für den Umsatz', () => withServer(async (s) => {
+  const t = await tenancy(s)
+  await s.api('/api/deposit-entries', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: '2025-01-05', kind: 'received', amountCents: 170000 }) })
+  await s.api('/api/deposit-entries', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: '2025-06-01', kind: 'applied', purpose: 'rent', amountCents: 85000 }) })
+  const bound = (await payments(s))[0] ?? assert.fail('keine gebundene Zahlung')
+  await importJune(s)
+  const open = await transactions(s)
+  assert.ok(open.every((t) => t.suggestion?.target.type !== 'existingPayment'), JSON.stringify(open.map((o) => o.suggestion)))
+  const first = open[0] ?? assert.fail('kein Umsatz')
+  const p = await planLinks(s, [{ transactionId: first.id, parts: [{ tenancyId: t.id, amountCents: 85000, target: { type: 'existingPayment', paymentId: bound.id } }] }])
+  assert.equal(p.problems.length, 1)
+}))
+
+test('Durchsicht C2: „Ist das die Kaution?“ hängt die Zuordnung auf die neue Kautionsbuchung um', () => withServer(async (s) => {
+  await tenancy(s)
+  await importJune(s)
+  const [first] = await transactions(s)
+  assert.ok(first)
+  await book(s, asSuggested([first]))
+  const [p] = await payments(s)
+  assert.equal((await json(s, 'POST', `/api/deposit-entries/from-payment/${p?.id}`)).status, 201)
+  const open = await transactions(s)
+  assert.ok(!open.some((o) => o.id === first.id), 'der Umsatz bleibt erledigt')
+  const done = (await transactions(s, 'done')).find((d) => d.id === first.id)
+  assert.equal(done?.links.length, 1)
+  assert.ok(done?.links[0]?.depositEntryId)
+  assert.equal(done?.links[0]?.created, true)
+}))
+
+test('Durchsicht I1: eine verknüpfte Kautionsbuchung wechselt ihre Art nicht', () => withServer(async (s) => {
+  const t = await tenancy(s)
+  await s.api('/api/deposit-entries', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: '2025-01-05', kind: 'received', amountCents: 240000 }) })
+  await importJune(s)
+  await importFile(s, fixture('kontoauszug-juli.xml'), 'juli.xml')
+  const open = await transactions(s)
+  const inflow = open.find((o) => o.amountCents > 0) ?? assert.fail('kein Eingang')
+  const outflow = open.find((o) => o.amountCents < 0) ?? assert.fail('kein Ausgang')
+  await book(s, [
+    { transactionId: inflow.id, parts: [{ tenancyId: t.id, amountCents: 85000, target: { type: 'deposit', kind: 'received' } }] },
+    { transactionId: outflow.id, parts: [{ tenancyId: t.id, amountCents: -85000, target: { type: 'deposit', kind: 'refunded' } }] },
+  ])
+  const entries = await s.api<DepositEntry[]>('/api/deposit-entries')
+  const refunded = entries.find((e) => e.kind === 'refunded') ?? assert.fail('keine Rückzahlung')
+  const res = await json(s, 'PUT', `/api/deposit-entries/${refunded.id}`, { kind: 'applied', purpose: 'rent' })
+  assert.equal(res.status, 409)
+  assert.match(await errorFrom(res), /einem Kontoumsatz über 850,00 € zugeordnet/)
+  assert.deepEqual(await payments(s), [], 'keine gebundene Zahlung entstanden')
+  const received = entries.find((e) => e.kind === 'received' && e.date === inflow.bookingDate) ?? assert.fail('kein Eingang')
+  assert.equal((await json(s, 'PUT', `/api/deposit-entries/${received.id}`, { kind: 'interest' })).status, 200, 'Eingang und Ertrag sind beide Zufluss')
+}))

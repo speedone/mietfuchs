@@ -16,8 +16,8 @@ const signedDeposit = (kind: string, cents: number): number => (kind === 'applie
 export async function linkedTargetRefusal(
   db: Executor,
   target: { paymentId: string } | { depositEntryId: string },
-  before: { tenancyId: string },
-  after: { tenancyId: string; cents: number },
+  before: { tenancyId: string; kind?: string },
+  after: { tenancyId: string; cents: number; kind?: string },
 ): Promise<string | null> {
   const where = 'paymentId' in target ? eq(bankTransactionLinks.paymentId, target.paymentId) : eq(bankTransactionLinks.depositEntryId, target.depositEntryId)
   const [link] = await db.select().from(bankTransactionLinks).where(where)
@@ -27,6 +27,10 @@ export async function linkedTargetRefusal(
   const what = 'paymentId' in target ? 'Diese Zahlung' : 'Diese Kautionsbuchung'
   const refusal = `${what} ist einem Kontoumsatz über ${euro(Math.abs(tx.amountCents))} zugeordnet. Lösen Sie zuerst die Zuordnung auf der Seite Kontoauszug.`
   if (after.tenancyId !== before.tenancyId) return refusal
+  // Eine Kautionsbuchung behält ihre Art (Durchsicht I1): Aus einer Rückzahlung an den Mieter würde sonst eine Verrechnung,
+  // bei der kein Geld fließt, mit einer neuen Mietzahlung daneben. Nur Eingang und Ertrag sind beide Zufluss.
+  const inflow = (k: string | undefined): boolean => k === 'received' || k === 'interest'
+  if (before.kind !== after.kind && !(inflow(before.kind) && inflow(after.kind))) return refusal
   let others = 0
   for (const l of await db.select().from(bankTransactionLinks).where(eq(bankTransactionLinks.transactionId, link.transactionId))) {
     if (l.id === link.id) continue

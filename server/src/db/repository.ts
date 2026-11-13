@@ -772,7 +772,7 @@ async function guardPayment(db: Executor, before: Payment | null, after: Payment
   }
   // Einem Kontoumsatz zugeordnet (#188): senken ja, über den Umsatz heben oder umhängen nicht (db/bankGuard.ts).
   if (before !== null && (before.amountCents !== after.amountCents || before.tenancyId !== after.tenancyId)) {
-    const refusal = await linkedTargetRefusal(db, { paymentId: before.id }, before, { tenancyId: after.tenancyId, cents: after.amountCents })
+    const refusal = await linkedTargetRefusal(db, { paymentId: before.id }, { tenancyId: before.tenancyId }, { tenancyId: after.tenancyId, cents: after.amountCents })
     if (refusal) throw new BoundPaymentError(refusal)
   }
   await guardPaymentFields(db, before, after)

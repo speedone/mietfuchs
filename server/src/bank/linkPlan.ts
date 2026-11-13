@@ -8,6 +8,8 @@
 // Rest bleibt offen.
 
 import crypto from 'node:crypto'
+import { depositProblem } from '../../../shared/deposit.ts'
+import { germanDate } from '../../../shared/law/register.ts'
 import type { DepositEntry, Payment, PaymentKind } from '../../../shared/types.ts'
 import { BANK_SET_ASIDE } from '../db/schema.ts'
 import { clip, type BankEntry } from './statement.ts'
@@ -25,6 +27,7 @@ export type LinkWrite = {
   payments: (Pick<Payment, 'tenancyId' | 'date' | 'amountCents' | 'kind' | 'note'> & { transactionId: string })[]
   depositEntries: (Pick<DepositEntry, 'tenancyId' | 'date' | 'kind' | 'amountCents' | 'note'> & { transactionId: string })[]
   existing: { transactionId: string; paymentId: string }[]
+  existingDeposits: { transactionId: string; depositEntryId: string }[]
   setAside: { transactionId: string; reason: SetAsideReason }[]
 }
 
@@ -47,7 +50,11 @@ export function planBankLinks(
   open: readonly { tx: BankTransaction; openCents: number }[],
   ctx: MatchContext,
 ): LinkPlan {
-  const writes: LinkWrite = { payments: [], depositEntries: [], existing: [], setAside: [] }
+  const writes: LinkWrite = { payments: [], depositEntries: [], existing: [], existingDeposits: [], setAside: [] }
+  // Der Stand der Kaution mit allem, was dieser Lauf schon bucht (Durchsicht I4): Eine Rückzahlung über den Stand ist ein
+  // Problem dieses Umsatzes, nicht ein Fehler des ganzen Laufs beim Buchen.
+  const plannedDeposits: DepositEntry[] = [...ctx.depositEntries]
+  const usedDeposits = new Set<string>()
   const problems: LinkProblem[] = []
   const openById = new Map(open.filter((o) => o.openCents !== 0).map((o) => [o.tx.id, o]))
   const tenancyIds = new Set(ctx.tenancies.map((t) => t.id))
@@ -75,8 +82,9 @@ export function planBankLinks(
     }
     const sign = Math.sign(openCents)
     const sum = d.parts.reduce((a, p) => a + p.amountCents, 0)
-    const local: LinkWrite = { payments: [], depositEntries: [], existing: [], setAside: [] }
+    const local: LinkWrite = { payments: [], depositEntries: [], existing: [], existingDeposits: [], setAside: [] }
     const localPayments = new Set<string>()
+    const localDeposits = new Set<string>()
     let failed = false
     for (const part of d.parts) {
       const fail = (message: string): void => {
@@ -91,6 +99,17 @@ export function planBankLinks(
         const fits = part.target.kind === 'received' ? part.amountCents > 0 : part.amountCents < 0
         if (!fits) fail(part.target.kind === 'received' ? 'Eine eingegangene Kaution ist ein Eingang.' : 'Eine zurückgezahlte Kaution ist ein Ausgang.')
         else local.depositEntries.push({ transactionId: tx.id, tenancyId: part.tenancyId, date: tx.bookingDate, kind: part.target.kind, amountCents: Math.abs(part.amountCents), ...noteOf(tx) })
+      } else if (part.target.type === 'existingDeposit') {
+        const depositEntryId = part.target.depositEntryId
+        const d = ctx.depositEntries.find((x) => x.id === depositEntryId)
+        const signed = d ? (d.kind === 'applied' || d.kind === 'refunded' ? -d.amountCents : d.amountCents) : 0
+        if (!d) fail('Diese Kautionsbuchung gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+        else if (ctx.linkedDepositEntryIds.has(d.id) || usedDeposits.has(d.id) || localDeposits.has(d.id)) fail('Diese Kautionsbuchung ist schon einem Kontoumsatz zugeordnet.')
+        else if (d.tenancyId !== part.tenancyId || (d.kind !== 'received' && d.kind !== 'refunded') || signed !== part.amountCents) fail('Die erfasste Kautionsbuchung passt nicht zu diesem Teil: Mietverhältnis, Art oder Betrag weichen ab.')
+        else {
+          localDeposits.add(d.id)
+          local.existingDeposits.push({ transactionId: tx.id, depositEntryId: d.id })
+        }
       } else {
         const paymentId = part.target.paymentId
         const p = ctx.payments.find((x) => x.id === paymentId)
@@ -107,8 +126,21 @@ export function planBankLinks(
       problem(`Die Teile ergeben mehr als den Umsatz (${euro(Math.abs(sum))} statt ${euro(Math.abs(openCents))}).`)
       failed = true
     }
+    if (!failed && local.depositEntries.length > 0) {
+      const after = [...plannedDeposits, ...local.depositEntries.map((d, i) => ({ id: `geplant-${tx.id}-${i}`, tenancyId: d.tenancyId, date: d.date, kind: d.kind, amountCents: d.amountCents }))]
+      for (const tenancyId of new Set(local.depositEntries.map((d) => d.tenancyId))) {
+        const short = depositProblem(after.filter((d) => d.tenancyId === tenancyId))
+        if (short && !failed) {
+          problem(`Mehr als die Kaution hergibt: Am ${germanDate(short.date)} fehlten ${euro(-short.balanceCents)}.`)
+          failed = true
+        }
+      }
+      if (!failed) plannedDeposits.splice(0, plannedDeposits.length, ...after)
+    }
     if (failed) continue
     for (const id of localPayments) usedPayments.add(id)
+    for (const id of localDeposits) usedDeposits.add(id)
+    writes.existingDeposits.push(...local.existingDeposits)
     writes.payments.push(...local.payments)
     writes.depositEntries.push(...local.depositEntries)
     writes.existing.push(...local.existing)
@@ -118,6 +150,7 @@ export function planBankLinks(
     ...(writes.payments.length > 0 ? [`${plural(writes.payments.length, 'Zahlung', 'Zahlungen')} gebucht`] : []),
     ...(writes.depositEntries.length > 0 ? [plural(writes.depositEntries.length, 'Kautionsbuchung', 'Kautionsbuchungen')] : []),
     ...(writes.existing.length > 0 ? [`${plural(writes.existing.length, 'Umsatz', 'Umsätze')} mit erfasster Zahlung verknüpft`] : []),
+    ...(writes.existingDeposits.length > 0 ? [`${plural(writes.existingDeposits.length, 'Umsatz', 'Umsätze')} mit erfasster Kautionsbuchung verknüpft`] : []),
     ...(writes.setAside.length > 0 ? [`${writes.setAside.length} beiseitegelegt`] : []),
   ]
   const sentence = clauses.length === 0 ? 'Nichts zu buchen.' : `${clauses.join(', ')}.`
@@ -139,6 +172,7 @@ function targetOf(raw: unknown): LinkTarget | null {
   if (raw.type === 'newPayment' && typeof raw.kind === 'string' && PAYMENT_KIND_SET.has(raw.kind)) return { type: 'newPayment', kind: raw.kind as PaymentKind }
   if (raw.type === 'existingPayment' && typeof raw.paymentId === 'string' && raw.paymentId !== '') return { type: 'existingPayment', paymentId: raw.paymentId }
   if (raw.type === 'deposit' && (raw.kind === 'received' || raw.kind === 'refunded')) return { type: 'deposit', kind: raw.kind }
+  if (raw.type === 'existingDeposit' && typeof raw.depositEntryId === 'string' && raw.depositEntryId !== '') return { type: 'existingDeposit', depositEntryId: raw.depositEntryId }
   return null
 }
 

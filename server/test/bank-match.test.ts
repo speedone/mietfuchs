@@ -18,7 +18,7 @@ const tx = (bookingDate: string, amountCents: number, over: Partial<BankTransact
 const tenancy = (over: Partial<MatchTenancy> = {}): MatchTenancy => ({ id: 't1', iban: TENANT, start: '2025-01-01', end: null, depositCents: 240000, ...over })
 
 const ctx = (over: Partial<MatchContext> = {}): MatchContext => ({
-  tenancies: [tenancy()], payers: [], payments: [], linkedPaymentIds: new Set(), depositEntries: [],
+  tenancies: [tenancy()], payers: [], payments: [], linkedPaymentIds: new Set(), depositEntries: [], linkedDepositEntryIds: new Set(),
   monthlySollCents: () => 80000, ...over,
 })
 
@@ -105,4 +105,24 @@ test('openCents und linkedCents', () => {
   assert.equal(linkedCents({ id: 'd', tenancyId: 't1', date: '2025-08-01', kind: 'refunded', amountCents: 240000 }), -240000)
   assert.equal(linkedCents({ id: 'd', tenancyId: 't1', date: '2025-08-01', kind: 'interest', amountCents: 100 }), 100)
   assert.equal(linkedCents(payment('p', '2025-03-03', -80000)), -80000)
+})
+
+// ---------- Befunde der Durchsicht (Teil 2) ----------
+
+test('Durchsicht I2: eine schon erfasste Kautionsbuchung gleichen Betrags wird verknüpft, nicht doppelt angelegt', () => {
+  const hand: DepositEntry = { id: 'd1', tenancyId: 't1', date: '2025-01-08', kind: 'received', amountCents: 240000 }
+  const s = suggest(tx('2025-01-11', 240000), ctx({ depositEntries: [hand] }))
+  assert.deepEqual(s?.target, { type: 'existingDeposit', depositEntryId: 'd1' })
+  assert.deepEqual(suggest(tx('2025-01-11', 240000), ctx({ depositEntries: [hand], linkedDepositEntryIds: new Set(['d1']) }))?.target, { type: 'deposit', kind: 'received' })
+  const refund: DepositEntry = { id: 'd2', tenancyId: 't1', date: '2025-08-03', kind: 'refunded', amountCents: 240000 }
+  assert.deepEqual(suggest(tx('2025-08-01', -240000), ctx({ tenancies: [tenancy({ end: '2025-06-30' })], depositEntries: [hand, refund] }))?.target, { type: 'existingDeposit', depositEntryId: 'd2' })
+})
+
+test('Durchsicht I3: eine erfasste Zahlung außerhalb von 7 Tagen, aber im Monat drumherum, macht den Vorschlag gelb', () => {
+  const s = suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-06-15', 80000)] }))
+  assert.deepEqual(s?.target, { type: 'newPayment', kind: 'rent' })
+  assert.equal(s?.light, 'yellow')
+  assert.equal(s?.reason, 'Am 15.06.2025 ist schon eine Zahlung über 800,00 € erfasst. Bitte prüfen Sie, ob es dieselbe ist.')
+  assert.equal(suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-08-15', 80000)] }))?.light, 'green')
+  assert.equal(suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-06-15', 80000)], linkedPaymentIds: new Set(['p1']) }))?.light, 'green')
 })
