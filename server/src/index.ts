@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import crypto from 'node:crypto'
+import { compareName } from '../../shared/compareName.ts'
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -76,7 +77,7 @@ import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2R
 import { applyBankImport, applyBankLinks, BankError, readBankAccounts, readBankState, readBankStock, removeBankImport, removeBankLink, setTransactionAside, updateBankAccount } from './db/bank.ts'
 import { linkToken, parseLinkDecisions, planBankLinks, type LinkDecision, type LinkPlan } from './bank/linkPlan.ts'
 import { decisionsOf, importToken, planBankImport, type ImportDecision, type ImportPlan } from './bank/importPlan.ts'
-import { MAX_ZIP_TOTAL_BYTES, readBankFile } from './bank/read.ts'
+import { looksLikeBankFile, MAX_ZIP_TOTAL_BYTES, readBankFile } from './bank/read.ts'
 import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry, withoutBoundDeposits } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
@@ -121,7 +122,7 @@ import { roomView } from '../../shared/rooms.ts'
 import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
 import { derivedTaxLines, incomeCsv, partsBySource, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { carriesStock, createPriorVersion, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked } from './db/priorVersions.ts'
-import { BANK_SET_ASIDE, bankTransactionLinks, bankTransactions as bankTransactionsTable, changeGroups, costItems as costItemsTable, properties as propertiesTable, tenancies as tenanciesTable } from './db/schema.ts'
+import { BANK_SET_ASIDE, bankTransactionLinks, bankTransactions as bankTransactionsTable, changeGroups, costItems as costItemsTable, properties as propertiesTable, tenancies as tenanciesTable, units as unitsTable } from './db/schema.ts'
 import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, retitleCurrentGroup, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
 import { applyRevert, consentSnapshot, isRevertMode, previewRevert, restoreConsent, RevertRefused, type ConsentSnapshot, type RevertPreview } from './db/revert.ts'
 import { cleanSnapshots, interleaveSnapshots, listSnapshots, parseSnapshotName, snapshotFile, snapshotLastGroup, type SnapshotNotice, type SnapshotPoint } from './db/snapshots.ts'
@@ -336,6 +337,18 @@ const checkPageSizes = (req: Request, res: Response, next: NextFunction): void =
 }
 // Eine XML-Datei als Beleg (#189) bleibt nur liegen, wenn sie eine E-Rechnung ist. multer entscheidet vor dem Schreiben
 // ohne Inhalt; hier wird der Inhalt gelesen und alles andere wieder gelöscht, bevor eine Zeile in `uploads` entsteht.
+// Kontoauszüge gehören auf die Seite Kontoauszug (#188): Bankdaten gehen nie an eine KI. Vor jeder Prüfung und Auswertung
+// erkannt am Inhalt (`looksLikeBankFile`), nicht am Namen; die Datei, die multer schon abgelegt hat, wird sofort wieder
+// gelöscht, im Belegordner bleibt nichts.
+const BANK_FILE_TEXT = 'Das ist ein Kontoauszug. Kontoauszüge lesen Sie auf der Seite Kontoauszug ein.'
+async function refuseBankFile(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const file = storedUpload(req.file ?? filesOf(req).file?.[0])
+  if (!file) return next()
+  const content = await fs.promises.readFile(file.path).catch(() => null)
+  if (content === null || !looksLikeBankFile(content, file.originalname)) return next()
+  fs.rmSync(file.path, { force: true })
+  res.status(422).json({ error: BANK_FILE_TEXT, bankFile: true })
+}
 async function checkXmlReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
   const file = storedUpload(req.file ?? filesOf(req).file?.[0])
   if (!file || path.extname(file.filename).toLowerCase() !== '.xml') return next()
@@ -345,7 +358,7 @@ async function checkXmlReceipt(req: Request, res: Response, next: NextFunction):
   fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: SCRIPT_REFUSAL })
 }
-const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, checkXmlReceipt, inRequest]
+const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }, { name: 'eInvoiceXml', maxCount: 1 }]), checkPageSizes, refuseBankFile, checkXmlReceipt, inRequest]
 
 // Die E-Rechnung zum Beleg (#189): die Datei selbst, wenn sie eine XML-Datei ist (PR 3), sonst das XML, das der Browser
 // aus dem PDF mitgeschickt hat. `null`: keine mitgeschickt.
@@ -1094,6 +1107,30 @@ async function bankSollOf(db: Database): Promise<(tenancyId: string, month: stri
   }
   return (tenancyId, month) => soll.get(`${tenancyId}|${month}`) ?? null
 }
+// Alle Mietverhältnisse aller Objekte für die Auswahl auf der Seite Kontoauszug: Ein Konto empfängt Mieten mehrerer
+// Häuser. Beschriftung „Mieter, Wohnung (Objekt)“, ausgezogene mit Ende.
+app.get('/api/bank/tenancies', async (_req, res) => {
+  res.json(await readData(async (db) => {
+    const [rows, unitRows, propertyRows] = await Promise.all([
+      db.select({ id: tenanciesTable.id, tenantName: tenanciesTable.tenantName, unitId: tenanciesTable.unitId, end: tenanciesTable.end }).from(tenanciesTable),
+      db.select({ id: unitsTable.id, name: unitsTable.name, propertyId: unitsTable.propertyId }).from(unitsTable),
+      db.select({ id: propertiesTable.id, name: propertiesTable.name }).from(propertiesTable),
+    ])
+    const unitOf = new Map(unitRows.map((u) => [u.id, u]))
+    const propertyName = new Map(propertyRows.map((p) => [p.id, p.name]))
+    const day = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
+    return rows.map((t) => {
+      const unit = unitOf.get(t.unitId)
+      const property = unit ? (propertyName.get(unit.propertyId) ?? '').trim() : ''
+      const place = unit ? `, ${unit.name}${property ? ` (${property})` : ''}` : ''
+      return { id: t.id, label: `${t.tenantName}${place}${t.end ? `, bis ${day(t.end)}` : ''}` }
+    }).sort((a, b) => compareName(a.label, b.label))
+  }))
+})
+// Für die Zeile im Cockpit: nur die Zahl der offenen Umsätze, ohne das Monats-Soll für die Vorschläge.
+app.get('/api/bank/open-count', async (_req, res) => {
+  res.json(await readData(async (db) => ({ count: (await readBankState(db, () => null)).views.filter((v) => v.openCents !== 0).length })))
+})
 app.get('/api/bank/transactions', async (req, res) => {
   const state = req.query.state === 'done' ? 'done' : 'open'
   res.json(await readData(async (db) => {
@@ -2123,7 +2160,7 @@ async function recordOrRefuse(req: Request, res: Response, file: StoredUpload): 
   }
 }
 
-app.post('/api/upload', upload.single('file'), checkXmlReceipt, inRequest, async (req, res) => {
+app.post('/api/upload', upload.single('file'), refuseBankFile, checkXmlReceipt, inRequest, async (req, res) => {
   const file = storedUpload(req.file)
   if (!file) return res.status(400).json({ error: 'Keine Datei' })
   if (!(await recordOrRefuse(req, res, file))) return

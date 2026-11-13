@@ -220,7 +220,7 @@ export async function removeDepositEntry(db: Executor, id: string): Promise<bool
 // Für die Aufstellung zum Auszug (#228): je Mietverhältnis des Objekts die jüngste abgeschlossene Abrechnung, in der es
 // steht, mit ihrem Saldo, und die Zeiträume seiner Wohnzeit, die noch nicht abgeschlossen sind und deren
 // Abrechnungsfrist (§ 556 Abs. 3 Satz 2 BGB, `settlementDeadline`) heute noch läuft. Für ältere ist eine Nachforderung
-// ausgeschlossen; sie als „steht noch aus“ zu nennen, läse sich auf dem Blatt für den Mieter wie eine offene Forderung
+// in der Regel ausgeschlossen (§ 556 Abs. 3 Satz 3 BGB, außer die Verspätung ist nicht zu vertreten); sie als „steht noch aus“ zu nennen, läse sich auf dem Blatt für den Mieter wie eine offene Forderung
 // (Durchsicht W1: Einzug 2012, erst seit Kurzem mit Mietfuchs abgerechnet). Gelesen aus dem
 // eingefrorenen Stand, also das, was der Mieter bekommen hat; nichts wird neu gerechnet.
 //

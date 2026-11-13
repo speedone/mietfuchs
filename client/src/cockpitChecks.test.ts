@@ -129,3 +129,10 @@ test('Beteiligte Wohnungen: eine Wohnung mit Zimmern zählt nicht neben ihren Zi
   const list = [u('a', true), u('wg', true), u('z1', true, 'wg'), u('z2', true, 'wg'), u('leer', false)]
   expect(participatingUnits(list).map((x) => x.id)).toEqual(['a', 'z1', 'z2'])
 })
+
+test('Kontoauszug (#188): Zeile zu nicht zugeordneten Umsätzen, Einzahl richtig, keine bei 0', async () => {
+  const { bankOpenText } = await import('./cockpitChecks')
+  expect(bankOpenText(3)).toBe('3 Umsätze aus dem Kontoauszug sind noch nicht zugeordnet.')
+  expect(bankOpenText(1)).toBe('1 Umsatz aus dem Kontoauszug ist noch nicht zugeordnet.')
+  expect(bankOpenText(0)).toBeNull()
+})

@@ -54,6 +54,19 @@ describe('Zahlwörter', () => {
   })
 })
 
+describe('Kaution beim Auszug (#228)', () => {
+  test('ein Mietverhältnis mit Kaution endet im Zeitraum; ohne Kaution, im Vorjahr oder ohne Ende keine Kachel', () => {
+    const with_ = (ts: Tenancy[]) => stock({ tenancies: ts })
+    const leaving = tenancy('w1', '2020-01-01', '2025-06-30', { tenantName: 'Erika Beispiel', depositCents: 240000 })
+    expect(reasonOf(with_([leaving]), 'deposit')).toBe('Weil Erika Beispiel 2025 auszieht und eine Kaution vereinbart ist')
+    expect(reasonOf(with_([{ ...leaving, tenantName: ' ' }]), 'deposit')).toBe('Weil 2025 ein Mietverhältnis mit Kaution endet')
+    expect(reasonOf(with_([leaving, { ...leaving, id: 'x' }]), 'deposit')).toBe('Weil 2025 zwei Mietverhältnisse mit Kaution enden')
+    expect(reasonOf(with_([{ ...leaving, depositCents: undefined }]), 'deposit')).toBeUndefined()
+    expect(reasonOf(with_([{ ...leaving, end: '2024-12-31' }]), 'deposit')).toBeUndefined()
+    expect(reasonOf(with_([{ ...leaving, end: null }]), 'deposit')).toBeUndefined()
+  })
+})
+
 describe('Mieterwechsel und Leerstand im Zeitraum', () => {
   const two = (ts: Tenancy[], over: Partial<HelpStock> = {}) => stock({ units: [unit({ id: 'w1', name: 'EG links' })], tenancies: ts, ...over })
 

@@ -12,6 +12,7 @@ import type { ImportWrite } from '../bank/importPlan.ts'
 import type { LinkWrite, SetAsideReason } from '../bank/linkPlan.ts'
 import { linkedCents, openCents, suggest, type MatchContext, type Suggestion } from '../bank/match.ts'
 import type { BankTransaction } from '../bank/model.ts'
+import type { BankLinkView, BankTransactionView as SharedTransactionView } from '../../../shared/types.ts'
 import { compareText } from '../apportion.ts'
 import { retitleCurrentGroup } from './journal.ts'
 import { readDepositEntries, readPayments } from './read.ts'
@@ -135,8 +136,7 @@ export async function readBankStock(db: Executor): Promise<BankStock> {
 
 // ---------- Zuordnen und Buchen (Teil 2) ----------
 
-export type BankLinkView = { id: string; paymentId: string | null; depositEntryId: string | null; created: boolean; cents: number; tenancyId: string | null }
-export type BankTransactionView = BankTransaction & { openCents: number; links: BankLinkView[]; suggestion: Suggestion | null }
+export type BankTransactionView = BankTransaction & SharedTransactionView
 
 // Umsätze mit offenem Rest, Verknüpfungen und Vorschlag, dazu der Zusammenhang, gegen den geplant wird. Das Monats-Soll
 // kommt von außen aus dem Mietkonto (index.ts), hier wird es nicht neu gerechnet.

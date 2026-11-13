@@ -98,6 +98,17 @@ Abrechnung ändert sich.
 
 ---
 
+## Kaution: Der bisherige Stand bleibt
+
+Ab Version 0.18 lässt sich die Kaution am Mietverhältnis führen. Am Bestand ändert das Update nichts:
+Ohne Kautionsbuchung gilt weiter der Kautionsstatus, den Sie bisher gewählt haben, und keine Zahl in
+Mietkonto, Abrechnung oder Steuerübersicht ändert sich. Wollen Sie die Kaution führen, legen Sie in den
+Stammdaten am Mietverhältnis mit „Kaution führen“ die Eingänge an; ab der ersten Buchung ergibt sich der
+Stand aus den Buchungen. Haben Sie die Kaution bisher als Mietzahlung erfasst und erkennt die Seite Steuer
+das unter „Ist das die Kaution?“, buchen Sie sie dort mit „Als Kaution umbuchen“ um.
+
+---
+
 ## Sie wechseln von der Programmdatei zum Programm mit eigenem Fenster
 
 Seit Version 0.15 gibt es Mietfuchs unter Windows und macOS als eigenes Programm mit eigenem Fenster:

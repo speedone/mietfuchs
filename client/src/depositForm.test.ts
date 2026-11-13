@@ -49,7 +49,7 @@ describe('Rumpf einer Buchung', () => {
   test('der Satz unter dem Zweck sagt, was eine Verrechnung mit Miete oder Abrechnung anlegt', () => {
     expect(depositPurposeHint('rent')).toBe('Mietfuchs legt dazu im Mietkonto eine Mietzahlung an diesem Tag an; sie wird wie jede Mietzahlung auf die offenen Monate verteilt. Den Monat können Sie im Mietkonto bestimmen.')
     expect(depositPurposeHint('settlement')).toBe('Mietfuchs legt dazu im Mietkonto eine Zahlung aus der Abrechnung an diesem Tag an.')
-    expect(depositPurposeHint('damage')).toBe('Die Steuerübersicht zählt diesen Betrag nicht als Einnahme.')
+    expect(depositPurposeHint('damage')).toBe('Nach dem Bundesfinanzhof ist eine einbehaltene Kaution eine Einnahme aus Vermietung (Urteil vom 11.07.2000, IX R 48/96). Die Steuerübersicht zählt sie nicht mit; tragen Sie sie selbst ein. Was Sie davon reparieren lassen, sind Werbungskosten.')
     expect(depositPurposeHint('')).toBeNull()
   })
 })
@@ -83,4 +83,15 @@ describe('Satz zum Stand', () => {
 
 test('Betrag mit Vorzeichen: Verrechnung und Rückzahlung mindern', () => {
   expect([entry('received', 100), entry('interest', 5), entry('applied', 30), entry('refunded', 70)].map(signedCents)).toEqual([100, 5, -30, -70])
+})
+
+test('Verrechnung vor dem Mietende: Hinweis nach BGH VIII ZR 234/13, nur für eine neue oder neu zur Verrechnung gewordene Buchung', async () => {
+  const { appliedDuringTenancy } = await import('./depositForm')
+  const body = { tenancyId: 't', date: '2026-03-01', kind: 'applied' as const, amountCents: 5000, purpose: 'damage' as const }
+  expect(appliedDuringTenancy(body, null, null)).toBe(true)
+  expect(appliedDuringTenancy(body, '2026-06-30', null)).toBe(true)
+  expect(appliedDuringTenancy(body, '2026-02-28', null)).toBe(false)
+  expect(appliedDuringTenancy({ kind: 'received', date: body.date }, null, null)).toBe(false)
+  expect(appliedDuringTenancy(body, null, { kind: 'applied' })).toBe(false)
+  expect(appliedDuringTenancy(body, null, { kind: 'received' })).toBe(true)
 })

@@ -94,6 +94,27 @@ Rechner entsteht ein neues Zertifikat, und gekoppelte Fenster koppeln Sie neu. I
 Verbindung über `http://`; die Adresse mit `https://` zeigt dort nur eine Warnung, weil kein Browser
 dieses Zertifikat kennt.
 
+## Kontoauszüge
+
+Lesen Sie auf der Seite Kontoauszug den Auszug Ihrer Bank ein, verarbeitet Mietfuchs ihn nur auf Ihrem
+Rechner. Die Datei selbst wird nicht gespeichert. Gespeichert werden je Auszug Zeitraum, Salden und
+Dateiname, je Buchungstag Anzahl und Summen der Umsätze und die einzelnen Umsätze, die zur Vermietung
+gehören, mit Name und IBAN der Gegenseite und Verwendungszweck. Auf einem Konto, das Sie nicht
+ausdrücklich als Konto nur für die Vermietung bestätigt haben, speichert Mietfuchs private Umsätze nicht
+einzeln, auch nicht im Verlauf oder in einer Sicherung; sie stehen nur in der Summe des Tages. Hat ein Tag nur
+einen Umsatz, zeigt diese Summe seinen Betrag, ohne Gegenseite und Zweck. Stellen Sie ein Konto nur für die
+Vermietung wieder auf Mischkonto zurück, bleiben die bis dahin einzeln gespeicherten Umsätze, auch in Verlauf und
+Sicherungen; ein Rücksprung oder ein Backup stellt die Bestätigung nicht wieder her. Rückfragen
+der Vorschau zu einzelnen Eingängen bleiben bis zu Ihrer Antwort im Arbeitsspeicher. Kontoauszüge gehen
+nie an einen Dienst für die Belegauswertung, auch nicht an einen auf Ihrem Rechner: Der Eingang der Belege
+weist sie ab. Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.
+
+Für die Daten Ihrer Mieter, auch Name und IBAN aus dem Kontoauszug, sind Sie als Vermieter in der Regel
+selbst Verantwortlicher im Sinne der DSGVO; die Ausnahme für rein persönliche oder familiäre Tätigkeiten
+greift bei einer Vermietung meist nicht. Brauchen Sie die Umsätze eines Mietverhältnisses nach seinem Ende
+nicht mehr, etwa weil Abrechnung, Kaution und Steuer erledigt sind, nehmen Sie den Import zurück oder löschen
+Sie das Mietverhältnis.
+
 ## Verbindungen ins Internet
 
 Mietfuchs stellt nur in drei Fällen eine Verbindung ins Internet her, und jeweils erst, nachdem Sie

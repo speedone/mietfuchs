@@ -72,5 +72,5 @@ export function depositAppliedText(entries: readonly DepositEntry[], year: numbe
   const cents = entries
     .filter((e) => e.kind === 'applied' && (e.purpose === 'damage' || e.purpose === 'other') && e.date.startsWith(`${year}-`))
     .reduce((sum, e) => sum + e.amountCents, 0)
-  return cents > 0 ? `Aus Kautionen einbehalten, nicht in den Einnahmen enthalten: ${fmtEuro(cents)}. Ob und wo das anzugeben ist, hängt vom Grund ab.` : null
+  return cents > 0 ? `Aus Kautionen einbehalten: ${fmtEuro(cents)}. Nach dem Bundesfinanzhof ist das eine Einnahme aus Vermietung (Urteil vom 11.07.2000, IX R 48/96); Mietfuchs zählt sie hier nicht mit. Tragen Sie sie selbst ein; was Sie davon reparieren lassen, sind Werbungskosten.` : null
 }

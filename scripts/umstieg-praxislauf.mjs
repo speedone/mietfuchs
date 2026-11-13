@@ -975,6 +975,53 @@ fall(20, 'Backup mit Kautionsbuchungen und einer Verrechnung als Zahlung (#228)'
   })
 })
 
+fall(21, 'Backup mit eingelesenem Kontoauszug, einer gebuchten Miete und einer Kaution (#188)', async () => {
+  // Ein erfundener Juni-Auszug auf ein Mischkonto, eine Miete als Zahlung und ein Eingang als Kaution gebucht. Nach
+  // Backup, Zurücknehmen der Zuordnungen und Wiederherstellen sind Konto, Import, Tage, Umsätze und beide Zuordnungen
+  // wieder da, und der Umsatz ist weiter erledigt.
+  const dataDir = tempDir()
+  const senden = (base, pfad, method, body) => fetch(`${base}${pfad}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+  const datei = fs.readFileSync(path.join(import.meta.dirname, '..', 'server', 'test', 'fixtures', 'camt', 'kontoauszug-juni.xml'))
+  const formular = (felder) => {
+    const fd = new FormData()
+    fd.append('statement', new Blob([datei]), 'juni.xml')
+    for (const [k, v] of Object.entries(felder)) fd.append(k, v)
+    return fd
+  }
+  await withServer(dataDir, async ({ base }) => {
+    const unit = await jsonOf(await senden(base, '/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true }))
+    const tenancy = await jsonOf(await senden(base, '/api/tenancies', 'POST', {
+      unitId: unit.id, tenantName: 'Erika Beispiel', persons: 1, start: '2025-01-01', iban: 'DE02120300000000202051',
+      prepayments: [{ from: '2025-01', monthlyCents: 15000 }], prepaymentOverrides: {}, baseRents: [{ from: '2025-01', monthlyCents: 70000 }],
+    }))
+    const antworten = JSON.stringify([{ type: 'account', iban: 'DE89370400440532013000', accept: true }])
+    const vorschau = await jsonOf(await fetch(`${base}/api/bank/import/plan`, { method: 'POST', body: formular({ decisions: antworten }) }))
+    gleich(vorschau.sentence, '2 Umsätze übernommen.', 'Kontoauszug: die Vorschau nennt zwei Umsätze der Vermietung')
+    gleich((await fetch(`${base}/api/bank/import`, { method: 'POST', body: formular({ decisions: antworten, token: vorschau.token }) })).status, 200, 'Kontoauszug: eingelesen')
+    const [miete, kaution] = await holen(base, '/api/bank/transactions?state=open')
+    const entscheidungen = [
+      { transactionId: miete.id, parts: [{ tenancyId: tenancy.id, amountCents: miete.openCents, target: { type: 'newPayment', kind: 'rent' } }] },
+      { transactionId: kaution.id, parts: [{ tenancyId: tenancy.id, amountCents: kaution.openCents, target: { type: 'deposit', kind: 'received' } }] },
+    ]
+    const plan = await jsonOf(await senden(base, '/api/bank/links/plan', 'POST', { decisions: entscheidungen }))
+    gleich(plan.problems, [], 'Kontoauszug: der Buchungslauf hat keine Probleme')
+    gleich((await senden(base, '/api/bank/links', 'POST', { decisions: entscheidungen, token: plan.token })).status, 200, 'Kontoauszug: gebucht')
+    const vorher = { erledigt: await holen(base, '/api/bank/transactions?state=done'), konten: await holen(base, '/api/bank/accounts'), zahlungen: await holen(base, '/api/payments'), kaution: await holen(base, '/api/deposit-entries') }
+    gleich(vorher.erledigt.length, 2, 'Kontoauszug: beide Umsätze sind erledigt')
+    const zip = await backupHolen(base)
+
+    for (const t of vorher.erledigt) for (const l of t.links) await senden(base, `/api/bank/links/${l.id}?payment=delete`, 'DELETE')
+    gleich((await holen(base, '/api/bank/transactions?state=open')).length, 2, 'Kontoauszug: nach dem Lösen wieder offen')
+
+    const antwort = await backupEinspielen(base, zip)
+    gleich(antwort.status, 200, 'Kontoauszug: die Route nimmt das Archiv an')
+    gleich(await holen(base, '/api/bank/transactions?state=done'), vorher.erledigt, 'Kontoauszug: Umsätze und Zuordnungen kommen zurück')
+    gleich(await holen(base, '/api/bank/accounts'), vorher.konten, 'Kontoauszug: Konto, Import und Lückenlosigkeit kommen zurück')
+    gleich(await holen(base, '/api/payments'), vorher.zahlungen, 'Kontoauszug: die Zahlung kommt zurück, mit Vermerk')
+    gleich(await holen(base, '/api/deposit-entries'), vorher.kaution, 'Kontoauszug: die Kautionsbuchung kommt zurück')
+  })
+})
+
 // ---------- Lauf ----------
 
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete

@@ -7,7 +7,7 @@ import { localToday } from '../periodForm'
 import { sentAtRefusal } from '../sentAtStep'
 import { isNotAllocable, usageOf } from '../types'
 import { rentedWithin, usageAt } from '../../../shared/unitUsage.ts'
-import { participatingUnits, cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
+import { bankOpenText, participatingUnits, cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
 import { coverageCheck, filesByItem, partsBySource } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
@@ -115,6 +115,12 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     api<DepositEntry[]>(withProperty('/api/deposit-entries', propertyId)).then((d) => setDeposits(Array.isArray(d) ? d : [])).catch(() => setDeposits([]))
   }, [propertyId])
   const afterMoveOut = depositsAfterMoveOut(tenancies, deposits, localToday())
+  // Kontoauszug (#188): Umsätze, die noch nicht zugeordnet sind; ohne Konto oder bei einem Fehler keine Zeile.
+  const [bankOpen, setBankOpen] = useState(0)
+  useEffect(() => {
+    api<{ count: number }>('/api/bank/open-count').then((r) => setBankOpen(typeof r?.count === 'number' ? r.count : 0)).catch(() => setBankOpen(0))
+  }, [])
+  const bankLine = bankOpenText(bankOpen)
   useEffect(() => {
     api<UploadEntry[]>('/api/uploads').then((list) => { setUploadFiles(new Set(list.map((u) => u.file))); setBookedFiles(filesByItem(list)) }, () => setUploadFiles(null))
   }, [param, propertyId])
@@ -505,6 +511,14 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
             </Card>
           )}
         </>
+      )}
+
+      {bankLine && (
+        <Card title="Kontoauszug">
+          <p>{bankLine}{' '}
+            <button type="button" className="btn small secondary" onClick={() => onNavigate('kontoauszug')}>Zum Kontoauszug</button>
+          </p>
+        </Card>
       )}
 
       {afterMoveOut.length > 0 && (

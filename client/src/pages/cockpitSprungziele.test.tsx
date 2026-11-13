@@ -31,7 +31,7 @@ const item = (id: string, patch: Partial<CostItem> = {}, year = YEAR): CostItem 
 const meter = (id: string): Meter => ({ id, propertyId: 'objekt-1', name: `Wasser ${id}`, unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
-type Stock = { units: Unit[]; tenancies: Tenancy[]; settlement?: Partial<Settlement>; items?: CostItem[]; meters?: Meter[]; consumption?: Consumption[]; deposits?: DepositEntry[] }
+type Stock = { units: Unit[]; tenancies: Tenancy[]; settlement?: Partial<Settlement>; items?: CostItem[]; meters?: Meter[]; consumption?: Consumption[]; deposits?: DepositEntry[]; bankOpen?: number }
 
 function page(stock: Stock): ReturnType<typeof vi.fn> {
   const settlement: Settlement = {
@@ -48,6 +48,7 @@ function page(stock: Stock): ReturnType<typeof vi.fn> {
     if (path === '/api/meters') return json(stock.meters ?? [])
     if (path === `/api/consumption/${YEAR}`) return json(stock.consumption ?? [])
     if (path === '/api/deposit-entries') return json(stock.deposits ?? [])
+    if (path === '/api/bank/open-count') return json({ count: stock.bankOpen ?? 0 })
     return json([])
   })
   const navigate = vi.fn()
@@ -204,4 +205,17 @@ test('Kaution nach Auszug: ohne Buchungen keine Karte', async () => {
   page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1', { end: '2020-06-30', depositCents: 160000 })] })
   await screen.findAllByText('Mietverhältnisse & Flächen', { selector: '.check-title' }, SLOW)
   expect(screen.queryByText('Kaution nach Auszug')).toBeNull()
+})
+
+test('Kontoauszug (#188): nicht zugeordnete Umsätze stehen als Zeile mit Sprung auf die Seite, ohne keine', async () => {
+  const navigate = page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1')], bankOpen: 3 })
+  expect(await screen.findByText(/3 Umsätze aus dem Kontoauszug sind noch nicht zugeordnet\./, {}, SLOW)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Zum Kontoauszug' }))
+  expect(navigate).toHaveBeenCalledWith('kontoauszug')
+})
+
+test('Kontoauszug (#188): ohne offene Umsätze keine Zeile', async () => {
+  page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1')] })
+  await screen.findAllByText('Mietverhältnisse & Flächen', { selector: '.check-title' }, SLOW)
+  expect(screen.queryByText(/aus dem Kontoauszug/)).toBeNull()
 })

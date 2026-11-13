@@ -8,6 +8,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Kontoauszug einlesen: Auf der neuen Seite „Kontoauszug“ (unter Mietkonto) lesen Sie den Auszug Ihrer Bank als
+  Datei ein (camt.052, camt.053, camt.054 oder MT940, auch als ZIP). Eine Vorschau zeigt, was gespeichert wird, und
+  fragt bei einem neuen Konto und bei Eingängen von unbekannter IBAN nach. Jedes Konto gilt als Mischkonto, bis Sie
+  es als Konto nur für die Vermietung bestätigen; auf einem Mischkonto stehen private Umsätze nur in der Summe des
+  Tages, nie einzeln.
+  Zweimal eingelesene Tage ändern nichts. Zu jedem offenen Umsatz schlägt die Seite Mietverhältnis und Art vor (über
+  die IBAN), mit Ampel und Grund; „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, eine Kaution als
+  Kautionsbuchung, eine schon erfasste Zahlung wird nur verknüpft. Aufteilen auf zwei Wohnungen, Beiseitelegen und
+  Lösen gehen ebenso; je Konto steht, ob es lückenlos eingelesen ist. Das Cockpit nennt nicht zugeordnete Umsätze,
+  das Mietkonto vermerkt „aus dem Kontoauszug“, und der Eingang der Belege weist Kontoauszüge ab, damit Bankdaten nie
+  an eine KI gehen ([#188](https://github.com/speedone/mietfuchs/issues/188)).
 - Kaution führen: Am Mietverhältnis (Stammdaten, „Kaution führen“) buchen Sie Eingänge, auch in Raten, Zinsen,
   Verrechnungen und Rückzahlungen, und ändern sie dort. Den Stand rechnet Mietfuchs aus den Buchungen; ohne
   Buchungen gilt weiter der gewählte Stand. Vor einem Datum nach heute und vor einer Verrechnung über den offenen
@@ -34,6 +45,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   kommen aus dem Anschreiben, eine abweichende IBAN am Objekt gilt also auch im Code. Der Verwendungszweck ist ein
   neuer Baustein der Vorlage, für alle Objekte, ein Objekt oder einen Mieter; Vorgabe ist „Name, Wohnung, Abrechnung“
   ([#624](https://github.com/speedone/mietfuchs/issues/624)).
+- Zwei neue Anleitungen unter „Hilfe & Begriffe“: „Kaution führen: Eingang, Raten, Verrechnung und Auszug“
+  ([#228](https://github.com/speedone/mietfuchs/issues/228)) und „Kontoauszug einlesen und Mieteingänge zuordnen“
+  ([#188](https://github.com/speedone/mietfuchs/issues/188)), je mit nachgerechnetem Beispiel. Endet im gewählten
+  Zeitraum ein Mietverhältnis mit Kaution, schlägt die Hilfe die Anleitung zur Kaution vor.
 
 ### Geändert
 

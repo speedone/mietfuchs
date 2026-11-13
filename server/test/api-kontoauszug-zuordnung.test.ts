@@ -304,3 +304,18 @@ test('Durchsicht I1: eine verknüpfte Kautionsbuchung wechselt ihre Art nicht', 
   const received = entries.find((e) => e.kind === 'received' && e.date === inflow.bookingDate) ?? assert.fail('kein Eingang')
   assert.equal((await json(s, 'PUT', `/api/deposit-entries/${received.id}`, { kind: 'interest' })).status, 200, 'Eingang und Ertrag sind beide Zufluss')
 }))
+
+test('Seite: GET /api/bank/tenancies nennt alle Mietverhältnisse mit Wohnung und Objekt', () => withServer(async (s) => {
+  const t = await tenancy(s)
+  const list = await s.api<{ id: string; label: string }[]>('/api/bank/tenancies')
+  assert.equal(list.length, 1)
+  assert.equal(list[0]?.id, t.id)
+  assert.equal(list[0]?.label, 'Mieter EG, EG')
+}))
+
+test('Cockpit: GET /api/bank/open-count zählt die offenen Umsätze', () => withServer(async (s) => {
+  assert.deepEqual(await s.api('/api/bank/open-count'), { count: 0 })
+  await tenancy(s)
+  await importJune(s)
+  assert.deepEqual(await s.api('/api/bank/open-count'), { count: 2 })
+}))

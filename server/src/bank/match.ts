@@ -11,7 +11,7 @@
 
 import { depositState } from '../../../shared/deposit.ts'
 import { germanDate } from '../../../shared/law/register.ts'
-import type { DepositEntry, Payment, PaymentKind, Tenancy } from '../../../shared/types.ts'
+import type { BankLinkTarget, BankSuggestion, DepositEntry, Payment, Tenancy } from '../../../shared/types.ts'
 import { addIsoDays } from './coverage.ts'
 import { normalizeIban } from './statement.ts'
 import type { BankTransaction, TenancyPayer } from './model.ts'
@@ -30,13 +30,9 @@ export type MatchContext = {
   monthlySollCents: (tenancyId: string, month: string) => number | null
 }
 
-export type LinkTarget =
-  | { type: 'newPayment'; kind: PaymentKind }
-  | { type: 'existingPayment'; paymentId: string }
-  | { type: 'deposit'; kind: 'received' | 'refunded' }
-  | { type: 'existingDeposit'; depositEntryId: string }
+export type LinkTarget = BankLinkTarget
 
-export type Suggestion = { tenancyId: string; target: LinkTarget; light: 'green' | 'yellow'; reason: string }
+export type Suggestion = BankSuggestion
 
 export const SAME_PAYMENT_DAYS = 7
 export const DEPOSIT_WINDOW_DAYS = 31

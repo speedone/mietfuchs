@@ -98,6 +98,12 @@ export function suggestGuides(stock: HelpStock | null, max = 3): GuideSuggestion
   if (changes > 0) add(EVENT, 'tenantChange', changes === 1 ? `Weil ${when} ein Mieterwechsel erfasst ist` : `Weil ${when} ${numberWord(changes)} Mieterwechsel erfasst sind`)
   else if (vacant.length === 1) add(EVENT, 'tenantChange', `Weil „${vacant[0]!.name}“ ${when} zeitweise nicht vermietet ist`)
   else if (vacant.length > 1) add(EVENT, 'tenantChange', `Weil ${numberWord(vacant.length)} ${vacant.some(isParking) ? 'Einheiten' : 'Wohnungen'} ${when} zeitweise nicht vermietet sind`)
+  // Kaution beim Auszug (#228): Ein Mietverhältnis mit vereinbarter Kaution endet im Zeitraum. Ob noch Geld beim Vermieter
+  // liegt, steht in den Kautionsbuchungen, die die Hilfe nicht lädt; der Grund nennt deshalb nur das Ende.
+  const leaving = tenancies.filter((t) => t.end !== null && t.end >= from && t.end <= to && (t.depositCents ?? 0) > 0)
+  const leaver = leaving[0]?.tenantName.trim()
+  if (leaving.length === 1) add(EVENT, 'deposit', leaver ? `Weil ${leaver} ${when} auszieht und eine Kaution vereinbart ist` : `Weil ${when} ein Mietverhältnis mit Kaution endet`)
+  else if (leaving.length > 1) add(EVENT, 'deposit', `Weil ${when} ${numberWord(leaving.length)} Mietverhältnisse mit Kaution enden`)
 
   // Heizanlagen des Objekts, die im Zeitraum heizen. Eine Ersatzanlage beginnt am Tag nach dem letzten der ersetzten.
   const all = stock.plants.filter((p) => p.propertyId === property.id)

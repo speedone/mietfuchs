@@ -844,6 +844,35 @@ Cockpit und Hinweis der Steuer.
   Lexikon „Einbehalt“, kein Vorschlag und keine Frist für den Einbehalt, und die mit der Kaution verrechnete
   Nachzahlung steht in der Zeile der Abrechnung.
 
+## Kontoauszug (#188)
+
+Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in server/src/db/CLAUDE.md.
+
+- **Lesen** (`bank/read.ts`, `camt.ts`, `mt940.ts`): rein, Datei hinein, Auszüge und Befunde heraus. `looksLikeBankFile`
+  erkennt einen Auszug am Inhalt (camt-Wurzel, MT940-Kopf, ZIP mit solchem Eintrag); `refuseBankFile` in index.ts
+  weist ihn an `/api/upload`, `/api/intake`, `/api/extract` und den Heizrouten mit 422 und `bankFile` ab und löscht die
+  Datei. **Kein Modul unter `bank/` importiert aus `ai/`**, und `ai/` nimmt aus `bank/` höchstens `looksLikeBankFile`
+  (bank-waechter.test.ts).
+- **Einlesen** (`bank/importPlan.ts`, `planBankImport`): planen gegen den Bestand, Regeln 1 bis 9 der Spec mit
+  Nummer im Code. Einheit des Abgleichs ist der abgeschlossene Buchungstag je Konto; ein bekannter Tag wird nie neu
+  geschrieben, derselbe Tag auf mehreren Seiten einer Datei ist einer. Auf dem **Mischkonto** (Voreinstellung) wird nur
+  gespeichert, was von oder an Mieter- bzw. Zahler-IBANs geht oder per Antwort zur Vermietung gehört; Eingänge
+  unbekannter Herkunft sind Rückfragen, Ausgänge an Unbekannt privat. camt.054 zerlegt nur eine gespeicherte,
+  unverknüpfte Sammelbuchung desselben Tags, vollständig und auf dem Mischkonto nur mit Mieter-Posten. Routen
+  `POST /api/bank/import/plan` (Trockenlauf) und `POST /api/bank/import` (neu geplant in der Schreibschlange, Marke,
+  409 mit neuer Vorschau); die Datei bleibt im Arbeitsspeicher (eigener multer, 20 MB).
+- **Lückenlos** (`bank/coverage.ts`): nur über Auszüge mit Salden, ein enthaltener Auszug zählt nicht; Wortlaut nie
+  „Einnahmen vollständig“.
+- **Zuordnen** (`bank/match.ts`, `bank/linkPlan.ts`): Vorschlag nur über die IBAN; erfasste Zahlung oder
+  Kautionsbuchung gleichen Betrags in 7 Tagen wird verknüpft (eine Verrechnung aus der Kaution nie), eine erfasste
+  Zahlung im Monat drumherum macht gelb. Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
+  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft. `applyBankLinks` geht über
+  `insertEntityIn` bzw. `insertDepositEntriesIn`, ein Eintrag im Verlauf je Lauf. Das Monats-Soll liefert
+  `bankSollOf` aus dem Mietkonto; `GET /api/bank/open-count` zählt ohne es (Cockpit).
+- **Wächter an Zielen** (`db/bankGuard.ts`): Eine verknüpfte Zahlung oder Kautionsbuchung lässt sich senken, aber nicht
+  über den Umsatz heben, die Art wechseln (außer Eingang und Ertrag) oder umhängen; „Ist das die Kaution?“ hängt die
+  Zuordnung mit um. Lösen (`DELETE /api/bank/links/:id`) löscht das Ziel nur, wenn es aus dem Umsatz entstand.
+
 ## Der Schnappschuss (#55)
 
 [snapshot.ts](snapshot.ts): Die Berechnung liest den Speicher nicht selbst, sie bekommt einen

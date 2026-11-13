@@ -7,8 +7,7 @@ import { depositState } from '../../../shared/deposit.ts'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
 import {
   DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, NO_MONEY_FORM_TEXT, depositEntryBody, depositFormOf, depositKindText, depositPurposeHint, depositStateText, emptyDepositForm, formWithoutMoney,
-  holdBody, holdFormOf, rentBeyondOpen, signedCents, withKind, type DepositField, type DepositHoldField,
-} from '../depositForm'
+  holdBody, holdFormOf, rentBeyondOpen, signedCents, withKind, type DepositField, type DepositHoldField, appliedDuringTenancy, APPLIED_DURING_TENANCY_TEXT } from '../depositForm'
 import { depositSettlement, type DepositSettlement } from '../depositSettlement'
 import { localToday } from '../periodForm'
 import type { DepositEntry, DepositStatementInfo, Tenancy } from '../types'
@@ -19,6 +18,10 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 import { useConfirm, useToast } from './feedback'
 import Field from './Field'
 import Table from './Table'
+
+// Eine gesetzliche Frist für die Abrechnung der Kaution gibt es nicht; der BGH verlangt eine angemessene, nicht allgemein
+// bestimmbare (Urteil vom 24.07.2019, VIII ZR 141/17). Entscheidung des Betreibers vom 13.11.2026: keine Zahl nennen.
+const DEPOSIT_DEADLINE_TEXT = 'Rechnen Sie die Kaution in angemessener Frist ab; eine feste Frist gibt es nicht, sie hängt vom Einzelfall ab (BGH, Urteil vom 24.07.2019, VIII ZR 141/17).'
 
 export default function DepositDrawer({ tenancy, entries, info, onChanged, onClose }: {
   tenancy: Tenancy
@@ -101,9 +104,13 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
     if (result.body.date > localToday()) {
       const ok = await confirm({
         title: 'Datum in der Zukunft?',
-        message: `Die Buchung trägt den ${fmtDate(result.body.date)}, ein Tag nach heute. Der Stand der Kaution zählt sie trotzdem gleich mit.`,
+        message: `Die Buchung trägt den ${fmtDate(result.body.date)}, einen Tag nach heute oder später. Der Stand der Kaution zählt sie trotzdem gleich mit.`,
         confirmLabel: verb,
       })
+      if (!ok) return
+    }
+    if (appliedDuringTenancy(result.body, tenancy.end, editing)) {
+      const ok = await confirm({ title: 'Verrechnen, solange das Mietverhältnis läuft?', message: APPLIED_DURING_TENANCY_TEXT, confirmLabel: 'Trotzdem verrechnen' })
       if (!ok) return
     }
     const beyond = rentBeyondOpen(result.body, info?.openRentCents, editing)
@@ -183,11 +190,12 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
         <section aria-label="Aufstellung zum Auszug" className="field-group" ref={holdSection}>
           <h3>Aufstellung zum Auszug</h3>
           <SettlementView settlement={settlement} />
+          <p className="muted">{DEPOSIT_DEADLINE_TEXT}</p>
           {/* Bei Stand 0 gibt es nichts zurückzuhalten; ein gespeicherter Einbehalt bleibt sichtbar, damit er sich leeren lässt. */}
           {holdShown && (
             <>
               <ErrorSummary errors={holdErrors} />
-              <Field label="Einbehalt €" {...holdErrors.field('holdAmount')} hint="Was Sie vorerst zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung. Leer heißt keiner. Mehr als der Stand der Kaution zählt nicht.">
+              <Field label="Einbehalt €" {...holdErrors.field('holdAmount')} hint="Was Sie vorerst zurückhalten, wenn aus einer noch ausstehenden Nebenkostenabrechnung eine Nachzahlung zu erwarten ist: ein angemessener Teil, längstens bis zum Ablauf der Abrechnungsfrist (BGH, Urteil vom 18.01.2006, VIII ZR 71/05). Leer heißt keiner. Mehr als der Stand der Kaution zählt nicht.">
                 <input value={hold.amount} inputMode="decimal" placeholder="z. B. 300,00" onChange={(e) => setHold({ ...hold, amount: e.target.value })} />
               </Field>
               <Field label="Grund" {...holdErrors.field('holdNote')}>

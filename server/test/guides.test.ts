@@ -38,6 +38,11 @@ import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { CALENDAR_RULES } from '../../shared/period.ts'
 import { CODE_LENGTH, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, createSessions, formatCode, newSetupCode } from '../src/access.ts'
 import { DEFAULT_PORTS } from '../src/instanceGuard.ts'
+import { depositLimit, depositProblem, depositState } from '../../shared/deposit.ts'
+import type { DepositEntry } from '../../shared/types.ts'
+import { fingerprintOf, type BankEntry } from '../src/bank/statement.ts'
+import { planBankImport } from '../src/bank/importPlan.ts'
+import { SAME_PAYMENT_DAYS, suggest, type MatchContext } from '../src/bank/match.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ids = Object.keys(GUIDES) as GuideId[]
@@ -45,7 +50,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'deposit', 'bankStatement', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -502,6 +507,72 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     const parts = splitByService({ startMonth: 1, changes: ['2025-05'] }, { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
     assert.deepEqual(parts.map((p) => p.amountCents), [15781, 32219])
     inOrder(GUIDES.periodMayApril.example, ['01.01.', '30.04.2025', '30.04.2026', eur(48000), eur(15781), eur(32219)], 'periodMayApril')
+  },
+  // #228: Höchstgrenze, Stand nach Raten, Zinsen und Verrechnung mit den Funktionen von Server und Oberfläche
+  // (shared/deposit.ts); auszuzahlen bleibt der Stand minus Einbehalt, wie in client/src/depositSettlement.ts.
+  deposit: () => {
+    const limit = depositLimit({ start: '2025-01-01', baseRents: [{ from: '2025-01', monthlyCents: 80000 }], costModel: 'settlement', heatingModel: 'settlement' })
+    if (limit === null) return assert.fail('keine Höchstgrenze')
+    const t = { depositCents: limit }
+    const e = (id: string, date: string, kind: DepositEntry['kind'], amountCents: number, purpose?: DepositEntry['purpose']): DepositEntry =>
+      ({ id, tenancyId: 't', date, kind, amountCents, ...(purpose ? { purpose } : {}) })
+    const two = [e('r1', '2025-01-01', 'received', 80000), e('r2', '2025-02-01', 'received', 80000)]
+    const afterTwo = depositState(t, two)
+    assert.equal(afterTwo.status, 'teilweise')
+    const all = [...two, e('r3', '2025-03-01', 'received', 80000), e('z', '2025-12-31', 'interest', 1820)]
+    const full = depositState(t, all)
+    assert.equal(full.status, 'erhalten')
+    const settled = [...all, e('v', '2026-07-15', 'applied', 45000, 'rent')]
+    const after = depositState(t, settled)
+    assert.equal(depositProblem(settled), null)
+    const hold = 30000
+    const payout = Math.max(0, after.balanceCents) - Math.min(hold, Math.max(0, after.balanceCents))
+    inOrder(GUIDES.deposit.example, [eur(80000), eur(limit), eur(80000), eur(afterTwo.balanceCents), eur(1820), eur(full.balanceCents), eur(45000), eur(after.balanceCents), eur(hold), eur(payout)], 'deposit')
+    assert.equal(payout, 166820)
+  },
+  // #188: derselbe Tag auf einem Mischkonto durch den Plan des Imports (Tagessumme, gespeicherte Umsätze) und die
+  // Vorschläge durch match.ts (grün über IBAN und Soll, kein Vorschlag bei zwei laufenden Mietverhältnissen).
+  bankStatement: () => {
+    const OWN = 'DE89370400440532013000'
+    const A = 'DE02120300000000202051'
+    const B = 'DE44500105175407324931'
+    const SHOP = 'DE75512108001245126199'
+    const entry = (amountCents: number, iban: string, name: string): BankEntry => {
+      const base = {
+        bookingDate: '2025-06-02', valueDate: '2025-06-02', amountCents, counterpartyName: name, counterpartyIban: iban, ultimatePartyName: null,
+        purpose: name, bankReference: null, endToEndId: null, reversal: false, bookingDateEstimated: false, batch: null,
+      }
+      return { ...base, fingerprint: fingerprintOf(base) }
+    }
+    const entries = [entry(83000, A, 'Mieter A'), entry(100000, B, 'Mieter B'), entry(-4999, SHOP, 'Buchhandlung')]
+    const sum = entries.reduce((a, x) => a + x.amountCents, 0)
+    let n = 0
+    const plan = planBankImport(
+      { statements: [{ format: 'camt.053', statementId: null, accountIban: OWN, accountOtherId: null, createdAt: null, fromWholeDay: true, fromDate: '2025-06-02', toDate: '2025-06-02', openingBalanceCents: 100000, closingBalanceCents: 100000 + sum, entries }], problems: [], pendingSkipped: 0 },
+      {
+        accounts: [{ id: 'konto', iban: OWN, otherId: null, label: 'Girokonto', kind: 'mixed', rentalConfirmedAt: null }], imports: [], days: [], transactions: [], links: [], payers: [],
+        tenancyIbans: [{ tenancyId: 'a', iban: A }, { tenancyId: 'wohnung', iban: B }, { tenancyId: 'stellplatz', iban: B }], ownIbans: [],
+      },
+      [], { sha256: 'sha', name: 'auszug.xml' }, () => `id-${++n}`, '2025-07-01T08:00:00Z',
+    )
+    const [day] = plan.writes.days
+    if (!day) return assert.fail('kein Tag')
+    assert.equal(plan.writes.transactions.length, 2)
+    assert.ok(plan.writes.transactions.every((x) => x.amountCents > 0), 'der Einkauf steht einzeln da')
+    const ctx: MatchContext = {
+      tenancies: [{ id: 'a', iban: A, start: '2025-01-01', end: null }, { id: 'wohnung', iban: B, start: '2025-01-01', end: null }, { id: 'stellplatz', iban: B, start: '2025-01-01', end: null }],
+      payers: [], payments: [], linkedPaymentIds: new Set(), depositEntries: [], linkedDepositEntryIds: new Set(),
+      monthlySollCents: (id) => (id === 'a' ? 65000 + 18000 : null),
+    }
+    const txA = plan.writes.transactions.find((x) => x.counterpartyIban === A) ?? assert.fail('Eingang A fehlt')
+    const txB = plan.writes.transactions.find((x) => x.counterpartyIban === B) ?? assert.fail('Eingang B fehlt')
+    assert.equal(suggest(txA, ctx)?.light, 'green')
+    assert.equal(suggest(txB, ctx), null)
+    assert.equal(SAME_PAYMENT_DAYS, 7)
+    assert.match(GUIDES.bankStatement.result.join(' '), /höchstens sieben Tage/)
+    inOrder(GUIDES.bankStatement.example, [eur(65000), eur(18000), eur(83000), '02.06.2025', eur(83000), eur(txB.amountCents), eur(4999),
+      `${day.entryCount} Umsätze`, eur(day.creditCents), eur(day.debitCents), eur(txA.amountCents), eur(txB.amountCents), eur(90000), eur(10000)], 'bankStatement')
+    assert.equal(90000 + 10000, txB.amountCents)
   },
   // #528: Mindestlänge, Länge des Codes und die Dauer einer Sitzung aus dem Kern der Anmeldung (server/src/access.ts)
   network: () => {

@@ -6,7 +6,7 @@
 import type { GuidePage, GuideView } from '../../shared/guides.ts'
 
 export type Tab =
-  | 'cockpit' | 'zaehler' | 'kosten' | 'mietkonto'
+  | 'cockpit' | 'zaehler' | 'kosten' | 'mietkonto' | 'kontoauszug'
   | 'heizkosten' | 'abrechnung' | 'uebersicht' | 'steuer'
   | 'stammdaten' | 'belege' | 'einstellungen' | 'verlauf' | 'hilfe'
 
@@ -25,6 +25,8 @@ export const NAV: { section?: string; items: NavItem[] }[] = [
       { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢', short: 'Zähler' },
       { id: 'kosten', label: 'Kosten', icon: '🧾' },
       { id: 'mietkonto', label: 'Mietkonto', icon: '💶' },
+      // Kontoauszug einlesen und Zahlungen zuordnen (#188), gleich unter dem Mietkonto, in das die Zahlungen gehen.
+      { id: 'kontoauszug', label: 'Kontoauszug', icon: '🏦' },
     ],
   },
   {

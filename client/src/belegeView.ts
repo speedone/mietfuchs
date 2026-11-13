@@ -49,6 +49,17 @@ export async function splitForStore(files: readonly File[], hasEInvoice: (f: Fil
   return { evaluate, store }
 }
 
+// Kontoauszug (#188): Endungen, die nur ein Kontoauszug trägt (ZIP mit Auszügen, MT940). Solche Dateien übergeht die
+// Ablage wie jede andere, aber der Satz dazu führt auf die Seite Kontoauszug (Durchsicht Teil 3, W5). camt kommt als
+// .xml an den Server und wird dort am Inhalt erkannt.
+const BANK_FILE_NAME = /\.(zip|sta|940|mt940)$/i
+// Der Satz zu übergangenen Dateien, leer, wenn keine übergangen wurde.
+export function skippedText(files: Iterable<File>): string {
+  const skipped = [...files].filter((f) => !isAcceptedFile(f))
+  if (skipped.length === 0) return ''
+  return skipped.some((f) => BANK_FILE_NAME.test(f.name)) ? BANK_FILE_TEXT : SKIPPED_FILES
+}
+
 export function splitFiles(files: Iterable<File>): { ok: File[]; skipped: number } {
   const all = [...files]
   const ok = all.filter(isAcceptedFile)
@@ -140,3 +151,8 @@ export function discardQuestion(source: AssessmentSource): { title: string; mess
   const from = source === 'e-rechnung' ? 'aus der E-Rechnung' : 'der KI'
   return { title: `Vorschläge ${from} verwerfen?`, message: `Die Vorschläge ${from} zu diesem Beleg werden verworfen; der Beleg kommt an die gewählte Position.` }
 }
+
+// Kontoauszug (#188): Der Server weist einen Auszug an den Routen der Belege mit diesem Satz ab (422, `bankFile`); der
+// Eingang setzt dann den Knopf zur Seite Kontoauszug daneben.
+export const BANK_FILE_TEXT = 'Das ist ein Kontoauszug. Kontoauszüge lesen Sie auf der Seite Kontoauszug ein.'
+export const isBankFileError = (text: string | undefined): boolean => text === BANK_FILE_TEXT
