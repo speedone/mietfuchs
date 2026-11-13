@@ -95,7 +95,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   [BankImportDrawer.tsx](src/components/BankImportDrawer.tsx) (Primärknopf „Einlesen“, Ausnahme in S16): jede Antwort plant
   neu, 409 zeigt die neue Vorschau. Offene Umsätze in [BankOpenTable.tsx](src/components/BankOpenTable.tsx) (`stacked`,
   Ampel immer mit Grund als Text), „Alle grünen übernehmen (n)“ mit einer Rückfrage; eine vom Vorschlag abweichende Wahl
-  meldet die Seite als offenes Formular. Konten in [BankAccountsCard.tsx](src/components/BankAccountsCard.tsx). **Nichts
+  meldet die Seite als offenes Formular. Konten in [BankAccountsCard.tsx](src/components/BankAccountsCard.tsx), gemerkte Zahler mit „Entfernen …“ in [BankPayersCard.tsx](src/components/BankPayersCard.tsx). Trägt eine Rückfrage `suggestion`, belegt das Fenster die Antwort vor (nur ohne eigene Antwort) und nennt den Grund am Feld „Mietverhältnis“. **Nichts
   davon geht in den Browserspeicher**: Rückfragen der Vorschau nennen private Umsätze. Der Eingang der Belege setzt an
   die Ablehnung eines Auszugs (`isBankFileError`) den Knopf „Zur Seite Kontoauszug“.
 - **Von Hand erfassen aus dem Beleg** (#490 PR 3, #487 Teil 2, Logik in [receiptForm.ts](src/receiptForm.ts)): „Von Hand

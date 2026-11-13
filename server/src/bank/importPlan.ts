@@ -130,10 +130,10 @@ export function planBankImport(
   let pending = 0
   const alreadyImported: string[] = []
 
-  const accountDecision = new Map<string, boolean>()
+  const accountDecision = new Map<string, { accept: boolean; rental: boolean }>()
   const entryDecision = new Map<string, Extract<ImportDecision, { type: 'entry' }>>()
   for (const d of decisions) {
-    if (d.type === 'account') accountDecision.set(d.iban, d.accept)
+    if (d.type === 'account') accountDecision.set(d.iban, { accept: d.accept, rental: d.accept && d.rental === true })
     else entryDecision.set(d.key, d)
   }
 
@@ -184,14 +184,16 @@ export function planBankImport(
         askedAccounts.add(key)
         continue
       }
-      if (!answer) continue
+      if (!answer.accept) continue
+      // „Ja, ein Konto nur für die Vermietung“ (Nachtrag 13.11.) ist dieselbe ausdrückliche Bestätigung wie in der Karte
+      // „Konten“: Ab jetzt wird jeder Umsatz einzeln gespeichert, und es gibt keine Rückfrage zu Eingängen.
       account = {
         id: id(),
         iban: s.accountIban,
         otherId: s.accountIban ? null : s.accountOtherId,
         label: `Konto ${key.slice(-4)}`,
-        kind: 'mixed',
-        rentalConfirmedAt: null,
+        kind: answer.rental ? 'rental' : 'mixed',
+        rentalConfirmedAt: answer.rental ? now : null,
       }
       accounts.push(account)
       writes.accounts.push(account)
@@ -365,7 +367,7 @@ export function planBankImport(
 export function importToken(plan: ImportPlan, decisions: readonly ImportDecision[]): string {
   const ordinal = new Map(plan.newIds.map((v, i) => [v, `#${i}`]))
   const json = JSON.stringify({ writes: plan.writes, questions: plan.questions, findings: plan.findings, decisions }, (k, v: unknown) => {
-    if (k === 'importedAt') return ''
+    if (k === 'importedAt' || k === 'rentalConfirmedAt') return v === null ? null : ''
     return typeof v === 'string' ? (ordinal.get(v) ?? v) : v
   })
   return crypto.createHash('sha256').update(json, 'utf8').digest('hex')
@@ -387,7 +389,8 @@ export function decisionsOf(raw: unknown): ImportDecision[] | null {
     if (typeof d !== 'object' || d === null) return null
     const o = d as Record<string, unknown>
     if (o.type === 'account' && typeof o.iban === 'string' && typeof o.accept === 'boolean') {
-      out.push({ type: 'account', iban: o.iban, accept: o.accept })
+      if (o.rental !== undefined && typeof o.rental !== 'boolean') return null
+      out.push({ type: 'account', iban: o.iban, accept: o.accept, ...(o.rental === true ? { rental: true } : {}) })
     } else if (o.type === 'entry' && typeof o.key === 'string' && (o.as === 'rent' || o.as === 'deposit' || o.as === 'private')
       && (o.tenancyId === undefined || typeof o.tenancyId === 'string') && (o.rememberPayer === undefined || typeof o.rememberPayer === 'boolean')) {
       out.push({

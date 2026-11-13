@@ -67,6 +67,7 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'POST /api/bank/import': s('Kontoauszug eingelesen', 'bank_imports'),
   'PUT /api/bank/accounts/:id': s('Konto geändert', 'bank_accounts'),
   'DELETE /api/bank/imports/:id': s('Import zurückgenommen', 'bank_imports'),
+  'DELETE /api/bank/payers/:id': s('Gemerkten Zahler entfernt', 'tenancy_payers'),
   // Teil 2: Der Buchungslauf nennt die Zahl (retitleCurrentGroup in db/bank.ts); die Vorschau (…/links/plan) liest nur.
   'POST /api/bank/links': s('Umsätze aus dem Kontoauszug gebucht', 'bank_transaction_links'),
   'DELETE /api/bank/links/:id': s('Zuordnung gelöst', 'bank_transaction_links'),

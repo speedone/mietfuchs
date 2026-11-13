@@ -375,3 +375,17 @@ test('Integration D2: nach dem Zurücknehmen eines älteren Imports trägt ein s
   assert.equal(again.writes.days[0]?.importId, importB?.id)
   assert.equal(again.writes.transactions.length, 1)
 })
+
+test('3 Nachtrag 13.11.: „Ja, ein Konto nur für die Vermietung“ legt das Konto als bestätigtes Vermieterkonto an und fragt nach keinem Eingang', () => {
+  const r = read(statement([entry('2025-06-02', 85000, { counterpartyIban: STRANGER }), entry('2025-06-02', -4999, { counterpartyIban: STRANGER })]))
+  const d: ImportDecision[] = [{ type: 'account', iban: OWN, accept: true, rental: true }]
+  const p = plan(r, stock({ accounts: [] }), d)
+  assert.equal(p.ready, true)
+  assert.deepEqual(p.questions, [])
+  assert.equal(p.writes.accounts[0]?.kind, 'rental')
+  assert.equal(p.writes.accounts[0]?.rentalConfirmedAt, '2025-07-01T08:00:00Z')
+  assert.equal(p.writes.transactions.length, 2)
+  // Die Zeit der Bestätigung steht nicht in der Prüfmarke: Vorschau und Einlesen laufen zu verschiedenen Zeiten
+  const later = planBankImport(r, stock({ accounts: [] }), d, { sha256: 'sha-1', name: 'auszug.xml' }, counter('sha-1'), '2025-07-01T08:05:00Z')
+  assert.equal(importToken(later, d), importToken(p, d))
+})

@@ -33,6 +33,7 @@ let planReply: (decisions: unknown) => BankImportPreview
 let importReply: () => Response
 let linkPlanReply: (decisions: unknown) => BankLinkPreview
 let linkReply: () => Response
+let payers: { id: string; tenancyId: string; iban: string; name: string | null }[]
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 beforeEach(() => {
@@ -40,6 +41,7 @@ beforeEach(() => {
   open = []
   done = []
   accounts = []
+  payers = []
   planReply = (d) => preview(Array.isArray(d) && d.length > 0 ? { questions: [], ready: true, token: 'marke-2' } : {})
   importReply = () => json({ ok: true, sentence: '2 Umsätze übernommen.' })
   linkPlanReply = () => ({ problems: [], sentence: '1 Zahlung gebucht.', token: 'link-1' })
@@ -54,6 +56,7 @@ beforeEach(() => {
     sent.push({ url, method, body })
     if (path === '/api/bank/accounts' && method === 'GET') return json(accounts)
     if (path === '/api/bank/tenancies') return json(tenancies)
+    if (path === '/api/bank/payers' && method === 'GET') return json(payers)
     if (path === '/api/bank/transactions' && method === 'GET') return json(query === 'state=done' ? done : open)
     if (path === '/api/bank/import/plan') return json(planReply(JSON.parse(String((body as Record<string, string>).decisions ?? '[]'))))
     if (path === '/api/bank/import') return importReply()
@@ -95,13 +98,15 @@ test('Einlesen: Vorschau mit Rückfrage zum Konto, Antwort plant neu, „Einlese
   const drawer = await screen.findByRole('dialog')
   expect(within(drawer).getByText(`Das Konto ${OWN} wurde noch nie eingelesen. Ist es Ihr Konto für Mieteingänge?`)).toBeTruthy()
   expect(within(drawer).getByText('Ein Kautionskonto lesen Sie hier bitte nicht ein.')).toBeTruthy()
-  expect(within(drawer).getByText('2 Umsätze übernommen.')).toBeTruthy()
+  // #644: Mit offener Rückfrage steht noch kein Satz zum Ergebnis da
+  expect(within(drawer).queryByText('2 Umsätze übernommen.')).toBeNull()
   const read = within(drawer).getByRole('button', { name: 'Einlesen' }) as HTMLButtonElement
   expect(read.disabled).toBe(true)
   fireEvent.click(within(drawer).getByLabelText('Ja, mein Konto für Mieteingänge'))
   await waitFor(() => expect(posts('/api/bank/import/plan').length).toBe(2))
   expect(JSON.parse(String((posts('/api/bank/import/plan')[1]?.body as Record<string, string>).decisions))).toEqual([{ type: 'account', iban: OWN, accept: true }])
   await waitFor(() => expect(read.disabled).toBe(false))
+  expect(within(drawer).getByText('2 Umsätze übernommen.')).toBeTruthy()
   fireEvent.click(read)
   await waitFor(() => expect(posts('/api/bank/import').length).toBe(1))
   expect(posts('/api/bank/import')[0]?.body).toEqual({ statement: 'Datei juni.xml', decisions: JSON.stringify([{ type: 'account', iban: OWN, accept: true }]), token: 'marke-2' })
@@ -259,4 +264,114 @@ test('Klicktest B3: ein teilweise zugeordneter Umsatz zeigt seine Zuordnung mit 
   fireEvent.click(within(table).getByRole('button', { name: /^Lösen …/ }))
   await confirmDialog('Lösen, Zahlung behalten')
   await waitFor(() => expect(sent.some((s) => s.method === 'DELETE' && s.url === '/api/bank/links/l1')).toBe(true))
+})
+
+test('Nachtrag 13.11.: ein Vorschlag des Servers belegt die Rückfrage vor und nennt den Grund am Feld', async () => {
+  planReply = () => preview({ questions: [{ type: 'entry', key: '0:2025-06-02:1', bookingDate: '2025-06-02', amountCents: 85000, counterpartyName: 'Erika Beispiel',
+    counterpartyIban: 'DE02120300000000202051', purpose: 'Miete Juni', suggestion: { tenancyId: 't1', reason: 'Name und Betrag passen zu Erika Beispiel.' } }] })
+  renderPage()
+  await chooseFile()
+  const drawer = await screen.findByRole('dialog')
+  const kind = await within(drawer).findByLabelText(/Was ist der Eingang/) as HTMLSelectElement
+  await waitFor(() => expect(kind.value).toBe('rent'))
+  const tenancy = within(drawer).getByLabelText(/Mietverhältnis/) as HTMLSelectElement
+  expect(tenancy.value).toBe('t1')
+  expect(within(drawer).getByText('Vorschlag: Name und Betrag passen zu Erika Beispiel.')).toBeTruthy()
+  // Durchsicht: Ein Vorschlag merkt kein Konto; das entscheidet nur der Vermieter selbst
+  expect((within(drawer).getByLabelText('Dieses Konto als Zahler merken') as HTMLInputElement).checked).toBe(false)
+  await waitFor(() => expect(posts('/api/bank/import/plan').length).toBeGreaterThanOrEqual(2))
+  expect(JSON.parse((posts('/api/bank/import/plan').at(-1)?.body as Record<string, string>).decisions ?? '[]'))
+    .toEqual([{ type: 'entry', key: '0:2025-06-02:1', as: 'rent', tenancyId: 't1' }])
+  // Eine andere Wahl nimmt den Satz zum Vorschlag weg
+  fireEvent.change(tenancy, { target: { value: 't2' } })
+  expect(within(drawer).queryByText(/^Vorschlag:/)).toBeNull()
+})
+
+test('Nachtrag 13.11.: gemerkte Zahler stehen mit Mietverhältnis und lassen sich nach Rückfrage entfernen', async () => {
+  accounts = [account()]
+  payers = [{ id: 'p1', tenancyId: 't1', iban: 'DE02120300000000202051', name: 'Erika Beispiel' }]
+  renderPage()
+  const card = (await screen.findByRole('heading', { name: 'Gemerkte Zahler' })).closest('section') as HTMLElement
+  expect(within(card).getByText(/Erika Beispiel, EG \(Haus A\)/)).toBeTruthy()
+  expect(within(card).getByText(/DE02120300000000202051/)).toBeTruthy()
+  fireEvent.click(within(card).getByRole('button', { name: /Entfernen …/ }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/fragt das Einlesen wieder nach/)
+  payers = []
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
+  await waitFor(() => expect(posts('/api/bank/payers/p1').map((p) => p.method)).toEqual(['DELETE']))
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gemerkte Zahler' })).toBeNull())
+})
+
+test('#644: auch bei „Kaution“ lässt sich das Konto als Zahler merken, ab Werk an', async () => {
+  planReply = () => preview({ questions: [{ type: 'entry', key: '0:2025-06-02:1', bookingDate: '2025-06-02', amountCents: 160000, counterpartyName: 'Neues Konto', counterpartyIban: 'DE75512108001245126199', purpose: 'Kaution' }] })
+  renderPage()
+  await chooseFile()
+  const drawer = await screen.findByRole('dialog')
+  fireEvent.change(within(drawer).getByLabelText(/Was ist der Eingang/), { target: { value: 'deposit' } })
+  fireEvent.change(within(drawer).getByLabelText(/Mietverhältnis/), { target: { value: 't1' } })
+  expect((within(drawer).getByLabelText('Dieses Konto als Zahler merken') as HTMLInputElement).checked).toBe(true)
+  await waitFor(() => expect(JSON.parse((posts('/api/bank/import/plan').at(-1)?.body as Record<string, string>).decisions ?? '[]'))
+    .toEqual([{ type: 'entry', key: '0:2025-06-02:1', as: 'deposit', tenancyId: 't1', rememberPayer: true }]))
+})
+
+test('#644: ein beiseitegelegter Umsatz mit Teilzuordnung zeigt unter „Erledigte Umsätze“ auch seine Zuordnung', async () => {
+  accounts = [account()]
+  done = [tx('d1', 100000, { setAside: 'other', openCents: 0, suggestion: null,
+    links: [{ id: 'l1', tenancyId: 't1', paymentId: 'p1', depositEntryId: null, cents: 85000, created: true }] })]
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: 'Erledigte Umsätze zeigen' }))
+  const table = await screen.findByRole('table', { name: 'Erledigte Umsätze' })
+  expect(within(table).getByRole('button', { name: /Zurückholen/ })).toBeTruthy()
+  expect(within(table).getByText('Zahlung über 850,00 €')).toBeTruthy()
+  expect(within(table).getByRole('button', { name: /Lösen …/ })).toBeTruthy()
+})
+
+test('Klicktest 13.11.: die Ampel ist farbig gekennzeichnet und behält ihr Wort', async () => {
+  accounts = [account()]
+  open = [tx('x1', 85000), tx('x2', 30000, { suggestion: { tenancyId: 't1', target: { type: 'newPayment', kind: 'rent' }, light: 'yellow', reason: 'Betrag weicht vom Soll ab (850,00 €)' } }), tx('x3', 1000, { suggestion: null })]
+  renderPage()
+  const table = await screen.findByRole('table', { name: 'Offene Umsätze' })
+  expect(within(table).getByText('grün').className).toBe('badge green')
+  expect(within(table).getByText('gelb').className).toBe('badge amber')
+  expect(within(table).getByText('ohne Vorschlag').className).toBe('badge gray')
+})
+
+test('Nachtrag 13.11.: „Ja, ein Konto nur für die Vermietung“ schickt die Bestätigung mit und nennt vorher, was sie bedeutet', async () => {
+  renderPage()
+  await chooseFile()
+  const drawer = await screen.findByRole('dialog')
+  expect(within(drawer).getByText(/Ab jetzt wird jeder Umsatz dieses Kontos einzeln gespeichert/)).toBeTruthy()
+  fireEvent.click(within(drawer).getByLabelText('Ja, ein Konto nur für die Vermietung'))
+  await waitFor(() => expect(JSON.parse((posts('/api/bank/import/plan').at(-1)?.body as Record<string, string>).decisions ?? '[]'))
+    .toEqual([{ type: 'account', iban: OWN, accept: true, rental: true }]))
+})
+
+test('Nachtrag 13.11.: „Alle übrigen als privat“ beantwortet jede offene Rückfrage mit „privat“ und lässt Antworten stehen', async () => {
+  const q = (key: string, amountCents: number) => ({ type: 'entry' as const, key, bookingDate: '2025-06-02', amountCents, counterpartyName: `Zahler ${key}`, counterpartyIban: `DE7551210800124512619${key}`, purpose: '' })
+  planReply = () => preview({ questions: [q('1', 1000), q('2', 2000), q('3', 3000)] })
+  renderPage()
+  await chooseFile()
+  const drawer = await screen.findByRole('dialog')
+  const kinds = within(drawer).getAllByLabelText(/Was ist der Eingang/) as HTMLSelectElement[]
+  fireEvent.change(kinds[0] as HTMLSelectElement, { target: { value: 'rent' } })
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Alle übrigen als privat (2)' }))
+  expect(kinds.map((k) => k.value)).toEqual(['rent', 'private', 'private'])
+  expect(within(drawer).queryByRole('button', { name: /Alle übrigen als privat/ })).toBeNull()
+})
+
+test('Nachtrag 13.11.: „Alle Ausgänge ohne Vorschlag beiseitelegen“ fragt einmal und legt genau die Ausgänge ohne Vorschlag als „Sonstiges“ beiseite', async () => {
+  accounts = [account()]
+  // Durchsicht: Ein Eingang ohne Vorschlag (etwa die erste Miete eines neuen Zahlers) bleibt offen
+  open = [tx('x1', 85000), tx('x2', -18500, { suggestion: null, counterpartyName: 'Stadtwerke' }), tx('x3', -31240, { suggestion: null, counterpartyName: 'Stadtkasse' }),
+    tx('x4', 84000, { suggestion: null, counterpartyName: 'Jobcenter' })]
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: 'Alle Ausgänge ohne Vorschlag beiseitelegen (2) …' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/2 Ausgänge ohne Vorschlag/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Beiseitelegen' }))
+  await waitFor(() => expect(posts('/api/bank/links/plan').length).toBe(1))
+  expect((posts('/api/bank/links/plan')[0]?.body as { decisions: unknown }).decisions).toEqual([
+    { transactionId: 'x2', setAside: 'other' }, { transactionId: 'x3', setAside: 'other' },
+  ])
 })

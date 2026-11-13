@@ -101,3 +101,15 @@ test('Zahlung löschen: Esc bricht ab, Enter auf „Löschen“ löscht', async 
   await act(async () => {})
   expect(sent).toEqual([{ url: '/api/payments/p1', method: 'DELETE' }])
 })
+
+test('#644: eine Zahlung aus dem Kontoauszug sagt beim Löschen, dass der Umsatz wieder offen ist', async () => {
+  PAYMENTS[0] = { ...PAYMENTS[0], fromBank: true } as Payment
+  try {
+    shell()
+    fireEvent.click(await screen.findByRole('button', { name: 'Zahlung löschen' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Zahlung löschen?' })
+    expect(dialog.textContent).toMatch(/aus dem Kontoauszug ist danach wieder offen/)
+  } finally {
+    PAYMENTS[0] = { id: 'p1', tenancyId: 't1', date: `${YEAR}-06-15`, amountCents: 80000, kind: 'rent' }
+  }
+})

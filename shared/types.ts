@@ -3577,10 +3577,13 @@ export type BankAccountInfo = {
 
 export type BankImportQuestion =
   | { type: 'account'; iban: string | null; otherId: string | null }
-  | { type: 'entry'; key: string; bookingDate: string; amountCents: number; counterpartyName: string | null; counterpartyIban: string | null; purpose: string }
+  | { type: 'entry'; key: string; bookingDate: string; amountCents: number; counterpartyName: string | null; counterpartyIban: string | null; purpose: string; suggestion?: { tenancyId: string; reason: string } }
+
+// Ein gemerkter Zahler eines Mietverhältnisses (Rückfrage beim Einlesen, „Dieses Konto als Zahler merken“).
+export type BankPayerView = { id: string; tenancyId: string; iban: string; name: string | null }
 
 export type BankImportDecision =
-  | { type: 'account'; iban: string; accept: boolean }
+  | { type: 'account'; iban: string; accept: boolean; rental?: boolean }
   | { type: 'entry'; key: string; as: 'rent' | 'deposit' | 'private'; tenancyId?: string; rememberPayer?: boolean }
 
 export type BankImportPreview = {

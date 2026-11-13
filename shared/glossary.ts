@@ -342,6 +342,49 @@ export const GLOSSARY = {
     example: 'Ein Eingang über 500 € von einer IBAN, die Mietfuchs nicht kennt: Beim Einlesen fragt Mietfuchs, ob es ein Mieteingang, eine Kaution oder privat ist. Sagen Sie „privat“, bleibt davon nur die Tagessumme.',
     needed: 'Immer, wenn Sie nicht ein eigenes Konto nur für die Vermietung führen. Ein Kautionskonto lesen Sie nicht ein.',
   },
+  // Nachtrag 13.11. zu #188: gemerkte Zahler und der Vorschlag nach Name und Betrag in der Rückfrage.
+  bankPayer: {
+    topic: 'operation',
+    title: 'Gemerkter Zahler',
+    short: 'Ein Konto, von dem die Miete eines Mietverhältnisses kommt, obwohl es nicht die IBAN am Mietverhältnis ist, etwa das Konto des Partners, eines Angehörigen oder des Jobcenters. Beim Einlesen fragt Mietfuchs bei einem Eingang von unbekannter IBAN nach; mit „Dieses Konto als Zahler merken“ ordnet es künftige Eingänge von dort ohne Rückfrage demselben Mietverhältnis zu, und sie werden auch auf einem Mischkonto einzeln gespeichert. Passen Name und Betrag zu genau einem Mietverhältnis, ist die Rückfrage schon so vorbelegt; der Name allein genügt nicht, denn dieselbe Person kann auch privat überweisen.',
+    example: 'Die Miete von Familie Yilmaz über 1.280 € kommt vom Konto der Tochter. Beim ersten Einlesen fragt Mietfuchs, Sie wählen „Mieteingang“ und das Mietverhältnis und lassen „Dieses Konto als Zahler merken“ angehakt. Im nächsten Monat schlägt Mietfuchs den Eingang ohne Rückfrage grün vor. Überweist die Tochter später einmal etwas Privates, entfernen Sie das Konto in der Karte „Gemerkte Zahler“ mit „Entfernen …“; danach fragt das Einlesen wieder.',
+    needed: 'Wenn jemand anderes als der Mieter selbst die Miete überweist, oder wenn am Mietverhältnis keine IBAN steht. Ein versehentlich gemerktes Konto nehmen Sie auf der Seite Kontoauszug wieder heraus; schon gespeicherte Umsätze und Zuordnungen bleiben dabei.',
+  },
+  bankFormats: {
+    topic: 'operation',
+    title: 'camt und MT940',
+    short: 'Die beiden Dateiformate, in denen Banken Kontoauszüge zum Einlesen in Programme ausgeben. camt ist das neuere (eine XML-Datei; camt.053 ist der Tagesauszug, camt.052 die Umsätze im Laufe des Tages, camt.054 die Aufschlüsselung einer Sammelbuchung), MT940 das ältere (eine Textdatei, meist mit der Endung .sta). Mietfuchs liest beide, auch mehrere Auszüge in einem ZIP. Eine CSV-Datei oder ein PDF liest es nicht: Jede Bank baut ihre CSV-Datei anders, und ein PDF ist zum Lesen für Menschen gemacht.',
+    example: 'Im Online-Banking einer Sparkasse bietet der Export der Umsätze die Wahl zwischen CSV, camt und MT940. Sie wählen camt, den Monat Januar und erhalten eine ZIP-Datei mit einem Tagesauszug je Buchungstag. Diese ZIP-Datei lesen Sie in Mietfuchs ganz ein.',
+    needed: 'Wenn Ihre Bank eine Datei anbietet. Findet sich nur CSV oder PDF, bieten viele Banken camt oder MT940 erst im Geschäftskundenzugang oder über ein Banking-Programm an; sonst bleibt das Erfassen von Hand im Mietkonto.',
+  },
+  rentalAccount: {
+    topic: 'operation',
+    title: 'Konto nur für die Vermietung',
+    short: 'Ein Konto, auf dem nur Mieten, Kautionen und Kosten der Vermietung laufen, nichts Privates. Bestätigen Sie ein Konto so (beim ersten Einlesen mit „Ja, ein Konto nur für die Vermietung“ oder später mit „Nur für die Vermietung …“ in der Karte „Konten“), speichert Mietfuchs ab dann jeden Umsatz einzeln, auch einen Ausgang, und fragt beim Einlesen nicht mehr nach unbekannten Eingängen. Vorher gilt jedes Konto als Mischkonto.',
+    example: 'Sie führen für Ihr Mehrfamilienhaus ein eigenes Girokonto. Nach der Bestätigung stehen auch die Abbuchung der Stadtwerke über 185 € und die der Versicherung über 412,30 € einzeln unter „Offene Umsätze“, und nach dem Buchen der Mieten legt „Alle Ausgänge ohne Vorschlag beiseitelegen“ sie in einem Schritt als „Sonstiges“ beiseite. Laufen doch einmal private Umsätze darüber, stellen Sie das Konto mit „Zurück zum Mischkonto …“ zurück; was schon einzeln gespeichert ist, bleibt.',
+    needed: 'Nur wenn wirklich nichts Privates über das Konto läuft. Im Zweifel lassen Sie es beim Mischkonto; dann bleibt Privates nur in der Summe des Tages.',
+  },
+  bankCoverage: {
+    topic: 'operation',
+    title: 'Lückenlos eingelesen',
+    short: 'Der Satz am Konto sagt, für welchen Zeitraum Mietfuchs jeden Auszug kennt: Der Endsaldo jedes Auszugs ist der Anfangssaldo des nächsten, kein Tag fehlt. Dafür braucht es Auszüge mit Anfangs- und Endsaldo; camt.052 ohne Salden zählt nicht mit. Über Ihre Einnahmen sagt der Satz nichts: Eine Miete, die auf ein anderes Konto ging oder bar gezahlt wurde, fehlt trotzdem.',
+    example: 'Sie lesen die Auszüge von Januar bis März ein, den Februar aber nicht. Die Karte sagt dann: „Zwischen 31.01.2026 und 01.03.2026 fehlt ein Auszug oder die Salden schließen nicht an.“ Lesen Sie den Februar nach, steht da „Konto lückenlos eingelesen vom 01.01.2026 bis 31.03.2026.“',
+    needed: 'Wenn Sie sicher sein wollen, dass Ihnen kein Eingang auf diesem Konto entgangen ist, etwa vor der Steuererklärung.',
+  },
+  bankSuggestion: {
+    topic: 'operation',
+    title: 'Vorschlag und Ampel beim Kontoauszug',
+    short: 'Zu jedem offenen Umsatz schlägt Mietfuchs Mietverhältnis und Art vor und sagt mit einer Ampel, wie sicher der Vorschlag ist. Das Mietverhältnis findet es über die IBAN des Mieters oder eines gemerkten Zahlers, nie über Name oder Zweck allein. Grün heißt: Die Zahlung ist schon erfasst oder der Betrag ist genau das Soll des Monats. Gelb heißt: prüfen, etwa weil der Betrag vom Soll abweicht, eine Kaution oder Rücklastschrift sein kann oder am selben Tag schon eine Zahlung über denselben Betrag erfasst ist. Ohne Vorschlag steht ein Umsatz, dessen IBAN keinem Mietverhältnis gehört. Gebucht wird nichts ohne Ihr „Buchen“.',
+    example: 'Frau Becker zahlt 930 €, das Soll des Monats ist 930 €: grün mit dem Grund „IBAN bekannt, Betrag wie Monatsmiete“. Im nächsten Monat zahlt sie 900 €: gelb mit dem Grund, dass der Betrag vom Soll (930,00 €) abweicht. „Alle grünen übernehmen“ bucht nur die grünen, die noch wie vorgeschlagen stehen.',
+    needed: 'Immer beim Zuordnen. Prüfen Sie jeden gelben Vorschlag, bevor Sie ihn buchen.',
+  },
+  bankSetAside: {
+    topic: 'operation',
+    title: 'Beiseitelegen, Aufteilen und Lösen',
+    short: 'Drei Wege für Umsätze, die nicht einfach eine Miete sind. Beiseitelegen nimmt einen Umsatz aus den offenen, ohne etwas zu buchen: als Umbuchung zwischen eigenen Konten, weil er nicht zur Vermietung gehört, oder aus einem anderen Grund; unter „Erledigte Umsätze zeigen“ holen Sie ihn zurück. Aufteilen ordnet einen Umsatz mehreren Mietverhältnissen oder Arten zu („+ weiterer Teil“), etwa eine Überweisung für zwei Wohnungen. Lösen hebt eine Zuordnung wieder auf; die Rückfrage bietet an, die Zahlung im Mietkonto zu behalten oder mit zu löschen.',
+    example: 'Ein Mieter überweist 1.880 € für seine Wohnung (930 €) und die Wohnung seiner Mutter (950 €). Sie teilen den Umsatz in zwei Teile zu 930 € und 950 € auf je ein Mietverhältnis und buchen. Merken Sie später, dass die 950 € zur falschen Wohnung gingen, lösen Sie diesen Teil und ordnen ihn neu zu.',
+    needed: 'Wenn ein Umsatz nicht zu genau einem Mietverhältnis passt oder gar nicht zur Vermietung gehört.',
+  },
   // #334: Fälligkeit am Mietverhältnis und Rückstand ab dem erwarteten Eingang (Entwurf 2026-11-07, E1 bis E8). Beispiel
   // nachgerechnet in server/test/rent-due.test.ts (Einzug Fr 09.10.2026, NW).
   rentDue: {

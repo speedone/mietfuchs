@@ -120,11 +120,17 @@ Kurzfassung steht im [README](../README.md#funktionen).
 9. **Kontoauszug**: Den Auszug deiner Bank als Datei einlesen (camt.052, camt.053, camt.054 oder MT940,
    auch mehrere in einem ZIP). Eine Vorschau zeigt, was gespeichert wird, und fragt nach, wo Mietfuchs es
    nicht weiß: ein Konto, das noch nie eingelesen wurde, und ein Eingang von einer unbekannten IBAN
-   (Mieteingang, Kaution oder privat). Jedes Konto gilt als **Mischkonto**, bis du es als Konto nur für die
+   (Mieteingang, Kaution oder privat). Passen Name und Betrag zu genau einem Mietverhältnis, ist die
+   Antwort vorbelegt; bestätigt wird sie erst mit „Einlesen“. „Alle übrigen als privat“ beantwortet den Rest in
+   einem Klick, und ein reines Vermieterkonto legst du gleich mit „Ja, ein Konto nur für die Vermietung“ an; dann
+   gibt es keine Rückfragen zu Eingängen, und „Alle Ausgänge ohne Vorschlag beiseitelegen“ räumt nach dem Buchen die
+   übrigen Ausgänge weg. Mit „Dieses Konto als Zahler merken“ fragt
+   Mietfuchs bei diesem Konto künftig nicht mehr; die Karte „Gemerkte Zahler“ zeigt alle gemerkten Konten
+   und nimmt eines mit „Entfernen …“ wieder heraus. Jedes Konto gilt als **Mischkonto**, bis du es als Konto nur für die
    Vermietung bestätigst. Auf einem Mischkonto speichert Mietfuchs nur Umsätze mit deinen Mietern und
    gemerkten Zahlern und Eingänge, die du als Mieteingang oder Kaution einordnest; alles andere nur als
    Summe des Tages. Zweimal eingelesene Tage ändern nichts. Zu jedem offenen Umsatz
-   schlägt die Seite Mietverhältnis und Art vor (über die IBAN, nie über Name oder Zweck), mit Ampel und
+   schlägt die Seite Mietverhältnis und Art vor (über die IBAN des Mieters oder eines gemerkten Zahlers), mit Ampel und
    Grund; „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, eine Kaution als Kautionsbuchung, und
    eine schon von Hand erfasste Zahlung wird nur verknüpft. Ein Umsatz lässt sich auf mehrere Mietverhältnisse
    aufteilen, beiseitelegen oder wieder lösen. Je Konto steht, ob es lückenlos eingelesen ist; über die

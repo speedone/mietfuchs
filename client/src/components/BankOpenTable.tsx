@@ -7,8 +7,10 @@ import type { BankSetAside } from '../types'
 import type { TenancyOption } from './BankImportDrawer'
 import { FieldMessage } from './Field'
 import Table from './Table'
+import Term from './Term'
 
-const LIGHT_TEXT = { green: '● grün', yellow: '● gelb' } as const
+// Die Ampel als farbiges Kennzeichen mit Wort (Klicktest 13.11.: ein schwarzer Punkt mit „grün“ las sich wie ein Versehen).
+const LIGHT_BADGE = { green: { className: 'badge green', text: 'grün' }, yellow: { className: 'badge amber', text: 'gelb' } } as const
 // Kennung neuer Teile, fest je Teil (W2).
 let partSeq = 0
 
@@ -72,7 +74,7 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
   return (
     <Table className="stacked" aria-label="Offene Umsätze">
       <thead>
-        <tr><th>Ampel</th><th>Datum</th><th className="num">Betrag</th><th>Gegenseite</th><th>Zweck</th><th>Zuordnung</th><th><span className="sr-only">Aktion</span></th></tr>
+        <tr><th><Term id="bankSuggestion">Ampel</Term></th><th>Datum</th><th className="num">Betrag</th><th>Gegenseite und Zweck</th><th>Zuordnung</th></tr>
       </thead>
       <tbody>
         {rows.map((row) => {
@@ -90,7 +92,7 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
           return (
             <tr key={tx.id} data-transaction={tx.id}>
               <td data-label="Ampel">
-                <span>{s ? LIGHT_TEXT[s.light] : '○ ohne Vorschlag'}</span>
+                {s ? <span className={LIGHT_BADGE[s.light].className}>{LIGHT_BADGE[s.light].text}</span> : <span className="badge gray">ohne Vorschlag</span>}
                 <br /><span className="muted">{s ? s.reason : 'Kein Mietverhältnis zu dieser IBAN bekannt'}</span>
               </td>
               <td data-label="Datum">{fmtDate(tx.bookingDate)}</td>
@@ -98,8 +100,12 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
                 {fmtEuro(tx.openCents)}
                 {tx.openCents !== tx.amountCents && <><br /><span className="muted">{`von ${fmtEuro(tx.amountCents)}`}</span></>}
               </td>
-              <td data-label="Gegenseite">{tx.counterpartyName ?? tx.counterpartyIban ?? ''}{tx.ultimatePartyName && <><br /><span className="muted">{`für ${tx.ultimatePartyName}`}</span></>}</td>
-              <td data-label="Zweck">{tx.purpose}</td>
+              {/* Zweck unter der Gegenseite und „Buchen“ am Ende der Zuordnung (#644): Mit eigenen Spalten war die Tabelle bei
+                  1280 px breiter als die Karte, und „Buchen“ lag rechts außer Sicht. */}
+              <td data-label="Gegenseite und Zweck">
+                {tx.counterpartyName ?? tx.counterpartyIban ?? ''}{tx.ultimatePartyName && <><br /><span className="muted">{`für ${tx.ultimatePartyName}`}</span></>}
+                {tx.purpose && <><br /><span className="muted">{tx.purpose}</span></>}
+              </td>
               <td data-label="Zuordnung">
                 {/* Teilweise zugeordnet (Klicktest B3): Der gebuchte Teil steht hier und lässt sich lösen. */}
                 {tx.links.map((l) => (
@@ -117,20 +123,20 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
                 )}
                 {row.parts.length > 1 && rest !== 0 && <p className="muted">{`Rest ${fmtEuro(rest)} bleibt offen.`}</p>}
                 <label className="field">
-                  <span>Beiseitelegen</span>
+                  <span><Term id="bankSetAside">Beiseitelegen</Term></span>
                   <select aria-label="Beiseitelegen" value={row.setAside ?? ''} onChange={(e) => onChange(tx.id, { ...row, setAside: (e.target.value || null) as BankSetAside | null })}>
                     <option value="">nein, zuordnen</option>
                     {SET_ASIDE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </label>
                 {problem && <FieldMessage error={problem} announce />}
-              </td>
-              <td className="actions">
+                <div className="actions">
                 <button type="button" className="btn secondary" disabled={busy || reason !== null} aria-describedby={reason ? `why-${tx.id}` : undefined}
                   onClick={() => onBook([{ ...row, selected: true }])}>
                   Buchen<span className="sr-only">{` ${fmtDate(tx.bookingDate)} ${fmtEuro(tx.openCents)}`}</span>
                 </button>
                 {reason && <p id={`why-${tx.id}`} className="muted">{reason}</p>}
+                </div>
               </td>
             </tr>
           )

@@ -3,10 +3,11 @@
 // Sätze kommen vom Server, die Entscheidungen der Zeilen aus bankView.ts. Nichts davon geht in den Browserspeicher.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, errorText, fmtDate, fmtEuro } from '../api'
-import { decisionsOf, initialRow, isUntouched, untouchedGreen, type BankRow } from '../bankView'
-import type { BankAccountInfo, BankLinkPreview, BankTransactionView } from '../types'
+import { decisionsOf, initialRow, isUntouched, untouchedGreen, untouchedWithoutSuggestion, type BankRow } from '../bankView'
+import type { BankAccountInfo, BankLinkPreview, BankPayerView, BankTransactionView } from '../types'
 import BankAccountsCard from '../components/BankAccountsCard'
 import BankImportDrawer, { type TenancyOption } from '../components/BankImportDrawer'
+import BankPayersCard from '../components/BankPayersCard'
 import BankOpenTable from '../components/BankOpenTable'
 import Card from '../components/Card'
 import DisclosureButton from '../components/DisclosureButton'
@@ -16,6 +17,7 @@ import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
 import { useConfirm, useToast } from '../components/feedback'
 import { useOpenForm } from '../property'
+import Term from '../components/Term'
 
 export const RETENTION_SENTENCE = 'Bewahren Sie die Kontoauszüge Ihrer Bank selbst auf. Mietfuchs ersetzt sie nicht.'
 
@@ -28,6 +30,7 @@ export default function Kontoauszug() {
   const [file, setFile] = useState<File | null>(null)
   const [accounts, setAccounts] = useState<BankAccountInfo[] | null>(null)
   const [tenancies, setTenancies] = useState<TenancyOption[]>([])
+  const [payers, setPayers] = useState<BankPayerView[]>([])
   const [rows, setRows] = useState<BankRow[]>([])
   const [done, setDone] = useState<BankTransactionView[] | null>(null)
   const [showDone, setShowDone] = useState(false)
@@ -39,13 +42,15 @@ export default function Kontoauszug() {
   // Neu laden; die Wahl je Zeile bleibt, solange der Umsatz offen ist (auch nach einer 409).
   const load = useCallback(async () => {
     try {
-      const [acc, open, ten] = await Promise.all([
+      const [acc, open, ten, pay] = await Promise.all([
         api<BankAccountInfo[]>('/api/bank/accounts'),
         api<BankTransactionView[]>('/api/bank/transactions?state=open'),
         api<TenancyOption[]>('/api/bank/tenancies'),
+        api<BankPayerView[]>('/api/bank/payers'),
       ])
       setAccounts(acc)
       setTenancies(ten)
+      setPayers(pay)
       setRows((before) => open.map((tx) => {
         const kept = before.find((r) => r.tx.id === tx.id)
         return kept && kept.tx.openCents === tx.openCents ? { ...kept, tx } : initialRow(tx)
@@ -107,6 +112,19 @@ export default function Kontoauszug() {
     if (ok) await book(chosen.map((r) => initialRow(r.tx)))
   }
 
+  // Nachtrag 13.11.: Auf einem Konto nur für die Vermietung steht jeder Ausgang einzeln; nach dem Buchen der Mieten legt ein
+  // Klick den Rest als „Sonstiges“ beiseite. Einzelne holt „Zurückholen“ unter den erledigten Umsätzen zurück.
+  const withoutSuggestion = untouchedWithoutSuggestion(rows)
+  const setAsideRest = async () => {
+    const chosen = withoutSuggestion
+    const ok = await confirm({
+      title: 'Alle Ausgänge ohne Vorschlag beiseitelegen?',
+      message: `${plural(chosen.length, 'Ausgang', 'Ausgänge')} ohne Vorschlag ${chosen.length === 1 ? 'wird' : 'werden'} als „Sonstiges“ beiseitegelegt. Gebucht wird nichts; einzelne holen Sie unter „Erledigte Umsätze zeigen“ mit „Zurückholen“ zurück.`,
+      confirmLabel: 'Beiseitelegen',
+    })
+    if (ok) await book(chosen.map((r) => ({ ...r, setAside: 'other' as const })))
+  }
+
   const unlink = async (link: BankTransactionView['links'][number]) => {
     const choice: { mode: 'keep' | 'delete' | null } = { mode: null }
     const ok = await confirm({
@@ -144,7 +162,7 @@ export default function Kontoauszug() {
   return (
     <>
       <PageHeader context="none" title="Kontoauszug"
-        subtitle="Den Auszug Ihrer Bank einlesen (camt oder MT940, auch als ZIP) und die Mieteingänge den Mietverhältnissen zuordnen."
+        subtitle={<>Den Auszug Ihrer Bank einlesen (<Term id="bankFormats">camt oder MT940</Term>, auch als ZIP) und die Mieteingänge den Mietverhältnissen zuordnen.</>}
         actions={<button type="button" className="btn" onClick={choose}>Kontoauszug einlesen</button>} />
       <input ref={fileInput} type="file" className="sr-only" aria-label="Datei mit Kontoauszügen" accept=".xml,.sta,.txt,.940,.mt940,.zip"
         onChange={(e) => {
@@ -169,6 +187,11 @@ export default function Kontoauszug() {
                   setRows((rs) => rs.map((r) => (r.tx.id === id ? row : r)))
                   setProblems(({ [id]: _old, ...rest }) => rest)
                 }} onBook={(chosen) => void book(chosen)} onUnlink={(l) => void unlink(l)} />}
+          {withoutSuggestion.length > 1 && (
+            <div>
+              <button type="button" className="btn secondary" disabled={busy} onClick={() => void setAsideRest()}>{`Alle Ausgänge ohne Vorschlag beiseitelegen (${withoutSuggestion.length}) …`}</button>
+            </div>
+          )}
           <DisclosureButton open={showDone} onToggle={() => setShowDone((v) => !v)} closedLabel="Erledigte Umsätze zeigen" openLabel="Erledigte Umsätze ausblenden" controls="bank-done" className="btn ghost" />
           {showDone && (
             <div id="bank-done">
@@ -183,14 +206,19 @@ export default function Kontoauszug() {
                         <td data-label="Gegenseite">{tx.counterpartyName ?? tx.counterpartyIban ?? ''}</td>
                         <td data-label="Zweck">{tx.purpose}</td>
                         <td data-label="Erledigt durch">
-                          {tx.setAside !== null
-                            ? <button type="button" className="btn ghost" onClick={() => void restore(tx)}>Zurückholen<span className="sr-only">{` ${fmtDate(tx.bookingDate)}`}</span></button>
-                            : tx.links.map((l) => (
-                              <div key={l.id} className="flex flex-wrap items-baseline gap-2">
-                                <span>{`${l.depositEntryId ? 'Kautionsbuchung' : 'Zahlung'} über ${fmtEuro(l.cents)}`}</span>
-                                <button type="button" className="btn ghost danger-ghost ml-auto" onClick={() => void unlink(l)}>Lösen …<span className="sr-only">{` ${fmtDate(tx.bookingDate)}`}</span></button>
-                              </div>
-                            ))}
+                          {/* Beiseitegelegt mit Teilzuordnung (#644): beides steht da, die Zuordnung und der Rest. */}
+                          {tx.links.map((l) => (
+                            <div key={l.id} className="flex flex-wrap items-baseline gap-2">
+                              <span>{`${l.depositEntryId ? 'Kautionsbuchung' : 'Zahlung'} über ${fmtEuro(l.cents)}`}</span>
+                              <button type="button" className="btn ghost danger-ghost ml-auto" onClick={() => void unlink(l)}>Lösen …<span className="sr-only">{` ${fmtDate(tx.bookingDate)}`}</span></button>
+                            </div>
+                          ))}
+                          {tx.setAside !== null && (
+                            <div className="flex flex-wrap items-baseline gap-2">
+                              {tx.links.length > 0 && <span>{`Rest ${fmtEuro(tx.amountCents - tx.links.reduce((a, l) => a + l.cents, 0))} beiseitegelegt`}</span>}
+                              <button type="button" className="btn ghost" onClick={() => void restore(tx)}>Zurückholen<span className="sr-only">{` ${fmtDate(tx.bookingDate)}`}</span></button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -202,6 +230,7 @@ export default function Kontoauszug() {
         </Card>
       )}
       {accounts !== null && accounts.length > 0 && <BankAccountsCard accounts={accounts} onChanged={() => void load()} />}
+      {payers.length > 0 && <BankPayersCard payers={payers} tenancies={tenancies} onChanged={() => void load()} />}
       {file && (
         <BankImportDrawer key={`${file.name}:${file.size}:${file.lastModified}`} file={file} tenancies={tenancies}
           onClose={() => setFile(null)}
