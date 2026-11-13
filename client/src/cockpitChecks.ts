@@ -119,3 +119,9 @@ export function cockpitSubtitle({ loaded, fresh, open, sentAt = null, closed = f
   if (open.length === 0) return 'Nichts mehr offen.'
   return `Noch ${countOf(open.length, 'Punkt', 'Punkte')} offen.`
 }
+
+// Kontoauszug (#188): die Zeile im Cockpit zu Umsätzen, die noch nicht zugeordnet sind; ohne solche keine.
+export function bankOpenText(count: number): string | null {
+  if (count <= 0) return null
+  return count === 1 ? '1 Umsatz aus dem Kontoauszug ist noch nicht zugeordnet.' : `${count} Umsätze aus dem Kontoauszug sind noch nicht zugeordnet.`
+}

@@ -689,6 +689,7 @@ function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
       <td className="num" data-label="Betrag">
         {fmtEuro(p.amountCents)}
         {p.fromDeposit && <div><small className="muted">aus der Kaution; ändern Sie sie unter Stammdaten bei „Kaution führen“</small></div>}
+        {p.fromBank && <div><small className="muted">aus dem Kontoauszug</small></div>}
       </td>
       <td className="actions no-print">
         <button className="icon-btn danger" title="Löschen" aria-label="Zahlung löschen" onClick={() => onDelete(p)}>🗑</button>

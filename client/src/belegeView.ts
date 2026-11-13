@@ -140,3 +140,8 @@ export function discardQuestion(source: AssessmentSource): { title: string; mess
   const from = source === 'e-rechnung' ? 'aus der E-Rechnung' : 'der KI'
   return { title: `Vorschläge ${from} verwerfen?`, message: `Die Vorschläge ${from} zu diesem Beleg werden verworfen; der Beleg kommt an die gewählte Position.` }
 }
+
+// Kontoauszug (#188): Der Server weist einen Auszug an den Routen der Belege mit diesem Satz ab (422, `bankFile`); der
+// Eingang setzt dann den Knopf zur Seite Kontoauszug daneben.
+export const BANK_FILE_TEXT = 'Das ist ein Kontoauszug. Kontoauszüge lesen Sie auf der Seite Kontoauszug ein.'
+export const isBankFileError = (text: string | undefined): boolean => text === BANK_FILE_TEXT

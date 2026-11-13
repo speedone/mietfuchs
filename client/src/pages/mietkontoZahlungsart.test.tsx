@@ -288,3 +288,12 @@ test('eine Zahlung aus der Kaution: Art nicht wählbar, Vermerk am Betrag, Lösc
   const question = await screen.findByRole('alertdialog')
   expect(within(question).getByText(/Die Verrechnung in der Kaution fällt mit weg\./)).toBeTruthy()
 })
+
+// ---------- Kontoauszug (#188, Teil 3): eine Zahlung aus dem Kontoauszug ----------
+
+test('eine Zahlung aus dem Kontoauszug trägt den Vermerk am Betrag', async () => {
+  payments = [{ id: 'pb', tenancyId: 't1', date: `${YEAR}-12-02`, amountCents: 80000, kind: 'rent', note: 'Miete Dezember', fromBank: true }]
+  shell()
+  const row = (await screen.findByText('Miete Dezember')).closest('tr') ?? expect.fail('keine Zeile')
+  expect(within(row).getByText('aus dem Kontoauszug')).toBeTruthy()
+})

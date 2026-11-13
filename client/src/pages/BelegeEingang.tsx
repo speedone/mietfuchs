@@ -33,7 +33,7 @@ import { useConfirm, useToast } from '../components/feedback'
 import { renderThumbnail } from '../pdfPreview'
 import { useFocusFirstNew } from '../focusNew'
 import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
-import { aiMode, discardQuestion, elsewhereGroups, periodKeyOfYear, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, withoutPosition } from '../belegeView'
+import { aiMode, discardQuestion, elsewhereGroups, periodKeyOfYear, RECEIPT_ACCEPT, SKIPPED_FILES, splitFiles, splitForStore, withoutPosition, isBankFileError } from '../belegeView'
 import { hasEInvoice } from '../pdfIntake'
 import type { ReceiptStock } from '../receiptStock'
 import type { NavTarget } from '../nav'
@@ -678,7 +678,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           )}
         </div>
 
-        {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
+        {entry.status === 'fehler' && (isBankFileError(entry.error)
+          ? <NoticeBox level="error" action={entry.error}><button type="button" className="btn small secondary" onClick={() => onNavigate('kontoauszug')}>Zur Seite Kontoauszug</button></NoticeBox>
+          : <NoticeBox level="error" action={entry.error} />)}
         {entry.status === 'gespeichert' && entry.failure && (
           <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : (file) => manual(file, entry.fileName)}
             onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
