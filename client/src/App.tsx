@@ -36,6 +36,7 @@ import Uebersicht from './pages/Uebersicht'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
 import Mietkonto from './pages/Mietkonto'
+import Kontoauszug from './pages/Kontoauszug'
 import Zaehler from './pages/Zaehler'
 import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
@@ -618,6 +619,7 @@ function Shell() {
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters}
           receiptStart={receiptStart} onReceiptStartDone={() => setReceiptStart(null)} onNewCostItem={(u) => void openNewCostItem(u)} onOpenInbox={() => void navigate('belege:eingang')} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
+        {tab === 'kontoauszug' && <Kontoauszug />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)}
           onOpenItem={(item) => void openCostItem(item)} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} onNewCostItem={(u) => void openNewCostItem(u)}

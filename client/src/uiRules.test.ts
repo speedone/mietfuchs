@@ -404,7 +404,7 @@ test('S9: Links im Fließtext sind unterstrichen', () => {
 test('S11: Seitentitel beginnt mit dem Namen in der Navigation', () => {
   const fileOf: Record<string, string> = {
     cockpit: 'Cockpit', zaehler: 'Zaehler', kosten: 'Kosten', belege: 'Belege',
-    mietkonto: 'Mietkonto', heizkosten: 'Heizkosten', abrechnung: 'Abrechnung', uebersicht: 'Uebersicht', steuer: 'Steuer',
+    mietkonto: 'Mietkonto', kontoauszug: 'Kontoauszug', heizkosten: 'Heizkosten', abrechnung: 'Abrechnung', uebersicht: 'Uebersicht', steuer: 'Steuer',
     stammdaten: 'Stammdaten', einstellungen: 'Einstellungen', verlauf: 'Verlauf', hilfe: 'Hilfe',
   }
   const wrong = NAV.flatMap((g) => g.items).flatMap((item) => {
@@ -560,6 +560,7 @@ const DRAWER_VERBS = /^(?:Anlegen|Speichern)$/
 const DRAWER_VERB_EXCEPTIONS = new Map<string, { verb: string | readonly string[]; why: string }>([
   ['./components/AccessCard.tsx', { verb: ['Abmelden', 'Ausschalten'], why: 'die Fenster „Auf allen Geräten abmelden“ und „Anmeldung ausschalten“ (#528) speichern nichts, sie bestätigen mit dem bisherigen Passwort eine Handlung' }],
   ['./components/ReadingSheetDrawer.tsx', { verb: 'Drucken', why: 'das Fenster speichert nichts, es druckt das Ableseformular (#320)' }],
+  ['./components/BankImportDrawer.tsx', { verb: 'Einlesen', why: 'das Fenster liest einen Kontoauszug ein (#188); angelegt wird dabei nichts von Hand' }],
   ['./components/PrintDrawer.tsx', { verb: 'Drucken', why: 'das Fenster druckt die Abrechnung; die Druckeinstellungen speichert ihr eigenes „Speichern“ am Entwurf' }],
 ])
 // Primärknöpfe im Seitenfenster, die ihren Text aus einem Ausdruck nehmen, mit Grund.
