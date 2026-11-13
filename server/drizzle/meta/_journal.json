@@ -715,6 +715,13 @@
       "when": 1794515619532,
       "tag": "0101_kaution_index",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "6",
+      "when": 1794554778639,
+      "tag": "0102_kontoauszug",
+      "breakpoints": true
     }
   ]
 }

@@ -267,6 +267,16 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   deposit_entries_purpose_valid: 'Womit verrechnet wurde, gehört zu einer Verrechnung und nur zu ihr. Bitte geben Sie an, womit Sie verrechnen.',
   deposit_entries_payment_valid: 'Eine Zahlung gehört nur zu einer Verrechnung mit Miete oder Abrechnung. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
   deposit_entries_date_valid: 'Der Tag der Kautionsbuchung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  // Kontoauszug (#188); bank/importPlan.ts und db/bank.ts prüfen vorher, jede dieser Meldungen ist ein Fehler im Programm.
+  bank_accounts_rental_valid: 'Ein Konto nur für die Vermietung braucht Ihre Bestätigung. Bitte stellen Sie es auf der Seite Kontoauszug um.',
+  bank_accounts_identity_complete: 'Ein Konto ohne IBAN und ohne Kontokennung lässt sich nicht speichern. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  bank_imports_from_valid: 'Der Beginn des Auszugs ist kein Datum in der Form JJJJ-MM-TT. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  bank_imports_to_valid: 'Das Ende des Auszugs ist kein Datum in der Form JJJJ-MM-TT. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  bank_days_date_valid: 'Der Buchungstag ist kein Datum in der Form JJJJ-MM-TT. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  bank_transactions_amount_valid: 'Ein Umsatz über 0 € wird nicht gespeichert. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  bank_transactions_booking_date_valid: 'Der Buchungstag des Umsatzes ist kein Datum in der Form JJJJ-MM-TT. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  bank_transactions_value_date_valid: 'Die Wertstellung des Umsatzes ist kein Datum in der Form JJJJ-MM-TT. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  bank_transaction_links_target_valid: 'Eine Zuordnung gehört zu genau einer Zahlung oder einer Kautionsbuchung. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
   // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19); db/co2Refunds.ts prüft vorher.
   tenancies_self_supply_kind_valid: 'Welche Heizung der Mieter selbst betreibt, gibt es nur bei „Mieter heizt selbst“. Bitte laden Sie die Seite neu.',
   co2_refunds_settled_or_paid_valid: 'Eine CO₂-Erstattung wird entweder in einer Abrechnung verrechnet oder ausgezahlt, nicht beides.',

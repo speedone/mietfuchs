@@ -79,6 +79,15 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Buchung und liest sich wie zuvor. Der Einbehalt (`tenancies.deposit_hold_cents`, `deposit_hold_note`) in 0099, die
   Bedingung „größer 0“ in 0100 (Neubau, getrennt wie oben), die Indizes auf `tenancy_id` und `payment_id` in 0101.
   Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Kaution“.
+- **Kontoauszug** (#188): sechs Tabellen in Schritt 0102, ohne Objektbezug (ein Konto empfängt Mieten mehrerer Häuser):
+  `bank_accounts` (`kind` `mixed` Voreinstellung, `rental` nur mit `rental_confirmed_at`), `bank_imports` (ein Auszug, nicht
+  eine Datei; eindeutig je Konto, Prüfsumme und Zeitraum), `bank_days` (Tagessummen laut Auszug, private eingeschlossen),
+  `bank_transactions` (nur Umsätze der Vermietung bzw. jeder auf einem Mietkonto), `bank_transaction_links` (genau ein
+  Ziel, Zahlung oder Kautionsbuchung, je Ziel höchstens ein Link, **kein Betrag**) und `tenancy_payers`. Konto und Import
+  kaskadieren auf Tage, Umsätze und Links; mit der Zahlung fällt nur der Link, der Umsatz ist dann wieder offen.
+  Indizes: `bank_transactions(account_id, booking_date)` und `(fingerprint)` für den Abgleich, `tenancy_payers(iban)`
+  und `bank_transaction_links(transaction_id)` für Vorschlag und Summe je Umsatz. Beschreibung in
+  [../CLAUDE.md](../CLAUDE.md) unter „Kontoauszug“ (mit PR 3).
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,
   Anteile, Teilnehmer, Einzel- und Eigenbeträge, Pauschalen, `unit_no_connection`.
   `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.
