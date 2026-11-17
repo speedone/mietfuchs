@@ -1,0 +1,73 @@
+# Wegwerf-Probe zu #647 (Anschreiben im Druck unter Windows verkleinert). Nur auf dem Zweig probe/druck-647, nie nach main.
+name: Probe Druck 647
+on:
+  push:
+    branches: [probe/druck-647]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-11-arm]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Electron installieren
+        shell: pwsh
+        run: |
+          npm --prefix desktop ci
+          npx --prefix desktop install-electron
+      - name: Drucker auf eine Datei
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\probe | Out-Null
+          Add-PrinterPort -Name 'C:\probe\druck.pdf'
+          Add-Printer -Name 'ProbePDF' -DriverName 'Microsoft Print To PDF' -PortName 'C:\probe\druck.pdf'
+          (Get-CimInstance Win32_Printer -Filter "Name='ProbePDF'") | Invoke-CimMethod -MethodName SetDefaultPrinter | Out-Null
+          Get-Printer | Format-Table Name, DriverName, PortName
+          Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name LogPixels -ErrorAction SilentlyContinue
+          Get-CimInstance Win32_DesktopMonitor | Format-Table Name, PixelsPerXLogicalInch
+      - name: Varianten drucken
+        shell: pwsh
+        run: |
+          $electron = node -e "process.stdout.write(require('./desktop/node_modules/electron'))"
+          $main = "${{ github.workspace }}\scripts\probe-druck-647\main.cjs"
+          New-Item -ItemType Directory -Force probe-out | Out-Null
+          function Run($name, $mode, $opts, $extra, $dialog) {
+            Remove-Item C:\probe\druck.pdf -ErrorAction SilentlyContinue
+            $env:MODE = $mode; $env:OPTS = $opts; $env:OUT = "$PWD\probe-out\$name.pdf"
+            $job = $null
+            if ($dialog) {
+              # Den Druckdialog bestätigen: Fenster suchen und Enter schicken (Drucker ProbePDF ist Standard)
+              $job = Start-Job { Start-Sleep 6; $w = New-Object -ComObject WScript.Shell
+                foreach ($t in 'Print','Drucken') { if ($w.AppActivate($t)) { Start-Sleep 1; $w.SendKeys('{ENTER}'); "aktiviert: $t"; break } }
+                Start-Sleep 2; $w.SendKeys('{ENTER}') }
+            }
+            $argList = @('--no-sandbox') + $extra + @($main)
+            $p = Start-Process -FilePath $electron -ArgumentList $argList -NoNewWindow -PassThru -RedirectStandardOutput "probe-out\$name.log" -RedirectStandardError "probe-out\$name.err"
+            if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; "Zeitüberschreitung" | Add-Content "probe-out\$name.log" }
+            if ($job) { Receive-Job $job -Wait | Add-Content "probe-out\$name.log"; Remove-Job $job }
+            Start-Sleep 3
+            if (Test-Path C:\probe\druck.pdf) { Copy-Item C:\probe\druck.pdf "probe-out\$name.pdf" }
+            "== $name"; Get-Content "probe-out\$name.log"
+            if (Test-Path "probe-out\$name.pdf") { "PDF da" } else { "kein PDF" }
+          }
+          Run 'liste' 'list' '{}' @() $false
+          Run 'printToPDF' 'pdf' '{"pageSize":"A4","printBackground":true,"preferCSSPageSize":true}' @() $false
+          Run 'still' 'print' '{"silent":true,"deviceName":"ProbePDF"}' @() $false
+          Run 'still-dpi600' 'print' '{"silent":true,"deviceName":"ProbePDF","dpi":{"horizontal":600,"vertical":600}}' @() $false
+          Run 'dialog' 'print' '{}' @() $true
+          Run 'dialog-dsf125' 'print' '{}' @('--force-device-scale-factor=1.25') $true
+          Run 'still-dsf125' 'print' '{"silent":true,"deviceName":"ProbePDF"}' @('--force-device-scale-factor=1.25') $false
+          Run 'dialog-a4-ohne-raender' 'print' '{"pageSize":"A4","margins":{"marginType":"none"}}' @() $true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: probe-${{ matrix.os }}
+          path: probe-out
