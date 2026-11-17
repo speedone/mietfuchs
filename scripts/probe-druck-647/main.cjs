@@ -28,6 +28,18 @@ app.whenReady().then(async () => {
     fs.writeFileSync(process.env.OUT, await wc.printToPDF(JSON.parse(process.env.OPTS || '{}')))
     return app.quit()
   }
+  if (mode === 'pdfprint') {
+    // Erst ein A4-PDF, dann dieses im PDF-Betrachter von Chromium zeigen und von dort drucken
+    const file = require('node:path').join(require('node:os').tmpdir(), 'probe-a4.pdf')
+    fs.writeFileSync(file, await wc.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true }))
+    const viewer = new BrowserWindow({ width: 1000, height: 900, show: true, webPreferences: { plugins: true } })
+    await viewer.loadURL(require('node:url').pathToFileURL(file).href)
+    await new Promise((r) => setTimeout(r, 3000))
+    const opts = { printBackground: true, ...JSON.parse(process.env.OPTS || '{}') }
+    console.log('pdfprint', JSON.stringify(opts))
+    viewer.webContents.print(opts, (ok, reason) => { console.log('ergebnis', ok, reason); setTimeout(() => app.quit(), 4000) })
+    return
+  }
   const opts = { printBackground: true, ...JSON.parse(process.env.OPTS || '{}') }
   console.log('print', JSON.stringify(opts))
   wc.print(opts, (ok, reason) => { console.log('ergebnis', ok, reason); setTimeout(() => app.quit(), 4000) })

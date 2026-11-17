@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025]
+        os: [windows-2025, windows-11-arm]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -47,9 +47,9 @@ jobs:
             $job = $null
             if ($dialog) {
               # Den Druckdialog bestätigen: Fenster suchen und Enter schicken (Drucker ProbePDF ist Standard)
-              $job = Start-Job { Start-Sleep 6; $w = New-Object -ComObject WScript.Shell
-                foreach ($t in 'Print','Drucken') { if ($w.AppActivate($t)) { Start-Sleep 1; $w.SendKeys('{ENTER}'); "aktiviert: $t"; break } }
-                Start-Sleep 2; $w.SendKeys('{ENTER}') }
+              $confirm = "${{ github.workspace }}\scripts\probe-druck-647\confirm.ps1"
+              $shot = "$PWD\probe-out\$name-dialog.png"
+              $job = Start-Job { param($c, $s) & $c $s } -ArgumentList $confirm, $shot
             }
             $argList = @('--no-sandbox') + $extra + @($main)
             $p = Start-Process -FilePath $electron -ArgumentList $argList -NoNewWindow -PassThru -RedirectStandardOutput "probe-out\$name.log" -RedirectStandardError "probe-out\$name.err"
@@ -62,11 +62,10 @@ jobs:
           }
           Run 'dialog-A4' 'print' '{}' @() $true 'A4'
           Run 'dialog-Letter' 'print' '{}' @() $true 'Letter'
-          Run 'dialog-Legal' 'print' '{}' @() $true 'Legal'
-          Run 'dialog-A3' 'print' '{}' @() $true 'A3'
-          Run 'dialog-A5' 'print' '{}' @() $true 'A5'
-          Run 'still-Legal' 'print' '{"silent":true,"deviceName":"ProbePDF"}' @() $false 'Legal'
-          Run 'dialog-Legal-pageSizeA4' 'print' '{"pageSize":"A4"}' @() $true 'Legal'
+          Run 'pdf-dialog-A4' 'pdfprint' '{}' @() $true 'A4'
+          Run 'pdf-dialog-Letter' 'pdfprint' '{}' @() $true 'Letter'
+          Run 'pdf-dialog-Legal' 'pdfprint' '{}' @() $true 'Legal'
+          Run 'pdf-still-Letter' 'pdfprint' '{"silent":true,"deviceName":"ProbePDF"}' @() $false 'Letter'
           Get-Culture | Format-List Name
       - uses: actions/upload-artifact@v7
         if: always()
