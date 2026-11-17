@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, windows-11-arm]
+        os: [windows-2025]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -39,7 +39,9 @@ jobs:
           $electron = node -e "process.stdout.write(require('./desktop/node_modules/electron'))"
           $main = "${{ github.workspace }}\scripts\probe-druck-647\main.cjs"
           New-Item -ItemType Directory -Force probe-out | Out-Null
-          function Run($name, $mode, $opts, $extra, $dialog) {
+          function Run($name, $mode, $opts, $extra, $dialog, $paper = 'Letter') {
+            Set-PrintConfiguration -PrinterName 'ProbePDF' -PaperSize $paper
+            "Papier am Drucker: " + (Get-PrintConfiguration -PrinterName 'ProbePDF').PaperSize
             Remove-Item C:\probe\druck.pdf -ErrorAction SilentlyContinue
             $env:MODE = $mode; $env:OPTS = $opts; $env:OUT = "$PWD\probe-out\$name.pdf"
             $job = $null
@@ -58,14 +60,14 @@ jobs:
             "== $name"; Get-Content "probe-out\$name.log"
             if (Test-Path "probe-out\$name.pdf") { "PDF da" } else { "kein PDF" }
           }
-          Run 'liste' 'list' '{}' @() $false
-          Run 'printToPDF' 'pdf' '{"pageSize":"A4","printBackground":true,"preferCSSPageSize":true}' @() $false
-          Run 'still' 'print' '{"silent":true,"deviceName":"ProbePDF"}' @() $false
-          Run 'still-dpi600' 'print' '{"silent":true,"deviceName":"ProbePDF","dpi":{"horizontal":600,"vertical":600}}' @() $false
-          Run 'dialog' 'print' '{}' @() $true
-          Run 'dialog-dsf125' 'print' '{}' @('--force-device-scale-factor=1.25') $true
-          Run 'still-dsf125' 'print' '{"silent":true,"deviceName":"ProbePDF"}' @('--force-device-scale-factor=1.25') $false
-          Run 'dialog-a4-ohne-raender' 'print' '{"pageSize":"A4","margins":{"marginType":"none"}}' @() $true
+          Run 'dialog-A4' 'print' '{}' @() $true 'A4'
+          Run 'dialog-Letter' 'print' '{}' @() $true 'Letter'
+          Run 'dialog-Legal' 'print' '{}' @() $true 'Legal'
+          Run 'dialog-A3' 'print' '{}' @() $true 'A3'
+          Run 'dialog-A5' 'print' '{}' @() $true 'A5'
+          Run 'still-Legal' 'print' '{"silent":true,"deviceName":"ProbePDF"}' @() $false 'Legal'
+          Run 'dialog-Legal-pageSizeA4' 'print' '{"pageSize":"A4"}' @() $true 'Legal'
+          Get-Culture | Format-List Name
       - uses: actions/upload-artifact@v7
         if: always()
         with:
