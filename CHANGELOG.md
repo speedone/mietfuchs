@@ -6,6 +6,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- Abrechnung: Die Knöpfe der Kopfzeile stehen geordnet. Unter „Mehr“ hat jede Zeile die Erklärung links und ihre
+  Knöpfe rechts, die Knöpfe neben „versendet am“ stehen auf einer Linie mit dem Feld, und der Stand wird in einem
+  schmalen Fenster nicht mehr zu einer engen Spalte gequetscht.
+
 ## [0.18.0] – 2026-11-13
 
 ### Hinzugefügt

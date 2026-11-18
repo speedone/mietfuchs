@@ -799,7 +799,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         )}
         {!empty && (
           <div className="flex flex-wrap items-center gap-3">
-            <div className="grow">
+            {/* Mindestbreite für Stand und Frist: Reicht der Platz nicht, rutschen die Knöpfe darunter, statt den Text zu einer schmalen Spalte zu quetschen. */}
+            <div className="min-w-0 flex-1 basis-80">
               {isClosed ? (
                 <>
                   {/* Neutral, keine Erfolgsmeldung (#337): Nach dem Abschluss steht der Versand noch aus. */}
@@ -817,7 +818,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {/* Die Frist (§ 556 Abs. 3 BGB) in derselben Zeile; läuft sie bald ab oder ist sie abgelaufen, steht sie darunter als Hinweis. */}
               {deadlineInfo && data.totalCostsCents > 0 && deadlineInfo.level === 'ok' && <div className="muted">{deadlineInfo.text}</div>}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Unterkante gleich: Steht das Feld „versendet am“ mit seiner Beschriftung darin, fluchten die Knöpfe mit dem Feld. */}
+            <div className="flex flex-wrap items-end gap-2">
               {isClosed ? (
                 // Der Versand ist ein eigener Schritt nach dem Abschluss (#337): erst „Als versendet markieren“, dann das
                 // Datum (Vorgabe heute) mit „Speichern“. Ein gespeichertes Datum steht im Feld.
@@ -879,31 +881,34 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         )}
         {!printDrawer && letterChoice !== null && letterChoice !== letterDefault && <p className="muted m-0">{LETTER_CHOICE_NOTE}</p>}
         {moreItems && moreOpen && (
-          <div id={moreId} className="grid gap-3 pt-3 border-t border-line">
+          // Jede Zeile gleich gebaut: Erklärung links, Knöpfe rechts und mittig dazu; schmal rutschen die Knöpfe darunter.
+          <div id={moreId} className="grid border-t border-line divide-y divide-line">
             {letterMore && (
-              <div className="grid gap-2">
-                <p className="muted m-0">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <p className="muted m-0 min-w-0 flex-1 basis-80">
                   {withLetter ? 'Jede Abrechnung beginnt mit einem Brief an den Mieter.' : 'Ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und Betreff; Ergebnis, Anpassung und Belegeinsicht stehen unter der Tabelle.'} Die Vorlage für alle Objekte steht unter
                   „Einstellungen“; hier weichen Sie für dieses Objekt ab, bei einem Mieter mit „Anschreiben bearbeiten“ in seiner Vorschau.
                   {isClosed ? ' Diese Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren.' : ''}
                 </p>
                 {propertyId && templates && (
-                  <div><button className="btn secondary" onClick={() => setLetterEdit({ kind: 'property' })}>Vorlage für dieses Objekt bearbeiten</button></div>
-                )}
-                {/* Teil 2b: Logo und Briefpapier, die Vorgabe aus den Einstellungen oder eine eigene für dieses Objekt. */}
-                {designs && propertyId && (
-                  <div className="row">
-                    <span className="muted">Logo und Briefpapier: {designSummary(designs.property ?? designs.installation)}{designs.property ? ' (eigene für dieses Objekt)' : ' (wie in den Einstellungen)'}</span>
-                    <button className="btn secondary" onClick={() => setDesignEdit(true)}>Logo und Briefpapier für dieses Objekt</button>
-                  </div>
+                  <button className="btn secondary" onClick={() => setLetterEdit({ kind: 'property' })}>Vorlage für dieses Objekt bearbeiten</button>
                 )}
               </div>
             )}
+            {/* Teil 2b: Logo und Briefpapier, die Vorgabe aus den Einstellungen oder eine eigene für dieses Objekt. */}
+            {letterMore && designs && propertyId && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <span className="muted min-w-0 flex-1 basis-80">Logo und Briefpapier: {designSummary(designs.property ?? designs.installation)}{designs.property ? ' (eigene für dieses Objekt)' : ' (wie in den Einstellungen)'}</span>
+                <button className="btn secondary" onClick={() => setDesignEdit(true)}>Logo und Briefpapier für dieses Objekt</button>
+              </div>
+            )}
             {exportMore && (
-              <div className="row center">
-                <span className="muted grow">Die Zahlen dieser Abrechnung als Daten, etwa für ein eigenes Layout (Beträge in JSON in Cent).</span>
-                <button className="btn secondary" onClick={() => void exportData('json')}>Als JSON exportieren</button>
-                <button className="btn secondary" onClick={() => void exportData('csv')}>Als CSV exportieren</button>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <span className="muted min-w-0 flex-1 basis-80">Die Zahlen dieser Abrechnung als Daten, etwa für ein eigenes Layout (Beträge in JSON in Cent).</span>
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn secondary" onClick={() => void exportData('json')}>Als JSON exportieren</button>
+                  <button className="btn secondary" onClick={() => void exportData('csv')}>Als CSV exportieren</button>
+                </div>
               </div>
             )}
           </div>
