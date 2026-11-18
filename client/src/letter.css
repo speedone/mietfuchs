@@ -107,6 +107,26 @@
    Druck aller zählte er über alle Mieter hinweg. */
 
 @media print {
+  /* Nichts im Druck darf breiter werden als die Seite (#647). Sonst verkleinern Chromium (auch das Programmfenster und
+     printToPDF), Firefox und Safari das ganze Dokument mit einem Faktor, und im Anschreiben stehen Fußzeile, Falz- und
+     Lochmarken zu hoch. Abschalten lässt sich das nicht, abschneiden (`overflow`) ließe Beträge verschwinden; deshalb
+     bricht im Druck Fließtext um, wenn ein Wort sonst nicht in die Zeile passt. Datentabellen nicht: Dort senkte
+     `anywhere` die Mindestbreite jeder Zelle, Chromium verteilte die Spalten neu und trennte normale Wörter
+     („Allgemeinstro-m“, nachgemessen); in ihnen helfen umbrechende Spaltenköpfe und Notizen unter Beträgen (Beträge
+     selbst bleiben in einer Zeile, `td.num` in index.css) und `softBreak` für überlange Wörter (softBreak.ts). Die Hülle
+     `.print-pages` ist selbst eine Tabelle und gibt `anywhere` an ihren Inhalt weiter. Geprüft mit
+     scripts/print-width-check.mjs; normale Abrechnungen drucken damit unverändert (PDFs des Beispielbestands verglichen). */
+  body { overflow-wrap: anywhere; }
+  table:not(.print-pages) { overflow-wrap: normal; }
+  th.num, td.num > div, td.num.wraps { white-space: normal; }
+  /* Außerhalb der Abrechnung, dieselbe Regel (#647, gefunden mit print-width-check.mjs): Tabellen mit vielen Spalten
+     (`print-compact`) drucken mit schmalem Innenabstand und kleinerer Schrift. Das CO₂-Blatt hat neun Spalten, ihr
+     Innenabstand allein (9 × 24 px) machte es breiter als die Seite (Druck auf rund 87 %); die Werbungskosten der Steuer
+     haben sieben. In der Steuer stehen in „verteilt“ Betrag und Text („… in Folgejahre“, `wraps`), die umbrechen dürfen;
+     vorher schnitt der Druck die Spalte „Zuordnung“ am rechten Rand ab. */
+  .print-compact { font-size: 9pt; }
+  .print-compact :is(th, td) { padding-inline: 1.5mm; }
+
   /* Die Briefseite füllt das Blatt bis 4 mm vor den unteren Rand: Firefox schob mit 1 mm Luft die zweite Zeile der
      Fußzeile auf eine eigene Seite (nachgemessen, Druck in Safari #286). */
   .letter { --page: 12mm; min-height: calc(297mm - 2 * var(--page) - 4mm); box-sizing: border-box; max-width: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; font-size: 11pt; line-height: 1.4; color: var(--text); break-after: page; page-break-after: always; }

@@ -181,7 +181,9 @@ async function drivePage(args) {
 let pdfjs = null
 async function readPdf(file) {
   pdfjs ??= await import(pathToFileURL(path.join(root, 'client/node_modules/pdfjs-dist/legacy/build/pdf.mjs')).href)
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(file)), verbosity: 0, standardFontDataUrl: path.join(root, 'client/node_modules/pdfjs-dist/standard_fonts/') }).promise
+  // pdf.js verlangt am Ende einen Schrägstrich; unter Windows lieferte path.join Backslashes, und die Auswertung brach ab
+  const fonts = path.join(root, 'client/node_modules/pdfjs-dist/standard_fonts/').split(path.sep).join('/')
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(file)), verbosity: 0, standardFontDataUrl: fonts }).promise
   const pages = []
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i)

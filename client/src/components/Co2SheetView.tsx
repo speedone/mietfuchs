@@ -42,7 +42,7 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
       {sheet.deliveries.length === 0
         ? <p>Für diese Heizperiode sind keine Rechnungen eingetragen.</p>
         : (
-          <Table>
+          <Table className="print-compact">
             <thead><tr><th>Rechnung</th>{SHEET_COLUMNS.map((c, j) => <th key={c} className={j >= 5 ? 'num' : undefined}>{c}</th>)}</tr></thead>
             <tbody>
               {rows.map((r, i) => (

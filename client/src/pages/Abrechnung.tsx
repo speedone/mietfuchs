@@ -37,6 +37,7 @@ import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
 import DisclosureButton from '../components/DisclosureButton'
 import { totalColumnLabel, totalNote } from '../calcSteps'
+import { softBreak } from '../softBreak'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import Co2Block from '../components/Co2Block'
@@ -1207,16 +1208,16 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                             {(toggle) => (
                               <tr>
                                 <td>
-                                  {r.category}
-                                  {r.description !== r.category && <div className="muted">{r.description}</div>}
+                                  {softBreak(r.category)}
+                                  {r.description !== r.category && <div className="muted">{softBreak(r.description)}</div>}
                                 </td>
                                 <td className="num">
                                   {fmtEuro(r.totalCents)}
                                   {totalNote(r) && <div className="muted">{totalNote(r)}</div>}
                                 </td>
                                 <td>
-                                  {r.keyLabel}
-                                  {r.basisText && <div className="muted">{r.basisText}</div>}
+                                  {softBreak(r.keyLabel)}
+                                  {r.basisText && <div className="muted">{softBreak(r.basisText)}</div>}
                                   {toggle}
                                 </td>
                                 <td className="num">{fmtEuro(r.shareCents)}</td>
@@ -1226,7 +1227,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                         ))}
                         {g.rows.length > 1 && (
                           <tr className="subtotal">
-                            <td>Summe {g.category}</td>
+                            <td>Summe {softBreak(g.category)}</td>
                             <td className="num">{fmtEuro(g.rows.reduce((a, r) => a + r.totalCents, 0))}</td>
                             <td />
                             <td className="num">{fmtEuro(g.rows.reduce((a, r) => a + r.shareCents, 0))}</td>
@@ -1340,7 +1341,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                         <tbody>
                           {st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r, i) => (
                             <tr key={i}>
-                              <td>{r.category} - {r.description}</td>
+                              <td>{softBreak(`${r.category} - ${r.description}`)}</td>
                               <td className="num">{fmtEuro(r.labor35aCents!)}</td>
                             </tr>
                           ))}
@@ -1376,7 +1377,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                             <tbody>
                               {labor.rows.map((r, i) => (
                                 <tr key={i}>
-                                  <td>{r.service}</td>
+                                  <td>{softBreak(r.service)}</td>
                                   {labor.full && <td className="num">{r.total}</td>}
                                   {labor.full && <td className="num">{r.labor}</td>}
                                   <td className="num">{r.share}</td>

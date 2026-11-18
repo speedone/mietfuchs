@@ -11,6 +11,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Abrechnung: Die Knöpfe der Kopfzeile stehen geordnet. Unter „Mehr“ hat jede Zeile die Erklärung links und ihre
   Knöpfe rechts, die Knöpfe neben „versendet am“ stehen auf einer Linie mit dem Feld, und der Stand wird in einem
   schmalen Fenster nicht mehr zu einer engen Spalte gequetscht.
+### Behoben
+
+- Druck der Abrechnung einer Eigentumswohnung: Rechnet eine Position nach der Hausgeldabrechnung ab, stand im
+  Anschreiben die Fußzeile bei drei Vierteln der Seite, und Falz- und Lochmarken saßen zu hoch, im Programmfenster wie
+  in Chrome und Edge. Die Spaltenüberschrift „Gesamtkosten bzw. Anteil an der Gemeinschaft“ brach nicht um, die
+  Tabelle wurde breiter als die Seite, und der Browser verkleinerte deshalb den ganzen Druck auf rund 80 %. Jetzt
+  bricht sie um, ebenso überlange Wörter ohne Trennstelle in Beschreibungen und im Anschreiben, und eine Prüfung bei
+  jeder Änderung hält fest, dass nichts im Druck breiter wird als die Seite
+  ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+- Druck der Steuer (Anlage V): Die Tabelle der Werbungskosten war breiter als die Seite, der Druck verkleinert und die
+  Spalte „Zuordnung“ am rechten Rand abgeschnitten. Sie passt jetzt auf die Seite
+  ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+- Druck der CO₂-Angaben für den Messdienst: Das Blatt druckte verkleinert, weil seine neun Spalten nicht auf die Seite
+  passten. Es druckt jetzt in voller Größe ([#647](https://github.com/speedone/mietfuchs/issues/647)).
 
 ## [0.18.0] – 2026-11-13
 

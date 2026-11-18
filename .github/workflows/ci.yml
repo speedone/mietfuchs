@@ -84,6 +84,20 @@ jobs:
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
           # Ohne NKA_HOST im Netz (#528): Der frische Datenordner verlangt ein Passwort, den Code liest das Skript aus der Datei
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --code-file "$RUNNER_TEMP/daten/einrichtungscode.txt"
+      # Nichts im Druck breiter als die Seite (#647): sonst verkleinern alle Browser den ganzen Druck, und im Anschreiben
+      # stehen Fußzeile, Falz- und Lochmarken zu hoch. Druckt die Abrechnung beider Objekte des Beispielbestands mit
+      # Extremwerten in Chromium (scripts/print-width-check.mjs). Einmal genügt, das hängt nicht an der Node-Version.
+      - name: Druckbreite prüfen
+        if: steps.scope.outputs.docs != 'true' && matrix.node == '24'
+        run: |
+          npx playwright install --with-deps chromium
+          node scripts/print-width-check.mjs --out "$RUNNER_TEMP/druckbreite"
+      - name: Druckbreite hochladen
+        if: failure() && steps.scope.outputs.docs != 'true' && matrix.node == '24'
+        uses: actions/upload-artifact@v7
+        with:
+          name: druckbreite
+          path: ${{ runner.temp }}/druckbreite
 
 # Die Prüfung „Lange KI-Antwort (Node)“ stand früher hier und läuft seit #52 in
 # .github/workflows/release.yml: beim Tag, wöchentlich nach Zeitplan, beim Start von Hand und an
