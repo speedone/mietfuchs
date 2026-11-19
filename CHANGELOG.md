@@ -21,7 +21,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   CO₂-Aufteilung (der Satz zu Ihrem Anteil an den CO₂-Kosten), mit eigener Heizkostenabrechnung (die Zeilen der
   Brennstofflieferungen) und mit sehr langen Wörtern ohne Trennstelle in Beschreibungen oder im Anschreiben. All das
   bricht jetzt um, und eine Prüfung bei jeder Änderung hält fest, dass nichts im Druck breiter wird als die Seite
-  ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+  ([#647](https://github.com/speedone/mietfuchs/issues/647)). Die Spalten der Aufstellung stehen dafür etwas enger;
+  Angaben wie „58 von 270 m² · 181/365 Tage“ brechen seltener um, und manche Abrechnung wird eine Seite kürzer.
 - Druck der Steuer (Anlage V): Die Tabelle der Werbungskosten war breiter als die Seite, der Druck verkleinert und die
   Spalte „Zuordnung“ am rechten Rand abgeschnitten. Sie passt jetzt auf die Seite
   ([#647](https://github.com/speedone/mietfuchs/issues/647)).

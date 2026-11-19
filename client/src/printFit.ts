@@ -182,7 +182,11 @@ export function fitForPrint(win: Window = window): Element[] | null {
       if (found.length === 0) break
       const tables = new Set<Element>()
       for (const el of found) {
-        const table = el.closest('table:not(.print-pages)')
+        // Ragt eine Zelle der Hülle `.print-pages` hinaus, ohne dass ein Kind es tut, zieht eine Tabelle darin sie auf
+        // (ihre Mindestbreite plus Innenabstand der Hülle): dann die breiteste, nicht die ganze Aufstellung (CI unter Linux)
+        const inner = [...el.querySelectorAll('table:not(.print-pages)')].filter((t) => !t.classList.contains(PRINT_FIT))
+        const widest = inner.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0]
+        const table = el.closest('table:not(.print-pages)') ?? widest ?? null
         if (table && !table.classList.contains(PRINT_FIT)) tables.add(table)
       }
       const targets = tables.size > 0 ? [...tables] : found.filter((el) => !el.classList.contains(PRINT_FIT))

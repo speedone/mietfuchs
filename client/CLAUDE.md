@@ -221,7 +221,9 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   um (Beträge selbst nicht), und Text aus Daten in Zellen geht durch `softBreak` ([softBreak.ts](src/softBreak.ts)), das nur
   in Wörter über 40 Zeichen unsichtbare Umbruchstellen setzt. Steht in einer Zelle `num` Text neben dem Betrag (Steuer,
   „… in Folgejahre“), trägt sie `wraps`. Tabellen mit vielen Spalten (CO₂-Blatt, Werbungskosten der Steuer) tragen
-  `print-compact`: im Druck schmaler Innenabstand und 9 pt. Eine neue Druckspalte mit Text aus Eingaben bekommt
+  `print-compact`: im Druck schmaler Innenabstand und 9 pt an den Zellen selbst (`th`/`td` haben eine eigene Schriftgröße).
+  Die Tabellen der Aufstellung haben im Druck 2,5 mm Innenabstand: Die CI läuft unter Linux mit den Breiten von Arial
+  (Liberation Sans), dort war die Kostentabelle einer ETW mit 12 px 4 px zu breit. Eine neue Druckspalte mit Text aus Eingaben bekommt
   `softBreak`, eine neue Druckansicht einen Fall in scripts/print-width-views.mjs; eine Überschrift, die nicht umbrechen
   darf, gibt es im Druck nicht. **Notbremse** ([printFit.ts](src/printFit.ts), beim Start in main.tsx): Bei `beforeprint`
   stellt sie das Drucklayout nach (jede Regel `@media` wie im Druck, Breiten gegen den Satzspiegel aus `@page`, das

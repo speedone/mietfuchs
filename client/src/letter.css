@@ -124,8 +124,13 @@
      Innenabstand allein (9 × 24 px) machte es breiter als die Seite (Druck auf rund 87 %); die Werbungskosten der Steuer
      haben sieben. In der Steuer stehen in „verteilt“ Betrag und Text („… in Folgejahre“, `wraps`), die umbrechen dürfen;
      vorher schnitt der Druck die Spalte „Zuordnung“ am rechten Rand ab. */
-  .print-compact { font-size: 9pt; }
-  .print-compact :is(th, td) { padding-inline: 1.5mm; }
+  /* Die Zellen selbst: `th` und `td` haben eine eigene Schriftgröße (index.css) und erbten die 9 pt der Tabelle nicht; mit
+     den Breiten von Arial (Liberation Sans unter Linux) war das CO₂-Blatt so 706 px breit (CI, nachgemessen). */
+  .print-compact :is(th, td) { font-size: 9pt; padding-inline: 1.5mm; }
+  /* Tabellen der Aufstellung mit 2,5 mm Innenabstand statt 12 px: Mit den Breiten von Arial und Extremwerten (Beträge in
+     Millionenhöhe, „Laut Gemeinschaftsabrechnung“ als längstes Wort) brauchte die Kostentabelle einer ETW 627 px, die
+     Hülle lässt 623 (CI unter Linux, nachgemessen); so bleiben rund 16 px Luft. */
+  .card.statement table:not(.print-pages) :is(th, td) { padding-inline: 2.5mm; }
   /* Notbremse (printFit.ts): nur an einem Element, das trotz allem breiter wäre als die Seite. Feste Spalten über die
      ganze Breite und Umbruch an jeder Stelle; `!important`, weil auch Utilities (`whitespace-nowrap`) dort weichen
      müssen. Im Normalfall trägt kein Element die Klasse. */
