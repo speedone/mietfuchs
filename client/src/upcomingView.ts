@@ -61,7 +61,7 @@ function rowOf(item: UpcomingDeadline, today: string): UpcomingRow {
       return row('info', {
         title: `Einwendungsfrist der Mieter, Abrechnung ${item.label}`,
         when: `bis etwa ${date} (${dueText(item.date, today)})`,
-        detail: `Versendet am ${fmtDate(item.sentAt)}. Einwendungen gegen die Abrechnung müssen die Mieter bis zum Ablauf des zwölften Monats nach Zugang mitteilen; danach sind sie ausgeschlossen, wenn sie die Verspätung zu vertreten haben (§ 556 Abs. 3 Satz 5 und 6 BGB). ` +
+        detail: `Versendet am ${fmtDate(item.sentAt)}. Einwendungen gegen die Abrechnung müssen die Mieter bis zum Ablauf des zwölften Monats nach Zugang mitteilen; danach sind sie ausgeschlossen, wenn die Mieter die Verspätung zu vertreten haben (§ 556 Abs. 3 Satz 5 und 6 BGB). ` +
           'Den Zugang kennt Mietfuchs nicht: Gerechnet ist ab dem Versanddatum bis zum Monatsende. Geht die Abrechnung später zu oder fällt das Ende auf einen Sonnabend, Sonntag oder Feiertag, endet die Frist später.',
         action: { label: 'Zur Abrechnung', tab: 'abrechnung', period: item.period },
       })

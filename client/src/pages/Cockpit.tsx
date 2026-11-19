@@ -111,19 +111,23 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
   }, [propertyId])
   // „Demnächst fällig“ (#190): Fristen und Erinnerungen des Objekts, vom Server gerechnet, darunter seit #190 auch die
-  // Kaution nach Auszug (#228). Neu geladen mit dem Objekt und mit den Mietverhältnissen (Auszug, Kaution); ein Fehler
+  // Kaution ausgezogener Mieter (#228). Neu geladen mit dem Objekt und mit den Mietverhältnissen (Auszug, Kaution); ein Fehler
   // lässt die Karte weg.
   const [upcoming, setUpcoming] = useState<UpcomingDeadlines | null>(null)
   useEffect(() => {
+    // Eine verspätete Antwort einer früheren Anfrage überschreibt die neuere nicht (Durchsicht B4).
+    let current = true
     api<UpcomingDeadlines>(withProperty('/api/upcoming', propertyId))
-      .then((u) => setUpcoming(u && Array.isArray(u.items) ? u : null))
-      .catch(() => setUpcoming(null))
+      .then((u) => { if (current) setUpcoming(u && Array.isArray(u.items) ? u : null) })
+      .catch(() => { if (current) setUpcoming(null) })
+    return () => { current = false }
   }, [propertyId, tenancies, settlement?.closed?.sentAt])
   // Ein Eintrag mit Zeitraum wechselt erst dorthin (die Abrechnung gehört zu ihrem Zeitraum), wie bei der Heizung.
   const followUpcoming = useCallback((a: UpcomingAction) => {
-    if (a.period === undefined) return onNavigate(a.tab, a.focus)
+    // Schon im Zeitraum: kein Wechsel, sonst fragte ein offenes Formular ohne Grund (Durchsicht B3).
+    if (a.period === undefined || a.period === key) return onNavigate(a.tab, a.focus)
     void switchPeriod(a.period).then((ok) => { if (ok) onNavigate(a.tab, a.focus) })
-  }, [switchPeriod, onNavigate])
+  }, [switchPeriod, onNavigate, key])
   // Kontoauszug (#188): Umsätze, die noch nicht zugeordnet sind; ohne Konto oder bei einem Fehler keine Zeile.
   const [bankOpen, setBankOpen] = useState(0)
   useEffect(() => {

@@ -46,7 +46,7 @@ test('Einwendungsfrist: nur zur Information, als genähert gekennzeichnet', () =
   expect(row?.levelText).toBe('zur Information')
   expect(row?.title).toBe('Einwendungsfrist der Mieter, Abrechnung 2025')
   expect(row?.when).toBe('bis etwa 31.01.2027 (in 72 Tagen)')
-  expect(row?.detail).toBe('Versendet am 20.01.2026. Einwendungen gegen die Abrechnung müssen die Mieter bis zum Ablauf des zwölften Monats nach Zugang mitteilen; danach sind sie ausgeschlossen, wenn sie die Verspätung zu vertreten haben (§ 556 Abs. 3 Satz 5 und 6 BGB). Den Zugang kennt Mietfuchs nicht: Gerechnet ist ab dem Versanddatum bis zum Monatsende. Geht die Abrechnung später zu oder fällt das Ende auf einen Sonnabend, Sonntag oder Feiertag, endet die Frist später.')
+  expect(row?.detail).toBe('Versendet am 20.01.2026. Einwendungen gegen die Abrechnung müssen die Mieter bis zum Ablauf des zwölften Monats nach Zugang mitteilen; danach sind sie ausgeschlossen, wenn die Mieter die Verspätung zu vertreten haben (§ 556 Abs. 3 Satz 5 und 6 BGB). Den Zugang kennt Mietfuchs nicht: Gerechnet ist ab dem Versanddatum bis zum Monatsende. Geht die Abrechnung später zu oder fällt das Ende auf einen Sonnabend, Sonntag oder Feiertag, endet die Frist später.')
   expect(row?.action).toEqual({ label: 'Zur Abrechnung', tab: 'abrechnung', period: calendarPeriod(2025) })
 })
 

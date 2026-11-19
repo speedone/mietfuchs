@@ -28,7 +28,9 @@ export default function UpcomingCard({ list, onAction }: { list: UpcomingDeadlin
               <span className="muted">{r.when}</span>
             </div>
             <div className="muted">{r.detail}</div>
-            <button type="button" className="btn small secondary" onClick={() => onAction(r.action)}>{r.action.label}</button>
+            <button type="button" className="btn small secondary" onClick={() => onAction(r.action)}>
+              {r.action.label}<span className="sr-only">: {r.title}</span>
+            </button>
           </li>
         ))}
       </ul>

@@ -7,6 +7,7 @@ import { shiftMonths, valueAt } from '../../shared/law/register.ts'
 import { bgbObjectionMonths } from '../../shared/law/bgb-betrkv.ts'
 import { practiceObjectionEndOfMonth } from '../../shared/law/practice.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
+import { GUIDES } from '../../shared/guides.ts'
 import { upcomingDeadlines, UPCOMING_HORIZON_DAYS, type UpcomingInput, type UpcomingMeter, type UpcomingTenancy } from '../src/upcomingDeadlines.ts'
 import type { DepositEntry, PeriodKey, PeriodRules, UpcomingDeadline } from '../../shared/types.ts'
 
@@ -183,4 +184,12 @@ test('Lexikon „Einwendungsfrist“: Zahl aus dem Register, Beispiel mit object
   assert.match(term.example, /am 20\.01\.2026 versendet\. Mietfuchs zeigt die Einwendungsfrist bis etwa 31\.01\.2027/)
   // Ein Zugang am 02.02.2026 endet nach jeder Lesart später (02.02.2027 bzw. 28.02.2027).
   assert.ok(objectionDeadline('2026-02-02') > '2027-01-31' && shiftMonths('2026-02-02', 12) > '2027-01-31')
+})
+
+// Durchsicht B1: Die Karte „Kaution nach Auszug“ gibt es nicht mehr; die Anleitung nennt die neue Stelle.
+test('Durchsicht B1: Anleitung zur Kaution nennt „Demnächst fällig“ und „Kaution abrechnen“, nicht die alte Karte', () => {
+  const text = JSON.stringify(GUIDES)
+  assert.doesNotMatch(text, /Kaution nach Auszug/)
+  assert.match(text, /„Demnächst fällig“/)
+  assert.match(text, /„Kaution abrechnen“/)
 })
