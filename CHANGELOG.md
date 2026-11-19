@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.18.1] – 2026-11-19
+
 ### Geändert
 
 - Abrechnung: Die Knöpfe der Kopfzeile stehen geordnet. Unter „Mehr“ hat jede Zeile die Erklärung links und ihre
@@ -3708,7 +3710,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.18.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/speedone/mietfuchs/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/speedone/mietfuchs/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/speedone/mietfuchs/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/speedone/mietfuchs/compare/v0.16.0...v0.16.1
