@@ -12,6 +12,29 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Knöpfe rechts, die Knöpfe neben „versendet am“ stehen auf einer Linie mit dem Feld, und der Stand wird in einem
   schmalen Fenster nicht mehr zu einer engen Spalte gequetscht.
 
+### Behoben
+
+- Druck der Abrechnung: Im Anschreiben stand die Fußzeile bei drei Vierteln der Seite, und Falz- und Lochmarken saßen
+  zu hoch, im Programmfenster wie in Chrome und Edge. Ursache war eine Tabelle der Aufstellung, die breiter wurde als
+  die Seite; der Browser verkleinerte deshalb den ganzen Druck auf rund 80 %. Das geschah bei einer Eigentumswohnung
+  (die Spaltenüberschrift „Gesamtkosten bzw. Anteil an der Gemeinschaft“ brach nicht um), mit Messdienst und gebuchter
+  CO₂-Aufteilung (der Satz zu Ihrem Anteil an den CO₂-Kosten), mit eigener Heizkostenabrechnung (die Zeilen der
+  Brennstofflieferungen) und mit sehr langen Wörtern ohne Trennstelle in Beschreibungen oder im Anschreiben. All das
+  bricht jetzt um, und eine Prüfung bei jeder Änderung hält fest, dass nichts im Druck breiter wird als die Seite
+  ([#647](https://github.com/speedone/mietfuchs/issues/647)). Die Spalten der Aufstellung stehen dafür etwas enger;
+  Angaben wie „58 von 270 m² · 181/365 Tage“ brechen seltener um, und manche Abrechnung wird eine Seite kürzer.
+- Druck der Steuer (Anlage V): Die Tabelle der Werbungskosten war breiter als die Seite, der Druck verkleinert und die
+  Spalte „Zuordnung“ am rechten Rand abgeschnitten. Sie passt jetzt auf die Seite
+  ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+- Druck der CO₂-Angaben für den Messdienst: Das Blatt druckte verkleinert, weil seine neun Spalten nicht auf die Seite
+  passten. Es druckt jetzt in voller Größe ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+- Druck einer E-Rechnung und der Kautionsaufstellung: Ein sehr langes Wort ohne Trennstelle in einer Position der
+  Rechnung oder im Grund einer Verrechnung machte die Tabelle breiter als die Seite, und der Druck wurde verkleinert.
+  Solche Wörter brechen jetzt um ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+- Druck allgemein: Wäre trotzdem einmal etwas breiter als die Seite, bricht Mietfuchs beim Drucken genau diese Stelle
+  um, statt dass der Browser alles verkleinert. Anschreiben und übrige Seiten bleiben in voller Größe, und es fehlt
+  nichts ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+
 ## [0.18.0] – 2026-11-13
 
 ### Hinzugefügt

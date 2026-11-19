@@ -11,7 +11,7 @@ export default function Co2Block({ view }: { view: Co2BlockView | null }) {
       <Table>
         <tbody>
           {view.lines.map((l) => (
-            <tr key={l.label}><td>{l.label}</td><td className="num">{l.value}</td></tr>
+            <tr key={l.label}><td>{l.label}</td><td className="num wraps">{l.value}</td></tr>
           ))}
         </tbody>
       </Table>

@@ -107,6 +107,46 @@
    Druck aller zählte er über alle Mieter hinweg. */
 
 @media print {
+  /* Nichts im Druck darf breiter werden als die Seite (#647). Sonst verkleinern Chromium (auch das Programmfenster und
+     printToPDF), Firefox und Safari das ganze Dokument mit einem Faktor, und im Anschreiben stehen Fußzeile, Falz- und
+     Lochmarken zu hoch. Abschalten lässt sich das nicht, abschneiden (`overflow`) ließe Beträge verschwinden; deshalb
+     bricht im Druck Fließtext um, wenn ein Wort sonst nicht in die Zeile passt. Datentabellen nicht: Dort senkte
+     `anywhere` die Mindestbreite jeder Zelle, Chromium verteilte die Spalten neu und trennte normale Wörter
+     („Allgemeinstro-m“, nachgemessen); in ihnen helfen umbrechende Spaltenköpfe und Notizen unter Beträgen (Beträge
+     selbst bleiben in einer Zeile, `td.num` in index.css) und `softBreak` für überlange Wörter (softBreak.ts). Die Hülle
+     `.print-pages` ist selbst eine Tabelle und gibt `anywhere` an ihren Inhalt weiter. Geprüft mit
+     scripts/print-width-check.mjs; normale Abrechnungen drucken damit unverändert (PDFs des Beispielbestands verglichen). */
+  body { overflow-wrap: anywhere; }
+  table:not(.print-pages) { overflow-wrap: normal; }
+  th.num, td.num > div, td.num.wraps { white-space: normal; }
+  /* Außerhalb der Abrechnung, dieselbe Regel (#647, gefunden mit print-width-check.mjs): Tabellen mit vielen Spalten
+     (`print-compact`) drucken mit schmalem Innenabstand und kleinerer Schrift. Das CO₂-Blatt hat neun Spalten, ihr
+     Innenabstand allein (9 × 24 px) machte es breiter als die Seite (Druck auf rund 87 %); die Werbungskosten der Steuer
+     haben sieben. In der Steuer stehen in „verteilt“ Betrag und Text („… in Folgejahre“, `wraps`), die umbrechen dürfen;
+     vorher schnitt der Druck die Spalte „Zuordnung“ am rechten Rand ab. */
+  /* Die Zellen selbst: `th` und `td` haben eine eigene Schriftgröße (index.css) und erbten die 9 pt der Tabelle nicht; mit
+     den Breiten von Arial (Liberation Sans unter Linux) war das CO₂-Blatt so 706 px breit (CI, nachgemessen). */
+  .print-compact :is(th, td) { font-size: 9pt; padding-inline: 1.5mm; }
+  /* Tabellen der Aufstellung mit 2,5 mm Innenabstand statt 12 px: Mit den Breiten von Arial und Extremwerten (Beträge in
+     Millionenhöhe, „Laut Gemeinschaftsabrechnung“ als längstes Wort) brauchte die Kostentabelle einer ETW 627 px, die
+     Hülle lässt 623 (CI unter Linux, nachgemessen); so bleiben rund 16 px Luft. */
+  .card.statement table:not(.print-pages) :is(th, td) { padding-inline: 2.5mm; }
+  /* Notbremse (printFit.ts): nur an einem Element, das trotz allem breiter wäre als die Seite. Feste Spalten über die
+     ganze Breite und Umbruch an jeder Stelle; `!important`, weil auch Utilities (`whitespace-nowrap`) dort weichen
+     müssen. Im Normalfall trägt kein Element die Klasse. */
+  .print-fit { max-width: 100% !important; }
+  table.print-fit { table-layout: fixed !important; width: 100% !important; }
+  /* Nur das Umbrechen erzwingen, nicht `white-space: normal`: Das machte aus mehrzeiligem Text (`pre-line` im Brief,
+     Anschrift, Unterschrift) Fließtext (Durchsicht). Ohne `text-wrap-mode` (Chromium vor 130, Firefox vor 124, Safari
+     vor 18) bleibt nur `white-space`. */
+  .print-fit, .print-fit * { overflow-wrap: anywhere !important; }
+  @supports (text-wrap-mode: wrap) {
+    .print-fit, .print-fit * { text-wrap-mode: wrap !important; }
+  }
+  @supports not (text-wrap-mode: wrap) {
+    .print-fit, .print-fit * { white-space: normal !important; }
+  }
+
   /* Die Briefseite füllt das Blatt bis 4 mm vor den unteren Rand: Firefox schob mit 1 mm Luft die zweite Zeile der
      Fußzeile auf eine eigene Seite (nachgemessen, Druck in Safari #286). */
   .letter { --page: 12mm; min-height: calc(297mm - 2 * var(--page) - 4mm); box-sizing: border-box; max-width: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; font-size: 11pt; line-height: 1.4; color: var(--text); break-after: page; page-break-after: always; }

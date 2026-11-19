@@ -29,6 +29,7 @@ import { anlageVLines } from '../anlageV'
 import type { NoticeTab } from '../notices'
 import { DEFERRED_COLUMN_NOTE, deferredCellText, deferredParts, deferredSumText, isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText, SPREAD_BLOCK_READING, SPREAD_CARRIED_MORE, spreadRestBeforeStartText, spreadRestText, SPREAD_REST_MORE, spreadUsageChangedText } from '../taxSpread'
 import { formerYearsText, incomeMore, incomeTable, lateDecemberText, OLD_LEASE_MORE, oldLeaseForwardText, possibleDepositText, TURN_OF_YEAR_MORE, turnOfYearLines, unallocatedText, unitRows } from '../taxIncome'
+import { softBreak } from '../softBreak'
 
 // `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2), dort zu den
 // Steuerangaben des Objekts (#554).
@@ -337,7 +338,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
                       {g.categories.map((c) => (
                         <tr key={c.category}>
                           <td>
-                            {c.category}
+                            {softBreak(c.category)}
                             <div className="muted cell-sub">{g.group}</div>
                           </td>
                           <td className="num">{fmtEuro(c.amountCents)}</td>
@@ -907,7 +908,7 @@ function SplitTable({ report }: { report: TaxReport }) {
   const deferred = showsDeferred(report)
   return (
     <>
-      <Table className="stacked" aria-label="Werbungskosten je Position">
+      <Table className="stacked print-compact" aria-label="Werbungskosten je Position">
         <thead>
           <tr>
             <th>Position</th>
@@ -929,7 +930,7 @@ function SplitTable({ report }: { report: TaxReport }) {
             <td data-label="Gesamt" className="num">{fmtEuro(report.expenses.totalCents)}</td>
             <td data-label="privat" className="num">{fmtEuro(report.expenses.privateCents)}</td>
             {gratuitous && <td data-label="unentgeltlich" className="num">{fmtEuro(report.expenses.gratuitousCents ?? 0)}</td>}
-            {deferred && <td data-label="verteilt" className="num">{deferredSumText(report)}</td>}
+            {deferred && <td data-label="verteilt" className="num wraps">{deferredSumText(report)}</td>}
             <td data-label="abziehbar" className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
             <td data-label="Zuordnung" />
             <td className="actions no-print" />
@@ -949,15 +950,15 @@ function SplitRow({ item, gratuitous, deferred }: { item: TaxExpenseItem; gratui
       <tr>
         <td data-label="Position">
           {/* M8: die Beschreibung vorn, Gruppe und Kostenart darunter statt einer Brotkrumenzeile davor */}
-          <span>{item.description}</span>
-          <div className="muted cell-sub">{item.group} · {item.category}</div>
+          <span>{softBreak(item.description)}</span>
+          <div className="muted cell-sub">{item.group} · {softBreak(item.category)}</div>
           {movedInText(item) && <div className="muted fine">{movedInText(item)}</div>}
           {spreadItemText(item) && <div className="muted fine">{spreadItemText(item)}</div>}
         </td>
         <td data-label="Gesamt" className="num">{fmtEuro(item.amountCents)}</td>
         <td data-label="privat" className="num">{fmtEuro(item.privateCents)}</td>
         {gratuitous && <td data-label="unentgeltlich" className="num">{fmtEuro(item.gratuitousCents ?? 0)}</td>}
-        {deferred && <td data-label="verteilt" className="num">{deferredCellText(item)}</td>}
+        {deferred && <td data-label="verteilt" className="num wraps">{deferredCellText(item)}</td>}
         <td data-label="abziehbar" className="num">{fmtEuro(item.deductibleCents)}</td>
         <td data-label="Zuordnung">{allocationLabel(item)}</td>
         <td className="actions no-print">
@@ -1004,7 +1005,7 @@ function SpreadBlockView({ report }: { report: TaxReport }) {
                 return (
                   <tr key={r.key} data-row={r.key} className={r.kind === 'sum' ? 'subtotal' : undefined}>
                     {b.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.code !== undefined && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
-                    <td data-label="Angabe">{r.label}</td>
+                    <td data-label="Angabe">{softBreak(r.label)}</td>
                     <td data-label={total ? 'Gesamtaufwand' : 'Gesamtbetrag'} className="num">{r.grossCents === null ? '' : fmtEuro(r.grossCents)}</td>
                     <td data-label="abzugsfähiger Anteil" className="num">{r.percent === null ? '' : `${r.percent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`}</td>
                     <td data-label={total ? `davon ${thisYear}` : thisYear} className="num">{fmtEuro(r.cents)}</td>
@@ -1126,7 +1127,7 @@ function UnitIncome({ report, year }: { report: TaxReport; year: number }) {
           <tbody>
             {rows.map((u) => (
               <tr key={u.unitId}>
-                <td data-label="Wohnung">{u.unitName}{u.relative && <div className="muted cell-sub">an Angehörige vermietet{i?.relatives ? `: Zeile ${i.relatives.line}` : ''}</div>}</td>
+                <td data-label="Wohnung">{softBreak(u.unitName)}{u.relative && <div className="muted cell-sub">an Angehörige vermietet{i?.relatives ? `: Zeile ${i.relatives.line}` : ''}</div>}</td>
                 <td data-label="Wohnfläche" className="num">{u.areaM2 === null ? '–' : fmtArea(u.areaM2)}</td>
                 <td data-label="Miete ohne Umlagen" className="num">{fmtEuro(u.rentCents)}</td>
               </tr>
@@ -1195,7 +1196,7 @@ function OverviewCard({ year, basis, refresh }: { year: number; basis: Basis; re
               {v.lines.map((l) => (
                 <tr key={l.propertyId} data-row={l.propertyId}>
                   <td data-label="Objekt">
-                    {l.name}
+                    {softBreak(l.name)}
                     {l.current && <div className="muted cell-sub">dieses Objekt</div>}
                   </td>
                   {l.state === 'rental' ? (

@@ -89,6 +89,35 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   die Auswertung nicht) und gelegentlich „Als PDF sichern“ im echten Safari als Gegenprobe, denn der
   Lauf druckt über WKWebView, nicht über Safaris Menü.
 
+- **[print-width-check.mjs](print-width-check.mjs)** (#647, Schritt „Druckbreite prüfen“ in ci.yml, bei jedem PR auf
+  Node 24): **Nichts im Druck darf breiter werden als die Seite** (A4 mit 12 mm Rand, 186 mm). Ist ein Element breiter,
+  verkleinern Chromium (auch Programmfenster und `printToPDF`), Firefox und Safari das ganze Dokument mit einem Faktor,
+  und im Anschreiben stehen Fußzeile, Falz- und Lochmarken zu hoch (#647: Spaltenkopf „Gesamtkosten bzw. Anteil an der
+  Gemeinschaft“ mit `nowrap`, Druck auf rund 80 %). Abschalten lässt sich das nicht, abschneiden ließe Beträge
+  verschwinden. Der Lauf nimmt den Beispielbestand plus Heizanlage und Extremwerte (Wort von 68 Zeichen ohne
+  Trennstelle als Beschreibung und Leistung nach § 35a und im eigenen Schlusssatz des Anschreibens, Beträge in
+  Millionenhöhe, lange E-Mail im Kontakt). **Fälle**: die Seite Abrechnung wie Strg+P für Lindenweg, Eigentumswohnung
+  (mit `external`), Ulmenweg 7 (eigene Heizkostenabrechnung mit Brennstoff und Vorrat), Birkenweg 2 (Messdienst mit
+  CO₂-Aufteilung) und Lindenweg mit Logo und Briefpapier (dann druckt die Seite ohne Rand, erlaubt ist die ganze
+  Seitenbreite), dazu jede andere Druckansicht aus [print-width-views.mjs](print-width-views.mjs): Ableseformular,
+  Kaution, monatliche Information, CO₂-Blatt, E-Rechnung, getrennte Heizkostenabrechnung (Weg d), Ableseergebnis, Steuer.
+  Deren `setup` legt eigene Objekte an („Ulmenweg 7“, „Erlenstraße 9“), damit die Abrechnung der beiden Objekte des
+  Beispielbestands gleich bleibt; `open` bedient die Oberfläche bis `window.print()` (allein aufrufbar: `node scripts/print-width-views.mjs --only <name>`). Je
+  Fall zwei Prüfungen: im Medium print bei einem Fenster so breit wie der Satzspiegel ragt kein sichtbares Element hinaus
+  (gemessen mit `scrollWidth`, denn Text, der aus einem Absatz ragt, macht dessen Box nicht breiter; Befund mit Klasse und
+  Text), in jeder Engine aus `--engines` (Vorgabe Chromium; geprüft mit Firefox und WebKit); und in der PDF aus Chromium ist
+  jede Seite A4, auf jeder Seite mit Anschreiben steht der Betreff (fehlt er als eigenes Textstück, ist das ein Befund) bei 98,46 mm und, wo gedruckt, die Fußzeile ab 275 mm.
+  **Erst messen, dann `page.pdf()`**: Das löst `afterprint` aus, und Ableseformular und Monatsinformation nehmen dann ihre
+  Druckklasse wieder ab. Bericht `bericht.md` und PDFs in `--out`, Exit 1 bei Befunden, 2 bei gescheitertem Lauf.
+  Dazu in jedem Fall und jeder Engine `beforeprint`: Die Notbremse (client/src/printFit.ts) darf nichts markieren; im
+  Fall `notbremse` steht eine fremde, nicht umbrechende Zeile in der Abrechnung, dort muss sie greifen, danach ragt
+  nichts hinaus, und in der PDF stehen Betreff und Fußzeile richtig und jedes Wort der Zeile (rot ohne Notbremse:
+  Fußzeile bei 191 mm, 29 Wörter abgeschnitten).
+  `--cases` nimmt einzelne Fälle. Rot nachgewiesen am Stand vor dem Fix (Fußzeile bei 191 mm, Steuer 1110 px mit
+  abgeschnittener Spalte „Zuordnung“, CO₂-Blatt 811 px) und gegen jede einzelne Abhilfe (ohne die Regel für Fließtext:
+  Betreff bei 77 mm). Abhilfe steht in client/src/letter.css (`@media print`) und softBreak.ts (client/CLAUDE.md,
+  „Druckbreite“).
+
 ## Messung mit großem Bestand
 
 - **[perf-stock.mjs](perf-stock.mjs)** legt einen erfundenen, reproduzierbaren Bestand an (fester Startwert je

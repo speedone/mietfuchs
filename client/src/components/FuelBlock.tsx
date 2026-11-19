@@ -1,6 +1,7 @@
 // Der Druckblock „Brennstoff“ in der Abrechnung eines Mieters (Heizung PR 7). Gedruckt wird er mit.
 import Table from './Table'
 import type { FuelBlockView } from '../fuelView'
+import { softBreak } from '../softBreak'
 
 export default function FuelBlock({ view }: { view: FuelBlockView | null }) {
   if (!view) return null
@@ -10,7 +11,7 @@ export default function FuelBlock({ view }: { view: FuelBlockView | null }) {
       <Table>
         <tbody>
           {view.rows.map((r) => (
-            <tr key={r.label}><td>{r.label}</td><td className="num">{r.value}</td></tr>
+            <tr key={r.label}><td>{softBreak(r.label)}</td><td className="num wraps">{r.value}</td></tr>
           ))}
         </tbody>
       </Table>

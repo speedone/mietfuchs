@@ -213,6 +213,23 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   „Speichern“ in der Kopfzeile. Nachweis, dass sich der Druck nicht ändert: PDFs des Beispielbestands (alle, einer, ohne
   Anschreiben, mit Anlagen) vorher und nachher, Seitenzahl, Text und Lage jedes Textstücks gleich. Ein Wächter in printCss.test.ts
   verlangt `.statement-hidden` nur in `@media screen`.
+- **Druckbreite** (#647): Nichts im Druck darf breiter werden als die Seite, sonst verkleinert der Browser den ganzen
+  Druck samt Anschreiben (scripts/print-width-check.mjs prüft es bei jedem PR). In `@media print` ([letter.css](src/letter.css)) bricht
+  Fließtext notfalls überall um (`overflow-wrap: anywhere` an `body`), **Datentabellen nicht**: Dort senkte `anywhere` die
+  Mindestbreite jeder Zelle, Chromium verteilte die Spalten neu und trennte normale Wörter mitten im Wort, auch feste
+  Spaltenbreiten passten nur knapp (nachgemessen). In Tabellen brechen deshalb Spaltenköpfe und Notizen unter Beträgen
+  um (Beträge selbst nicht), und Text aus Daten in Zellen geht durch `softBreak` ([softBreak.ts](src/softBreak.ts)), das nur
+  in Wörter über 40 Zeichen unsichtbare Umbruchstellen setzt. Steht in einer Zelle `num` Text neben dem Betrag (Steuer,
+  „… in Folgejahre“), trägt sie `wraps`. Tabellen mit vielen Spalten (CO₂-Blatt, Werbungskosten der Steuer) tragen
+  `print-compact`: im Druck schmaler Innenabstand und 9 pt an den Zellen selbst (`th`/`td` haben eine eigene Schriftgröße).
+  Die Tabellen der Aufstellung haben im Druck 2,5 mm Innenabstand: Die CI läuft unter Linux mit den Breiten von Arial
+  (Liberation Sans), dort war die Kostentabelle einer ETW mit 12 px 4 px zu breit. Eine neue Druckspalte mit Text aus Eingaben bekommt
+  `softBreak`, eine neue Druckansicht einen Fall in scripts/print-width-views.mjs; eine Überschrift, die nicht umbrechen
+  darf, gibt es im Druck nicht. **Notbremse** ([printFit.ts](src/printFit.ts), beim Start in main.tsx): Bei `beforeprint`
+  stellt sie das Drucklayout nach (jede Regel `@media` wie im Druck, Breiten gegen den Satzspiegel aus `@page`, das
+  Dokument so breit wie er), misst und gibt nur dem, was hinausragt, die Klasse `print-fit` (zuerst Datentabellen: feste
+  Spalten, Umbruch überall). Danach ist es zu spät: Chromium legt den Faktor im ersten Drucklayout fest (nachgemessen).
+  Im Normalfall markiert sie nichts, das prüft print-width-check.mjs in jedem Fall; sie ersetzt keine Vorbeugung.
 - **Nicht gedruckt** wird, was nicht zur Abrechnung gehört: Hinweise der Datenbank (Database.tsx), Hinweis im leeren
   Objekt, Mitteilungen, Kopf und Leiste am Handy tragen `no-print`.
 - **Fehler vor dem Druck**: Hat eine offene Abrechnung Fehler der Stufe `error`, fragt die Seite vor

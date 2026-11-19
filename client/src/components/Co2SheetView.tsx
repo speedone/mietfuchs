@@ -7,6 +7,7 @@ import { SHEET_COLUMNS, sheetFacts, sheetHead, sheetNotes, sheetRows } from '../
 import Table from './Table'
 import type { Co2Sheet } from '../types'
 import { NoticeBox } from './Notice'
+import { softBreak } from '../softBreak'
 
 export default function Co2SheetView({ plantId, period, onClose }: { plantId: string; period: string; onClose: () => void }) {
   const [sheet, setSheet] = useState<Co2Sheet | null>(null)
@@ -42,12 +43,12 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
       {sheet.deliveries.length === 0
         ? <p>Für diese Heizperiode sind keine Rechnungen eingetragen.</p>
         : (
-          <Table>
+          <Table className="print-compact">
             <thead><tr><th>Rechnung</th>{SHEET_COLUMNS.map((c, j) => <th key={c} className={j >= 5 ? 'num' : undefined}>{c}</th>)}</tr></thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={`${r.label}:${i}`} className={r.kind === 'sum' || r.kind === 'billing' ? 'subtotal' : undefined}>
-                  <td>{r.label}{refs[i] !== null && <sup>{refs[i]}</sup>}</td>
+                  <td>{softBreak(r.label)}{refs[i] !== null && <sup>{refs[i]}</sup>}</td>
                   {r.cells.map((c, j) => <td key={j} className={j >= 5 ? 'num' : undefined}>{c}</td>)}
                 </tr>
               ))}
