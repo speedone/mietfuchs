@@ -381,8 +381,7 @@ Ab Version 1.0 gilt:
   Anleitung zum Umstieg stünde dann hier.
 
 Die Zusage gilt für Daten, die Mietfuchs selbst geschrieben hat. Eine Datei, die Sie von Hand im
-Datenordner verändert haben, kann Mietfuchs nicht schützen. Neue Funktionen dürfen in 1.x
-hinzukommen, sie ändern aber nichts an bestehenden Beständen, solange Sie sie nicht nutzen.
+Datenordner verändert haben, kann Mietfuchs nicht schützen.
 
 ---
 
