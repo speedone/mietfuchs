@@ -21,7 +21,7 @@ export type JumpTarget =
   | { kind: 'new'; what: NewForm }
   | { kind: 'section'; section: SectionId }
   | { kind: 'property'; part: PropertyPart }
-  // Das Seitenfenster der Kaution eines Mietverhältnisses (#228), aus der Cockpit-Zeile „Kaution nach Auszug“.
+  // Das Seitenfenster der Kaution eines Mietverhältnisses (#228), aus „Kaution abrechnen“ in „Demnächst fällig“ (#190).
   | { kind: 'deposit'; tenancyId: string }
 
 // Ein Eintrag des Servers, kein Ziel der Oberfläche

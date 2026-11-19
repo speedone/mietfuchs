@@ -6,6 +6,7 @@ import { objectionDeadline, settlementDeadline, CALENDAR_RULES, parsePeriodKey, 
 import { shiftMonths, valueAt } from '../../shared/law/register.ts'
 import { bgbObjectionMonths } from '../../shared/law/bgb-betrkv.ts'
 import { practiceObjectionEndOfMonth } from '../../shared/law/practice.ts'
+import { GLOSSARY } from '../../shared/glossary.ts'
 import { upcomingDeadlines, UPCOMING_HORIZON_DAYS, type UpcomingInput, type UpcomingMeter, type UpcomingTenancy } from '../src/upcomingDeadlines.ts'
 import type { DepositEntry, PeriodKey, PeriodRules, UpcomingDeadline } from '../../shared/types.ts'
 
@@ -170,4 +171,16 @@ test('Ordnung: nach Tag, dann Art, dann Kennung; Kennungen eindeutig und stabil'
   assert.deepEqual(first.items.map((i) => i.id), ['deposit:t1', 'calibration:m1', 'calibration:m2', 'settlement:2025-01'])
   assert.deepEqual(upcomingDeadlines(all, '2026-11-20'), first)
   assert.equal(new Set(first.items.map((i) => i.id)).size, first.items.length)
+})
+
+// ---------- Lexikon ----------
+
+test('Lexikon „Einwendungsfrist“: Zahl aus dem Register, Beispiel mit objectionDeadline nachgerechnet', () => {
+  const term = GLOSSARY.objectionDeadline
+  assert.match(term.short, /bis zum Ablauf des 12\. Monats nach Zugang/)
+  assert.equal(term.norm, '§ 556 Abs. 3 Satz 5 und 6 BGB')
+  assert.equal(objectionDeadline('2026-01-20'), '2027-01-31')
+  assert.match(term.example, /am 20\.01\.2026 versendet\. Mietfuchs zeigt die Einwendungsfrist bis etwa 31\.01\.2027/)
+  // Ein Zugang am 02.02.2026 endet nach jeder Lesart später (02.02.2027 bzw. 28.02.2027).
+  assert.ok(objectionDeadline('2026-02-02') > '2027-01-31' && shiftMonths('2026-02-02', 12) > '2027-01-31')
 })

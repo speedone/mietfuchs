@@ -266,6 +266,13 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene
   Punkte (`cockpitSubtitle`).
+- **„Demnächst fällig“** (#190, [UpcomingCard.tsx](src/components/UpcomingCard.tsx), Texte und Ziele in
+  [upcomingView.ts](src/upcomingView.ts)): im Cockpit über der Checkliste, für das gewählte Objekt, auch im leeren
+  Zeitraum; ohne Einträge fehlt die Karte. Welche Fristen darin stehen, entscheidet der Server (server/src/CLAUDE.md,
+  „Demnächst fällig“); „in N Tagen“ rechnet gegen `today` des Servers. Stufe als Wort im Abzeichen (abgelaufen, offen,
+  zur Information), nie nur als Farbe; kein Personenname im Titel. Ein Eintrag mit Zeitraum wechselt erst mit
+  `useSwitchPeriod` dorthin und springt dann (Abrechnung, abgeschlossen ohne Versanddatum zu `SENT_AT_TARGET`); die
+  Kaution öffnet ihr Seitenfenster, die Eichfrist den Zähler. Sie ersetzt die frühere Karte „Kaution nach Auszug“.
 - **Sprungziele** (#554, [focus.ts](src/focus.ts), Ziele je Knopf in [jumpTargets.ts](src/jumpTargets.ts)): `navigate(tab,
   focus)` nimmt ein `JumpTarget`, nicht nur einen Eintrag des Servers (`NoticeSubject`, bleibt in shared/types.ts).
   `new` öffnet das Formular des eigenen Knopfs der Seite (`useNewTarget`, den Fokus ins erste Feld setzt das

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, DepositEntry, HeatingPlant, HeatingSettlementInfo, Meter, Notice, PeriodKey, Settings, Settlement, Tenancy, Unit, UpdateStatus, UploadEntry } from '../types'
+import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, PeriodKey, Settings, Settlement, Tenancy, Unit, UpcomingDeadlines, UpdateStatus, UploadEntry } from '../types'
 import type { NavTarget } from '../nav'
 import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
@@ -27,7 +27,8 @@ import { ibanHintTitle, invalidIbans } from '../ibanCheck'
 import { addressCheckDetail, addressFindings } from '../landlord'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
-import { depositsAfterMoveOut } from '../depositSettlement'
+import UpcomingCard from '../components/UpcomingCard'
+import type { UpcomingAction } from '../upcomingView'
 import { isSubject, type JumpTarget } from '../focus'
 import { CHECKS_TARGET, NEW_COST_ITEM_TARGET, SENT_AT_TARGET, TENANCIES_TARGET, soleSubject, unitsTarget } from '../jumpTargets'
 
@@ -109,12 +110,20 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([]))
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
   }, [propertyId])
-  // Kaution nach Auszug (#228): die Kautionsbuchungen des Objekts.
-  const [deposits, setDeposits] = useState<DepositEntry[]>([])
+  // „Demnächst fällig“ (#190): Fristen und Erinnerungen des Objekts, vom Server gerechnet, darunter seit #190 auch die
+  // Kaution nach Auszug (#228). Neu geladen mit dem Objekt und mit den Mietverhältnissen (Auszug, Kaution); ein Fehler
+  // lässt die Karte weg.
+  const [upcoming, setUpcoming] = useState<UpcomingDeadlines | null>(null)
   useEffect(() => {
-    api<DepositEntry[]>(withProperty('/api/deposit-entries', propertyId)).then((d) => setDeposits(Array.isArray(d) ? d : [])).catch(() => setDeposits([]))
-  }, [propertyId])
-  const afterMoveOut = depositsAfterMoveOut(tenancies, deposits, localToday())
+    api<UpcomingDeadlines>(withProperty('/api/upcoming', propertyId))
+      .then((u) => setUpcoming(u && Array.isArray(u.items) ? u : null))
+      .catch(() => setUpcoming(null))
+  }, [propertyId, tenancies, settlement?.closed?.sentAt])
+  // Ein Eintrag mit Zeitraum wechselt erst dorthin (die Abrechnung gehört zu ihrem Zeitraum), wie bei der Heizung.
+  const followUpcoming = useCallback((a: UpcomingAction) => {
+    if (a.period === undefined) return onNavigate(a.tab, a.focus)
+    void switchPeriod(a.period).then((ok) => { if (ok) onNavigate(a.tab, a.focus) })
+  }, [switchPeriod, onNavigate])
   // Kontoauszug (#188): Umsätze, die noch nicht zugeordnet sind; ohne Konto oder bei einem Fehler keine Zeile.
   const [bankOpen, setBankOpen] = useState(0)
   useEffect(() => {
@@ -410,6 +419,8 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
       {!consentHeld && consentPending(settings, updateStatus) && <UpdateConsent onAnswered={reload} downloads={updateDownloads} />}
       {updateStatus && desktopHintVisible(updateStatus, settings) && <DesktopHint status={updateStatus} onDismissed={reload} />}
 
+      <UpcomingCard list={upcoming} onAction={followUpcoming} />
+
       {fresh ? (
         <div className="card">
           <EmptyState action={{ label: start.label, onClick: () => onNavigate(start.tab, start.focus ?? undefined) }}>
@@ -518,19 +529,6 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
           <p>{bankLine}{' '}
             <button type="button" className="btn small secondary" onClick={() => onNavigate('kontoauszug')}>Zum Kontoauszug</button>
           </p>
-        </Card>
-      )}
-
-      {afterMoveOut.length > 0 && (
-        <Card title="Kaution nach Auszug">
-          <ul>
-            {afterMoveOut.map((d) => (
-              <li key={d.tenancyId}>
-                Bei Ihnen liegen noch {fmtEuro(d.balanceCents)} von {d.tenantName} (ausgezogen am {fmtDate(d.end)}).{' '}
-                <button type="button" className="btn small secondary" onClick={() => onNavigate('stammdaten', { kind: 'deposit', tenancyId: d.tenancyId })}>Kaution öffnen</button>
-              </li>
-            ))}
-          </ul>
         </Card>
       )}
 

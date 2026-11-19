@@ -19,6 +19,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Aufteilung in Miete und Nachzahlung vor. Ein Ausgang an den Mieter in Höhe eines offenen Guthabens wird als dessen
   Auszahlung vorgeschlagen. Es zählen nur abgeschlossene Abrechnungen; eine wieder geöffnete nicht
   ([#308](https://github.com/speedone/mietfuchs/issues/308)).
+- Cockpit: Die Karte „Demnächst fällig“ zeigt für das gewählte Objekt, welche Fristen abgelaufen sind oder in den
+  nächsten 90 Tagen enden, nach Datum geordnet und je mit einem Knopf an die passende Stelle: die Abrechnungsfrist
+  jedes Zeitraums, dessen Abrechnung noch nicht als versendet markiert ist (auch abgeschlossen ohne Versanddatum), nach
+  dem Versand die Einwendungsfrist der Mieter (gerechnet ab dem Versanddatum, deshalb als ungefähr gekennzeichnet),
+  die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
+  die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
+  Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
 
 ## [0.18.1] – 2026-11-19
 
