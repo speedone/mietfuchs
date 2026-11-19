@@ -2115,6 +2115,10 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   // Abrechnung des bisherigen Objekts verrechnete CO₂-Erstattung (ihr Zeitraum gehört zu dessen Rhythmus).
   const lieferungen = await db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, after.id))
   if ((lieferungen[0]?.n ?? 0) > 0) haengt.push('Rechnungen einer Heizung der Wohnung')
+  // Durchsicht zu #180: Antworten zu fehlenden Zwischenablesungen beschreiben Grenzen bei der Heizanlage des bisherigen
+  // Objekts; im neuen gälten sie still für dessen Anlage.
+  const luecken = await db.select({ n: count() }).from(interimReadingGaps).where(eq(interimReadingGaps.unitId, after.id))
+  if ((luecken[0]?.n ?? 0) > 0) haengt.push('Antworten zu fehlenden Zwischenablesungen')
   const ihreMietverhaeltnisse = await db.select({ id: tenancies.id, tenantName: tenancies.tenantName, start: tenancies.start, end: tenancies.end })
     .from(tenancies).where(eq(tenancies.unitId, after.id))
   const tenancyIds = ihreMietverhaeltnisse.map((t) => t.id)

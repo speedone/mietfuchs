@@ -70,8 +70,30 @@ test('ein einziges Objekt: kein Feld „Objekt“, und der Rumpf bleibt beim Obj
   expect(within(dialog).queryByLabelText(/^Objekt/)).toBeNull()
   fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
   await vi.waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]?.body).toMatchObject({ propertyId: 'objekt-1' })
+  expect(sent[0]?.body).not.toHaveProperty('propertyId')
   expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+test('ohne Wechsel nennt der Rumpf kein Objekt, auch mit zwei Objekten (Durchsicht: veralteter Stand verschöbe zurück)', async () => {
+  page([unit('eg', 'EG')])
+  const dialog = await edit('eg')
+  fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'EG links' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ name: 'EG links' })
+  expect(sent[0]?.body).not.toHaveProperty('propertyId')
+})
+
+test('ein anderes Objekt nimmt die Wahl „Liegt als Zimmer in der Wohnung“ zurück, denn sie gehört zum bisherigen', async () => {
+  page([unit('eg', 'EG'), unit('wg', 'WG')])
+  const dialog = await edit('eg')
+  fireEvent.change(within(dialog).getByLabelText(/Liegt als Zimmer in der Wohnung/), { target: { value: 'wg' } })
+  fireEvent.change(objectSelect(dialog), { target: { value: 'objekt-2' } })
+  expect(within(dialog).queryByLabelText(/Liegt als Zimmer in der Wohnung/)).toBeNull()
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  fireEvent.click(within(await screen.findByRole('alertdialog', undefined, SLOW)).getByRole('button', { name: 'Verschieben' }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ propertyId: 'objekt-2', parentUnitId: null })
 })
 
 test('eine neue Wohnung hat kein Feld „Objekt“', async () => {

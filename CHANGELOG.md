@@ -39,7 +39,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   abgeschlossene Abrechnung beträfe: Nennt eine abgeschlossene Abrechnung des bisherigen Objekts die Wohnung, oder hat
   das neue Objekt einen Zeitraum abgeschlossen, in dem ein Mietverhältnis der Wohnung lief. Neu geprüft werden dabei
   auch Rechnungen einer Etagenheizung, CO₂-Beträge, Korrekturen der Heizvorauszahlung, verrechnete CO₂-Erstattungen,
-  Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
+  Antworten zu fehlenden Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 

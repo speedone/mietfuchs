@@ -393,7 +393,12 @@ describe('Objekt einer Wohnung (#180)', () => {
   test('das Objekt kommt aus der Wohnung und geht nur beim Bearbeiten mit', () => {
     const f = unitToForm({ id: 'u1', propertyId: 'objekt-2', name: 'W', areaM2: 80, participates: true })
     expect(f.propertyId).toBe('objekt-2')
-    expect(body(f).propertyId).toBe('objekt-2')
+    // Nur ein gewähltes anderes Objekt geht mit (Durchsicht #180): Ein Formular mit veraltetem Stand schickte sonst das
+    // alte Objekt und verschöbe eine inzwischen anderswo verschobene Wohnung still zurück.
+    const built = (x: UnitForm, saved?: string) => (buildUnitBody(x, saved) as { body: Record<string, unknown> }).body
+    expect(built(f, 'objekt-2')).not.toHaveProperty('propertyId')
+    expect(built(f)).not.toHaveProperty('propertyId')
+    expect(built(f, 'objekt-1').propertyId).toBe('objekt-2')
     // Eine neue Wohnung legt die Route im gewählten Objekt an; der Rumpf nennt keines.
     expect(body(form())).not.toHaveProperty('propertyId')
   })

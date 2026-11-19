@@ -414,7 +414,7 @@ vorverteilt (#95), die Flexibilität steckt in der Kostenposition (#94).
 - **Wohnung verschieben** (#180, `PUT /api/units/:id` mit `propertyId`, Oberfläche in client/CLAUDE.md): Mit ihr wandern
   Mietverhältnisse, Zahlungen, Staffeln, Kaution. `guardUnit` lehnt mit Satz ab, was zum bisherigen Objekt gehört (Zähler,
   Kostenpositionen in jeder Form, Heizanlage mit Liste, Rechnungen einer Etagenheizung, CO₂-Beträge, Heizkorrekturen,
-  verrechnete CO₂-Erstattungen, Rest und Zwischenzähler, Zimmer), dazu `guardMoveSettlements`: eine abgeschlossene
+  verrechnete CO₂-Erstattungen, Antworten zu fehlenden Zwischenablesungen, Rest und Zwischenzähler, Zimmer), dazu `guardMoveSettlements`: eine abgeschlossene
   Abrechnung oder Heizkostenabrechnung des bisherigen Objekts, deren eingefrorener Stand die Wohnung oder eines ihrer
   Mietverhältnisse nennt (Suche nach der Kennung als JSON-Zeichenkette), und eine abgeschlossene des neuen Objekts,
   deren Zeitraum ein Mietverhältnis der Wohnung berührt; `guardMovePeriods` eine Jahreskorrektur unter einem Zeitraum,

@@ -446,7 +446,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   (`unitPropertyOptions` in [unitForm.ts](src/unitForm.ts), das gespeicherte Objekt steht immer darin). Zimmer und
   Wohnungen mit Zimmern sperren es mit Satz (`unitMoveLock`). Ist ein anderes Objekt gewählt, entfällt das Feld „Liegt als
   Zimmer in der Wohnung“ (seine Wahl gehört zum bisherigen Objekt), und „Speichern“ fragt vorher (`unitMoveQuestion`,
-  „Verschieben“); die Ablehnung des Servers steht im Fuß des Fensters, danach nennt eine Mitteilung das neue Objekt. Tests:
+  „Verschieben“). Der Rumpf nennt `propertyId` nur, wenn es vom gespeicherten abweicht (`buildUnitBody(form, savedPropertyId)`): Ein
+  Formular mit veraltetem Stand verschöbe sonst eine anderswo verschobene Wohnung still zurück. Die Ablehnung des Servers steht im Fuß des Fensters, danach nennt eine Mitteilung das neue Objekt. Tests:
   wohnungVerschieben.test.tsx.
 
 ## Lexikon und Anleitungen

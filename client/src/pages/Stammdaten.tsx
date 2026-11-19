@@ -297,7 +297,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
   async function saveUnit() {
     if (!unitForm) return
-    const built = buildUnitBody(unitForm)
+    const built = buildUnitBody(unitForm, units.find((u) => u.id === unitForm.id)?.propertyId)
     if ('problems' in built) {
       unitErrors.report(built.problems)
       return
@@ -1024,7 +1024,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             {/* Objekt einer Wohnung (#180): ab zwei Objekten; der Wechsel fragt beim Speichern nach. */}
             {propertyChoices.length > 0 && (
               <Field label="Objekt" hint={moveLock ?? (moving ? 'Beim Speichern fragt Mietfuchs nach, bevor die Wohnung in das andere Objekt wechselt.' : 'Falsch angelegt oder das Haus aufgeteilt? Hier wechselt die Wohnung samt Mietverhältnissen in ein anderes Objekt.')}>
-                <select value={unitForm.propertyId} disabled={moveLock !== null} onChange={(e) => setUnitForm({ ...unitForm, propertyId: e.target.value })}>
+                <select value={unitForm.propertyId} disabled={moveLock !== null} onChange={(e) => setUnitForm({ ...unitForm, propertyId: e.target.value, parentUnitId: savedUnit !== undefined && e.target.value !== savedUnit.propertyId ? '' : unitForm.parentUnitId })}>
                   {propertyChoices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
               </Field>

@@ -66,7 +66,9 @@ export type UnitBuildResult = { problems: Problem<UnitField>[] } | { body: Recor
 
 // null statt undefined, damit geleerte Felder über die generische PUT-Route auch
 // zurückgesetzt werden.
-export function buildUnitBody(form: UnitForm): UnitBuildResult {
+// `savedPropertyId`: das Objekt der gespeicherten Wohnung. Nur ein anderes geht mit (#180, Durchsicht): Ein Formular mit
+// veraltetem Stand schickte sonst das alte Objekt und verschöbe eine inzwischen verschobene Wohnung still zurück.
+export function buildUnitBody(form: UnitForm, savedPropertyId?: string): UnitBuildResult {
   // 0 m² ist erlaubt (#135): Eine Garage, ein Stellplatz oder ein Lager zählt beim
   // Flächenschlüssel dann nicht mit. Ein leeres Feld ist keine Angabe und bleibt ein Fehler.
   // Alle Angaben auf einmal, je mit Feld (#346, Schritt 3); vorher ein Sammelsatz für Name und Fläche.
@@ -124,8 +126,8 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
       parentUnitId: form.parentUnitId || null,
       floor: form.floor.trim() || null,
       notes: form.notes.trim() || null,
-      // Nur beim Bearbeiten (#180): Ein anderes Objekt verschiebt die Wohnung, der Server prüft, ob das geht.
-      ...(form.id && form.propertyId ? { propertyId: form.propertyId } : {}),
+      // Nur beim Bearbeiten und nur ein anderes Objekt (#180): Es verschiebt die Wohnung, der Server prüft, ob das geht.
+      ...(form.id && form.propertyId && savedPropertyId !== undefined && form.propertyId !== savedPropertyId ? { propertyId: form.propertyId } : {}),
     },
   }
 }

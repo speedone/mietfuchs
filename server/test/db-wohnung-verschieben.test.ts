@@ -14,7 +14,7 @@ import { saveCo2Statement } from '../src/db/co2.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { closeSettlement, createEntity, createProperty, CrossPropertyError, findEntity, updateEntity } from '../src/db/repository.ts'
-import { fuelDeliveries, heatingPrepayments, heatingSeparateSpans, properties } from '../src/db/schema.ts'
+import { fuelDeliveries, heatingPrepayments, heatingSeparateSpans, interimReadingGaps, properties } from '../src/db/schema.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { Tenancy, Unit } from '../../shared/types.ts'
@@ -139,6 +139,15 @@ test('Verschieben: eine Rechnung einer Etagenheizung der Wohnung gehört zur Anl
       await db.insert(fuelDeliveries).values({ id: 'f1', plantId: 'hp', unitId: 'c', label: 'Gas C', amountCents: 10000 })
     })
     await assert.rejects(verschieben(opened), abgelehnt(/Rechnungen einer Heizung/))
+    assert.equal(await objektVon(opened), 'objekt-1')
+  })
+})
+
+test('Verschieben: Antworten zu fehlenden Zwischenablesungen gehören zur Heizanlage des bisherigen Objekts (Durchsicht)', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => db.insert(interimReadingGaps).values({ unitId: 'c', date: '2025-06-30', status: 'impossible', reason: 'Gerät defekt' }))
+    await assert.rejects(verschieben(opened), abgelehnt(/fehlenden Zwischenablesungen/))
     assert.equal(await objektVon(opened), 'objekt-1')
   })
 })
