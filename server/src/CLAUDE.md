@@ -875,9 +875,25 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   Zahlung gleichen Betrags bis 15 Tage entfernt macht gelb und geht vor; eine Rate der Kaution (ein Drittel oder
   „Kaution“ im Zweck, in den ersten 100 Tagen, solange Kaution laut Buchungen offen und nicht laut Stammdaten erhalten,
   Betrag ungleich dem Soll dieses und des Folgemonats, nicht bei Bürgschaft oder Verpfändung) wird gelb als Kaution vorgeschlagen. Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
-  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft. `applyBankLinks` geht über
+  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft.
+  **Nachzahlung und Guthaben am Betrag** (#308, `bank/settlementMatch.ts`, rein): offen ist je Mietverhältnis und
+  **aktuellem** Abschluss (Objekt und getrennte Heizkostenabrechnung, nie `closed_settlement_history`, nie die
+  Live-Berechnung) der Saldo abzüglich der Zahlungen der Art „Abrechnung“, abgeleitet, nie gespeichert. Eine Zahlung trägt
+  keinen Zeitraum: Sie tilgt Abrechnungen, deren Zeitraum vor ihrem Datum endete, die älteste zuerst, nur in ihrer
+  Richtung; ein Rest ohne passende Abrechnung bleibt unbeachtet. Vorschlag gelb, nur bei genauem Betrag, nur wenn genau eine
+  Abrechnung passt, nach dem Ende des Zeitraums und ab dem Versand, ohne Versanddatum ab dem Tag des Abschlusses (den Abzug
+  gebuchter Zahlungen begrenzt das nicht). Archive gelesen wie `creditedByTenancy` (`scope`) und `depositStatements`
+  (`settledSeparately`). Der erste passende Umsatz in Datumsfolge reserviert die Abrechnung (`suggestWithSettlement`,
+  `readBankState`), wie eine vorgeschlagene erfasste Zahlung. Eingang gleich der Nachzahlung (Mietkonto ohne Rückstand)
+  oder Monats-Soll + Nachzahlung (Miete des Buchungsmonats ganz offen, sonst kein Rückstand; `BankSuggestion.parts`),
+  Ausgang gleich dem Guthaben (vor der Rückzahlung der Kaution, außer der Betrag gleicht ihr). Kein Vorschlag bei
+  „Kaution“ im Zweck, bei Betrag gleich dem Soll und bei `creditedAsPaid`. Das Mietkonto liefert `bankLedgerOf` in
+  index.ts (Rückstand aus der Ansicht des laufenden Jahres mit den Abrechnungen, Monat aus der des Buchungsjahrs). Ohne
+  Zeile und ohne Übertrag ist ein Konto nur ausgeglichen, wenn das Mietverhältnis vor dem Jahr endete und sein Konto
+  geführt war (`ledgerTenancy`); sonst unbekannt, kein Vorschlag. `applyBankLinks` geht über
   `insertEntityIn` bzw. `insertDepositEntriesIn`, ein Eintrag im Verlauf je Lauf. Das Monats-Soll liefert
-  `bankSollOf` aus dem Mietkonto; `GET /api/bank/open-count` zählt ohne es (Cockpit).
+  `bankLedgerOf` (index.ts) aus dem Mietkonto, für die Rückfrage beim Einlesen nur das Soll (`sollOnly`);
+  `GET /api/bank/open-count` zählt ohne es (Cockpit).
 - **Wächter an Zielen** (`db/bankGuard.ts`): Eine verknüpfte Zahlung oder Kautionsbuchung lässt sich senken, aber nicht
   über den Umsatz heben, die Art wechseln (außer Eingang und Ertrag) oder umhängen; „Ist das die Kaution?“ hängt die
   Zuordnung mit um. Lösen (`DELETE /api/bank/links/:id`) löscht das Ziel nur, wenn es aus dem Umsatz entstand.

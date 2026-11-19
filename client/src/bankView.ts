@@ -52,6 +52,12 @@ function linkTargetOf(part: RowPart): BankLinkTarget | null {
 export function initialRow(tx: BankTransactionView): BankRow {
   const s = tx.suggestion
   const key = `${tx.id}:0`
+  // Ein Vorschlag mit Teilen (#308, Miete und Nachzahlung) wird zur Aufteilung. Die Kennungen weiterer Teile tragen ein
+  // „v“, damit sie nie mit denen von „+ weiterer Teil“ zusammenfallen (Zähler in BankOpenTable.tsx).
+  if (s?.parts && s.parts.length > 0) {
+    const parts = s.parts.map((p, i): RowPart => ({ key: i === 0 ? key : `${tx.id}:v${i}`, tenancyId: s.tenancyId, ...rowTargetOf(p.target), amountCents: p.amountCents }))
+    return { tx, parts, selected: false, setAside: null }
+  }
   const part: RowPart = s ? { key, tenancyId: s.tenancyId, ...rowTargetOf(s.target), amountCents: tx.openCents } : { key, tenancyId: null, target: null, amountCents: tx.openCents }
   return { tx, parts: [part], selected: false, setAside: null }
 }

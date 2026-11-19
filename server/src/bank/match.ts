@@ -9,13 +9,15 @@
 //    gesetzt.
 // 4. Ampel: grün nur, wenn alles eindeutig ist; eine erfasste Zahlung gleichen Betrags bis 15 Tage entfernt macht gelb und
 //    geht einer Kautionsrate vor (ein Drittel oder „Kaution“ im Zweck, in den ersten 100 Tagen, solange Kaution offen).
-// Naht für #308 (Nachzahlung am Betrag erkennen): eine weitere Regel zwischen Kaution und Ausgang.
+// 5. Nachzahlung und Guthaben aus der abgeschlossenen Abrechnung am Betrag (#308, bank/settlementMatch.ts): gelb, nach
+//    allem, was der Zweck („Kaution“) oder eine erfasste Buchung sagt, und nie anstelle der grünen Monatsmiete.
 
 import { depositState } from '../../../shared/deposit.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 import type { BankLinkTarget, BankSuggestion, DepositEntry, Payment, Tenancy } from '../../../shared/types.ts'
 import { addIsoDays } from './coverage.ts'
 import { normalizeIban } from './statement.ts'
+import { matchSettlement, type OpenSettlement, type RentAccount } from './settlementMatch.ts'
 import type { BankTransaction, TenancyPayer } from './model.ts'
 
 export type MatchTenancy = Pick<Tenancy, 'id' | 'start' | 'end' | 'depositCents' | 'depositStatus' | 'depositForm'> & { iban?: string | null }
@@ -30,6 +32,10 @@ export type MatchContext = {
   linkedDepositEntryIds: ReadonlySet<string>
   // Soll des Monats laut Mietkonto ('JJJJ-MM'); null, wenn das Mietkonto für den Monat keines kennt.
   monthlySollCents: (tenancyId: string, month: string) => number | null
+  // #308: offene Nachzahlungen und Guthaben aus abgeschlossenen Abrechnungen und das Mietkonto zum Buchungsmonat
+  // ('JJJJ-MM'); `null` bzw. fehlend heißt: unbekannt, dann kein Vorschlag am Betrag.
+  openSettlements?: (tenancyId: string) => readonly OpenSettlement[]
+  rentAccount?: (tenancyId: string, month: string) => RentAccount | null
 }
 
 export type LinkTarget = BankLinkTarget
@@ -81,6 +87,20 @@ export function tenancyFor(tx: Pick<BankTransaction, 'counterpartyIban' | 'booki
 }
 
 export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | null {
+  return suggestWithSettlement(tx, ctx).suggestion
+}
+
+// Wie `suggest`, dazu die Kennung der Abrechnung, deren offenen Betrag der Vorschlag nimmt (#308). `readBankState` reserviert
+// sie damit für diesen Umsatz, wie eine vorgeschlagene erfasste Zahlung (Durchsicht PR #654, 2).
+export function suggestWithSettlement(tx: BankTransaction, ctx: MatchContext): { suggestion: Suggestion | null; settlementKey: string | null } {
+  let settlementKey: string | null = null
+  const suggestion = suggestInner(tx, ctx, (key) => {
+    settlementKey = key
+  })
+  return { suggestion, settlementKey }
+}
+
+function suggestInner(tx: BankTransaction, ctx: MatchContext, takes: (settlementKey: string) => void): Suggestion | null {
   const t = tenancyFor(tx, ctx)
   if (!t) return null
   const day = dayNumber(tx.bookingDate)
@@ -119,8 +139,17 @@ export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | nu
     && tx.amountCents <= depositOpenCents && Math.abs(day - dayNumber(t.start)) <= DEPOSIT_WINDOW_DAYS) {
     return yellow({ type: 'deposit', kind: 'received' }, 'Betrag wie die vereinbarte Kaution, nahe dem Mietbeginn')
   }
+  const settlementMatch = (account: RentAccount | null) =>
+    ctx.openSettlements && !/kaution/i.test(tx.purpose ?? '') ? matchSettlement(tx, ctx.openSettlements(t.id), account, soll) : null
   if (tx.amountCents < 0) {
     const balance = depositState({ depositCents: t.depositCents }, entries).balanceCents
+    // #308: Ein Ausgang in Höhe des offenen Guthabens ist dessen Auszahlung; gleicht er zugleich der Kaution, die nach dem
+    // Auszug noch beim Vermieter liegt, bleibt es bei der Rückzahlung der Kaution.
+    const payout = settlementMatch(null)
+    if (payout && !(t.end !== null && tx.bookingDate > t.end && balance === -tx.amountCents)) {
+      takes(payout.settlement.key)
+      return yellow({ type: 'newPayment', kind: 'settlement' }, `Betrag wie das offene Guthaben aus der ${payout.settlement.label}`)
+    }
     if (t.end !== null && tx.bookingDate > t.end && balance > 0) return yellow({ type: 'deposit', kind: 'refunded' }, 'Auszahlung nach dem Auszug, die Kaution liegt noch bei Ihnen')
     return yellow({ type: 'newPayment', kind: 'settlement' }, 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung')
   }
@@ -146,6 +175,20 @@ export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | nu
     && tx.amountCents <= depositOpenCents) {
     if (/kaution/i.test(tx.purpose ?? '')) return yellow({ type: 'deposit', kind: 'received' }, '„Kaution“ im Verwendungszweck, und die vereinbarte Kaution ist noch nicht ganz eingegangen')
     if (Math.abs(tx.amountCents * 3 - (t.depositCents ?? 0)) <= 2) return yellow({ type: 'deposit', kind: 'received' }, 'Betrag wie eine Rate der vereinbarten Kaution (ein Drittel)')
+  }
+  // #308: Nachzahlung am Betrag, nur mit bekanntem Mietkonto (sonst lässt sich „sonst ausgeglichen“ nicht sagen).
+  const account = ctx.rentAccount?.(t.id, tx.bookingDate.slice(0, 7)) ?? null
+  const owed = account ? settlementMatch(account) : null
+  if (owed) takes(owed.settlement.key)
+  if (owed?.type === 'settlement') {
+    return yellow({ type: 'newPayment', kind: 'settlement' }, `Betrag wie die offene Nachzahlung aus der ${owed.settlement.label}; das Mietkonto ist sonst ausgeglichen`)
+  }
+  if (owed?.type === 'split') {
+    const settlementTarget: LinkTarget = { type: 'newPayment', kind: 'settlement' }
+    return {
+      ...yellow(settlementTarget, `Betrag wie Monatsmiete (${euro(owed.rentCents)}) und offene Nachzahlung aus der ${owed.settlement.label} (${euro(owed.settlement.openCents)}); das Mietkonto ist sonst ausgeglichen`),
+      parts: [{ amountCents: owed.rentCents, target: { type: 'newPayment', kind: 'rent' } }, { amountCents: owed.settlement.openCents, target: settlementTarget }],
+    }
   }
   if (soll === null) return yellow({ type: 'newPayment', kind: 'rent' }, 'Für diesen Monat kennt das Mietkonto kein Soll')
   if (soll !== tx.amountCents) return yellow({ type: 'newPayment', kind: 'rent' }, `Betrag weicht vom Soll ab (${euro(soll)})`)
