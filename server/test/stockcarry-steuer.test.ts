@@ -78,7 +78,8 @@ async function measure(rhythm: Rhythm, deliveries: Delivery[], options: Options 
       }
       await saveStock(db, 'oel', k(2), { stockUnit: 'l', closingQuantity: 500 })
     })
-    const source = await opened.read((db) => readStock(db))
+    // Eine Kopie: Der gelesene Bestand ist eingefroren (#651), dieser Test baut ihn danach um.
+    const source = structuredClone(await opened.read((db) => readStock(db)))
     if (rhythm === 'wegD') {
       for (const p of source.heatingPlants) Object.assign(p, { separateSettlement: true, separateSpans: [{ from: '2024-05', until: null }] })
     }

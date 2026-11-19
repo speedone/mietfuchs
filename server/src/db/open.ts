@@ -21,6 +21,7 @@ import path from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applyMigrations, connect, loadMigrations, type Connection, type Database, type Migration } from './client.ts'
 import { beginGroup, endGroup, ensureJournal, pruneJournal, type JournalMeta, type JournalSchema } from './journal.ts'
+import { registerStockMark } from './stockCache.ts'
 import { writable } from '../paths.ts'
 import { APP_VERSION } from '../version.ts'
 
@@ -653,6 +654,26 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     await pruneJournal(connection.db, new Date())
     const schemaSteps = Number(connection.rows('SELECT count(*) FROM __drizzle_migrations')[0]?.[0] ?? 0)
     const lane = createLane()
+    // Wann der gelesene Bestand noch gilt (stockCache.ts, #651): Jeder eigene Schreibvorgang zählt
+    // hoch, auch ein gescheiterter oder zurückgerollter (lieber einmal zu oft neu lesen), und
+    // während er läuft, gilt gar nichts. `data_version` ändert sich, wenn eine andere Verbindung
+    // festgeschrieben hat.
+    let writes = 0
+    let writing = false
+    const counted = async <T>(work: () => Promise<T>): Promise<T> => {
+      writing = true
+      try {
+        return await work()
+      } finally {
+        writing = false
+        writes++
+      }
+    }
+    registerStockMark(connection.db, () => {
+      if (writing) return null
+      const version = connection.rows('PRAGMA data_version')[0]?.[0]
+      return `${writes}:${String(version)}`
+    })
     const journaled = async <T>(work: (db: Database) => Promise<T>, journal: JournalMeta): Promise<T> => {
       const group = await beginGroup(connection.db, journal, schemaSteps, new Date())
       try {
@@ -669,7 +690,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       // backupBeforeMigrating ohnehin null zurück, das hier hält die Zusage aber an einer Stelle.
       backup: applied > 0 ? backup : null,
       warnings,
-      write: (work, journal) => lane.write(() => (journal ? journaled(work, journal) : work(connection.db))),
+      write: (work, journal) => lane.write(() => counted(() => (journal ? journaled(work, journal) : work(connection.db)))),
       journalSchema,
       schemaSteps,
       read: (work) => lane.read(() => work(connection.db)),
