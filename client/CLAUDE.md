@@ -442,6 +442,12 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   zeigt Nutzung, Personen und Nutzungswechsel nicht (ein Satz sagt warum), das Mietverhältnis bietet sie nicht an, die Liste
   rückt die Zimmer unter ihre Wohnung (`listedUnits`). Die Löschsperre sagt `unitDeleteBlocked` vorher (`dependents.rooms`).
   Tests: zimmerStammdaten.test.tsx, zimmerZaehler.test.tsx.
+- **Wohnung verschieben** (#180): Beim Bearbeiten einer Wohnung steht ab zwei Objekten das Feld „Objekt“
+  (`unitPropertyOptions` in [unitForm.ts](src/unitForm.ts), das gespeicherte Objekt steht immer darin). Zimmer und
+  Wohnungen mit Zimmern sperren es mit Satz (`unitMoveLock`). Ist ein anderes Objekt gewählt, entfällt das Feld „Liegt als
+  Zimmer in der Wohnung“ (seine Wahl gehört zum bisherigen Objekt), und „Speichern“ fragt vorher (`unitMoveQuestion`,
+  „Verschieben“); die Ablehnung des Servers steht im Fuß des Fensters, danach nennt eine Mitteilung das neue Objekt. Tests:
+  wohnungVerschieben.test.tsx.
 
 ## Lexikon und Anleitungen
 
