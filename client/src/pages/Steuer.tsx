@@ -182,7 +182,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
                       {r.line !== null && <div className="muted cell-sub">Zeile {r.line}{r.code !== undefined ? `, Kennzahl ${r.code}` : ''}</div>}
                     </td>
                     <td className="num">
-                      {r.value !== null ? softBreak(r.value) : <>
+                      {r.value ?? <>
                         <span className="muted">nicht eingetragen</span>
                         {onNavigate && <> <button className="btn small ghost no-print" onClick={() => onNavigate('stammdaten', TAX_HEADER_TARGET)}>Hier eintragen → Stammdaten</button></>}
                       </>}
@@ -1127,7 +1127,7 @@ function UnitIncome({ report, year }: { report: TaxReport; year: number }) {
           <tbody>
             {rows.map((u) => (
               <tr key={u.unitId}>
-                <td data-label="Wohnung">{u.unitName}{u.relative && <div className="muted cell-sub">an Angehörige vermietet{i?.relatives ? `: Zeile ${i.relatives.line}` : ''}</div>}</td>
+                <td data-label="Wohnung">{softBreak(u.unitName)}{u.relative && <div className="muted cell-sub">an Angehörige vermietet{i?.relatives ? `: Zeile ${i.relatives.line}` : ''}</div>}</td>
                 <td data-label="Wohnfläche" className="num">{u.areaM2 === null ? '–' : fmtArea(u.areaM2)}</td>
                 <td data-label="Miete ohne Umlagen" className="num">{fmtEuro(u.rentCents)}</td>
               </tr>
@@ -1196,7 +1196,7 @@ function OverviewCard({ year, basis, refresh }: { year: number; basis: Basis; re
               {v.lines.map((l) => (
                 <tr key={l.propertyId} data-row={l.propertyId}>
                   <td data-label="Objekt">
-                    {l.name}
+                    {softBreak(l.name)}
                     {l.current && <div className="muted cell-sub">dieses Objekt</div>}
                   </td>
                   {l.state === 'rental' ? (

@@ -34,6 +34,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 /** @typedef {typeof import('./demo-stock.mjs')} Stock */
 /** @typedef {{ name: string, label: string, setup?: (api: Api, ids: Ids, stock: Stock) => Promise<void>, open: (page: Page, ids: Ids) => Promise<void> }} PrintView */
 
+// Ein Wort ohne Trennstelle, wie es als Beschreibung oder Firmenname vorkommt (auch in print-width-check.mjs)
+export const LONG_WORD = 'Wartungsvertragsverlängerungsvereinbarungsnachtragsrechnungsposition'
+
 // Wie lange auf ein Element gewartet wird, bevor die Ansicht als nicht erreichbar gilt
 const WAIT_MS = 20000
 
@@ -222,7 +225,7 @@ async function ensureUlmenweg(api, ids, stock) {
   }
   // Bei eigener Abrechnung steht der Betrag in der Position, die Rechnung (Lieferung) trägt Energie und CO₂
   const delivery = await api.post(`/api/heating-plants/${plant.id}/deliveries`, {
-    label: `Erdgas ${YEAR}`, invoiceFrom: `${YEAR}-01-01`, invoiceTo: `${YEAR}-12-31`, invoiceDate: `${YEAR + 1}-01-20`,
+    label: `Erdgas ${YEAR} ${LONG_WORD}`, invoiceFrom: `${YEAR}-01-01`, invoiceTo: `${YEAR}-12-31`, invoiceDate: `${YEAR + 1}-01-20`,
     energyKwh: 24000, gasBasis: 'hs', emissionsKg: 4353, co2CostCents: 28480,
   })
   const item = (body) => api.post(`/api/costItems${house.q}`, { year: YEAR, category: 'Heizung und Warmwasser', key: 'heatingSystem', heatingPlantId: plant.id, heatingTarget: 'heating', ...body })
@@ -284,7 +287,7 @@ export const PRINT_VIEWS = [
       const entry = (body) => api.post('/api/deposit-entries', { tenancyId: hartmann.id, ...body })
       await entry({ date: '2021-08-20', kind: 'received', amountCents: 156000, note: 'Überweisung vor Einzug' })
       await entry({ date: `${stock.PREV}-12-31`, kind: 'interest', amountCents: 1870 })
-      await entry({ date: `${stock.YEAR}-08-15`, kind: 'refunded', amountCents: 157870, note: 'Rückzahlung nach Wohnungsabnahme' })
+      await entry({ date: `${stock.YEAR}-08-15`, kind: 'refunded', amountCents: 157870, note: `Rückzahlung nach Wohnungsabnahme ${LONG_WORD}` })
     },
     async open(page, ids) {
       await chooseProperty(page, ids.haus, 'Lindenweg 12')
@@ -423,21 +426,28 @@ export const PRINT_VIEWS = [
 
 // ---------- Allein aufgerufen: jede Ansicht öffnen und messen ----------
 
-// Läuft in der Seite: Breite des Dokuments und was über den Satzspiegel hinausragt (wie print-width-check.mjs)
-function measure(limit) {
+// Läuft in der Seite: alles Sichtbare, das hinausragt (auch print-width-check.mjs misst hiermit)
+export function overflowingElements(limit) {
+  // Die Skripte kennen die Typen des DOM nicht (wie safari-print-check.mjs)
   const win = /** @type {any} */ (globalThis)
   const document = win.document
+  // Wie weit ein Element im Druck reicht; null, wenn es nicht gedruckt wird. Text, der aus seinem Block ragt, macht dessen
+  // Box nicht breiter, nur seinen Inhalt (scrollWidth).
+  const reach = (el) => {
+    const style = win.getComputedStyle(el)
+    if (style.display === 'none' || style.visibility === 'hidden') return null
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 || r.height === 0) return null
+    return { left: r.left, right: style.overflowX === 'visible' ? Math.max(r.right, r.left + el.scrollWidth) : r.right }
+  }
+  const outside = (x) => x !== null && (x.right > limit + 0.5 || x.left < -0.5)
   const found = []
   for (const el of document.querySelectorAll('body *')) {
-    const style = win.getComputedStyle(el)
-    if (style.display === 'none' || style.visibility === 'hidden') continue
-    const r = el.getBoundingClientRect()
-    if (r.width === 0 || r.height === 0) continue
-    if (r.right > limit + 0.5 || r.left < -0.5) {
-      const childOut = [...el.children].some((c) => { const cr = c.getBoundingClientRect(); return cr.right > limit + 0.5 || cr.left < -0.5 })
-      if (childOut) continue
-      found.push({ tag: el.tagName.toLowerCase(), cls: String(el.className), right: Math.round(r.right), text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) })
-    }
+    const x = reach(el)
+    if (!outside(x)) continue
+    // Nur das innerste Element nennen: ragt ein Kind hinaus, ist das Elternteil meist nur deshalb so breit
+    if ([...el.children].some((c) => outside(reach(c)))) continue
+    found.push({ tag: el.tagName.toLowerCase(), cls: String(el.className), right: Math.round(/** @type {any} */ (x).right), text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) })
   }
   return { documentWidth: document.documentElement.scrollWidth, found }
 }
@@ -491,7 +501,7 @@ async function main() {
         await page.emulateMedia({ media: 'print' })
         await page.setViewportSize({ width: Math.floor(limit), height: 900 })
         await page.waitForTimeout(300)
-        const width = await page.evaluate(measure, limit)
+        const width = await page.evaluate(overflowingElements, limit)
         row.width = width.documentWidth
         row.overflow = width.found.length > 0 || width.documentWidth > limit + 1
         if (row.overflow) {

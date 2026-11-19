@@ -18,6 +18,7 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 import { useConfirm, useToast } from './feedback'
 import Field from './Field'
 import Table from './Table'
+import { softBreak } from '../softBreak'
 
 // Eine gesetzliche Frist für die Abrechnung der Kaution gibt es nicht; der BGH verlangt eine angemessene, nicht allgemein
 // bestimmbare (Urteil vom 24.07.2019, VIII ZR 141/17). Entscheidung des Betreibers vom 13.11.2026: keine Zahl nennen.
@@ -288,7 +289,7 @@ function SettlementView({ settlement: s, printed = false }: { settlement: Deposi
       <Table aria-label="Buchungen der Kaution">
         <tbody>
           {s.rows.map((r, i) => (
-            <tr key={i}><td>{fmtDate(r.date)}</td><td>{r.label}{printed ? (r.printNote ? ` (${r.printNote})` : '') : r.note ? ` (${r.note})` : ''}</td><td className="num">{fmtEuro(r.cents)}</td></tr>
+            <tr key={i}><td>{fmtDate(r.date)}</td><td>{softBreak(`${r.label}${printed ? (r.printNote ? ` (${r.printNote})` : '') : r.note ? ` (${r.note})` : ''}`)}</td><td className="num">{fmtEuro(r.cents)}</td></tr>
           ))}
         </tbody>
       </Table>

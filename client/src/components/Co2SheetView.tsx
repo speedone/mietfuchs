@@ -7,6 +7,7 @@ import { SHEET_COLUMNS, sheetFacts, sheetHead, sheetNotes, sheetRows } from '../
 import Table from './Table'
 import type { Co2Sheet } from '../types'
 import { NoticeBox } from './Notice'
+import { softBreak } from '../softBreak'
 
 export default function Co2SheetView({ plantId, period, onClose }: { plantId: string; period: string; onClose: () => void }) {
   const [sheet, setSheet] = useState<Co2Sheet | null>(null)
@@ -47,7 +48,7 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
             <tbody>
               {rows.map((r, i) => (
                 <tr key={`${r.label}:${i}`} className={r.kind === 'sum' || r.kind === 'billing' ? 'subtotal' : undefined}>
-                  <td>{r.label}{refs[i] !== null && <sup>{refs[i]}</sup>}</td>
+                  <td>{softBreak(r.label)}{refs[i] !== null && <sup>{refs[i]}</sup>}</td>
                   {r.cells.map((c, j) => <td key={j} className={j >= 5 ? 'num' : undefined}>{c}</td>)}
                 </tr>
               ))}

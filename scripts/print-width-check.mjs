@@ -43,18 +43,18 @@ const PAGE_WIDTH_PX = 210 * PX_PER_MM
 const FOOTER_MIN_MM = 275
 // Der Betreff beginnt bei 98,46 mm (DIN 5008 Form B); die Grundlinie seiner Zeile liegt wenige Millimeter darunter
 const SUBJECT_MM = [98, 106]
-// Ein Wort ohne Trennstelle, wie es als Beschreibung oder Firmenname vorkommt
-const LONG_WORD = 'Wartungsvertragsverlängerungsvereinbarungsnachtragsrechnungsposition'
 const LONG_MAIL = 'hausverwaltung.klaus.wegener-musterstadt@beispiel-hausverwaltung-mit-langem-namen.example.org'
 
 /** @type {typeof import('./demo-stock.mjs')} */
 let stock
+/** @type {string} */
+let LONG_WORD
 /** @type {any} */
 let pdfjs = null
 
 /**
  * Ein Fall: welches Objekt, wie man zur gedruckten Ansicht kommt, und was die PDF zeigen muss.
- * @typedef {{ name: string, label: string, property: 'haus' | 'etw', paper?: boolean, letters?: boolean, footer?: boolean,
+ * @typedef {{ name: string, label: string, property: string, paper?: boolean, letters?: boolean, footer?: boolean,
  *   before?: (api: any, ids: any) => Promise<void>, after?: (api: any, ids: any) => Promise<void>,
  *   open: (page: any, ids: any) => Promise<void> }} PrintCase
  */
@@ -105,30 +105,29 @@ async function addStock(api, ids) {
   await api.put('/api/letter-texts', { texts: { closing: `Für Rückfragen stehe ich Ihnen gern zur Verfügung: ${LONG_WORD}${LONG_WORD}` } })
 }
 
-// Läuft in der Seite: alles Sichtbare, das hinausragt
-function overflowingElements(limit) {
-  // Die Skripte kennen die Typen des DOM nicht (wie safari-print-check.mjs)
-  const win = /** @type {any} */ (globalThis)
-  const document = win.document
-  // Wie weit ein Element im Druck reicht; null, wenn es nicht gedruckt wird. Text, der aus seinem Block ragt, macht dessen
-  // Box nicht breiter, nur seinen Inhalt (scrollWidth).
-  const reach = (el) => {
-    const style = win.getComputedStyle(el)
-    if (style.display === 'none' || style.visibility === 'hidden') return null
-    const r = el.getBoundingClientRect()
-    if (r.width === 0 || r.height === 0) return null
-    return { left: r.left, right: style.overflowX === 'visible' ? Math.max(r.right, r.left + el.scrollWidth) : r.right }
+// Ein Haus mit Messdienst und gebuchter CO₂-Aufteilung (Vorwegabzug, docs/heizung.md „CO₂ beim Messdienst“): Der Block
+// der CO₂-Kosten nennt dann je Mieter „… (näherungsweise nach Ihrem Anteil an den Heizkosten; maßgeblich ist der
+// Betrag in der Einzelabrechnung des Messdienstes)“ in einer Zelle mit Betrag (Durchsicht dieses Fixes).
+async function addServiceCo2(api, ids) {
+  const property = await api.post('/api/properties', { name: 'Birkenweg 2', kind: 'mfh', address: 'Birkenweg 2, 12345 Musterstadt' })
+  const q = `?property=${property.id}`
+  const tenants = [['EG', 70, 'Lea Krüger', 52000], ['OG', 64, 'Murat Demir', 48000]]
+  /** @type {Record<string, number>} */
+  const amounts = {}
+  for (const [name, areaM2, tenantName, cents] of tenants) {
+    const unit = await api.post(`/api/units${q}`, { name, areaM2, participates: true })
+    const t = await api.post(`/api/tenancies${q}`, {
+      unitId: unit.id, tenantName, personHistory: [{ from: '2020-01-01', persons: 2 }], start: '2020-01-01', end: null,
+      prepayments: [{ from: '2020-01', monthlyCents: 15000 }], prepaymentOverrides: {}, baseRents: [{ from: '2020-01', monthlyCents: 60000 }],
+    })
+    amounts[t.id] = /** @type {number} */ (cents)
   }
-  const outside = (x) => x !== null && (x.right > limit + 0.5 || x.left < -0.5)
-  const found = []
-  for (const el of document.querySelectorAll('body *')) {
-    const x = reach(el)
-    if (!outside(x)) continue
-    // Nur das innerste Element nennen: ragt ein Kind hinaus, ist das Elternteil meist nur deshalb so breit
-    if ([...el.children].some((c) => outside(reach(c)))) continue
-    found.push({ tag: el.tagName.toLowerCase(), cls: String(el.className), right: Math.round(/** @type {any} */ (x).right), text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) })
-  }
-  return { documentWidth: document.documentElement.scrollWidth, found }
+  const { plant } = await api.post(`/api/heating-plants${q}`, { energy: 'gas', method: 'service' })
+  const users = Object.values(amounts).reduce((a, b) => a + b, 0)
+  const landlord = 4800
+  await api.post(`/api/costItems${q}`, { year: stock.YEAR, category: 'Heizung und Warmwasser', description: `Heizkostenabrechnung Messdienst ${stock.YEAR}`, vendor: 'Messdienst Beispiel GmbH', amountCents: users + landlord, key: 'amounts', tenancyAmounts: amounts })
+  await api.put(`/api/heating-plants/${plant.id}/periods/${stock.YEAR}-01/co2${q}`, { method: 'serviceDeducted', serviceUsersTotalCents: users, serviceLandlordCents: landlord, serviceUnitsCount: tenants.length })
+  ids.messdienst = property.id
 }
 
 async function readPages(file) {
@@ -171,6 +170,9 @@ function settlementCases(images, base) {
   return [
     { name: 'abrechnung', label: 'Abrechnung Lindenweg 12 (mit Heizung)', property: 'haus', letters: true, footer: true, open: openSettlement },
     { name: 'abrechnung-etw', label: 'Abrechnung Eigentumswohnung Kastanienallee 5', property: 'etw', letters: true, footer: true, open: openSettlement },
+    // Eigene Heizkostenabrechnung mit Gaslieferung (Blöcke Brennstoff und CO₂ aus eigener Aufteilung), aus print-width-views.mjs
+    { name: 'abrechnung-ulmenweg', label: 'Abrechnung Ulmenweg 7 (eigene Heizkostenabrechnung)', property: 'ulmenweg', letters: true, footer: true, open: openSettlement },
+    { name: 'abrechnung-messdienst', label: 'Abrechnung Birkenweg 2 (Messdienst mit CO₂-Aufteilung)', property: 'messdienst', letters: true, footer: true, open: openSettlement },
     {
       name: 'abrechnung-briefpapier', label: 'Abrechnung Lindenweg 12 mit Logo und Briefpapier', property: 'haus', paper: true, letters: true, footer: false,
       before: () => putDesign(base, { logo: 'new', paper: 'new', paperNextFile: 'keep', paperNext: 'same', margins }, images),
@@ -183,21 +185,24 @@ function settlementCases(images, base) {
 async function main() {
   fs.mkdirSync(out, { recursive: true })
   stock = await import('./demo-stock.mjs')
-  const views = /** @type {any[]} */ ((await import('./print-width-views.mjs')).PRINT_VIEWS)
+  const viewsModule = await import('./print-width-views.mjs')
+  const views = /** @type {any[]} */ (viewsModule.PRINT_VIEWS)
+  const overflowingElements = viewsModule.overflowingElements
+  LONG_WORD = viewsModule.LONG_WORD
   const pw = await stock.loadPlaywright()
+  for (const e of engines) if (!['chromium', 'firefox', 'webkit'].includes(e)) throw new Error(`Unbekannte Engine: ${e}`)
   /** @type {Record<string, any>} */
   const browsers = {}
-  for (const e of engines) {
-    if (!['chromium', 'firefox', 'webkit'].includes(e)) throw new Error(`Unbekannte Engine: ${e}`)
-    browsers[e] = await pw[e].launch()
-  }
   /** @type {Awaited<ReturnType<typeof stock.startDemo>> | null} */
   let demo = null
   /** @type {string[]} */
   const findings = []
+  // Ab hier räumt `finally` auf, auch wenn eine Engine nicht startet (sonst blieben die übrigen offen, und der Lauf endete nie)
   try {
+    for (const e of engines) browsers[e] = await pw[e].launch()
     demo = await stock.startDemo({ pdf: (html) => stock.textPdf(html), prefix: 'mietfuchs-druckbreite-' })
     await addStock(demo.api, demo.ids)
+    await addServiceCo2(demo.api, demo.ids)
     for (const v of views) await v.setup?.(demo.api, demo.ids, stock)
     const images = await designImages(browsers.chromium ?? Object.values(browsers)[0])
     /** @type {PrintCase[]} */

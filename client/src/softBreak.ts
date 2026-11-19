@@ -9,10 +9,13 @@ export const SOFT_BREAK_MIN = 40
 export const SOFT_BREAK_CHUNK = 20
 
 const LONG_WORD = new RegExp(`\\S{${SOFT_BREAK_MIN + 1},}`, 'gu')
+// Ein Zeichen samt seiner kombinierenden Zeichen (NFD: „ü“ als u + U+0308): Dazwischen darf keine Umbruchstelle stehen,
+// sonst stünden die Punkte allein am Anfang der nächsten Zeile (Durchsicht)
+const CLUSTER = /\P{M}\p{M}*|\p{M}+/gu
 
 export function softBreak(text: string): string {
   return text.replace(LONG_WORD, (word) => {
-    const chars = [...word]
+    const chars = word.match(CLUSTER) ?? [word]
     const parts: string[] = []
     for (let i = 0; i < chars.length; i += SOFT_BREAK_CHUNK) parts.push(chars.slice(i, i + SOFT_BREAK_CHUNK).join(''))
     return parts.join('​')

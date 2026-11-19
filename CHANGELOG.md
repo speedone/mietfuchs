@@ -11,14 +11,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Abrechnung: Die Knöpfe der Kopfzeile stehen geordnet. Unter „Mehr“ hat jede Zeile die Erklärung links und ihre
   Knöpfe rechts, die Knöpfe neben „versendet am“ stehen auf einer Linie mit dem Feld, und der Stand wird in einem
   schmalen Fenster nicht mehr zu einer engen Spalte gequetscht.
+
 ### Behoben
 
-- Druck der Abrechnung einer Eigentumswohnung: Rechnet eine Position nach der Hausgeldabrechnung ab, stand im
-  Anschreiben die Fußzeile bei drei Vierteln der Seite, und Falz- und Lochmarken saßen zu hoch, im Programmfenster wie
-  in Chrome und Edge. Die Spaltenüberschrift „Gesamtkosten bzw. Anteil an der Gemeinschaft“ brach nicht um, die
-  Tabelle wurde breiter als die Seite, und der Browser verkleinerte deshalb den ganzen Druck auf rund 80 %. Jetzt
-  bricht sie um, ebenso überlange Wörter ohne Trennstelle in Beschreibungen und im Anschreiben, und eine Prüfung bei
-  jeder Änderung hält fest, dass nichts im Druck breiter wird als die Seite
+- Druck der Abrechnung: Im Anschreiben stand die Fußzeile bei drei Vierteln der Seite, und Falz- und Lochmarken saßen
+  zu hoch, im Programmfenster wie in Chrome und Edge. Ursache war eine Tabelle der Aufstellung, die breiter wurde als
+  die Seite; der Browser verkleinerte deshalb den ganzen Druck auf rund 80 %. Das geschah bei einer Eigentumswohnung
+  (die Spaltenüberschrift „Gesamtkosten bzw. Anteil an der Gemeinschaft“ brach nicht um), mit Messdienst und gebuchter
+  CO₂-Aufteilung (der Satz zu Ihrem Anteil an den CO₂-Kosten), mit eigener Heizkostenabrechnung (die Zeilen der
+  Brennstofflieferungen) und mit sehr langen Wörtern ohne Trennstelle in Beschreibungen oder im Anschreiben. All das
+  bricht jetzt um, und eine Prüfung bei jeder Änderung hält fest, dass nichts im Druck breiter wird als die Seite
   ([#647](https://github.com/speedone/mietfuchs/issues/647)).
 - Druck der Steuer (Anlage V): Die Tabelle der Werbungskosten war breiter als die Seite, der Druck verkleinert und die
   Spalte „Zuordnung“ am rechten Rand abgeschnitten. Sie passt jetzt auf die Seite

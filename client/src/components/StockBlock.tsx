@@ -2,6 +2,7 @@
 // 8.2, 9.5). Er erklärt die Zeilen „aus dem Vorrat“ und „im Vorrat“ und wird mitgedruckt.
 import Table from './Table'
 import type { StockBlockView } from '../stockView'
+import { softBreak } from '../softBreak'
 
 export default function StockBlock({ view }: { view: StockBlockView | null }) {
   if (!view) return null
@@ -10,7 +11,7 @@ export default function StockBlock({ view }: { view: StockBlockView | null }) {
       <h3>{view.title}</h3>
       <Table>
         <tbody>
-          {view.lines.map((l, i) => <tr key={`${i}:${l.label}`}><td>{l.label}</td><td className="num">{l.value}</td></tr>)}
+          {view.lines.map((l, i) => <tr key={`${i}:${l.label}`}><td>{softBreak(l.label)}</td><td className="num wraps">{l.value}</td></tr>)}
         </tbody>
       </Table>
       {view.notes.map((n) => <p key={n} className="muted">{n}</p>)}
