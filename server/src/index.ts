@@ -2096,7 +2096,7 @@ app.get('/api/consumption/:period', async (req, res) => {
     const property = await propertyOf(db, req)
     const period = await periodOf(db, req, property)
     const stock = await readStock(db)
-    return onStock(stock, `consumption:${property}:${period.key}`, () => consumptionOverview(snapshotFor(stock, property, period)))
+    return onStock(stock, `consumption:${property}:${period.from}:${period.to}`, () => consumptionOverview(snapshotFor(stock, property, period)))
   }))
 })
 
@@ -2105,7 +2105,7 @@ app.get('/api/consumption/:period', async (req, res) => {
 // Abrechnungen des Objekts (Grenzen, Frist, Versand, eingefrorene Anrechnung) kommen für die Abrechnungsreife mit
 // (#281 E5, ledgerStatements.ts); calc.ts liest den Speicher nicht selbst.
 // Schnappschuss und Optionen des Mietkontos eines Kalenderjahrs, eine Stelle für die Ansicht und „als bezahlt erfassen“.
-async function ledgerInputOf(db: Database, req: Request, year: number): Promise<{ snapshot: Snapshot, options: LedgerOptions & { asOf: string } }> {
+async function ledgerInputOf(db: Database, req: Request, year: number): Promise<{ snapshot: Snapshot, options: LedgerOptions & { asOf: string }, stock: Stock, property: string }> {
   const stock = await readStock(db)
   const property = await propertyOf(db, req)
   const span = calendarYearPeriod(year)
@@ -2120,7 +2120,7 @@ async function ledgerInputOf(db: Database, req: Request, year: number): Promise<
     closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)),
     span.to,
   )
-  return { snapshot, options: { asOf: today(), statements } }
+  return { snapshot, options: { asOf: today(), statements }, stock, property }
 }
 const ledgerYearOf = (req: Request): number => {
   const year = Number(req.params.year)
@@ -2131,9 +2131,10 @@ const ledgerYearOf = (req: Request): number => {
 app.get('/api/rentledger/:year', async (req, res) => {
   const year = ledgerYearOf(req)
   res.json(await readData(async (db) => {
-    const { snapshot, options } = await ledgerInputOf(db, req, year)
-    const stock = await readStock(db)
-    return onStock(stock, `ledger:${await propertyOf(db, req)}:${year}:${options.asOf}`, () => rentLedger(snapshot, options))
+    // Gemerkt am selben Bestand, aus dem Schnappschuss und Abschlüsse stammen (Durchsicht: ein zweites `readStock`
+    // könnte nach einer Änderung über eine andere Verbindung ein anderer sein).
+    const { snapshot, options, stock, property } = await ledgerInputOf(db, req, year)
+    return onStock(stock, `ledger:${property}:${year}:${options.asOf}`, () => rentLedger(snapshot, options))
   }))
 })
 
@@ -2174,8 +2175,12 @@ app.post('/api/rentledger/:year/mark-paid', async (req, res) => {
 
 // Abrechnung und Steuer je Bestand gemerkt (#651, stockMemo.ts): dieselbe Frage an denselben, eingefrorenen Bestand
 // rechnet einmal. Der Schlüssel nennt alles außer dem Bestand, woran das Ergebnis hängt, auch den Tag.
-const settlementOf = (stock: Stock, property: string, period: BillingPeriod) =>
-  onStock(stock, `settlement:${property}:${period.key}:${today()}`, () => computeSettlement(snapshotFor(stock, property, period), { asOf: today() }))
+// Der Zeitraum steht mit Beginn und Ende im Schlüssel: `periodOf` liest die Regeln vor dem Bestand, und `key` allein
+// ist nur der Monat des Beginns. Der Tag wird einmal gelesen, für Schlüssel und Rechnung zugleich.
+const settlementOf = (stock: Stock, property: string, period: BillingPeriod) => {
+  const day = today()
+  return onStock(stock, `settlement:${property}:${period.from}:${period.to}:${day}`, () => computeSettlement(snapshotFor(stock, property, period), { asOf: day }))
+}
 const taxReportOf = (stock: Parameters<typeof taxReportFor>[0], property: string, year: number) =>
   onStock(stock, `tax:${property}:${year}:${today()}`, () => taxReportFor(stock, property, year))
 

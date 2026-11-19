@@ -69,6 +69,13 @@ eingefroren**, auf jedem Weg: Wer darin sortieren, anhängen oder Felder setzen 
 in `rateAtMonth` (shared/monthRate.ts): nur für eine eingefrorene Staffel, eine offene wird jedes Mal neu sortiert.
 `coveredDays` in calc.ts merkt sich Werte für die Listen, die `readingsOf` je Aufruf von `computeSettlement` selbst
 gruppiert und einfriert; der Speicher lebt also nur innerhalb eines Aufrufs.
+**Ergebnisse je Bestand** merkt [stockMemo.ts](../stockMemo.ts) (`onStock(stock, key, compute)`): offene Abrechnung
+(auch der Vergleich einer abgeschlossenen und der Export), Steuer je Objekt (auch in der Übersicht aller Objekte),
+Verbrauch und Mietkonto, in index.ts (`settlementOf`, `taxReportOf`). **Der Schlüssel nennt alles außer dem Bestand,
+woran das Ergebnis hängt**: Objekt, Zeitraum mit Beginn und Ende oder Jahr, den Tag (`today()` einmal gelesen, für
+Schlüssel und `asOf`). Gemerkt wird am selben Bestand, aus dem gerechnet wurde, nie an einem zweiten `readStock`.
+Was nach dem Rechnen aus der Datenbank dazukommt (Anschreiben, Kautionen in der Steuer), gehört nicht hinein. Ein
+offener Bestand wird nie gemerkt, ein Fehler nicht, das Ergebnis ist eingefroren.
 
 **Eine zweite Verbindung auf die Datei gibt es nur in Tests**, und die Schlange ordnet sie nicht.
 Ohne WAL und ohne `busy_timeout` scheitert ein Schreiben dort sofort mit „database is locked“, wenn

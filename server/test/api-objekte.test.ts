@@ -828,3 +828,34 @@ function entryData(zip: AdmZip, name: string): Buffer {
   if (!entry) return assert.fail(`im Archiv fehlt der Eintrag ${name}`)
   return entry.getData()
 }
+
+test('Gemerkte Ergebnisse (#651): je Objekt und Jahr getrennt, nach dem Schreiben neu gerechnet', async () => {
+  // Abrechnung, Steuer, Verbrauch und Mietkonto werden je Bestand gemerkt (stockMemo.ts). Ohne Schreiben dazwischen
+  // fragt dieser Test abwechselnd zwei Objekte und zwei Jahre: Jede Antwort muss ihre eigene sein.
+  await withProperties(async (s, b) => {
+    await s.api('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'A-EG', areaM2: 50, participates: true }) })
+    await s.api(`/api/units?property=${b.id}`, { method: 'POST', body: JSON.stringify({ name: 'B-EG', areaM2: 50, participates: true }) })
+    const cost = (property: string, year: number, amountCents: number) => s.api(`/api/costItems?property=${property}`, {
+      method: 'POST', body: JSON.stringify({ year, category: 'Grundsteuer', description: `Grundsteuer ${year}`, amountCents, key: 'area' }),
+    })
+    await cost('objekt-1', 2024, 10000)
+    await cost('objekt-1', 2025, 20000)
+    await cost(b.id, 2025, 30000)
+    const total = async (property: string, year: number) =>
+      (await s.api<{ totalCostsCents: number }>(`/api/settlement/${year}?property=${property}`)).totalCostsCents
+    const expenses = async (property: string, year: number) =>
+      (await s.api<{ expenses: { totalCents: number } }>(`/api/taxreport/${year}?property=${property}`)).expenses.totalCents
+    for (let round = 0; round < 2; round++) {
+      assert.equal(await total('objekt-1', 2025), 20000)
+      assert.equal(await total(b.id, 2025), 30000)
+      assert.equal(await total('objekt-1', 2024), 10000)
+      assert.equal(await expenses('objekt-1', 2025), 20000)
+      assert.equal(await expenses(b.id, 2025), 30000)
+      assert.equal(await expenses('objekt-1', 2024), 10000)
+    }
+    await cost('objekt-1', 2025, 5000)
+    assert.equal(await total('objekt-1', 2025), 25000, 'nach dem Schreiben neu gerechnet')
+    assert.equal(await expenses('objekt-1', 2025), 25000)
+    assert.equal(await total(b.id, 2025), 30000)
+  })
+})
