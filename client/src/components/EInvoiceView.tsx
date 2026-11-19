@@ -5,13 +5,14 @@ import { eInvoiceDocument } from '../eInvoiceView'
 import Card from './Card'
 import Table from './Table'
 import { NoticeBox } from './Notice'
+import { softBreak } from '../softBreak'
 
 // Angaben als Zeilen „Beschriftung: Wert“, als Tabelle mit Zeilenköpfen (Vorleser nennen die Beschriftung zum Wert)
 function Facts({ rows, label }: { rows: [string, string][]; label: string }) {
   return (
     <Table aria-label={label}>
       <tbody>
-        {rows.map(([name, value]) => <tr key={name}><th scope="row" className="text-muted">{name}</th><td>{value}</td></tr>)}
+        {rows.map(([name, value]) => <tr key={name}><th scope="row" className="text-muted">{name}</th><td>{softBreak(value)}</td></tr>)}
       </tbody>
     </Table>
   )
@@ -52,7 +53,7 @@ export function EInvoiceView({ view }: { view: View }) {
             {d.positions.map((p, i) => (
               <tr key={i}>
                 <td data-label="Nr.">{p.nr}</td>
-                <td data-label="Bezeichnung">{p.name}{p.description && p.description !== p.name && <div className="text-muted">{p.description}</div>}</td>
+                <td data-label="Bezeichnung">{softBreak(p.name)}{p.description && p.description !== p.name && <div className="text-muted">{softBreak(p.description)}</div>}</td>
                 <td data-label="Menge" className="num">{p.quantity}</td>
                 <td data-label="Einzelpreis" className="num">{p.unitPrice}</td>
                 <td data-label="USt">{p.vat}</td>
@@ -70,7 +71,7 @@ export function EInvoiceView({ view }: { view: View }) {
               {d.charges.map((c, i) => (
                 <tr key={i}>
                   <td data-label="Art">{c.kind}</td>
-                  <td data-label="Grund">{c.reason}</td>
+                  <td data-label="Grund">{softBreak(c.reason)}</td>
                   <td data-label="USt">{c.vat}</td>
                   <td data-label="Betrag (netto)" className="num">{c.amount}</td>
                 </tr>

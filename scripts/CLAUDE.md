@@ -94,18 +94,19 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   verkleinern Chromium (auch Programmfenster und `printToPDF`), Firefox und Safari das ganze Dokument mit einem Faktor,
   und im Anschreiben stehen Fußzeile, Falz- und Lochmarken zu hoch (#647: Spaltenkopf „Gesamtkosten bzw. Anteil an der
   Gemeinschaft“ mit `nowrap`, Druck auf rund 80 %). Abschalten lässt sich das nicht, abschneiden ließe Beträge
-  verschwinden. Der Lauf nimmt den Beispielbestand plus Heizanlage und Extremwerte (Wort von 69 Zeichen ohne
+  verschwinden. Der Lauf nimmt den Beispielbestand plus Heizanlage und Extremwerte (Wort von 68 Zeichen ohne
   Trennstelle als Beschreibung und Leistung nach § 35a und im eigenen Schlusssatz des Anschreibens, Beträge in
   Millionenhöhe, lange E-Mail im Kontakt). **Fälle**: die Seite Abrechnung wie Strg+P für Lindenweg, Eigentumswohnung
-  (mit `external`) und Lindenweg mit Logo und Briefpapier (dann druckt die Seite ohne Rand, erlaubt ist die ganze
+  (mit `external`), Ulmenweg 7 (eigene Heizkostenabrechnung mit Brennstoff und Vorrat), Birkenweg 2 (Messdienst mit
+  CO₂-Aufteilung) und Lindenweg mit Logo und Briefpapier (dann druckt die Seite ohne Rand, erlaubt ist die ganze
   Seitenbreite), dazu jede andere Druckansicht aus [print-width-views.mjs](print-width-views.mjs): Ableseformular,
   Kaution, monatliche Information, CO₂-Blatt, E-Rechnung, getrennte Heizkostenabrechnung (Weg d), Ableseergebnis, Steuer.
   Deren `setup` legt eigene Objekte an („Ulmenweg 7“, „Erlenstraße 9“), damit die Abrechnung der beiden Objekte des
-  Beispielbestands gleich bleibt; `open` bedient die Oberfläche bis `window.print()` (allein aufrufbar mit `--only`). Je
+  Beispielbestands gleich bleibt; `open` bedient die Oberfläche bis `window.print()` (allein aufrufbar: `node scripts/print-width-views.mjs --only <name>`). Je
   Fall zwei Prüfungen: im Medium print bei einem Fenster so breit wie der Satzspiegel ragt kein sichtbares Element hinaus
   (gemessen mit `scrollWidth`, denn Text, der aus einem Absatz ragt, macht dessen Box nicht breiter; Befund mit Klasse und
   Text), in jeder Engine aus `--engines` (Vorgabe Chromium; geprüft mit Firefox und WebKit); und in der PDF aus Chromium ist
-  jede Seite A4, auf jeder Seite mit Anschreiben steht der Betreff bei 98,46 mm und, wo gedruckt, die Fußzeile ab 275 mm.
+  jede Seite A4, auf jeder Seite mit Anschreiben steht der Betreff (fehlt er als eigenes Textstück, ist das ein Befund) bei 98,46 mm und, wo gedruckt, die Fußzeile ab 275 mm.
   **Erst messen, dann `page.pdf()`**: Das löst `afterprint` aus, und Ableseformular und Monatsinformation nehmen dann ihre
   Druckklasse wieder ab. Bericht `bericht.md` und PDFs in `--out`, Exit 1 bei Befunden, 2 bei gescheitertem Lauf.
   `--cases` nimmt einzelne Fälle. Rot nachgewiesen am Stand vor dem Fix (Fußzeile bei 191 mm, Steuer 1110 px mit

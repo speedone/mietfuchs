@@ -27,6 +27,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#647](https://github.com/speedone/mietfuchs/issues/647)).
 - Druck der CO₂-Angaben für den Messdienst: Das Blatt druckte verkleinert, weil seine neun Spalten nicht auf die Seite
   passten. Es druckt jetzt in voller Größe ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+- Druck einer E-Rechnung und der Kautionsaufstellung: Ein sehr langes Wort ohne Trennstelle in einer Position der
+  Rechnung oder im Grund einer Verrechnung machte die Tabelle breiter als die Seite, und der Druck wurde verkleinert.
+  Solche Wörter brechen jetzt um ([#647](https://github.com/speedone/mietfuchs/issues/647)).
 
 ## [0.18.0] – 2026-11-13
 

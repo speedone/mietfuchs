@@ -254,7 +254,7 @@ function xrechnung(year) {
 <cac:TaxTotal><cbc:TaxAmount currencyID="EUR">60.61</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">319.00</cbc:TaxableAmount><cbc:TaxAmount currencyID="EUR">60.61</cbc:TaxAmount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
 <cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="EUR">319.00</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount currencyID="EUR">319.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID="EUR">379.61</cbc:TaxInclusiveAmount><cbc:PayableAmount currencyID="EUR">379.61</cbc:PayableAmount></cac:LegalMonetaryTotal>
 ${line('1', 'Jährliche Wartung Gasbrennwertkessel einschließlich Abgasmessung', '245.00')}
-${line('2', 'Dichtungssatz und Zündelektrode', '74.00')}
+${line('2', `Dichtungssatz und Zündelektrode ${LONG_WORD}`, '74.00')}
 </Invoice>
 `
 }
@@ -277,8 +277,10 @@ export const PRINT_VIEWS = [
   {
     name: 'kaution',
     label: 'Kaution, Aufstellung zum Auszug (Stammdaten)',
-    // Der ausgezogene Mieter des Lindenwegs: erhalten, verzinst, ausgezahlt. Keine Verrechnung, die Mietkonto oder Steuer
-    // berührte.
+    // Der ausgezogene Mieter des Lindenwegs: erhalten, verzinst, mit einem Schaden verrechnet, ausgezahlt. Gedruckt wird
+    // nur die Notiz einer Verrechnung (depositSettlement.ts), deshalb steht das lange Wort dort, doppelt: einmal
+    // passt es in die drei Spalten und prüfte nichts (Gegenprobe ohne softBreak); der Zweck „Schaden“
+    // berührt weder Mietkonto noch Steuer.
     async setup(api, ids, stock) {
       /** @type {any[]} */
       const tenancies = await api.get(`/api/tenancies?property=${ids.haus}`)
@@ -287,7 +289,8 @@ export const PRINT_VIEWS = [
       const entry = (body) => api.post('/api/deposit-entries', { tenancyId: hartmann.id, ...body })
       await entry({ date: '2021-08-20', kind: 'received', amountCents: 156000, note: 'Überweisung vor Einzug' })
       await entry({ date: `${stock.PREV}-12-31`, kind: 'interest', amountCents: 1870 })
-      await entry({ date: `${stock.YEAR}-08-15`, kind: 'refunded', amountCents: 157870, note: `Rückzahlung nach Wohnungsabnahme ${LONG_WORD}` })
+      await entry({ date: `${stock.YEAR}-08-15`, kind: 'applied', purpose: 'damage', amountCents: 20000, note: `Schaden laut Wohnungsabnahme ${LONG_WORD}${LONG_WORD}` })
+      await entry({ date: `${stock.YEAR}-08-15`, kind: 'refunded', amountCents: 137870, note: 'Rückzahlung nach Wohnungsabnahme' })
     },
     async open(page, ids) {
       await chooseProperty(page, ids.haus, 'Lindenweg 12')

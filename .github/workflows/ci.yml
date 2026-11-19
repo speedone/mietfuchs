@@ -85,7 +85,7 @@ jobs:
           # Ohne NKA_HOST im Netz (#528): Der frische Datenordner verlangt ein Passwort, den Code liest das Skript aus der Datei
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --code-file "$RUNNER_TEMP/daten/einrichtungscode.txt"
       # Nichts im Druck breiter als die Seite (#647): sonst verkleinern alle Browser den ganzen Druck, und im Anschreiben
-      # stehen Fußzeile, Falz- und Lochmarken zu hoch. Druckt die Abrechnung (fünf Objekte, mit Briefpapier) und jede andere
+      # stehen Fußzeile, Falz- und Lochmarken zu hoch. Druckt die Abrechnung (fünf Fälle, darunter Heizung, Messdienst und Briefpapier) und jede andere
       # Druckansicht mit Extremwerten (scripts/print-width-check.mjs, print-width-views.mjs). Einmal genügt, das hängt nicht
       # an der Node-Version.
       - name: Druckbreite prüfen

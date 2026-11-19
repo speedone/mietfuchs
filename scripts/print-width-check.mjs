@@ -251,7 +251,10 @@ async function main() {
                 if (Math.abs(p.w - 210) > 1 || Math.abs(p.h - 297) > 1) findings.push(`${tag}: Seite ${i + 1} ist ${p.w.toFixed(1)} × ${p.h.toFixed(1)} mm, nicht A4`)
                 if (!c.letters || !p.text.includes(`Nebenkostenabrechnung ${stock.YEAR}, `)) return
                 const subject = p.items.find((it) => it.s.startsWith(`Nebenkostenabrechnung ${stock.YEAR}, `))
-                if (!subject) return
+                if (!subject) {
+                  findings.push(`${tag}: Seite ${i + 1} nennt die Abrechnung, aber kein Textstück beginnt mit dem Betreff; Lage nicht prüfbar`)
+                  return
+                }
                 letters += 1
                 if (subject.y < SUBJECT_MM[0] || subject.y > SUBJECT_MM[1]) findings.push(`${tag}: Seite ${i + 1} (Anschreiben): Betreff bei ${subject.y.toFixed(1)} mm statt bei 98,46 mm, der Druck ist verkleinert oder verschoben`)
                 if (!c.footer) return
