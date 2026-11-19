@@ -30,6 +30,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Druck einer E-Rechnung und der Kautionsaufstellung: Ein sehr langes Wort ohne Trennstelle in einer Position der
   Rechnung oder im Grund einer Verrechnung machte die Tabelle breiter als die Seite, und der Druck wurde verkleinert.
   Solche Wörter brechen jetzt um ([#647](https://github.com/speedone/mietfuchs/issues/647)).
+- Druck allgemein: Wäre trotzdem einmal etwas breiter als die Seite, bricht Mietfuchs beim Drucken genau diese Stelle
+  um, statt dass der Browser alles verkleinert. Anschreiben und übrige Seiten bleiben in voller Größe, und es fehlt
+  nichts ([#647](https://github.com/speedone/mietfuchs/issues/647)).
 
 ## [0.18.0] – 2026-11-13
 

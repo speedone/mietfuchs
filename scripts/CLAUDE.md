@@ -109,6 +109,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   jede Seite A4, auf jeder Seite mit Anschreiben steht der Betreff (fehlt er als eigenes Textstück, ist das ein Befund) bei 98,46 mm und, wo gedruckt, die Fußzeile ab 275 mm.
   **Erst messen, dann `page.pdf()`**: Das löst `afterprint` aus, und Ableseformular und Monatsinformation nehmen dann ihre
   Druckklasse wieder ab. Bericht `bericht.md` und PDFs in `--out`, Exit 1 bei Befunden, 2 bei gescheitertem Lauf.
+  Dazu in jedem Fall und jeder Engine `beforeprint`: Die Notbremse (client/src/printFit.ts) darf nichts markieren; im
+  Fall `notbremse` steht eine fremde, nicht umbrechende Zeile in der Abrechnung, dort muss sie greifen, danach ragt
+  nichts hinaus, und in der PDF stehen Betreff und Fußzeile richtig und jedes Wort der Zeile (rot ohne Notbremse:
+  Fußzeile bei 191 mm, 29 Wörter abgeschnitten).
   `--cases` nimmt einzelne Fälle. Rot nachgewiesen am Stand vor dem Fix (Fußzeile bei 191 mm, Steuer 1110 px mit
   abgeschnittener Spalte „Zuordnung“, CO₂-Blatt 811 px) und gegen jede einzelne Abhilfe (ohne die Regel für Fließtext:
   Betreff bei 77 mm). Abhilfe steht in client/src/letter.css (`@media print`) und softBreak.ts (client/CLAUDE.md,

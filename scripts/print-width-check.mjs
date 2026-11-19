@@ -56,7 +56,7 @@ let pdfjs = null
  * Ein Fall: welches Objekt, wie man zur gedruckten Ansicht kommt, und was die PDF zeigen muss.
  * @typedef {{ name: string, label: string, property: string, paper?: boolean, letters?: boolean, footer?: boolean,
  *   before?: (api: any, ids: any) => Promise<void>, after?: (api: any, ids: any) => Promise<void>,
- *   open: (page: any, ids: any) => Promise<void> }} PrintCase
+ *   open: (page: any, ids: any) => Promise<void>, brake?: boolean }} PrintCase
  */
 
 // Die Seite Abrechnung wie Strg+P: alle Mieter, mit Anschreiben
@@ -67,6 +67,25 @@ async function openSettlement(page) {
   // Logo und Briefpapier lädt die Seite nach (bis dahin druckt sie ohne)
   await page.waitForFunction(() => [.../** @type {any} */ (globalThis).document.images].every((img) => img.complete))
   await page.waitForTimeout(500)
+}
+
+// Notbremse (client/src/printFit.ts): eine Zeile, die kein Prüffall vorhersieht, in der ersten Aufstellung, nicht
+// umbrechend. Ohne Notbremse ragt sie hinaus; mit ihr muss der Druck in voller Größe bleiben und jedes Wort darin stehen.
+const BRAKE_TOKENS = Array.from({ length: 60 }, (_, i) => `Z${String(i + 1).padStart(2, '0')}x`)
+async function openSettlementWithStranger(page) {
+  await openSettlement(page)
+  await page.evaluate((tokens) => {
+    const document = /** @type {any} */ (globalThis).document
+    const table = document.querySelector('.card.statement table:not(.print-pages)')
+    if (!table) throw new Error('Keine Tabelle in der ersten Aufstellung')
+    const row = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.colSpan = 20
+    cell.style.whiteSpace = 'nowrap'
+    cell.textContent = tokens.join(' ')
+    row.append(cell)
+    table.querySelector('tbody').append(row)
+  }, BRAKE_TOKENS)
 }
 
 // Logo und Briefpapier als PNG, erfunden wie der übrige Bestand (wie in safari-print-check.mjs)
@@ -179,8 +198,12 @@ function settlementCases(images, base) {
       after: () => putDesign(base, { logo: 'remove', paper: 'remove', paperNextFile: 'keep', paperNext: 'none', margins }),
       open: openSettlement,
     },
+    { name: 'notbremse', label: 'Notbremse: unbekannte breite Zeile in der Abrechnung Lindenweg 12', property: 'haus', letters: true, footer: true, brake: true, open: openSettlementWithStranger },
   ]
 }
+
+/** @param {PrintCase} c @param {string} engine */
+const tagOf = (c, engine) => (engines.length > 1 ? `${c.label} [${engine}]` : c.label)
 
 async function main() {
   fs.mkdirSync(out, { recursive: true })
@@ -218,7 +241,7 @@ async function main() {
         for (const engine of engines) {
           const { context, page, pageErrors } = await openPage(browsers[engine], demo, c, c.open)
           try {
-            const tag = engines.length > 1 ? `${c.label} [${engine}]` : c.label
+            const tag = tagOf(c, engine)
             // Erst messen, dann die PDF: page.pdf() löst `afterprint` aus, und Blätter wie Ableseformular und
             // Monatsinformation räumen dann ihre Druckklasse ab (die Messung danach sähe die ganze Oberfläche)
             const limit = c.paper ? PAGE_WIDTH_PX : TEXT_WIDTH_PX
@@ -226,6 +249,23 @@ async function main() {
             await page.setViewportSize({ width: Math.floor(limit), height: 900 })
             await page.waitForTimeout(300)
             const width = await page.evaluate(overflowingElements, limit)
+            // Notbremse: `beforeprint` wie beim Druck. Im Normalfall markiert sie nichts, im Fall `notbremse` die Tabelle,
+            // und danach ragt nichts mehr hinaus. In jeder Engine, nicht nur in der mit PDF.
+            const fitted = await page.evaluate(() => {
+              const win = /** @type {any} */ (globalThis)
+              win.dispatchEvent(new win.Event('beforeprint'))
+              return [...win.document.querySelectorAll('.print-fit')].map((el) => `<${el.tagName.toLowerCase()}> „${(el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)}“`)
+            })
+            if (c.brake) {
+              if (width.found.length === 0) findings.push(`${tagOf(c, engine)}: die fremde Zeile ragt nicht hinaus, der Fall prüft die Notbremse nicht`)
+              if (fitted.length === 0) findings.push(`${tagOf(c, engine)}: die Notbremse markierte nichts`)
+              const after = await page.evaluate(overflowingElements, limit)
+              if (after.found.length > 0) findings.push(`${tagOf(c, engine)}: nach der Notbremse ragen noch ${after.found.length} Elemente hinaus, darunter <${after.found[0].tag}> „${after.found[0].text}“ (bis ${after.found[0].right} px)`)
+              width.found = []
+              width.documentWidth = 0
+            } else if (fitted.length > 0) {
+              findings.push(`${tagOf(c, engine)}: die Notbremse griff im Normalfall (${fitted.join('; ')})`)
+            }
             /** @type {string | null} */
             let file = null
             if (engine === 'chromium') {
@@ -234,6 +274,8 @@ async function main() {
               await page.waitForTimeout(300)
               file = path.join(out, `${c.name}.pdf`)
               await page.pdf({ path: file, preferCSSPageSize: true })
+              const fittedPdf = await page.evaluate(() => /** @type {any} */ (globalThis).document.querySelectorAll('.print-fit').length)
+              if (!c.brake && fittedPdf > 0) findings.push(`${tag}: die Notbremse griff beim Druck (${fittedPdf} Elemente)`)
             }
             if (width.found.length > 0 || width.documentWidth > limit + 1) {
               // Eine zu breite Tabelle schiebt jede ihrer Zellen mit hinaus; je Fall eine Zeile und die ersten verschiedenen Elemente
@@ -246,6 +288,11 @@ async function main() {
             let summary = `${width.found.length} Elemente zu breit`
             if (file) {
               const pages = await readPages(file)
+              if (c.brake) {
+                const all = pages.map((p) => p.text).join(' ')
+                const missing = BRAKE_TOKENS.filter((t) => !all.includes(t))
+                if (missing.length > 0) findings.push(`${tag}: im Druck fehlen ${missing.length} Wörter der fremden Zeile (${missing.slice(0, 5).join(', ')} …), die Notbremse schnitt ab`)
+              }
               let letters = 0
               pages.forEach((p, i) => {
                 if (Math.abs(p.w - 210) > 1 || Math.abs(p.h - 297) > 1) findings.push(`${tag}: Seite ${i + 1} ist ${p.w.toFixed(1)} × ${p.h.toFixed(1)} mm, nicht A4`)

@@ -223,7 +223,11 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   „… in Folgejahre“), trägt sie `wraps`. Tabellen mit vielen Spalten (CO₂-Blatt, Werbungskosten der Steuer) tragen
   `print-compact`: im Druck schmaler Innenabstand und 9 pt. Eine neue Druckspalte mit Text aus Eingaben bekommt
   `softBreak`, eine neue Druckansicht einen Fall in scripts/print-width-views.mjs; eine Überschrift, die nicht umbrechen
-  darf, gibt es im Druck nicht.
+  darf, gibt es im Druck nicht. **Notbremse** ([printFit.ts](src/printFit.ts), beim Start in main.tsx): Bei `beforeprint`
+  stellt sie das Drucklayout nach (jede Regel `@media` wie im Druck, Breiten gegen den Satzspiegel aus `@page`, das
+  Dokument so breit wie er), misst und gibt nur dem, was hinausragt, die Klasse `print-fit` (zuerst Datentabellen: feste
+  Spalten, Umbruch überall). Danach ist es zu spät: Chromium legt den Faktor im ersten Drucklayout fest (nachgemessen).
+  Im Normalfall markiert sie nichts, das prüft print-width-check.mjs in jedem Fall; sie ersetzt keine Vorbeugung.
 - **Nicht gedruckt** wird, was nicht zur Abrechnung gehört: Hinweise der Datenbank (Database.tsx), Hinweis im leeren
   Objekt, Mitteilungen, Kopf und Leiste am Handy tragen `no-print`.
 - **Fehler vor dem Druck**: Hat eine offene Abrechnung Fehler der Stufe `error`, fragt die Seite vor
