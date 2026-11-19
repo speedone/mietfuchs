@@ -6,6 +6,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
+  sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
+  abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und
+  Exportformate ändern sich in 1.x nicht ohne Vorwarnung; ein Bruch kommt nur mit 2.0. MIGRATION.md sagt auch, was
+  bis 1.0 gilt ([#447](https://github.com/speedone/mietfuchs/issues/447)).
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

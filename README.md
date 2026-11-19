@@ -229,6 +229,16 @@ die übrigen Orte und das Wiederherstellen stehen unter [Daten & Backup](docs/da
 Datenschutzerklärung in [docs/datenschutz.md](docs/datenschutz.md). **Backup = diesen Ordner
 kopieren**, oder in den Einstellungen auf *Backup herunterladen (ZIP)* klicken.
 
+## Kompatibilität ab 1.0
+
+Ab Version 1.0 sagt Mietfuchs zu, dass du dich für die echte Nebenkostenabrechnung darauf verlassen kannst:
+Jeder Bestand und jedes Backup aus 1.x lässt sich in jeder späteren 1.x öffnen und einspielen, ohne
+Handarbeit. Eine abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde. Datenordner,
+Umgebungsvariablen, Docker-Image und die Exportformate (JSON, CSV) ändern sich in 1.x nicht ohne
+Vorwarnung. Was diese Zusagen bricht, kommt nur mit einer neuen Hauptversion (2.0). Bis dahin öffnet
+jede Version die Bestände älterer Versionen ebenfalls; verbindlich ist die Zusage ab 1.0. Der Wortlaut
+und was bis 1.0 gilt: [MIGRATION.md](MIGRATION.md#kompatibilität-bis-und-ab-10).
+
 ## Mitmachen
 
 Fehlerkorrekturen, Tests, fachliche Verbesserungen und neue Funktionen sind willkommen, gern direkt

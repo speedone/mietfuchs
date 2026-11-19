@@ -64,3 +64,8 @@ Alte Archive ohne Datenbank gehen weiterhin: Mietfuchs baut sie dann aus den wie
 Daten neu auf. Wer nur noch eine lose `db.json` von früher hat, packt sie in ein ZIP und stellt
 dieses wieder her. Warum das der verlässlichere Weg ist als das Hineinlegen in den Datenordner,
 und wo dieser Ordner liegt, steht in [MIGRATION.md](../MIGRATION.md).
+
+**Ab Version 1.0 gilt eine Kompatibilitätszusage**: Jedes Backup aus 1.x lässt sich in jeder späteren
+1.x einspielen, ohne Handarbeit, und Datenordner, Umgebungsvariablen, Docker-Image und Exportformate
+(JSON, CSV) ändern sich in 1.x nicht ohne Vorwarnung. Der Wortlaut und was bis dahin gilt:
+[MIGRATION.md](../MIGRATION.md#kompatibilität-bis-und-ab-10).
