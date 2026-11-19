@@ -10,7 +10,7 @@ import { coverageOf, type Coverage } from '../bank/coverage.ts'
 import type { BankAccount, BankImport, BankStock } from '../bank/model.ts'
 import type { ImportWrite } from '../bank/importPlan.ts'
 import type { LinkWrite, SetAsideReason } from '../bank/linkPlan.ts'
-import { linkedCents, openCents, suggest, type MatchContext, type Suggestion } from '../bank/match.ts'
+import { linkedCents, openCents, suggestWithSettlement, type MatchContext, type Suggestion } from '../bank/match.ts'
 import type { BankTransaction } from '../bank/model.ts'
 import type { BankLinkView, BankPayerView, BankTransactionView as SharedTransactionView } from '../../../shared/types.ts'
 import { compareText } from '../apportion.ts'
@@ -183,14 +183,22 @@ export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'mo
   }
   // In zeitlicher Folge: Eine erfasste Zahlung, die ein Umsatz schon vorschlägt, schlägt kein späterer noch einmal vor;
   // sonst scheiterte „alle grünen übernehmen“ am zweiten (zwei Mieten von 850 € neben einer erfassten).
+  // Ebenso nimmt der erste Umsatz, dem der Vorschlag eine offene Nachzahlung oder ein Guthaben zuordnet, diesen Betrag;
+  // ein späterer gleicher Höhe bekommt keinen Vorschlag am Betrag mehr (#308, Durchsicht PR #654, 2).
   const reserved = new Set(ctx.linkedPaymentIds)
+  const takenSettlements = new Set<string>()
+  const allOpen = ctx.openSettlements
+  const openSettlements = allOpen ? (tenancyId: string) => allOpen(tenancyId).filter((o) => !takenSettlements.has(o.key)) : undefined
   const views = [...stock.transactions]
     .sort((a, b) => compareText(a.bookingDate, b.bookingDate))
     .map((tx) => {
       const links = linksOf.get(tx.id) ?? []
       const open = openCents(tx, links.map((l) => l.cents))
-      const suggestion = open !== 0 ? suggest({ ...tx, amountCents: open }, { ...ctx, linkedPaymentIds: reserved }) : null
+      const { suggestion, settlementKey } = open !== 0
+        ? suggestWithSettlement({ ...tx, amountCents: open }, { ...ctx, linkedPaymentIds: reserved, ...(openSettlements ? { openSettlements } : {}) })
+        : { suggestion: null, settlementKey: null }
       if (suggestion?.target.type === 'existingPayment') reserved.add(suggestion.target.paymentId)
+      if (settlementKey !== null) takenSettlements.add(settlementKey)
       return { ...tx, openCents: open, links, suggestion }
     })
   return { ctx, views }

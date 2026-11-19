@@ -14,7 +14,7 @@ const TENANT = 'DE02120300000000202051'
 const fixture = (name: string) => fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'camt', name))
 
 type Target = { type: 'newPayment'; kind: 'rent' | 'settlement' } | { type: 'existingPayment'; paymentId: string } | { type: 'deposit'; kind: 'received' | 'refunded' }
-type Suggestion = { tenancyId: string; target: Target; light: 'green' | 'yellow'; reason: string }
+type Suggestion = { tenancyId: string; target: Target; light: 'green' | 'yellow'; reason: string; parts?: { amountCents: number; target: Target }[] }
 type TxView = { id: string; bookingDate: string; amountCents: number; purpose: string; openCents: number; suggestion: Suggestion | null; links: { id: string; paymentId: string | null; depositEntryId: string | null; created: boolean }[] }
 type LinkPreview = { problems: { transactionId: string; message: string }[]; sentence: string; token: string }
 
@@ -320,40 +320,157 @@ test('Cockpit: GET /api/bank/open-count zählt die offenen Umsätze', () => with
   assert.deepEqual(await s.api('/api/bank/open-count'), { count: 2 })
 }))
 
-// #308: Ein Eingang ohne Zweck in Höhe der offenen Nachzahlung der abgeschlossenen Abrechnung wird gelb als Abrechnung
-// vorgeschlagen; ohne Abschluss (nur Live-Berechnung, wieder geöffnet) nicht. Ein Auszug mit einem Eingang, im Test gebaut.
-const camtWith = (date: string, amount: string, purpose: string) => Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+
+// ---------- #308: Nachzahlung und Guthaben aus der abgeschlossenen Abrechnung am Betrag ----------
+// Auszüge im Test gebaut. Der Abschluss trägt die wirkliche Uhrzeit (`closedAt`), der Server rechnet mit NKA_TEST_TODAY;
+// deshalb setzt jeder Abschluss ein Versanddatum vor den Umsätzen.
+const SECOND = 'DE44500105175407324931'
+type Entry = { date: string; cents: number; purpose?: string; iban?: string }
+const camtOf = (entries: readonly Entry[]) => {
+  const first = entries[0]?.date ?? '2026-01-01'
+  const ntry = entries.map((e, i) => {
+    const amount = (Math.abs(e.cents) / 100).toFixed(2)
+    const party = e.cents > 0
+      ? `<Dbtr><Pty><Nm>Erika Beispiel</Nm></Pty></Dbtr><DbtrAcct><Id><IBAN>${e.iban ?? TENANT}</IBAN></Id></DbtrAcct>`
+      : `<Cdtr><Pty><Nm>Erika Beispiel</Nm></Pty></Cdtr><CdtrAcct><Id><IBAN>${e.iban ?? TENANT}</IBAN></Id></CdtrAcct>`
+    return `<Ntry><Amt Ccy="EUR">${amount}</Amt><CdtDbtInd>${e.cents > 0 ? 'CRDT' : 'DBIT'}</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>
+      <BookgDt><Dt>${e.date}</Dt></BookgDt><ValDt><Dt>${e.date}</Dt></ValDt><AcctSvcrRef>REF-${e.date}-${i}</AcctSvcrRef>
+      <NtryDtls><TxDtls><RltdPties>${party}</RltdPties><RmtInf><Ustrd>${e.purpose ?? 'Ueberweisung'}</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>`
+  }).join('\n')
+  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt>
-  <GrpHdr><MsgId>MSG-${date}</MsgId><CreDtTm>${date}T18:00:00+01:00</CreDtTm></GrpHdr>
-  <Stmt><Id>${date}</Id><CreDtTm>${date}T18:00:00+01:00</CreDtTm>
-    <Acct><Id><IBAN>${OWN}</IBAN></Id></Acct>
-    <Ntry><Amt Ccy="EUR">${amount}</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>
-      <BookgDt><Dt>${date}</Dt></BookgDt><ValDt><Dt>${date}</Dt></ValDt><AcctSvcrRef>REF-${date}</AcctSvcrRef>
-      <NtryDtls><TxDtls><RltdPties><Dbtr><Pty><Nm>Erika Beispiel</Nm></Pty></Dbtr><DbtrAcct><Id><IBAN>${TENANT}</IBAN></Id></DbtrAcct></RltdPties>
-        <RmtInf><Ustrd>${purpose}</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>
+  <GrpHdr><MsgId>MSG-${first}</MsgId><CreDtTm>${first}T18:00:00+01:00</CreDtTm></GrpHdr>
+  <Stmt><Id>${first}</Id><CreDtTm>${first}T18:00:00+01:00</CreDtTm><Acct><Id><IBAN>${OWN}</IBAN></Id></Acct>
+${ntry}
   </Stmt></BkToCstmrStmt></Document>`)
+}
+const importEntries = (s: Server, entries: readonly Entry[]) => importFile(s, camtOf(entries), 'auszug.xml')
+
+// Je Monat von `from` bis `to` (je einschließlich) eine Miete von 850 € am Ersten, außer in `skip`.
+async function payRent(s: Server, tenancyId: string, from: string, to: string, skip: readonly string[] = []): Promise<Payment[]> {
+  const out: Payment[] = []
+  for (let m = from; m <= to; m = m.endsWith('-12') ? `${Number(m.slice(0, 4)) + 1}-01` : `${m.slice(0, 5)}${String(Number(m.slice(5)) + 1).padStart(2, '0')}`) {
+    if (skip.includes(m)) continue
+    out.push(await s.api<Payment>('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId, date: `${m}-01`, amountCents: 85000 }) }))
+  }
+  return out
+}
+// Grundsteuer des Kalenderjahrs anlegen, abschließen und das Versanddatum setzen. Mit 1.800 € Vorauszahlung im Jahr
+// ergeben 2.100 € eine Nachzahlung von 300 €, 1.680 € ein Guthaben von 120 €.
+async function settle(s: Server, year: number, amountCents: number, sentAt: string): Promise<void> {
+  await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: `${year}-01`, category: 'Grundsteuer', description: `Grundsteuer ${year}`, amountCents, key: 'area' }) })
+  const closed = await json(s, 'POST', `/api/settlement/${year}-01/close`, {})
+  assert.equal(closed.status, 201, await closed.clone().text())
+  const sent = await json(s, 'PUT', `/api/settlement/${year}-01/close`, { sentAt })
+  assert.equal(sent.status, 200, await sent.clone().text())
+}
+const suggestions = async (s: Server) => (await transactions(s)).map((t) => [t.bookingDate, t.openCents, t.suggestion?.target, t.suggestion?.parts])
+const RENT_TARGET = { type: 'newPayment', kind: 'rent' }
+const SETTLEMENT_TARGET = { type: 'newPayment', kind: 'settlement' }
 
 test('#308: Nachzahlung am Betrag nur aus der abgeschlossenen Abrechnung; wieder geöffnet zählt sie nicht', () => withEnv({ NKA_TEST_TODAY: '2026-04-15' }, async (s) => {
   const t = await tenancy(s)
-  // Mietkonto ausgeglichen: jede Miete von Januar 2025 bis April 2026 bezahlt.
-  for (let i = 0; i < 16; i++) {
-    const month = `${2025 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`
-    await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: `${month}-01`, amountCents: 85000 }) })
-  }
-  // 2.100 € Grundsteuer gegen 1.800 € Vorauszahlungen: 300 € Nachzahlung.
-  await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 210000, key: 'area' }) })
-  await importFile(s, camtWith('2026-03-10', '300.00', 'Ueberweisung'), 'maerz.xml')
+  await payRent(s, t.id, '2025-01', '2026-04')
+  await importEntries(s, [{ date: '2026-03-10', cents: 30000 }])
   const suggestion = async () => (await transactions(s))[0]?.suggestion
-  assert.deepEqual((await suggestion())?.target, { type: 'newPayment', kind: 'rent' }, 'nur Live-Berechnung')
+  await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 210000, key: 'area' }) })
+  assert.deepEqual((await suggestion())?.target, RENT_TARGET, 'nur Live-Berechnung')
 
   assert.equal((await json(s, 'POST', '/api/settlement/2025-01/close', {})).status, 201)
+  assert.deepEqual((await suggestion())?.target, RENT_TARGET, 'abgeschlossen erst nach dem Umsatz, ohne Versanddatum (Durchsicht PR #654, 1)')
+  assert.equal((await json(s, 'PUT', '/api/settlement/2025-01/close', { sentAt: '2026-02-20' })).status, 200)
   const closed = await suggestion()
-  assert.deepEqual([closed?.target, closed?.light, closed?.reason], [{ type: 'newPayment', kind: 'settlement' }, 'yellow', 'Betrag wie die offene Nachzahlung aus der Abrechnung 2025; das Mietkonto ist sonst ausgeglichen'])
+  assert.deepEqual([closed?.target, closed?.light, closed?.reason], [SETTLEMENT_TARGET, 'yellow', 'Betrag wie die offene Nachzahlung aus der Abrechnung 2025; das Mietkonto ist sonst ausgeglichen'])
 
   assert.equal((await json(s, 'DELETE', '/api/settlement/2025-01/close')).status, 200)
-  assert.deepEqual((await suggestion())?.target, { type: 'newPayment', kind: 'rent' }, 'wieder geöffnet')
+  assert.deepEqual((await suggestion())?.target, RENT_TARGET, 'wieder geöffnet')
 
   assert.equal((await json(s, 'POST', '/api/settlement/2025-01/close', {})).status, 201)
+  assert.equal((await json(s, 'PUT', '/api/settlement/2025-01/close', { sentAt: '2026-02-20' })).status, 200)
   await book(s, asSuggested(await transactions(s)))
   assert.deepEqual((await payments(s)).filter((p) => p.kind === 'settlement').map((p) => [p.date, p.amountCents]), [['2026-03-10', 30000]])
+}))
+
+// Durchsicht PR #654, 2: Der erste passende Umsatz in Datumsfolge nimmt die Nachzahlung, wie eine erfasste Zahlung.
+test('#308 Durchsicht: zwei Umsätze in Höhe derselben Nachzahlung, nur der erste bekommt den Vorschlag', () => withEnv({ NKA_TEST_TODAY: '2026-04-15' }, async (s) => {
+  const t = await tenancy(s)
+  await payRent(s, t.id, '2025-01', '2026-04')
+  await settle(s, 2025, 210000, '2026-02-20')
+  await importEntries(s, [{ date: '2026-03-10', cents: 30000 }, { date: '2026-03-12', cents: 30000 }])
+  assert.deepEqual((await suggestions(s)).map(([d, , target]) => [d, target]), [['2026-03-10', SETTLEMENT_TARGET], ['2026-03-12', RENT_TARGET]])
+}))
+
+// (a) Miete + Nachzahlung in einer Überweisung, der Buchungsmonat schon im Rückstand; gebucht werden beide Teile.
+test('#308 Durchsicht: Miete und Nachzahlung in einer Überweisung, Buchungsmonat überfällig', () => withEnv({ NKA_TEST_TODAY: '2026-03-25' }, async (s) => {
+  const t = await tenancy(s)
+  await payRent(s, t.id, '2025-01', '2026-02')
+  await settle(s, 2025, 210000, '2026-02-20')
+  await importEntries(s, [{ date: '2026-03-03', cents: 115000 }])
+  const [row] = await transactions(s)
+  const sg = row?.suggestion ?? assert.fail('kein Vorschlag')
+  assert.deepEqual([sg.light, sg.parts], ['yellow', [{ amountCents: 85000, target: RENT_TARGET }, { amountCents: 30000, target: SETTLEMENT_TARGET }]])
+  await book(s, [{ transactionId: row.id, parts: (sg.parts ?? []).map((p) => ({ tenancyId: sg.tenancyId, ...p })) }])
+  assert.deepEqual((await payments(s)).filter((p) => p.date === '2026-03-03').map((p) => [p.kind, p.amountCents]), [['rent', 85000], ['settlement', 30000]])
+  const ledger = await s.api<RentLedger>('/api/rentledger/2026')
+  assert.equal(ledger.rows[0]?.months[2]?.status, 'paid', 'März bezahlt')
+}))
+
+// (b) Die erteilte Abrechnung rechnet die Vorauszahlung Dezember an, die nie gezahlt wurde: kein Vorschlag.
+test('#308 Durchsicht: unbezahlte, angerechnete Vorauszahlung: kein Vorschlag', () => withEnv({ NKA_TEST_TODAY: '2026-04-15' }, async (s) => {
+  const t = await tenancy(s)
+  await payRent(s, t.id, '2025-01', '2026-04', ['2025-12'])
+  await settle(s, 2025, 210000, '2026-02-20')
+  await importEntries(s, [{ date: '2026-03-10', cents: 30000 }])
+  assert.deepEqual((await suggestions(s))[0]?.[2], RENT_TARGET)
+}))
+
+// (c) Umsatz im Vorjahr, heute im Folgejahr: Ob das Mietkonto ausgeglichen ist, sagt die Ansicht des laufenden Jahres.
+test('#308 Durchsicht: Buchung im Vorjahr, Rückstand im laufenden Jahr zählt', () => withEnv({ NKA_TEST_TODAY: '2027-02-15' }, async (s) => {
+  const t = await tenancy(s)
+  const paid = await payRent(s, t.id, '2025-01', '2027-02')
+  await settle(s, 2025, 210000, '2026-02-20')
+  await importEntries(s, [{ date: '2026-03-10', cents: 30000 }])
+  assert.deepEqual((await suggestions(s))[0]?.[2], SETTLEMENT_TARGET, 'alles bezahlt')
+  const january = paid.find((p) => p.date === '2027-01-01') ?? assert.fail('keine Januarmiete')
+  assert.equal((await json(s, 'DELETE', `/api/payments/${january.id}`)).status, 200)
+  assert.deepEqual((await suggestions(s))[0]?.[2], RENT_TARGET, 'Rückstand 2027')
+}))
+
+// (d) Ausgezogen: ohne Rückstand ausgeglichen, mit Übertrag (`carriedOnly`) nicht.
+test('#308 Durchsicht: Ausgezogener ohne und mit Rückstand', () => withEnv({ NKA_TEST_TODAY: '2026-04-15' }, async (s) => {
+  const t = await tenancy(s, 'EG', TENANT, { end: '2025-12-31' })
+  const paid = await payRent(s, t.id, '2025-01', '2025-12')
+  await settle(s, 2025, 210000, '2026-02-20')
+  await importEntries(s, [{ date: '2026-03-10', cents: 30000 }])
+  assert.deepEqual((await suggestions(s))[0]?.[2], SETTLEMENT_TARGET, 'nichts offen')
+  const december = paid.find((p) => p.date === '2025-12-01') ?? assert.fail('keine Dezembermiete')
+  assert.equal((await json(s, 'DELETE', `/api/payments/${december.id}`)).status, 200)
+  assert.deepEqual((await suggestions(s))[0]?.[2], RENT_TARGET, 'Übertrag aus 2025')
+}))
+
+// Durchsicht PR #654, 4: Endete das Mietverhältnis vor dem Beginn der Erfassung, weiß das Mietkonto nichts über es; das
+// ist nicht „ausgeglichen“.
+test('#308 Durchsicht: Mietverhältnis vor dem Beginn der Erfassung: unbekannt, kein Vorschlag', () => withEnv({ NKA_TEST_TODAY: '2025-04-15' }, async (s) => {
+  await tenancy(s, 'EG', TENANT, { start: '2024-01-01', end: '2024-12-31', baseRents: [{ from: '2024-01', monthlyCents: 70000 }], prepayments: [{ from: '2024-01', monthlyCents: 15000 }] })
+  const next = await tenancy(s, 'OG', SECOND)
+  await payRent(s, next.id, '2025-01', '2025-04')
+  // Zwei gleich große Wohnungen, 2024 nur EG vermietet: 4.200 € je zur Hälfte, 2.100 € gegen 1.800 €.
+  await settle(s, 2024, 420000, '2025-02-20')
+  await importEntries(s, [{ date: '2025-03-10', cents: 30000 }])
+  assert.deepEqual((await suggestions(s))[0]?.[2], RENT_TARGET)
+}))
+
+// (f) Guthaben 2024 und Nachzahlung 2025 zugleich offen; auch die Auszahlung reserviert (Durchsicht PR #654, 2).
+test('#308 Durchsicht: Guthaben und Nachzahlung zugleich offen; zwei gleiche Auszahlungen, nur die erste', () => withEnv({ NKA_TEST_TODAY: '2026-04-15' }, async (s) => {
+  const t = await tenancy(s, 'EG', TENANT, { start: '2024-01-01', baseRents: [{ from: '2024-01', monthlyCents: 70000 }], prepayments: [{ from: '2024-01', monthlyCents: 15000 }] })
+  await payRent(s, t.id, '2024-01', '2026-04')
+  await settle(s, 2024, 168000, '2025-02-20')
+  await settle(s, 2025, 210000, '2026-02-20')
+  await importEntries(s, [{ date: '2026-03-05', cents: -12000 }, { date: '2026-03-06', cents: -12000 }, { date: '2026-03-10', cents: 30000 }])
+  const rows = await transactions(s)
+  assert.deepEqual(rows.map((r) => [r.bookingDate, r.suggestion?.reason]), [
+    ['2026-03-05', 'Betrag wie das offene Guthaben aus der Abrechnung 2024'],
+    ['2026-03-06', 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung'],
+    ['2026-03-10', 'Betrag wie die offene Nachzahlung aus der Abrechnung 2025; das Mietkonto ist sonst ausgeglichen'],
+  ])
 }))

@@ -87,6 +87,20 @@ export function tenancyFor(tx: Pick<BankTransaction, 'counterpartyIban' | 'booki
 }
 
 export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | null {
+  return suggestWithSettlement(tx, ctx).suggestion
+}
+
+// Wie `suggest`, dazu die Kennung der Abrechnung, deren offenen Betrag der Vorschlag nimmt (#308). `readBankState` reserviert
+// sie damit für diesen Umsatz, wie eine vorgeschlagene erfasste Zahlung (Durchsicht PR #654, 2).
+export function suggestWithSettlement(tx: BankTransaction, ctx: MatchContext): { suggestion: Suggestion | null; settlementKey: string | null } {
+  let settlementKey: string | null = null
+  const suggestion = suggestInner(tx, ctx, (key) => {
+    settlementKey = key
+  })
+  return { suggestion, settlementKey }
+}
+
+function suggestInner(tx: BankTransaction, ctx: MatchContext, takes: (settlementKey: string) => void): Suggestion | null {
   const t = tenancyFor(tx, ctx)
   if (!t) return null
   const day = dayNumber(tx.bookingDate)
@@ -133,6 +147,7 @@ export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | nu
     // Auszug noch beim Vermieter liegt, bleibt es bei der Rückzahlung der Kaution.
     const payout = settlementMatch(null)
     if (payout && !(t.end !== null && tx.bookingDate > t.end && balance === -tx.amountCents)) {
+      takes(payout.settlement.key)
       return yellow({ type: 'newPayment', kind: 'settlement' }, `Betrag wie das offene Guthaben aus der ${payout.settlement.label}`)
     }
     if (t.end !== null && tx.bookingDate > t.end && balance > 0) return yellow({ type: 'deposit', kind: 'refunded' }, 'Auszahlung nach dem Auszug, die Kaution liegt noch bei Ihnen')
@@ -164,6 +179,7 @@ export function suggest(tx: BankTransaction, ctx: MatchContext): Suggestion | nu
   // #308: Nachzahlung am Betrag, nur mit bekanntem Mietkonto (sonst lässt sich „sonst ausgeglichen“ nicht sagen).
   const account = ctx.rentAccount?.(t.id, tx.bookingDate.slice(0, 7)) ?? null
   const owed = account ? settlementMatch(account) : null
+  if (owed) takes(owed.settlement.key)
   if (owed?.type === 'settlement') {
     return yellow({ type: 'newPayment', kind: 'settlement' }, `Betrag wie die offene Nachzahlung aus der ${owed.settlement.label}; das Mietkonto ist sonst ausgeglichen`)
   }

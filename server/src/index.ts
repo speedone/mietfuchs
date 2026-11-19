@@ -2,6 +2,8 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { AsyncLocalStorage } from 'node:async_hooks'
 import crypto from 'node:crypto'
 import { compareName } from '../../shared/compareName.ts'
+import { compareText } from './apportion.ts'
+import { ledgerTenancy } from './rentAllocation.ts'
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -1079,7 +1081,7 @@ async function withSuggestions(db: Database, preview: ReturnType<typeof bankPrev
     return [y - 1, y, y + 1]
   }))
   const [soll, rows] = await Promise.all([
-    bankLedgerOf(db, years).then((l) => l.monthlySollCents),
+    bankLedgerOf(db, years, { sollOnly: true }).then((l) => l.monthlySollCents),
     db.select({ id: tenanciesTable.id, tenantName: tenanciesTable.tenantName, start: tenanciesTable.start, end: tenanciesTable.end }).from(tenanciesTable),
   ])
   return {
@@ -1131,13 +1133,14 @@ app.delete('/api/bank/imports/:id', async (req, res) => {
 // Jahres, in dem ein Umsatz liegt; neu gerechnet wird es nie.
 // Für den Vorschlag am Betrag (#308) dazu aus demselben Mietkonto (mit den Abrechnungen für die Abrechnungsreife, wie die
 // Seite Mietkonto) der Buchungsmonat und der Rückstand heute (Ansicht des laufenden Jahres, über alle Jahre), und aus den
-// aktuellen Abschlüssen die offenen Nachzahlungen und Guthaben (bank/settlementMatch.ts).
-async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>): Promise<Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount'>> {
+// aktuellen Abschlüssen die offenen Nachzahlungen und Guthaben (bank/settlementMatch.ts). `sollOnly`: nur das Soll, für
+// den Vorschlag zur Rückfrage beim Einlesen.
+async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>, { sollOnly = false } = {}): Promise<Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount'>> {
   const stock = await readStock(db)
   const asOf = today()
   const currentYear = Number(asOf.slice(0, 4))
   const years = new Set(onlyYears ?? (await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).map((r) => Number(r.date.slice(0, 4))))
-  years.add(currentYear)
+  if (!sollOnly) years.add(currentYear)
   const soll = new Map<string, number>()
   const months = new Map<string, NonNullable<RentAccount['month']>>()
   const arrears = new Map<string, Omit<RentAccount, 'month'>>()
@@ -1150,8 +1153,8 @@ async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>): Prom
       const span = calendarYearPeriod(year)
       const snapshot = snapshotFor(stock, property.id, span)
       const plantIds = new Set((snapshot.heatingPlants ?? []).map((p) => p.id))
-      const statements = ledgerStatementsFor(snapshot, closedOfStock.filter((c) => c.propertyId === property.id), closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)), span.to)
-      const ledger = rentLedger(snapshot, { asOf, statements })
+      const statements = sollOnly ? [] : ledgerStatementsFor(snapshot, closedOfStock.filter((c) => c.propertyId === property.id), closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)), span.to)
+      const ledger = rentLedger(snapshot, sollOnly ? { asOf } : { asOf, statements })
       for (const row of ledger.rows) {
         for (const m of row.months) {
           const key = `${row.tenancyId}|${year}-${String(m.month).padStart(2, '0')}`
@@ -1161,9 +1164,18 @@ async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>): Prom
         }
         if (year === currentYear) arrears.set(row.tenancyId, { arrearsCents: row.arrearsCents, uncertain: uncertainOf(row.notDemandable) })
       }
-      if (year === currentYear) for (const c of ledger.carriedOnly) arrears.set(c.tenancyId, { arrearsCents: c.openCents, uncertain: uncertainOf(c.notDemandable) })
+      if (year !== currentYear) continue
+      for (const c of ledger.carriedOnly) arrears.set(c.tenancyId, { arrearsCents: c.openCents, uncertain: uncertainOf(c.notDemandable) })
+      // Ohne Zeile und ohne Übertrag ist ausgeglichen nur, wer vor dem Jahr auszog und dessen Konto geführt war (wie die
+      // Bedingung von `carriedOnly` in calc.ts). Endete es vor dem Beginn der Erfassung oder beginnt es erst später, weiß
+      // das Mietkonto nichts: unbekannt, also kein Vorschlag (Durchsicht PR #654, 4).
+      for (const t of snapshot.tenancies) {
+        if (arrears.has(t.id) || t.end === null || compareText(t.end, span.from) >= 0) continue
+        if (compareText(ledgerTenancy(t, snapshot.payments, year).start, t.end) <= 0) arrears.set(t.id, { arrearsCents: 0, uncertain: false })
+      }
     }
   }
+  if (sollOnly) return { monthlySollCents: (tenancyId, month) => soll.get(`${tenancyId}|${month}`) ?? null }
   const open = openSettlementsOf(closedBalancesOf({
     properties: stock.properties,
     heatingPlants: stock.heatingPlants,
@@ -1175,8 +1187,11 @@ async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>): Prom
   return {
     monthlySollCents: (tenancyId, month) => soll.get(`${tenancyId}|${month}`) ?? null,
     openSettlements: (tenancyId) => openByTenancy.get(tenancyId) ?? [],
-    // Ohne Zeile im laufenden Jahr und ohne Übertrag (ausgezogen, nichts offen) ist das Mietkonto ausgeglichen.
-    rentAccount: (tenancyId, month) => ({ ...(arrears.get(tenancyId) ?? { arrearsCents: 0, uncertain: false }), month: months.get(`${tenancyId}|${month}`) ?? null }),
+    // Unbekannt (`null`) ohne Angabe aus der Ansicht des laufenden Jahres.
+    rentAccount: (tenancyId, month) => {
+      const known = arrears.get(tenancyId)
+      return known ? { ...known, month: months.get(`${tenancyId}|${month}`) ?? null } : null
+    },
   }
 }
 // Alle Mietverhältnisse aller Objekte für die Auswahl auf der Seite Kontoauszug: Ein Konto empfängt Mieten mehrerer
