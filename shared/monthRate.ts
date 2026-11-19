@@ -2,7 +2,19 @@
 export type MonthlySchedule = { from: string, monthlyCents: number }
 
 const MS_DAY = 86400000
-const toUTC = (iso: string): number => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
+// Gemerkt wie `toUTC` in server/src/calc.ts (#651): Der Wert hängt nur am Text, und Mietkonto und Steuer
+// zerlegen dieselben Monatsgrenzen zehntausendfach (im Profil der Steuer aller Objekte 13 % der Zeit). Begrenzt,
+// damit ein lange laufender Server nicht wächst; beim Überlauf wird geleert, das Ergebnis bleibt dasselbe.
+const UTC_CACHE = new Map<string, number>()
+const UTC_CACHE_MAX = 20000
+const toUTC = (iso: string): number => {
+  const hit = UTC_CACHE.get(iso)
+  if (hit !== undefined) return hit
+  const value = Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
+  if (UTC_CACHE.size >= UTC_CACHE_MAX) UTC_CACHE.clear()
+  UTC_CACHE.set(iso, value)
+  return value
+}
 
 // Überlappung zweier Zeiträume in Tagen (alle Grenzen inklusiv, ISO-Daten, end=null = offen).
 export function overlapDays(aStart: string, aEnd: string | null, bStart: string, bEnd: string | null): number {
@@ -39,9 +51,25 @@ export function monthShare(t: { start: string, end: string | null }, month: stri
 
 // Staffelbetrag, der am Monatsersten gilt (für Kaltmiete oder Vorauszahlung).
 // `schedule`: Array aus { from: 'YYYY-MM', monthlyCents }. firstMonth: 'YYYY-MM'.
+//
+// Die sortierte Staffel wird nur für eine **eingefrorene** Staffel gemerkt (#651): Der Bestand aus `readStock`
+// ist tief eingefroren, kann sich also nicht mehr ändern. Eine offene Staffel (Formular, Tests) wird bei jedem
+// Aufruf neu sortiert, sonst gälte nach einer Änderung die alte Rate (calc-gemerkt.test.ts).
+const SORTED_SCHEDULES = new WeakMap<readonly MonthlySchedule[], readonly MonthlySchedule[]>()
+const sortedSchedule = (schedule: readonly MonthlySchedule[]): readonly MonthlySchedule[] => {
+  const frozen = Object.isFrozen(schedule) && schedule.every((e) => Object.isFrozen(e))
+  if (frozen) {
+    const hit = SORTED_SCHEDULES.get(schedule)
+    if (hit) return hit
+  }
+  const sorted = schedule.slice().sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
+  if (frozen) SORTED_SCHEDULES.set(schedule, sorted)
+  return sorted
+}
+
 export function rateAtMonth(schedule: readonly MonthlySchedule[], firstMonth: string): number {
   let rate = 0
-  for (const e of schedule.slice().sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))) {
+  for (const e of sortedSchedule(schedule)) {
     if (e.from <= firstMonth) rate = e.monthlyCents
   }
   return rate

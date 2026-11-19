@@ -65,7 +65,9 @@ Marke der Verbindung gleich bleibt ([stockCache.ts](stockCache.ts), angemeldet i
 `data_version` für fremde Verbindungen, `total_changes()` als Absicherung; während eines Schreibvorgangs und in
 einer offenen Transaktion, etwa dem Probelauf in dryRun.ts, `null`, dann wird frisch gelesen und nichts gemerkt). Eine Transaktion oder zweite Verbindung hat keine Marke. **Der Bestand ist tief
 eingefroren**, auf jedem Weg: Wer darin sortieren, anhängen oder Felder setzen will, kopiert vorher
-(`structuredClone`, `slice`, Spread), sonst wirft es (`TypeError`).
+(`structuredClone`, `slice`, Spread), sonst wirft es (`TypeError`). Darauf bauen gemerkte Zwischenwerte der
+Berechnung (`rateAtMonth` in shared/monthRate.ts, `coveredDays` in calc.ts): Sie gelten nur für eingefrorene Listen,
+eine offene wird jedes Mal neu gerechnet.
 
 **Eine zweite Verbindung auf die Datei gibt es nur in Tests**, und die Schlange ordnet sie nicht.
 Ohne WAL und ohne `busy_timeout` scheitert ein Schreiben dort sofort mit „database is locked“, wenn
