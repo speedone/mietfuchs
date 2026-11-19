@@ -26,6 +26,8 @@ declare module 'bun:sqlite' {
     // uns denselben SQL-Text immer wieder reicht, ist `query` hier das Richtige.
     query(sql: string): Statement
     exec(sql: string, ...params: Binding[]): Changes
+    // Ob gerade eine Transaktion offen ist (für den Zwischenspeicher des Bestands, #651).
+    readonly inTransaction: boolean
     close(): void
   }
 }

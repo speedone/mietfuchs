@@ -660,6 +660,9 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // festgeschrieben hat (ein Test mit `besideServer`, ein zweites Programm auf derselben Datei).
     // `total_changes()` zählt jede eigene Änderung dieser Verbindung, auch eine, die an `write`
     // vorbeiginge; das ist die Absicherung für eine Stelle, die sich nicht an die Regel hält.
+    // **In einer offenen Transaktion gilt ebenfalls nichts**: Der Probelauf (dryRun.ts) liest darin
+    // einen Stand, den er gleich zurückrollt, und `total_changes()` zählt beim Zurückrollen nicht
+    // zurück; gemerkt, käme danach der verworfene Stand heraus.
     let writes = 0
     let writing = false
     const counted = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -672,7 +675,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       }
     }
     registerStockMark(connection.db, () => {
-      if (writing) return null
+      if (writing || connection.inTransaction()) return null
       const [version, changes] = connection.rows('SELECT (SELECT data_version FROM pragma_data_version), total_changes()')[0] ?? []
       return `${writes}:${String(version)}:${String(changes)}`
     })

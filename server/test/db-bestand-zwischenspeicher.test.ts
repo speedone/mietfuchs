@@ -18,6 +18,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
+import { dryRun } from '../src/db/dryRun.ts'
 import { createEntity, insertEntityIn } from '../src/db/repository.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { besideServer } from '../testing/api.ts'
@@ -132,5 +133,18 @@ test('Zwischenspeicher: auch ein Schreiben an der Schlange vorbei wird gesehen',
     assert.deepEqual(unitNames(await opened.read((db) => readStock(db))), ['EG'])
     await opened.read((db) => createEntity(db, 'units', 'u2', unitBody('OG')))
     assert.deepEqual(unitNames(await opened.read((db) => readStock(db))), ['EG', 'OG'])
+  })
+})
+
+test('Zwischenspeicher: ein zurückgerollter Probelauf hinterlässt seinen Stand nicht', async () => {
+  // Der Probelauf (db/dryRun.ts) schreibt in einer Transaktion, liest mit `readStock` auf der Verbindung selbst und
+  // rollt zurück. Die Routen tun das in `write`; die Tests auch in `read`. Gemerkt werden darf in der Transaktion
+  // nichts: `total_changes()` zählt beim Zurückrollen nicht zurück, die Marke danach glich der darin.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', unitBody('EG')))
+    assert.deepEqual(unitNames(await opened.read((db) => readStock(db))), ['EG'])
+    const seen = await opened.read((db) => dryRun(db, (tx) => insertEntityIn(tx, 'units', 'u2', unitBody('OG')), unitNames))
+    assert.deepEqual(seen, ['EG', 'OG'], 'der Probelauf sieht seine Änderung')
+    assert.deepEqual(unitNames(await opened.read((db) => readStock(db))), ['EG'], 'danach gilt wieder der gespeicherte Stand')
   })
 })

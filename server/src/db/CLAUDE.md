@@ -62,8 +62,8 @@ es eine Meldung, abgebrochen wird nie.
 **Geschrieben wird nur in `write`, nie in `read`**, auch nicht in einer Transaktion darin: Davon hängt neben dem
 Journal der **Zwischenspeicher des Bestands** ab (#651). `readStock` gibt denselben Bestand zurück, solange die
 Marke der Verbindung gleich bleibt ([stockCache.ts](stockCache.ts), angemeldet in open.ts: eigene Schreibvorgänge,
-`data_version` für fremde Verbindungen, `total_changes()` als Absicherung; während eines Schreibvorgangs `null`,
-dann wird frisch gelesen). Eine Transaktion oder zweite Verbindung hat keine Marke. **Der Bestand ist tief
+`data_version` für fremde Verbindungen, `total_changes()` als Absicherung; während eines Schreibvorgangs und in
+einer offenen Transaktion, etwa dem Probelauf in dryRun.ts, `null`, dann wird frisch gelesen und nichts gemerkt). Eine Transaktion oder zweite Verbindung hat keine Marke. **Der Bestand ist tief
 eingefroren**, auf jedem Weg: Wer darin sortieren, anhängen oder Felder setzen will, kopiert vorher
 (`structuredClone`, `slice`, Spread), sonst wirft es (`TypeError`).
 
