@@ -1,7 +1,7 @@
 // Logik der Seite „Kontoauszug“ (#188, Teil 3): Vorauswahl aus dem Vorschlag, Entscheidungen, grüne Zeilen, Sätze.
 import { describe, expect, test } from 'vitest'
 import {
-  BANK_TARGET_OPTIONS, coverageText, decisionsOf, greenRows, initialRow, questionProblems, removePart, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, untouchedGreen,
+  BANK_TARGET_OPTIONS, coverageText, decisionsOf, greenRows, initialRow, isUntouched, questionProblems, removePart, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, untouchedGreen,
   type BankRow,
 } from './bankView'
 import type { BankAccountInfo, BankSuggestion, BankTransactionView } from './types'
@@ -19,6 +19,22 @@ describe('Vorauswahl', () => {
     expect(existing.parts).toEqual([{ key: 'x:0', tenancyId: 't1', target: 'existingPayment', refId: 'p1', amountCents: 85000 }])
     const deposit = initialRow(tx('x', 85000, { ...green, target: { type: 'existingDeposit', depositEntryId: 'd1' } }))
     expect(deposit.parts[0]).toEqual({ key: 'x:0', tenancyId: 't1', target: 'existingDeposit', refId: 'd1', amountCents: 85000 })
+  })
+  test('#308: ein Vorschlag mit Teilen wird zur Aufteilung, gelb und noch unberührt', () => {
+    const split: BankSuggestion = {
+      tenancyId: 't1', target: { type: 'newPayment', kind: 'settlement' }, light: 'yellow', reason: 'Miete und Nachzahlung',
+      parts: [{ amountCents: 85000, target: { type: 'newPayment', kind: 'rent' } }, { amountCents: 30000, target: { type: 'newPayment', kind: 'settlement' } }],
+    }
+    const row = initialRow(tx('x', 115000, split))
+    expect(row.parts).toEqual([
+      { key: 'x:0', tenancyId: 't1', target: 'rent', amountCents: 85000 },
+      { key: 'x:v1', tenancyId: 't1', target: 'settlement', amountCents: 30000 },
+    ])
+    expect(isUntouched(row)).toBe(true)
+    expect(decisionsOf([{ ...row, selected: true }])).toEqual([{ transactionId: 'x', parts: [
+      { tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent' } },
+      { tenancyId: 't1', amountCents: 30000, target: { type: 'newPayment', kind: 'settlement' } },
+    ] }])
   })
   test('ohne Vorschlag ist nichts gewählt und die Zeile nicht buchbar', () => {
     const row = initialRow(tx('x', 85000))

@@ -56,7 +56,7 @@ test('Invariante: die Verknüpfungen übersteigen nie den Umsatz', async () => {
       })
       for (let step = 0; step < STEPS; step++) {
         await opened.write(async (db) => {
-          const { ctx, views } = await readBankState(db, () => null)
+          const { ctx, views } = await readBankState(db, { monthlySollCents: () => null })
           const allLinks = views.flatMap((v) => v.links)
           const op = rnd()
           try {
@@ -97,7 +97,7 @@ test('Invariante: die Verknüpfungen übersteigen nie den Umsatz', async () => {
           }
         })
         await opened.write(async (db) => {
-          const { views } = await readBankState(db, () => null)
+          const { views } = await readBankState(db, { monthlySollCents: () => null })
           const seen = new Set<string>()
           for (const v of views) {
             const sum = v.links.reduce((a, l) => a + l.cents, 0)

@@ -3540,7 +3540,15 @@ export type BankLinkTarget =
   | { type: 'deposit'; kind: 'received' | 'refunded' }
   | { type: 'existingDeposit'; depositEntryId: string }
 
-export type BankSuggestion = { tenancyId: string; target: BankLinkTarget; light: 'green' | 'yellow'; reason: string }
+// `parts` (#308): Der Vorschlag teilt den Umsatz auf, etwa Miete und Nachzahlung in einer Überweisung; die Teile gehören
+// alle zu `tenancyId` und ergeben den offenen Betrag. `target` ist dann die Art des Teils, um den es geht.
+export type BankSuggestion = {
+  tenancyId: string
+  target: BankLinkTarget
+  light: 'green' | 'yellow'
+  reason: string
+  parts?: { amountCents: number; target: BankLinkTarget }[]
+}
 
 export type BankLinkView = { id: string; paymentId: string | null; depositEntryId: string | null; created: boolean; cents: number; tenancyId: string | null }
 

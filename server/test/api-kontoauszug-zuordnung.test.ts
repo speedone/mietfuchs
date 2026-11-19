@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DepositEntry, Payment, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
-import { errorFrom, startServer, type Server } from '../testing/api.ts'
+import { errorFrom, startServer, withEnv, type Server } from '../testing/api.ts'
 import { journalOf, newest, revert } from '../testing/revert.ts'
 
 const OWN = 'DE89370400440532013000'
@@ -318,4 +318,42 @@ test('Cockpit: GET /api/bank/open-count zählt die offenen Umsätze', () => with
   await tenancy(s)
   await importJune(s)
   assert.deepEqual(await s.api('/api/bank/open-count'), { count: 2 })
+}))
+
+// #308: Ein Eingang ohne Zweck in Höhe der offenen Nachzahlung der abgeschlossenen Abrechnung wird gelb als Abrechnung
+// vorgeschlagen; ohne Abschluss (nur Live-Berechnung, wieder geöffnet) nicht. Ein Auszug mit einem Eingang, im Test gebaut.
+const camtWith = (date: string, amount: string, purpose: string) => Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt>
+  <GrpHdr><MsgId>MSG-${date}</MsgId><CreDtTm>${date}T18:00:00+01:00</CreDtTm></GrpHdr>
+  <Stmt><Id>${date}</Id><CreDtTm>${date}T18:00:00+01:00</CreDtTm>
+    <Acct><Id><IBAN>${OWN}</IBAN></Id></Acct>
+    <Ntry><Amt Ccy="EUR">${amount}</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>
+      <BookgDt><Dt>${date}</Dt></BookgDt><ValDt><Dt>${date}</Dt></ValDt><AcctSvcrRef>REF-${date}</AcctSvcrRef>
+      <NtryDtls><TxDtls><RltdPties><Dbtr><Pty><Nm>Erika Beispiel</Nm></Pty></Dbtr><DbtrAcct><Id><IBAN>${TENANT}</IBAN></Id></DbtrAcct></RltdPties>
+        <RmtInf><Ustrd>${purpose}</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>
+  </Stmt></BkToCstmrStmt></Document>`)
+
+test('#308: Nachzahlung am Betrag nur aus der abgeschlossenen Abrechnung; wieder geöffnet zählt sie nicht', () => withEnv({ NKA_TEST_TODAY: '2026-04-15' }, async (s) => {
+  const t = await tenancy(s)
+  // Mietkonto ausgeglichen: jede Miete von Januar 2025 bis April 2026 bezahlt.
+  for (let i = 0; i < 16; i++) {
+    const month = `${2025 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`
+    await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: `${month}-01`, amountCents: 85000 }) })
+  }
+  // 2.100 € Grundsteuer gegen 1.800 € Vorauszahlungen: 300 € Nachzahlung.
+  await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 210000, key: 'area' }) })
+  await importFile(s, camtWith('2026-03-10', '300.00', 'Ueberweisung'), 'maerz.xml')
+  const suggestion = async () => (await transactions(s))[0]?.suggestion
+  assert.deepEqual((await suggestion())?.target, { type: 'newPayment', kind: 'rent' }, 'nur Live-Berechnung')
+
+  assert.equal((await json(s, 'POST', '/api/settlement/2025-01/close', {})).status, 201)
+  const closed = await suggestion()
+  assert.deepEqual([closed?.target, closed?.light, closed?.reason], [{ type: 'newPayment', kind: 'settlement' }, 'yellow', 'Betrag wie die offene Nachzahlung aus der Abrechnung 2025; das Mietkonto ist sonst ausgeglichen'])
+
+  assert.equal((await json(s, 'DELETE', '/api/settlement/2025-01/close')).status, 200)
+  assert.deepEqual((await suggestion())?.target, { type: 'newPayment', kind: 'rent' }, 'wieder geöffnet')
+
+  assert.equal((await json(s, 'POST', '/api/settlement/2025-01/close', {})).status, 201)
+  await book(s, asSuggested(await transactions(s)))
+  assert.deepEqual((await payments(s)).filter((p) => p.kind === 'settlement').map((p) => [p.date, p.amountCents]), [['2026-03-10', 30000]])
 }))

@@ -27,7 +27,7 @@ import { taxOverview } from './taxOverview.ts'
 import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor, type Snapshot } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
@@ -74,6 +74,8 @@ import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, set
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
+import type { MatchContext } from './bank/match.ts'
+import { closedBalancesOf, openSettlementsOf, type OpenSettlement, type RentAccount } from './bank/settlementMatch.ts'
 import { applyBankImport, applyBankLinks, BankError, readBankAccounts, readBankState, readBankStock, readTenancyPayers, removeBankImport, removeBankLink, removeTenancyPayer, setTransactionAside, updateBankAccount } from './db/bank.ts'
 import { linkToken, parseLinkDecisions, planBankLinks, type LinkDecision, type LinkPlan } from './bank/linkPlan.ts'
 import { decisionsOf, importToken, planBankImport, type ImportDecision, type ImportPlan } from './bank/importPlan.ts'
@@ -1077,7 +1079,7 @@ async function withSuggestions(db: Database, preview: ReturnType<typeof bankPrev
     return [y - 1, y, y + 1]
   }))
   const [soll, rows] = await Promise.all([
-    bankSollOf(db, years),
+    bankLedgerOf(db, years).then((l) => l.monthlySollCents),
     db.select({ id: tenanciesTable.id, tenantName: tenanciesTable.tenantName, start: tenanciesTable.start, end: tenanciesTable.end }).from(tenanciesTable),
   ])
   return {
@@ -1127,17 +1129,55 @@ app.delete('/api/bank/imports/:id', async (req, res) => {
 
 // Zuordnen und Buchen (#188, Teil 2). Das Monats-Soll für den Vorschlag kommt aus dem Mietkonto jedes Objekts und jedes
 // Jahres, in dem ein Umsatz liegt; neu gerechnet wird es nie.
-async function bankSollOf(db: Database, onlyYears?: ReadonlySet<number>): Promise<(tenancyId: string, month: string) => number | null> {
+// Für den Vorschlag am Betrag (#308) dazu aus demselben Mietkonto (mit den Abrechnungen für die Abrechnungsreife, wie die
+// Seite Mietkonto) der Buchungsmonat und der Rückstand heute (Ansicht des laufenden Jahres, über alle Jahre), und aus den
+// aktuellen Abschlüssen die offenen Nachzahlungen und Guthaben (bank/settlementMatch.ts).
+async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>): Promise<Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount'>> {
   const stock = await readStock(db)
-  const years = onlyYears ?? new Set((await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).map((r) => Number(r.date.slice(0, 4))))
+  const asOf = today()
+  const currentYear = Number(asOf.slice(0, 4))
+  const years = new Set(onlyYears ?? (await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).map((r) => Number(r.date.slice(0, 4))))
+  years.add(currentYear)
   const soll = new Map<string, number>()
+  const months = new Map<string, NonNullable<RentAccount['month']>>()
+  const arrears = new Map<string, Omit<RentAccount, 'month'>>()
+  // Ausdrücklich als Abschlüsse der Datenbank gelesen, wie in `ledgerInputOf`.
+  const closedOfStock: readonly StoredClosedSettlement[] = stock.closedSettlements
+  const closedHeatingOfStock: readonly StoredClosedHeatingSettlement[] = stock.closedHeatingSettlements
+  const uncertainOf = (list: readonly NotDemandable[]) => list.some((n) => n.reason === 'creditedAsPaid')
   for (const property of stock.properties) {
     for (const year of years) {
-      const ledger = rentLedger(snapshotFor(stock, property.id, calendarYearPeriod(year)), { asOf: today() })
-      for (const row of ledger.rows) for (const m of row.months) soll.set(`${row.tenancyId}|${year}-${String(m.month).padStart(2, '0')}`, m.sollCents)
+      const span = calendarYearPeriod(year)
+      const snapshot = snapshotFor(stock, property.id, span)
+      const plantIds = new Set((snapshot.heatingPlants ?? []).map((p) => p.id))
+      const statements = ledgerStatementsFor(snapshot, closedOfStock.filter((c) => c.propertyId === property.id), closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)), span.to)
+      const ledger = rentLedger(snapshot, { asOf, statements })
+      for (const row of ledger.rows) {
+        for (const m of row.months) {
+          const key = `${row.tenancyId}|${year}-${String(m.month).padStart(2, '0')}`
+          soll.set(key, m.sollCents)
+          // Vor dem Beginn der Erfassung weiß das Mietkonto über den Monat nichts.
+          if (m.status !== 'notRecorded') months.set(key, { sollCents: m.sollCents, paidCents: m.paidCents, overdue: m.status === 'open' })
+        }
+        if (year === currentYear) arrears.set(row.tenancyId, { arrearsCents: row.arrearsCents, uncertain: uncertainOf(row.notDemandable) })
+      }
+      if (year === currentYear) for (const c of ledger.carriedOnly) arrears.set(c.tenancyId, { arrearsCents: c.openCents, uncertain: uncertainOf(c.notDemandable) })
     }
   }
-  return (tenancyId, month) => soll.get(`${tenancyId}|${month}`) ?? null
+  const open = openSettlementsOf(closedBalancesOf({
+    properties: stock.properties,
+    heatingPlants: stock.heatingPlants,
+    closed: closedOfStock,
+    closedHeating: closedHeatingOfStock,
+  }), stock.payments)
+  const openByTenancy = new Map<string, OpenSettlement[]>()
+  for (const o of open) openByTenancy.set(o.tenancyId, [...(openByTenancy.get(o.tenancyId) ?? []), o])
+  return {
+    monthlySollCents: (tenancyId, month) => soll.get(`${tenancyId}|${month}`) ?? null,
+    openSettlements: (tenancyId) => openByTenancy.get(tenancyId) ?? [],
+    // Ohne Zeile im laufenden Jahr und ohne Übertrag (ausgezogen, nichts offen) ist das Mietkonto ausgeglichen.
+    rentAccount: (tenancyId, month) => ({ ...(arrears.get(tenancyId) ?? { arrearsCents: 0, uncertain: false }), month: months.get(`${tenancyId}|${month}`) ?? null }),
+  }
 }
 // Alle Mietverhältnisse aller Objekte für die Auswahl auf der Seite Kontoauszug: Ein Konto empfängt Mieten mehrerer
 // Häuser. Beschriftung „Mieter, Wohnung (Objekt)“, ausgezogene mit Ende.
@@ -1161,12 +1201,12 @@ app.get('/api/bank/tenancies', async (_req, res) => {
 })
 // Für die Zeile im Cockpit: nur die Zahl der offenen Umsätze, ohne das Monats-Soll für die Vorschläge.
 app.get('/api/bank/open-count', async (_req, res) => {
-  res.json(await readData(async (db) => ({ count: (await readBankState(db, () => null)).views.filter((v) => v.openCents !== 0).length })))
+  res.json(await readData(async (db) => ({ count: (await readBankState(db, { monthlySollCents: () => null })).views.filter((v) => v.openCents !== 0).length })))
 })
 app.get('/api/bank/transactions', async (req, res) => {
   const state = req.query.state === 'done' ? 'done' : 'open'
   res.json(await readData(async (db) => {
-    const { views } = await readBankState(db, await bankSollOf(db))
+    const { views } = await readBankState(db, await bankLedgerOf(db))
     return views.filter((v) => (state === 'open' ? v.openCents !== 0 : v.openCents === 0))
   }))
 })
@@ -1174,7 +1214,7 @@ type LinkPlanned = { plan: LinkPlan, decisions: LinkDecision[], token: string }
 async function linkPlanOf(db: Database, req: Request): Promise<LinkPlanned> {
   const parsed = parseLinkDecisions(bodyObject(req).decisions)
   if ('error' in parsed) throw new RouteProblem(400, parsed.error)
-  const { ctx, views } = await readBankState(db, await bankSollOf(db))
+  const { ctx, views } = await readBankState(db, await bankLedgerOf(db))
   const plan = planBankLinks(parsed.decisions, views.filter((v) => v.openCents !== 0).map((v) => ({ tx: v, openCents: v.openCents })), ctx)
   return { plan, decisions: parsed.decisions, token: linkToken(plan, parsed.decisions) }
 }

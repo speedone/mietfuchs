@@ -13,6 +13,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und
   Exportformate ändern sich in 1.x nicht ohne Vorwarnung; ein Bruch kommt nur mit 2.0. MIGRATION.md sagt auch, was
   bis 1.0 gilt ([#447](https://github.com/speedone/mietfuchs/issues/447)).
+- Kontoauszug: Eine Nachzahlung aus der abgeschlossenen Abrechnung wird am Betrag erkannt, auch ohne Verwendungszweck.
+  Passt ein Eingang genau zur offenen Nachzahlung (abzüglich schon gebuchter Zahlungen der Art „Abrechnung“) oder zu
+  Monatsmiete plus Nachzahlung, und ist das Mietkonto sonst ausgeglichen, schlägt Mietfuchs gelb „Abrechnung“ bzw. die
+  Aufteilung in Miete und Nachzahlung vor. Ein Ausgang an den Mieter in Höhe eines offenen Guthabens wird als dessen
+  Auszahlung vorgeschlagen. Es zählen nur abgeschlossene Abrechnungen; eine wieder geöffnete nicht
+  ([#308](https://github.com/speedone/mietfuchs/issues/308)).
 
 ## [0.18.1] – 2026-11-19
 

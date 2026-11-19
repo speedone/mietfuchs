@@ -4,7 +4,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { linkedCents, openCents, suggest, type MatchContext, type MatchTenancy } from '../src/bank/match.ts'
 import type { BankTransaction } from '../src/bank/model.ts'
-import type { DepositEntry, Payment } from '../../shared/types.ts'
+import { closedBalancesOf, openSettlementsOf, type ClosedBalance, type OpenSettlement, type RentAccount } from '../src/bank/settlementMatch.ts'
+import { periodKey } from '../../shared/period.ts'
+import type { DepositEntry, HeatingPlant, Payment, Property } from '../../shared/types.ts'
 
 const TENANT = 'DE02120300000000202051'
 const PAYER = 'DE44500105175407324931'
@@ -176,4 +178,106 @@ test('Durchsicht 642/3: eine erfasste Zahlung gleichen Betrags geht dem Vorschla
   const s = suggest(tx('2025-02-04', 80000, { purpose: 'Kaution' }), ctx({ payments: [payment('p1', '2025-02-16', 80000)], monthlySollCents: () => 95000 }))
   assert.match(s?.reason ?? '', /schon eine Zahlung über denselben Betrag/)
   assert.equal(suggest(tx('2025-06-02', 80000), ctx({ payments: [payment('p1', '2025-05-15', 80000)] }))?.light, 'green')
+})
+
+// ---------- Nachzahlung und Guthaben aus der abgeschlossenen Abrechnung am Betrag (#308) ----------
+
+const archive = (statements: { tenancyId: string; balanceCents: number }[]): unknown => ({ statements })
+const calendarHouse: Pick<Property, 'id' | 'periodRules'> = { id: 'h', periodRules: { startMonth: 1, changes: [] } }
+
+test('#308: aus jedem Abschluss je Mietverhältnis die Nachzahlung (positiv) oder das Guthaben (negativ), mit Zeitraum und Versand', () => {
+  const plant: Pick<HeatingPlant, 'id' | 'propertyId' | 'periodStartMonth' | 'periodChanges'> = { id: 'p', propertyId: 'h', periodStartMonth: 10, periodChanges: [] }
+  const balances = closedBalancesOf({
+    properties: [calendarHouse],
+    heatingPlants: [plant],
+    closed: [{ propertyId: 'h', period: periodKey('2025-01'), sentAt: '2026-02-15', settlement: archive([{ tenancyId: 't1', balanceCents: -30000 }, { tenancyId: 't2', balanceCents: 12000 }, { tenancyId: 't3', balanceCents: 0 }]) }],
+    closedHeating: [{ plantId: 'p', period: periodKey('2024-10'), sentAt: null, settlement: archive([{ tenancyId: 't1', balanceCents: -4500 }]) }],
+  })
+  assert.deepEqual(balances.map((b) => [b.tenancyId, b.label, b.periodTo, b.sentAt, b.dueCents]), [
+    ['t1', 'Abrechnung 2025', '2025-12-31', '2026-02-15', 30000],
+    ['t2', 'Abrechnung 2025', '2025-12-31', '2026-02-15', -12000],
+    ['t1', 'Heizkostenabrechnung 2024/2025', '2025-09-30', null, 4500],
+  ])
+  assert.equal(new Set(balances.map((b) => b.key)).size, 3, 'Kennung je Abrechnung und Mietverhältnis')
+  assert.deepEqual(closedBalancesOf({ properties: [calendarHouse], heatingPlants: [], closed: [{ propertyId: 'h', period: periodKey('2025-01'), sentAt: null, settlement: 'kaputt' }], closedHeating: [] }), [], 'unlesbares Archivstück')
+})
+
+const balance = (over: Partial<ClosedBalance> = {}): ClosedBalance =>
+  ({ key: 'h|2025-01|t1', tenancyId: 't1', label: 'Abrechnung 2025', periodTo: '2025-12-31', sentAt: null, dueCents: 30000, ...over })
+const settlementPayment = (date: string, amountCents: number, tenancyId = 't1'): Payment => ({ id: `s${date}${amountCents}`, tenancyId, date, amountCents, kind: 'settlement' })
+
+test('#308: Zahlungen der Art „Abrechnung“ mindern den offenen Betrag, die älteste Abrechnung zuerst; Mieten und frühere Zahlungen nicht', () => {
+  const open = (b: ClosedBalance[], p: Payment[]) => openSettlementsOf(b, p).map((o) => [o.label, o.openCents])
+  assert.deepEqual(open([balance()], [settlementPayment('2026-03-01', 10000)]), [['Abrechnung 2025', 20000]], 'Teilzahlung')
+  assert.deepEqual(open([balance()], [settlementPayment('2025-12-15', 10000), payment('r', '2026-03-01', 10000)]), [['Abrechnung 2025', 30000]], 'vor dem Ende des Zeitraums, Miete')
+  assert.deepEqual(open([balance()], [settlementPayment('2026-03-01', 10000, 't2')]), [['Abrechnung 2025', 30000]], 'anderes Mietverhältnis')
+  const older = balance({ key: 'h|2024-01|t1', label: 'Abrechnung 2024', periodTo: '2024-12-31', dueCents: 20000 })
+  assert.deepEqual(open([balance(), older], [settlementPayment('2026-04-01', 25000)]), [['Abrechnung 2025', 25000], ['Abrechnung 2024', 0]])
+  assert.deepEqual(open([balance({ dueCents: -12000 })], [settlementPayment('2026-03-01', -12000)]), [['Abrechnung 2025', 0]], 'Guthaben ausgezahlt')
+  assert.deepEqual(open([balance({ dueCents: -12000 })], [settlementPayment('2026-03-01', 5000)]), [['Abrechnung 2025', -12000]], 'Zahlung in der Gegenrichtung mindert nichts')
+})
+
+const BALANCED: RentAccount = { arrearsCents: 0, uncertain: false, month: { sollCents: 80000, paidCents: 80000, overdue: false } }
+const UNPAID_MONTH: RentAccount = { arrearsCents: 0, uncertain: false, month: { sollCents: 80000, paidCents: 0, overdue: false } }
+const settled = (open: Partial<OpenSettlement>[] = [{}], account: RentAccount | null = BALANCED, over: Partial<MatchContext> = {}): MatchContext => ctx({
+  openSettlements: (id) => open.map((o) => ({ ...balance(), openCents: o.dueCents ?? 30000, ...o })).filter((o) => o.tenancyId === id),
+  rentAccount: () => account,
+  ...over,
+})
+const RENT = { type: 'newPayment', kind: 'rent' }
+
+test('#308: Nachzahlung ohne Zweck bei ausgeglichenem Mietkonto wird gelb als Abrechnung vorgeschlagen', () => {
+  const s = suggest(tx('2026-03-10', 30000, { purpose: 'Ueberweisung' }), settled())
+  assert.deepEqual(s, { tenancyId: 't1', target: { type: 'newPayment', kind: 'settlement' }, light: 'yellow', reason: 'Betrag wie die offene Nachzahlung aus der Abrechnung 2025; das Mietkonto ist sonst ausgeglichen' })
+  assert.deepEqual(suggest(tx('2026-03-10', 30000), settled([{}], null))?.target, RENT, 'ohne Mietkonto keine Aussage')
+  assert.deepEqual(suggest(tx('2026-03-10', 30000), settled([{}], { ...BALANCED, arrearsCents: 80000 }))?.target, RENT, 'Rückstand: vielleicht Miete')
+  assert.deepEqual(suggest(tx('2026-03-10', 30000), settled([{}], { ...BALANCED, uncertain: true }))?.target, RENT, 'mehr angerechnet als gezahlt')
+  assert.deepEqual(suggest(tx('2026-03-10', 30000), ctx())?.target, RENT, 'ohne Abschluss (nur Live-Berechnung) kein Vorschlag')
+  assert.deepEqual(suggest(tx('2026-03-10', 30000), settled([]))?.target, RENT, 'nichts offen')
+})
+
+test('#308: Miete und Nachzahlung in einer Überweisung ergeben die Aufteilung', () => {
+  const s = suggest(tx('2026-03-02', 110000), settled([{}], UNPAID_MONTH))
+  assert.deepEqual(s, {
+    tenancyId: 't1', target: { type: 'newPayment', kind: 'settlement' }, light: 'yellow',
+    reason: 'Betrag wie Monatsmiete (800,00 €) und offene Nachzahlung aus der Abrechnung 2025 (300,00 €); das Mietkonto ist sonst ausgeglichen',
+    parts: [{ amountCents: 80000, target: { type: 'newPayment', kind: 'rent' } }, { amountCents: 30000, target: { type: 'newPayment', kind: 'settlement' } }],
+  })
+  assert.equal(suggest(tx('2026-03-02', 110000), settled([{}], BALANCED))?.parts, undefined, 'Miete des Monats schon bezahlt')
+  const overdue = { sollCents: 80000, paidCents: 0, overdue: true }
+  assert.equal(suggest(tx('2026-03-02', 110000), settled([{}], { ...UNPAID_MONTH, month: overdue, arrearsCents: 80000 }))?.parts?.length, 2, 'nur der Monat selbst im Rückstand')
+  assert.equal(suggest(tx('2026-03-02', 110000), settled([{}], { ...UNPAID_MONTH, month: overdue, arrearsCents: 160000 }))?.parts, undefined, 'noch ein Monat offen')
+  assert.equal(suggest(tx('2026-03-02', 110000), settled([{}], { ...UNPAID_MONTH, arrearsCents: 80000 }))?.parts, undefined, 'ein anderer Monat offen')
+  assert.equal(suggest(tx('2026-03-02', 110000), settled([{}], { ...UNPAID_MONTH, month: null }))?.parts, undefined, 'Monat unbekannt')
+})
+
+test('#308: Auszahlung eines offenen Guthabens an den Mieter, auch nach dem Auszug mit Kaution', () => {
+  const s = suggest(tx('2026-03-10', -12000), settled([{ dueCents: -12000 }], null))
+  assert.deepEqual(s, { tenancyId: 't1', target: { type: 'newPayment', kind: 'settlement' }, light: 'yellow', reason: 'Betrag wie das offene Guthaben aus der Abrechnung 2025' })
+  const ended = tenancy({ end: '2025-12-31' })
+  const received: DepositEntry = { id: 'd', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 240000 }
+  assert.equal(suggest(tx('2026-03-10', -12000), settled([{ dueCents: -12000 }], null, { tenancies: [ended], depositEntries: [received] }))?.reason, 'Betrag wie das offene Guthaben aus der Abrechnung 2025')
+  assert.deepEqual(suggest(tx('2026-03-10', -240000), settled([{ dueCents: -12000 }], null, { tenancies: [ended], depositEntries: [received] }))?.target, { type: 'deposit', kind: 'refunded' }, 'Betrag wie die Kaution')
+  assert.equal(suggest(tx('2026-03-10', -10000), settled([{ dueCents: -12000 }], null))?.reason, 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung', 'anderer Betrag: wie bisher')
+})
+
+test('#308: nach einer Teilzahlung nur beim genauen Rest', () => {
+  assert.match(suggest(tx('2026-04-10', 20000), settled([{ openCents: 20000 }]))?.reason ?? '', /offene Nachzahlung aus der Abrechnung 2025/)
+  assert.deepEqual(suggest(tx('2026-04-10', 30000), settled([{ openCents: 20000 }]))?.target, RENT)
+})
+
+test('#308: zwei offene Abrechnungen: ein Vorschlag nur, wenn genau eine passt', () => {
+  const y2024 = { key: 'h|2024-01|t1', label: 'Abrechnung 2024', periodTo: '2024-12-31', dueCents: 30000 }
+  assert.deepEqual(suggest(tx('2026-03-10', 30000), settled([{}, y2024]))?.target, RENT, 'beide gleich hoch')
+  assert.match(suggest(tx('2026-03-10', 20000), settled([{}, { ...y2024, dueCents: 20000 }]))?.reason ?? '', /Abrechnung 2024/)
+  assert.match(suggest(tx('2026-03-10', 30000), settled([{}, { ...y2024, dueCents: 20000 }]))?.reason ?? '', /Abrechnung 2025/)
+  assert.deepEqual(suggest(tx('2026-03-02', 110000), settled([{}, { ...y2024, dueCents: 110000 }], UNPAID_MONTH))?.target, RENT, 'die eine genau, die andere mit der Miete')
+})
+
+test('#308: nicht vor dem Ende des Zeitraums und nicht vor dem Versand; Monatsmiete und Kaution im Zweck bleiben wie bisher', () => {
+  assert.deepEqual(suggest(tx('2025-12-20', 30000), settled())?.target, RENT)
+  assert.deepEqual(suggest(tx('2026-02-10', 30000), settled([{ sentAt: '2026-02-15' }]))?.target, RENT)
+  assert.match(suggest(tx('2026-02-15', 30000), settled([{ sentAt: '2026-02-15' }]))?.reason ?? '', /Nachzahlung/)
+  assert.equal(suggest(tx('2026-03-02', 80000), settled([{ dueCents: 80000 }]))?.light, 'green', 'gleich dem Soll: Miete')
+  assert.deepEqual(suggest(tx('2026-03-10', 30000, { purpose: 'Kaution Rest' }), settled())?.target, RENT)
 })
