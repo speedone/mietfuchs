@@ -351,6 +351,40 @@ Umstieg eingegeben haben, fehlt dann.
 
 ---
 
+## Kompatibilität bis und ab 1.0
+
+Hier steht, wie Ihre Daten von Version zu Version mitgehen und worauf Sie sich ab wann verlassen
+können.
+
+### Bis Version 1.0
+
+Heute ist Mietfuchs noch vor 1.0. Auch jetzt öffnet jede Version die Bestände älterer Versionen:
+Mietfuchs führt die Datenbank beim ersten Start selbst auf den neuen Stand, legt vorher eine
+Sicherung daneben (siehe [Zurück zu einer älteren Version](#zurück-zu-einer-älteren-version)) und sagt
+Ihnen in der Oberfläche, dass es passiert ist. Umgekehrt geht es nicht: Eine ältere Version arbeitet
+nicht mit der Datenbank einer neueren, sagt es aber und verändert sie nicht. Eine ausdrückliche,
+verbindliche Zusage gibt es bis 1.0 noch nicht. Was sich zwischen den Versionen ändert, steht im
+[Changelog](CHANGELOG.md); wo Sie etwas tun müssen, steht es oben in dieser Anleitung.
+
+### Ab Version 1.0
+
+Ab Version 1.0 gilt:
+
+- **Daten:** Jeder Bestand und jedes Backup aus 1.x lässt sich in jeder späteren 1.x öffnen und
+  einspielen, ohne Handarbeit. Sie müssen nichts umwandeln, umbenennen oder von Hand verschieben.
+- **Zahlen:** Eine abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde. Spätere Versionen
+  rechnen sie nicht still um.
+- **Betrieb:** Der Datenordner, die Umgebungsvariablen, das Docker-Image und die Exportformate (JSON
+  und CSV) ändern sich in 1.x nicht ohne Vorwarnung. Eine Änderung wird vorher im Changelog
+  angekündigt.
+- **Bruch:** Was eine dieser Zusagen bricht, kommt nur mit einer neuen Hauptversion (2.0). Eine
+  Anleitung zum Umstieg stünde dann hier.
+
+Die Zusage gilt für Daten, die Mietfuchs selbst geschrieben hat. Eine Datei, die Sie von Hand im
+Datenordner verändert haben, kann Mietfuchs nicht schützen.
+
+---
+
 ## Backup
 
 Am Backup ändert sich nichts: **diesen Ordner kopieren.** Wer lieber auf den Knopf drückt, bekommt
