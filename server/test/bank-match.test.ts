@@ -182,33 +182,54 @@ test('Durchsicht 642/3: eine erfasste Zahlung gleichen Betrags geht dem Vorschla
 
 // ---------- Nachzahlung und Guthaben aus der abgeschlossenen Abrechnung am Betrag (#308) ----------
 
-const archive = (statements: { tenancyId: string; balanceCents: number }[]): unknown => ({ statements })
+const archive = (statements: { tenancyId: string; balanceCents: number; scope?: 'heating' }[]): unknown => ({ statements })
 const calendarHouse: Pick<Property, 'id' | 'periodRules'> = { id: 'h', periodRules: { startMonth: 1, changes: [] } }
+const plant: Pick<HeatingPlant, 'id' | 'propertyId' | 'periodStartMonth' | 'periodChanges' | 'separateSpans'> =
+  { id: 'p', propertyId: 'h', periodStartMonth: 10, periodChanges: [], separateSpans: [{ from: '2024-01', until: null }] }
 
 test('#308: aus jedem Abschluss je Mietverhältnis die Nachzahlung (positiv) oder das Guthaben (negativ), mit Zeitraum und Versand', () => {
-  const plant: Pick<HeatingPlant, 'id' | 'propertyId' | 'periodStartMonth' | 'periodChanges'> = { id: 'p', propertyId: 'h', periodStartMonth: 10, periodChanges: [] }
   const balances = closedBalancesOf({
     properties: [calendarHouse],
     heatingPlants: [plant],
-    closed: [{ propertyId: 'h', period: periodKey('2025-01'), sentAt: '2026-02-15', settlement: archive([{ tenancyId: 't1', balanceCents: -30000 }, { tenancyId: 't2', balanceCents: 12000 }, { tenancyId: 't3', balanceCents: 0 }]) }],
-    closedHeating: [{ plantId: 'p', period: periodKey('2024-10'), sentAt: null, settlement: archive([{ tenancyId: 't1', balanceCents: -4500 }]) }],
+    closed: [{ propertyId: 'h', period: periodKey('2025-01'), closedAt: '2026-02-01T09:30:00.000Z', sentAt: '2026-02-15', settlement: archive([{ tenancyId: 't1', balanceCents: -30000 }, { tenancyId: 't2', balanceCents: 12000 }, { tenancyId: 't3', balanceCents: 0 }]) }],
+    closedHeating: [{ plantId: 'p', period: periodKey('2024-10'), closedAt: '2025-11-03T10:00:00.000Z', sentAt: null, settlement: archive([{ tenancyId: 't1', balanceCents: -4500, scope: 'heating' }]) }],
   })
-  assert.deepEqual(balances.map((b) => [b.tenancyId, b.label, b.periodTo, b.sentAt, b.dueCents]), [
-    ['t1', 'Abrechnung 2025', '2025-12-31', '2026-02-15', 30000],
-    ['t2', 'Abrechnung 2025', '2025-12-31', '2026-02-15', -12000],
-    ['t1', 'Heizkostenabrechnung 2024/2025', '2025-09-30', null, 4500],
+  assert.deepEqual(balances.map((b) => [b.tenancyId, b.label, b.periodTo, b.sentAt, b.closedOn, b.dueCents]), [
+    ['t1', 'Abrechnung 2025', '2025-12-31', '2026-02-15', '2026-02-01', 30000],
+    ['t2', 'Abrechnung 2025', '2025-12-31', '2026-02-15', '2026-02-01', -12000],
+    ['t1', 'Abrechnung Heizkosten 2024/2025', '2025-09-30', null, '2025-11-03', 4500],
   ])
   assert.equal(new Set(balances.map((b) => b.key)).size, 3, 'Kennung je Abrechnung und Mietverhältnis')
-  assert.deepEqual(closedBalancesOf({ properties: [calendarHouse], heatingPlants: [], closed: [{ propertyId: 'h', period: periodKey('2025-01'), sentAt: null, settlement: 'kaputt' }], closedHeating: [] }), [], 'unlesbares Archivstück')
+  assert.deepEqual(closedBalancesOf({ properties: [calendarHouse], heatingPlants: [], closed: [{ propertyId: 'h', period: periodKey('2025-01'), closedAt: '2026-02-01', sentAt: null, settlement: 'kaputt' }], closedHeating: [] }), [], 'unlesbares Archivstück')
+})
+
+// Durchsicht PR #654 (Kann): gelesen wie die Nachbarn. Das Archiv des Objekts ohne Mieterabrechnungen der Art Heizung
+// (`creditedByTenancy`), das der Anlage nur mit ihnen; ein Abschluss einer Heizperiode, die nicht (mehr) getrennt
+// abgerechnet wird, zählt nicht (`settledSeparately` wie in `depositStatements`).
+test('#308 Durchsicht: Mieterabrechnungen nach Art getrennt, Heizperiode nur bei getrennter Abrechnung', () => {
+  const mixed = archive([{ tenancyId: 't1', balanceCents: -30000 }, { tenancyId: 't1', balanceCents: -4500, scope: 'heating' }])
+  const read = (over: { plants?: typeof plant[] } = {}) => closedBalancesOf({
+    properties: [calendarHouse],
+    heatingPlants: over.plants ?? [plant],
+    closed: [{ propertyId: 'h', period: periodKey('2025-01'), closedAt: '2026-02-01', sentAt: null, settlement: mixed }],
+    closedHeating: [{ plantId: 'p', period: periodKey('2024-10'), closedAt: '2025-11-03', sentAt: null, settlement: mixed }],
+  }).map((b) => [b.label, b.dueCents])
+  assert.deepEqual(read(), [['Abrechnung 2025', 30000], ['Abrechnung Heizkosten 2024/2025', 4500]])
+  assert.deepEqual(read({ plants: [{ ...plant, separateSpans: [] }] }), [['Abrechnung 2025', 30000]], 'nicht getrennt abgerechnet')
 })
 
 const balance = (over: Partial<ClosedBalance> = {}): ClosedBalance =>
-  ({ key: 'h|2025-01|t1', tenancyId: 't1', label: 'Abrechnung 2025', periodTo: '2025-12-31', sentAt: null, dueCents: 30000, ...over })
+  ({ key: 'h|2025-01|t1', tenancyId: 't1', label: 'Abrechnung 2025', periodTo: '2025-12-31', sentAt: null, closedOn: '2026-01-31', dueCents: 30000, ...over })
 const settlementPayment = (date: string, amountCents: number, tenancyId = 't1'): Payment => ({ id: `s${date}${amountCents}`, tenancyId, date, amountCents, kind: 'settlement' })
 
 test('#308: Zahlungen der Art „Abrechnung“ mindern den offenen Betrag, die älteste Abrechnung zuerst; Mieten und frühere Zahlungen nicht', () => {
   const open = (b: ClosedBalance[], p: Payment[]) => openSettlementsOf(b, p).map((o) => [o.label, o.openCents])
   assert.deepEqual(open([balance()], [settlementPayment('2026-03-01', 10000)]), [['Abrechnung 2025', 20000]], 'Teilzahlung')
+  assert.deepEqual(open([balance({ closedOn: '2026-05-01' })], [settlementPayment('2026-01-05', 10000)]), [['Abrechnung 2025', 20000]], 'vor dem (erneuten) Abschluss gebucht zählt')
+  // (e) Objekt- und getrennte Heizkostenabrechnung desselben Mieters: die ältere (Heizperiode bis 30.09.) zuerst.
+  const heating = balance({ key: 'anlage|2024-10|t1', label: 'Abrechnung Heizkosten 2024/2025', periodTo: '2025-09-30', dueCents: 4500 })
+  assert.deepEqual(open([balance(), heating], [settlementPayment('2026-03-01', 10000)]), [['Abrechnung 2025', 24500], ['Abrechnung Heizkosten 2024/2025', 0]])
+  assert.deepEqual(open([balance(), heating], [settlementPayment('2025-11-01', 10000)]), [['Abrechnung 2025', 30000], ['Abrechnung Heizkosten 2024/2025', 0]], 'vor dem Ende 2025 nur die Heizperiode')
   assert.deepEqual(open([balance()], [settlementPayment('2025-12-15', 10000), payment('r', '2026-03-01', 10000)]), [['Abrechnung 2025', 30000]], 'vor dem Ende des Zeitraums, Miete')
   assert.deepEqual(open([balance()], [settlementPayment('2026-03-01', 10000, 't2')]), [['Abrechnung 2025', 30000]], 'anderes Mietverhältnis')
   const older = balance({ key: 'h|2024-01|t1', label: 'Abrechnung 2024', periodTo: '2024-12-31', dueCents: 20000 })
@@ -278,6 +299,11 @@ test('#308: nicht vor dem Ende des Zeitraums und nicht vor dem Versand; Monatsmi
   assert.deepEqual(suggest(tx('2025-12-20', 30000), settled())?.target, RENT)
   assert.deepEqual(suggest(tx('2026-02-10', 30000), settled([{ sentAt: '2026-02-15' }]))?.target, RENT)
   assert.match(suggest(tx('2026-02-15', 30000), settled([{ sentAt: '2026-02-15' }]))?.reason ?? '', /Nachzahlung/)
+  // Durchsicht PR #654, 1: ohne Versanddatum nicht vor dem Abschluss; ein früheres Versanddatum geht vor.
+  assert.deepEqual(suggest(tx('2026-01-05', 30000), settled([{ closedOn: '2026-01-31' }]))?.target, RENT, 'vor dem Abschluss')
+  assert.match(suggest(tx('2026-01-31', 30000), settled([{ closedOn: '2026-01-31' }]))?.reason ?? '', /Nachzahlung/, 'am Tag des Abschlusses')
+  assert.match(suggest(tx('2026-01-05', 30000), settled([{ closedOn: '2026-01-31', sentAt: '2026-01-03' }]))?.reason ?? '', /Nachzahlung/, 'auf Papier versandt vor dem Abschluss')
+  assert.equal(suggest(tx('2026-01-05', -12000), settled([{ dueCents: -12000, closedOn: '2026-01-31' }], null))?.reason, 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung', 'Guthaben ebenso')
   assert.equal(suggest(tx('2026-03-02', 80000), settled([{ dueCents: 80000 }]))?.light, 'green', 'gleich dem Soll: Miete')
   assert.deepEqual(suggest(tx('2026-03-10', 30000, { purpose: 'Kaution Rest' }), settled())?.target, RENT)
 })
