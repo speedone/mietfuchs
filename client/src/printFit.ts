@@ -96,15 +96,19 @@ function walk(rules: CSSRuleList, media: CSSMediaRule[], pages: CSSPageRule[]): 
   }
 }
 
-function readRules(doc: Document): { media: CSSMediaRule[]; pages: CSSPageRule[] } {
+// `unknown`: ein Stylesheet mit eigener Media-Angabe oder ein `@import`; was dort im Druck gilt, sieht die Notbremse nicht
+function readRules(doc: Document): { media: CSSMediaRule[]; pages: CSSPageRule[]; unknown: boolean } {
   const media: CSSMediaRule[] = []
   const pages: CSSPageRule[] = []
+  let unknown = false
   for (const sheet of Array.from(doc.styleSheets)) {
+    if (sheet.media.mediaText.trim() !== '' && sheet.media.mediaText.trim() !== 'all') unknown = true
     let rules: CSSRuleList
     try { rules = sheet.cssRules } catch { continue } // fremde Herkunft: nicht lesbar
+    if (Array.from(rules).some((r) => r instanceof CSSImportRule)) unknown = true
     walk(rules, media, pages)
   }
-  return { media, pages }
+  return { media, pages, unknown }
 }
 
 // Ränder der Seite: die letzte Regel `@page` ohne Seitenwahl, die einen Rand setzt (letter.css, mit Briefpapier
@@ -139,7 +143,8 @@ function reach(win: Window, el: Element, originX: number): Reach | null {
 const SLACK_PX = 1.5
 function overflowing(win: Window, doc: Document, limit: number): Element[] {
   const originX = doc.documentElement.getBoundingClientRect().left
-  const outside = (x: Reach | null) => x !== null && (x.right > limit + SLACK_PX || x.left < -SLACK_PX)
+  // Nur nach rechts: Was links hinausragt, macht das Dokument nicht breiter (Durchsicht)
+  const outside = (x: Reach | null) => x !== null && x.right > limit + SLACK_PX
   const found: Element[] = []
   for (const el of Array.from(doc.querySelectorAll('body *'))) {
     if (!outside(reach(win, el, originX))) continue
@@ -149,25 +154,27 @@ function overflowing(win: Window, doc: Document, limit: number): Element[] {
   return found
 }
 
-// Was die Notbremse bei diesem Druck markiert hat (leer im Normalfall)
-export function fitForPrint(win: Window = window): Element[] {
+// Was die Notbremse bei diesem Druck markiert hat (leer im Normalfall). `null`: Sie setzt aus, weil sie eine Media-Query
+// nicht auswerten kann; halb nachgestellt ergäbe die Messung Unsinn, etwa Teile der Oberfläche, die im Druck fehlen
+// (Durchsicht). Der Druck geht dann wie ohne Notbremse.
+export function fitForPrint(win: Window = window): Element[] | null {
   const doc = win.document
   for (const el of Array.from(doc.querySelectorAll(`.${PRINT_FIT}`))) el.classList.remove(PRINT_FIT)
-  const { media, pages } = readRules(doc)
+  const { media, pages, unknown } = readRules(doc)
   const width = pageWidth(pages)
   const device = (condition: string) => win.matchMedia(condition).matches
+  const verdicts = media.map((rule) => printMediaMatches(rule.media.mediaText, width, device))
+  if (unknown || verdicts.some((m) => m === null)) return null
   const restore: [CSSMediaRule, string][] = []
   const root = doc.documentElement
   const rootWidth = root.style.getPropertyValue('width')
   const rootPriority = root.style.getPropertyPriority('width')
   const marked: Element[] = []
   try {
-    for (const rule of media) {
-      const m = printMediaMatches(rule.media.mediaText, width, device)
-      if (m === null) continue
+    media.forEach((rule, i) => {
       restore.push([rule, rule.media.mediaText])
-      rule.media.mediaText = m ? 'all' : 'not all'
-    }
+      rule.media.mediaText = verdicts[i] ? 'all' : 'not all'
+    })
     root.style.setProperty('width', `${width}px`, 'important')
     // Höchstens vier Runden: zuerst die Tabellen, dann, was danach noch hinausragt
     for (let round = 0; round < 4; round++) {
@@ -193,11 +200,16 @@ export function fitForPrint(win: Window = window): Element[] {
 // Einmal beim Start (main.tsx), auch für Strg+P. Nach printJob.ts, das bei `beforeprint` in der Einfangphase aufräumt.
 export function installPrintFit(win: Window = window): void {
   win.addEventListener('beforeprint', () => {
+    // Spur am Dokument (Zahl der markierten Elemente oder `skipped`) für print-width-check.mjs und die Fehlersuche
+    const root = win.document.documentElement
     try {
       const marked = fitForPrint(win)
-      if (marked.length > 0) console.warn(`Druck: ${marked.length} Element(e) breiter als die Seite, im Druck umgebrochen (#647)`, marked)
+      root.dataset.printFit = marked === null ? 'skipped' : String(marked.length)
+      if (marked === null) console.warn('Druck: Notbremse ausgesetzt, eine Media-Query ist ihr unbekannt (#647)')
+      else if (marked.length > 0) console.warn(`Druck: ${marked.length} Element(e) breiter als die Seite, im Druck umgebrochen (#647)`, marked)
     } catch (error) {
       // Die Notbremse darf den Druck nie verhindern
+      root.dataset.printFit = 'error'
       console.error('Druck: Notbremse gegen Verkleinern gescheitert (#647)', error)
     }
   })

@@ -249,33 +249,58 @@ async function main() {
             await page.setViewportSize({ width: Math.floor(limit), height: 900 })
             await page.waitForTimeout(300)
             const width = await page.evaluate(overflowingElements, limit)
-            // Notbremse: `beforeprint` wie beim Druck. Im Normalfall markiert sie nichts, im Fall `notbremse` die Tabelle,
-            // und danach ragt nichts mehr hinaus. In jeder Engine, nicht nur in der mit PDF.
+            // Notbremse (client/src/printFit.ts) wie beim Druck: `beforeprint` aus dem Zustand am Bildschirm (Medium screen,
+            // 1440 px), denn sie stellt das Drucklayout selbst nach; unter nachgestelltem Druck prüfte das nichts (Durchsicht).
+            // Im Normalfall markiert sie nichts, im Fall `notbremse` die Tabelle. In jeder Engine, nicht nur in der mit PDF.
+            await page.emulateMedia({ media: null })
+            await page.setViewportSize({ width: 1440, height: 900 })
+            await page.waitForTimeout(300)
             const fitted = await page.evaluate(() => {
               const win = /** @type {any} */ (globalThis)
+              delete win.document.documentElement.dataset.printFit
               win.dispatchEvent(new win.Event('beforeprint'))
-              return [...win.document.querySelectorAll('.print-fit')].map((el) => `<${el.tagName.toLowerCase()}> „${(el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)}“`)
+              return {
+                ran: win.document.documentElement.dataset.printFit,
+                marks: [...win.document.querySelectorAll('.print-fit')].map((el) => `<${el.tagName.toLowerCase()}> „${(el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)}“`),
+              }
             })
+            if (fitted.ran === undefined) findings.push(`${tag}: die Notbremse lief bei beforeprint nicht`)
+            else if (fitted.ran === 'skipped') findings.push(`${tag}: die Notbremse kennt eine Media-Query nicht und setzte aus (Konsole der Seite)`)
+            else if (fitted.ran === 'error') findings.push(`${tag}: die Notbremse scheiterte (Konsole der Seite)`)
             if (c.brake) {
-              if (width.found.length === 0) findings.push(`${tagOf(c, engine)}: die fremde Zeile ragt nicht hinaus, der Fall prüft die Notbremse nicht`)
-              if (fitted.length === 0) findings.push(`${tagOf(c, engine)}: die Notbremse markierte nichts`)
+              if (width.found.length === 0) findings.push(`${tag}: die fremde Zeile ragt nicht hinaus, der Fall prüft die Notbremse nicht`)
+              if (fitted.marks.length === 0) findings.push(`${tag}: die Notbremse markierte nichts`)
+              await page.emulateMedia({ media: 'print' })
+              await page.setViewportSize({ width: Math.floor(limit), height: 900 })
+              await page.waitForTimeout(300)
               const after = await page.evaluate(overflowingElements, limit)
-              if (after.found.length > 0) findings.push(`${tagOf(c, engine)}: nach der Notbremse ragen noch ${after.found.length} Elemente hinaus, darunter <${after.found[0].tag}> „${after.found[0].text}“ (bis ${after.found[0].right} px)`)
+              if (after.found.length > 0) findings.push(`${tag}: nach der Notbremse ragen noch ${after.found.length} Elemente hinaus, darunter <${after.found[0].tag}> „${after.found[0].text}“ (bis ${after.found[0].right} px)`)
               width.found = []
               width.documentWidth = 0
-            } else if (fitted.length > 0) {
-              findings.push(`${tagOf(c, engine)}: die Notbremse griff im Normalfall (${fitted.join('; ')})`)
+              await page.emulateMedia({ media: null })
+              await page.setViewportSize({ width: 1440, height: 900 })
+              await page.waitForTimeout(300)
+            } else if (fitted.marks.length > 0) {
+              findings.push(`${tag}: die Notbremse griff im Normalfall (${fitted.marks.join('; ')})`)
             }
             /** @type {string | null} */
             let file = null
             if (engine === 'chromium') {
-              await page.emulateMedia({ media: null })
-              await page.setViewportSize({ width: 1440, height: 900 })
-              await page.waitForTimeout(300)
+              // Spuren des Laufs eben entfernen: Die PDF muss selbst `beforeprint` auslösen, sonst bewiese sie nichts
+              await page.evaluate(() => {
+                const document = /** @type {any} */ (globalThis).document
+                delete document.documentElement.dataset.printFit
+                for (const el of document.querySelectorAll('.print-fit')) el.classList.remove('print-fit')
+              })
               file = path.join(out, `${c.name}.pdf`)
               await page.pdf({ path: file, preferCSSPageSize: true })
-              const fittedPdf = await page.evaluate(() => /** @type {any} */ (globalThis).document.querySelectorAll('.print-fit').length)
-              if (!c.brake && fittedPdf > 0) findings.push(`${tag}: die Notbremse griff beim Druck (${fittedPdf} Elemente)`)
+              const pdfFit = await page.evaluate(() => {
+                const document = /** @type {any} */ (globalThis).document
+                return { ran: document.documentElement.dataset.printFit, marks: document.querySelectorAll('.print-fit').length }
+              })
+              if (pdfFit.ran === undefined) findings.push(`${tag}: page.pdf() löste die Notbremse nicht aus`)
+              if (!c.brake && pdfFit.marks > 0) findings.push(`${tag}: die Notbremse griff beim Druck (${pdfFit.marks} Elemente)`)
+              if (c.brake && pdfFit.marks === 0) findings.push(`${tag}: die Notbremse markierte beim Druck nichts`)
             }
             if (width.found.length > 0 || width.documentWidth > limit + 1) {
               // Eine zu breite Tabelle schiebt jede ihrer Zellen mit hinaus; je Fall eine Zeile und die ersten verschiedenen Elemente
