@@ -26,7 +26,7 @@ import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
-import { stockMarkOf } from './stockCache.ts'
+import { deepFreeze, stockMarkOf } from './stockCache.ts'
 import {
   aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemMeterRest, costItemMeterRestBehind, costItemMeterRestSubs, costItemMeterRestUnits, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, depositEntries, unitLocalRents, unitNoConnection, unitUsageChanges, meters, payments,
   flatRates, tenancyDirectCharges, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
@@ -667,15 +667,6 @@ export async function readStock(db: Executor): Promise<Stock> {
   const stock = deepFreeze(await readWholeStock(db))
   if (mark !== null) keptStocks.set(db, { mark, stock })
   return stock
-}
-
-// Auch in ein schon (flach) eingefrorenes Objekt hinein; `seen` hält Kreise aus, die es im Bestand nicht gibt.
-function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
-  if (value === null || typeof value !== 'object' || seen.has(value)) return value
-  seen.add(value)
-  Object.freeze(value)
-  for (const key of Object.keys(value)) deepFreeze(Reflect.get(value, key), seen)
-  return value
 }
 
 async function readWholeStock(db: Executor): Promise<Stock> {
