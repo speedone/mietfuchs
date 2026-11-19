@@ -158,3 +158,27 @@ export const practiceBankClosedDays: LawParam<readonly string[], 'eventDate'> = 
   }],
   describe: (v) => `kein Bankgeschäftstag: ${v.map((d) => `${d.slice(3, 5)}.${d.slice(0, 2)}.`).join(' und ')}`,
 }
+
+// **Ende der Einwendungsfrist am Monatsende** (#190, Entwurf docs/superpowers/specs/2026-11-12-fristen-design.md,
+// Abschnitt Recht). § 556 Abs. 3 Satz 5 BGB lässt die Frist „bis zum Ablauf des zwölften Monats nach Zugang“ laufen.
+// Ob damit der Tag gleicher Zahl (§ 188 Abs. 2 BGB) oder das Ende des zwölften Kalendermonats gemeint ist, ist hier an
+// keiner Entscheidung gelesen. Der Vermieter verlässt sich auf den Ablauf; Mietfuchs nimmt deshalb das spätere der
+// beiden Enden, den Monatsletzten. Eine Auslegung, keine Rechtsfolge.
+export const practiceObjectionEndOfMonth: LawParam<boolean, 'eventDate'> = {
+  id: 'practice.objection-end-of-month',
+  title: 'Einwendungsfrist endet am Monatsletzten',
+  norm: 'Auslegung von § 556 Abs. 3 Satz 5 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: true,
+    source: {
+      rank: 'interpretation',
+      cite: '§ 556 Abs. 3 Satz 5 BGB; Rechenweise nicht an einer Entscheidung gelesen, gewählt ist das späteste vertretbare Ende',
+      url: 'https://www.gesetze-im-internet.de/bgb/__556.html',
+      retrieved: '2026-11-20',
+      checked: 'adopted',
+    },
+    enacted: 'Festlegung von Mietfuchs (#190)',
+  }],
+  describe: (v) => (v ? 'die Frist endet am letzten Tag des zwölften Monats nach Zugang' : 'die Frist endet am Tag gleicher Zahl'),
+}

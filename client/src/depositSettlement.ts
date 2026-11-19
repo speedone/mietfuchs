@@ -49,22 +49,8 @@ export function depositSettlement(
   }
 }
 
-// Die Zeilen „Kaution nach Auszug“ im Cockpit (#228): Mietverhältnisse, deren Ende erreicht ist und bei denen laut den
-// Buchungen noch Geld liegt. Ohne Buchungen keine Zeile: Dann weiß Mietfuchs nicht, was wo liegt. Keine Frist, denn eine
-// gesetzliche gibt es nicht, und die Rechtsprechung dazu ist nicht gelesen.
-export function depositsAfterMoveOut(
-  tenancies: readonly Pick<Tenancy, 'id' | 'tenantName' | 'end' | 'depositCents' | 'depositStatus'>[],
-  entries: readonly DepositEntry[],
-  today: string,
-): { tenancyId: string; tenantName: string; end: string; balanceCents: number }[] {
-  return tenancies.flatMap((t) => {
-    if (t.end === null || t.end > today) return []
-    const own = entries.filter((e) => e.tenancyId === t.id)
-    if (own.length === 0) return []
-    const balanceCents = depositState(t, own).balanceCents
-    return balanceCents > 0 ? [{ tenancyId: t.id, tenantName: t.tenantName, end: t.end, balanceCents }] : []
-  })
-}
+// Die Kautionen nach Auszug stehen seit #190 in shared/deposit.ts, denn der Server rechnet sie für „Demnächst fällig“.
+export { depositsAfterMoveOut } from '../../shared/deposit.ts'
 
 // Der Hinweis der Steuer (#228): Was im Jahr mit Schaden oder Sonstigem verrechnet wurde, steht nicht in den Einnahmen.
 // Die Verrechnung mit Miete oder Abrechnung zählt dort schon über ihre Zahlung. Die steuerliche Einordnung eines

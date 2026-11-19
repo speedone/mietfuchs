@@ -56,7 +56,7 @@ import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverR
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import { connect, loadMigrations, type Database, type Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readCostItems, readDepositEntries, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './db/read.ts'
+import { readClosedSettlements, readCostItems, readDepositEntries, readHeatingPlants, readMeters, readProperties, readReadings, readSettings, readStock, readTenancies, readUnits, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
 import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
 import { DEFAULT_LETTER_TEXTS, isMonthKey, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
@@ -67,7 +67,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, DepositHoldError, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -83,6 +83,7 @@ import { linkToken, parseLinkDecisions, planBankLinks, type LinkDecision, type L
 import { decisionsOf, importToken, planBankImport, type ImportDecision, type ImportPlan } from './bank/importPlan.ts'
 import { looksLikeBankFile, MAX_ZIP_TOTAL_BYTES, readBankFile } from './bank/read.ts'
 import { suggestForQuestion } from './bank/importSuggest.ts'
+import { upcomingDeadlines } from './upcomingDeadlines.ts'
 import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry, withoutBoundDeposits } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
@@ -1417,6 +1418,25 @@ function computeHeating(stock: Stock, plant: HeatingPlant, period: BillingPeriod
   if (!snapshot) throw new RouteProblem(404, PLANT_GONE_TEXT)
   return computeSettlement(snapshot, { asOf: today() })
 }
+
+// „Demnächst fällig“ im Cockpit (#190): Fristen und Erinnerungen des Objekts aus den Daten (upcomingDeadlines.ts).
+app.get('/api/upcoming', async (req, res) => {
+  res.json(await readData(async (db) => {
+    const propertyId = await propertyOf(db, req)
+    const unitIds = new Set((await readUnits(db)).filter((u) => u.propertyId === propertyId).map((u) => u.id))
+    const meters = (await readMeters(db)).filter((m) => m.propertyId === propertyId)
+    const meterIds = new Set(meters.map((m) => m.id))
+    return upcomingDeadlines({
+      rules: await rulesForProperty(db, propertyId),
+      tenancies: (await readTenancies(db)).filter((t) => unitIds.has(t.unitId)),
+      costPeriods: new Set((await readCostItems(db)).filter((c) => c.propertyId === propertyId).map((c) => c.period)),
+      closed: (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId).map((c) => ({ period: c.period, sentAt: c.sentAt })),
+      meters,
+      readings: (await readReadings(db)).filter((r) => meterIds.has(r.meterId)),
+      deposits: await listDepositEntries(db, propertyId),
+    }, today())
+  }))
+})
 
 app.get('/api/heating-settlements', async (req, res) => {
   res.json(await readData(async (db) => separateHeatingSettlements(db, await propertyOf(db, req), today())))

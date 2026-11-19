@@ -11,8 +11,9 @@
 // wie heating.ts und glossary.ts). Sie hängt an keiner Uhr und an keiner Locale.
 
 import type { BillingPeriod, PeriodKey, PeriodRules, SettlementPeriod } from './types.ts'
-import { valueAt } from './law/register.ts'
-import { bgbDeadlineMonths, bgbMaxPeriodMonths } from './law/bgb-betrkv.ts'
+import { eventPeriodEnd, valueAt } from './law/register.ts'
+import { bgbDeadlineMonths, bgbMaxPeriodMonths, bgbObjectionMonths } from './law/bgb-betrkv.ts'
+import { practiceObjectionEndOfMonth } from './law/practice.ts'
 
 export const CALENDAR_RULES: PeriodRules = { startMonth: 1, changes: [] }
 
@@ -152,6 +153,16 @@ export const settlementPeriod = (p: BillingPeriod): SettlementPeriod => ({ ...p,
 // Zeitraums (`bgb.deadline-months`, #208).
 export function settlementDeadline(p: Pick<BillingPeriod, 'from' | 'to'>, months: number = valueAt(bgbDeadlineMonths, p.from)): string {
   return lastDay(indexOfDate(p.to) + months)
+}
+
+// § 556 Abs. 3 Satz 5 BGB (#190): Einwendungen gegen die Abrechnung bis zum Ablauf des zwölften Monats nach Zugang.
+// Den Zugang kennt Mietfuchs nicht; gerechnet wird ab dem Versanddatum, das nie nach dem Zugang liegt. Das Ende ist der
+// Tag gleicher Zahl (§ 188 Abs. 2 und 3 BGB) oder, nach `practice.objection-end-of-month`, der Monatsletzte, das
+// spätere der beiden, weil der Vermieter sich auf den Ablauf verlässt. Ohne Verschiebung nach § 193 BGB; die Oberfläche
+// sagt, dass sich das Ende dadurch und durch einen späteren Zugang nach hinten verschieben kann.
+export function objectionDeadline(sentAt: string): string {
+  const end = eventPeriodEnd(sentAt, valueAt(bgbObjectionMonths, sentAt))
+  return valueAt(practiceObjectionEndOfMonth, sentAt) ? lastDay(indexOfDate(end)) : end
 }
 
 export function periodDays(p: Pick<BillingPeriod, 'from' | 'to'>): number {
