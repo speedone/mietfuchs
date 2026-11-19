@@ -206,7 +206,7 @@ export function installPrintFit(win: Window = window): void {
       const marked = fitForPrint(win)
       root.dataset.printFit = marked === null ? 'skipped' : String(marked.length)
       if (marked === null) console.warn('Druck: Notbremse ausgesetzt, eine Media-Query ist ihr unbekannt (#647)')
-      else if (marked.length > 0) console.warn(`Druck: ${marked.length} Element(e) breiter als die Seite, im Druck umgebrochen (#647)`, marked)
+      else if (marked.length > 0) console.warn(`Druck: zu breit für die Seite, im Druck umgebrochen (#647); betroffen: ${marked.length}`, marked)
     } catch (error) {
       // Die Notbremse darf den Druck nie verhindern
       root.dataset.printFit = 'error'

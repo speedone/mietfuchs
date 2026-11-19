@@ -528,7 +528,7 @@ async function main() {
       if (demo.problem()) throw new Error(/** @type {string} */ (demo.problem()))
     }
     const table = ['| Ansicht | geöffnet | Breite im Druck (px) | zu breit | Seiten | Anmerkung |', '|---|---|---|---|---|---|',
-      ...rows.map((r) => `| ${r.name} | ${r.opened ? 'ja' : 'nein'} | ${r.width ?? '–'} | ${r.overflow === null ? '–' : r.overflow ? 'ja' : 'nein'} | ${r.pages ?? '–'} | ${r.note.replace(/\|/g, '\\|')} |`)]
+      ...rows.map((r) => `| ${r.name} | ${r.opened ? 'ja' : 'nein'} | ${r.width ?? '–'} | ${r.overflow === null ? '–' : r.overflow ? 'ja' : 'nein'} | ${r.pages ?? '–'} | ${r.note.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`)]
     fs.writeFileSync(path.join(out, 'ansichten.md'), `# Druckansichten\n\nSatzspiegel ${Math.floor(limit)} px.\n\n${table.join('\n')}\n`)
     console.log(`\n${table.join('\n')}\n\nPDFs und Bericht: ${out}`)
   } finally {
