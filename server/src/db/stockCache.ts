@@ -4,7 +4,8 @@
 // bisher bei jeder Anfrage, die rechnet oder eine Liste zeigt. Gelesen und geschrieben wird aber
 // nur durch die Schlange (createLane in open.ts), also lässt sich genau sagen, wann sich etwas
 // geändert haben kann: nach einem eigenen Schreibvorgang oder wenn eine zweite Verbindung
-// festgeschrieben hat (`PRAGMA data_version`, das gibt es nur in Tests mit `besideServer`).
+// festgeschrieben hat (`PRAGMA data_version`: ein Test mit `besideServer` oder ein zweites Programm
+// auf derselben Datei). `total_changes()` fängt dazu eigene Änderungen an `write` vorbei ab.
 //
 // Die Datenbank meldet dazu eine **Marke**: eine Zeichenkette, die sich bei jeder solchen Änderung
 // ändert, und `null`, solange ein Schreibvorgang läuft. Während des Schreibens gibt es keinen

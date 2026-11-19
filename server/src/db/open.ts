@@ -657,7 +657,9 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // Wann der gelesene Bestand noch gilt (stockCache.ts, #651): Jeder eigene Schreibvorgang zählt
     // hoch, auch ein gescheiterter oder zurückgerollter (lieber einmal zu oft neu lesen), und
     // während er läuft, gilt gar nichts. `data_version` ändert sich, wenn eine andere Verbindung
-    // festgeschrieben hat.
+    // festgeschrieben hat (ein Test mit `besideServer`, ein zweites Programm auf derselben Datei).
+    // `total_changes()` zählt jede eigene Änderung dieser Verbindung, auch eine, die an `write`
+    // vorbeiginge; das ist die Absicherung für eine Stelle, die sich nicht an die Regel hält.
     let writes = 0
     let writing = false
     const counted = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -671,8 +673,8 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     }
     registerStockMark(connection.db, () => {
       if (writing) return null
-      const version = connection.rows('PRAGMA data_version')[0]?.[0]
-      return `${writes}:${String(version)}`
+      const [version, changes] = connection.rows('SELECT (SELECT data_version FROM pragma_data_version), total_changes()')[0] ?? []
+      return `${writes}:${String(version)}:${String(changes)}`
     })
     const journaled = async <T>(work: (db: Database) => Promise<T>, journal: JournalMeta): Promise<T> => {
       const group = await beginGroup(connection.db, journal, schemaSteps, new Date())

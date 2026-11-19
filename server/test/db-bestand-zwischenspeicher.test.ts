@@ -122,3 +122,15 @@ test('Zwischenspeicher: der geteilte Bestand lässt sich nicht verändern', asyn
     assert.throws(() => { stock.settings.houseName = 'anders' }, TypeError)
   })
 })
+
+test('Zwischenspeicher: auch ein Schreiben an der Schlange vorbei wird gesehen', async () => {
+  // Geschrieben wird nur über `write` (server/src/db/CLAUDE.md, „Die Schlange“). Hielte sich eine künftige Stelle
+  // nicht daran, darf daraus kein veralteter Bestand werden: `data_version` sieht eigene Änderungen nicht, deshalb
+  // gehört `total_changes()` zur Marke.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', unitBody('EG')))
+    assert.deepEqual(unitNames(await opened.read((db) => readStock(db))), ['EG'])
+    await opened.read((db) => createEntity(db, 'units', 'u2', unitBody('OG')))
+    assert.deepEqual(unitNames(await opened.read((db) => readStock(db))), ['EG', 'OG'])
+  })
+})

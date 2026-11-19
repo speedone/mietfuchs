@@ -669,10 +669,12 @@ export async function readStock(db: Executor): Promise<Stock> {
   return stock
 }
 
-function deepFreeze<T>(value: T): T {
-  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value
+// Auch in ein schon (flach) eingefrorenes Objekt hinein; `seen` hält Kreise aus, die es im Bestand nicht gibt.
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return value
+  seen.add(value)
   Object.freeze(value)
-  for (const key of Object.keys(value)) deepFreeze(Reflect.get(value, key))
+  for (const key of Object.keys(value)) deepFreeze(Reflect.get(value, key), seen)
   return value
 }
 

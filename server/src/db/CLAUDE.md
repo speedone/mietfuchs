@@ -59,6 +59,14 @@ sonst beendete Node den Prozess). Das Kennzeichen in `AsyncLocalStorage` ist ein
 Kärtchen, das am Ende ungültig wird, weil Zeitgeber den Speicher überleben. Nach 30 Sekunden gibt
 es eine Meldung, abgebrochen wird nie.
 
+**Geschrieben wird nur in `write`, nie in `read`**, auch nicht in einer Transaktion darin: Davon hängt neben dem
+Journal der **Zwischenspeicher des Bestands** ab (#651). `readStock` gibt denselben Bestand zurück, solange die
+Marke der Verbindung gleich bleibt ([stockCache.ts](stockCache.ts), angemeldet in open.ts: eigene Schreibvorgänge,
+`data_version` für fremde Verbindungen, `total_changes()` als Absicherung; während eines Schreibvorgangs `null`,
+dann wird frisch gelesen). Eine Transaktion oder zweite Verbindung hat keine Marke. **Der Bestand ist tief
+eingefroren**, auf jedem Weg: Wer darin sortieren, anhängen oder Felder setzen will, kopiert vorher
+(`structuredClone`, `slice`, Spread), sonst wirft es (`TypeError`).
+
 **Eine zweite Verbindung auf die Datei gibt es nur in Tests**, und die Schlange ordnet sie nicht.
 Ohne WAL und ohne `busy_timeout` scheitert ein Schreiben dort sofort mit „database is locked“, wenn
 der Server gerade liest. Öffne sie deshalb mit `besideServer` aus server/testing/api.ts (wartet bis
