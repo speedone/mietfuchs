@@ -654,6 +654,7 @@ function GuideView({ guide: g, onFollow, onOpenTerm, onOpenGuide }: { guide: Gui
 
           <section aria-labelledby={sectionId('luecken')}>
             <SectionHeading id="luecken">Was Mietfuchs (noch) nicht kann</SectionHeading>
+            {g.gaps.length === 0 && <p className="m-0">Für diesen Fall ist keine Lücke bekannt.</p>}
             <ul className="m-0 pl-6 flex flex-col gap-2">
               {g.gaps.map((x, i) => (
                 <li key={i}>
