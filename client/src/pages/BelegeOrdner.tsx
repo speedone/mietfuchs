@@ -14,9 +14,11 @@ import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { eInvoicePdfOf } from '../eInvoicePdf'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckIsPart, buildFolder, canReleaseReceipt, coverage, filesByItem, duplicateHints, inboxFor, partsBySource, receiptCards, registerCount, receiptName, releaseQuestion, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard } from '../receipts'
+import { buildFolder, canReleaseReceipt, coverage, filesByItem, duplicateHints, inboxFor, partsBySource, receiptCards, registerCount, receiptName, releaseQuestion, releaseSplit, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard } from '../receipts'
 import { hitPlace, RECEIPT_ACCEPT } from '../belegeView'
 import { useEvaluationQueue } from '../evaluationQueue'
+import { closedCheckPath } from '../costPeriods'
+import { labelOfKey } from '../periodForm'
 import type { ReceiptStock } from '../receiptStock'
 import Field from '../components/Field'
 import { useConfirm, useToast } from '../components/feedback'
@@ -298,8 +300,17 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
   const confirm = useConfirm()
   const toast = useToast()
   async function release(card: ReceiptCard, c: CostItem) {
-    const part = amountCheckIsPart(c, rulesOf(properties.find((p) => p.id === c.propertyId)))
-    const ok = await confirm({ ...releaseQuestion(card.upload, c, card.items.filter((x) => x.id !== c.id).length, part), confirmLabel: 'Zuordnung lösen', danger: true })
+    const rules = rulesOf(properties.find((p) => p.id === c.propertyId))
+    // Ist die Abrechnung des Zeitraums abgeschlossen, sagt es die Rückfrage (wie „Betrag prüfen“ beim Anhängen).
+    // Scheitert die Frage, fehlt nur der Satz.
+    let closedLabel: string | null = null
+    try {
+      const raw = stock.loadedItems.find((x) => x.id === c.id) ?? c
+      const s = await api<Pick<Settlement, 'closed'>>(withProperty(closedCheckPath(raw, rules, stock.plantsBy.get(c.propertyId) ?? []), c.propertyId))
+      if (s.closed) closedLabel = labelOfKey(rules, c.period)
+    } catch { /* ohne Auskunft kein Satz */ }
+    const split = releaseSplit(c, costItems, present, booked)
+    const ok = await confirm({ ...releaseQuestion(card.upload, c, card.items.filter((x) => x.id !== c.id).length, split, closedLabel), confirmLabel: 'Zuordnung lösen', danger: true })
     if (!ok) return
     try {
       await api(`/api/costItems/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify({ invoiceFile: null }) })

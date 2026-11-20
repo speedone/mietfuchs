@@ -127,3 +127,25 @@ test('Karte einer Auswertung im Eingang: der Dateiname steht im Kopf neben dem R
   expect(heads[0]).toContain('muell-januar.pdf')
   expect(heads[1]).toContain('muell-juli.pdf')
 })
+
+// Durchsicht: „Position öffnen“ an der angelegten Zeile geht über den Weg, der Objekt und Zeitraum wechselt
+// (`onOpenItem` der Seite, App.tsx `openCostItem`), nicht über den bloßen Seitenwechsel; und der Satz nennt, wo gelöscht
+// wird (das Fenster „Kostenposition bearbeiten“ hat kein Löschen).
+test('zurückgeholte Auswertung: „Position öffnen“ an der angelegten Zeile übergibt die Position, der Satz nennt den Papierkorb in der Kostenliste', async () => {
+  const id = await bookAll()
+  const onOpenItem = vi.fn()
+  const onNavigate = vi.fn()
+  render(
+    <PeriodProvider><PropertyProvider><UIProvider>
+      <Belege view="ordner" units={UNITS} settings={null} onNavigate={onNavigate} onOpenItem={onOpenItem} renderThumb={() => Promise.resolve('')} />
+    </UIProvider></PropertyProvider></PeriodProvider>,
+  )
+  const card = await waitFor(() => document.querySelector<HTMLElement>('[data-view="ordner"] li[data-file="muell.pdf"]') ?? expect.fail('kein Beleg im Ordner'), SLOW)
+  fireEvent.click(within(card).getByRole('button', { name: 'Auswertung zeigen (muell.pdf)' }))
+  await waitFor(() => expect(document.activeElement?.getAttribute('data-assessment')).toBe(id), SLOW)
+  const review = within(document.activeElement as HTMLElement)
+  expect(review.getByText(/Rückgängig machen Sie das auf der Seite Kosten: In der Liste der Kostenpositionen löschen Sie die Position mit dem Papierkorb an ihrer Zeile \(„Kostenposition löschen“\)\./)).toBeTruthy()
+  fireEvent.click(review.getByRole('button', { name: 'Position öffnen (Sperrmüll)' }))
+  expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ description: 'Sperrmüll', period: calendarPeriod(YEAR) }))
+  expect(onNavigate).not.toHaveBeenCalled()
+})

@@ -727,6 +727,14 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Sprung zu diesem Beleg steht sie offen.
   const [placing, setPlacing] = useState<ReadonlySet<string>>(new Set())
   const togglePlacing = (id: string) => setPlacing((s) => { const next = new Set(s); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  // „Position öffnen“ aus einer Auswertung: über den Weg der Seite, der vorher in Objekt und Zeitraum der Position
+  // wechselt (App.tsx `openCostItem`). Der Eingang zeigt Auswertungen aller Jahre, und eine zurückgeholte gehört oft
+  // nicht zum gewählten; der bloße Seitenwechsel öffnete das Fenster dann über einer Liste ohne die Position.
+  const openItemById = (id: string) => {
+    const item = stock.costItems.find((c) => c.id === id)
+    if (item && onOpenItem) onOpenItem(item)
+    else onNavigate('kosten', { kind: 'costItem', id })
+  }
   const renderAssessment = (v: AssessmentView) => {
     const shown = beside.has(v.id) && v.open
     const jumpedHere = highlighted === `a:${v.id}` || highlighted === `f:${v.file}`
@@ -769,7 +777,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           <div className="min-w-0 flex-1">
             <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v)}
               onChange={(next) => { upsert(next); keepInQueue(next); void reloadAll() }}
-              onOpenItem={(id) => onNavigate('kosten', { kind: 'costItem', id })} onYearDraft={onYearDraft} />
+              onOpenItem={openItemById} onYearDraft={onYearDraft} />
           </div>
         </div>
       </div>
@@ -833,7 +841,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             <>
               {/* Ob nie eine KI eingerichtet war oder die eingerichtete gerade nicht antwortet, weiß der Server nicht (es
                   gibt immer eine Voreinstellung): Der Satz nennt deshalb beides und beschreibt den Weg ohne KI als normalen. */}
-              <span className="muted">Ohne KI-Auswertung: Mietfuchs speichert die Belege, und Sie erfassen jeden mit „Von Hand erfassen“. Kosten ohne Beleg legen Sie auf der Seite Kosten mit „+ Kostenposition anlegen“ an. Eine KI ist nicht eingerichtet oder antwortet gerade nicht; „Per KI auswerten“ bleibt an jedem Beleg.</span>
+              <span className="muted">Ohne KI-Auswertung: Mietfuchs speichert die Belege; Rechnungen erfassen Sie danach mit „Von Hand erfassen“, Kosten ohne Beleg auf der Seite Kosten mit „+ Kostenposition anlegen“. Eine KI ist nicht eingerichtet oder antwortet gerade nicht.</span>
               <button type="button" className="btn small ghost" onClick={() => onNavigate('kosten')}>Zur Seite Kosten</button>
               <button type="button" className="btn small ghost" onClick={() => void checkAi()}>Erneut prüfen</button>
               {checking && <span className="muted" role="status">Mietfuchs fragt die KI …</span>}

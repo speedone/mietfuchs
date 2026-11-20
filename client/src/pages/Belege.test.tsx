@@ -1435,13 +1435,52 @@ test('Ordner: hängt ein Beleg an mehreren Positionen, löst „Zuordnung lösen
   await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/gs2', method: 'PUT', body: { invoiceFile: null } }]))
 })
 
-test('Ordner: ein Teil einer aufgeteilten Rechnung nennt in der Rückfrage, was das Lösen für die übrigen Teile heißt', async () => {
-  extraItems = [{ id: 'vt', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Versicherung', description: 'Gebäudeversicherung (Teil)', amountCents: 30000, key: 'area', invoiceFile: '7_vers.pdf', sourceId: 'q1' }]
+// Durchsicht: Nach dem Aufteilen tragen beide Teile denselben Beleg. Wer einen löst, lässt die Rechnung belegt (der
+// Beleg eines Teils deckt die übrigen); erst der letzte Teil mit Beleg macht sie unbelegt. Die Rückfrage sagt, was gilt.
+const PART = { propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Versicherung', amountCents: 30000, key: 'area', sourceId: 'q1' } as const
+test('Ordner: ein Teil einer aufgeteilten Rechnung, der andere Teil trägt den Beleg weiter: die Rückfrage sagt „weiter belegt“', async () => {
+  extraItems = [
+    { ...PART, id: 'vt1', description: 'Gebäudeversicherung (Teil 1)', invoiceFile: '7_vers.pdf' },
+    { ...PART, id: 'vt2', description: 'Gebäudeversicherung (Teil 2)', invoiceFile: '7_vers.pdf' },
+  ]
+  extraUploads = [up('7_vers.pdf')]
+  renderWithUi('ordner')
+  const card = await folderCard('7_vers.pdf')
+  fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …\s*\(vers\.pdf von Gebäudeversicherung \(Teil 1\)\)$/ }))
+  const text = (await screen.findByRole('alertdialog')).textContent ?? ''
+  expect(text).toMatch(/Der Beleg bleibt an 1 weiteren Position\./)
+  expect(text).toMatch(/Die Position ist ein Teil einer aufgeteilten Rechnung und gilt weiter als belegt, weil ein anderer Teil den Beleg der Rechnung trägt\./)
+  expect(text).not.toMatch(/ohne Beleg/)
+})
+
+test('Ordner: der letzte Teil mit Beleg einer aufgeteilten Rechnung: die Rückfrage sagt, dass danach die ganze Rechnung ohne Beleg ist', async () => {
+  extraItems = [
+    { ...PART, id: 'vt1', description: 'Gebäudeversicherung (Teil 1)', invoiceFile: '7_vers.pdf' },
+    { ...PART, id: 'vt2', description: 'Gebäudeversicherung (Teil 2)' },
+  ]
   extraUploads = [up('7_vers.pdf')]
   renderWithUi('ordner')
   const card = await folderCard('7_vers.pdf')
   fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …/ }))
-  expect((await screen.findByRole('alertdialog')).textContent).toMatch(/Teil einer aufgeteilten Rechnung/)
+  const text = (await screen.findByRole('alertdialog')).textContent ?? ''
+  expect(text).toMatch(/Die Position ist ein Teil einer aufgeteilten Rechnung: Danach trägt kein Teil mehr einen Beleg, die ganze Rechnung ist ohne Beleg\./)
+  expect(text).not.toMatch(/weiter als belegt/)
+})
+
+test('Ordner: „Zuordnung lösen …“ in einem abgeschlossenen Zeitraum nennt die abgeschlossene Abrechnung und was sich ändert', async () => {
+  closed = { closedAt: '2026-02-01T10:00:00.000Z' }
+  renderWithUi('ordner')
+  const card = await folderCard('2_wasser.pdf')
+  fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …/ }))
+  const text = (await screen.findByRole('alertdialog')).textContent ?? ''
+  expect(text).toContain(`Die Abrechnung ${YEAR} ist abgeschlossen und bleibt, wie sie verschickt wurde. Belegmappe, Belege für die Steuer und Belegkopien dieses Zeitraums führen den Beleg an dieser Position danach nicht mehr.`)
+})
+
+test('Ordner: „Zuordnung lösen …“ in einem offenen Zeitraum nennt keine abgeschlossene Abrechnung', async () => {
+  renderWithUi('ordner')
+  const card = await folderCard('2_wasser.pdf')
+  fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …/ }))
+  expect((await screen.findByRole('alertdialog')).textContent).not.toMatch(/abgeschlossen/)
 })
 
 test('Ordner: nur über eine gebuchte Zeile verknüpft gibt es kein „Zuordnung lösen …“, dafür „Auswertung zeigen“', async () => {
@@ -1495,6 +1534,9 @@ test('Eingang ohne KI: der Zustand ist ein normaler Weg, mit Verweis auf „Von 
   renderWithUi('eingang', undefined, LOCAL, onNavigate)
   const note = await screen.findByText(/Ohne KI-Auswertung/)
   expect(note.textContent).toMatch(/„Von Hand erfassen“/)
+  // Durchsicht: zwei Sätze, und „Von Hand erfassen“ gilt Rechnungen, nicht Zählerfotos
+  expect(note.textContent).toMatch(/Rechnungen erfassen Sie danach mit „Von Hand erfassen“/)
+  expect((note.textContent ?? '').split(/[.!?](?:\s|$)/).filter((x) => x.trim()).length).toBe(2)
   expect(note.textContent).toMatch(/Seite Kosten mit „\+ Kostenposition anlegen“/)
   expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Zur Seite Kosten' }))

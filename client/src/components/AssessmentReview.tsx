@@ -30,12 +30,15 @@ type Props = {
   // Ob das Jahr der Buchung einen ungespeicherten Entwurf hat (Durchsicht zu #309, MUSS 1): „Alle grünen
   // übernehmen“ im Eingang bucht eine solche Auswertung nicht.
   onYearDraft?: (assessmentId: string, dirty: boolean) => void
+  // Auf der Seite Kosten steht die Liste der Kostenpositionen auf derselben Seite: Der Rückweg einer angelegten Zeile
+  // nennt sie dort, ohne Sprung.
+  page?: 'kosten'
 }
 
 const ACTIONS: readonly string[] = ['', 'create', 'dismiss', 'release']
 const isAction = (v: string): v is RowAction => ACTIONS.includes(v) || v.startsWith('link:')
 
-export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem, onYearDraft }: Props) {
+export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem, onYearDraft, page }: Props) {
   const confirm = useConfirm()
   const [rows, setRows] = useState<Record<number, RowDraft>>(() => initialRows(a))
   const [preview, setPreview] = useState<BookingPreview | null>(null)
@@ -235,12 +238,16 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                           onChange={(e) => patch(line.idx, { action: e.target.checked ? 'release' : '' })} /> lösen
                       </label>
                     )}
-                    {/* Der Rückweg einer angelegten Zeile: Sie wird wieder offen, wenn ihre Position gelöscht ist */}
-                    {line.state === 'created' && onOpenItem && line.costItemId && (() => {
+                    {/* Der Rückweg einer angelegten Zeile: Sie wird wieder offen, wenn ihre Position gelöscht ist. Gelöscht
+                        wird in der Liste der Seite Kosten (das Fenster „Kostenposition bearbeiten“ hat kein Löschen). */}
+                    {line.state === 'created' && page === 'kosten' && (
+                      <div className="muted">Rückgängig machen Sie das in der Liste der Kostenpositionen auf dieser Seite: Löschen Sie die Position mit dem Papierkorb an ihrer Zeile („Kostenposition löschen“).</div>
+                    )}
+                    {line.state === 'created' && page !== 'kosten' && onOpenItem && line.costItemId && (() => {
                       const id = line.costItemId
                       return (
                         <div className="muted">
-                          Rückgängig machen Sie das, indem Sie die Position auf der Seite Kosten löschen.{' '}
+                          <span>Rückgängig machen Sie das auf der Seite Kosten: In der Liste der Kostenpositionen löschen Sie die Position mit dem Papierkorb an ihrer Zeile („Kostenposition löschen“).</span>{' '}
                           <button type="button" className="btn small ghost" onClick={() => onOpenItem(id)}>Position öffnen{' '}<span className="sr-only">({line.itemDescription ?? line.description})</span></button>
                         </div>
                       )

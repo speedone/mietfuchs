@@ -90,12 +90,15 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. **Rückwege am Beleg im Ordner**: je Position „Position
   öffnen“ (`openCostItem` in App.tsx wechselt vorher mit `useSwitchTo` in Objekt und Zeitraum der Position) und, nur wenn
   der Beleg von Hand an ihr hängt (`canReleaseReceipt`: ihr `invoiceFile`, keine gebuchte Zeile), „Zuordnung lösen …“ mit
-  Rückfrage (`releaseQuestion`, `PUT /api/costItems/:id` mit `invoiceFile: null`; nennt weitere Positionen und Teile einer
-  aufgeteilten Rechnung). Hat der Beleg eine Auswertung, steht „Auswertung zeigen“: Der Eingang lädt nur offene
+  Rückfrage (`releaseQuestion`, `PUT /api/costItems/:id` mit `invoiceFile: null`; nennt weitere Positionen, bei einem
+  Teil einer aufgeteilten Rechnung, ob sie danach belegt bleibt, gerechnet mit `isItemCovered` auf dem Stand nach dem
+  Lösen (`releaseSplit`), und eine abgeschlossene Abrechnung des Zeitraums). Hat der Beleg eine Auswertung, steht „Auswertung zeigen“: Der Eingang lädt nur offene
   Auswertungen und behält gebuchte nur, bis die Seite verlassen wird; auf Wunsch holt er eine einzeln zurück
   (`focusAssessment`/`onOpenAssessment` über App.tsx wie `openReceipt`, in Belege.tsx `recall`, im Eingang
   `recallAssessment` mit `GET /api/assessments/:id`), dieselbe Karte mit `AssessmentReview`, in der sich eine verknüpfte
-  Zeile lösen lässt; gehört sie einem anderen Objekt, wird erst gewechselt. **„Betrag prüfen“** rollt beim Erscheinen in
+  Zeile lösen lässt; gehört sie einem anderen Objekt, wird erst gewechselt. An einer angelegten Zeile nennt
+  `AssessmentReview` den Rückweg (Papierkorb in der Kostenliste); „Position öffnen“ geht im Eingang über `onOpenItem`
+  (`openCostItem`, wechselt Objekt und Zeitraum), auf der Seite Kosten (`page="kosten"`) steht nur der Satz. **„Betrag prüfen“** rollt beim Erscheinen in
   den Blick und bekommt den Fokus (`showAmountCheck`); steht er in der ausgeblendeten Ansicht, nennt ihn ein Hinweis über
   den Reitern mit „Zu „Betrag prüfen““ (`onAmountCheck`). **Ohne KI** kann die Seite „nie eingerichtet“ nicht von „nicht
   erreichbar“ unterscheiden (der Server hat immer eine Voreinstellung); der Satz nennt beides, beschreibt das Erfassen von
