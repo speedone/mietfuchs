@@ -62,8 +62,19 @@ Vorschläge**, übernommen wird erst nach Prüfung durch den Menschen. Gilt auch
   dann `progress`, `heartbeat` (alle 10 s), zuletzt `result` oder `error` (Firefox wartet höchstens
   300 s auf Header). **Abbruch** über `POST /api/ai/cancel/<requestId>` (Feld `requestId`, beim
   Schließen des Tabs per `sendBeacon`) und zusätzlich über das Schließen der Verbindung; die Kennung
-  ist der verlässliche Weg (Proxys, ältere Bun). Ein Abbruch stoppt die Anfrage und löscht den eben
-  hochgeladenen Beleg. Client: [client/src/aiRequest.ts](../../../client/src/aiRequest.ts).
+  ist der verlässliche Weg (Proxys, ältere Bun). Client: [client/src/aiRequest.ts](../../../client/src/aiRequest.ts).
+- **Erst speichern, dann auswerten**: Eingang und Kosten laden jeden abgelegten Beleg zuerst über `/api/upload` hoch
+  (Objekt und Jahr der Auswahl) und werten danach den gespeicherten aus (`existingFile`, Warteschlange in
+  client/src/evaluationQueue.ts). Ein Abbruch stoppt dann nur die Anfrage an das Modell; der Beleg bleibt im
+  Posteingang („Ohne Position“), ebenso nach dem Schließen des Tabs oder dem Neuladen, auch die schon gespeicherten
+  wartenden eines Stapels (hochgeladen wird der Reihe nach; was noch aussteht, liegt nur im Browser). **Im Verlauf sind
+  es zwei Einträge je Beleg** („Beleg hochgeladen“, „Beleg mit KI ausgewertet“); die Auswertung rückgängig zu machen
+  lässt den Beleg liegen. Was der Browser nicht lesen kann (beschädigtes oder geschütztes PDF), liegt jetzt ebenfalls
+  im Posteingang; eine leere Datei lädt die Oberfläche nicht hoch. Den Typ eines so genannten Belegs nimmt die Route aus der Endung, bei unbekannter Endung aus `uploads`
+  (`documentOf`). **Nur wer die Datei mit der Auswertung selbst schickt** (Feld `file`: die Heizrouten, `/api/extract`,
+  Tabs aus älteren Fassungen), verliert sie beim Abbruch wieder: Der Server legt sie dann in den Papierkorb und nimmt
+  ihre Zeile weg. Die Regel stammt aus der Zeit vor dem Posteingang (ein Beleg, auf den nichts verweist, galt als
+  Rest); für die Heizrouten gilt sie weiter.
 - **Fehler mit Ausweg** (#487): Scheitert die KI, bleibt der Beleg gespeichert; die Fehlerantwort aller vier Routen
   (`failureOf` in index.ts) trägt `reason` (`AiFailureReason` in shared/types.ts), `kept: true`, `file` und bei
   fehlender Bestätigung `service`, bei „nicht erreichbar“ `provider` (der Satz nennt Ollama nur bei Ollama), im

@@ -130,7 +130,10 @@ an der langen Kante: Der KI-Prüflauf hat gezeigt, dass mehr die Trefferquote ni
 aber jede Auswertung verlängert. Wer ein Modell mit anderem Bedarf nutzt, ändert den Wert unter
 *Einstellungen → KI → Erweitert* oder mit `NKA_AI_IMAGE_EDGE`; daneben steht, welchem dpi-Wert
 er bei A4 entspricht. Während der Auswertung zeigt Mietfuchs, was das Modell
-gerade tut und wie lange es schon läuft. Abbrechen stoppt auch das Modell.
+gerade tut und wie lange es schon läuft. Abbrechen stoppt auch das Modell; der Beleg selbst bleibt
+gespeichert und steht auf der Seite Belege im Eingang unter „Ohne Position“, wo du ihn von Hand
+erfassen oder später erneut auswerten lässt. Mietfuchs speichert die Belege eines Stapels der Reihe
+nach, bevor es sie auswertet; an jedem steht, ob er schon gespeichert ist.
 
 ## Ollama und Docker
 

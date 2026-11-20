@@ -15,7 +15,7 @@ import { aiSummary } from '../aiForm'
 import { type KeyContext } from '../costForm'
 import { keepDraft } from '../useDraft'
 import { bookDecisions, greenDecisions, loadOpenAssessments, openBadgeClass, planDecisions } from '../assessment'
-import { assessmentOf, belongsTo, isBusy, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
+import { assessmentOf, belongsTo, isBusy, storedNote, useEvaluationQueue, waitingLabel, type QueueEntry, type QueueTarget, type StoredPlaces } from '../evaluationQueue'
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
 import AssessmentReview from '../components/AssessmentReview'
 import DisclosureButton from '../components/DisclosureButton'
@@ -650,6 +650,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Einträge, die als Karte der Warteschlange stehen: Zählerstände, Fehler, Abgebrochenes, ein gespeichertes Zählerfoto
   // und ein gespeicherter Beleg, dessen Karte (noch) nicht unter „Ohne Position“ steht.
   const freeFiles = new Set(freeCards.map((c) => c.upload.file))
+  // Wo der Beleg eines abgebrochenen oder gescheiterten Eintrags liegt, sagt der Bestand: unter „Ohne Position“ oder,
+  // schon als Zählerfoto erkannt, im Ordner (`storedNote`)
+  const places: StoredPlaces = { free: freeFiles, photos: new Set(allCards.filter((c) => c.upload.kind === 'meterPhoto' && c.items.length === 0).map((c) => c.upload.file)) }
   const entryCards = queue.filter((x) => {
     if (x.status === 'wartend' || x.status === 'läuft' || x.status === 'abgelegt') return false
     if (isInvoice(x) && (x.status === 'fertig' || x.status === 'übernommen')) return false
@@ -677,7 +680,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
       <div className="card no-print" key={entry.id} data-queue-entry={entry.id} data-file={entry.file} tabIndex={-1}>
         <div className="row center">
           <strong>{meter ? '🔢 ' : '🧾 '}{entry.fileName}</strong>
-          {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
+          {entry.status === 'wartend' && <span className="badge gray">{waitingLabel(entry)}</span>}
           {entry.status === 'läuft' && (
             <AiProgressBadge
               progress={entry.progress ?? null}
@@ -705,6 +708,8 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
         {entry.status === 'fehler' && (isBankFileError(entry.error)
           ? <NoticeBox level="error" action={entry.error}><button type="button" className="btn small secondary" onClick={() => onNavigate('kontoauszug')}>Zur Seite Kontoauszug</button></NoticeBox>
           : <NoticeBox level="error" action={entry.error} />)}
+        {/* Abgebrochen oder gescheitert, der Beleg liegt aber in der Ablage: sagen, wo */}
+        {storedNote(entry, places) && <p className="muted" role="status">{storedNote(entry, places)}</p>}
         {entry.status === 'gespeichert' && entry.failure && (
           <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : (file) => manual(file, entry.fileName)}
             onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
@@ -815,7 +820,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           <div className="muted">
             {mode === 'ohne'
               ? 'Mietfuchs speichert jeden Beleg; danach erfassen Sie ihn von Hand oder ordnen ihn einer Position zu.'
-              : 'Mietfuchs speichert jeden Beleg und wertet ihn danach aus, einen nach dem anderen (je Beleg 1–2 Min.). Sie können die Seite dabei verlassen.'}
+              : 'Mietfuchs speichert jeden Beleg, der Reihe nach, und wertet ihn danach aus, einen nach dem anderen (je Beleg 1–2 Min.). Steht an einem Beleg „gespeichert“, können Sie die Seite verlassen; ohne Auswertung steht er unter „Ohne Position“.'}
             {' '}{ai.notice ?? 'Alles bleibt lokal.'}
           </div>
           <input

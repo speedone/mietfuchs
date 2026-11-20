@@ -24,6 +24,8 @@ beforeEach(() => {
   stored = []
   answer = () => ({ error: SERVER_TEXT, file: 'srv-foto.jpg', reason: 'unreachable', kept: true, provider: 'ollama' })
   vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+    // Der Beleg ist gespeichert, bevor er ausgewertet wird; unter diesem Namen nennt ihn auch die Fehlerantwort
+    if (url === '/api/upload') return Promise.resolve(new Response(JSON.stringify({ file: 'srv-foto.jpg' }), { status: 200, headers: { 'content-type': 'application/json' } }))
     const method = init?.method ?? 'GET'
     if (url === '/api/extract' || url === '/api/intake') {
       if (init?.body instanceof FormData) sent.push(init.body)
@@ -99,7 +101,8 @@ async function expectKept(onOpenReceipt: ReturnType<typeof vi.fn>, inbox = false
   await screen.findByText('Der Dienst nimmt den Schlüssel nicht an.', { exact: false })
   expect(document.activeElement).not.toBe(document.body)
   expect(document.activeElement?.closest(inbox ? '[data-queue-entry], li.receipt-card' : '[data-queue-entry]')).not.toBeNull()
-  expect([sent[0]?.get('file') instanceof File, sent[0]?.get('existingFile')]).toEqual([true, null])
+  // Schon der erste Versuch nennt den Beleg nur: Er ging vor der Auswertung in die Ablage
+  expect([sent[0]?.get('file'), sent[0]?.get('existingFile')]).toEqual([null, 'srv-foto.jpg'])
   expect([sent[1]?.get('file'), sent[1]?.get('existingFile')]).toEqual([null, 'srv-foto.jpg'])
   expect(await screen.findByText('Der Dienst nimmt den Schlüssel nicht an.', { exact: false })).toBeTruthy()
 }

@@ -83,7 +83,7 @@ import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro, loadErrorText } from '../api'
 import { aiSummary } from '../aiForm'
-import { assessmentOf, belongsTo, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
+import { assessmentOf, belongsTo, storedNote, storedPlaces, useEvaluationQueue, waitingLabel, type QueueEntry, type QueueTarget } from '../evaluationQueue'
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
 import { ReadingReview } from '../components/ReadingReview'
 import { OtherQueueEntries } from '../components/OtherQueueEntries'
@@ -845,7 +845,12 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   const target: QueueTarget = { propertyId, year, period: key, pageImageEdge: settings?.ai?.pageImageEdge ?? undefined, docType: 'rechnung' }
   const queue = useMemo(() => all.filter((x) => belongsTo(x, propertyId, key)), [all, propertyId, key])
   const focusAfterRetry = useRetryFocus(queue)
-  const isReading = (x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
+  // Wo der Beleg eines abgebrochenen oder gescheiterten Eintrags liegt, sagt die Ablage (`storedNote`): nach jedem
+  // solchen Ende neu geladen, damit der Satz nur steht, solange der Beleg dort ohne Position liegt.
+  const endedKey = queue.filter((x) => x.status === 'abgebrochen' || x.status === 'fehler').map((x) => `${x.id}:${x.status}`).join('|')
+  useEffect(() => { if (endedKey) void loadUploads() }, [endedKey])
+  const places = useMemo(() => storedPlaces(uploads ?? [], new Set(items.flatMap((i) => (i.invoiceFile ? [i.invoiceFile] : [])))), [uploads, items])
+  const isReading =(x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
   // Ein Zählerfoto aus dem Eingang desselben Objekts und Zeitraums steht auch hier. Ablesungen braucht die
   // Seite nur für seine Ampel; geladen wird erst, wenn eines da ist.
   const hasReading = queue.some(isReading)
@@ -1057,7 +1062,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           onDrop={(e) => { e.preventDefault(); setDragOver(false); setSkipped(addFiles(e.dataTransfer.files, target) > 0) }}
         >
           <strong>Belege hierher ziehen</strong> oder klicken zum Auswählen - auch mehrere auf einmal.
-          <div className="muted">Sie werden nacheinander verarbeitet (PDF oder Foto).</div>
+          <div className="muted">Die Belege werden der Reihe nach gespeichert und danach ausgewertet, einen nach dem anderen (PDF oder Foto).</div>
           <input
             ref={fileInputRef}
             type="file"
@@ -1085,7 +1090,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             <div key={entry.id} className="stack" data-queue-entry={entry.id} tabIndex={-1}>
               <div className="row center">
                 <strong>{meter ? '🔢 ' : ''}{entry.fileName}</strong>
-                {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
+                {entry.status === 'wartend' && <span className="badge gray">{waitingLabel(entry)}</span>}
                 {entry.status === 'läuft' && (
                   <AiProgressBadge
                     progress={entry.progress ?? null}
@@ -1113,6 +1118,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 )}
               </div>
               {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
+              {storedNote(entry, places) && <p className="muted" role="status">{storedNote(entry, places)}</p>}
               {entry.status === 'gespeichert' && entry.failure && (
                 <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : (file) => void manualFromReceipt(file, entry.fileName)}
                   onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
