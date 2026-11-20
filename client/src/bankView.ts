@@ -118,6 +118,33 @@ export function targetOptionsFor(tx: BankTransactionView, chosen: RowTarget | nu
 
 const germanDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
 
+// Vorschau und Mitteilung beim Einlesen (Systemprüfung, Durchsicht): Der Satz des Servers sagt „übernommen“, gebucht wird
+// aber erst unter „Offene Umsätze“. Beide Sätze entstehen deshalb hier aus den Zahlen der Antwort, mit demselben Wort:
+// die Vorschau sagt, was das Einlesen tun wird, die Mitteilung, was geschah und was als Nächstes zu tun ist. Auf dem
+// Mischkonto sind die gezählten Umsätze die der Vermietung.
+export type ImportSummary = { stored: number; knownDays: number; pending: number; alreadyImportedOn?: string }
+const importParts = (summary: ImportSummary) => {
+  const { stored, knownDays, pending } = summary
+  const more = [
+    ...(knownDays > 0 ? [knownDays === 1 ? '1 Tag ist schon eingelesen' : `${knownDays} Tage sind schon eingelesen`] : []),
+    ...(pending > 0 ? [pending === 1 ? '1 Umsatz kommt mit dem Tagesauszug' : `${pending} Umsätze kommen mit dem Tagesauszug`] : []),
+  ]
+  return { count: stored === 1 ? '1 Umsatz' : `${stored} Umsätze`, more: more.length > 0 ? ` (${more.join(', ')})` : '' }
+}
+const alreadyImportedText = (iso: string): string => `Dieser Auszug wurde am ${germanDay(iso)} schon eingelesen.`
+export function importPreviewText(summary: ImportSummary): string {
+  if (summary.alreadyImportedOn) return alreadyImportedText(summary.alreadyImportedOn)
+  const { count, more } = importParts(summary)
+  const verb = summary.stored === 1 ? 'wird' : 'werden'
+  return summary.stored > 0 ? `${count} ${verb} eingelesen; gebucht wird dabei noch nichts${more}.` : `${count} ${verb} eingelesen${more}.`
+}
+export function importDoneText(summary: ImportSummary): string {
+  if (summary.alreadyImportedOn) return alreadyImportedText(summary.alreadyImportedOn)
+  const { count, more } = importParts(summary)
+  if (summary.stored <= 0) return `${count} eingelesen${more}.`
+  return `${count} eingelesen, gebucht ist noch nichts${more}. Ordnen Sie ${summary.stored === 1 ? 'ihn' : 'sie'} unter „Offene Umsätze“ zu und klicken Sie dort auf „Buchen“.`
+}
+
 // Wortlaut der Spec: nie „Einnahmen vollständig“, nur ob das Konto lückenlos eingelesen ist.
 export function coverageText(a: Pick<BankAccountInfo, 'coverage'>): string {
   const c = a.coverage

@@ -18,10 +18,15 @@ const ENTRIES: DepositEntry[] = [
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let reply: { status: number; body: unknown }
+// Was GET /api/letter-design antwortet (das Fenster fragt beim Öffnen, ob ein Briefpapier den Absender trägt).
+let designReply: unknown
 beforeEach(() => {
   sent = []
   reply = { status: 200, body: { ok: true } }
+  designReply = {}
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    // Nur lesend und kein Teil dessen, was die Tests als gesendet prüfen.
+    if (String(url).startsWith('/api/letter-design')) return new Response(JSON.stringify(designReply), { status: 200, headers: { 'content-type': 'application/json' } })
     sent.push({ url, method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) })
     return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'content-type': 'application/json' } })
   })
@@ -163,16 +168,21 @@ test('während eine Buchung gelöscht wird, sind Anlegen und Löschen gesperrt',
 
 // ---------- Teil 2: Aufstellung zum Auszug ----------
 
-const MOVED: Tenancy = { ...TENANCY, end: '2025-12-31', depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' }
+const MOVED: Tenancy = { ...TENANCY, end: '2025-12-31', correspondenceAddress: 'Neue Straße 5, 99999 Anderswo', depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' }
 const MOVED_ENTRIES: DepositEntry[] = [
   { id: 'a', tenancyId: 't', date: '2022-01-05', kind: 'received', amountCents: 240000 },
   { id: 'b', tenancyId: 't', date: '2025-12-31', kind: 'interest', amountCents: 1234 },
 ]
 const INFO: DepositStatementInfo = { tenancyId: 't', last: { label: '2024', balanceCents: -18000 }, lastHeating: null, pending: ['2025'], openRentCents: 0 }
 
-function openMoved(tenancy: Tenancy = MOVED) {
+const LETTER = {
+  unit: { name: 'EG links' },
+  property: { id: 'p', name: 'Haus Birke', address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null, landlordAddress: null, landlordContact: null },
+  settings: { landlordName: 'Petra Vermieterin', iban: '', paymentDeadlineDays: 30, landlordAddress: 'Gartenweg 3, 54321 Beispielstadt', landlordContact: '' },
+}
+function openMoved(tenancy: Tenancy = MOVED, letter: Partial<typeof LETTER> = LETTER) {
   const onChanged = vi.fn()
-  render(<UIProvider><DepositDrawer tenancy={tenancy} entries={MOVED_ENTRIES} info={INFO} onChanged={onChanged} onClose={vi.fn()} /></UIProvider>)
+  render(<UIProvider><DepositDrawer tenancy={tenancy} entries={MOVED_ENTRIES} info={INFO} {...letter} onChanged={onChanged} onClose={vi.fn()} /></UIProvider>)
   return { onChanged, drawer: screen.getByRole('dialog', { name: 'Kaution von Erika Mustermann' }) }
 }
 const flat = (el: Element) => (el.textContent ?? '').replace(/\u00a0/g, ' ')
@@ -227,8 +237,65 @@ test('Drucken druckt nur die Aufstellung', async () => {
   // Abschlussdurchsicht G4: Orientierung und freie Notizen sind für den Vermieter, nicht für das Blatt; das Datum gehört drauf.
   expect(flat(sheet)).not.toMatch(/Nebenkostenabrechnung 2024|noch nicht abgeschlossen/)
   expect(flat(sheet)).toMatch(/Stand vom \d{2}\.\d{2}\.\d{4}/)
+  // Ein Brief wie die Abrechnung: Absender, Anschrift für den Schriftverkehr, Betreff mit Wohnung und Objekt, Gruß und Unterschrift.
+  const letter = within(sheet as HTMLElement).getByRole('region', { name: 'Schreiben an Erika Mustermann' })
+  expect(letter.classList.contains('letter')).toBe(true)
+  expect(flat(letter.querySelector('.letter-head') ?? expect.fail('kein Absender'))).toContain('Petra Vermieterin')
+  expect([...letter.querySelectorAll('.letter-address > div')].map((d) => d.textContent)).toEqual(['Erika Mustermann', 'Neue Straße 5', '99999 Anderswo'])
+  expect(flat(letter.querySelector('.letter-subject') ?? expect.fail('kein Betreff'))).toContain('EG links, Lindenweg 12, 12345 Musterstadt')
+  expect(flat(letter)).toContain('Zur Auszahlung an Sie bleiben damit 2.112,34 €')
+  expect(flat(letter)).toContain('Mit freundlichen Grüßen')
+  expect(flat(letter.querySelector('.letter-signature') ?? expect.fail('keine Unterschrift'))).toBe('Petra Vermieterin')
+  // Wie beim Schreiben der Mieterhöhung (printJob.ts): Dateiname aus dem Titel, aufgeräumt erst bei der nächsten Bedienung,
+  // nicht bei `afterprint` (Safari meldet es, während der Dialog noch offen ist).
+  expect(document.title).toBe('Kaution Erika Mustermann')
   window.dispatchEvent(new Event('afterprint'))
+  expect(document.body.classList.contains('print-deposit')).toBe(true)
+  window.dispatchEvent(new Event('pointerdown'))
   await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
+  expect(document.title).not.toBe('Kaution Erika Mustermann')
+})
+
+test('am Druckknopf steht, dass der Brief den heutigen Stand zeigt und nicht gespeichert wird', () => {
+  const { drawer } = openMoved()
+  expect(within(drawer).getByText('Der Brief zeigt den Stand von heute und wird nicht gespeichert; ein späterer Druck kann anders ausfallen.')).toBeTruthy()
+})
+
+test('ohne Namen des Vermieters warnt die Aufstellung und druckt trotzdem', async () => {
+  const print = vi.fn()
+  vi.stubGlobal('print', print)
+  const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
+  expect(await within(drawer).findByText(/Im Brief steht kein Name des Vermieters/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Aufstellung drucken' }))
+  await waitFor(() => expect(print).toHaveBeenCalledTimes(1))
+  window.dispatchEvent(new Event('afterprint'))
+  window.dispatchEvent(new Event('pointerdown'))
+  await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
+})
+
+// Durchsicht: Mit Briefpapier trägt das Papier den Absender; kann der Browser es nicht je Seite drucken, sagt es das Fenster.
+const PAPER = { name: 'papier.png', file: 'papier.png', size: 1, mime: 'image/png' }
+const withPaper = { installation: { logo: null, paper: PAPER, paperNext: 'same', paperNextFile: null, margins: { top: 45, right: 20, bottom: 30, left: 25 } }, property: null }
+
+test('mit Briefpapier warnt die Aufstellung nicht vor dem fehlenden Namen', async () => {
+  designReply = withPaper
+  vi.stubGlobal('CSS', { supports: () => true })
+  const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
+  await waitFor(() => expect(within(drawer).queryByText(/kein Name des Vermieters/)).toBeNull())
+  expect(within(drawer).queryByText(/Briefpapier druckt dieser Browser nicht/)).toBeNull()
+})
+
+test('kann der Browser kein Briefpapier je Seite drucken, sagt es das Fenster, und der fehlende Name zählt wieder', async () => {
+  designReply = withPaper
+  vi.stubGlobal('CSS', { supports: () => false })
+  const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
+  expect(await within(drawer).findByText('Briefpapier druckt dieser Browser nicht')).toBeTruthy()
+  expect(within(drawer).getByText(/Im Brief steht kein Name des Vermieters/)).toBeTruthy()
+})
+
+test('mit Namen des Vermieters warnt die Aufstellung nicht', () => {
+  const { drawer } = openMoved()
+  expect(within(drawer).queryByText(/kein Name des Vermieters/)).toBeNull()
 })
 
 test('nach „Einbehalt speichern“ schließt das Fenster ohne Rückfrage, Strg+S im Einbehalt speichert ihn', async () => {

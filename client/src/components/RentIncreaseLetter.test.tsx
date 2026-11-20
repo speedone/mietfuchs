@@ -56,14 +56,14 @@ test('Mieterhöhung, Druck mit Briefpapier: Schreiben und Zustimmungserklärung 
   expect(frames.map((f) => f.classList.contains('print-pages-new'))).toEqual([false, true])
   for (const f of frames) {
     expect(f.querySelector('thead img.paper-follow')?.getAttribute('src')).toBe(design.follow)
-    expect(f.querySelector('tbody section.letter.rent-increase-paged')).not.toBeNull()
+    expect(f.querySelector('tbody section.letter.letter-paged')).not.toBeNull()
   }
   expect(frames[0]?.querySelector('img.letter-paper')?.getAttribute('src')).toBe(design.paper)
   expect(frames[1]?.querySelector('.rent-increase-consent')).not.toBeNull()
   unmount()
   // Ohne Briefpapier (auch in einem Browser, der es nicht je Seite drucken kann) bleibt der Aufbau, wie er war.
   const plain = render(<RentIncreaseLetterSheet increase={INCREASE} design={{ ...design, paper: null, follow: null, margins: null }} />)
-  expect(plain.container.querySelector('.print-pages-frame, .print-pages, .rent-increase-paged')).toBeNull()
+  expect(plain.container.querySelector('.print-pages-frame, .print-pages, .letter-paged')).toBeNull()
   expect(plain.container.querySelectorAll('section.letter')).toHaveLength(2)
 })
 

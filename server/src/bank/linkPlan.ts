@@ -131,7 +131,14 @@ export function planBankLinks(
       for (const tenancyId of new Set(local.depositEntries.map((d) => d.tenancyId))) {
         const short = depositProblem(after.filter((d) => d.tenancyId === tenancyId))
         if (short && !failed) {
-          problem(`Mehr als die Kaution hergibt: Am ${germanDate(short.date)} fehlten ${euro(-short.balanceCents)}.`)
+          // Ohne jeden Eingang (auch keinen aus diesem Lauf) hilft die Zahl allein nicht weiter (Systemprüfung): Führen nur
+          // die Stammdaten die Kaution als erhalten, fehlt die Buchung des Eingangs, und die gibt es unter „Kaution führen“.
+          const noReceipt = !after.some((d) => d.tenancyId === tenancyId && (d.kind === 'received' || d.kind === 'interest'))
+          const inStock = ctx.tenancies.find((t) => t.id === tenancyId)?.depositStatus === 'erhalten'
+          const way = noReceipt
+            ? ` Für dieses Mietverhältnis ist noch kein Eingang der Kaution gebucht${inStock ? '; „erhalten“ in den Stammdaten ist nur eine Angabe ohne Buchung' : ''}. Buchen Sie zuerst den Eingang: in den Stammdaten beim Mietverhältnis unter „Kaution führen“. Danach lässt sich die Rückzahlung hier zuordnen.`
+            : ''
+          problem(`Mehr als die Kaution hergibt: Am ${germanDate(short.date)} fehlten ${euro(-short.balanceCents)}.${way}`)
           failed = true
         }
       }
