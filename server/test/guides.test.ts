@@ -46,6 +46,12 @@ import { SAME_PAYMENT_DAYS, suggest, type MatchContext } from '../src/bank/match
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ids = Object.keys(GUIDES) as GuideId[]
+// Anleitungen ohne bekannte Lücke (Systemprüfung): Die einzige Lücke von „CO₂-Kosten der Heizung aufteilen“ war das
+// Blatt für den Messdienst, und das gibt es. Ausnahmen werden nur weniger; eine neue Anleitung nennt ihre Lücken.
+const WITHOUT_GAPS: readonly GuideId[] = ['co2Costs']
+// Geschlossene Issues, die einmal als „geplant in #N“ an einer Lücke standen. Kein Abruf bei GitHub: Die Liste wächst
+// von Hand, wenn ein Issue einer Lücke geschlossen wird (beim Release, siehe CLAUDE.md „Geschlossen wird beim Release“).
+const CLOSED_ISSUES: readonly number[] = [97, 99, 210, 218]
 
 // ---------- Aufbau ----------
 
@@ -59,7 +65,9 @@ test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#2
     assert.ok(g.steps.length >= 3, `${id}: zu wenige Schritte`)
     assert.ok(g.result.length >= 2, `${id}: „Was Mietfuchs daraus macht“ zu knapp`)
     assert.ok(g.caveats.length >= 1, `${id}: „Worauf Sie achten müssen“ fehlt`)
-    assert.ok(g.gaps.length >= 1, `${id}: „Was Mietfuchs (noch) nicht kann“ fehlt`)
+    // Eine Anleitung ohne bekannte Lücke steht ausdrücklich in WITHOUT_GAPS; die Hilfe sagt es dann.
+    assert.equal(g.gaps.length === 0, WITHOUT_GAPS.includes(id), `${id}: „Was Mietfuchs (noch) nicht kann“ fehlt, oder die Ausnahme ist überholt`)
+    for (const x of g.gaps) assert.ok(x.text.trim(), `${id}: leere Lücke`)
     assert.match(g.example, /\d/, `${id}: Beispiel ohne Zahl`)
     for (const s of g.steps) assert.ok(s.text.trim(), `${id}: leerer Schritt`)
   }
@@ -99,9 +107,25 @@ test('Anleitungen: Rechtliches nur mit Norm, und jede Norm nennt Paragraf oder A
   assert.ok(withNorm >= 8, `nur ${withNorm} belegte Rechtsaussagen`)
 })
 
-test('Anleitungen: offene Lücken verweisen auf ihr Issue, darunter die Heizkostenabrechnung und die Vorverteilung', () => {
+test('Anleitungen: offene Lücken verweisen auf ihr offenes Issue, darunter die Vorverteilung; geschlossene Issues nennt keine', () => {
   const issues = new Set(ids.flatMap((id) => GUIDES[id].gaps.flatMap((g) => (g.issue ? [g.issue] : []))))
-  for (const n of [95, 97, 99]) assert.ok(issues.has(n), `#${n} fehlt`)
+  for (const n of [95]) assert.ok(issues.has(n), `#${n} fehlt`)
+  // Systemprüfung: Die Hilfe zeigt „geplant in #N“. Diese Issues sind geschlossen (Stand 20.11.2026), geplant ist dort
+  // nichts mehr: #218 (Vorerfassung: nur der Hinweis kam, die Lücke bleibt ohne Nummer), #210 (Blatt für den Messdienst,
+  // ausgeliefert), #97 (CO₂ und Abgrenzung nach Gradtagen ausgeliefert, die Reste bleiben ohne Nummer), #99 (eigene
+  // Heizkostenabrechnung, der Heizwert aus der Belegauswertung bleibt ohne Nummer). Wird ein weiteres Issue einer
+  // Lücke geschlossen, kommt seine Nummer hier dazu; GitHub fragt dieser Test nicht.
+  for (const n of CLOSED_ISSUES) assert.ok(!issues.has(n), `#${n} ist geschlossen und steht noch als „geplant in“ an einer Lücke`)
+  // Was es gibt, ist keine Lücke: das Blatt „CO₂-Angaben für den Messdienst“ (Seite Heizkosten) und die Abgrenzung
+  // einer Gas- oder Fernwärmerechnung nach Gradtagen (Anleitung supplierInvoice).
+  for (const id of ids) {
+    assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /CO₂-Angaben für den Messdienst ausdrucken/, id)
+    assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /nach Gradtagen auf die Heizperiode abgrenzen; bis dahin weist Mietfuchs nur darauf hin/, id)
+  }
+  // Was offen bleibt, steht weiter da, nur ohne Nummer
+  assert.ok(GUIDES.heatingSelf.gaps.some((x) => /Vorerfassung nach Gruppen/.test(x.text) && x.issue === undefined))
+  assert.ok(GUIDES.supplierInvoice.gaps.some((x) => /gemeinsamer Gaszähler/.test(x.text) && x.issue === undefined))
+  assert.ok(GUIDES.stockFuel.gaps.some((x) => /Heizwert laut Rechnung/.test(x.text) && x.issue === undefined))
   // Der Belegordner (#170) und das Übernehmen aus dem Vorjahr (#141) sind ausgeliefert und keine
   // Lücke mehr; das alte Wort „Belegarchiv“ kennt die Oberfläche nicht mehr.
   for (const n of [141, 170]) assert.ok(!issues.has(n), `#${n} ist keine Lücke mehr`)
@@ -761,7 +785,6 @@ test('CO₂-Kosten aufteilen (Heizung PR 6): Ort von S je Messdienst, Muster nur
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ich finde diese Zeile nicht“')))
   assert.ok(g.caveats.some((c) => /3 Prozent/.test(c.text) && c.norm === '§ 7 Abs. 3 und 4 CO2KostAufG'))
   assert.match(g.applies, /01\.01\.2023/)
-  assert.ok(g.gaps.some((x) => x.issue === 210), '#210 fehlt')
 })
 
 test('meteringService nennt das Auslesen mit der KI als Vorschlag, den der Vermieter prüft; #103 ist keine Lücke mehr (Heizung PR 20)', () => {
@@ -779,7 +802,7 @@ test('Heizkosten selbst abrechnen (Heizung PR 10): Pflichten mit Norm, Lücken m
   assert.match(hinweise, /VIII ZR 19\/07/)
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ableseergebnis drucken“') && /jede Wohnung/.test(s.text)))
   // Heizung PR 12: Heizkostenverteiler rechnet Mietfuchs; offen ist die Vorerfassung bei gemischten Geräten (#218).
-  assert.ok(g.gaps.some((x) => x.issue === 218 && /Heizkostenverteiler/.test(x.text)))
+  assert.ok(g.gaps.some((x) => /Vorerfassung/.test(x.text) && /Heizkostenverteiler/.test(x.text)))
   for (const id of ids.filter((x) => x !== 'heatingSelf')) {
     assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /eigene Heizkostenabrechnung (nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht|mit Wärmemengenzählern)/, id)
   }
@@ -790,7 +813,6 @@ test('Durchsicht #240, M7: „Heizkosten selbst abrechnen“ nennt die Karte War
   assert.ok(g.steps.some((s) => /Karte „Warmwasser“.*„Kilowattstunden der Rechnung berechnet nach“/.test(s.text)))
   assert.ok(g.caveats.some((c) => /unzumutbar aufwendig/.test(c.text) && c.norm === '§ 9 Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20'))
   assert.ok(g.caveats.some((c) => /vor dem 01\.10\.2024 beginnen.*mehr als die Hälfte/.test(c.text)))
-  assert.ok(GUIDES.stockFuel.gaps.every((x) => x.issue !== undefined))
 })
 
 test('Heizung PR 12: „Heizkosten selbst abrechnen“ nennt Heizkostenverteiler mit Skala und Faktor, den Stichtagswert und die Werte des Ablesedienstes; keine Anleitung sagt mehr, Heizkostenverteiler rechne Mietfuchs nicht', () => {

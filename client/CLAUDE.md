@@ -264,7 +264,9 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   (mit „Mietfuchs beenden“), außer in der Hilfe.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
-  Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene
+  Grund (`aria-describedby`). Ebenso das Mietkonto ohne Mietverhältnis im Jahr (`ledgerStep`), die Steuer ohne
+  Kosten (`costsStep`, der Knopf `no-print`) und die Seite Heizkosten ohne Heizanlage („Heizung einrichten“): Kein
+  Leerzustand nennt eine andere Seite ohne Knopf dorthin. Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene
   Punkte (`cockpitSubtitle`).
 - **„Demnächst fällig“** (#190, [UpcomingCard.tsx](src/components/UpcomingCard.tsx), Texte und Ziele in
   [upcomingView.ts](src/upcomingView.ts)): im Cockpit über der Checkliste, für das gewählte Objekt, auch im leeren
@@ -286,6 +288,14 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   (`useSectionJump`, `.focus-target`) und setzt den Fokus auf ihr `data-jump-focus` oder ihre Überschrift, `property`
   öffnet „Objekt bearbeiten“ mit dem Teil. Genau ein betroffener Eintrag öffnet sich selbst; ohne eindeutige Stelle
   (Eingang, Kostenvergleich, „Zur Abrechnung“) bleibt es bei der Seite.
+  Ein Eintrag ohne Formular, aber mit einem Bereich auf seiner Seite, wird hervorgehoben wie eine Karte
+  (`useSubjectJump`, Kennung `data-jump="Art:Kennung"`): `heatingCosts` hebt auf der Seite Heizkosten den Bereich der
+  Anlage hervor (mehr als die Anlage nennt der Hinweis nicht), `heatingPlant` mit leerer Kennung
+  (`SET_UP_HEATING_TARGET`) die Karte „Heizung“ der Stammdaten mit dem Fokus auf „Heizung einrichten“. Ins Bild holen
+  und Fokus setzen alle drei Wege mit `revealJump`.
+- **Der Bestand der App** (Wohnungen, Mietverhältnisse, Einstellungen, Heizanlagen) lädt `reload` in App.tsx; von den
+  Heizanlagen hängt ab, ob „Heizkosten“ in der Navigation steht. Eine Seite, die den Bestand anderswo ändert, ruft es
+  danach auf: die Stammdaten nach jedem Speichern, der Verlauf nach jedem Rücksprung (`onReverted`).
 - **Zahlungs-QR-Code** (#624, [paymentQr.ts](src/paymentQr.ts), [PaymentQr.tsx](src/components/PaymentQr.tsx)): `paymentQrOf`
   entscheidet (Nachzahlung, Schalter, Baustein im Anschreiben vorhanden, gültiger Inhalt), der Kasten steht direkt nach
   dem Absatz `backPayment`, im Brief wie unter der Aufstellung. Gezeichnet mit lean-qr als SVG, **Byte-Modus ohne
@@ -649,8 +659,9 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   zurücknehmen …“ und „Nur die späteren Änderungen zurücknehmen …“. Die Rückfrage kommt aus der Vorschau des Servers
   (`revertQuestion`: Titel „Zum Stand vor/nach „…“ zurückkehren?“, die ersten acht Einträge, Dateien aus dem
   Papierkorb, die Sätze des Servers wie „Zustimmungen bleiben“); eine Grenze steht als `NoticeBox` am Eintrag, ohne
-  Rückfrage. Danach eine Mitteilung (`revertedMessage`: ein Eintrag mit Titel, mehrere mit ihrer Zahl), das Objekt neu
-  geladen (`reload`, Zeitraum und Namen können sich geändert haben) und die Liste neu. Zurückgenommene Einträge tragen
+  Rückfrage. Danach eine Mitteilung (`revertedMessage`: ein Eintrag mit Titel, mehrere mit ihrer Zahl), der Bestand der App neu
+  geladen (`onReverted`, das `reload` der App samt Objekten; Zeitraum, Namen, Wohnungen, Mietverhältnisse und
+  Heizanlagen können sich geändert haben) und die Liste neu. Zurückgenommene Einträge tragen
   „zurückgenommen“, Schranken haben keine Knöpfe; nur lesbare tragen beide Knöpfe, denn die Vorschau entscheidet, ob
   der Stand über eine Sicherung erreichbar ist. „Rückgängig“ in der Mitteilung nach einer Speicheraktion gibt es noch
   nicht (die Mitteilungen haben keine Aktion).
@@ -703,7 +714,19 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
 - **Anlegen oder Bearbeiten heißt Seitenfenster**, auch Ablesung, Lieferung, Mieterwechsel,
   Zeitraumwechsel, der Zeitraum der Heizung, die getrennte Heizkostenabrechnung, die Schätzung nach § 9a
   (geöffnet aus der Zeile der Wohnung, „Schätzen“/„Ändern“) und das Objekt (die Karte „Objekt“ zeigt nur an,
-  `propertySummary`). Mit Vorschau
+  `propertySummary`). **Ablesung** (Zaehler.tsx, Logik in [readingForm.ts](src/readingForm.ts)): ein Fenster für
+  Anlegen und Bearbeiten (✎ je Zeile, `PUT /api/readings/:id` mit `buildReadingUpdate`: Abgewähltes ausdrücklich, nie
+  der Zähler und nie das Eichjahr des neuen Zählers, das der Server im PUT ablehnt; Abgewähltes als `null`, damit kein
+  `replacement: false` gespeichert wird; ein Stichtagswert des Heizkostenverteilers hat kein ✎, er hat sein eigenes
+  Formular). Vor dem Speichern fragt `readingQuestion`: Datum nach heute oder ein negatives Segment zur Ablesung
+  unmittelbar davor oder danach, **verglichen wie `meterSegments` in calc.ts** (ist die spätere Ablesung ein
+  Zählerwechsel, zählt ihr Endstand des alten Zählers, ohne Endstand keine Frage; am selben Tag gilt die letzte der
+  Liste, `latestReading`, wie beim Anhalt „Letzter Stand“); beim Heizkostenverteiler rät sie zum Stichtagswert statt
+  zum Zählerwechsel. **Rückfrage, kein Verbot**. Das Datum einer neuen Ablesung ist nur dann mit heute vorbelegt, wenn
+  heute im gewählten Zeitraum liegt (`newReadingForm`; sonst leer, denn ein übersehenes Datum verschiebt Geld zwischen
+  Mietern), ohne `changedFrom` (vorbelegt gilt hier nicht als geändert), und solange es unberührt ist, steht
+  `PREFILLED_DATE_HINT` am Feld. Der Mieterwechsel erfasst seine Stände über tenantChange.ts und fragt nicht.
+  Mit Vorschau
   verwirft **jede Änderung nach der Vorschau die Vorschau** (auch eine verspätete Antwort gilt dann
   nicht, Folgenummer je Anfrage), und ein Satz sagt, dass sie neu nötig ist.
   Beispiel „Offene Monate als bezahlt erfassen“ im Mietkonto (#608, [markPaidForm.ts](src/markPaidForm.ts)): Die Vorschau
