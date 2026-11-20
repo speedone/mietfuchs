@@ -635,7 +635,7 @@ test('kein „Bankverbindung fehlt“ mit IBAN und keines bei einem Guthaben', a
 test('die Übersicht nennt vor dem Abschluss, welche Vorauszahlung der Brief ab wann ankündigt, und den Weg, es zu ändern', async () => {
   show()
   const table = await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
-  expect(plain(within(table).getByText(/Brief kündigt an/).textContent).replace(/\u202f/g, ' ')).toBe(`Brief kündigt an: Vorauszahlung 50,00 € ab Dezember ${YEAR + 1} (bisher 40,00 €)`)
+  expect(plain(within(table).getByText(/Brief kündigt an/).textContent).replace(/\u202f/g, ' ')).toBe(`Brief kündigt an: Vorauszahlung 50,00 € ab Dezember ${YEAR + 1}`)
   expect(screen.getByText(/Sie ändern Betrag und Monat je Mieter über „Ansehen“ und dort „Anschreiben bearbeiten“/)).toBeTruthy()
   cleanup()
   // Abgeschlossen übernimmt die Karte „Neue Vorauszahlung“ (#317); ohne Ankündigung steht nichts.
@@ -676,6 +676,15 @@ test('eigener Betrag gleich der geltenden Vorauszahlung: das Seitenfenster sagt,
   await waitFor(() => expect(plain(dialog.textContent).replace(/\u202f/g, ' ')).toMatch(/Die Vorauszahlung beträgt 40,00 € und gilt ab \S+ \d{4} ohnehin\. Das Anschreiben kündigt deshalb keine Anpassung an\./), SLOW)
   fireEvent.change(within(dialog).getByRole('textbox', { name: /Neue monatliche Vorauszahlung/ }), { target: { value: '45' } })
   await waitFor(() => expect(plain(dialog.textContent)).not.toContain('kündigt deshalb keine Anpassung an'), SLOW)
+})
+
+// Durchsicht (S1): Der Betrag gilt schon; die Übersicht sagt, dass der Brief deshalb nichts ankündigt.
+test('die Übersicht sagt, wenn der Brief keine Anpassung ankündigt, weil der Betrag schon gilt', async () => {
+  settlement = lettersFor(SETTINGS, { suggestedMonthlyCents: 4000 })
+  show()
+  const table = await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  expect(plain(within(table).getByText(/Brief kündigt keine Anpassung an/).textContent).replace(/\u202f/g, ' ')).toBe('Brief kündigt keine Anpassung an: 40,00 € gelten schon')
+  expect(screen.getByText(/Sie ändern Betrag und Monat je Mieter/)).toBeTruthy()
 })
 
 // ---------- Zahlungs-QR-Code (#624) ----------

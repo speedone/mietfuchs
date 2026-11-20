@@ -153,6 +153,21 @@ test('ein Browser ohne Ränder je Seite (Safari): ohne Briefpapier, mit Logo, Ra
   expect((within(drawer).getByRole('button', { name: 'Drucken' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
+// Durchsicht (S2): Wer die Bankverbindung auf dem Briefpapier führt, bekommt „Bankverbindung fehlt“ nicht.
+test('ohne IBAN: mit Briefpapier kein „Bankverbindung fehlt“, ohne Briefpapier schon', async () => {
+  const noIban: Settings = { ...SETTINGS, iban: '' }
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+  settlement = { ...settlement, letters: lettersOf(settlement, { settings: noIban, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
+  show(noIban)
+  await screen.findAllByText('Bankverbindung fehlt', {}, SLOW)
+  cleanup()
+  designs = { installation: { ...DEFAULT_LETTER_DESIGN, paper: PAPER }, property: null }
+  show(noIban)
+  const card = await statementOf()
+  await waitFor(() => expect(card.querySelector('img.letter-paper')).not.toBeNull(), SLOW)
+  expect(screen.queryByText('Bankverbindung fehlt')).toBeNull()
+})
+
 test('Briefpapier nur auf der ersten Seite: kein Papier auf den Folgeseiten', async () => {
   designs = { installation: { ...DEFAULT_LETTER_DESIGN, paper: PAPER, paperNext: 'none' }, property: null }
   const { container } = show()

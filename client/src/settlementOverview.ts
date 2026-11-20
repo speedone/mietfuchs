@@ -76,13 +76,20 @@ export function tenantRows(data: Pick<Settlement, 'statements'> & { notSettled?:
 
 // Was der Brief eines Mieters an neuer Vorauszahlung ankündigt (§ 560 Abs. 4 BGB), als Zeile der Übersicht vor dem
 // Abschluss (Systemprüfung: Die Vorgabe kündigt den Vorschlag an, und die Seite sagte es erst im Brief selbst). Nur, wenn
-// der Baustein gedruckt wird (`chooseLetterBlocks`); der bisherige Betrag steht im Anschreiben (`VorauszahlungBisher`).
-export function announcedAdjustment(letter: Pick<StatementLetter, 'adjustment' | 'texts' | 'values'> | null | undefined, balanceCents: number): string | null {
+// der Baustein gedruckt wird (`chooseLetterBlocks`). Ohne „bisher“: Der Brief nennt es in der Vorgabe nicht, und die Rate
+// am Ende des Zeitraums kann vom laufenden Betrag abweichen.
+export function announcedAdjustment(letter: Pick<StatementLetter, 'adjustment' | 'texts'> | null | undefined, balanceCents: number): string | null {
   const cents = letter?.adjustment.newCents ?? null
   if (!letter || cents === null || !chooseLetterBlocks(letter, balanceCents, 0).some((b) => b === 'adjustSuggestion' || b === 'adjustCustom')) return null
   const from = letter.adjustment.from
-  const before = (letter.values?.VorauszahlungBisher ?? '').trim()
-  return `Brief kündigt an: Vorauszahlung ${fmtEuro(cents)}${from ? ` ab ${monthName(from)}` : ''}${before ? ` (bisher ${before})` : ''}`
+  return `Brief kündigt an: Vorauszahlung ${fmtEuro(cents)}${from ? ` ab ${monthName(from)}` : ''}`
+}
+// Durchsicht (S1): Der gewählte Betrag (Vorschlag oder eigener, `chosenCents`) gilt schon (`currentPrepaymentAt`), der Brief
+// lässt den Satz deshalb weg. Die Übersicht sagt es, statt gar nichts zu zeigen.
+export function alreadyAppliesNote(letter: Pick<StatementLetter, 'adjustment'> | null | undefined, chosenCents: number | null, currentCents: number | null): string | null {
+  if (!letter || letter.adjustment.mode === 'none' || letter.adjustment.newCents !== null) return null
+  if (chosenCents === null || currentCents === null || chosenCents !== currentCents) return null
+  return `Brief kündigt keine Anpassung an: ${fmtEuro(currentCents)} gelten schon`
 }
 // Der Weg, es zu ändern, einmal unter der Tabelle.
 export const ADJUSTMENT_NOTE =

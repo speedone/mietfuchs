@@ -3,7 +3,7 @@
 import type { LetterBlock, LetterTemplates, Property, Settings, Settlement, Statement, StatementLetter, Tenancy } from './types'
 import { chooseLetterBlocks, lettersOf, renderLetterText } from '../../shared/letter.ts'
 import { fmtDate, fmtEuro } from './api'
-import { andList, countOf } from '../../shared/wording.ts'
+import { countOf } from '../../shared/wording.ts'
 import { localToday } from './periodForm'
 
 // Eine Antwort von /api/letter-texts, wie sie sein soll; ein älterer Server oder eine Testattrappe liefert
@@ -195,13 +195,17 @@ export const SENDER_MISSING_CLOSED_TEXT =
 
 // Systemprüfung: Ohne IBAN (Einstellungen bzw. Objekt) bittet der Satz zur Nachzahlung um Überweisung, ohne ein Konto zu
 // nennen ({Konto} wird leer). Geprüft wird, was im Anschreiben steht, abgeschlossen also das eingefrorene: die eingesetzte
-// IBAN und der Satz selbst. **Ein Hinweis, keine Sperre**: Wer bar oder per Lastschrift kassiert, schreibt den Satz ohne
-// „überweisen“ oder lässt ihn weg und bekommt dann keinen; ebenso, wer das Konto in den eigenen Text schreibt.
+// IBAN und der Satz selbst. **Ein Hinweis, keine Sperre, und im Zweifel keiner** (Durchsicht S2): nur, wenn ein Satz zur
+// Überweisung auffordert („überweisen Sie“, ohne Verneinung im selben Satz) und der Text kein Konto nennt. Wer bar oder per
+// Lastschrift kassiert und es so schreibt, bekommt keinen; mit Briefpapier auch nicht, denn das Papier trägt üblicherweise
+// die Bankverbindung, und Mietfuchs sieht nicht, was darauf steht (wie `senderMissing`). **Nur auf der Seite Abrechnung**,
+// nicht im Cockpit: Das kennt das Briefpapier nicht.
 const IBAN_IN_TEXT = /[A-Z]{2}\d{2}(?: ?[0-9A-Z]{4}){2,}/
-export function ibanMissing(p: { balanceCents: number, iban: string | null | undefined, sentence: string | null | undefined }): boolean {
-  if (p.balanceCents >= 0 || (p.iban ?? '').trim() !== '') return false
-  const sentence = (p.sentence ?? '').trim()
-  return /überweis/i.test(sentence) && !IBAN_IN_TEXT.test(sentence)
+const asksForTransfer = (sentence: string): boolean => /überweisen Sie/i.test(sentence) && !/(?:^|[^\p{L}])(?:nicht|nichts|kein\p{L}*)(?![\p{L}])/iu.test(sentence)
+export function ibanMissing(p: { balanceCents: number, iban: string | null | undefined, sentence: string | null | undefined, paper: boolean }): boolean {
+  if (p.paper || p.balanceCents >= 0 || (p.iban ?? '').trim() !== '') return false
+  const text = (p.sentence ?? '').trim()
+  return !IBAN_IN_TEXT.test(text) && text.split(/(?<=[.!?])\s+/).some(asksForTransfer)
 }
 export const IBAN_MISSING_TITLE = 'Bankverbindung fehlt'
 export const IBAN_MISSING_TEXT =
@@ -212,25 +216,3 @@ export const IBAN_MISSING_TEXT =
 export const IBAN_MISSING_CLOSED_TEXT =
   'Das abgeschlossene Anschreiben bittet um Überweisung der Nachzahlung, nennt aber kein Konto. ' +
   'Der Satz ist mit der Abrechnung eingefroren: Bitte wieder öffnen, die IBAN eintragen und erneut abschließen, oder nennen Sie dem Mieter das Konto auf anderem Weg.'
-
-// Fürs Cockpit: die Mieter, deren Anschreiben so zur Nachzahlung auffordert, bis zum Versand. Eine vor #415 abgeschlossene
-// Abrechnung trägt kein Anschreiben.
-export function missingAccountFindings(s: {
-  statements: readonly Pick<Statement, 'tenancyId' | 'tenantName' | 'balanceCents'>[]
-  letters?: Record<string, Pick<StatementLetter, 'texts' | 'values'>>
-  closed?: { sentAt?: string | null } | null
-}): string[] {
-  if (s.closed?.sentAt) return []
-  return s.statements
-    .filter((st) => {
-      const letter = s.letters?.[st.tenancyId]
-      return !!letter && ibanMissing({ balanceCents: st.balanceCents, iban: letter.values?.IBAN, sentence: letter.texts.backPayment })
-    })
-    .map((st) => st.tenantName)
-}
-// Die Zeile im Cockpit dazu, alle betroffenen Mieter beim Namen.
-export function missingAccountDetail(names: readonly string[], closed: boolean): string {
-  return `Das Anschreiben an ${andList(names)} bittet um Überweisung der Nachzahlung, nennt aber kein Konto. ${closed
-    ? 'Es ist mit der Abrechnung eingefroren: Öffnen Sie sie wieder, tragen Sie die IBAN ein und schließen Sie erneut ab.'
-    : 'Tragen Sie die IBAN in den Einstellungen oder beim Objekt ein, oder ändern Sie den Satz zur Nachzahlung im Anschreiben.'}`
-}

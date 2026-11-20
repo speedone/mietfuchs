@@ -28,7 +28,7 @@ import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../not
 import { CalcNotice, CalcNoticeGroup, NoticeBox, NoticeGroup } from '../components/Notice'
 import { groupNotices, noticePeople } from '../noticeGroups'
 import PrintDrawer, { type PrintScope } from '../components/PrintDrawer'
-import { ADJUSTMENT_NOTE, announcedAdjustment, checkList, hintSummary, neighbors, prepaymentBasisNote, resultText, tenantRows } from '../settlementOverview'
+import { ADJUSTMENT_NOTE, alreadyAppliesNote, announcedAdjustment, checkList, hintSummary, neighbors, prepaymentBasisNote, resultText, tenantRows } from '../settlementOverview'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { emptySettlement, startStep } from '../emptyStock'
@@ -725,9 +725,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       out.push({ code: 'page.sender', level: 'warning', title: 'Absender fehlt', text: data?.closed ? SENDER_MISSING_CLOSED_TEXT : SENDER_MISSING_TEXT })
     }
     // Systemprüfung: Der Satz zur Nachzahlung bittet um Überweisung, aber das Anschreiben trägt keine IBAN (abgeschlossen die
-    // eingefrorene). Nur bei den Mietern mit Nachzahlung, bis zum Versand; ein Hinweis, keine Sperre (letterView.ts).
+    // eingefrorene). Nur bei den Mietern mit Nachzahlung, bis zum Versand, nicht mit Briefpapier; ein Hinweis, keine Sperre
+    // (letterView.ts).
     const backPayment = (v.showLetter ? v.paragraphs : v.underTable).find((p) => p.block === 'backPayment')?.text
-    if (!data?.closed?.sentAt && v.letter && ibanMissing({ balanceCents: v.st.balanceCents, iban: v.letter.values?.IBAN, sentence: backPayment })) {
+    if (!data?.closed?.sentAt && v.letter && ibanMissing({ balanceCents: v.st.balanceCents, iban: v.letter.values?.IBAN, sentence: backPayment, paper })) {
       out.push({ code: 'page.iban', level: 'warning', title: IBAN_MISSING_TITLE, text: data?.closed ? IBAN_MISSING_CLOSED_TEXT : IBAN_MISSING_TEXT })
     }
     return out
@@ -740,7 +741,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Je Mieter die Titel der eigenen Prüfungen, als Merker in der Tabelle der Übersicht.
   const checksByTenancy = new Map(views.map((v) => [v.st.tenancyId, pageChecks(v).map((n) => (n.code === 'page.address' ? 'Anschrift prüfen' : n.title.replace(/ \(.*\)$/, '')))]))
   // Vor dem Abschluss: was der Brief je Mieter an neuer Vorauszahlung ankündigt (abgeschlossen zeigt es die Karte zu #317).
-  const announced = new Map(data && !data.closed ? views.map((v) => [v.st.tenancyId, announcedAdjustment(v.letter, v.st.balanceCents)]) : [])
+  // Gilt der gewählte Betrag schon, sagt die Zeile das (Durchsicht S1), mit derselben Regel wie `lettersOf`.
+  const announced = new Map(data && !data.closed ? views.map((v) => {
+    const own = tenancyLetters[v.st.tenancyId]?.adjustment
+    const chosen = v.letter?.adjustment.mode === 'custom' ? own?.cents ?? null : v.st.suggestedMonthlyCents > 0 ? v.st.suggestedMonthlyCents : null
+    const current = currentPrepaymentAt(data, v.st, v.tenancy, own?.from ?? adjustFromFor(localToday(), data.period.to))
+    return [v.st.tenancyId, announcedAdjustment(v.letter, v.st.balanceCents) ?? alreadyAppliesNote(v.letter, chosen, current)]
+  }) : [])
   const anyAnnounced = [...announced.values()].some((t) => t !== null)
   const basisNote = data ? prepaymentBasisNote(data) : null
   const fixOf = (n: Notice) => {

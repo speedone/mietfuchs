@@ -25,7 +25,6 @@ import EmptyState from '../components/EmptyState'
 import { startStep } from '../emptyStock'
 import { ibanHintTitle, invalidIbans } from '../ibanCheck'
 import { addressCheckDetail, addressFindings } from '../landlord'
-import { missingAccountDetail, missingAccountFindings } from '../letterView'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
 import UpcomingCard from '../components/UpcomingCard'
@@ -326,13 +325,6 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
         tab: allFormer ? 'stammdaten' : 'abrechnung', focus: allFormer ? TENANCIES_TARGET : CHECKS_TARGET, cta: allFormer ? 'Anschrift eintragen' : 'Zur Abrechnung',
         ...(only ? { go: () => onNavigate('stammdaten', { kind: 'tenancy', id: only.tenancyId }) } : {}),
       })
-    }
-
-    // 6c. Bankverbindung vor dem Versand (Systemprüfung): Das Anschreiben bittet um Überweisung der Nachzahlung, trägt aber
-    // keine IBAN. Dieselbe Prüfung steht auf der Seite Abrechnung (`ibanMissing` in letterView.ts); kein Hinweis der Berechnung.
-    const noAccount = missingAccountFindings(settlement)
-    if (noAccount.length > 0) {
-      list.push({ title: 'Bankverbindung für die Nachzahlung', level: 'gelb', detail: missingAccountDetail(noAccount, !!settlement.closed), tab: 'abrechnung', focus: CHECKS_TARGET, cta: 'Zur Abrechnung' })
     }
 
     // 7. Abschluss & Versand

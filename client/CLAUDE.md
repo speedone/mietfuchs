@@ -191,9 +191,9 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   selbst, Anschrift, Länge und fehlender Absender (`senderMissing`: bis zum Versand, nicht mit Briefpapier oder eigener
   Unterschrift; offen „Hier beheben →“ in die Einstellungen, abgeschlossen „wieder öffnen“, auch in der Vorschau) und
   fehlende Bankverbindung (`ibanMissing` in letterView.ts, `page.iban`: nur bei einem Mieter mit Nachzahlung, dessen Satz
-  im Anschreiben um Überweisung bittet und kein Konto nennt, geprüft am Anschreiben, abgeschlossen also eingefroren; bis zum
-  Versand, Wege wie beim Absender; wer bar oder per Lastschrift kassiert und den Satz so schreibt, bekommt keinen; im
-  Cockpit die Zeile „Bankverbindung für die Nachzahlung“, `missingAccountFindings`), als
+  im Anschreiben zur Überweisung auffordert („überweisen Sie“ ohne Verneinung im selben Satz) und kein Konto nennt, geprüft
+  am Anschreiben, abgeschlossen also eingefroren; bis zum Versand, nicht mit Briefpapier, Wege wie beim Absender; im
+  Zweifel kein Hinweis; **nicht im Cockpit**, das kennt das Briefpapier nicht), als
   Hinweise derselben Gestalt, `pageChecks`. **Gleiche Hinweise mehrerer Mieter stehen
   in einem Kasten** (`groupNotices` in [noticeGroups.ts](src/noticeGroups.ts), `CalcNoticeGroup`): nur bei gleichem
   Code, Stufe, Titel und Bezug auf ein Mietverhältnis der Abrechnung, wenn der Text nach Abzug von Name, Wohnung und
@@ -202,7 +202,8 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   Betrag; sonst bleibt der Hinweis einzeln. Den Zeitraum nennt die Zeile nur bei gleichem Namen und gleicher Wohnung. Hat die Abrechnung Fehler, sagt es auch die
   Vorschau, mit „Zurück zu „Zu prüfen““), die Übersicht (Kennzahlen,
   Tabelle je Mieter `tenantRows` mit den Mietverhältnissen ohne Abrechnung, `stacked`; offen steht beim Ergebnis, welche
-  Vorauszahlung der Brief ab wann ankündigt (`announcedAdjustment`, nur wenn der Baustein gedruckt wird), darunter der Weg,
+  Vorauszahlung der Brief ab wann ankündigt (`announcedAdjustment`, nur wenn der Baustein gedruckt wird) oder dass er
+  nichts ankündigt, weil der gewählte Betrag schon gilt (`alreadyAppliesNote`), darunter der Weg,
   es zu ändern (`ADJUSTMENT_NOTE`), und der Satz, dass das Soll angesetzt ist (`prepaymentBasisNote`: offen, solange eine
   Vorauszahlung nicht von Hand angepasst ist); die Karte zu § 560 bleibt eine
   eigene Karte darunter, als Spalte wäre sie zu eng) und „Kontrolle“ (Kontrollansicht, Vermieteranteil, Rechtsstand je als
@@ -340,8 +341,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   ist keine eigene Angabe (`setText`), geschickt wird nur, was sich geändert hat (`textChanges`); ein unbekannter
   Platzhalter ist eine Meldung am Feld (`letterProblems`, dieselbe Prüfung wie der Server). Ein eigener Betrag über
   dem Vorschlag bekommt den Hinweis zu § 560 Abs. 4 BGB (`adjustmentHint`, nur wenn es einen Vorschlag gibt),
-  gesperrt wird nichts. Gilt der gewählte Betrag im Monat der Anpassung laut Staffel ohnehin, sagt das Fenster, dass der
-  Brief nichts ankündigt (`sameAmountHint`, `adjust.currentAt`). Die Vorschau setzt den neuen Betrag aus dem Entwurf ein (`draftNewCents`); „Anpassung auf
+  gesperrt wird nichts. Galt der gewählte Betrag schon am Ende des Zeitraums und gilt er im Monat der Anpassung weiter
+  (`currentPrepaymentAt`), sagt das Fenster, dass der Brief nichts ankündigt (`sameAmountHint`, `adjust.currentAt`). Die Vorschau setzt den neuen Betrag aus dem Entwurf ein (`draftNewCents`); „Anpassung auf
   Vorgabe zurücksetzen“ nimmt die eigene Wahl des Mieters weg (`adjustment: null`). Ein gesperrter Knopf nennt den
   Grund daneben.
 - **Ab Monat und „In die Staffel übernehmen“** (#317): Das Seitenfenster des Mieters hat bei einer Anpassung ein

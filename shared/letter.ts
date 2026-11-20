@@ -265,9 +265,10 @@ export function buildLetter(i: {
   suggestedCents: number
   // #317: der Monat, ab dem die Anpassung gilt (eigene Angabe des Mieters, sonst die Vorgabe)
   from: string
-  // Die Vorauszahlung, die in diesem Monat laut Staffel ohnehin gilt (`prepaymentAt`). Ist der neue Betrag derselbe, wird
-  // nichts angekündigt: „auf 160,00 € angepasst“ stand sonst im Brief eines Mieters, der 160 € schon zahlt. Entschieden
-  // wird hier, beim Erzeugen; ein eingefrorenes Anschreiben trägt seinen Betrag im Stand und druckt weiter wie zugestellt.
+  // Die Vorauszahlung, die schon am Ende des abgerechneten Zeitraums galt und im Monat der Anpassung weiter gilt
+  // (`unchangedPrepayment`), sonst `null`. Ist der neue Betrag derselbe, wird nichts angekündigt: „auf 160,00 € angepasst“
+  // stand sonst im Brief eines Mieters, der 160 € schon zahlt. Entschieden wird hier, beim Erzeugen; ein eingefrorenes
+  // Anschreiben trägt seinen Betrag im Stand und druckt weiter wie zugestellt.
   currentCents?: number | null
 }): StatementLetter {
   const chosen = adjustedCents(i.adjustment, i.suggestedCents)
@@ -334,8 +335,9 @@ export function adjustmentHint(mode: LetterAdjustmentMode, cents: number | null,
   return `Der Betrag liegt über dem Vorschlag von ${euro(suggestedCents)}. Nach § 560 Abs. 4 BGB ist eine Anpassung nur auf eine angemessene Höhe zulässig; prüfen Sie, ob Sie den höheren Betrag begründen können.`
 }
 
-// Systemprüfung: Der gewählte Betrag gilt im Monat der Anpassung laut Staffel ohnehin. Dann gibt es nichts anzupassen, und
-// das Anschreiben lässt den Satz weg (`buildLetter`); das Seitenfenster sagt es, statt den Satz still zu verlieren.
+// Systemprüfung: Der gewählte Betrag galt schon im abgerechneten Zeitraum und gilt im Monat der Anpassung weiter
+// (`currentPrepaymentAt`). Dann gibt es nichts anzupassen, und das Anschreiben lässt den Satz weg (`buildLetter`); das
+// Seitenfenster sagt es, statt den Satz still zu verlieren.
 export function sameAmountHint(newCents: number | null, currentCents: number | null, month: string | null): string | null {
   if (newCents === null || currentCents === null || newCents !== currentCents) return null
   return `Die Vorauszahlung beträgt ${euro(currentCents)}${month && isMonthKey(month) ? ` und gilt ab ${monthName(month)} ohnehin` : ''}. Das Anschreiben kündigt deshalb keine Anpassung an.`
@@ -403,7 +405,7 @@ export const adjustmentDefault = (s: Pick<Settings, 'printAdjustSuggestion'>): L
 // derselben Abgrenzung wie der Vorschlag (Heizkostenabrechnung nur die Heizstaffel, bei getrennt
 // abgerechneter Heizung ohne sie).
 type LetterTenancy = Pick<Tenancy, 'end' | 'prepayments' | 'heatingPrepayments'>
-function prepaymentBefore(st: Settlement['statements'][number], t: LetterTenancy | undefined, separate: boolean): number | null {
+function prepaymentBefore(st: Pick<Settlement['statements'][number], 'scope' | 'periodEnd'>, t: LetterTenancy | undefined, separate: boolean): number | null {
   if (!t) return null
   return prepaymentAt(st, t, separate, (t.end && t.end < st.periodEnd ? t.end : st.periodEnd).slice(0, 7))
 }
@@ -418,10 +420,18 @@ function prepaymentAt(st: Pick<Settlement['statements'][number], 'scope'>, t: Le
 // kennt das Feld nicht, dann zählt, ob in ihrem Zeitraum eine getrennte Heizkostenabrechnung endet.
 const separateOf = (s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>): boolean =>
   s.scope?.kind !== 'heating' && (s.suggestionWithoutHeating ?? (s.separateHeating ?? []).length > 0)
-// Für das Seitenfenster des Mieters: die Vorauszahlung, mit der `lettersOf` den neuen Betrag vergleicht.
+// Die Vorauszahlung, die es nicht anzupassen gibt: Sie galt schon am Ende des abgerechneten Zeitraums (das „bisher“ des
+// Briefs) **und** gilt im Monat der Anpassung. Beides, nicht nur der Monat (Durchsicht M1): Eine Stufe nach dem Zeitraum, ob
+// mit „In die Staffel übernehmen“ oder vorab von Hand eingetragen, ist gerade die Anpassung, die der Brief nach § 560
+// Abs. 4 BGB erklärt; fiele der Satz dann weg, forderte das Mietkonto den Betrag ohne Erklärung an den Mieter.
+function unchangedPrepayment(st: Pick<Settlement['statements'][number], 'scope' | 'periodEnd'>, t: LetterTenancy | undefined, separate: boolean, month: string): number | null {
+  const before = prepaymentBefore(st, t, separate)
+  return before !== null && before === prepaymentAt(st, t, separate, month) ? before : null
+}
+// Für Seitenfenster und Übersicht: die Vorauszahlung, mit der `lettersOf` den neuen Betrag vergleicht.
 export const currentPrepaymentAt = (
-  s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>, st: Pick<Settlement['statements'][number], 'scope'>, t: LetterTenancy | undefined, month: string,
-): number | null => prepaymentAt(st, t, separateOf(s), month)
+  s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>, st: Pick<Settlement['statements'][number], 'scope' | 'periodEnd'>, t: LetterTenancy | undefined, month: string,
+): number | null => unchangedPrepayment(st, t, separateOf(s), month)
 
 // Das Anschreiben je Mietverhältnis einer Abrechnung. Der Server ruft es mit den Texten aller Ebenen auf; die
 // Oberfläche nur, wenn eine Antwort keines trägt (dann mit den Vorgaben von Mietfuchs).
@@ -439,7 +449,7 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
       adjustment: own?.adjustment ?? adjustmentDefault(src.settings),
       suggestedCents: st.suggestedMonthlyCents,
       from,
-      currentCents: prepaymentAt(st, tenancy, separate, from),
+      currentCents: unchangedPrepayment(st, tenancy, separate, from),
       facts: {
         tenantName: st.tenantName,
         unitName: st.unitName,

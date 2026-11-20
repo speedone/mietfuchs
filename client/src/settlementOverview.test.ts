@@ -1,7 +1,7 @@
 // Die Ordnung der Seite Abrechnung: „Zu prüfen“, die Tabelle je Mieter und das Blättern in der Vorschau, ohne DOM.
 import { expect, test } from 'vitest'
 import type { NotSettled, Notice, Statement } from './types'
-import { announcedAdjustment, checkList, hintSummary, isQuietHint, neighbors, noticeHeadline, prepaymentBasisNote, resultText, tenantRows } from './settlementOverview'
+import { alreadyAppliesNote, announcedAdjustment, checkList, hintSummary, isQuietHint, neighbors, noticeHeadline, prepaymentBasisNote, resultText, tenantRows } from './settlementOverview'
 import { DEFAULT_LETTER_TEXTS, buildLetter, type LetterFacts } from '../../shared/letter.ts'
 import samplesRaw from './testing/noticeSamples.json?raw'
 
@@ -96,17 +96,17 @@ const letterFacts: LetterFacts = {
   totalShareCents: 130800, prepaymentCents: 144000, balanceCents: 13200, paymentDeadlineDays: 30, iban: '', landlordName: 'Max',
   prepaymentKind: 'monatliche Nebenkostenvorauszahlung', prepaymentBeforeCents: 12000, basis: 'ein Zwölftel Ihrer Jahreskosten, gerundet',
 }
-test('Übersicht: was der Brief an neuer Vorauszahlung ankündigt, mit Betrag, Monat und bisherigem Betrag', () => {
+test('Übersicht: was der Brief an neuer Vorauszahlung ankündigt, mit Betrag und Monat', () => {
   const built = (mode: 'none' | 'suggestion' | 'custom', cents: number | null = null) =>
     buildLetter({ texts: DEFAULT_LETTER_TEXTS, facts: letterFacts, adjustment: { mode, cents }, suggestedCents: 10900, from: '2027-01' })
-  expect(plainText(announcedAdjustment(built('suggestion'), 13200))).toBe('Brief kündigt an: Vorauszahlung 109,00 € ab Januar 2027 (bisher 120,00 €)')
-  expect(plainText(announcedAdjustment(built('custom', 11500), 13200))).toBe('Brief kündigt an: Vorauszahlung 115,00 € ab Januar 2027 (bisher 120,00 €)')
+  expect(plainText(announcedAdjustment(built('suggestion'), 13200))).toBe('Brief kündigt an: Vorauszahlung 109,00 € ab Januar 2027')
+  expect(plainText(announcedAdjustment(built('custom', 11500), 13200))).toBe('Brief kündigt an: Vorauszahlung 115,00 € ab Januar 2027')
   expect(announcedAdjustment(built('none'), 13200)).toBeNull()
   expect(announcedAdjustment(null, 13200)).toBeNull()
   // Ein leerer Baustein wird nicht gedruckt: Dann kündigt der Brief nichts an.
   expect(announcedAdjustment({ ...built('suggestion'), texts: { ...built('suggestion').texts, adjustSuggestion: '' } }, 13200)).toBeNull()
   // Vor #317 eingefroren: ohne Monat.
-  expect(plainText(announcedAdjustment({ ...built('suggestion'), adjustment: { mode: 'suggestion', newCents: 10900 } }, 13200))).toBe('Brief kündigt an: Vorauszahlung 109,00 € (bisher 120,00 €)')
+  expect(plainText(announcedAdjustment({ ...built('suggestion'), adjustment: { mode: 'suggestion', newCents: 10900 } }, 13200))).toBe('Brief kündigt an: Vorauszahlung 109,00 €')
 })
 
 // Systemprüfung: Ohne Mietkonto steht das Soll als „geleistet“ in der Abrechnung, und nur ein geführtes Mietkonto warnt.
@@ -118,4 +118,17 @@ test('Übersicht: ein Satz sagt, dass die Vorauszahlungen laut Vertrag angesetzt
   expect(prepaymentBasisNote({ statements: [s({ prepaymentOverridden: true })], closed: null })).toBeNull()
   expect(prepaymentBasisNote({ statements: [s({ prepaymentCents: 0 })], closed: null })).toBeNull()
   expect(prepaymentBasisNote({ statements: [s({})], closed: { closedAt: '2026-02-01T10:00:00Z', sentAt: null } })).toBeNull()
+})
+
+// Durchsicht (S1): Ein Betrag gleich der Staffel fällt aus dem Brief; die Übersicht sagt es, statt nichts zu zeigen.
+test('Übersicht: der gewählte Betrag gilt schon, der Brief kündigt nichts an', () => {
+  const none = { adjustment: { mode: 'custom' as const, newCents: null, from: null } }
+  expect(plainText(alreadyAppliesNote(none, 12000, 12000))).toBe('Brief kündigt keine Anpassung an: 120,00 € gelten schon')
+  expect(alreadyAppliesNote(none, 11500, 12000)).toBeNull()
+  expect(alreadyAppliesNote(none, null, 12000)).toBeNull()
+  expect(alreadyAppliesNote(none, 12000, null)).toBeNull()
+  // Wird angekündigt oder ist „keine Anpassung“ gewählt, steht der Satz nicht.
+  expect(alreadyAppliesNote({ adjustment: { mode: 'custom', newCents: 12000, from: '2027-01' } }, 12000, 12000)).toBeNull()
+  expect(alreadyAppliesNote({ adjustment: { mode: 'none', newCents: null, from: null } }, 12000, 12000)).toBeNull()
+  expect(alreadyAppliesNote(null, 12000, 12000)).toBeNull()
 })

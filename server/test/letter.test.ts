@@ -283,9 +283,9 @@ test('M1: die Vorgabe des Monats liegt nach dem abgerechneten Zeitraum', () => {
   assert.equal(lettersOf(st, { ...base, asOf: '2025-12-15' }).t1?.adjustment.from, '2026-02')
 })
 
-// Systemprüfung: „auf 160,00 € angepasst“, obwohl der Mieter 160 € schon zahlt. Verglichen wird mit der Staffel im Monat
-// der Anpassung; ein eingefrorenes Anschreiben (mit Betrag im Stand) druckt seinen Satz weiter.
-test('keine Anpassung im Anschreiben, wenn der neue Betrag der Vorauszahlung entspricht, die im Monat ohnehin gilt', () => {
+// Systemprüfung: „auf 160,00 € angepasst“, obwohl der Mieter 160 € schon zahlt. Verglichen wird mit der Staffel am Ende des
+// Zeitraums und im Monat der Anpassung; ein eingefrorenes Anschreiben (mit Betrag im Stand) druckt seinen Satz weiter.
+test('keine Anpassung im Anschreiben, wenn der neue Betrag am Ende des Zeitraums galt und im Monat der Anpassung weiter gilt', () => {
   const st = { ...oneStatement, statements: oneStatement.statements.map((x) => ({ ...x, suggestedMonthlyCents: 16000 })) }
   const base = { settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 }, property: house, installation: {}, propertyTexts: {}, asOf: '2026-11-01' }
   const tenancy = (prepayments: { from: string, monthlyCents: number }[]) => ({ id: 't1', end: null, prepayments, correspondenceAddress: '' })
@@ -299,9 +299,13 @@ test('keine Anpassung im Anschreiben, wenn der neue Betrag der Vorauszahlung ent
   const other = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }])], own: {} }).t1
   assert.deepEqual(blocks(other), ['adjustSuggestion'])
   assert.equal(other?.adjustment.newCents, 16000)
-  // Im Zeitraum 150 €, seit Januar 2026 schon 160 €: Im Monat der Anpassung (Januar 2027) gilt der Betrag bereits.
+  // Durchsicht (M1): Im Zeitraum 150 €, seit Januar 2026 schon 160 € (von Hand oder übernommen): Die Stufe nach dem
+  // Zeitraum ist die Anpassung selbst, der Brief erklärt sie weiter.
   const raised = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }, { from: '2026-01', monthlyCents: 16000 }])], own: {} }).t1
-  assert.deepEqual(blocks(raised), [])
+  assert.deepEqual(blocks(raised), ['adjustSuggestion'])
+  // Im Zeitraum 160 €, danach gesenkt: Der Vorschlag weicht vom laufenden Betrag ab.
+  const lowered = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 16000 }, { from: '2026-06', monthlyCents: 15000 }])], own: {} }).t1
+  assert.deepEqual(blocks(lowered), ['adjustSuggestion'])
   // Eine Stufe erst nach dem Monat der Anpassung zählt nicht.
   const later = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }, { from: '2027-06', monthlyCents: 16000 }])], own: {} }).t1
   assert.deepEqual(blocks(later), ['adjustSuggestion'])

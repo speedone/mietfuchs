@@ -83,10 +83,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - Abrechnung vor dem Versand: Die Kontrollansicht zeigte den Saldo je Mieter mit umgekehrtem Vorzeichen zur Beschriftung;
   dort steht jetzt das Ergebnis in Worten („Nachzahlung 300,00 €“, „Guthaben 1.500,00 €“) wie in der Übersicht. Hat ein
-  Mieter eine Nachzahlung und nennt das Anschreiben kein Konto, weil keine IBAN eingetragen ist, weisen „Zu prüfen“, das
-  Fenster „Drucken“ und das Cockpit bis zum Versand darauf hin (ein Hinweis, gedruckt wird trotzdem). Das Anschreiben
-  kündigt keine Anpassung der Vorauszahlung mehr an, wenn der neue Betrag der Vorauszahlung entspricht, die ab dem Monat
-  ohnehin gilt; das Seitenfenster „Anschreiben bearbeiten“ sagt es. Die Übersicht je Mieter nennt vor dem Abschluss, welche
+  Mieter eine Nachzahlung und fordert das Anschreiben zur Überweisung auf, ohne ein Konto zu nennen, weil keine IBAN
+  eingetragen ist, weisen „Zu prüfen“ und das Fenster „Drucken“ bis zum Versand darauf hin (ein Hinweis, gedruckt wird
+  trotzdem; nicht mit Briefpapier). Das Anschreiben kündigt keine Anpassung der Vorauszahlung mehr an, wenn der neue Betrag
+  schon im abgerechneten Zeitraum galt und weiter gilt; das Seitenfenster „Anschreiben bearbeiten“ und die Übersicht sagen
+  es. Die Übersicht je Mieter nennt vor dem Abschluss, welche
   neue Vorauszahlung der Brief ab wann ankündigt, und wo sich das ändern lässt, und sie sagt, dass als Vorauszahlungen
   angesetzt ist, was laut Vertrag zu zahlen war. Abgeschlossene Abrechnungen bleiben, wie sie sind.
 
