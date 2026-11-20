@@ -2,7 +2,8 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { startPrint, type PrintJob } from '../printJob'
 import type { JumpTarget } from '../focus'
 import { TAX_HEADER_TARGET } from '../jumpTargets'
-import type { DepositEntry, Settings, TaxExpenseItem, TaxOverview, TaxReceived, TaxReport } from '../types'
+import type { DepositEntry, Settings, TaxExpenseItem, TaxOverview, TaxReceived, TaxReport, Unit } from '../types'
+import { costsStep } from '../emptyStock'
 import { depositAppliedText } from '../depositSettlement'
 import { api, errorText, fmtArea, fmtDate, fmtEuro } from '../api'
 import { useConfirm, useToast } from '../components/feedback'
@@ -33,9 +34,11 @@ import { softBreak } from '../softBreak'
 
 // `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2), dort zu den
 // Steuerangaben des Objekts (#554).
-type Props = { settings: Settings | null; onNavigate?: (tab: NoticeTab, focus?: JumpTarget) => void }
+// `units`: die Wohnungen des Objekts, für den Knopf im Jahr ohne Kosten (emptyStock.ts); ohne Angabe kein Knopf.
+type Props = { settings: Settings | null; units?: readonly Unit[]; onNavigate?: (tab: NoticeTab, focus?: JumpTarget) => void }
 
-export default function Steuer({ settings, onNavigate }: Props) {
+export default function Steuer({ settings, units, onNavigate }: Props) {
+  const emptyStep = units && onNavigate ? costsStep(units) : null
   // Die Steuer rechnet im Kalenderjahr (#208, Entwurf 3.10).
   const { calendarYear: year } = usePeriod()
   const { property } = useProperty()
@@ -321,7 +324,14 @@ export default function Steuer({ settings, onNavigate }: Props) {
 
             <h3>Werbungskosten</h3>
             {data.expenses.groups.length === 0 ? (
-              <div className="empty">Keine Kostenpositionen für {year} erfasst.</div>
+              <div className="empty">
+                Keine Kostenpositionen für {year} erfasst.
+                {emptyStep && onNavigate && (
+                  <div className="row centered no-print">
+                    <button type="button" className="btn secondary" onClick={() => onNavigate(emptyStep.tab, emptyStep.focus ?? undefined)}>{emptyStep.label}</button>
+                  </div>
+                )}
+              </div>
             ) : split ? (
               <SplitTable report={data} />
             ) : (

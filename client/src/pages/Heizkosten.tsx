@@ -5,7 +5,7 @@
 // für den Messdienst“ (#210), der die Seite ersetzt, bis man zurückgeht. Sie steht erst ab einer
 // Heizanlage in der Navigation (`navFor`). Seit #266 je Anlage die Karte „Betriebsstrom der Heizung“.
 import Card from '../components/Card'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Co2Sheet, CostItem, DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
 import { api, errorText } from '../api'
 import { usePeriod } from '../period'
@@ -41,6 +41,10 @@ import { flatIdsWithRooms } from '../unitForm'
 import { selfUsedWithin } from '../../../shared/unitUsage.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 import { NoticeBox } from '../components/Notice'
+import EmptyState from '../components/EmptyState'
+import { useSubjectJump, type FocusProps, type JumpTarget } from '../focus'
+import { SET_UP_HEATING_TARGET } from '../jumpTargets'
+import type { NoticeTab } from '../notices'
 
 // `heating`: der Ausweis der Abrechnung des Zeitraums (Heizung PR 10), für die eigene Heizkostenabrechnung.
 // `findings`: die Befunde der CO₂-Prüfung je Anlage und Heizperiode, je Lieferung (Heizung PR 17, #246 R-K7).
@@ -48,10 +52,14 @@ import { NoticeBox } from '../components/Notice'
 type Loaded = { items: CostItem[]; plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[]; findings: Record<string, Record<string, string[]>> }
 
 // `onOpenReceipt`, `onOpenAiSettings`: Auswege, wenn die KI an einer Rechnung oder Abrechnung scheitert (#487)
-export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpenReceipt, onOpenAiSettings }: {
+// `focus`: „Hier beheben →“ an einem Hinweis zu den Heizkosten einer Anlage; ihr Bereich wird hervorgehoben. Mehr als
+// die Anlage nennt der Hinweis nicht (`NoticeSubject`), Heizperiode und Karte sucht man darin selbst.
+// `onNavigate`: der Weg in die Stammdaten, solange es keine Heizanlage gibt.
+export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpenReceipt, onOpenAiSettings, focus, onFocusDone, onNavigate }: {
   units: Unit[]; tenancies: Tenancy[]; onTenanciesChanged?: () => Promise<void> | void
   onOpenReceipt?: (file: string) => void; onOpenAiSettings?: () => void
-}) {
+  onNavigate?: (tab: NoticeTab, focus?: JumpTarget) => void
+} & FocusProps) {
   const { property } = useProperty()
   const period = usePeriod()
   const [data, setData] = useState<Loaded | null>(null)
@@ -106,6 +114,8 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
     }
   }, [property, period.param])
   useEffect(() => { void load() }, [load])
+  const plantIds = useMemo(() => data?.plants.map((p) => p.id) ?? null, [data])
+  const jumpAt = useSubjectJump(sheetFor ? null : focus, 'heatingCosts', plantIds, onFocusDone)
   const first = co2FirstPeriodStart()
   // Die Monate, die die Lieferungen überdecken: Für sie fragt die Karte „Gradtagzahlen Ihres Orts“.
   const all = Object.values(data?.deliveries ?? {}).flat().filter((d) => d.invoiceFrom !== null && d.invoiceTo !== null)
@@ -125,10 +135,17 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
       />
       {error && <NoticeBox level="error" action={error} />}
       {data !== null && data.plants.length === 0 && (
-        <div className="card"><p>Legen Sie zuerst in den Stammdaten unter „Heizung“ eine Heizanlage an.</p></div>
+        <div className="card">
+          <EmptyState action={onNavigate ? { label: 'Heizung einrichten', onClick: () => onNavigate('stammdaten', SET_UP_HEATING_TARGET) } : null}>
+            Legen Sie zuerst in den Stammdaten unter „Heizung“ eine Heizanlage an.
+          </EmptyState>
+        </div>
       )}
       {(data?.plants ?? []).map((plant) => (
-        <div key={plant.id}>
+        <div key={plant.id} {...jumpAt(plant.id)}>
+          {/* Die Überschrift des Bereichs, auf der der Fokus nach „Hier beheben →“ steht (Durchsicht): Sie nennt die Anlage.
+              Bei einer einzigen Anlage nur für Vorleseprogramme, die Karten darunter nennen sie ohnehin. */}
+          <h2 className={(data?.plants.length ?? 0) > 1 ? 'section-title' : 'sr-only'} data-jump-focus="">{plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}</h2>
           <>
             {/* #341 M8: ein Satz, was zu tun ist. Ohne Lieferung teilt Mietfuchs die CO₂-Kosten nicht auf, auch nicht bei der
                 eigenen Heizkostenabrechnung (calc.ts, `ownSplit`). Den Weg von Hand (Gutschrift mit demselben
