@@ -7,7 +7,8 @@ import { andList } from '../../shared/wording.ts'
 // `periodCovered`: Decken Ablesungen den gewählten Zeitraum (Regel des Servers, `readingsCoverPeriod` in calc.ts)?
 // `readingCount` zählt alle Ablesungen aller Jahre und sagt das ab dem zweiten Jahr nicht mehr; es gilt nur noch,
 // wenn ein älterer Server das Feld nicht schickt.
-export type MeterConsumption = { meterId: string; readingCount: number; periodCovered?: boolean; warnings: string[]; notices?: Notice[] }
+// `periodGap`: die Tage ohne Ablesung, `lastReadingOn`: die jüngste Ablesung überhaupt (beides für den Satz im Cockpit).
+export type MeterConsumption = { meterId: string; readingCount: number; periodCovered?: boolean; periodGap?: { from: string; to: string } | null; lastReadingOn?: string | null; warnings: string[]; notices?: Notice[] }
 const uncovered = (c: MeterConsumption): boolean => (c.periodCovered === undefined ? c.readingCount < 2 : !c.periodCovered)
 
 // Die abgelaufene Eichfrist (Heizung PR 21) ist eine Warnung und keine Sperre: Mietfuchs rechnet mit den
@@ -37,6 +38,30 @@ export function meterReadiness(
     return !c || uncovered(c) || readingProblems(c) > 0
   })
   return { relevant, incomplete }
+}
+
+// Ein Datum deutsch, aus der Zeichenkette gebaut, damit keine Zeitzone einen Tag verschiebt.
+const day = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
+const nextDay = (iso: string): string => new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)) + 1)).toISOString().slice(0, 10)
+
+// Der Text der roten Cockpit-Zeile „Zählerstände“: je Zähler die Tage ohne Ablesung, wenn der Server sie nennt. Liegt
+// die letzte Ablesung länger zurück als der Beginn der Lücke, ist der Zähler vielleicht ausgebaut; dann nennt ein Satz,
+// was die Seite Zähler dafür anbietet (den Tausch als Zählerwechsel an der Ablesung oder das Löschen des Zählers,
+// mehr gibt es nicht: ein Feld „ausgebaut am“ kennt das Modell nicht).
+export function incompleteDetail(incomplete: Meter[], consumption: MeterConsumption[]): string {
+  const of = (m: Meter) => consumption.find((x) => x.meterId === m.id)
+  const names = incomplete.map((m) => {
+    const gap = of(m)?.periodGap
+    return gap ? `${m.name} (ohne Ablesung vom ${day(gap.from)} bis ${day(gap.to)})` : m.name
+  })
+  const idle = incomplete.flatMap((m) => {
+    const c = of(m)
+    const last = c?.lastReadingOn
+    return c?.periodGap && last && nextDay(last) < c.periodGap.from ? [`${m.name} (zuletzt abgelesen am ${day(last)})`] : []
+  })
+  const removed = idle.length === 0 ? '' :
+    ` Schon länger nicht abgelesen: ${andList(idle)}. Wurde ein solcher Zähler getauscht, erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel; gibt es ihn nicht mehr, können Sie ihn auf der Seite Zähler löschen, dabei werden auch seine Ablesungen gelöscht.`
+  return `Anfang/Ende fehlt oder unplausibel bei: ${andList(names)}${removed ? '.' : ''}${removed}`
 }
 
 // Zähler, deren Eichfrist laut Angabe des Vermieters vor einer Ablesung des Zeitraums abgelaufen ist.

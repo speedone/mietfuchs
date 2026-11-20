@@ -16,7 +16,7 @@ import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending, desktopHintVisible } from '../update'
-import { calibrationDetail, heatingWithoutConsumption, meterReadiness, overdueMeters } from '../meterCheck'
+import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters } from '../meterCheck'
 import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { DesktopHint, UpdateConsent } from '../components/Update'
@@ -50,7 +50,7 @@ type Props = {
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
-type Consumption = { meterId: string; consumption: number; readingCount: number; periodCovered?: boolean; warnings: string[]; notices?: Notice[] }
+type Consumption = { meterId: string; consumption: number; readingCount: number; periodCovered?: boolean; periodGap?: { from: string; to: string } | null; lastReadingOn?: string | null; warnings: string[]; notices?: Notice[] }
 
 type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 
@@ -238,7 +238,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
       const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
       if (incomplete.length > 0) {
         list.push({ title: 'Zählerstände', level: 'rot', tab: 'zaehler', focus: soleSubject('meter', incomplete.map((m) => m.id)), cta: 'Stände erfassen',
-          detail: `Anfang/Ende fehlt oder unplausibel bei: ${andList(incomplete.map((m) => m.name))}` })
+          detail: incompleteDetail(incomplete, consumption) })
       } else {
         list.push({ title: 'Zählerstände', level: 'gruen',
           detail: `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.` })

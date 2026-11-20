@@ -717,7 +717,7 @@
  },
  {
   "code": "meter.negative-in-key",
-  "text": "„Wasser“: Negativer Verbrauch am Zähler „Wasser zc“ zwischen dem 31.12.2024 und dem 31.12.2025 (-50). Im Verteilschlüssel bekäme damit ein Mieter einen negativen Anteil, oder die übrigen trügen zusammen mehr als die Rechnung. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Prüfen Sie die Ablesung, oder kennzeichnen Sie sie als Zählerwechsel."
+  "text": "„Wasser“: Negativer Verbrauch am Zähler „Wasser zc“ vom 01.01.2025 bis zum 31.12.2025 (-50). Er ginge so in den Verteilschlüssel ein: Der Anteil dessen, dem er zugerechnet wird, wäre negativ, und die übrigen Anteile wären entsprechend zu hoch. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Prüfen Sie die Ablesungen, oder kennzeichnen Sie einen Zählerwechsel."
  },
  {
   "code": "meter.reading-future",

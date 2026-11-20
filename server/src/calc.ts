@@ -607,6 +607,8 @@ function makeNotice(code: NoticeCode, text: string, subject: NoticeSubject | und
   return { code, level: kind.level, title: kind.title, text, ...(subject ? { subject } : {}), ...(kind.rule ? { rule: kind.rule } : {}), terms: kind.terms }
 }
 const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem', id: item.id })
+// Der Ausweg, wenn einer Einheit kein Zähler fehlt, weil sie keinen Anschluss hat (#117); wörtlich wie bisher.
+const NO_CONNECTION_HINT = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'
 
 // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19): Kostenart und Beschriftung der Gutschriftzeile. Eine
 // eigene Kostenart, denn die Zeile ist keine Heizkostenzeile und darf in keine Grundlage einer Kürzung fallen.
@@ -853,14 +855,6 @@ function coveredDaysOf(readings: SnapshotReading[], from: string, to: string): n
   )
 }
 
-// Segmente mit negativem Verbrauch, die in den Zeitraum hineinreichen (Schnitt wie in `consumptionInPeriod`). Ein
-// Rücksprung vor oder nach dem Zeitraum geht in dessen Verbrauch nicht ein.
-function negativeSegmentsIn(readings: SnapshotReading[], from: string, to: string): MeterSegment[] {
-  const pStart = toUTC(from) - MS_DAY
-  const pEnd = toUTC(to)
-  return meterSegments(readings).segments.filter((s) => s.delta < 0 && Math.min(pEnd, toUTC(s.to)) - Math.max(pStart, toUTC(s.from)) > 0)
-}
-
 // Ablesungen, aus denen der Verbrauch des Zeitraums entsteht (`readingsUsedFor`) und deren Datum nach dem Stichtag
 // liegt. Ein Tag Spielraum wie beim Versanddatum: Die Oberfläche rechnet in der Zeitzone des Browsers. Ohne Stichtag
 // (Tests, Regression des Umstiegs) weiß die Berechnung nicht, was Zukunft ist, und meldet nichts.
@@ -870,21 +864,47 @@ function futureReadingsUsed(readings: readonly SnapshotReading[], period: { from
   return readingsUsedFor(readings, period).filter((r) => compareText(r.date, limit) > 0)
 }
 
-// Deckt ein Zähler den Zeitraum mit Ablesungen (Cockpit, Ampel „Zählerstände“)? Dieselbe Regel wie für Hauptzähler
-// und lückenhafte Wohnungszähler in der Abrechnung (`coveredDays`: jeder Tag liegt in einem Segment), nur über die
-// Spanne, in der der Zähler messen konnte: ab dem Tag nach seiner ersten Ablesung, wenn sie im Zeitraum oder danach
-// liegt (im Lauf des Zeitraums eingebaut), und bis zu seiner letzten, wenn ein Nachfolger an derselben Wohnung
-// anschließt (`successorFrom`: Tausch, als neuer Zähler angelegt, wie die Ketten in `unitCoveredDays`). Ohne Ablesung
-// ist nichts gedeckt; eine leere Spanne (vor dem Zeitraum ausgebaut, erst danach eingebaut) verlangt nichts.
-function readingsCoverPeriod(readings: SnapshotReading[], successorFrom: string | null, from: string, to: string): boolean {
+// Wie viele Tage am Ende des Zeitraums ein Wohnungszähler ohne Ablesung sein darf, ohne dass die Ampel „Zählerstände“
+// rot wird, und wie viele Tage nach der letzten Ablesung des alten ein neu angelegter Zähler noch als sein Nachfolger
+// gilt. Abgelesen wird um den Stichtag herum, selten genau an ihm; die Abrechnung rechnet mit einer Ablesung kurz
+// davor ohne Hinweis (die fehlenden Tage zählen dort nicht mit, `consumptionInPeriod`), und das Cockpit soll dann
+// nichts verlangen, was der Vermieter nicht erfüllen kann. Zwei Wochen sind eine Schwelle zum Hinsehen, keine Regel:
+// An der Zahl hängt kein Betrag und kein Hinweis der Abrechnung, deshalb steht sie hier und nicht im Register.
+const READING_EDGE_DAYS = 14
+
+// Welche Tage des Zeitraums decken die Ablesungen eines Zählers nicht (Cockpit, Ampel „Zählerstände“)? `null`: keine.
+// Dieselbe Regel wie für Hauptzähler und lückenhafte Wohnungszähler in der Abrechnung (ein Tag ist gedeckt, wenn er
+// in einem Segment liegt, wie `coveredDays`), nur über die Spanne, in der der Zähler messen konnte: ab dem Tag nach
+// seiner ersten Ablesung, wenn sie im Zeitraum oder danach liegt (im Lauf des Zeitraums eingebaut), und bis zu seiner
+// letzten, wenn ein Nachfolger anschließt (`succeeded`). Eine leere Spanne (vor dem Zeitraum ersetzt, erst danach
+// eingebaut) verlangt nichts; ohne Ablesung fehlt der ganze Zeitraum. Genannt wird die Spanne vom ersten bis zum
+// letzten ungedeckten Tag. `edgeDays`: so viele Tage dürfen allein am Ende fehlen (`READING_EDGE_DAYS`; beim
+// Hauptzähler 0, denn die Abrechnung nimmt ihn nur über den ganzen Zeitraum als Basis, `meter.main-partial`).
+function uncoveredSpan(readings: SnapshotReading[], succeeded: boolean, edgeDays: number, from: string, to: string): { from: string, to: string } | null {
   const dates = readings.map((r) => r.date).sort(compareText)
   const first = dates[0]
   const last = dates[dates.length - 1]
-  if (first === undefined || last === undefined) return false
+  if (first === undefined || last === undefined) return { from, to }
   const start = compareText(first, dayBefore(from)) > 0 ? dayAfter(first) : from
-  const end = successorFrom !== null && compareText(last, to) < 0 ? last : to
-  if (compareText(start, end) > 0) return true
-  return coveredDaysOf(readings, start, end) >= rangeOverlapDays(start, end, start, end)
+  const end = succeeded && compareText(last, to) < 0 ? last : to
+  if (compareText(start, end) > 0) return null
+  const covered = meterSegments(readings).segments
+    .map((seg) => ({ from: dayAfter(seg.from), to: seg.to }))
+    .filter((iv) => compareText(iv.to, start) >= 0 && compareText(iv.from, end) <= 0)
+  let gapFrom = start
+  for (const iv of covered.slice().sort((a, b) => compareText(a.from, b.from))) {
+    if (compareText(iv.from, gapFrom) > 0) break
+    if (compareText(iv.to, gapFrom) >= 0) gapFrom = dayAfter(iv.to)
+  }
+  if (compareText(gapFrom, end) > 0) return null
+  let gapTo = end
+  for (const iv of covered.slice().sort((a, b) => compareText(b.to, a.to))) {
+    if (compareText(iv.to, gapTo) < 0) break
+    if (compareText(iv.from, gapTo) <= 0) gapTo = dayBefore(iv.from)
+  }
+  const tailOnly = compareText(gapFrom, start) > 0 && covered.every((iv) => compareText(iv.to, gapFrom) < 0)
+  if (tailOnly && rangeOverlapDays(gapFrom, end, gapFrom, end) <= edgeDays) return null
+  return { from: gapFrom, to: gapTo }
 }
 
 // Wie viele Tage die Zähler einer Einheit zusammen abdecken. Zähler laufen **nebeneinander**
@@ -925,9 +945,11 @@ export type ConsumptionOverviewRow = {
   meterId: string
   consumption: number
   readingCount: number
-  // Decken Ablesungen den Zeitraum (`readingsCoverPeriod`)? `readingCount` zählt alle Ablesungen aller Jahre und sagt das
-  // ab dem zweiten Jahr nicht mehr.
+  // Decken Ablesungen den Zeitraum (`uncoveredSpan`)? `readingCount` zählt alle Ablesungen aller Jahre und sagt das
+  // ab dem zweiten Jahr nicht mehr. `periodGap`: die Tage, die fehlen; `lastReadingOn` für den Satz dazu.
   periodCovered: boolean
+  periodGap: { from: string, to: string } | null
+  lastReadingOn: string | null
   notices: Notice[]
   warnings: string[]
 }
@@ -936,23 +958,31 @@ export type ConsumptionOverviewRow = {
 // `asOf` (JJJJ-MM-TT) wie bei der Abrechnung: der Stichtag für Ablesungen mit Datum in der Zukunft; die Route setzt heute.
 export function consumptionOverview(snapshot: Snapshot, options: { asOf?: string } = {}): ConsumptionOverviewRow[] {
   const { from, to } = snapshot.period
-  const firstReadingOf = new Map<string, string>()
+  const datesOf = new Map<string, string[]>()
   for (const r of snapshot.readings) {
-    const known = firstReadingOf.get(r.meterId)
-    if (known === undefined || compareText(r.date, known) < 0) firstReadingOf.set(r.meterId, r.date)
+    const list = datesOf.get(r.meterId)
+    if (list) list.push(r.date)
+    else datesOf.set(r.meterId, [r.date])
   }
+  // Derselbe Platz: an derselben Wohnung, ohne Wohnung derselbe Umfang (Hauptzähler durch Hauptzähler) und dieselbe Anlage.
+  const samePlace = (a: SnapshotMeter, b: SnapshotMeter): boolean => a.type === b.type && (a.unitId ?? null) === (b.unitId ?? null) &&
+    (a.unitId ? true : (a.scope ?? 'property') === (b.scope ?? 'property') && (a.heatingPlantId ?? null) === (b.heatingPlantId ?? null) && (a.heatingRole ?? null) === (b.heatingRole ?? null))
   return snapshot.meters.map((m) => {
     const readings = snapshot.readings.filter((r) => r.meterId === m.id)
     const { notices, warnings } = meterSegments(readings)
-    // Nachfolger (nur an einer Wohnung, wie `unitCoveredDays`): ein anderer Zähler derselben Sparte, dessen erste
-    // Ablesung nicht vor der letzten dieses Zählers liegt.
+    // Nachfolger (ein Tausch, als neuer Zähler angelegt): die Regel von `inUseAt` (monthlyInfo.ts), ein Zähler am selben
+    // Platz, dessen Ablesungen alle nicht vor der letzten dieses Zählers liegen und eine danach. Dazu muss er anschließen
+    // (erste Ablesung höchstens `READING_EDGE_DAYS` nach der letzten des alten): Mehrere Heizkostenverteiler je Wohnung
+    // sind der Normalfall, und ein Monate später eingebauter zweiter verdeckte sonst den fehlenden Endstand des ersten.
     const last = readings.reduce<string | null>((a, r) => (a === null || compareText(r.date, a) > 0 ? r.date : a), null)
-    const successorFrom = m.unitId && last !== null
-      ? snapshot.meters.flatMap((o) => {
-        const first = o.id !== m.id && o.unitId === m.unitId && o.type === m.type ? firstReadingOf.get(o.id) : undefined
-        return first !== undefined && compareText(first, last) >= 0 ? [first] : []
-      }).sort(compareText)[0] ?? null
-      : null
+    const succeeded = last !== null && snapshot.meters.some((o) => {
+      if (o.id === m.id || !samePlace(o, m)) return false
+      const dates = datesOf.get(o.id) ?? []
+      const first = dates.reduce<string | null>((a, d) => (a === null || compareText(d, a) < 0 ? d : a), null)
+      return first !== null && compareText(first, last) >= 0 && dates.some((d) => compareText(d, last) > 0) &&
+        compareText(first, new Date(toUTC(last) + READING_EDGE_DAYS * MS_DAY).toISOString().slice(0, 10)) <= 0
+    })
+    const periodGap = uncoveredSpan(readings, succeeded, m.unitId ? READING_EDGE_DAYS : 0, from, to)
     for (const r of futureReadingsUsed(readings, { from, to }, options.asOf)) {
       const n = makeNotice('meter.reading-future',
         `Zähler „${m.name ?? m.id}“: Die Ablesung vom ${fmtDay(r.date)} liegt in der Zukunft. Mietfuchs verteilt den Unterschied zum Stand davor gleichmäßig auf alle Tage bis zu diesem Datum und rechnet dem Zeitraum nur seinen Teil davon zu. ` +
@@ -992,7 +1022,9 @@ export function consumptionOverview(snapshot: Snapshot, options: { asOf?: string
       meterId: m.id,
       consumption: Math.round(consumptionInPeriod(readings, from, to) * 100) / 100,
       readingCount: readings.length,
-      periodCovered: readingsCoverPeriod(readings, successorFrom, from, to),
+      periodCovered: periodGap === null,
+      periodGap,
+      lastReadingOn: last,
       notices,
       warnings,
     }
@@ -4214,23 +4246,43 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Anlegen der Statements eine vorläufige Korrektur.
   const notices: Notice[] = []
   const warn = (code: NoticeCode, text: string, subject?: NoticeSubject) => notices.push(makeNotice(code, text, subject))
-  // Zählerstände, die in den Verbrauchsschlüssel einer Position eingehen (Systemprüfung). `meters`: jeder Zähler, aus
-  // dem die Position rechnet.
+  // Zählerstände, die in den Verbrauchsschlüssel einer Position eingehen (Systemprüfung).
   // **Negativer Verbrauch: Fehler, und die Position wird nicht verteilt** (wie `meter.sub-incomplete`, nicht wie
-  // `tenancy.overlap`). Wie erfasst gerechnet, schrumpfen Zähler und Nenner: Ein Mieter bekäme einen negativen Anteil
-  // und die übrigen zusammen mehr als die Rechnung (gemessen: 900 €, 900 € und -900 € bei einer Rechnung über 900 €).
-  // Das ist keine angreifbare, aber bezifferbare Abrechnung wie bei der Überschneidung, sondern eine, die keine Kürzung
-  // heilt; der Vermieter trägt deshalb sichtbar, bis die Ablesung stimmt. Gefragt wird je Segment, nicht nach der
-  // Summe: Ein Rücksprung mitten im Zeitraum verschiebt den Verbrauch zwischen Vor- und Nachmieter auch dann, wenn die
-  // Jahressumme positiv bleibt.
-  const negativeInKey = (where: string, meters: readonly SnapshotMeter[]): boolean => {
-    const found = meters.flatMap((m) => negativeSegmentsIn(readingsOf(m.id), yFrom, yTo).map((seg) => ({ m, seg })))
+  // `tenancy.overlap`). Wie erfasst gerechnet, schrumpfen Zähler und Nenner: Wem der negative Verbrauch zugerechnet
+  // wird, bekäme eine Gutschrift, und die übrigen zusammen mehr als die Rechnung (gemessen: 900 €, 900 € und -900 € bei
+  // einer Rechnung über 900 €). Das heilt keine Kürzung; der Vermieter trägt deshalb sichtbar, bis die Ablesung stimmt.
+  // **Gefragt wird je Empfänger, nicht je Segment** (Durchsicht): Ein Rücksprung, der sich beim selben Empfänger
+  // ausgleicht (ein Schätzwert mitten im Jahr bei ganzjährigem Mieter), verschiebt kein Geld und bleibt die Warnung
+  // `meter.negative` der Verbrauchsübersicht; ein Bestand, der vorher richtig rechnete, rechnet weiter so. Ein
+  // Wohnungszähler wird deshalb an den Grenzen geteilt, an denen der Empfänger wechselt (Mieterwechsel,
+  // Nutzungswechsel), und jeder Teil für sich geprüft; ein Zwischenzähler (`whole`) geht nur als Summe des Zeitraums
+  // ein. Haupt- und Bezugszähler prüft der Aufrufer nicht: Sie gehen nur als Summe ein, und eine Summe, die nicht
+  // trägt, behandelt der Plan des Rests (`meter.sub-exceeds-main`, `meter.rest-unavailable`).
+  const recipientSpans = (unitId: string | null, among: readonly { unitId: string, start: string, end: string | null }[]): { from: string, to: string }[] => {
+    const cuts = new Set<string>()
+    if (unitId) {
+      for (const t of among) {
+        if (t.unitId !== unitId) continue
+        if (compareText(t.start, yFrom) > 0 && compareText(t.start, yTo) <= 0) cuts.add(t.start)
+        if (t.end && compareText(t.end, yFrom) >= 0 && compareText(t.end, yTo) < 0) cuts.add(dayAfter(t.end))
+      }
+      const u = unitById.get(unitId)
+      if (u) for (const x of usageIn(u).spans) if (compareText(x.from, yFrom) > 0 && compareText(x.from, yTo) <= 0) cuts.add(x.from)
+    }
+    const starts = [yFrom, ...[...cuts].sort(compareText)]
+    return starts.map((from, i) => ({ from, to: dayBefore(starts[i + 1] ?? dayAfter(yTo)) }))
+  }
+  const negativeInKey = (where: string, parts: readonly { m: SnapshotMeter, whole?: boolean }[], among: readonly { unitId: string, start: string, end: string | null }[]): boolean => {
+    const found = parts.flatMap(({ m, whole }) => (whole ? [{ from: yFrom, to: yTo }] : recipientSpans(m.unitId ?? null, among)).flatMap((sp) => {
+      const value = Math.round(consumptionInPeriod(readingsOf(m.id), sp.from, sp.to) * 1000) / 1000
+      return value < 0 ? [{ m, ...sp, value }] : []
+    }))
     const first = found[0]
     if (!first) return false
     warn('meter.negative-in-key',
-      `${where}: Negativer Verbrauch am Zähler ${andList(found.map(({ m, seg }) => `„${m.name ?? m.id}“ zwischen dem ${fmtDay(seg.from)} und dem ${fmtDay(seg.to)} (${fmtMeter(seg.delta)})`))}. ` +
-        'Im Verteilschlüssel bekäme damit ein Mieter einen negativen Anteil, oder die übrigen trügen zusammen mehr als die Rechnung. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. ' +
-        'Prüfen Sie die Ablesung, oder kennzeichnen Sie sie als Zählerwechsel.',
+      `${where}: Negativer Verbrauch am Zähler ${andList(found.map((f) => `„${f.m.name ?? f.m.id}“ vom ${fmtDay(f.from)} bis zum ${fmtDay(f.to)} (${fmtMeter(f.value)})`))}. ` +
+        'Er ginge so in den Verteilschlüssel ein: Der Anteil dessen, dem er zugerechnet wird, wäre negativ, und die übrigen Anteile wären entsprechend zu hoch. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. ' +
+        'Prüfen Sie die Ablesungen, oder kennzeichnen Sie einen Zählerwechsel.',
       { kind: 'meter', id: first.m.id })
     return true
   }
@@ -6596,7 +6648,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else if (mixedRooms.length > 0) {
         forced = 'noBasis'
         warn('meter.rest-mixed', mixedRoomsText(where, type, mixedRooms), unitSubject(mixedRooms))
-      } else if (negativeInKey(where, keyMeters)) {
+      } else if (negativeInKey(where, [...behindMeters.map((m) => ({ m })), ...subList.flatMap((x) => (x.m && covered(x.m) >= diy ? [{ m: x.m, whole: true }] : []))], b.partTenancies)) {
         forced = 'noBasis'
       } else if (standardMisplaced(mr, item.participantUnitIds)) {
         // Nachprüfung der Abschlussdurchsicht: Ein „wie bisher“ mit Teilnehmern, anderem Bezug oder Empfängern (Backup, ältere Schnittstelle) gibt es
@@ -6879,14 +6931,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Zähler der Sparte an der Einheit (beim Zimmer an seiner Wohnung, #573), die es gibt, die den Zeitraum aber
       // nicht decken: Gerechnet wird wie ohne Zähler, gesagt wird es mit eigenem Text und dem Ziel Zähler.
       const unreadMetersOf = (u: SnapshotUnit): SnapshotMeter[] => (data?.meters ?? []).filter((m) => m.type === item.meterType && (m.unitId === u.id || m.unitId === flatIdOfRoom.get(u.id)))
-      const notRead = (units: readonly SnapshotUnit[], consequence: string): void => {
-        const pairs = units.flatMap((u) => unreadMetersOf(u).map((m) => ({ u, m })))
-        const first = pairs[0]
+      const notRead = (units: readonly SnapshotUnit[], consequence: (noConnection: string) => string): void => {
+        // Je Zähler einmal: Der Zähler einer Wohnung mit Zimmern steht für jedes ihrer Zimmer.
+        const byMeter = new Map<SnapshotMeter, SnapshotUnit[]>()
+        for (const u of units) for (const m of unreadMetersOf(u)) byMeter.set(m, [...(byMeter.get(m) ?? []), u])
+        const first = [...byMeter.keys()][0]
         if (!first) return
-        const many = pairs.length > 1
+        const many = byMeter.size > 1
+        // Wer selbst einen Zähler hat, hat einen Anschluss; ein Zimmer unter dem Zähler seiner Wohnung nicht unbedingt (#117).
+        const rooms = [...byMeter].some(([m, us]) => us.some((u) => u.id !== m.unitId))
         warn('meter.unit-not-read',
-          `„${item.description}“: ${many ? 'Die Zähler' : 'Der Zähler'} ${andList(pairs.map(({ u, m }) => `„${m.name ?? m.id}“ (${u.name})`))} ${many ? 'haben' : 'hat'} keine Ablesungen, die den Abrechnungszeitraum decken; es fehlt der Stand zu Beginn oder zum Ende - ${consequence} Tragen Sie die fehlenden Stände nach.`,
-          { kind: 'meter', id: first.m.id })
+          `„${item.description}“: ${many ? 'Die Zähler' : 'Der Zähler'} ${andList([...byMeter].map(([m, us]) => `„${m.name ?? m.id}“ (${andList(us.map((u) => u.name))})`))} ${many ? 'haben' : 'hat'} keine Ablesungen, die den Abrechnungszeitraum decken; es fehlt der Stand zu Beginn oder zum Ende - ${consequence(rooms ? NO_CONNECTION_HINT : '')} Tragen Sie die fehlenden Stände nach.`,
+          { kind: 'meter', id: first.id })
       }
       if (data?.unitProblem?.kind === 'mixed') {
         // Verschiedene Größen (Gas in m³ neben kWh) rechnete schon vor #342 falsch; verteilt wird nicht.
@@ -6895,12 +6951,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else if (mixedRooms.length > 0) {
         forced = 'noBasis'
         warn('meter.rest-mixed', mixedRoomsText(`„${item.description}“`, item.meterType ?? '', mixedRooms), unitSubject(mixedRooms))
-      } else if (negativeInKey(`„${item.description}“`, keyMeters)) {
+      } else if (negativeInKey(`„${item.description}“`, (data?.meters ?? []).map((m) => ({ m })), b.partTenancies)) {
         forced = 'noBasis'
       } else if (!data || data.basis <= 0) {
         forced = 'noBasis'
         warn('meter.no-consumption', `„${item.description}“: kein Verbrauch für Zählertyp „${meterTypeLabel(item.meterType)}“ erfasst - Betrag geht an den Vermieter.`, itemSubject(item))
-        if (data) notRead(data.unmetered, 'ohne Verbrauch wird die Position nicht verteilt.')
+        if (data) notRead(data.unmetered, () => 'ohne Verbrauch wird die Position nicht verteilt.')
       } else {
         const type = item.meterType ?? '-'
         // Für die Zerlegung des Vermieteranteils (#142): Verbrauch der Zähler von Wohnungen
@@ -6935,7 +6991,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const names = andList(without.map((u) => u.name))
           // Eine Garage oder ein Stellplatz hat oft keinen Anschluss; dann nennt die Meldung den
           // Ausweg, die Kennzeichnung an der Einheit (#117).
-          const hint = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'
           const textWith = (noConnection: string): string => data.main !== null
             ? data.mainSelfByDays
               ? `der Rest des Hauptzählers gilt für die Tage als Eigenanteil, an denen alle Einheiten ohne Zähler selbstgenutzt sind, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau.${noConnection}`
@@ -6945,8 +7000,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
               : data.limited
                 ? `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen teilnehmenden Wohnungen mitgetragen. Bitte die Teilnehmer der Position prüfen.${noConnection}`
                 : `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen Wohnungen mitgetragen. Mit einem Hauptzähler (Zähler ohne Wohnung) gilt für sie der Rest des Hauptzählers.${noConnection}`
-          if (without.length > 0) warn('meter.unit-without-meter', `„${item.description}“: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - ${textWith(hint)}`, unitSubject(without))
-          notRead(unread, textWith(''))
+          if (without.length > 0) warn('meter.unit-without-meter', `„${item.description}“: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - ${textWith(NO_CONNECTION_HINT)}`, unitSubject(without))
+          notRead(unread, textWith)
         }
         selfRaw = item.amountCents * (data.selfConsumption / data.basis)
         // Der Zähler einer Wohnung mit Zimmern geht auf die Zimmer (#573).

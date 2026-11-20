@@ -51,9 +51,29 @@ test('Negativer Verbrauch im Schlüssel: Fehler an der Abrechnung, die Position 
   assert.deepEqual(s.warnings, s.notices.map((x) => x.text))
 })
 
-test('Negativer Verbrauch: ein Rücksprung mitten im Zeitraum zählt auch bei positiver Jahressumme', () => {
-  const s = settle({ readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('zc', 300, 350), { meterId: 'zc', date: '2025-06-30', value: 900 }] })
-  assert.equal(notice(s, 'meter.negative-in-key').length, 1)
+// Durchsicht (Sollte 5): Ein Rücksprung, der sich beim selben Empfänger ausgleicht, verschiebt kein Geld. Er bleibt die
+// Warnung `meter.negative` der Verbrauchsübersicht, und die Abrechnung rechnet wie vorher.
+test('Rücksprung mitten im Jahr bei ganzjährigem Mieter: kein Fehler, Zahlen wie bisher', () => {
+  const s = settle({ readings: [...year('za', 100, 150), ...year('zb', 200, 250), { meterId: 'zc', date: '2024-12-31', value: 300 }, { meterId: 'zc', date: '2025-06-30', value: 330.4 }, { meterId: 'zc', date: '2025-12-31', value: 330 }] })
+  assert.deepEqual(notice(s, 'meter.negative-in-key'), [])
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error'), [])
+  // 50, 50 und 30 von 130 m³ aus 900 €.
+  assert.deepEqual([share(s, 't-a'), share(s, 't-b'), share(s, 't-c')], [34616, 34615, 20769])
+  assert.equal(s.landlord.totalCents, 0)
+  const rows = overview({ readings: [{ meterId: 'zc', date: '2024-12-31', value: 300 }, { meterId: 'zc', date: '2025-06-30', value: 330.4 }, { meterId: 'zc', date: '2025-12-31', value: 330 }] })
+  assert.equal(notice(row(rows, 'zc'), 'meter.negative').length, 1)
+})
+
+test('Rücksprung mitten im Jahr bei Mieterwechsel: der Nachmieter bekäme negativen Verbrauch, Fehler', () => {
+  const s = settle({
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), { ...tenancy('t-c', 'c'), end: '2025-06-30' }, { ...tenancy('t-c2', 'c'), start: '2025-07-01' }],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250), { meterId: 'zc', date: '2024-12-31', value: 300 }, { meterId: 'zc', date: '2025-06-30', value: 400 }, { meterId: 'zc', date: '2025-12-31', value: 350 }],
+  })
+  const [n, ...more] = notice(s, 'meter.negative-in-key')
+  assert.ok(n, 'kein Hinweis meter.negative-in-key')
+  assert.equal(more.length, 0)
+  assert.match(n.text, /vom 01\.07\.2025 bis zum 31\.12\.2025 \(-50\)/)
+  assert.equal(s.landlord.totalCents, 90000)
 })
 
 test('Negativer Verbrauch vor dem Zeitraum oder an einem Zähler anderer Sparte: kein Fehler, verteilt wie bisher', () => {
@@ -65,12 +85,45 @@ test('Negativer Verbrauch vor dem Zeitraum oder an einem Zähler anderer Sparte:
   assert.deepEqual([share(s, 't-a'), share(s, 't-b'), share(s, 't-c')], [30000, 30000, 30000])
 })
 
-test('Negativer Verbrauch am Hauptzähler, der die Basis wäre: Fehler statt stillem Rückfall', () => {
+// Durchsicht (Muss 1): Der Hauptzähler geht nur als Summe des Zeitraums in die Basis. Ein Rücksprung mittendrin (ein
+// Schätzwert des Versorgers) verschiebt nichts; der Bestand rechnet wie vorher.
+test('Hauptzähler mit Rücksprung mittendrin und positiver Summe: kein Fehler, Zahlen wie bisher', () => {
   const s = settle({
+    meters: [meter('za', 'a'), meter('zb', 'b'), meter('haupt', null)],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250),
+      { meterId: 'haupt', date: '2024-12-31', value: 5000 }, { meterId: 'haupt', date: '2025-06-30', value: 5100 }, { meterId: 'haupt', date: '2025-07-31', value: 5099 }, { meterId: 'haupt', date: '2025-12-31', value: 5200 }],
+  })
+  assert.deepEqual(notice(s, 'meter.negative-in-key'), [])
+  assert.deepEqual([share(s, 't-a'), share(s, 't-b'), share(s, 't-c')], [22500, 22500, 0])
+  assert.equal(s.landlord.totalCents, 45000)
+})
+
+test('Hauptzähler, der nicht Basis ist (kurz) oder im Zeitraum rückwärts läuft: löst nie den Fehler aus', () => {
+  const kurz = settle({
+    meters: [meter('za', 'a'), meter('zb', 'b'), meter('haupt', null)],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250),
+      { meterId: 'haupt', date: '2024-06-30', value: 5000 }, { meterId: 'haupt', date: '2025-03-31', value: 4900 }, { meterId: 'haupt', date: '2025-09-30', value: 5100 }],
+  })
+  assert.deepEqual(notice(kurz, 'meter.negative-in-key'), [])
+  assert.equal(notice(kurz, 'meter.main-partial').length, 1)
+  assert.deepEqual([share(kurz, 't-a'), share(kurz, 't-b')], [45000, 45000])
+  // Summe negativ: Der Hauptzähler wird nicht Basis (wie bisher mit Warnung), verteilt wird nach den Wohnungszählern.
+  const negativ = settle({
     meters: [meter('za', 'a'), meter('zb', 'b'), meter('haupt', null)],
     readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('haupt', 5000, 4000)],
   })
-  assert.deepEqual(notice(s, 'meter.negative-in-key').map((n) => n.subject), [{ kind: 'meter', id: 'haupt' }])
+  assert.deepEqual(notice(negativ, 'meter.negative-in-key'), [])
+  assert.equal(notice(negativ, 'meter.sub-exceeds-main').length, 1)
+  assert.deepEqual([share(negativ, 't-a'), share(negativ, 't-b')], [45000, 45000])
+})
+
+test('Zwischenzähler mit negativer Summe: Fehler, denn sein Ziel bekäme einen negativen Betrag', () => {
+  const s = settle({
+    costItems: [{ ...wasser, meterRest: { referenceMeterId: null, behindMeterIds: null, key: 'area', unitIds: null, subMeters: [{ meterId: 'garten', target: { key: 'direct', unitIds: ['a'] } }] } }],
+    meters: [meter('za', 'a'), meter('zb', 'b'), meter('zc', 'c'), meter('haupt', null), { ...meter('garten', null), scope: 'common' }],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('zc', 300, 350), ...year('haupt', 1000, 1200), ...year('garten', 20, 10)],
+  })
+  assert.deepEqual(notice(s, 'meter.negative-in-key').map((n) => n.subject), [{ kind: 'meter', id: 'garten' }])
   assert.equal(s.landlord.totalCents, 90000)
 })
 
@@ -139,6 +192,64 @@ test('Übersicht: ein als neuer Zähler angelegter Tausch, der alte endet mit se
   assert.equal(row(next, 'neu').periodCovered, false)
 })
 
+// Durchsicht (Sollte 3): Die Abrechnung rechnet mit einer Ablesung kurz vor dem Stichtag ohne Hinweis; das Cockpit
+// verlangt dann nichts, was der Vermieter nicht erfüllen kann.
+test('Übersicht: Ablesung wenige Tage vor dem Ende des Zeitraums deckt, eine Lücke darüber nennt ihre Tage', () => {
+  const dez = (day: string): SnapshotReading[] => [{ meterId: 'za', date: '2024-12-28', value: 0 }, { meterId: 'za', date: `2025-${day}`, value: 50 }]
+  assert.equal(row(overview({ readings: dez('12-28') }), 'za').periodCovered, true)
+  assert.equal(row(overview({ readings: dez('12-28') }), 'za').periodGap, null)
+  assert.equal(row(overview({ readings: dez('12-17') }), 'za').periodCovered, true)
+  const frueh = row(overview({ readings: dez('12-16') }), 'za')
+  assert.equal(frueh.periodCovered, false)
+  assert.deepEqual(frueh.periodGap, { from: '2025-12-17', to: '2025-12-31' })
+  // Ohne Endstand: die Tage des Zeitraums, zuletzt abgelesen am Stichtag davor.
+  const offen = row(overview({ readings: year('za', 0, 50) }, 2026), 'za')
+  assert.deepEqual(offen.periodGap, { from: '2026-01-01', to: '2026-12-31' })
+  assert.equal(offen.lastReadingOn, '2025-12-31')
+  // Der Hauptzähler taugt der Abrechnung nur über den ganzen Zeitraum als Basis (`meter.main-partial`): kein Spielraum.
+  const haupt = row(overview({ meters: [meter('haupt', null)], readings: [{ meterId: 'haupt', date: '2024-12-28', value: 0 }, { meterId: 'haupt', date: '2025-12-28', value: 50 }] }), 'haupt')
+  assert.deepEqual(haupt.periodGap, { from: '2025-12-29', to: '2025-12-31' })
+})
+
+// Durchsicht (Sollte 2): Ein durch einen neu angelegten Hauptzähler ersetzter ist danach Geschichte.
+test('Übersicht: Hauptzähler durch einen neu angelegten Hauptzähler ersetzt, der alte ist im Folgejahr nicht rot', () => {
+  const s: Partial<SnapshotSource> = {
+    meters: [meter('h1', null), meter('h2', null), { ...meter('garten', null), scope: 'common' }],
+    readings: [
+      { meterId: 'h1', date: '2023-12-31', value: 1 }, { meterId: 'h1', date: '2024-06-30', value: 5 },
+      { meterId: 'h2', date: '2024-06-30', value: 0 }, { meterId: 'h2', date: '2024-12-31', value: 5 }, { meterId: 'h2', date: '2025-12-31', value: 9 },
+      { meterId: 'garten', date: '2023-12-31', value: 1 }, { meterId: 'garten', date: '2024-06-30', value: 5 },
+    ],
+  }
+  assert.equal(row(overview(s), 'h1').periodCovered, true)
+  assert.equal(row(overview(s, 2024), 'h1').periodCovered, true)
+  assert.equal(row(overview(s), 'h2').periodCovered, true)
+  // Ein Zähler für einen Teil des Hauses ist kein Vorgänger des Hauptzählers.
+  assert.equal(row(overview(s), 'garten').periodCovered, false)
+  // Ein Wohnungszähler ohne Nachfolger, seit Jahren nicht abgelesen: nicht gedeckt, mit dem Tag der letzten Ablesung.
+  const alt = row(overview({ readings: [{ meterId: 'za', date: '2022-12-31', value: 1 }, { meterId: 'za', date: '2023-06-30', value: 5 }] }), 'za')
+  assert.equal(alt.periodCovered, false)
+  assert.equal(alt.lastReadingOn, '2023-06-30')
+})
+
+// Durchsicht (Sollte 4): Mehrere Heizkostenverteiler je Wohnung sind der Normalfall; ein später eingebauter zweiter ist
+// kein Nachfolger des ersten.
+test('Übersicht: ein später eingebauter paralleler Zähler verdeckt keinen fehlenden Endstand', () => {
+  const hkv = (id: string): SnapshotMeter => ({ id, unitId: 'a', type: 'hkv', name: id })
+  const rows = overview({
+    meters: [hkv('k1'), hkv('k2')],
+    readings: [{ meterId: 'k1', date: '2023-12-31', value: 1 }, { meterId: 'k1', date: '2024-12-31', value: 5 }, { meterId: 'k2', date: '2025-03-01', value: 0 }, { meterId: 'k2', date: '2025-12-31', value: 5 }],
+  })
+  assert.equal(row(rows, 'k1').periodCovered, false)
+  assert.equal(row(rows, 'k2').periodCovered, true)
+  // Liest der alte nach dem Einbau des neuen weiter, laufen beide nebeneinander: kein Nachfolger.
+  const parallel = overview({
+    meters: [hkv('k1'), hkv('k2')],
+    readings: [{ meterId: 'k1', date: '2024-12-31', value: 1 }, { meterId: 'k1', date: '2025-06-30', value: 5 }, { meterId: 'k1', date: '2025-09-30', value: 6 }, { meterId: 'k2', date: '2025-06-30', value: 0 }, { meterId: 'k2', date: '2025-12-31', value: 5 }],
+  })
+  assert.equal(row(parallel, 'k1').periodCovered, false)
+})
+
 // ---------- 3. Ablesung mit Datum in der Zukunft ----------
 
 const zukunft = (): Partial<SnapshotSource> => ({
@@ -195,6 +306,20 @@ test('Zähler ohne Ablesung im Zeitraum: eigener Hinweis mit Ziel Zähler, nicht
   assert.deepEqual(notice(s, 'meter.unit-without-meter'), [])
   // Die Zahlen bleiben, wie sie waren: Die übrigen tragen mit.
   assert.deepEqual([share(s, 't-a'), share(s, 't-b'), share(s, 't-c')], [45000, 45000, 0])
+})
+
+test('Zimmer einer Wohnung (#573): der nicht abgelesene Zähler der Wohnung steht einmal, mit dem Rat zum Anschluss', () => {
+  const room = (id: string, areaM2: number): SnapshotUnit => ({ ...unit(id), areaM2, parentUnitId: 'c' })
+  const s = settle({
+    units: [unit('a'), unit('b'), unit('c'), room('c1', 20), room('c2', 30)],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), tenancy('t-c1', 'c1'), tenancy('t-c2', 'c2')],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250), { meterId: 'zc', date: '2024-12-31', value: 300 }],
+  })
+  const [n, ...more] = notice(s, 'meter.unit-not-read')
+  assert.ok(n, 'kein Hinweis meter.unit-not-read')
+  assert.equal(more.length, 0)
+  assert.equal(n.text.split('„Wasser zc“').length, 2, n.text)
+  assert.match(n.text, /keinen eigenen Anschluss/)
 })
 
 test('Wohnung ganz ohne Zähler: Wortlaut und Ziel wie bisher, auch neben einer nicht abgelesenen', () => {
