@@ -78,6 +78,40 @@ export function itemsDetail(items: number, sumCents: number, files: number): str
   return `${countOf(items, 'Position', 'Positionen')} · Summe ${fmtEuro(sumCents)}${files ? ` · ${countOf(files, 'Belegdatei', 'Belegdateien')}` : ''}`
 }
 
+// „Kosten erfasst“ ohne Kosten (#447): Der Knopf führt in den Eingang der Belege. Wer nur Papier hat, fand dort keinen
+// Weg zu den Kosten; die Zeile nennt deshalb beide.
+export function noCostsDetail(label: string): string {
+  return `Für ${label} sind noch keine Kosten erfasst. Laden Sie Belege im Eingang hoch, oder erfassen Sie die Kosten von Hand auf der Seite Kosten mit „+ Kostenposition anlegen“.`
+}
+
+// „Vermieter und Bankverbindung“ (#447): Name, Anschrift und IBAN des Vermieters gehörten zu keinem Schritt; dass der
+// Absender fehlt, sagte erst die Seite Abrechnung. Keine der Angaben ändert eine Zahl.
+// **In jedem Zustand eine Hilfe (`hint`), nie ein offener Punkt** (Durchsicht): Die Seite Abrechnung meldet „Absender
+// fehlt“ nicht, wenn Briefpapier oder eine eigene Unterschrift den Absender trägt (`senderMissing` in letterView.ts).
+// Die Unterschrift kennt das Cockpit aus den Anschreiben der Abrechnung (`ownSignature`), das Briefpapier lädt es nicht;
+// ein offener Punkt bliebe dort für immer stehen. Und zählte die Zeile nur in manchen Zuständen, spränge der Nenner
+// des Fortschritts.
+// - Ohne Namen und ohne eigene Unterschrift gelb, mit Sprung; der Text stimmt mit und ohne Briefpapier.
+// - Sonst grün. Fehlende Anschrift und IBAN werden nur genannt: Die Rücksendeangabe nennt ohne Anschrift die Adresse
+//   des Objekts, und ob die IBAN bei einer Nachzahlung fehlt, prüft die Seite Abrechnung.
+// `own`: Das Objekt führt einen eigenen Vermieter; dann stehen die Angaben beim Objekt (`senderFix`).
+export const LANDLORD_CHECK = 'Vermieter und Bankverbindung'
+export function landlordCheck(
+  landlord: { landlordName: string; landlordAddress: string; iban: string },
+  own: boolean,
+  ownSignature = false,
+): { level: 'gruen' | 'gelb'; detail: string; cta?: string; hint: true } {
+  const name = landlord.landlordName.trim()
+  const address = landlord.landlordAddress.trim()
+  if (name === '' && !ownSignature) {
+    return { level: 'gelb', hint: true, cta: 'Vermieter eintragen',
+      detail: `Der Name des Vermieters fehlt. Ohne ihn stehen im Anschreiben weder Absender noch Unterschrift; das genügt nur, wenn Ihr Briefpapier den Absender nennt. Tragen Sie Name, Anschrift und Bankverbindung ${own ? 'in den Stammdaten beim Objekt' : 'in den Einstellungen'} ein.` }
+  }
+  const who = name === '' ? 'Kein Name eingetragen, das Anschreiben trägt Ihre eigene Unterschrift' : name
+  const where = address === '' ? 'ohne eigene Anschrift, die Rücksendeangabe nennt die Adresse des Objekts' : address
+  return { level: 'gruen', hint: true, detail: `${who} · ${where} · ${landlord.iban.trim() === '' ? 'keine IBAN eingetragen' : 'IBAN eingetragen'}` }
+}
+
 // Unterzeile unter der Überschrift des Cockpits. Beim Erststart (#180) steht dort keine
 // Checkliste, sondern zwei Knöpfe zum Anfangen; eine Zahl offener Punkte, die nirgends
 // aufgezählt sind, sagte einem Vermieter ohne Vorkenntnisse nichts. Die Zeile nennt deshalb den

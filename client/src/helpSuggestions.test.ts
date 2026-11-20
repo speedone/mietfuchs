@@ -45,6 +45,24 @@ describe('ohne Bestand und ohne Treffer nichts', () => {
   })
 })
 
+// Erste Schritte (#447): Der leere Bestand ist eindeutig abzulesen; dann steht die allgemeine Anleitung oben.
+describe('leerer Bestand: die erste Abrechnung von Anfang bis Ende', () => {
+  test('ohne Wohnung, und mit vermieteter Wohnung ohne Mietverhältnis', () => {
+    expect(suggestGuides(stock({ units: [], tenancies: [] }))).toEqual([{ guideId: 'firstSettlement', reason: 'Weil in Lindenweg 12 noch keine Wohnung angelegt ist' }])
+    expect(suggestGuides(stock({ tenancies: [] }))[0]).toEqual({ guideId: 'firstSettlement', reason: 'Weil in Lindenweg 12 noch kein Mietverhältnis angelegt ist' })
+  })
+  // Durchsicht: Ein frisches Objekt hat keinen Namen; „in Ihr Objekt“ ist falsch gebeugt.
+  test('Objekt ohne Namen: der Satz stimmt auch dann', () => {
+    const p = property({ name: ' ' })
+    expect(suggestGuides(stock({ property: p, properties: [p], units: [], tenancies: [] }))[0]?.reason).toBe('Weil in Ihrem Objekt noch keine Wohnung angelegt ist')
+    expect(suggestGuides(stock({ property: p, properties: [p], tenancies: [] }))[0]?.reason).toBe('Weil in Ihrem Objekt noch kein Mietverhältnis angelegt ist')
+  })
+  test('nicht mit Mietverhältnis, und nicht, wenn nur selbst genutzt wird', () => {
+    expect(ids(stock())).not.toContain('firstSettlement')
+    expect(ids(stock({ units: [unit({ participates: false, selfUsed: true })], tenancies: [] }))).not.toContain('firstSettlement')
+  })
+})
+
 describe('Zahlwörter', () => {
   test('bis zwölf als Wort, darüber als Ziffer', () => {
     expect(numberWord(2)).toBe('zwei')
@@ -105,7 +123,8 @@ describe('Mieterwechsel und Leerstand im Zeitraum', () => {
   })
 
   test('kein Leerstand: Wohnung ohne Mietverhältnis im Jahr (unvollständig erfasst), Eigennutzung, nicht beteiligt', () => {
-    expect(ids(two([]))).toEqual([])
+    // Ganz ohne Mietverhältnis ist der Bestand am Anfang (#447): die Anleitung für die erste Abrechnung, kein Leerstand
+    expect(ids(two([]))).toEqual(['firstSettlement'])
     expect(ids(two([tenancy('w1', '2020-01-01', '2023-12-31')]))).toEqual([])
     const own = unit({ id: 'w1', participates: false, selfUsed: true })
     expect(ids(stock({ units: [own], tenancies: [] }))).toEqual([])

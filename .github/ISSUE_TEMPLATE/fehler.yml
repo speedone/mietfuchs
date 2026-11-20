@@ -1,0 +1,72 @@
+name: Fehler melden
+description: Mietfuchs rechnet oder zeigt etwas falsch, stürzt ab oder lässt sich nicht bedienen.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für die Meldung.
+
+        **Bitte keine echten Mieterdaten, Namen oder Belege hochladen.** Issues sind öffentlich und bleiben dauerhaft sichtbar, auch Bildschirmfotos und angehängte Dateien. Ersetze Namen, Adressen, IBANs und Beträge vorher durch Beispielwerte.
+
+        Eine Frage zur Bedienung? Dafür gibt es die [Diskussionen](https://github.com/speedone/mietfuchs/discussions/categories/q-a). Eine Sicherheitslücke bitte vertraulich melden, wie in [SECURITY.md](https://github.com/speedone/mietfuchs/blob/main/SECURITY.md) beschrieben.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Steht in Mietfuchs unter Einstellungen in der Karte „Über Mietfuchs“.
+      placeholder: z. B. 0.18.0
+    validations:
+      required: true
+  - type: dropdown
+    id: betriebsart
+    attributes:
+      label: Betriebsart
+      description: Wie hast du Mietfuchs installiert oder gestartet?
+      options:
+        - Windows, aus dem Microsoft Store
+        - Windows, mit dem Installer
+        - macOS (.dmg)
+        - Linux-Paket (.deb, .rpm, Arch)
+        - Programmdatei ohne Installation
+        - Docker
+        - Aus dem Quellcode
+    validations:
+      required: true
+  - type: input
+    id: umgebung
+    attributes:
+      label: Betriebssystem und Browser
+      description: Den Browser nur, wenn du Mietfuchs im Browser benutzt.
+      placeholder: z. B. Windows 11, Firefox
+  - type: textarea
+    id: schritte
+    attributes:
+      label: Was hast du getan?
+      description: Die Schritte, mit denen sich der Fehler nachstellen lässt, mit Beispielwerten.
+      placeholder: |
+        1. Seite Kosten, „+ Kostenposition anlegen“
+        2. Kostenart Grundsteuer, Betrag 1.200 €, Schlüssel nach Wohnfläche
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: erwartet
+    attributes:
+      label: Was hast du erwartet?
+    validations:
+      required: true
+  - type: textarea
+    id: geschehen
+    attributes:
+      label: Was ist stattdessen geschehen?
+      description: Fehlermeldungen bitte im Wortlaut. Bildschirmfotos nur ohne echte Daten.
+    validations:
+      required: true
+  - type: checkboxes
+    id: daten
+    attributes:
+      label: Keine echten Daten
+      options:
+        - label: Diese Meldung und ihre Anhänge enthalten keine echten Mieterdaten, Namen oder Belege.
+          required: true

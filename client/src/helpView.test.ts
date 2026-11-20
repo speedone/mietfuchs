@@ -118,7 +118,9 @@ describe('Gruppen und Themen', () => {
     expect(groups.map((g) => g.group)).toEqual([...GUIDE_GROUPS])
     expect(groups.flatMap((g) => g.guides.map((x) => x.id)).sort()).toEqual(Object.keys(GUIDES).sort())
     for (const g of groups) expect(g.guides.length, g.group).toBeGreaterThan(0)
-    expect(groups[0]?.guides[0]?.id).toBe('granny')
+    // Zuerst der Einstieg (#447), dann die Objekte
+    expect(groups[0]?.guides.map((x) => x.id)).toEqual(['firstSettlement'])
+    expect(groups[1]?.guides[0]?.id).toBe('granny')
     for (const g of GUIDE_GROUPS) expect(GUIDE_GROUP_LABELS[g]).toBeTruthy()
   })
 

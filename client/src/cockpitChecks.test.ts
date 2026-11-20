@@ -136,3 +136,38 @@ test('Kontoauszug (#188): Zeile zu nicht zugeordneten Umsätzen, Einzahl richtig
   expect(bankOpenText(1)).toBe('1 Umsatz aus dem Kontoauszug ist noch nicht zugeordnet.')
   expect(bankOpenText(0)).toBeNull()
 })
+
+// Erste Schritte (#447): Die Angaben des Vermieters gehörten zu keinem Schritt; „Absender fehlt“ stand erst auf der
+// Seite Abrechnung. Durchsicht: Die Zeile ist in jedem Zustand eine Hilfe (`hint`), denn ob Briefpapier den Absender
+// trägt, weiß das Cockpit nicht, und der Nenner des Fortschritts soll nicht springen.
+test('Zeile „Vermieter und Bankverbindung“: immer eine Hilfe; ohne Namen gelb, mit eigener Unterschrift oder Namen grün, Anschrift und IBAN nur genannt', async () => {
+  const { landlordCheck, LANDLORD_CHECK } = await import('./cockpitChecks')
+  const none = landlordCheck({ landlordName: ' ', landlordAddress: '', iban: '' }, false)
+  expect(none).toMatchObject({ level: 'gelb', hint: true, cta: 'Vermieter eintragen' })
+  expect(none.detail).toMatch(/Name des Vermieters fehlt/)
+  expect(none.detail).toMatch(/in den Einstellungen/)
+  // Stimmt mit und ohne Briefpapier (`senderMissing` nimmt Briefpapier aus, das Cockpit lädt es nicht)
+  expect(none.detail).toMatch(/Briefpapier/)
+  expect(none.detail).not.toMatch(/IBAN/)
+  expect(landlordCheck({ landlordName: '', landlordAddress: '', iban: '' }, true).detail).toMatch(/beim Objekt/)
+  // Eine eigene Unterschrift im Anschreiben nennt den Erklärenden (wie `senderMissing`): nichts zu tun
+  const signed = landlordCheck({ landlordName: '', landlordAddress: '', iban: '' }, false, true)
+  expect(signed).toMatchObject({ level: 'gruen', hint: true })
+  expect(signed.cta).toBeUndefined()
+  expect(signed.detail).toMatch(/eigene Unterschrift/)
+  expect(signed.detail).not.toMatch(/weder Absender noch Unterschrift/)
+  // Ohne Anschrift grün mit ruhigem Satz, kein offener Punkt für bestehende Nutzer
+  const noAddress = landlordCheck({ landlordName: 'Erika Muster', landlordAddress: '', iban: 'DE89370400440532013000' }, false)
+  expect(noAddress).toEqual({ level: 'gruen', hint: true, detail: 'Erika Muster · ohne eigene Anschrift, die Rücksendeangabe nennt die Adresse des Objekts · IBAN eingetragen' })
+  expect(landlordCheck({ landlordName: 'Erika Muster', landlordAddress: 'Weg 1, 12345 Ort', iban: ' ' }, false))
+    .toEqual({ level: 'gruen', hint: true, detail: 'Erika Muster · Weg 1, 12345 Ort · keine IBAN eingetragen' })
+  expect(LANDLORD_CHECK).toBe('Vermieter und Bankverbindung')
+})
+
+test('Zeile „Kosten erfasst“ ohne Kosten nennt beide Wege: Beleg hochladen oder von Hand erfassen', async () => {
+  const { noCostsDetail } = await import('./cockpitChecks')
+  const text = noCostsDetail('2025')
+  expect(text).toMatch(/^Für 2025 sind noch keine Kosten erfasst\./)
+  expect(text).toMatch(/Belege/)
+  expect(text).toContain('auf der Seite Kosten mit „+ Kostenposition anlegen“')
+})

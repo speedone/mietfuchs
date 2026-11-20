@@ -59,7 +59,8 @@ const nextDay = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`)
 const overlaps = (start: string, end: string | null, from: string, to: string): boolean => start <= to && (end === null || end >= from)
 
 type Candidate = GuideSuggestion & { rank: number }
-// Ränge, siehe oben
+// Ränge, siehe oben; davor der leere Bestand, in dem es noch nichts anderes zu sagen gibt (#447)
+const START = 0
 const EVENT = 1
 const PERIOD = 2
 const HEATING = 3
@@ -77,6 +78,13 @@ export function suggestGuides(stock: HelpStock | null, max = 3): GuideSuggestion
   const tenancies = stock.tenancies.filter((t) => unitIds.has(t.unitId))
   const out: Candidate[] = []
   const add = (rank: number, guideId: GuideId, reason: string) => out.push({ rank, guideId, reason })
+
+  // Leerer Bestand (#447): noch keine Wohnung, oder eine vermietete Wohnung und kein Mietverhältnis. Dann steht die
+  // Anleitung für die erste Abrechnung ganz oben. Wer nur selbst nutzt, hat nichts abzurechnen.
+  // Ein frisches Objekt hat noch keinen Namen; nach „in“ steht der Ersatz im Dativ (Durchsicht).
+  const inName = property.name.trim() || 'Ihrem Objekt'
+  if (units.length === 0) add(START, 'firstSettlement', `Weil in ${inName} noch keine Wohnung angelegt ist`)
+  else if (tenancies.length === 0 && units.some((u) => usageAt(u, to) === 'vermietet')) add(START, 'firstSettlement', `Weil in ${inName} noch kein Mietverhältnis angelegt ist`)
 
   // Mieterwechsel: in derselben Wohnung endet ein Mietverhältnis vor dem letzten Tag des Zeitraums, und ein späteres
   // beginnt nach seinem ersten Tag. Ein Wechsel genau an der Grenze gehört zum Vorjahr.

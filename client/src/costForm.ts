@@ -1,7 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird - sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, PropertyKind, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
@@ -546,6 +546,30 @@ export function suggestedKey(category: string, units: Unit[], meters: Meter[], p
     if (participating.length > 0 && metered.size > 0 && covered) return { key: 'meter', meterType: 'kaltwasser' }
   }
   return { key: defaultKeyFor(category), meterType: '' }
+}
+
+// Wasser ohne Wohnungszähler (#447): Ohne Kaltwasserzähler an einer Wohnung lässt sich Wasser nicht nach Verbrauch
+// verteilen, und vorbelegt ist die Personenzahl. Ein Prüfer ohne Vorwissen erfuhr nicht, warum, und legte die Zähler
+// erst nach den Kosten an. Ein ruhiger Satz am Feld nennt die Reihenfolge; die Auswahl bleibt, wie sie ist.
+// Kein Satz, sobald eine Wohnung einen Kaltwasserzähler hat oder die Position schon nach Verbrauch verteilt, und
+// (Durchsicht) mit denselben Ausnahmen wie der Hinweis `key.water-not-by-meter` der Berechnung: nicht bei einer
+// Eigentumswohnung (dort gilt ohne Vereinbarung der Maßstab der Gemeinschaft) und nicht bei weniger als zwei genutzten
+// Einheiten (vermietet oder selbst genutzt), denn dann änderte der Schlüssel nichts.
+// Der Satz passt zur Auswahl: „nach Verbrauch (Zähler)“ steht schon darin, sobald eine Wohnung einen Zähler anderer
+// Sparte hat (`costKeyOptions`); dann nennt er den Zählertyp statt des Schlüssels.
+const WATER_METER_QUESTION = 'Haben die Wohnungen Wasserzähler? Legen Sie sie zuerst unter „Zähler & Stände“ an;'
+export function waterMeterHint(
+  form: Pick<ItemForm, 'category' | 'key'>,
+  meters: readonly Pick<Meter, 'type' | 'unitId'>[],
+  units: readonly Unit[],
+  propertyKind: PropertyKind | null | undefined,
+): string | null {
+  if (form.category !== 'Wasser/Abwasser' || form.key === 'meter' || propertyKind === 'etw') return null
+  if (units.filter((u) => usageOf(u) !== 'ausgenommen').length < 2) return null
+  if (meters.some((m) => m.type === 'kaltwasser' && m.unitId)) return null
+  return costMeterTypes(meters).length > 0
+    ? `${WATER_METER_QUESTION} dann lässt sich das Wasser nach Verbrauch mit dem Zählertyp „${METER_TYPE_LABELS.kaltwasser}“ verteilen.`
+    : `${WATER_METER_QUESTION} dann steht hier „${KEY_LABELS.meter}“ zur Wahl.`
 }
 
 // Kostenart wechseln. Eine neue Position bekommt den Vorschlag der Kostenart; eine bestehende

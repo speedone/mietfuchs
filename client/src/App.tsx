@@ -293,11 +293,13 @@ function Shell() {
   }, [navigate, tab])
   // „Zurück zur Anleitung“: in die Hilfe, die die Anleitung öffnet und den Fokus auf den Schritt setzt.
   const [helpGuide, setHelpGuide] = useState<{ id: GuideId; step: number; seq: number } | null>(null)
-  const backToGuide = useCallback(() => {
-    if (!thread) return
-    const { guide, step } = thread
+  // Auch der Verweis im leeren Cockpit öffnet so eine Anleitung, ohne Schritt an ihrem Anfang (#447).
+  const openGuide = useCallback((guide: GuideId, step = -1) => {
     void navigate('hilfe', null, null).then((done) => { if (done) setHelpGuide((h) => ({ id: guide, step, seq: (h?.seq ?? 0) + 1 })) })
-  }, [navigate, thread])
+  }, [navigate])
+  const backToGuide = useCallback(() => {
+    if (thread) openGuide(thread.guide, thread.step)
+  }, [openGuide, thread])
   // „Leiste schließen“: Die Leiste verschwindet mit dem Knopf, der den Fokus hatte; ohne Ziel stünde er danach auf
   // <body>, und die Tabulatortaste begänne wieder oben in der Seitenleiste. Er geht deshalb an den Titel der Seite, der
   // dafür `tabIndex = -1` bekommt (Durchsicht von PR 2, K4).
@@ -629,7 +631,7 @@ function Shell() {
         {relocation === 'none' && relocationManual && <Umzug manual onClose={() => setRelocationManual(false)} />}
         {relocation === 'none' && !relocationManual && (!databaseClosed || tab === 'hilfe') && <>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} updateDownloads={update.updater?.owner === 'window'} consentHeld={arrival !== null} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} updateDownloads={update.updater?.owner === 'window'} consentHeld={arrival !== null} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} onOpenGuide={(id) => openGuide(id)} />
         )}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t)} />}
         {tab === 'stammdaten' && (

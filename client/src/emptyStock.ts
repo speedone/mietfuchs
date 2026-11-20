@@ -4,10 +4,14 @@
 // Wohnung gibt, auf die ein Beleg verteilt werden könnte. Ohne DOM prüfbar (emptyStock.test.ts).
 import type { Tenancy, Unit } from './types'
 import type { JumpTarget } from './focus'
-import { NEW_TENANCY_TARGET, NEW_UNIT_TARGET, TENANCIES_TARGET } from './jumpTargets'
+import { NEW_COST_ITEM_TARGET, NEW_TENANCY_TARGET, NEW_UNIT_TARGET, TENANCIES_TARGET } from './jumpTargets'
 
 // `focus`: das Formular, das der Knopf auf der Zielseite öffnet (#554); die Belege haben dort keine eigene Stelle.
-export type StartStep = { text: string, label: string, tab: 'stammdaten' | 'belege:eingang', focus: JumpTarget | null }
+// `secondary` (#447): der zweite Weg neben dem Hochladen. Wer nur Papier hat, erfasst die Kosten von Hand.
+export type StartStep = {
+  text: string, label: string, tab: 'stammdaten' | 'belege:eingang', focus: JumpTarget | null
+  secondary?: { label: string, tab: 'kosten', focus: JumpTarget }
+}
 
 // Der erste Schritt, der für den Zeitraum `label` fehlt. `calendar` wählt „Jahr“ oder „Zeitraum“.
 export function startStep(units: readonly Unit[], tenancies: readonly Tenancy[], label: string, calendar: boolean): StartStep {
@@ -18,10 +22,11 @@ export function startStep(units: readonly Unit[], tenancies: readonly Tenancy[],
     return { text: 'Legen Sie zuerst ein Mietverhältnis an: Wer wohnt seit wann in welcher Wohnung?', label: 'Mietverhältnis anlegen', tab: 'stammdaten', focus: NEW_TENANCY_TARGET }
   }
   return {
-    text: `Für ${calendar ? 'das Jahr' : 'den Zeitraum'} ${label} gibt es noch keine Kosten und kein abzurechnendes Mietverhältnis. Erfassen Sie die Belege des ${calendar ? 'Jahres' : 'Zeitraums'}, oder prüfen Sie Beginn und Ende der Mietverhältnisse.`,
+    text: `Für ${calendar ? 'das Jahr' : 'den Zeitraum'} ${label} gibt es noch keine Kosten und kein abzurechnendes Mietverhältnis. Laden Sie die Belege des ${calendar ? 'Jahres' : 'Zeitraums'} hoch, oder erfassen Sie die Kosten von Hand. Fehlt ein Mietverhältnis, prüfen Sie Beginn und Ende der Mietverhältnisse.`,
     label: 'Belege erfassen',
     tab: 'belege:eingang',
     focus: null,
+    secondary: { label: 'Kosten von Hand erfassen', tab: 'kosten', focus: NEW_COST_ITEM_TARGET },
   }
 }
 

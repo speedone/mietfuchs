@@ -7,7 +7,7 @@ import { localToday } from '../periodForm'
 import { sentAtRefusal } from '../sentAtStep'
 import { isNotAllocable, usageOf } from '../types'
 import { rentedWithin, usageAt } from '../../../shared/unitUsage.ts'
-import { bankOpenText, participatingUnits, cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
+import { bankOpenText, participatingUnits, cockpitSubtitle, itemsDetail, landlordCheck, LANDLORD_CHECK, noCostsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
 import { coverageCheck, filesByItem, partsBySource } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
@@ -24,14 +24,15 @@ import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { startStep } from '../emptyStock'
 import { ibanHintTitle, invalidIbans } from '../ibanCheck'
-import { addressCheckDetail, addressFindings } from '../landlord'
+import { addressCheckDetail, addressFindings, effectiveLandlord } from '../landlord'
+import { GUIDES, type GuideId } from '../../../shared/guides.ts'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
 import UpcomingCard from '../components/UpcomingCard'
 import BackupReminder from '../components/BackupReminder'
 import type { UpcomingAction } from '../upcomingView'
 import { isSubject, type JumpTarget } from '../focus'
-import { BACKUP_TARGET, CHECKS_TARGET, NEW_COST_ITEM_TARGET, SENT_AT_TARGET, TENANCIES_TARGET, soleSubject, unitsTarget } from '../jumpTargets'
+import { BACKUP_TARGET, CHECKS_TARGET, NEW_COST_ITEM_TARGET, SENT_AT_TARGET, TENANCIES_TARGET, senderFix, soleSubject, unitsTarget } from '../jumpTargets'
 
 type Props = {
   units: Unit[]
@@ -48,6 +49,8 @@ type Props = {
   // `focus` öffnet auf der Zielseite den betroffenen Eintrag (#142), etwa ein Mietverhältnis, seit #554 auch ein
   // Formular oder eine Karte (jumpTargets.ts).
   onNavigate: (tab: NavTarget, focus?: JumpTarget) => void
+  // Öffnet eine Anleitung in „Hilfe & Begriffe“ (#447); ohne den Weg (Seitentest) steht der Verweis nicht da.
+  onOpenGuide?: (id: GuideId) => void
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
@@ -76,7 +79,7 @@ type Check = {
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
 const NOTABLE_CHANGE_PCT = 25
 
-export default function Cockpit({ units, tenancies, settings, updateStatus, updateDownloads = false, consentHeld = false, reload, onNavigate }: Props) {
+export default function Cockpit({ units, tenancies, settings, updateStatus, updateDownloads = false, consentHeld = false, reload, onNavigate, onOpenGuide }: Props) {
   const { key, label, param, at, period, calendar, rules, year } = usePeriod()
   const switchPeriod = useSwitchPeriod()
   const { property } = useProperty()
@@ -181,6 +184,17 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     if (!settlement) return []
     const list: Check[] = []
 
+    // 0. Vermieter und Bankverbindung (#447, Logik in cockpitChecks.ts): eine Hilfe, die nie zum Fortschritt zählt. Nur
+    // bis zum Abschluss, danach ist der Absender im Anschreiben eingefroren; ohne geladene Einstellungen keine Zeile.
+    if (settings && !settlement.closed) {
+      const own = property?.landlordName != null
+      // Eine eigene Unterschrift in jedem Anschreiben nennt den Erklärenden (wie `senderMissing`)
+      const ownSignature = settlement.statements.length > 0 && settlement.statements.every((st) => (settlement.letters?.[st.tenancyId]?.texts?.signature ?? '').trim() !== '')
+      const check = landlordCheck(effectiveLandlord(property ?? null, settings), own, ownSignature)
+      const fix = senderFix(own)
+      list.push({ title: LANDLORD_CHECK, ...check, ...(check.level === 'gelb' ? { tab: fix.tab, focus: fix.focus } : {}) })
+    }
+
     // 1. Mietverhältnisse & Flächen
     // Auch die selbstgenutzte Wohnung braucht eine Fläche - ohne sie fällt ihr Eigenanteil
     // beim Flächenschlüssel stillschweigend weg.
@@ -205,7 +219,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     // 2. Belege & Kosten erfasst
     if (yearItems.length === 0) {
       list.push({ title: 'Kosten erfasst', level: 'rot', tab: 'belege:eingang', cta: 'Belege erfassen',
-        detail: `Für ${label} sind noch keine Kosten erfasst.` })
+        detail: noCostsDetail(label) })
     } else {
       list.push({ title: 'Kosten erfasst', level: 'gruen',
         detail: itemsDetail(yearItems.length, itemsSum, invoiceFileCount) })
@@ -370,7 +384,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     }
 
     return list
-  }, [property, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles, sourceParts])
+  }, [settings, property, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles, sourceParts])
 
   const relevant = checks.filter((c) => c.level !== 'leer' && !c.hint)
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
@@ -428,9 +442,19 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
 
       {fresh ? (
         <div className="card">
-          <EmptyState action={{ label: start.label, onClick: () => onNavigate(start.tab, start.focus ?? undefined) }}>
+          <EmptyState
+            action={{ label: start.label, onClick: () => onNavigate(start.tab, start.focus ?? undefined) }}
+            secondary={start.secondary ? { label: start.secondary.label, onClick: () => onNavigate('kosten', start.secondary?.focus) } : null}
+          >
             Noch nichts für {label} erfasst.
           </EmptyState>
+          {/* #447: der Weg von Anfang bis Ende, für alle, die Mietfuchs zum ersten Mal öffnen */}
+          {onOpenGuide && (
+            <p className="muted text-center">
+              Zum ersten Mal hier?{' '}
+              <button type="button" className="btn ghost small" onClick={() => onOpenGuide('firstSettlement')}>Anleitung: {GUIDES.firstSettlement.title}</button>
+            </p>
+          )}
         </div>
       ) : settlement && (
         <>

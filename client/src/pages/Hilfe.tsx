@@ -14,6 +14,7 @@ import { allGuides, type GuideEntry } from '../guideView'
 import { chooseTerm, chooseTopic, firstSentence, GUIDE_GROUP_LABELS, GUIDE_SECTIONS, guideGroups, guidesWithTerm, jumpToTerm, lexiconEntries, lexiconFilters, lexiconPane, POPULAR_SEARCHES, relatedGuides, relatedTerms, resultCountText, searchHelp, TERM_TOPIC_LABELS, topicCounts, type GuideHit, type GuideSection, type LexiconState, type Segment, type TermHit } from '../helpView'
 import { pageLabel } from '../nav'
 import { suggestGuides, type HelpStock } from '../helpSuggestions'
+import { DISCUSSIONS_URL, NEW_ISSUE_URL, SECURITY_REPORT_URL } from '../../../shared/support.ts'
 import { countOf, plural } from '../../../shared/wording.ts'
 import type { GuideId } from '../../../shared/guides.ts'
 import { GLOSSARY, type Term, type TermId, type TermTopic } from '../../../shared/glossary.ts'
@@ -102,7 +103,9 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
     if (!guideRequest) return
     setTrail([])
     show({ kind: 'guide', id: guideRequest.id }, () => {
-      focusStep(guideRequest.step)
+      // Ohne Schritt (Verweis aus dem leeren Cockpit, #447) beginnt die Anleitung oben
+      if (guideRequest.step < 0) focusHeading()
+      else focusStep(guideRequest.step)
       onOpenGuideDone?.()
     })
   }, [guideRequest])
@@ -330,6 +333,23 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
           </ul>
         </>
       )}
+
+      {/* Fragen und Fehler (#447): ruhig am Ende, auch unter den Treffern einer Suche, die nicht weiterhilft. Links in
+          ein neues Fenster, denn nur die gehen im Programmfenster an den Browser (desktop/src/main.js). */}
+      <section aria-labelledby="hilfe-fragen" className="no-print">
+        <h2 id="hilfe-fragen" className="help-section">Fragen und Fehler</h2>
+        <p className="muted">
+          Kommen Sie nicht weiter, oder rechnet Mietfuchs anders, als Sie es erwarten? Fragen stellen Sie in den Diskussionen
+          auf GitHub, einen Fehler melden Sie dort mit einem Formular. Beides ist öffentlich und braucht ein Konto bei
+          GitHub: Bitte nennen Sie keine echten Mieterdaten, Namen oder Belege, sondern Beispielwerte. Hilfreich ist die
+          Version von Mietfuchs; sie steht in den Einstellungen in der Karte „Über Mietfuchs“.
+        </p>
+        <p className="flex flex-wrap gap-x-4 gap-y-2">
+          <a href={DISCUSSIONS_URL} target="_blank" rel="noreferrer">Frage stellen</a>
+          <a href={NEW_ISSUE_URL} target="_blank" rel="noreferrer">Fehler melden</a>
+          <a href={SECURITY_REPORT_URL} target="_blank" rel="noreferrer">Sicherheitslücke vertraulich melden</a>
+        </p>
+      </section>
     </>
   )
 }

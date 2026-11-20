@@ -25,6 +25,7 @@ export const TERM_TOPIC_LABELS: Record<TermTopic, string> = {
 }
 
 export const GUIDE_GROUP_LABELS: Record<GuideGroup, string> = {
+  start: 'Erste Schritte',
   property: 'Ihr Objekt',
   year: 'Im Abrechnungsjahr',
   heating: 'Heizung',
