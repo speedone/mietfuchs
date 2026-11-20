@@ -425,3 +425,23 @@ test('Kein Zähler im Zeitraum abgelesen: „Kein Verbrauch erfasst“ bleibt, d
   assert.equal(notice(ohne, 'meter.no-consumption').length, 1)
   assert.deepEqual(notice(ohne, 'meter.unit-not-read'), [])
 })
+
+// Integrationsdurchsicht: Neben `meter.negative-in-key` an der Heizposition nach Wärmezählern stand „nach Zählern
+// verteilt werden 94,5 % der Heizkosten“. Die Position wird aber nicht verteilt, der Satz widersprach dem Fehler.
+test('Negativer Verbrauch an der Heizposition nach Wärmezählern: kein Hinweis auf den Verbrauchsanteil daneben', () => {
+  const heatMeter = (id: string, unitId: string): SnapshotMeter => ({ id, unitId, type: 'waerme', name: `Wärme ${id}` })
+  const byMeter: SnapshotCostItem = { id: 'hv', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Gas nach Verbrauch', amountCents: 189000, key: 'meter', meterType: 'waerme' }
+  const byArea: SnapshotCostItem = { id: 'hg', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Gas Grundkosten', amountCents: 11000, key: 'area' }
+  const stock = { costItems: [byMeter, byArea], meters: [heatMeter('za', 'a'), heatMeter('zb', 'b'), heatMeter('zc', 'c')] }
+  // Zur Kontrolle der Bestand mit sauberen Ständen: Dort steht der Hinweis, mit 94,5 %.
+  const clean = settle({ ...stock, readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('zc', 300, 350)] })
+  assert.deepEqual(notice(clean, 'meter.negative-in-key'), [])
+  assert.match(notice(clean, 'heating.consumption-share')[0]?.text ?? '', /nach Zählern verteilt werden 94,5 % der Heizkosten/)
+  const s = settle({ ...stock, readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('zc', 300, 250)] })
+  assert.equal(notice(s, 'meter.negative-in-key').length, 1)
+  // Die Position nach Zählern trägt niemand, die Grundkosten sind verteilt.
+  assert.ok(s.statements.every((st) => st.rows.every((r) => r.costItemId !== 'hv' || r.shareCents === 0)))
+  assert.ok(s.statements.some((st) => st.rows.some((r) => r.costItemId === 'hg' && r.shareCents > 0)))
+  assert.deepEqual(notice(s, 'heating.consumption-share'), [])
+  assert.deepEqual(notice(s, 'heating.all-by-consumption'), [])
+})

@@ -10141,10 +10141,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         itemSubject({ id: g.itemIds[0] ?? '' }))
       continue
     }
+    // Integrationsdurchsicht: Eine Position, die nicht verteilt wird (`meter.negative-in-key`: ganz beim Vermieter) oder
+    // die sonst niemand trägt, zählt nicht in den Verbrauchsanteil; der Satz „nach Zählern verteilt werden … %“
+    // widerspräche dem Fehler daneben. Tragen Mieter alle Positionen der Gruppe, bleibt es bei deren Zahlen.
+    const unborne = g.itemIds.flatMap((id) => items.find((c) => c.id === id) ?? []).filter((c) => bearersOf(c.id).length === 0)
+    const consumptionCents = g.consumptionCents - unborne.filter((c) => c.key === 'meter').reduce((a, c) => a + c.amountCents, 0)
+    const totalCents = g.totalCents - unborne.reduce((a, c) => a + c.amountCents, 0)
+    if (unborne.length > 0 && (consumptionCents <= 0 || totalCents <= 0 || (consumptionCents * 100 >= totalCents * share.min && consumptionCents * 100 <= totalCents * share.max))) continue
+    const bornePct = Math.round((consumptionCents * 1000) / totalCents) / 10
     // Über dem Höchstsatz nennt auch der Mischfall § 10 (Durchsicht des Zweigs); unter dem Mindestsatz bleibt der Text.
-    const above = g.consumptionCents * 100 > g.totalCents * share.max
+    const above = consumptionCents * 100 > totalCents * share.max
     warn('heating.consumption-share',
-      `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(pct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ${above ? `${ABOVE_MAX_SHARE} ` : ''}Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
+      `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(bornePct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ${above ? `${ABOVE_MAX_SHARE} ` : ''}Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
       itemSubject({ id: g.itemIds[0] ?? '' }))
   }
 
