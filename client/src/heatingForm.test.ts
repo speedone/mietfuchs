@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, unitValueFields, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, unitValueFields, whoHint, whoOptions, heatingSetUpMessage, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -559,4 +559,14 @@ describe('#573: beheizte Fläche einer Wohnung mit Zimmern, dieselbe Regel wie a
     const form = { ...heatingToForm(plant, units), unitValues: { a: '55', wg: '', z1: '18', z2: '' } }
     expect(heatingPlantBody(form, units, [], 'hp1', plant)).toEqual({ error: expect.stringMatching(/^Zimmer 2: Bitte tragen Sie die beheizte Fläche/) })
   })
+})
+
+// Systemprüfung: Nach dem Einrichten der ersten Heizanlage nennt die Mitteilung die neue Seite und, was dort zu tun ist.
+test('Mitteilung nach dem Einrichten: nennt die Seite „Heizkosten“ und was dort zu tun ist', () => {
+  const base = 'Heizung eingerichtet. An Ihren Beträgen ändert sich nichts. In der Navigation steht jetzt die Seite „Heizkosten“.'
+  expect(heatingSetUpMessage({ method: 'service', energy: 'gas', contracting: false, heatGeneration: null })).toBe(`${base} Tragen Sie dort je Heizperiode die Angaben aus der Heizkostenabrechnung ein.`)
+  expect(heatingSetUpMessage({ method: 'manual', energy: 'gas', contracting: false, heatGeneration: null })).toMatch(/als Lieferungen ein, dann teilt Mietfuchs die CO₂-Kosten auf\.$/)
+  // Ohne CO₂-Kosten (Pellets) und ohne Messdienst ist dort nichts Pflicht: nur die Seite
+  expect(heatingSetUpMessage({ method: 'manual', energy: 'pellets', contracting: false, heatGeneration: null })).toBe(base)
+  expect(heatingSetUpMessage(null)).toBe(base)
 })

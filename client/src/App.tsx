@@ -394,14 +394,28 @@ function Shell() {
   const currentProperty = useRef(propertyId)
   currentProperty.current = propertyId
 
+  // Die Seite Heizkosten erscheint erst mit einer Heizanlage (Heizung PR 6, Entwurf 11.4). Neu
+  // gefragt wird bei jedem Seitenwechsel, so erscheint sie, sobald die Anlage in den Stammdaten
+  // angelegt ist; `reload` lädt sie mit, damit sie schon in den Stammdaten erscheint.
+  // Die Liste selbst braucht „Passend zu Ihrem Bestand“ in der Hilfe (#488, Teil 4).
+  const [heatingPlants, setHeatingPlants] = useState<HeatingPlant[]>([])
+  // Für welches Objekt die Liste geladen ist, wie `unitsFor`: Nach einem Objektwechsel stünden die Vorschläge der Hilfe
+  // sonst kurz ohne Heizung da und sprängen, sobald die Anlagen kommen (Integrationsdurchsicht von #488).
+  const [plantsFor, setPlantsFor] = useState<string | null>(null)
+  const hasHeatingPlant = heatingPlants.length > 0
+
   // Wohnungen und Mietverhältnisse des gewählten Objekts (#92). Solange die Objekte noch nicht
   // geladen sind, wird gewartet: Ohne Angabe gälte auf dem Server bei mehreren Objekten keins.
   const reload = useCallback(async () => {
-    const [u, t, s] = await Promise.all([
+    // Die Heizanlagen gehören zum Bestand (Systemprüfung): Nach dem Einrichten der Heizung in den Stammdaten und nach
+    // einem Rücksprung im Verlauf stimmt sonst die Navigation nicht, bis man die Seite wechselt. Scheitert nur ihre
+    // Abfrage, bleibt die Liste, wie sie ist.
+    const [u, t, s, , h] = await Promise.all([
       propertyId ? api<Unit[]>(withProperty('/api/units', propertyId)) : Promise.resolve([]),
       propertyId ? api<Tenancy[]>(withProperty('/api/tenancies', propertyId)) : Promise.resolve([]),
       api<Settings>('/api/settings'),
       reloadProperties(),
+      propertyId ? api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).catch(() => null) : Promise.resolve([]),
     ])
     // Wechselt das Objekt schnell hin und her (A → B → A), kann die Antwort für B nach der für A
     // ankommen. Sie gilt dann nicht mehr, sonst stünden Wohnungen von B unter A.
@@ -411,6 +425,10 @@ function Shell() {
     if (propertyId) setUnitCounts((c) => ({ ...c, [propertyId]: u.length }))
     setTenancies(t)
     setSettings(s)
+    if (h) {
+      setHeatingPlants((prev) => keepIfEqual(prev, h))
+      setPlantsFor(propertyId ?? null)
+    }
   }, [propertyId, reloadProperties])
 
   useEffect(() => {
@@ -426,15 +444,6 @@ function Shell() {
     reload().catch((e) => console.error(e))
   }), [hasOpenForm, reload])
 
-  // Die Seite Heizkosten erscheint erst mit einer Heizanlage (Heizung PR 6, Entwurf 11.4). Neu
-  // gefragt wird bei jedem Seitenwechsel, so erscheint sie, sobald die Anlage in den Stammdaten
-  // angelegt ist.
-  // Die Liste selbst braucht „Passend zu Ihrem Bestand“ in der Hilfe (#488, Teil 4).
-  const [heatingPlants, setHeatingPlants] = useState<HeatingPlant[]>([])
-  // Für welches Objekt die Liste geladen ist, wie `unitsFor`: Nach einem Objektwechsel stünden die Vorschläge der Hilfe
-  // sonst kurz ohne Heizung da und sprängen, sobald die Anlagen kommen (Integrationsdurchsicht von #488).
-  const [plantsFor, setPlantsFor] = useState<string | null>(null)
-  const hasHeatingPlant = heatingPlants.length > 0
   useEffect(() => {
     if (!propertyId) {
       setHeatingPlants((prev) => keepIfEqual(prev, []))
@@ -618,7 +627,7 @@ function Shell() {
         )}
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters}
           receiptStart={receiptStart} onReceiptStartDone={() => setReceiptStart(null)} onNewCostItem={(u) => void openNewCostItem(u)} onOpenInbox={() => void navigate('belege:eingang')} />}
-        {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
+        {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} onNavigate={(t, f) => void navigate(t, f ?? null)} />}
         {tab === 'kontoauszug' && <Kontoauszug />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)}
@@ -627,11 +636,12 @@ function Shell() {
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}
-        {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />}
-        {tab === 'steuer' && <Steuer settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)} />}
+        {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings}
+          focus={focus} onFocusDone={clearFocus} onNavigate={(t, f) => void navigate(t, f ?? null)} />}
+        {tab === 'steuer' && <Steuer settings={settings} units={units} onNavigate={(t, f) => void navigate(t, f ?? null)} />}
         {tab === 'hilfe' && <Hilfe onFollow={(g, step) => void followStep(g, step, true)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)}
           openGuide={helpGuide} onOpenGuideDone={() => setHelpGuide(null)} stock={helpStock} />}
-        {tab === 'verlauf' && <Verlauf />}
+        {tab === 'verlauf' && <Verlauf onReverted={reload} />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} focus={focus} onFocusDone={clearFocus} onNavigate={(t) => void navigate(t)} onOpenRelocation={() => { setRelocationManual(true); window.scrollTo(0, 0) }} />
         )}

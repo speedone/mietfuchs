@@ -4,7 +4,7 @@
 // Wohnung gibt, auf die ein Beleg verteilt werden könnte. Ohne DOM prüfbar (emptyStock.test.ts).
 import type { Tenancy, Unit } from './types'
 import type { JumpTarget } from './focus'
-import { NEW_TENANCY_TARGET, NEW_UNIT_TARGET } from './jumpTargets'
+import { NEW_TENANCY_TARGET, NEW_UNIT_TARGET, TENANCIES_TARGET } from './jumpTargets'
 
 // `focus`: das Formular, das der Knopf auf der Zielseite öffnet (#554); die Belege haben dort keine eigene Stelle.
 export type StartStep = { text: string, label: string, tab: 'stammdaten' | 'belege:eingang', focus: JumpTarget | null }
@@ -23,6 +23,27 @@ export function startStep(units: readonly Unit[], tenancies: readonly Tenancy[],
     tab: 'belege:eingang',
     focus: null,
   }
+}
+
+// Das Mietkonto eines Jahres ohne Mietverhältnis (Systemprüfung): dieselbe Reihenfolge, nur ohne die Belege. Gibt es
+// Mietverhältnisse, aber keines in diesem Jahr, führt der Knopf zur Karte „Mietverhältnisse“, wo Beginn und Ende stehen.
+export function ledgerStep(units: readonly Unit[], tenancies: readonly Tenancy[], year: number): StartStep {
+  const none = `Für ${year} gibt es keine Mietverhältnisse.`
+  if (units.length === 0) {
+    return { text: `${none} Legen Sie zuerst eine Wohnung an, danach das Mietverhältnis mit der Kaltmiete.`, label: 'Wohnung anlegen', tab: 'stammdaten', focus: NEW_UNIT_TARGET }
+  }
+  if (tenancies.length === 0) {
+    return { text: `${none} Legen Sie eines an und hinterlegen Sie die Kaltmiete.`, label: 'Mietverhältnis anlegen', tab: 'stammdaten', focus: NEW_TENANCY_TARGET }
+  }
+  return { text: `${none} Prüfen Sie Beginn und Ende der Mietverhältnisse, oder legen Sie ein weiteres an.`, label: 'Mietverhältnisse prüfen', tab: 'stammdaten', focus: TENANCIES_TARGET }
+}
+
+// Eine Seite, der nur die Kosten des Jahres fehlen (Steuer): in den Eingang der Belege; ohne Wohnung zuerst die Wohnung,
+// denn ohne sie ließe sich kein Beleg verteilen (N12).
+export function costsStep(units: readonly Unit[]): Pick<StartStep, 'label' | 'tab' | 'focus'> {
+  return units.length === 0
+    ? { label: 'Wohnung anlegen', tab: 'stammdaten', focus: NEW_UNIT_TARGET }
+    : { label: 'Belege erfassen', tab: 'belege:eingang', focus: null }
 }
 
 // Ein Zeitraum ohne alles, was eine Abrechnung ausmacht: keine Abrechnung je Mieter, kein Mietverhältnis

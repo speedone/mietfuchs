@@ -62,6 +62,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
+- Zähler: Eine Ablesung lässt sich bearbeiten (✎ in ihrer Zeile), statt sie zu löschen und neu anzulegen. Vor dem
+  Speichern fragt Mietfuchs nach, wenn der Stand unter dem vorigen Stand desselben Zählers liegt und kein Zählerwechsel
+  angehakt ist, wenn er über dem folgenden Stand liegt oder wenn das Datum in der Zukunft liegt; speichern können Sie
+  trotzdem. Bei einem Zählerwechsel zählt dabei der Endstand des alten Zählers, beim Heizkostenverteiler verweist die
+  Rückfrage auf den Stichtagswert. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt, wenn heute im
+  gewählten Abrechnungszeitraum liegt; ein Hinweis am Feld sagt es, solange Sie es nicht geändert haben.
 
 ### Geändert
 
@@ -81,15 +87,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Heizung, Hinweise der Abrechnung: Werden die Heizkosten ganz nach Wärmezählern verteilt, ohne Grundkosten nach Fläche,
-  weist die Abrechnung jetzt darauf hin, dass die Heizkostenverordnung höchstens 70 % nach Verbrauch vorsieht und ein
-  höherer Anteil nur mit einer Vereinbarung bleibt (§ 7 Abs. 1, § 10 HeizkostenV); enthält die Position auch das
-  Warmwasser, nennt der Hinweis, dass es abzutrennen ist. Er ist eine Auskunft und färbt das Cockpit nicht. Liegt der
-  Anteil nach Verbrauch neben Grundkosten über 70 %, nennt der bestehende Hinweis jetzt ebenfalls § 10. Ist bei der eigenen Heizkostenabrechnung eine Erfassung
-  gewählt, aber noch kein Gerät angelegt (etwa Heizkostenverteiler), zeigt die Seite Heizkosten die Wohnungen nicht
-  mehr als „abgelesen“, sondern nennt den fehlenden Schritt, und der Hinweis „Kein Verbrauch erfasst“ sagt, dass die
-  Geräte auf der Seite „Zähler & Stände“ anzulegen sind. Kein Betrag ändert sich; abgeschlossene Abrechnungen bleiben,
-  wie sie sind.
+- Navigation und Sprünge: Die Seite „Heizkosten“ steht in der Navigation, sobald die Heizung in den Stammdaten
+  eingerichtet ist, nicht erst nach einem Seitenwechsel; die Mitteilung nach dem Einrichten nennt die Seite. „Hier
+  beheben → Heizkosten“ führt zur betroffenen Heizanlage und hebt sie hervor, „Heizung einrichten →“ zur Karte
+  „Heizung“ der Stammdaten. Nach „Rückgängig“ im Verlauf zeigen die Stammdaten den wiederhergestellten Stand, ohne dass
+  die Seite neu geladen werden muss. Mietkonto, Heizkosten und Steuer führen aus dem leeren Zustand mit einem Knopf zum
+  fehlenden Schritt. Im Cockpit heißt die Zeile, die Kostenpositionen zählt, „Kosten erfasst“ statt „Belege erfasst“.
+- Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
+  Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
+  Issue, in dem sie tatsächlich geplant ist.
 
 ## [0.18.1] – 2026-11-19
 
