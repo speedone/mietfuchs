@@ -14,7 +14,7 @@ import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
 import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
-import { cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
+import { BACKUP_TEMP_PREFIX, cleanBackupTempDirs, cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
 import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UpdateStatus, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, bookingTitle, parseDecisions } from './bookingPlan.ts'
@@ -90,6 +90,8 @@ import { decisionsOf, importToken, planBankImport, type ImportDecision, type Imp
 import { looksLikeBankFile, MAX_ZIP_TOTAL_BYTES, readBankFile } from './bank/read.ts'
 import { suggestForQuestion } from './bank/importSuggest.ts'
 import { upcomingDeadlines } from './upcomingDeadlines.ts'
+import { backupStatus, createBackupMark } from './backupMark.ts'
+import { writable } from './paths.ts'
 import { createDepositEntry, DepositError, depositStatements, listDepositEntries, moveToDeposit, removeDepositEntry, updateDepositEntry, withoutBoundDeposits } from './db/deposits.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
@@ -3235,22 +3237,70 @@ function createZip(): OutgoingZip {
   }
 }
 
-async function sendZip(res: Response, out: OutgoingZip): Promise<void> {
+// `true`, wenn das Archiv vollständig gesendet wurde (das Backup merkt sich nur dann seinen Zeitpunkt).
+async function sendZip(res: Response, out: OutgoingZip): Promise<boolean> {
   const early = out.failure()
   if (early) {
     res.status(500).json({ error: `Das Archiv ließ sich nicht erstellen, weil ein Beleg nicht lesbar ist: ${messageOf(early)}` })
-    return
+    return false
   }
   res.set('Content-Type', 'application/zip')
   out.startSending()
   out.zip.end()
+  let sent = true
   await pipeline(out.zip.outputStream, res).catch((err: unknown) => {
+    sent = false
     console.error(`Ein ZIP ließ sich nicht vollständig senden: ${messageOf(err)}`)
     res.destroy()
   })
+  return sent
 }
 
 // ---------- Backup & Wiederherstellen ----------
+// Wann zuletzt ein Backup heruntergeladen wurde (backupMark.ts): eine Datei im Datenordner, nicht in der Datenbank.
+const BACKUP_MARK = createBackupMark(DATA_DIR)
+
+// **Der Knopf „Backup herunterladen“ ist ein Link**, kein Abruf der Oberfläche (ein Archiv mit allen Belegen gehört
+// nicht in den Arbeitsspeicher des Browsers). Scheitert das Backup, zeigte der Browser deshalb das rohe JSON der
+// Fehlermeldung, oder er speicherte es mit dem Attribut `download` als „backup.json“ (nachgemessen in Chromium). Wer als
+// Browser einem Link folgt (er verlangt `text/html`), bekommt stattdessen eine lesbare Seite mit dem Weg zurück; Skripte
+// und `api()` bekommen weiter JSON. Die Oberfläche lädt den Link in einen unsichtbaren Rahmen und zeigt den Satz aus
+// `#meldung` in der Karte (client/src/backupView.ts, `frameMessage`). Ohne Stil und Skript, die CSP ließe beides nicht zu.
+const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+function backupFailure(req: Request, res: Response, status: number, error: string): void {
+  if (req.accepts(['json', 'html']) !== 'html') {
+    res.status(status).json({ error })
+    return
+  }
+  res.status(status).type('html').send(
+    `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Backup nicht erstellt - Mietfuchs</title></head>` +
+    `<body><h1>Das Backup wurde nicht erstellt</h1><p id="meldung">${escapeHtml(error)}</p><p>Ihre Daten sind unverändert.</p><p><a href="/">Zurück zu Mietfuchs</a></p></body></html>`,
+  )
+}
+
+// Was dem Vermieter hilft, wenn der Schnappschuss scheitert: bei Schreibschutz und voller Platte der Satz von
+// db/errors.ts, sonst der Weg, der immer geht. Der technische Befund steht auf der Konsole.
+const snapshotProblemText = (err: unknown): string => {
+  const known = databaseProblem(err)
+  if (known && known.status === 503) return known.message
+  return `Versuchen Sie es bitte noch einmal. Gelingt es wieder nicht, beenden Sie Mietfuchs und kopieren Sie den ganzen Datenordner (${DATA_DIR}); darin ist alles enthalten.`
+}
+
+// Der jüngste Abschluss einer Abrechnung oder Heizkostenabrechnung, für die Erinnerung ans Backup
+const latestClosedAt = (stock: Stock): string | null =>
+  [...stock.closedSettlements, ...stock.closedHeatingSettlements].reduce<string | null>((latest, c) => (latest === null || c.closedAt > latest ? c.closedAt : latest), null)
+
+app.get('/api/backup/status', async (_req, res) => {
+  const lastAt = BACKUP_MARK.read()
+  const now = new Date()
+  // Ohne lesbaren Bestand und im umgezogenen Ordner wird nicht erinnert: Dort sagt der Hinweis oben, was los ist.
+  if (movedNow() || database === null || databaseUnavailable(databaseState()) !== null) {
+    res.json(backupStatus({ hasStock: false, lastAt, latestClosedAt: null, now }))
+    return
+  }
+  res.json(await readData(async (db) => backupStatus({ hasStock: await carriesStock(db), lastAt, latestClosedAt: latestClosedAt(await readStock(db)), now })))
+})
+
 app.get('/api/backup', async (req, res) => {
   // Wie beim Wiederherstellen: Der Belegordner muss dastehen, bevor jemand ihn liest. Dass er
   // es heute tut, liegt nur daran, dass multer ihn beim Laden des Moduls anlegt und `load()`
@@ -3279,14 +3329,13 @@ app.get('/api/backup', async (req, res) => {
   // lässt, ist schlimmer als keines: Der Vermieter hält sich danach für gesichert. Deshalb sagt
   // Mietfuchs, was los ist, und nennt den Weg, der immer funktioniert.
   if (!traegtDenBestand && !fs.existsSync(jsonFile)) {
-    return res.status(503).json({
-      error:
-        'Mietfuchs kann gerade kein Backup erstellen, weil es an seine Daten nicht herankommt: ' +
+    return backupFailure(req, res, 503,
+      'Mietfuchs kann gerade kein Backup erstellen, weil es an seine Daten nicht herankommt: ' +
         'Die Datenbank lässt sich nicht lesen, und eine Datei db.json gibt es nicht mehr. Ein ' +
         'Archiv ohne Bestand ließe sich später nicht einspielen, und deshalb entsteht keines. ' +
         `Sichern Sie bitte stattdessen den ganzen Datenordner (${DATA_DIR}), indem Sie ihn ` +
         'kopieren; darin ist alles enthalten. Woran es liegt, steht im Cockpit.',
-    })
+    )
   }
 
   if (!traegtDenBestand) out.addFile(jsonFile, 'db.json')
@@ -3304,6 +3353,8 @@ app.get('/api/backup', async (req, res) => {
   // Die Datenbank kommt als **Schnappschuss** mit und nicht als Kopie der laufenden Datei
   // (db/backup.ts).
   let snapshotFile: string | null = null
+  // Der Ausweichordner für den Schnappschuss, wenn sich im Datenordner nicht schreiben lässt (unten)
+  let snapshotDir: string | null = null
   if (traegtDenBestand && database) {
     // **Ein eigener Name je Anfrage.** Zwei gleichzeitige Backups teilten sich sonst die
     // Zwischendatei, und die zweite löschte, was die erste gerade packen will; heraus käme ein
@@ -3321,17 +3372,28 @@ app.get('/api/backup', async (req, res) => {
     // Der Schnappschuss entsteht, **bevor** die erste Zeile des Archivs gesendet wird: Scheitert
     // er, gibt es noch eine Fehlermeldung statt eines abgebrochenen Downloads. Weggeräumt wird
     // die Zwischendatei erst, wenn das Archiv gesendet ist, denn yazl liest sie erst dann.
-    // Im umgezogenen Ordner neben der geöffneten Kopie, nicht im alten Ordner (Durchsicht Daten K7)
-    const temp = path.join(OPEN_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
+    // Im umgezogenen Ordner neben der geöffneten Kopie, nicht im alten Ordner (Durchsicht Daten K7).
+    // **Lässt sich im Datenordner nicht schreiben** (Rechte während des Betriebs geändert, Datenträger nur noch lesbar),
+    // weicht der Schnappschuss in den Ordner für Zwischendateien aus: `VACUUM INTO` liest die Datenbank nur, und gerade
+    // dann braucht der Vermieter sein Backup. Vorher kam hier „Failed query: VACUUM INTO ?“. Dort in einem eigenen
+    // Ordner (`mkdtemp`, nur für das eigene Benutzerkonto lesbar): Der Schnappschuss ist der ganze Bestand.
+    let temp = path.join(OPEN_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
     try {
+      if (!writable(OPEN_DIR)) {
+        snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), BACKUP_TEMP_PREFIX))
+        temp = path.join(snapshotDir, ARCHIVE_DB_NAME)
+      }
       await writeDatabaseSnapshot(database, temp)
       // Der Verlauf nur auf ausdrücklichen Wunsch (db/backup.ts, `stripJournal`).
       if (req.query.journal !== '1') await stripJournal(temp)
     } catch (err) {
       fs.rmSync(temp, { force: true })
+      if (snapshotDir) fs.rmSync(snapshotDir, { recursive: true, force: true })
       // Hier wird abgebrochen und nicht stillschweigend ohne Datenbank gepackt: Ein Archiv, das
       // sich vollständig anfühlt und es nicht ist, fällt erst im Ernstfall auf.
-      return res.status(500).json({ error: `Die Datenbank ließ sich nicht sichern: ${messageOf(err)}` })
+      // Die Meldung des Treibers nennt die Abfrage samt Werten; übersetzt wie jeder Fehler der Datenbank (db/errors.ts).
+      console.error(`Backup: Die Datenbank ließ sich nicht sichern: ${messageOf(err)}`)
+      return backupFailure(req, res, 500, `Die Datenbank ließ sich nicht sichern. ${snapshotProblemText(err)}`)
     }
     out.addFile(temp, ARCHIVE_DB_NAME)
     snapshotFile = temp
@@ -3341,9 +3403,15 @@ app.get('/api/backup', async (req, res) => {
   const stamp = new Date().toISOString().slice(0, 10)
   res.set('Content-Disposition', `attachment; filename="mietfuchs-backup-${stamp}.zip"`)
   try {
-    await sendZip(res, out)
+    // Gemerkt wird nur ein vollständig gesendetes Archiv, und nie im umgezogenen Ordner. `record` wirft nicht; der
+    // Download ist an dieser Stelle ohnehin durch. **Nur bei GET**: Express beantwortet HEAD mit derselben Route und
+    // 200, sendet aber keinen Rumpf (`curl -I` hätte sonst als heruntergeladenes Backup gezählt und die Erinnerung
+    // 30 Tage verstummen lassen).
+    const sent = await sendZip(res, out)
+    if (sent && req.method === 'GET') BACKUP_MARK.record(new Date(), { persist: !movedNow() })
   } finally {
     if (snapshotFile) fs.rmSync(snapshotFile, { force: true })
+    if (snapshotDir) fs.rmSync(snapshotDir, { recursive: true, force: true })
   }
 })
 
@@ -3398,6 +3466,11 @@ const restoreUpload = multer({
 })
 
 const NOTHING_CHANGED = 'Es wurde nichts davon übernommen; Ihre bisherigen Daten sind unverändert.'
+// Derselbe Abschluss beim Einspielen eines Backups im Umzug, wenn im neuen Ordner noch nichts liegt
+const RELOCATION_NOTHING_TAKEN = 'Es wurde nichts übernommen; die Datei selbst ist unverändert.'
+// Zufallsbytes, eine Textdatei und ein abgebrochener Download sehen für den Leser gleich aus: Das Verzeichnis am Ende
+// des Archivs fehlt. Der häufigste Grund bei einem echten Backup ist der unvollständige Download oder die halbe Kopie.
+const NOT_A_ZIP = 'Die Datei ist kein gültiges ZIP-Archiv. Vielleicht wurde sie nicht vollständig heruntergeladen oder kopiert; laden oder kopieren Sie das Backup noch einmal.'
 
 // Liest ein Backup vollständig und prüft es, bevor irgendetwas ersetzt wird. Wirft einen Fehler
 // mit einer Meldung für die Oberfläche; dann bleibt der bisherige Datenstand unangetastet.
@@ -3426,7 +3499,7 @@ async function readBackup(archive: string, staging: string): Promise<ReadBackup>
   try {
     zip = await openZip(archive, RESTORE_LIMITS)
   } catch (err) {
-    if (err instanceof ZipRefusal) throw new Error(err.kind === 'not-zip' ? 'Datei ist kein gültiges ZIP-Archiv.' : `${err.message} ${NOTHING_CHANGED}`)
+    if (err instanceof ZipRefusal) throw new Error(`${err.kind === 'not-zip' ? NOT_A_ZIP : err.message} ${NOTHING_CHANGED}`)
     throw err
   }
   try {
@@ -4219,7 +4292,9 @@ app.post('/api/relocation/restore-backup', async (req, res) => {
       fs.mkdirSync(staging)
       backup = await readBackup(choice.backup, staging)
     } catch (err) {
-      return void res.status(400).json({ error: messageOf(err) })
+      // Ohne eigenen Bestand (der Regelfall beim Umzug) gibt es hier keine „bisherigen Daten“; gesagt wird, was stimmt.
+      const text = messageOf(err)
+      return void res.status(400).json({ error: (await hasOwnStock()) ? text : text.replace(NOTHING_CHANGED, RELOCATION_NOTHING_TAKEN) })
     }
     await runRestore(backup, res)
   } finally {
@@ -5613,6 +5688,8 @@ if ((RUNTIME === 'desktop' || RUNTIME === 'store') && !MOVED_AWAY) {
   }
 }
 if (!MOVED_AWAY) cleanRestoreLeftovers(DATA_DIR)
+// Liegengebliebene Ausweichordner eines abgebrochenen Backups im Ordner für Zwischendateien (restoreFiles.ts)
+cleanBackupTempDirs(os.tmpdir())
 
 // HTTPS (#528, Schritt 2): Fehlt das Zertifikat, entsteht es jetzt, nach dem Binden und vor dem Öffnen der Datenbank. Ein
 // Problem dabei verhindert nie den Start, Mietfuchs antwortet dann nur über HTTP und sagt es einmal. Ein umgezogener
@@ -5766,7 +5843,15 @@ if (!MOVED_AWAY) {
   if (database) console.log(`Datenbank: ${database.file}`)
   // Auf die Fehlerausgabe, nicht in die gewöhnliche: Der Start gelingt, aber etwas ist nicht in
   // Ordnung, und wer Ausgaben einsammelt, soll genau das auseinanderhalten können.
-  else console.error(`Datenbank: nicht geöffnet. ${openProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
+  // Der zweite Satz nur, wenn es die db.json gibt (bis 0.7 der ganze Bestand): Ohne sie startet Mietfuchs ohne Daten,
+  // und „arbeitet weiter mit db.json“ schickte den Vermieter zu einer Datei, die es nicht gibt.
+  else {
+    const jsonFile = path.join(DATA_DIR, 'db.json')
+    const then = fs.existsSync(jsonFile)
+      ? `Mietfuchs arbeitet weiter mit ${jsonFile}; es geht nichts verloren.`
+      : `Mietfuchs startet ohne Daten und zeigt in der Oberfläche, was zu tun ist. An den Dateien in ${DATA_DIR} wurde nichts geändert.`
+    console.error(`Datenbank: nicht geöffnet. ${openProblem ?? ''}\n${then}`)
+  }
   for (const warning of database?.warnings ?? []) console.error(`Hinweis: ${warning}`)
   // Die Sicherung vor dem Update (#154) auch hier, mit vollem Pfad (#180): Im Container oder im
   // npm-Betrieb liest das Protokoll, wer die Oberfläche vielleicht nie öffnet. Nur beim Start,

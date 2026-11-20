@@ -1281,6 +1281,14 @@ export const GLOSSARY = {
     norm: 'Format nach der Richtlinie EPC069-12 des European Payments Council (SEPA-Überweisung)',
     needed: 'Nein, er ist eine Erleichterung für den Mieter. Sie schalten ihn beim Drucken ein („QR-Code zum Bezahlen bei Nachzahlung“). Er erscheint nur bei einer Nachzahlung und nur mit Vermieter und einer IBAN aus dem Europäischen Wirtschaftsraum; hat das Objekt eine eigene IBAN, steht diese im Code. Den Verwendungszweck ändern Sie in der Vorlage des Anschreibens, für alle Objekte, ein Objekt oder einen Mieter. Der Code entsteht auf Ihrem Rechner, nichts geht ins Netz. Abrechnungen, die vor dieser Funktion abgeschlossen wurden, bekommen keinen Code.',
   },
+  // Datensicherung: das Backup als ZIP-Datei, im Unterschied zu den automatischen Sicherungen im Verlauf
+  backup: {
+    topic: 'operation',
+    title: 'Backup',
+    short: 'Eine ZIP-Datei mit Ihrem ganzen Bestand: der Datenbank, allen hochgeladenen Belegen sowie Logo und Briefpapier. Sie laden sie in den Einstellungen unter „Daten & Sicherung“ herunter und spielen sie dort wieder ein, auch auf einem anderen Rechner.',
+    example: 'Die Datei heißt etwa mietfuchs-backup-2026-11-20.zip. Das Cockpit erinnert, wenn das letzte Backup älter als 30 Tage ist oder seither eine Abrechnung abgeschlossen wurde. Nicht enthalten sind die API-Schlüssel externer KI-Dienste, das Passwort der Anmeldung, das Zertifikat für die verschlüsselte Verbindung und die automatischen Sicherungen aus dem Verlauf.',
+    needed: 'Ja. Ihre Daten liegen nur auf Ihrem Rechner; ohne ein Backup auf einem anderen Datenträger, etwa einem USB-Stick, sind sie bei einem Defekt oder Diebstahl verloren. Die automatischen Sicherungen im Verlauf liegen auf demselben Rechner und helfen nur gegen einen Bedienfehler.',
+  },
 } satisfies Record<string, Term>
 
 export type TermId = keyof typeof GLOSSARY

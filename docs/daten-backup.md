@@ -19,7 +19,42 @@ Wo der Datenordner liegt, hängt davon ab, wie du Mietfuchs nutzt:
 - **Aus dem Quellcode**: `server/data/`.
 
 Im Programm für Windows und macOS öffnet das Menü *Mietfuchs → Datenordner zeigen* den Ordner.
-Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
+`NKA_DATA_DIR` legt ihn frei fest.
+
+## Backup: zwei Wege
+
+1. **Über die Oberfläche**, im laufenden Betrieb: *Einstellungen → Daten & Sicherung → Backup
+   herunterladen (ZIP)*. Das Archiv enthält die Datenbank, alle Belege, Logo und Briefpapier. Kopiere
+   die Datei auf einen Datenträger, der nicht in diesem Rechner steckt (USB-Stick, externe
+   Festplatte): Ein Backup im Ordner Downloads geht mit dem Rechner verloren. Die Karte nennt, wann
+   zuletzt ein Backup heruntergeladen wurde, und das Cockpit erinnert, wenn es Daten gibt und noch
+   keines heruntergeladen wurde, das letzte älter als 30 Tage ist oder seither eine Abrechnung
+   abgeschlossen wurde. Mietfuchs sieht dabei nur, dass das Archiv gesendet wurde, nicht, ob und wo
+   du es gespeichert hast.
+2. **Den ganzen Datenordner kopieren**: **Beende Mietfuchs vorher** (bei Docker `docker compose
+   down`, siehe [docker.md](docker.md)). Eine Kopie der Datenbank, in die gerade geschrieben wird,
+   kann unvollständig sein. Dieser Weg nimmt alles mit, auch was im ZIP fehlt.
+
+**Nicht im Backup über die Oberfläche** stehen:
+
+- die API-Schlüssel externer KI-Dienste (`secrets.json`); nach dem Wiederherstellen auf einem anderen
+  Rechner trägst du sie dort neu ein,
+- Passwort und gekoppelte Fenster (`zugang.json`, `einrichtungscode.txt`) und das Zertifikat (`tls/`),
+  siehe unten,
+- die automatischen Sicherungen: `vorversionen/` (wöchentlich, die vier jüngsten) und die Sicherungen
+  vor einem Update oder vor dem Einspielen (`mietfuchs.sqlite.vor-…`). Sie liegen nur im Datenordner,
+  also auf demselben Rechner wie die Daten, und helfen gegen einen Bedienfehler (Seite „Verlauf“),
+  nicht gegen den Verlust des Rechners,
+- der Papierkorb gelöschter Belege (`papierkorb/`),
+- der Verlauf der Änderungen, außer du hakst ihn an (oben),
+- Zustimmungen (Übermittlung an einen KI-Dienst, Abfrage nach Updates): Es gelten die des Rechners,
+  auf dem du einspielst,
+- `letztes-backup.json`, in der sich Mietfuchs merkt, wann zuletzt ein Backup heruntergeladen wurde.
+  Sie gehört auch nicht in den Umzug ins Programmfenster: Ein eingespielter Stand brächte sonst seinen
+  alten Zeitpunkt mit.
+
+Lässt sich im Datenordner gerade nicht schreiben (Rechte geändert, Datenträger nur lesbar), entsteht das
+Backup über die Oberfläche trotzdem; den Zeitpunkt merkt sich Mietfuchs dann nur, bis es beendet wird.
 
 Eingelesene Kontoauszüge (Seite „Kontoauszug“) stehen in der Datenbank und kommen mit ins Backup:
 Konten, Importe, Tagessummen, die Umsätze der Vermietung, die Zuordnungen und gemerkte Zahler. Die Datei

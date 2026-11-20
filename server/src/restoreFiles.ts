@@ -127,6 +127,34 @@ export function cleanRestoreLeftovers(dataDir: string): void {
   }
 }
 
+// Der Ausweichordner des Backups bei nicht beschreibbarem Datenordner (`GET /api/backup` in index.ts): `mkdtemp` mit
+// diesem Anfang im Ordner für Zwischendateien, darin der Schnappschuss, also der ganze Bestand. Die Route räumt ihn
+// selbst weg; stirbt der Prozess mittendrin, bliebe er liegen. Der Start räumt deshalb auf, **nur nach Muster und
+// Alter**: genau die Gestalt von `mkdtemp` (sechs Zeichen), ein Ordner, älter als eine Stunde (ein jüngerer kann das
+// laufende Backup eines zweiten Mietfuchs sein), und unter Unix nur der des eigenen Benutzerkontos. Wirft nie.
+export const BACKUP_TEMP_PREFIX = 'mietfuchs-backup-'
+const BACKUP_TEMP_NAME = /^mietfuchs-backup-[A-Za-z0-9]{6}$/
+const BACKUP_TEMP_MAX_AGE_MS = 60 * 60 * 1000
+export function cleanBackupTempDirs(tmpDir: string, now: number = Date.now()): void {
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(tmpDir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  const uid = process.getuid?.()
+  for (const e of entries) {
+    if (!e.isDirectory() || !BACKUP_TEMP_NAME.test(e.name)) continue
+    const dir = path.join(tmpDir, e.name)
+    try {
+      const stat = fs.statSync(dir)
+      if (now - stat.mtimeMs < BACKUP_TEMP_MAX_AGE_MS) continue
+      if (uid !== undefined && stat.uid !== uid) continue
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch { /* dann beim nächsten Start */ }
+  }
+}
+
 // Platz, den ein Wiederherstellen braucht, in Bytes. Nicht nur die Belege und die Datenbank aus
 // dem Archiv: Danach entstehen noch die db.json und `db.json.vor-restore`, und je nach Archiv die
 // Sicherung vor ausstehenden Migrationen (`mietfuchs.sqlite.vor-<Schritt>`) oder bei einem Archiv

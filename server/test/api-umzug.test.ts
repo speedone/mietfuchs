@@ -864,3 +864,30 @@ test('Praxistest G: falscher Ordner gewählt, verständliche Absage; erneut such
     fs.rmSync(home, { recursive: true, force: true })
   }
 })
+
+// Durchsicht (Datensicherung): Was kein ZIP ist, sagt im Umzug nicht „Ihre bisherigen Daten sind unverändert“, wenn es
+// im neuen Ordner gar keine gibt; mit eigenem Bestand (`replace`) stimmt der Satz.
+test('Backup einspielen: was kein ZIP ist, nennt ohne eigenen Bestand keine bisherigen Daten', async () => {
+  const home = tempDir()
+  const zip = path.join(home, 'mietfuchs-backup.zip')
+  fs.writeFileSync(zip, 'Nur ein Text, kein Archiv.')
+  const s = await startServerIn(tempDir(), desktopEnv(home))
+  try {
+    const known = await post(s.base, '/api/relocation/inspect', { folder: zip })
+    const id = (known.body.backup as { id?: string } | undefined)?.id
+    if (!id) return assert.fail(`Keine Kennung für das Backup: ${JSON.stringify(known.body)}`)
+    const fresh = await post(s.base, '/api/relocation/restore-backup', { id })
+    assert.equal(fresh.status, 400)
+    assert.match(String(fresh.body.error), /kein gültiges ZIP-Archiv/)
+    assert.match(String(fresh.body.error), /nicht vollständig heruntergeladen/)
+    assert.doesNotMatch(String(fresh.body.error), /bisherigen Daten/, String(fresh.body.error))
+    assert.match(String(fresh.body.error), /Es wurde nichts übernommen/)
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Eigene', areaM2: 10, participates: true }) })
+    const own = await post(s.base, '/api/relocation/restore-backup', { id, replace: true })
+    assert.equal(own.status, 400)
+    assert.match(String(own.body.error), /Ihre bisherigen Daten sind unverändert/)
+  } finally {
+    s.stop()
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})

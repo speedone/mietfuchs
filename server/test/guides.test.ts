@@ -38,6 +38,9 @@ import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { CALENDAR_RULES } from '../../shared/period.ts'
 import { CODE_LENGTH, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, createSessions, formatCode, newSetupCode } from '../src/access.ts'
 import { DEFAULT_PORTS } from '../src/instanceGuard.ts'
+import { backupReminder, BACKUP_REMINDER_DAYS } from '../src/backupMark.ts'
+import { PRIOR_KEEP, PRIOR_MAX_AGE_DAYS } from '../src/db/priorVersions.ts'
+import { JOURNAL_KEEP_MONTHS } from '../src/db/journal.ts'
 import { depositLimit, depositProblem, depositState } from '../../shared/deposit.ts'
 import type { DepositEntry } from '../../shared/types.ts'
 import { planRentIncrease } from '../src/rentIncrease.ts'
@@ -58,7 +61,7 @@ const CLOSED_ISSUES: readonly number[] = [97, 99, 210, 218]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'deposit', 'rentIncrease', 'bankStatement', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'deposit', 'rentIncrease', 'bankStatement', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing', 'backup'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -664,6 +667,21 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     assert.equal(code.split('-').length, 3)
     inOrder(GUIDES.pairing.example, [`${CODE_LENGTH} Zeichen`, `${PAIRING_MINUTES} Minuten`, String(DEFAULT_PORTS[0]), `${MAX_DEVICES} Programmfenster`], 'pairing')
     inOrder(GLOSSARY.pairingCode.example, [`${PAIRING_MINUTES} Minuten`, String(DEFAULT_PORTS[0])], 'pairingCode')
+  },
+  // Datensicherung: Spanne der Erinnerung (backupMark.ts), Takt und Zahl der Vorversionen (priorVersions.ts) und die
+  // Aufbewahrung des Verlaufs (journal.ts); dazu, dass genau an der Grenze noch nicht erinnert wird.
+  backup: () => {
+    const now = new Date('2026-11-20T12:00:00Z')
+    const ago = (days: number): string => new Date(now.getTime() - days * 86_400_000).toISOString()
+    assert.equal(backupReminder({ hasStock: true, lastAt: ago(BACKUP_REMINDER_DAYS), latestClosedAt: null, now }), null)
+    assert.equal(backupReminder({ hasStock: true, lastAt: ago(BACKUP_REMINDER_DAYS + 1), latestClosedAt: null, now }), 'old')
+    assert.equal(backupReminder({ hasStock: true, lastAt: ago(1), latestClosedAt: ago(0), now }), 'closed')
+    inOrder(GUIDES.backup.example, [`${BACKUP_REMINDER_DAYS} Tage`, `${PRIOR_MAX_AGE_DAYS} Tage`, `${PRIOR_KEEP} jüngsten`, `${JOURNAL_KEEP_MONTHS} Monate`], 'backup')
+    inOrder(GLOSSARY.backup.example, [`${BACKUP_REMINDER_DAYS} Tage`], 'backup (Lexikon)')
+    // Was nicht im Backup steht, nennen Anleitung und Begriff gleich
+    for (const text of [GUIDES.backup.caveats.map((c) => c.text).join(' '), GLOSSARY.backup.example]) {
+      for (const part of ['API-Schlüssel', 'Passwort der Anmeldung', 'Zertifikat', 'automatischen Sicherungen']) assert.ok(text.includes(part), `${part} fehlt`)
+    }
   },
 }
 

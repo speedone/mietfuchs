@@ -1,7 +1,9 @@
-import { inWindow } from '../relocation'
-import { useEffect, useState } from 'react'
+import { inWindow, reloadWithArrival, type Arrival } from '../relocation'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { dataFolder, type HealthReport } from '../database'
-import type { Settings } from '../types'
+import type { BackupStatus, Settings } from '../types'
+import { asBackupStatus, frameMessage, lastBackupLine, recheckUntilChanged } from '../backupView'
+import { NoticeBox } from '../components/Notice'
 import { api, errorText } from '../api'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -30,12 +32,16 @@ const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`
 
 // `onNavigate`: Sprung auf eine andere Seite (der Link auf den Verlauf, #318).
 // `onOpenRelocation`: „Daten aus bisherigem Mietfuchs übernehmen …“ (#517), nur im Programmfenster
-// `focus`: die Karte, zu der ein Sprung führt (#554): Vermieter und IBAN, KI-Belegauswertung, Anleitung zum Update.
-type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void; onOpenRelocation?: () => void } & FocusProps
+// `focus`: die Karte, zu der ein Sprung führt (#554): Vermieter und IBAN, KI-Belegauswertung, Anleitung zum Update, Backup.
+// `reloadPage`: das Neuladen nach dem Wiederherstellen, im Test hineingereicht.
+type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void; onOpenRelocation?: () => void; reloadPage?: (arrival: Arrival) => void } & FocusProps
 
-const SETTINGS_SECTIONS = ['landlord', 'ai', 'about', 'access'] as const
+// Der unsichtbare Rahmen, in den der Backup-Link lädt (siehe dort)
+const BACKUP_FRAME = 'mietfuchs-backup'
 
-export default function Einstellungen({ settings, reload, update, onNavigate, onOpenRelocation, focus, onFocusDone }: Props) {
+const SETTINGS_SECTIONS = ['landlord', 'ai', 'about', 'access', 'backup'] as const
+
+export default function Einstellungen({ settings, reload, update, onNavigate, onOpenRelocation, reloadPage = reloadWithArrival, focus, onFocusDone }: Props) {
   const jumpAt = useSectionJump(focus, SETTINGS_SECTIONS, true, onFocusDone)
   const { properties } = useProperty()
   const toast = useToast()
@@ -64,6 +70,33 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
       .then((r) => setFolder(dataFolder(r?.database?.file)))
       .catch(() => {})
   }, [])
+  // Wann zuletzt ein Backup heruntergeladen wurde. Der Download ist ein Link, kein Abruf; wann er fertig ist, erfährt die
+  // Seite nicht. Deshalb fragt sie nach dem Klick in wachsendem Abstand nach, bis sich der Zeitpunkt ändert
+  // (`recheckUntilChanged`, rund zwei Minuten), und immer, wenn das Fenster wieder den Fokus bekommt.
+  const [backup, setBackup] = useState<BackupStatus | null>(null)
+  // Die Ablehnung des Servers, wenn ein Backup scheitert (aus dem Rahmen gelesen)
+  const [backupError, setBackupError] = useState('')
+  const loadBackup = useCallback(() => {
+    api<unknown>('/api/backup/status')
+      .then((s) => setBackup(asBackupStatus(s)))
+      .catch(() => {})
+  }, [])
+  // Je Klick eine Folge von Nachfragen; ein neuer Klick und das Verlassen der Seite beenden die laufende.
+  const recheck = useRef(0)
+  useEffect(() => {
+    loadBackup()
+    window.addEventListener('focus', loadBackup)
+    return () => {
+      window.removeEventListener('focus', loadBackup)
+      recheck.current = -1
+    }
+  }, [loadBackup])
+  function awaitDownload() {
+    setBackupError('')
+    const run = ++recheck.current
+    void recheckUntilChanged(async () => asBackupStatus(await api<unknown>('/api/backup/status')), backup?.lastDownloadAt ?? null, { stopped: () => recheck.current !== run })
+      .then((changed) => { if (changed && recheck.current === run) setBackup(changed) })
+  }
   // Ob das Backup den Verlauf der Änderungen mitnimmt (#318). Nur eine Wahl für den Download, nichts wird gespeichert.
   const [withJournal, setWithJournal] = useState(false)
   const [restoring, setRestoring] = useState(false)
@@ -98,8 +131,10 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
         setRestoring(false)
         return
       }
+      // Wie nach Umzug und neuerem Stand: neu laden, und danach steht einmal oben „Ihr Backup ist eingespielt“ mit dem,
+      // was da ist (`reloadWithArrival`, Arrival.tsx). Vorher lud die Seite ins Cockpit, ohne ein Wort der Bestätigung.
       setRestoreMsg('Backup wiederhergestellt - die Seite wird neu geladen …')
-      setTimeout(() => window.location.reload(), 1200)
+      reloadPage('backup')
     } catch (e) {
       setRestoreMsg(`Fehler: ${String((e as Error).message)}`)
       setRestoring(false)
@@ -175,7 +210,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
 
       <LawOverridesCard />
 
-      <Card title={<>Daten &amp; Sicherung</>}>
+      <Card title={<>Daten &amp; Sicherung</>} {...jumpAt('backup')}>
         <p className="muted">
           {folder && <>Ihre Daten liegen im Datenordner von Mietfuchs: <code>{folder}</code>. </>}
           Belege gehen nur an einen externen KI-Dienst, und nur, wenn Sie dem zugestimmt haben; die Update-Prüfung fragt bei
@@ -185,7 +220,26 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
           den Verlauf der Änderungen nur, wenn Sie es unten wählen.
         </p>
         <div className="row">
-          <a className="btn secondary" href={withJournal ? '/api/backup?journal=1' : '/api/backup'} download>⬇ Backup herunterladen (ZIP)</a>
+          {/* Ein Link, kein Abruf: Ein Archiv mit allen Belegen gehört nicht in den Arbeitsspeicher. Er lädt in einen
+              unsichtbaren Rahmen. Nachgemessen in Chromium: Mit `download` speicherte der Browser eine Ablehnung des
+              Servers als „backup.json“, und als gewöhnlicher Link fragte er bei offenem Formular „Seite verlassen?“. Im
+              Rahmen lädt ein Download kein Dokument; eine Ablehnung schon, und ihr Satz steht dann hier in der Karte. */}
+          <a className="btn secondary" href={withJournal ? '/api/backup?journal=1' : '/api/backup'} target={BACKUP_FRAME} onClick={awaitDownload}>⬇ Backup herunterladen (ZIP)</a>
+          <iframe
+            name={BACKUP_FRAME}
+            title="Backup herunterladen"
+            hidden
+            tabIndex={-1}
+            onLoad={(e) => {
+              let text = ''
+              try {
+                text = frameMessage(e.currentTarget.contentDocument)
+              } catch {
+                // Lässt sich der Rahmen nicht lesen, gibt es nichts zu zeigen
+              }
+              if (text) setBackupError(text)
+            }}
+          />
           <label className="btn secondary">
             {restoring && <span className="spinner" />}⬆ Backup wiederherstellen …
             <input
@@ -196,6 +250,13 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
             />
           </label>
         </div>
+        {backupError && <NoticeBox level="error" title="Das Backup wurde nicht erstellt" action={backupError} />}
+        {backup && (
+          <p className="muted" role="status">
+            {lastBackupLine(backup)} Ob und wo die Datei gespeichert wurde, sieht Mietfuchs nicht; bewahren Sie Ihr Backup
+            nicht auf diesem Rechner auf, etwa auf einem USB-Stick oder einer externen Festplatte.
+          </p>
+        )}
         <label className="checkline">
           <input type="checkbox" checked={withJournal} onChange={(e) => setWithJournal(e.target.checked)} />
           Verlauf der Änderungen mitsichern
