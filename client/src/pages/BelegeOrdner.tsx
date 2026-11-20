@@ -14,12 +14,14 @@ import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { eInvoicePdfOf } from '../eInvoicePdf'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { buildFolder, coverage, filesByItem, duplicateHints, inboxFor, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard } from '../receipts'
+import { buildFolder, canReleaseReceipt, coverage, filesByItem, duplicateHints, inboxFor, partsBySource, receiptCards, registerCount, receiptName, releaseQuestion, releaseSplit, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard } from '../receipts'
 import { hitPlace, RECEIPT_ACCEPT } from '../belegeView'
 import { useEvaluationQueue } from '../evaluationQueue'
+import { closedCheckPath } from '../costPeriods'
+import { labelOfKey } from '../periodForm'
 import type { ReceiptStock } from '../receiptStock'
 import Field from '../components/Field'
-import { useToast } from '../components/feedback'
+import { useConfirm, useToast } from '../components/feedback'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
 import { AmountCheckBox, AttachPicker, ReceiptItem, useAttach, useDeleteReceipt, useHighlight } from '../components/ReceiptParts'
@@ -204,9 +206,13 @@ type Props = {
   onShowInInbox?: (file: string) => void
   // Für Tests: die Belegmappe erzeugen, ohne pdf.js und Download
   makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
+  // „Auswertung zeigen“ an einem Beleg mit Auswertung: Der Eingang holt sie zurück, auch eine fertig gebuchte
+  onShowAssessment?: (file: string) => void
+  // Ob „Betrag prüfen“ dieser Ansicht offen ist, mit der Position (für den Hinweis in der anderen Ansicht)
+  onAmountCheck?: (item: CostItem | null) => void
 }
 
-export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onOpenItem, focusFile, onFocusDone, onShowInInbox, makeTenantFolder = downloadTenantFolder }: Props) {
+export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onOpenItem, focusFile, onFocusDone, onShowInInbox, makeTenantFolder = downloadTenantFolder, onShowAssessment, onAmountCheck }: Props) {
   const { year: currentYear, calendar, key: periodKeyNow, period: periodNow, label: periodLabelNow } = usePeriod()
   const { property, properties } = useProperty()
   const { uploads, costItems, loadedOnce } = stock
@@ -217,6 +223,8 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
   const attach = useAttach(stock, properties, setError, (file) => {
     for (const x of queue) if (x.status === 'gespeichert' && (x.failure?.file ?? x.file) === file) remove(x.id)
   })
+  const checkItem = attach.check?.item ?? null
+  useEffect(() => { onAmountCheck?.(checkItem) }, [checkItem, onAmountCheck])
   // Der Ordner zeigt das Objekt und das Jahr der Seitenleiste (#170); gewählt werden beide nur dort (#346
   // Schritt 8, M13). Was der Ordner darüber hinaus kann, ist ein Umfang und keine Wahl: Belege aller Objekte bzw.
   // aller Jahre zeigen. Das Jahr ist das Kalenderjahr, in dem der gewählte Zeitraum beginnt; darunter stehen seine
@@ -287,6 +295,31 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
   // Ein Zählerfoto an keiner Position lässt sich löschen, wie vorher im Belegordner (Durchsicht S1)
   // Gelöscht: Auch was die Warteschlange zu ihm zeigt, ist erledigt (Nachdurchsicht S-D)
   const deleteFile = useDeleteReceipt(async (file) => { forgetFile(file); await stock.reload() }, setError)
+  // „Zuordnung lösen …“: Der Rückweg für einen von Hand angehängten Beleg, ohne Umweg über das Kostenformular. Gelöst
+  // wird nur die genannte Position; der Beleg bleibt gespeichert.
+  const confirm = useConfirm()
+  const toast = useToast()
+  async function release(card: ReceiptCard, c: CostItem) {
+    const rules = rulesOf(properties.find((p) => p.id === c.propertyId))
+    // Ist die Abrechnung des Zeitraums abgeschlossen, sagt es die Rückfrage (wie „Betrag prüfen“ beim Anhängen).
+    // Scheitert die Frage, fehlt nur der Satz.
+    let closedLabel: string | null = null
+    try {
+      const raw = stock.loadedItems.find((x) => x.id === c.id) ?? c
+      const s = await api<Pick<Settlement, 'closed'>>(withProperty(closedCheckPath(raw, rules, stock.plantsBy.get(c.propertyId) ?? []), c.propertyId))
+      if (s.closed) closedLabel = labelOfKey(rules, c.period)
+    } catch { /* ohne Auskunft kein Satz */ }
+    const split = releaseSplit(c, costItems, present, booked)
+    const ok = await confirm({ ...releaseQuestion(card.upload, c, card.items.filter((x) => x.id !== c.id).length, split, closedLabel), confirmLabel: 'Zuordnung lösen', danger: true })
+    if (!ok) return
+    try {
+      await api(`/api/costItems/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify({ invoiceFile: null }) })
+      await stock.reload()
+      toast(`„${receiptName(card.upload)}“ ist von „${c.description}“ gelöst.`)
+    } catch (e) {
+      toast(`Die Zuordnung wurde nicht gelöst: ${errorText(e)}`, 'error')
+    }
+  }
   const renderCard = (card: ReceiptCard) => (
     <ReceiptItem key={card.upload.file} card={card} renderThumb={renderThumb} jumped={jumped === card.upload.file} hint={hints.get(card.upload.file)}
       place={showProperty && card.propertyIds.length > 0 ? card.propertyIds.map(propertyName).join(', ') : undefined}
@@ -294,11 +327,31 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
       {card.upload.kind === 'meterPhoto' ? (
         <span className="badge gray">Zählerfoto aus dem Eingang</span>
       ) : (
-        <ul className="receipt-items">
-          {card.items.map((c) => (
-            <li key={c.id}>→ {c.description}{filter.year === startYearOf(c.period) ? '' : ` (${startYearOf(c.period)})`} · {fmtEuro(c.amountCents)}</li>
-          ))}
-        </ul>
+        <>
+          <ul className="receipt-items">
+            {card.items.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center gap-2">
+                <span>→ {c.description}{filter.year === startYearOf(c.period) ? '' : ` (${startYearOf(c.period)})`} · {fmtEuro(c.amountCents)}</span>
+                {onOpenItem && (
+                  <button type="button" className="btn small ghost" onClick={() => onOpenItem(c)}>Position öffnen{' '}<span className="sr-only">({c.description})</span></button>
+                )}
+                {canReleaseReceipt(card.upload, c) && (
+                  <button type="button" className="btn small ghost danger-ghost ml-auto" onClick={() => void release(card, c)}>
+                    Zuordnung lösen …<span className="sr-only">{` (${receiptName(card.upload)} von ${c.description})`}</span>
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {/* Aus einer Auswertung gebucht: Dort stehen ihre Zeilen, und dort wird eine verknüpfte gelöst */}
+          {card.upload.assessment && onShowAssessment && (
+            <div className="row">
+              <button type="button" className="btn small secondary" onClick={() => onShowAssessment(card.upload.file)}>
+                Auswertung zeigen{' '}<span className="sr-only">({receiptName(card.upload)})</span>
+              </button>
+            </div>
+          )}
+        </>
       )}
     </ReceiptItem>
   )
