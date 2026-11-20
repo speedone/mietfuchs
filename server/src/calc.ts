@@ -1013,7 +1013,11 @@ export function consumptionOverview(snapshot: Snapshot, options: { asOf?: string
     // Wohnung vorher niemand wohnte (`firstOccupied`). Eine späte erste Ablesung allein verschiebt ihn nicht: Die
     // Wohnung zahlte sonst ohne Hinweis nur einen Teil des Zeitraums.
     let start = from
-    if (m.installedOn && compareText(m.installedOn, from) >= 0) start = dayAfter(m.installedOn)
+    // Nur ein lesbarer Kalendertag (Integrationsdurchsicht): Ein krummer Wert, der im Bestand stehen blieb, gilt wie
+    // keiner; `dayAfter` würfe sonst „Invalid time value“, und Cockpit und Zähler-Seite antworteten mit 500.
+    const installed = m.installedOn
+    const installedDay = typeof installed === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(installed) && !Number.isNaN(Date.parse(`${installed}T00:00:00Z`)) && new Date(`${installed}T00:00:00Z`).toISOString().slice(0, 10) === installed ? installed : null
+    if (installedDay !== null && compareText(installedDay, from) >= 0) start = dayAfter(installedDay)
     if (first !== null && compareText(first, dayBefore(from)) > 0 && snapshot.meters.some((o) => follows(m, o)) && compareText(dayAfter(first), start) > 0) start = dayAfter(first)
     const occupiedFrom = m.unitId ? firstOccupied(m.unitId) : null
     if (occupiedFrom !== null && compareText(occupiedFrom, start) > 0) start = occupiedFrom

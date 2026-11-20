@@ -445,3 +445,16 @@ test('Negativer Verbrauch an der Heizposition nach Wärmezählern: kein Hinweis 
   assert.deepEqual(notice(s, 'heating.consumption-share'), [])
   assert.deepEqual(notice(s, 'heating.all-by-consumption'), [])
 })
+
+// Integrationsdurchsicht (Daten): Ein krummer Einbautag, der im Bestand stehen bleibt (krumm, nicht kaputt), machte
+// Cockpit und Zähler-Seite zu einem 500 („Invalid time value“). Die Deckungsprüfung liest ihn dann, als fehle er.
+test('Krummer Einbautag im Bestand: die Verbrauchsübersicht rechnet, als fehle er', () => {
+  const readings = year('za', 100, 150)
+  const without = row(overview({ meters: [meter('za', 'a')], readings }), 'za')
+  for (const installedOn of ['neulich', '2025-02-30', '30.06.2025', '2025-13-01', '']) {
+    const r = row(overview({ meters: [{ ...meter('za', 'a'), installedOn }], readings }), 'za')
+    assert.deepEqual(r, without, installedOn)
+  }
+  // Auch die Abrechnung stolpert nicht.
+  assert.doesNotThrow(() => settle({ meters: [{ ...meter('za', 'a'), installedOn: 'neulich' }, meter('zb', 'b'), meter('zc', 'c')], readings: [...readings, ...year('zb', 1, 2), ...year('zc', 1, 2)] }))
+})
