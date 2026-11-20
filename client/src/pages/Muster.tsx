@@ -26,7 +26,7 @@ import { useDraft } from '../useDraft'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
 import MeterRestFields from '../components/MeterRestFields'
-import type { Meter, Notice, Property, Tenancy, Unit } from '../types'
+import type { Meter, Notice, Property, RentIncreasePlan, Tenancy, Unit } from '../types'
 import Letter from '../components/Letter'
 import { PaperPreview } from '../components/LetterDesignDrawer'
 import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES } from '../../../shared/letter.ts'
@@ -34,6 +34,7 @@ import { epcPayload } from '../../../shared/epcQr.ts'
 import type { PaymentQrData } from '../paymentQr'
 import { EInvoiceView } from '../components/EInvoiceView'
 import UpcomingCard from '../components/UpcomingCard'
+import { RentIncreasePlanView } from '../components/RentIncreaseDrawer'
 import { calendarPeriod } from '../../../shared/period.ts'
 import type { EInvoiceView as EInvoiceViewData } from '../types'
 
@@ -301,6 +302,11 @@ export default function Muster() {
       {/* Rechnungsansicht einer E-Rechnung als XML-Datei (#189) */}
       <EInvoiceView view={E_INVOICE} />
 
+      {/* Mieterhöhung (#191): die Rechnung aus dem Seitenfenster, mit festen Werten */}
+      <Card title="Rechnung einer Mieterhöhung">
+        <RentIncreasePlanView plan={SAMPLE_RENT_INCREASE} />
+      </Card>
+
       <Card title="Umschalter und Leerzustand">
         <Switcher label="Wohnung" className="switcher-field width-s" value={unit} options={UNITS} onChange={setUnit} />
         {/* Der Umschalter des Objekts mit „+“, so breit wie in der Seitenleiste */}
@@ -311,4 +317,14 @@ export default function Muster() {
       </Card>
     </>
   )
+}
+
+const SAMPLE_RENT_INCREASE: RentIncreasePlan = {
+  kind: 'comparison', state: 'possible', needs: [], currentCents: 50000, currentSince: '2020-01-01', receivedOn: '2026-11-20',
+  earliestReceivedOn: '2021-01-02', effectiveFrom: '2027-02', earliestEffectiveFrom: '2021-04',
+  consent: { consentEnd: '2027-01-31', consentEndOnWorkday: '2027-02-01', suitFrom: '2027-02-02', suitEnd: '2027-04-30' },
+  cap: null, comparison: null, index: null, maxCents: 55657, newCents: 55657, staggered: null, legalValues: [],
+  steps: [{ label: 'Bisherige Miete', value: '500,00 € (ab Januar 2020)' }, { label: 'Vergleichsmiete × Fläche', value: '9,05 € je m² × 61,5 m² = 556,57 €' }],
+  warnings: ['Die eingegebene Fläche von 61,5 m² weicht von der Wohnfläche der Wohnung (60 m²) ab.'],
+  reasons: ['Geht das Verlangen am 20.11.2026 zu, kann der Mieter bis zum 31.01.2027 zustimmen und schuldet die erhöhte Miete ab Februar 2027.'],
 }
