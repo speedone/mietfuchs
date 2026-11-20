@@ -49,6 +49,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und
   Exportformate ändern sich in 1.x nicht ohne Vorwarnung; ein Bruch kommt nur mit 2.0. MIGRATION.md sagt auch, was
   bis 1.0 gilt ([#447](https://github.com/speedone/mietfuchs/issues/447)).
+- Dokumentation und Prüfung der Kompatibilitätszusage: „Daten & Backup“ nennt jetzt, welche Exporte die Zusage meint
+  und wie sie aussehen (Abrechnung als JSON mit `format` und `version`, Abrechnung als CSV, die beiden CSV-Dateien im
+  ZIP „Belege für die Steuer“), „Installation“ führt alle Umgebungsvariablen mit Bedeutung und Voreinstellung auf und
+  sagt, welche nicht zur Zusage gehören. Tests binden beides: Der JSON-Export eines festen Bestands und jede Kopfzeile
+  werden wortgleich verglichen, jede Variable `NKA_…` im Quelltext muss in der Liste stehen oder als intern begründet
+  sein. Dazu liegen Bestände aus 0.13.1 und 0.18.1 im Repo, wie diese Versionen sie selbst geschrieben haben: Ihr
+  Backup wird in die aktuelle Version eingespielt und Abrechnung, Verbrauch, Mietkonto und Steuer centgenau mit den
+  damaligen Ergebnissen verglichen, und der Nachdruck ihrer abgeschlossenen Abrechnung wird wortgleich festgehalten.
 - Kontoauszug: Eine Nachzahlung aus der abgeschlossenen Abrechnung wird am Betrag erkannt, auch ohne Verwendungszweck.
   Passt ein Eingang genau zur offenen Nachzahlung (abzüglich schon gebuchter Zahlungen der Art „Abrechnung“) oder zu
   Monatsmiete plus Nachzahlung, und ist das Mietkonto sonst ausgeglichen, schlägt Mietfuchs gelb „Abrechnung“ bzw. die

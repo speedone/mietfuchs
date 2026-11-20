@@ -13,5 +13,9 @@ dist-bin/
 
 # Ist-Ergebnisse des Prüfkatalogs (GOLDEN=diff npm --prefix server test)
 expected.actual.json
+# Ebenso die des gebundenen JSON-Exports (GOLDEN=diff node --test test/export-zusage.test.ts)
+abrechnung-v*.actual.json
+# und des Nachdrucks alter Abschlüsse (NACHDRUCK=diff npm --prefix client test -- nachdruck)
+nachdruck.actual.txt
 dist-desktop/
 dist-desktop-server/

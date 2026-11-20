@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/alte-fassungen
-          key: mietfuchs-alte-fassungen-v1-0.3.1-0.7.1-0.9.0-0.12.0-0.14.1
+          key: mietfuchs-alte-fassungen-v1-0.3.1-0.7.1-0.9.0-0.12.0-0.13.1-0.14.1
       # Das Skript liest ZIP-Dateien mit adm-zip aus server/node_modules
       - name: Abhängigkeiten des Servers
         if: steps.speicher.outputs.cache-hit != 'true'

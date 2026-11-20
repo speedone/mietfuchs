@@ -655,7 +655,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `--slow-ai 320` lässt das Ollama über fünf Minuten schweigen; das läuft im vollen Umfang auf den
   Programmdateien (Linux x64, Windows x64, Apple Silicon) und gegen Node.
 - **[fenster-umzug-praxislauf.mjs](fenster-umzug-praxislauf.mjs)** (#517): lädt die Linux-Programmdateien 0.3.1 und
-  0.7.1 (db.json), 0.9.0, 0.12.0 und 0.14.1 von den Releases (höchstens 150 MB, drei Minuten je Datei, drei Versuche,
+  0.7.1 (db.json), 0.9.0, 0.12.0, 0.13.1 (die Fassung, die die Kompatibilitätszusage nennt, #447) und 0.14.1 von den Releases (höchstens 150 MB, drei Minuten je Datei, drei Versuche,
   zwischengespeichert in `--cache`, nie ins Repo, beim Laufen fest verknüpft statt kopiert), startet jede wie draußen
   aus `Downloads/mietfuchs-<Fassung>/` mit `data/` daneben (HOME im Wegwerf-Ordner, CI, ohne Anzeige), legt den Bestand
   über ihre API an (Backup mit db.json und zwei Belegen, dann eine Zahlung; bis 0.3 legt erst ein Speichern die db.json
@@ -671,6 +671,22 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `fenster-server-win`, mit dem Node des Runners gestartet; Altformate und Migrationen kommen dann aus dem Bündel).
   `--nur 0.3.1` für eine Fassung, `--out` für den Bericht. Lokal rund dreieinhalb Minuten je Durchgang, die
   Programmdateien belegen im Cache rund 500 MB. Nur unter Linux.
+- **[altbestand-fixture.mjs](altbestand-fixture.mjs)** (#447, Kompatibilitätszusage): hält den Bestand einer
+  veröffentlichten Version als Fixture fest, **ohne Netz und ohne Programmdatei**: `git archive <Tag>` legt Server,
+  shared/ und Skripte der Version in einen Wegwerf-Ordner (mit den `node_modules` von heute, geprüft mit v0.13.1 und
+  v0.18.1), ihr Server startet mit `NKA_TEST_IDS=seq` und festem `NKA_TEST_TODAY`, ihr eigener Beispielbestand
+  (`seed` aus ihrem demo-stock.mjs) entsteht über ihre API, die Abrechnung des Hauses wird abgeschlossen. Nach
+  `server/test/fixtures/releases/<Version>/` gehen `backup.zip` (ihr `/api/backup`) und `expected.json` (Abrechnung,
+  Verbrauch, Mietkonto, Steuer je Objekt, wie die Version sie ausrechnet, dazu Einstellungen, Objekt, Wohnungen und
+  Mietverhältnisse). Zwei Tests lesen den Ordner: [api-altbestand.test.ts](../server/test/api-altbestand.test.ts)
+  spielt das Backup in den Server von heute ein und verlangt jeden damaligen Wert wieder („alt in neu“, neue Felder
+  dürfen dazukommen; bewusste Änderungen stehen mit Grund in `KNOWN`), und
+  client/src/pages/Abrechnung.nachdruck.test.tsx druckt den eingefrorenen Abschluss mit der Oberfläche von heute und
+  vergleicht den Text mit `nachdruck.txt`. **Eine Fixture wird einmal erzeugt und nie erneuert** (das Skript weigert
+  sich); zu jeder Nebenversion kommt beim Release ein Ordner dazu: `node scripts/altbestand-fixture.mjs --tag v1.0.0
+  --port <frei>`, dann `NACHDRUCK=diff npm --prefix client test -- nachdruck` und `nachdruck.actual.txt` als
+  `nachdruck.txt` übernehmen. Grenze: Der Bestand ist der Beispielbestand der Version (Haus und Eigentumswohnung,
+  ohne Heizanlage und ohne abweichenden Zeitraum); die alten Programmdateien selbst laufen nur im Praxislauf oben.
 - **[bundle-vergleich.mjs](bundle-vergleich.mjs)** (#517): Rechnet das Bündel des Fensters wie die Quellen? Die Tests
   laufen alle auf den Quellen; was das Bündeln ändern kann (Auflösung einer Abhängigkeit, umgeschriebenes
   `import.meta.url`, eingebettete Migrationen, ein Fehler von rolldown), sähen sie nicht. Das Skript kopiert einen

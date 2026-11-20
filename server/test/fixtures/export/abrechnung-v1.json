@@ -1,0 +1,1446 @@
+{
+  "format": "mietfuchs-abrechnung",
+  "version": 1,
+  "property": {
+    "id": "objekt-1",
+    "name": "Beispiel A"
+  },
+  "period": {
+    "key": "2025-01",
+    "from": "2025-01-01",
+    "to": "2025-12-31",
+    "short": false,
+    "label": "2025"
+  },
+  "deadline": "2026-12-31",
+  "closed": null,
+  "draft": false,
+  "errors": [],
+  "totalCostsCents": 666000,
+  "statements": [
+    {
+      "tenancyId": "A",
+      "unitId": "a",
+      "unitName": "A",
+      "tenantName": "Mieter A",
+      "persons": 1,
+      "days": 365,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-12-31",
+      "rows": [
+        {
+          "costItemId": "gas",
+          "category": "Heizung und Warmwasser",
+          "description": "Erdgas",
+          "totalCents": 600000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
+          "shareCents": 176850,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "strom",
+          "category": "Heizung und Warmwasser",
+          "description": "Betriebsstrom",
+          "totalCents": 18000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
+          "shareCents": 5306,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wartung",
+          "category": "Heizung und Warmwasser",
+          "description": "Wartung",
+          "totalCents": 24000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
+          "shareCents": 7074,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "imm",
+          "category": "Heizung und Warmwasser",
+          "description": "Immissionsmessung",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
+          "shareCents": 1769,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Wärmezähler",
+          "totalCents": 12000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung 30 %",
+          "shareCents": 3600,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wwz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Warmwasserzähler",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Warmwasser 26,5 %",
+          "shareCents": 1590,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "co2:hp:2025-01",
+          "category": "Heizung und Warmwasser",
+          "description": "CO₂-Kosten: Anteil des Vermieters",
+          "totalCents": -56866,
+          "kind": "co2Relief",
+          "key": null,
+          "keyLabel": "CO₂-Kostenaufteilung",
+          "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
+          "shareCents": -16761,
+          "labor35aCents": 0
+        }
+      ],
+      "totalShareCents": 179428,
+      "total35aCents": 0,
+      "prepaymentCents": 0,
+      "balanceCents": -179428,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 15000,
+      "heatingPrepaymentCents": null,
+      "prepaymentNote": null,
+      "scope": "all",
+      "heatingOnly": false,
+      "recommendedDeadline": null,
+      "adjustment": null
+    },
+    {
+      "tenancyId": "B",
+      "unitId": "b",
+      "unitName": "B",
+      "tenantName": "Mieter B",
+      "persons": 1,
+      "days": 365,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-12-31",
+      "rows": [
+        {
+          "costItemId": "gas",
+          "category": "Heizung und Warmwasser",
+          "description": "Erdgas",
+          "totalCents": 600000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
+          "shareCents": 235800,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "strom",
+          "category": "Heizung und Warmwasser",
+          "description": "Betriebsstrom",
+          "totalCents": 18000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
+          "shareCents": 7074,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wartung",
+          "category": "Heizung und Warmwasser",
+          "description": "Wartung",
+          "totalCents": 24000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
+          "shareCents": 9432,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "imm",
+          "category": "Heizung und Warmwasser",
+          "description": "Immissionsmessung",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
+          "shareCents": 2358,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Wärmezähler",
+          "totalCents": 12000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung 40 %",
+          "shareCents": 4800,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wwz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Warmwasserzähler",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Warmwasser 35,333333 %",
+          "shareCents": 2120,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "co2:hp:2025-01",
+          "category": "Heizung und Warmwasser",
+          "description": "CO₂-Kosten: Anteil des Vermieters",
+          "totalCents": -56866,
+          "kind": "co2Relief",
+          "key": null,
+          "keyLabel": "CO₂-Kostenaufteilung",
+          "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
+          "shareCents": -22348,
+          "labor35aCents": 0
+        }
+      ],
+      "totalShareCents": 239236,
+      "total35aCents": 0,
+      "prepaymentCents": 0,
+      "balanceCents": -239236,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 19900,
+      "heatingPrepaymentCents": null,
+      "prepaymentNote": null,
+      "scope": "all",
+      "heatingOnly": false,
+      "recommendedDeadline": null,
+      "adjustment": null
+    },
+    {
+      "tenancyId": "C1",
+      "unitId": "c",
+      "unitName": "C",
+      "tenantName": "Mieter C1",
+      "persons": 1,
+      "days": 273,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-09-30",
+      "rows": [
+        {
+          "costItemId": "gas",
+          "category": "Heizung und Warmwasser",
+          "description": "Erdgas",
+          "totalCents": 600000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
+          "shareCents": 119644,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "strom",
+          "category": "Heizung und Warmwasser",
+          "description": "Betriebsstrom",
+          "totalCents": 18000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
+          "shareCents": 3589,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wartung",
+          "category": "Heizung und Warmwasser",
+          "description": "Wartung",
+          "totalCents": 24000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
+          "shareCents": 4786,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "imm",
+          "category": "Heizung und Warmwasser",
+          "description": "Immissionsmessung",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
+          "shareCents": 1196,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Wärmezähler",
+          "totalCents": 12000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung 18,36 %",
+          "shareCents": 2203,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wwz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Warmwasserzähler",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Warmwasser 28,898174 %",
+          "shareCents": 1734,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "co2:hp:2025-01",
+          "category": "Heizung und Warmwasser",
+          "description": "CO₂-Kosten: Anteil des Vermieters",
+          "totalCents": -56866,
+          "kind": "co2Relief",
+          "key": null,
+          "keyLabel": "CO₂-Kostenaufteilung",
+          "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
+          "shareCents": -11340,
+          "labor35aCents": 0
+        }
+      ],
+      "totalShareCents": 121812,
+      "total35aCents": 0,
+      "prepaymentCents": 0,
+      "balanceCents": -121812,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 0,
+      "heatingPrepaymentCents": null,
+      "prepaymentNote": null,
+      "scope": "all",
+      "heatingOnly": false,
+      "recommendedDeadline": null,
+      "adjustment": null
+    },
+    {
+      "tenancyId": "C2",
+      "unitId": "c",
+      "unitName": "C",
+      "tenantName": "Mieter C2",
+      "persons": 1,
+      "days": 92,
+      "periodStart": "2025-10-01",
+      "periodEnd": "2025-12-31",
+      "rows": [
+        {
+          "costItemId": "gas",
+          "category": "Heizung und Warmwasser",
+          "description": "Erdgas",
+          "totalCents": 600000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
+          "shareCents": 67706,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "strom",
+          "category": "Heizung und Warmwasser",
+          "description": "Betriebsstrom",
+          "totalCents": 18000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
+          "shareCents": 2031,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wartung",
+          "category": "Heizung und Warmwasser",
+          "description": "Wartung",
+          "totalCents": 24000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
+          "shareCents": 2708,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "imm",
+          "category": "Heizung und Warmwasser",
+          "description": "Immissionsmessung",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
+          "shareCents": 677,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Wärmezähler",
+          "totalCents": 12000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Heizung 11,64 %",
+          "shareCents": 1397,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "wwz",
+          "category": "Heizung und Warmwasser",
+          "description": "Miete Warmwasserzähler",
+          "totalCents": 6000,
+          "kind": null,
+          "key": "heatingSystem",
+          "keyLabel": "Nach Heizkostenverordnung",
+          "basisText": "nach Heizkostenverordnung, Warmwasser 9,268493 %",
+          "shareCents": 556,
+          "labor35aCents": 0
+        },
+        {
+          "costItemId": "co2:hp:2025-01",
+          "category": "Heizung und Warmwasser",
+          "description": "CO₂-Kosten: Anteil des Vermieters",
+          "totalCents": -56866,
+          "kind": "co2Relief",
+          "key": null,
+          "keyLabel": "CO₂-Kostenaufteilung",
+          "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
+          "shareCents": -6417,
+          "labor35aCents": 0
+        }
+      ],
+      "totalShareCents": 68658,
+      "total35aCents": 0,
+      "prepaymentCents": 0,
+      "balanceCents": -68658,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 22700,
+      "heatingPrepaymentCents": null,
+      "prepaymentNote": null,
+      "scope": "all",
+      "heatingOnly": false,
+      "recommendedDeadline": null,
+      "adjustment": null
+    }
+  ],
+  "landlord": {
+    "totalCents": 56866,
+    "rows": [
+      {
+        "costItemId": "co2:hp:2025-01",
+        "category": "Heizung und Warmwasser",
+        "description": "CO₂-Kosten: Anteil des Vermieters",
+        "totalCents": 56866,
+        "kind": null,
+        "key": null,
+        "keyLabel": "CO₂-Kostenaufteilung",
+        "basisText": null,
+        "shareCents": 56866,
+        "labor35aCents": null
+      }
+    ]
+  },
+  "heating": [
+    {
+      "plantId": "hp",
+      "plantName": "",
+      "energy": "gas",
+      "period": "2025-01",
+      "from": "2025-01-01",
+      "to": "2025-12-31",
+      "co2": {
+        "method": "self",
+        "booked": true,
+        "deducted": false,
+        "totalCents": 59859,
+        "landlordCents": 56866,
+        "landlordPermille": 950,
+        "kgPerM2": 54.4,
+        "emissionsKg": 10883.4,
+        "areaM2": 200,
+        "stage": {
+          "from": 52,
+          "to": null,
+          "landlordPercent": 95
+        },
+        "table": [
+          {
+            "from": 0,
+            "to": 12,
+            "landlordPercent": 0
+          },
+          {
+            "from": 12,
+            "to": 17,
+            "landlordPercent": 10
+          },
+          {
+            "from": 17,
+            "to": 22,
+            "landlordPercent": 20
+          },
+          {
+            "from": 22,
+            "to": 27,
+            "landlordPercent": 30
+          },
+          {
+            "from": 27,
+            "to": 32,
+            "landlordPercent": 40
+          },
+          {
+            "from": 32,
+            "to": 37,
+            "landlordPercent": 50
+          },
+          {
+            "from": 37,
+            "to": 42,
+            "landlordPercent": 60
+          },
+          {
+            "from": 42,
+            "to": 47,
+            "landlordPercent": 70
+          },
+          {
+            "from": 47,
+            "to": 52,
+            "landlordPercent": 80
+          },
+          {
+            "from": 52,
+            "to": null,
+            "landlordPercent": 95
+          }
+        ],
+        "shortened": false,
+        "selfLandlordCents": null,
+        "selfApproximated": false,
+        "tenants": [
+          {
+            "tenancyId": "A",
+            "landlordCents": 16761,
+            "tenantCents": 882,
+            "approximated": false
+          },
+          {
+            "tenancyId": "B",
+            "landlordCents": 22348,
+            "tenantCents": 1176,
+            "approximated": false
+          },
+          {
+            "tenancyId": "C1",
+            "landlordCents": 11340,
+            "tenantCents": 597,
+            "approximated": false
+          },
+          {
+            "tenancyId": "C2",
+            "landlordCents": 6417,
+            "tenantCents": 338,
+            "approximated": false
+          }
+        ],
+        "basis": "deliveries",
+        "coveragePermille": 1000,
+        "adjustments": [],
+        "areaSource": "served",
+        "areaScope": "plant"
+      },
+      "fuel": {
+        "coveragePermille": 1000,
+        "emissionsKg": 10883.4,
+        "co2Cents": 59859,
+        "deliveries": [
+          {
+            "deliveryId": "d1",
+            "label": "Erdgas",
+            "from": "2025-01-01",
+            "to": "2025-12-31",
+            "estimated": false,
+            "method": "inside",
+            "sharePermille": 1000,
+            "fixedKnown": true,
+            "split": false,
+            "amountCents": 600000,
+            "inPeriodCents": 600000,
+            "emissionsKg": 10883.4,
+            "co2Cents": 59859,
+            "energyKwh": 60000
+          }
+        ],
+        "carries": [],
+        "gaps": []
+      },
+      "co2Check": {
+        "applies": true,
+        "exemption": null,
+        "findings": [
+          {
+            "deliveryId": "d1",
+            "texts": [
+              "„Erdgas“: Die CO₂-Kosten von 598,59 € passen nicht zu 10.883,4 kg CO₂: Bei 55,00 €/t (2025) zuzüglich 19 % Umsatzsteuer wären es 712,32 €. Bitte prüfen Sie die Angaben der Rechnung, etwa ob die Umsatzsteuer enthalten ist (§ 3 Abs. 3 CO2KostAufG). Mietfuchs rechnet mit den CO₂-Kosten der Rechnung."
+            ]
+          }
+        ]
+      },
+      "self": {
+        "capture": "heatMeter",
+        "ok": true,
+        "heatPump": null,
+        "changeSplit": "degreeDays",
+        "areaBasisHeat": "area",
+        "hotWater": "combined",
+        "alpha": {
+          "percent": 15,
+          "dhwHeatKwh": 9000,
+          "referenceKwh": 60000,
+          "reference": "fuel",
+          "estimated": false
+        },
+        "dhw": {
+          "method": "heatMeter",
+          "alpha": 0.15,
+          "heatKwh": 9000,
+          "formulaKwh": null,
+          "factor": null,
+          "denominator": {
+            "kind": "fuelKwh",
+            "value": 60000,
+            "unit": "kWh"
+          },
+          "energyKwh": 60000,
+          "fuelForDhw": null,
+          "heatingValues": [],
+          "estimated": false,
+          "steps": [
+            "Gemessene Wärme für das Warmwasser: 9.000 kWh (§ 9 Abs. 2 Satz 1 HeizkostenV)",
+            "Warmwasseranteil = 9.000 kWh / 60.000 kWh Brennstoff laut Rechnung = 15,00 %"
+          ]
+        },
+        "shares": {
+          "heating": 70,
+          "water": 70,
+          "forced": false,
+          "previous": null
+        },
+        "pots": [
+          {
+            "pot": "heating",
+            "costCents": 562800,
+            "consumptionPct": 70,
+            "byAreaOnly": false,
+            "areaM2": 200,
+            "consumption": 40000,
+            "consumptionUnit": "kWh",
+            "baseCentsPerM2": 844.2000000000002,
+            "consumptionCentsPerUnit": 9.849,
+            "overThreshold": false,
+            "estimatedAreaM2": 0,
+            "estimatedConsumption": 0
+          },
+          {
+            "pot": "water",
+            "costCents": 103200,
+            "consumptionPct": 70,
+            "byAreaOnly": false,
+            "areaM2": 200,
+            "consumption": 120,
+            "consumptionUnit": "m³",
+            "baseCentsPerM2": 154.8,
+            "consumptionCentsPerUnit": 602,
+            "overThreshold": false,
+            "estimatedAreaM2": 0,
+            "estimatedConsumption": 0
+          }
+        ],
+        "units": [
+          {
+            "unitId": "a",
+            "unitName": "A",
+            "areaM2": 60,
+            "heatAreaM2": 60,
+            "readings": [
+              {
+                "meterId": "wz-a",
+                "meterName": "Wärme A",
+                "meterUnit": "kWh",
+                "pot": "heating",
+                "boundary": "2024-12-31",
+                "date": "2024-12-31",
+                "value": 1000
+              },
+              {
+                "meterId": "wz-a",
+                "meterName": "Wärme A",
+                "meterUnit": "kWh",
+                "pot": "heating",
+                "boundary": "2025-12-31",
+                "date": "2025-12-31",
+                "value": 13000
+              },
+              {
+                "meterId": "xw-a",
+                "meterName": "Warmwasser A",
+                "meterUnit": "m³",
+                "pot": "water",
+                "boundary": "2024-12-31",
+                "date": "2024-12-31",
+                "value": 10
+              },
+              {
+                "meterId": "xw-a",
+                "meterName": "Warmwasser A",
+                "meterUnit": "m³",
+                "pot": "water",
+                "boundary": "2025-12-31",
+                "date": "2025-12-31",
+                "value": 40
+              }
+            ],
+            "boundaries": [
+              {
+                "date": "2024-12-31",
+                "kind": "start",
+                "gap": null,
+                "far": false,
+                "missingMeters": [],
+                "status": "read",
+                "offDays": 0
+              },
+              {
+                "date": "2025-12-31",
+                "kind": "end",
+                "gap": null,
+                "far": false,
+                "missingMeters": [],
+                "status": "read",
+                "offDays": 0
+              }
+            ],
+            "users": [
+              {
+                "key": "A",
+                "role": "tenancy",
+                "tenancyId": "A",
+                "label": "Mieter A",
+                "from": "2025-01-01",
+                "to": "2025-12-31",
+                "days": 365,
+                "degreeDayPermille": 999.9999999999965,
+                "heatingConsumption": 12000,
+                "waterConsumption": 30,
+                "heatingGroup": false,
+                "waterGroup": false,
+                "heatingCents": 168840,
+                "waterCents": 27348,
+                "heatingCo2Cents": 14501,
+                "waterCo2Cents": 2260,
+                "heatingEstimated": false,
+                "waterEstimated": false
+              }
+            ]
+          },
+          {
+            "unitId": "b",
+            "unitName": "B",
+            "areaM2": 80,
+            "heatAreaM2": 80,
+            "readings": [
+              {
+                "meterId": "wz-b",
+                "meterName": "Wärme B",
+                "meterUnit": "kWh",
+                "pot": "heating",
+                "boundary": "2024-12-31",
+                "date": "2024-12-31",
+                "value": 0
+              },
+              {
+                "meterId": "wz-b",
+                "meterName": "Wärme B",
+                "meterUnit": "kWh",
+                "pot": "heating",
+                "boundary": "2025-12-31",
+                "date": "2025-12-31",
+                "value": 16000
+              },
+              {
+                "meterId": "xw-b",
+                "meterName": "Warmwasser B",
+                "meterUnit": "m³",
+                "pot": "water",
+                "boundary": "2024-12-31",
+                "date": "2024-12-31",
+                "value": 0
+              },
+              {
+                "meterId": "xw-b",
+                "meterName": "Warmwasser B",
+                "meterUnit": "m³",
+                "pot": "water",
+                "boundary": "2025-12-31",
+                "date": "2025-12-31",
+                "value": 40
+              }
+            ],
+            "boundaries": [
+              {
+                "date": "2024-12-31",
+                "kind": "start",
+                "gap": null,
+                "far": false,
+                "missingMeters": [],
+                "status": "read",
+                "offDays": 0
+              },
+              {
+                "date": "2025-12-31",
+                "kind": "end",
+                "gap": null,
+                "far": false,
+                "missingMeters": [],
+                "status": "read",
+                "offDays": 0
+              }
+            ],
+            "users": [
+              {
+                "key": "B",
+                "role": "tenancy",
+                "tenancyId": "B",
+                "label": "Mieter B",
+                "from": "2025-01-01",
+                "to": "2025-12-31",
+                "days": 365,
+                "degreeDayPermille": 999.9999999999965,
+                "heatingConsumption": 16000,
+                "waterConsumption": 40,
+                "heatingGroup": false,
+                "waterGroup": false,
+                "heatingCents": 225120,
+                "waterCents": 36464,
+                "heatingCo2Cents": 19334,
+                "waterCo2Cents": 3014,
+                "heatingEstimated": false,
+                "waterEstimated": false
+              }
+            ]
+          },
+          {
+            "unitId": "c",
+            "unitName": "C",
+            "areaM2": 60,
+            "heatAreaM2": 60,
+            "readings": [
+              {
+                "meterId": "wz-c",
+                "meterName": "Wärme C",
+                "meterUnit": "kWh",
+                "pot": "heating",
+                "boundary": "2024-12-31",
+                "date": "2024-12-31",
+                "value": 500
+              },
+              {
+                "meterId": "wz-c",
+                "meterName": "Wärme C",
+                "meterUnit": "kWh",
+                "pot": "heating",
+                "boundary": "2025-09-30",
+                "date": "2025-09-30",
+                "value": 7700
+              },
+              {
+                "meterId": "wz-c",
+                "meterName": "Wärme C",
+                "meterUnit": "kWh",
+                "pot": "heating",
+                "boundary": "2025-12-31",
+                "date": "2025-12-31",
+                "value": 12500
+              },
+              {
+                "meterId": "xw-c",
+                "meterName": "Warmwasser C",
+                "meterUnit": "m³",
+                "pot": "water",
+                "boundary": "2024-12-31",
+                "date": "2024-12-31",
+                "value": 5
+              },
+              {
+                "meterId": "xw-c",
+                "meterName": "Warmwasser C",
+                "meterUnit": "m³",
+                "pot": "water",
+                "boundary": "2025-09-30",
+                "date": "2025-09-30",
+                "value": 43
+              },
+              {
+                "meterId": "xw-c",
+                "meterName": "Warmwasser C",
+                "meterUnit": "m³",
+                "pot": "water",
+                "boundary": "2025-12-31",
+                "date": "2025-12-31",
+                "value": 55
+              }
+            ],
+            "boundaries": [
+              {
+                "date": "2024-12-31",
+                "kind": "start",
+                "gap": null,
+                "far": false,
+                "missingMeters": [],
+                "status": "read",
+                "offDays": 0
+              },
+              {
+                "date": "2025-09-30",
+                "kind": "change",
+                "gap": null,
+                "far": false,
+                "missingMeters": [],
+                "status": "read",
+                "offDays": 0
+              },
+              {
+                "date": "2025-12-31",
+                "kind": "end",
+                "gap": null,
+                "far": false,
+                "missingMeters": [],
+                "status": "read",
+                "offDays": 0
+              }
+            ],
+            "users": [
+              {
+                "key": "C1",
+                "role": "tenancy",
+                "tenancyId": "C1",
+                "label": "Mieter C1",
+                "from": "2025-01-01",
+                "to": "2025-09-30",
+                "days": 273,
+                "degreeDayPermille": 639.9999999999962,
+                "heatingConsumption": 7200,
+                "waterConsumption": 38,
+                "heatingGroup": false,
+                "waterGroup": false,
+                "heatingCents": 103330,
+                "waterCents": 29823,
+                "heatingCo2Cents": 8875,
+                "waterCo2Cents": 2465,
+                "heatingEstimated": false,
+                "waterEstimated": false
+              },
+              {
+                "key": "C2",
+                "role": "tenancy",
+                "tenancyId": "C2",
+                "label": "Mieter C2",
+                "from": "2025-10-01",
+                "to": "2025-12-31",
+                "days": 92,
+                "degreeDayPermille": 360.0000000000004,
+                "heatingConsumption": 4800,
+                "waterConsumption": 12,
+                "heatingGroup": false,
+                "waterGroup": false,
+                "heatingCents": 65510,
+                "waterCents": 9565,
+                "heatingCo2Cents": 5626,
+                "waterCo2Cents": 791,
+                "heatingEstimated": false,
+                "waterEstimated": false
+              }
+            ]
+          }
+        ],
+        "estimates": [],
+        "estimateOptions": [
+          {
+            "unitId": "a",
+            "unitName": "A",
+            "part": "heat",
+            "areaM2": 60,
+            "why": null,
+            "boundary": null,
+            "estimated": false,
+            "partlyMeasured": false,
+            "proposals": [
+              {
+                "method": "buildingAverage",
+                "value": 12000,
+                "perM2": 200,
+                "why": "ok"
+              },
+              {
+                "method": "previousPeriod",
+                "value": null,
+                "perM2": null,
+                "why": "noPrevious"
+              },
+              {
+                "method": "comparableUnit",
+                "value": null,
+                "perM2": null,
+                "why": "ok"
+              }
+            ],
+            "comparable": [
+              {
+                "unitId": "b",
+                "unitName": "B",
+                "perM2": 200,
+                "value": 12000
+              },
+              {
+                "unitId": "c",
+                "unitName": "C",
+                "perM2": 200,
+                "value": 12000
+              }
+            ]
+          },
+          {
+            "unitId": "a",
+            "unitName": "A",
+            "part": "water",
+            "areaM2": 60,
+            "why": null,
+            "boundary": null,
+            "estimated": false,
+            "partlyMeasured": false,
+            "proposals": [
+              {
+                "method": "buildingAverage",
+                "value": 38.57142857142858,
+                "perM2": 0.6428571428571429,
+                "why": "ok"
+              },
+              {
+                "method": "previousPeriod",
+                "value": null,
+                "perM2": null,
+                "why": "noPrevious"
+              },
+              {
+                "method": "comparableUnit",
+                "value": null,
+                "perM2": null,
+                "why": "ok"
+              }
+            ],
+            "comparable": [
+              {
+                "unitId": "b",
+                "unitName": "B",
+                "perM2": 0.5,
+                "value": 30
+              },
+              {
+                "unitId": "c",
+                "unitName": "C",
+                "perM2": 0.8333333333333334,
+                "value": 50
+              }
+            ]
+          },
+          {
+            "unitId": "b",
+            "unitName": "B",
+            "part": "heat",
+            "areaM2": 80,
+            "why": null,
+            "boundary": null,
+            "estimated": false,
+            "partlyMeasured": false,
+            "proposals": [
+              {
+                "method": "buildingAverage",
+                "value": 16000,
+                "perM2": 200,
+                "why": "ok"
+              },
+              {
+                "method": "previousPeriod",
+                "value": null,
+                "perM2": null,
+                "why": "noPrevious"
+              },
+              {
+                "method": "comparableUnit",
+                "value": null,
+                "perM2": null,
+                "why": "ok"
+              }
+            ],
+            "comparable": [
+              {
+                "unitId": "a",
+                "unitName": "A",
+                "perM2": 200,
+                "value": 16000
+              },
+              {
+                "unitId": "c",
+                "unitName": "C",
+                "perM2": 200,
+                "value": 16000
+              }
+            ]
+          },
+          {
+            "unitId": "b",
+            "unitName": "B",
+            "part": "water",
+            "areaM2": 80,
+            "why": null,
+            "boundary": null,
+            "estimated": false,
+            "partlyMeasured": false,
+            "proposals": [
+              {
+                "method": "buildingAverage",
+                "value": 53.33333333333333,
+                "perM2": 0.6666666666666666,
+                "why": "ok"
+              },
+              {
+                "method": "previousPeriod",
+                "value": null,
+                "perM2": null,
+                "why": "noPrevious"
+              },
+              {
+                "method": "comparableUnit",
+                "value": null,
+                "perM2": null,
+                "why": "ok"
+              }
+            ],
+            "comparable": [
+              {
+                "unitId": "a",
+                "unitName": "A",
+                "perM2": 0.5,
+                "value": 40
+              },
+              {
+                "unitId": "c",
+                "unitName": "C",
+                "perM2": 0.8333333333333334,
+                "value": 66.66666666666667
+              }
+            ]
+          },
+          {
+            "unitId": "c",
+            "unitName": "C",
+            "part": "heat",
+            "areaM2": 60,
+            "why": null,
+            "boundary": null,
+            "estimated": false,
+            "partlyMeasured": false,
+            "proposals": [
+              {
+                "method": "buildingAverage",
+                "value": 12000,
+                "perM2": 200,
+                "why": "ok"
+              },
+              {
+                "method": "previousPeriod",
+                "value": null,
+                "perM2": null,
+                "why": "noPrevious"
+              },
+              {
+                "method": "comparableUnit",
+                "value": null,
+                "perM2": null,
+                "why": "ok"
+              }
+            ],
+            "comparable": [
+              {
+                "unitId": "a",
+                "unitName": "A",
+                "perM2": 200,
+                "value": 12000
+              },
+              {
+                "unitId": "b",
+                "unitName": "B",
+                "perM2": 200,
+                "value": 12000
+              }
+            ]
+          },
+          {
+            "unitId": "c",
+            "unitName": "C",
+            "part": "water",
+            "areaM2": 60,
+            "why": null,
+            "boundary": null,
+            "estimated": false,
+            "partlyMeasured": false,
+            "proposals": [
+              {
+                "method": "buildingAverage",
+                "value": 30,
+                "perM2": 0.5,
+                "why": "ok"
+              },
+              {
+                "method": "previousPeriod",
+                "value": null,
+                "perM2": null,
+                "why": "noPrevious"
+              },
+              {
+                "method": "comparableUnit",
+                "value": null,
+                "perM2": null,
+                "why": "ok"
+              }
+            ],
+            "comparable": [
+              {
+                "unitId": "a",
+                "unitName": "A",
+                "perM2": 0.5,
+                "value": 30
+              },
+              {
+                "unitId": "b",
+                "unitName": "B",
+                "perM2": 0.5,
+                "value": 30
+              }
+            ]
+          }
+        ],
+        "threshold": null
+      },
+      "info": {
+        "contacts": [
+          {
+            "name": "Verbraucherzentrale, Energieberatung",
+            "url": "https://verbraucherzentrale-energieberatung.de",
+            "what": "Verbraucherorganisation: Informationen über Maßnahmen zur Energieeffizienzverbesserung, Endnutzer-Vergleichsprofile und energiebetriebene Geräte"
+          },
+          {
+            "name": "Deutsche Energie-Agentur (dena)",
+            "url": "https://www.dena.de",
+            "what": "Energieagentur: Informationen zur Energieeffizienz von Gebäuden"
+          },
+          {
+            "name": "Bundesstelle für Energieeffizienz beim BAFA",
+            "url": "https://www.bfee-online.de",
+            "what": "Informationen über angebotene Maßnahmen zur Energieeffizienzverbesserung und ihre Anbieter"
+          },
+          {
+            "name": "Europäische Produktdatenbank für die Energieverbrauchskennzeichnung (EPREL)",
+            "url": "https://eprel.ec.europa.eu",
+            "what": "Technische Angaben und Energielabel energiebetriebener Geräte"
+          }
+        ],
+        "contactsChecked": "2026-10-07",
+        "dispute": {
+          "kind": "unknown"
+        },
+        "units": {
+          "heating": "kWh",
+          "water": "m³"
+        },
+        "heatExempt": false,
+        "scope": "full",
+        "carriers": [
+          {
+            "energy": "gas",
+            "percent": 100
+          }
+        ],
+        "district": null,
+        "taxesText": null,
+        "meteringCents": 18000,
+        "comparisonSource": null,
+        "reference": null,
+        "climate": {
+          "factor": null,
+          "factorPrev": null,
+          "source": null
+        },
+        "mixedGeneration": false,
+        "referenceComparable": true,
+        "users": [
+          {
+            "tenancyId": "A",
+            "label": "Mieter A",
+            "days": 365,
+            "prevDays": null,
+            "heating": {
+              "now": 12000,
+              "estimated": false,
+              "referenceKwh": null,
+              "prev": null,
+              "nowAdjusted": null,
+              "prevAdjusted": null
+            },
+            "water": {
+              "now": 30,
+              "prev": null
+            },
+            "firstPeriod": false,
+            "prevUnknown": true,
+            "estimated": false,
+            "missing": [
+              "1b",
+              "4",
+              "5"
+            ],
+            "ghgKg": null
+          },
+          {
+            "tenancyId": "B",
+            "label": "Mieter B",
+            "days": 365,
+            "prevDays": null,
+            "heating": {
+              "now": 16000,
+              "estimated": false,
+              "referenceKwh": null,
+              "prev": null,
+              "nowAdjusted": null,
+              "prevAdjusted": null
+            },
+            "water": {
+              "now": 40,
+              "prev": null
+            },
+            "firstPeriod": false,
+            "prevUnknown": true,
+            "estimated": false,
+            "missing": [
+              "1b",
+              "4",
+              "5"
+            ],
+            "ghgKg": null
+          },
+          {
+            "tenancyId": "C1",
+            "label": "Mieter C1",
+            "days": 273,
+            "prevDays": null,
+            "heating": {
+              "now": 7200,
+              "estimated": false,
+              "referenceKwh": null,
+              "prev": null,
+              "nowAdjusted": null,
+              "prevAdjusted": null
+            },
+            "water": {
+              "now": 38,
+              "prev": null
+            },
+            "firstPeriod": false,
+            "prevUnknown": true,
+            "estimated": false,
+            "missing": [
+              "1b",
+              "4",
+              "5"
+            ],
+            "ghgKg": null
+          },
+          {
+            "tenancyId": "C2",
+            "label": "Mieter C2",
+            "days": 92,
+            "prevDays": null,
+            "heating": {
+              "now": 4800,
+              "estimated": false,
+              "referenceKwh": null,
+              "prev": null,
+              "nowAdjusted": null,
+              "prevAdjusted": null
+            },
+            "water": {
+              "now": 12,
+              "prev": null
+            },
+            "firstPeriod": true,
+            "prevUnknown": false,
+            "estimated": false,
+            "missing": [
+              "1b",
+              "4"
+            ],
+            "ghgKg": null
+          }
+        ],
+        "missing": [
+          "1b",
+          "4",
+          "5"
+        ],
+        "missingCommon": [
+          "1b"
+        ],
+        "uncertain": [
+          "3",
+          "5"
+        ],
+        "comparisons": true,
+        "tenancyIds": [
+          "A",
+          "B",
+          "C1",
+          "C2"
+        ]
+      }
+    }
+  ]
+}

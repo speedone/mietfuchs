@@ -376,7 +376,9 @@ Ab Version 1.0 gilt:
   rechnen sie nicht still um.
 - **Betrieb:** Der Datenordner, die Umgebungsvariablen, das Docker-Image und die Exportformate (JSON
   und CSV) ändern sich in 1.x nicht ohne Vorwarnung. Eine Änderung wird vorher im Changelog
-  angekündigt.
+  angekündigt. Welche Exporte das sind und wie sie aussehen, steht unter
+  [Daten & Backup](docs/daten-backup.md#exporte-und-ihre-form), welche Umgebungsvariablen unter
+  [Installation](docs/installation.md#umgebungsvariablen).
 - **Bruch:** Was eine dieser Zusagen bricht, kommt nur mit einer neuen Hauptversion (2.0). Eine
   Anleitung zum Umstieg stünde dann hier.
 
