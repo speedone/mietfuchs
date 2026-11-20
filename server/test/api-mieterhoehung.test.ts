@@ -4,8 +4,11 @@
 // NKA_UPDATE_URL und NKA_HOST).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Property, RentEntry, Tenancy, Unit } from '../../shared/types.ts'
-import { errorFrom, restore, startServer, type Server } from '../testing/api.ts'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import type { Property, RentEntry, RentIncreasePlan, Tenancy, Unit } from '../../shared/types.ts'
+import { errorFrom, restore, startServer, startServerIn, type Server } from '../testing/api.ts'
 import { journalOf, revert } from '../testing/revert.ts'
 import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 
@@ -111,4 +114,33 @@ test('Mieterhöhung, Daten: die Marke des Formulars erfasst Art, Indexwert, Art 
 test('Mieterhöhung, Daten: die Marke eines Mietverhältnisses ohne die neuen Felder bleibt, wie sie war', () => {
   const stamp = tenancyStamp({ start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 10000 }], heatingPrepayments: [], flatRates: [], baseRents: [{ from: '2024-01', monthlyCents: 50000 }], personHistory: [] })
   assert.equal(stamp, '["2024-01-01",null,["2024-01=10000"],[],[],["2024-01=50000"],[]]')
+})
+
+// PR 2 (Rechnung): POST /api/tenancies/:id/rent-increase/plan rechnet nur lesend aus dem Bestand und den Eingaben.
+test('Mieterhöhung, Rechnung: Plan über die Route, nur lesend, 404 und 400 mit Satz', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  const s = await startServerIn(dataDir, { NKA_TEST_TODAY: '2026-11-20' })
+  try {
+    const p = await post<Property>(s, '/api/properties', { name: 'Haus', kind: 'mfh', address: '', rentCapReduced: false, state: 'BY' })
+    const u = await post<Unit>(s, `/api/units?property=${p.id}`, { name: 'EG', areaM2: 60, participates: true })
+    const t = await post<Tenancy>(s, `/api/tenancies?property=${p.id}`, { ...BASE, unitId: u.id, tenantName: 'Becker', persons: 1, start: '2020-01-01', rentKind: 'free', rentIncreaseExcluded: false, baseRents: [{ from: '2020-01', monthlyCents: 50000 }] })
+    const journalBefore = (await journalOf(s)).length
+    const plan = await post<RentIncreasePlan>(s, `/api/tenancies/${t.id}/rent-increase/plan`, { kind: 'comparison', allStepsEntered: true, residential: true, noThirdPartyFunds: true, comparisonCentsPerM2: 1000 })
+    assert.equal(plan.state, 'possible', plan.reasons.join(' '))
+    assert.equal(plan.receivedOn, '2026-11-20', 'Vorgabe ist heute laut Server')
+    assert.equal(plan.effectiveFrom, '2027-02')
+    assert.equal(plan.cap?.percent, 20, 'Kappungsgrenze vom Objekt')
+    assert.equal(plan.maxCents, 60000)
+    assert.deepEqual(plan.consent, { consentEnd: '2027-01-31', consentEndOnWorkday: '2027-02-01', suitFrom: '2027-02-02', suitEnd: '2027-04-30' })
+    assert.equal((await journalOf(s)).length, journalBefore, 'nichts geschrieben')
+    const missing = await fetch(`${s.base}/api/tenancies/gibtsnicht/rent-increase/plan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'comparison' }) })
+    assert.equal(missing.status, 404)
+    for (const body of [{ kind: 'mietspiegel' }, { kind: 'comparison', receivedOn: '2026-02-31' }, { kind: 'comparison', comparisonCentsPerM2: -1 }, { kind: 'index', toIndex: { month: '2026-10', value: 106.15, base: 2020 } }, { kind: 'comparison', rentCap: 'vielleicht' }]) {
+      const bad = await fetch(`${s.base}/api/tenancies/${t.id}/rent-increase/plan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      assert.equal(bad.status, 400, JSON.stringify(body))
+      assert.match(await errorFrom(bad), /\.$/, 'ein ganzer Satz')
+    }
+  } finally {
+    s.stop()
+  }
 })

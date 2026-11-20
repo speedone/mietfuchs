@@ -30,8 +30,9 @@ import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor, type Snapshot } from './snapshot.ts'
 import { onStock } from './stockMemo.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Tenancy, Unit } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
+import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
@@ -1924,6 +1925,25 @@ const stepSaveRoute = async (req: Request, res: Response) => {
   if ('stale' in result) return res.status(409).json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Übernahme noch einmal.', plan: result.stale })
   res.json({ ok: true, written: result.written })
 }
+// Mieterhöhung (#191, PR 2): rechnen, nur lesend. Die Eingaben stehen im Rumpf; gerechnet wird über den gemerkten Bestand
+// (readStock) mit dem Tag des Servers. Geschrieben wird nichts, deshalb kein Satz im Verlauf (readData, nicht writeData).
+app.post('/api/tenancies/:id/rent-increase/plan', async (req: Request, res: Response) => {
+  const request = rentIncreaseRequestOf(bodyObject(req))
+  if ('error' in request) return res.status(400).json({ error: request.error })
+  const plan = await readData(async (db) => {
+    const stock = await readStock(db)
+    // Die Listen des Bestands mit vollem Typ (`Stock` schneidet sie mit denen des Schnappschusses).
+    const tenancies: readonly Tenancy[] = stock.tenancies
+    const units: readonly Unit[] = stock.units
+    const tenancy = tenancies.find((t) => t.id === req.params.id)
+    const unit = tenancy ? units.find((u) => u.id === tenancy.unitId) : undefined
+    if (!tenancy || !unit) return null
+    const property = stock.properties.find((p) => p.id === unit.propertyId) ?? null
+    return planRentIncrease({ today: today(), tenancy, unit, property, request })
+  })
+  if (!plan) return res.status(404).json({ error: 'Dieses Mietverhältnis gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json(plan)
+})
 app.post('/api/settlement/:period/prepayment-steps/plan', stepPlanRoute)
 app.post('/api/settlement/:period/prepayment-steps', stepSaveRoute)
 app.post('/api/heating-settlement/:plant/:period/prepayment-steps/plan', stepPlanRoute)
