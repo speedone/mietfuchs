@@ -50,7 +50,7 @@ type Props = {
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
-type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
+type Consumption = { meterId: string; consumption: number; readingCount: number; periodCovered?: boolean; warnings: string[]; notices?: Notice[] }
 
 type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 

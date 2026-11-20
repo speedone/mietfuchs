@@ -1428,7 +1428,31 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Einzige, was darauf stößt. Validator und Schema lehnen solche Bestände bewusst nicht ab.
 - **Diese Warnungen erscheinen nie auf der Abrechnung**, nur über `consumptionOverview` auf der
   Zähler-Seite und im Cockpit (Ampel „Zählerstände“ rot): Die Abrechnung ist das Dokument für den
-  Mieter.
+  Mieter. **Ausnahme, mit eigenen Codes** (die Stufe hängt am Code), sobald der Zähler in den Verbrauchsschlüssel
+  einer Position eingeht (Schlüssel `meter`, mit und ohne Bezugszähler; `negativeInKey`, `futureInKey`):
+  `meter.negative-in-key` (`error`) bei einem Segment mit negativem Verbrauch, das in den Zeitraum reicht, auch bei
+  positiver Jahressumme. **Die Position wird dann nicht verteilt**, der Vermieter trägt sichtbar (wie
+  `meter.sub-incomplete`, nicht wie `tenancy.overlap`): Wie erfasst gerechnet bekäme ein Mieter einen negativen Anteil
+  und die übrigen zusammen mehr als die Rechnung, das heilt keine Kürzung. `meter.reading-future` (`warning`) bei einer
+  benutzten Ablesung (`readingsUsedFor`) mit Datum mehr als einen Tag nach dem Stichtag `asOf`; verteilt wird wie
+  erfasst, denn tagesanteilig zwischen zwei Ablesungen zu rechnen ist die Regel, und ob das Datum falsch ist, weiß nur
+  der Vermieter. Derselbe Code steht in `consumptionOverview` (dort mit `asOf` der Route; ohne Stichtag kein Hinweis).
+  Die eigene Heizkostenabrechnung (`heatingSystem`) prüft beides nicht. Hinweise der Abrechnung stehen nur in der Zone
+  „Zu prüfen“ (`no-print`), nie auf dem Blatt des Mieters.
+- **Zeitraum gedeckt** (`ConsumptionOverviewRow.periodCovered`, `readingsCoverPeriod`): Die Ampel „Zählerstände“ fragt
+  nicht mehr nach `readingCount` (alle Ablesungen aller Jahre, ab dem zweiten Jahr immer mindestens zwei; das Feld
+  bleibt für die Zähler-Seite), sondern ob jeder Tag in einem Segment liegt (`coveredDays`, die Regel des Hauptzählers
+  und von `meter.unit-partial`), über die Spanne, in der der Zähler messen konnte: ab dem Tag nach seiner ersten
+  Ablesung, wenn sie im Zeitraum oder danach liegt (im Lauf eingebaut), bis zu seiner letzten, wenn an derselben
+  Wohnung ein Zähler derselben Sparte anschließt (Tausch als neuer Zähler, wie die Ketten in `unitCoveredDays`). Ein
+  Wechsel ohne Endstand deckt nicht, ein Zähler ohne Ablesung auch nicht. Bekannte Grenze: Ein Haupt- oder
+  Anlagenzähler hat keinen Nachfolger; ersetzt ihn ein neu angelegter Zähler, bleibt der alte im Jahr des Tauschs rot,
+  bis der Tausch als Zählerwechsel erfasst ist.
+- **Zähler vorhanden, aber nicht abgelesen** (`meter.unit-not-read`, `warning`, Ziel der Zähler): Hat eine Einheit einen
+  Zähler der Sparte, dessen Ablesungen den Zeitraum gar nicht decken, rechnet der Schlüssel `meter` (ohne
+  Bezugszähler) wie ohne Zähler, sagt es aber mit eigenem Text; `meter.unit-without-meter` nennt nur noch Einheiten
+  ohne Zähler, Wortlaut unverändert. Neben „Kein Verbrauch erfasst“ steht er zusätzlich. Im Zweig mit Bezugszähler
+  (`meterRest`) bleibt es beim bisherigen Text.
 - **Einheiten** (#342, [shared/meterUnits.ts](../../shared/meterUnits.ts)): Text am Zähler, beim Lesen
   normiert (`unitKey`), keine Migration. Wärme kWh/MWh/GJ, Wasser m³/l, Strom kWh/MWh als exakte
   Brüche; Heizkostenverteiler und „Sonstiges“ (auch Gas) ohne Umrechnung. **Leitsatz: Ein Bestand,

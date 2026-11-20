@@ -4,7 +4,11 @@ import { andList } from '../../shared/wording.ts'
 
 // Verbrauchsangaben des Servers je Zähler (gleiche Form wie auf der Zähler-Seite). `notices` trägt dieselben
 // Meldungen wie `warnings` mit Code; ein älterer Server schickt sie nicht.
-export type MeterConsumption = { meterId: string; readingCount: number; warnings: string[]; notices?: Notice[] }
+// `periodCovered`: Decken Ablesungen den gewählten Zeitraum (Regel des Servers, `readingsCoverPeriod` in calc.ts)?
+// `readingCount` zählt alle Ablesungen aller Jahre und sagt das ab dem zweiten Jahr nicht mehr; es gilt nur noch,
+// wenn ein älterer Server das Feld nicht schickt.
+export type MeterConsumption = { meterId: string; readingCount: number; periodCovered?: boolean; warnings: string[]; notices?: Notice[] }
+const uncovered = (c: MeterConsumption): boolean => (c.periodCovered === undefined ? c.readingCount < 2 : !c.periodCovered)
 
 // Die abgelaufene Eichfrist (Heizung PR 21) ist eine Warnung und keine Sperre: Mietfuchs rechnet mit den
 // Werten, und die Stände sind vollständig. Sie macht einen Zähler deshalb nicht unvollständig, sondern hat im
@@ -30,7 +34,7 @@ export function meterReadiness(
   const relevant = meters.filter((m) => meterTypes.has(m.type))
   const incomplete = relevant.filter((m) => {
     const c = consumption.find((x) => x.meterId === m.id)
-    return !c || c.readingCount < 2 || readingProblems(c) > 0
+    return !c || uncovered(c) || readingProblems(c) > 0
   })
   return { relevant, incomplete }
 }

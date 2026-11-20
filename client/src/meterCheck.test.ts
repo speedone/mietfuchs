@@ -19,6 +19,18 @@ test('Hauptzähler und Zwischenzähler vollständig: beide gezählt', () => {
   expect(r.incomplete).toEqual([])
 })
 
+// Systemprüfung: Ab dem zweiten Jahr hat jeder Zähler mindestens zwei Ablesungen, die Ampel war dann immer grün.
+test('Zwei Ablesungen aus dem Vorjahr, der gewählte Zeitraum ist nicht gedeckt: unvollständig', () => {
+  const r = meterReadiness([meter('haupt', null), meter('zwischen', 'u1')],
+    [{ meterId: 'haupt', readingCount: 2, periodCovered: false, warnings: [] }, { meterId: 'zwischen', readingCount: 2, periodCovered: true, warnings: [] }], new Set(['kaltwasser']))
+  expect(r.incomplete.map((m) => m.id)).toEqual(['haupt'])
+})
+
+test('Im Zeitraum eingebaut, eine Ablesung davor gibt es nicht: gedeckt heißt vollständig, gleich wie viele Ablesungen', () => {
+  const r = meterReadiness([meter('neu', 'u1')], [{ meterId: 'neu', readingCount: 1, periodCovered: true, warnings: [] }], new Set(['kaltwasser']))
+  expect(r.incomplete).toEqual([])
+})
+
 test('Zähler eines anderen Typs zählen nicht', () => {
   const r = meterReadiness([meter('strom', null, 'strom')], [], new Set(['kaltwasser']))
   expect(r.relevant).toEqual([])

@@ -79,6 +79,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Zählerstände in Abrechnung und Cockpit: Läuft ein Zähler im Abrechnungszeitraum rückwärts (Endstand unter dem
+  Anfangsstand), verteilte Mietfuchs die Position trotzdem nach Verbrauch; ein Mieter bekam einen negativen Anteil, die
+  übrigen zusammen mehr als die Rechnung, und die Abrechnung ließ sich ohne Rückfrage abschließen. Jetzt steht an der
+  Abrechnung der Fehler „Negativer Verbrauch im Verteilschlüssel“, die Position wird nicht verteilt, bis die Ablesung
+  stimmt, und Abschließen und Drucken fragen nach. Die Zeile „Zählerstände“ im Cockpit meldete ab dem zweiten Jahr
+  jeden Zähler als vollständig, weil sie die Ablesungen aller Jahre zählte; sie prüft jetzt, ob Ablesungen den
+  gewählten Zeitraum decken (ein im Lauf des Zeitraums eingebauter oder getauschter Zähler gilt ab bzw. bis zu seiner
+  Ablesung). Eine Ablesung mit Datum in der Zukunft (etwa 2052 statt 2025) nennen Zähler-Seite, Cockpit und Abrechnung
+  als Warnung, statt den Verbrauch still nach Tagen herunterzurechnen. Und hat eine Wohnung einen Zähler, dem nur die
+  Stände des Zeitraums fehlen, heißt der Hinweis nicht mehr „Wohnung ohne Zähler“, sondern „Zähler im Zeitraum nicht
+  abgelesen“ und führt zum Zähler.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert
