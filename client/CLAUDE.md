@@ -321,7 +321,7 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   Punkte (`cockpitSubtitle`).
 - **Erste Schritte** (#447): Der dritte Schritt des Leerzustands nennt beide Wege, Belege hochladen oder
   „Kosten von Hand erfassen“ (`StartStep.secondary`, im Cockpit der zweite Knopf); dasselbe sagt die rote Zeile
-  „Belege erfasst“ (`noCostsDetail`). Unter dem Leerzustand des Cockpits steht „Anleitung: Die erste Abrechnung von
+  „Kosten erfasst“ (`noCostsDetail`). Unter dem Leerzustand des Cockpits steht „Anleitung: Die erste Abrechnung von
   Anfang bis Ende“ (`onOpenGuide`, in App.tsx `openGuide` ohne Schritt: Die Hilfe öffnet die Anleitung oben). Die
   Checkliste beginnt bis zum Abschluss mit „Vermieter und Bankverbindung“ (`landlordCheck` in cockpitChecks.ts, mit
   `effectiveLandlord`): **in jedem Zustand eine Hilfe (`hint`), sie zählt nie zum Fortschritt**, denn ob Briefpapier den
