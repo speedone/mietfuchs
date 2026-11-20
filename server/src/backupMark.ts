@@ -41,11 +41,9 @@ export function backupReminder({ hasStock, lastAt, latestClosedAt, now }: { hasS
 
 export function backupStatus(input: { hasStock: boolean, lastAt: string | null, latestClosedAt: string | null, now: Date }): BackupStatus {
   const last = timeOf(input.lastAt)
-  return {
-    lastDownloadAt: last === null ? null : new Date(last).toISOString(),
-    ageDays: last === null ? null : Math.max(0, Math.floor((input.now.getTime() - last) / DAY_MS)),
-    reminder: backupReminder(input),
-  }
+  // Kein Alter in Tagen: Das rechnet die Oberfläche in Kalendertagen des Ortes, an dem sie auch das Datum bildet
+  // (client/src/backupView.ts); volle 24 Stunden ergäben „am 19.11. (heute)“.
+  return { lastDownloadAt: last === null ? null : new Date(last).toISOString(), reminder: backupReminder(input) }
 }
 
 // Der gemerkte Zeitpunkt: der aus der Datei oder, wenn sie sich nicht schreiben ließ, der dieses Laufs; der jüngere gilt.

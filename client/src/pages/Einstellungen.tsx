@@ -1,8 +1,8 @@
 import { inWindow, reloadWithArrival, type Arrival } from '../relocation'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { dataFolder, type HealthReport } from '../database'
 import type { BackupStatus, Settings } from '../types'
-import { asBackupStatus, frameMessage, lastBackupLine } from '../backupView'
+import { asBackupStatus, frameMessage, lastBackupLine, recheckUntilChanged } from '../backupView'
 import { NoticeBox } from '../components/Notice'
 import { api, errorText } from '../api'
 import PageHeader from '../components/PageHeader'
@@ -71,7 +71,8 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
       .catch(() => {})
   }, [])
   // Wann zuletzt ein Backup heruntergeladen wurde. Der Download ist ein Link, kein Abruf; wann er fertig ist, erfährt die
-  // Seite nicht. Deshalb fragt sie kurz nach dem Klick noch einmal und immer, wenn das Fenster wieder den Fokus bekommt.
+  // Seite nicht. Deshalb fragt sie nach dem Klick in wachsendem Abstand nach, bis sich der Zeitpunkt ändert
+  // (`recheckUntilChanged`, rund zwei Minuten), und immer, wenn das Fenster wieder den Fokus bekommt.
   const [backup, setBackup] = useState<BackupStatus | null>(null)
   // Die Ablehnung des Servers, wenn ein Backup scheitert (aus dem Rahmen gelesen)
   const [backupError, setBackupError] = useState('')
@@ -80,11 +81,22 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
       .then((s) => setBackup(asBackupStatus(s)))
       .catch(() => {})
   }, [])
+  // Je Klick eine Folge von Nachfragen; ein neuer Klick und das Verlassen der Seite beenden die laufende.
+  const recheck = useRef(0)
   useEffect(() => {
     loadBackup()
     window.addEventListener('focus', loadBackup)
-    return () => window.removeEventListener('focus', loadBackup)
+    return () => {
+      window.removeEventListener('focus', loadBackup)
+      recheck.current = -1
+    }
   }, [loadBackup])
+  function awaitDownload() {
+    setBackupError('')
+    const run = ++recheck.current
+    void recheckUntilChanged(async () => asBackupStatus(await api<unknown>('/api/backup/status')), backup?.lastDownloadAt ?? null, { stopped: () => recheck.current !== run })
+      .then((changed) => { if (changed && recheck.current === run) setBackup(changed) })
+  }
   // Ob das Backup den Verlauf der Änderungen mitnimmt (#318). Nur eine Wahl für den Download, nichts wird gespeichert.
   const [withJournal, setWithJournal] = useState(false)
   const [restoring, setRestoring] = useState(false)
@@ -212,7 +224,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
               unsichtbaren Rahmen. Nachgemessen in Chromium: Mit `download` speicherte der Browser eine Ablehnung des
               Servers als „backup.json“, und als gewöhnlicher Link fragte er bei offenem Formular „Seite verlassen?“. Im
               Rahmen lädt ein Download kein Dokument; eine Ablehnung schon, und ihr Satz steht dann hier in der Karte. */}
-          <a className="btn secondary" href={withJournal ? '/api/backup?journal=1' : '/api/backup'} target={BACKUP_FRAME} onClick={() => { setBackupError(''); window.setTimeout(loadBackup, 4000) }}>⬇ Backup herunterladen (ZIP)</a>
+          <a className="btn secondary" href={withJournal ? '/api/backup?journal=1' : '/api/backup'} target={BACKUP_FRAME} onClick={awaitDownload}>⬇ Backup herunterladen (ZIP)</a>
           <iframe
             name={BACKUP_FRAME}
             title="Backup herunterladen"

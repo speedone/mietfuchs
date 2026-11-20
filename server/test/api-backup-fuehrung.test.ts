@@ -8,6 +8,9 @@ import path from 'node:path'
 import AdmZip from 'adm-zip'
 import type { BackupStatus, Unit } from '../../shared/types.ts'
 import { backupReminder, BACKUP_MARK_FILE, BACKUP_REMINDER_DAYS } from '../src/backupMark.ts'
+import { pathToFileURL } from 'node:url'
+import { cleanBackupTempDirs } from '../src/restoreFiles.ts'
+import { serverRoot } from '../testing/api.ts'
 import { errorOf, removeDataDir, restore, startServer, startServerIn, startServerRaw, until, waitForExit, type Server } from '../testing/api.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
@@ -49,14 +52,13 @@ test('Erinnerung: die Regel für sich (kein Bestand, nie, zu alt, Abschluss dana
 test('Letztes Backup: der Server merkt sich den Zeitpunkt in einer eigenen Datei, nicht im Backup', async () => {
   const s = await startServer()
   try {
-    assert.deepEqual(await statusOf(s), { lastDownloadAt: null, ageDays: null, reminder: null }, 'ohne Bestand keine Erinnerung')
+    assert.deepEqual(await statusOf(s), { lastDownloadAt: null, reminder: null }, 'ohne Bestand keine Erinnerung')
     await addUnit(s)
     assert.equal((await statusOf(s)).reminder, 'never')
     const before = Date.now()
     await download(s)
     const status = await statusOf(s)
     assert.equal(status.reminder, null)
-    assert.equal(status.ageDays, 0)
     const at = Date.parse(status.lastDownloadAt ?? assert.fail('kein Zeitpunkt gemerkt'))
     assert.ok(at >= before - 1000 && at <= Date.now() + 1000, 'der Zeitpunkt ist der des Downloads')
     assert.ok(fs.existsSync(path.join(s.dataDir, BACKUP_MARK_FILE)), 'die Datei liegt im Datenordner')
@@ -88,7 +90,6 @@ test('Erinnerung: ein altes Backup und ein Abschluss seit dem Backup', async () 
     fs.writeFileSync(path.join(s.dataDir, BACKUP_MARK_FILE), JSON.stringify({ version: 1, at: daysAgo(BACKUP_REMINDER_DAYS + 10) }), 'utf8')
     const old = await statusOf(s)
     assert.equal(old.reminder, 'old')
-    assert.equal(old.ageDays, BACKUP_REMINDER_DAYS + 10)
     fs.writeFileSync(path.join(s.dataDir, BACKUP_MARK_FILE), JSON.stringify({ version: 1, at: daysAgo(1) }), 'utf8')
     assert.equal((await statusOf(s)).reminder, null)
     const closed = await fetch(`${s.base}/api/settlement/2025/close`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
@@ -220,5 +221,70 @@ test('Start im schreibgeschützten Ordner ohne db.json: die Konsole verweist nic
       fs.chmodSync(dataDir, 0o755)
       removeDataDir(dataDir)
     }
+  }
+})
+
+// Durchsicht: `curl -I /api/backup` ergab 200 ohne ein Byte, und danach galt das Backup als heruntergeladen.
+test('Letztes Backup: eine HEAD-Anfrage merkt nichts, die Erinnerung bleibt', async () => {
+  const s = await startServer()
+  try {
+    await addUnit(s)
+    const head = await fetch(`${s.base}/api/backup`, { method: 'HEAD' })
+    assert.equal(head.status, 200)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    assert.deepEqual(await statusOf(s), { lastDownloadAt: null, reminder: 'never' })
+    assert.equal(fs.existsSync(path.join(s.dataDir, BACKUP_MARK_FILE)), false)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht: Bildschirmfotos und Browserlauf zeigen ein gepflegtes Haus, also eines mit Backup.
+test('Beispielbestand: nach dem Aufbau ist ein Backup heruntergeladen, das Cockpit erinnert dort nicht', async () => {
+  // Das Skript bleibt JavaScript ohne Typdatei (eine `.d.mts` daneben nähme den übrigen Skripten ihre abgeleiteten
+  // Typen); geladen wird es deshalb über seinen Pfad, mit dem hier gebrauchten Ausschnitt als Typ.
+  type DemoStock = {
+    startDemo: (options: { pdf: (html: string) => Uint8Array, prefix: string }) => Promise<{ base: string, stop: () => Promise<unknown> }>
+    textPdf: (html: string) => Uint8Array
+  }
+  const { startDemo, textPdf } = await import(pathToFileURL(path.join(serverRoot, '..', 'scripts', 'demo-stock.mjs')).href) as DemoStock
+  const demo = await startDemo({ pdf: (html) => textPdf(html), prefix: 'mietfuchs-test-demo-' })
+  try {
+    const status = await (await fetch(`${demo.base}/api/backup/status`)).json() as BackupStatus
+    assert.equal(status.reminder, null)
+    assert.ok(status.lastDownloadAt, 'kein Zeitpunkt gemerkt')
+  } finally {
+    await demo.stop()
+  }
+})
+
+// Durchsicht: Stirbt der Prozess mitten im Backup bei nicht beschreibbarem Datenordner, bleibt der Ausweichordner mit
+// dem ganzen Bestand im Ordner für Zwischendateien liegen. Der Start räumt alte weg, nur die eigenen nach Muster.
+test('Start: liegengebliebene Ausweichordner des Backups werden nach Muster und Alter weggeräumt', () => {
+  const tmp = tempDir()
+  try {
+    const now = Date.now()
+    const make = (name: string, ageMs: number, folder = true): string => {
+      const dir = path.join(tmp, name)
+      if (folder) {
+        fs.mkdirSync(dir)
+        fs.writeFileSync(path.join(dir, 'mietfuchs.sqlite'), 'x')
+      } else fs.writeFileSync(dir, 'x')
+      const at = new Date(now - ageMs)
+      fs.utimesSync(dir, at, at)
+      return name
+    }
+    const HOUR = 3_600_000
+    make('mietfuchs-backup-Ab3dE9', 2 * HOUR)
+    make('mietfuchs-backup-Zz9zZ9', 10 * 60_000) // ein laufendes Backup eines anderen Mietfuchs
+    make('mietfuchs-backup-meins', 2 * HOUR) // nicht die Gestalt von mkdtemp: ein Ordner des Nutzers
+    make('mietfuchs-backup-2026-11-20.zip', 2 * HOUR, false)
+    make('mietfuchs-backup-Qq1qQ1', 2 * HOUR, false) // eine Datei dieses Namens ist nicht unsere
+    make('anderes-Ab3dE9', 2 * HOUR)
+    cleanBackupTempDirs(tmp, now)
+    assert.deepEqual(fs.readdirSync(tmp).sort(), ['anderes-Ab3dE9', 'mietfuchs-backup-2026-11-20.zip', 'mietfuchs-backup-Qq1qQ1', 'mietfuchs-backup-Zz9zZ9', 'mietfuchs-backup-meins'].sort())
+    cleanBackupTempDirs(path.join(tmp, 'gibt-es-nicht'), now) // wirft nie
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
   }
 })

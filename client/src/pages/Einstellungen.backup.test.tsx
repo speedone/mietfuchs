@@ -37,14 +37,16 @@ function open(status: BackupStatus | null, restoreAnswer: () => Response = () =>
 }
 
 test('die Karte nennt, wann zuletzt ein Backup heruntergeladen wurde, und sagt nicht „gesichert“', async () => {
-  open({ lastDownloadAt: '2026-11-17T12:00:00.000Z', ageDays: 3, reminder: null })
-  const line = await screen.findByText(/Backup zuletzt heruntergeladen am 17\.11\.2026 \(vor 3 Tagen\)\./, {}, SLOW)
+  const at = new Date()
+  at.setDate(at.getDate() - 3)
+  open({ lastDownloadAt: at.toISOString(), reminder: null })
+  const line = await screen.findByText(/Backup zuletzt heruntergeladen am \d\d\.\d\d\.\d{4} \(vor 3 Tagen\)\./, {}, SLOW)
   expect(line.textContent).toMatch(/Ob und wo die Datei gespeichert wurde, sieht Mietfuchs nicht/)
   expect(line.textContent).not.toMatch(/gesichert am/)
 })
 
 test('ohne Backup sagt die Karte das; ohne Antwort des Servers steht nichts da', async () => {
-  open({ lastDownloadAt: null, ageDays: null, reminder: 'never' })
+  open({ lastDownloadAt: null, reminder: 'never' })
   await screen.findByText(/Von diesem Rechner wurde bisher kein Backup heruntergeladen\./, {}, SLOW)
   cleanup()
   open(null)
@@ -53,7 +55,7 @@ test('ohne Backup sagt die Karte das; ohne Antwort des Servers steht nichts da',
 })
 
 test('scheitert das Backup, steht die Ablehnung des Servers in der Karte: der Link lädt in einen unsichtbaren Rahmen', async () => {
-  open({ lastDownloadAt: null, ageDays: null, reminder: 'never' })
+  open({ lastDownloadAt: null, reminder: 'never' })
   const link = await screen.findByRole('link', { name: /Backup herunterladen \(ZIP\)/ }, SLOW)
   expect(link.getAttribute('href')).toBe('/api/backup')
   // Mit `download` speicherte Chromium die Fehlermeldung als Datei „backup.json“
@@ -92,7 +94,7 @@ async function restoreFile() {
 }
 
 test('nach dem Wiederherstellen lädt die Seite mit dem Anlass neu, damit die Bestätigung erscheint', async () => {
-  open({ lastDownloadAt: null, ageDays: null, reminder: 'never' })
+  open({ lastDownloadAt: null, reminder: 'never' })
   await restoreFile()
   await waitFor(() => expect(reloaded).toEqual(['backup']), SLOW)
 })
@@ -111,15 +113,15 @@ test('mit Hinweisen des Servers bleibt die Meldung stehen, und ein Fehler lädt 
 
 test('Cockpit: die Erinnerung ist ein ruhiger Hinweis mit Sprung, und ohne Anlass fehlt sie', async () => {
   let opened = 0
-  vi.stubGlobal('fetch', async () => json({ lastDownloadAt: '2026-10-01T12:00:00.000Z', ageDays: 50, reminder: 'old' } satisfies BackupStatus))
+  vi.stubGlobal('fetch', async () => json({ lastDownloadAt: new Date(Date.now() - 50 * 86_400_000).toISOString(), reminder: 'old' } satisfies BackupStatus))
   render(<BackupReminder onOpen={() => { opened++ }} />)
-  await screen.findByText('Das letzte Backup wurde vor 50 Tagen heruntergeladen', {}, SLOW)
+  await screen.findByText(/^Das letzte Backup wurde vor (49|50|51) Tagen heruntergeladen$/, {}, SLOW)
   expect(document.querySelector('.notice-item')?.textContent).toMatch(/Hinweis/)
   fireEvent.click(screen.getByRole('button', { name: 'Zum Backup → Einstellungen' }))
   expect(opened).toBe(1)
   cleanup()
   let asked = 0
-  vi.stubGlobal('fetch', async () => { asked++; return json({ lastDownloadAt: '2026-11-19T12:00:00.000Z', ageDays: 1, reminder: null } satisfies BackupStatus) })
+  vi.stubGlobal('fetch', async () => { asked++; return json({ lastDownloadAt: '2026-11-19T12:00:00.000Z', reminder: null } satisfies BackupStatus) })
   const { container } = render(<BackupReminder onOpen={() => {}} />)
   await waitFor(() => expect(asked).toBeGreaterThan(0), SLOW)
   expect(container.textContent).toBe('')

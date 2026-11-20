@@ -14,7 +14,7 @@ import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
 import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
-import { cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
+import { BACKUP_TEMP_PREFIX, cleanBackupTempDirs, cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
 import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UpdateStatus, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, parseDecisions } from './bookingPlan.ts'
@@ -3351,7 +3351,7 @@ app.get('/api/backup', async (req, res) => {
     let temp = path.join(OPEN_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
     try {
       if (!writable(OPEN_DIR)) {
-        snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-backup-'))
+        snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), BACKUP_TEMP_PREFIX))
         temp = path.join(snapshotDir, ARCHIVE_DB_NAME)
       }
       await writeDatabaseSnapshot(database, temp)
@@ -3375,8 +3375,11 @@ app.get('/api/backup', async (req, res) => {
   res.set('Content-Disposition', `attachment; filename="mietfuchs-backup-${stamp}.zip"`)
   try {
     // Gemerkt wird nur ein vollständig gesendetes Archiv, und nie im umgezogenen Ordner. `record` wirft nicht; der
-    // Download ist an dieser Stelle ohnehin durch.
-    if (await sendZip(res, out)) BACKUP_MARK.record(new Date(), { persist: !movedNow() })
+    // Download ist an dieser Stelle ohnehin durch. **Nur bei GET**: Express beantwortet HEAD mit derselben Route und
+    // 200, sendet aber keinen Rumpf (`curl -I` hätte sonst als heruntergeladenes Backup gezählt und die Erinnerung
+    // 30 Tage verstummen lassen).
+    const sent = await sendZip(res, out)
+    if (sent && req.method === 'GET') BACKUP_MARK.record(new Date(), { persist: !movedNow() })
   } finally {
     if (snapshotFile) fs.rmSync(snapshotFile, { force: true })
     if (snapshotDir) fs.rmSync(snapshotDir, { recursive: true, force: true })
@@ -3434,6 +3437,8 @@ const restoreUpload = multer({
 })
 
 const NOTHING_CHANGED = 'Es wurde nichts davon übernommen; Ihre bisherigen Daten sind unverändert.'
+// Derselbe Abschluss beim Einspielen eines Backups im Umzug, wenn im neuen Ordner noch nichts liegt
+const RELOCATION_NOTHING_TAKEN = 'Es wurde nichts übernommen; die Datei selbst ist unverändert.'
 // Zufallsbytes, eine Textdatei und ein abgebrochener Download sehen für den Leser gleich aus: Das Verzeichnis am Ende
 // des Archivs fehlt. Der häufigste Grund bei einem echten Backup ist der unvollständige Download oder die halbe Kopie.
 const NOT_A_ZIP = 'Die Datei ist kein gültiges ZIP-Archiv. Vielleicht wurde sie nicht vollständig heruntergeladen oder kopiert; laden oder kopieren Sie das Backup noch einmal.'
@@ -4258,7 +4263,9 @@ app.post('/api/relocation/restore-backup', async (req, res) => {
       fs.mkdirSync(staging)
       backup = await readBackup(choice.backup, staging)
     } catch (err) {
-      return void res.status(400).json({ error: messageOf(err) })
+      // Ohne eigenen Bestand (der Regelfall beim Umzug) gibt es hier keine „bisherigen Daten“; gesagt wird, was stimmt.
+      const text = messageOf(err)
+      return void res.status(400).json({ error: (await hasOwnStock()) ? text : text.replace(NOTHING_CHANGED, RELOCATION_NOTHING_TAKEN) })
     }
     await runRestore(backup, res)
   } finally {
@@ -5649,6 +5656,8 @@ if ((RUNTIME === 'desktop' || RUNTIME === 'store') && !MOVED_AWAY) {
   }
 }
 if (!MOVED_AWAY) cleanRestoreLeftovers(DATA_DIR)
+// Liegengebliebene Ausweichordner eines abgebrochenen Backups im Ordner für Zwischendateien (restoreFiles.ts)
+cleanBackupTempDirs(os.tmpdir())
 
 // HTTPS (#528, Schritt 2): Fehlt das Zertifikat, entsteht es jetzt, nach dem Binden und vor dem Öffnen der Datenbank. Ein
 // Problem dabei verhindert nie den Start, Mietfuchs antwortet dann nur über HTTP und sagt es einmal. Ein umgezogener

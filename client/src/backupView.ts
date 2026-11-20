@@ -8,13 +8,21 @@ import type { BackupStatus } from './types'
 export function asBackupStatus(value: unknown): BackupStatus | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const v = value as Partial<BackupStatus>
-  const lastOk = v.lastDownloadAt === null || typeof v.lastDownloadAt === 'string'
-  const ageOk = v.ageDays === null || typeof v.ageDays === 'number'
+  const lastOk = v.lastDownloadAt === null || (typeof v.lastDownloadAt === 'string' && !Number.isNaN(Date.parse(v.lastDownloadAt)))
   const reminderOk = v.reminder === null || v.reminder === 'never' || v.reminder === 'old' || v.reminder === 'closed'
-  return lastOk && ageOk && reminderOk ? { lastDownloadAt: v.lastDownloadAt ?? null, ageDays: v.ageDays ?? null, reminder: v.reminder ?? null } : null
+  return lastOk && reminderOk ? { lastDownloadAt: v.lastDownloadAt ?? null, reminder: v.reminder ?? null } : null
 }
 
 const dateOf = (iso: string): string => new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+// **Das Alter zählt Kalendertage des Ortes, an dem auch das Datum gebildet wird**, nicht volle 24 Stunden: Ein Backup
+// von gestern 23 Uhr ist heute um 9 Uhr „gestern“, passend zum gezeigten Datum. Gerechnet über die Mitternacht beider
+// Tage in UTC-Zählung ihrer Ortsdaten, damit die Zeitumstellung (ein Tag mit 23 oder 25 Stunden) nichts verschiebt.
+export function calendarDaysSince(iso: string, now: Date): number {
+  const then = new Date(iso)
+  const day = (d: Date): number => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+  return Math.max(0, Math.round((day(now) - day(then)) / 86_400_000))
+}
 
 export function ageText(days: number): string {
   if (days <= 0) return 'heute'
@@ -23,15 +31,15 @@ export function ageText(days: number): string {
 }
 
 // Die Zeile in der Karte „Daten & Sicherung“
-export function lastBackupLine(status: BackupStatus): string {
-  if (status.lastDownloadAt === null || status.ageDays === null) return 'Von diesem Rechner wurde bisher kein Backup heruntergeladen.'
-  return `Backup zuletzt heruntergeladen am ${dateOf(status.lastDownloadAt)} (${ageText(status.ageDays)}).`
+export function lastBackupLine(status: BackupStatus, now: Date = new Date()): string {
+  if (status.lastDownloadAt === null) return 'Von diesem Rechner wurde bisher kein Backup heruntergeladen.'
+  return `Backup zuletzt heruntergeladen am ${dateOf(status.lastDownloadAt)} (${ageText(calendarDaysSince(status.lastDownloadAt, now))}).`
 }
 
 export type BackupReminderText = { title: string, text: string }
 const KEEP_ELSEWHERE = 'Laden Sie ein Backup herunter und bewahren Sie es nicht auf diesem Rechner auf, etwa auf einem USB-Stick oder einer externen Festplatte.'
 
-export function backupReminderText(status: BackupStatus): BackupReminderText | null {
+export function backupReminderText(status: BackupStatus, now: Date = new Date()): BackupReminderText | null {
   switch (status.reminder) {
     case null:
       return null
@@ -40,8 +48,36 @@ export function backupReminderText(status: BackupStatus): BackupReminderText | n
     case 'closed':
       return { title: 'Seit dem letzten Backup wurde eine Abrechnung abgeschlossen', text: `Der abgeschlossene Stand steht noch in keinem Backup. ${KEEP_ELSEWHERE}` }
     case 'old':
-      return { title: `Das letzte Backup wurde ${ageText(status.ageDays ?? 0)} heruntergeladen`, text: `Was Sie seither erfasst haben, steht in keinem Backup. ${KEEP_ELSEWHERE}` }
+      return {
+        title: status.lastDownloadAt === null ? 'Das letzte Backup ist lange her' : `Das letzte Backup wurde ${ageText(calendarDaysSince(status.lastDownloadAt, now))} heruntergeladen`,
+        text: `Was Sie seither erfasst haben, steht in keinem Backup. ${KEEP_ELSEWHERE}`,
+      }
   }
+}
+
+// Nach dem Klick auf den Download: Wann das Archiv ganz gesendet ist, erfährt die Seite nicht, und ein großes braucht
+// Minuten. Deshalb fragt sie in wachsendem Abstand nach, bis der Server einen anderen Zeitpunkt nennt als vorher,
+// zusammen rund zwei Minuten; danach bleibt das Nachfragen beim Fokus des Fensters. Ein Lesefehler zählt wie „noch
+// nicht“. `stopped`: die Seite ist weg oder ein neuer Klick hat übernommen.
+export const BACKUP_RECHECK_MS: readonly number[] = [2_000, 4_000, 8_000, 16_000, 30_000, 60_000]
+export async function recheckUntilChanged(
+  ask: () => Promise<BackupStatus | null>,
+  before: string | null,
+  { wait = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms) }), stopped = () => false }: { wait?: (ms: number) => Promise<void>, stopped?: () => boolean } = {},
+): Promise<BackupStatus | null> {
+  for (const ms of BACKUP_RECHECK_MS) {
+    if (stopped()) return null
+    await wait(ms)
+    if (stopped()) return null
+    let status: BackupStatus | null = null
+    try {
+      status = await ask()
+    } catch {
+      // noch nicht
+    }
+    if (status && status.lastDownloadAt !== before) return status
+  }
+  return null
 }
 
 // Der Backup-Link lädt in einen unsichtbaren Rahmen (Einstellungen.tsx): Ein Download lädt dort kein Dokument, eine
