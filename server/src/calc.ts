@@ -5396,6 +5396,31 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Der Ausweis je Anlage und Heizperiode (Entwurf 8.8 ohne § 6a, der mit PR 14 kommt).
   const selfStatementOf =(sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null): SelfHeatingStatement => {
     const cost = { heating: potCostOf(sp, potItems, 'heating'), water: potCostOf(sp, potItems, 'water') }
+    // Die Beträge des Blocks je Nutzer und Topf: die Summe seiner verteilten Zeilen (`selfBlockCents`). Eine Position
+    // für Heizung und Warmwasser steht in einer Zeile; sie wird nach dem Warmwasseranteil und den Gewichten geteilt, der
+    // Teil Heizung gerundet, der Rest ist Warmwasser, damit beide zusammen die Zeile ergeben. Eine Position, die nicht
+    // verteilt wurde (Fehler an der Position), zählt wie bisher mit Topf mal Gewicht.
+    const blockOf = (userKey: string, w: SelfWeights | undefined): Record<SelfPot, number> => {
+      let heating = 0
+      let water = 0
+      const loose = { heating: 0, water: 0 }
+      for (const c of potItems) {
+        if (c.key !== 'heatingSystem') continue
+        const h = c.amountCents * partOf(sp, c, 'heating') * (w?.heating ?? 0)
+        const wa = c.amountCents * partOf(sp, c, 'water') * (w?.water ?? 0)
+        const booked = selfBlockCents.get(c.id)
+        if (!booked) {
+          loose.heating += h
+          loose.water += wa
+          continue
+        }
+        const cents = booked.get(userKey) ?? 0
+        const part = h + wa !== 0 ? roundHalfAway((cents * h) / (h + wa)) : cents
+        heating += part
+        water += cents - part
+      }
+      return { heating: heating + Math.round(loose.heating), water: water + Math.round(loose.water) }
+    }
     const offDays = (d: string, b: string): number => Math.abs(Math.round((toUTC(d) - toUTC(b)) / MS_DAY))
     return {
       capture: sp.capture,
@@ -5445,16 +5470,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         users: u.users.map((x): SelfUserView => {
           const w = sp.weights?.get(x.key)
           const co2 = potCo2Of(sp, potItems, reliefKey, x.tenancyId, w)
+          const block = blockOf(x.key, w)
+          // Der gedruckte Abzug ganz auf beide Töpfe: Heizung gerundet, der Rest ist Warmwasser.
+          const heatingCo2 = Math.round(co2.heating)
           return {
             key: x.key, role: x.role, tenancyId: x.tenancyId, label: x.label, from: x.from, to: x.to, days: x.days, degreeDayPermille: x.degreeDayPermille,
             heatingConsumption: x.pots.heating.value,
             waterConsumption: sp.plan.pots.includes('water') ? x.pots.water.value : null,
             heatingGroup: x.pots.heating.group,
             waterGroup: x.pots.water.group,
-            heatingCents: w ? Math.round(cost.heating * w.heating) : 0,
-            waterCents: w ? Math.round(cost.water * w.water) : 0,
-            heatingCo2Cents: Math.round(co2.heating),
-            waterCo2Cents: Math.round(co2.water),
+            heatingCents: w ? block.heating : 0,
+            waterCents: w ? block.water : 0,
+            heatingCo2Cents: heatingCo2,
+            waterCo2Cents: Math.round(co2.heating + co2.water) - heatingCo2,
             heatingEstimated: x.pots.heating.estimated === true,
             waterEstimated: x.pots.water.estimated === true,
           }
@@ -5833,6 +5861,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // „Nur Heizung“ zeitanteilig (Heizung PR 10) und der Betrag nach der Verordnung bei Pauschale (Entwurf 6.3).
   const manualSplitTime = new Map<string, Map<string, { now: number, alt: number }>>()
   const selfFlat = new Map<string, number>()
+  // Der Betrag jeder verteilten Position der eigenen Heizkostenabrechnung je Nutzer, in Cent wie gedruckt: beim Mieter
+  // seine Kostenzeile, sonst sein Teil der Zeilen des Vermieters. Daraus nennt der Block „Heizkostenabrechnung“ die
+  // Beträge je Topf (`selfStatementOf`); Topf mal Gewicht einmal gerundet wich ab zwei Positionen um einen Cent ab.
+  const selfBlockCents = new Map<string, Map<string, number>>()
   // #258: je Mietverhältnis die Positionen, die es laut Mietvertrag nicht trägt, mit Betrag (Hinweis nach der Schleife).
   // `settled`: Wenigstens eine dieser Positionen rechnet das Mietverhältnis ab (weder Pauschale noch Inklusivmiete).
   const notAgreedByTenancy = new Map<string, { t: TenancyWithUnit, items: string[], settled: boolean }>()
@@ -5896,6 +5928,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
     const targets: Target[] = []
+    // Eigene Heizkostenabrechnung: jeder Nutzer mit seinem Rohwert und der Stelle, an der sein Ziel stünde (`selfBlockCents`).
+    const selfBlockUsers: { key: string, raw: number, target: number }[] = []
     // Anteil, der auf selbstgenutzte Wohnungen entfällt (Teil des Vermieteranteils) - für
     // die Steuerübersicht separat ausgewiesen, weil er privat und damit nicht abziehbar ist.
     let selfRaw = 0
@@ -6864,6 +6898,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else {
         for (const u of sp.plan.units.flatMap((x) => x.users)) {
           const raw = item.amountCents * (sp.weights.get(u.key)?.[target] ?? 0)
+          selfBlockUsers.push({ key: u.key, raw, target: targets.length })
           if (u.role === 'tenancy') {
             const t = tenancies.find((x) => x.id === u.tenancyId)
             const x = t ? usageIn(t.unit) : null
@@ -6985,6 +7020,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       targets.forEach((_, i) => { if (booked[i]) lineOf.set(i, k++) })
     }
     const shareOf = (i: number): number => { const k = lineOf.get(i); return k === undefined ? 0 : cents[k] }
+    if (selfBlockUsers.length > 0) {
+      // Ein Mieter mit eigener Zeile bekommt genau sie; was beim Vermieter steht (Leerstand, Eigennutzung, außerhalb,
+      // Pauschale, Inklusivmiete), wird nach den exakten Anteilen auf die übrigen Nutzer geteilt, damit alle zusammen
+      // genau die Position ergeben.
+      const own = (u: { key: string, target: number }): boolean => targets[u.target]?.t.id === u.key && lineOf.has(u.target)
+      const rest = selfBlockUsers.filter((u) => !own(u))
+      const restCents = distributeCents(
+        item.amountCents - selfBlockUsers.reduce((a, u) => a + (own(u) ? shareOf(u.target) : 0), 0),
+        rest.map((u) => ({ key: u.key, landlord: true, raw: u.raw })),
+      )
+      const byUser = new Map<string, number>()
+      for (const u of selfBlockUsers) if (own(u)) byUser.set(u.key, (byUser.get(u.key) ?? 0) + shareOf(u.target))
+      rest.forEach((u, k) => byUser.set(u.key, (byUser.get(u.key) ?? 0) + restCents[k]))
+      selfBlockCents.set(item.id, byUser)
+    }
     // #258: der Anteil jedes nicht vereinbarten Mietverhältnisses für den Hinweis. Die Zeile `notAgreed` des
     // Vermieters wird nach den exakten Anteilen auf sie aufgeteilt, damit die Beträge zusammen genau die Zeile ergeben.
     if (notAgreed.size > 0) {

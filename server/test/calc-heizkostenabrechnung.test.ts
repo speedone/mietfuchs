@@ -211,7 +211,9 @@ test('Ausweis: Töpfe mit Preisen je Einheit, Warmwasseranteil, Nutzer mit Gradt
     assert.deepEqual([water.costCents, water.consumption, water.consumptionUnit], [103200, 120, 'm³'])
     const c = self.units.find((u) => u.unitId === 'c') ?? assert.fail('Wohnung C')
     assert.deepEqual(c.users.map((u) => [u.tenancyId, u.heatingConsumption, u.waterConsumption, u.heatingCents, u.waterCents]), [
-      ['C1', 7200, 38, 103330, 29823], ['C2', 4800, 12, 65510, 9565],
+      // Systemprüfung 20.11.2026: Warmwasser C1 29.822 statt 29.823 ct, denn der Block nennt die Summe der verteilten
+      // Zeilen (C1 trägt 133.152 ct in sechs Zeilen), nicht mehr Topf mal Gewicht einmal gerundet.
+      ['C1', 7200, 38, 103330, 29822], ['C2', 4800, 12, 65510, 9565],
     ])
     assert.deepEqual(c.boundaries.map((b) => [b.date, b.kind, b.status]), [['2024-12-31', 'start', 'read'], ['2025-09-30', 'change', 'read'], ['2025-12-31', 'end', 'read']])
   })

@@ -330,7 +330,7 @@ const AREAS: Record<string, number> = { a: 60, b: 40, c: 50, d: 50 }
 const ESTIMATES = { checked: 0, over: 0, exact25: 0, kept: 0, complete: 0 }
 type BFacts = { from: string; to: string; kept: number | null; endMissing: boolean; split: string }
 const TABLE = onlyVersion(hkvDegreeDays).value
-function estimateChecks(r: ReturnType<typeof computeSettlement>, estimates: readonly HeatingEstimate[], b: BFacts | null, where: string): void {
+function estimateChecks(r: ReturnType<typeof computeSettlement>, estimates: readonly HeatingEstimate[], b: BFacts | null, where: string, slack = 1): void {
   const self = r.heating?.find((h) => h.plantId === 'hp')?.self
   if (!self?.ok) return
   const total = Object.values(AREAS).reduce((a, v) => a + v, 0)
@@ -347,7 +347,7 @@ function estimateChecks(r: ReturnType<typeof computeSettlement>, estimates: read
     for (const u of self.units) {
       const got = u.users.reduce((a, x) => a + x.heatingCents, 0)
       const want = (heat.costCents * u.areaM2) / heat.areaM2
-      assert.ok(Math.abs(got - want) <= u.users.length, `${where}: (s6) ${u.unitName} nur nach Fläche: ${got} statt ${want}`)
+      assert.ok(Math.abs(got - want) <= u.users.length * slack, `${where}: (s6) ${u.unitName} nur nach Fläche: ${got} statt ${want}`)
     }
   } else if (!heat.byAreaOnly) {
     assert.ok(heat.consumptionPct > 0, `${where}: (s6) Anteil nach Verbrauch unter der Grenze`)
@@ -424,14 +424,20 @@ function onceEach(s: unknown, deliveryPlant: ReadonlyMap<string, string>, where:
   assert.equal(new Set(ids).size, ids.length, `${where}: Gegenbuchung doppelt: ${ids.join(', ')}`)
 }
 
-// Heizung PR 10, (s1): Die Kernrechnung verteilt jeden Topf ganz. Der Ausweis nennt je Nutzer den Topfbetrag
-// (Kosten des Topfs × Gewicht, auf den Cent gerundet); zusammen sind sie die Kosten des Topfs, je Nutzer
-// höchstens ein halber Cent daneben. Keine Position der Anlage geht ohne Grund an den Vermieter, und der Rest
+// Heizung PR 10, (s1): Die Kernrechnung verteilt jeden Topf ganz. Der Ausweis nennt je Nutzer den Topfbetrag;
+// zusammen sind sie die Kosten des Topfs. Seit der Systemprüfung vom 20.11.2026 ist der Topfbetrag die Summe der
+// verteilten Zeilen des Nutzers (jede Position einmal gerundet, #202), nicht mehr Kosten des Topfs × Gewicht einmal
+// gerundet: je Nutzer und Position höchstens ein Cent daneben (`slackOf`), dafür genau der Betrag seiner Kostenzeilen
+// (centgenau geprüft in calc-heizblock-betraege.test.ts). Keine Position der Anlage geht ohne Grund an den Vermieter, und der Rest
 // beim Vermieter (Leerstand) wird nie negativ.
 //
 // (s3), Durchsicht von #239: Bei verbundenem Warmwasser (alle Positionen „Heizung und Warmwasser“) trägt der Topf
 // Warmwasser den Warmwasseranteil α = gemessene Wärme am Speicher / Energie des Brennstoffs, der Topf Heizung
 // den Rest; eine Vertauschung von α und 1 − α fällt hier auf, denn Σ Zeilen = Σ Positionen hielte sie aus.
+// Wie viele Cent der Topfbetrag eines Nutzers vom exakten Wert abweichen darf: einen je verteilter Zeile, also je
+// Position und je Übertragszeile einer Lieferung oder des Vorrats (jede wird einmal gerundet).
+const slackOf = (r: ReturnType<typeof computeSettlement>): number =>
+  Math.max(1, new Set([...r.statements.flatMap((st) => st.rows), ...r.landlord.rows].map((row) => row.costItemId)).size)
 function selfChecks(r: ReturnType<typeof computeSettlement>, items: readonly { id: string; key: string; amountCents: number; heatingTarget?: string | null }[], where: string): void {
   const self = r.heating?.find((h) => h.plantId === 'hp')?.self
   const mine = items.filter((c) => c.key === 'heatingSystem')
@@ -442,7 +448,7 @@ function selfChecks(r: ReturnType<typeof computeSettlement>, items: readonly { i
   for (const pot of self.pots) {
     const users = self.units.flatMap((u) => u.users)
     const sum = users.reduce((a, u) => a + (pot.pot === 'heating' ? u.heatingCents : u.waterCents), 0)
-    assert.ok(Math.abs(sum - pot.costCents) <= users.length, `${where}: (s1) Topf ${pot.pot}: Σ Nutzer ${sum}, Kosten ${pot.costCents}`)
+    assert.ok(Math.abs(sum - pot.costCents) <= users.length * slackOf(r), `${where}: (s1) Topf ${pot.pot}: Σ Nutzer ${sum}, Kosten ${pot.costCents}`)
   }
   if (self.alpha && mine.every((c) => c.heatingTarget === 'both')) {
     SELF.alpha++
@@ -464,7 +470,7 @@ function selfChecks(r: ReturnType<typeof computeSettlement>, items: readonly { i
 // ihr Topfbetrag der Heizung abzüglich der Verbrauchskosten genau Grundkosten je m³ × Rauminhalt, je Nutzer höchstens ein
 // Cent daneben: Die Gewichte folgen dem Rauminhalt. Dass der Topf ganz verteilt wird, prüft (s1).
 const VOLUME = { periods: 0, units: 0 }
-function volumeChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, where: string): void {
+function volumeChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, where: string, slack = 1): void {
   const self = r.heating?.find((h) => h.plantId === 'hp')?.self
   if (!self?.ok) return
   const plant = stock.heatingPlants.find((p) => p.id === 'hp') ?? assert.fail(`${where}: keine Anlage`)
@@ -488,7 +494,7 @@ function volumeChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, 
     const base = u.users.reduce((a, x) => a + x.heatingCents, 0) - consumption
     const want = heat.baseCentsPerM2 * volumeOf(u.unitId)
     VOLUME.units++
-    assert.ok(Math.abs(base - want) <= u.users.length, `${where}: (s7) ${u.unitName}: Grundkosten ${base.toFixed(2)} statt ${want.toFixed(2)} (${volumeOf(u.unitId)} m³)`)
+    assert.ok(Math.abs(base - want) <= u.users.length * slack, `${where}: (s7) ${u.unitName}: Grundkosten ${base.toFixed(2)} statt ${want.toFixed(2)} (${volumeOf(u.unitId)} m³)`)
   }
 }
 
@@ -1183,10 +1189,10 @@ for (const variant of VARIANTS) {
             }
           }
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
-          if (r && variant.volume) volumeChecks(r, (await opened.read((db) => readStock(db))), `${fall}; ${key}`)
+          if (r && variant.volume) volumeChecks(r, (await opened.read((db) => readStock(db))), `${fall}; ${key}`, slackOf(r))
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
           if (r && variant.rules) rulesChecks(r, stock, key, periodOf(key), `${fall}; ${key}`)
-          if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
+          if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`, slackOf(r))
           if (r) overchargedChecks(r, `${fall}; ${key}`)
           if (r) overchargedTenantChecks(r, stock, closed, `${fall}; ${key}`, periodOf, itemKey)
           if (r) creditChecks(r, stock, key, periodOf, `${fall}; ${key}`)
