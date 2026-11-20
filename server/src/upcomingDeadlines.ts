@@ -19,17 +19,19 @@
 //
 // - **Mieterhöhung** (#191, PR 4; Entwurf docs/superpowers/specs/2026-11-20-mieterhoehung-design.md, „Umsetzung PR 4“),
 //   je Mietverhältnis über `nextRentEvents` (rentIncrease.ts), nichts nach dem Auszug:
-//   - `rentStep`: Stufe einer Staffelmiete (Art der Miete oder der Stufe `staggered`), die im Fenster beginnt. Bei der
+//   - `rentStep`: Stufe einer Staffelmiete (Art der Miete `staggered`), die im Fenster beginnt; keine Modernisierung und
+//     nicht die erste Stufe (die Anfangsmiete). Ohne Art der Miete nichts, wie bei `rentIncrease`. Bei der
 //     letzten Stufe der früheste Zugang eines Verlangens nach § 558 BGB, nur wenn eines möglich ist (Vertrag schließt
 //     Erhöhungen ausdrücklich nicht aus, Wohnfläche vorhanden, Mietverhältnis läuft bis zum Wirksamwerden).
 //   - `rentIncrease`: frühester Zugang eines Verlangens bzw. einer Indexerklärung im Fenster oder schon erreicht. Nicht bei
 //     Sperren, die keine Eingabe löst (Ausschluss, keine Wohnfläche, Auszug vor dem Wirksamwerden, Indexmiete nach einer
 //     Modernisierungsstufe), und **nicht ohne Art der Miete**: Die Angabe ist freiwillig und neu; wer sie nicht macht,
 //     erhöht nicht über Mietfuchs und soll im Cockpit keine Erinnerung an jedes Mietverhältnis bekommen. Eine offene
-//     Frage zum Ausschluss sperrt nicht, sie lässt sich nachtragen. Unterdrückt, solange ein Verlangen offen ist
+//     Frage zum Ausschluss sperrt nicht, sie lässt sich nachtragen. Das Wirksamwerden liegt wie in der Rechnung nach jeder
+//     schon eingetragenen Stufe, auch einer Modernisierung (`laterStep`). Unterdrückt, solange ein Verlangen offen ist
 //     (Entwurf, versandtes nach § 558) oder eine Erhöhung erst nach heute wirkt.
 //   - `rentConsent`: versandtes Verlangen nach § 558 ohne Antwort, ohne Fenster: Zustimmungsfrist läuft (bis zum nach
-//     § 193 BGB verschobenen Werktag), Klagefrist läuft, oder beide sind verstrichen. Gerechnet aus dem tatsächlichen
+//     § 193 BGB verschobenen Werktag, der auch `date` ist), Klagefrist läuft, oder beide sind verstrichen. Gerechnet aus dem tatsächlichen
 //     Zugang (`receivedOn`), nicht aus dem Plan des Schreibens. Schweigen ist keine Zustimmung (S8); nichts erledigt sich
 //     von selbst, der Eintrag geht erst mit der eingetragenen Antwort oder der Rücknahme.
 //
@@ -156,7 +158,9 @@ function rentItems(input: UpcomingInput, today: string, until: string, items: Up
     const runsUntil = (month: string): boolean => unit.areaM2 > 0 && (t.end === null || compareText(t.end, `${month}-01`) >= 0)
 
     const step = events.nextStep
-    if (step && (t.rentKind === 'staggered' || step.reason === 'staggered')) {
+    // Nur eine Stufe der Staffel (keine Modernisierung, die liefert `nextRentEvents` nicht), und nicht ihr Beginn:
+    // Die erste Stufe ist die Anfangsmiete, keine Erhöhung (Durchsicht S2).
+    if (step && step.previousCents !== null && t.rentKind === 'staggered') {
       const date = `${step.from}-01`
       const after = events.earliest
       const comparisonFrom = step.last && t.rentIncreaseExcluded === false && after?.kind === 'comparison' && runsUntil(after.effectiveFrom) ? after.receivedOn : null
@@ -169,7 +173,7 @@ function rentItems(input: UpcomingInput, today: string, until: string, items: Up
     const pending = increases.some((x) => isOpen(x) || (x.status !== 'draft' && x.status !== 'refused' && x.status !== 'withdrawn' && compareText(x.effectiveFrom, monthOf(today)) > 0))
     const afterModernization = e?.kind === 'index' && [...t.baseRents].sort((a, b) => compareText(a.from, b.from)).at(-1)?.reason === 'modernization'
     if (e && !pending && !afterModernization && compareText(e.receivedOn, until) <= 0 && runsUntil(e.effectiveFrom)) {
-      items.push({ kind: 'rentIncrease', id: `rentIncrease:${t.id}`, date: e.receivedOn, ...who, increaseKind: e.kind, effectiveFrom: e.effectiveFrom, exclusionOpen: t.rentIncreaseExcluded == null })
+      items.push({ kind: 'rentIncrease', id: `rentIncrease:${t.id}`, date: e.receivedOn, ...who, increaseKind: e.kind, effectiveFrom: e.effectiveFrom, exclusionOpen: t.rentIncreaseExcluded == null, staggered: t.rentKind === 'staggered' })
     }
 
     for (const o of events.open) {
@@ -177,8 +181,8 @@ function rentItems(input: UpcomingInput, today: string, until: string, items: Up
       if (!x?.receivedOn) continue
       const stage = compareText(today, o.consentEndOnWorkday) <= 0 ? 'running' : compareText(today, o.suitEnd) <= 0 ? 'suit' : 'lapsed'
       items.push({
-        kind: 'rentConsent', id: `rentConsent:${o.id}`, date: stage === 'running' ? o.consentEnd : o.suitEnd, ...who, increaseId: o.id, stage,
-        receivedOn: x.receivedOn, consentEnd: o.consentEnd, suitEnd: o.suitEnd,
+        kind: 'rentConsent', id: `rentConsent:${o.id}`, date: stage === 'running' ? o.consentEndOnWorkday : o.suitEnd, ...who, increaseId: o.id, stage,
+        receivedOn: x.receivedOn, consentEnd: o.consentEnd, consentEndOnWorkday: o.consentEndOnWorkday, suitEnd: o.suitEnd,
       })
     }
   }

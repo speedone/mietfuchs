@@ -399,16 +399,29 @@ Stammdaten. Schließt den letzten Punkt von #190. Abweichungen und Festlegungen:
   Eingaben des Fensters sperren nicht.
 - **„Schon erreicht“** steht mit dem frühesten Zugang als Datum, solange kein Verlangen offen ist; `effectiveFrom` ist der
   Monat bei Zugang ab heute (am Monatsersten wie die Rechnung am Zweiten), nicht der zum vergangenen frühesten Zugang.
+  Durchsicht S3: `effectiveFrom` liegt nach jeder schon eingetragenen Stufe ab diesem Monat, auch einer Modernisierung
+  (`monthAfterSteps`, dieselbe Regel wie `laterStep` der Rechnung); ein Vergleichstest prüft für zufällige Staffeln, dass
+  `planRentIncrease` mit dem genannten Zugang und Monat weder zu früh noch an einer Stufe scheitert. Bei Staffelmiete
+  sagt der Text, dass § 558 erst nach der letzten vereinbarten Stufe möglich ist und alle Stufen eingetragen sein müssen
+  (K5).
 - **Unterdrückt** wird `rentIncrease` bei einem offenen Verlangen (Entwurf jeder Art, versandtes nach § 558) und bei jeder
   versandten oder angenommenen Erhöhung, die erst nach dem laufenden Monat wirkt.
-- **`rentStep`** nur bei Staffelmiete (Art der Miete oder der Stufe `staggered`); eine künftige Stufe nach Vertrag,
-  Index oder Zustimmung erscheint nicht, der Vermieter hat sie selbst angelegt. „Danach § 558 möglich“ nur bei der
+- **`rentStep`** nur bei Staffelmiete (Art der Miete `staggered`); eine künftige Stufe nach Vertrag, Index oder
+  Zustimmung erscheint nicht, der Vermieter hat sie selbst angelegt. Durchsicht K6: auch eine als `staggered`
+  eingetragene Stufe nur mit dieser Art der Miete (der Wächter am Mietverhältnis verlangt sie ohnehin), damit „ohne
+  Art der Miete erscheint nichts“ ohne Ausnahme gilt. Durchsicht: keine Stufe wegen
+  Modernisierung (`nextRentEvents` überspringt sie; sie ist kein Bezugstag, ein „§ 558 danach“ läge sonst vor der
+  Stufe, M1) und nicht die erste Stufe (die Anfangsmiete ist keine Erhöhung, S2). Wächter: `comparisonFrom` liegt immer
+  nach dem Tag der Stufe. „Danach § 558 möglich“ nur bei der
   letzten zählenden Stufe, ausdrücklichem „nein“ zum Ausschluss, Wohnfläche und Mietverhältnis bis zum Wirksamwerden,
   mit dem frühesten Zugang als Datum. Kein Hinweis auf einen Dauerauftrag.
 - **`rentConsent`** ohne Fenster: offen bis zum nach § 193 BGB verschobenen Ende (Klage erst danach, O2), dann
   abgelaufen mit dem Ende der Klagefrist, danach zur Information, bis die Antwort eingetragen oder das Verlangen
   zurückgenommen ist (S8: nichts erledigt sich von selbst). Gerechnet aus dem tatsächlichen Zugang `receivedOn` und dem
-  Register am Tag des Zugangs, nicht aus dem Plan in `basis`. Kein Text rät zur Klage.
+  Register am Tag des Zugangs, nicht aus dem Plan in `basis`. Kein Text rät zur Klage. Während sie läuft, nennt der
+  Eintrag das verschobene Ende (`consentEndOnWorkday`, auch `date`) und sagt, dass die Verlängerung nicht geklärt ist
+  (Durchsicht S4).
+- **Offener Entwurf** (Durchsicht K7): Er unterdrückt `rentIncrease`; das Seitenfenster sagt es deshalb als Hinweis.
 - **Route** liest wie bisher je Sammlung (nicht über `readStock`) und dazu Wohnungen, Land des Objekts und die Verlangen
   (`readRentIncreasesOf`, eine Abfrage). Kein `onStock`: Kautionen und Verlangen liegen nicht im Bestand, und
   db/CLAUDE.md lässt im gemerkten Ergebnis nichts zu, was außerhalb des Bestands gelesen wird.

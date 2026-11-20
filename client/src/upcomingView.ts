@@ -85,14 +85,14 @@ function rowOf(item: UpcomingDeadline, today: string): UpcomingRow {
         action: { label: 'Zähler öffnen', tab: 'zaehler', focus: { kind: 'meter', id: item.meterId } },
       })
     case 'rentStep': {
-      const last = item.last ? ' Es ist die letzte vereinbarte Stufe.' : ''
+      const last = item.last ? ' Es ist die letzte eingetragene Stufe.' : ''
       const after = item.comparisonFrom
         ? ` Danach ist eine Erhöhung bis zur ortsüblichen Vergleichsmiete möglich (§ 557a Abs. 2 Satz 2, § 558 BGB); ein Verlangen kann frühestens am ${fmtDate(item.comparisonFrom)} zugehen.`
         : ''
       return row('info', {
         title: `Neue Stufe der Staffelmiete, ${item.unitName}`,
         when: `ab ${date} (${dueText(item.date, today)})`,
-        detail: `${item.tenantName} zahlt ab dann ${fmtEuro(item.cents)} Kaltmiete${item.fromCents !== null ? ` statt ${fmtEuro(item.fromCents)}` : ''}. Die Stufe ist vereinbart und gilt ohne Erklärung (§ 557a BGB).${last}${after}`,
+        detail: `${item.tenantName} zahlt ab dann ${fmtEuro(item.cents)} Kaltmiete statt ${fmtEuro(item.fromCents)}. Die Stufe ist vereinbart und gilt ohne Erklärung (§ 557a BGB).${last}${after}`,
         action: rentIncreaseAction('Mieterhöhung öffnen', item.tenancyId),
       })
     }
@@ -103,10 +103,12 @@ function rowOf(item: UpcomingDeadline, today: string): UpcomingRow {
       const text = item.increaseKind === 'index'
         ? `Eine Erklärung an ${item.tenantName}, die Miete an den Verbraucherpreisindex anzupassen (§ 557b BGB), kann ${when} zugehen; die geänderte Miete wäre dann ab dem ${effective} zu zahlen. Den neuen Indexwert geben Sie im Fenster „Mieterhöhung“ ein.`
         : `Ein Verlangen an ${item.tenantName}, der Erhöhung bis zur ortsüblichen Vergleichsmiete zuzustimmen (§ 558 BGB), kann ${when} zugehen; die erhöhte Miete wäre dann ab dem ${effective} geschuldet. Wie viel möglich ist, rechnet das Fenster „Mieterhöhung“ aus Vergleichsmiete und Kappungsgrenze.`
+      const exclusion = item.exclusionOpen ? ' Vorher ist am Mietverhältnis noch anzugeben, ob der Vertrag Mieterhöhungen ausschließt (§ 557 Abs. 3 BGB).' : ''
+      const staggered = item.staggered ? ' Bei einer Staffelmiete ist das erst nach der letzten vereinbarten Stufe möglich (§ 557a Abs. 2 BGB); Mietfuchs rechnet mit den eingetragenen Stufen, deshalb müssen alle vereinbarten Stufen eingetragen sein.' : ''
       return row('info', {
         title: `${item.increaseKind === 'index' ? 'Indexanpassung' : 'Mieterhöhung'} möglich, ${item.unitName}`,
         when: reached ? `Zugang möglich seit ${date}` : `Zugang ab ${date} (${dueText(item.date, today)})`,
-        detail: item.exclusionOpen ? `${text} Vorher ist am Mietverhältnis noch anzugeben, ob der Vertrag Mieterhöhungen ausschließt (§ 557 Abs. 3 BGB).` : text,
+        detail: `${text}${exclusion}${staggered}`,
         action: rentIncreaseAction('Mieterhöhung öffnen', item.tenancyId),
       })
     }
@@ -115,10 +117,14 @@ function rowOf(item: UpcomingDeadline, today: string): UpcomingRow {
       const suitEnd = fmtDate(item.suitEnd)
       const action = rentIncreaseAction('Antwort eintragen', item.tenancyId)
       if (item.stage === 'running') {
+        // Bis zum nach § 193 BGB verschobenen Werktag (Durchsicht S4), wie die Stufe auf dem Server.
+        const shifted = item.consentEndOnWorkday !== item.consentEnd
+          ? ` Das Monatsende, der ${fmtDate(item.consentEnd)}, fällt auf einen Sonnabend, Sonntag oder Feiertag; ob sich die Frist deshalb nach § 193 BGB bis zum ${fmtDate(item.consentEndOnWorkday)} verlängert, ist nicht geklärt. Mietfuchs zählt sie bis dahin als laufend und rechnet eine Klage erst danach.`
+          : ''
         return row('open', {
           title: `Zustimmungsfrist zur Mieterhöhung, ${item.unitName}`,
-          when: `bis ${fmtDate(item.consentEnd)} (${dueText(item.consentEnd, today)})`,
-          detail: `Das Verlangen ist ${item.tenantName} am ${received} zugegangen. Zustimmen kann der Mieter bis zum Ablauf des zweiten Kalendermonats nach dem Zugang (§ 558b Abs. 1 BGB). Tragen Sie die Antwort ein, sobald sie vorliegt; mit der Zustimmung trägt Mietfuchs die neue Miete in die Kaltmiete-Staffel ein.`,
+          when: `bis ${fmtDate(item.consentEndOnWorkday)} (${dueText(item.consentEndOnWorkday, today)})`,
+          detail: `Das Verlangen ist ${item.tenantName} am ${received} zugegangen. Zustimmen kann der Mieter bis zum Ablauf des zweiten Kalendermonats nach dem Zugang (§ 558b Abs. 1 BGB).${shifted} Tragen Sie die Antwort ein, sobald sie vorliegt; mit der Zustimmung trägt Mietfuchs die neue Miete in die Kaltmiete-Staffel ein.`,
           action,
         })
       }

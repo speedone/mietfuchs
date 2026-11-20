@@ -204,8 +204,13 @@ function finish(d: Draft, log: LawLog): RentIncreasePlan {
 }
 
 // Eine Stufe ab dem Monat des Wirksamwerdens oder danach: Die Erhöhung läge vor einer schon vereinbarten Änderung.
+// Dieselbe Regel nutzt das Cockpit (`monthAfterSteps`), damit das genannte Wirksamwerden sich so planen lässt.
+const stepFromOrAfter = (sorted: readonly RentEntry[], month: string): RentEntry | undefined => sorted.find((r) => compareText(r.from, month) >= 0)
+// Der früheste Monat ab `month`, den `laterStep` nicht sperrt: nach der letzten Stufe ab diesem Monat.
+const monthAfterSteps = (sorted: readonly RentEntry[], month: string): string =>
+  stepFromOrAfter(sorted, month) ? addMonths(sorted.at(-1)?.from ?? month, 1) : month
 function laterStep(d: Draft, sorted: readonly RentEntry[], effective: string): void {
-  const step = sorted.find((r) => compareText(r.from, effective) >= 0)
+  const step = stepFromOrAfter(sorted, effective)
   if (step) block(d, `In der Kaltmiete-Staffel steht schon eine Stufe ab ${monthName(step.from)}. Eine Erhöhung ab ${monthName(effective)} ist so nicht möglich; wählen Sie einen späteren Monat oder prüfen Sie die Staffel.`)
 }
 function endsBefore(d: Draft, t: RentIncreaseTenancy, effective: string): void {
@@ -470,16 +475,18 @@ function planIndex(d: Draft, input: RentIncreaseInput, log: LawLog): void {
 
 // ---------- Cockpit (PR 4) ----------
 
-// Die nächsten Ereignisse eines Mietverhältnisses: nächste Stufe der Staffel (mit der Miete davor und ob danach noch eine
-// zählende Stufe folgt), frühester Zugang einer Erhöhung (nur mit beantworteter Art der Miete und ohne Ausschluss; ist
+// Die nächsten Ereignisse eines Mietverhältnisses: nächste Stufe der Staffel ohne Modernisierung (mit der Miete davor und
+// ob danach noch eine zählende Stufe folgt), frühester Zugang einer Erhöhung (nur mit beantworteter Art der Miete und ohne Ausschluss; ist
 // die Frage zum Ausschluss offen, wird gerechnet, die Antwort lässt sich nachtragen) und die Fristen versandter Verlangen
 // nach § 558 BGB. `earliest.effectiveFrom` ist der früheste Monat bei Zugang frühestens heute (am Monatsersten wie die
-// Vorgabe der Rechnung am Zweiten): Ist der früheste Zugang schon vorbei, zählt, was ein Verlangen heute bewirkt. Werte
+// Vorgabe der Rechnung am Zweiten), nach jeder schon eingetragenen Stufe ab diesem Monat wie `laterStep` (Durchsicht S3):
+// Ist der früheste Zugang schon vorbei, zählt, was ein Verlangen heute bewirkt. Werte
 // aus dem Register zum Tag (Texte außerhalb einer Abrechnung, `valueAt`).
 export function nextRentEvents(input: { today: string; tenancy: RentIncreaseTenancy; state: FederalState | null; increases: readonly Pick<RentIncrease, 'id' | 'kind' | 'status' | 'receivedOn'>[] }): RentEvents {
   const { today, tenancy: t } = input
   const sorted = sortedRents(t)
-  const at = sorted.findIndex((r) => compareText(r.from, monthOf(today)) > 0)
+  // Die nächste zählende Stufe (Durchsicht M1): Eine Modernisierung ist keine Stufe der Staffel und kein Bezugstag.
+  const at = sorted.findIndex((r) => compareText(r.from, monthOf(today)) > 0 && reasonOf(r) !== 'modernization')
   const next = at < 0 ? undefined : sorted[at]
   const nextStep: RentEvents['nextStep'] = next
     ? {
@@ -494,12 +501,12 @@ export function nextRentEvents(input: { today: string; tenancy: RentIncreaseTena
     if (t.rentKind === 'index') {
       const v = valueAt(bgbIndexRent, today)
       const timing = indexTiming(ref, v)
-      earliest = { kind: 'index', receivedOn: timing.earliestReceipt, effectiveFrom: addMonths(monthOf(later(timing.earliestReceipt, fromToday)), v.effectiveMonthOffset) }
+      earliest = { kind: 'index', receivedOn: timing.earliestReceipt, effectiveFrom: monthAfterSteps(sorted, addMonths(monthOf(later(timing.earliestReceipt, fromToday)), v.effectiveMonthOffset)) }
     } else {
       const consent = valueAt(bgbRentIncreaseConsent, today)
       const timing = comparisonTiming(ref, valueAt(bgbRentIncreaseWaitMonths, today), valueAt(bgbRentIncreaseLockMonths, today), consent.effectiveMonth)
       const natural = addMonths(monthOf(later(timing.earliestReceipt, fromToday)), consent.effectiveMonth)
-      earliest = { kind: 'comparison', receivedOn: timing.earliestReceipt, effectiveFrom: compareText(natural, timing.earliestEffective) >= 0 ? natural : timing.earliestEffective }
+      earliest = { kind: 'comparison', receivedOn: timing.earliestReceipt, effectiveFrom: monthAfterSteps(sorted, compareText(natural, timing.earliestEffective) >= 0 ? natural : timing.earliestEffective) }
     }
   }
   const open = input.increases

@@ -220,7 +220,7 @@ test('Demnächst fällig: Stufe als Wort, Sprung zur Abrechnung des Zeitraums, a
 
 test('Demnächst fällig: Mieterhöhung möglich ohne Namen im Titel, der Sprung öffnet das Fenster „Mieterhöhung“ (#191)', async () => {
   const navigate = page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1')], upcoming: [
-    { kind: 'rentIncrease', id: 'rentIncrease:t1', date: '2021-01-02', tenancyId: 't1', unitName: 'U1', tenantName: 'Mieter t1', increaseKind: 'comparison', effectiveFrom: `${YEAR + 2}-02`, exclusionOpen: false },
+    { kind: 'rentIncrease', id: 'rentIncrease:t1', date: '2021-01-02', tenancyId: 't1', unitName: 'U1', tenantName: 'Mieter t1', increaseKind: 'comparison', effectiveFrom: `${YEAR + 2}-02`, exclusionOpen: false, staggered: false },
   ] })
   const title = await screen.findByText('Mieterhöhung möglich, U1', undefined, SLOW)
   const row = title.closest('li') ?? assert.fail('keine Zeile')

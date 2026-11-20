@@ -91,20 +91,20 @@ const RENT_JUMP = { kind: 'rentIncrease', tenancyId: 't1' }
 test('Staffelstufe: zur Information, letzte Stufe mit frühestem Verlangen danach, Sprung ins Fenster „Mieterhöhung“', () => {
   const [last, middle] = upcomingRows(list(
     { kind: 'rentStep', id: 'rentStep:t1:2027-01', date: '2027-01-01', ...who, fromCents: 54000, cents: 56000, last: true, comparisonFrom: '2028-01-02' },
-    { kind: 'rentStep', id: 'rentStep:t2:2027-02', date: '2027-02-01', ...who, tenancyId: 't2', fromCents: null, cents: 56000, last: false, comparisonFrom: null },
+    { kind: 'rentStep', id: 'rentStep:t2:2027-02', date: '2027-02-01', ...who, tenancyId: 't2', fromCents: 54000, cents: 56000, last: false, comparisonFrom: null },
   ))
   expect(last?.level).toBe('info')
   expect(last?.title).toBe('Neue Stufe der Staffelmiete, EG links')
   expect(last?.when).toBe('ab 01.01.2027 (in 42 Tagen)')
-  expect(plain(last?.detail ?? '')).toBe('Erika Mustermann zahlt ab dann 560,00 € Kaltmiete statt 540,00 €. Die Stufe ist vereinbart und gilt ohne Erklärung (§ 557a BGB). Es ist die letzte vereinbarte Stufe. Danach ist eine Erhöhung bis zur ortsüblichen Vergleichsmiete möglich (§ 557a Abs. 2 Satz 2, § 558 BGB); ein Verlangen kann frühestens am 02.01.2028 zugehen.')
+  expect(plain(last?.detail ?? '')).toBe('Erika Mustermann zahlt ab dann 560,00 € Kaltmiete statt 540,00 €. Die Stufe ist vereinbart und gilt ohne Erklärung (§ 557a BGB). Es ist die letzte eingetragene Stufe. Danach ist eine Erhöhung bis zur ortsüblichen Vergleichsmiete möglich (§ 557a Abs. 2 Satz 2, § 558 BGB); ein Verlangen kann frühestens am 02.01.2028 zugehen.')
   expect(last?.action).toEqual({ label: 'Mieterhöhung öffnen', tab: 'stammdaten', focus: RENT_JUMP })
-  expect(plain(middle?.detail ?? '')).toBe('Erika Mustermann zahlt ab dann 560,00 € Kaltmiete. Die Stufe ist vereinbart und gilt ohne Erklärung (§ 557a BGB).')
+  expect(plain(middle?.detail ?? '')).toBe('Erika Mustermann zahlt ab dann 560,00 € Kaltmiete statt 540,00 €. Die Stufe ist vereinbart und gilt ohne Erklärung (§ 557a BGB).')
 })
 
 test('Erhöhung möglich: schon erreicht oder kommend, Vergleichsmiete und Index, offene Frage zum Ausschluss', () => {
   const [reached, soon] = upcomingRows(list(
-    { kind: 'rentIncrease', id: 'rentIncrease:t1', date: '2021-01-02', ...who, increaseKind: 'comparison', effectiveFrom: '2027-02', exclusionOpen: false },
-    { kind: 'rentIncrease', id: 'rentIncrease:t2', date: '2027-02-18', ...who, increaseKind: 'index', effectiveFrom: '2027-04', exclusionOpen: true },
+    { kind: 'rentIncrease', id: 'rentIncrease:t1', date: '2021-01-02', ...who, increaseKind: 'comparison', effectiveFrom: '2027-02', exclusionOpen: false, staggered: false },
+    { kind: 'rentIncrease', id: 'rentIncrease:t2', date: '2027-02-18', ...who, increaseKind: 'index', effectiveFrom: '2027-04', exclusionOpen: true, staggered: false },
   ))
   expect(reached?.level).toBe('info')
   expect(reached?.title).toBe('Mieterhöhung möglich, EG links')
@@ -117,7 +117,7 @@ test('Erhöhung möglich: schon erreicht oder kommend, Vergleichsmiete und Index
 })
 
 test('Zustimmungsfrist: läuft (offen), abgelaufen mit Klagefrist, danach nur zur Information; Schweigen ist keine Zustimmung', () => {
-  const consent = { kind: 'rentConsent' as const, ...who, increaseId: 'r1', receivedOn: '2026-11-10', consentEnd: '2027-01-31', suitEnd: '2027-04-30' }
+  const consent = { kind: 'rentConsent' as const, ...who, increaseId: 'r1', receivedOn: '2026-11-10', consentEnd: '2027-01-31', consentEndOnWorkday: '2027-01-31', suitEnd: '2027-04-30' }
   const [running, suit, lapsed] = upcomingRows(list(
     { ...consent, id: 'rentConsent:r1', date: '2027-01-31', stage: 'running' },
     { ...consent, id: 'rentConsent:r2', date: '2027-04-30', stage: 'suit' },
@@ -137,4 +137,21 @@ test('Zustimmungsfrist: läuft (offen), abgelaufen mit Klagefrist, danach nur zu
   expect(lapsed?.when).toBe('am 30.04.2027 abgelaufen')
   expect(lapsed?.detail).toBe('Zum Verlangen, das Erika Mustermann am 10.11.2026 zugegangen ist, ist keine Antwort eingetragen, und die Frist für eine Klage auf Zustimmung (§ 558b Abs. 2 BGB) ist verstrichen. Schweigen ist keine Zustimmung; ohne sie gilt die erhöhte Miete nicht. Tragen Sie die Antwort ein oder nehmen Sie das Verlangen zurück, dann verschwindet der Eintrag.')
   for (const r of [running, suit, lapsed]) expect(r?.title).not.toContain('Mustermann')
+})
+
+test('Zustimmungsfrist: am Wochenende verschobenes Ende, bis zu diesem Werktag offen (Durchsicht S4)', () => {
+  const item: UpcomingDeadline = {
+    kind: 'rentConsent', id: 'rentConsent:r1', date: '2027-02-01', ...who, increaseId: 'r1', stage: 'running',
+    receivedOn: '2026-11-10', consentEnd: '2027-01-31', consentEndOnWorkday: '2027-02-01', suitEnd: '2027-04-30',
+  }
+  const [row] = upcomingRows({ today: '2027-02-01', until: '2027-05-02', items: [item] })
+  expect(row?.when).toBe('bis 01.02.2027 (heute)')
+  expect(row?.detail).toMatch(/Das Monatsende, der 31\.01\.2027, fällt auf einen Sonnabend, Sonntag oder Feiertag; ob sich die Frist deshalb nach § 193 BGB bis zum 01\.02\.2027 verlängert, ist nicht geklärt\. Mietfuchs zählt sie bis dahin als laufend und rechnet eine Klage erst danach\./)
+})
+
+test('Erhöhung möglich bei Staffelmiete: Hinweis auf § 557a Abs. 2 und die eingetragenen Stufen (Durchsicht K5)', () => {
+  const [row] = upcomingRows(list(
+    { kind: 'rentIncrease', id: 'rentIncrease:t1', date: '2028-01-02', ...who, increaseKind: 'comparison', effectiveFrom: '2028-04', exclusionOpen: false, staggered: true },
+  ))
+  expect(row?.detail).toMatch(/Bei einer Staffelmiete ist das erst nach der letzten vereinbarten Stufe möglich \(§ 557a Abs\. 2 BGB\); Mietfuchs rechnet mit den eingetragenen Stufen, deshalb müssen alle vereinbarten Stufen eingetragen sein\.$/)
 })

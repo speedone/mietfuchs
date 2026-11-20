@@ -607,14 +607,16 @@ von der Route (NKA_TEST_TODAY wirkt).
   Vorlauf); abgelaufen im ersten Jahr danach oder, solange eine Ablesung nach dem Ende liegt. Die gelbe Zeile
   „Eichfrist“ der Checkliste bleibt daneben.
 - **Mieterhöhung** (#191, PR 4) je Mietverhältnis über `nextRentEvents` (rentIncrease.ts), nichts nach dem Auszug, Titel
-  mit der Wohnung (`unitName`): `rentStep` Stufe einer Staffelmiete (Art der Miete oder der Stufe `staggered`) im
-  Fenster, bei der letzten zählenden Stufe `comparisonFrom` nur bei `rentIncreaseExcluded === false`, Wohnfläche und
+  mit der Wohnung (`unitName`): `rentStep` Stufe einer Staffelmiete (Art der Miete `staggered`) im
+  Fenster, keine Modernisierung und nicht die erste Stufe (`previousCents` null), bei der letzten zählenden Stufe `comparisonFrom` nur bei `rentIncreaseExcluded === false`, Wohnfläche und
   Mietverhältnis bis zum Wirksamwerden. `rentIncrease` frühester Zugang (§ 558 bzw. § 557b) im Fenster oder vorbei,
-  `effectiveFrom` bei Zugang ab heute; **ohne `rentKind` kein Eintrag** (freiwillige Angabe, wer sie nicht macht, wird
+  `effectiveFrom` bei Zugang ab heute und nach jeder eingetragenen Stufe ab diesem Monat (`monthAfterSteps`, dieselbe
+  Regel wie `laterStep`; Vergleichstest gegen `planRentIncrease`), `staggered` für den Hinweis auf § 557a Abs. 2;
+  **ohne `rentKind` kein Eintrag** (freiwillige Angabe, wer sie nicht macht, wird
   nicht erinnert), offener Ausschluss nur als `exclusionOpen`; weg bei Ausschluss, ohne Fläche, Auszug vor dem
   Wirksamwerden, Indexmiete nach Modernisierungsstufe, offenem Verlangen (`isOpen`) oder Wirkung nach heute.
   `rentConsent` je versandtem Verlangen nach § 558 ohne Antwort, ohne Fenster, `stage` `running` (bis
-  `consentEndOnWorkday`), `suit` (bis `suitEnd`), `lapsed`; gerechnet aus `receivedOn`, nicht aus `basis`. Die Route
+  `consentEndOnWorkday`, auch `date` und im Eintrag für die Anzeige), `suit` (bis `suitEnd`), `lapsed`; gerechnet aus `receivedOn`, nicht aus `basis`. Die Route
   liest dazu Wohnungen, `state` des Objekts und `readRentIncreasesOf` (eine Abfrage); nicht gemerkt (`onStock`), denn
   Kautionen und Verlangen liegen außerhalb des Bestands. Tests: fristen-mieterhoehung.test.ts.
 - Sortiert nach `date`, Art, Kennung (`compareText`); Kennungen `art:bezug`, stabil. Tests: fristen-cockpit.test.ts

@@ -70,7 +70,7 @@ test('Demnächst fällig: Staffelstufe, Mieterhöhung möglich, nach dem Versand
     })
     const rentOnly = async () => (await s.api<UpcomingDeadlines>('/api/upcoming')).items.filter((i) => i.kind.startsWith('rent'))
     assert.deepEqual(await rentOnly(), [
-      { kind: 'rentIncrease', id: `rentIncrease:${free.id}`, date: '2021-01-02', tenancyId: free.id, unitName: 'EG', tenantName: 'Erika Mustermann', increaseKind: 'comparison', effectiveFrom: '2027-02', exclusionOpen: false },
+      { kind: 'rentIncrease', id: `rentIncrease:${free.id}`, date: '2021-01-02', tenancyId: free.id, unitName: 'EG', tenantName: 'Erika Mustermann', increaseKind: 'comparison', effectiveFrom: '2027-02', exclusionOpen: false, staggered: false },
       { kind: 'rentStep', id: `rentStep:${staggered.id}:2027-01`, date: '2027-01-01', tenancyId: staggered.id, unitName: 'OG', tenantName: 'Max Muster', fromCents: 52000, cents: 54000, last: true, comparisonFrom: '2028-01-02' },
     ])
 
@@ -93,8 +93,8 @@ test('Demnächst fällig: Staffelstufe, Mieterhöhung möglich, nach dem Versand
     const sent = await send(s, 'POST', `/api/rent-increases/${draft.id}/send`, { receivedOn: '2026-11-20', token: draft.token })
     assert.equal(sent.status, 200, await sent.clone().text())
     assert.deepEqual((await rentOnly()).find((i) => i.kind === 'rentConsent'), {
-      kind: 'rentConsent', id: `rentConsent:${draft.id}`, date: '2027-01-31', tenancyId: free.id, unitName: 'EG', tenantName: 'Erika Mustermann',
-      increaseId: draft.id, stage: 'running', receivedOn: '2026-11-20', consentEnd: '2027-01-31', suitEnd: '2027-04-30',
+      kind: 'rentConsent', id: `rentConsent:${draft.id}`, date: '2027-02-01', tenancyId: free.id, unitName: 'EG', tenantName: 'Erika Mustermann',
+      increaseId: draft.id, stage: 'running', receivedOn: '2026-11-20', consentEnd: '2027-01-31', consentEndOnWorkday: '2027-02-01', suitEnd: '2027-04-30',
     })
 
     // Ein anderes Objekt sieht nichts davon.
