@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
-  bookDecisions, bookedLines, categoryOptions, changeAssessmentYear, decisionsOf, fromSameReceipt, initialRows, linesShape, linkChoices, noteGroups, planDecisions, previewLines, reasonChips, shownRow, withConfirmed, yearOptions, confirmLabel, type RowAction, type RowDraft,
+  ampelNote, bookDecisions, bookedLines, categoryOptions, combinableLines, changeAssessmentYear, decisionsOf, fromSameReceipt, initialRows, linesShape, linkChoices, noteGroups, planDecisions, previewLines, reasonChips, shownRow, withConfirmed, yearOptions, confirmLabel, PREPAID_ADVICE, type RowAction, type RowDraft,
 } from '../assessment'
 import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
@@ -19,6 +19,7 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import { receiptHref } from '../eInvoiceView'
 import Term from './Term'
+import CombineLinesDrawer from './CombineLinesDrawer'
 
 type Props = {
   assessment: AssessmentView
@@ -170,6 +171,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   }
 
   const notes = noteGroups(a)
+  // „Alle Zeilen als eine Position anlegen“ (CombineLinesDrawer): der ausdrückliche Weg für eine Rechnung mit vielen Zeilen
+  const [combining, setCombining] = useState(false)
 
   return (
     <div className="stack assessment-review">
@@ -202,7 +205,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       )}
       {/* Was nur informiert (bezahlte Abschläge), färbt keine Zeile und steht als Hinweis da */}
       {notes.info.length > 0 && (
-        <NoticeBox level="hint" action={<>{notes.info.map((n) => <span key={n} className="block">{n}</span>)}</>} />
+        <NoticeBox level="hint" action={<>{notes.info.map((n) => <span key={n} className="block">{n}</span>)}<span className="block">{PREPAID_ADVICE}</span></>} />
       )}
       {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
       {a.amountsAdjusted === 'netto' && (
@@ -257,7 +260,10 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                     1440 px seitlich scrollen. Ampel und Betrag stehen in der ersten Zeile wie vorher neben der Wahl, der Lohn darunter.
                     Je Position ein <tbody>, damit die zwei Zeilen als Gruppe erkennbar sind (row-groups, Durchsicht von M10). */}
                 <tr>
-                  <td rowSpan={2}><span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} /></td>
+                  <td rowSpan={2}>
+                    <span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} />
+                    {ampelNote(a, line) && <span className="sr-only" data-ampel-note>{ampelNote(a, line)}</span>}
+                  </td>
                   <td colSpan={3}>
                     {/* Der Name der Auswahl nennt die Position; die sichtbare Frage hören Vorleser nicht doppelt */}
                     <span className="muted" aria-hidden="true">Was geschieht? </span>
@@ -270,8 +276,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                         : <option value="">Offen lassen</option>}
                       <option value="create">Neu anlegen</option>
                       {linkChoices(line, row).map((c) => (fromSameReceipt(line, c.id)
-                        // Eine Rechnung mit vielen Zeilen als eine Position: Die Summenregel zählt die Zeile dazu.
-                        ? <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ aus diesem Beleg (bisher {fmtEuro(c.amountCents)}) verknüpfen: Betrag kommt dazu</option>
+                        // Eine Rechnung mit vielen Zeilen als eine Position. Ohne Betrag: Was aus ihm wird, sagt die Vorschau.
+                        ? <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ aus diesem Beleg verknüpfen</option>
                         : <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
                       ))}
                       {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
@@ -294,6 +300,22 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
             )
           })}
       </Table>
+      {combinableLines(a).length > 0 && (
+        <div className="row center">
+          <span className="muted">Eine Rechnung, eine Kostenposition (etwa Strom, Gas, Wasser)?</span>
+          <button type="button" className="btn small secondary" disabled={busy || year.dirty || year.saving} onClick={() => setCombining(true)}>Alle Zeilen als eine Position anlegen</button>
+        </div>
+      )}
+      {combining && (
+        <CombineLinesDrawer key={a.id} assessment={a} units={units} keyContext={keyContext} onClose={() => setCombining(false)}
+          onBooked={(result) => {
+            setCombining(false)
+            setPreview(null)
+            if (result.kind === 'done') setBooked({ lines: result.lines, shape: linesShape(result.assessment) })
+            else setError(result.message)
+            onChange(result.assessment)
+          }} />
+      )}
       {/* Begründungen und Positionen, die im Formular gepflegt werden, stehen unter der Tabelle:
           in einer Zeile scrollten sie auf dem Handy mit (Durchsicht zu #170). */}
       <div>

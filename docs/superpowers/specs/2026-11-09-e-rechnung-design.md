@@ -137,8 +137,9 @@ Abbildung:
   - `assessments.e_invoice_notes`: die Sätze dieses Wegs (BR-CO-Abweichung, BT-113, Rechnungsart 384, Abzug mit
     Bezug). Eine solche Notiz macht die Auswertung rot; `sumWarning` greift hier nicht, weil die verteilten Positionen
     immer genau BT-112 ergeben. **Nachtrag (Systemprüfung, 20.11.2026)**: Die Notiz zu BT-113 informiert nur und färbt
-    keine Zeile mehr (`informsOnly` in shared/assessment.ts). Sie stellt keinen Betrag in Frage, und weil jede
-    Jahresrechnung eines Versorgers Abschläge nennt, war sonst keine davon je grün. Die drei anderen bleiben rot: 384
+    keine Zeile mehr rot (`informsOnly` in shared/assessment.ts). Sie stellt keinen Betrag in Frage, und weil jede
+    Jahresrechnung eines Versorgers Abschläge nennt, stand sonst jede davon ganz in Rot. Die Zeilen sind aber gelb und
+    nie vorab angehakt: Einzeln gebuchte Abschläge oder Anzahlungen zählten sonst doppelt. Die drei anderen bleiben rot: 384
     und der Abzug mit Bezug warnen vor doppelten bzw. zu niedrigen Kosten, eine BR-CO-Abweichung stellt die Beträge in
     Frage; ebenso der Grund einer Ablehnung an einer KI-Auswertung.
   - `assessment_lines.labor_guessed`: gelb in `scorePosition` (shared/assessment.ts) und nicht vorab angehakt.

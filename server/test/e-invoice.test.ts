@@ -577,6 +577,21 @@ test('E-Rechnung prüfen: ein gewöhnlicher Nachlass ist kein Abzug einer Abschl
   assert.equal(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-500, 'Anzahlung', { id: '2' })] })).length, 1)
 })
 
+// Durchsicht der Systemprüfung: Seit die Notiz zu BT-113 nicht mehr rot macht, muss der Abzug einer früheren Rechnung an
+// seinem Text erkannt werden, in jeder üblichen Benennung.
+test('E-Rechnung prüfen: ein Abzug heißt auch Teilrechnung, Teilzahlung, Akonto, Vorauskasse oder Vorschuss', () => {
+  for (const name of ['abzgl. 1. Teilrechnung TR-17 Hauswart', 'abzüglich Teilzahlung vom 01.03.', 'Akontozahlung', 'a conto erhalten', 'Abschläge laut Zahlungsplan',
+    'Abschlagsrechnung Nr. 4', 'Vorauszahlung', 'Anzahlung', 'Vorauskasse', 'Vorschuss', 'bereits geleistete Zahlungen', 'bereits erhalten', 'abzgl. 2. Abschlag']) {
+    const byLine = notesOf(invoice({ lines: [line(100000, 'Hauswart Jahresleistung', { id: '1' }), line(-40000, name, { id: '2' })], totals: { ...invoice().totals, prepaid: 10000 } }))
+    assert.equal(byLine.filter((n) => /zieht 400,00\s€/.test(n)).length, 1, name)
+    assert.ok(byLine.some((n) => !informsOnly(n)), `${name}: die Auswertung bleibt rot`)
+    assert.equal(notesOf(invoice({ charges: [docCharge(false, 500, name)] })).length, 1, `${name} als Abschlag auf Dokumentebene`)
+  }
+  for (const name of ['Teilleistung Winterdienst', 'Rabatt', 'Skonto', 'Mengenabschlag', 'Pfand zurück', 'Vorschussfreie Lieferung']) {
+    assert.deepEqual(notesOf(invoice({ lines: [line(100000, 'Leistung', { id: '1' }), line(-500, name, { id: '2' })] })), [], name)
+  }
+})
+
 // ---------- Kleine Punkte der Durchsicht ----------
 
 test('E-Rechnung Lohnanteil: „Mieter“ in der Bezeichnung ist keine Miete', () => {

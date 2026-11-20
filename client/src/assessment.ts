@@ -124,15 +124,26 @@ export function reasonChips(v: Pick<AssessmentView, 'lines' | 'eInvoiceNotes'>):
 }
 
 // Die Jahre zur Wahl im Feld „Jahr der Buchung“: um das gespeicherte herum, dazu immer das gewählte Jahr
-// (`requestedYear`) und der Beginn des gewählten Zeitraums. Liest die KI ein weit früheres Jahr aus dem Beleg, rät der
-// Hinweis der Zeile, das Jahr der Buchung zu ändern; das gewählte muss dann in der Liste stehen. Das gespeicherte steht
-// immer darin (der angezeigte Wert eines Auswahlfelds muss dem gespeicherten entsprechen).
-export function yearOptions(v: Pick<AssessmentView, 'year' | 'requestedYear' | 'requestedPeriod'>): number[] {
+// (`requestedYear`). Liest die KI ein weit früheres Jahr aus dem Beleg, rät der Hinweis der Zeile, das Jahr der Buchung zu
+// ändern; das gewählte muss dann in der Liste stehen. Das gespeicherte steht immer darin (der angezeigte Wert eines
+// Auswahlfelds muss dem gespeicherten entsprechen). Bei abweichendem Zeitraum führt das gewählte Jahr in den gewählten
+// Zeitraum zurück (der Server bildet ihn aus dem Jahr); das Jahr, in dem er beginnt, gehört nicht dazu: Bei Oktober bis
+// September führte es in den Vorzeitraum.
+export function yearOptions(v: Pick<AssessmentView, 'year' | 'requestedYear'>): number[] {
   const years = new Set([v.year - 2, v.year - 1, v.year, v.year + 1])
   if (v.requestedYear !== null) years.add(v.requestedYear)
-  const start = v.requestedPeriod === null ? NaN : Number(v.requestedPeriod.slice(0, 4))
-  if (Number.isInteger(start)) years.add(start)
   return [...years].sort((a, b) => a - b)
+}
+
+// Der Satz zu bezahlten Abschlägen im Kasten der Auswertung (`noteGroups().info`): warum die Zeilen nicht vorab angehakt sind.
+export const PREPAID_ADVICE = 'Haben Sie diese Abschläge oder Anzahlungen schon einzeln als Kosten gebucht, dürfen sie nicht zusätzlich zählen: Prüfen Sie das, bevor Sie diese Rechnung buchen.'
+
+// Steht der Grund einer Ampel nur im Kasten der Rechnung über der Tabelle (`reasonChips` nennt ihn nicht noch einmal),
+// sagt die Ampel es Vorlesern; der `title` allein erreicht sie nicht.
+export function ampelNote(v: Pick<AssessmentView, 'eInvoiceNotes'>, line: AssessmentLine): string | null {
+  const s = line.suggestion
+  if (!s || s.level === 'gruen' || !s.reasons.some((r) => v.eInvoiceNotes.includes(r))) return null
+  return `${s.level === 'rot' ? 'Rot' : 'Gelb'}: siehe Hinweis zur Rechnung über der Tabelle`
 }
 
 // Was die Auswahl einer Zeile zeigt und was von ihr gebucht wird, ist dasselbe: Ein Ziel zum
@@ -266,4 +277,97 @@ export async function bookDecisions(id: string, decisions: readonly LineDecision
 export function openBadgeClass(v: Pick<AssessmentView, 'lines'>): 'badge red' | 'badge amber' | 'badge green' {
   const levels = v.lines.filter((l) => l.state === 'open').map((l) => l.suggestion?.level)
   return levels.includes('rot') ? 'badge red' : levels.includes('gelb') ? 'badge amber' : 'badge green'
+}
+
+// ---------- Alle Zeilen als eine Position (Durchsicht der Systemprüfung) ----------
+//
+// Eine Rechnung mit vielen Zeilen einer Kostenart (Energie, Wasser) soll eine Kostenposition werden. Der Planer legt in
+// einem Schritt keine Position an und verknüpft zugleich mit ihr; gebucht wird deshalb zweimal nacheinander, beide Male
+// über Vorschau und Marke des Servers: erst die erste Zeile anlegen, dann die übrigen mit ihrer Position verknüpfen
+// (`sameReceipt`). Es gelten die Angaben des Servers; Eingaben, die noch in der Tabelle stehen, gelten dabei nicht (wie
+// bei „Alle grünen übernehmen“).
+
+export type CombineDraft = { category: string; description: string }
+
+// Die Zeilen, die zusammen eine Position werden können: offen, mit gelesenem Betrag über 0. Gutschriften werden nie
+// verrechnet und bleiben offen. Angeboten wird die Aktion erst ab zwei solchen Zeilen und nur mit Objekt.
+export function combinableLines(v: Pick<AssessmentView, 'lines' | 'propertyId'>): AssessmentLine[] {
+  if (v.propertyId === null) return []
+  const lines = v.lines.filter((l) => l.state === 'open' && l.suggestion !== null && l.amountCents !== null && l.amountCents > 0)
+  return lines.length >= 2 ? lines : []
+}
+
+// Womit das Fenster beginnt: die Kostenart nur, wenn alle Zeilen dieselbe tragen (sonst wählt der Nutzer), die
+// Beschreibung aus Rechnungssteller und Rechnungsnummer, ohne Steller der Name des Belegs.
+export function combineStart(v: Pick<AssessmentView, 'lines' | 'propertyId' | 'vendor' | 'invoiceNumber' | 'originalName'>): CombineDraft {
+  const categories = new Set(combinableLines(v).map((l) => l.suggestion?.fields.category ?? l.category))
+  const [only] = categories
+  const vendor = (v.vendor ?? '').trim()
+  const description = vendor === '' ? v.originalName : v.invoiceNumber ? `${vendor}, Rechnung ${v.invoiceNumber}` : vendor
+  return { category: categories.size === 1 && only !== undefined ? only : '', description }
+}
+
+// Was entsteht, vor dem Buchen: eine Position mit der Summe der Zeilen, und was offen bleibt.
+export function combineSummary(v: Pick<AssessmentView, 'lines' | 'propertyId'>, draft: CombineDraft): string {
+  const lines = combinableLines(v)
+  const sum = lines.reduce((t, l) => t + (l.amountCents ?? 0), 0)
+  const left = v.lines.filter((l) => l.state === 'open' && !lines.includes(l)).length
+  const rest = left === 0 ? '' : left === 1 ? ' 1 Zeile bleibt offen (Gutschrift oder Zeile ohne Betrag).' : ` ${left} Zeilen bleiben offen (Gutschriften und Zeilen ohne Betrag).`
+  return `Es entsteht eine Position „${draft.description.trim()}“${draft.category ? ` (${draft.category})` : ''} über ${fmtEuro(sum)} aus ${lines.length} Zeilen.${rest}`
+}
+
+// Schritt 1: die erste Zeile als die neue Position, mit Kostenart und Beschreibung des Fensters und dem Schlüssel dazu.
+export function combineFirst(v: Pick<AssessmentView, 'lines' | 'propertyId'>, draft: CombineDraft, key: Pick<LineFields, 'key' | 'allocation'>): LineDecision[] {
+  const first = combinableLines(v)[0]
+  if (!first?.suggestion) return []
+  return [{ idx: first.idx, action: 'create', fields: { ...first.suggestion.fields, category: draft.category, description: draft.description.trim(), key: key.key, allocation: key.allocation, externalTotalCents: null } }]
+}
+
+// Schritt 2: die übrigen Zeilen an die eben angelegte Position.
+export function combineRest(v: Pick<AssessmentView, 'lines' | 'propertyId'>, costItemId: string): LineDecision[] {
+  return combinableLines(v).slice(1).map((l) => ({ idx: l.idx, action: 'link', costItemId }))
+}
+
+export type CombineResult =
+  | { kind: 'done'; assessment: AssessmentView; lines: string[] }
+  | { kind: 'cancelled' }
+  // Nichts ist gebucht: die Meldung steht im Fenster.
+  | { kind: 'refused'; message: string }
+  // Die Position ist angelegt, die übrigen Zeilen sind noch offen.
+  | { kind: 'partial'; message: string; assessment: AssessmentView }
+
+const planProblems = (p: BookingPreview): string => p.errors.map((e) => e.message).join(' ')
+
+// Bucht beide Schritte. `ask` stellt die Rückfrage des Planers (schon eine Position dieser Art erfasst?), bevor etwas
+// gebucht ist. Scheitert der zweite Schritt, bleibt die angelegte Position stehen, und die Meldung sagt, wie es weitergeht.
+export async function bookAsOne(
+  v: AssessmentView, draft: CombineDraft, key: Pick<LineFields, 'key' | 'allocation'>, ask: (messages: string[]) => Promise<boolean>,
+): Promise<CombineResult> {
+  let first = combineFirst(v, draft, key)
+  const [create] = first
+  if (!create) return { kind: 'refused', message: 'Es gibt keine zwei offenen Zeilen mit Betrag mehr. Bitte schließen Sie das Fenster.' }
+  const plan = await planDecisions(v.id, first)
+  if (plan.errors.length > 0) return { kind: 'refused', message: planProblems(plan) }
+  if (plan.confirm.length > 0) {
+    if (!await ask(plan.confirm.map((c) => c.message))) return { kind: 'cancelled' }
+    first = withConfirmed(first, [create.idx])
+  }
+  const created = await bookDecisions(v.id, first, plan.token)
+  if (created.kind === 'conflict') return { kind: 'partial', message: created.message, assessment: created.assessment }
+  if (created.kind !== 'done') return { kind: 'refused', message: [created.message, planProblems(created.preview)].filter(Boolean).join(' ') }
+  const itemId = created.assessment.lines.find((l) => l.idx === create.idx)?.costItemId
+  const next = `Die Position „${draft.description.trim()}“ ist mit der ersten Zeile angelegt; die übrigen Zeilen sind noch offen. Verknüpfen Sie sie unter „Was geschieht?“ mit dieser Position.`
+  if (!itemId) return { kind: 'partial', message: next, assessment: created.assessment }
+  try {
+    const rest = combineRest(v, itemId)
+    const linkPlan = await planDecisions(v.id, rest)
+    if (linkPlan.errors.length > 0 || linkPlan.confirm.length > 0) {
+      return { kind: 'partial', message: [planProblems(linkPlan), ...linkPlan.confirm.map((c) => c.message), next].filter(Boolean).join(' '), assessment: created.assessment }
+    }
+    const linked = await bookDecisions(v.id, rest, linkPlan.token)
+    if (linked.kind === 'done') return { kind: 'done', assessment: linked.assessment, lines: bookedLines(linked.preview) }
+    return { kind: 'partial', message: `${linked.message} ${next}`, assessment: linked.kind === 'conflict' ? linked.assessment : created.assessment }
+  } catch (e) {
+    return { kind: 'partial', message: `${e instanceof Error ? e.message : String(e)} ${next}`, assessment: created.assessment }
+  }
 }

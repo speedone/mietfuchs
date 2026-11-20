@@ -328,12 +328,17 @@ test('E-Rechnung: jede Notiz macht die Zeile rot und steht in den Gründen', () 
 // Systemprüfung: Jede Jahresrechnung eines Versorgers nennt bezahlte Abschläge (BT-113). Die Notiz stellt keinen Betrag in
 // Frage (die Zeilen ergeben den Gesamtbetrag), sie färbt deshalb keine Zeile; jede andere Notiz bleibt rot.
 const PREPAID = 'Abschläge über 1.030,00\u00a0€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 804,86\u00a0€.'
-test('E-Rechnung: die Notiz zu bezahlten Abschlägen informiert nur, die Zeile bleibt grün und vorab angehakt', () => {
+test('E-Rechnung: bezahlte Abschläge machen keine Zeile rot, aber gelb und nie vorab angehakt', () => {
   assert.equal(informsOnly(PREPAID), true)
-  const s = eInvoiceView({ source: 'e-rechnung', eInvoiceNotes: [PREPAID] })
-  assert.equal(s.level, 'gruen', s.reasons.join(' | '))
-  assert.equal(s.preselected, true)
-  assert.deepEqual(s.reasons.filter((r) => r === PREPAID), [], 'der Hinweis zur Rechnung steht nicht an jeder Zeile')
+  // Wie eine E-Rechnung ankommt: Die Kostenart ist aus der Beschreibung erraten (toRaw.ts liefert keine).
+  for (const categoryGuessed of [true, false]) {
+    const s = eInvoiceView({ source: 'e-rechnung', eInvoiceNotes: [PREPAID] }, { categoryGuessed })
+    assert.equal(s.level, 'gelb', s.reasons.join(' | '))
+    // Sonst legte „Vorschau, Buchen“ die Zeilen ungesehen an, auch wenn die Abschläge schon einzeln gebucht sind
+    // (anderer Zeitraum oder andere Kostenart: kein Kandidat warnt).
+    assert.equal(s.preselected, false)
+    assert.ok(s.reasons.includes(PREPAID), 'der Grund steht an der Zeile')
+  }
 })
 
 test('E-Rechnung: neben bezahlten Abschlägen macht jede andere Notiz weiter rot', () => {
@@ -383,6 +388,12 @@ test('viele Zeilen: kein Ziel ist eine Gutschrift, eine Position im anderen Zeit
   assert.deepEqual(targets([strom({ key: 'amounts' })]), [], 'Einzelbeträge')
   assert.deepEqual(targets([strom({ key: 'external' })]), [], 'laut Gemeinschaftsabrechnung')
   assert.deepEqual(targets([strom({ sourceId: 'q', serviceFrom: '2026-01-01', serviceTo: '2026-12-31' })]), [], 'Teil einer aufgeteilten Rechnung')
+  // Was der Planer wegen eines Zwillingsbelegs ablehnt (bookingPlan.ts), wird nicht angeboten.
+  const twin = describeAssessment({ assessment: assessmentOf({ file: 'strom.xml', vendor: 'Stadtwerke', nextIdx: 2 }), lines: stromLines() }, {
+    items: [strom()], units: UNITS3, meters: [], propertyKind: null, rules: CALENDAR_RULES, originalName: 'strom.xml', twinOf: null, twinNames: new Map([['kopie.pdf', 'kopie.pdf']]),
+    booked: [{ costItemId: 'strom', amountCents: 20000 }, { costItemId: 'strom', amountCents: 20000, file: 'kopie.pdf' }],
+  })
+  assert.deepEqual(twin.lines[1]?.suggestion?.sameReceipt, [], 'Position mit einem Beleg gleichen Inhalts')
   assert.deepEqual(targets([strom(), grundsteuer({ id: 'fremd', category: 'Allgemeinstrom', description: 'Fremd', vendor: 'Anderer' })])?.map((c) => c.id), ['strom'], 'nur aus dieser Auswertung gebuchte')
 })
 

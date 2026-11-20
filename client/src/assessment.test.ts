@@ -1,7 +1,7 @@
 // Die Entscheidungen der Komponente „Auswertung prüfen“ (Belegbuchung, #170), ohne DOM.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssessmentLine, AssessmentView, BookingPreview, LineCandidate, LineSuggestion } from './types'
-import { bookDecisions, openBadgeClass, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, fromSameReceipt, noteGroups, reasonChips, yearOptions, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
+import { bookDecisions, openBadgeClass, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, fromSameReceipt, ampelNote, combinableLines, combineStart, combineSummary, combineFirst, combineRest, noteGroups, reasonChips, yearOptions, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
 import { CATEGORIES } from './types'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 
@@ -23,6 +23,7 @@ const PREVIEW: BookingPreview = { items: [], notices: [], errors: [], confirm: [
 
 describe('Begründungen, Notizen und Jahre der Karte (Systemprüfung)', () => {
   const PREPAID = 'Abschläge über 1.030,00\u00a0€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 804,86\u00a0€.'
+  const placed = (p: Partial<AssessmentView>): AssessmentView => ({ ...view([]), ...p })
   const ZWEIFEL = 'Diese Rechnung korrigiert eine frühere Rechnung. Diese darf nicht zusätzlich gebucht sein.'
 
   it('gleichlautende Begründungen stehen einmal, in der schlechtesten Farbe; grüne und gebuchte Zeilen nennen nichts', () => {
@@ -48,13 +49,62 @@ describe('Begründungen, Notizen und Jahre der Karte (Systemprüfung)', () => {
   it('Jahr der Buchung: das gewählte und das gespeicherte Jahr stehen immer zur Wahl, aufsteigend und ohne Doppel', () => {
     expect(yearOptions(view([]))).toEqual([2023, 2024, 2025, 2026])
     // Die KI las 2023, abgelegt war der Beleg für 2025: Der Hinweis rät, das Jahr zu ändern, also muss 2025 wählbar sein.
-    expect(yearOptions({ ...view([]), year: 2023, requestedYear: 2025 })).toEqual([2021, 2022, 2023, 2024, 2025])
-    expect(yearOptions({ ...view([]), year: 2025, requestedYear: 2019 })).toEqual([2019, 2023, 2024, 2025, 2026])
-    expect(yearOptions({ ...view([]), requestedYear: null, requestedPeriod: null })).toEqual([2023, 2024, 2025, 2026])
+    expect(yearOptions(placed({ year: 2023, requestedYear: 2025 }))).toEqual([2021, 2022, 2023, 2024, 2025])
+    expect(yearOptions(placed({ year: 2025, requestedYear: 2019 }))).toEqual([2019, 2023, 2024, 2025, 2026])
+    expect(yearOptions(placed({ requestedYear: null, requestedPeriod: null }))).toEqual([2023, 2024, 2025, 2026])
   })
 
-  it('Jahr der Buchung bei abweichendem Zeitraum: auch das Jahr, in dem der gewählte Zeitraum beginnt', () => {
-    expect(yearOptions({ ...view([]), year: 2022, requestedYear: null, requestedPeriod: periodKey('2025-05') })).toEqual([2020, 2021, 2022, 2023, 2025])
+  // Durchsicht: Oktober bis September, gewählt 2026 heißt Zeitraum 2025-10. Das Beginnjahr 2025 anzubieten führte in
+  // den Vorzeitraum (2024-10); zur Wahl steht deshalb nur das gewählte Jahr selbst.
+  it('Jahr der Buchung bei abweichendem Zeitraum: nur das gewählte Jahr, nicht das Jahr, in dem sein Zeitraum beginnt', () => {
+    expect(yearOptions(placed({ year: 2023, requestedYear: 2026, requestedPeriod: periodKey('2025-10') }))).toEqual([2021, 2022, 2023, 2024, 2026])
+    expect(yearOptions(placed({ year: 2022, requestedYear: null, requestedPeriod: periodKey('2025-10') }))).toEqual([2020, 2021, 2022, 2023])
+  })
+
+  it('eine Zeile, deren Grund nur im Kasten der Rechnung steht, sagt das Vorlesern an der Ampel', () => {
+    const v = { ...view([
+      line(0, { suggestion: suggestion({ level: 'rot', reasons: [ZWEIFEL] }) }),
+      line(1, { suggestion: suggestion({ level: 'gelb', reasons: [PREPAID, 'Kategorie unklar'] }) }),
+      line(2, { suggestion: suggestion({ level: 'gelb', reasons: ['Kategorie unklar'] }) }),
+      line(3),
+    ]), eInvoiceNotes: [PREPAID, ZWEIFEL] }
+    expect(v.lines.map((l) => ampelNote(v, l))).toEqual([
+      'Rot: siehe Hinweis zur Rechnung über der Tabelle', 'Gelb: siehe Hinweis zur Rechnung über der Tabelle', null, null,
+    ])
+  })
+})
+
+// Durchsicht der Systemprüfung: Der Weg „eine Rechnung, eine Position“ ist eine eigene Aktion der Karte.
+describe('Alle Zeilen als eine Position', () => {
+  const fields = (amountCents: number | null, category = 'Wasser/Abwasser') => ({ ...suggestion().fields, amountCents, category })
+  const l = (idx: number, amountCents: number | null, patch: Partial<AssessmentLine> = {}, category = 'Wasser/Abwasser') =>
+    line(idx, { amountCents, category, suggestion: suggestion({ fields: fields(amountCents, category) }), ...patch })
+  const v = { ...view([l(0, 20000), l(1, 10387), l(2, -5000), l(3, null), l(4, 5000, { state: 'created', costItemId: 'x', suggestion: null }), l(5, 7000, { state: 'dismissed', dismissed: true })]), invoiceNumber: 'R-17' }
+
+  it('zusammen gehen nur offene Zeilen mit Betrag über 0: keine Gutschrift, keine ungelesene, gebuchte oder verworfene', () => {
+    expect(combinableLines(v).map((x) => x.idx)).toEqual([0, 1])
+    expect(combinableLines(view([l(0, 20000)]))).toEqual([])
+    expect(combinableLines({ ...v, propertyId: null })).toEqual([])
+  })
+
+  it('vorbelegt: die gemeinsame Kostenart, sonst keine; Beschreibung aus Rechnungssteller und Rechnungsnummer', () => {
+    expect(combineStart(v)).toEqual({ category: 'Wasser/Abwasser', description: 'Stadtwerke, Rechnung R-17' })
+    const mixed = view([l(0, 20000), l(1, 10387, {}, 'Müllabfuhr')])
+    expect(combineStart(mixed)).toEqual({ category: '', description: 'Stadtwerke' })
+    expect(combineStart({ ...mixed, vendor: null })).toEqual({ category: '', description: 'w.pdf' })
+  })
+
+  it('die Zusammenfassung nennt die eine Position mit Summe und was offen bleibt', () => {
+    expect(combineSummary(v, { category: 'Wasser/Abwasser', description: 'Stadtwerke' }))
+      .toBe('Es entsteht eine Position „Stadtwerke“ (Wasser/Abwasser) über 303,87\u00a0€ aus 2 Zeilen. 2 Zeilen bleiben offen (Gutschriften und Zeilen ohne Betrag).')
+    expect(combineSummary(view([l(0, 20000), l(1, 10387)]), { category: '', description: 'Stadtwerke' }))
+      .toBe('Es entsteht eine Position „Stadtwerke“ über 303,87\u00a0€ aus 2 Zeilen.')
+  })
+
+  it('gebucht wird in zwei Schritten: die erste Zeile anlegen, die übrigen mit ihrer Position verknüpfen', () => {
+    const first = combineFirst(v, { category: 'Müllabfuhr', description: 'Stadtwerke' }, { key: 'units', allocation: null })
+    expect(first).toEqual([{ idx: 0, action: 'create', fields: { ...fields(20000), category: 'Müllabfuhr', description: 'Stadtwerke', key: 'units', allocation: null, externalTotalCents: null } }])
+    expect(combineRest(v, 'neu')).toEqual([{ idx: 1, action: 'link', costItemId: 'neu' }])
   })
 })
 

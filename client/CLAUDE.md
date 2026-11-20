@@ -733,9 +733,16 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
 - **Auswertung prüfen** ([AssessmentReview.tsx](src/components/AssessmentReview.tsx), Logik in
   [assessment.ts](src/assessment.ts)): Begründungen unter der Tabelle stehen je Wortlaut einmal, in der schlechtesten
   Farbe (`reasonChips`), Notizen der E-Rechnung nur im Kasten darüber (`noteGroups`: Zweifel als Warnung, bezahlte
-  Abschläge als Hinweis). „Was geschieht?“ bietet auch die aus diesem Beleg schon gebuchten Positionen an
-  (`sameReceipt`, „… aus diesem Beleg … verknüpfen: Betrag kommt dazu“). „Jahr der Buchung“ enthält immer das gewählte
-  Jahr (`yearOptions`).
+  Abschläge als Hinweis mit dem Satz zu einzeln gebuchten Abschlägen); steht der Grund einer Ampel nur dort, sagt sie es
+  Vorlesern (`ampelNote`). „Was geschieht?“ bietet auch die aus diesem Beleg schon gebuchten Positionen an
+  (`sameReceipt`, „Mit „…“ aus diesem Beleg verknüpfen“, ohne Betrag: den nennt die Vorschau). Ab zwei offenen Zeilen
+  mit Betrag über 0 steht unter der Tabelle „Alle Zeilen als eine Position anlegen“
+  ([CombineLinesDrawer.tsx](src/components/CombineLinesDrawer.tsx)): Seitenfenster mit Kostenart (vorbelegt nur, wenn
+  alle Zeilen dieselbe tragen) und Beschreibung (Rechnungssteller, Rechnungsnummer), dem Satz, was entsteht, und
+  „Anlegen“. Gebucht wird in zwei Schritten über den Planer (`bookAsOne`: erste Zeile anlegen, übrige verknüpfen);
+  Gutschriften bleiben offen, eine Rückfrage des Planers kommt vor dem ersten Schritt, und scheitert der zweite, sagt die
+  Karte, dass die Position angelegt ist und wie es weitergeht. „Jahr der Buchung“ enthält immer das gewählte Jahr
+  (`yearOptions`), nicht das Beginnjahr eines abweichenden Zeitraums.
 - **Was an einem gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Ein
   ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle
   grünen übernehmen“; ein ungespeichertes Objekt oder Jahr eines Belegs ohne Position sperrt „Per KI auswerten“

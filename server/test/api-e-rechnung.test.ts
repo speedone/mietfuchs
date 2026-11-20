@@ -164,7 +164,13 @@ test('E-Rechnung mit vielen Zeilen: bezahlte Abschläge färben nicht rot, und d
     assert.equal(a.eInvoiceNotes.length, 1)
     const [note] = a.eInvoiceNotes
     assert.match(note ?? '', /Abschläge über 1\.030,00\s€ sind bereits bezahlt/)
-    for (const l of a.lines) assert.ok(!l.suggestion?.reasons.includes(note ?? ''), `Zeile ${l.idx} nennt die Notiz der Rechnung als eigenen Grund`)
+    // Keine Zeile ist wegen der Abschläge rot, aber auch keine vorab angehakt: „Vorschau, Buchen“ legte sonst 8 Positionen an.
+    for (const l of a.lines) {
+      assert.equal(l.suggestion?.preselected, false, `Zeile ${l.idx} ist vorab angehakt`)
+      assert.notEqual(l.suggestion?.level, 'gruen', `Zeile ${l.idx} ist grün`)
+      assert.ok(l.suggestion?.reasons.includes(note ?? ''), `Zeile ${l.idx} nennt die Abschläge nicht`)
+    }
+    assert.ok(a.lines.some((l) => l.suggestion?.level === 'gelb'), 'die Abschläge allein machen nicht rot')
     const post = async (route: string, body: unknown) => {
       const res = await fetch(`${s.base}/api/assessments/${a.id}/${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       return { status: res.status, body: await jsonOf<{ token?: string, assessment?: AssessmentView, confirm?: unknown[], errors?: unknown[] }>(res) }

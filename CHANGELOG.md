@@ -81,10 +81,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Belege: Eine E-Rechnung mit vielen Zeilen, etwa die Jahresrechnung eines Versorgers, lässt sich als eine
-  Kostenposition buchen. Nach dem Anlegen der ersten Zeile bietet „Was geschieht?“ bei den übrigen deren Position zum
-  Verknüpfen an, und die Vorschau nennt den Betrag danach. Bereits bezahlte Abschläge stehen als Hinweis an der
-  Auswertung und färben nicht mehr jede Zeile rot; gleichlautende Begründungen mehrerer Zeilen stehen einmal.
+- Belege: Eine Rechnung mit vielen Zeilen, etwa die Jahresrechnung eines Versorgers als E-Rechnung, lässt sich als eine
+  Kostenposition buchen. Unter der Tabelle steht dafür „Alle Zeilen als eine Position anlegen“: Kostenart und
+  Beschreibung wählen, das Fenster nennt vorher Position und Summe; Gutschriften bleiben offen. Wer Zeile für Zeile
+  bucht, findet nach dem Anlegen der ersten Zeile deren Position bei den übrigen unter „Was geschieht?“. Bereits
+  bezahlte Abschläge stehen als Hinweis an der Auswertung und färben nicht mehr jede Zeile rot; die Zeilen sind dann
+  gelb und nicht vorab angehakt, weil einzeln gebuchte Abschläge sonst doppelt zählten. Gleichlautende Begründungen
+  mehrerer Zeilen stehen einmal.
+- E-Rechnung: Ein Abzug früherer Zahlungen wird auch unter den Namen Teilrechnung, Teilzahlung, Akonto, Vorauskasse
+  und Vorschuss erkannt und als Warnung genannt.
 - Belege: „Jahr der Buchung“ bietet immer auch das Jahr an, für das der Beleg abgelegt wurde, auch wenn die Auswertung
   ein weit früheres Jahr aus dem Beleg liest.
 

@@ -1183,7 +1183,8 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
 - **Eine Rechnung mit vielen Zeilen als eine Position**: Die aus dieser Auswertung gebuchten Positionen sind für ihre
   übrigen Zeilen keine Kandidaten (keine Doppelung, keine Farbe, keine Rückfrage), aber Ziele zum Verknüpfen
   (`LineSuggestion.sameReceipt`): nur im Zeitraum der Buchung, nie eine Gutschrift (Position oder Zeile), nie `amounts`,
-  `external` oder ein Teil einer aufgeteilten Rechnung, also nur, was der Planer annimmt. Bei einer `reassessed`-Zeile
+  `external`, ein Teil einer aufgeteilten Rechnung oder eine Position mit einem Beleg gleichen Inhalts, also nur, was der
+  Planer annimmt. Bei einer `reassessed`-Zeile
   bleiben sie Kandidaten mit Rückfrage und stehen dort nicht noch einmal.
 - **Hängt der Beleg (oder einer gleicher Prüfsumme) schon von Hand an einer Position**, ist sie
   Kandidat jeder seiner Zeilen, gleich welcher Kostenart (`lineCandidates`): rot, Anlegen nur mit
@@ -1215,8 +1216,9 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   `assessments.source`/`invoice_number`/`e_invoice_notes`, `assessment_lines.labor_guessed` (Schritte 0095/0096, ohne
   Angabe eine KI-Auswertung). Ampel in `suggestLine`: jede Notiz rot außer einer, die nur informiert (`informsOnly` in shared/assessment.ts: heute allein die
   zu bezahlten Abschlägen, BT-113, denn die Zeilen ergeben den Gesamtbetrag und fast jede Jahresrechnung eines Versorgers
-  trägt sie; sie steht einmal als Hinweis an der Auswertung; im Zweifel ist eine Notiz keine Information, auch der Grund
-  einer Ablehnung bleibt rot), `laborGuessed` gelb und nie vorab angehakt, gleiche
+  trägt sie; sie macht **gelb und nie vorab angehakt**, weil einzeln gebuchte Abschläge sonst doppelt zählten und in einem
+  anderen Zeitraum oder unter anderer Kostenart kein Kandidat warnt; sie steht einmal als Hinweis an der Auswertung; im
+  Zweifel ist eine Notiz keine Information, auch der Grund einer Ablehnung bleibt rot), `laborGuessed` gelb und nie vorab angehakt, gleiche
   Nummer und gleicher Steller in einem anderen Beleg rot (`otherInvoices`, über alle Objekte). **Reine XML-Datei** (PR 3):
   Der Filter lässt `.xml` nur auf `/api/upload`, `/api/intake`, `/api/extract` durch (`E_INVOICE_XML_ROUTES`,
   `carriesScript` mit `eInvoiceXml`), `checkXmlReceipt` liest danach den Inhalt (`isEInvoiceDocument`) und löscht alles
