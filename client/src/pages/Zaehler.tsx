@@ -4,7 +4,7 @@ import Field from '../components/Field'
 import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, ESTIMATE_HELP, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
+import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate, loadErrorText } from '../api'
@@ -32,7 +32,7 @@ type Props = { units: Unit[] } & FocusProps
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
-  const { param, label } = usePeriod()
+  const { param, label, period } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -50,6 +50,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   // Die Ablesung im Seitenfenster (#346 Schritt 7, N16a): der Zähler, für den das Fenster offen ist.
   const [readingFor, setReadingFor] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
+  // Die Ablesung, die das Fenster bearbeitet; `null` heißt: eine neue.
+  const [editedReading, setEditedReading] = useState<Reading | null>(null)
+  // Das vorbelegte Datum einer neuen Ablesung, solange es unberührt ist; dann steht der Hinweis am Feld. Bloße Hilfe,
+  // kein Teil von `value` des Fensters.
+  const [prefilledDate, setPrefilledDate] = useState('')
   const estimateHelpId = useId()
   const [error, setError] = useState('')
   // Ableseformular (#320): Auswahl im Seitenfenster, danach das Blatt zum Drucken.
@@ -132,28 +137,60 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   // Die Meldung zur Ablesung steht im Fuß des Seitenfensters über „Anlegen“ (UI-Durchsicht H3, #346 Schritt 7).
   function openReading(meterId: string) {
     readingError.clear()
-    setReadingForm({ ...EMPTY_READING })
+    setEditedReading(null)
+    // Heute nur, wenn heute im gewählten Zeitraum liegt; sonst bleibt das Pflichtfeld leer.
+    const form = newReadingForm(todayIso(), period)
+    setReadingForm(form)
+    setPrefilledDate(form.date)
     setReadingFor(meterId)
+  }
+
+  function openEditReading(r: Reading) {
+    readingError.clear()
+    setEditedReading(r)
+    setPrefilledDate('')
+    setReadingForm(readingToForm(r))
+    setReadingFor(r.meterId)
+  }
+
+  function closeReading() {
+    readingError.clear()
+    setReadingFor(null)
+    setEditedReading(null)
   }
 
   async function saveReading(meterId: string) {
     const meter = meters.find((m) => m.id === meterId)
-    const built = buildReadingBody(readingForm, meterId, meter !== undefined && asksReplacementCalibration(meter))
+    // Bearbeiten schickt nur, was der Server im PUT annimmt (kein Eichjahr des neuen Zählers, kein anderer Zähler).
+    const built = editedReading
+      ? buildReadingUpdate(readingForm)
+      : buildReadingBody(readingForm, meterId, meter !== undefined && asksReplacementCalibration(meter))
     if ('problems' in built) {
       readingError.report(built.problems)
       return
     }
     readingError.clear()
+    // Rückfrage statt Verbot: Ein Stand unter dem vorigen oder ein Datum nach heute ist meist ein Tippfehler,
+    // speichern darf der Vermieter trotzdem. „Abbrechen“ lässt das Fenster mit der Eingabe offen.
+    const question = readingQuestion(
+      { meterId, date: built.body.date, value: built.body.value, replacement: built.body.replacement === true, oldEndValue: built.body.oldEndValue },
+      readings,
+      { today: todayIso(), unit: meter?.unit, editingId: editedReading?.id, meterType: meter?.type },
+    )
+    if (question && !(await confirm(question))) return
     try {
-      await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
+      if (editedReading) await api(`/api/readings/${editedReading.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+      else await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
     } catch (e) {
       readingError.show(errorText(e))
       return
     }
+    const editing = editedReading !== null
     setReadingFor(null)
+    setEditedReading(null)
     setReadingForm({ ...EMPTY_READING })
     await load()
-    toast('Ablesung angelegt.')
+    toast(editing ? 'Ablesung gespeichert.' : 'Ablesung angelegt.')
   }
 
   async function deleteReading(r: Reading) {
@@ -228,6 +265,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     onEdit={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
                     onDelete={() => deleteMeter(m)}
                     onNewReading={() => openReading(m.id)}
+                    onEditReading={openEditReading}
                     onDeleteReading={deleteReading}
                     onSaved={() => { void load(); toast('Stichtagswert gespeichert.') }}
                   />
@@ -254,22 +292,22 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       {readingMeter && (
         <Drawer
           // Ein anderer Zähler im offenen Fenster ist ein neues Formular (Durchsicht S3)
-          key={readingMeter.id}
+          key={`${readingMeter.id}:${editedReading?.id ?? 'neu'}`}
           open
-          title="Neue Ablesung"
+          title={editedReading ? 'Ablesung bearbeiten' : 'Neue Ablesung'}
           subtitle={`${readingMeter.name}${readingMeter.meterNumber ? `, Nr. ${readingMeter.meterNumber}` : ''}`}
-          onClose={() => { readingError.clear(); setReadingFor(null) }}
+          onClose={closeReading}
           onSubmit={() => void saving.run(() => saveReading(readingMeter.id))}
           busy={saving.busy}
           value={readingForm}
           errors={readingError}
-          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(() => saveReading(readingMeter.id))}>Anlegen</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(() => saveReading(readingMeter.id))}>{editedReading ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="field-grid">
-            <Field label="Datum" required {...readingError.field('date')}>
-              <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
+            <Field label="Datum" required hint={prefilledDate !== '' && readingForm.date === prefilledDate ? PREFILLED_DATE_HINT : undefined} {...readingError.field('date')}>
+              <input type="date" value={readingForm.date} onChange={(e) => { setPrefilledDate(''); setReadingForm({ ...readingForm, date: e.target.value }) }} />
             </Field>
-            <Field label={`${readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} required hint={lastReadingText(readingMeter, readings)} {...readingError.field('value')}>
+            <Field label={`${readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} required hint={lastReadingText(readingMeter, editedReading ? readings.filter((r) => r.id !== editedReading.id) : readings)} {...readingError.field('value')}>
               <input value={readingForm.value} inputMode="decimal" onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
             </Field>
           </div>
@@ -283,7 +321,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             </Field>
           )}
           {/* Praxistest: Das Eichjahr gilt für das heutige Gerät; ohne neues Jahr bliebe die Warnung des ausgebauten stehen. */}
-          {readingForm.replacement && asksReplacementCalibration(readingMeter) && (
+          {/* Beim Bearbeiten nimmt der Server kein Eichjahr an (400); das Fenster nennt stattdessen den Weg. */}
+          {readingForm.replacement && editedReading && asksReplacementCalibration(readingMeter) && (
+            <small className="muted">Das Eichjahr des neuen Zählers ändern Sie über „Zähler bearbeiten“.</small>
+          )}
+          {readingForm.replacement && !editedReading && asksReplacementCalibration(readingMeter) && (
             <YearField
               label="Neuer Zähler geeicht bis Ende (Jahr)"
               hint={<>{replacementCalibrationHint(readingMeter)} Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres; das Jahr steht in der Mitteilung des Messdienstes oder auf dem Eichschein.</>}
@@ -456,7 +498,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
 
 // Der letzte Stand des Zählers als Anhalt im Fenster „Neue Ablesung“ (Durchsicht K1): Die Liste dahinter ist verdeckt.
 export function lastReadingText(meter: Pick<Meter, 'id' | 'unit'>, readings: readonly Reading[]): string | undefined {
-  const last = readings.filter((r) => r.meterId === meter.id).reduce<Reading | null>((a, r) => (a === null || r.date >= a.date ? r : a), null)
+  const last = latestReading(readings.filter((r) => r.meterId === meter.id))
   if (!last) return undefined
   return `Letzter Stand: ${last.value.toLocaleString('de-DE')}${meter.unit ? ` ${meter.unit}` : ''} am ${fmtDate(last.date)}`
 }
@@ -474,10 +516,11 @@ function FragmentRow(props: {
   onEdit: () => void
   onDelete: () => void
   onNewReading: () => void
+  onEditReading: (r: Reading) => void
   onDeleteReading: (r: Reading) => void
   onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, onNewReading, onDeleteReading, onSaved } = props
+  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, onNewReading, onEditReading, onDeleteReading, onSaved } = props
   const digits = readingDigits(readings)
   const panelId = useId()
   return (
@@ -538,7 +581,11 @@ function FragmentRow(props: {
                         {r.estimated && <span className="badge amber">geschätzt</span>} {r.note}
                         {r.estimated && r.estimateReason && <div>Begründung: {r.estimateReason}</div>}
                       </td>
-                      <td className="actions"><button className="icon-btn danger" title="Löschen" aria-label="Ablesung löschen" onClick={() => onDeleteReading(r)}>🗑</button></td>
+                      <td className="actions">
+                        {/* Ein Stichtagswert hat sein eigenes Formular unter der Liste; das allgemeine Fenster passt nicht zu ihm. */}
+                        {!isCutoffReading(m.type, r) && <button className="icon-btn" title="Bearbeiten" aria-label="Ablesung bearbeiten" onClick={() => onEditReading(r)}>✎</button>}
+                        <button className="icon-btn danger" title="Löschen" aria-label="Ablesung löschen" onClick={() => onDeleteReading(r)}>🗑</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

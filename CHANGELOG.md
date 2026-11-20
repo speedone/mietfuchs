@@ -62,6 +62,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
+- Zähler: Eine Ablesung lässt sich bearbeiten (✎ in ihrer Zeile), statt sie zu löschen und neu anzulegen. Vor dem
+  Speichern fragt Mietfuchs nach, wenn der Stand unter dem vorigen Stand desselben Zählers liegt und kein Zählerwechsel
+  angehakt ist, wenn er über dem folgenden Stand liegt oder wenn das Datum in der Zukunft liegt; speichern können Sie
+  trotzdem. Bei einem Zählerwechsel zählt dabei der Endstand des alten Zählers, beim Heizkostenverteiler verweist die
+  Rückfrage auf den Stichtagswert. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt, wenn heute im
+  gewählten Abrechnungszeitraum liegt; ein Hinweis am Feld sagt es, solange Sie es nicht geändert haben.
 
 ### Geändert
 
@@ -81,29 +87,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Zählerstände in Abrechnung und Cockpit:
-  - Negativer Verbrauch: Ergab ein Wohnungszähler für einen Mieter, eine Eigennutzung oder einen Leerstand einen
-    negativen Verbrauch (Endstand unter dem Anfangsstand), verteilte Mietfuchs die Position trotzdem nach Verbrauch;
-    ein Mieter bekam einen negativen Anteil, die übrigen zusammen mehr als die Rechnung, und die Abrechnung ließ sich
-    ohne Rückfrage abschließen. Jetzt steht an der Abrechnung der Fehler „Negativer Verbrauch im Verteilschlüssel“, die
-    Position wird nicht verteilt und steht beim Vermieter, bis die Ablesung stimmt, und Abschließen und Drucken fragen
-    nach. **Für offene Abrechnungen heißt das:** Nur eine Position, in der ein solcher negativer Verbrauch steckt,
-    ändert ihre Zahlen (die Anteile der Mieter fallen auf 0). Ein Rücksprung mitten im Zeitraum, der sich beim selben
-    Mieter wieder ausgleicht, und Rücksprünge am Hauptzähler ändern nichts; sie stehen wie bisher als Warnung auf der
-    Seite Zähler. Abgeschlossene Abrechnungen bleiben, wie sie sind. Am häufigsten trifft es einen Leerstand oder
-    Mieterwechsel, bei dem zwei Ableser verschieden runden (Auszug mit 45, Einzug mit 44,8): Der Leerstand dazwischen
-    hat dann negativen Verbrauch, und die Position wird nicht verteilt, bis einer der beiden Stände berichtigt ist.
-  - Cockpit: Die Zeile „Zählerstände“ meldete ab dem zweiten Jahr jeden Zähler als vollständig, weil sie die
-    Ablesungen aller Jahre zählte. Sie prüft jetzt, ob Ablesungen den gewählten Zeitraum von Anfang bis Ende decken,
-    und nennt die Tage, die fehlen. Ein getauschter Zähler gilt bis zu seiner letzten Ablesung, ein Zähler in einer
-    erst im Zeitraum bezogenen Wohnung ab dem Einzug. Bei einem Wohnungszähler dürfen am Anfang und Ende zusammen bis
-    zu zwei Wochen fehlen (im kurzen Zeitraum entsprechend weniger); die Zeile bleibt dann grün und nennt diese Tage.
-    Wurde ein Zähler erst im Lauf des Zeitraums eingebaut, tragen Sie am Zähler das Datum unter „Eingebaut am“ ein;
-    das Feld gibt es jetzt bei jedem Zähler, und Mietfuchs erwartet Ablesungen dann erst ab diesem Tag.
-  - Eine Ablesung mit Datum in der Zukunft (etwa 2052 statt 2025) nennen Zähler-Seite, Cockpit und Abrechnung als
-    Warnung, statt den Verbrauch still nach Tagen herunterzurechnen; gerechnet wird weiter wie erfasst.
-  - Hat eine Wohnung einen Zähler, dem nur die Stände des Zeitraums fehlen, heißt der Hinweis nicht mehr „Wohnung ohne
-    Zähler“, sondern „Zähler im Zeitraum nicht abgelesen“ und führt zum Zähler. Die Zahlen bleiben dieselben.
+- Navigation und Sprünge: Die Seite „Heizkosten“ steht in der Navigation, sobald die Heizung in den Stammdaten
+  eingerichtet ist, nicht erst nach einem Seitenwechsel; die Mitteilung nach dem Einrichten nennt die Seite. „Hier
+  beheben → Heizkosten“ führt zur betroffenen Heizanlage und hebt sie hervor, „Heizung einrichten →“ zur Karte
+  „Heizung“ der Stammdaten. Nach „Rückgängig“ im Verlauf zeigen die Stammdaten den wiederhergestellten Stand, ohne dass
+  die Seite neu geladen werden muss. Mietkonto, Heizkosten und Steuer führen aus dem leeren Zustand mit einem Knopf zum
+  fehlenden Schritt. Im Cockpit heißt die Zeile, die Kostenpositionen zählt, „Kosten erfasst“ statt „Belege erfasst“.
+- Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
+  Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
+  Issue, in dem sie tatsächlich geplant ist.
 
 ## [0.18.1] – 2026-11-19
 
