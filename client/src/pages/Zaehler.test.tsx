@@ -6,7 +6,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { Meter, Reading, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
+import { UIProvider } from '../components/feedback'
 import Zaehler from './Zaehler'
+import { todayIso } from '../readingSheet'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 let METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }]
@@ -79,6 +81,8 @@ test('Ablesung ohne Datum: Meldung am Feld und in der Sammelmeldung über „Anl
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 }))
     fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+    // Das Datum ist mit heute vorbelegt; hier wird es geleert.
+    fireEvent.change(screen.getByLabelText(/^Datum/), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText(/Zählerstand/), { target: { value: '5' } })
     const button = screen.getByRole('button', { name: /^Anlegen$/ })
     fireEvent.click(button)
@@ -108,12 +112,15 @@ test('Ablesung ohne Datum: Meldung am Feld und in der Sammelmeldung über „Anl
   }
 })
 
+// Mit UIProvider: Ohne ihn beantwortet `useConfirm` jede Rückfrage mit „nein“, und es stünde kein Dialog im Baum.
 const renderPage = () => render(
-  <PeriodProvider>
-    <PropertyProvider>
-      <Zaehler units={UNITS} />
-    </PropertyProvider>
-  </PeriodProvider>,
+  <UIProvider>
+    <PeriodProvider>
+      <PropertyProvider>
+        <Zaehler units={UNITS} />
+      </PropertyProvider>
+    </PeriodProvider>
+  </UIProvider>,
 )
 
 test('Zählerwechsel ohne Endstand: die Tabelle sagt „fehlt“ statt eines leeren Werts (#142)', async () => {
@@ -413,6 +420,146 @@ test('Ablesung: das Fenster nennt den letzten Stand des Zählers', async () => {
   fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
   const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
   expect(within(box).getByText('Letzter Stand: 1.234,5 m³ am 31.12.2024')).toBeTruthy()
+})
+
+// ---------- Ablesung bearbeiten, Rückfrage vor dem Speichern, Datum vorbelegt ----------
+// Vorher ließ sich eine Ablesung nur löschen und neu anlegen; PUT /api/readings/:id hatte keinen Aufrufer.
+const withReadings = async (list: Reading[], run: () => Promise<void>) => {
+  readings = list
+  try {
+    stubWithUrls()
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`Ablesungen \\(${list.length}\\)`) }, { timeout: 5000 }))
+    await run()
+  } finally {
+    readings = []
+  }
+}
+
+test('Ablesung bearbeiten: das Fenster zeigt die gespeicherten Werte und speichert mit PUT', async () => {
+  await withReadings([
+    { id: 'r1', meterId: 'm1', date: '2024-12-31', value: 1000 },
+    { id: 'r2', meterId: 'm1', date: '2025-06-30', value: 1234.5, note: 'Zwischenablesung' },
+  ], async () => {
+    // Die jüngste Ablesung steht oben.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ablesung bearbeiten' })[0] as HTMLElement)
+    const box = screen.getByRole('dialog', { name: /Ablesung bearbeiten/ })
+    expect((within(box).getByLabelText(/^Datum/) as HTMLInputElement).value).toBe('2025-06-30')
+    const stand = within(box).getByLabelText(/^Zählerstand/) as HTMLInputElement
+    expect(stand.value).toBe('1234,5')
+    expect((within(box).getByLabelText(/^Hinweis/) as HTMLInputElement).value).toBe('Zwischenablesung')
+    // Anhalt ist der Stand davor, nicht die Ablesung selbst.
+    expect(within(box).getByText('Letzter Stand: 1.000 m³ am 31.12.2024')).toBeTruthy()
+    expect(within(box).queryByRole('button', { name: 'Anlegen' })).toBeNull()
+    fireEvent.change(stand, { target: { value: '1.240' } })
+    fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ url: '/api/readings/r2', method: 'PUT', body: { date: '2025-06-30', value: 1240, replacement: false, oldEndValue: null, note: 'Zwischenablesung', estimated: false } })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+})
+
+// Der Server lehnt `newCalibratedUntil` im PUT mit 400 ab; das Fenster bietet es beim Bearbeiten nicht an und sagt, wo
+// das Eichjahr steht.
+test('Ablesung bearbeiten: beim Zählerwechsel kein Feld für das Eichjahr, sondern der Weg dorthin', async () => {
+  await withReadings([{ id: 'r1', meterId: 'm1', date: '2025-07-01', value: 3, replacement: true, oldEndValue: 980 }], async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Ablesung bearbeiten' }))
+    const box = screen.getByRole('dialog', { name: /Ablesung bearbeiten/ })
+    expect((within(box).getByLabelText(/Zählerwechsel/) as HTMLInputElement).checked).toBe(true)
+    expect((within(box).getByLabelText(/^Endstand alter Zähler/) as HTMLInputElement).value).toBe('980')
+    expect(within(box).queryByLabelText(/Neuer Zähler geeicht bis Ende/)).toBeNull()
+    expect(within(box).getByText(/Das Eichjahr des neuen Zählers ändern Sie über „Zähler bearbeiten“/)).toBeTruthy()
+  })
+})
+
+test('Stand unter dem vorigen Stand: Rückfrage; „Abbrechen“ speichert nichts, „Trotzdem anlegen“ speichert', async () => {
+  await withReadings([{ id: 'r1', meterId: 'm1', date: '2025-12-31', value: 450.8 }], async () => {
+    fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+    const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
+    fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2026-06-30' } })
+    fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '12,5' } })
+    saveReadingIn(box)
+    const frage = await screen.findByRole('alertdialog')
+    expect(frage.textContent).toMatch(/Der Stand 12,5 m³ liegt unter dem vorigen Stand 450,8 m³ vom 31\.12\.2025/)
+    fireEvent.click(within(frage).getByRole('button', { name: 'Abbrechen' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(calls).toEqual([])
+    // Das Fenster bleibt mit der Eingabe offen.
+    expect((within(box).getByLabelText(/^Zählerstand/) as HTMLInputElement).value).toBe('12,5')
+    await waitFor(() => expect((within(box).getByRole('button', { name: 'Anlegen' }) as HTMLButtonElement).disabled).toBe(false))
+    saveReadingIn(box)
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Trotzdem anlegen' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2026-06-30', value: 12.5 } })
+  })
+})
+
+test('Stand unter dem vorigen Stand mit Zählerwechsel: keine Rückfrage', async () => {
+  await withReadings([{ id: 'r1', meterId: 'm1', date: '2025-12-31', value: 450.8 }], async () => {
+    fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+    const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
+    fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2026-06-30' } })
+    fireEvent.click(within(box).getByLabelText(/Zählerwechsel/))
+    fireEvent.change(within(box).getByLabelText(/^Startstand neuer Zähler/), { target: { value: '12,5' } })
+    saveReadingIn(box)
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+})
+
+test('Datum in der Zukunft: Rückfrage vor dem Anlegen', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2052-12-31' } })
+  fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '500' } })
+  saveReadingIn(box)
+  const frage = await screen.findByRole('alertdialog')
+  expect(frage.textContent).toMatch(/Das Datum 31\.12\.2052 liegt in der Zukunft\./)
+  expect(calls).toEqual([])
+})
+
+test('Ablesung bearbeiten: die Rückfrage heißt „Trotzdem speichern“ und vergleicht nicht mit der Ablesung selbst', async () => {
+  await withReadings([
+    { id: 'r1', meterId: 'm1', date: '2024-12-31', value: 400 },
+    { id: 'r2', meterId: 'm1', date: '2025-12-31', value: 450.8 },
+  ], async () => {
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ablesung bearbeiten' })[0] as HTMLElement)
+    const box = screen.getByRole('dialog', { name: /Ablesung bearbeiten/ })
+    fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '39,9' } })
+    fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
+    const frage = await screen.findByRole('alertdialog')
+    expect(frage.textContent).toMatch(/unter dem vorigen Stand 400 m³ vom 31\.12\.2024/)
+    fireEvent.click(within(frage).getByRole('button', { name: 'Trotzdem speichern' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toMatchObject({ url: '/api/readings/r2', method: 'PUT', body: { value: 39.9 } })
+  })
+})
+
+// Vorbelegt ist nicht geändert: Wer das Fenster ohne Eingabe schließt, wird nicht nach „Verwerfen“ gefragt.
+test('Neue Ablesung: das Datum ist mit heute vorbelegt, und ohne Eingabe schließt das Fenster ohne Rückfrage', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  expect((within(box).getByLabelText(/^Datum/) as HTMLInputElement).value).toBe(todayIso())
+  fireEvent.click(within(box).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+// Ein Stichtagswert (Heizkostenverteiler) hat sein eigenes Formular; das allgemeine Fenster passte nicht zu ihm.
+test('Stichtagswert eines Heizkostenverteilers: kein „Ablesung bearbeiten“', async () => {
+  const before = METERS
+  METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten' }]
+  try {
+    await withReadings([
+      { id: 'r1', meterId: 'm1', date: '2025-06-30', value: 12 },
+      { id: 'r2', meterId: 'm1', date: '2025-12-31', value: 0, replacement: true, oldEndValue: 40 },
+    ], async () => {
+      expect(screen.getAllByRole('button', { name: 'Ablesung löschen' })).toHaveLength(2)
+      expect(screen.getAllByRole('button', { name: 'Ablesung bearbeiten' })).toHaveLength(1)
+    })
+  } finally {
+    METERS = before
+  }
 })
 
 // Aufklappen einheitlich (Durchsicht M1): „Ablesungen (N)“ klappt die Ablesungen auf wie jeder Aufklapper, mit Pfeil

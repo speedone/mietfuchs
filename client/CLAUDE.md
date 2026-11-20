@@ -685,7 +685,14 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
 - **Anlegen oder Bearbeiten heißt Seitenfenster**, auch Ablesung, Lieferung, Mieterwechsel,
   Zeitraumwechsel, der Zeitraum der Heizung, die getrennte Heizkostenabrechnung, die Schätzung nach § 9a
   (geöffnet aus der Zeile der Wohnung, „Schätzen“/„Ändern“) und das Objekt (die Karte „Objekt“ zeigt nur an,
-  `propertySummary`). Mit Vorschau
+  `propertySummary`). **Ablesung** (Zaehler.tsx, Logik in [readingForm.ts](src/readingForm.ts)): ein Fenster für
+  Anlegen und Bearbeiten (✎ je Zeile, `PUT /api/readings/:id` mit `buildReadingUpdate`: Abgewähltes ausdrücklich, nie
+  der Zähler und nie das Eichjahr des neuen Zählers, das der Server im PUT ablehnt; ein Stichtagswert des
+  Heizkostenverteilers hat kein ✎, er hat sein eigenes Formular). Vor dem Speichern fragt `readingQuestion` (Datum nach
+  heute; negativer Verbrauch zum Stand unmittelbar davor oder danach, außer die spätere Ablesung ist ein Zählerwechsel),
+  **Rückfrage, kein Verbot**. Das Datum einer neuen Ablesung ist heute (`newReadingForm`), ohne `changedFrom`:
+  vorbelegt gilt hier nicht als geändert. Der Mieterwechsel erfasst seine Stände über tenantChange.ts und fragt nicht.
+  Mit Vorschau
   verwirft **jede Änderung nach der Vorschau die Vorschau** (auch eine verspätete Antwort gilt dann
   nicht, Folgenummer je Anfrage), und ein Satz sagt, dass sie neu nötig ist.
   Beispiel „Offene Monate als bezahlt erfassen“ im Mietkonto (#608, [markPaidForm.ts](src/markPaidForm.ts)): Die Vorschau

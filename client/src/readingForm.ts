@@ -3,7 +3,8 @@
 import { parseQuantity } from './costForm'
 import type { Problem } from './formProblems'
 import { parseYearText } from './yearText'
-import type { Meter } from './types'
+import type { Meter, Reading } from './types'
+import { fmtDate } from './api'
 import { asksCalibration } from './meterForm'
 
 // `newCalibratedUntil`: das Eichjahr des neuen Zählers beim Wechsel (Praxistest), als Text wie das Jahresfeld.
@@ -75,6 +76,86 @@ export function buildReadingBody(form: ReadingForm, meterId: string, asksYear = 
       ...(form.estimated ? { estimated: true as const, estimateReason: reason } : {}),
     },
   }
+}
+
+// Eine neue Ablesung beginnt mit dem heutigen Datum. Entscheidung: heute und nicht das Ende des gewählten Zeitraums.
+// Wer gleich nach dem Ablesen einträgt, hat damit das richtige Datum; das Zeitraumende wäre nur für die Jahresablesung
+// richtig und läge im laufenden Zeitraum in der Zukunft. Vorbelegt gilt nicht als geändert: Das Fenster merkt sich den
+// Stand vor der ersten Eingabe (kein `changedFrom`), wer ohne Eingabe schließt, wird nicht gefragt.
+export const newReadingForm = (today: string): ReadingForm => ({ ...EMPTY_READING, date: today })
+
+// Ein Stand als Text fürs Feld: deutsches Komma, ohne Tausenderpunkt, keine Stelle geht verloren.
+const quantityText = (n: number): string => n.toLocaleString('de-DE', { useGrouping: false, maximumFractionDigits: 20 })
+
+// Bearbeiten: das Formular aus der gespeicherten Ablesung. Das Eichjahr des neuen Zählers gehört nicht dazu (es steht
+// am Zähler und geht nur beim Anlegen des Wechsels mit).
+export function readingToForm(r: Reading): ReadingForm {
+  return {
+    date: r.date,
+    value: quantityText(r.value),
+    replacement: r.replacement === true,
+    oldEndValue: r.oldEndValue == null ? '' : quantityText(r.oldEndValue),
+    newCalibratedUntil: '',
+    note: r.note ?? '',
+    estimated: r.estimated === true,
+    estimateReason: r.estimateReason ?? '',
+  }
+}
+
+// Der Rumpf für PUT /api/readings/:id. Der Server lässt stehen, was im Rumpf fehlt; was abgewählt oder geleert ist,
+// geht deshalb ausdrücklich hinaus (`false`, `null`). Nie dabei: der Zähler (eine Ablesung wechselt ihn hier nicht) und
+// `newCalibratedUntil` (im PUT eine 400).
+export type ReadingUpdate = {
+  date: string
+  value: number
+  replacement: boolean
+  oldEndValue: number | null
+  note: string | null
+  estimated: boolean
+  estimateReason?: string
+}
+export function buildReadingUpdate(form: ReadingForm): { problems: Problem<ReadingField>[] } | { body: ReadingUpdate } {
+  const built = buildReadingBody(form, '')
+  if ('problems' in built) return built
+  const b = built.body
+  return {
+    body: {
+      date: b.date,
+      value: b.value,
+      replacement: form.replacement,
+      oldEndValue: form.replacement ? b.oldEndValue ?? null : null,
+      note: b.note ?? null,
+      estimated: form.estimated,
+      ...(b.estimateReason !== undefined ? { estimateReason: b.estimateReason } : {}),
+    },
+  }
+}
+
+// Rückfrage vor dem Speichern (Anlegen und Bearbeiten), kein Verbot: Der Vermieter darf speichern. Gefragt wird bei
+// einem Datum nach heute und bei einem Stand, der mit dem Stand unmittelbar davor oder danach einen negativen Verbrauch
+// ergäbe, außer die spätere der beiden Ablesungen ist ein Zählerwechsel. Verglichen wird nur mit Ablesungen desselben
+// Zählers an anderen Tagen; beim Bearbeiten zählt die Ablesung selbst nicht.
+export type ReadingQuestion = { title: string; message: string; confirmLabel: string }
+export function readingQuestion(
+  candidate: { meterId: string; date: string; value: number; replacement: boolean },
+  readings: readonly Reading[],
+  opts: { today: string; unit?: string; editingId?: string },
+): ReadingQuestion | null {
+  const text = (n: number) => `${n.toLocaleString('de-DE', { maximumFractionDigits: 20 })}${opts.unit ? ` ${opts.unit}` : ''}`
+  const others = readings.filter((r) => r.meterId === candidate.meterId && r.id !== opts.editingId)
+  const previous = others.filter((r) => r.date < candidate.date).reduce<Reading | null>((a, r) => (a === null || r.date > a.date ? r : a), null)
+  const next = others.filter((r) => r.date > candidate.date).reduce<Reading | null>((a, r) => (a === null || r.date < a.date ? r : a), null)
+  const lines: string[] = []
+  if (candidate.date > opts.today) lines.push(`Das Datum ${fmtDate(candidate.date)} liegt in der Zukunft.`)
+  if (previous && !candidate.replacement && candidate.value < previous.value) {
+    lines.push(`Der Stand ${text(candidate.value)} liegt unter dem vorigen Stand ${text(previous.value)} vom ${fmtDate(previous.date)}; der Verbrauch dazwischen wäre negativ. Wurde der Zähler getauscht, haken Sie „Zählerwechsel“ an.`)
+  }
+  if (next && next.replacement !== true && next.value < candidate.value) {
+    lines.push(`Der Stand ${text(candidate.value)} liegt über dem folgenden Stand ${text(next.value)} vom ${fmtDate(next.date)}; der Verbrauch dazwischen wäre negativ.`)
+  }
+  if (lines.length === 0) return null
+  const editing = opts.editingId !== undefined
+  return { title: editing ? 'Ablesung trotzdem speichern?' : 'Ablesung trotzdem anlegen?', message: lines.join(' '), confirmLabel: editing ? 'Trotzdem speichern' : 'Trotzdem anlegen' }
 }
 
 // Das Eichjahr des neuen Geräts fragt das Fenster nach derselben Regel wie das Zählerformular (nie am

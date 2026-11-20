@@ -62,6 +62,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
+- Zähler: Eine Ablesung lässt sich bearbeiten (✎ in ihrer Zeile), statt sie zu löschen und neu anzulegen. Vor dem
+  Speichern fragt Mietfuchs nach, wenn der Stand unter dem vorigen Stand desselben Zählers liegt und kein Zählerwechsel
+  angehakt ist, wenn er über dem folgenden Stand liegt oder wenn das Datum in der Zukunft liegt; speichern können Sie
+  trotzdem. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt.
 
 ### Geändert
 
