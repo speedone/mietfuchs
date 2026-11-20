@@ -946,7 +946,13 @@ fällig“ (PR 4, Abschnitt „Demnächst fällig“).
   `planToken`/`increaseToken`; die Plan-Route liefert sie mit), sonst 409 mit dem neuen Plan bzw. `increase`; Lesen und
   Schreiben in einem `writeData`, eine Transaktion, Stufe über `patchTenancyIn`, `RentIncreaseError` mit Satz. **Höchstens
   ein offenes Verlangen** je Mietverhältnis (Entwurf oder versandtes nach § 558). Entwurf nur aus einem Plan, der nicht
-  `blocked` ist (zu früh geht, der Zugang kommt beim Versand). **`basis`** friert ein: Eingaben der Rechnung und des
+  `blocked` ist (zu früh geht, der Zugang kommt beim Versand). **Ohne Namen des Vermieters kein Entwurf** (400 mit Satz,
+  `rentSenderProblem` in shared/rentIncreaseLetter.ts, dieselbe Prüfung wie im Seitenfenster): § 558a Abs. 1 und § 557b
+  Abs. 3 BGB verlangen Textform, § 126b BGB dafür die Nennung des Erklärenden, ohne Form ist die Erklärung nichtig
+  (§ 125 Satz 1 BGB); der Name ist der wirksame (`effectiveLandlord`, Objekt vor Einstellungen). Ausgenommen ist ein
+  hinterlegtes Briefpapier (eigene Gestaltung des Objekts vor der Installation, eine fehlende Datei zählt nicht), wie bei
+  „Absender fehlt“ der Abrechnung. Versand und Antwort eines schon angelegten Entwurfs ohne Namen sperrt der Server nicht
+  (das Schreiben kann schon beim Mieter sein); die Oberfläche warnt am Entwurf. **`basis`** friert ein: Eingaben der Rechnung und des
   Schreibens, Plan samt `legalValues`, Angabe zur Kappungsgrenzen-Verordnung mit Tag (S2), Absender, Empfänger und Anrede
   zum Zeitpunkt, Wohnung, Inklusivmiete, Vorauszahlungen im Monat des Wirksamwerdens; das Schreiben druckt nur daraus.
   **Versand** rechnet mit dem tatsächlichen Zugang neu (Monat und verlangte Miete bleiben die des Schreibens): nur bei

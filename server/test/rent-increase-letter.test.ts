@@ -2,7 +2,7 @@
 // Mietspiegel (M6), auffindbare Vergleichswohnungen (M7), alle Vermieter und Mieter (S4), Alter des Mietspiegels (S5).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rentIncreaseBasisProblem, rentIncreaseLetterOf, surveyStale } from '../../shared/rentIncreaseLetter.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf, rentSenderProblem, surveyStale } from '../../shared/rentIncreaseLetter.ts'
 import type { RentIncreaseLetterInput } from '../../shared/types.ts'
 
 const SURVEY = { name: 'Mietspiegel Musterstadt 2025', asOf: '2025-04', field: 'Baujahr 1950 bis 1964', rangeLowCentsPerM2: 850, rangeHighCentsPerM2: 1100, availableAt: 'www.musterstadt.de' }
@@ -61,4 +61,14 @@ test('Grundlage: Fassung und Grundgestalt geprüft, sonst ein ganzer Satz statt 
   for (const x of [null, 'text', {}, { version: 2 }, { version: 1 }, { version: 1, plan: {}, letter: {}, sender: {}, recipient: [], premises: {}, prepayments: {} }]) {
     assert.match(rentIncreaseBasisProblem(x) ?? '', /^Dieses Schreiben stammt aus einer anderen Fassung von Mietfuchs.*\.$/, JSON.stringify(x))
   }
+})
+
+test('Schreiben: ohne Namen des Vermieters kein Schreiben (§ 126b BGB), außer das Briefpapier trägt den Absender', () => {
+  assert.equal(rentSenderProblem('Max Vermieter', false), null)
+  assert.equal(rentSenderProblem('', true), null)
+  const p = rentSenderProblem('  ', false)
+  assert.equal(p?.field, 'allLandlordsNamed')
+  assert.match(p?.text ?? '', /§ 558a Abs\. 1/)
+  assert.match(p?.text ?? '', /§ 557b Abs\. 3/)
+  assert.match(p?.text ?? '', /§ 126b BGB/)
 })

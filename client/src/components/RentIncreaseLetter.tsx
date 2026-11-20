@@ -90,6 +90,9 @@ export function RentIncreasePrint({ increase, propertyId, onDone }: { increase: 
     document.body.classList.add('print-rent-increase')
     const job = startPrint({
       title: `Mieterhöhung ${increase.basis.letter.recipientName} ab ${monthLabel(increase.effectiveFrom)}`,
+      // Schreiben und Zustimmungserklärung sind zwei Seiten: „Seite x von y“ im Seitenrand wie bei der Abrechnung, mit
+      // Briefpapier nicht (dessen Ränder gehören dem Papier). Der Seitenrand zählt nicht zur Druckbreite.
+      pageNumbers: !design.paper,
       onDone: () => {
         document.body.classList.remove('print-rent-increase')
         onDone()

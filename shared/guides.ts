@@ -14,6 +14,7 @@ import type { TermId } from './glossary.ts'
 // Rechtszahlen aus dem Rechtsregister (Heizung PR 1), in der Fassung von `LAW_AS_OF` wie im Lexikon.
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvEstimateThreshold, hkvRenewableExemption } from './law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, valueAt } from './law/register.ts'
+import { bgbRentCap, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths } from './law/bgb-betrkv.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -25,6 +26,11 @@ const INFO_CUT = valueAt(hkvCutInformation, LAW_AS_OF)
 // Heizung PR 6: die Kürzung bei fehlender CO₂-Aufteilung (§ 7 Abs. 4 CO2KostAufG) und der Beginn der
 // Aufteilung (§ 11 Abs. 2 Satz 1) aus dem Register.
 const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
+// Mieterhöhung (#191): Kappungsgrenze, Zustimmungs- und Klagefrist, Warte- und Sperrfrist
+const RENT_CAP = valueAt(bgbRentCap, LAW_AS_OF)
+const RENT_CONSENT = valueAt(bgbRentIncreaseConsent, LAW_AS_OF)
+const RENT_WAIT_MONTHS = valueAt(bgbRentIncreaseWaitMonths, LAW_AS_OF)
+const RENT_LOCK_MONTHS = valueAt(bgbRentIncreaseLockMonths, LAW_AS_OF)
 const CO2_FROM = germanDate(co2FirstPeriodStart())
 // Heizung PR 11: seit wann Wärmepumpen nicht mehr von der Heizkostenverordnung ausgenommen sind.
 const HEAT_PUMP_FROM = germanDate(hkvRenewableExemption.versions.find((v) => v.validFrom !== undefined)?.validFrom ?? '')
@@ -495,6 +501,47 @@ const GUIDE_DATA = {
       { text: 'Ein Anschreiben zur Abrechnung der Kaution fehlt noch; gedruckt wird nur die Aufstellung.' },
     ],
     terms: ['deposit', 'paymentOrder', 'formerYearsRent', 'separateHeatingSettlement'],
+  },
+  // #191: Mieterhöhung (Entwurf 2026-11-20). Beschrieben ist nur, was das Fenster „Mieterhöhung“ tut. Gelesen sind
+  // § 558a Abs. 1 bis 3, § 557b Abs. 3 und § 126b BGB (20.11.2026); die Fristen und die Kappungsgrenze kommen aus dem
+  // Register. Kein Rat, ob eine Erhöhung oder eine Klage sinnvoll ist.
+  rentIncrease: {
+    group: 'year',
+    title: 'Miete erhöhen: Vergleichsmiete oder Indexmiete, Schreiben und Zustimmung',
+    applies: 'Sie möchten die Kaltmiete eines laufenden Mietverhältnisses bis zur ortsüblichen Vergleichsmiete anheben oder eine vereinbarte Indexmiete anpassen und wissen, womit Sie die Erhöhung begründen (etwa den Mietspiegel Ihrer Gemeinde) bzw. den neuen Indexwert.',
+    steps: [
+      { page: 'stammdaten', text: 'Öffnen Sie das Mietverhältnis mit ✎ und wählen Sie bei der Kaltmiete die „Art der Miete“ und die Antwort auf „Schließt der Vertrag Mieterhöhungen aus?“. Ohne diese Angaben rechnet Mietfuchs keine Erhöhung. Jede frühere Änderung der Kaltmiete gehört mit ihrer Art in die Staffel.' },
+      { page: 'einstellungen', text: 'Das Schreiben muss Sie als Vermieter nennen: Tragen Sie unter „Name des Vermieters“ Ihren Namen ein. Ohne ihn legt Mietfuchs kein Schreiben an, außer Sie drucken auf ein hinterlegtes Briefpapier.' },
+      { page: 'stammdaten', text: 'Klicken Sie in der Liste der Mietverhältnisse auf „Mieterhöhung“. Wählen Sie die „Art der Erhöhung“ und haken Sie unter „Bestätigungen“ an, was zutrifft. Bei einer Erhöhung bis zur Vergleichsmiete tragen Sie die Vergleichsmiete je m² ein, wie Ihr Begründungsmittel sie nennt; bei einer Indexmiete Monat und Wert des neuen Index („Neuer Index, Wert“).' },
+      { page: 'stammdaten', text: 'Unter „Rechnung“ steht, ob die Erhöhung „Möglich“, „Noch nicht möglich“ oder „Nicht möglich“ ist, mit den Gründen in ganzen Sätzen, dem frühesten Zugang, dem Monat der neuen Miete und dem Rechenweg unter „Herleitung“. „Zugang beim Mieter“ ist der Tag, an dem das Schreiben ankommt, nicht der Versand.' },
+      { page: 'stammdaten', text: 'Für das Schreiben wählen Sie bei der Vergleichsmiete das „Begründungsmittel“ mit seinen Angaben und beantworten, ob es für die Gemeinde einen qualifizierten Mietspiegel gibt. Prüfen Sie den „Empfänger“ und bestätigen Sie, dass alle Vermieter und alle Mieter laut Mietvertrag genannt sind. „Schreiben als Entwurf anlegen“ speichert das Schreiben; die Miete ändert sich dadurch noch nicht.' },
+      { page: 'stammdaten', text: 'Unter „Verlangen und Erklärungen“ lesen Sie das Schreiben mit „Schreiben ansehen“ und drucken es mit „Drucken“; beim Verlangen bis zur Vergleichsmiete liegt eine Zustimmungserklärung zum Zurücksenden bei. Ist das Schreiben beim Mieter angekommen, tragen Sie den Tag ein und klicken auf „Als versendet speichern …“.' },
+      { page: 'stammdaten', text: 'Hat der Mieter geantwortet, tragen Sie den Tag der Antwort ein und klicken auf „Zugestimmt …“, „Teilweise zugestimmt …“ (mit der Angabe bei „Zugestimmte Miete €“) oder „Abgelehnt …“. Mit „Zurücknehmen …“ nehmen Sie ein versandtes Schreiben zurück.' },
+    ],
+    result: [
+      'Die neue Miete steht erst in der Kaltmiete-Staffel, wenn Sie die Zustimmung eintragen, bei einer Indexmiete schon mit „Als versendet speichern …“. Ab ihrem Monat rechnen Mietkonto, Abrechnung und Steuer damit; vorher ändert sich nichts.',
+      'Nach dem Ende der Zustimmungsfrist geschieht nichts von selbst: Ohne eingetragene Zustimmung bleibt die bisherige Miete stehen.',
+      'Das Schreiben bleibt, wie es angelegt wurde, mit Absender, Zahlen und Fristen dieses Tages; ein Nachdruck ergibt dasselbe Schreiben. „Als versendet speichern …“ rechnet mit dem tatsächlichen Zugang neu und lehnt ab, wenn das gedruckte Schreiben dann andere Zahlen oder Fristen nennt; dann legen Sie es neu an.',
+      'Das Cockpit nennt unter „Demnächst fällig“, ab wann eine Erhöhung möglich ist, die laufende Zustimmungsfrist und die nächste Stufe einer Staffelmiete. Solange ein Entwurf offen ist, erinnert es nicht an eine mögliche Erhöhung.',
+      '„Zurücknehmen …“ nimmt die eingetragene Stufe wieder aus der Staffel, wenn sie seither unverändert ist und keine spätere Stufe auf ihr aufbaut.',
+    ],
+    example: `Kaltmiete 500 € seit dem Mietbeginn im Januar 2020, die Wohnung hat 60 m², und Ihr Mietspiegel nennt 11 € je m²: Die Vergleichsmiete für die Wohnung wären 660 €. Ohne Verordnung der Gemeinde darf die Miete innerhalb von ${RENT_CAP.years} Jahren um höchstens ${RENT_CAP.percent} % steigen; ausgehend von 500 € sind das 600 €, und das ist der Höchstbetrag. Geht das Schreiben am 15.10.2026 zu, kann der Mieter bis zum 31.12.2026 zustimmen; mit seiner Zustimmung gilt ab Januar 2027 die neue Miete von 600 €.`,
+    caveats: [
+      { text: 'Das Verlangen ist dem Mieter in Textform zu erklären und zu begründen, und Textform verlangt, dass die Person des Erklärenden genannt ist. Deshalb legt Mietfuchs ohne Namen des Vermieters kein Schreiben an.', norm: '§ 558a Abs. 1, § 126b BGB' },
+      { text: 'Enthält ein qualifizierter Mietspiegel Angaben für die Wohnung, gehören sie in das Schreiben, auch wenn Sie die Erhöhung anders begründen. Mietfuchs fragt deshalb immer danach und legt mit „Weiß nicht“ kein Schreiben an.', norm: '§ 558a Abs. 3 BGB' },
+      { text: `Schweigen ist keine Zustimmung. Der Mieter kann bis zum Ablauf des ${RENT_CONSENT.consentMonths}. Kalendermonats nach dem Zugang zustimmen; stimmt er nicht zu, sieht das Gesetz die Klage auf Zustimmung innerhalb von ${RENT_CONSENT.suitMonths} weiteren Monaten vor. Mietfuchs nennt diese Daten nur; ob Sie klagen, entscheiden Sie, am besten nach rechtlichem Rat.`, norm: '§ 558b Abs. 1 und 2 BGB' },
+      { text: `Die Miete muss beim Wirksamwerden seit ${RENT_WAIT_MONTHS} Monaten unverändert sein, und das Verlangen darf frühestens ${RENT_LOCK_MONTHS} Monate nach der letzten Erhöhung zugehen; Erhöhungen wegen Modernisierung zählen dabei nicht. Mietfuchs rechnet das aus der Kaltmiete-Staffel, deshalb muss sie vollständig sein.`, norm: '§ 558 Abs. 1 BGB' },
+      { text: `Ob in Ihrer Gemeinde eine Verordnung die Kappungsgrenze von ${RENT_CAP.percent} % auf ${RENT_CAP.reducedPercent} % senkt, weiß Mietfuchs nicht. Sie geben es am Objekt oder im Fenster an; ohne Angabe rechnet Mietfuchs mit dem niedrigeren Satz.`, norm: '§ 558 Abs. 3 BGB' },
+      { text: 'Die Anpassung einer Indexmiete braucht keine Zustimmung: Sie wird durch Erklärung in Textform geltend gemacht, die die Änderung des Index und die neue Miete oder die Erhöhung als Betrag nennt, und die neue Miete ist ab dem übernächsten Monat nach dem Zugang zu zahlen.', norm: '§ 557b Abs. 3 BGB' },
+      { text: 'Fällt das Ende der Zustimmungsfrist auf ein Wochenende oder einen Feiertag, nennt Mietfuchs auch das verschobene Ende; ob sich die Frist dadurch verlängert, ist nicht geklärt.', norm: '§ 193 BGB' },
+      { text: 'Zwei Auslegungen von Mietfuchs: Die neue Miete wird auf den Cent abgerundet, und als Zugang schlägt Mietfuchs nie einen Monatsersten vor. Mietfuchs prüft Fristen und Rechnung, nicht aber, ob Ihr Mietspiegel passt, die Wohnung richtig eingeordnet ist oder der Vertrag etwas anderes regelt; es ersetzt keine Rechtsberatung.' },
+    ],
+    gaps: [
+      { text: 'Mietspiegel, Vergleichswohnungen und Indexwerte kennt Mietfuchs nicht; Sie tragen ein, was Ihr Mietspiegel bzw. das Statistische Bundesamt nennt.' },
+      { text: 'Eine Erhöhung nach einer Modernisierung rechnet Mietfuchs nicht und schreibt dafür kein Schreiben. Sie tragen sie als Stufe mit der Art Modernisierung in die Kaltmiete-Staffel ein.' },
+      { text: 'Mietfuchs verschickt das Schreiben nicht und weiß nicht, wann es zugegangen ist; den Zugang tragen Sie ein.' },
+    ],
+    terms: ['rentIncreaseRequest', 'comparisonRent', 'rentCap', 'consentPeriod', 'rentJustification', 'qualifiedRentSurvey', 'indexRent', 'staggeredRent'],
   },
   // #188: Kontoauszug einlesen und Zahlungen zuordnen (Entwurf 2026-11-12). Keine Rechtsaussage: Die Frage der
   // Aufzeichnungspflichten privater Vermieter ist im Entwurf als offen festgehalten.

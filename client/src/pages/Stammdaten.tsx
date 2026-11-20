@@ -205,6 +205,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [depositFor, setDepositFor] = useState<string | null>(null)
   // Mieterhöhung (#191): das Seitenfenster mit der Rechnung je Mietverhältnis.
   const [rentIncreaseFor, setRentIncreaseFor] = useState<string | null>(null)
+  // „Hier beheben“ im Fenster „Mieterhöhung“, wenn die Art der Miete fehlt: Das Formular des Mietverhältnisses beginnt
+  // dann am Feld „Art der Miete“ (`data-autofocus`, Drawer.tsx). Gilt nur für dieses eine Öffnen.
+  const [rentKindJump, setRentKindJump] = useState(false)
+  const tenFormOpen = tenForm !== null
+  useEffect(() => { if (!tenFormOpen) setRentKindJump(false) }, [tenFormOpen])
   // Für die Aufstellung zum Auszug: letzte Abrechnung und Ausstehendes je Mietverhältnis.
   const [depositInfo, setDepositInfo] = useState<DepositStatementInfo[]>([])
   useEffect(() => {
@@ -829,7 +834,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <div className="field-group">
               <div className="field-group-label">Kaltmiete je Monat - Staffel (leer = nur NK)</div>
               {/* #191: Art der Miete und Ausschluss von Erhöhungen; gerechnet wird damit nur bei einer Mieterhöhung. */}
-              <div className="field-grid">
+              <div className="field-grid" data-autofocus={rentKindJump || undefined}>
                 <Field label="Art der Miete" hint={RENT_KIND_HINT}>
                   <select aria-label="Art der Miete" value={tenForm.rentKind} onChange={(e) => setTenForm({ ...tenForm, rentKind: rentKindOptions().find((o) => o.value === e.target.value)?.value ?? '' })}>
                     {rentKindOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -1194,7 +1199,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
       {rentIncreaseTenancy && (
         <RentIncreaseDrawer key={rentIncreaseTenancy.id} tenancy={rentIncreaseTenancy} unit={units.find((u) => u.id === rentIncreaseTenancy.unitId)}
-          property={property} settings={settings} onClose={() => setRentIncreaseFor(null)} />
+          property={property} settings={settings} onClose={() => setRentIncreaseFor(null)}
+          // Zustimmung, Versand einer Indexanpassung und Rücknahme ändern die Kaltmiete-Staffel: neu laden, sonst zeigte
+          // das Formular den alten Stand und scheiterte beim Speichern an der Marke (409).
+          onChanged={() => void reload()}
+          onEditTenancy={() => { setRentIncreaseFor(null); tenErrors.clear(); setRentKindJump(true); setTenForm(tenancyToForm(rentIncreaseTenancy)) }} />
       )}
 
       {wizardFor && (

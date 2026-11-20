@@ -44,6 +44,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Entwurf offen ist, sagt das Fenster, dass das Cockpit nicht erinnert.
   - Neu im Lexikon: „Ortsübliche Vergleichsmiete“, „Kappungsgrenze“, „Indexmiete“, „Staffelmiete“,
     „Mieterhöhungsverlangen“, „Zustimmungsfrist“, „Begründungsmittel“ und „Qualifizierter Mietspiegel“.
+  - Nacharbeit am Fenster „Mieterhöhung“ ([#191](https://github.com/speedone/mietfuchs/issues/191)): Nach Zustimmung,
+    Versand einer Indexanpassung und Rücknahme zeigen die Stammdaten sofort die neue Kaltmiete-Staffel; vorher zeigte
+    das Mietverhältnis die alte, und Speichern scheiterte. Ohne Namen des Vermieters legt Mietfuchs kein Schreiben mehr
+    an, denn die Erhöhung braucht Textform, und dafür muss der Erklärende genannt sein (§ 558a Abs. 1, § 557b Abs. 3,
+    § 126b BGB); mit hinterlegtem Briefpapier bleibt es bei einer Warnung, und ein schon angelegter Entwurf ohne Namen
+    trägt einen Hinweis. Nach dem Anlegen des Entwurfs fragt „Schließen“ nicht mehr „Änderungen verwerfen?“. Fehlt die
+    Art der Miete, führt „Hier beheben“ an das Feld im Mietverhältnis. Das Schreiben druckt ohne Briefpapier „Seite x
+    von y“ (Chromium). Neu ist die Anleitung „Miete erhöhen: Vergleichsmiete oder Indexmiete, Schreiben und
+    Zustimmung“.
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und

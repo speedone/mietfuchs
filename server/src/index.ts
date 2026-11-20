@@ -35,7 +35,8 @@ import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './close
 import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
 import { buildBasis, decided as decidedRentIncrease, decisionProblem, sentOf as sentRentIncrease, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
 import { deleteRentIncrease, insertRentIncrease, readRentIncrease, readRentIncreases, readRentIncreasesOf, replaceRentIncrease } from './db/rentIncreases.ts'
-import { rentIncreaseBasisProblem, rentIncreaseLetterOf } from '../../shared/rentIncreaseLetter.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf, rentSenderProblem } from '../../shared/rentIncreaseLetter.ts'
+import { effectiveLandlord } from '../../shared/landlord.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
@@ -1996,7 +1997,15 @@ app.post('/api/tenancies/:id/rent-increases', async (req: Request, res: Response
     if (increases.some(isOpenRentIncrease)) throw new RentIncreaseError(409, 'Für dieses Mietverhältnis gibt es schon ein offenes Verlangen (Entwurf oder versandt ohne Antwort). Löschen Sie den Entwurf oder tragen Sie die Antwort ein, bevor Sie ein neues anlegen.')
     const problem = draftProblem(plan)
     if (problem) throw new RentIncreaseError(400, problem)
-    const basis = buildBasis({ today: day, request, plan, letter: letter.letter, ...ctx, settings: await readSettings(db) })
+    const settings = await readSettings(db)
+    // Ohne Namen des Vermieters kein Schreiben (§ 126b BGB), außer ein Briefpapier trägt den Absender; dieselbe Prüfung
+    // wie im Seitenfenster (shared/rentIncreaseLetter.ts). Das Briefpapier wie in GET /api/letter-design: die eigene
+    // Gestaltung des Objekts geht vor, eine fehlende Datei zählt nicht.
+    const ownDesign = ctx.property ? await readPropertyDesign(db, ctx.property.id) : null
+    const paper = presentDesign(DATA_DIR, ownDesign ?? await readInstallationDesign(db), new Set()).paper !== null
+    const noSender = rentSenderProblem(effectiveLandlord(ctx.property, settings).landlordName, paper)
+    if (noSender) throw new RentIncreaseError(400, noSender.text)
+    const basis = buildBasis({ today: day, request, plan, letter: letter.letter, ...ctx, settings })
     const draft = draftOfRentIncrease({ id: newId(), tenancyId: ctx.tenancy.id, today: day, basis })
     await db.transaction(async (tx) => insertRentIncrease(tx, draft))
     return { created: rentIncreaseViewOf(draft, ctx.tenancy) }

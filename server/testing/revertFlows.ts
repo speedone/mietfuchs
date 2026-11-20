@@ -65,6 +65,10 @@ async function rentIncreaseDraft(ctx: Ctx): Promise<(Row & { token: string; crea
   const request = { kind: 'comparison', allStepsEntered: true, residential: true, noThirdPartyFunds: true, comparisonCentsPerM2: 2000, rentCap: 'yes' }
   const plan = await json<{ token: string }>(await send(ctx.s, 'POST', `/api/tenancies/${t.id}/rent-increase/plan`, request))
   if (!plan) return null
+  // Ohne Namen des Vermieters legt der Server kein Schreiben an (§ 126b BGB); gesetzt nur, solange keiner eingetragen ist,
+  // damit der Stand der übrigen Schritte bleibt.
+  const settings = await get<{ landlordName?: string }>(ctx.s, '/api/settings', {})
+  if ((settings.landlordName ?? '').trim() === '') await send(ctx.s, 'PUT', '/api/settings', { landlordName: 'Vermieter Muster' })
   const letter = { justification: 'database', database: { name: 'Mietdatenbank Musterstadt', date: '2026-01-15' }, qualifiedSurvey: 'no', recipientName: String(t.tenantName), allLandlordsNamed: true, allTenantsNamed: true, extraParagraph: '' }
   return json(await send(ctx.s, 'POST', `/api/tenancies/${t.id}/rent-increases`, { request, letter, token: plan.token }))
 }

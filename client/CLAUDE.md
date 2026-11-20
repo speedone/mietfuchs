@@ -615,6 +615,16 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Text in [rentIncreaseLetter.ts](src/rentIncreaseLetter.ts)) nimmt `LetterHead` aus Letter.tsx, Logo und Briefpapier wie die
   Abrechnung, und druckt aus `basis` als Blatt am Ende von body (`print-rent-increase` in letter.css), die
   Zustimmungserklärung auf eigener Seite. Druckbreite: Fall `mieterhoehung` in scripts/print-width-views.mjs.
+  Nacharbeit: **`onChanged`** nach Versand, Antwort und Rücknahme (auch nach einer Ablehnung), die Seite lädt damit die
+  Mietverhältnisse neu; sonst zeigte das Formular die alte Staffel und scheiterte an der Marke (409). **Gespeichert gilt
+  nicht als geändert**: `changedFrom` ist der Stand beim Öffnen, und gleichen die Eingaben dem zuletzt als Entwurf
+  angelegten Stand (`saved`), bekommt der Drawer als `value` wieder den Stand beim Öffnen; erst eine Eingabe danach fragt
+  wieder. **Ohne Namen des Vermieters kein Schreiben** (`rentSenderProblem` in shared/rentIncreaseLetter.ts, wie der
+  Server; § 126b BGB): Meldung am Häkchen zum Briefkopf, das dann gesperrt ist; das Briefpapier (`GET /api/letter-design`)
+  erfragt das Fenster nur ohne Namen, mit Briefpapier bleibt es bei der Warnung `SENDER_ON_PAPER_ONLY`, ein Entwurf ohne
+  Namen trägt `SENDER_MISSING_DRAFT`. Fehlt die Art der Miete, öffnet „Hier beheben → Mietverhältnis“ (`onEditTenancy`)
+  das Formular am Feld (`rentKindJump`, `data-autofocus`); das Fenster schließt dabei ohne Rückfrage. Der Druck setzt
+  ohne Briefpapier `pageNumbers` (nur Chromium); den Fußvermerk der Abrechnung (`PrintPages`) hat das Schreiben nicht.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus
