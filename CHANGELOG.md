@@ -226,8 +226,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Seite Zähler. Abgeschlossene Abrechnungen bleiben, wie sie sind. Am häufigsten trifft es einen Leerstand oder
     Mieterwechsel, bei dem zwei Ableser verschieden runden (Auszug mit 45, Einzug mit 44,8): Der Leerstand dazwischen
     hat dann negativen Verbrauch, und die Position wird nicht verteilt, bis einer der beiden Stände berichtigt ist.
-    Trifft der Fehler eine Heizposition nach Wärmezählern, steht daneben nicht mehr der Hinweis, welcher Anteil der
-    Heizkosten nach Zählern verteilt wird: Eine Position, die nicht verteilt wird, zählt in diesen Anteil nicht.
+    Trifft der Fehler eine Heizposition, steht daneben nicht mehr der Hinweis, welcher Anteil der Heizkosten nach
+    Zählern verteilt wird: Ob der Anteil stimmt, lässt sich erst beurteilen, wenn die Ablesung berichtigt ist; dann
+    steht der Hinweis wieder da. Ohne einen solchen Fehler bleibt er, wie er war.
   - Cockpit: Die Zeile „Zählerstände“ meldete ab dem zweiten Jahr jeden Zähler als vollständig, weil sie die
     Ablesungen aller Jahre zählte. Sie prüft jetzt, ob Ablesungen den gewählten Zeitraum von Anfang bis Ende decken,
     und nennt die Tage, die fehlen. Ein getauschter Zähler gilt bis zu seiner letzten Ablesung, ein Zähler in einer
