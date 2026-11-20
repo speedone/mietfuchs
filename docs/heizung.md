@@ -286,6 +286,15 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   wie Erfassung und Warmwasser (Fehlerklasse #239/#241). Ob Satz 5 unter die freie Wahl nach § 6 Abs. 4 fällt, sagt der
   Wortlaut nicht; Texte sprechen von „bestimmt oder vereinbart“. Invariante: Variante „Grundkosten nach umbautem Raum“
   in fuel-invariant.test.ts, Prüfung (s7).
+- **Ausweis zum Nachrechnen** ([client/src/heatingSelfView.ts](../client/src/heatingSelfView.ts), `quantity`, `perUnit`,
+  `costSplit`): Der Server liefert Mengen ungerundet (Differenzen der Stände, mal Faktor, geteilte Anteile, auch mit
+  Gleitkommarest) und rundet erst den Betrag. Gedruckt wird eine Menge, die mit höchstens drei Nachkommastellen aufgeht,
+  genau so (35,4 MWh, 72,5 m², 785 Einheiten); ein gerechneter Anteil und der Preis je Einheit bekommen so viele
+  Stellen, dass ihre Rundung den Betrag um höchstens einen Viertelcent verschiebt (Preis mindestens vier Stellen je m²
+  bzw. m³, sechs je Verbrauchseinheit). Je Nutzer stehen Grund- und Verbrauchskosten getrennt: Verbrauchskosten =
+  Verbrauch mal Preis je Einheit des Topfs (folgt aus `weightsOf`), Grundkosten = Rest zum Betrag der Zeile, dazu Fläche
+  bzw. Raum der Wohnung. Das rechnet die Oberfläche aus den vorhandenen Feldern, auch für eingefrorene Stände; keine
+  Aufteilung ohne Anteil nach Verbrauch (nur nach Fläche, § 9a Abs. 2, 0 oder 100 %) und ohne Betrag.
 - **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel Gradtage statt Tage; kombinierte
   Positionen bleiben nach Tagen.
 - **Invarianten** (fuel-invariant.test.ts, fuel-stock-invariant.test.ts) mit Varianten für eigene

@@ -79,6 +79,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Eigene Heizkostenabrechnung: Der Ausweis lässt sich nachrechnen. Verbrauch, Fläche und umbauter Raum stehen so genau
+  da, wie gerechnet wird (35,4 MWh statt „35 MWh“, 72,5 m²), ganze Zahlen weiter ohne Nachkommastellen; der Preis je
+  Einheit bekommt so viele Stellen, dass Menge mal Preis den gedruckten Betrag ergibt. Je Mieter stehen Grund- und
+  Verbrauchskosten jetzt getrennt, die Grundkosten mit der Fläche der Wohnung. Die Beträge ändern sich nicht, auch
+  nicht in abgeschlossenen Abrechnungen.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert
