@@ -68,7 +68,7 @@ jobs:
         if: steps.scope.outputs.docs == 'true'
         working-directory: server
         env:
-          DOC_TESTS: test/geviertstrich.test.ts test/anrede.test.ts test/calibration.test.ts test/store-submit.test.ts
+          DOC_TESTS: test/geviertstrich.test.ts test/anrede.test.ts test/calibration.test.ts test/store-submit.test.ts test/issue-templates.test.ts
         run: node --test $DOC_TESTS
       # Typecheck (tsc --noEmit) + Vite-Build
       - run: npm run build
