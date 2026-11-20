@@ -35,7 +35,8 @@ import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './close
 import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
 import { buildBasis, decided as decidedRentIncrease, decisionProblem, sentOf as sentRentIncrease, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
 import { deleteRentIncrease, insertRentIncrease, readRentIncrease, readRentIncreases, readRentIncreasesOf, replaceRentIncrease } from './db/rentIncreases.ts'
-import { rentIncreaseBasisProblem, rentIncreaseLetterOf } from '../../shared/rentIncreaseLetter.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf, rentSenderWarning } from '../../shared/rentIncreaseLetter.ts'
+import { effectiveLandlord } from '../../shared/landlord.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
@@ -1983,7 +1984,8 @@ app.post('/api/tenancies/:id/rent-increases', async (req: Request, res: Response
   // Die Miete am Stichtag friert nur mit ihrem Tag ein (Durchsicht PR 2, K1): Ohne ihn wüsste ein Nachdruck nicht, zu
   // welchem Stichtag sie gehört.
   if (request.rentAtCapDateCents != null && request.rentAtCapDateOn == null) return res.status(400).json({ error: 'Zur Miete am Stichtag fehlt der Tag, zu dem sie gehört. Bitte rechnen Sie neu und speichern Sie dann.' })
-  const letter = rentIncreaseLetterOf(body.letter, request.kind)
+  // Die Bestätigung zum Briefkopf prüft erst der Vorgang unten: Ob sie verlangt ist, hängt am Absender.
+  const letter = rentIncreaseLetterOf(body.letter, request.kind, { senderMissing: true })
   if ('problems' in letter) return res.status(400).json({ error: letter.problems[0]?.text ?? 'Die Angaben für das Schreiben sind unvollständig.' })
   const result = await writeData(async (db) => {
     const ctx = await rentIncreaseContextOf(db, String(req.params.id))
@@ -1994,9 +1996,19 @@ app.post('/api/tenancies/:id/rent-increases', async (req: Request, res: Response
     const token = planToken(plan, increases)
     if (body.token !== token) return { stale: { ...plan, token } satisfies RentIncreasePlanView }
     if (increases.some(isOpenRentIncrease)) throw new RentIncreaseError(409, 'Für dieses Mietverhältnis gibt es schon ein offenes Verlangen (Entwurf oder versandt ohne Antwort). Löschen Sie den Entwurf oder tragen Sie die Antwort ein, bevor Sie ein neues anlegen.')
+    const settings = await readSettings(db)
+    // Ohne Namen des Vermieters entsteht der Entwurf trotzdem (Warnung der Oberfläche, keine Sperre: Der Name kann von
+    // Hand auf den Ausdruck kommen, shared/rentIncreaseLetter.ts). Nur die Bestätigung zum Briefkopf ist dann nicht
+    // verlangt; mit Namen oder mit Briefpapier (das den Absender trägt) bleibt sie Pflicht. Das Briefpapier wie in GET
+    // /api/letter-design: die eigene Gestaltung des Objekts geht vor, eine fehlende Datei zählt nicht.
+    const ownDesign = ctx.property ? await readPropertyDesign(db, ctx.property.id) : null
+    const paper = presentDesign(DATA_DIR, ownDesign ?? await readInstallationDesign(db), new Set()).paper !== null
+    const senderMissing = rentSenderWarning(effectiveLandlord(ctx.property, settings).landlordName, paper) !== null
+    const strict = rentIncreaseLetterOf(body.letter, request.kind, { senderMissing })
+    if ('problems' in strict) throw new RentIncreaseError(400, strict.problems[0]?.text ?? 'Die Angaben für das Schreiben sind unvollständig.')
     const problem = draftProblem(plan)
     if (problem) throw new RentIncreaseError(400, problem)
-    const basis = buildBasis({ today: day, request, plan, letter: letter.letter, ...ctx, settings: await readSettings(db) })
+    const basis = buildBasis({ today: day, request, plan, letter: letter.letter, ...ctx, settings })
     const draft = draftOfRentIncrease({ id: newId(), tenancyId: ctx.tenancy.id, today: day, basis })
     await db.transaction(async (tx) => insertRentIncrease(tx, draft))
     return { created: rentIncreaseViewOf(draft, ctx.tenancy) }

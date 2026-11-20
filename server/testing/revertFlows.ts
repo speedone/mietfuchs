@@ -66,7 +66,12 @@ async function rentIncreaseDraft(ctx: Ctx): Promise<(Row & { token: string; crea
   const plan = await json<{ token: string }>(await send(ctx.s, 'POST', `/api/tenancies/${t.id}/rent-increase/plan`, request))
   if (!plan) return null
   const letter = { justification: 'database', database: { name: 'Mietdatenbank Musterstadt', date: '2026-01-15' }, qualifiedSurvey: 'no', recipientName: String(t.tenantName), allLandlordsNamed: true, allTenantsNamed: true, extraParagraph: '' }
-  return json(await send(ctx.s, 'POST', `/api/tenancies/${t.id}/rent-increases`, { request, letter, token: plan.token }))
+  // Ein Bestand ohne Namen des Vermieters gehört dazu (der Entwurf entsteht dann mit Warnung der Oberfläche). Nach dem
+  // Aufräumen oben und mit frischer Marke gibt es keinen Grund für eine Ablehnung: Scheitert das Anlegen, scheitert der
+  // Lauf mit Ansage, statt dass die Schritte der Mieterhöhung still nichts mehr üben.
+  const created = await send(ctx.s, 'POST', `/api/tenancies/${t.id}/rent-increases`, { request, letter, token: plan.token })
+  if (!created.ok) throw new Error(`Mieterhöhung: Entwurf nicht angelegt (HTTP ${created.status}): ${await created.text()}`)
+  return json(created)
 }
 
 export async function refresh(ctx: Ctx): Promise<void> {
