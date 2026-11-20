@@ -16,6 +16,7 @@ import { toRawExtraction } from '../src/eInvoice/toRaw.ts'
 import { readEInvoice, type EInvoiceResult } from '../src/eInvoice/index.ts'
 import { normalizeAmounts } from '../src/invoiceAmounts.ts'
 import { toExtraction } from '../src/extract.ts'
+import { informsOnly } from '../../shared/assessment.ts'
 import type { EInvoice, EInvoiceSyntax } from '../src/eInvoice/model.ts'
 import { ciiOf, consistent, docCharge, invoice, line, S7, ublOf, vat, xmlOf } from '../testing/eInvoiceXml.ts'
 
@@ -289,6 +290,20 @@ test('E-Rechnung prüfen: bereits bezahlte Abschläge werden genannt, der Gesamt
   assert.match(notes[0], /Abschläge über 50,00\s€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 119,00\s€/)
 })
 
+// Systemprüfung: Welche Notiz nur informiert, erkennt die Ansicht am Satz (shared/assessment.ts, `informsOnly`), denn
+// gespeichert sind nur die Sätze. Dieser Test hält Satz und Erkennung zusammen; alle anderen Notizen bleiben Zweifel.
+test('E-Rechnung prüfen: nur die Notiz zu bezahlten Abschlägen informiert, jede andere stellt die Rechnung in Frage', () => {
+  const prepaid = notesOf(consistent(invoice({ totals: { ...invoice().totals, prepaid: 5000 } })))
+  assert.deepEqual(prepaid.map(informsOnly), [true])
+  const fixture = readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, '03.01a-INVOICE_uncefact.xml'))))
+  assert.deepEqual(fixture.notes.map(informsOnly), [true], fixture.notes.join(' | '))
+  const corrected = readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, '01.18a-INVOICE_ubl.xml'))))
+  assert.ok(corrected.notes.length > 0 && corrected.notes.every((n) => !informsOnly(n)), corrected.notes.join(' | '))
+  const inv = invoice()
+  const off = notesOf({ ...inv, totals: { ...inv.totals, lineNet: (inv.totals.lineNet ?? 0) + 500 } })
+  assert.ok(off.length > 0 && off.every((n) => !informsOnly(n)), off.join(' | '))
+})
+
 test('E-Rechnung prüfen: Summenregeln BR-CO mit einem Cent Spielraum', () => {
   const inv = invoice()
   const total = inv.totals.taxInclusive ?? assert.fail('BT-112 fehlt')
@@ -560,6 +575,21 @@ test('E-Rechnung prüfen: ein gewöhnlicher Nachlass ist kein Abzug einer Abschl
   assert.deepEqual(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-500, 'Preisabschlag', { id: '2' })] })), [])
   assert.equal(notesOf(invoice({ charges: [docCharge(false, 500, 'Abschlagszahlung vom 01.03.')] })).length, 1)
   assert.equal(notesOf(invoice({ lines: [line(10000, 'Leistung', { id: '1' }), line(-500, 'Anzahlung', { id: '2' })] })).length, 1)
+})
+
+// Durchsicht der Systemprüfung: Seit die Notiz zu BT-113 nicht mehr rot macht, muss der Abzug einer früheren Rechnung an
+// seinem Text erkannt werden, in jeder üblichen Benennung.
+test('E-Rechnung prüfen: ein Abzug heißt auch Teilrechnung, Teilzahlung, Akonto, Vorauskasse oder Vorschuss', () => {
+  for (const name of ['abzgl. 1. Teilrechnung TR-17 Hauswart', 'abzüglich Teilzahlung vom 01.03.', 'Akontozahlung', 'a conto erhalten', 'Abschläge laut Zahlungsplan',
+    'Abschlagsrechnung Nr. 4', 'Vorauszahlung', 'Anzahlung', 'Vorauskasse', 'Vorschuss', 'bereits geleistete Zahlungen', 'bereits erhalten', 'abzgl. 2. Abschlag']) {
+    const byLine = notesOf(invoice({ lines: [line(100000, 'Hauswart Jahresleistung', { id: '1' }), line(-40000, name, { id: '2' })], totals: { ...invoice().totals, prepaid: 10000 } }))
+    assert.equal(byLine.filter((n) => /zieht 400,00\s€/.test(n)).length, 1, name)
+    assert.ok(byLine.some((n) => !informsOnly(n)), `${name}: die Auswertung bleibt rot`)
+    assert.equal(notesOf(invoice({ charges: [docCharge(false, 500, name)] })).length, 1, `${name} als Abschlag auf Dokumentebene`)
+  }
+  for (const name of ['Teilleistung Winterdienst', 'Rabatt', 'Skonto', 'Mengenabschlag', 'Pfand zurück', 'Vorschussfreie Lieferung']) {
+    assert.deepEqual(notesOf(invoice({ lines: [line(100000, 'Leistung', { id: '1' }), line(-500, name, { id: '2' })] })), [], name)
+  }
 })
 
 // ---------- Kleine Punkte der Durchsicht ----------

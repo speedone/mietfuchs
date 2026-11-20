@@ -1196,6 +1196,12 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   vorher. Ziele nur im Objekt und Jahr der Auswertung; `amounts` und `external` sind keine Ziele
   („Position öffnen“). **Gutschriften werden nie verrechnet**: Gutschrift-Positionen sind keine
   Ziele, eine Gutschrift-Zeile hat nur Gutschriften als Kandidaten.
+- **Eine Rechnung mit vielen Zeilen als eine Position**: Die aus dieser Auswertung gebuchten Positionen sind für ihre
+  übrigen Zeilen keine Kandidaten (keine Doppelung, keine Farbe, keine Rückfrage), aber Ziele zum Verknüpfen
+  (`LineSuggestion.sameReceipt`): nur im Zeitraum der Buchung, nie eine Gutschrift (Position oder Zeile), nie `amounts`,
+  `external`, ein Teil einer aufgeteilten Rechnung oder eine Position mit einem Beleg gleichen Inhalts, also nur, was der
+  Planer annimmt. Bei einer `reassessed`-Zeile
+  bleiben sie Kandidaten mit Rückfrage und stehen dort nicht noch einmal.
 - **Hängt der Beleg (oder einer gleicher Prüfsumme) schon von Hand an einer Position**, ist sie
   Kandidat jeder seiner Zeilen, gleich welcher Kostenart (`lineCandidates`): rot, Anlegen nur mit
   Bestätigung. Derselbe Beleg kann nicht zweimal an dieselbe Position.
@@ -1211,6 +1217,9 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
 - **Prüfungen in shared/**: `amountProblem`, `costItemBody` (shared/costItem.ts), Ampel und
   Vorauswahl (shared/assessment.ts), Kostenarten (shared/categories.ts). `POST`/`PUT /api/costItems`
   prüfen noch nicht damit.
+- **Verlauf**: Der Eintrag einer Buchung nennt, was sie getan hat („Beleg gebucht (1 Zeile angelegt)“, „… (13 Zeilen
+  verknüpft)“; `bookingTitle` in bookingPlan.ts, `retitleCurrentGroup` in der Route): Die Oberfläche bucht eine Rechnung
+  mit vielen Zeilen in zwei Schritten zu einer Position, und „Rückgängig“ nimmt nur den obersten zurück.
 - **Routen**: `/api/extract` und `/api/intake` liefern `assessment`; `GET /api/assessments`,
   `GET`/`PUT …/:id`, `POST …/plan`, `POST …/book`. `GET /api/uploads` nennt `bookedItemIds` und
   `bookedCents`; ein nur über eine gebuchte Zeile verknüpfter Beleg zählt als verknüpft
@@ -1224,7 +1233,11 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   `invoiceNumber`, `eInvoiceNotes`, je Zeile `laborGuessed`; Verlauf „Beleg aus der E-Rechnung übernommen“. `refused`: der
   KI-Weg wie bisher, der Grund in `eInvoiceRefusal` der Antwort und als Notiz an der Auswertung (`source: 'ki'`). Spalten
   `assessments.source`/`invoice_number`/`e_invoice_notes`, `assessment_lines.labor_guessed` (Schritte 0095/0096, ohne
-  Angabe eine KI-Auswertung). Ampel in `suggestLine`: jede Notiz rot, `laborGuessed` gelb und nie vorab angehakt, gleiche
+  Angabe eine KI-Auswertung). Ampel in `suggestLine`: jede Notiz rot außer einer, die nur informiert (`informsOnly` in shared/assessment.ts: heute allein die
+  zu bezahlten Abschlägen, BT-113, denn die Zeilen ergeben den Gesamtbetrag und fast jede Jahresrechnung eines Versorgers
+  trägt sie; sie macht **gelb und nie vorab angehakt**, weil einzeln gebuchte Abschläge sonst doppelt zählten und in einem
+  anderen Zeitraum oder unter anderer Kostenart kein Kandidat warnt; sie steht einmal als Hinweis an der Auswertung; im
+  Zweifel ist eine Notiz keine Information, auch der Grund einer Ablehnung bleibt rot), `laborGuessed` gelb und nie vorab angehakt, gleiche
   Nummer und gleicher Steller in einem anderen Beleg rot (`otherInvoices`, über alle Objekte). **Reine XML-Datei** (PR 3):
   Der Filter lässt `.xml` nur auf `/api/upload`, `/api/intake`, `/api/extract` durch (`E_INVOICE_XML_ROUTES`,
   `carriesScript` mit `eInvoiceXml`), `checkXmlReceipt` liest danach den Inhalt (`isEInvoiceDocument`) und löscht alles

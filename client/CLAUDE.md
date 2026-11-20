@@ -799,6 +799,27 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Typ checkbox, radio oder date, dessen `onChange` speichert, ist verboten, ohne Ausnahme (seit #281
   sind auch Art und Monat einer Zahlung im Mietkonto ein Entwurf). Rückrufe aus Props mit anderem Namen
   sieht er nicht.
+- **Auswertung prüfen** ([AssessmentReview.tsx](src/components/AssessmentReview.tsx), Logik in
+  [assessment.ts](src/assessment.ts)): Begründungen unter der Tabelle stehen je Wortlaut einmal, in der schlechtesten
+  Farbe (`reasonChips`), Notizen der E-Rechnung nur im Kasten darüber (`noteGroups`: Zweifel als Warnung, bezahlte
+  Abschläge als Hinweis mit dem Satz zu einzeln gebuchten Abschlägen); steht der Grund einer Ampel nur dort, sagt sie es
+  Vorlesern (`ampelNote`). „Was geschieht?“ bietet auch die aus diesem Beleg schon gebuchten Positionen an
+  (`sameReceipt`, „Mit „…“ aus diesem Beleg verknüpfen“, ohne Betrag: den nennt die Vorschau). Ab zwei offenen Zeilen
+  mit Betrag über 0 steht unter der Tabelle „Alle Zeilen als eine Position anlegen“
+  ([CombineLinesDrawer.tsx](src/components/CombineLinesDrawer.tsx)): Seitenfenster mit Kostenart (vorbelegt nur, wenn
+  alle Zeilen dieselbe tragen) und Beschreibung (Rechnungssteller, Rechnungsnummer), dem Satz, was entsteht, und
+  „Anlegen“. Gebucht wird in zwei Schritten über den Planer (`bookAsOne`: erste Zeile anlegen, übrige verknüpfen);
+  eine Rückfrage des Planers kommt vor dem ersten Schritt, lehnt er das Anlegen ab (etwa „laut Gemeinschaftsabrechnung“),
+  nennt der Fuß den Weg über die Zeilen. **Gutschriften bleiben offen**: Das Fenster nennt ihren Betrag, die Folge
+  („… zu viel um“) und den Rechnungsbetrag, die Karte danach „… ist noch offen“ (`openCredits`). **§35a-Lohn** steht als
+  Häkchen mit Betrag da, angehakt nur, wenn er gelesen ist; ein nur vorgeschlagener (`laborGuessed`) kommt nie ungesehen
+  mit, ohne Häkchen trägt jede Zeile ausdrücklich keinen (`combineRest`, wegen der Summenregel). Trägt die Auswertung die
+  Notiz zu bezahlten Abschlägen, steht ihr Hinweis auch im Fenster. Scheitert der zweite Schritt, liest die Karte den
+  Stand neu und sagt nur, was stimmt. **Ist aus dem Beleg schon eine Position gebucht** (`sameReceiptTargets`:
+  Teilzustand, „Rückgängig“ im Verlauf, Zeile für Zeile begonnen), entfällt der Knopf zum Anlegen; stattdessen „Alle
+  offenen Zeilen mit „…“ verknüpfen“ (bei mehreren Positionen mit Auswahl): Es setzt die Zeilen und zeigt die gewohnte
+  Vorschau, gebucht wird mit „Buchen“. Nach „Anlegen“ im Fenster steht der Fokus auf der Erfolgsmeldung. „Jahr der Buchung“ enthält immer das gewählte Jahr
+  (`yearOptions`), nicht das Beginnjahr eines abweichenden Zeitraums.
 - **Was an einem gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Ein
   ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle
   grünen übernehmen“; ein ungespeichertes Objekt oder Jahr eines Belegs ohne Position sperrt „Per KI auswerten“

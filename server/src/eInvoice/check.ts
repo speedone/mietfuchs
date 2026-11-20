@@ -20,7 +20,9 @@ import type { EInvoice } from './model.ts'
 const TAKEN = new Set(['380', '381', '384', '875', '876', '877'])
 const ADVANCE = new Set(['386', '326'])
 // „Abschlag“ heißt auch Nachlass (Mengenabschlag, Preisabschlag); gemeint ist hier nur die Abschlagszahlung.
-const ADVANCE_TEXT = /\babschlag\b|abschlagsrechnung|abschlagszahlung|anzahlung|vorauszahlung|bereits (gezahlt|bezahlt)/i
+// Dazu die üblichen Namen einer früheren Rechnung oder Zahlung (Durchsicht der Systemprüfung): Die Notiz zu BT-113 macht
+// allein nicht mehr rot, der Abzug muss also an seinem Text erkannt werden. Im Zweifel lieber eine Notiz zu viel.
+const ADVANCE_TEXT = /\babschlag\b|\babschläge\b|abschlagsrechnung|abschlagszahlung|anzahlung|vorauszahlung|vorauskasse|\bvorschuss\b|teilrechnung|teilzahlung|akonto|\ba conto\b|bereits (gezahlt|bezahlt|geleistet|erhalten)/i
 const SLACK_CENTS = 1
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
