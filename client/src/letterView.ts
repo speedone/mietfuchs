@@ -192,3 +192,27 @@ export const SENDER_MISSING_CLOSED_TEXT =
   'Im abgeschlossenen Anschreiben steht kein Name des Vermieters: Gedruckt werden weder Absender noch Unterschrift. ' +
   'Eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). ' +
   'Absender und Unterschrift sind mit der Abrechnung eingefroren: Bitte wieder öffnen, Ihren Namen eintragen und erneut abschließen.'
+
+// Systemprüfung: Ohne IBAN (Einstellungen bzw. Objekt) bittet der Satz zur Nachzahlung um Überweisung, ohne ein Konto zu
+// nennen ({Konto} wird leer). Geprüft wird, was im Anschreiben steht, abgeschlossen also das eingefrorene: die eingesetzte
+// IBAN und der Satz selbst. **Ein Hinweis, keine Sperre, und im Zweifel keiner** (Durchsicht S2): nur, wenn ein Satz zur
+// Überweisung auffordert („überweisen Sie“, ohne Verneinung im selben Satz) und der Text kein Konto nennt. Wer bar oder per
+// Lastschrift kassiert und es so schreibt, bekommt keinen; mit Briefpapier auch nicht, denn das Papier trägt üblicherweise
+// die Bankverbindung, und Mietfuchs sieht nicht, was darauf steht (wie `senderMissing`). **Nur auf der Seite Abrechnung**,
+// nicht im Cockpit: Das kennt das Briefpapier nicht.
+const IBAN_IN_TEXT = /[A-Z]{2}\d{2}(?: ?[0-9A-Z]{4}){2,}/
+const asksForTransfer = (sentence: string): boolean => /überweisen Sie/i.test(sentence) && !/(?:^|[^\p{L}])(?:nicht|nichts|kein\p{L}*)(?![\p{L}])/iu.test(sentence)
+export function ibanMissing(p: { balanceCents: number, iban: string | null | undefined, sentence: string | null | undefined, paper: boolean }): boolean {
+  if (p.paper || p.balanceCents >= 0 || (p.iban ?? '').trim() !== '') return false
+  const text = (p.sentence ?? '').trim()
+  return !IBAN_IN_TEXT.test(text) && text.split(/(?<=[.!?])\s+/).some(asksForTransfer)
+}
+export const IBAN_MISSING_TITLE = 'Bankverbindung fehlt'
+export const IBAN_MISSING_TEXT =
+  'Das Anschreiben bittet um Überweisung der Nachzahlung, nennt aber kein Konto: Es ist keine IBAN eingetragen. ' +
+  'Tragen Sie die IBAN in den Einstellungen ein oder, nur für dieses Objekt, in den Stammdaten beim Objekt. ' +
+  'Zahlt der Mieter bar oder per Lastschrift, ändern Sie stattdessen den Satz zur Nachzahlung über „Anschreiben bearbeiten“.'
+// Abgeschlossen ist der Satz eingefroren: Eine IBAN in den Einstellungen ändert das Anschreiben nicht mehr.
+export const IBAN_MISSING_CLOSED_TEXT =
+  'Das abgeschlossene Anschreiben bittet um Überweisung der Nachzahlung, nennt aber kein Konto. ' +
+  'Der Satz ist mit der Abrechnung eingefroren: Bitte wieder öffnen, die IBAN eintragen und erneut abschließen, oder nennen Sie dem Mieter das Konto auf anderem Weg.'
