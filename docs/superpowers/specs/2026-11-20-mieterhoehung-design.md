@@ -278,7 +278,7 @@ Abweichungen und Festlegungen gegenüber dem Entwurf:
 - **Unbekannte Werte** von `rentKind` und `reason` sind eine 400 mit Satz und werden nicht still zu „nicht angegeben“
   bzw. `agreement`, damit eine vertippte Modernisierung nicht als Vereinbarung gespeichert wird.
 - **Vorgabe der Art einer Stufe** im Formular: die erste Stufe `agreement`, jede weitere nach der Art der Miete
-  (`staggered`, `index`, sonst `agreement`). Alte Stufen ohne Art zeigen „Nicht angegeben (zählt wie Vereinbarung)“.
+  (`staggered`, `index`, sonst `agreement`). Alte Stufen ohne Art zeigen „Nicht angegeben (wie Vereinbarung)“.
 - **`RentIncreaseBasis`** ist bis PR 3 nur „ein JSON-Objekt“ (`{ readonly [key: string]: unknown }`, Bedingung
   `json_type = 'object'`); den Inhalt legt PR 3 fest.
 - **Hinweis zum Staffelabstand** nur bei `rentKind: 'staggered'`; eine Stufe der Art Modernisierung zählt dabei nicht.

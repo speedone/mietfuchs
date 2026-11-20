@@ -43,7 +43,7 @@ describe('Art je Stufe', () => {
     // Gespeichert „Staffel“, die Art der Miete inzwischen „nach Vertrag“: Der Wert bleibt sichtbar (und wird gemeldet).
     expect(rentReasonOptions('free', 'staggered').map((o) => o.value)).toContain('staggered')
     // Eine alte Stufe ohne Art zeigt „nicht angegeben“.
-    expect(rentReasonOptions('free', '')[0]).toEqual({ value: '', label: 'Nicht angegeben (zählt wie Vereinbarung)' })
+    expect(rentReasonOptions('free', '')[0]).toEqual({ value: '', label: 'Nicht angegeben (wie Vereinbarung)' })
     expect(rentReasonOptions('free', 'agreement').some((o) => o.value === '')).toBe(false)
   })
   it('Zeile aus der gespeicherten Stufe: Indexwert mit einer Nachkommastelle, Monat als MM.JJJJ', () => {

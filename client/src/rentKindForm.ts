@@ -46,7 +46,7 @@ export function rentReasonOptions(kind: RentKindChoice, current: RentReasonChoic
   const reasons = (['agreement', 'staggered', 'index', 'comparison', 'modernization'] as const).filter((r) =>
     r === current || (r === 'staggered' ? kind === 'staggered' : r === 'index' ? kind === 'index' : true))
   return [
-    ...(current === '' ? [{ value: '' as const, label: 'Nicht angegeben (zählt wie Vereinbarung)' }] : []),
+    ...(current === '' ? [{ value: '' as const, label: 'Nicht angegeben (wie Vereinbarung)' }] : []),
     ...reasons.map((value) => ({ value, label: RENT_REASON_LABELS[value] })),
   ]
 }

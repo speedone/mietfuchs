@@ -1024,7 +1024,7 @@ test('Mieterhöhung: Art der Miete, Ausschluss und Art je Stufe zeigen den gespe
   const dialog = within(screen.getByRole('dialog'))
   const reasons = dialog.getAllByRole('combobox', { name: 'Art der Stufe' }) as HTMLSelectElement[]
   expect(reasons.map((s) => s.value)).toEqual(['agreement', 'index', ''])
-  expect(reasons.map((s) => s.selectedOptions[0]?.textContent)).toEqual(['Vertragsbeginn oder Vereinbarung', 'Anpassung der Indexmiete', 'Nicht angegeben (zählt wie Vereinbarung)'])
+  expect(reasons.map((s) => s.selectedOptions[0]?.textContent)).toEqual(['Vertragsbeginn oder Vereinbarung', 'Anpassung der Indexmiete', 'Nicht angegeben (wie Vereinbarung)'])
   expect((dialog.getAllByRole('textbox', { name: 'Indexwert' }) as HTMLInputElement[]).map((i) => i.value)).toEqual(['94,2', '106,1', ''])
   expect((dialog.getAllByRole('textbox', { name: 'Indexmonat' }) as HTMLInputElement[]).map((i) => i.value)).toEqual(['Oktober 2024', 'Dezember 2025', ''])
   expect((dialog.getAllByRole('textbox', { name: 'Basisjahr' }) as HTMLInputElement[]).map((i) => i.value)).toEqual(['2020', '2020', ''])
