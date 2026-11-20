@@ -406,6 +406,46 @@ export function amountCheckFormReason(item: CostItem, rules?: PeriodRules): stri
   return 'Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).'
 }
 
+// ---------- Zuordnung lösen (Ordner) ----------
+
+// Ob sich ein Beleg im Ordner von einer Position lösen lässt: nur, wenn er von Hand an ihr hängt (`invoiceFile`) und
+// keine gebuchte Zeile seiner Auswertung an ihr. Was die Belegbuchung verknüpft hat, löst die Auswertung („Auswertung
+// zeigen“), sonst bliebe die Zeile gebucht und der Beleg hinge weiter an der Position.
+export function canReleaseReceipt(upload: ReceiptUpload, item: CostItem): boolean {
+  return item.invoiceFile === upload.file && !(upload.bookedItemIds ?? []).includes(item.id)
+}
+
+// Was für einen Teil einer aufgeteilten Rechnung (#455) nach dem Lösen gilt: Der Beleg eines Teils belegt auch die
+// übrigen (`isItemCovered`). Nach dem Aufteilen tragen meist alle Teile denselben Beleg; wer einen löst, lässt die
+// Rechnung belegt (`covered`). Erst mit dem letzten Teil, der einen Beleg trägt, ist die ganze Rechnung ohne Beleg
+// (`uncovered`). `none`: kein Teil mit Quelle. Gerechnet wird mit dem Stand nach dem Lösen.
+export type ReleaseSplit = 'none' | 'covered' | 'uncovered'
+export function releaseSplit(item: CostItem, items: readonly CostItem[], present: ReadonlySet<string> | null, booked: ReadonlyMap<string, readonly string[]>): ReleaseSplit {
+  if (!item.sourceId) return 'none'
+  const after = items.map((c) => (c.id === item.id ? { ...c, invoiceFile: undefined } : c))
+  const released = after.find((c) => c.id === item.id) ?? { ...item, invoiceFile: undefined }
+  return isItemCovered(released, present, booked, partsBySource(after)) ? 'covered' : 'uncovered'
+}
+
+// Die Rückfrage vor dem Lösen. `others`: an wie vielen weiteren Positionen der Beleg hängt; ohne weitere steht er
+// danach im Eingang. `split`: siehe `releaseSplit`. `closedLabel`: Die Abrechnung des Zeitraums der Position ist
+// abgeschlossen; sie bleibt, wie sie ist, aber Mappen und Belegkopien dieses Zeitraums ändern sich.
+export function releaseQuestion(upload: Pick<UploadInfo, 'originalName' | 'file'>, item: Pick<CostItem, 'description'>, others: number, split: ReleaseSplit, closedLabel: string | null = null): { title: string; message: string } {
+  const after = others === 0
+    ? 'Der Beleg bleibt gespeichert und steht danach im Eingang unter „Ohne Position“.'
+    : `Der Beleg bleibt an ${others === 1 ? '1 weiteren Position' : `${others} weiteren Positionen`}.`
+  const part = split === 'covered'
+    ? ' Die Position ist ein Teil einer aufgeteilten Rechnung und gilt weiter als belegt, weil ein anderer Teil den Beleg der Rechnung trägt.'
+    : split === 'uncovered'
+      ? ' Die Position ist ein Teil einer aufgeteilten Rechnung: Danach trägt kein Teil mehr einen Beleg, die ganze Rechnung ist ohne Beleg.'
+      : ''
+  const closed = closedLabel === null ? '' : ` Die Abrechnung ${closedLabel} ist abgeschlossen und bleibt, wie sie verschickt wurde. Belegmappe, Belege für die Steuer und Belegkopien dieses Zeitraums führen den Beleg an dieser Position danach nicht mehr.`
+  return {
+    title: 'Zuordnung lösen?',
+    message: `„${receiptName(upload)}“ hängt danach nicht mehr an „${item.description}“. Betrag und Angaben der Position bleiben. ${after}${part}${closed}`,
+  }
+}
+
 // „Betrag prüfen“ nach dem Zuordnen: Eine aus dem Vorjahr übernommene Position trägt einen
 // geschätzten Betrag, der Beleg den wirklichen. Gespeichert wird nur der Betrag, mit derselben
 // Prüfung wie im Formular; der Lohnanteil der Position bleibt.

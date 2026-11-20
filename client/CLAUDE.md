@@ -87,7 +87,22 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   „Weiter prüfen“ springt zur Auswertung (`data-assessment`). Belege ohne Position anderer Objekte oder Jahre nennt eine
   Zeile mit Sprung (`elsewhereGroups`). **Ordner** ([pages/BelegeOrdner.tsx](src/pages/BelegeOrdner.tsx)): wie früher
   der Belegordner ohne Posteingang; die Suche gilt immer allen Objekten und Jahren, Treffer ohne Position stehen unter
-  „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. Die Seite Kosten behält ihre eigene Ablage und Prüfung
+  „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. **Rückwege am Beleg im Ordner**: je Position „Position
+  öffnen“ (`openCostItem` in App.tsx wechselt vorher mit `useSwitchTo` in Objekt und Zeitraum der Position) und, nur wenn
+  der Beleg von Hand an ihr hängt (`canReleaseReceipt`: ihr `invoiceFile`, keine gebuchte Zeile), „Zuordnung lösen …“ mit
+  Rückfrage (`releaseQuestion`, `PUT /api/costItems/:id` mit `invoiceFile: null`; nennt weitere Positionen, bei einem
+  Teil einer aufgeteilten Rechnung, ob sie danach belegt bleibt, gerechnet mit `isItemCovered` auf dem Stand nach dem
+  Lösen (`releaseSplit`), und eine abgeschlossene Abrechnung des Zeitraums). Hat der Beleg eine Auswertung, steht „Auswertung zeigen“: Der Eingang lädt nur offene
+  Auswertungen und behält gebuchte nur, bis die Seite verlassen wird; auf Wunsch holt er eine einzeln zurück
+  (`focusAssessment`/`onOpenAssessment` über App.tsx wie `openReceipt`, in Belege.tsx `recall`, im Eingang
+  `recallAssessment` mit `GET /api/assessments/:id`), dieselbe Karte mit `AssessmentReview`, in der sich eine verknüpfte
+  Zeile lösen lässt; gehört sie einem anderen Objekt, wird erst gewechselt. An einer angelegten Zeile nennt
+  `AssessmentReview` den Rückweg (Papierkorb in der Kostenliste); „Position öffnen“ geht im Eingang über `onOpenItem`
+  (`openCostItem`, wechselt Objekt und Zeitraum), auf der Seite Kosten (`page="kosten"`) steht nur der Satz. **„Betrag prüfen“** rollt beim Erscheinen in
+  den Blick und bekommt den Fokus (`showAmountCheck`); steht er in der ausgeblendeten Ansicht, nennt ihn ein Hinweis über
+  den Reitern mit „Zu „Betrag prüfen““ (`onAmountCheck`). **Ohne KI** kann die Seite „nie eingerichtet“ nicht von „nicht
+  erreichbar“ unterscheiden (der Server hat immer eine Voreinstellung); der Satz nennt beides, beschreibt das Erfassen von
+  Hand als normalen Weg und führt mit „Zur Seite Kosten“ weiter. Die Seite Kosten behält ihre eigene Ablage und Prüfung
   (Regel 4). sessionStorage leert vitestSetup.ts vor jedem Test.
 - **Seite „Kontoauszug“** (#188, [pages/Kontoauszug.tsx](src/pages/Kontoauszug.tsx), Logik in [bankView.ts](src/bankView.ts)):
   unabhängig vom gewählten Objekt (`context="none"`), denn ein Konto empfängt Mieten mehrerer Häuser; die
@@ -634,6 +649,27 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Text in [rentIncreaseLetter.ts](src/rentIncreaseLetter.ts)) nimmt `LetterHead` aus Letter.tsx, Logo und Briefpapier wie die
   Abrechnung, und druckt aus `basis` als Blatt am Ende von body (`print-rent-increase` in letter.css), die
   Zustimmungserklärung auf eigener Seite. Druckbreite: Fall `mieterhoehung` in scripts/print-width-views.mjs.
+  Nacharbeit: **`onChanged`** nach Versand, Antwort und Rücknahme (auch nach einer Ablehnung), die Seite lädt damit die
+  Mietverhältnisse neu; sonst zeigte das Formular die alte Staffel und scheiterte an der Marke (409). **Gespeichert gilt
+  nicht als geändert**: `changedFrom` ist der Stand beim Öffnen, und gleichen die Eingaben dem zuletzt als Entwurf
+  angelegten Stand (`saved`), bekommt der Drawer als `value` wieder den Stand beim Öffnen; erst eine Eingabe danach fragt
+  wieder. Nach „Entwurf löschen“ gelten sie wieder als ungespeichert (`saved` zurück). **Ohne Namen des Vermieters
+  eine Warnung, keine Sperre** (`rentSenderWarning` in shared/rentIncreaseLetter.ts, § 126b BGB, wie „Absender fehlt“ der
+  Abrechnung: Der Name kann von Hand auf den Ausdruck kommen): im Fenster, am Entwurf (`SENDER_MISSING_DRAFT`) und in
+  der Rückfrage vor „Als versendet speichern …“ (`sendQuestion` mit `SENDER_MISSING_SEND`); kein Text behauptet, die Form
+  fehle. Das Häkchen zum Briefkopf ist dann gesperrt, geht als „nein“ an den Server und ist nicht verlangt; das Briefpapier erfragt das Fenster
+  beim Öffnen (`GET /api/letter-design`), mit Briefpapier bleibt es bei der Warnung `SENDER_ON_PAPER_ONLY`, ein Entwurf ohne
+  Namen trägt `SENDER_MISSING_DRAFT`. Fehlt die Art der Miete, öffnet „Hier beheben → Mietverhältnis“ (`onEditTenancy`)
+  das Formular am Feld (`rentKindJump`, `data-autofocus`); mit Eingaben fragt der Knopf vorher wie jedes Schließen.
+  `onChanged` wartet das Fenster ab, bevor es die Aktion meldet (solange `busy`). Der Druck setzt
+  ohne Briefpapier `pageNumbers` (nur Chromium, nur beim Verlangen nach § 558 mit seiner Zustimmungserklärung; die
+  Indexerklärung druckte sonst „Seite 1 von 1“); den Fußvermerk der Abrechnung hat das Schreiben nicht. **Mit Briefpapier**
+  stehen Schreiben und Zustimmungserklärung je in der Hülle `PrintPages` (`paper`, `follow`, die Erklärung mit `newPage`):
+  Der Rahmen wiederholt die Ränder je Druckseite, der Kopf trägt das Papier der Folgeseiten (`useLetterDesign` lädt es
+  mit). Weil der Brief ab der Blattkante misst, rückt `rent-increase-paged` (letter.css) ihn um den oberen und die
+  seitlichen Ränder zurück, ohne Mindesthöhe und ohne eigenen Seitenumbruch. Ohne `canPagePaper` druckt es wie ohne
+  Briefpapier, das Fenster sagt es (`PAPER_BROWSER_NOTE`), und für die Prüfung des Absenders zählt das Briefpapier dann
+  nicht. Geprüft im Fall `mieterhoehung-briefpapier` von scripts/print-width-check.mjs.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus
