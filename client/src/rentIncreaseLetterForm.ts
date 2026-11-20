@@ -71,6 +71,9 @@ export function qualifiedSurveyOptions(): { value: RentQualifiedSurveyAnswer | '
 }
 export const EXTRA_PARAGRAPH_HINT = 'Der einzige frei formulierte Text des Schreibens. Er darf weder die Mietstruktur (etwa Betriebskosten in die Miete nehmen) noch die Vorauszahlungen ändern; sonst kann das ganze Verlangen unwirksam sein (BGH, Urteil vom 16.12.2020, VIII ZR 108/20, Rn. 18 f.).'
 export const PARTIES_HINT = 'Das Schreiben muss von allen Vermietern laut Mietvertrag ausgehen und an alle Mieter gerichtet sein. Den Absender ändern Sie in den Einstellungen oder am Objekt.'
+// Ohne Ränder je Druckseite (`canPagePaper` in letterDesignView.ts) druckt das Schreiben wie ohne Briefpapier; derselbe
+// Grund wie auf der Seite Abrechnung, ohne deren Satz zur Fußzeile.
+export const PAPER_BROWSER_NOTE = 'Dieser Browser (etwa Safari) kann die Ränder nicht je Druckseite unterscheiden; mit Briefpapier stünde der Text der Folgeseiten im Kopf oder Fuß des Papiers. Das Schreiben druckt deshalb wie ohne Briefpapier: mit Seitenrand und Absender oben. Mit Briefpapier drucken Sie in einem aktuellen Chrome, Edge oder Firefox.'
 export const SEVERAL_LANDLORDS_LABEL = 'Mehrere Vermieter, etwa Eheleute oder eine Erbengemeinschaft: Das Schreiben spricht in der Mehrzahl („wir“).'
 
 // Der Rumpf aus den Texten, oder die Meldungen am Feld. Was sich nicht lesen lässt (Betrag, Monat, Fläche), meldet diese

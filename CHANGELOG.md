@@ -51,7 +51,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     § 126b BGB); mit hinterlegtem Briefpapier bleibt es bei einer Warnung, und ein schon angelegter Entwurf ohne Namen
     trägt einen Hinweis. Nach dem Anlegen des Entwurfs fragt „Schließen“ nicht mehr „Änderungen verwerfen?“. Fehlt die
     Art der Miete, führt „Hier beheben“ an das Feld im Mietverhältnis. Das Schreiben druckt ohne Briefpapier „Seite x
-    von y“ (Chromium). Neu ist die Anleitung „Miete erhöhen: Vergleichsmiete oder Indexmiete, Schreiben und
+    von y“ (Chromium). Mit Briefpapier hält es auf jeder Seite die eingestellten Ränder ein und druckt das Papier der
+    Folgeseiten; vorher lief der Text über den Fuß des Briefpapiers, und die zweite Seite begann an der Blattkante. Neu ist die Anleitung „Miete erhöhen: Vergleichsmiete oder Indexmiete, Schreiben und
     Zustimmung“.
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine

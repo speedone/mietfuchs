@@ -3,7 +3,7 @@
 // Seiten; wie die Abrechnung druckt es „Seite x von y“ im Seitenrand (`pageNumbers` in printJob.ts), mit Briefpapier nicht.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, waitFor } from '@testing-library/react'
-import { RentIncreasePrint } from './RentIncreaseLetter'
+import { RentIncreaseLetterSheet, RentIncreasePrint } from './RentIncreaseLetter'
 import type { RentIncrease, RentIncreaseBasis, RentIncreasePlan } from '../types'
 
 const PLAN: RentIncreasePlan = {
@@ -43,4 +43,26 @@ test('Mieterhöhung, Druck: ohne Briefpapier steht „Seite x von y“ im Seiten
   expect(style?.textContent).toMatch(/"Seite " counter\(page\) " von " counter\(pages\)/)
   unmount()
   expect(document.head.querySelector('style[data-page-numbers]')).toBeNull()
+})
+
+// Mit Briefpapier druckt die Seite ohne Rand; die Ränder je Druckseite hält der Rahmen der Hülle `PrintPages`. Ohne ihn
+// lief das Schreiben über den Fuß des Briefpapiers und begann Seite 2 an der Blattkante (nachgemessen im PDF; die Lagen
+// selbst prüft scripts/print-width-check.mjs, Fall `mieterhoehung-briefpapier`).
+test('Mieterhöhung, Druck mit Briefpapier: Schreiben und Zustimmungserklärung je im Rahmen mit den Rändern, das Papier der Folgeseiten im Kopf', () => {
+  const design = { logo: null, paper: 'data:image/png;base64,AAAA', follow: 'data:image/png;base64,BBBB', margins: { top: 42, right: 20, bottom: 38, left: 25 }, ready: true, failed: [] }
+  const { container, unmount } = render(<RentIncreaseLetterSheet increase={INCREASE} design={design} />)
+  const frames = [...container.querySelectorAll('.print-pages-frame')]
+  expect(frames).toHaveLength(2)
+  expect(frames.map((f) => f.classList.contains('print-pages-new'))).toEqual([false, true])
+  for (const f of frames) {
+    expect(f.querySelector('thead img.paper-follow')?.getAttribute('src')).toBe(design.follow)
+    expect(f.querySelector('tbody section.letter.rent-increase-paged')).not.toBeNull()
+  }
+  expect(frames[0]?.querySelector('img.letter-paper')?.getAttribute('src')).toBe(design.paper)
+  expect(frames[1]?.querySelector('.rent-increase-consent')).not.toBeNull()
+  unmount()
+  // Ohne Briefpapier (auch in einem Browser, der es nicht je Seite drucken kann) bleibt der Aufbau, wie er war.
+  const plain = render(<RentIncreaseLetterSheet increase={INCREASE} design={{ ...design, paper: null, follow: null, margins: null }} />)
+  expect(plain.container.querySelector('.print-pages-frame, .print-pages, .rent-increase-paged')).toBeNull()
+  expect(plain.container.querySelectorAll('section.letter')).toHaveLength(2)
 })

@@ -29,6 +29,8 @@ beforeEach(() => {
   sent = []
   increases = []
   paper = false
+  // Ein Browser, der Ränder je Druckseite kann (Chromium, Firefox); jsdom kennt die Eigenschaft nicht.
+  vi.stubGlobal('CSS', { supports: () => true })
   reply = () => PLAN
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
@@ -291,7 +293,22 @@ test('Mieterhöhung, Schreiben: mit Briefpapier ohne Namen nur eine Warnung, der
   open(TENANCY, { ...PROPERTY, landlordName: 'Erika Eigentümerin' }, NAMELESS)
   await fillLetter()
   expect(screen.queryByText(/Im Briefkopf steht kein Vermieter/)).toBeNull()
-  expect(sent.some((x) => x.url.startsWith('/api/letter-design'))).toBe(false)
+})
+
+test('Mieterhöhung: kann der Browser kein Briefpapier je Druckseite, sagt das Fenster es, und ohne Namen zählt das Briefpapier nicht', async () => {
+  // jsdom kennt `box-decoration-break: clone` nicht (wie Safari): Das Schreiben druckt dann ohne Briefpapier.
+  vi.stubGlobal('CSS', { supports: () => false })
+  reply = () => POSSIBLE
+  paper = true
+  increases = [DRAFT]
+  open(TENANCY, PROPERTY, NAMELESS)
+  expect(await screen.findByText('Briefpapier druckt dieser Browser nicht')).toBeTruthy()
+  expect(await screen.findByText(/Im Briefkopf steht kein Vermieter/)).toBeTruthy()
+  cleanup()
+  paper = false
+  open(TENANCY, PROPERTY, NAMELESS)
+  await screen.findByText('Entwurf')
+  expect(screen.queryByText('Briefpapier druckt dieser Browser nicht')).toBeNull()
 })
 
 test('Mieterhöhung, Liste: ein Entwurf ohne Namen des Vermieters trägt den Hinweis, versandt nicht mehr', async () => {

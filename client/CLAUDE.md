@@ -620,11 +620,17 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   nicht als geändert**: `changedFrom` ist der Stand beim Öffnen, und gleichen die Eingaben dem zuletzt als Entwurf
   angelegten Stand (`saved`), bekommt der Drawer als `value` wieder den Stand beim Öffnen; erst eine Eingabe danach fragt
   wieder. **Ohne Namen des Vermieters kein Schreiben** (`rentSenderProblem` in shared/rentIncreaseLetter.ts, wie der
-  Server; § 126b BGB): Meldung am Häkchen zum Briefkopf, das dann gesperrt ist; das Briefpapier (`GET /api/letter-design`)
-  erfragt das Fenster nur ohne Namen, mit Briefpapier bleibt es bei der Warnung `SENDER_ON_PAPER_ONLY`, ein Entwurf ohne
+  Server; § 126b BGB): Meldung am Häkchen zum Briefkopf, das dann gesperrt ist; das Briefpapier erfragt das Fenster
+  beim Öffnen (`GET /api/letter-design`), mit Briefpapier bleibt es bei der Warnung `SENDER_ON_PAPER_ONLY`, ein Entwurf ohne
   Namen trägt `SENDER_MISSING_DRAFT`. Fehlt die Art der Miete, öffnet „Hier beheben → Mietverhältnis“ (`onEditTenancy`)
   das Formular am Feld (`rentKindJump`, `data-autofocus`); das Fenster schließt dabei ohne Rückfrage. Der Druck setzt
-  ohne Briefpapier `pageNumbers` (nur Chromium); den Fußvermerk der Abrechnung (`PrintPages`) hat das Schreiben nicht.
+  ohne Briefpapier `pageNumbers` (nur Chromium); den Fußvermerk der Abrechnung hat das Schreiben nicht. **Mit Briefpapier**
+  stehen Schreiben und Zustimmungserklärung je in der Hülle `PrintPages` (`paper`, `follow`, die Erklärung mit `newPage`):
+  Der Rahmen wiederholt die Ränder je Druckseite, der Kopf trägt das Papier der Folgeseiten (`useLetterDesign` lädt es
+  mit). Weil der Brief ab der Blattkante misst, rückt `rent-increase-paged` (letter.css) ihn um den oberen und die
+  seitlichen Ränder zurück, ohne Mindesthöhe und ohne eigenen Seitenumbruch. Ohne `canPagePaper` druckt es wie ohne
+  Briefpapier, das Fenster sagt es (`PAPER_BROWSER_NOTE`), und für die Prüfung des Absenders zählt das Briefpapier dann
+  nicht. Geprüft im Fall `mieterhoehung-briefpapier` von scripts/print-width-check.mjs.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus

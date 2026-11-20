@@ -8,10 +8,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Property, RentIncreaseDecision, RentIncreasePlan, RentIncreasePlanView as PlanWithToken, RentIncreaseView, Settings, Tenancy, Unit } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { localToday } from '../periodForm'
-import { DECISION_LABELS, EXTRA_PARAGRAPH_HINT, PARTIES_HINT, RENT_INCREASE_STATUS_LABELS, SEVERAL_LANDLORDS_LABEL, decisionQuestion, followPlanRange, justificationOptions, notYetNote, qualifiedSurveyOptions, rentIncreaseDecisions, rentLetterInput, rentLetterStart, rentLetterWarnings, sendQuestion, senderNote, type RentLetterValue, type RentSurveyValue } from '../rentIncreaseLetterForm'
+import { DECISION_LABELS, EXTRA_PARAGRAPH_HINT, PAPER_BROWSER_NOTE, PARTIES_HINT, RENT_INCREASE_STATUS_LABELS, SEVERAL_LANDLORDS_LABEL, decisionQuestion, followPlanRange, justificationOptions, notYetNote, qualifiedSurveyOptions, rentIncreaseDecisions, rentLetterInput, rentLetterStart, rentLetterWarnings, sendQuestion, senderNote, type RentLetterValue, type RentSurveyValue } from '../rentIncreaseLetterForm'
 import { SENDER_MISSING_DRAFT, SENDER_ON_PAPER_ONLY, rentIncreaseBasisProblem, rentSenderProblem } from '../../../shared/rentIncreaseLetter.ts'
-import { effectiveLetterDesign } from '../../../shared/letterDesign.ts'
-import { asLetterDesigns } from '../letterDesignView'
+import { asLetterDesigns, canPagePaper, printDesign } from '../letterDesignView'
 import { withProperty } from '../property'
 import { sameDraft } from '../draft'
 import { effectiveLandlord } from '../landlord'
@@ -59,22 +58,25 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   const edited = { value, letter }
   const shown = saved !== null && sameDraft(edited, saved) ? opened : edited
   // Ohne Namen des Vermieters kein Schreiben, außer ein Briefpapier trägt den Absender (shared/rentIncreaseLetter.ts,
-  // dieselbe Prüfung wie der Server). Das Briefpapier wird nur dann erfragt; bis zur Antwort gilt es als vorhanden, damit
-  // die Sperre nicht kurz aufblinkt (der Server prüft ohnehin).
+  // dieselbe Prüfung wie der Server). Bis zur Antwort gilt das Briefpapier als vorhanden, damit die Sperre nicht kurz
+  // aufblinkt (der Server prüft ohnehin). Es zählt, was dieser Browser druckt: Ohne Ränder je Druckseite (`canPagePaper`,
+  // etwa Safari) druckt das Schreiben wie ohne Briefpapier, und das Fenster sagt es (`paperSkipped`, wie die Abrechnung).
   const nameless = landlord !== null && landlord.landlordName.trim() === ''
   const propertyId = property?.id ?? unit?.propertyId
   const [paper, setPaper] = useState<boolean | null>(null)
+  const [paperSkipped, setPaperSkipped] = useState(false)
   useEffect(() => {
-    if (!nameless) return
     let alive = true
     api<unknown>(withProperty('/api/letter-design', propertyId))
       .then((d) => {
-        const designs = asLetterDesigns(d)
-        if (alive) setPaper(designs ? effectiveLetterDesign(designs).paper !== null : false)
+        if (!alive) return
+        const planned = printDesign(asLetterDesigns(d), { legacy: false, pagedPaper: canPagePaper() })
+        setPaper(planned.paper !== null)
+        setPaperSkipped(planned.paperSkipped)
       })
       .catch(() => { if (alive) setPaper(false) })
     return () => { alive = false }
-  }, [nameless, propertyId])
+  }, [propertyId])
   const noSender = nameless ? rentSenderProblem(landlord.landlordName, paper ?? true) : null
   const [plan, setPlan] = useState<PlanWithToken | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -313,6 +315,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
         <h3>Verlangen und Erklärungen</h3>
         {increases === null && <p className="muted">Mietfuchs lädt …</p>}
         {increases?.length === 0 && <p className="muted">Für dieses Mietverhältnis ist noch kein Schreiben angelegt.</p>}
+        {paperSkipped && (increases?.length ?? 0) > 0 && <NoticeBox level="info" title="Briefpapier druckt dieser Browser nicht">{PAPER_BROWSER_NOTE}</NoticeBox>}
         {increases?.map((x) => (
           <IncreaseItem key={x.id} x={x} busy={saving.busy} landlord={landlord} onPrint={() => void print(x)}
             onSend={(receivedOn) => void saving.run(() => send(x, receivedOn))}
