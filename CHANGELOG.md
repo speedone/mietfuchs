@@ -16,6 +16,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Kappungsgrenzen-Verordnung gilt. Neu im Lexikon: „Ortsübliche Vergleichsmiete“, „Kappungsgrenze“, „Indexmiete“,
   „Staffelmiete“, „Mieterhöhungsverlangen“ und „Zustimmungsfrist“. Alle Angaben sind freiwillig; Mietkonto, Abrechnung
   und Steuer rechnen unverändert ([#191](https://github.com/speedone/mietfuchs/issues/191)).
+- Mieterhöhung, zweiter Teil: „Mieterhöhung“ am Mietverhältnis in den Stammdaten rechnet für eine Erhöhung bis zur
+  ortsüblichen Vergleichsmiete (§ 558 BGB) oder die Anpassung einer Indexmiete (§ 557b BGB), ob, ab wann und um wie
+  viel die Miete steigen darf: frühester Zugang und frühestes Wirksamwerden (Wartefrist tagesgenau ab Mietbeginn,
+  Sperrfrist, nie ein Zugang am Monatsersten), Zustimmungs- und Klagefrist mit den Feiertagen des Landes,
+  Kappungsgrenze mit Herleitung aus der Miete am Stichtag, Höchstbetrag aus Vergleichsmiete und tatsächlicher Fläche
+  (bei Inklusivmiete mit dem enthaltenen Betriebskostenanteil), bei der Indexmiete die neue Miete im Verhältnis der
+  Indexwerte, auf den Cent abgerundet. Fehlt eine Angabe oder schließt der Vertrag eine Erhöhung aus, sagt Mietfuchs
+  in ganzen Sätzen, warum. Gespeichert wird noch nichts ([#191](https://github.com/speedone/mietfuchs/issues/191)).
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und

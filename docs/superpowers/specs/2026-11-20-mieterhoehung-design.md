@@ -282,3 +282,37 @@ Abweichungen und Festlegungen gegenüber dem Entwurf:
 - **`RentIncreaseBasis`** ist bis PR 3 nur „ein JSON-Objekt“ (`{ readonly [key: string]: unknown }`, Bedingung
   `json_type = 'object'`); den Inhalt legt PR 3 fest.
 - **Hinweis zum Staffelabstand** nur bei `rentKind: 'staggered'`; eine Stufe der Art Modernisierung zählt dabei nicht.
+
+## Umsetzung PR 2 (Rechnung), 20.11.2026
+
+Umgesetzt in server/src/rentIncrease.ts (rein), Route `POST /api/tenancies/:id/rent-increase/plan` (nur lesend, auch in
+„Aufteilung in PRs“ ist POST gemeint) und Seitenfenster „Mieterhöhung“ aus dem Mietverhältnis. Abweichungen und
+Festlegungen:
+
+- **Bezugstag**: Die erste Stufe der Staffel zählt immer, auch mit Art `modernization`, denn beginnt die Staffel nach
+  dem Mietbeginn, ist unbekannt, was davor galt (später ist sicher). Fehlt eine zählende Stufe, gilt der Mietbeginn.
+- **Frühester Zugang beim Verlangen** ist der spätere aus Sperrfrist und „erhöhte Miete nach § 558b Abs. 1 nicht vor dem
+  Ende der Wartefrist“ (M1: Mietbeginn 15.11.2025 → Zugang ab 02.12.2026, wirksam 01.03.2027). Ein früherer Zugang nach
+  Ablauf der Sperrfrist mit späterem Wirksamkeitsmonat (O3) wird nicht vorgeschlagen und gilt als `notYet`.
+- **Zeitpunkt der Registerwerte**: Zustimmung, Sperrfrist und Indexfrist am Tag des Zugangs, Wartefrist am Ersten des
+  Monats, in dem die Miete nach § 558b geschuldet wäre, Kappungsgrenze und Rundung am Tag des Wirksamwerdens. Das Cockpit
+  (`nextRentEvents`) fragt `valueAt` zum Tag.
+- **Klagefrist-Ende** aus dem nicht verschobenen Monatsende nach § 188 Abs. 2, 3 BGB (Ende 28.02. → 28.05.), früher ist
+  sicher (O2).
+- **Bestätigung „alle Stufen erfasst“** wird für jede Art verlangt und heißt „alle Änderungen der Kaltmiete seit
+  Mietbeginn mit ihrer Art, bei Staffelmiete auch die künftigen“; Fristen und Kappungsgrenze hängen in jedem Fall daran.
+  Die Ausschluss-Antwort (§ 557 Abs. 3) muss auch für die Indexmiete beantwortet sein, „ja“ sperrt beide Arten.
+- **Drittmittel** (§ 558 Abs. 5): nur die Bestätigung „keine“; ohne sie gesperrt, ein Abzug wird nicht gerechnet.
+- **Kappungsgrenzen-Verordnung**: eine Antwort je Rechnung, vorbelegt vom Objekt, gefragt für „Zugang oder
+  Wirksamwerden“ (O8). Datum der Antwort und Einfrieren in `basis` (S2) mit PR 3.
+- **Verlangte Miete über dem Höchstbetrag** wird nicht gekappt, sondern ist `blocked` mit Satz; ebenso ein Höchstbetrag,
+  der nicht über der bisherigen Miete liegt. Die Spanne wird ohne den enthaltenen Betriebskostenanteil verglichen.
+- **Indexmiete**: Der neue Indexwert muss vor dem Zugangsmonat liegen (ein Monatswert ist vorher nicht veröffentlicht).
+  Beruht die bisherige Miete auf einer Stufe `modernization`, sperrt die Rechnung: Wie eine Indexanpassung danach zu
+  rechnen ist, steht nicht in der Recherche (offener Punkt). Eine Senkung wird gerechnet und gewarnt, Zustand bleibt
+  `possible` (O7).
+- **Betriebskostenanteil bei Inklusivmiete** wird nicht vorbelegt (offener Punkt): Die Abrechnung führt den
+  Inklusivanteil nur je Position als Anteil des Vermieters, nicht je Mietverhältnis; ihn je Mietverhältnis zu rechnen
+  wäre ein Eingriff in calc.ts. Bis dahin gibt der Vermieter den Betrag ein, die Rechnung sperrt ohne ihn.
+- **Mit dem Schreiben (PR 3)**: Begründungsmittel mit Angaben, qualifizierter Mietspiegel (M6), Vergleichswohnungen (M7),
+  Vermieter und Mieter vollständig (S4), Mietspiegel zugänglich und Alter (S5).

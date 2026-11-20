@@ -596,6 +596,11 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   und `close` zählen nur am Fenster selbst. Das erste Feld bekommt den Fokus, bei nachladendem Inhalt
   nach 60 ms noch einmal. Wächter S12b: `value` immer (kein fester Wert), kein `footer`, kein eigener
   Schließer in `actions`; ob `value` alles umfasst, prüft die Durchsicht.
+- **Seitenfenster ohne Speichern** (Mieterhöhung, #191 PR 2, [RentIncreaseDrawer.tsx](src/components/RentIncreaseDrawer.tsx),
+  Logik in [rentIncreaseForm.ts](src/rentIncreaseForm.ts)): rechnet nur, `cancelLabel="Schließen"`, keine `actions`; die
+  Rechnung folgt `value` nach 250 ms mit Folgenummer, ein unlesbares Feld steht als Satz an der Stelle der Rechnung. Der
+  Zustand steht als Wort („Möglich“, „Noch nicht möglich“, „Nicht möglich“), die Kappungsgrenzen-Verordnung ist vom Objekt
+  vorbelegt. `RentIncreasePlanView` steht auf der Musterseite.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus

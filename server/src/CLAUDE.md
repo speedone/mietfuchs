@@ -887,7 +887,7 @@ Cockpit und Hinweis der Steuer.
 
 Entwurf [docs/superpowers/specs/2026-11-20-mieterhoehung-design.md](../../docs/superpowers/specs/2026-11-20-mieterhoehung-design.md),
 Plan in vier gestapelten PRs ([docs/superpowers/plans/2026-11-20-mieterhoehung.md](../../docs/superpowers/plans/2026-11-20-mieterhoehung.md)).
-Stand nach PR 1 (Daten und Register): nur Angaben, keine Rechnung.
+Stand nach PR 2: Angaben (PR 1) und Rechnung ohne Speichern; Schreiben und Übernahme folgen mit PR 3.
 
 - **Die Kaltmiete-Staffel bleibt die einzige Quelle des Solls.** Jede Stufe trägt optional ihre Art
   (`RentEntry.reason`, `RentChangeReason`) und bei einer Indexmiete ihren Indexwert (`RentEntry.index`: Monat, Wert
@@ -907,6 +907,21 @@ Stand nach PR 1 (Daten und Register): nur Angaben, keine Rechnung.
   Basis 2020). Einen Postlauf trägt das Register nicht (kein belastbarer Beleg; offener Punkt im Entwurf).
 - **Lexikon**: `comparisonRent`, `rentCap` (wo die Länder ihre Verordnungen veröffentlichen, ohne Gemeindeliste),
   `indexRent`, `staggeredRent`, `rentIncreaseRequest`, `consentPeriod`; Beispiele in glossary-mieterhoehung.test.ts.
+- **Rechnung** ([rentIncrease.ts](rentIncrease.ts), rein wie prepaymentSteps.ts): `planRentIncrease` für `comparison`
+  (§ 558) und `index` (§ 557b), `staggeredOverview` (§ 557a), `nextRentEvents` für das Cockpit (PR 4). Zustand `possible`,
+  `notYet` (Zugang oder Monat zu früh) oder `blocked` (Angabe fehlt, `needs`, oder Gesetz schließt aus), Gründe als ganze
+  Sätze mit Norm. **Bezugstag** tagesgenau: letzte zählende Stufe (Erster ihres Monats), frühestens `Tenancy.start`;
+  `modernization` zählt nicht, die erste Stufe immer. Warte- und Sperrfrist getrennt (`dayAfterMonths`, §§ 187 Abs. 2, 188
+  Abs. 2, 3), frühester Zugang so, dass die Miete nach § 558b nicht vor dem Ende der Wartefrist geschuldet ist, **nie am
+  Monatsersten**; Vorgabe des Zugangs ist heute. Kappungsgrenze aus der Miete am Stichtag bzw. bei Mietbeginn (nur wenn
+  die Staffel im Monat des Mietbeginns beginnt), sonst `rentAtCapDate` verlangt; Modernisierung nach dem Monat der
+  Ausgangsmiete kommt hinzu. Fristen nach § 558b mit `deadlineOnWorkday` nur für den Beginn der Klage (O2). Indexwerte
+  nur aus der Reihe von `practice.vpi-series`, der neue Wert vor dem Zugangsmonat; nach einer Modernisierungsstufe
+  gesperrt (nicht recherchiert). Exakt mit BigInt, `floor-cent`. Jede Zahl mit `law()` und Protokoll (`legalValues`).
+- **Route** `POST /api/tenancies/:id/rent-increase/plan` (Eingaben im Rumpf, `rentIncreaseRequestOf` prüft sie, 400 mit
+  Satz): rechnet über `readStock` mit `today()`, nur lesend (`readData`, kein Satz im Verlauf). Den Betriebskostenanteil
+  einer Inklusivmiete schlägt sie nicht vor: Die Abrechnung führt den Inklusivanteil nur je Position und Objekt, nicht je
+  Mietverhältnis. Tests: rent-increase.test.ts (Beispiele, Sperren, Invarianten), api-mieterhoehung.test.ts.
 
 ## Kontoauszug (#188)
 
