@@ -251,13 +251,74 @@ export type Tenancy = {
   notes?: string // freie Notiz zum Mietverhältnis
 }
 
-// Ein Mieterhöhungsverlangen nach § 558 BGB oder eine Erklärung nach § 557b BGB (#191, Entwurf Datenmodell 5). Die Tabelle
-// `rent_increases` legt PR 1 an, sie bleibt bis PR 3 leer und ohne Route.
+// Ein Mieterhöhungsverlangen nach § 558 BGB oder eine Erklärung nach § 557b BGB (#191, Entwurf Datenmodell 5), Tabelle
+// `rent_increases`, geschrieben ab PR 3 (server/src/rentIncreaseSave.ts).
 export type RentIncreaseKind = 'comparison' | 'index'
 export type RentIncreaseStatus = 'draft' | 'sent' | 'agreed' | 'partial' | 'refused' | 'withdrawn'
-// Die eingefrorenen Eingaben und die Rechnung eines Verlangens (JSON wie ein Abschluss), für Nachdruck und Prüfung. Den
-// Inhalt legt PR 3 fest; bis dahin steht nur fest, dass es ein Objekt ist, und gelesen wird es nicht.
-export type RentIncreaseBasis = { readonly [key: string]: unknown }
+// Begründungsmittel nach § 558a Abs. 2 BGB: Mietspiegel, Gutachten eines Sachverständigen, drei Vergleichswohnungen,
+// Auskunft aus einer Mietdatenbank.
+export type RentJustification = 'survey' | 'expert' | 'comparables' | 'database'
+// Ein Mietspiegel, wie das Schreiben ihn nennt (Entwurf R7, Gegenprüfung M6, S5): Name, Stand ('JJJJ-MM'), Feld bzw.
+// Einordnung der Wohnung, Spanne je m² (empfohlen), wo er allgemein zugänglich ist (leer: Er liegt dem Schreiben bei).
+export type RentSurveyInfo = {
+  name: string
+  asOf: string
+  field: string
+  rangeLowCentsPerM2: number | null
+  rangeHighCentsPerM2: number | null
+  availableAt: string
+}
+// Eine Vergleichswohnung (Gegenprüfung M7): auffindbar mit Anschrift und Geschoss bzw. Lage im Haus.
+export type RentComparable = { address: string; location: string; areaM2: number; centsPerM2: number }
+// Ein Gutachten (liegt bei) oder eine Auskunft aus einer Mietdatenbank: von wem bzw. welche, vom welchem Tag ('JJJJ-MM-TT').
+export type RentSource = { name: string; date: string }
+export type RentQualifiedSurveyAnswer = 'yes' | 'no' | 'unknown'
+// Die Eingaben für das Schreiben (shared/rentIncreaseLetter.ts prüft sie). Bei einer Indexmiete gelten nur Empfänger,
+// Bestätigungen und Zusatzabsatz; die übrigen Felder sind dann leer (`justification` und `qualifiedSurvey` `null`).
+export type RentIncreaseLetterInput = {
+  justification: RentJustification | null
+  survey: RentSurveyInfo | null // bei `survey`
+  expert: RentSource | null // bei `expert`
+  database: RentSource | null // bei `database`
+  comparables: RentComparable[] // bei `comparables` genau drei, sonst leer
+  // Gibt es für die Gemeinde einen qualifizierten Mietspiegel (§ 558a Abs. 3 BGB, Gegenprüfung M6)? Bei „ja“ stehen seine
+  // Angaben im Schreiben, auch bei einem anderen Begründungsmittel; „weiß nicht“ lässt kein Schreiben zu. Bei `survey` ist
+  // der genannte Mietspiegel dann der qualifizierte.
+  qualifiedSurvey: RentQualifiedSurveyAnswer | null
+  qualified: RentSurveyInfo | null // bei „ja“ und einem anderen Begründungsmittel
+  // An wen das Schreiben geht: alle Mieter laut Vertrag (Gegenprüfung S4), vorbelegt mit `tenantName`.
+  recipientName: string
+  // Gehen vom Schreiben mehrere Vermieter aus (Eheleute, Erbengemeinschaft; Recherche 7.2)? Dann spricht es in der Mehrzahl.
+  // Eine ausdrückliche Angabe im Formular (Durchsicht S3), nicht aus dem Namen erraten.
+  severalLandlords: boolean
+  allLandlordsNamed: boolean
+  allTenantsNamed: boolean
+  // Der einzige freie Text; er darf weder die Mietstruktur noch die Vorauszahlungen ändern (VIII ZR 108/20 Rn. 18 f.).
+  extraParagraph: string
+}
+// Die eingefrorenen Eingaben und die Rechnung eines Verlangens (JSON wie ein Abschluss), für Nachdruck und Prüfung: Das
+// Schreiben druckt nur hieraus, nie aus dem heutigen Bestand.
+export type RentIncreaseBasis = {
+  version: 1
+  letterDate: string // 'JJJJ-MM-TT', der Tag des Entwurfs und Datum des Briefs
+  request: RentIncreaseRequest // die Eingaben der Rechnung des Entwurfs
+  // Die Rechnung des Entwurfs samt Registerstand (`legalValues`): die Grundlage des gedruckten Schreibens, auch nach dem
+  // Versand unverändert, damit ein Nachdruck Wort für Wort das verschickte Schreiben ergibt (Durchsicht M1).
+  plan: RentIncreasePlan
+  letter: RentIncreaseLetterInput
+  // Die Angabe zur Kappungsgrenzen-Verordnung mit dem Tag, an dem sie gemacht wurde (Gegenprüfung S2); nur Vergleichsmiete.
+  rentCap: { answer: RentCapAnswer; answeredOn: string } | null
+  sender: { name: string; address: string; contact: string; returnLine: string; footer: string }
+  recipient: string[]
+  salutation: string
+  premises: { propertyName: string; address: string; unitName: string; areaM2: number }
+  inclusive: boolean // die Kaltmiete enthält Betriebskosten (`costModel` oder `heatingModel` `inclusive`)
+  // Monatliche Vorauszahlungen bzw. Pauschale im Monat des Wirksamwerdens; das Schreiben nennt sie als unverändert.
+  prepayments: { operatingCents: number; heatingCents: number; flatRateCents: number }
+  // Die Rechnung zum tatsächlichen Zugang, eingefroren beim Versand (vorher `null`). Sie nennt dieselben Zahlen und Fristen
+  // wie `plan`, sonst lehnt der Versand ab (rentIncreaseSave.ts); nur Zugang und Tag der Rechnung weichen ab.
+  sentPlan: RentIncreasePlan | null
+}
 export type RentIncrease = {
   id: string
   tenancyId: string
@@ -272,6 +333,10 @@ export type RentIncrease = {
   agreedCents: number | null // nur bei `partial`
   decidedOn: string | null
 }
+// Ein Verlangen, wie die Routen es liefern: mit der Marke seines Stands, die Versand, Statuswechsel und Löschen mitschicken.
+export type RentIncreaseView = RentIncrease & { token: string }
+// Was `POST /api/rent-increases/:id/status` setzt: die Antwort des Mieters oder die Rücknahme.
+export type RentIncreaseDecision = 'agreed' | 'partial' | 'refused' | 'withdrawn'
 
 // ---------- Rechnung einer Mieterhöhung (#191, PR 2: server/src/rentIncrease.ts, POST /api/tenancies/:id/rent-increase/plan)
 // Die Eingaben des Vermieters im Seitenfenster „Mieterhöhung“. Fehlt eine Angabe, gilt die Vorgabe der Rechnung (Zugang
@@ -333,6 +398,7 @@ export type RentIncreasePlan = {
   kind: RentIncreaseKind
   state: RentIncreaseState
   reasons: string[] // ganze Sätze mit Norm
+  refusals: string[] // die Sätze aus `reasons`, die `blocked` oder `notYet` begründen
   warnings: string[]
   needs: RentIncreaseNeed[]
   currentCents: number | null // die bisherige Miete laut Staffel
@@ -353,6 +419,9 @@ export type RentIncreasePlan = {
   staggered: RentStaggeredOverview | null
   legalValues: AppliedValue[]
 }
+// Die Antwort von `POST /api/tenancies/:id/rent-increase/plan` (PR 3): der Plan mit der Marke, die das Anlegen eines
+// Entwurfs mitschickt; sie ändert sich mit dem Plan und mit jedem Verlangen des Mietverhältnisses.
+export type RentIncreasePlanView = RentIncreasePlan & { token: string }
 // Für das Cockpit (PR 4): nächste Stufe, frühester Zugang einer Erhöhung, Fristen offener Verlangen.
 export type RentEvents = {
   nextStep: { from: string; cents: number } | null

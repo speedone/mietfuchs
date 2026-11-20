@@ -13,7 +13,7 @@ import type { LabeledRow, LetterParagraph } from '../letterView'
 import PaymentQr from './PaymentQr'
 import type { PaymentQrData } from '../paymentQr'
 
-type HeadProps = {
+export type HeadProps = {
   sender: string // der Absender oben, meist der Name des Vermieters
   senderAddress?: string // seine Anschrift darunter (Teil 2), ohne Angabe nichts
   returnLine: string // die Rücksendeangabe über der Anschrift
@@ -40,7 +40,7 @@ export function breakAfterAt(text: string): ReactNode {
 
 const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
 
-function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper }: HeadProps) {
+export function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper }: HeadProps) {
   return (
     <>
       {/* Das Briefpapier liegt unter allem auf der ganzen Seite; mit ihm entfällt der Absender von Mietfuchs (der Kopf

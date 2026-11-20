@@ -1188,7 +1188,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
       {rentIncreaseTenancy && (
         <RentIncreaseDrawer key={rentIncreaseTenancy.id} tenancy={rentIncreaseTenancy} unit={units.find((u) => u.id === rentIncreaseTenancy.unitId)}
-          property={property} onClose={() => setRentIncreaseFor(null)} />
+          property={property} settings={settings} onClose={() => setRentIncreaseFor(null)} />
       )}
 
       {wizardFor && (

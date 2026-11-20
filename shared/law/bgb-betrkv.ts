@@ -319,3 +319,15 @@ export const bgbStaggeredRent: LawParam<{ readonly minMonths: number }, 'eventDa
   versions: [{ value: { minMonths: 12 }, source: bgbRentIncreaseSource('§ 557a Abs. 2 Satz 1 BGB', '557a'), enacted: '§ 557a BGB' }],
   describe: (v) => `jede Stufe mindestens ${v.minMonths} Monate unverändert`,
 }
+
+// Alter eines Mietspiegels (#191, PR 3, Gegenprüfung S5): Ein qualifizierter Mietspiegel ist im Abstand von zwei Jahren der
+// Marktentwicklung anzupassen (§ 558d Abs. 2 Satz 1). Ein älterer darf nur verwendet werden, wenn es keinen neueren gibt
+// (§ 558a Abs. 4 Satz 2); Mietfuchs warnt dann nur. `eventDate`: der Tag des Schreibens.
+export const bgbRentSurveyUpdateYears: LawParam<number, 'eventDate'> = {
+  id: 'bgb.rent-survey-update-years',
+  title: 'Anpassung eines qualifizierten Mietspiegels',
+  norm: '§ 558d Abs. 2 Satz 1 BGB',
+  timing: 'eventDate',
+  versions: [{ value: 2, source: bgbRentIncreaseSource('§ 558d Abs. 2 Satz 1 BGB', '558d'), enacted: '§ 558d BGB' }],
+  describe: (v) => `Anpassung an die Marktentwicklung im Abstand von ${v} Jahren`,
+}

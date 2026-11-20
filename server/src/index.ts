@@ -30,9 +30,12 @@ import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor, type Snapshot } from './snapshot.ts'
 import { onStock } from './stockMemo.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Tenancy, Unit, RentEntry, RentIncrease, RentIncreasePlanView, Property } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
+import { buildBasis, decided as decidedRentIncrease, decisionProblem, sentOf as sentRentIncrease, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
+import { deleteRentIncrease, insertRentIncrease, readRentIncrease, readRentIncreases, replaceRentIncrease } from './db/rentIncreases.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf } from '../../shared/rentIncreaseLetter.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
@@ -1927,22 +1930,151 @@ const stepSaveRoute = async (req: Request, res: Response) => {
 }
 // Mieterhöhung (#191, PR 2): rechnen, nur lesend. Die Eingaben stehen im Rumpf; gerechnet wird über den gemerkten Bestand
 // (readStock) mit dem Tag des Servers. Geschrieben wird nichts, deshalb kein Satz im Verlauf (readData, nicht writeData).
+// PR 3: Die Antwort trägt die Marke (`planToken`), die das Anlegen eines Entwurfs mitschickt.
+async function rentIncreaseContextOf(db: Executor, tenancyId: string): Promise<{ tenancy: Tenancy; unit: Unit; property: Property | null } | null> {
+  const stock = await readStock(db)
+  // Die Listen des Bestands mit vollem Typ (`Stock` schneidet sie mit denen des Schnappschusses).
+  const tenancies: readonly Tenancy[] = stock.tenancies
+  const units: readonly Unit[] = stock.units
+  const properties: readonly Property[] = stock.properties
+  const tenancy = tenancies.find((t) => t.id === tenancyId)
+  const unit = tenancy ? units.find((u) => u.id === tenancy.unitId) : undefined
+  if (!tenancy || !unit) return null
+  return { tenancy, unit, property: properties.find((p) => p.id === unit.propertyId) ?? null }
+}
+const NO_TENANCY = 'Dieses Mietverhältnis gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+const NO_RENT_INCREASE = 'Diese Mieterhöhung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+const STALE_RENT_INCREASE = 'Der Stand hat sich geändert. Bitte prüfen Sie die Mieterhöhung noch einmal.'
 app.post('/api/tenancies/:id/rent-increase/plan', async (req: Request, res: Response) => {
   const request = rentIncreaseRequestOf(bodyObject(req))
   if ('error' in request) return res.status(400).json({ error: request.error })
   const plan = await readData(async (db) => {
-    const stock = await readStock(db)
-    // Die Listen des Bestands mit vollem Typ (`Stock` schneidet sie mit denen des Schnappschusses).
-    const tenancies: readonly Tenancy[] = stock.tenancies
-    const units: readonly Unit[] = stock.units
-    const tenancy = tenancies.find((t) => t.id === req.params.id)
-    const unit = tenancy ? units.find((u) => u.id === tenancy.unitId) : undefined
-    if (!tenancy || !unit) return null
-    const property = stock.properties.find((p) => p.id === unit.propertyId) ?? null
-    return planRentIncrease({ today: today(), tenancy, unit, property, request })
+    const ctx = await rentIncreaseContextOf(db, String(req.params.id))
+    if (!ctx) return null
+    const plan = planRentIncrease({ today: today(), ...ctx, request })
+    return { ...plan, token: planToken(plan, await readRentIncreases(db, ctx.tenancy.id)) } satisfies RentIncreasePlanView
   })
-  if (!plan) return res.status(404).json({ error: 'Dieses Mietverhältnis gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  if (!plan) return res.status(404).json({ error: NO_TENANCY })
   res.json(plan)
+})
+
+// Mieterhöhung (#191, PR 3): Entwurf, Versand, Antwort, Löschen; Regeln in rentIncreaseSave.ts, Zeilen in
+// db/rentIncreases.ts. Jede Route liest und schreibt in einem Schreibvorgang (gelesen wird in derselben Schlange wie
+// geschrieben), prüft die Marke des gesehenen Stands (sonst 409 mit dem neuen) und schreibt in einer Transaktion; die
+// Stufe der Kaltmiete-Staffel mit `patchTenancyIn` (derselbe Wächter wie PUT /api/tenancies/:id).
+app.get('/api/tenancies/:id/rent-increases', async (req, res) => {
+  const out = await readData(async (db) => {
+    const ctx = await rentIncreaseContextOf(db, String(req.params.id))
+    return ctx ? (await readRentIncreases(db, ctx.tenancy.id)).map((x) => rentIncreaseViewOf(x, ctx.tenancy)) : null
+  })
+  if (!out) return res.status(404).json({ error: NO_TENANCY })
+  res.json(out)
+})
+app.post('/api/tenancies/:id/rent-increases', async (req: Request, res: Response) => {
+  const body = bodyObject(req)
+  const request = rentIncreaseRequestOf(isObject(body.request) ? body.request : {})
+  if ('error' in request) return res.status(400).json({ error: request.error })
+  // Die Miete am Stichtag friert nur mit ihrem Tag ein (Durchsicht PR 2, K1): Ohne ihn wüsste ein Nachdruck nicht, zu
+  // welchem Stichtag sie gehört.
+  if (request.rentAtCapDateCents != null && request.rentAtCapDateOn == null) return res.status(400).json({ error: 'Zur Miete am Stichtag fehlt der Tag, zu dem sie gehört. Bitte rechnen Sie neu und speichern Sie dann.' })
+  const letter = rentIncreaseLetterOf(body.letter, request.kind)
+  if ('problems' in letter) return res.status(400).json({ error: letter.problems[0]?.text ?? 'Die Angaben für das Schreiben sind unvollständig.' })
+  const result = await writeData(async (db) => {
+    const ctx = await rentIncreaseContextOf(db, String(req.params.id))
+    if (!ctx) throw new RentIncreaseError(404, NO_TENANCY)
+    const day = today()
+    const increases = await readRentIncreases(db, ctx.tenancy.id)
+    const plan = planRentIncrease({ today: day, ...ctx, request })
+    const token = planToken(plan, increases)
+    if (body.token !== token) return { stale: { ...plan, token } satisfies RentIncreasePlanView }
+    if (increases.some(isOpenRentIncrease)) throw new RentIncreaseError(409, 'Für dieses Mietverhältnis gibt es schon ein offenes Verlangen (Entwurf oder versandt ohne Antwort). Löschen Sie den Entwurf oder tragen Sie die Antwort ein, bevor Sie ein neues anlegen.')
+    const problem = draftProblem(plan)
+    if (problem) throw new RentIncreaseError(400, problem)
+    const basis = buildBasis({ today: day, request, plan, letter: letter.letter, ...ctx, settings: await readSettings(db) })
+    const draft = draftOfRentIncrease({ id: newId(), tenancyId: ctx.tenancy.id, today: day, basis })
+    await db.transaction(async (tx) => insertRentIncrease(tx, draft))
+    return { created: rentIncreaseViewOf(draft, ctx.tenancy) }
+  })
+  if ('stale' in result) return res.status(409).json({ error: STALE_RENT_INCREASE, plan: result.stale })
+  res.status(201).json(result.created)
+})
+// Gemeinsam für Versand, Antwort und Löschen: das Verlangen, sein Mietverhältnis und die Prüfung der Marke.
+async function rentIncreaseOf(db: Executor, id: string, token: unknown) {
+  const increase = await readRentIncrease(db, id)
+  if (!increase) throw new RentIncreaseError(404, NO_RENT_INCREASE)
+  const ctx = await rentIncreaseContextOf(db, increase.tenancyId)
+  if (!ctx) throw new RentIncreaseError(404, NO_TENANCY)
+  const stale = token !== rentIncreaseToken(increase, ctx.tenancy) ? rentIncreaseViewOf(increase, ctx.tenancy) : null
+  return { increase, ctx, stale }
+}
+// Versand und Antwort lesen die eingefrorene Grundlage; aus einer anderen Fassung lehnen sie mit Satz ab (Durchsicht K1).
+function readableBasis(x: RentIncrease): void {
+  const problem = rentIncreaseBasisProblem(x.basis)
+  if (problem) throw new RentIncreaseError(409, problem)
+}
+app.post('/api/rent-increases/:id/send', async (req: Request, res: Response) => {
+  const body = bodyObject(req)
+  const receivedOn = body.receivedOn
+  if (!isDateOnly(receivedOn)) return res.status(400).json({ error: 'Bitte geben Sie den Tag an, an dem das Schreiben beim Mieter angekommen ist.' })
+  const result = await writeData(async (db) => {
+    const { increase, ctx, stale } = await rentIncreaseOf(db, String(req.params.id), body.token)
+    if (stale) return { stale }
+    readableBasis(increase)
+    const day = today()
+    const plan = planRentIncrease({ today: day, ...ctx, request: sendRequest(increase, receivedOn) })
+    const problem = sendProblem(increase, plan, receivedOn, day)
+    if (problem) throw problem
+    const next = sentRentIncrease(increase, plan, receivedOn)
+    await db.transaction(async (tx) => {
+      await replaceRentIncrease(tx, next)
+      // Indexmiete: Die Erklärung wirkt mit dem Zugang (§ 557b Abs. 3 BGB), die Stufe gehört gleich in die Staffel.
+      if (writesStep(increase.status, next.status, next.kind)) await patchTenancyIn(tx, ctx.tenancy, { baseRents: withStep(ctx.tenancy.baseRents, rentIncreaseStepOf(next)) })
+    })
+    return { done: rentIncreaseViewOf(next, { baseRents: writesStep(increase.status, next.status, next.kind) ? withStep(ctx.tenancy.baseRents, rentIncreaseStepOf(next)) : ctx.tenancy.baseRents }) }
+  })
+  if ('stale' in result) return res.status(409).json({ error: STALE_RENT_INCREASE, increase: result.stale })
+  res.json(result.done)
+})
+app.post('/api/rent-increases/:id/status', async (req: Request, res: Response) => {
+  const body = bodyObject(req)
+  const decision = body.status
+  if (!isRentIncreaseDecision(decision)) return res.status(400).json({ error: 'Die Antwort ist unbekannt (zugestimmt, teilweise zugestimmt, abgelehnt oder zurückgenommen).' })
+  const decidedOn = body.decidedOn
+  if (!isDateOnly(decidedOn)) return res.status(400).json({ error: 'Bitte geben Sie den Tag der Antwort an.' })
+  const agreed = body.agreedCents
+  if (agreed !== undefined && agreed !== null && !(typeof agreed === 'number' && Number.isSafeInteger(agreed) && agreed >= 0)) return res.status(400).json({ error: 'Die zugestimmte Miete ist ein Betrag in Cent, nicht negativ.' })
+  const agreedCents = typeof agreed === 'number' ? agreed : null
+  const result = await writeData(async (db) => {
+    const { increase, ctx, stale } = await rentIncreaseOf(db, String(req.params.id), body.token)
+    if (stale) return { stale }
+    readableBasis(increase)
+    const problem = decisionProblem(increase, decision, agreedCents, decidedOn, today(), ctx.tenancy.end)
+    if (problem) throw new RentIncreaseError(400, problem)
+    const next = decidedRentIncrease(increase, decision, agreedCents, decidedOn)
+    let rents: readonly RentEntry[] = ctx.tenancy.baseRents
+    if (decision === 'withdrawn' && rentStepWritten(increase)) rents = withoutStep(rents, rentIncreaseStepOf(increase)) ?? rents
+    else if (writesStep(increase.status, next.status, next.kind)) rents = withStep(rents, rentIncreaseStepOf(next))
+    await db.transaction(async (tx) => {
+      await replaceRentIncrease(tx, next)
+      if (rents !== ctx.tenancy.baseRents) await patchTenancyIn(tx, ctx.tenancy, { baseRents: [...rents] })
+      await retitleCurrentGroup(tx, RENT_INCREASE_DECISION_TITLES[decision])
+    })
+    return { done: rentIncreaseViewOf(next, { baseRents: rents }) }
+  })
+  if ('stale' in result) return res.status(409).json({ error: STALE_RENT_INCREASE, increase: result.stale })
+  res.json(result.done)
+})
+app.delete('/api/rent-increases/:id', async (req: Request, res: Response) => {
+  const body = bodyObject(req)
+  const result = await writeData(async (db) => {
+    const { increase, stale } = await rentIncreaseOf(db, String(req.params.id), body.token)
+    if (stale) return { stale }
+    if (increase.status !== 'draft') throw new RentIncreaseError(409, 'Nur ein Entwurf lässt sich löschen. Ein versandtes Verlangen nehmen Sie zurück; so bleibt im Verlauf, was der Mieter bekommen hat.')
+    await db.transaction(async (tx) => deleteRentIncrease(tx, increase.id))
+    return { done: true }
+  })
+  if ('stale' in result) return res.status(409).json({ error: STALE_RENT_INCREASE, increase: result.stale })
+  res.json({ ok: true })
 })
 app.post('/api/settlement/:period/prepayment-steps/plan', stepPlanRoute)
 app.post('/api/settlement/:period/prepayment-steps', stepSaveRoute)
@@ -4989,7 +5121,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Die Verteilung nach § 82b EStDV (#262, E-9): dieselbe Gestalt, bestätigt mit `confirmSpread`.
   if (err instanceof SpreadQuestion) return res.status(409).json({ error: err.message, question: 'spread' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError || err instanceof RentIncreaseError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

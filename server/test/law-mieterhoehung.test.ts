@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
-import { bgbIndexRent, bgbRentCap, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths, bgbStaggeredRent } from '../../shared/law/bgb-betrkv.ts'
+import { bgbIndexRent, bgbRentCap, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths, bgbRentSurveyUpdateYears, bgbStaggeredRent } from '../../shared/law/bgb-betrkv.ts'
 import { practiceRentIncreaseRounding, practiceVpiSeries } from '../../shared/law/practice.ts'
 
 test('Mieterhöhung: die Werte des Registers nach dem Wortlaut (§§ 557a, 557b, 558, 558b BGB)', () => {
@@ -15,16 +15,17 @@ test('Mieterhöhung: die Werte des Registers nach dem Wortlaut (§§ 557a, 557b,
   assert.deepEqual(valueAt(bgbRentIncreaseConsent, LAW_AS_OF), { consentMonths: 2, effectiveMonth: 3, suitMonths: 3 })
   assert.deepEqual(valueAt(bgbIndexRent, LAW_AS_OF), { minMonths: 12, effectiveMonthOffset: 2 })
   assert.deepEqual(valueAt(bgbStaggeredRent, LAW_AS_OF), { minMonths: 12 })
+  assert.equal(valueAt(bgbRentSurveyUpdateYears, LAW_AS_OF), 2, 'PR 3: Alter eines Mietspiegels (§ 558d Abs. 2 Satz 1 BGB)')
   assert.equal(valueAt(practiceRentIncreaseRounding, LAW_AS_OF), 'floor-cent')
   assert.deepEqual(valueAt(practiceVpiSeries, LAW_AS_OF), { table: '61111-0002', base: 2020 })
 })
 
 test('Mieterhöhung: Gesetzeswerte am Wortlaut geprüft, Festlegungen als übernommen gekennzeichnet', () => {
-  for (const p of [bgbRentIncreaseWaitMonths, bgbRentIncreaseLockMonths, bgbRentCap, bgbRentIncreaseConsent, bgbIndexRent, bgbStaggeredRent]) {
+  for (const p of [bgbRentIncreaseWaitMonths, bgbRentIncreaseLockMonths, bgbRentCap, bgbRentIncreaseConsent, bgbIndexRent, bgbStaggeredRent, bgbRentSurveyUpdateYears]) {
     for (const v of p.versions) {
       assert.equal(v.source.rank, 'law', p.id)
       assert.equal(v.source.checked, 'checked', p.id)
-      assert.match(v.source.url, /^https:\/\/www\.gesetze-im-internet\.de\/bgb\/__55[78][ab]?\.html$/, p.id)
+      assert.match(v.source.url, /^https:\/\/www\.gesetze-im-internet\.de\/bgb\/__55[78][abd]?\.html$/, p.id)
       assert.equal(v.source.retrieved, '2026-11-20', p.id)
     }
   }
@@ -35,7 +36,7 @@ test('Mieterhöhung: Gesetzeswerte am Wortlaut geprüft, Festlegungen als übern
 
 test('Mieterhöhung: alle Werte stehen in LAW_PARAMS, ein Postlauf nicht (kein belastbarer Beleg, Entwurf S7)', () => {
   const ids = new Set(LAW_PARAMS.map((p) => p.id))
-  for (const id of ['bgb.rent-increase-wait-months', 'bgb.rent-increase-lock-months', 'bgb.rent-cap', 'bgb.rent-increase-consent', 'bgb.index-rent', 'bgb.staggered-rent', 'practice.rent-increase-rounding', 'practice.vpi-series']) {
+  for (const id of ['bgb.rent-increase-wait-months', 'bgb.rent-increase-lock-months', 'bgb.rent-cap', 'bgb.rent-increase-consent', 'bgb.index-rent', 'bgb.staggered-rent', 'practice.rent-increase-rounding', 'practice.vpi-series', 'bgb.rent-survey-update-years']) {
     assert.ok(ids.has(id), id)
   }
   assert.ok(!ids.has('practice.letter-delivery-days'))

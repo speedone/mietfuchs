@@ -887,7 +887,7 @@ Cockpit und Hinweis der Steuer.
 
 Entwurf [docs/superpowers/specs/2026-11-20-mieterhoehung-design.md](../../docs/superpowers/specs/2026-11-20-mieterhoehung-design.md),
 Plan in vier gestapelten PRs ([docs/superpowers/plans/2026-11-20-mieterhoehung.md](../../docs/superpowers/plans/2026-11-20-mieterhoehung.md)).
-Stand nach PR 2: Angaben (PR 1) und Rechnung ohne Speichern; Schreiben und Übernahme folgen mit PR 3.
+Stand nach PR 3: Angaben (PR 1), Rechnung (PR 2), Schreiben und Übernahme in die Staffel (PR 3); das Cockpit folgt mit PR 4.
 
 - **Die Kaltmiete-Staffel bleibt die einzige Quelle des Solls.** Jede Stufe trägt optional ihre Art
   (`RentEntry.reason`, `RentChangeReason`) und bei einer Indexmiete ihren Indexwert (`RentEntry.index`: Monat, Wert
@@ -922,6 +922,32 @@ Stand nach PR 2: Angaben (PR 1) und Rechnung ohne Speichern; Schreiben und Über
   Satz): rechnet über `readStock` mit `today()`, nur lesend (`readData`, kein Satz im Verlauf). Den Betriebskostenanteil
   einer Inklusivmiete schlägt sie nicht vor: Die Abrechnung führt den Inklusivanteil nur je Position und Objekt, nicht je
   Mietverhältnis. Tests: rent-increase.test.ts (Beispiele, Sperren, Invarianten), api-mieterhoehung.test.ts.
+
+- **Speichern** ([rentIncreaseSave.ts](rentIncreaseSave.ts), Zeilen in [db/rentIncreases.ts](db/rentIncreases.ts), PR 3):
+  `POST /api/tenancies/:id/rent-increases` legt einen Entwurf an (Rumpf `request`, `letter`, `token`), `POST
+  /api/rent-increases/:id/send` (`receivedOn`), `POST …/status` (`agreed`, `partial` mit `agreedCents`, `refused`,
+  `withdrawn`, je mit `decidedOn`), `DELETE /api/rent-increases/:id` (nur Entwurf), `GET /api/tenancies/:id/rent-increases`.
+  Muster #317: **Marke** des gesehenen Stands (Plan samt Kennungen und Stand der Verlangen bzw. Zeile samt Kaltmiete-Staffel,
+  `planToken`/`increaseToken`; die Plan-Route liefert sie mit), sonst 409 mit dem neuen Plan bzw. `increase`; Lesen und
+  Schreiben in einem `writeData`, eine Transaktion, Stufe über `patchTenancyIn`, `RentIncreaseError` mit Satz. **Höchstens
+  ein offenes Verlangen** je Mietverhältnis (Entwurf oder versandtes nach § 558). Entwurf nur aus einem Plan, der nicht
+  `blocked` ist (zu früh geht, der Zugang kommt beim Versand). **`basis`** friert ein: Eingaben der Rechnung und des
+  Schreibens, Plan samt `legalValues`, Angabe zur Kappungsgrenzen-Verordnung mit Tag (S2), Absender, Empfänger und Anrede
+  zum Zeitpunkt, Wohnung, Inklusivmiete, Vorauszahlungen im Monat des Wirksamwerdens; das Schreiben druckt nur daraus.
+  **Versand** rechnet mit dem tatsächlichen Zugang neu (Monat und verlangte Miete bleiben die des Schreibens): nur bei
+  `possible`, nicht in der Zukunft, und nur wenn Miete und Ende der Zustimmungsfrist gleich bleiben, sonst 400 mit Satz
+  (neu anlegen, neu drucken); der neue Plan ersetzt den eingefrorenen. **Stufe**: Zustimmung (auch teilweise, Betrag über
+  der bisherigen und höchstens der verlangten Miete; nach einer Ablehnung noch möglich; nicht, wenn das Mietverhältnis
+  vor dem Wirksamwerden endet) schreibt `comparison`, der Versand
+  einer Indexanpassung `index` mit dem neuen Indexwert; eine Stufe ab dem Monat oder später ist 409. **Zurücknehmen**
+  nimmt die Stufe nur heraus, wenn sie unverändert dasteht und keine spätere Stufe auf ihr aufbaut (fehlt sie, bleibt
+  die Staffel), sonst 409. Ein offenes Verlangen sperrt das Verschieben der Wohnung in ein anderes Objekt (`guardUnit`). **Schweigen ist
+  keine Zustimmung** (S8): Nichts geschieht nach Fristablauf von selbst. Eingaben des Schreibens prüft
+  shared/rentIncreaseLetter.ts für Server und Oberfläche (qualifizierter Mietspiegel Pflichtfrage, „weiß nicht“ sperrt;
+  drei Vergleichswohnungen mit Anschrift und Lage; alle Vermieter und Mieter bestätigt). Register:
+  `bgb.rent-survey-update-years` (§ 558d Abs. 2, nur Warnung zum Alter eines Mietspiegels). `refusals` im Plan: die Sätze,
+  die `blocked`/`notYet` begründen (Ablehnung beim Versand). Verlauf: je Route ein Satz, die Antwort mit eigenem
+  (`retitleCurrentGroup`). Tests: api-mieterhoehung-schreiben.test.ts (auch Rücksprung und Backup), rent-increase-letter.test.ts.
 
 ## Kontoauszug (#188)
 

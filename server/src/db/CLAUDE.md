@@ -113,8 +113,10 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `basis` ist JSON wie ein Abschluss, `agreed_cents` genau bei `partial`). Die Bedingungen an den drei bestehenden
   Tabellen in 0104 (Neubau, getrennt wie 0092/0093). Keine Datenanweisung; db.json und ältere Backups kommen ohne
   Angaben an. Dass Indexwert und die Arten `index`/`staggered` zur Art der Miete passen, prüft das Repository
-  (`rentScheduleProblem` in `guardTenancy`, `RentDataError`), denn es hängt an zwei Tabellen. `rent_increases` bleibt
-  bis PR 3 leer und ohne Route. Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Mieterhöhung“.
+  (`rentScheduleProblem` in `guardTenancy`, `RentDataError`), denn es hängt an zwei Tabellen. `rent_increases` liest
+  und schreibt [rentIncreases.ts](rentIncreases.ts), nur Zeilen; Regeln, Marken und Übernahme in die Staffel stehen in
+  ../rentIncreaseSave.ts, die Routen in index.ts. Ein offenes Verlangen (Entwurf oder versandt ohne Antwort) sperrt den
+  Wechsel der Wohnung in ein anderes Objekt (`guardUnit`). Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Mieterhöhung“.
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,
   Anteile, Teilnehmer, Einzel- und Eigenbeträge, Pauschalen, `unit_no_connection`.
   `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.

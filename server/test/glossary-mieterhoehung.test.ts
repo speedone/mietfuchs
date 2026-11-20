@@ -97,3 +97,22 @@ test('Lexikon Mieterhöhungsverlangen und Zustimmungsfrist: Fristbeispiel 20.11.
   assert.match(r.example, /spätestens seit 01\.11\.2025/)
   assert.match(r.example, new RegExp(`seit ${valueAt(bgbRentIncreaseWaitMonths, LAW_AS_OF)} Monaten`))
 })
+
+test('Lexikon Mieterhöhung, Schreiben (PR 3): Begründungsmittel und qualifizierter Mietspiegel, Abstand aus dem Register', async () => {
+  const { bgbRentSurveyUpdateYears } = await import('../../shared/law/bgb-betrkv.ts')
+  for (const id of ['rentJustification', 'qualifiedRentSurvey'] as const) {
+    const t = GLOSSARY[id]
+    assert.equal(t.topic, 'tenants', id)
+    assert.match(t.norm, /§ 558a/, id)
+    for (const text of [t.short, t.example, t.needed]) {
+      assert.doesNotMatch(text, /\b(du|dein|deine|dir|dich)\b/i, `${id}: geduzt`)
+      assert.doesNotMatch(text, /\u2014/, `${id}: Geviertstrich`)
+    }
+  }
+  assert.equal(valueAt(bgbRentSurveyUpdateYears, LAW_AS_OF), 2)
+  assert.match(GLOSSARY.qualifiedRentSurvey.short, /im Abstand von zwei Jahren/)
+  assert.match(GLOSSARY.qualifiedRentSurvey.short, /auch wenn Sie es mit Vergleichswohnungen oder einem Gutachten begründen/)
+  // Das Beispiel der Vergleichswohnungen: verlangt wird höchstens die niedrigste Miete je m².
+  const rates = [...GLOSSARY.rentJustification.example.matchAll(/(\d+,\d{2}) € je m²/g)].map((m) => euro(m[1] ?? ''))
+  assert.equal(rates.at(-1), Math.min(...rates.slice(0, 3)))
+})

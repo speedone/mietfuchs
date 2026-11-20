@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-// Das Seitenfenster „Mieterhöhung“ (#191, PR 2): Auswahlfelder zeigen den vorbelegten Wert, die Rechnung geht mit genau
-// diesem Wert an den Server, der Zustand steht als Wort da; gespeichert wird nichts.
+// Das Seitenfenster „Mieterhöhung“ (#191): Auswahlfelder zeigen den vorbelegten Wert, die Rechnung geht mit genau diesem
+// Wert an den Server, der Zustand steht als Wort da (PR 2). PR 3: Eingaben des Schreibens mit Auswahlfeldern, Entwurf mit
+// der Marke des Plans, Liste der Verlangen mit Rückfrage vor jeder Antwort.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import RentIncreaseDrawer from './RentIncreaseDrawer'
 import { UIProvider } from './feedback'
-import type { Property, RentIncreasePlan, Tenancy, Unit } from '../types'
+import type { Property, RentIncreaseBasis, RentIncreasePlan, RentIncreaseView, Settings, Tenancy, Unit } from '../types'
 
 const TENANCY: Tenancy = {
   id: 't1', unitId: 'u1', tenantName: 'Erika Mustermann', persons: 1, personHistory: [], start: '2020-01-01', end: null,
@@ -16,27 +17,34 @@ const PROPERTY = { id: 'p1', name: 'Haus', kind: 'mfh', address: '', landlordNam
 const PLAN: RentIncreasePlan = {
   kind: 'comparison', state: 'notYet', reasons: ['Am 20.11.2026 ist es noch zu früh.'], warnings: [], needs: [], currentCents: 50000, currentSince: '2020-01-01',
   receivedOn: '2026-11-20', today: '2026-11-20', capBaseDay: null, earliestReceivedOn: '2026-12-02', effectiveFrom: '2027-03', earliestEffectiveFrom: '2027-03', consent: null, cap: null,
-  comparison: null, index: null, maxCents: null, newCents: null, steps: [], staggered: null, legalValues: [],
+  comparison: null, index: null, maxCents: null, newCents: null, steps: [], staggered: null, legalValues: [], refusals: [],
 }
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let reply: (body: Record<string, unknown>) => RentIncreasePlan
+let increases: RentIncreaseView[]
 beforeEach(() => {
   sent = []
+  increases = []
   reply = () => PLAN
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-    sent.push({ url, method: init?.method ?? 'GET', body })
-    return new Response(JSON.stringify(reply(body)), { status: 200, headers: { 'content-type': 'application/json' } })
+    sent.push({ url, method, body })
+    const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers: { 'content-type': 'application/json' } })
+    if (url.endsWith('/rent-increases') && method === 'GET') return json(increases)
+    if (url.endsWith('/rent-increase/plan')) return json({ ...reply(body), token: 'marke-1' })
+    return json({ ok: true })
   })
 })
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
+const plans = () => sent.filter((x) => x.url.endsWith('/rent-increase/plan'))
 
-const open = (tenancy: Tenancy = TENANCY, property: Property | null = PROPERTY) =>
-  render(<UIProvider><RentIncreaseDrawer tenancy={tenancy} unit={UNIT} property={property} onClose={() => {}} /></UIProvider>)
+const open = (tenancy: Tenancy = TENANCY, property: Property | null = PROPERTY, settings: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact'> | null = null) =>
+  render(<UIProvider><RentIncreaseDrawer tenancy={tenancy} unit={UNIT} property={property} settings={settings} onClose={() => {}} /></UIProvider>)
 
 test('Mieterhöhung: Auswahlfelder zeigen den vorbelegten Wert, und genau der geht an den Server', async () => {
   open()
@@ -46,25 +54,88 @@ test('Mieterhöhung: Auswahlfelder zeigen den vorbelegten Wert, und genau der ge
   const cap = screen.getByLabelText(/Verordnung zur/) as HTMLSelectElement
   expect(cap.value).toBe('yes')
   expect(cap.selectedOptions[0]?.textContent).toMatch(/^Ja/)
-  await waitFor(() => expect(sent.length).toBe(1))
-  expect(sent[0]?.url).toBe('/api/tenancies/t1/rent-increase/plan')
-  expect(sent[0]?.method).toBe('POST')
-  expect(sent[0]?.body).toMatchObject({ kind: 'comparison', rentCap: 'yes', areaM2: 60 })
+  await waitFor(() => expect(plans().length).toBe(1))
+  expect(plans()[0]?.method).toBe('POST')
+  expect(plans()[0]?.body).toMatchObject({ kind: 'comparison', rentCap: 'yes', areaM2: 60 })
   expect(await screen.findByText('Noch nicht möglich')).toBeTruthy()
   expect(screen.getByText('Am 20.11.2026 ist es noch zu früh.')).toBeTruthy()
-  expect(screen.queryByRole('button', { name: /Speichern|Anlegen/ })).toBeNull()
+  // „Noch nicht möglich“ ohne neue Miete: kein Schreiben.
+  expect(screen.queryByRole('button', { name: /Schreiben als Entwurf anlegen/ })).toBeNull()
 })
 
 test('Mieterhöhung: bei Indexmiete ist die Art vorbelegt, ohne Angabe am Objekt „weiß nicht“; ein Wechsel rechnet neu', async () => {
   open({ ...TENANCY, rentKind: 'index' }, null)
   expect((screen.getByLabelText('Art der Erhöhung') as HTMLSelectElement).value).toBe('index')
-  await waitFor(() => expect(sent.length).toBe(1))
-  expect(sent[0]?.body).toMatchObject({ kind: 'index' })
+  await waitFor(() => expect(plans().length).toBe(1))
+  expect(plans()[0]?.body).toMatchObject({ kind: 'index' })
   fireEvent.change(screen.getByLabelText('Art der Erhöhung'), { target: { value: 'comparison' } })
   const cap = await screen.findByLabelText(/Verordnung zur/) as HTMLSelectElement
   expect(cap.value).toBe('unknown')
-  await waitFor(() => expect(sent.length).toBe(2))
-  expect(sent[1]?.body).toMatchObject({ kind: 'comparison', rentCap: 'unknown' })
+  await waitFor(() => expect(plans().length).toBe(2))
+  expect(plans()[1]?.body).toMatchObject({ kind: 'comparison', rentCap: 'unknown' })
+})
+
+const POSSIBLE: RentIncreasePlan = {
+  ...PLAN, state: 'possible', reasons: [], earliestReceivedOn: '2026-11-20', effectiveFrom: '2027-02', newCents: 60000, maxCents: 60000,
+  consent: { consentEnd: '2027-01-31', consentEndOnWorkday: '2027-02-01', suitFrom: '2027-02-02', suitEnd: '2027-04-30' },
+  comparison: { centsPerM2: 1000, areaM2: 60, rentCents: 60000, operatingCostsCents: null, limitCents: 60000 },
+}
+const BASIS: RentIncreaseBasis = {
+  version: 1, letterDate: '2026-11-20', request: { kind: 'comparison' }, plan: POSSIBLE,
+  letter: { justification: 'expert', survey: null, expert: { name: 'Dipl.-Ing. Muster', date: '2026-10-01' }, database: null, comparables: [], qualifiedSurvey: 'no', qualified: null, recipientName: 'Erika Mustermann', severalLandlords: false, allLandlordsNamed: true, allTenantsNamed: true, extraParagraph: '' },
+  rentCap: { answer: 'yes', answeredOn: '2026-11-20' },
+  sender: { name: 'Max Vermieter', address: 'Ahornstraße 3, 12345 Musterstadt', contact: '', returnLine: 'Max Vermieter · Ahornstraße 3, 12345 Musterstadt', footer: '' },
+  recipient: ['Erika Mustermann', 'Lindenweg 12', '12345 Musterstadt'], salutation: 'Guten Tag Erika Mustermann,',
+  premises: { propertyName: 'Haus', address: 'Lindenweg 12, 12345 Musterstadt', unitName: 'EG', areaM2: 60 }, inclusive: false,
+  prepayments: { operatingCents: 15000, heatingCents: 0, flatRateCents: 0 }, sentPlan: null,
+}
+const SENT: RentIncreaseView = {
+  id: 'r1', tenancyId: 't1', kind: 'comparison', createdOn: '2026-11-20', receivedOn: '2026-11-20', effectiveFrom: '2027-02', fromCents: 50000, toCents: 60000,
+  basis: BASIS, status: 'sent', agreedCents: null, decidedOn: null, token: 'marke-r1',
+}
+
+test('Mieterhöhung, Schreiben: Auswahlfelder zeigen den Wert, „Bitte wählen“ beim qualifizierten Mietspiegel; Entwurf mit der Marke des Plans', async () => {
+  reply = () => POSSIBLE
+  open()
+  const justification = await screen.findByLabelText('Begründungsmittel') as HTMLSelectElement
+  expect(justification.value).toBe('survey')
+  expect(justification.selectedOptions[0]?.textContent).toBe('Mietspiegel')
+  const qualified = screen.getByLabelText(/qualifizierten Mietspiegel/) as HTMLSelectElement
+  expect(qualified.value).toBe('')
+  expect(qualified.selectedOptions[0]?.textContent).toBe('Bitte wählen')
+  expect((screen.getByLabelText('Empfänger') as HTMLInputElement).value).toBe('Erika Mustermann')
+  // Unvollständig: Meldungen, nichts gesendet.
+  fireEvent.click(screen.getByRole('button', { name: 'Schreiben als Entwurf anlegen' }))
+  await waitFor(() => expect(screen.getAllByText(/qualifizierten Mietspiegel gibt/).length).toBeGreaterThan(0))
+  expect(sent.some((x) => x.url.endsWith('/rent-increases') && x.method === 'POST')).toBe(false)
+  fireEvent.change(justification, { target: { value: 'expert' } })
+  fireEvent.change(qualified, { target: { value: 'no' } })
+  expect(qualified.value).toBe('no')
+  fireEvent.change(screen.getByLabelText(/Sachverständiger/), { target: { value: 'Dipl.-Ing. Muster' } })
+  fireEvent.change(screen.getByLabelText('Datum des Gutachtens'), { target: { value: '2026-10-01' } })
+  fireEvent.click(screen.getByLabelText(/Mehrere Vermieter/))
+  fireEvent.click(screen.getByLabelText(/alle Vermieter laut Mietvertrag/))
+  fireEvent.click(screen.getByLabelText(/alle Mieter laut Mietvertrag/))
+  await waitFor(() => expect(plans().length).toBeGreaterThan(0))
+  fireEvent.click(screen.getByRole('button', { name: 'Schreiben als Entwurf anlegen' }))
+  await waitFor(() => expect(sent.some((x) => x.url === '/api/tenancies/t1/rent-increases' && x.method === 'POST')).toBe(true))
+  const post = sent.find((x) => x.url === '/api/tenancies/t1/rent-increases' && x.method === 'POST')
+  expect(post?.body).toMatchObject({ token: 'marke-1', request: { kind: 'comparison', rentCap: 'yes' }, letter: { justification: 'expert', qualifiedSurvey: 'no', expert: { name: 'Dipl.-Ing. Muster', date: '2026-10-01' }, recipientName: 'Erika Mustermann', severalLandlords: true } })
+})
+
+test('Mieterhöhung, Liste: Schreiben aus der Grundlage, Zustimmung erst nach Rückfrage mit dem Satz zum Schweigen', async () => {
+  increases = [SENT]
+  open()
+  expect(await screen.findByText('Versandt')).toBeTruthy()
+  expect(screen.getByText(/Zustimmungsfrist bis 01\.02\.2027/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Schreiben ansehen' }))
+  expect(screen.getByText(/Gutachten des öffentlich bestellten und vereidigten Sachverständigen Dipl\.-Ing\. Muster/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Zugestimmt …' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/Schweigen ist keine Zustimmung/)
+  fireEvent.click(screen.getByRole('button', { name: 'Eintragen' }))
+  await waitFor(() => expect(sent.some((x) => x.url === '/api/rent-increases/r1/status')).toBe(true))
+  expect(sent.find((x) => x.url === '/api/rent-increases/r1/status')?.body).toMatchObject({ status: 'agreed', token: 'marke-r1', agreedCents: null })
 })
 
 test('Mieterhöhung: „bisher“ ist die heute geltende Stufe, nicht eine künftige (Durchsicht S4)', async () => {
@@ -84,12 +155,12 @@ test('Mieterhöhung: das Feld „Miete am …“ nennt den Stichtag und schickt 
   open()
   const field = await screen.findByLabelText('Miete am 01.02.2024 €')
   fireEvent.change(field, { target: { value: '480' } })
-  await waitFor(() => expect(sent.at(-1)?.body).toMatchObject({ rentAtCapDateCents: 48000, rentAtCapDateOn: '2024-02-01' }))
+  await waitFor(() => expect(plans().at(-1)?.body).toMatchObject({ rentAtCapDateCents: 48000, rentAtCapDateOn: '2024-02-01' }))
   // Ein anderer Monat verschiebt den Stichtag; die Eingabe trägt weiter ihren Tag, das Feld nennt den neuen.
   const month = screen.getByRole('textbox', { name: 'Wirksam ab' })
   fireEvent.change(month, { target: { value: '5.2027' } })
   fireEvent.blur(month)
-  await waitFor(() => expect(sent.at(-1)?.body).toMatchObject({ effectiveFrom: '2027-05', rentAtCapDateOn: '2024-02-01' }))
+  await waitFor(() => expect(plans().at(-1)?.body).toMatchObject({ effectiveFrom: '2027-05', rentAtCapDateOn: '2024-02-01' }))
   expect(await screen.findByLabelText('Miete am 01.05.2024 €')).toBeTruthy()
 })
 
@@ -104,4 +175,36 @@ test('Mieterhöhung: fällt das Ende der Zustimmungsfrist auf ein Wochenende ode
   reply = () => ({ ...PLAN, consent: { consentEnd: '2026-12-31', consentEndOnWorkday: '2026-12-31', suitFrom: '2027-01-01', suitEnd: '2027-03-31' } })
   open()
   expect((await screen.findByText(/bis 31\.12\.2026/)).textContent).not.toMatch(/§ 193/)
+})
+
+const DRAFT: RentIncreaseView = { ...SENT, id: 'r2', status: 'draft', receivedOn: null, token: 'marke-r2' }
+
+test('Mieterhöhung, Entwurf zu früh: Karte und Rückfrage vor dem Druck sagen „Nicht vor dem … zugehen lassen“ (Durchsicht S1)', async () => {
+  increases = [{ ...DRAFT, basis: { ...BASIS, plan: { ...POSSIBLE, state: 'notYet', receivedOn: '2026-12-02', earliestReceivedOn: '2026-12-02' } } }]
+  open()
+  expect(await screen.findByText(/Nicht vor dem 02\.12\.2026 zugehen lassen/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Drucken' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/Nicht vor dem 02\.12\.2026 zugehen lassen/)
+})
+
+test('Mieterhöhung, Liste: tatsächlicher Zugang getrennt vom Zugang, mit dem das Schreiben rechnet (Durchsicht M1)', async () => {
+  increases = [{ ...SENT, receivedOn: '2026-11-25', basis: { ...BASIS, sentPlan: { ...POSSIBLE, receivedOn: '2026-11-25' } } }]
+  open()
+  expect(await screen.findByText(/Zugang am 25\.11\.2026/)).toBeTruthy()
+  expect(screen.getByText(/Das Schreiben rechnet mit dem Zugang am 20\.11\.2026/)).toBeTruthy()
+})
+
+test('Mieterhöhung, Liste: eine Grundlage aus einer anderen Fassung zeigt einen Satz statt des Schreibens (Durchsicht K1)', async () => {
+  increases = [{ ...SENT, basis: { version: 2 } as unknown as RentIncreaseBasis }]
+  open()
+  expect(await screen.findByText(/Dieses Schreiben stammt aus einer anderen Fassung von Mietfuchs/)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Drucken' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Schreiben ansehen' })).toBeNull()
+})
+
+test('Mieterhöhung, Liste: weicht der heutige Absender vom eingefrorenen ab, steht ein Hinweis dabei (Durchsicht K2)', async () => {
+  increases = [SENT]
+  open(TENANCY, PROPERTY, { landlordName: 'Erika Vermieterin', iban: '', paymentDeadlineDays: 14, landlordAddress: 'Ahornstraße 3, 12345 Musterstadt', landlordContact: '' })
+  expect(await screen.findByText(/„Max Vermieter“.*„Erika Vermieterin“/)).toBeTruthy()
 })

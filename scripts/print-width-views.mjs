@@ -1,4 +1,4 @@
-// Die übrigen Druckansichten für die Prüfung der Druckbreite (#647): Ableseformular, Kaution, monatliche
+// Die übrigen Druckansichten für die Prüfung der Druckbreite (#647): Ableseformular, Kaution, Mieterhöhung, monatliche
 // Verbrauchsinformation, CO₂-Blatt, E-Rechnung, getrennte Heizkostenabrechnung, Ableseergebnis und Steuer. Die Seite
 // Abrechnung prüft print-width-check.mjs selbst; hier stehen nur die Wege zu den anderen Blättern.
 //
@@ -302,6 +302,47 @@ export const PRINT_VIEWS = [
       const deposit = await shown(page.locator('dialog[open].drawer'), 'Fenster „Kaution“')
       await clickButton(deposit, 'Aufstellung drucken', 'Knopf „Aufstellung drucken“')
       await untilPrinted(page, 'Kaution')
+    },
+  },
+  {
+    name: 'mieterhoehung',
+    label: 'Mieterhöhung, Schreiben mit Vergleichswohnungen (Stammdaten)',
+    // Familie Yilmaz am Lindenweg: Miete nach Vertrag, ein Entwurf mit drei Vergleichswohnungen; die Anschrift der ersten
+    // trägt das lange Wort (Tabelle im Brief, #191 PR 3). Der Entwurf ändert weder Staffel noch Abrechnung.
+    async setup(api, ids) {
+      /** @type {any[]} */
+      const tenancies = await api.get(`/api/tenancies?property=${ids.haus}`)
+      const yilmaz = tenancies.find((t) => t.tenantName === 'Familie Yilmaz')
+      if (!yilmaz) throw new Error('Mietverhältnis „Familie Yilmaz“ fehlt im Beispielbestand')
+      await api.put(`/api/tenancies/${yilmaz.id}?property=${ids.haus}`, { rentKind: 'free', rentIncreaseExcluded: false })
+      /** @type {Record<string, unknown>} */
+      const request = { kind: 'comparison', allStepsEntered: true, residential: true, noThirdPartyFunds: true, comparisonCentsPerM2: 1400, rentCap: 'yes' }
+      let plan = await api.post(`/api/tenancies/${yilmaz.id}/rent-increase/plan`, request)
+      if (plan.needs.includes('rentAtCapDate')) {
+        request.rentAtCapDateCents = plan.currentCents ?? 50000
+        plan = await api.post(`/api/tenancies/${yilmaz.id}/rent-increase/plan`, request)
+      }
+      if (plan.state === 'blocked') throw new Error(`Mieterhöhung gesperrt: ${plan.refusals.join(' ')}`)
+      const comparable = (address, location, centsPerM2) => ({ address, location, areaM2: 80, centsPerM2 })
+      await api.post(`/api/tenancies/${yilmaz.id}/rent-increases`, {
+        request, token: plan.token,
+        letter: {
+          justification: 'comparables', qualifiedSurvey: 'no', recipientName: 'Ayşe und Mehmet Yilmaz', allLandlordsNamed: true, allTenantsNamed: true,
+          comparables: [comparable(`${LONG_WORD}straße 1, 12345 Musterstadt`, '1. OG links', 1450), comparable('Ahornweg 5, 12345 Musterstadt', 'EG rechts', 1420), comparable('Birkenstraße 8, 12345 Musterstadt', '2. OG Mitte', 1500)],
+          extraParagraph: `Für Rückfragen erreichen Sie uns unter der bekannten Nummer. ${LONG_WORD}`,
+        },
+      })
+    },
+    async open(page, ids) {
+      await chooseProperty(page, ids.haus, 'Lindenweg 12')
+      await navigate(page, 'Stammdaten')
+      const row = await shown(page.locator('tr', { hasText: 'Familie Yilmaz' }), 'Zeile „Familie Yilmaz“')
+      await clickButton(row, 'Mieterhöhung', 'Knopf „Mieterhöhung“')
+      const win = await shown(page.locator('dialog[open].drawer'), 'Fenster „Mieterhöhung“')
+      const item = await shown(win.locator('article', { hasText: 'Entwurf' }), 'Entwurf in der Liste')
+      await clickButton(item, /^Drucken$/, 'Knopf „Drucken“ am Entwurf')
+      await untilPrinted(page, 'Mieterhöhung')
+      await attached(page.locator('.rent-increase-print'), 'Schreiben im Dokument')
     },
   },
   {

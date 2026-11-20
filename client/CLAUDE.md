@@ -596,11 +596,19 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   und `close` zählen nur am Fenster selbst. Das erste Feld bekommt den Fokus, bei nachladendem Inhalt
   nach 60 ms noch einmal. Wächter S12b: `value` immer (kein fester Wert), kein `footer`, kein eigener
   Schließer in `actions`; ob `value` alles umfasst, prüft die Durchsicht.
-- **Seitenfenster ohne Speichern** (Mieterhöhung, #191 PR 2, [RentIncreaseDrawer.tsx](src/components/RentIncreaseDrawer.tsx),
-  Logik in [rentIncreaseForm.ts](src/rentIncreaseForm.ts)): rechnet nur, `cancelLabel="Schließen"`, keine `actions`; die
-  Rechnung folgt `value` nach 250 ms mit Folgenummer, ein unlesbares Feld steht als Satz an der Stelle der Rechnung. Der
-  Zustand steht als Wort („Möglich“, „Noch nicht möglich“, „Nicht möglich“), die Kappungsgrenzen-Verordnung ist vom Objekt
-  vorbelegt. `RentIncreasePlanView` steht auf der Musterseite.
+- **Seitenfenster Mieterhöhung** (#191, [RentIncreaseDrawer.tsx](src/components/RentIncreaseDrawer.tsx), Logik in
+  [rentIncreaseForm.ts](src/rentIncreaseForm.ts) und [rentIncreaseLetterForm.ts](src/rentIncreaseLetterForm.ts)):
+  `cancelLabel="Schließen"`, keine `actions`; die Rechnung folgt `value` nach 250 ms mit Folgenummer, ein unlesbares Feld
+  steht als Satz an der Stelle der Rechnung. Der Zustand steht als Wort („Möglich“, „Noch nicht möglich“, „Nicht möglich“),
+  die Kappungsgrenzen-Verordnung ist vom Objekt vorbelegt. `RentIncreasePlanView` steht auf der Musterseite. PR 3: Ist der
+  Plan nicht gesperrt, folgen die Eingaben des Schreibens (`value` des Fensters umfasst sie; Meldungen am Feld über den
+  Pfad im Rumpf, etwa `survey.name`, dieselbe Prüfung wie der Server) und „Schreiben als Entwurf anlegen“ mit der Marke des
+  Plans; darunter die Verlangen des Mietverhältnisses mit „Schreiben ansehen“ (Aufklapper), „Drucken“, „Als versendet
+  speichern …“ und den Antworten, jede mit Rückfrage (`sendQuestion`, `decisionQuestion`; zur Zustimmung der Satz „Schweigen
+  ist keine Zustimmung“), Fehler als Mitteilung. Das Schreiben ([RentIncreaseLetter.tsx](src/components/RentIncreaseLetter.tsx),
+  Text in [rentIncreaseLetter.ts](src/rentIncreaseLetter.ts)) nimmt `LetterHead` aus Letter.tsx, Logo und Briefpapier wie die
+  Abrechnung, und druckt aus `basis` als Blatt am Ende von body (`print-rent-increase` in letter.css), die
+  Zustimmungserklärung auf eigener Seite. Druckbreite: Fall `mieterhoehung` in scripts/print-width-views.mjs.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus

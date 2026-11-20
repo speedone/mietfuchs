@@ -24,6 +24,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (bei Inklusivmiete mit dem enthaltenen Betriebskostenanteil), bei der Indexmiete die neue Miete im Verhältnis der
   Indexwerte, auf den Cent abgerundet. Fehlt eine Angabe oder schließt der Vertrag eine Erhöhung aus, sagt Mietfuchs
   in ganzen Sätzen, warum. Gespeichert wird noch nichts ([#191](https://github.com/speedone/mietfuchs/issues/191)).
+- Mieterhöhung, dritter Teil: Im Fenster „Mieterhöhung“ entsteht aus der Rechnung ein Schreiben zum Drucken, im
+  Briefformat mit Briefkopf, Logo und Briefpapier. Beim Verlangen nach § 558 BGB wählen Sie das Begründungsmittel
+  (Mietspiegel mit Name, Stand, Feld und Spanne, Gutachten, drei Vergleichswohnungen mit Anschrift und Lage,
+  Mietdatenbank) und beantworten, ob es einen qualifizierten Mietspiegel gibt; seine Angaben stehen dann immer im
+  Schreiben. Dazu Empfänger, die Angabe, ob mehrere Vermieter schreiben, Bestätigungen zu allen Vermietern und Mietern
+  und ein freier Zusatzabsatz; alle
+  Pflichtangaben stehen fest, beim Verlangen mit einer Zustimmungserklärung zum Zurücksenden. Das Schreiben wird als
+  Entwurf gespeichert und bleibt für den Nachdruck unverändert, auch nach dem Versand. „Als versendet speichern“
+  rechnet mit dem tatsächlichen Zugang neu und lehnt ab, wenn das gedruckte Schreiben dann andere Zahlen oder Fristen
+  nennt; danach tragen Sie die Antwort des Mieters ein (zugestimmt, teilweise, abgelehnt) oder
+  nehmen das Verlangen zurück. Mit der Zustimmung bzw. beim Versand einer Indexanpassung trägt Mietfuchs die neue
+  Miete in die Kaltmiete-Staffel ein; Schweigen des Mieters gilt nie als Zustimmung. Neu im Lexikon:
+  „Begründungsmittel“ und „Qualifizierter Mietspiegel“ ([#191](https://github.com/speedone/mietfuchs/issues/191)).
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und

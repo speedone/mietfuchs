@@ -414,7 +414,7 @@ test('Mieterhöhung: nächste Ereignisse für das Cockpit (nächste Stufe, früh
   assert.equal(e.earliest?.effectiveFrom, '2028-04')
   const open = nextRentEvents({
     today: '2026-11-20', tenancy: tenancyOf(), state: 'BY',
-    increases: [{ id: 'r1', tenancyId: 't1', kind: 'comparison', createdOn: '2026-11-18', receivedOn: '2026-11-20', effectiveFrom: '2027-02', fromCents: 50000, toCents: 55000, basis: {}, status: 'sent', agreedCents: null, decidedOn: null }],
+    increases: [{ id: 'r1', kind: 'comparison', receivedOn: '2026-11-20', status: 'sent' }],
   })
   assert.deepEqual(open.open, [{ id: 'r1', consentEnd: '2027-01-31', consentEndOnWorkday: '2027-02-01', suitFrom: '2027-02-02', suitEnd: '2027-04-30' }])
   assert.equal(nextRentEvents({ today: '2026-11-20', tenancy: tenancyOf({ rentKind: null }), state: null, increases: [] }).earliest, null)
