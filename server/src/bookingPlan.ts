@@ -448,6 +448,16 @@ export type BookingOutcome =
   | { kind: 'conflict'; message: string }
   | { kind: 'stale'; preview: BookingPreview }
 
+// Der Satz des Verlaufs zu einer Buchung, mit dem, was sie getan hat („Beleg gebucht (13 Zeilen verknüpft)“): Wer eine
+// Rechnung in zwei Schritten zu einer Position bucht (erst anlegen, dann verknüpfen), sieht sonst zwei gleichlautende
+// Einträge und weiß nicht, welchen „Rückgängig“ zurücknimmt.
+export function bookingTitle(decisions: readonly LineDecision[]): string {
+  const count = (action: LineDecision['action']) => decisions.filter((d) => d.action === action).length
+  const part = (n: number, verb: string) => (n === 0 ? [] : [`${n} ${n === 1 ? 'Zeile' : 'Zeilen'} ${verb}`])
+  const parts = [...part(count('create'), 'angelegt'), ...part(count('link'), 'verknüpft'), ...part(count('release'), 'gelöst'), ...part(count('dismiss'), 'verworfen')]
+  return parts.length === 0 ? 'Beleg gebucht' : `Beleg gebucht (${parts.join(', ')})`
+}
+
 // Das Ergebnis jeder Entscheidung außer „buchen“; `null` heißt, die Schreibliste ist auszuführen.
 // db/booking.ts und der nachgebaute Server der Browser-Tests (client/src/testing/fakeBooking.ts)
 // nehmen beide diese Zuordnung, damit sie nicht zweimal dasteht.

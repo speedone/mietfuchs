@@ -18,6 +18,9 @@ export const INFORMATIONAL: ReadonlySet<string> = new Set(['basis.unit-zero', 'b
   // Folge-PR zu #252 (#224, Entscheidung F6): Der Hinweis trifft auch den rechtmäßigen Fall „eigener Zähler,
   // Vermieter trägt den Strom selbst“ und lässt sich ohne Buchung nicht beheben; er färbt deshalb nicht.
   'heating.operating-power-missing',
+  // Durchsicht des Zweigs fix/heizung-hinweise: Heizkosten ganz nach Zählern. Mit einer rechtsgeschäftlichen Bestimmung
+  // nach § 10 HeizkostenV ist das rechtmäßig, und das Modell kennt sie nicht; der Hinweis ließe sich nie abstellen.
+  'heating.all-by-consumption',
   // #266: Fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld; den Mietern schadet das
   // nicht. „Abzug des Betriebsstroms fehlt“ steht bewusst nicht hier: Er ist der Fall des BGH mit ausdrücklicher Angabe.
   'heating.operating-power-bill-missing',

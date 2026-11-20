@@ -5,6 +5,19 @@ Heizkostenabrechnung, § 6a, § 9a, Betriebsstrom), liest diese Datei zuerst. Ge
 `docs/superpowers/specs/2026-10-05-heizung-gesamt-design.md` (Verweise wie „15.1 Nr. 2“ oder
 „G-A2“ meinen Abschnitte dort). Rechtswerte stehen im Rechtsregister (server/src/CLAUDE.md).
 
+**Freie Schlüssel, ganz nach Zählern** (Systemprüfung): Laufen alle Heizpositionen einer Wohnung nach Zählern, ohne
+Grundkosten nach Fläche, meldet `heating.all-by-consumption` (hint, ohne Betrag) den Höchstsatz des § 7 Abs. 1 Satz 1
+und dass ein höherer Anteil nur mit einer rechtsgeschäftlichen Bestimmung bleibt (§ 10 HeizkostenV; das Modell kennt
+bei freien Schlüsseln keine, der Hinweis sagt deshalb, dass sie vorgeht). **Eigener Code, der das Cockpit nicht färbt**
+(`INFORMATIONAL`): Im rechtmäßigen Fall ließe er sich nie abstellen; der Mischfall `heating.consumption-share` färbt
+weiter und nennt über dem Höchstsatz ebenfalls § 10. Kein Kürzungsbetrag: § 12 Abs. 1 Satz 1 verlangt, dass „nicht
+verbrauchsabhängig“ abgerechnet wird. **Er schweigt**, wo die Verordnung nicht erkennbar gilt oder niemand abgerechnet
+wird: Wohnung nicht nach Verbrauch gedeckt, nur eine Wohnung in der Gruppe, Zähler, die weder Wärme noch Warmwasser
+erfassen (`HEAT_CAPTURE` in shared/heating.ts: Strom, Sonstiges, Kaltwasser), und Positionen, die nur Mieter tragen,
+die selbst heizen, oder niemand (Warmmiete, Pauschale; `bearersOf` in calc.ts). Er sagt bedingt, dass enthaltenes
+Warmwasser abzutrennen ist (§ 8 Abs. 1, § 9 Abs. 1), außer eine Position nach Warmwasserzählern steht daneben; ob eine
+Position Warmwasser enthält, weiß Mietfuchs bei freien Schlüsseln nicht.
+
 **Grundsätze**: Eine Anlage ändert für sich keine Zahl; was Mietfuchs nicht rechnen kann, lehnt der
 Server mit Satz ab (`HeatingError`, 400). Heizregeln gelten nur für die Kostenart **„Heizung und
 Warmwasser“** (`HEATING_CATEGORY`), nicht für „Heizung“. Abgeschlossenes bleibt, wie es zugestellt
@@ -233,7 +246,10 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
 - **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
   [db/heatingSelf.ts](../server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und Positionen offener
   Zeiträume in einer Transaktion; fehlen Teil und Ziel, 409 mit Liste. Zurück auf „Niemand“ verlangt
-  `convertItems: 'area'`. Bei Heizkostenverteilern und Ablesedienst werden keine Wärmezähler angelegt.
+  `convertItems: 'area'` (die Rückfrage nennt, was entfällt) und nimmt aus offenen Heizperioden mit, was die Einrichtung eintrug (Anteile,
+  `above_70_agreed`, das automatische `dhw_method = 'heatMeter'` ohne eigene Warmwasserangaben; danach `dropIfEmpty`),
+  sonst sperrte die Zeile den Wechsel des Zeitraums der Heizung. Der Zeitraum gehört **vor** die eigene Abrechnung
+  (`SELF_PERIOD_FIRST` im Fenster); die Ablehnung in heatingPeriodChange.ts nennt den Weg über „Niemand“. Bei Heizkostenverteilern und Ablesedienst werden keine Wärmezähler angelegt.
 - **Zeiträume der eigenen Abrechnung** stehen in `heating_self_spans` (von, bis ausschließlich), mit
   **Erfassung und Warmwasserbereitung** je Spanne (`captureOf`, `hotWaterOf`). Die Einrichtung öffnet
   einen Zeitraum nie vor oder in einer abgeschlossenen Heizperiode; das Zurückschalten schließt ihn
@@ -286,6 +302,21 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   wie Erfassung und Warmwasser (Fehlerklasse #239/#241). Ob Satz 5 unter die freie Wahl nach § 6 Abs. 4 fällt, sagt der
   Wortlaut nicht; Texte sprechen von „bestimmt oder vereinbart“. Invariante: Variante „Grundkosten nach umbautem Raum“
   in fuel-invariant.test.ts, Prüfung (s7).
+- **Ausweis zum Nachrechnen** ([client/src/heatingSelfView.ts](../client/src/heatingSelfView.ts), `quantity`, `perUnit`,
+  `costSplit`, `basisOf`): Der Server liefert Mengen ungerundet (Differenzen der Stände, mal Faktor, geteilte Anteile, auch mit
+  Gleitkommarest) und rundet erst den Betrag. Gedruckt wird eine Menge, die mit höchstens drei Nachkommastellen aufgeht,
+  genau so (35,4 MWh, 72,5 m², 785 Einheiten); ein gerechneter Anteil und der Preis je Einheit bekommen so viele
+  Stellen, dass ihre Rundung den Betrag um höchstens einen Viertelcent verschiebt (Preis mindestens vier Stellen je m²
+  bzw. m³, sechs je Verbrauchseinheit). **Zugesagt ist: Menge mal Preis ergibt den gedruckten Betrag bis auf Rundung
+  von höchstens einem Cent**, nicht mehr (bei verbundenem Warmwasser ist der Topfbetrag ungerundet, gedruckt wird der
+  gerundete). Je Nutzer stehen Grund- und Verbrauchskosten getrennt: Verbrauchskosten = Verbrauch mal Preis je Einheit
+  des Topfs (folgt aus `weightsOf`), Grundkosten = Rest zum Betrag der Zeile. Dazu Fläche bzw. Raum der Wohnung und bei
+  einem Teilzeitraum der Anteil, mit dem der Server sie in diesem Topf gewichtet („davon 640 von 1.000 ‰ der Gradtage“,
+  Warmwasser und zeitanteilige Teilung „273 von 365 Tagen“). Der Stand trägt Gradtage und Tage nur je Nutzer; der Nenner
+  ist ihre Summe über die Nutzer der Wohnung, und genannt wird die Rechnung nur, wenn sie die gedruckten Grundkosten
+  bis auf einen Cent ergibt, sonst steht nur der Betrag da (ebenso ohne Fläche im Stand). Das rechnet die Oberfläche
+  aus den vorhandenen Feldern, auch für eingefrorene Stände; keine Aufteilung ohne Anteil nach Verbrauch (nur nach
+  Fläche, § 9a Abs. 2, 0 oder 100 %) und ohne Betrag.
 - **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel Gradtage statt Tage; kombinierte
   Positionen bleiben nach Tagen.
 - **Invarianten** (fuel-invariant.test.ts, fuel-stock-invariant.test.ts) mit Varianten für eigene
@@ -324,6 +355,14 @@ eines Ablesedienstes sind je Wohnung ein gedachter Zähler mit kumulierten Stän
 ohne Stand am Beginn einer Zeile nach einer Lücke, damit die Lücke nicht still 0 zählt). Dieselben
 bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
 
+- **Erfassung gewählt, kein Gerät angelegt** (Systemprüfung): Ein Topf ohne ein einziges Gerät geht nur nach Fläche
+  (`totals[p].devices` im Plan). Der Ausweis sagt es (`SelfPotView.noDevices`; je Grenze einer Wohnung die Töpfe, für die sie kein Gerät hat,
+  `SelfBoundaryView.noDevicePots`, auch wenn nur dieser Wohnung eins fehlt und daneben `heating.self-incomplete` steht;
+  `status` beschreibt weiter nur die vorhandenen Zähler; nichts davon unter einer Ausnahme nach § 11, einer
+  Vereinbarung nach § 2 oder solange die Verordnung für die Wärmepumpe noch nicht gilt), die Seite Heizkosten zeigt
+  statt „abgelesen“ den fehlenden Schritt (`missingDevicesLines`, `estimateIdleText` in client/src/heatingSelfView.ts),
+  und `heating.no-consumption` nennt neben der Kürzung, dass die Geräte auf der Seite „Zähler & Stände“ anzulegen sind.
+  Keine Zahl ändert sich.
 - **Einheitsskala**: Ablesewert × Bewertungsfaktor; **Produktskala**: wie abgelesen. Ohne Skala oder
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine
@@ -341,6 +380,17 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
 - **Ausweis je Gerät** (`self.devices`) aus den Differenzen des Plans, nicht aus einer zweiten Lesart;
   jeder Mieter bekommt nur seine Geräte und Zeilen. Dass der Faktor genannt wird, ist Praxis, keine
   Norm (so in Lexikon und Sätzen).
+- **Beträge je Nutzer und Topf** (`heatingCents`, `waterCents`) sind die Summe seiner verteilten Zeilen
+  (`selfBlockCents` in calc.ts: beim Mieter die Kostenzeile jeder Position, sonst sein Teil der Zeilen des
+  Vermieters), nicht Topf mal Gewicht einmal gerundet (`selfBlocksOf`); alle Nutzer zusammen ergeben die Positionen
+  und Überträge, je Mieter beide Töpfe zusammen genau seine Heizkostenzeilen. Die Zeilen für Heizung und Warmwasser
+  werden je Nutzer **einmal** geteilt (das Verhältnis ist für alle solchen Positionen dasselbe), über alle Nutzer
+  zugleich nach dem Restverfahren auf den gedruckten Topf Heizung: Der stimmt genau, Warmwasser bis auf einen Cent
+  (zwei gerundete Topfbeträge). `heatingRows`/`waterRows` nennen je Nutzer und Topf die Zahl der Zeilen, damit der
+  Druck seine Toleranz gegen Fläche mal Preis daran binden kann (fehlt in älteren eingefrorenen Ständen). Der
+  CO₂-Abzug: Heizung gerundet, Rest Warmwasser (`selfCo2Of`). Die Kürzungsgrundlage „Anteil Warmwasser“ der Hinweise
+  (`waterBaseOf`) liest dieselben Beträge. Eine nicht verteilte Position (`heating.target-invalid`) zählt im Block
+  weiter mit Topf mal Gewicht. Tests: calc-heizblock-betraege.test.ts, (s1a) bis (s1d) in fuel-invariant.test.ts.
 
 ### Schätzung nach § 9a
 

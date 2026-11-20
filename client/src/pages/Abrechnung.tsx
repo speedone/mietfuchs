@@ -28,7 +28,7 @@ import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../not
 import { CalcNotice, CalcNoticeGroup, NoticeBox, NoticeGroup } from '../components/Notice'
 import { groupNotices, noticePeople } from '../noticeGroups'
 import PrintDrawer, { type PrintScope } from '../components/PrintDrawer'
-import { checkList, hintSummary, neighbors, resultText, tenantRows } from '../settlementOverview'
+import { ADJUSTMENT_NOTE, alreadyAppliesNote, announcedAdjustment, checkList, hintSummary, neighbors, prepaymentBasisNote, resultText, tenantRows } from '../settlementOverview'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { emptySettlement, startStep } from '../emptyStock'
@@ -60,14 +60,14 @@ import { PAPER_PAGE_CSS, asLetterDesigns, canPagePaper, designKey, paperVars, pr
 import { designImage } from '../letterPaper'
 import type { LetterDesigns } from '../../../shared/types.ts'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
-import { PAYMENT_QR_LINES, exceedsOnePage } from '../../../shared/letter.ts'
+import { PAYMENT_QR_LINES, currentPrepaymentAt, exceedsOnePage } from '../../../shared/letter.ts'
 import PaymentQr from '../components/PaymentQr'
 import { paymentQrOf, paymentQrReason } from '../paymentQr'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
 import { sentMonthLines } from '../prepaymentSteps'
-import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, SENDER_MISSING_CLOSED_TEXT, SENDER_MISSING_TEXT, senderMissing, statementHeadRows } from '../letterView'
+import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, IBAN_MISSING_CLOSED_TEXT, IBAN_MISSING_TEXT, IBAN_MISSING_TITLE, ibanMissing, SENDER_MISSING_CLOSED_TEXT, SENDER_MISSING_TEXT, senderMissing, statementHeadRows } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -221,8 +221,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         body: JSON.stringify({ texts: save.texts, ...(save.adjust !== undefined ? { adjustment: save.adjust } : {}) }),
       })
     }
+    // „mitdrucken“ steht am Objekt: Die Objekte der App laden mit, sonst kennte „Objekt bearbeiten“ einen älteren Stand.
+    const atProperty = letterEdit.kind === 'property'
     setLetterEdit(null)
-    await load()
+    await Promise.all([load(), ...(atProperty ? [reload()] : [])])
     toast('Anschreiben gespeichert.')
   }
 
@@ -724,6 +726,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     if (!data?.closed?.sentAt && v.head && senderMissing({ sender: v.head.sender, signature, paper })) {
       out.push({ code: 'page.sender', level: 'warning', title: 'Absender fehlt', text: data?.closed ? SENDER_MISSING_CLOSED_TEXT : SENDER_MISSING_TEXT })
     }
+    // Systemprüfung: Der Satz zur Nachzahlung bittet um Überweisung, aber das Anschreiben trägt keine IBAN (abgeschlossen die
+    // eingefrorene). Nur bei den Mietern mit Nachzahlung, bis zum Versand, nicht mit Briefpapier; ein Hinweis, keine Sperre
+    // (letterView.ts).
+    const backPayment = (v.showLetter ? v.paragraphs : v.underTable).find((p) => p.block === 'backPayment')?.text
+    if (!data?.closed?.sentAt && v.letter && ibanMissing({ balanceCents: v.st.balanceCents, iban: v.letter.values?.IBAN, sentence: backPayment, paper })) {
+      out.push({ code: 'page.iban', level: 'warning', title: IBAN_MISSING_TITLE, text: data?.closed ? IBAN_MISSING_CLOSED_TEXT : IBAN_MISSING_TEXT })
+    }
     return out
   }
   // Je Hinweis einmal (die Rücksendeangabe ist bei allen Mietern dieselbe).
@@ -733,13 +742,24 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const people = noticePeople(data?.statements ?? [])
   // Je Mieter die Titel der eigenen Prüfungen, als Merker in der Tabelle der Übersicht.
   const checksByTenancy = new Map(views.map((v) => [v.st.tenancyId, pageChecks(v).map((n) => (n.code === 'page.address' ? 'Anschrift prüfen' : n.title.replace(/ \(.*\)$/, '')))]))
+  // Vor dem Abschluss: was der Brief je Mieter an neuer Vorauszahlung ankündigt (abgeschlossen zeigt es die Karte zu #317).
+  // Gilt der gewählte Betrag schon, sagt die Zeile das (Durchsicht S1), mit derselben Regel wie `lettersOf`.
+  const announced = new Map(data && !data.closed ? views.map((v) => {
+    const own = tenancyLetters[v.st.tenancyId]?.adjustment
+    const chosen = v.letter?.adjustment.mode === 'custom' ? own?.cents ?? null : v.st.suggestedMonthlyCents > 0 ? v.st.suggestedMonthlyCents : null
+    const current = currentPrepaymentAt(data, v.st, v.tenancy, own?.from ?? adjustFromFor(localToday(), data.period.to))
+    return [v.st.tenancyId, announcedAdjustment(v.letter, v.st.balanceCents) ?? alreadyAppliesNote(v.letter, chosen, current)]
+  }) : [])
+  const anyAnnounced = [...announced.values()].some((t) => t !== null)
+  const basisNote = data ? prepaymentBasisNote(data) : null
   const fixOf = (n: Notice) => {
     // Absender fehlt: zum Namen des Vermieters, in die Stammdaten, wenn das Objekt einen eigenen Namen führt (gespeichert
     // nur als leerer Text aus älteren Daten oder über die API; das Formular speichert dann `null`). Abgeschlossen kein
     // Knopf: Der Absender ist eingefroren, der Text nennt „wieder öffnen“.
-    if (n.code === 'page.sender') {
+    // Bankverbindung fehlt: ebenso, zur IBAN in derselben Karte.
+    if (n.code === 'page.sender' || n.code === 'page.iban') {
       if (data?.closed || !onNavigate) return null
-      const fix = senderFix(property?.landlordName != null)
+      const fix = senderFix(n.code === 'page.iban' ? property?.iban != null : property?.landlordName != null)
       return { label: fix.label, onClick: () => onNavigate(fix.tab, fix.focus) }
     }
     const t = noticeTarget(n.subject)
@@ -1028,7 +1048,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                           <td data-label="Zeitraum">{r.period}<div className="muted">{`${r.days} Tage`}</div></td>
                           <td data-label="Kosten" className="num">{fmtEuro(r.costsCents)}</td>
                           <td data-label="Vorauszahlungen" className="num">{fmtEuro(r.prepaymentCents)}</td>
-                          <td data-label="Ergebnis"><strong>{resultText(r.balanceCents)}</strong></td>
+                          <td data-label="Ergebnis">
+                            <strong>{resultText(r.balanceCents)}</strong>
+                            {announced.get(r.tenancyId) && <div className="muted">{announced.get(r.tenancyId)}</div>}
+                          </td>
                           <td className="actions">
                             <button id={`${previewIds}-${r.tenancyId}`} className="btn small secondary" onClick={() => openPreview(r.tenancyId)}>
                               Ansehen{' '}<span className="sr-only">{`(${r.tenantName}, ${r.unitName})`}</span>
@@ -1045,6 +1068,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   ))}
                 </tbody>
               </Table>
+              {anyAnnounced && <p className="muted">{ADJUSTMENT_NOTE}</p>}
+              {basisNote && <p className="muted">{basisNote}</p>}
               {(data.notSettled ?? []).some((n) => !n.usageConflict) && (
                 <p className="muted">
                   Bei Pauschale oder Inklusivmiete bleibt der Anteil des Mietverhältnisses an den Kosten beim Vermieter und zählt
@@ -1144,7 +1169,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={returnLineText(head.returnLine)} />
               )}
               {/* Durchsicht: auch in der Vorschau des Mieters, wo „Zu prüfen“ nicht steht. */}
-              {pageChecks(v).filter((n) => n.code === 'page.sender').map((n) => (
+              {pageChecks(v).filter((n) => n.code === 'page.sender' || n.code === 'page.iban').map((n) => (
                 <NoticeBox key={n.code} level="warning" className="no-print" title={n.title} action={n.text} fix={fixOf(n)} />
               ))}
               {head && addressFieldWarning(head.recipient) && (
@@ -1571,7 +1596,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             base={mergeLetterTexts(templates.installation, templates.property)}
             own={own?.texts ?? {}}
             values={{ ...letter.values, Datum: fmtDate(data.closed?.sentAt ?? localToday()) }}
-            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: adjustFromFor(localToday(), data.period.to) }}
+            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: adjustFromFor(localToday(), data.period.to), currentAt: (month) => currentPrepaymentAt(data, st, tenancies.find((t) => t.id === st.tenancyId), month) }}
             shown={letterParagraphs(letter, st.balanceCents, { date: localToday(), attachments: 0 }).map((p) => p.block)}
             salutations={{
               names: ownSalutation(st.tenancyId) ? [] : [st.tenantName],

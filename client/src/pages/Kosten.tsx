@@ -66,6 +66,7 @@ import {
   costFieldProblems,
   formPartOf,
   type CostField,
+  COST_STALE_FIELDS,
 } from '../costForm'
 import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
@@ -92,6 +93,7 @@ import { usePeriod } from '../period'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
+import { ifUnchanged, isStale, refreshSeen, staleText } from '../staleRecord'
 import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import MeterRestFields from '../components/MeterRestFields'
@@ -222,10 +224,30 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   const formId = form?.id
   const itemsRef = useRef(items)
   itemsRef.current = items
+  // Der Stand der Position beim Öffnen des Formulars (staleRecord.ts): Er geht beim Speichern als `ifUnchanged` mit, damit
+  // der Server ablehnt, wenn ein zweites Fenster, ein anderes Gerät oder eine Belegbuchung sie inzwischen geändert hat.
+  // Gemerkt beim Öffnen, nicht aus der Liste beim Speichern: Die Liste lädt neu, das offene Formular nicht.
+  const seenItem = useRef<CostItem | undefined>(undefined)
   useEffect(() => {
     const item = formId ? itemsRef.current.find((i) => i.id === formId) : undefined
+    seenItem.current = item
     setHeatingPeriod(item?.period ?? '')
     setHeatingPlantId(item?.heatingPlantId ?? '')
+    if (!item) return
+    // Und gleich gegen den Bestand abgeglichen (`refreshSeen`): Andere Wege ändern Positionen, ohne dass diese Liste neu
+    // lädt (Heizung einrichten, Betriebsstrom, Lieferung zuordnen, ein anderes Fenster). Solange der Nutzer noch nichts
+    // getan hat, zeigt das Formular dann den Stand von jetzt; danach behält es seinen, und das Speichern wird abgelehnt.
+    let alive = true
+    refreshSeen(seenItem, item, {
+      load: () => api<CostItem[]>(withProperty('/api/costItems', propertyId)),
+      adopt: (now) => {
+        setForm(itemToForm(now))
+        setHeatingPeriod(now.period)
+        setHeatingPlantId(now.heatingPlantId ?? '')
+        load().catch(() => { /* das Formular zeigt den Stand schon */ })
+      },
+    }, () => alive)
+    return () => { alive = false }
   }, [formId])
   // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
   // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
@@ -647,7 +669,13 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     }
     // Ein Dialog bestätigt alles, was er gezeigt hat (Kennzeichen des Servers: `paidOn`, `taxYear`, `spread`).
     const confirmed = { confirmPaidOn: true, confirmTaxYear: true, confirmSpread: true }
-    const bodyOf = (): string => JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? confirmed : {}) })
+    const bodyOf = (): string => JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? confirmed : {}), ...(editing ? ifUnchanged(seenItem.current) : {}) })
+    // Die Ablehnung des Servers im Fuß des Fensters; die Eingabe bleibt stehen. Kennt das Formular einen älteren Stand
+    // oder ist die Position gelöscht, lädt die Liste dahinter neu, damit sie nach dem Schließen den Stand von jetzt zeigt.
+    const refused = (e: unknown): void => {
+      setError(staleText(e, seenItem.current, COST_STALE_FIELDS) ?? errorText(e))
+      if (editing && (isStale(e) || (e instanceof ApiError && e.status === 404))) load().catch(() => { /* die Meldung im Fenster steht schon */ })
+    }
     const body = bodyOf()
     // Antwortet der Server dennoch mit seiner Rückfrage (409, `question: 'paidOn'`), weil sich der Bestand seit dem
     // Laden geändert hat, wird sie zur Rückfrage der Seite, mit seinen Sätzen; bestätigt geht derselbe Rumpf mit
@@ -710,7 +738,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           const done = await sendConfirmed((b) => api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body: b }), bodyOf())
           if (!done) return
         } catch (e) {
-          setError(errorText(e))
+          refused(e)
           return
         }
         const desc = form.description.trim()
@@ -750,7 +778,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
       }, body)
       if (!done) return
     } catch (e) {
-      setError(errorText(e))
+      refused(e)
       return
     }
     const desc = form.description.trim()

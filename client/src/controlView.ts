@@ -4,6 +4,7 @@
 // #202 nicht geben; gibt es eine, wird sie benannt.
 
 import { landlordReasonLabel } from './landlordReasons'
+import { resultText } from './settlementOverview'
 import type { LandlordReason, Settlement, SettlementRow } from './types'
 
 export type ControlTenant = {
@@ -16,6 +17,8 @@ export type ControlTenant = {
   costCents: number
   prepaymentCents: number
   balanceCents: number
+  /** Das Ergebnis in Worten wie in der Übersicht („Nachzahlung 300,00 €“); `balanceCents` ist bei einem Guthaben positiv. */
+  result: string
   /** Zeilen minus Gesamtkosten; 0, wenn beides übereinstimmt. */
   rowsDifferenceCents: number
 }
@@ -66,7 +69,7 @@ export function controlView(data: Pick<Settlement, 'statements' | 'landlord'>): 
     const rowsCents = st.rows.reduce((a, r) => a + r.shareCents, 0)
     return {
       tenancyId: st.tenancyId, name: st.tenantName, unit: st.unitName, rowsCents, costCents: st.totalShareCents,
-      prepaymentCents: st.prepaymentCents, balanceCents: st.balanceCents, rowsDifferenceCents: rowsCents - st.totalShareCents,
+      prepaymentCents: st.prepaymentCents, balanceCents: st.balanceCents, result: resultText(st.balanceCents), rowsDifferenceCents: rowsCents - st.totalShareCents,
     }
   })
 

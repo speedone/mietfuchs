@@ -668,7 +668,187 @@ test('Eingang: nach dem Buchen führen „→ Kosten ansehen“ und „→ Zur A
   expect(onNavigate).toHaveBeenLastCalledWith('abrechnung')
 })
 
+// ---------- Systemprüfung: eine Rechnung mit vielen Zeilen als eine Position ----------
+
+test('viele Zeilen: nach dem Anlegen der ersten Zeile lassen sich die übrigen mit ihrer Position verknüpfen, ohne Rückfrage', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([
+    { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 200 },
+    { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 103.87 },
+    { description: 'Niederschlagswasser', category: 'Wasser/Abwasser', amountEur: 50 },
+  ])
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Frischwasser')
+  fireEvent.change(await actionOf('Abwasser'), { target: { value: '' } })
+  fireEvent.change(await actionOf('Niederschlagswasser'), { target: { value: '' } })
+  await previewAndBook()
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  const first = fake.items[0] ?? assert.fail('die erste Zeile ist nicht angelegt')
+  expect(fake.items).toHaveLength(1)
+  for (const name of ['Abwasser', 'Niederschlagswasser']) {
+    const action = await actionOf(name)
+    await waitFor(() => expect([...action.options].map((o) => o.value)).toContain(`link:${first.id}`), SLOW)
+    const option = [...action.options].find((o) => o.value === `link:${first.id}`) ?? assert.fail('kein Ziel')
+    // Ohne Zusage über den Betrag: Nach einer Handänderung der Position ersetzt die Summenregel ihn, die Vorschau sagt es.
+    expect(option.textContent).toBe('Mit „Frischwasser“ aus diesem Beleg verknüpfen')
+    fireEvent.change(action, { target: { value: `link:${first.id}` } })
+  }
+  // Die übrigen Zeilen einer Rechnung sind keine Doppelung: keine rote Ampel, keine Begründung.
+  expect([...container.querySelectorAll('.chip')].map((c) => c.textContent)).toEqual([])
+  expect(container.querySelectorAll('.assessment-table .ampel.rot')).toHaveLength(0)
+  const { shown } = await previewAndBook()
+  expect(shown).toHaveLength(1)
+  expect(shown[0]).toMatch(/^„Frischwasser“: 200,00\s€ → 353,87\s€/)
+  await waitFor(() => expect(fake.items[0]?.amountCents).toBe(35387), SLOW)
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(fake.items).toHaveLength(1)
+})
+
+test('viele Zeilen: „Alle Zeilen als eine Position anlegen“ zeigt Position und Summe und bucht alle Kosten-Zeilen an eine Position', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([
+    { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 200 },
+    { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 103.87 },
+    { description: 'Niederschlagswasser', category: 'Wasser/Abwasser', amountEur: 50 },
+    { description: 'Gutschrift Vorjahr', category: 'Wasser/Abwasser', amountEur: -20 },
+  ])
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Frischwasser')
+  fireEvent.click(screen.getByRole('button', { name: 'Alle Zeilen als eine Position anlegen' }))
+  const dialog = await screen.findByRole('dialog', { name: /Eine Position aus allen Zeilen/ }, SLOW)
+  const kostenart = within(dialog).getByRole('combobox', { name: /Kostenart/ })
+  if (!(kostenart instanceof HTMLSelectElement)) return assert.fail('die Kostenart ist kein Auswahlfeld')
+  expect(kostenart.value).toBe('Wasser/Abwasser')
+  const name = within(dialog).getByRole('textbox', { name: /Beschreibung/ })
+  if (!(name instanceof HTMLInputElement)) return assert.fail('die Beschreibung ist kein Textfeld')
+  expect(name.value).toBe('Stadtwerke')
+  fireEvent.change(name, { target: { value: 'Wasser Stadtwerke' } })
+  expect(within(dialog).getByText(/Es entsteht eine Position „Wasser Stadtwerke“ \(Wasser\/Abwasser\) über 353,87\s€ aus 3 Zeilen\./)).toBeTruthy()
+  expect(within(dialog).getByText(/Die Gutschrift über 20,00\s€ bleibt offen, denn Gutschriften werden nie verrechnet/)).toBeTruthy()
+  expect(fake.items).toHaveLength(0)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(fake.items.map((i) => [i.description, i.amountCents])).toEqual([['Wasser Stadtwerke', 35387]]), SLOW)
+  const done = await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(done.textContent).toMatch(/„Wasser Stadtwerke“: 200,00\s€ → 353,87\s€/)
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: /Eine Position aus allen Zeilen/ })).toBeNull(), SLOW)
+  // Die Gutschrift bleibt offen und wird nie verrechnet; die Karte weist danach auf sie hin.
+  expect((await actionOf('Gutschrift Vorjahr')).value).not.toMatch(/^link:/)
+  expect(fake.assessments[0]?.lines.map((l) => l.state)).toEqual(['created', 'linked', 'linked', 'open'])
+  expect(await screen.findByText(/Eine Gutschrift über 20,00\s€ ist noch offen/, {}, SLOW)).toBeTruthy()
+  // Der Knopf ist mit dem Buchen verschwunden: Der Fokus steht auf der Erfolgsmeldung, nicht auf der Seite.
+  expect(document.activeElement).toBe(done)
+  // In diesem Zustand legt nichts eine zweite Position an.
+  expect(screen.queryByRole('button', { name: 'Alle Zeilen als eine Position anlegen' })).toBeNull()
+})
+
+// Durchsicht 2, Punkt 4: Teilzustand (zweiter Schritt gescheitert, neu geladen, „Rückgängig“ im Verlauf).
+test('viele Zeilen: ist schon eine Position aus dem Beleg gebucht, verknüpft eine Aktion alle offenen Zeilen mit ihr', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  const first = fake.evaluate('w.pdf', invoice([
+    { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 200 },
+    { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 103.87 },
+    { description: 'Niederschlagswasser', category: 'Wasser/Abwasser', amountEur: 50 },
+  ]), { year: YEAR })
+  const decisions = [{ idx: 0, action: 'create', fields: first.lines[0]?.suggestion?.fields ?? assert.fail('kein Vorschlag') }]
+  const post = (p: string, body: unknown) => fake.handle(p, { method: 'POST', body: JSON.stringify(body) })
+  const plan = await (await post(`/api/assessments/${first.id}/plan`, { decisions }))?.json()
+  expect((await post(`/api/assessments/${first.id}/book`, { decisions, token: plan.token }))?.status).toBe(200)
+  const partial = fake.assessments[0] ?? assert.fail('keine Auswertung')
+  let current = partial
+  const { rerender } = render(<UIProvider><AssessmentReview assessment={partial} units={UNITS} onChange={(next) => { current = next }} /></UIProvider>)
+  expect(screen.queryByRole('button', { name: 'Alle Zeilen als eine Position anlegen' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Alle offenen Zeilen mit „Frischwasser“ verknüpfen' }))
+  const panel = await screen.findByLabelText('Vorschau', {}, SLOW)
+  expect(within(panel).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringMatching(/^„Frischwasser“: 200,00\s€ → 353,87\s€/)])
+  expect((await actionOf('Abwasser')).value).toBe(`link:${fake.items[0]?.id}`)
+  fireEvent.click(screen.getByRole('button', { name: 'Buchen' }))
+  await waitFor(() => expect(fake.items.map((i) => i.amountCents)).toEqual([35387]), SLOW)
+  rerender(<UIProvider><AssessmentReview assessment={current} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(current.lines.map((l) => l.state)).toEqual(['created', 'linked', 'linked'])
+})
+
+// Durchsicht 2, Punkt 2 und 5
+test('viele Zeilen: ein gelesener §35a-Lohn steht angehakt im Fenster, abgewählt entsteht die Position ohne Lohnanteil', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([
+    { description: 'Hauswart Arbeitslohn', category: 'Hauswart', amountEur: 1190, labor35aEur: 1190 },
+    { description: 'Hauswart Material', category: 'Hauswart', amountEur: 238 },
+  ], 'Hausmeisterdienst')
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Hauswart Arbeitslohn')
+  fireEvent.click(screen.getByRole('button', { name: 'Alle Zeilen als eine Position anlegen' }))
+  const dialog = await screen.findByRole('dialog', { name: /Eine Position aus allen Zeilen/ }, SLOW)
+  const labor = within(dialog).getByRole('checkbox', { name: /§35a-Lohnanteil von 1\.190,00\s€ übernehmen/ })
+  if (!(labor instanceof HTMLInputElement)) return assert.fail('kein Häkchen')
+  expect(labor.checked).toBe(true)
+  expect(within(dialog).getByText(/über 1\.428,00\s€ aus 2 Zeilen, davon §35a-Lohn 1\.190,00\s€\./)).toBeTruthy()
+  fireEvent.click(labor)
+  expect(within(dialog).getByText(/über 1\.428,00\s€ aus 2 Zeilen, ohne §35a-Lohnanteil\./)).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(fake.items.map((i) => [i.amountCents, i.labor35aCents ?? null])).toEqual([[142800, null]]), SLOW)
+})
+
+test('viele Zeilen: ein nur vorgeschlagener Lohnanteil ist im Fenster nicht angehakt, und der Abschlags-Hinweis steht auch dort', () => {
+  const one = crafted({}, { level: 'gelb', preselected: false })
+  const base = one.lines[0] ?? assert.fail('keine Zeile')
+  const s = base.suggestion ?? assert.fail('kein Vorschlag')
+  const prepaid = 'Abschläge über 500,00\u00a0€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 1.428,00\u00a0€.'
+  const lines = [
+    { ...base, idx: 0, description: 'Hauswart Arbeitslohn', amountCents: 119000, labor35aCents: 119000, laborGuessed: true, suggestion: { ...s, fields: { ...s.fields, amountCents: 119000, labor35aCents: 119000 } } },
+    { ...base, idx: 1, description: 'Material', amountCents: 23800, suggestion: { ...s, fields: { ...s.fields, amountCents: 23800 } } },
+  ]
+  render(<UIProvider><AssessmentReview assessment={{ ...one, lines, nextIdx: 2, source: 'e-rechnung', eInvoiceNotes: [prepaid] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Alle Zeilen als eine Position anlegen' }))
+  const dialog = screen.getByRole('dialog', { name: /Eine Position aus allen Zeilen/ })
+  const labor = within(dialog).getByRole('checkbox', { name: /§35a-Lohnanteil von 1\.190,00\s€ übernehmen/ })
+  if (!(labor instanceof HTMLInputElement)) return assert.fail('kein Häkchen')
+  expect(labor.checked).toBe(false)
+  expect(within(dialog).getByText(/nur aus der Art der Position vorgeschlagen/)).toBeTruthy()
+  expect(within(dialog).getByText(/ohne §35a-Lohnanteil\./)).toBeTruthy()
+  expect(within(dialog).getByText(/Abschläge über 500,00\s€ sind bereits bezahlt/)).toBeTruthy()
+  expect(within(dialog).getByText(/Haben Sie diese Abschläge oder Anzahlungen schon einzeln als Kosten gebucht/)).toBeTruthy()
+})
+
+test('viele Zeilen: bei einer einzigen offenen Zeile gibt es die Aktion nicht', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 200 }])
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Frischwasser')
+  expect(screen.queryByRole('button', { name: 'Alle Zeilen als eine Position anlegen' })).toBeNull()
+})
+
+test('gleichlautende Begründungen mehrerer Zeilen stehen unter der Tabelle einmal', () => {
+  const one = crafted({}, { level: 'gelb', reasons: ['Kategorie unklar'] })
+  const base = one.lines[0] ?? assert.fail('keine Zeile')
+  const lines = [0, 1, 2].map((idx) => ({ ...base, idx, description: `Zeile ${idx}` }))
+  render(<UIProvider><AssessmentReview assessment={{ ...one, lines, nextIdx: 3 }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getAllByText('Kategorie unklar')).toHaveLength(1)
+})
+
+test('Jahr der Buchung: das gewählte Jahr steht zur Wahl, auch wenn der Beleg ein weit früheres nennt', () => {
+  render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), year: YEAR - 2, detectedYear: YEAR - 2, requestedYear: YEAR }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  const box = screen.getByRole('combobox', { name: 'Jahr der Buchung' })
+  if (!(box instanceof HTMLSelectElement)) return assert.fail('das Jahr ist kein Auswahlfeld')
+  expect(box.value).toBe(String(YEAR - 2))
+  expect([...box.options].map((o) => o.value)).toEqual([YEAR - 4, YEAR - 3, YEAR - 2, YEAR - 1, YEAR].map(String))
+})
+
 // ---------- E-Rechnung (#189): Herkunft und Notizen an der Auswertung ----------
+
+test('E-Rechnung: bezahlte Abschläge stehen als Hinweis da, eine Notiz mit Zweifel als Warnung, jede einmal', () => {
+  const prepaid = 'Abschläge über 1.030,00\u00a0€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 804,86\u00a0€.'
+  const doubt = 'Diese Rechnung korrigiert eine frühere Rechnung. Diese darf nicht zusätzlich gebucht sein.'
+  const { container } = render(<UIProvider><AssessmentReview assessment={{ ...crafted({}, { level: 'rot', reasons: [doubt] }), source: 'e-rechnung', eInvoiceNotes: [prepaid, doubt] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getAllByText(doubt)).toHaveLength(1)
+  expect(screen.getAllByText(/Abschläge über 1\.030,00\s€ sind bereits bezahlt/)).toHaveLength(1)
+  expect(screen.getByText(/Haben Sie diese Abschläge oder Anzahlungen schon einzeln als Kosten gebucht/)).toBeTruthy()
+  expect(container.querySelectorAll('.chip')).toHaveLength(0)
+  expect(container.querySelector('.assessment-table [data-ampel-note]')?.textContent).toBe('Rot: siehe Hinweis zur Rechnung über der Tabelle')
+})
 
 test('E-Rechnung: die Prüfung sagt, woher die Angaben stammen, und nennt die Notizen', () => {
   render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), source: 'e-rechnung', invoiceNumber: 'R-1', eInvoiceNotes: ['Abschläge über 50,00 € sind bereits bezahlt.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)
