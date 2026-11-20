@@ -102,6 +102,9 @@ test('Datenbank nicht geöffnet: der Grund einmal, ohne Fehlerkasten der Seite, 
   const box = (await screen.findByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' })).closest('section') as HTMLElement
   expect(screen.getAllByText(detail)).toHaveLength(1)
   await waitFor(() => expect(within(box).getByRole('button', { name: /Mietfuchs beenden/ })).toBeTruthy())
-  expect(screen.queryByText(/Lade Abrechnungsstand/)).toBeNull()
+  // Der Hinweis meldet der App erst in einem Effekt, dass die Datenbank zu ist (`onClosed` in App.tsx); bis zum
+  // nächsten Rendern steht die Seite noch da. Geprüft wird der Endzustand, deshalb gewartet (in der CI unter Last war
+  // die Seite hier einmal noch zu sehen).
+  await waitFor(() => expect(screen.queryByText(/Lade Abrechnungsstand/)).toBeNull())
   expect(screen.queryByText(/Die Anfrage ist fehlgeschlagen/)).toBeNull()
 })

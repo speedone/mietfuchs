@@ -58,12 +58,31 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Objekt- und Zeitraumwechsel. Jeder Eintrag trägt Objekt, Jahr und Zeitraum des Hochladens und, sobald bekannt, den
   Namen des Belegs (`file`); Eingang und Kosten zeigen die ihres Objekts und Zeitraums (`belongsTo`), die übrigen nennt
   `OtherQueueEntries` mit Sprung (`useSwitchTo`; Einträge gelöschter Objekte und was die Seite schon als Karte zeigt,
-  zählen nicht). Beide werten über `/api/intake` aus, Kosten mit `docType=rechnung` (keine Frage nach der Belegart;
+  zählen nicht). **Ein abgelegter Beleg ist gespeichert, bevor er ausgewertet wird**: `addFiles` lädt jede
+  Datei über `/api/upload` hoch (Objekt und Jahr des Eintrags, also die des Ablegens, auch nach einem Wechsel mitten im
+  Stapel), der Reihe nach und unabhängig von der laufenden Auswertung (`pumpStore`); ausgewertet wird danach der
+  gespeicherte Beleg (`existingFile`), wie bei „Per KI auswerten“ (`addStored`). Hängt die KI, wird abgebrochen, der Tab
+  geschlossen oder neu geladen, geht von einem gespeicherten Beleg nur die Auswertung verloren; er steht unter „Ohne
+  Position“. **Nicht „sofort“**: Ein Beleg, dessen Upload aussteht, liegt nur im Browser. Ein wartender Eintrag sagt
+  deshalb, wie weit er ist („wartet auf das Speichern …“, „wird gespeichert …“, „gespeichert, wartet …“,
+  `waitingLabel`), der Text der Ablage nennt „gespeichert“ als Zeichen, und `unsaved` fragt beim Schließen des Tabs,
+  solange etwas wartet. Ein abgebrochener oder gescheiterter Eintrag sagt, wo sein Beleg liegt (`storedNote`), **nach dem
+  Bestand der Seite, nicht aus der Erinnerung der Schlange** (`storedPlaces`; im Eingang die Karten unter „Ohne
+  Position“, in Kosten die nach jedem solchen Ende neu geladene Ablage): unter „Ohne Position“, ein schon als Zählerfoto
+  erkanntes Bild im Ordner unter „Zählerfotos“, sonst (gelöscht, zugeordnet, gebucht, neu ausgewertet) kein Satz;
+  `addStored` räumt den alten Eintrag desselben Belegs. Eine leere Datei (0 Byte) wird nicht hochgeladen, sondern ist
+  ein Fehler mit Satz. Ein PDF, das der Browser nicht lesen kann (beschädigt, Passwort), ist dagegen jetzt gespeichert
+  und steht mit dem Fehler und unter „Ohne Position“ (vorher ging es gar nicht hoch; lieber einer zu viel). Ein
+  gescheiterter Upload (auch ein Kontoauszug, 422) ist der Fehler dieses einen Eintrags, die übrigen laufen weiter.
+  „Entfernen“ an einem wartenden, gespeicherten Beleg lässt ihn als „abgebrochen“ stehen (der Beleg bleibt), vor dem
+  Upload verschwindet der Eintrag. Seitentests beantworten `/api/upload` mit `uploadAnswer` (testing/storedUpload.ts).
+  Beide werten über `/api/intake` aus, Kosten mit `docType=rechnung` (keine Frage nach der Belegart;
   Zählerfotos erkennt der Eingang, dort „Als Rechnung auswerten“). `addFiles` ergibt die Zahl übergangener Dateien;
   jede Ablage nennt sie mit `SKIPPED_FILES` (belegeView.ts). Weder eine laufende Auswertung noch ein erkannter Zählerstand
   melden sich bei `useOpenForm`, beides überlebt den Seitenwechsel; beim Schließen des Tabs fragt `unsaved`.
   Verlassen der Seite räumt Erledigtes (`sweep`); die Datei bleibt nur bis zur Auswertung im Browser, ein neuer
-  Versuch holt den gespeicherten Beleg vom Server. Ohne Provider (Seitentests) hat die Seite eine eigene Schlange.
+  Versuch holt den gespeicherten Beleg vom Server. Ohne Provider (Seitentests) hat die Seite eine eigene Schlange; eine
+  ausgehängte Schlange beginnt nichts mehr (`closed`), wieder eingehängt (StrictMode) läuft sie weiter (`open`).
 - **Seite „Belege“** (#490, [pages/Belege.tsx](src/pages/Belege.tsx), Logik in [belegeView.ts](src/belegeView.ts)):
   Reiter „Eingang“ (mit Zahl der offenen Einträge) und „Ordner“ nach dem Tab-Muster (Pfeiltasten); beide Ansichten
   bleiben eingehängt und die andere `hidden`, damit kein Entwurf beim Wechsel verloren geht. Den Bestand (Belege und
@@ -285,6 +304,15 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   Mietverhältnisse) und springt in den Zeitraum mit den jüngsten Kosten (`arrivalSummary`); die Frage zu Updates im
   Cockpit wartet, bis sie geschlossen ist. Ohne geöffnete Datenbank zeigt App.tsx statt der Seite nur den Hinweis oben
   (mit „Mietfuchs beenden“), außer in der Hilfe.
+- **Backup** ([backupView.ts](src/backupView.ts)): Die Karte „Daten & Sicherung“ nennt aus `GET /api/backup/status`,
+  wann zuletzt ein Backup heruntergeladen wurde (nach dem Klick in wachsendem Abstand neu gefragt, bis sich der Zeitpunkt ändert, rund zwei Minuten,
+  `recheckUntilChanged`, und beim Fokus des Fensters; das Alter zählt Kalendertage des Ortes, passend zum Datum), immer
+  „heruntergeladen“, nie „gesichert“. Der Knopf ist ein Link **in einen unsichtbaren Rahmen** (`target`, kein
+  `download`): Nachgemessen in Chromium speicherte `download` eine Ablehnung des Servers als „backup.json“, und ein
+  gewöhnlicher Link fragte bei offenem Formular „Seite verlassen?“. Lädt der Rahmen ein Dokument, war es eine
+  Ablehnung; ihr Satz (`frameMessage`) steht als `NoticeBox level="error"` in der Karte. Das Cockpit erinnert über [BackupReminder.tsx](src/components/BackupReminder.tsx) (eigener Abruf,
+  `NoticeBox` Stufe `hint`, Sprung `BACKUP_TARGET`); wann, entscheidet der Server. Nach dem Wiederherstellen lädt die
+  Seite mit `reloadWithArrival('backup')` neu; mit Hinweisen des Servers bleibt die Meldung stehen wie bisher.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Ebenso das Mietkonto ohne Mietverhältnis im Jahr (`ledgerStep`), die Steuer ohne
@@ -683,10 +711,21 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Indexerklärung druckte sonst „Seite 1 von 1“); den Fußvermerk der Abrechnung hat das Schreiben nicht. **Mit Briefpapier**
   stehen Schreiben und Zustimmungserklärung je in der Hülle `PrintPages` (`paper`, `follow`, die Erklärung mit `newPage`):
   Der Rahmen wiederholt die Ränder je Druckseite, der Kopf trägt das Papier der Folgeseiten (`useLetterDesign` lädt es
-  mit). Weil der Brief ab der Blattkante misst, rückt `rent-increase-paged` (letter.css) ihn um den oberen und die
+  mit). Weil der Brief ab der Blattkante misst, rückt `letter-paged` (letter.css) ihn um den oberen und die
   seitlichen Ränder zurück, ohne Mindesthöhe und ohne eigenen Seitenumbruch. Ohne `canPagePaper` druckt es wie ohne
   Briefpapier, das Fenster sagt es (`PAPER_BROWSER_NOTE`), und für die Prüfung des Absenders zählt das Briefpapier dann
   nicht. Geprüft im Fall `mieterhoehung-briefpapier` von scripts/print-width-check.mjs.
+- **Aufstellung der Kaution als Brief** (#228, [DepositLetter.tsx](src/components/DepositLetter.tsx), Text in
+  [depositLetter.ts](src/depositLetter.ts)): „Aufstellung drucken“ im Fenster „Kaution“ druckt nach demselben Muster
+  (`LetterHead`, `useLetterDesign` aus RentIncreaseLetter.tsx, Blatt am Ende von body, `print-deposit` in letter.css).
+  Der Text steht fest und kommt aus dem heutigen Bestand (ein Satz am Druckknopf sagt es); ohne Namen des Vermieters
+  warnt das Fenster nur, mit Briefpapier nicht (es fragt `GET /api/letter-design` beim Öffnen). **Mit Briefpapier** steht
+  der Brief wie das Schreiben der Mieterhöhung in `PrintPages` (`paper`, `follow`) mit der gemeinsamen Klasse
+  `letter-paged`; ohne `canPagePaper` druckt er wie ohne, und das Fenster sagt es (`PAPER_BROWSER_NOTE`). Druckbreite:
+  Fall `kaution`, Ränder je Seite: Fall `kaution-briefpapier` (29 Buchungen, drei Seiten) in scripts/print-width-check.mjs.
+  Gedruckt über `startPrint` (Dateiname „Kaution {Mieter}“). Vorschau und Mitteilung beim Einlesen
+  eines Kontoauszugs bauen `importPreviewText`/`importDoneText` (bankView.ts) aus `summary`, nie aus dem Satz des
+  Servers: eingelesen, nichts gebucht, weiter unter „Offene Umsätze“.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Ein Formular, das einen Datensatz ganz schickt, schickt den Stand mit, den es zeigt** ([staleRecord.ts](src/staleRecord.ts),

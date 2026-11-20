@@ -376,7 +376,13 @@ Ab Version 1.0 gilt:
   rechnen sie nicht still um.
 - **Betrieb:** Der Datenordner, die Umgebungsvariablen, das Docker-Image und die Exportformate (JSON
   und CSV) ändern sich in 1.x nicht ohne Vorwarnung. Eine Änderung wird vorher im Changelog
-  angekündigt.
+  angekündigt. Welche Exporte das sind und wie sie aussehen, steht unter
+  [Daten & Backup](docs/daten-backup.md#exporte-und-ihre-form). Für den JSON-Export der Abrechnung heißt
+  das: Vorhandene Felder behalten Namen, Art und Bedeutung; neue Felder können dazukommen, und wer den
+  Export einliest, ignoriert unbekannte Felder. Fällt ein Feld weg, heißt es anders oder bedeutet es etwas
+  anderes, steigt die Angabe `version` in der Datei. Texte in Feldern sind Anzeige und nicht Teil der
+  Zusage. Welche Umgebungsvariablen gemeint sind, steht unter
+  [Installation](docs/installation.md#umgebungsvariablen).
 - **Bruch:** Was eine dieser Zusagen bricht, kommt nur mit einer neuen Hauptversion (2.0). Eine
   Anleitung zum Umstieg stünde dann hier.
 

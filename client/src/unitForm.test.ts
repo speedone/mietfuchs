@@ -156,21 +156,21 @@ describe('Löschfrage einer Wohnung', () => {
   test('nennt alles, was mitgelöscht wird, mit Anzahl', () => {
     expect(unitDeleteMessage({ tenancies: 2, meters: 1, readings: 5, payments: 24, costItemLinks: 3, directCostItems: 0, fuelDeliveries: 0, rooms: 0 })).toBe(
       'Mit der Wohnung werden gelöscht: 2 Mietverhältnisse, 1 Zähler, 5 Ablesungen, 24 Zahlungen und 3 Angaben an Kostenpositionen ' +
-        '(vereinbarte Anteile, Teilnahmen, Einzelbeträge). Das lässt sich nicht rückgängig machen.',
+        '(vereinbarte Anteile, Teilnahmen, Einzelbeträge). Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.',
     )
   })
 
   test('Einzahl, und was nicht da ist, steht nicht da', () => {
     expect(unitDeleteMessage({ ...none, tenancies: 1, payments: 1 })).toBe(
-      'Mit der Wohnung werden gelöscht: 1 Mietverhältnis und 1 Zahlung. Das lässt sich nicht rückgängig machen.',
+      'Mit der Wohnung werden gelöscht: 1 Mietverhältnis und 1 Zahlung. Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.',
     )
-    expect(unitDeleteMessage(none)).toBe('An der Wohnung hängt nichts weiter. Das lässt sich nicht rückgängig machen.')
+    expect(unitDeleteMessage(none)).toBe('An der Wohnung hängt nichts weiter. Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.')
   })
 
   test('direkt zugeordnete Rechnungen bleiben und gehen an den Vermieter', () => {
     expect(unitDeleteMessage({ ...none, directCostItems: 2 })).toBe(
       'An der Wohnung hängt nichts weiter. 2 direkt zugeordnete Kostenpositionen bleiben erhalten; ihren Betrag trägt danach der Vermieter. ' +
-        'Das lässt sich nicht rückgängig machen.',
+        'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.',
     )
   })
 
@@ -184,10 +184,22 @@ describe('Löschfrage einer Wohnung', () => {
     expect(unitDeleteBlocked(null)).toBeNull()
   })
 
+  test('nennt Kautionsbuchungen und abgeschlossene Abrechnungen der Mietverhältnisse, und was sich in Mietkonto und Steuer ändert', () => {
+    expect(unitDeleteMessage({ ...none, tenancies: 1, payments: 12 }, { depositEntries: 1, closed: ['2025'] })).toBe(
+      'Mit der Wohnung werden gelöscht: 1 Mietverhältnis, 12 Zahlungen und 1 Kautionsbuchung. ' +
+        'Mietkonto und Steuerübersicht zeigen diese Zahlungen danach nicht mehr, auch für frühere Jahre. ' +
+        'Ein Mietverhältnis der Wohnung steht in einer abgeschlossenen Abrechnung (zuletzt 2025); sie bleibt, wie sie ist, führt Wohnung und Mieter aber nicht mehr, sobald Sie sie wieder öffnen. ' +
+        'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.',
+    )
+    expect(unitDeleteMessage({ ...none, tenancies: 1 }, { depositEntries: 0, closed: [] })).toBe(
+      'Mit der Wohnung werden gelöscht: 1 Mietverhältnis. Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.',
+    )
+  })
+
   test('ohne Zählung (Server nicht erreichbar) die vollständige Liste ohne Zahlen', () => {
     expect(unitDeleteMessage(null)).toBe(
       'Mit der Wohnung werden auch ihre Mietverhältnisse, Zähler, Ablesungen und Zahlungen gelöscht, dazu ihre Anteile an ' +
-        'Kostenpositionen. Das lässt sich nicht rückgängig machen.',
+        'Kostenpositionen. Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.',
     )
   })
 })
@@ -362,7 +374,7 @@ describe('Zimmer einer Wohnung', () => {
   })
 
   test('Löschfrage: das Zimmer selbst löscht sich wie jede Einheit', () => {
-    expect(unitDeleteMessage(none)).toBe('An der Wohnung hängt nichts weiter. Das lässt sich nicht rückgängig machen.')
+    expect(unitDeleteMessage(none)).toBe('An der Wohnung hängt nichts weiter. Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.')
   })
 
   test('eine Wohnung mit Zimmern hat Nutzung, Personen und Nutzungswechsel nicht: Rumpf ohne Eigennutzung', () => {

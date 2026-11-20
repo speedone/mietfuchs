@@ -4,7 +4,16 @@
 // und ihr Ergebnis steht da, wenn man zurückkehrt. Jeder Eintrag trägt Objekt, Jahr und Zeitraum, mit denen er
 // hochgeladen wurde; jede Seite zeigt die Einträge ihres Objekts und Zeitraums (`entriesFor`).
 //
-// Belege gehen nacheinander an den Server, denn ein lokales Modell verarbeitet sinnvoll nur eine Anfrage
+// **Ein abgelegter Beleg ist gespeichert, bevor er ausgewertet wird**: Jede Datei geht über `/api/upload` in die
+// Ablage (mit Objekt und Jahr, wie „Nur ablegen, ohne Auswertung“), der Reihe nach und unabhängig davon, ob gerade
+// eine Auswertung läuft; ausgewertet wird danach der gespeicherte Beleg (`existingFile`). Hängt die KI, wird die
+// Auswertung abgebrochen, der Tab geschlossen oder die Seite neu geladen, geht von einem gespeicherten Beleg
+// höchstens die Auswertung verloren: Er steht dann im Eingang unter „Ohne Position“. Ein Beleg, dessen Upload noch
+// aussteht, ist dagegen nur im Browser; der Eintrag sagt, wie weit er ist (`waitingLabel`), und `unsaved` lässt den
+// Browser beim Schließen fragen. Vorher lag nur der Beleg auf dem Server,
+// der gerade ausgewertet wurde, und ein Abbruch löschte auch den.
+//
+// Ausgewertet wird nacheinander, denn ein lokales Modell verarbeitet sinnvoll nur eine Anfrage
 // gleichzeitig. Schnellerfassung und Kosten werten über denselben Eingang aus (`/api/intake`), der Rechnung und
 // Zählerfoto unterscheidet. Gebucht wird danach über die gespeicherte Auswertung („Auswertung prüfen“), ein
 // Zählerstand mit „Ablesung übernehmen“.
@@ -12,11 +21,11 @@ import { createContext, createElement, useContext, useEffect, useState, useSyncE
 import { aiRequest, type AiProgress } from './aiRequest'
 import { appFetch } from './access'
 import { buildUpload } from './pdfIntake'
-import { errorText } from './api'
+import { api, errorText } from './api'
 import { failureOf } from './aiFailure'
 import { readExifDate, type ReadingCandidate } from './readingCandidate'
 import type { AiFailure, AssessmentView, IntakeResult } from './types'
-import { splitFiles } from './belegeView'
+import { isBankFileError, splitFiles } from './belegeView'
 
 // 'gespeichert': Die KI ist gescheitert, der Beleg ist aber gespeichert (Fehler mit Ausweg, #487); `failure`
 // sagt warum, und `retry` wertet ihn erneut aus, ohne ihn noch einmal hochzuladen.
@@ -59,9 +68,12 @@ export type QueueEntry = QueueBase & {
   // die Antwort des Servers und, bei einem Zählerfoto, das Aufnahmedatum aus der Datei
   result?: IntakeResult
   exifDate?: string | null
-  // Der Name des Belegs in der Ablage, sobald es ihn gibt (ein Beleg aus dem Eingang, nach der Antwort, nach einem
-  // Scheitern mit gespeichertem Beleg): Daran erkennt der Eingang, dass seine Karte schon anderswo steht (#490).
+  // Der Name des Belegs in der Ablage, sobald es ihn gibt (gleich nach dem Hochladen, bei einem Beleg aus dem Eingang
+  // von Anfang an): Daran erkennt der Eingang, dass seine Karte schon anderswo steht (#490). Solange er an einem
+  // wartenden Eintrag fehlt, ist der Beleg noch nicht gespeichert (`waitingLabel`).
   file?: string
+  // Sein Upload läuft gerade (`waitingLabel`)
+  storing?: boolean
   data: QueueData
 }
 export type QueuePatch = Partial<Omit<QueueEntry, 'id' | 'fileName' | 'data'>> & { data?: QueueData }
@@ -89,6 +101,34 @@ export const belongsTo = (entry: QueueEntry, propertyId: string | undefined, per
 export const isOpenEntry = (entry: QueueEntry): boolean =>
   entry.status !== 'übernommen' && entry.status !== 'abgelegt' && entry.status !== 'abgebrochen'
 
+// Was an einem wartenden Eintrag steht: Erst mit dem Namen in der Ablage ist der Beleg gespeichert; davor wird er
+// gerade hochgeladen oder wartet noch darauf (dann liegt er nur im Browser).
+export const waitingLabel = (entry: Pick<QueueEntry, 'file' | 'storing'>): string =>
+  (entry.file ? 'gespeichert, wartet …' : entry.storing ? 'wird gespeichert …' : 'wartet auf das Speichern …')
+// Der Satz an einem abgebrochenen oder gescheiterten Eintrag, dessen Beleg in der Ablage liegt: Verloren ist nur die
+// Auswertung. **Wo er liegt, sagt der Bestand der Seite** (`storedPlaces`), nicht die Erinnerung der Schlange: Ist der
+// Beleg inzwischen gelöscht, zugeordnet, gebucht oder neu ausgewertet (dann steht er unter „Zu prüfen“), gibt es
+// keinen Satz; ein vom Server schon als Zählerfoto erkanntes Bild steht im Ordner unter „Zählerfotos“.
+export const STORED_NOTE = 'Der Beleg ist gespeichert und steht auf der Seite Belege im Eingang unter „Ohne Position“.'
+export const STORED_PHOTO_NOTE = 'Das Foto ist gespeichert und steht auf der Seite Belege im Ordner unter „Zählerfotos“.'
+export type StoredPlaces = { free: ReadonlySet<string>; photos: ReadonlySet<string> }
+type StoredUpload = { file: string; kind?: string; bookedItemIds?: readonly string[]; assessment?: { open?: boolean } | null }
+// `linked`: die Belege, auf die eine Kostenposition zeigt (`invoiceFile`)
+export function storedPlaces(uploads: readonly StoredUpload[], linked: ReadonlySet<string>): StoredPlaces {
+  const free = new Set<string>()
+  const photos = new Set<string>()
+  for (const u of uploads) {
+    if (linked.has(u.file) || (u.bookedItemIds?.length ?? 0) > 0) continue
+    if (u.kind === 'meterPhoto') photos.add(u.file)
+    else if (!u.assessment?.open) free.add(u.file)
+  }
+  return { free, photos }
+}
+export function storedNote(entry: Pick<QueueEntry, 'status' | 'file'>, places: StoredPlaces): string {
+  if ((entry.status !== 'abgebrochen' && entry.status !== 'fehler') || !entry.file) return ''
+  return places.photos.has(entry.file) ? STORED_PHOTO_NOTE : places.free.has(entry.file) ? STORED_NOTE : ''
+}
+
 export const isBusy = (entry: QueueEntry): boolean => entry.status === 'wartend' || entry.status === 'läuft'
 // Ein erkannter Zählerstand, der noch nicht übernommen ist: Er steht nur im Browser.
 export const isOpenReading = (entry: QueueEntry): boolean => entry.status === 'fertig' && entry.result?.kind === 'zaehler'
@@ -111,6 +151,12 @@ export class EvaluationQueue {
   // Der Grund eines gespeicherten Belegs während seines neuen Versuchs: Wird der abgebrochen, steht der Eintrag
   // wieder als „gespeichert“ mit diesem Grund da (Durchsicht #487).
   private kept = new Map<number, AiFailure>()
+  // Neu abgelegte Dateien, die noch in die Ablage müssen, und der eine Upload, der gerade läuft. Nacheinander: Die
+  // Reihenfolge der Ablage bleibt die der Belege (der Server benennt nach der Zeit), ein Handy schickt nie mehrere
+  // große Fotos zugleich, und ein gescheiterter Upload betrifft nur seinen Beleg.
+  private toStore = new Set<number>()
+  private storing: { id: number; controller: AbortController } | null = null
+  private closed = false
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -134,11 +180,15 @@ export class EvaluationQueue {
   }
 
   private enqueue(list: { file: File; stored?: string }[], target: QueueTarget) {
+    // Ein Beleg aus der Ablage wird neu ausgewertet: Was die Schlange zu ihm noch zeigt (abgebrochen, gescheitert),
+    // ist damit erledigt, sonst stünde er zweimal da.
+    for (const { stored } of list) if (stored) this.forgetFile(stored)
     const added: QueueEntry[] = []
     for (const { file, stored } of list) {
       const id = this.nextId++
       this.files.set(id, file)
       if (stored) this.stored.set(id, stored)
+      else this.toStore.add(id)
       if (target.pageImageEdge !== undefined) this.edges.set(id, target.pageImageEdge)
       if (target.docType) this.docTypes.set(id, target.docType)
       added.push({ id, fileName: file.name, status: 'wartend', propertyId: target.propertyId, year: target.year, period: target.period, file: stored, data: {} })
@@ -156,6 +206,7 @@ export class EvaluationQueue {
   addStored = (list: { file: File; stored: string }[], target: QueueTarget): void => this.enqueue(list, target)
 
   private forget(id: number) {
+    this.toStore.delete(id)
     this.files.delete(id)
     this.stored.delete(id)
     this.edges.delete(id)
@@ -163,7 +214,18 @@ export class EvaluationQueue {
     this.kept.delete(id)
   }
 
+  // Einen Eintrag aus der Liste nehmen. Ein wartender Beleg, der schon gespeichert ist, bleibt gespeichert: Sein
+  // Eintrag steht dann als „abgebrochen“ da und sagt, wo der Beleg liegt (`storedNote`); erst ein zweites Entfernen
+  // nimmt ihn aus der Liste. Wird er gerade hochgeladen, bricht der Upload ab (kam er beim Server schon an, liegt der
+  // Beleg unter „Ohne Position“: lieber einer zu viel als einer verloren).
   remove = (id: number): void => {
+    const entry = this.entries.find((x) => x.id === id)
+    if (entry?.status === 'wartend' && entry.file && !this.kept.has(id)) {
+      this.forget(id)
+      this.set(this.entries.map((x) => (x.id === id ? { ...x, status: 'abgebrochen' } : x)))
+      return
+    }
+    if (this.storing?.id === id) this.storing.controller.abort()
     this.forget(id)
     this.set(this.entries.filter((x) => x.id !== id))
   }
@@ -212,11 +274,69 @@ export class EvaluationQueue {
   }
 
   // Bricht alles ab, was läuft (nur beim Aushängen der ganzen Schlange, etwa am Ende eines Tests).
-  abortAll = (): void => { for (const controller of this.aborts.values()) controller.abort() }
+  // Wieder eingehängt (React hängt im Entwicklungsmodus jede Komponente einmal aus und wieder ein)
+  open = (): void => {
+    this.closed = false
+    this.pump()
+  }
+  abortAll = (): void => {
+    this.closed = true
+    this.storing?.controller.abort()
+    for (const controller of this.aborts.values()) controller.abort()
+  }
+
+  // Der nächste Beleg, der noch in die Ablage muss; unabhängig davon, ob gerade ausgewertet wird.
+  private pumpStore() {
+    if (this.storing) return
+    const next = this.entries.find((x) => x.status === 'wartend' && this.toStore.has(x.id))
+    const file = next && this.files.get(next.id)
+    if (!next || !file) return
+    // Eine leere Datei ist kein Beleg (ein abgebrochener Download, ein Scan ohne Inhalt): nicht speichern, sagen.
+    if (file.size === 0) {
+      this.toStore.delete(next.id)
+      this.files.delete(next.id)
+      this.patch(next.id, { status: 'fehler', error: `„${next.fileName}“ ist leer (0 Byte) und wurde nicht gespeichert.` })
+      return
+    }
+    const controller = new AbortController()
+    this.storing = { id: next.id, controller }
+    this.patch(next.id, { storing: true })
+    void this.store(next, file, controller)
+  }
+
+  private async store(entry: QueueEntry, file: File, controller: AbortController) {
+    const id = entry.id
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      if (entry.propertyId) fd.append('propertyId', entry.propertyId)
+      fd.append('year', String(entry.year))
+      const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd, signal: controller.signal })
+      if (typeof res.file !== 'string' || res.file === '') throw new Error('Mietfuchs hat den Beleg nicht bestätigt.')
+      this.storing = null
+      // Währenddessen entfernt: Der Beleg liegt in der Ablage, einen Eintrag gibt es nicht mehr.
+      if (!this.toStore.delete(id)) return
+      this.stored.set(id, res.file)
+      this.patch(id, { file: res.file, storing: false })
+    } catch (e) {
+      this.storing = null
+      if (!this.toStore.delete(id)) return
+      this.files.delete(id)
+      // Der Satz zum Kontoauszug bleibt wörtlich, die Seite setzt den Knopf zur Seite Kontoauszug daneben.
+      const text = errorText(e)
+      this.patch(id, { status: 'fehler', storing: false, error: isBankFileError(text) ? text : `„${entry.fileName}“ wurde nicht hochgeladen: ${text}` })
+    } finally {
+      this.pump()
+    }
+  }
 
   private pump() {
+    // Ausgehängt: Was noch wartet, beginnt nicht mehr (sonst startete der Abbruch des einen den nächsten).
+    if (this.closed) return
+    this.pumpStore()
     if (this.entries.some((x) => x.status === 'läuft')) return
-    const next = this.entries.find((x) => x.status === 'wartend')
+    // Ausgewertet wird nur, was gespeichert ist; ein Beleg, der noch hochgeladen wird, kommt danach an die Reihe.
+    const next = this.entries.find((x) => x.status === 'wartend' && !this.toStore.has(x.id))
     if (!next) return
     const file = this.files.get(next.id)
     if (!file && !this.stored.has(next.id)) {
@@ -293,7 +413,7 @@ const QueueCtx = createContext<EvaluationQueue | null>(null)
 // Die eine Warteschlange der App. Sie bricht nur ab, wenn sie selbst ausgehängt wird.
 export function EvaluationQueueProvider({ children }: { children: ReactNode }) {
   const [queue] = useState(() => new EvaluationQueue())
-  useEffect(() => () => queue.abortAll(), [queue])
+  useEffect(() => { queue.open(); return () => queue.abortAll() }, [queue])
   return createElement(QueueCtx.Provider, { value: queue }, children)
 }
 
@@ -307,7 +427,7 @@ export function useEvaluationQueueStore(): EvaluationQueue | null {
 export function useEvaluationQueue() {
   const shared = useContext(QueueCtx)
   const [own] = useState(() => new EvaluationQueue())
-  useEffect(() => (shared ? undefined : () => own.abortAll()), [shared, own])
+  useEffect(() => { if (shared) return undefined; own.open(); return () => own.abortAll() }, [shared, own])
   const queue = shared ?? own
   const entries = useSyncExternalStore(queue.subscribe, queue.getSnapshot)
   return {

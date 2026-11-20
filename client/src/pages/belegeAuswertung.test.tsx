@@ -12,6 +12,7 @@ import { UIProvider } from '../components/feedback'
 import Belege from './Belege'
 import { fakeBooking, type FakeBooking } from '../testing/fakeBooking'
 import { calendarPeriod } from '../../../shared/period.ts'
+import { uploadAnswer } from '../testing/storedUpload'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
@@ -33,6 +34,7 @@ beforeEach(() => {
   gone = new Set()
   sent = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return uploadAnswer(init)
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
     const method = init?.method ?? 'GET'
     const path = url.split('?')[0] ?? url

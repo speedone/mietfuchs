@@ -9,6 +9,7 @@ import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Belege from './Belege'
 import { fakeBooking } from '../testing/fakeBooking'
+import { uploadAnswer } from '../testing/storedUpload'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const IMAGE: UploadInfo = {
@@ -31,6 +32,7 @@ beforeEach(() => {
   items = []
   sent = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return uploadAnswer(init)
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
     if (url === '/api/intake') {
       intake.push(init?.body as FormData)

@@ -29,9 +29,10 @@ import { GUIDES, type GuideId } from '../../../shared/guides.ts'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
 import UpcomingCard from '../components/UpcomingCard'
+import BackupReminder from '../components/BackupReminder'
 import type { UpcomingAction } from '../upcomingView'
 import { isSubject, type JumpTarget } from '../focus'
-import { CHECKS_TARGET, NEW_COST_ITEM_TARGET, SENT_AT_TARGET, TENANCIES_TARGET, senderFix, soleSubject, unitsTarget } from '../jumpTargets'
+import { BACKUP_TARGET, CHECKS_TARGET, NEW_COST_ITEM_TARGET, SENT_AT_TARGET, TENANCIES_TARGET, senderFix, soleSubject, unitsTarget } from '../jumpTargets'
 
 type Props = {
   units: Unit[]
@@ -573,6 +574,9 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
           </ul>
         </NoticeBox>
       )}
+
+      {/* Die Erinnerung ans Backup, in einer eigenen Komponente mit eigenem Abruf */}
+      <BackupReminder onOpen={() => onNavigate('einstellungen', BACKUP_TARGET)} />
     </>
   )
 }

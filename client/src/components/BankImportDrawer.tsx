@@ -4,7 +4,7 @@
 // Browserspeicher; Schließen verwirft alles.
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, errorText, fmtEuro } from '../api'
-import { importDecisionsOf, questionKey, questionProblems, type QuestionAnswer } from '../bankView'
+import { importDecisionsOf, importDoneText, importPreviewText, questionKey, questionProblems, type QuestionAnswer } from '../bankView'
 import type { BankImportPreview, BankImportQuestion } from '../types'
 import Drawer from './Drawer'
 import Field from './Field'
@@ -26,7 +26,8 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
   file: File
   tenancies: readonly TenancyOption[]
   onClose: () => void
-  onDone: (sentence: string) => void
+  // Die Mitteilung nach dem Einlesen (`importDoneText`): eingelesen, noch nichts gebucht, nächster Schritt.
+  onDone: (message: string) => void
 }) {
   const [answers, setAnswers] = useState<Record<string, QuestionAnswer>>({})
   const [preview, setPreview] = useState<BankImportPreview | null>(null)
@@ -97,7 +98,7 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
     try {
       const decisions = importDecisionsOf(questions, answers)
       const res = await api<{ ok: true; sentence: string }>('/api/bank/import', { method: 'POST', body: form(file, { decisions: JSON.stringify(decisions), token: preview.token }) })
-      onDone(res.sentence)
+      onDone(importDoneText(preview.summary))
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.data.preview) {
         const fresh = e.data.preview as BankImportPreview
@@ -118,9 +119,10 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
       {planning && !preview && <p className="muted">Die Datei wird gelesen …</p>}
       {preview && (
         <>
-          {/* Solange Rückfragen offen sind, zählt der Satz nur die Tage ohne Frage („0 Umsätze übernommen“, #644); er steht
-              erst da, wenn alles beantwortet ist. Was fehlt, sagt der Satz unter den Fragen. */}
-          {(preview.ready || preview.questions.length === 0) && <p role="status">{preview.sentence}</p>}
+          {/* Solange Rückfragen offen sind, zählt der Satz nur die Tage ohne Frage („0 Umsätze“, #644); er steht
+              erst da, wenn alles beantwortet ist. Was fehlt, sagt der Satz unter den Fragen. Der Satz entsteht aus den Zahlen
+              (`importPreviewText`), mit demselben Wort wie die Mitteilung danach; `sentence` des Servers dient nur dem Vergleich darunter. */}
+          {(preview.ready || preview.questions.length === 0) && <p role="status">{importPreviewText(preview.summary)}</p>}
           {/* Was der Satz zum Ergebnis schon sagt ("schon eingelesen"), steht nicht noch einmal als Befund (Klicktest B2). */}
           {preview.findings.filter((f) => f.message !== preview.sentence).map((f, i) => <NoticeBox key={i} level="error" context={f.where} action={f.message} />)}
           {/* Nachtrag 13.11.: Hundert private Eingänge sollen nicht hundert Klicks kosten. „privat“ ist die sichere Wahl, davon

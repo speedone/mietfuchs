@@ -383,6 +383,23 @@ export function textPdf(html) {
   return Buffer.from(pdf, 'latin1')
 }
 
+// Der Beispielbestand ist ein gepflegtes Haus: Nach dem Aufbau wird einmal ein Backup abgerufen (die Antwort verworfen),
+// sonst zeigte das Cockpit in Bildschirmfotos und Browserlauf „Noch kein Backup heruntergeladen“. Der Server merkt sich
+// den Zeitpunkt kurz nach dem letzten Byte, deshalb wartet der Helfer, bis der Stand ihn nennt.
+/** @param {string} base */
+async function downloadBackup(base) {
+  const res = await fetch(`${base}/api/backup`)
+  if (!res.ok) throw new Error(`GET /api/backup: HTTP ${res.status}`)
+  await res.arrayBuffer()
+  for (let i = 0; i < 100; i++) {
+    /** @type {any} */
+    const status = await (await fetch(`${base}/api/backup/status`)).json()
+    if (status.lastDownloadAt) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error('Der Server hat sich das Backup des Beispielbestands nicht gemerkt.')
+}
+
 // ---------- Alles zusammen ----------
 // Wegwerf-Ordner, nachgebautes Ollama, Server und Bestand. `pdf` macht aus einem Rechnungsbogen (HTML) die
 // Bytes eines PDFs: beim Fotografieren gedruckt vom Browser, im Browserlauf mit `textPdf`.
@@ -403,6 +420,7 @@ export async function startDemo({ pdf, prefix = 'mietfuchs-demo-', sequence = ['
     server = await startServer(dataDir, ollama.url)
     const api = client(server.base)
     const ids = await seed(api, async (html) => pdf(html))
+    await downloadBackup(server.base)
     return { base: server.base, api, ids, stop, problem: server.problem }
   } catch (err) {
     await stop()

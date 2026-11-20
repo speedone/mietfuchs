@@ -1,7 +1,7 @@
 // Logik der Seite „Kontoauszug“ (#188, Teil 3): Vorauswahl aus dem Vorschlag, Entscheidungen, grüne Zeilen, Sätze.
 import { describe, expect, test } from 'vitest'
 import {
-  BANK_TARGET_OPTIONS, coverageText, decisionsOf, greenRows, initialRow, isUntouched, questionProblems, removePart, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, untouchedGreen,
+  BANK_TARGET_OPTIONS, coverageText, importDoneText, importPreviewText, decisionsOf, greenRows, initialRow, isUntouched, questionProblems, removePart, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, untouchedGreen,
   type BankRow,
 } from './bankView'
 import type { BankAccountInfo, BankSuggestion, BankTransactionView } from './types'
@@ -11,6 +11,33 @@ const tx = (id: string, amountCents: number, suggestion: BankSuggestion | null =
   ultimatePartyName: null, purpose: 'Miete Juni', reversal: false, setAside: null, openCents: amountCents, links: [], suggestion,
 })
 const green: BankSuggestion = { tenancyId: 't1', target: { type: 'newPayment', kind: 'rent' }, light: 'green', reason: 'IBAN bekannt, Betrag wie Monatsmiete' }
+
+// Systemprüfung: Nach dem Einlesen stand „4 Umsätze übernommen“, obwohl noch nichts gebucht ist. Durchsicht: Die Vorschau
+// davor benutzt dasselbe Wort; beide Sätze entstehen aus den Zahlen der Antwort, nie aus dem Satz des Servers.
+describe('Vorschau und Mitteilung beim Einlesen', () => {
+  const sum = (stored: number, knownDays = 0, pending = 0) => ({ stored, knownDays, pending })
+  test('Mitteilung: was geschah (eingelesen, nichts gebucht) und was als Nächstes zu tun ist', () => {
+    expect(importDoneText(sum(4)))
+      .toBe('4 Umsätze eingelesen, gebucht ist noch nichts. Ordnen Sie sie unter „Offene Umsätze“ zu und klicken Sie dort auf „Buchen“.')
+    expect(importDoneText(sum(1, 3, 2)))
+      .toBe('1 Umsatz eingelesen, gebucht ist noch nichts (3 Tage sind schon eingelesen, 2 Umsätze kommen mit dem Tagesauszug). Ordnen Sie ihn unter „Offene Umsätze“ zu und klicken Sie dort auf „Buchen“.')
+  })
+  test('Vorschau: dasselbe Wort, in der Zukunft', () => {
+    expect(importPreviewText(sum(4))).toBe('4 Umsätze werden eingelesen; gebucht wird dabei noch nichts.')
+    expect(importPreviewText(sum(1, 1, 1))).toBe('1 Umsatz wird eingelesen; gebucht wird dabei noch nichts (1 Tag ist schon eingelesen, 1 Umsatz kommt mit dem Tagesauszug).')
+  })
+  test('ohne neuen Umsatz: kein „übernommen“, kein nächster Schritt', () => {
+    expect(importPreviewText(sum(0, 1))).toBe('0 Umsätze werden eingelesen (1 Tag ist schon eingelesen).')
+    expect(importDoneText(sum(0, 1))).toBe('0 Umsätze eingelesen (1 Tag ist schon eingelesen).')
+    expect(importPreviewText(sum(0))).toBe('0 Umsätze werden eingelesen.')
+    expect(importDoneText(sum(0))).toBe('0 Umsätze eingelesen.')
+  })
+  test('ein schon eingelesener Auszug nennt den Tag', () => {
+    const known = { ...sum(0), alreadyImportedOn: '2026-11-13' }
+    expect(importPreviewText(known)).toBe('Dieser Auszug wurde am 13.11.2026 schon eingelesen.')
+    expect(importDoneText(known)).toBe('Dieser Auszug wurde am 13.11.2026 schon eingelesen.')
+  })
+})
 
 describe('Vorauswahl', () => {
   test('Vorschlag wird zur Vorauswahl', () => {

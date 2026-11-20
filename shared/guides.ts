@@ -513,14 +513,14 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Zinsen und andere Erträge der Anlage buchen Sie, wie Ihre Bank sie ausweist, mit der Art „Ertrag (Zinsen)“. Mit „Ändern“ an einer Zeile ändern Sie eine Buchung, mit „Löschen …“ entfernen Sie sie.' },
       { page: 'stammdaten', text: 'Verrechnen Sie die Kaution mit einer eigenen Forderung, wählen Sie die Art „Verrechnung“ und unter „Verrechnet mit“ den Grund: „Mietrückstand“, „Nachzahlung aus der Abrechnung“, „Schaden“ oder „Sonstiges“.' },
       { page: 'steuer', text: 'Haben Sie die Kaution früher als Mietzahlung erfasst, nennt die Seite Steuer sie unter „Ist das die Kaution?“. Mit „Als Kaution umbuchen“ wird aus der Mietzahlung ein Eingang der Kaution; die Monate, die sie gedeckt hat, sind danach wieder offen.' },
-      { page: 'stammdaten', text: 'Ist das Mietverhältnis beendet, zeigt das Fenster hinter „Kaution führen“ oben die „Aufstellung zum Auszug“, sobald es Buchungen gibt. Wollen Sie vorerst etwas zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung, tragen Sie „Einbehalt €“ und „Grund“ ein und klicken Sie auf „Einbehalt speichern“. „Aufstellung drucken“ druckt das Blatt für den Mieter.' },
+      { page: 'stammdaten', text: 'Ist das Mietverhältnis beendet, zeigt das Fenster hinter „Kaution führen“ oben die „Aufstellung zum Auszug“, sobald es Buchungen gibt. Wollen Sie vorerst etwas zurückhalten, etwa bis zur nächsten Nebenkostenabrechnung, tragen Sie „Einbehalt €“ und „Grund“ ein und klicken Sie auf „Einbehalt speichern“. „Aufstellung drucken“ druckt sie als Brief an den Mieter: mit Ihrem Absender, der Anschrift für den Schriftverkehr, Wohnung und Objekt im Betreff, Datum und Unterschriftszeile.' },
       { page: 'stammdaten', text: 'Zahlen Sie die Kaution aus, buchen Sie das mit der Art „Rückzahlung an den Mieter“.' },
     ],
     result: [
       'Den Stand rechnet Mietfuchs aus den Buchungen: Eingänge und Erträge erhöhen ihn, Verrechnungen und Rückzahlungen mindern ihn. Ist weniger eingegangen als vereinbart, steht die Kaution als „teilweise erhalten“ da. Ohne Buchungen gilt weiter der Stand, den Sie am Mietverhältnis gewählt haben.',
       'Mehr verrechnen oder auszahlen, als bis zu dem Tag eingegangen ist, lässt sich nicht buchen. Vor einem Datum nach heute und vor einer Verrechnung über den offenen Mietrückstand hinaus fragt das Fenster nach.',
       'Eingang, Ertrag und Rückzahlung stehen weder im Mietkonto noch in der Steuerübersicht. Eine Verrechnung mit Mietrückstand oder Nachzahlung legt im Mietkonto eine Zahlung an diesem Tag an, die wie jede Zahlung zählt; ändern lässt sie sich nur an der Kaution. Was Sie für einen Schaden oder Sonstiges einbehalten, ist eine Einnahme aus Vermietung; die Steuerübersicht nennt es nur mit dem Betrag, eintragen tun Sie es selbst.',
-      'Die Aufstellung zum Auszug nennt jede Buchung, den Einbehalt mit Grund und was auszuzahlen bleibt. Darunter steht, nur für Sie und nicht im Druck, das Ergebnis der letzten Nebenkostenabrechnung, auch einer getrennten Heizkostenabrechnung, und welche Abrechnung noch aussteht.',
+      'Die Aufstellung zum Auszug nennt jede Buchung, den Einbehalt mit Grund und was auszuzahlen bleibt; der gedruckte Brief fragt dann nach dem Konto für die Auszahlung oder nennt die letzten vier Stellen der beim Mietverhältnis hinterlegten IBAN. Der Brief zeigt den Stand von heute und wird nicht gespeichert. Fehlt Ihr Name in den Einstellungen und am Objekt, weist das Fenster darauf hin, denn der Brief hat dann weder Absender noch Unterschrift. Darunter steht, nur für Sie und nicht im Druck, das Ergebnis der letzten Nebenkostenabrechnung, auch einer getrennten Heizkostenabrechnung, und welche Abrechnung noch aussteht.',
       'Solange nach dem Auszug laut den Buchungen noch Geld bei Ihnen liegt, nennt das Cockpit es unter „Demnächst fällig“ als „Kaution abrechnen“.',
     ],
     example: 'Kaltmiete 800 €, vereinbart sind 2.400 € Kaution, das Dreifache. Der Mieter zahlt drei Raten zu 800 €; nach der zweiten liegen 1.600 € bei Ihnen, die Kaution ist teilweise erhalten. Mit der dritten Rate und 18,20 € Zinsen sind es 2.418,20 €. Nach dem Auszug verrechnen Sie 450 € Mietrückstand, es bleiben 1.968,20 €. Halten Sie bis zur nächsten Nebenkostenabrechnung 300 € zurück, bleiben 1.668,20 € auszuzahlen.',
@@ -536,7 +536,7 @@ const GUIDE_DATA = {
     gaps: [
       { text: 'Das Kautionskonto als Kontoauszug einlesen; Zinsen buchen Sie bis dahin von Hand.', issue: 285 },
       { text: 'Mietfuchs kennt keinen Ratenplan und erinnert nicht an eine ausstehende Rate; es rechnet auch keine Zinsen aus.' },
-      { text: 'Ein Anschreiben zur Abrechnung der Kaution fehlt noch; gedruckt wird nur die Aufstellung.' },
+      { text: 'Der Text des Briefs zur Aufstellung steht fest und lässt sich nicht bearbeiten. Er nennt, was gebucht und was einbehalten ist, und keine Frist.' },
     ],
     terms: ['deposit', 'paymentOrder', 'formerYearsRent', 'separateHeatingSettlement'],
   },
@@ -762,6 +762,38 @@ const GUIDE_DATA = {
       { text: 'Unter Linux hat Mietfuchs kein Programmfenster; dort öffnen Sie es im Browser.' },
     ],
     terms: ['signIn', 'pairingCode'],
+  },
+  // Datensicherung: Backup herunterladen, aufbewahren, wiederherstellen; der Unterschied zu den Sicherungen im Verlauf.
+  backup: {
+    group: 'operation',
+    title: 'Backup herunterladen, aufbewahren und wiederherstellen',
+    applies: 'Mietfuchs speichert alles auf Ihrem eigenen Rechner oder Gerät, nirgends sonst. Geht er kaputt, wird er gestohlen oder löschen Sie den Datenordner, sind die Daten weg, wenn es kein Backup an einem anderen Ort gibt. Das betrifft jeden, der Mietfuchs benutzt.',
+    steps: [
+      { page: 'einstellungen', text: 'Öffnen Sie in den Einstellungen die Karte „Daten & Sicherung“ und klicken Sie auf „⬇ Backup herunterladen (ZIP)“. Der Browser speichert eine Datei, deren Name mit mietfuchs-backup beginnt und das Datum trägt, meist im Ordner Downloads.' },
+      { text: 'Kopieren Sie die Datei auf einen Datenträger, der nicht in diesem Rechner steckt, etwa einen USB-Stick oder eine externe Festplatte, und bewahren Sie ihn getrennt vom Rechner auf. Ein Backup, das nur im Ordner Downloads liegt, geht mit dem Rechner verloren.' },
+      { page: 'einstellungen', text: 'Das Häkchen „Verlauf der Änderungen mitsichern“ setzen Sie nur, wenn das Backup auch den Verlauf mitnehmen soll. Er enthält gelöschte Angaben früherer Mieter; ein solches Backup geben Sie nicht weiter.' },
+      { page: 'einstellungen', text: 'Wiederherstellen, auch auf einem neuen Rechner mit frisch installiertem Mietfuchs: Klicken Sie in derselben Karte auf „⬆ Backup wiederherstellen …“, wählen Sie die ZIP-Datei und bestätigen Sie mit „Wiederherstellen“. Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.' },
+      { text: 'Einen Bedienfehler der letzten Tage nehmen Sie ohne Backup zurück: Auf der Seite Verlauf lässt sich eine Änderung zurücknehmen, und an jeder automatischen Sicherung steht „Zu diesem Stand zurückkehren …“.' },
+    ],
+    result: [
+      'Das Backup ist eine ZIP-Datei mit der Datenbank, allen hochgeladenen Belegen sowie Logo und Briefpapier. Die Karte „Daten & Sicherung“ nennt danach, wann zuletzt ein Backup heruntergeladen wurde; ob und wo Sie die Datei gespeichert haben, sieht Mietfuchs nicht.',
+      'Das Cockpit erinnert mit einem Hinweis, wenn es Daten gibt und noch kein Backup heruntergeladen wurde, das letzte zu lange her ist oder seither eine Abrechnung abgeschlossen wurde.',
+      'Nach dem Wiederherstellen lädt die Seite neu und zeigt einmal „Ihr Backup ist eingespielt“. Den Stand von vorher behält Mietfuchs als Sicherheitskopie mit dem Namen mietfuchs.sqlite.vor-restore im Datenordner.',
+      'Lässt sich eine Datei nicht einspielen, etwa weil der Download unvollständig war, sagt Mietfuchs das und ändert nichts an Ihren Daten.',
+    ],
+    example: 'Das Cockpit erinnert, wenn das letzte Backup älter als 30 Tage ist. Unabhängig davon legt Mietfuchs selbst höchstens alle 7 Tage eine Sicherung im Datenordner an und behält davon die 4 jüngsten; der Verlauf der Änderungen reicht 12 Monate zurück. Beides liegt auf demselben Rechner wie Ihre Daten.',
+    caveats: [
+      { text: 'Nicht im Backup stehen die API-Schlüssel externer KI-Dienste, das Passwort der Anmeldung, das Zertifikat für die verschlüsselte Verbindung und die automatischen Sicherungen aus dem Verlauf. Nach dem Wiederherstellen auf einem anderen Rechner tragen Sie den API-Schlüssel dort neu ein und legen das Passwort neu fest; ein gekoppeltes Programmfenster koppeln Sie neu.' },
+      { text: 'Zustimmungen (Übermittlung an einen KI-Dienst, Abfrage nach Updates) bringt ein Backup nicht mit. Es gelten die des Rechners, auf dem Sie es einspielen, auf einem neuen also keine.' },
+      { text: 'Die automatischen Sicherungen im Verlauf ersetzen kein Backup. Sie liegen im selben Datenordner wie Ihre Daten und gehen bei einem Defekt der Festplatte, einem Diebstahl oder dem Löschen des Ordners mit verloren. Sie helfen gegen einen Bedienfehler, das Backup gegen den Verlust des Rechners.' },
+      { text: 'Ein Backup enthält Namen, Anschriften, Bankverbindungen und Belege Ihrer Mieter und ist nicht verschlüsselt. Bewahren Sie es so sorgfältig auf wie Ihre Papierordner, und legen Sie es nur dann in einen Speicher im Internet, wenn Sie es vorher selbst verschlüsseln.' },
+      { text: 'Ein Backup aus einer neueren Version von Mietfuchs lässt sich in einer älteren nicht einspielen. Aktualisieren Sie dann zuerst Mietfuchs.' },
+    ],
+    gaps: [
+      { text: 'Mietfuchs legt ein Backup nicht von selbst an einem anderen Ort ab und verschlüsselt es nicht; Herunterladen und Aufbewahren bleiben Ihre Aufgabe.' },
+      { text: 'Einzelne Angaben lassen sich aus einem Backup nicht zurückholen; eingespielt wird immer der ganze Stand.' },
+    ],
+    terms: ['backup'],
   },
 } satisfies Record<string, Guide>
 

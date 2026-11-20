@@ -48,8 +48,9 @@ const SERVER = path.join(ROOT, 'server', 'src', 'index.ts')
 const REPO = 'speedone/mietfuchs'
 
 // Die Fassungen: 0.3.1 und 0.7.1 mit db.json (vor der Datenbank), 0.9.0 mit Datenbank und Umstieg, 0.12.0 mit
-// mehreren Objekten und Zeiträumen, 0.14.1 als letzte Programmdatei vor dem Fenster.
-const VERSIONS = ['0.3.1', '0.7.1', '0.9.0', '0.12.0', '0.14.1']
+// mehreren Objekten und Zeiträumen, 0.13.1 als die Fassung, die die Kompatibilitätszusage ausdrücklich nennt (#447),
+// 0.14.1 als letzte Programmdatei vor dem Fenster.
+const VERSIONS = ['0.3.1', '0.7.1', '0.9.0', '0.12.0', '0.13.1', '0.14.1']
 // Grenzen für die Downloads: die Programmdateien sind 40 bis 60 MB groß
 const DOWNLOAD_MAX_BYTES = 150 * 1024 ** 2
 const DOWNLOAD_TIMEOUT_MS = 180_000

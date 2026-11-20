@@ -504,6 +504,12 @@ export type UpcomingDeadlineKind = UpcomingDeadline['kind']
 // Einwendungsfrist; die Oberfläche rechnet „in N Tagen“ gegen `today`, damit Server und Anzeige denselben Tag meinen.
 export type UpcomingDeadlines = { today: string; until: string; items: UpcomingDeadline[] }
 
+// Wann zuletzt ein Backup heruntergeladen wurde (`GET /api/backup/status`, server/src/backupMark.ts). `reminder`: Das
+// Cockpit erinnert, wenn es Daten gibt und noch nie ein Backup heruntergeladen wurde (`never`), das letzte älter als die
+// feste Spanne ist (`old`) oder seither eine Abrechnung abgeschlossen wurde (`closed`). Das Alter in Tagen rechnet die Oberfläche selbst, in Kalendertagen.
+export type BackupReminder = 'never' | 'old' | 'closed'
+export type BackupStatus = { lastDownloadAt: string | null; reminder: BackupReminder | null }
+
 // Die Art einer Zahlung (#280). `rent`: Miete (Kaltmiete, Vorauszahlungen, Pauschale), die das
 // Mietkonto von Januar an auf das Monats-Soll verteilt. `settlement`: Nachzahlung oder Guthaben aus
 // der Nebenkostenabrechnung, ein Guthaben negativ; das Mietkonto führt sie gesondert. Die Kaution
@@ -3863,7 +3869,7 @@ export type BankImportDecision =
 export type BankImportPreview = {
   questions: BankImportQuestion[]
   findings: { where: string; message: string }[]
-  summary: { stored: number; knownDays: number; pending: number }
+  summary: { stored: number; knownDays: number; pending: number; alreadyImportedOn?: string }
   sentence: string
   ready: boolean
   token: string

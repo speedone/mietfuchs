@@ -27,21 +27,33 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 
 // Der Vorschlag aus der Antwort des Modells: Zähler nach der gelesenen Nummer, Datum vom Bild, sonst aus dem Foto,
 // sonst heute; angehakt, solange die Ampel nicht rot ist.
+// Das Datum aus der Auswertung als Kalendertag 'JJJJ-MM-TT' oder `null`: Der Server nimmt als Ablesedatum nur einen
+// Tag, den es gibt. Deutsch geschrieben (12.03.2025) wird umgewandelt, alles andere gilt als nicht erkannt.
+function imageDay(text: string | null | undefined): string | null {
+  const t = (text ?? '').trim()
+  const german = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(t)
+  const iso = german ? `${german[3]}-${(german[2] ?? '').padStart(2, '0')}-${(german[1] ?? '').padStart(2, '0')}` : t
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const d = new Date(`${iso}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null
+}
+
 export function initialCandidate(r: MeterReadingExtraction, exifDate: string | null, meters: Meter[], readings: Reading[]): ReadingCandidate {
   const matchedMeterId = autoMatchMeter(r.meterNumber ?? null, meters) ?? ''
   const value = r.value ?? null
+  const onImage = imageDay(r.dateOnImage)
   const sc = scoreReading({
     meterNumber: r.meterNumber ?? null,
     value,
-    hasDate: !!(r.dateOnImage || exifDate),
+    hasDate: !!(onImage || exifDate),
     matchedMeterId: matchedMeterId || null,
     readings,
   })
   return {
     meterNumber: r.meterNumber ?? '',
     value: value != null ? quantityInput(value) : '',
-    date: r.dateOnImage || exifDate || todayISO(),
-    hasDate: !!(r.dateOnImage || exifDate),
+    date: onImage || exifDate || todayISO(),
+    hasDate: !!(onImage || exifDate),
     matchedMeterId,
     replacement: sc.replacementGuess,
     oldEndValue: sc.suggestedOldEndValue != null ? quantityInput(sc.suggestedOldEndValue) : '',

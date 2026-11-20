@@ -8,7 +8,7 @@ import { CALIBRATION_AMENDED_ON } from '../../shared/law/messev.ts'
 import { hasKnownUnits, knownUnit, meterUnitOptions, unitKey, unitLabel, unitProblem } from '../../shared/meterUnits.ts'
 import { METER_TYPE_LABELS } from '../../shared/wording.ts'
 import type { Unit } from './types'
-import { APARTMENT_METER_TYPES, flatIdsWithRooms } from './unitForm'
+import { APARTMENT_METER_TYPES, DELETE_UNDO, flatIdsWithRooms } from './unitForm'
 import type { Problem } from './formProblems'
 import { parseYearText } from './yearText'
 import { YEAR_MAX, YEAR_MIN } from './monthText'
@@ -351,4 +351,16 @@ export function meterUnitChoices<U extends Pick<Unit, 'id' | 'parentUnitId'>>(un
   if (APARTMENT_METER_TYPES.includes(type)) return [...units]
   const flats = flatIdsWithRooms(units)
   return units.filter((u) => u.id === selected || !flats.has(u.id))
+}
+
+// Die Löschfrage eines Zählers: Vorher stand nur „alle zugehörigen Ablesungen“. Die Tage der Ablesungen hat die Seite
+// schon geladen.
+export function meterDeleteMessage(readingDates: readonly string[]): string {
+  if (readingDates.length === 0) return `Der Zähler hat keine Ablesungen. ${DELETE_UNDO}`
+  // Nur lesbare Tage nennen ein Jahr; ein krummes Datum im Bestand („1.1.2024“) zählt mit, aber ohne Jahr.
+  const years = [...new Set(readingDates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).map((d) => d.slice(0, 4)))].sort()
+  const span = years.length === 0 ? '' : years.length === 1 ? ` aus dem Jahr ${years[0]}` : ` aus den Jahren ${years[0]} bis ${years[years.length - 1]}`
+  const n = readingDates.length
+  return `Mit dem Zähler ${n === 1 ? 'wird 1 Ablesung' : `werden ${n} Ablesungen`}${span} gelöscht. ` +
+    `Der Verbrauch dieser Zeit lässt sich danach nicht mehr berechnen; abgeschlossene Abrechnungen bleiben, wie sie sind. ${DELETE_UNDO}`
 }

@@ -971,7 +971,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/alte-fassungen
-          key: mietfuchs-alte-fassungen-v1-0.3.1-0.7.1-0.9.0-0.12.0-0.14.1
+          key: mietfuchs-alte-fassungen-v1-0.3.1-0.7.1-0.9.0-0.12.0-0.13.1-0.14.1
       - name: Praxislauf
         run: node scripts/fenster-umzug-praxislauf.mjs --cache "$RUNNER_TEMP/alte-fassungen" --out umzug-bericht
       - uses: actions/download-artifact@v8

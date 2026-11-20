@@ -648,7 +648,8 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   Positionen. Hochladen nimmt `propertyId`/`year`; ein unbekanntes Objekt oder Jahr wird abgelehnt
   und die Datei entfernt, ein Fehler der Datenbank verhindert das Hochladen nicht.
 - **Ein Beleg aus dem Posteingang wird nicht erneut hochgeladen**: KI-Routen nehmen `existingFile`
-  (`path.basename`), ein Abbruch löscht ihn nicht.
+  (`path.basename`), ein Abbruch löscht ihn nicht. Eingang und Kosten gehen immer diesen Weg: erst `/api/upload`,
+  dann die Auswertung des gespeicherten Belegs (ai/CLAUDE.md, „Erst speichern, dann auswerten“).
 - **Zuordnen an eine bestehende Position** (`attachChoices`, `amountCheckBody`): passende Positionen
   oben, danach „Betrag prüfen“ (eine übernommene Position trägt einen Schätzbetrag). Bei `amounts`,
   `external`, einem Teil einer aufgeteilten Rechnung (`amountCheckIsPart`, #455: sein Betrag ist nur der Anteil des
@@ -889,6 +890,13 @@ Cockpit und Hinweis der Steuer.
   abgerechnete Heizperioden einer Anlage, die die Wohnung versorgt (Weg d), als `lastHeating` und „Heizkosten …“.
   Dazu `openRentCents` aus dem Mietkonto des laufenden Jahres (Endsaldo zum 31.12. als Schuld, auch noch nicht Fälliges): Das
   Seitenfenster fragt nach, bevor eine Verrechnung mit Miete darüber hinausgeht.
+- **Gedruckt ist die Aufstellung ein Brief** (client/src/depositLetter.ts, components/DepositLetter.tsx): `LetterHead`
+  mit Absender (`effectiveLandlord`), Anschrift (`recipientLines`), Ort und Datum, Betreff mit Wohnung und Objekt, die
+  Aufstellung, ein Satz zum Ergebnis, Gruß, Unterschrift; Logo und Briefpapier wie beim Schreiben der Mieterhöhung.
+  **Fester Text, nichts eingefroren, keine Bausteine in der Datenbank**; er nennt keine Norm, keine Frist und kein
+  „ich/wir“. Bleibt etwas auszuzahlen, fragt er nach dem Konto oder nennt die letzten vier Stellen von `Tenancy.iban` (nie die ganze); eine Nachforderung kennt die
+  Aufstellung nicht (nie unter 0), deshalb steht das Konto des Vermieters nicht darauf. Ohne Namen des Vermieters warnt
+  das Fenster (`depositSenderMissing`), gedruckt wird trotzdem.
 - **Cockpit und Steuer**: „Kaution abrechnen“ in „Demnächst fällig“ (#190) je Mietverhältnis mit erreichtem Ende,
   Buchungen und Stand über 0 (`depositsAfterMoveOut` in shared/deposit.ts), ohne Frist; der Sprung öffnet das
   Seitenfenster (`{ kind: 'deposit' }` in client/src/focus.ts). Die Steuer nennt,
@@ -996,7 +1004,9 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   unbekannter Herkunft sind Rückfragen, Ausgänge an Unbekannt privat. camt.054 zerlegt nur eine gespeicherte,
   unverknüpfte Sammelbuchung desselben Tags, vollständig und auf dem Mischkonto nur mit Mieter-Posten. Routen
   `POST /api/bank/import/plan` (Trockenlauf) und `POST /api/bank/import` (neu geplant in der Schreibschlange, Marke,
-  409 mit neuer Vorschau); die Datei bleibt im Arbeitsspeicher (eigener multer, 20 MB).
+  409 mit neuer Vorschau); die Datei bleibt im Arbeitsspeicher (eigener multer, 20 MB). Die Oberfläche zeigt nicht
+  `sentence`, sondern baut Vorschau und Mitteilung aus `summary` („eingelesen“, nicht „übernommen“; `alreadyImportedOn`
+  nur beim schon eingelesenen Auszug).
   **Vorschlag zur Rückfrage** (`bank/importSuggest.ts`, Nachtrag 13.11.): Passen Name (Wörter des Mieternamens ohne
   Anrede, Umlaute umschrieben, in beliebiger Reihenfolge) und Betrag (Monats-Soll des Buchungsmonats, des Vor- oder
   Folgemonats) zu genau einem Mietverhältnis, trägt die Frage `suggestion`; der Client belegt die Antwort damit vor.
@@ -1010,8 +1020,12 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   Kautionsbuchung gleichen Betrags in 7 Tagen wird verknüpft (eine Verrechnung aus der Kaution nie), eine erfasste
   Zahlung gleichen Betrags bis 15 Tage entfernt macht gelb und geht vor; eine Rate der Kaution (ein Drittel oder
   „Kaution“ im Zweck, in den ersten 100 Tagen, solange Kaution laut Buchungen offen und nicht laut Stammdaten erhalten,
-  Betrag ungleich dem Soll dieses und des Folgemonats, nicht bei Bürgschaft oder Verpfändung) wird gelb als Kaution vorgeschlagen. Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
-  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft.
+  Betrag ungleich dem Soll dieses und des Folgemonats, nicht bei Bürgschaft oder Verpfändung) wird gelb als Kaution vorgeschlagen. Ein
+  **Ausgang mit „Kaution“ im Zweck** ist bei vereinbarter Geldkaution gelb „Kaution zurückgezahlt“, auch ohne Buchung,
+  aber nicht, wenn laut Buchungen nichts mehr beim Vermieter liegt
+  (sonst griffe der allgemeine Rest „Auszahlung an den Mieter, etwa ein Guthaben“). Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
+  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft; fehlt jeder Eingang (auch im selben
+  Lauf), nennt die Ablehnung den Weg über „Kaution führen“, und dass „erhalten“ in den Stammdaten keine Buchung ist.
   **Nachzahlung und Guthaben am Betrag** (#308, `bank/settlementMatch.ts`, rein): offen ist je Mietverhältnis und
   **aktuellem** Abschluss (Objekt und getrennte Heizkostenabrechnung, nie `closed_settlement_history`, nie die
   Live-Berechnung) der Saldo abzüglich der Zahlungen der Art „Abrechnung“, abgeleitet, nie gespeichert. Eine Zahlung trägt
@@ -1112,6 +1126,23 @@ geänderte**: Eine gespeicherte ungültige, die unverändert mitkommt, hindert d
 Backup, Wiederherstellen, Umstieg und Validator prüfen bewusst nicht (krumm, nicht kaputt). Leer
 ist erlaubt. Das Cockpit nennt ungültige IBANs des gewählten Objekts als ruhigen Hinweis
 ([client/src/ibanCheck.ts](../../client/src/ibanCheck.ts)).
+
+## Kalendertage und Verweise beim Speichern
+
+Nach dem Muster der IBAN: `requireDay` in [db/repository.ts](db/repository.ts) lehnt in den Wächtern der Sammelrouten
+einen **neu gesetzten oder geänderten** Tag ab, den es nicht gibt (400 mit Satz): Einzug (Pflicht), Auszug und
+Vertragsdatum am Mietverhältnis, Datum einer Zahlung und einer Ablesung (Pflicht, nur die Form), Einbautag eines Zählers.
+Ebenso ein Auszug vor dem Einzug, wenn eines der beiden Daten neu oder geändert ist (derselbe Tag ist erlaubt); das
+Formular meldet es vorher am Feld (`tenancyRequired`). Was unverändert mitkommt, bleibt (krumm, nicht kaputt); Backup,
+Wiederherstellen, Umstieg und Validator prüfen nicht. Ein leerer Auszug wird als `null` gespeichert. Ein neuer oder
+geänderter Verweis auf eine Wohnung, ein Mietverhältnis oder einen Zähler, den es nicht gibt, und eine negative
+Wohnfläche bekommen dort einen Satz statt des Befunds der Datenbank (`goneText`). Ein Tag liegt in den Jahren 1900 bis
+2100 (wie `YEAR_MIN`/`YEAR_MAX` der Oberfläche); eine Angabe, die kein Text ist, ist eine 400 und wird nicht still zu
+„fehlt“ (`dayInput`). **Ein schon gespeicherter Einzug, aus dem sich kein Tag bilden lässt, wird beim Rechnen nicht
+aufgefangen und nicht geraten**: `snapshotFor` und `/api/upcoming` antworten vorher mit 409 und einem Satz, der
+Mietverhältnis und Wohnung nennt (`requireTenancyStarts` in [snapshot.ts](snapshot.ts)); die Listen der Stammdaten
+bleiben erreichbar, dort wird er nachgetragen. Das Datum eines Zählerfotos aus der KI-Auswertung kommt als Kalendertag
+oder gar nicht an (`dayFromModel` in extract.ts; deutsch geschrieben wird umgewandelt).
 
 ## Rechenweg (#114)
 

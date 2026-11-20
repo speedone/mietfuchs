@@ -277,10 +277,11 @@ export const PRINT_VIEWS = [
   {
     name: 'kaution',
     label: 'Kaution, Aufstellung zum Auszug (Stammdaten)',
-    // Der ausgezogene Mieter des Lindenwegs: erhalten, verzinst, mit einem Schaden verrechnet, ausgezahlt. Gedruckt wird
-    // nur die Notiz einer Verrechnung (depositSettlement.ts), deshalb steht das lange Wort dort, doppelt: einmal
-    // passt es in die drei Spalten und prüfte nichts (Gegenprobe ohne softBreak); der Zweck „Schaden“
-    // berührt weder Mietkonto noch Steuer.
+    // Der ausgezogene Mieter des Lindenwegs: erhalten, verzinst, mit einem Schaden verrechnet, zum Teil ausgezahlt, der
+    // Rest zum Teil einbehalten. Gedruckt wird ein Brief (DepositLetter.tsx) mit der Aufstellung als Tabelle. Aus den
+    // Notizen steht dort nur die einer Verrechnung (depositSettlement.ts), deshalb steht das lange Wort dort, doppelt:
+    // einmal passt es in die drei Spalten und prüfte nichts (Gegenprobe ohne softBreak); der Zweck „Schaden“
+    // berührt weder Mietkonto noch Steuer. Dazu das lange Wort im Grund des Einbehalts (Fließtext des Briefs).
     async setup(api, ids, stock) {
       /** @type {any[]} */
       const tenancies = await api.get(`/api/tenancies?property=${ids.haus}`)
@@ -290,7 +291,8 @@ export const PRINT_VIEWS = [
       await entry({ date: '2021-08-20', kind: 'received', amountCents: 156000, note: 'Überweisung vor Einzug' })
       await entry({ date: `${stock.PREV}-12-31`, kind: 'interest', amountCents: 1870 })
       await entry({ date: `${stock.YEAR}-08-15`, kind: 'applied', purpose: 'damage', amountCents: 20000, note: `Schaden laut Wohnungsabnahme ${LONG_WORD}${LONG_WORD}` })
-      await entry({ date: `${stock.YEAR}-08-15`, kind: 'refunded', amountCents: 137870, note: 'Rückzahlung nach Wohnungsabnahme' })
+      await entry({ date: `${stock.YEAR}-08-15`, kind: 'refunded', amountCents: 100000, note: 'Rückzahlung nach Wohnungsabnahme' })
+      await api.put(`/api/tenancies/${hartmann.id}?property=${ids.haus}`, { depositHoldCents: 20000, depositHoldNote: `Nebenkosten ${stock.YEAR} ${LONG_WORD}` })
     },
     async open(page, ids) {
       await chooseProperty(page, ids.haus, 'Lindenweg 12')
@@ -302,6 +304,7 @@ export const PRINT_VIEWS = [
       const deposit = await shown(page.locator('dialog[open].drawer'), 'Fenster „Kaution“')
       await clickButton(deposit, 'Aufstellung drucken', 'Knopf „Aufstellung drucken“')
       await untilPrinted(page, 'Kaution')
+      await attached(page.locator('.deposit-print .letter'), 'Brief der Kaution im Dokument')
     },
   },
   {

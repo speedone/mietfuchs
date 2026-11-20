@@ -8,7 +8,7 @@
 // antwortet dann, wie es mag.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { documentMaterial, numberFromModel, rawFromAnswer, toExtraction } from '../src/extract.ts'
+import { dayFromModel, documentMaterial, numberFromModel, rawFromAnswer, toExtraction } from '../src/extract.ts'
 
 test('Zahlen aus der Antwort: Zahlen kommen unverändert an', () => {
   assert.equal(numberFromModel(12345), 12345)
@@ -181,4 +181,20 @@ test('Material eines Belegs: Textebene vor Bildern, Scan mit höchstens vier Sei
   assert.match(scan.suffix, /Die Rechnung ist als Bild\(er\) angehängt/)
   assert.throws(() => documentMaterial('/gibt/es/nicht.pdf', 'application/pdf', {}, { text: 'X', noun: 'Die Rechnung' }), /keine lesbare Textebene/)
   assert.throws(() => documentMaterial('/gibt/es/nicht.txt', 'text/plain', {}, { text: 'X', noun: 'Die Rechnung' }), /Dateityp text\/plain wird nicht unterstützt/)
+})
+
+// Durchsicht zu den Datumsprüfungen: Das Modell schreibt das Datum auf dem Zählerfoto nicht immer als JJJJ-MM-TT. Ein
+// deutsch geschriebenes wird umgewandelt, alles andere gilt als nicht gelesen (dann nimmt die Oberfläche das Datum des
+// Fotos oder heute und weist darauf hin), statt dass die Übernahme der Ablesung am Server scheitert.
+test('Datum auf dem Zählerfoto: ISO bleibt, deutsch geschrieben wird umgewandelt, alles andere gilt als nicht gelesen', () => {
+  assert.equal(dayFromModel('2025-03-12'), '2025-03-12')
+  assert.equal(dayFromModel(' 12.03.2025 '), '2025-03-12')
+  assert.equal(dayFromModel('1.3.2025'), '2025-03-01')
+  assert.equal(dayFromModel('12.03.25'), null)
+  assert.equal(dayFromModel('31.02.2025'), null)
+  assert.equal(dayFromModel('2025-02-31'), null)
+  assert.equal(dayFromModel('März 2025'), null)
+  assert.equal(dayFromModel(''), null)
+  assert.equal(dayFromModel(20250312), null)
+  assert.equal(dayFromModel(null), null)
 })

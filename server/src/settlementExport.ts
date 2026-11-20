@@ -17,6 +17,11 @@ import { csvField, euro, textField } from './taxReceipts.ts'
 export type ExportableSettlement = Pick<Settlement, 'period' | 'deadline' | 'totalCostsCents' | 'landlord' | 'closed' | 'statements'> & Partial<Pick<Settlement, 'heating' | 'notices' | 'letters'>>
 
 export const EXPORT_FORMAT = 'mietfuchs-abrechnung'
+// **Wann die Fassung steigt** (Kompatibilitätszusage ab 1.0, #447, docs/daten-backup.md „Exporte und ihre Form“):
+// Vorhandene Felder behalten Namen, Art und Bedeutung. Ein neues Feld ist keine neue Fassung; wer den Export liest,
+// ignoriert unbekannte Felder. Entfernen, Umbenennen oder eine andere Bedeutung verlangen `EXPORT_VERSION` + 1 und einen
+// Eintrag im CHANGELOG. Texte in Feldern (`basisText`, `keyLabel`, Sätze der Heizungsblöcke) sind Anzeige und nicht
+// Teil der Zusage. export-zusage.test.ts hält die Form gegen eine eingecheckte Fassung und sagt, welcher Fall vorliegt.
 export const EXPORT_VERSION = 1
 
 export type ExportRow = {
