@@ -17,14 +17,14 @@ import { useOptionalPeriod } from '../period'
 import { localToday } from '../periodForm'
 import { plantRules, servesUnit } from '../../../shared/heatingPeriod.ts'
 import { ApiError } from '../api'
-import { useFocusTarget, type FocusProps } from '../focus'
+import { revealJump, useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, unitValueFields, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
   asksContracting, asksSwitch, CONTRACTING_LABEL, contractingSwap,
   asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
-  SELF_UNTIL_SWITCH,
+  SELF_UNTIL_SWITCH, heatingSetUpMessage,
 } from '../heatingForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 
@@ -59,6 +59,17 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   // „Hier beheben →“ an einem Hinweis zur Heizanlage (Heizung PR 5): die Karte ins Bild holen.
   const cardRef = useRef<HTMLDivElement>(null)
   useFocusTarget(focus, 'heatingPlant', plants, (p) => p.id, () => cardRef.current?.scrollIntoView?.({ block: 'start' }), onFocusDone)
+  // „Heizung einrichten →“ ohne Anlage (leere Kennung, notices.ts) und der Leerzustand der Seite Heizkosten: die Karte
+  // hervorheben, ins Bild holen und den Fokus auf „Heizung einrichten“ setzen, sonst auf ihre Überschrift.
+  const [setUpJump, setSetUpJump] = useState(0)
+  useEffect(() => {
+    if (focus?.kind !== 'heatingPlant' || focus.id !== '') return
+    setSetUpJump((n) => n + 1)
+    onFocusDone?.()
+  }, [focus, onFocusDone])
+  useEffect(() => {
+    if (setUpJump > 0) revealJump(cardRef.current)
+  }, [setUpJump])
 
   const load = useCallback(async () => {
     setPlants(await api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)))
@@ -197,7 +208,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       return
     }
     toast(created
-      ? (first ? 'Heizung eingerichtet. An Ihren Beträgen ändert sich nichts.' : 'Weitere Heizanlage angelegt. Ordnen Sie ihre Heizpositionen auf der Seite Kosten zu.')
+      ? (first ? heatingSetUpMessage(saved) : 'Weitere Heizanlage angelegt. Ordnen Sie ihre Heizpositionen auf der Seite Kosten zu.')
       : back ? 'Heizung gespeichert. Der eigene Anfangsbestand ist entfernt; der Restbestand der bisherigen Heizanlage ist jetzt ihr Anfangsbestand.' : 'Heizung gespeichert.')
   }
 
@@ -292,7 +303,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   }
 
   return (
-    <div className="card" ref={cardRef}>
+    <div className={setUpJump > 0 ? 'card focus-target' : 'card'} ref={cardRef}>
       {/* Eine weitere Anlage legt der Kopf an, oben rechts wie jede Listenaktion (#346 Schritt 7b). */}
       <CardHeader title={<Term id="heatingSystem">Heizung</Term>} aside={plants.length > 0 ? <button className="btn secondary" onClick={openNew}>+ Heizanlage anlegen</button> : undefined} />
       {!form && !swap && <ErrorSummary errors={errors} />}
@@ -306,7 +317,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             Optional. Wenn Sie hier angeben, womit geheizt wird und wer abrechnet, sagt die Abrechnung, ob Mieter wegen nicht
             fernablesbarer Geräte kürzen dürfen. An Ihren Beträgen ändert sich dadurch nichts.
           </p>
-          <button className="btn secondary" onClick={openNew}>Heizung einrichten</button>
+          <button className="btn secondary" data-jump-focus="" onClick={openNew}>Heizung einrichten</button>
         </>
       )}
       {plants.map((p) => (
