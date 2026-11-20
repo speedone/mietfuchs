@@ -101,6 +101,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   CO₂-Aufteilung) und Lindenweg mit Logo und Briefpapier (dann druckt die Seite ohne Rand, erlaubt ist die ganze
   Seitenbreite), dazu jede andere Druckansicht aus [print-width-views.mjs](print-width-views.mjs): Ableseformular,
   Kaution, monatliche Information, CO₂-Blatt, E-Rechnung, getrennte Heizkostenabrechnung (Weg d), Ableseergebnis, Steuer.
+  Die Mieterhöhung läuft dazu ein zweites Mal mit Briefpapier (`mieterhoehung-briefpapier`, Ränder oben 42 und unten
+  38 mm): Das Schreiben hat mehrere Seiten, und auf jeder steht aller Text zwischen den Rändern (`band`; rot am Stand
+  davor: Seite 1 bis 294,5 mm, Seite 2 ab 4 mm).
   Deren `setup` legt eigene Objekte an („Ulmenweg 7“, „Erlenstraße 9“), damit die Abrechnung der beiden Objekte des
   Beispielbestands gleich bleibt; `open` bedient die Oberfläche bis `window.print()` (allein aufrufbar: `node scripts/print-width-views.mjs --only <name>`). Je
   Fall zwei Prüfungen: im Medium print bei einem Fenster so breit wie der Satzspiegel ragt kein sichtbares Element hinaus

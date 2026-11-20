@@ -40,6 +40,8 @@ import { CODE_LENGTH, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, createSessions
 import { DEFAULT_PORTS } from '../src/instanceGuard.ts'
 import { depositLimit, depositProblem, depositState } from '../../shared/deposit.ts'
 import type { DepositEntry } from '../../shared/types.ts'
+import { planRentIncrease } from '../src/rentIncrease.ts'
+import { rentSenderWarning } from '../../shared/rentIncreaseLetter.ts'
 import { fingerprintOf, type BankEntry } from '../src/bank/statement.ts'
 import { planBankImport } from '../src/bank/importPlan.ts'
 import { SAME_PAYMENT_DAYS, suggest, type MatchContext } from '../src/bank/match.ts'
@@ -56,7 +58,7 @@ const CLOSED_ISSUES: readonly number[] = [97, 99, 210, 218]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'deposit', 'bankStatement', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'deposit', 'rentIncrease', 'bankStatement', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -553,6 +555,39 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     const payout = Math.max(0, after.balanceCents) - Math.min(hold, Math.max(0, after.balanceCents))
     inOrder(GUIDES.deposit.example, [eur(80000), eur(limit), eur(80000), eur(afterTwo.balanceCents), eur(1820), eur(full.balanceCents), eur(45000), eur(after.balanceCents), eur(hold), eur(payout)], 'deposit')
     assert.equal(payout, 166820)
+  },
+  // #191: Höchstbetrag, Kappungsgrenze und Fristen mit der Rechnung des Servers (rentIncrease.ts), der Zugang an einem
+  // Tag, dessen Zustimmungsfrist an einem Werktag endet (sonst nennte die Rechnung zwei Enden, § 193 BGB).
+  rentIncrease: () => {
+    const plan = planRentIncrease({
+      today: '2026-10-15',
+      tenancy: { id: 't', start: '2020-01-01', end: null, baseRents: [{ from: '2020-01', monthlyCents: 50000 }], rentKind: 'free', rentIncreaseExcluded: false },
+      unit: { areaM2: 60 },
+      property: { rentCapReduced: false, state: 'BY' },
+      request: { kind: 'comparison', receivedOn: '2026-10-15', allStepsEntered: true, residential: true, noThirdPartyFunds: true, comparisonCentsPerM2: 1100 },
+    })
+    assert.equal(plan.state, 'possible', plan.reasons.join(' '))
+    if (!plan.cap || !plan.comparison || !plan.consent || plan.newCents === null || plan.effectiveFrom === null) return assert.fail('Rechnung unvollständig')
+    assert.equal(plan.consent.consentEnd, plan.consent.consentEndOnWorkday, 'das Beispiel soll ohne § 193 BGB auskommen')
+    assert.equal(plan.newCents, Math.min(plan.cap.limitCents, plan.comparison.rentCents))
+    assert.equal(plan.effectiveFrom, '2027-01')
+    inOrder(GUIDES.rentIncrease.example, [
+      eur(50000), '60 m²', eur(1100), eur(plan.comparison.rentCents), `${plan.cap.percent} %`, eur(plan.cap.baseCents), eur(plan.cap.limitCents),
+      '15.10.2026', plan.consent.consentEnd.split('-').reverse().join('.'), 'Januar 2027', eur(plan.newCents),
+    ], 'rentIncrease')
+    const all = JSON.stringify(GUIDES.rentIncrease)
+    // Was die Anleitung zum Absender sagt, ist die Warnung der Oberfläche: kein Verbot, und beide Auswege.
+    assert.ok(rentSenderWarning('', false), 'ohne Namen eine Warnung')
+    assert.equal(rentSenderWarning('', true), null, 'mit Briefpapier nicht')
+    const sender = [...GUIDES.rentIncrease.steps.map((x) => x.text), ...GUIDES.rentIncrease.caveats.map((x) => x.text)].filter((x) => /Name des Vermieters|Namen des Vermieters/.test(x)).join(' ')
+    assert.match(sender, /warnt/)
+    assert.match(sender, /von Hand/)
+    assert.doesNotMatch(all, /legt Mietfuchs (ohne Namen des Vermieters )?kein Schreiben an|Ohne ihn legt Mietfuchs kein Schreiben an/)
+    assert.match(GUIDES.rentIncrease.example, /für Ihre Gemeinde/)
+    assert.doesNotMatch(all, /Verordnung der Gemeinde/, 'die Verordnung erlässt die Landesregierung (§ 558 Abs. 3 Satz 3 BGB)')
+    assert.match(all, /Schweigen ist keine Zustimmung/)
+    assert.doesNotMatch(all, /sollten Sie klagen|klagen Sie|empfehlen/i, 'kein Rat zur Klage')
+    assert.match(GUIDES.rentIncrease.caveats.map((c) => c.text).join(' '), /Auslegung/)
   },
   // #188: derselbe Tag auf einem Mischkonto durch den Plan des Imports (Tagessumme, gespeicherte Umsätze) und die
   // Vorschläge durch match.ts (grün über IBAN und Soll, kein Vorschlag bei zwei laufenden Mietverhältnissen).
