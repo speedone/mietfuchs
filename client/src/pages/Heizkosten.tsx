@@ -143,6 +143,9 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
       )}
       {(data?.plants ?? []).map((plant) => (
         <div key={plant.id} {...jumpAt(plant.id)}>
+          {/* Die Überschrift des Bereichs, auf der der Fokus nach „Hier beheben →“ steht (Durchsicht): Sie nennt die Anlage.
+              Bei einer einzigen Anlage nur für Vorleseprogramme, die Karten darunter nennen sie ohnehin. */}
+          <h2 className={(data?.plants.length ?? 0) > 1 ? 'section-title' : 'sr-only'} data-jump-focus="">{plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}</h2>
           <>
             {/* #341 M8: ein Satz, was zu tun ist. Ohne Lieferung teilt Mietfuchs die CO₂-Kosten nicht auf, auch nicht bei der
                 eigenen Heizkostenabrechnung (calc.ts, `ownSplit`). Den Weg von Hand (Gutschrift mit demselben

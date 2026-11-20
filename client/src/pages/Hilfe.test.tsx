@@ -639,6 +639,7 @@ test('Anleitung ohne Lücke: der Abschnitt sagt es, statt leer zu stehen', async
   const section = screen.getByRole('heading', { name: 'Was Mietfuchs (noch) nicht kann' }).closest('section')
   expect(section?.textContent).toMatch(/Für diesen Fall ist keine Lücke bekannt\./)
   expect(section?.textContent).not.toMatch(/geplant in/)
+  expect(section?.querySelector('ul')).toBeNull()
 })
 
 test('Lücke mit offenem Issue: „geplant in“ mit dem Link aufs Issue', async () => {

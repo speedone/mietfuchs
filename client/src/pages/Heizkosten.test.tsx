@@ -201,6 +201,11 @@ test('Sprungziel: der Bereich der betroffenen Anlage ist hervorgehoben, das Ziel
   await waitFor(() => expect(document.querySelector('[data-jump="heatingCosts:hp2"]')?.classList.contains('focus-target')).toBe(true), { timeout: 5000 })
   expect(document.querySelector('[data-jump="heatingCosts:hp1"]')?.classList.contains('focus-target')).toBe(false)
   expect(document.querySelector('[data-jump="heatingCosts:hp2"]')?.contains(document.activeElement)).toBe(true)
+  // Durchsicht: Der Fokus steht auf der Überschrift mit dem Namen der Anlage am Anfang des Bereichs, nicht auf der
+  // Überschrift der ersten Karte darin.
+  expect(document.activeElement?.tagName).toBe('H2')
+  expect(document.activeElement?.textContent).toBe('Heizanlage „Hinterhaus“')
+  expect(document.querySelector('[data-jump="heatingCosts:hp2"]')?.firstElementChild).toBe(document.activeElement)
   expect(done).toHaveBeenCalledTimes(1)
 })
 

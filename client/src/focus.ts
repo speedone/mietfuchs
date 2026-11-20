@@ -194,7 +194,8 @@ export function useSubjectJump(
   return useCallback((id: string, className?: string) => {
     // Ein Bereich ist keine Karte: Die Hervorhebung `.card.focus-target` aus index.css greift nicht, deshalb ein Rahmen
     // aus Utilities in derselben Farbe.
-    const classes = [className, active?.id === id ? 'focus-target rounded-l outline-2 outline-offset-4 outline-accent' : null].filter(Boolean).join(' ')
-    return { 'data-jump': `${kind}:${id}`, ...(classes ? { className: classes } : {}) }
+    // `scroll-mt-4`: Beim Rollen bleibt über dem Bereich Platz für den Rahmen, sonst klebt er am Fensterrand (Sichtprüfung).
+    const classes = [className, 'scroll-mt-4', active?.id === id ? 'focus-target rounded-l outline-2 outline-offset-4 outline-accent' : null].filter(Boolean).join(' ')
+    return { 'data-jump': `${kind}:${id}`, className: classes }
   }, [active, kind])
 }
