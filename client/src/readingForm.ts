@@ -3,7 +3,9 @@
 import { parseQuantity } from './costForm'
 import type { Problem } from './formProblems'
 import { parseYearText } from './yearText'
-import type { Meter } from './types'
+import type { Meter, MeterType, Reading } from './types'
+import { isCutoffReading } from './hcaForm'
+import { fmtDate } from './api'
 import { asksCalibration } from './meterForm'
 
 // `newCalibratedUntil`: das Eichjahr des neuen Zählers beim Wechsel (Praxistest), als Text wie das Jahresfeld.
@@ -75,6 +77,120 @@ export function buildReadingBody(form: ReadingForm, meterId: string, asksYear = 
       ...(form.estimated ? { estimated: true as const, estimateReason: reason } : {}),
     },
   }
+}
+
+// Das Datum einer neuen Ablesung ist nur dann mit heute vorbelegt, wenn heute im gewählten Abrechnungszeitraum liegt;
+// sonst bleibt das Pflichtfeld leer und erzwingt die Eingabe. Grund (Durchsicht): Wer im Januar die Jahresablesung des
+// abgelaufenen Zeitraums nachträgt und das vorbelegte Datum übersieht, verschiebt still Geld zwischen den Mietern
+// (15.01. statt 31.12.: 979,87 € und 1.020,13 € statt je 1.000,00 € bei 2.000 € Wasser nach Zähler). Vorbelegt gilt
+// nicht als geändert: Das Fenster merkt sich den Stand vor der ersten Eingabe (kein `changedFrom`).
+export const newReadingForm = (today: string, period: { from: string; to: string }): ReadingForm =>
+  ({ ...EMPTY_READING, date: period.from <= today && today <= period.to ? today : '' })
+
+// Der Hinweis am Feld, solange das vorbelegte Datum unberührt ist.
+export const PREFILLED_DATE_HINT = 'Vorbelegt ist das heutige Datum. Für die Ablesung zum Ende des Zeitraums tragen Sie den Ablesetag ein.'
+
+// Die jüngste Ablesung einer Liste; am selben Tag die letzte der Liste, wie die Berechnung nach dem Sortieren die
+// spätere als Vorgänger des nächsten Segments nimmt. Eine Stelle für den Anhalt unter dem Feld und die Rückfrage.
+export const latestReading = <R extends Pick<Reading, 'date'>>(readings: readonly R[]): R | null =>
+  readings.reduce<R | null>((a, r) => (a === null || r.date >= a.date ? r : a), null)
+
+// Ein Stand als Text fürs Feld: deutsches Komma, ohne Tausenderpunkt, keine Stelle geht verloren.
+const quantityText = (n: number): string => n.toLocaleString('de-DE', { useGrouping: false, maximumFractionDigits: 20 })
+
+// Bearbeiten: das Formular aus der gespeicherten Ablesung. Das Eichjahr des neuen Zählers gehört nicht dazu (es steht
+// am Zähler und geht nur beim Anlegen des Wechsels mit).
+export function readingToForm(r: Reading): ReadingForm {
+  return {
+    date: r.date,
+    value: quantityText(r.value),
+    replacement: r.replacement === true,
+    oldEndValue: r.oldEndValue == null ? '' : quantityText(r.oldEndValue),
+    newCalibratedUntil: '',
+    note: r.note ?? '',
+    estimated: r.estimated === true,
+    estimateReason: r.estimateReason ?? '',
+  }
+}
+
+// Der Rumpf für PUT /api/readings/:id. Der Server lässt stehen, was im Rumpf fehlt; was abgewählt oder geleert ist,
+// geht deshalb ausdrücklich hinaus, als `null` (der Server liest es als „keine Angabe“; ein `replacement: false`
+// speicherte er als `false`, wo eine frisch angelegte Ablesung den Schlüssel gar nicht hat). Nie dabei: der Zähler (eine Ablesung wechselt ihn hier nicht) und
+// `newCalibratedUntil` (im PUT eine 400).
+export type ReadingUpdate = {
+  date: string
+  value: number
+  replacement: true | null
+  oldEndValue: number | null
+  note: string | null
+  estimated: boolean
+  estimateReason?: string
+}
+export function buildReadingUpdate(form: ReadingForm): { problems: Problem<ReadingField>[] } | { body: ReadingUpdate } {
+  const built = buildReadingBody(form, '')
+  if ('problems' in built) return built
+  const b = built.body
+  return {
+    body: {
+      date: b.date,
+      value: b.value,
+      replacement: form.replacement ? true : null,
+      oldEndValue: form.replacement ? b.oldEndValue ?? null : null,
+      note: b.note ?? null,
+      estimated: form.estimated,
+      ...(b.estimateReason !== undefined ? { estimateReason: b.estimateReason } : {}),
+    },
+  }
+}
+
+// Rückfrage vor dem Speichern (Anlegen und Bearbeiten), kein Verbot: Der Vermieter darf speichern. Gefragt wird bei
+// einem Datum nach heute und wenn das Segment zur Ablesung unmittelbar davor oder danach negativ wäre. **Verglichen wird
+// so, wie die Berechnung die Segmente bildet** (`meterSegments` in server/src/calc.ts): Ist die spätere der beiden
+// Ablesungen ein Zählerwechsel, zählt ihr Endstand des alten Zählers gegen den Stand davor (ohne Endstand entsteht kein
+// Segment, also keine Frage), sonst Stand gegen Stand. Verglichen wird nur mit Ablesungen desselben Zählers an anderen
+// Tagen; beim Bearbeiten zählt die Ablesung selbst nicht. Ein Heizkostenverteiler wird nicht getauscht, er setzt am
+// Stichtag auf null: Der Rat nennt dort das Formular des Stichtagswerts (Beschriftungen wörtlich wie in
+// CutoffReadingForm.tsx) statt des Hakens „Zählerwechsel“.
+export type ReadingQuestion = { title: string; message: string; confirmLabel: string }
+export function readingQuestion(
+  candidate: { meterId: string; date: string; value: number; replacement: boolean; oldEndValue?: number | null },
+  readings: readonly Reading[],
+  opts: { today: string; unit?: string; editingId?: string; meterType?: MeterType },
+): ReadingQuestion | null {
+  const text = (n: number) => `${n.toLocaleString('de-DE', { maximumFractionDigits: 20 })}${opts.unit ? ` ${opts.unit}` : ''}`
+  const hca = opts.meterType === 'hkv'
+  const negative = '; der Verbrauch dazwischen wäre negativ.'
+  const others = readings.filter((r) => r.meterId === candidate.meterId && r.id !== opts.editingId)
+  const previous = latestReading(others.filter((r) => r.date < candidate.date))
+  const next = others.filter((r) => r.date > candidate.date).reduce<Reading | null>((a, r) => (a === null || r.date < a.date ? r : a), null)
+  const lines: string[] = []
+  if (candidate.date > opts.today) lines.push(`Das Datum ${fmtDate(candidate.date)} liegt in der Zukunft.`)
+  if (previous) {
+    const before = `dem vorigen Stand ${text(previous.value)} vom ${fmtDate(previous.date)}`
+    if (candidate.replacement) {
+      if (candidate.oldEndValue != null && candidate.oldEndValue < previous.value) {
+        lines.push(`Der Endstand des alten Zählers ${text(candidate.oldEndValue)} liegt unter ${before}${negative}`)
+      }
+    } else if (candidate.value < previous.value) {
+      lines.push(`Der Stand ${text(candidate.value)} liegt unter ${before}${negative} ${hca
+        ? 'Hat der Heizkostenverteiler am Stichtag auf null gesetzt, tragen Sie den Wert davor unter den Ablesungen bei „Stichtagswert laut Anzeige“ ein und klicken Sie auf „Stichtagswert speichern“.'
+        : 'Wurde der Zähler getauscht, haken Sie „Zählerwechsel“ an.'}`)
+    }
+  }
+  if (next) {
+    if (next.replacement === true) {
+      if (next.oldEndValue != null && next.oldEndValue < candidate.value) {
+        lines.push(isCutoffReading(opts.meterType ?? 'sonstig', next)
+          ? `Der Stand ${text(candidate.value)} liegt über dem Stichtagswert ${text(next.oldEndValue)} vom ${fmtDate(next.date)}${negative}`
+          : `Der Stand ${text(candidate.value)} liegt über dem Endstand des alten Zählers ${text(next.oldEndValue)} beim Zählerwechsel am ${fmtDate(next.date)}${negative}`)
+      }
+    } else if (next.value < candidate.value) {
+      lines.push(`Der Stand ${text(candidate.value)} liegt über dem folgenden Stand ${text(next.value)} vom ${fmtDate(next.date)}${negative}`)
+    }
+  }
+  if (lines.length === 0) return null
+  const editing = opts.editingId !== undefined
+  return { title: editing ? 'Ablesung trotzdem speichern?' : 'Ablesung trotzdem anlegen?', message: lines.join(' '), confirmLabel: editing ? 'Trotzdem speichern' : 'Trotzdem anlegen' }
 }
 
 // Das Eichjahr des neuen Geräts fragt das Fenster nach derselben Regel wie das Zählerformular (nie am

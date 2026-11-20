@@ -13,6 +13,8 @@ import { UIProvider } from '../components/feedback'
 import Cockpit from './Cockpit'
 import Abrechnung from './Abrechnung'
 import Stammdaten from './Stammdaten'
+import Mietkonto from './Mietkonto'
+import Steuer from './Steuer'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
@@ -98,4 +100,43 @@ test('Stammdaten ohne Wohnung: der gesperrte Knopf nennt seinen Grund, die Heizu
   expect(reason?.textContent).toBe('Legen Sie zuerst eine Wohnung an.')
   expect(screen.queryByRole('button', { name: 'Heizung einrichten' })).toBeNull()
   expect(screen.getByText(/sobald Sie die Wohnungen angelegt haben/)).toBeTruthy()
+})
+
+// Systemprüfung, Leerzustände ohne Weg: Mietkonto und Steuer nannten die fehlende Voraussetzung ohne Knopf.
+test('Mietkonto ohne Mietverhältnis: der Knopf führt in die Stammdaten zum Formular', async () => {
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? url
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/units') return json([UNIT])
+    if (path.startsWith('/api/rentledger/')) return json({ year: YEAR, rows: [], settlementOnly: [], carriedOnly: [], totals: { sollYearCents: 0, paidYearCents: 0, settlementYearCents: 0, openCents: 0, notDemandableCents: 0 } })
+    return json([])
+  })
+  const navigate = vi.fn()
+  wrap(<Mietkonto onNavigate={navigate} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis anlegen' }, SLOW))
+  expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'new', what: 'tenancy' })
+  expect(document.querySelector('[data-empty-state]')?.textContent).toMatch(new RegExp(`Für ${YEAR} gibt es keine Mietverhältnisse`))
+})
+
+test('Steuer ohne Kosten: „Belege erfassen“ führt in den Eingang und wird nicht gedruckt', async () => {
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? url
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path.startsWith('/api/taxreport/')) return json({
+      year: YEAR,
+      income: { baseRentSollCents: 0, inclusiveRentSollCents: 0, prepaymentSollCents: 0, flatRateSollCents: 0, prepaymentSettlementCents: 0, prepaymentOverridden: false, sollCents: 0, paidCents: 0, settlementBackPaymentsCents: 0, settlementRefundsCents: 0, tenanciesWithSoll: 0, tenanciesWithoutPayment: 0 },
+      expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [], unstatedCount: 0 },
+      movedOut: [], selfUseChangedInYear: false, closedSelfUseDiffers: false, closedItemsChanged: 0, reserveContributionCents: 0, reserveSuspects: [], totalAreaM2: 80, selfUsedAreaM2: 0,
+      selfOccupiedExists: false, excludedExists: false, selfUsedShareCents: 0, surplusSollCents: 0, surplusPaidCents: 0, costModels: { tenancies: 0, inclusive: 0, partlyInclusive: 0, flatRate: 0 }, settlementPeriods: [],
+    })
+    return json([])
+  })
+  const navigate = vi.fn()
+  wrap(<Steuer settings={null} units={[UNIT]} onNavigate={navigate} />)
+  const button = await screen.findByRole('button', { name: 'Belege erfassen' }, SLOW)
+  expect(button.closest('.no-print')).toBeTruthy()
+  fireEvent.click(button)
+  expect(navigate).toHaveBeenCalledWith('belege:eingang', undefined)
 })
