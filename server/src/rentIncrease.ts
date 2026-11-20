@@ -29,6 +29,7 @@ import { deadlineOnWorkday } from '../../shared/deadlines.ts'
 import { FIRST_YEAR } from '../../shared/holidays.ts'
 import { addMonths, monthBounds, monthName } from '../../shared/monthlyInfo.ts'
 import { compareText } from './calc.ts'
+import { AMOUNT_MAX_CENTS } from '../../shared/epcQr.ts'
 
 export type RentIncreaseTenancy = Pick<Tenancy, 'id' | 'start' | 'end' | 'baseRents' | 'rentKind' | 'rentIncreaseExcluded' | 'costModel' | 'heatingModel'>
 export type RentIncreaseInput = {
@@ -161,6 +162,13 @@ const need = (d: Draft, what: RentIncreaseNeed, sentence: string): void => {
 const block = (d: Draft, sentence: string): void => {
   d.blocked = true
   d.plan.reasons.push(sentence)
+}
+// Integrationsdurchsicht K-Geld-2: Ein errechneter Betrag über der Obergrenze (oder außerhalb der sicheren Ganzzahlen)
+// sperrt, statt ungenau weiterzurechnen.
+const tooLarge = (d: Draft, ...cents: number[]): boolean => {
+  if (cents.every((c) => Number.isSafeInteger(c) && c <= AMOUNT_MAX_CENTS)) return false
+  block(d, `Der errechnete Betrag ist zu groß; Mietfuchs rechnet mit Beträgen bis ${euro(AMOUNT_MAX_CENTS)}. Bitte prüfen Sie die Eingaben.`)
+  return true
 }
 const wait = (d: Draft, sentence: string): void => {
   d.notYet = true
@@ -329,6 +337,7 @@ function capOf(d: Draft, input: RentIncreaseInput, sorted: readonly RentEntry[],
     if (i > 0 && before && reasonOf(r) === 'modernization' && compareText(r.from, baseMonth) > 0 && compareText(r.from, effective) < 0) modernizationCents += Math.max(0, r.monthlyCents - before.monthlyCents)
   })
   const limitCents = rounded(BigInt(baseCents) * BigInt(100 + percent), 100n, rounding) + modernizationCents
+  if (tooLarge(d, limitCents)) return null
   const p = d.plan
   p.reasons.push(`Kappungsgrenze (${bgbRentCap.norm}): Innerhalb von ${v.years} Jahren darf die Miete höchstens ${percent} % steigen, Erhöhungen wegen Modernisierung ausgenommen. Ausgangsmiete ist die am ${germanDate(baseDay)} vereinbarte Miete von ${euro(baseCents)}${baseDay === capDate ? ', drei Jahre vor dem Wirksamwerden' : ', die Miete bei Mietbeginn'}${baseSource === 'entered' ? ' (von Ihnen eingegeben)' : ''}.`)
   if (!reduced) p.reasons.push(`Sie haben angegeben, dass in der Gemeinde keine Verordnung die Kappungsgrenze senkt; gerechnet wird mit ${percent} %. Prüfen Sie das vor jedem Verlangen, denn Verordnungen kommen hinzu und laufen aus.`)
@@ -363,6 +372,7 @@ function comparisonOf(d: Draft, input: RentIncreaseInput, rounding: 'floor-cent'
   const rentCents = rounded(BigInt(q.comparisonCentsPerM2) * area.num, area.den, rounding)
   const operatingCostsCents = inclusive ? (q.operatingCostsCents ?? 0) : null
   const limitCents = rentCents + (operatingCostsCents ?? 0)
+  if (tooLarge(d, rentCents, limitCents)) return null
   p.steps.push({ label: 'Vergleichsmiete × Fläche', value: `${euro(q.comparisonCentsPerM2)} je m² × ${areaText(areaM2)} = ${euro(rentCents)}` })
   if (operatingCostsCents !== null) {
     p.steps.push({ label: 'Enthaltene Betriebskosten', value: `+ ${euro(operatingCostsCents)}` })
@@ -434,6 +444,7 @@ function planIndex(d: Draft, input: RentIncreaseInput, log: LawLog): void {
   const tenths = (x: RentIndexValue): bigint => BigInt(Math.round(x.value * 10))
   const rounding = law(practiceRentIncreaseRounding, { date: firstOf(effective) }, log)
   const newCents = rounded(BigInt(current.monthlyCents) * tenths(to), tenths(from), rounding)
+  if (tooLarge(d, newCents)) return
   p.index = { from, to }
   p.steps.push({ label: 'Bisherige Miete', value: `${euro(current.monthlyCents)} (ab ${monthName(current.from)})` })
   p.steps.push({ label: 'Ausgangsindex', value: indexText(from) })
@@ -492,7 +503,7 @@ const isDay = (x: unknown): x is string => {
   return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === x
 }
 const isMonth = (x: unknown): x is string => typeof x === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(x)
-const isCents = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x) && x >= 0
+const isCents = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x) && x >= 0 && x <= AMOUNT_MAX_CENTS
 const AREA_MAX = 10000
 const BASE_YEARS = { min: 1950, max: 2100 }
 
@@ -524,7 +535,7 @@ export function rentIncreaseRequestOf(body: Record<string, unknown>): RentIncrea
   if (rentCap !== null) out.rentCap = rentCap
   for (const key of ['rentAtCapDateCents', 'comparisonCentsPerM2', 'rangeLowCentsPerM2', 'rangeHighCentsPerM2', 'operatingCostsCents', 'requestedCents'] as const) {
     const v = optional(key)
-    if (v !== null && !isCents(v)) return { error: 'Ein Betrag ist eine ganze Zahl von Cent, nicht negativ.' }
+    if (v !== null && !isCents(v)) return { error: `Ein Betrag ist eine ganze Zahl von Cent, nicht negativ und höchstens ${euro(AMOUNT_MAX_CENTS)}.` }
     if (v !== null) out[key] = v
   }
   if (out.rangeLowCentsPerM2 != null && out.rangeHighCentsPerM2 != null && out.rangeLowCentsPerM2 > out.rangeHighCentsPerM2) return { error: 'Der Unterwert der Spanne liegt über dem Oberwert.' }

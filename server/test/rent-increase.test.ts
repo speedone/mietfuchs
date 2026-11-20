@@ -4,7 +4,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Property, RentEntry, RentIncreasePlan, RentIncreaseRequest, Tenancy, Unit } from '../../shared/types.ts'
-import { nextRentEvents, planRentIncrease, type RentIncreaseInput } from '../src/rentIncrease.ts'
+import { nextRentEvents, planRentIncrease, rentIncreaseRequestOf, type RentIncreaseInput } from '../src/rentIncrease.ts'
+import { AMOUNT_MAX_CENTS } from '../../shared/epcQr.ts'
 
 type TenancyPart = RentIncreaseInput['tenancy']
 
@@ -593,4 +594,26 @@ test('Invariante: eine vorn gekürzte Staffel macht nie einen höheren Betrag m�
     if (b.maxCents !== null && a.maxCents !== null && b.effectiveFrom === a.effectiveFrom) assert.ok(b.maxCents <= a.maxCents, where)
     if (b.maxCents !== null && a.maxCents === null) assert.fail(`gekürzt rechnet, vollständig nicht: ${where}`)
   }
+})
+
+test('Mieterhöhung: Beträge über der Obergrenze sperren, statt mit ungenauen Zahlen zu rechnen (Integrationsdurchsicht K-Geld-2)', () => {
+  const huge = plan(comparison({ receivedOn: '2026-11-20', rentCap: 'no', comparisonCentsPerM2: AMOUNT_MAX_CENTS }))
+  assert.equal(huge.state, 'blocked', huge.reasons.join(' '))
+  assert.equal(huge.newCents, null)
+  assert.equal(huge.maxCents, null)
+  assert.ok(said(huge, /zu groß/), huge.reasons.join(' '))
+  const t = indexTenancy([{ from: '2015-01', monthlyCents: 5_000_000_000, index: { month: '2014-12', value: 0.1, base: 2020 } }])
+  const index = plan({ kind: 'index', ...confirmed, receivedOn: '2026-11-20', toIndex: { month: '2026-10', value: 9999.9, base: 2020 } }, t)
+  assert.equal(index.state, 'blocked', index.reasons.join(' '))
+  assert.equal(index.newCents, null)
+  assert.ok(said(index, /zu groß/), index.reasons.join(' '))
+})
+
+test('Mieterhöhung: Eingabe eines Betrags über der Obergrenze oder außerhalb der sicheren Ganzzahlen ist ein Fehler mit Satz', () => {
+  for (const v of [Number.MAX_SAFE_INTEGER, AMOUNT_MAX_CENTS + 1, 2 ** 60]) {
+    const r = rentIncreaseRequestOf({ kind: 'comparison', comparisonCentsPerM2: v })
+    assert.ok('error' in r && /\.$/.test(r.error), String(v))
+  }
+  const ok = rentIncreaseRequestOf({ kind: 'comparison', requestedCents: AMOUNT_MAX_CENTS })
+  assert.ok(!('error' in ok))
 })

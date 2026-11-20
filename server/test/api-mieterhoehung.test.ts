@@ -135,7 +135,7 @@ test('Mieterhöhung, Rechnung: Plan über die Route, nur lesend, 404 und 400 mit
     assert.equal((await journalOf(s)).length, journalBefore, 'nichts geschrieben')
     const missing = await fetch(`${s.base}/api/tenancies/gibtsnicht/rent-increase/plan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'comparison' }) })
     assert.equal(missing.status, 404)
-    for (const body of [{ kind: 'mietspiegel' }, { kind: 'comparison', receivedOn: '2026-02-31' }, { kind: 'comparison', comparisonCentsPerM2: -1 }, { kind: 'index', toIndex: { month: '2026-10', value: 106.15, base: 2020 } }, { kind: 'comparison', rentCap: 'vielleicht' }, { kind: 'comparison', receivedOn: '1990-03-05' }, { kind: 'comparison', receivedOn: '9999-12-20' }, { kind: 'comparison', rentAtCapDateOn: '2024-02-30' }]) {
+    for (const body of [{ kind: 'mietspiegel' }, { kind: 'comparison', receivedOn: '2026-02-31' }, { kind: 'comparison', comparisonCentsPerM2: -1 }, { kind: 'comparison', comparisonCentsPerM2: Number.MAX_SAFE_INTEGER }, { kind: 'index', toIndex: { month: '2026-10', value: 106.15, base: 2020 } }, { kind: 'comparison', rentCap: 'vielleicht' }, { kind: 'comparison', receivedOn: '1990-03-05' }, { kind: 'comparison', receivedOn: '9999-12-20' }, { kind: 'comparison', rentAtCapDateOn: '2024-02-30' }]) {
       const bad = await fetch(`${s.base}/api/tenancies/${t.id}/rent-increase/plan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       assert.equal(bad.status, 400, JSON.stringify(body))
       assert.match(await errorFrom(bad), /\.$/, 'ein ganzer Satz')

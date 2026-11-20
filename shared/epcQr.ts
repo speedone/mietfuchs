@@ -12,7 +12,8 @@ export type EpcInput = { name: string; iban: string; amountCents: number; purpos
 export const EPC_MAX_BYTES = 331
 export const EPC_NAME_MAX = 70
 export const EPC_PURPOSE_MAX = 140
-const AMOUNT_MAX_CENTS = 99_999_999_999
+// Größter Betrag im Zahlungs-QR-Code (999.999.999,99 €); auch Obergrenze für Beträge der Mieterhöhung.
+export const AMOUNT_MAX_CENTS = 99_999_999_999
 
 // EU-27, Island, Liechtenstein, Norwegen. Französische Überseegebiete und Åland führen IBANs mit FR bzw. FI.
 export const EEA_COUNTRIES: readonly string[] = [
