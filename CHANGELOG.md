@@ -49,16 +49,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und
   Exportformate ändern sich in 1.x nicht ohne Vorwarnung; ein Bruch kommt nur mit 2.0. MIGRATION.md sagt auch, was
   bis 1.0 gilt ([#447](https://github.com/speedone/mietfuchs/issues/447)).
-- Dokumentation und Prüfung der Kompatibilitätszusage: „Daten & Backup“ nennt jetzt, welche Exporte die Zusage meint
-  und wie sie aussehen (Abrechnung als JSON mit `format` und `version`, Abrechnung als CSV, die beiden CSV-Dateien im
-  ZIP „Belege für die Steuer“), „Installation“ führt alle Umgebungsvariablen mit Bedeutung und Voreinstellung auf und
-  sagt, welche nicht zur Zusage gehören. Für den JSON-Export gilt: Vorhandene Felder behalten Namen, Art und Bedeutung,
-  neue Felder können dazukommen, erst ein entferntes, umbenanntes oder umgedeutetes Feld hebt `version`; Texte in
-  Feldern sind Anzeige. Tests binden beides: Der JSON-Export eines festen Bestands wird Feld für Feld und jede
-  Kopfzeile wortgleich verglichen, jede Variable `NKA_…` im Quelltext muss in der Liste stehen oder als intern begründet
-  sein. Dazu liegen Bestände aus 0.13.1 und 0.18.1 im Repo, wie diese Versionen sie selbst geschrieben haben: Ihr
-  Backup wird in die aktuelle Version eingespielt und Abrechnung, Verbrauch, Mietkonto und Steuer centgenau mit den
-  damaligen Ergebnissen verglichen, und der Nachdruck ihrer abgeschlossenen Abrechnung wird wortgleich festgehalten.
 - Kontoauszug: Eine Nachzahlung aus der abgeschlossenen Abrechnung wird am Betrag erkannt, auch ohne Verwendungszweck.
   Passt ein Eingang genau zur offenen Nachzahlung (abzüglich schon gebuchter Zahlungen der Art „Abrechnung“) oder zu
   Monatsmiete plus Nachzahlung, und ist das Mietkonto sonst ausgeglichen, schlägt Mietfuchs gelb „Abrechnung“ bzw. die
@@ -72,6 +62,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
+- Zähler: Eine Ablesung lässt sich bearbeiten (✎ in ihrer Zeile), statt sie zu löschen und neu anzulegen. Vor dem
+  Speichern fragt Mietfuchs nach, wenn der Stand unter dem vorigen Stand desselben Zählers liegt und kein Zählerwechsel
+  angehakt ist, wenn er über dem folgenden Stand liegt oder wenn das Datum in der Zukunft liegt; speichern können Sie
+  trotzdem. Bei einem Zählerwechsel zählt dabei der Endstand des alten Zählers, beim Heizkostenverteiler verweist die
+  Rückfrage auf den Stichtagswert. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt, wenn heute im
+  gewählten Abrechnungszeitraum liegt; ein Hinweis am Feld sagt es, solange Sie es nicht geändert haben.
 
 ### Geändert
 
@@ -88,6 +84,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Antworten zu fehlenden Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
+
+### Behoben
+
+- Navigation und Sprünge: Die Seite „Heizkosten“ steht in der Navigation, sobald die Heizung in den Stammdaten
+  eingerichtet ist, nicht erst nach einem Seitenwechsel; die Mitteilung nach dem Einrichten nennt die Seite. „Hier
+  beheben → Heizkosten“ führt zur betroffenen Heizanlage und hebt sie hervor, „Heizung einrichten →“ zur Karte
+  „Heizung“ der Stammdaten. Nach „Rückgängig“ im Verlauf zeigen die Stammdaten den wiederhergestellten Stand, ohne dass
+  die Seite neu geladen werden muss. Mietkonto, Heizkosten und Steuer führen aus dem leeren Zustand mit einem Knopf zum
+  fehlenden Schritt. Im Cockpit heißt die Zeile, die Kostenpositionen zählt, „Kosten erfasst“ statt „Belege erfasst“.
+- Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
+  Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
+  Issue, in dem sie tatsächlich geplant ist.
 
 ## [0.18.1] – 2026-11-19
 

@@ -23,6 +23,9 @@ export const AI_SETTINGS_TARGET: JumpTarget = { kind: 'section', section: 'ai' }
 export const UPDATE_GUIDE_TARGET: JumpTarget = { kind: 'section', section: 'about' }
 // „Ohne Passwort im Netz“ in der Seitenleiste (#528): die Karte „Anmeldung“ der Einstellungen
 export const ACCESS_TARGET: JumpTarget = { kind: 'section', section: 'access' }
+// Noch keine Heizanlage: die Karte „Heizung“ der Stammdaten mit „Heizung einrichten“ (wie der Hinweis der Berechnung
+// mit leerer Kennung, notices.ts)
+export const SET_UP_HEATING_TARGET: JumpTarget = { kind: 'heatingPlant', id: '' }
 
 // Eine betroffene Wohnung öffnet sich selbst, mehrere führen zur Karte „Wohnungen“.
 export function unitsTarget(ids: readonly string[]): JumpTarget {
