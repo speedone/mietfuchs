@@ -52,9 +52,14 @@ export function heatingByConsumption(key: CostKey): boolean {
 //   Nettosummen nicht positiv, gibt es keinen sinnvollen Prozentsatz und keinen Hinweis. Nur für
 //   Positionen nach Zählern, denn Einzelbeträge und die Gemeinschaftsabrechnung enthalten ihre
 //   Grundkosten schon.
+//   **Ganz nach Zählern** (`onlyMetered`, Systemprüfung): Eine Wohnung, deren Heizpositionen alle nach
+//   Zählern laufen, liegt über dem Höchstsatz des § 7 Abs. 1 Satz 1; zulässig ist das nur mit einer
+//   rechtsgeschäftlichen Bestimmung nach § 10, die das Modell nicht kennt. Gemeldet wird sie nur, wenn
+//   sie wirklich nach Verbrauch gedeckt ist (`covered`): Ohne Ablesungen ist nichts nach Verbrauch
+//   verteilt, und das sagt schon `meter.no-consumption`.
 export type HeatingFindings = {
   withoutConsumption: Map<string, Set<string>>
-  shareOutside: { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number }[]
+  shareOutside: { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number; onlyMetered: boolean }[]
 }
 
 // `consumptionShare` liefert die Grenzen aus dem Rechtsregister (`hkv.consumption-share`) und wird
@@ -74,18 +79,21 @@ export function heatingFindings(
     if (affected.size > 0) withoutConsumption.set(c.id, affected)
   }
   // Gruppen: Wohnungen mit derselben Menge an Positionen haben denselben Anteil.
-  const groups = new Map<string, { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number }>()
+  const groups = new Map<string, HeatingFindings['shareOutside'][number]>()
   for (const u of units) {
     const own = heating.filter((c) => takesPart(c, u.id))
     const metered = own.filter((c) => c.key === 'meter')
     const other = own.filter((c) => !heatingByConsumption(c.key))
-    if (metered.length === 0 || other.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external' || c.key === 'heatingSystem')) continue
+    if (metered.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external' || c.key === 'heatingSystem')) continue
+    const onlyMetered = other.length === 0
+    if (onlyMetered && !covered.has(u.id)) continue
     const key = own.map((c) => c.id).join('\u0000')
     const g = groups.get(key) ?? {
       unitIds: [],
       itemIds: own.map((c) => c.id),
       consumptionCents: metered.reduce((a, c) => a + c.amountCents, 0),
       totalCents: own.reduce((a, c) => a + c.amountCents, 0),
+      onlyMetered,
     }
     g.unitIds.push(u.id)
     groups.set(key, g)

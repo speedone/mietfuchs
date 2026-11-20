@@ -5,6 +5,14 @@ Heizkostenabrechnung, § 6a, § 9a, Betriebsstrom), liest diese Datei zuerst. Ge
 `docs/superpowers/specs/2026-10-05-heizung-gesamt-design.md` (Verweise wie „15.1 Nr. 2“ oder
 „G-A2“ meinen Abschnitte dort). Rechtswerte stehen im Rechtsregister (server/src/CLAUDE.md).
 
+**Freie Schlüssel, ganz nach Zählern** (Systemprüfung): Laufen alle Heizpositionen einer Wohnung nach Zählern, ohne
+Grundkosten nach Fläche, meldet `heating.consumption-share` (hint, ohne Betrag) den Höchstsatz des § 7 Abs. 1 Satz 1
+und dass ein höherer Anteil nur mit einer rechtsgeschäftlichen Bestimmung bleibt (§ 10 HeizkostenV; das Modell kennt
+bei freien Schlüsseln keine, der Hinweis sagt deshalb, dass sie vorgeht). Kein Kürzungsbetrag: § 12 Abs. 1 Satz 1
+verlangt, dass „nicht verbrauchsabhängig“ abgerechnet wird. Nur für Wohnungen, die wirklich nach Verbrauch gedeckt
+sind (`onlyMetered` in shared/heating.ts). Derselbe Hinweis sagt bedingt, dass enthaltenes Warmwasser abzutrennen ist
+(§ 8 Abs. 1, § 9 Abs. 1); ob eine Position Warmwasser enthält, weiß Mietfuchs bei freien Schlüsseln nicht.
+
 **Grundsätze**: Eine Anlage ändert für sich keine Zahl; was Mietfuchs nicht rechnen kann, lehnt der
 Server mit Satz ab (`HeatingError`, 400). Heizregeln gelten nur für die Kostenart **„Heizung und
 Warmwasser“** (`HEATING_CATEGORY`), nicht für „Heizung“. Abgeschlossenes bleibt, wie es zugestellt
@@ -324,6 +332,12 @@ eines Ablesedienstes sind je Wohnung ein gedachter Zähler mit kumulierten Stän
 ohne Stand am Beginn einer Zeile nach einer Lücke, damit die Lücke nicht still 0 zählt). Dieselben
 bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
 
+- **Erfassung gewählt, kein Gerät angelegt** (Systemprüfung): Ein Topf ohne ein einziges Gerät geht nur nach Fläche
+  (`totals[p].devices` im Plan). Der Ausweis sagt es (`SelfPotView.noDevices`, je Grenze einer Wohnung ohne Gerät
+  `SelfBoundaryView.noDevices`; `status` bleibt `read`, damit ältere Stände lesbar bleiben), die Seite Heizkosten zeigt
+  statt „abgelesen“ den fehlenden Schritt (`missingDevicesLines`, `estimateIdleText` in client/src/heatingSelfView.ts),
+  und `heating.no-consumption` nennt neben der Kürzung, dass die Geräte auf der Seite „Zähler & Stände“ anzulegen sind.
+  Keine Zahl ändert sich.
 - **Einheitsskala**: Ablesewert × Bewertungsfaktor; **Produktskala**: wie abgelesen. Ohne Skala oder
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine

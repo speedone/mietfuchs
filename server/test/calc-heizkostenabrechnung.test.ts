@@ -293,6 +293,12 @@ test('Kein Verbrauch erfasst: nur nach Fläche, 15 % auf den Anteil am unerfasst
     // C1 1.080,58 € − 92,81 €, C2 607,82 € − 52,20 € (Abzüge 167,61 / 223,48 / 117,46 / 60,11 € nach dem
     // Anteil am Brennstoff im Topf Heizung; Herleitung im Kommentar der Abweichung 15).
     assert.match(text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter A \(A\) 231,51 €, Mieter B \(B\) 308,68 €, Mieter C1 \(C\) 148,17 € und Mieter C2 \(C\) 83,34 €/)
+    // Systemprüfung: Ist gar kein Gerät angelegt, nennt der Hinweis den fehlenden Schritt und der Ausweis den Topf.
+    assert.match(text, /Für Heizung ist an keiner Wohnung ein Wärmezähler angelegt\. Legen Sie die Geräte auf der Seite „Zähler & Stände“ an/)
+    const self = s.heating?.find((h) => h.self)?.self ?? assert.fail('Ausweis fehlt')
+    assert.deepEqual(self.pots.map((p) => [p.pot, p.noDevices]), [['heating', true], ['water', undefined]])
+    // Die Warmwasserzähler der Wohnungen sind abgelesen: An den Grenzen fehlt nichts.
+    assert.ok(self.units.every((u) => u.boundaries.every((b) => b.noDevices === undefined)))
   })
 })
 
@@ -320,6 +326,9 @@ test('Wärmepumpe, deren Erfassung erst im Zeitraum eingebaut wurde: Hinweis, ke
     const s = computeSettlement({ ...snap, heatingPlants: plants, costItems: items, meters: snap.meters.filter((m) => !(m.type === 'waerme' && m.unitId !== null)) })
     assert.match(textOf(s, 'heating.heat-pump-capture'), /01\.10\.2024.*§ 12 Abs\. 3 HeizkostenV.*nach dem 01\.06\.2025 beginnt/s)
     assert.ok(!codes(s).includes('heating.no-consumption'), 'keine Kürzung, solange die Verordnung nicht gilt')
+    // Systemprüfung: Solange keine Erfassung verlangt ist, fehlt auch kein Gerät.
+    const self = s.heating?.find((h) => h.self)?.self ?? assert.fail('Ausweis fehlt')
+    assert.ok(self.pots.every((p) => p.noDevices === undefined) && self.units.every((u) => u.boundaries.every((b) => b.noDevices === undefined)))
   })
 })
 

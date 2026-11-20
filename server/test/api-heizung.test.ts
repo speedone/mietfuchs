@@ -733,6 +733,50 @@ test('Ablesedienst (Heizung PR 12): PUT speichert die Werte, eine Überschneidun
   }
 })
 
+// Systemprüfung: Heizkostenverteiler gewählt, aber kein Gerät angelegt. Die Seite Heizkosten zeigte jede Wohnung als
+// „abgelesen“, und der Hinweis nannte nur die Kürzung, nicht den fehlenden Schritt.
+test('Heizkostenverteiler ohne angelegtes Gerät: Ausweis und Hinweis nennen den fehlenden Schritt, verteilt wird nach Fläche', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const eg = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const og = await s.api<Unit>('/api/units', jsonPost({ name: 'OG', areaM2: 40, participates: true }))
+    for (const [u, n] of [[eg, 'A'], [og, 'B']] as const) await s.api('/api/tenancies', jsonPost({ unitId: u.id, tenantName: n, persons: 1, start: '2020-01-01' }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    const setup = await send(`/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify({
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'hca', dhwHeatMeter: false, totalHeatMeter: false,
+    }) })
+    assert.equal(setup.status, 200, await setup.clone().text())
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 100000, key: 'heatingSystem', heatingPlantId: plant.id, heatingPart: 'fuel', heatingTarget: 'heating' }))
+    const ohne = await s.api<Settlement>('/api/settlement/2025')
+    const self = ohne.heating?.find((h) => h.plantId === plant.id)?.self ?? assert.fail('Ausweis der eigenen Abrechnung fehlt')
+    const topf = self.pots.find((p) => p.pot === 'heating') ?? assert.fail('Topf Heizung fehlt')
+    // Verteilt wird ganz nach Fläche, 60 : 40; daran ändert die Behebung nichts.
+    assert.equal(topf.byAreaOnly, true)
+    assert.deepEqual(ohne.statements.map((st) => [st.tenantName, st.totalShareCents]), [['A', 60000], ['B', 40000]])
+    assert.equal(topf.noDevices, true, 'der Topf sagt, dass kein Gerät angelegt ist')
+    for (const u of self.units) for (const b of u.boundaries) assert.equal(b.noDevices, true, `${u.unitName} ${b.date}: nichts abzulesen ist nicht „abgelesen“`)
+    const text = ohne.notices?.find((n) => n.code === 'heating.no-consumption')?.text ?? assert.fail('heating.no-consumption fehlt')
+    assert.match(text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\)/)
+    assert.match(text, /an keiner Wohnung ein Heizkostenverteiler angelegt/)
+    assert.match(text, /Seite „Zähler & Stände“/)
+
+    // Mit Geräten und Ablesungen verschwindet beides.
+    for (const [u, wert] of [[eg, 300], [og, 700]] as const) {
+      const m = await s.api<Meter>('/api/meters', jsonPost({ name: `HKV ${u.name}`, unitId: u.id, type: 'hkv', unit: 'Einheiten', hcaScale: 'product' }))
+      await s.api('/api/readings', jsonPost({ meterId: m.id, date: '2024-12-31', value: 0 }))
+      await s.api('/api/readings', jsonPost({ meterId: m.id, date: '2025-12-31', value: wert }))
+    }
+    const mit = await s.api<Settlement>('/api/settlement/2025')
+    const danach = mit.heating?.find((h) => h.plantId === plant.id)?.self ?? assert.fail('Ausweis fehlt')
+    assert.equal(danach.pots.find((p) => p.pot === 'heating')?.noDevices, undefined)
+    for (const u of danach.units) for (const b of u.boundaries) assert.deepEqual([b.status, b.noDevices], ['read', undefined])
+    assert.ok(!mit.notices?.some((n) => n.code === 'heating.no-consumption'))
+  } finally {
+    s.stop()
+  }
+})
+
 test('Pflichtangaben nach § 6a und Ausnahmen über die Routen (Heizung PR 14): speichern, Satz bei Fehler, 404', async () => {
   const s = await startServer()
   const send = (method: string, url: string, body?: unknown) =>

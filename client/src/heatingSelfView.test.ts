@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, missingDevicesLines, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
 
@@ -26,6 +26,28 @@ describe('Ampel der Ablesungen (Heizung PR 10, Entwurf 3.5)', () => {
     expect(boundaryText(b({ status: 'off', offDays: 36, far: true }), 'C')).toBe('C, Mieterwechsel zum 30.09.2025: abgelesen 36 Tage daneben, über einen Wintermonat; bitte wählen')
     expect(boundaryText(b({ status: 'off', offDays: 36, far: true, gap: 'imprecise' }), 'C')).toBe('C, Mieterwechsel zum 30.09.2025: abgelesen 36 Tage daneben, über einen Wintermonat (geteilt nach § 9b Abs. 3)')
     expect(boundaryText(b({ status: 'missing', kind: 'end', date: '2025-12-31' }), 'B')).toBe('B, Ende der Heizperiode am 31.12.2025: keine Ablesung')
+  })
+  // Systemprüfung: Heizkostenverteiler gewählt, kein Gerät angelegt. Nichts abzulesen ist nicht „abgelesen“.
+  it('ohne angelegtes Gerät: rot und der fehlende Schritt statt „abgelesen“', () => {
+    expect(boundaryLight(b({ noDevices: true }))).toBe('red')
+    expect(boundaryText(b({ noDevices: true, kind: 'end', date: '2025-12-31' }), 'EG')).toBe('EG, Ende der Heizperiode am 31.12.2025: kein Gerät angelegt')
+    expect(boundaryText(b({ noDevices: true, kind: 'end', date: '2025-12-31' }), 'EG', 'serviceValues')).toBe('EG, Ende der Heizperiode am 31.12.2025: kein Wert des Ablesedienstes eingetragen')
+  })
+  it('je Topf ohne Gerät ein Satz mit dem Weg zur Seite Zähler; sonst keiner', () => {
+    const pot = (over: Partial<SelfHeatingStatement['pots'][number]>) => ({ pot: 'heating', byAreaOnly: true, ...over }) as SelfHeatingStatement['pots'][number]
+    expect(missingDevicesLines({ capture: 'hca', pots: [pot({ noDevices: true })] })).toEqual([
+      'Heizung: An keiner Wohnung ist ein Heizkostenverteiler angelegt; verteilt wird deshalb nur nach Fläche. Legen Sie die Geräte auf der Seite „Zähler & Stände“ an und tragen Sie dort die Ablesungen zu Beginn und Ende der Heizperiode ein.',
+    ])
+    expect(missingDevicesLines({ capture: 'heatMeter', pots: [pot({ noDevices: true, basisUnit: 'm³' }), pot({ pot: 'water', noDevices: true })] }).map((l) => l.split(';')[0])).toEqual([
+      'Heizung: An keiner Wohnung ist ein Wärmezähler angelegt', 'Warmwasser: An keiner Wohnung ist ein Warmwasserzähler angelegt',
+    ])
+    expect(missingDevicesLines({ capture: 'heatMeter', pots: [pot({ noDevices: true, basisUnit: 'm³' })] })[0]).toMatch(/nur nach umbautem Raum\./)
+    expect(missingDevicesLines({ capture: 'serviceValues', pots: [pot({ noDevices: true })] })).toEqual([
+      'Heizung: Es sind keine Werte des Ablesedienstes eingetragen; verteilt wird deshalb nur nach Fläche. Tragen Sie die Werte auf dieser Seite unter „Werte des Ablesedienstes“ ein.',
+    ])
+    expect(missingDevicesLines({ capture: 'hca', pots: [pot({})] })).toEqual([])
+    // Eine ältere abgeschlossene Abrechnung kennt die Angabe nicht.
+    expect(missingDevicesLines({ pots: [pot({})] })).toEqual([])
   })
   // Befund M7 aus #341: gemeint war der neue Warmwasserzähler, der Satz nannte ihn nicht.
   it('der Satz nennt den Zähler ohne Stand, mit Nummer', () => {

@@ -79,6 +79,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Heizung, Hinweise der Abrechnung: Werden die Heizkosten ganz nach Wärmezählern verteilt, ohne Grundkosten nach Fläche,
+  weist die Abrechnung jetzt darauf hin, dass die Heizkostenverordnung höchstens 70 % nach Verbrauch vorsieht und ein
+  höherer Anteil nur mit einer Vereinbarung bleibt (§ 7 Abs. 1, § 10 HeizkostenV); enthält die Position auch das
+  Warmwasser, nennt der Hinweis, dass es abzutrennen ist. Ist bei der eigenen Heizkostenabrechnung eine Erfassung
+  gewählt, aber noch kein Gerät angelegt (etwa Heizkostenverteiler), zeigt die Seite Heizkosten die Wohnungen nicht
+  mehr als „abgelesen“, sondern nennt den fehlenden Schritt, und der Hinweis „Kein Verbrauch erfasst“ sagt, dass die
+  Geräte auf der Seite „Zähler & Stände“ anzulegen sind. Kein Betrag ändert sich; abgeschlossene Abrechnungen bleiben,
+  wie sie sind.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

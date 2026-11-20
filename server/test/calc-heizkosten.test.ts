@@ -293,3 +293,40 @@ test('Einzelbetrag 0 aus der Messdienstabrechnung ist gedeckt, kein Kürzungsrec
   ] })
   assert.deepEqual(heatingNotices(s), [])
 })
+
+// ---------- Systemprüfung: ganz nach Wärmezähler ----------
+
+test('Eine Position ganz nach Wärmezähler: Hinweis auf den Höchstsatz und die Vereinbarung nach § 10, ohne Betrag', () => {
+  const kosten = [heizung({ id: 'v', description: 'Erdgas und Wartung', key: 'meter', meterType: 'waerme', amountCents: 300000 })]
+  const s = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: kosten })
+  const n = notesOf(s, 'heating.consumption-share')
+  assert.equal(n.length, 1)
+  assert.equal(n[0]?.level, 'hint')
+  assert.deepEqual(n[0]?.subject, { kind: 'costItem', id: 'v' })
+  const text = n[0]?.text ?? ''
+  assert.match(text, /„Erdgas und Wartung“/)
+  assert.match(text, /ganz nach Zählern verteilt/)
+  assert.match(text, /mindestens 50 und höchstens 70 %/)
+  assert.match(text, /§ 10 HeizkostenV/)
+  assert.match(text, /ist nichts zu tun/)
+  // Das Warmwasser in derselben Position (§ 8 Abs. 1, § 9 Abs. 1 HeizkostenV): bedingt, denn ob es enthalten ist, weiß Mietfuchs nicht.
+  assert.match(text, /Enthält die Position auch die Kosten des Warmwassers/)
+  assert.match(text, /§ 9 Abs\. 1 HeizkostenV/)
+  // Verbrauchsabhängig wird abgerechnet: kein Kürzungsrecht behauptet, kein Betrag.
+  assert.doesNotMatch(text, /€|kürzen|§ 12/)
+  assert.deepEqual(heatingNotices(s), [])
+  // Der Hinweis ändert keine Zahl: verteilt wird weiter nach dem Verbrauch 10 : 11 : 12.
+  assert.deepEqual(s.statements.map((st) => st.totalShareCents), [90909, 100000, 109091])
+})
+
+test('Ganz nach Wärmezähler, aber ohne Ablesungen: nichts ist nach Verbrauch verteilt, kein Hinweis auf den Höchstsatz', () => {
+  const s = settle({ ...drei, costItems: [heizung({ id: 'v', key: 'meter', meterType: 'waerme', amountCents: 300000 })] })
+  assert.deepEqual(notesOf(s, 'heating.consumption-share'), [])
+})
+
+test('Einzelbeträge des Messdienstes und eine Gutschrift nach Wärmezähler allein: kein Hinweis auf den Höchstsatz', () => {
+  const messdienst = settle({ ...drei, costItems: [heizung({ id: 'md', key: 'amounts', tenancyAmounts: { A: 100000, B: 100000, C: 100000 }, amountCents: 300000 })] })
+  assert.deepEqual(notesOf(messdienst, 'heating.consumption-share'), [])
+  const gutschrift = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [heizung({ id: 'g', key: 'meter', meterType: 'waerme', amountCents: -5000 })] })
+  assert.deepEqual(notesOf(gutschrift, 'heating.consumption-share'), [])
+})
