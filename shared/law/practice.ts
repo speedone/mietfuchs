@@ -182,3 +182,47 @@ export const practiceObjectionEndOfMonth: LawParam<boolean, 'eventDate'> = {
   }],
   describe: (v) => (v ? 'die Frist endet am letzten Tag des zwölften Monats nach Zugang' : 'die Frist endet am Tag gleicher Zahl'),
 }
+
+// **Rundung der neuen Miete** (#191, Entwurf R11, Recherche O1). Gesetz und BGH regeln keine Rundung; gerechnet wird
+// exakt im Verhältnis und die neue Miete auf den Cent abgerundet, bei Erhöhung wie bei Senkung. So liegt sie nie über
+// dem Zulässigen bzw. Geschuldeten (kein Nachteil des Mieters, § 557b Abs. 5, § 558 Abs. 6 BGB). Eine Auslegung.
+export const practiceRentIncreaseRounding: LawParam<'floor-cent', 'eventDate'> = {
+  id: 'practice.rent-increase-rounding',
+  title: 'Rundung der neuen Miete',
+  norm: 'Auslegung zu §§ 557b, 558 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: 'floor-cent',
+    source: {
+      rank: 'interpretation',
+      cite: '§§ 557b, 558 BGB regeln keine Rundung; BGH VIII ZR 177/03 und VIII ZR 291/16 rechnen auf den Cent ohne Regel',
+      url: 'https://www.gesetze-im-internet.de/bgb/__558.html',
+      retrieved: '2026-11-20',
+      checked: 'adopted',
+    },
+    enacted: 'Festlegung von Mietfuchs (#191)',
+  }],
+  describe: () => 'die neue Miete wird auf den Cent abgerundet',
+}
+
+// **Reihe des Verbraucherpreisindex** (#191, Entwurf R9). Die Indexmiete folgt dem Verbraucherpreisindex für Deutschland
+// (BGH VIII ZR 291/16 Rn. 12), Monatswerte aus der beim Zugang aktuellen Reihe (VIII ZR 42/20 Rn. 28, 34, 43 bis 45), zurzeit
+// GENESIS-Tabelle 61111-0002, Basis 2020 = 100. Wechselt das Statistische Bundesamt die Basis, kommt eine neue Fassung.
+export const practiceVpiSeries: LawParam<{ readonly table: string; readonly base: number }, 'eventDate'> = {
+  id: 'practice.vpi-series',
+  title: 'Reihe des Verbraucherpreisindex',
+  norm: '§ 557b Abs. 1 BGB, Statistisches Bundesamt',
+  timing: 'eventDate',
+  versions: [{
+    value: { table: '61111-0002', base: 2020 },
+    source: {
+      rank: 'practice',
+      cite: 'Statistisches Bundesamt, GENESIS-Online, Tabelle 61111-0002, Verbraucherpreisindex nach Monaten, Basis 2020 = 100',
+      url: 'https://genesis.destatis.de/datenbank/online/statistic/61111/table/61111-0002',
+      retrieved: '2026-11-20',
+      checked: 'adopted',
+    },
+    enacted: 'Basis 2020 seit dem Berichtsmonat Januar 2023',
+  }],
+  describe: (v) => `Verbraucherpreisindex, Tabelle ${v.table}, Basis ${v.base} = 100`,
+}

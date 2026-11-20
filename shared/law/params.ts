@@ -3,6 +3,7 @@
 // Konstanten, die hier fehlen.
 import type { LawParam, Timing } from './register.ts'
 import type { LawValue } from '../types.ts'
+import { bgbIndexRent, bgbRentCap, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths, bgbStaggeredRent } from './bgb-betrkv.ts'
 import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDepositMaxMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbObjectionMonths, bgbRentDueAtStart, bgbRentDueSaturday, bgbRentDueWorkday, bgbTransferExecutionDays } from './bgb-betrkv.ts'
 import { HOLIDAY_PARAMS } from './feiertagsgesetze.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable } from './co2kostaufg.ts'
@@ -10,6 +11,7 @@ import { estgAcquisitionRelated, estgCheapRent, estgShortPeriodDays } from './es
 import { gmodgHeating43 } from './gmodg.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRenewableExemption, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from './heizkostenv.ts'
 import { messevCalibrationYears } from './messev.ts'
+import { practiceRentIncreaseRounding, practiceVpiSeries } from './practice.ts'
 import { practiceBankClosedDays, practiceObjectionEndOfMonth, practiceCreditBookingDays, practiceEvaporatorWindow, practiceMeterRestHigh, practiceReadingOffWarning, practiceVacancyPersons } from './practice.ts'
 import { ustgGasHeatNetworkRate, ustgSmallBusiness, ustgStandardRate } from './ustg.ts'
 
@@ -91,4 +93,13 @@ export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   bgbDepositMaxMonths,
   bgbObjectionMonths,
   practiceObjectionEndOfMonth,
+  // Mieterhöhung (#191)
+  bgbRentIncreaseWaitMonths,
+  bgbRentIncreaseLockMonths,
+  bgbRentCap,
+  bgbRentIncreaseConsent,
+  bgbIndexRent,
+  bgbStaggeredRent,
+  practiceRentIncreaseRounding,
+  practiceVpiSeries,
 ]
