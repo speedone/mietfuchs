@@ -69,7 +69,8 @@ export function RentIncreaseLetterSheet({ increase, design = null }: { increase:
 }
 
 // Logo und Briefpapier des Objekts, geladen wie auf der Seite Abrechnung (Briefpapier nur, wo der Browser es kann).
-function useLetterDesign(propertyId: string | null | undefined): PrintedDesign {
+// Auch für den Brief zur Kaution (DepositLetter.tsx).
+export function useLetterDesign(propertyId: string | null | undefined): PrintedDesign {
   const [designs, setDesigns] = useState<LetterDesigns | null>(null)
   const [loaded, setLoaded] = useState<LoadedDesign | null>(null)
   useEffect(() => {

@@ -1,16 +1,17 @@
 // Das Seitenfenster „Kaution“ eines Mietverhältnisses (#228): Stand in einem Satz, die Kautionsbuchungen und das
 // Formular für eine neue oder, nach „Ändern“ an einer Zeile, für diese. Logik in depositForm.ts und shared/deposit.ts;
 // gespeichert wird je Buchung über /api/deposit-entries, der Aufrufer lädt danach neu (`onChanged`).
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useRef, useState } from 'react'
 import { depositState } from '../../../shared/deposit.ts'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
 import {
   DEPOSIT_KIND_OPTIONS, DEPOSIT_PURPOSE_OPTIONS, NO_MONEY_FORM_TEXT, depositEntryBody, depositFormOf, depositKindText, depositPurposeHint, depositStateText, emptyDepositForm, formWithoutMoney,
   holdBody, holdFormOf, rentBeyondOpen, signedCents, withKind, type DepositField, type DepositHoldField, appliedDuringTenancy, APPLIED_DURING_TENANCY_TEXT } from '../depositForm'
-import { depositSettlement, type DepositSettlement } from '../depositSettlement'
+import { DEPOSIT_SENDER_MISSING_TEXT, depositLetterView, depositSenderMissing } from '../depositLetter'
+import { depositSettlement } from '../depositSettlement'
+import { effectiveLandlord } from '../landlord'
 import { localToday } from '../periodForm'
-import type { DepositEntry, DepositStatementInfo, Tenancy } from '../types'
+import type { DepositEntry, DepositStatementInfo, Property, Settings, Tenancy, Unit } from '../types'
 import type { DepositFormState } from '../depositForm'
 import { useSaving } from '../useSaving'
 import Drawer from './Drawer'
@@ -18,15 +19,21 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 import { useConfirm, useToast } from './feedback'
 import Field from './Field'
 import Table from './Table'
-import { softBreak } from '../softBreak'
+import { DepositLetterPrint, SettlementView } from './DepositLetter'
 
 // Eine gesetzliche Frist für die Abrechnung der Kaution gibt es nicht; der BGH verlangt eine angemessene, nicht allgemein
 // bestimmbare (Urteil vom 24.07.2019, VIII ZR 141/17). Entscheidung des Betreibers vom 13.11.2026: keine Zahl nennen.
 const DEPOSIT_DEADLINE_TEXT = 'Rechnen Sie die Kaution in angemessener Frist ab; eine feste Frist gibt es nicht, sie hängt vom Einzelfall ab (BGH, Urteil vom 24.07.2019, VIII ZR 141/17).'
 
-export default function DepositDrawer({ tenancy, entries, info, onChanged, onClose }: {
+type LandlordFields = 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact'
+
+export default function DepositDrawer({ tenancy, entries, info, unit, property = null, settings = null, onChanged, onClose }: {
   tenancy: Tenancy
   entries: DepositEntry[]
+  // Für den Brief der Aufstellung: Wohnung und Objekt im Betreff, der Absender aus Objekt und Einstellungen.
+  unit?: Pick<Unit, 'name'>
+  property?: Pick<Property, 'id' | 'name' | 'address' | LandlordFields> | null
+  settings?: Pick<Settings, LandlordFields> | null
   // Die letzte Abrechnung und was aussteht, für die Aufstellung zum Auszug (GET /api/deposit-entries/statements).
   info?: DepositStatementInfo
   // Nach jeder gespeicherten Änderung, auch am Einbehalt (der am Mietverhältnis steht): Der Aufrufer lädt neu.
@@ -54,23 +61,12 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
   const settlement = depositSettlement(tenancy, entries, info, localToday())
   const holdShown = settlement !== null && (settlement.balanceCents > 0 || tenancy.depositHoldCents !== undefined || tenancy.depositHoldNote !== undefined)
   const [printing, setPrinting] = useState(false)
-  // Gedruckt wird nur das Blatt (index.css, `print-deposit`), wie die monatliche Verbrauchsinformation: erst nach dem
-  // Rendern, aufgeräumt nach dem Druck.
-  useEffect(() => {
-    if (!printing) return
-    document.body.classList.add('print-deposit')
-    const done = () => {
-      document.body.classList.remove('print-deposit')
-      setPrinting(false)
-    }
-    window.addEventListener('afterprint', done)
-    const t = setTimeout(() => window.print(), 80)
-    return () => {
-      clearTimeout(t)
-      window.removeEventListener('afterprint', done)
-      document.body.classList.remove('print-deposit')
-    }
-  }, [printing])
+  // Gedruckt wird ein Brief (DepositLetter.tsx, Text in depositLetter.ts). Ohne Namen des Vermieters warnt die Aufstellung
+  // nur; ob ein Briefpapier den Absender trägt, weiß das Fenster nicht (geladen wird es erst zum Druck).
+  const letter = settlement && depositLetterView({
+    tenancy, unitName: unit?.name ?? '', property, settlement, today: localToday(),
+    landlord: effectiveLandlord(property, settings ?? { landlordName: '', iban: '', paymentDeadlineDays: 30, landlordAddress: '', landlordContact: '' }),
+  })
 
   async function saveHold() {
     const result = holdBody(hold)
@@ -208,16 +204,10 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
             {holdShown && <button className="btn secondary" disabled={saving.busy} onClick={() => void saving.run(saveHold)}>Einbehalt speichern</button>}
             <button className="btn secondary" onClick={() => setPrinting(true)}>Aufstellung drucken</button>
           </div>
+          {letter && depositSenderMissing(letter, false) && <p className="muted">{DEPOSIT_SENDER_MISSING_TEXT}</p>}
         </section>
       )}
-      {printing && settlement && createPortal(
-        <div className="deposit-print">
-          <h2>Aufstellung zum Auszug</h2>
-          <p>Kaution von {tenancy.tenantName}{tenancy.end ? `, ausgezogen am ${fmtDate(tenancy.end)}` : ''}. Stand vom {fmtDate(localToday())}.</p>
-          <SettlementView settlement={settlement} printed />
-        </div>,
-        document.body,
-      )}
+      {printing && settlement && letter && <DepositLetterPrint view={letter} settlement={settlement} propertyId={property?.id} onDone={() => setPrinting(false)} />}
       {formWithoutMoney(tenancy) && <p className="muted">{NO_MONEY_FORM_TEXT}</p>}
       {entries.length > 0 && (
         <Table aria-label="Kautionsbuchungen">
@@ -277,29 +267,6 @@ export default function DepositDrawer({ tenancy, entries, info, onChanged, onClo
         </Field>
       </div>
     </Drawer>
-  )
-}
-
-// Die Aufstellung selbst, gleich am Bildschirm und im Druck.
-// Gedruckt geht das Blatt an den Mieter; „Ihnen“ hieße dort ihn (Durchsicht G2). Freie Notizen, die letzte Abrechnung
-// und Ausstehendes sind Orientierung für den Vermieter und stehen nicht darauf (Abschlussdurchsicht G4).
-function SettlementView({ settlement: s, printed = false }: { settlement: DepositSettlement; printed?: boolean }) {
-  return (
-    <>
-      <Table aria-label="Buchungen der Kaution">
-        <tbody>
-          {s.rows.map((r, i) => (
-            <tr key={i}><td>{fmtDate(r.date)}</td><td>{softBreak(`${r.label}${printed ? (r.printNote ? ` (${r.printNote})` : '') : r.note ? ` (${r.note})` : ''}`)}</td><td className="num">{fmtEuro(r.cents)}</td></tr>
-          ))}
-        </tbody>
-      </Table>
-      <p className="m-0">{printed ? 'Beim Vermieter liegen' : 'Bei Ihnen liegen'} {fmtEuro(s.balanceCents)}.</p>
-      {s.hold && <p className="m-0">Einbehalten: {fmtEuro(s.hold.cents)} ({s.hold.note})</p>}
-      <p className="m-0"><strong>Bleibt auszuzahlen: {fmtEuro(s.payoutCents)}</strong></p>
-      {!printed && s.lastStatement && <p className="muted m-0">{s.lastStatement}</p>}
-      {!printed && s.lastHeatingStatement && <p className="muted m-0">{s.lastHeatingStatement}</p>}
-      {!printed && s.pending.map((line) => <p key={line} className="muted m-0">{line}</p>)}
-    </>
   )
 }
 

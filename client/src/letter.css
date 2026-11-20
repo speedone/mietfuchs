@@ -292,3 +292,14 @@
   .paper-print .rent-increase-paged .letter-body { padding-bottom: 0; }
   .paper-print .rent-increase-paged.rent-increase-consent .letter-body { padding-top: calc(98.46mm - var(--paper-top)); }
 }
+
+/* Aufstellung zum Auszug der Kaution (#228, DepositLetter.tsx): ein Brief wie das Schreiben der Mieterhöhung. Das Blatt
+   hängt am Ende von body und erscheint nur im Druck; beim Drucken bleibt die Oberfläche samt Seitenfenster weg. Die
+   Aufstellung steht darin als Block zwischen den Absätzen. */
+.deposit-print { display: none; }
+.deposit-letter-settlement { margin: 0 0 var(--space-3); }
+@media print {
+  body.print-deposit > #root { display: none !important; }
+  body.print-deposit .deposit-print { display: block; }
+  .deposit-letter-settlement { margin: 0 0 4.2mm; }
+}

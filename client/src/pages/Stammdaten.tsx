@@ -1194,6 +1194,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
       {depositTenancy && (
         <DepositDrawer tenancy={depositTenancy} entries={entriesOf(depositTenancy.id)} info={depositInfo.find((i) => i.tenancyId === depositTenancy.id)}
+          unit={units.find((u) => u.id === depositTenancy.unitId)} property={property} settings={settings}
           onChanged={() => { setDepositVersion((v) => v + 1); void reload() }} onClose={() => setDepositFor(null)} />
       )}
 
