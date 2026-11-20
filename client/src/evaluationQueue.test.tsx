@@ -6,7 +6,7 @@
 import { createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
-import { EvaluationQueueProvider, storedNote, useEvaluationQueue, type QueueTarget } from './evaluationQueue'
+import { EvaluationQueue, EvaluationQueueProvider, storedNote, storedPlaces, useEvaluationQueue, waitingLabel, type QueueTarget } from './evaluationQueue'
 
 type Pending = { path: string; form: FormData; signal: AbortSignal; onProgress?: (p: unknown) => void; resolve: (v: unknown) => void; reject: (e: Error) => void }
 const pending: Pending[] = []
@@ -265,20 +265,88 @@ test('„Entfernen“ an einem gespeicherten, wartenden Beleg lässt ihn als „
   expect(result.current.queue.map((x) => x.fileName)).toEqual(['a.pdf'])
 })
 
-// Ein Bild, das der Server schon als Zählerfoto erkannt hat (er liest gerade den Stand), liegt nach dem Abbruch nicht
-// unter „Ohne Position“, sondern im Ordner unter „Zählerfotos“: Der Satz am Eintrag nennt den richtigen Ort.
-test('abgebrochen beim Lesen des Zählerstands: der Eintrag nennt die Zählerfotos, sonst „Ohne Position“', async () => {
+// Durchsicht: Der Satz „steht unter „Ohne Position““ gilt nur, solange der Beleg dort liegt. Wo er liegt, sagt der
+// Bestand der Seite (`storedPlaces`), nicht die Erinnerung der Schlange: neu ausgewertet, zugeordnet, gelöscht oder
+// als Zählerfoto erkannt stimmt der Satz sonst nicht mehr.
+test('der Satz am abgebrochenen Eintrag folgt dem Bestand: „Ohne Position“, „Zählerfotos“ oder nichts', () => {
+  const entry = { status: 'abgebrochen' as const, file: 'srv-a.pdf' }
+  const places = (list: Parameters<typeof storedPlaces>[0], linked: string[] = []) => storedPlaces(list, new Set(linked))
+  expect(storedNote(entry, places([{ file: 'srv-a.pdf', kind: 'receipt' }]))).toMatch(/im Eingang unter „Ohne Position“/)
+  expect(storedNote({ ...entry, status: 'fehler' }, places([{ file: 'srv-a.pdf', kind: 'receipt' }]))).toMatch(/„Ohne Position“/)
+  expect(storedNote(entry, places([{ file: 'srv-a.pdf', kind: 'meterPhoto' }]))).toMatch(/im Ordner unter „Zählerfotos“/)
+  // gelöscht, an einer Position, gebucht oder mit offener Auswertung unter „Zu prüfen“: kein Satz
+  expect(storedNote(entry, places([]))).toBe('')
+  expect(storedNote(entry, places([{ file: 'srv-a.pdf', kind: 'receipt' }], ['srv-a.pdf']))).toBe('')
+  expect(storedNote(entry, places([{ file: 'srv-a.pdf', kind: 'receipt', bookedItemIds: ['c1'] }]))).toBe('')
+  expect(storedNote(entry, places([{ file: 'srv-a.pdf', kind: 'receipt', assessment: { open: true } }]))).toBe('')
+  // ohne Beleg in der Ablage und in jedem anderen Zustand ohnehin nicht
+  expect(storedNote({ status: 'fehler' }, places([{ file: 'srv-a.pdf', kind: 'receipt' }]))).toBe('')
+  expect(storedNote({ status: 'fertig', file: 'srv-a.pdf' }, places([{ file: 'srv-a.pdf', kind: 'receipt' }]))).toBe('')
+})
+
+test('„Per KI auswerten“ an einem abgebrochenen Beleg räumt dessen alten Eintrag', async () => {
   const { result } = renderHook(() => useEvaluationQueue())
-  act(() => result.current.addFiles([new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' }), pdf('b.pdf')], target))
+  act(() => result.current.addFiles([pdf('a.pdf')], target))
   await waitFor(() => expect(pending).toHaveLength(1))
-  act(() => pending[0]?.onProgress?.({ step: 'meterReading', phase: 'waiting' }))
   await act(async () => result.current.cancel(result.current.queue[0]?.id ?? -1))
   await waitFor(() => expect(result.current.queue[0]?.status).toBe('abgebrochen'))
-  expect(storedNote(result.current.queue[0] ?? { status: 'fertig' })).toMatch(/im Ordner unter „Zählerfotos“/)
+  act(() => result.current.addStored([{ file: pdf('a.pdf'), stored: 'srv-a.pdf' }], target))
+  expect(result.current.queue.map((x) => [x.file, x.status === 'abgebrochen'])).toEqual([['srv-a.pdf', false]])
+})
+
+test('eine leere Datei wird nicht gespeichert: ein Fehler mit Satz, die übrigen laufen weiter', async () => {
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([new File([], 'leer.pdf', { type: 'application/pdf' }), pdf('b.pdf')], target))
+  await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'fehler', error: '„leer.pdf“ ist leer (0 Byte) und wurde nicht gespeichert.' }))
+  expect(result.current.queue[0]?.file).toBeUndefined()
+  await waitFor(() => expect(pending).toHaveLength(1))
+  expect(uploads.map((u) => u.name)).toEqual(['b.pdf'])
+})
+
+test('ein wartender Eintrag sagt, wie weit er ist: wartet auf das Speichern, wird gespeichert, gespeichert', async () => {
+  let open: () => void = () => {}
+  uploadGate.set('a.pdf', new Promise((resolve) => { open = resolve }))
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')], target))
+  await waitFor(() => expect(uploads).toHaveLength(1))
+  await waitFor(() => expect(result.current.queue.map(waitingLabel)).toEqual(['wird gespeichert …', 'wartet auf das Speichern …', 'wartet auf das Speichern …']))
+  await act(async () => open())
+  await waitFor(() => expect(pending).toHaveLength(1))
+  await waitFor(() => expect(result.current.queue.slice(1).map(waitingLabel)).toEqual(['gespeichert, wartet …', 'gespeichert, wartet …']))
+})
+
+// Objekt- oder Jahreswechsel mitten im Stapel: Jeder Beleg trägt Objekt und Jahr des Ablegens, auch wenn sein Upload
+// erst beginnt, nachdem anderswo schon weiter abgelegt wurde.
+test('Wechsel mitten im Stapel: jeder Beleg wird mit Objekt und Jahr seines Ablegens gespeichert und ausgewertet', async () => {
+  let open: () => void = () => {}
+  uploadGate.set('a.pdf', new Promise((resolve) => { open = resolve }))
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf'), pdf('b.pdf')], target))
+  await waitFor(() => expect(uploads).toHaveLength(1))
+  act(() => result.current.addFiles([pdf('c.pdf')], { propertyId: 'objekt-2', year: 2024, period: '2024' }))
+  await act(async () => open())
+  await waitFor(() => expect(uploads.map((u) => [u.name, u.propertyId, u.year])).toEqual([
+    ['a.pdf', 'objekt-1', '2025'], ['b.pdf', 'objekt-1', '2025'], ['c.pdf', 'objekt-2', '2024'],
+  ]))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  await act(async () => pending[0]?.resolve(invoice('srv-a.pdf')))
   await waitFor(() => expect(pending).toHaveLength(2))
-  await act(async () => result.current.cancel(result.current.queue[1]?.id ?? -1))
-  await waitFor(() => expect(result.current.queue[1]?.status).toBe('abgebrochen'))
-  expect(storedNote(result.current.queue[1] ?? { status: 'fertig' })).toMatch(/im Eingang unter „Ohne Position“/)
-  // Ohne Beleg in der Ablage kein Satz
-  expect(storedNote({ status: 'fehler' })).toBe('')
+  await act(async () => pending[1]?.resolve(invoice('srv-b.pdf')))
+  await waitFor(() => expect(pending).toHaveLength(3))
+  expect([pending[2]?.form.get('existingFile'), pending[2]?.form.get('propertyId'), pending[2]?.form.get('year'), pending[2]?.form.get('period')])
+    .toEqual(['srv-c.pdf', 'objekt-2', '2024', '2024'])
+})
+
+// App.tsx fragt `unsaved` beim Schließen des Tabs: auch, solange ein Upload aussteht.
+test('solange ein Beleg noch nicht gespeichert ist, gilt die Schlange als ungespeichert', async () => {
+  let open: () => void = () => {}
+  uploadGate.set('a.pdf', new Promise((resolve) => { open = resolve }))
+  const queue = new EvaluationQueue()
+  queue.open()
+  queue.addFiles([pdf('a.pdf')], target)
+  await waitFor(() => expect(uploads).toHaveLength(1))
+  expect(queue.getSnapshot()[0]?.file).toBeUndefined()
+  expect(queue.unsaved()).toBe(true)
+  queue.abortAll()
+  open()
 })

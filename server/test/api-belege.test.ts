@@ -403,8 +403,10 @@ test('Abbrechen per Kennung (#170): ein Beleg aus dem Posteingang bleibt samt An
 
 // Der Eingang speichert jeden Beleg zuerst (/api/upload) und wertet danach den gespeicherten aus (`existingFile`).
 // Der Abbruch der Auswertung, das Schließen des Tabs und das Neuladen lassen ihn im Posteingang liegen, mit Objekt
-// und Jahr der Ablage, auch wenn der Schuhkarton erst nach der Belegart fragt (Bild).
-test('Erst speichern, dann auswerten: ein Abbruch am Schuhkarton lässt den Beleg im Posteingang des Objekts', async () => {
+// und Jahr der Ablage, auch wenn der Schuhkarton erst nach der Belegart fragt (Bild). **Das konnte der Server schon**
+// (der Test war vor der Umstellung der Warteschlange grün): Er sichert den Weg ab, auf den sich die Oberfläche jetzt
+// verlässt; für /api/extract steht dasselbe oben („Abbrechen per Kennung“).
+test('Bestehendes abgesichert: ein Abbruch am Schuhkarton lässt einen gespeicherten Beleg im Posteingang des Objekts', async () => {
   await withOllama(async (s, ollama) => {
     const file = await uploadBelegFile(s, Buffer.from('JPEG-Rechnung'), 'foto.jpg', { propertyId: 'objekt-1', year: '2025' })
     const requestId = '0123456789abcdef0123456789abcdef'

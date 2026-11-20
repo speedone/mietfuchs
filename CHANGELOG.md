@@ -86,6 +86,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   lud, während die KI arbeitete oder hing, verlor die wartenden Belege, und „Abbrechen“ an der laufenden Auswertung
   löschte auch diesen. Jetzt geht dabei nur die Auswertung verloren; der Beleg steht im Eingang unter „Ohne Position“
   und lässt sich von Hand erfassen oder erneut auswerten. Das gilt auch für die Ablage auf der Seite Kosten.
+  Gespeichert wird der Reihe nach: Jeder Beleg zeigt, ob er noch auf das Speichern wartet, gerade gespeichert wird oder
+  gespeichert ist. Der Verlauf führt je Beleg jetzt zwei Einträge („Beleg hochgeladen“ und „Beleg mit KI ausgewertet“);
+  wer die Auswertung rückgängig macht, behält den Beleg. Ein PDF, das sich nicht lesen lässt (beschädigt oder mit
+  Passwort), wird ebenfalls gespeichert und steht unter „Ohne Position“; eine leere Datei wird mit einer Meldung
+  abgelehnt.
 
 ## [0.18.1] – 2026-11-19
 

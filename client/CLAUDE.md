@@ -58,13 +58,21 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Objekt- und Zeitraumwechsel. Jeder Eintrag trägt Objekt, Jahr und Zeitraum des Hochladens und, sobald bekannt, den
   Namen des Belegs (`file`); Eingang und Kosten zeigen die ihres Objekts und Zeitraums (`belongsTo`), die übrigen nennt
   `OtherQueueEntries` mit Sprung (`useSwitchTo`; Einträge gelöschter Objekte und was die Seite schon als Karte zeigt,
-  zählen nicht). **Ein abgelegter Beleg ist gespeichert, bevor irgendetwas ausgewertet wird**: `addFiles` lädt jede
-  Datei sofort über `/api/upload` hoch (Objekt und Jahr des Eintrags), nacheinander und unabhängig von der laufenden
-  Auswertung (`pumpStore`); ausgewertet wird danach der gespeicherte Beleg (`existingFile`), wie bei „Per KI auswerten“
-  (`addStored`). Hängt die KI, wird abgebrochen, der Tab geschlossen oder neu geladen, geht nur die Auswertung verloren;
-  der Beleg steht unter „Ohne Position“. Ein wartender Eintrag sagt „wird gespeichert …“ oder „gespeichert, wartet …“
-  (`waitingLabel`), ein abgebrochener oder gescheiterter mit Beleg in der Ablage, wo er liegt (`storedNote`: unter „Ohne Position“, ein
-  schon als Zählerfoto erkanntes Bild, `photo`, im Ordner unter „Zählerfotos“). Ein
+  zählen nicht). **Ein abgelegter Beleg ist gespeichert, bevor er ausgewertet wird**: `addFiles` lädt jede
+  Datei über `/api/upload` hoch (Objekt und Jahr des Eintrags, also die des Ablegens, auch nach einem Wechsel mitten im
+  Stapel), der Reihe nach und unabhängig von der laufenden Auswertung (`pumpStore`); ausgewertet wird danach der
+  gespeicherte Beleg (`existingFile`), wie bei „Per KI auswerten“ (`addStored`). Hängt die KI, wird abgebrochen, der Tab
+  geschlossen oder neu geladen, geht von einem gespeicherten Beleg nur die Auswertung verloren; er steht unter „Ohne
+  Position“. **Nicht „sofort“**: Ein Beleg, dessen Upload aussteht, liegt nur im Browser. Ein wartender Eintrag sagt
+  deshalb, wie weit er ist („wartet auf das Speichern …“, „wird gespeichert …“, „gespeichert, wartet …“,
+  `waitingLabel`), der Text der Ablage nennt „gespeichert“ als Zeichen, und `unsaved` fragt beim Schließen des Tabs,
+  solange etwas wartet. Ein abgebrochener oder gescheiterter Eintrag sagt, wo sein Beleg liegt (`storedNote`), **nach dem
+  Bestand der Seite, nicht aus der Erinnerung der Schlange** (`storedPlaces`; im Eingang die Karten unter „Ohne
+  Position“, in Kosten die nach jedem solchen Ende neu geladene Ablage): unter „Ohne Position“, ein schon als Zählerfoto
+  erkanntes Bild im Ordner unter „Zählerfotos“, sonst (gelöscht, zugeordnet, gebucht, neu ausgewertet) kein Satz;
+  `addStored` räumt den alten Eintrag desselben Belegs. Eine leere Datei (0 Byte) wird nicht hochgeladen, sondern ist
+  ein Fehler mit Satz. Ein PDF, das der Browser nicht lesen kann (beschädigt, Passwort), ist dagegen jetzt gespeichert
+  und steht mit dem Fehler und unter „Ohne Position“ (vorher ging es gar nicht hoch; lieber einer zu viel). Ein
   gescheiterter Upload (auch ein Kontoauszug, 422) ist der Fehler dieses einen Eintrags, die übrigen laufen weiter.
   „Entfernen“ an einem wartenden, gespeicherten Beleg lässt ihn als „abgebrochen“ stehen (der Beleg bleibt), vor dem
   Upload verschwindet der Eintrag. Seitentests beantworten `/api/upload` mit `uploadAnswer` (testing/storedUpload.ts).
