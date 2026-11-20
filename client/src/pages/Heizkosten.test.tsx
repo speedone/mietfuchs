@@ -185,3 +185,35 @@ test('CO₂-Angaben: Nutzeinheiten vorbelegt mit den Wohnungen an der Heizung, o
   fireEvent.change(frage, { target: { value: 'shown' } })
   expect((await screen.findByLabelText(/^Nutzeinheiten laut Abrechnung/) as HTMLInputElement).value).toBe('2')
 })
+
+// Systemprüfung: „Hier beheben → Heizkosten“ führte nur an den Seitenanfang. Der Hinweis nennt die Anlage; ihr Bereich
+// wird hervorgehoben und nimmt den Fokus, die andere Anlage nicht.
+test('Sprungziel: der Bereich der betroffenen Anlage ist hervorgehoben, das Ziel gilt als erledigt', async () => {
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = url.split('?')[0] ?? ''
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'zfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json([{ ...PLANT, name: 'Vorderhaus' }, { ...PLANT, id: 'hp2', name: 'Hinterhaus' }])
+    return json([])
+  })
+  const done = vi.fn()
+  render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} focus={{ kind: 'heatingCosts', id: 'hp2' }} onFocusDone={done} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(document.querySelector('[data-jump="heatingCosts:hp2"]')?.classList.contains('focus-target')).toBe(true), { timeout: 5000 })
+  expect(document.querySelector('[data-jump="heatingCosts:hp1"]')?.classList.contains('focus-target')).toBe(false)
+  expect(document.querySelector('[data-jump="heatingCosts:hp2"]')?.contains(document.activeElement)).toBe(true)
+  expect(done).toHaveBeenCalledTimes(1)
+})
+
+// Systemprüfung, Leerzustände: ohne Heizanlage ein Knopf, der in den Stammdaten zur Karte „Heizung“ führt.
+test('ohne Heizanlage: „Heizung einrichten“ führt zur Karte „Heizung“ der Stammdaten', async () => {
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = url.split('?')[0] ?? ''
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'zfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    return json([])
+  })
+  const navigate = vi.fn()
+  render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} onNavigate={navigate} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Heizung einrichten' }, { timeout: 5000 }))
+  expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'heatingPlant', id: '' })
+})
