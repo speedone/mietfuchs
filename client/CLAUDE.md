@@ -617,6 +617,13 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Zustimmungserklärung auf eigener Seite. Druckbreite: Fall `mieterhoehung` in scripts/print-width-views.mjs.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
+- **Ein Formular, das einen Datensatz ganz schickt, schickt den Stand vom Öffnen mit** ([staleRecord.ts](src/staleRecord.ts),
+  Server: db/CLAUDE.md „Zwei Fenster, ein Datensatz“): `useSeenRecord(form?.id, liste)` merkt ihn beim Öffnen (nicht
+  aus der Liste beim Speichern, die lädt neu), `ifUnchanged(seen.current)` hängt ihn an den Rumpf, und die Ablehnung
+  steht über `staleText(e, seen, FELDER) ?? errorText(e)` im Fuß des Fensters: Satz des Servers, „Inzwischen geändert: …“
+  aus `current` und dass die Eingabe stehen bleibt. So Kostenposition (auch beim Aufteilen; `COST_STALE_FIELDS` in
+  costForm.ts), Wohnung, Zähler und Objekt; das Mietverhältnis hat `tenancyStamp`. Teilrümpfe (Beleg zuordnen, Betrag
+  prüfen, Art einer Zahlung) schicken nichts mit, sie ändern nur, was sie nennen.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus
   [src/testing/dialog.ts](src/testing/dialog.ts), Tastendrücke wie im Browser aus
   [src/testing/keys.ts](src/testing/keys.ts) (`press`). `<dialog>` hat die Rolle `dialog`, die

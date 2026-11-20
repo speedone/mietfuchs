@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CostItem } from '../types'
+import type { CostItem, Property } from '../types'
 import { propertyBody, propertySummary, propertyToForm, spreadRestChange, type PropertyField, type PropertyForm } from '../propertyForm'
 import { api, ApiError, errorText } from '../api'
 import { useProperty, withProperty } from '../property'
@@ -10,6 +10,9 @@ import PropertyFields from './PropertyFields'
 import { useFormError } from './ErrorSummary'
 import { useSaving } from '../useSaving'
 import { focusOpener, type FocusProps, type PropertyPart } from '../focus'
+import { ifUnchanged, staleText, type StaleFields } from '../staleRecord'
+
+const PROPERTY_STALE_FIELDS: StaleFields = { name: 'Bezeichnung', address: 'Adresse', kind: 'Art', landlordName: 'Vermieter', iban: 'IBAN', paymentDeadlineDays: 'Zahlungsfrist' }
 
 // Die Karte „Objekt“ in den Stammdaten (#92). Sie zeigt die Angaben des gewählten Objekts nur an; „Bearbeiten“
 // oben rechts öffnet ein Seitenfenster mit allen Feldern, wie bei Wohnungen und Mietverhältnissen. Vorher stand
@@ -35,6 +38,7 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
   jumpRef.current = { open, onFocusDone }
   // Vorher der Fokus auf „Bearbeiten“, damit er beim Schließen dorthin zurückkehrt (Durchsicht zu #554)
   const editButton = useRef<HTMLButtonElement>(null)
+  const seen = useRef<Property | undefined>(undefined)
   const hasProperty = !!property
   useEffect(() => {
     if (!hasProperty || focus?.kind !== 'property') return
@@ -49,6 +53,8 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
     if (!property) return
     errors.clear()
     setPart(jumpPart)
+    // Der Stand des Objekts beim Öffnen, als `ifUnchanged` beim Speichern (staleRecord.ts).
+    seen.current = property
     setForm(propertyToForm(property))
     setItems([])
     // Scheitert das Laden, sagt das Fenster es (K5); der Server fragt beim Speichern trotzdem nach.
@@ -69,7 +75,7 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
     const title = 'Verteilung für die Steuer ändert sich'
     const questions = spreadRestChange(form.spreadRestSaved, body, items)
     if (questions.length > 0 && !(await confirm({ title, message: questions.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' }))) return
-    const send = (confirmed: boolean) => api(`/api/properties/${property.id}`, { method: 'PUT', body: JSON.stringify({ ...body, ...(confirmed ? { confirmSpread: true } : {}) }) })
+    const send = (confirmed: boolean) => api(`/api/properties/${property.id}`, { method: 'PUT', body: JSON.stringify({ ...body, ...(confirmed ? { confirmSpread: true } : {}), ...ifUnchanged(seen.current) }) })
     try {
       try {
         await send(questions.length > 0)
@@ -83,7 +89,7 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
       setForm(null)
       toast('Objekt gespeichert.')
     } catch (e) {
-      errors.show(errorText(e))
+      errors.show(staleText(e, seen.current, PROPERTY_STALE_FIELDS) ?? errorText(e))
     }
   })
 

@@ -26,6 +26,7 @@ import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { allowsSpread, isSpreadYears, spreadOptions, spreadQuestions, spreadRates } from '../../shared/spread.ts'
 import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
+import type { StaleFields } from './staleRecord'
 import { flatIdsWithRooms } from './unitForm'
 import { roomView } from '../../shared/rooms.ts'
 import { allowsContractAnswer, contractTenancies, openWhy } from './contractAgreement'
@@ -131,6 +132,18 @@ export const EMPTY_ITEM_FORM: ItemForm = {
 }
 
 // Formular aus einer gespeicherten Position füllen
+// Was die Meldung „inzwischen an anderer Stelle geändert“ beim Namen nennt (staleRecord.ts), in der Reihenfolge des
+// Formulars; der Betrag mit dem Wert von jetzt, weil an ihm die Abrechnung hängt. Alles Übrige heißt „weitere Angaben“.
+export const COST_STALE_FIELDS: StaleFields = {
+  category: 'Kostenart',
+  description: 'Beschreibung',
+  vendor: 'Rechnungssteller',
+  amountCents: { label: 'Betrag', now: (v) => (typeof v === 'number' ? fmtEuro(v) : null) },
+  labor35aCents: '§35a-Lohn',
+  key: 'Umlageschlüssel',
+  invoiceFile: 'Beleg',
+}
+
 export function itemToForm(i: CostItem): ItemForm {
   return {
     id: i.id,

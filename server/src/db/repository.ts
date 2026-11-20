@@ -1354,6 +1354,54 @@ export class StaleTenancyError extends Error {
   status = 409
 }
 
+// Dieselbe Lage für jeden Datensatz der generischen Routen und für das Objekt: Zwei Fenster (zwei Tabs, Handy und
+// Rechner im Heimnetz) öffnen denselben Datensatz, das erste speichert, das zweite schickt danach sein ganzes Formular
+// und schrieb damit den Stand von vorher zurück, ohne Meldung. Schickt das Formular den Datensatz mit, wie es ihn
+// geladen hat (`ifUnchanged`, das Objekt aus der Liste), muss er dem gespeicherten noch gleichen, sonst 409 mit dem
+// Stand von jetzt (`current`). Verglichen wird der Inhalt, deshalb braucht es keine Spalte für eine Fassung. **Ohne die
+// Angabe gilt wie bisher der letzte** (ältere Tabs, Skripte, Teilrümpfe wie „Beleg zuordnen“), und **ein Rumpf, der
+// genau den Stand herstellt, der schon gilt, ist Erfolg** (Doppelklick, Wiederholung nach verlorener Antwort). Das
+// Mietverhältnis hat seine eigene Marke als Text (`tenancyStamp`, oben), weil die Liste dort Schlüssel umschreibt.
+export class StaleRecordError extends Error {
+  status = 409
+  current: unknown
+  constructor(message: string, current: unknown) {
+    super(message)
+    this.current = current
+  }
+}
+// Was die Listen dazusetzen, ohne dass es gespeichert ist (index.ts: `year` der Kostenposition im Kalenderobjekt,
+// `fromDeposit` und `fromBank` der Zahlung), dazu die Angabe selbst.
+const VIEW_ONLY = new Set(['year', 'fromDeposit', 'fromBank', 'ifUnchanged'])
+// Der Inhalt eines Datensatzes als Text: Schlüssel sortiert, Fehlendes und `null` gleich, Listen in ihrer Reihenfolge.
+function recordMark(value: unknown, top = true): string {
+  if (Array.isArray(value)) return `[${value.map((x) => recordMark(x, false)).join(',')}]`
+  if (!isObject(value)) return JSON.stringify(value ?? null)
+  const entries = Object.entries(Object(value) as Record<string, unknown>)
+    .filter(([key, x]) => x !== undefined && x !== null && !(top && VIEW_ONLY.has(key)))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([key, x]) => `${JSON.stringify(key)}:${recordMark(x, false)}`).join(',')}}`
+}
+const dayDe = (iso: string): string => iso.split('-').reverse().join('.')
+export function requireUnchanged(what: string, current: object, next: object | null, body: unknown): void {
+  const seen = raw(body, 'ifUnchanged')
+  if (!isObject(seen)) return
+  const now = recordMark(current)
+  if (recordMark(seen) === now || (next !== null && recordMark(next) === now)) return
+  throw new StaleRecordError(
+    `${what} wurde inzwischen an anderer Stelle geändert, etwa in einem zweiten Fenster oder auf einem anderen Gerät. ` +
+      'Gespeichert wurde nichts, damit diese Änderung nicht verloren geht. Bitte schließen Sie das Formular, öffnen Sie es erneut und tragen Sie Ihre Änderung noch einmal ein.',
+    current,
+  )
+}
+const RECORD_NAMES: Record<Exclude<CollectionName, 'tenancies'>, (x: Record<string, unknown>) => string> = {
+  units: (x) => `Die Wohnung „${String(x.name ?? '')}“`,
+  costItems: (x) => `Die Kostenposition „${String(x.description ?? '')}“`,
+  meters: (x) => `Der Zähler „${String(x.name ?? '')}“`,
+  readings: (x) => `Die Ablesung vom ${dayDe(String(x.date ?? ''))}`,
+  payments: (x) => `Die Zahlung vom ${dayDe(String(x.date ?? ''))}`,
+}
+
 // Ein Vorgang, der eine abgeschlossene Abrechnung träfe (#208). Wie bei `findClosedSettlement`
 // bleibt der eingefrorene Stand maßgeblich; wer ändern will, öffnet sie wieder (#56).
 export class PeriodConflict extends Error {
@@ -2666,7 +2714,9 @@ export async function createProperty(db: Database, id: string, body: unknown): P
 export async function updateProperty(db: Database, id: string, body: unknown): Promise<Property | null> {
   const current = await findProperty(db, id)
   if (!current) return null
-  const { id: _id, ...rest } = mergeProperty(current, body)
+  const merged = mergeProperty(current, body)
+  requireUnchanged(`Das Objekt „${current.name}“`, current, merged, body)
+  const { id: _id, ...rest } = merged
   await requireSpreadRest(db, id, current.spreadRestYear ?? null, rest.spreadRestYear ?? null, body)
   await db.update(properties).set(rest).where(eq(properties.id, id))
   return (await findProperty(db, id)) ?? null
@@ -3161,6 +3211,7 @@ export async function updateEntity(db: Database, coll: CollectionName, id: strin
     const current = (await c.read(db)).find((eintrag) => eintrag.id === id)
     if (!current) return false
     const entity = c.merge(current, body)
+    if (coll !== 'tenancies') requireUnchanged(RECORD_NAMES[coll]({ ...current }), current, entity, body)
     await db.transaction(async (tx) => {
       await c.guard(tx, current, entity, body)
       await c.replace(tx, entity)
@@ -3371,6 +3422,8 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
   // aller Teile, bevor etwas geschrieben ist, und mit derselben Regel wie das Formular (`splitPaidOnQuestions`). Der
   // Wächter der Teile fragt danach nicht mehr (`splitPart`).
   const current = currentId === null ? null : (await readCostItems(db)).find((c) => c.id === currentId) ?? null
+  // Das offene Formular kennt einen älteren Stand (`requireUnchanged`): Aufteilen ersetzte ihn sonst ebenso still.
+  if (current !== null) requireUnchanged(RECORD_NAMES.costItems({ ...current }), current, null, body)
   // Das Jahr der Zahlung eines Teils: über zwei Kalenderjahre das des Rumpfes; mit Verteilung an jedem Teil, sonst
   // begänne jeder Teil seine Verteilung in einem anderen Jahr (Durchsicht des Zweigs, S6a).
   const partTaxYear = (p: { needsTaxYear: boolean }): number | null => (p.needsTaxYear || base.spreadYears !== undefined ? base.taxYear ?? null : null)

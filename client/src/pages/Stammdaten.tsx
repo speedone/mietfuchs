@@ -39,6 +39,9 @@ import HeatingCard from '../components/HeatingCard'
 import { focusOpener, useFocusTarget, useNewTarget, useScrollToFocus, useSectionJump, type FocusProps } from '../focus'
 import { splitTenancies } from '../tenancyList'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
+import { ifUnchanged, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
+
+const UNIT_STALE_FIELDS: StaleFields = { name: 'Name', areaM2: 'Wohnfläche', rooms: 'Zimmer', floor: 'Etage', propertyId: 'Objekt' }
 import { salutationOf } from '../../../shared/letter.ts'
 import { NoticeBox } from '../components/Notice'
 
@@ -182,6 +185,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const { property, properties } = useProperty()
   const propertyId = property?.id
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
+  // Der Stand der Wohnung beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
+  const seenUnit = useSeenRecord(unitForm?.id, units)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   // Der Mieterwechsel ist gespeichert, aber die Ansicht ließ sich nicht neu laden (#150).
@@ -322,8 +327,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       return
     }
     unitErrors.clear()
-    const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
+    const body = JSON.stringify({ ...built.body, ...(editing ? ifUnchanged(seenUnit.current) : {}) })
     // Wechselt die Wohnung das Objekt (#180), fragt die Seite vorher, was mitwandert.
     const saved = units.find((u) => u.id === unitForm.id)
     const move = saved ? unitMoveQuestion({
@@ -335,7 +340,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
       else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
     } catch (e) {
-      unitErrors.show(errorText(e))
+      unitErrors.show(staleText(e, seenUnit.current, UNIT_STALE_FIELDS) ?? errorText(e))
       return
     }
     setUnitForm(null)

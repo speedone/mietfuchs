@@ -79,6 +79,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Gleichzeitig bearbeiten: War dieselbe Kostenposition in zwei Fenstern geöffnet (zwei Tabs, oder Handy und Rechner im
+  Heimnetz), überschrieb das zuletzt gespeicherte Fenster still, was das andere geändert hatte, etwa einen neuen
+  Betrag. Jetzt lehnt Mietfuchs das zweite Speichern ab, nennt im Formular, was sich inzwischen geändert hat, und
+  lässt die Eingabe stehen. Dasselbe gilt für Wohnungen, Zähler und das Objekt und nach einer Belegbuchung oder dem
+  Aufteilen einer Rechnung. Wurde der Datensatz inzwischen gelöscht, sagt die Meldung das statt „Nicht gefunden“.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

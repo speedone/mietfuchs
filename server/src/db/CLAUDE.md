@@ -207,6 +207,18 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Hauptzeile wird geändert, nicht gelöscht und neu eingefügt (`rowid` und Reihenfolge bleiben). Ein
   unbekanntes Feld hat keine Spalte. Sammlungen hängen an `withCollection`, damit der Übersetzer
   sagt, was fehlt.
+- **Zwei Fenster, ein Datensatz** (`requireUnchanged`, `StaleRecordError`): Ein Formular schickt alle Angaben, das
+  zweite Speichern schrieb also den Stand von vorher zurück. Trägt der Rumpf `ifUnchanged` mit dem Datensatz, wie das
+  Formular ihn geladen hat (das Objekt aus der Liste), muss er dem gespeicherten im Inhalt gleichen (`recordMark`:
+  Schlüssel sortiert, fehlend gleich `null`, ohne das, was nur die Liste dazusetzt, `VIEW_ONLY`), sonst 409 mit `stale`
+  und `current`. **Ohne die Angabe gilt wie bisher der letzte** (ältere Tabs, Skripte, Teilrümpfe), und **ein Rumpf, der
+  genau den geltenden Stand herstellt, ist Erfolg** (Doppelklick, Wiederholung). Keine Spalte, keine Migration. Gilt in
+  `updateEntity` für Wohnung, Kostenposition, Zähler, Ablesung und Zahlung, in `updateProperty` und beim Aufteilen einer
+  gespeicherten Position (`saveCostItemSplit`, dort ohne die Ausnahme). Das Mietverhältnis behält seine Marke als Text
+  (`tenancyStamp`, `StaleTenancyError`): Die Liste schreibt dort die Schlüssel der Jahreskorrektur um. Wer der Liste
+  einer Sammlung ein Feld dazusetzt, das nicht gespeichert ist, trägt es in `VIEW_ONLY` ein (und im Client in
+  staleRecord.ts), sonst lehnte jedes Speichern ab. Ein `PUT` auf einen gelöschten Datensatz ist eine 404 mit Satz je
+  Sammlung (`GONE` in index.ts). Geprüft in api-gleichzeitig.test.ts. Noch ohne Erkennung: `PUT /api/settings`.
 - **Was krumm hereinkommt, wird geradegerückt, nicht abgelehnt**: Bei zwei Staffeleinträgen zum
   selben Stichtag gilt der letzte (Regel einmal in [../schedule.ts](../schedule.ts)); die
   Jahreskorrektur eines Kalenderobjekts braucht eine vierstellige Jahreszahl. **Ausnahme

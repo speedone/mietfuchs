@@ -26,6 +26,9 @@ import HcaFields from '../components/HcaFields'
 import CutoffReadingForm from '../components/CutoffReadingForm'
 import { hcaSummary, isCutoffReading, ratedText } from '../hcaForm'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
+import { ifUnchanged, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
+
+const METER_STALE_FIELDS: StaleFields = { name: 'Name', unitId: 'Wohnung', type: 'Zählertyp', meterNumber: 'Zählernummer', unit: 'Einheit' }
 
 type Props = { units: Unit[] } & FocusProps
 
@@ -44,6 +47,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [readings, setReadings] = useState<Reading[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
   const [meterForm, setMeterForm] = useState<MeterForm | null>(null)
+  // Der Stand des Zählers beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
+  const seenMeter = useSeenRecord(meterForm?.id, meters)
   // Heizung PR 21: die Jahreszahl auf dem Zähler, nur für den Vorschlag; gespeichert wird „geeicht bis“.
   const [markedYear, setMarkedYear] = useState('')
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
@@ -94,14 +99,14 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       return
     }
     meterErrors.clear()
-    const body = JSON.stringify(result.body)
     const editing = !!meterForm.id
+    const body = JSON.stringify({ ...result.body, ...(editing ? ifUnchanged(seenMeter.current) : {}) })
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
       if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
       else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
     } catch (e) {
-      meterErrors.show(errorText(e))
+      meterErrors.show(staleText(e, seenMeter.current, METER_STALE_FIELDS) ?? errorText(e))
       return
     }
     const name = meterForm.name.trim()
