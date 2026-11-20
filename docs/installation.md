@@ -507,14 +507,14 @@ Adresse und Anmeldung setzt das Fenster dort selbst.
 | `NKA_AUTH` | Anmeldung: `auto`, `on` oder `off` (siehe [Docker](docker.md#anmeldung-ein--und-ausschalten-nka_auth)). | `auto` |
 | `NKA_PASSWORD_FILE` | Pfad zu einer Datei mit dem Passwort für den ersten Start, etwa ein Docker-Secret. Gilt nur, solange keins festgelegt ist. | keine |
 | `NKA_PASSWORD` | Das Passwort für den ersten Start im Klartext; `NKA_PASSWORD_FILE` geht vor. | keine |
-| `NKA_ALLOWED_HOSTS` | Weitere Namen, unter denen Mietfuchs antwortet (mehrere mit Komma, `.example.org` für alle Namen darunter, `*` schaltet die Prüfung ab). | IP-Adresse, `localhost` und Namen im Heimnetz; im Docker-Image ist die Prüfung aus |
+| `NKA_ALLOWED_HOSTS` | Weitere Namen, unter denen Mietfuchs antwortet (mehrere mit Komma, `.example.org` für alle Namen darunter, `*` schaltet die Prüfung ab). | IP-Adresse, `localhost` und Namen im Heimnetz; im Docker-Image und beim Start aus dem Quellcode ist die Prüfung aus, solange nichts eingetragen ist |
 | `NKA_TRUST_PROXY` | Adresse, Netz oder Name des Reverse-Proxys, dessen Angaben Mietfuchs glaubt (siehe [Docker](docker.md#der-proxy-muss-eingetragen-sein-nka_trust_proxy)). | keinem Proxy wird vertraut |
 | `NKA_AI_PROVIDER` | KI-Belegauswertung: Art der Schnittstelle, `ollama` oder `openai`. Für alle Variablen der KI gilt: Ein gesetzter Wert geht vor den Einstellungen (siehe [KI-Belegauswertung](ki-belegauswertung.md#für-fortgeschrittene)). | wie in den Einstellungen |
 | `NKA_AI_URL` | Adresse des KI-Dienstes. | wie in den Einstellungen |
 | `NKA_AI_MODEL` | Modell des KI-Dienstes. | wie in den Einstellungen |
 | `NKA_AI_API_KEY` | Schlüssel des KI-Dienstes. | keiner |
 | `NKA_AI_API_KEY_FILE` | Pfad einer Datei mit dem Schlüssel; nicht zusammen mit `NKA_AI_API_KEY`. | keine |
-| `NKA_AI_TIMEOUT` | Zeitlimit je Auswertungsschritt in Sekunden. | `1200` |
+| `NKA_AI_TIMEOUT` | Zeitlimit in Sekunden, dann für jeden Schritt der Auswertung dasselbe. | je Schritt: `180` für das Einordnen, `600` für Belegart und Zählerfoto, `1200` für das Auslesen |
 | `NKA_AI_MAX_TOKENS` | Höchstlänge der Antwort in Token (nur OpenAI-kompatible Dienste). | `16384` |
 | `NKA_AI_IMAGE_EDGE` | Lange Kante der Seitenbilder eines Scans in Bildpunkten. | `1200` |
 | `NKA_OLLAMA_URL` | Adresse von Ollama; gilt, solange Ollama der Anbieter ist und `NKA_AI_URL` fehlt. | `http://localhost:11434` |

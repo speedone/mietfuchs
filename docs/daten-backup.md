@@ -85,10 +85,18 @@ Tabellenkalkulation als Formel läse (Beginn mit `=`, `+`, `-` oder `@`), beginn
 
 ### Abrechnung als JSON (Seite Abrechnung, „Als JSON exportieren“)
 
-Die Datei nennt ihre Form selbst: `"format": "mietfuchs-abrechnung"` und `"version": 1`. **Ändert sich
-die Form, steigt `version`**, und das [Changelog](../CHANGELOG.md) nennt die Änderung; `format` bleibt.
-Wer die Datei einliest, prüft beide Felder. Beträge sind Cent als ganze Zahlen, Datumsangaben
-`JJJJ-MM-TT`.
+Die Datei nennt ihre Form selbst: `"format": "mietfuchs-abrechnung"` und `"version": 1`; `format`
+bleibt immer gleich. Beträge sind Cent als ganze Zahlen, Datumsangaben `JJJJ-MM-TT`. Für die Form gilt:
+
+- **Vorhandene Felder behalten Namen, Art und Bedeutung.**
+- **Neue Felder können dazukommen**, ohne dass `version` steigt; das
+  [Changelog](../CHANGELOG.md) nennt sie. Wer die Datei einliest, prüft `format` und `version` und
+  ignoriert Felder, die er nicht kennt.
+- **Fällt ein Feld weg, heißt es anders oder bedeutet es etwas anderes, steigt `version`**, und das
+  Changelog nennt die Änderung.
+- **Texte in Feldern sind Anzeige** und nicht Teil der Zusage: etwa `basisText`, `keyLabel`,
+  `prepaymentNote`, `title` eines Fehlers und die Sätze in `heating`. Ihr Wortlaut kann sich ändern;
+  rechne mit den Zahlen, nicht mit den Sätzen.
 
 | Feld | Inhalt |
 | --- | --- |
@@ -106,7 +114,8 @@ Wer die Datei einliest, prüft beide Felder. Beträge sind Cent als ganze Zahlen
 
 Ein vollständiges Beispiel der Fassung 1 liegt im Quellcode:
 [abrechnung-v1.json](../server/test/fixtures/export/abrechnung-v1.json). Ein Test vergleicht den Export
-Zeichen für Zeichen damit.
+Feld für Feld damit und unterscheidet, ob ein Feld fehlt oder seine Art geändert hat (neue Fassung),
+ob eines dazugekommen ist (erlaubt) oder ob sich nur eine Zahl geändert hat.
 
 ### Abrechnung als CSV (Seite Abrechnung, „Als CSV exportieren“)
 

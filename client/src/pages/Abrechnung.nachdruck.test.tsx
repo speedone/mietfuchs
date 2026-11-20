@@ -56,8 +56,10 @@ afterEach(() => {
   localStorage.clear()
 })
 
-// Der Text, wie er auf dem Papier steht: ohne alles, was im Druck verborgen ist (`no-print`), ohne Knöpfe und Felder.
-// Eine Zeile je Block, die Zellen einer Tabellenzeile mit „ | “ getrennt, damit die Datei sich lesen und vergleichen lässt.
+// Der Text, wie er auf dem Papier steht: ohne alles, was im Druck verborgen ist (`no-print`, `print:hidden`), ohne
+// Knöpfe und Felder; was nur am Bildschirm zugeklappt ist (`hidden` mit `print:block` oder `print-only`), steht im
+// Druck und zählt mit. Eine Zeile je Block, die Zellen einer Tabellenzeile mit „ | “ getrennt, die Angaben des
+// Informationsblocks (Raster aus `span`) je in einer Zeile, damit die Datei sich lesen und vergleichen lässt.
 const BLOCKS = new Set(['DIV', 'P', 'TR', 'H1', 'H2', 'H3', 'H4', 'LI', 'TABLE', 'SECTION', 'HEADER', 'FOOTER', 'ADDRESS', 'BR', 'DT', 'DD', 'CAPTION', 'FIGCAPTION'])
 function printedText(root: Element): string {
   let out = ''
@@ -67,11 +69,14 @@ function printedText(root: Element): string {
       return
     }
     if (!(node instanceof Element)) return
-    if (node.classList.contains('no-print') || node.hasAttribute('hidden') || ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SVG', 'svg', 'STYLE'].includes(node.tagName)) return
-    if (BLOCKS.has(node.tagName)) out += '\n'
+    const shownInPrint = node.classList.contains('print:block') || node.classList.contains('print-only')
+    if (node.classList.contains('no-print') || node.classList.contains('print:hidden') || (node.hasAttribute('hidden') && !shownInPrint)) return
+    if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SVG', 'svg', 'STYLE'].includes(node.tagName)) return
+    const block = BLOCKS.has(node.tagName) || [...node.classList].some((c) => c.startsWith('letter-info-'))
+    if (block) out += '\n'
     node.childNodes.forEach(walk)
     if (node.tagName === 'TD' || node.tagName === 'TH') out += ' | '
-    if (BLOCKS.has(node.tagName)) out += '\n'
+    if (block) out += '\n'
   }
   walk(root)
   return out.split('\n').map((line) => line.replace(/[  ]/g, ' ').replace(/\s+/g, ' ').replace(/( \|)+ *$/, '').trim()).filter(Boolean).join('\n')

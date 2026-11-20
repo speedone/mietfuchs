@@ -1,18 +1,24 @@
 // Kompatibilitätszusage ab 1.0 (#447), Teil „Exportformate“: Die Form der Exporte ist hier gebunden, damit sie sich
 // nicht nebenbei ändert. Was die Zusage meint, steht in docs/daten-backup.md („Exporte und ihre Form“):
 //
-// - **JSON-Export der Abrechnung** (`format: mietfuchs-abrechnung`, `version`): der ganze Export eines festen Bestands
-//   wortgleich gegen die eingecheckte Datei fixtures/export/abrechnung-v<version>.json. Der Bestand ist Beispiel A
-//   der eigenen Heizkostenabrechnung (server/testing/selfHeating.ts), weil er jeden Teil der Form füllt (Positionen,
-//   Sonderzeilen, Heizungsblöcke).
+// - **JSON-Export der Abrechnung** (`format: mietfuchs-abrechnung`, `version`): der Export eines festen Bestands gegen
+//   die eingecheckte Datei fixtures/export/abrechnung-v<version>.json. Der Bestand ist Beispiel A der eigenen
+//   Heizkostenabrechnung (server/testing/selfHeating.ts), weil er jeden Teil der Form füllt (Positionen, Sonderzeilen,
+//   Heizungsblöcke).
 // - **CSV-Export der Abrechnung** und **die beiden CSV-Dateien des Steuer-ZIP**: die Kopfzeile jeder Datei wortgleich,
 //   in jeder ihrer Spielarten.
 //
-// **Die Fixture wird nie von selbst überschrieben.** Wer die Form bewusst ändert, startet mit
+// **Die Regel für das JSON** (dieselbe wie in der Doku): Vorhandene Felder behalten Namen, Art und Bedeutung; neue
+// Felder können dazukommen, wer den Export liest, ignoriert unbekannte. Entfernen, Umbenennen oder eine andere
+// Bedeutung verlangen `version` + 1 und einen Eintrag im CHANGELOG. Texte, die nur Anzeige sind (`DISPLAY_TEXT`),
+// gehören nicht zur Zusage. Der Test unterscheidet deshalb drei Fälle, je mit eigener Ansage:
+//   (a) Formbruch: ein Feld der Fixture fehlt oder hat eine andere Art.
+//   (b) additiv: es gibt neue Felder. Erlaubt; die Fixture wird neu erzeugt, das CHANGELOG nennt sie.
+//   (c) gleiche Form, anderer Wert: Die Berechnung von Beispiel A hat sich geändert. Kein Exportthema.
+//
+// **Die Fixture wird nie von selbst überschrieben.** Neu erzeugen:
 //     GOLDEN=diff node --test test/export-zusage.test.ts      (im Ordner server/)
-// dann liegt das Ist-Ergebnis als abrechnung-v<version>.actual.json daneben. Die Übernahme ist ein eigener,
-// begründeter Schritt: `EXPORT_VERSION` anheben, die Änderung im CHANGELOG nennen, die Datei unter dem Namen der
-// neuen Fassung einchecken.
+// dann liegt das Ist-Ergebnis als abrechnung-v<version>.actual.json daneben und wird von Hand übernommen.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -28,17 +34,90 @@ const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 
 const REGENERATE = 'GOLDEN=diff node --test test/export-zusage.test.ts (im Ordner server/)'
 const firstLine = (csv: string): string => csv.replace(/^﻿/, '').split('\r\n')[0] ?? assert.fail('leere Datei')
 
-test('JSON-Export der Abrechnung: der ganze Export eines festen Bestands, wortgleich mit der eingecheckten Fassung', () => {
+// Felder, deren Text nur Anzeige ist (aus der Berechnung erzeugte Sätze und Beschriftungen): gebunden ist ihre Art,
+// nicht ihr Wortlaut. Als Pfad ohne Listenstellen.
+const DISPLAY_TEXT = new Set([
+  '.period.label',
+  '.errors[].title',
+  '.statements[].prepaymentNote',
+  '.statements[].rows[].description', '.statements[].rows[].keyLabel', '.statements[].rows[].basisText',
+  '.landlord.rows[].description', '.landlord.rows[].keyLabel', '.landlord.rows[].basisText',
+  '.heating[].co2Check.findings[].texts[]',
+  '.heating[].self.dhw.steps[]',
+  '.heating[].info.contacts[].name', '.heating[].info.contacts[].url', '.heating[].info.contacts[].what', '.heating[].info.contactsChecked',
+])
+
+type FormDiff = { broken: string[], added: string[], changed: string[] }
+const kindOf = (v: unknown): string => (v === null ? 'null' : Array.isArray(v) ? 'Liste' : typeof v === 'object' ? 'Objekt' : typeof v === 'string' ? 'Text' : typeof v === 'number' ? 'Zahl' : typeof v)
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// Vergleicht die eingecheckte Fassung (`old`) mit dem Export von heute. `at` ist die Stelle, `generic` derselbe Pfad
+// ohne Listenstellen (für `DISPLAY_TEXT`).
+function formDiff(old: unknown, now: unknown, at = '', generic = '', out: FormDiff = { broken: [], added: [], changed: [] }): FormDiff {
+  if (kindOf(old) !== kindOf(now)) {
+    out.broken.push(`${at || '(Wurzel)'}: ${kindOf(old)} wurde ${kindOf(now)}`)
+  } else if (Array.isArray(old) && Array.isArray(now)) {
+    if (old.length !== now.length) out.changed.push(`${at}: ${old.length} Einträge, heute ${now.length}`)
+    for (let i = 0; i < Math.min(old.length, now.length); i++) formDiff(old[i], now[i], `${at}[${i}]`, `${generic}[]`, out)
+  } else if (isObject(old) && isObject(now)) {
+    for (const [k, v] of Object.entries(old)) {
+      if (k in now) formDiff(v, now[k], `${at}.${k}`, `${generic}.${k}`, out)
+      else out.broken.push(`${at}.${k}: fehlt`)
+    }
+    for (const k of Object.keys(now)) if (!(k in old)) out.added.push(`${at}.${k}`)
+  } else if (old !== now && !DISPLAY_TEXT.has(generic)) {
+    out.changed.push(`${at}: ${JSON.stringify(old)} wurde ${JSON.stringify(now)}`)
+  }
+  return out
+}
+
+const BREAK = (n: number): string =>
+  `Formbruch im JSON-Export der Abrechnung (${n} Stellen): Ein Feld der Fassung ${EXPORT_VERSION} fehlt oder hat eine andere Art. Vorhandene Felder behalten Namen, Art und Bedeutung ` +
+  '(Kompatibilitätszusage, docs/daten-backup.md). Ist der Bruch gewollt: `version` anheben (`EXPORT_VERSION` in server/src/settlementExport.ts), die Änderung im CHANGELOG nennen und die neue Form als ' +
+  `abrechnung-v${EXPORT_VERSION + 1}.json daneben einchecken (${REGENERATE}); abrechnung-v${EXPORT_VERSION}.json bleibt als Beleg der alten Fassung liegen. ` +
+  'Liefert nur Beispiel A an dieser Stelle etwas anderes (etwa null statt eines Blocks), ist erst die Rechnung zu klären.'
+const CALC = (n: number): string =>
+  `Die Berechnung von Beispiel A hat sich geändert (${n} Stellen bei gleicher Form): Das ist kein Exportthema, sondern ein Befund der Rechnung. Die Fixture wird dafür nicht einfach neu erzeugt; ` +
+  'erst klären, warum Beispiel A (server/testing/selfHeating.ts) anders rechnet. Ist die neue Zahl richtig und gewollt, die Fixture mit Begründung erneuern.'
+const ADDED = (n: number): string =>
+  `Der JSON-Export der Abrechnung hat ${n} neue Felder. Das ist additiv und erlaubt (wer den Export liest, ignoriert unbekannte Felder), \`version\` bleibt ${EXPORT_VERSION}: ` +
+  `die Fixture neu erzeugen mit ${REGENERATE}, die .actual.json als abrechnung-v${EXPORT_VERSION}.json übernehmen, die neuen Felder im CHANGELOG nennen und in docs/daten-backup.md nachtragen.`
+
+test('JSON-Export der Abrechnung: Form und Zahlen eines festen Bestands wie in der eingecheckten Fassung', () => {
   const computed = computeSettlement(selfSnapshot())
   const actual = `${JSON.stringify(settlementExportJson({ ...computed, closed: null }, { id: 'objekt-1', name: 'Beispiel A' }), null, 2)}\n`
   const file = path.join(DIR, `abrechnung-v${EXPORT_VERSION}.json`)
   if (process.env.GOLDEN === 'diff') fs.writeFileSync(path.join(DIR, `abrechnung-v${EXPORT_VERSION}.actual.json`), actual, 'utf8')
   assert.ok(fs.existsSync(file), `Zur Fassung ${EXPORT_VERSION} des JSON-Exports fehlt die Datei ${path.basename(file)}. Erzeugen mit ${REGENERATE}, dann die .actual.json unter diesem Namen einchecken.`)
-  assert.equal(actual, fs.readFileSync(file, 'utf8'),
-    'Die Form des JSON-Exports der Abrechnung hat sich geändert (oder eine Zahl von Beispiel A). Der Export fällt unter die Kompatibilitätszusage ab 1.0 ' +
-    '(docs/daten-backup.md): `version` anheben (`EXPORT_VERSION` in server/src/settlementExport.ts) und die Änderung im CHANGELOG nennen, dann die Fixture neu erzeugen mit ' +
-    `${REGENERATE} und die .actual.json als abrechnung-v<neue Fassung>.json einchecken. ` +
-    'Hat sich nur eine Zahl geändert und nicht die Form, ist das eine fachliche Frage an die Rechnung und keine an diese Datei.')
+  const stored: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const now: unknown = JSON.parse(actual)
+  const diff = formDiff(stored, now)
+  // In dieser Reihenfolge: Ein Bruch geht vor, und eine geänderte Zahl darf nicht mit „additiv, neu erzeugen“ untergehen.
+  assert.deepEqual(diff.broken.slice(0, 30), [], BREAK(diff.broken.length))
+  assert.deepEqual(diff.changed.slice(0, 30), [], CALC(diff.changed.length))
+  assert.deepEqual(diff.added.slice(0, 30), [], ADDED(diff.added.length))
+})
+
+test('JSON-Export der Abrechnung: der Formvergleich unterscheidet Bruch, neues Feld, andere Zahl und Anzeigetext', () => {
+  const old = { version: 1, statements: [{ tenancyId: 'A', balanceCents: 100, prepaymentNote: 'ein Satz', rows: [{ shareCents: 1, basisText: '60 von 120 m²', kind: null }] }] }
+  const st = old.statements[0] ?? assert.fail('keine Abrechnung')
+  const row = st.rows[0] ?? assert.fail('keine Zeile')
+  const withRow = (r: unknown): unknown => ({ ...old, statements: [{ ...st, rows: [r] }] })
+  assert.deepEqual(formDiff(old, structuredClone(old)), { broken: [], added: [], changed: [] })
+  // (a) Feld fehlt, heißt anders oder hat eine andere Art
+  assert.deepEqual(formDiff(old, withRow({ basisText: row.basisText, kind: null })).broken, ['.statements[0].rows[0].shareCents: fehlt'])
+  assert.deepEqual(formDiff(old, withRow({ ...row, shareCents: '1' })).broken, ['.statements[0].rows[0].shareCents: Zahl wurde Text'])
+  assert.deepEqual(formDiff(old, withRow({ ...row, kind: 'co2Relief' })).broken, ['.statements[0].rows[0].kind: null wurde Text'])
+  // (b) neues Feld, sonst nichts
+  assert.deepEqual(formDiff(old, withRow({ ...row, neu: 1 })), { broken: [], added: ['.statements[0].rows[0].neu'], changed: [] })
+  // (c) andere Zahl, andere Zahl der Zeilen
+  assert.deepEqual(formDiff(old, withRow({ ...row, shareCents: 2 })).changed, ['.statements[0].rows[0].shareCents: 1 wurde 2'])
+  assert.equal(formDiff(old, { ...old, statements: [{ ...st, rows: [row, row] }] }).changed.length, 1)
+  // Anzeigetext: nach Art, nicht nach Wortlaut
+  assert.deepEqual(formDiff(old, { ...old, statements: [{ ...st, prepaymentNote: 'anders', rows: [{ ...row, basisText: '60 von 120 Quadratmetern' }] }] }), { broken: [], added: [], changed: [] })
+  assert.equal(formDiff(old, withRow({ ...row, basisText: null })).broken.length, 1)
+  // Kennungen sind kein Anzeigetext
+  assert.equal(formDiff(old, { ...old, statements: [{ ...st, tenancyId: 'B' }] }).changed.length, 1)
 })
 
 test('JSON-Export der Abrechnung: Kennung und Fassung stehen vorn, und die Fixture trägt dieselbe Fassung', () => {

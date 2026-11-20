@@ -240,7 +240,8 @@ Vorwarnung. Was diese Zusagen bricht, kommt nur mit einer neuen Hauptversion (2.
 jede Version die Bestände älterer Versionen ebenfalls; verbindlich ist die Zusage ab 1.0. Der Wortlaut
 und was bis 1.0 gilt: [MIGRATION.md](MIGRATION.md#kompatibilität-bis-und-ab-10). Welche Exporte gemeint
 sind und wie sie aussehen, steht unter
-[Daten & Backup](docs/daten-backup.md#exporte-und-ihre-form), welche Umgebungsvariablen unter
+[Daten & Backup](docs/daten-backup.md#exporte-und-ihre-form) (im JSON-Export behalten vorhandene Felder
+Namen, Art und Bedeutung; neue Felder können dazukommen), welche Umgebungsvariablen unter
 [Installation](docs/installation.md#umgebungsvariablen).
 
 Gepflegt wird nur die jeweils neueste veröffentlichte Version: Fehler- und Sicherheitskorrekturen
