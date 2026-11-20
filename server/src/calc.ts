@@ -822,7 +822,23 @@ export function consumptionInPeriod(readings: SnapshotReading[], from: string, t
 // Tage im Zeitraum [from, to], die Segmente des Zählers abdecken (#116). Eine Ablesung gilt
 // zum Tagesende, ein Segment deckt also die Tage nach seiner ersten Ablesung bis einschließlich
 // seiner letzten. Eine Lücke, etwa ein Zählerwechsel ohne Endstand, deckt nichts ab.
+//
+// Für eine eingefrorene Liste gemerkt (#651): `readingsOf` in `computeSettlement` gibt je Zähler dieselbe
+// eingefrorene Liste, und dieselbe Frage kommt dort für Schlüssel, Hinweise und Leerstand mehrfach. Eine offene
+// Liste wird jedes Mal neu gerechnet.
+const COVERED_DAYS = new WeakMap<readonly SnapshotReading[], Map<string, number>>()
 function coveredDays(readings: SnapshotReading[], from: string, to: string): number {
+  if (!Object.isFrozen(readings)) return coveredDaysOf(readings, from, to)
+  let byRange = COVERED_DAYS.get(readings)
+  if (!byRange) COVERED_DAYS.set(readings, (byRange = new Map()))
+  const key = `${from}|${to}`
+  const hit = byRange.get(key)
+  if (hit !== undefined) return hit
+  const days = coveredDaysOf(readings, from, to)
+  byRange.set(key, days)
+  return days
+}
+function coveredDaysOf(readings: SnapshotReading[], from: string, to: string): number {
   return meterSegments(readings).segments.reduce(
     (a, seg) => a + rangeOverlapDays(new Date(toUTC(seg.from) + MS_DAY).toISOString().slice(0, 10), seg.to, from, to),
     0,
@@ -3933,7 +3949,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Bewohnt im Jahr: selbstgenutzt oder mit einem Mietverhältnis. Nur bei ihnen fehlt ein
   // Zähler wirklich; eine leere Wohnung oder eine unvermietete Garage verbraucht nichts (#116).
   const occupied = new Set([...periodUnits.filter((u) => u.selfUsed).map((u) => u.id), ...tenancies.map((t) => t.unitId)])
-  const readingsOf = (meterId: string) => allReadings.filter((r) => r.meterId === meterId)
+  // Je Zähler einmal gruppiert statt bei jedem Aufruf alle Ablesungen zu durchsuchen (#651; bei zehn Jahren und
+  // 60 Wohnungen über 20.000 Ablesungen, im Profil rund ein Zehntel der Abrechnung). Die Reihenfolge innerhalb eines
+  // Zählers bleibt die des Bestands, wie beim früheren `filter`; sie entscheidet bei zwei Ablesungen am selben Tag.
+  // Eingefroren, weil alle Aufrufer dieselbe Liste bekommen; wer sortieren will, kopiert (so schon an jeder Stelle).
+  const readingsByMeter = new Map<string, SnapshotReading[]>()
+  for (const r of allReadings) {
+    const list = readingsByMeter.get(r.meterId)
+    if (list) list.push(r)
+    else readingsByMeter.set(r.meterId, [r])
+  }
+  for (const list of readingsByMeter.values()) Object.freeze(list)
+  const noReadings: SnapshotReading[] = Object.freeze([]) as unknown as SnapshotReading[]
+  const readingsOf = (meterId: string): SnapshotReading[] => readingsByMeter.get(meterId) ?? noReadings
   // Geschätzte Ablesungen (#98) beim Verbrauch eines Mieters: die Zähler der Sparte an seiner Einheit und an der Wohnung,
   // in der sie als Zimmer liegt (#573), dazu `extra` (Haupt- oder Bezugszähler, an denen sein Anteil hängt). Nur ein Text,
   // keine Zahl; ohne Kennzeichnung im Bestand leer, die Texte bleiben dann wortgleich.
