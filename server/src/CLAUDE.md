@@ -883,6 +883,31 @@ Cockpit und Hinweis der Steuer.
   Lexikon „Einbehalt“, kein Vorschlag und keine Frist für den Einbehalt, und die mit der Kaution verrechnete
   Nachzahlung steht in der Zeile der Abrechnung.
 
+## Mieterhöhung (#191)
+
+Entwurf [docs/superpowers/specs/2026-11-20-mieterhoehung-design.md](../../docs/superpowers/specs/2026-11-20-mieterhoehung-design.md),
+Plan in vier gestapelten PRs ([docs/superpowers/plans/2026-11-20-mieterhoehung.md](../../docs/superpowers/plans/2026-11-20-mieterhoehung.md)).
+Stand nach PR 1 (Daten und Register): nur Angaben, keine Rechnung.
+
+- **Die Kaltmiete-Staffel bleibt die einzige Quelle des Solls.** Jede Stufe trägt optional ihre Art
+  (`RentEntry.reason`, `RentChangeReason`) und bei einer Indexmiete ihren Indexwert (`RentEntry.index`: Monat, Wert
+  mit einer Nachkommastelle, Basisjahr). Fehlt die Art, gilt `agreement`: Sie zählt für Wartefrist und Sperrfrist und
+  erhöht die Kappungsgrenze nicht, für jede unbekannte alte Stufe die sichere Seite. Mietkonto, Abrechnung und Steuer
+  lesen nur `from` und `monthlyCents`.
+- **Am Mietverhältnis** `rentKind` (`free`, `staggered`, `index`) und `rentIncreaseExcluded` (§ 557 Abs. 3 BGB); fehlend
+  heißt nicht beantwortet, und die Rechnung (ab PR 2) sperrt dann (Entwurf R14). **Am Objekt** `rentCapReduced`
+  (Kappungsgrenzen-Verordnung; `null` unbekannt, gerechnet wie „ja“). Getrennt von `tightMarket`.
+- **Wächter** (`guardTenancy`): Indexwert und Art `index` nur bei `rentKind: 'index'`, Art `staggered` nur bei
+  `'staggered'`; Indexwert über 0 mit höchstens einer Nachkommastelle, Basisjahr 1950 bis 2100 (`rentIndexOf`). Wer die
+  Art der Miete wechselt, bekommt eine 400 mit Satz statt still angepasster Stufen. Dieselben Regeln prüft das Formular
+  (client/src/rentKindForm.ts).
+- **Register**: `bgb.rent-increase-wait-months`, `bgb.rent-increase-lock-months`, `bgb.rent-cap`,
+  `bgb.rent-increase-consent`, `bgb.index-rent`, `bgb.staggered-rent` (Wortlaut am 20.11.2026 gelesen, `checked`),
+  `practice.rent-increase-rounding` (abrunden auf den Cent, Auslegung) und `practice.vpi-series` (Tabelle 61111-0002,
+  Basis 2020). Einen Postlauf trägt das Register nicht (kein belastbarer Beleg; offener Punkt im Entwurf).
+- **Lexikon**: `comparisonRent`, `rentCap` (wo die Länder ihre Verordnungen veröffentlichen, ohne Gemeindeliste),
+  `indexRent`, `staggeredRent`, `rentIncreaseRequest`, `consentPeriod`; Beispiele in glossary-mieterhoehung.test.ts.
+
 ## Kontoauszug (#188)
 
 Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in server/src/db/CLAUDE.md.

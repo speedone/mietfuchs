@@ -722,6 +722,20 @@
       "when": 1794554778639,
       "tag": "0102_kontoauszug",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "6",
+      "when": 1795162731872,
+      "tag": "0103_mieterhoehung_daten",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "6",
+      "when": 1795162744026,
+      "tag": "0104_mieterhoehung_bedingungen",
+      "breakpoints": true
     }
   ]
 }

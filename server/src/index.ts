@@ -68,7 +68,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -4969,7 +4969,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Die Verteilung nach § 82b EStDV (#262, E-9): dieselbe Gestalt, bestätigt mit `confirmSpread`.
   if (err instanceof SpreadQuestion) return res.status(409).json({ error: err.message, question: 'spread' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

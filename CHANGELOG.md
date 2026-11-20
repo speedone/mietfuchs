@@ -8,6 +8,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Mieterhöhung, erster Teil: Am Mietverhältnis lassen sich die Art der Miete (nach Vertrag, Staffelmiete, Indexmiete)
+  und die Frage, ob der Vertrag Mieterhöhungen ausschließt, angeben; in der Kaltmiete-Staffel je Stufe ihre Art
+  (Vertragsbeginn oder Vereinbarung, Stufe der Staffelmiete, Anpassung der Indexmiete, Zustimmung zur Vergleichsmiete,
+  Modernisierung) und bei einer Indexmiete Indexmonat, Indexwert und Basisjahr. Liegen Stufen einer Staffelmiete
+  weniger als ein Jahr auseinander, weist das Formular darauf hin. Am Objekt steht die Frage, ob in der Gemeinde eine
+  Kappungsgrenzen-Verordnung gilt. Neu im Lexikon: „Ortsübliche Vergleichsmiete“, „Kappungsgrenze“, „Indexmiete“,
+  „Staffelmiete“, „Mieterhöhungsverlangen“ und „Zustimmungsfrist“. Alle Angaben sind freiwillig; Mietkonto, Abrechnung
+  und Steuer rechnen unverändert ([#191](https://github.com/speedone/mietfuchs/issues/191)).
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und

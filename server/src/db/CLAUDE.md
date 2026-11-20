@@ -106,6 +106,15 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Indizes: `bank_transactions(account_id, booking_date)` und `(fingerprint)` für den Abgleich, `tenancy_payers(iban)`
   und `bank_transaction_links(transaction_id)` für Vorschlag und Summe je Umsatz. Beschreibung in
   [../CLAUDE.md](../CLAUDE.md) unter „Kontoauszug“.
+- **Mieterhöhung** (#191, Entwurf docs/superpowers/specs/2026-11-20-mieterhoehung-design.md): Schritt 0103 legt
+  `base_rents.reason` (Art der Stufe, `NULL` heißt `agreement`), `index_month`/`index_tenths`/`index_base` (Indexwert
+  in Zehnteln, alle drei oder keiner), `tenancies.rent_kind` und `rent_increase_excluded` (`NULL` nicht beantwortet),
+  `properties.rent_cap_reduced` (`NULL` unbekannt) und die Tabelle `rent_increases` an (je Mietverhältnis, CASCADE;
+  `basis` ist JSON wie ein Abschluss, `agreed_cents` genau bei `partial`). Die Bedingungen an den drei bestehenden
+  Tabellen in 0104 (Neubau, getrennt wie 0092/0093). Keine Datenanweisung; db.json und ältere Backups kommen ohne
+  Angaben an. Dass Indexwert und die Arten `index`/`staggered` zur Art der Miete passen, prüft das Repository
+  (`rentScheduleProblem` in `guardTenancy`, `RentDataError`), denn es hängt an zwei Tabellen. `rent_increases` bleibt
+  bis PR 3 leer und ohne Route. Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Mieterhöhung“.
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,
   Anteile, Teilnehmer, Einzel- und Eigenbeträge, Pauschalen, `unit_no_connection`.
   `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.

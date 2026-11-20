@@ -27,6 +27,7 @@ import Card from '../components/Card'
 import DepositDrawer from '../components/DepositDrawer'
 import { depositState } from '../../../shared/deposit.ts'
 import { depositStatusLabel } from '../depositForm'
+import { CURRENT_INDEX_BASE, defaultRentReason, EMPTY_RENT_EXTRA, EXCLUSION_HINT, exclusionOf, exclusionOptions, RENT_KIND_HINT, rentKindBody, rentKindOptions, rentReasonOptions, rentRowExtraOf, staggeredGapNote, withRentDetails, type ExclusionChoice, type RentKindChoice, type RentRow } from '../rentKindForm'
 import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
@@ -54,7 +55,8 @@ type TenancyForm = {
   personHistory: { from: string; persons: string }[]
   start: string
   end: string
-  baseRents: { from: string; amount: string }[]
+  // Kaltmiete-Staffel mit Art und Indexwert je Stufe (#191)
+  baseRents: RentRow[]
   prepayments: { from: string; amount: string }[]
   // Pauschale je Monat (#93), eigene Staffel
   flatRates: { from: string; amount: string }[]
@@ -71,6 +73,9 @@ type TenancyForm = {
   relative: boolean
   // Fälligkeit der Miete laut Vertrag (#334)
   rentDue: RentDueForm
+  // Art der Miete und Ausschluss von Erhöhungen (#191); '' nicht angegeben.
+  rentKind: RentKindChoice
+  rentIncreaseExcluded: ExclusionChoice
   deposit: string
   depositStatus: DepositStatus
   // Form der Sicherheit (#228); '' keine Angabe.
@@ -100,6 +105,8 @@ const EMPTY_TENANCY_EXTRA = {
   flatRates: [] as { from: string; amount: string }[],
   heatingPrepayments: [] as { from: string; amount: string }[],
   rentDue: EMPTY_RENT_DUE,
+  rentKind: '' as RentKindChoice,
+  rentIncreaseExcluded: '' as ExclusionChoice,
 }
 
 // Der Tag davor, für „bis …“ in der Liste der Wohnungen (#259).
@@ -128,6 +135,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     baseRents: (t.baseRents ?? []).map((p) => ({
       from: scheduleMonthText(p.from),
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+      ...rentRowExtraOf(p),
     })),
     prepayments: t.prepayments.map((p) => ({
       from: scheduleMonthText(p.from),
@@ -141,6 +149,8 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     contractDate: t.contractDate ?? '',
     relative: t.relative === true,
     rentDue: rentDueFormOf(t),
+    rentKind: t.rentKind ?? '',
+    rentIncreaseExcluded: exclusionOf(t.rentIncreaseExcluded),
     deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
     depositStatus: t.depositStatus ?? 'offen',
     depositForm: t.depositForm ?? '',
@@ -279,7 +289,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // „Wohnung anlegen“ und „Mietverhältnis anlegen“ aus Cockpit, Abrechnung und Leerzustand (#554): dasselbe Formular wie
   // der Knopf der Karte. Ohne Wohnung bleibt das Mietverhältnis gesperrt wie dort; die Karte nennt dann den Grund.
   const newUnit = () => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }
-  const newTenancy = () => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units.filter((u) => !flats.has(u.id)), tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }
+  const newTenancy = () => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units.filter((u) => !flats.has(u.id)), tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '', ...EMPTY_RENT_EXTRA, reason: 'agreement' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }
   // Der Fokus vorher auf den Knopf der Karte, wie oben auf das ✎ der Wohnung
   const newUnitButton = useRef<HTMLButtonElement>(null)
   const newTenancyButton = useRef<HTMLButtonElement>(null)
@@ -383,7 +393,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       tenErrors.report(scheduleProblems)
       return
     }
-    const baseRents = [...rents.schedule].sort((a, b) => a.from.localeCompare(b.from))
+    // Art und Indexwert je Stufe (#191), gemeldet je an ihrem Feld.
+    const rentDetails = withRentDetails(tenForm.baseRents, tenForm.start, rents.schedule, tenForm.rentKind)
+    if ('problems' in rentDetails) {
+      tenErrors.report(rentDetails.problems)
+      return
+    }
+    const baseRents = [...rentDetails.entries].sort((a, b) => a.from.localeCompare(b.from))
     const prepayments = pre.schedule
     const flatRates = flat.schedule
     const heating = heat.schedule
@@ -428,6 +444,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       relative: tenForm.relative,
       // #334: nur, was sich an der Fälligkeit geändert hat.
       ...rentDueBody(tenForm.rentDue, tenancies.find((t) => t.id === tenForm.id)),
+      // #191: Art der Miete und Ausschluss; nicht angegeben ist null.
+      ...rentKindBody(tenForm),
       depositCents,
       // Mit Kautionsbuchungen ergibt sich der Stand aus ihnen (#228): Der gespeicherte bleibt dann, wie er ist, und
       // gilt wieder, falls alle Buchungen gelöscht werden. Ohne Höhe gibt es keinen Stand, wie vor #228 (Durchsicht G10).
@@ -798,19 +816,59 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
             <div className="field-group">
               <div className="field-group-label">Kaltmiete je Monat - Staffel (leer = nur NK)</div>
-              {tenForm.baseRents.map((p, i) => (
-                <div className="staffel-row" key={i}>
-                  <MonthField label={scheduleLabel('baseRent')} placeholder={startsSchedule(tenForm.baseRents, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('baseRent', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from } : x)) })} />
-                  <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('baseRent', i, 'amount'))}>
-                    <input inputMode="decimal" value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
-                  </Field>
-                  {tenForm.baseRents.length > 1
-                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) }) }}>🗑</button>
-                    : <span />}
-                </div>
-              ))}
+              {/* #191: Art der Miete und Ausschluss von Erhöhungen; gerechnet wird damit nur bei einer Mieterhöhung. */}
+              <div className="field-grid">
+                <Field label="Art der Miete" hint={RENT_KIND_HINT}>
+                  <select aria-label="Art der Miete" value={tenForm.rentKind} onChange={(e) => setTenForm({ ...tenForm, rentKind: rentKindOptions().find((o) => o.value === e.target.value)?.value ?? '' })}>
+                    {rentKindOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Schließt der Vertrag Mieterhöhungen aus?" hint={EXCLUSION_HINT}>
+                  <select aria-label="Schließt der Vertrag Mieterhöhungen aus?" value={tenForm.rentIncreaseExcluded} onChange={(e) => setTenForm({ ...tenForm, rentIncreaseExcluded: exclusionOptions().find((o) => o.value === e.target.value)?.value ?? '' })}>
+                    {exclusionOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </Field>
+              </div>
+              {tenForm.baseRents.map((p, i) => {
+                const setRow = (patch: Partial<RentRow>) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, ...patch } : x)) })
+                // Indexfelder bei einer Indexmiete, und überall, wo ein Indexwert gespeichert ist (sonst verschwände er still).
+                const showsIndex = tenForm.rentKind === 'index' || p.indexMonth.trim() !== '' || p.indexValue.trim() !== ''
+                return (
+                  <div key={i}>
+                    <div className="staffel-row">
+                      <MonthField label={scheduleLabel('baseRent')} placeholder={startsSchedule(tenForm.baseRents, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('baseRent', i, 'from'))} onChange={(from) => setRow({ from })} />
+                      <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('baseRent', i, 'amount'))}>
+                        <input inputMode="decimal" value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setRow({ amount: e.target.value })} />
+                      </Field>
+                      {tenForm.baseRents.length > 1
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) }) }}>🗑</button>
+                        : <span />}
+                    </div>
+                    <div className="field-grid">
+                      <Field label="Art der Stufe" {...tenErrors.field(`baseRent.${i}.reason`)}>
+                        <select aria-label="Art der Stufe" value={p.reason} onChange={(e) => setRow({ reason: rentReasonOptions(tenForm.rentKind, p.reason).find((o) => o.value === e.target.value)?.value ?? p.reason })}>
+                          {rentReasonOptions(tenForm.rentKind, p.reason).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </Field>
+                      {showsIndex && (
+                        <>
+                          <MonthField label="Indexmonat" value={p.indexMonth} start={tenForm.start} today={localToday()} {...tenErrors.field(`baseRent.${i}.indexMonth`)} onChange={(indexMonth) => setRow({ indexMonth })} />
+                          <Field label="Indexwert" width="s" {...tenErrors.field(`baseRent.${i}.indexValue`)}>
+                            <input aria-label="Indexwert" inputMode="decimal" value={p.indexValue} placeholder="z. B. 121,7" onChange={(e) => setRow({ indexValue: e.target.value })} />
+                          </Field>
+                          <Field label="Basisjahr" width="s" {...tenErrors.field(`baseRent.${i}.indexBase`)}>
+                            <input aria-label="Basisjahr" inputMode="numeric" value={p.indexBase} placeholder={CURRENT_INDEX_BASE} onChange={(e) => setRow({ indexBase: e.target.value })} />
+                          </Field>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
               <PartialMonthNote rows={tenForm.baseRents} start={tenForm.start} end={tenForm.end} kind="baseRent" />
-              <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, baseRents: [...tenForm.baseRents, { from: '', amount: '' }] })}>+ Mieterhöhung ab Monat …</button>
+              <StaggeredGapNote rows={tenForm.baseRents} start={tenForm.start} kind={tenForm.rentKind} />
+              {tenForm.rentKind === 'index' && <small className="muted">Indexwerte aus dem <Term id="indexRent">Verbraucherpreisindex</Term>, Monatswerte der aktuellen Reihe (Basis {CURRENT_INDEX_BASE} = 100); ein leeres Basisjahr heißt diese Reihe.</small>}
+              <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, baseRents: [...tenForm.baseRents, { from: '', amount: '', ...EMPTY_RENT_EXTRA, reason: defaultRentReason(tenForm.rentKind, tenForm.baseRents.every((r) => !r.from.trim() && !r.amount.trim())) }] })}>+ Mieterhöhung ab Monat …</button>
             </div>
 
             <div className="field-group">
@@ -1382,6 +1440,16 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
 function PartialMonthNote({ rows, start, end, kind }: { rows: readonly { from: string; amount: string }[]; start: string; end: string; kind: ScheduleKind }) {
   const note = partialMonthNote(rows, start, end, kind)
   return note ? <small className="muted">{note}</small> : null
+}
+
+// Der Hinweis zum Abstand der Stufen einer Staffelmiete (#191, staggeredGapNote); nur, wenn sich die Staffel lesen lässt.
+function StaggeredGapNote({ rows, start, kind }: { rows: readonly RentRow[]; start: string; kind: RentKindChoice }) {
+  if (kind !== 'staggered') return null
+  const built = buildSchedule(rows, start, 'baseRent')
+  if ('problems' in built) return null
+  const details = withRentDetails(rows, start, built.schedule, kind)
+  const note = 'entries' in details ? staggeredGapNote(details.entries, kind) : null
+  return note ? <small className="muted" role="note">{note}</small> : null
 }
 
 // Den ✎ der angesprungenen Zeile fokussieren. Steht im Baum vor dem Seitenfenster: Dessen `useLayoutEffect` merkt sich

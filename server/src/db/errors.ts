@@ -73,6 +73,12 @@ const FIELD_NAMES: Record<string, string> = {
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
   deposit_form: 'Form der Sicherheit',
+  // Mieterhöhung (#191)
+  // Nach Tabelle und Spalte, weil „reason“ auch bei Schätzungen und Zählerlücken vorkommt und dort etwas anderes meint.
+  base_rents_reason: 'Art der Stufe',
+  rent_kind: 'Art der Miete',
+  from_cents: 'bisherige Miete',
+  to_cents: 'neue Miete',
   deposit_hold_cents: 'Einbehalt',
   deposit_hold_note: 'Grund für den Einbehalt',
   purpose: 'Zweck der Verrechnung',
@@ -81,7 +87,7 @@ const FIELD_NAMES: Record<string, string> = {
   mode: 'die Anpassung der Vorauszahlung',
 }
 
-const fieldName = (column: string): string => FIELD_NAMES[column] ?? `„${column}“`
+const fieldName = (column: string, table?: string): string => (table ? FIELD_NAMES[`${table}_${column}`] : undefined) ?? FIELD_NAMES[column] ?? `„${column}“`
 
 // Der Feldname aus dem Namen einer Prüfbedingung. Die Namen sind durchgehend
 // `<tabelle>_<feld>_not_negative`, `_known`, `_positive` oder `_complete`, und ein Test hält
@@ -93,7 +99,7 @@ function fieldOfConstraint(name: string, suffix: string): string {
   // in der er gerade arbeitet. Der längste passende Feldname gewinnt, weil manche Felder
   // Unterstriche enthalten (`old_end_value`).
   const treffer = Object.keys(FIELD_NAMES)
-    .filter((feld) => rest.endsWith(`_${feld}`))
+    .filter((feld) => rest === feld || rest.endsWith(`_${feld}`))
     .sort((a, b) => b.length - a.length)[0]
   return treffer ? fieldName(treffer) : `„${rest}“`
 }
@@ -134,6 +140,16 @@ export const RENT_DUE_TEXTS = {
   dayRange: 'Der Tag des Monats liegt zwischen 1 und 31. Bitte tragen Sie eine ganze Zahl ein; in kürzeren Monaten gilt der letzte Tag.',
   day: 'Der Tag des Monats (zwischen 1 und 31) gehört genau zu einem festen Tag. Bitte prüfen Sie die Fälligkeit der Miete.',
   firstRent: 'Erste Miete schon bei Mietbeginn fällig ist ja oder nein. Bitte setzen oder entfernen Sie den Haken.',
+} as const
+
+// Mieterhöhung (#191): dieselben Sätze im Repository (Wächter am Mietverhältnis) und an den Bedingungen.
+export const RENT_DATA_TEXTS = {
+  kind: 'Die Art der Miete ist „nicht angegeben“, „nach Vertrag“, „Staffelmiete“ oder „Indexmiete“. Bitte wählen Sie eine davon.',
+  reason: 'Die Art der Stufe ist unbekannt. Bitte wählen Sie sie aus der Liste: Vertragsbeginn oder Vereinbarung, Stufe einer Staffelmiete, Anpassung einer Indexmiete, Zustimmung zur Vergleichsmiete oder Modernisierung.',
+  indexComplete: 'Zum Indexwert gehören Monat, Wert und Basisjahr. Bitte tragen Sie alle drei ein oder keinen.',
+  indexValue: 'Der Indexwert ist eine Zahl größer als 0 mit höchstens einer Nachkommastelle, etwa 121,7.',
+  indexMonth: 'Der Monat des Indexwerts ist kein Monat in der Form JJJJ-MM (etwa 2025-10). Bitte wählen Sie ihn im Kalender.',
+  indexBase: 'Das Basisjahr des Index ist ein Jahr zwischen 1950 und 2100, etwa 2020 für „2020 = 100“.',
 } as const
 
 // Bedingungen, deren Endung allein den falschen Satz ergäbe (#208): `_complete` spräche von der
@@ -248,6 +264,20 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   tenancies_rent_due_known: RENT_DUE_TEXTS.rule,
   tenancies_rent_due_day_valid: RENT_DUE_TEXTS.day,
   tenancies_first_rent_at_start_valid: RENT_DUE_TEXTS.firstRent,
+  // Mieterhöhung (#191): Repository und Wächter fangen das vorher ab; die Bedingungen sind das Netz darunter.
+  tenancies_rent_kind_known: RENT_DATA_TEXTS.kind,
+  tenancies_rent_increase_excluded_known: 'Ob der Vertrag Mieterhöhungen ausschließt, ist ja, nein oder nicht angegeben. Bitte wählen Sie eins davon.',
+  properties_rent_cap_reduced_known: 'Ob in der Gemeinde eine Kappungsgrenzen-Verordnung gilt, ist ja, nein oder „weiß nicht“. Bitte wählen Sie eins davon.',
+  base_rents_reason_known: RENT_DATA_TEXTS.reason,
+  base_rents_index_complete: RENT_DATA_TEXTS.indexComplete,
+  base_rents_index_tenths_positive: RENT_DATA_TEXTS.indexValue,
+  base_rents_index_month_valid: RENT_DATA_TEXTS.indexMonth,
+  base_rents_index_base_valid: RENT_DATA_TEXTS.indexBase,
+  rent_increases_created_on_valid: 'Der Tag, an dem die Mieterhöhung erstellt wurde, ist kein Datum in der Form JJJJ-MM-TT. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  rent_increases_received_on_valid: 'Der Tag des Zugangs beim Mieter ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  rent_increases_decided_on_valid: 'Der Tag der Antwort des Mieters ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  rent_increases_agreed_valid: 'Einen zugestimmten Betrag gibt es genau dann, wenn der Mieter teilweise zugestimmt hat. Bitte geben Sie ihn dort an und sonst nicht.',
+  rent_increases_basis_is_json: 'Die Grundlage der Mieterhöhung ließ sich nicht speichern, weil sie unvollständig ist. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
   // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
   law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',
   law_overrides_source_complete: 'Zu einem eingetragenen Rechtswert gehört die Quelle, etwa „UBA, Bekanntmachung vom …“.',
@@ -372,8 +402,8 @@ function classify(grund: string): DatabaseProblem | null {
   const check = /CHECK constraint failed:\s*([a-z0-9_]+)/i.exec(grund)
   if (check) return withFinding(400, checkMessage(check[1]), grund)
 
-  const notNull = /NOT NULL constraint failed:\s*\S+\.(\w+)/i.exec(grund)
-  if (notNull) return withFinding(400, `Das Feld ${fieldName(notNull[1])} muss ausgefüllt sein.`, grund)
+  const notNull = /NOT NULL constraint failed:\s*(\w+)\.(\w+)/i.exec(grund)
+  if (notNull) return withFinding(400, `Das Feld ${fieldName(notNull[2], notNull[1])} muss ausgefüllt sein.`, grund)
 
   // Kein Fehler in den Daten, sondern am Rechner. Beide kommen vor, wenn jemand seinen
   // Datenordner auf einen vollen oder schreibgeschützten Datenträger legt.

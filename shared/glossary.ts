@@ -13,10 +13,10 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { bgbHeatDeliverySwitch, bgbObjectionMonths, bgbRentDueAtStart } from './law/bgb-betrkv.ts'
+import { bgbHeatDeliverySwitch, bgbIndexRent, bgbObjectionMonths, bgbRentCap, bgbRentDueAtStart, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths, bgbStaggeredRent } from './law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
-import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
-import { practiceEvaporatorWindow, practiceMeterRestHigh } from './law/practice.ts'
+import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, shiftMonths, valueAt } from './law/register.ts'
+import { practiceEvaporatorWindow, practiceMeterRestHigh, practiceVpiSeries } from './law/practice.ts'
 import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
@@ -140,6 +140,29 @@ export type Term = {
 const DEGREE_DAYS = onlyVersion(hkvDegreeDays).value
 const winterPermille = ['01', '02', '03', '04'].reduce((a, m) => a + (DEGREE_DAYS.months[m] ?? 0), 0)
 const deEuro = (cents: number): string => (cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// Mieterhöhung (#191): Fristen, Kappungsgrenze, Index- und Staffelmiete aus dem Register. Die Beispiele rechnen mit den
+// Werten; die Rundung ist die von `practice.rent-increase-rounding` (abrunden auf den Cent).
+const WAIT = valueAt(bgbRentIncreaseWaitMonths, LAW_AS_OF)
+const LOCK = valueAt(bgbRentIncreaseLockMonths, LAW_AS_OF)
+const CAP = valueAt(bgbRentCap, LAW_AS_OF)
+const CONSENT = valueAt(bgbRentIncreaseConsent, LAW_AS_OF)
+const INDEX = valueAt(bgbIndexRent, LAW_AS_OF)
+const STAGGERED = valueAt(bgbStaggeredRent, LAW_AS_OF)
+const VPI = valueAt(practiceVpiSeries, LAW_AS_OF)
+const ORDINAL: Readonly<Record<number, string>> = { 1: 'ersten', 2: 'zweiten', 3: 'dritten', 4: 'vierten' }
+const ordinal = (n: number): string => ORDINAL[n] ?? `${n}.`
+const NUMBER_WORD: Readonly<Record<number, string>> = { 1: 'einem', 2: 'zwei', 3: 'drei', 4: 'vier' }
+const numberWord = (n: number): string => NUMBER_WORD[n] ?? String(n)
+const floorCents = (exact: number): number => Math.floor(exact * 100 + 1e-9)
+const factorDe = (percent: number): string => ((100 + percent) / 100).toLocaleString('de-DE', { maximumFractionDigits: 2 })
+// Das Fristbeispiel des Entwurfs: Zugang am 20.11.2026, Monate nach § 558b aus dem Register.
+const RECEIVED = '2026-11-20'
+const RECEIVED_MONTH = `${RECEIVED.slice(0, 7)}-01`
+const CONSENT_END = dayBeforeIso(shiftMonths(RECEIVED_MONTH, CONSENT.consentMonths + 1))
+const EFFECTIVE = shiftMonths(RECEIVED_MONTH, CONSENT.effectiveMonth)
+const SUIT_END = dayBeforeIso(shiftMonths(shiftMonths(RECEIVED_MONTH, CONSENT.consentMonths + 1), CONSENT.suitMonths))
+const UNCHANGED_SINCE = shiftMonths(EFFECTIVE, -WAIT)
 
 export const GLOSSARY = {
   allocable: {
@@ -325,6 +348,56 @@ export const GLOSSARY = {
     example: 'Kaltmiete 800 €: höchstens 2.400 € Kaution, zahlbar in drei Raten zu 800 €. Sind zwei Raten eingegangen, zeigt Mietfuchs „teilweise erhalten“ und 1.600 € bei Ihnen; mit 12,34 € Zinsen liegen nach der dritten Rate 2.412,34 € bei Ihnen.',
     norm: '§ 551 Abs. 1 bis 4 BGB; BFH IX R 48/96 (einbehaltene Kaution als Einnahme)',
     needed: 'Wenn Sie festhalten wollen, was eingegangen ist und was Sie zurückzahlen: Unter Stammdaten steht am Mietverhältnis „Kaution führen“. Dort buchen Sie Eingänge, Zinsen, Verrechnungen und Rückzahlungen; den Stand rechnet Mietfuchs daraus. Ohne Buchungen gilt der Stand, den Sie am Mietverhältnis gewählt haben. Nach dem Auszug zeigt das Fenster eine Aufstellung mit dem, was auszuzahlen bleibt, und das Cockpit erinnert, solange noch Geld bei Ihnen liegt.',
+  },
+  // #191: Mieterhöhung (Entwurf 2026-11-20). Wortlaut der §§ 557, 557a, 557b, 558, 558a, 558b BGB am 20.11.2026 auf
+  // gesetze-im-internet.de gelesen, die Urteile im Volltext; Beispiele nachgerechnet in glossary-mieterhoehung.test.ts.
+  comparisonRent: {
+    topic: 'tenants',
+    title: 'Ortsübliche Vergleichsmiete',
+    short: `Die Miete, die in der Gemeinde für vergleichbare Wohnungen nach Art, Größe, Ausstattung, Beschaffenheit und Lage üblicherweise vereinbart oder geändert worden ist. Bis zu ihr können Sie die Zustimmung zu einer höheren Kaltmiete verlangen, wenn die Miete an dem Tag, an dem die Erhöhung wirken soll, seit ${WAIT} Monaten unverändert ist; das Verlangen geht frühestens ${LOCK} Monate nach der letzten Erhöhung zu. Erhöhungen nach Modernisierung oder wegen gestiegener Betriebskosten (§§ 559 bis 560 BGB) zählen dabei nicht. Maßgeblich ist die tatsächliche Wohnfläche, und die Kappungsgrenze gilt zusätzlich.`,
+    example: `Wohnung mit 70 m², Mietspiegel 9,50 € je m²: Vergleichsmiete 70 × 9,50 € = ${deEuro(70 * 950)} €. Bisher zahlt der Mieter 560 € kalt, vor drei Jahren ebenso. Die Kappungsgrenze erlaubt 560 € × ${factorDe(CAP.percent)} = ${deEuro(floorCents(560 * (100 + CAP.percent) / 100))} €; verlangen können Sie also höchstens ${deEuro(Math.min(70 * 950, floorCents(560 * (100 + CAP.percent) / 100)))} €.`,
+    norm: '§ 558 Abs. 1, 2, 3, § 558a BGB; BGH, Urteil vom 18.11.2015, VIII ZR 266/14 (tatsächliche Wohnfläche)',
+    needed: 'Wenn Sie die Kaltmiete eines Mietverhältnisses mit Miete „nach Vertrag“ erhöhen wollen. Mietfuchs ermittelt die Vergleichsmiete nicht; Sie entnehmen sie dem Mietspiegel Ihrer Gemeinde, einem Gutachten oder drei vergleichbaren Wohnungen. Bei einer Staffelmiete ist die Erhöhung bis zur Vergleichsmiete bis zur letzten Stufe ausgeschlossen, bei einer Indexmiete ganz. Damit die Fristen stimmen, tragen Sie unter Stammdaten am Mietverhältnis die Art der Miete und je Stufe der Kaltmiete ihre Art ein.',
+  },
+  rentCap: {
+    topic: 'tenants',
+    title: 'Kappungsgrenze',
+    short: `Bei einer Erhöhung bis zur Vergleichsmiete darf die Kaltmiete innerhalb von ${CAP.years} Jahren um höchstens ${CAP.percent} % steigen, in Gemeinden oder Teilen von Gemeinden, die eine Verordnung der Landesregierung bestimmt, um höchstens ${CAP.reducedPercent} %. Ausgangspunkt ist die vereinbarte, nicht geminderte Miete ${CAP.years} Jahre vor dem Tag, an dem die Erhöhung wirken soll. Erhöhungen nach Modernisierung oder wegen gestiegener Betriebskosten (§§ 559 bis 560 BGB) in diesen Jahren kommen hinzu.`,
+    example: `Miete vor ${CAP.years} Jahren 272,31 €: höchstens 272,31 € × ${factorDe(CAP.percent)} = ${deEuro(floorCents(272.31 * (100 + CAP.percent) / 100))} € (genau 326,772 €, auf den Cent abgerundet), mit Verordnung 272,31 € × ${factorDe(CAP.reducedPercent)} = ${deEuro(floorCents(272.31 * (100 + CAP.reducedPercent) / 100))} €.`,
+    norm: '§ 558 Abs. 3 BGB; BGH, Urteile vom 28.04.2004, VIII ZR 177/03 (Ausgangsmiete), und vom 17.04.2019, VIII ZR 33/18 (vereinbarte, nicht geminderte Miete)',
+    needed: `Bei jeder Erhöhung bis zur Vergleichsmiete. Unter Stammdaten geben Sie am Objekt an, ob in der Gemeinde eine Kappungsgrenzen-Verordnung gilt; bei „weiß nicht“ rechnet Mietfuchs mit ${CAP.reducedPercent} %, denn ein kleineres Verlangen ist nie unwirksam. Die Verordnungen erlassen die Landesregierungen befristet, oft mit neuer Liste der Gemeinden. Sie stehen im Gesetz- und Verordnungsblatt Ihres Landes und im Landesrecht-Portal, meist unter einem Namen wie „Kappungsgrenzenverordnung“ oder zusammen mit der Mietpreisbremse in einer „Mieterschutzverordnung“; prüfen Sie dort die Fassung, die beim Zugang Ihres Verlangens gilt.`,
+  },
+  indexRent: {
+    topic: 'tenants',
+    title: 'Indexmiete',
+    short: `Die Kaltmiete folgt dem Verbraucherpreisindex für Deutschland des Statistischen Bundesamts; das muss schriftlich vereinbart sein. Sie ändert sich im selben Verhältnis wie der Index, nicht um die Differenz der Punkte. Die Miete muss jeweils mindestens ${INDEX.minMonths} Monate unverändert bleiben, Erhöhungen nach Modernisierung ausgenommen. Eine Änderung machen Sie in Textform geltend, mit beiden Indexwerten und der bisherigen und neuen Miete oder der Erhöhung in Euro; geschuldet ist sie ab dem ${INDEX.effectiveMonthOffset === 2 ? 'übernächsten' : `${INDEX.effectiveMonthOffset}.`} Monat nach Zugang. Eine Erhöhung bis zur Vergleichsmiete ist ausgeschlossen.`,
+    example: `Ausgangsmiete 685,00 € bei Index 94,2, heute 106,1: 685,00 € × 106,1 / 94,2 = ${deEuro(floorCents(685 * 106.1 / 94.2))} € (rechnerisch 771,53397… €, auf den Cent abgerundet), also ${deEuro(floorCents(685 * 106.1 / 94.2) - 68500)} € mehr.`,
+    norm: '§ 557b BGB; BGH, Urteile vom 22.11.2017, VIII ZR 291/16 (Verhältnis, Prozentangabe nicht nötig), und vom 26.05.2021, VIII ZR 42/20 (Basisjahr, Monatswerte)',
+    needed: `Wenn Ihr Vertrag eine Indexmiete vereinbart. Wählen Sie dann unter Stammdaten am Mietverhältnis bei „Art der Miete“ „Indexmiete“ und tragen Sie an jeder Stufe der Kaltmiete den Indexmonat und den Indexwert ein, an der ersten den Ausgangsindex laut Vertrag. Beide Werte einer Anpassung stammen aus derselben, aktuellen Reihe des Statistischen Bundesamts (zurzeit Basis ${VPI.base} = 100, Tabelle ${VPI.table}); einen Wert aus einer älteren Reihe schlagen Sie dort neu nach.`,
+  },
+  staggeredRent: {
+    topic: 'tenants',
+    title: 'Staffelmiete',
+    short: `Die Kaltmiete ist für bestimmte Zeiträume in unterschiedlicher Höhe schriftlich vereinbart, jede Stufe als Betrag in Euro. Jede Stufe muss mindestens ${STAGGERED.minMonths} Monate gelten. Die Stufen treten ohne Erklärung ein. Solange die Staffel läuft, sind Erhöhungen bis zur Vergleichsmiete und nach Modernisierung ausgeschlossen. Gilt in der Gemeinde die Mietpreisbremse, muss jede Stufe sie dann einhalten, wenn sie fällig wird.`,
+    example: `Vertrag ab 01.01.2025 mit 700 €, ab 01.01.2026 720 €, ab 01.01.2027 740 €: drei Stufen im Abstand von ${STAGGERED.minMonths} Monaten. Stünde die zweite schon ab 01.10.2025 im Vertrag, lägen nur 9 Monate dazwischen, und Mietfuchs weist darauf hin.`,
+    norm: '§ 557a BGB',
+    needed: 'Wenn Ihr Vertrag eine Staffelmiete vereinbart. Wählen Sie dann unter Stammdaten am Mietverhältnis bei „Art der Miete“ „Staffelmiete“ und tragen Sie alle vereinbarten Stufen in die Kaltmiete-Staffel ein, jede weitere mit der Art „Stufe der Staffelmiete“. Nach der letzten Stufe ist eine Erhöhung bis zur Vergleichsmiete wieder möglich.',
+  },
+  rentIncreaseRequest: {
+    topic: 'tenants',
+    title: 'Mieterhöhungsverlangen',
+    short: 'Ihre Bitte an den Mieter, einer höheren Kaltmiete bis zur Vergleichsmiete zuzustimmen. Es ergeht in Textform an alle Mieter des Vertrags, nennt die bisherige und die neue Miete als Betrag und wird begründet, etwa mit dem Mietspiegel, einem Gutachten oder drei vergleichbaren Wohnungen. Enthält ein qualifizierter Mietspiegel Angaben zur Wohnung, gehören sie immer hinein. Schweigt der Mieter, hat er nicht zugestimmt.',
+    example: `Zugang am ${germanDate(RECEIVED)}: Die neue Miete gilt mit Zustimmung ab ${germanDate(EFFECTIVE)}. An diesem Tag muss die bisherige Miete seit ${WAIT} Monaten unverändert sein, also spätestens seit ${germanDate(UNCHANGED_SINCE)}; und die letzte Erhöhung muss beim Zugang mindestens ${LOCK} Monate zurückliegen.`,
+    norm: '§§ 558, 558a, 558b BGB; BGH, Urteil vom 16.12.2020, VIII ZR 108/20 (Betrag und Begründung)',
+    needed: 'Wenn Sie die Kaltmiete eines Mietverhältnisses mit Miete „nach Vertrag“ erhöhen wollen. Erhöhungen nach Modernisierung zählen bei Wartefrist, Sperrfrist und Kappungsgrenze nicht; erfassen Sie deshalb je Stufe der Kaltmiete ihre Art. Eine Minderung ist keine Stufe: Sie ändert die vereinbarte Miete nicht.',
+  },
+  consentPeriod: {
+    topic: 'tenants',
+    title: 'Zustimmungsfrist',
+    short: `Der Mieter hat bis zum Ablauf des ${ordinal(CONSENT.consentMonths)} Kalendermonats nach Zugang Ihres Verlangens Zeit zuzustimmen. Stimmt er zu, schuldet er die neue Miete ab Beginn des ${ordinal(CONSENT.effectiveMonth)} Kalendermonats nach Zugang; einen späteren Tag dürfen Sie selbst nennen. Stimmt er nicht oder nur teilweise zu, können Sie innerhalb von ${numberWord(CONSENT.suitMonths)} weiteren Monaten auf Zustimmung klagen.`,
+    example: `Zugang am Freitag, ${germanDate(RECEIVED)}: Zustimmung bis ${germanDate(CONSENT_END)} (ein Sonntag), neue Miete ab ${germanDate(EFFECTIVE)}, Klage bis ${germanDate(SUIT_END)}. Ob sich das Ende am Sonntag auf den Montag verschiebt (§ 193 BGB), ist nicht geklärt; sicher ist, erst danach zu klagen und die Klagefrist vom ${germanDate(CONSENT_END)} an zu rechnen.`,
+    norm: '§ 558b Abs. 1 und 2 BGB; BGH, Urteil vom 25.09.2013, VIII ZR 280/12 (späterer Wirksamkeitstag)',
+    needed: 'Nach jedem Mieterhöhungsverlangen. Alle Daten hängen am Zugang beim Mieter; sorgen Sie für einen Zugang, den Sie beweisen können, etwa durch Einwurf mit Zeugen.',
   },
   // #188: Kontoauszug einlesen (Entwurf 2026-11-12). Keine Rechtsaussage außer dem Satz zur Aufbewahrung; die Frage der
   // Aufzeichnungspflichten privater Vermieter ist im Entwurf als offen festgehalten.

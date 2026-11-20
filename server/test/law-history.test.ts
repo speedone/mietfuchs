@@ -166,6 +166,15 @@ const SHIPPED: readonly string[] = [
   // Fristen im Cockpit (#190)
   'bgb.objection-months|||12',
   'practice.objection-end-of-month|||true',
+  // Mieterhöhung (#191)
+  'bgb.rent-increase-wait-months|||15',
+  'bgb.rent-increase-lock-months|||12',
+  'bgb.rent-cap|||{"years":3,"percent":20,"reducedPercent":15}',
+  'bgb.rent-increase-consent|||{"consentMonths":2,"effectiveMonth":3,"suitMonths":3}',
+  'bgb.index-rent|||{"minMonths":12,"effectiveMonthOffset":2}',
+  'bgb.staggered-rent|||{"minMonths":12}',
+  'practice.rent-increase-rounding|||"floor-cent"',
+  'practice.vpi-series|||{"table":"61111-0002","base":2020}',
 ]
 
 const current = (): string[] =>

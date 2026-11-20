@@ -1001,3 +1001,85 @@ test('Kaution: der Sprung aus dem Cockpit öffnet das Seitenfenster des Mietverh
   expect(await screen.findByRole('dialog', { name: 'Kaution von Erika' }, SLOW)).toBeTruthy()
   expect(done).toHaveBeenCalled()
 })
+
+// ---------- Art der Miete und Art je Stufe (#191) ----------
+
+test('Mieterhöhung: Art der Miete, Ausschluss und Art je Stufe zeigen den gespeicherten Wert', async () => {
+  page([tenancy('t1', 'Index', {
+    rentKind: 'index', rentIncreaseExcluded: false,
+    baseRents: [
+      { from: '2025-01', monthlyCents: 68500, reason: 'agreement', index: { month: '2024-10', value: 94.2, base: 2020 } },
+      { from: '2026-03', monthlyCents: 77153, reason: 'index', index: { month: '2025-12', value: 106.1, base: 2020 } },
+      { from: '2026-09', monthlyCents: 79153 },
+    ],
+  })])
+  await openTenancy('Index')
+  const kindSelect = selectOf('Art der Miete')
+  expect(kindSelect.value).toBe('index')
+  expect(kindSelect.selectedOptions[0]?.textContent).toBe('Indexmiete')
+  expect([...kindSelect.options].map((o) => o.value)).toEqual(['', 'free', 'staggered', 'index'])
+  const excluded = selectOf('Schließt der Vertrag Mieterhöhungen aus?')
+  expect(excluded.value).toBe('no')
+  expect(excluded.selectedOptions[0]?.textContent).toBe('Nein')
+  const dialog = within(screen.getByRole('dialog'))
+  const reasons = dialog.getAllByRole('combobox', { name: 'Art der Stufe' }) as HTMLSelectElement[]
+  expect(reasons.map((s) => s.value)).toEqual(['agreement', 'index', ''])
+  expect(reasons.map((s) => s.selectedOptions[0]?.textContent)).toEqual(['Vertragsbeginn oder Vereinbarung', 'Anpassung der Indexmiete', 'Nicht angegeben (wie Vereinbarung)'])
+  expect((dialog.getAllByRole('textbox', { name: 'Indexwert' }) as HTMLInputElement[]).map((i) => i.value)).toEqual(['94,2', '106,1', ''])
+  expect((dialog.getAllByRole('textbox', { name: 'Indexmonat' }) as HTMLInputElement[]).map((i) => i.value)).toEqual(['Oktober 2024', 'Dezember 2025', ''])
+  expect((dialog.getAllByRole('textbox', { name: 'Basisjahr' }) as HTMLInputElement[]).map((i) => i.value)).toEqual(['2020', '2020', ''])
+  // Unverändert gespeichert: Art und Indexwert gehen mit, die Stufe ohne Art bleibt ohne.
+  fireEvent.click(dialog.getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
+  expect(tenancyBody()).toMatchObject({
+    rentKind: 'index', rentIncreaseExcluded: false,
+    baseRents: [
+      { from: '2025-01', monthlyCents: 68500, reason: 'agreement', index: { month: '2024-10', value: 94.2, base: 2020 } },
+      { from: '2026-03', monthlyCents: 77153, reason: 'index', index: { month: '2025-12', value: 106.1, base: 2020 } },
+      { from: '2026-09', monthlyCents: 79153 },
+    ],
+  })
+})
+
+test('Mieterhöhung: ohne Angaben „nicht angegeben“, ohne Indexfelder, gesendet als null', async () => {
+  page([tenancy('t1', 'Frei', { baseRents: [{ from: '2025-01', monthlyCents: 70000 }] })])
+  await openTenancy('Frei')
+  expect(selectOf('Art der Miete').value).toBe('')
+  expect(selectOf('Art der Miete').selectedOptions[0]?.textContent).toBe('Nicht angegeben')
+  expect(selectOf('Schließt der Vertrag Mieterhöhungen aus?').value).toBe('')
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.queryByRole('textbox', { name: 'Indexwert' })).toBeNull()
+  fireEvent.click(dialog.getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
+  expect(tenancyBody()).toMatchObject({ rentKind: null, rentIncreaseExcluded: null, baseRents: [{ from: '2025-01', monthlyCents: 70000 }] })
+})
+
+test('Mieterhöhung: eine neue Stufe bekommt die Art passend zur Mietart; Staffelabstand unter einem Jahr gibt einen Hinweis', async () => {
+  page([tenancy('t1', 'Staffel', { rentKind: 'staggered', baseRents: [{ from: '2025-01', monthlyCents: 70000, reason: 'agreement' }] })])
+  await openTenancy('Staffel')
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.click(dialog.getByRole('button', { name: /Mieterhöhung ab Monat/ }))
+  const reasons = dialog.getAllByRole('combobox', { name: 'Art der Stufe' }) as HTMLSelectElement[]
+  expect(reasons[1]?.value).toBe('staggered')
+  expect(reasons[1]?.selectedOptions[0]?.textContent).toBe('Stufe der Staffelmiete')
+  const months = monthFields(screen.getByRole('dialog'), 'Kaltmiete gültig ab')
+  fireEvent.change(months[1] ?? document.body, { target: { value: '10.2025' } })
+  fireEvent.change(dialog.getAllByRole('textbox', { name: 'Betrag €/Monat' })[1] ?? document.body, { target: { value: '720,00' } })
+  expect(await dialog.findByText(/mindestens 12 Monate gelten/)).toBeTruthy()
+  // Ein Hinweis, kein Fehler: gespeichert wird wie vereinbart.
+  fireEvent.click(dialog.getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(tenancyBody()).toBeTruthy())
+  expect(tenancyBody()).toMatchObject({ baseRents: [{ from: '2025-01', monthlyCents: 70000, reason: 'agreement' }, { from: '2025-10', monthlyCents: 72000, reason: 'staggered' }] })
+})
+
+test('Mieterhöhung: eine Indexstufe bei „nach Vertrag“ wird am Feld gemeldet und nicht gesendet', async () => {
+  page([tenancy('t1', 'Wechsel', { rentKind: 'index', baseRents: [{ from: '2025-01', monthlyCents: 70000, reason: 'agreement' }, { from: '2026-01', monthlyCents: 72000, reason: 'index' }] })])
+  await openTenancy('Wechsel')
+  fireEvent.change(selectOf('Art der Miete'), { target: { value: 'free' } })
+  // Der gespeicherte Wert der Stufe bleibt sichtbar, auch wenn er zur neuen Mietart nicht passt.
+  const dialog = within(screen.getByRole('dialog'))
+  expect((dialog.getAllByRole('combobox', { name: 'Art der Stufe' }) as HTMLSelectElement[])[1]?.value).toBe('index')
+  fireEvent.click(dialog.getByRole('button', { name: /^Speichern$/ }))
+  expect(await dialog.findAllByText(/gibt es nur bei einer Indexmiete/)).not.toHaveLength(0)
+  expect(sent).toHaveLength(0)
+})

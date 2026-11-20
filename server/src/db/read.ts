@@ -19,7 +19,7 @@
 
 import { isSpreadYears } from '../../../shared/spread.ts'
 import { asc, eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, DepositEntry, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, DepositEntry, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, RentEntry, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
@@ -153,6 +153,8 @@ export async function readProperties(db: Executor): Promise<Property[]> {
     ...(p.completedOn === null ? {} : { completedOn: p.completedOn }),
     // Vorzeitiges Ende der Verteilungen nach § 82b Abs. 2 EStDV (#262); `null` heißt keines.
     spreadRestYear: p.spreadRestYear,
+    // Kappungsgrenzen-Verordnung (#191): nur mit Angabe, damit ein Objekt ohne sich liest wie vorher.
+    ...(p.rentCapReduced !== null ? { rentCapReduced: p.rentCapReduced } : {}),
     // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
     periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))
@@ -207,7 +209,13 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
   const flat = groupBy(flatRateRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   // Direkt an Dritte gezahlte Kosten (#257), nach Monat; nur mit Einträgen.
   const direct = groupBy(await db.select().from(tenancyDirectCharges).orderBy(asc(tenancyDirectCharges.tenancyId), asc(tenancyDirectCharges.from)), (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
-  const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
+  // Art und Indexwert der Stufe (#191) nur mit Angabe: Eine Staffel ohne liest sich wie vor den Spalten.
+  const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r): RentEntry => ({
+    from: r.from,
+    monthlyCents: r.monthlyCents,
+    ...(r.reason !== null ? { reason: r.reason } : {}),
+    ...(r.indexMonth !== null && r.indexTenths !== null && r.indexBase !== null ? { index: { month: r.indexMonth, value: r.indexTenths / 10, base: r.indexBase } } : {}),
+  }))
   // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare,
   // geschlüsselt nach Zeitraum (#208). Der
   // angeschriebene Rückgabetyp macht daraus ein Paar statt einer Liste, ohne etwas zu behaupten:
@@ -263,6 +271,9 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     ...(t.costModel === null ? {} : { costModel: t.costModel }),
     ...(t.heatingModel === null ? {} : { heatingModel: t.heatingModel }),
     ...(t.selfSupplyKind === null ? {} : { selfSupplyKind: t.selfSupplyKind }),
+    // Mieterhöhung (#191): nur mit Angabe, fehlend heißt nicht beantwortet.
+    ...(t.rentKind !== null ? { rentKind: t.rentKind } : {}),
+    ...(t.rentIncreaseExcluded !== null ? { rentIncreaseExcluded: t.rentIncreaseExcluded } : {}),
     notes: orUndefined(t.notes),
   }))
 }

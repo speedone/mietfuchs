@@ -240,3 +240,82 @@ export const bgbDepositMaxMonths: LawParam<number, 'eventDate'> = {
   describe: (v) => `höchstens ${v} Monatsmieten ohne Betriebskosten`,
   checkOnly: true,
 }
+
+// ---------- Mieterhöhung (#191, Entwurf docs/superpowers/specs/2026-11-20-mieterhoehung-design.md) ----------
+// Wortlaut der §§ 557a, 557b, 558, 558b BGB am 20.11.2026 auf gesetze-im-internet.de gelesen. Gerechnet wird mit diesen
+// Werten ab PR 2 (server/src/rentIncrease.ts); `eventDate` heißt je nach Wert der Tag des Wirksamwerdens oder des Zugangs.
+const bgbRentIncreaseSource = (cite: string, section: string): Source =>
+  ({ rank: 'law', cite, url: `https://www.gesetze-im-internet.de/bgb/__${section}.html`, retrieved: '2026-11-20', checked: 'checked' })
+
+// Wartefrist: Die Miete muss am Tag, zu dem die Erhöhung eintreten soll, seit 15 Monaten unverändert sein; Erhöhungen
+// nach §§ 559 bis 560 werden nicht berücksichtigt (§ 558 Abs. 1 Satz 1 und 3). `eventDate`: der Tag des Wirksamwerdens.
+export const bgbRentIncreaseWaitMonths: LawParam<number, 'eventDate'> = {
+  id: 'bgb.rent-increase-wait-months',
+  title: 'Wartefrist vor einer Erhöhung bis zur Vergleichsmiete',
+  norm: '§ 558 Abs. 1 Satz 1 und 3 BGB',
+  timing: 'eventDate',
+  versions: [{ value: 15, source: bgbRentIncreaseSource('§ 558 Abs. 1 Satz 1 und 3 BGB', '558'), enacted: '§ 558 BGB' }],
+  describe: (v) => `Miete beim Wirksamwerden seit ${v} Monaten unverändert`,
+}
+
+// Jahressperrfrist: Das Verlangen kann frühestens ein Jahr nach der letzten Mieterhöhung geltend gemacht werden; §§ 559
+// bis 560 zählen nicht (§ 558 Abs. 1 Satz 2 und 3), auch einvernehmliche Modernisierungserhöhungen nicht (BGH, Urteil vom
+// 18.07.2007, VIII ZR 285/06). Dass die Frist ab dem Wirksamwerden der letzten Erhöhung läuft, ist herrschende Meinung
+// (Recherche O11, nur sekundär belegt). `eventDate`: der Tag des Zugangs.
+export const bgbRentIncreaseLockMonths: LawParam<number, 'eventDate'> = {
+  id: 'bgb.rent-increase-lock-months',
+  title: 'Sperrfrist nach der letzten Mieterhöhung',
+  norm: '§ 558 Abs. 1 Satz 2 und 3 BGB',
+  timing: 'eventDate',
+  versions: [{ value: 12, source: bgbRentIncreaseSource('§ 558 Abs. 1 Satz 2 und 3 BGB', '558'), enacted: '§ 558 BGB' }],
+  describe: (v) => `Zugang frühestens ${v} Monate nach der letzten Erhöhung`,
+}
+
+// Kappungsgrenze: innerhalb von drei Jahren höchstens 20 vom Hundert, von Erhöhungen nach §§ 559 bis 560 abgesehen; 15 vom
+// Hundert in Gebieten, die eine Landesverordnung bestimmt (§ 558 Abs. 3). Ausgangsmiete ist die drei Jahre vor dem
+// Wirksamwerden geltende vereinbarte Miete (BGH VIII ZR 177/03, VIII ZR 266/14 Rn. 20, VIII ZR 33/18). Die 15 % gibt es
+// seit dem Mietrechtsänderungsgesetz 2013; der Tag des Inkrafttretens ist nicht im BGBl. gelesen, deshalb keine
+// Grenze der Fassung (offener Punkt im Entwurf). `eventDate`: der Tag des Wirksamwerdens.
+export const bgbRentCap: LawParam<{ readonly years: number; readonly percent: number; readonly reducedPercent: number }, 'eventDate'> = {
+  id: 'bgb.rent-cap',
+  title: 'Kappungsgrenze',
+  norm: '§ 558 Abs. 3 BGB',
+  timing: 'eventDate',
+  versions: [{ value: { years: 3, percent: 20, reducedPercent: 15 }, source: bgbRentIncreaseSource('§ 558 Abs. 3 Satz 1 und 2 BGB', '558'), enacted: '§ 558 BGB' }],
+  describe: (v) => `innerhalb von ${v.years} Jahren höchstens ${v.percent} % mehr, in Gebieten mit Verordnung ${v.reducedPercent} %`,
+}
+
+// Zustimmung und Klage: Zustimmung bis zum Ablauf des zweiten Kalendermonats nach Zugang, die erhöhte Miete ab Beginn des
+// dritten, Klage innerhalb von drei weiteren Monaten (§ 558b Abs. 1 und 2). `eventDate`: der Tag des Zugangs.
+export const bgbRentIncreaseConsent: LawParam<{ readonly consentMonths: number; readonly effectiveMonth: number; readonly suitMonths: number }, 'eventDate'> = {
+  id: 'bgb.rent-increase-consent',
+  title: 'Zustimmungs- und Klagefrist beim Mieterhöhungsverlangen',
+  norm: '§ 558b Abs. 1 und 2 BGB',
+  timing: 'eventDate',
+  versions: [{ value: { consentMonths: 2, effectiveMonth: 3, suitMonths: 3 }, source: bgbRentIncreaseSource('§ 558b Abs. 1 und 2 BGB', '558b'), enacted: '§ 558b BGB' }],
+  describe: (v) => `Zustimmung bis zum Ablauf des ${v.consentMonths}. Kalendermonats nach Zugang, erhöhte Miete ab Beginn des ${v.effectiveMonth}., Klage binnen ${v.suitMonths} weiterer Monate`,
+}
+
+// Indexmiete: Die Miete muss jeweils mindestens ein Jahr unverändert bleiben, §§ 559 bis 560 ausgenommen (§ 557b Abs. 2
+// Satz 1); die geänderte Miete ist mit Beginn des übernächsten Monats nach Zugang der Erklärung zu entrichten (Abs. 3
+// Satz 3). Mietfuchs lässt die Erklärung erst ein Jahr nach dem Wirksamwerden der letzten Änderung zugehen (Entwurf R9,
+// Gegenprüfung M4). `eventDate`: der Tag des Zugangs.
+export const bgbIndexRent: LawParam<{ readonly minMonths: number; readonly effectiveMonthOffset: number }, 'eventDate'> = {
+  id: 'bgb.index-rent',
+  title: 'Indexmiete: Mindestdauer und Wirksamwerden',
+  norm: '§ 557b Abs. 2 und 3 BGB',
+  timing: 'eventDate',
+  versions: [{ value: { minMonths: 12, effectiveMonthOffset: 2 }, source: bgbRentIncreaseSource('§ 557b Abs. 2 Satz 1, Abs. 3 Satz 3 BGB', '557b'), enacted: '§ 557b BGB' }],
+  describe: (v) => `Miete mindestens ${v.minMonths} Monate unverändert, geänderte Miete ab Beginn des ${v.effectiveMonthOffset}. Monats nach Zugang`,
+}
+
+// Staffelmiete: Die Miete muss jeweils mindestens ein Jahr unverändert bleiben (§ 557a Abs. 2 Satz 1). Mietfuchs warnt
+// bei kürzerem Abstand und rechnet die Staffel, wie sie vereinbart ist (Recherche O5). `eventDate`: der Monat der Stufe.
+export const bgbStaggeredRent: LawParam<{ readonly minMonths: number }, 'eventDate'> = {
+  id: 'bgb.staggered-rent',
+  title: 'Staffelmiete: Mindestabstand der Stufen',
+  norm: '§ 557a Abs. 2 Satz 1 BGB',
+  timing: 'eventDate',
+  versions: [{ value: { minMonths: 12 }, source: bgbRentIncreaseSource('§ 557a Abs. 2 Satz 1 BGB', '557a'), enacted: '§ 557a BGB' }],
+  describe: (v) => `jede Stufe mindestens ${v.minMonths} Monate unverändert`,
+}
