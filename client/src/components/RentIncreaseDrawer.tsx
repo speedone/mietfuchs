@@ -5,10 +5,13 @@
 // Rückfrage (server/src/rentIncreaseSave.ts schreibt). Die Formularlogik steht in rentIncreaseForm.ts und
 // rentIncreaseLetterForm.ts, der Text des Schreibens in rentIncreaseLetter.ts; hier wird nur gerendert.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Property, RentIncreaseDecision, RentIncreasePlan, RentIncreasePlanView as PlanWithToken, RentIncreaseView, Tenancy, Unit } from '../types'
+import type { Property, RentIncreaseDecision, RentIncreasePlan, RentIncreasePlanView as PlanWithToken, RentIncreaseView, Settings, Tenancy, Unit } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { localToday } from '../periodForm'
-import { DECISION_LABELS, EXTRA_PARAGRAPH_HINT, PARTIES_HINT, RENT_INCREASE_STATUS_LABELS, decisionQuestion, justificationOptions, qualifiedSurveyOptions, rentIncreaseDecisions, rentLetterInput, rentLetterStart, rentLetterWarnings, sendQuestion, type RentLetterValue, type RentSurveyValue } from '../rentIncreaseLetterForm'
+import { DECISION_LABELS, EXTRA_PARAGRAPH_HINT, PARTIES_HINT, RENT_INCREASE_STATUS_LABELS, SEVERAL_LANDLORDS_LABEL, decisionQuestion, followPlanRange, justificationOptions, notYetNote, qualifiedSurveyOptions, rentIncreaseDecisions, rentLetterInput, rentLetterStart, rentLetterWarnings, sendQuestion, senderNote, type RentLetterValue, type RentSurveyValue } from '../rentIncreaseLetterForm'
+import { rentIncreaseBasisProblem } from '../../../shared/rentIncreaseLetter.ts'
+import { effectiveLandlord } from '../landlord'
+import type { EffectiveLandlord } from '../../../shared/landlord.ts'
 import { RentIncreaseLetterSheet, RentIncreasePrint } from './RentIncreaseLetter'
 import DisclosureButton from './DisclosureButton'
 import { useConfirm, useToast } from './feedback'
@@ -28,14 +31,17 @@ import { todayIso } from '../readingSheet'
 const PLAN_DELAY_MS = 250
 const STATE_BADGE = { possible: 'green', notYet: 'amber', blocked: 'red' } as const
 
-export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }: {
+export default function RentIncreaseDrawer({ tenancy, unit, property, settings = null, onClose }: {
   tenancy: Tenancy
   unit: Unit | undefined
   property: Property | null | undefined
+  // Für den Hinweis, wenn der heutige Absender vom eingefrorenen abweicht (Durchsicht K2); ohne Einstellungen keiner.
+  settings?: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact'> | null
   onClose: () => void
 }) {
   const [value, setValue] = useState<RentIncreaseValue>(() => rentIncreaseStart(tenancy, unit, property))
-  const [letter, setLetter] = useState<RentLetterValue>(() => rentLetterStart(tenancy))
+  const [letter, setLetter] = useState<RentLetterValue>(() => rentLetterStart(tenancy, { low: value.rangeLow, high: value.rangeHigh }))
+  const landlord = settings ? effectiveLandlord(property ?? null, settings) : null
   const [plan, setPlan] = useState<PlanWithToken | null>(null)
   const [note, setNote] = useState<string | null>(null)
   // Was der letzte Plan sagte und über das Neurechnen hinweg gilt: der Tag des Servers (Durchsicht S4) und der Tag der
@@ -52,6 +58,12 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }:
   const confirm = useConfirm()
   const set = <K extends keyof RentIncreaseValue>(key: K, v: RentIncreaseValue[K]) => setValue((old) => ({ ...old, [key]: v }))
   const setL = <K extends keyof RentLetterValue>(key: K, v: RentLetterValue[K]) => setLetter((old) => ({ ...old, [key]: v }))
+  // Die Spanne der Rechnung zieht die des Schreibens mit (Durchsicht S2).
+  const setRange = (key: 'rangeLow' | 'rangeHigh', text: string) => {
+    const before = { low: value.rangeLow, high: value.rangeHigh }
+    setLetter((old) => followPlanRange(old, before, key === 'rangeLow' ? { ...before, low: text } : { ...before, high: text }))
+    set(key, text)
+  }
 
   const loadIncreases = useCallback(() => {
     api<RentIncreaseView[]>(`/api/tenancies/${tenancy.id}/rent-increases`).then(setIncreases).catch((e: unknown) => toast(errorText(e), 'error'))
@@ -123,6 +135,12 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }:
     if (!(await confirm(decisionQuestion(x, decision, agreedCents)))) return
     await act(`/api/rent-increases/${x.id}/status`, { method: 'POST', body: JSON.stringify({ status: decision, agreedCents, decidedOn, token: x.token }) }, `${RENT_INCREASE_STATUS_LABELS[decision]}: gespeichert.`)
   }
+  // Vor dem Druck eines Entwurfs, der noch nicht zugehen darf, die Rückfrage mit dem frühesten Tag (Durchsicht S1).
+  async function print(x: RentIncreaseView) {
+    const early = notYetNote(x)
+    if (early && !(await confirm({ title: 'Schreiben drucken?', message: early, confirmLabel: 'Drucken' }))) return
+    setPrinting(x)
+  }
   async function remove(x: RentIncreaseView) {
     if (!(await confirm({ title: 'Entwurf löschen?', message: 'Der Entwurf des Schreibens wird gelöscht. Ihre Eingaben in diesem Fenster bleiben stehen.', confirmLabel: 'Löschen', danger: true }))) return
     await act(`/api/rent-increases/${x.id}`, { method: 'DELETE', body: JSON.stringify({ token: x.token }) }, 'Entwurf gelöscht.')
@@ -174,10 +192,10 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }:
             <input value={value.comparison} inputMode="decimal" placeholder="z. B. 8,50" onChange={(e) => set('comparison', e.target.value)} />
           </Field>
           <Field label="Spanne von €/m²" {...errors.field('rangeLow')}>
-            <input value={value.rangeLow} inputMode="decimal" onChange={(e) => set('rangeLow', e.target.value)} />
+            <input value={value.rangeLow} inputMode="decimal" onChange={(e) => setRange('rangeLow', e.target.value)} />
           </Field>
           <Field label="Spanne bis €/m²" {...errors.field('rangeHigh')}>
-            <input value={value.rangeHigh} inputMode="decimal" onChange={(e) => set('rangeHigh', e.target.value)} />
+            <input value={value.rangeHigh} inputMode="decimal" onChange={(e) => setRange('rangeHigh', e.target.value)} />
           </Field>
           <Field label="Tatsächliche Wohnfläche m²" hint="Vorbelegt mit der Fläche der Wohnung; maßgeblich ist die tatsächliche." {...errors.field('area')}>
             <input value={value.area} inputMode="decimal" onChange={(e) => set('area', e.target.value)} />
@@ -243,7 +261,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }:
         {increases === null && <p className="muted">Mietfuchs lädt …</p>}
         {increases?.length === 0 && <p className="muted">Für dieses Mietverhältnis ist noch kein Schreiben angelegt.</p>}
         {increases?.map((x) => (
-          <IncreaseItem key={x.id} x={x} busy={saving.busy} onPrint={() => setPrinting(x)}
+          <IncreaseItem key={x.id} x={x} busy={saving.busy} landlord={landlord} onPrint={() => void print(x)}
             onSend={(receivedOn) => void saving.run(() => send(x, receivedOn))}
             onDecide={(decision, agreedCents, decidedOn) => void saving.run(() => decide(x, decision, agreedCents, decidedOn))}
             onDelete={() => void saving.run(() => remove(x))} />
@@ -393,6 +411,10 @@ function LetterInputs({ kind, letter, setL, setLetter, errors, plan, busy, onCre
         <input value={letter.recipientName} onChange={(e) => setL('recipientName', e.target.value)} />
       </Field>
       <label className="checkline">
+        <input type="checkbox" checked={letter.severalLandlords} onChange={(e) => setL('severalLandlords', e.target.checked)} />
+        <span>{SEVERAL_LANDLORDS_LABEL}</span>
+      </label>
+      <label className="checkline">
         <input type="checkbox" checked={letter.allLandlordsNamed} onChange={(e) => setL('allLandlordsNamed', e.target.checked)} />
         <span>Im Briefkopf sind alle Vermieter laut Mietvertrag genannt.</span>
       </label>
@@ -415,9 +437,10 @@ function LetterInputs({ kind, letter, setL, setLetter, errors, plan, busy, onCre
 
 // Ein Verlangen der Liste: Stand, Beträge, Fristen, Schreiben zum Ansehen und Drucken (aus `basis`), Versand mit Zugang,
 // Antwort des Mieters mit Tag und bei teilweiser Zustimmung dem Betrag.
-function IncreaseItem({ x, busy, onPrint, onSend, onDecide, onDelete }: {
+function IncreaseItem({ x, busy, landlord, onPrint, onSend, onDecide, onDelete }: {
   x: RentIncreaseView
   busy: boolean
+  landlord: Pick<EffectiveLandlord, 'landlordName' | 'landlordAddress'> | null
   onPrint: () => void
   onSend: (receivedOn: string) => void
   onDecide: (decision: RentIncreaseDecision, agreedCents: number | null, decidedOn: string) => void
@@ -428,17 +451,40 @@ function IncreaseItem({ x, busy, onPrint, onSend, onDecide, onDelete }: {
   const [decidedOn, setDecidedOn] = useState(() => localToday())
   const [agreed, setAgreed] = useState('')
   const decisions = rentIncreaseDecisions(x)
-  const consent = x.basis.plan.consent
   const previewId = `rent-letter-${x.id}`
   const agreedCents = agreed.trim() === '' ? null : parseEuro(agreed)
+  const head = (
+    <p className="m-0">
+      <strong>{RENT_INCREASE_STATUS_LABELS[x.status]}</strong>
+      {' · '}{x.kind === 'index' ? 'Indexmiete' : 'Vergleichsmiete'}: {fmtEuro(x.fromCents)} → {fmtEuro(x.status === 'partial' && x.agreedCents !== null ? x.agreedCents : x.toCents)} ab {monthLabel(x.effectiveFrom)}
+      {x.receivedOn && <>{' · '}Zugang am {fmtDate(x.receivedOn)}</>}
+    </p>
+  )
+  // Eine Grundlage aus einer anderen Fassung (Durchsicht K1): nur der Satz, kein Schreiben, keine Antwort; löschen geht.
+  const foreign = rentIncreaseBasisProblem(x.basis)
+  if (foreign) {
+    return (
+      <article className="card grid gap-2" aria-label={`Verlangen ab ${monthLabel(x.effectiveFrom)}`}>
+        {head}
+        <NoticeBox level="warning">{foreign}</NoticeBox>
+        {x.status === 'draft' && <div className="flex gap-2"><button type="button" className="btn ghost danger-ghost ml-auto" disabled={busy} onClick={onDelete}>Entwurf löschen …</button></div>}
+      </article>
+    )
+  }
+  // Fristen nach dem tatsächlichen Zugang; das Schreiben selbst rechnet mit dem Zugang des Entwurfs (Durchsicht M1).
+  const consent = (x.basis.sentPlan ?? x.basis.plan).consent
+  const plannedOn = x.basis.plan.receivedOn
+  const early = notYetNote(x)
+  const otherSender = x.status !== 'withdrawn' ? senderNote(x.basis.sender, landlord) : null
   return (
     <article className="card grid gap-2" aria-label={`${x.kind === 'index' ? 'Indexanpassung' : 'Verlangen'} ab ${monthLabel(x.effectiveFrom)}`}>
-      <p className="m-0">
-        <strong>{RENT_INCREASE_STATUS_LABELS[x.status]}</strong>
-        {' · '}{x.kind === 'index' ? 'Indexmiete' : 'Vergleichsmiete'}: {fmtEuro(x.fromCents)} → {fmtEuro(x.status === 'partial' && x.agreedCents !== null ? x.agreedCents : x.toCents)} ab {monthLabel(x.effectiveFrom)}
-        {x.receivedOn && <>{' · '}Zugang {fmtDate(x.receivedOn)}</>}
-        {x.status === 'sent' && x.kind === 'comparison' && consent && <>{' · '}Zustimmungsfrist bis {fmtDate(consent.consentEndOnWorkday)}</>}
-      </p>
+      {head}
+      {x.status === 'sent' && x.kind === 'comparison' && consent && <p className="m-0">Zustimmungsfrist bis {fmtDate(consent.consentEndOnWorkday)}</p>}
+      {x.receivedOn && x.receivedOn !== plannedOn && x.kind === 'comparison' && (
+        <p className="m-0 muted">Das Schreiben rechnet mit dem Zugang am {fmtDate(plannedOn)}; Ende der Zustimmungsfrist und Monat der neuen Miete sind beim tatsächlichen Zugang dieselben.</p>
+      )}
+      {early && <NoticeBox level="warning">{early}</NoticeBox>}
+      {otherSender && <NoticeBox level="warning">{otherSender}</NoticeBox>}
       <div className="flex gap-2 flex-wrap">
         <DisclosureButton open={open} onToggle={() => setOpen(!open)} closedLabel="Schreiben ansehen" openLabel="Schreiben schließen" controls={previewId} className="btn secondary" />
         <button type="button" className="btn secondary" disabled={busy} onClick={onPrint}>Drucken</button>

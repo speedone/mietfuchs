@@ -2,7 +2,7 @@
 // Mietspiegel (M6), auffindbare Vergleichswohnungen (M7), alle Vermieter und Mieter (S4), Alter des Mietspiegels (S5).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rentIncreaseLetterOf, surveyStale } from '../../shared/rentIncreaseLetter.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf, surveyStale } from '../../shared/rentIncreaseLetter.ts'
 import type { RentIncreaseLetterInput } from '../../shared/types.ts'
 
 const SURVEY = { name: 'Mietspiegel Musterstadt 2025', asOf: '2025-04', field: 'Baujahr 1950 bis 1964', rangeLowCentsPerM2: 850, rangeHighCentsPerM2: 1100, availableAt: 'www.musterstadt.de' }
@@ -49,4 +49,16 @@ test('Schreiben: ein Mietspiegel gilt nach zwei Jahren als alt (§ 558d Abs. 2 S
   assert.equal(surveyStale('2024-11', '2026-11-20'), false)
   assert.equal(surveyStale('2024-10', '2026-11-20'), true)
   assert.equal(surveyStale('', '2026-11-20'), false)
+})
+
+test('Schreiben: mehrere Vermieter nur mit ausdrücklicher Angabe, eingefroren mit den Eingaben (Durchsicht S3)', () => {
+  assert.equal(ok(rentIncreaseLetterOf({ ...BASE, severalLandlords: true }, 'index')).severalLandlords, true)
+  assert.equal(ok(rentIncreaseLetterOf({ ...BASE, severalLandlords: false }, 'index')).severalLandlords, false)
+  assert.equal(ok(rentIncreaseLetterOf(BASE, 'index')).severalLandlords, false, 'ohne Angabe ein Vermieter')
+})
+
+test('Grundlage: Fassung und Grundgestalt geprüft, sonst ein ganzer Satz statt eines Absturzes (Durchsicht K1)', () => {
+  for (const x of [null, 'text', {}, { version: 2 }, { version: 1 }, { version: 1, plan: {}, letter: {}, sender: {}, recipient: [], premises: {}, prepayments: {} }]) {
+    assert.match(rentIncreaseBasisProblem(x) ?? '', /^Dieses Schreiben stammt aus einer anderen Fassung von Mietfuchs.*\.$/, JSON.stringify(x))
+  }
 })

@@ -328,17 +328,37 @@ index.ts, shared/rentIncreaseLetter.ts (Prüfung der Eingaben für Server und Ob
 
 - **`RentIncreaseBasis`** (shared/types.ts): `version`, `letterDate`, `request`, `plan` (samt `legalValues`), `letter`
   (Eingaben des Schreibens), `rentCap` mit `answeredOn` (S2), `sender`, `recipient`, `salutation`, `premises`,
-  `inclusive`, `prepayments` (im Monat des Wirksamwerdens). Die Miete am Stichtag friert mit `request` samt ihrem Tag
-  (`rentAtCapDateOn`) ein; ohne den Tag lehnt das Anlegen mit 400 ab.
+  `inclusive`, `prepayments` (im Monat des Wirksamwerdens), `sentPlan` (Rechnung zum tatsächlichen Zugang, vor dem
+  Versand `null`). Die Miete am Stichtag friert mit `request` samt ihrem Tag (`rentAtCapDateOn`) ein; ohne den Tag
+  lehnt das Anlegen mit 400 ab.
+- **Grundlage aus einer anderen Fassung** (Durchsicht K1): `rentIncreaseBasisProblem` (shared/rentIncreaseLetter.ts)
+  prüft `version` und Grundgestalt. Gelesen wird die Zeile trotzdem (Liste, Verlauf, Backup); die Oberfläche zeigt statt
+  des Schreibens den Satz „Dieses Schreiben stammt aus einer anderen Fassung …“, Versand und Antwort lehnen mit 409
+  und demselben Satz ab, ein Entwurf lässt sich löschen.
 - **Routen**: `POST /api/tenancies/:id/rent-increases` (Entwurf), `POST /api/rent-increases/:id/send`, `POST
   /api/rent-increases/:id/status`, `DELETE /api/rent-increases/:id`, `GET /api/tenancies/:id/rent-increases`. Die
   Plan-Route liefert die Marke mit (`RentIncreasePlanView`); sie umfasst auch Kennung und Stand der Verlangen, so legt
   ein Doppelklick keinen zweiten Entwurf an.
 - **Entwurf auch bei `notYet`**: Gesperrt ist nur `blocked`; der tatsächliche Zugang kommt beim Versand.
-- **Versand**: Monat und verlangte Miete bleiben die des Schreibens. Nur bei `possible`, Zugang nicht in der Zukunft und
-  nicht vor dem Tag des Schreibens; ändern sich mit dem tatsächlichen Zugang die Miete oder das Ende der Zustimmungsfrist,
-  wird nicht gespeichert (neu anlegen und neu drucken), denn das gedruckte Schreiben nennt sie. Der neu gerechnete Plan
-  ersetzt den des Entwurfs. Für den Satz der Ablehnung trägt der Plan `refusals` (die Sätze zu `blocked`/`notYet`).
+- **Versand** (Durchsicht M1): Monat und verlangte Miete bleiben die des Schreibens. Nur bei `possible` (sonst 400),
+  Zugang nicht in der Zukunft und nicht vor dem Tag des Schreibens. Der Nachdruck ergibt exakt das verschickte
+  Schreiben: `basis.plan` (Rechnung des Entwurfs, auch für den Satz „bei Zugang am …“) und `basis.request` bleiben, die
+  Rechnung zum tatsächlichen Zugang steht getrennt in `basis.sentPlan`, der Zugang in `receivedOn`. Nennt sie andere
+  Angaben als das gedruckte Schreiben (bisherige Miete, verlangte Miete, Wirksamwerden, Kappungsgrenze mit Prozentsatz,
+  Ausgangsmiete und Tag, verlängertes Ende der Zustimmungsfrist, Vergleichsrechnung, Indexwerte), lehnt der Versand mit
+  409 und dem Satz „neu anlegen und neu drucken“ ab, etwa nach einer geänderten Stufe der Staffel. Die Liste zeigt den
+  tatsächlichen Zugang und, wenn er abweicht, den Zugang, mit dem das Schreiben rechnet; Fristen nach `sentPlan`. Für den
+  Satz der Ablehnung trägt der Plan `refusals` (die Sätze zu `blocked`/`notYet`).
+- **Entwurf zu früh** (Durchsicht S1): Sagt die Rechnung des Entwurfs `notYet`, stehen auf der Karte und in einer
+  Rückfrage vor dem Druck „Nicht vor dem {frühester Zugang} zugehen lassen“. Nicht auf dem Blatt: DIN 5008 legt Briefkopf
+  und Anschriftfeld fest, eine Zeile über dem Brief verschöbe das Fenster, und gedruckt wird das Schreiben, das der Mieter
+  bekommt. Ein nicht mitgedruckter Hinweis im Druckblatt wäre nie zu sehen: Das Blatt ist am Bildschirm verborgen, der
+  Druckdialog öffnet sofort.
+- **Absender geändert** (Durchsicht K2): Weicht der heutige Absender (Einstellungen bzw. Objekt, etwa nach dem
+  Verschieben der Wohnung, #657) vom eingefrorenen `basis.sender` ab, nennt die Karte beide (`senderNote`); der Nachdruck
+  bleibt beim Absender des Schreibens.
+- **Logo und Briefpapier** (Durchsicht K3) sind nicht eingefroren: Jeder Druck, auch der Nachdruck, lädt sie aktuell
+  vom Objekt. Der Text des Schreibens ändert sich dadurch nicht.
 - **Übergänge**: Zustimmung und teilweise Zustimmung auch nach einer Ablehnung (Zustimmung im Rechtsstreit); eine
   Indexerklärung kennt nur die Rücknahme. Zurücknehmen geht aus jedem Stand nach dem Versand; fehlt die geschriebene
   Stufe schon, bleibt die Staffel, ist sie geändert, 409. Der Tag der Antwort liegt nicht vor dem Zugang und nicht in
@@ -350,8 +370,14 @@ index.ts, shared/rentIncreaseLetter.ts (Prüfung der Eingaben für Server und Ob
   Angabe „wo allgemein zugänglich“ heißt „liegt bei“ (S5). Warnungen ohne Sperre: Mietspiegel älter als
   `bgb.rent-survey-update-years` (neu im Register, § 558d Abs. 2 Satz 1, 2 Jahre), verlangte Miete je m² über der
   niedrigsten Vergleichswohnung (M7). Die Bestätigungen zu allen Vermietern und Mietern sind Pflicht (S4); der Empfänger
-  ist eingebbar, der Absender kommt aus Einstellungen bzw. Objekt.
-- **Schreiben**: Mehrere Vermieter (Name mit „und“, „&“, Komma, GbR, Erbengemeinschaft, Eheleute) sprechen in der
-  Mehrzahl, sonst „ich“. Die Zustimmungsfrist steht als Regel und als Datum zum Zugang laut Rechnung, mit dem nach § 193
+  ist eingebbar, der Absender kommt aus Einstellungen bzw. Objekt. Die Spanne des Mietspiegels ist aus der Rechnung
+  vorbelegt und zieht mit, solange sie nicht eigens geändert ist; liegt die verlangte Miete je m² (ohne enthaltene
+  Betriebskosten) über dem Oberwert der Spanne des genannten oder des qualifizierten Mietspiegels, warnt das Fenster
+  (Durchsicht S2).
+- **Schreiben**: Mehrere Vermieter sprechen in der Mehrzahl, sonst „ich“; das sagt die ausdrückliche Angabe „Mehrere
+  Vermieter“ im Formular (`letter.severalLandlords`, eingefroren mit den Eingaben, Durchsicht S3), nicht der Name. Bei
+  Inklusivmiete heißt der Gesamtbetrag „Miete (einschließlich Betriebskosten)“, in der Zustimmungserklärung mit dem
+  Betriebskostenanteil; „Nettokaltmiete“ steht dann nur in der Vergleichsrechnung (Durchsicht M2). Bei der Indexmiete
+  „Im {Monat} betrug er …“ für den neuen Indexwert (Durchsicht K4). Die Zustimmungsfrist steht als Regel und als Datum zum Zugang laut Rechnung, mit dem nach § 193
   BGB verlängerten Ende (`consentEndOnWorkday`). Die Klage steht als Satz zum Gesetz, nicht als Ankündigung. Bei
   Vergleichsmiete folgt auf eigener Seite eine Zustimmungserklärung. Ohne Fußzeile mit Bank (nicht nötig).

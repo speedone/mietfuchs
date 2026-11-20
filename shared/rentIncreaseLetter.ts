@@ -87,13 +87,14 @@ export function rentIncreaseLetterOf(raw: unknown, kind: RentIncreaseKind): { le
   const o = isObject(raw) ? raw : {}
   const recipientName = text(o.recipientName)
   if (recipientName === '' || recipientName.length > LETTER_TEXT_MAX) problems.push({ field: 'recipientName', text: 'Bitte nennen Sie als Empfänger alle Mieter laut Mietvertrag, etwa „Anna und Ben Becker“.' })
+  const severalLandlords = o.severalLandlords === true
   const allLandlordsNamed = o.allLandlordsNamed === true
   const allTenantsNamed = o.allTenantsNamed === true
   if (!allLandlordsNamed) problems.push({ field: 'allLandlordsNamed', text: 'Bitte bestätigen Sie, dass im Briefkopf alle Vermieter laut Mietvertrag genannt sind. Das Schreiben muss von allen ausgehen (§ 126b BGB).' })
   if (!allTenantsNamed) problems.push({ field: 'allTenantsNamed', text: 'Bitte bestätigen Sie, dass als Empfänger alle Mieter laut Mietvertrag genannt sind. Das Schreiben muss an alle gerichtet sein.' })
   const extraParagraph = typeof o.extraParagraph === 'string' ? o.extraParagraph.trim() : ''
   if (extraParagraph.length > EXTRA_PARAGRAPH_MAX) problems.push({ field: 'extraParagraph', text: `Bitte fassen Sie den Zusatzabsatz kürzer (höchstens ${EXTRA_PARAGRAPH_MAX} Zeichen).` })
-  const common = { recipientName, allLandlordsNamed, allTenantsNamed, extraParagraph }
+  const common = { recipientName, severalLandlords, allLandlordsNamed, allTenantsNamed, extraParagraph }
   if (kind === 'index') {
     const letter: RentIncreaseLetterInput = { justification: null, survey: null, expert: null, database: null, comparables: [], qualifiedSurvey: null, qualified: null, ...common }
     return problems.length > 0 ? { problems } : { letter }
@@ -120,4 +121,22 @@ export function surveyStale(asOf: string, onDay: string): boolean {
   if (!isMonth(asOf)) return false
   const years = valueAt(bgbRentSurveyUpdateYears, onDay)
   return `${Number(asOf.slice(0, 4)) + years}${asOf.slice(4)}` < onDay.slice(0, 7)
+}
+
+// Die eingefrorene Grundlage, wie sie aus der Datenbank kommt (Durchsicht K1): Fassung und Grundgestalt. Eine andere
+// Fassung (etwa nach dem Wiederherstellen eines Backups einer neueren Version) zeigt die Oberfläche nicht als Schreiben,
+// und der Server versendet oder beantwortet sie nicht (409); beide nennen diesen Satz statt abzustürzen. Löschen geht.
+export const FOREIGN_BASIS = 'Dieses Schreiben stammt aus einer anderen Fassung von Mietfuchs und lässt sich mit dieser nicht anzeigen, drucken oder bearbeiten; einen Entwurf können Sie löschen. Öffnen Sie es mit der Fassung, mit der es angelegt wurde, oder legen Sie es neu an.'
+export function rentIncreaseBasisProblem(x: unknown): string | null {
+  if (!isObject(x) || x.version !== 1) return FOREIGN_BASIS
+  const plan = x.plan
+  const letter = x.letter
+  const sender = x.sender
+  const fine = typeof x.letterDate === 'string' && isObject(x.request) &&
+    isObject(plan) && (plan.kind === 'comparison' || plan.kind === 'index') && typeof plan.receivedOn === 'string' &&
+    isObject(letter) && typeof letter.recipientName === 'string' && Array.isArray(letter.comparables) &&
+    isObject(sender) && typeof sender.name === 'string' && typeof sender.address === 'string' &&
+    Array.isArray(x.recipient) && typeof x.salutation === 'string' && isObject(x.premises) && isObject(x.prepayments) &&
+    (x.sentPlan === undefined || x.sentPlan === null || isObject(x.sentPlan))
+  return fine ? null : FOREIGN_BASIS
 }

@@ -28,10 +28,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Briefformat mit Briefkopf, Logo und Briefpapier. Beim Verlangen nach § 558 BGB wählen Sie das Begründungsmittel
   (Mietspiegel mit Name, Stand, Feld und Spanne, Gutachten, drei Vergleichswohnungen mit Anschrift und Lage,
   Mietdatenbank) und beantworten, ob es einen qualifizierten Mietspiegel gibt; seine Angaben stehen dann immer im
-  Schreiben. Dazu Empfänger, Bestätigungen zu allen Vermietern und Mietern und ein freier Zusatzabsatz; alle
+  Schreiben. Dazu Empfänger, die Angabe, ob mehrere Vermieter schreiben, Bestätigungen zu allen Vermietern und Mietern
+  und ein freier Zusatzabsatz; alle
   Pflichtangaben stehen fest, beim Verlangen mit einer Zustimmungserklärung zum Zurücksenden. Das Schreiben wird als
-  Entwurf gespeichert und bleibt für den Nachdruck unverändert. „Als versendet speichern“ rechnet mit dem
-  tatsächlichen Zugang neu; danach tragen Sie die Antwort des Mieters ein (zugestimmt, teilweise, abgelehnt) oder
+  Entwurf gespeichert und bleibt für den Nachdruck unverändert, auch nach dem Versand. „Als versendet speichern“
+  rechnet mit dem tatsächlichen Zugang neu und lehnt ab, wenn das gedruckte Schreiben dann andere Zahlen oder Fristen
+  nennt; danach tragen Sie die Antwort des Mieters ein (zugestimmt, teilweise, abgelehnt) oder
   nehmen das Verlangen zurück. Mit der Zustimmung bzw. beim Versand einer Indexanpassung trägt Mietfuchs die neue
   Miete in die Kaltmiete-Staffel ein; Schweigen des Mieters gilt nie als Zustimmung. Neu im Lexikon:
   „Begründungsmittel“ und „Qualifizierter Mietspiegel“ ([#191](https://github.com/speedone/mietfuchs/issues/191)).

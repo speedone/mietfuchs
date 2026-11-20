@@ -10,6 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { Property, RentEntry, RentIncreaseLetterInput, RentIncreasePlanView, RentIncreaseRequest, RentIncreaseView, Tenancy, Unit } from '../../shared/types.ts'
 import { errorFrom, jsonOf, restore, startServerIn, type Server } from '../testing/api.ts'
+import { connect } from '../src/db/client.ts'
 import { journalOf, revert } from '../testing/revert.ts'
 
 const TODAY = '2026-11-20'
@@ -30,6 +31,7 @@ const LETTER: RentIncreaseLetterInput = {
   qualifiedSurvey: 'yes',
   qualified: { name: 'Qualifizierter Mietspiegel Musterstadt 2025', asOf: '2025-04', field: 'Baujahr 1950 bis 1964, mittlere Lage', rangeLowCentsPerM2: 850, rangeHighCentsPerM2: 1100, availableAt: 'www.musterstadt.de/mietspiegel' },
   recipientName: 'Anna und Ben Becker',
+  severalLandlords: false,
   allLandlordsNamed: true,
   allTenantsNamed: true,
   extraParagraph: 'Für Rückfragen bin ich gern erreichbar.',
@@ -140,9 +142,9 @@ test('Mieterhöhung, Versand: neu gerechnet und eingefroren; zu früh gesperrt; 
     const sent = await jsonOf<RentIncreaseView>(res)
     assert.equal(sent.status, 'sent')
     assert.equal(sent.receivedOn, TODAY)
-    assert.equal(sent.basis.request.receivedOn, TODAY)
     assert.equal(sent.basis.plan.receivedOn, TODAY)
     assert.equal(sent.basis.plan.consent?.consentEnd, '2027-01-31')
+    assert.equal(sent.basis.sentPlan?.receivedOn, TODAY)
     assert.deepEqual(await c.rents(), [{ from: '2020-01', monthlyCents: 50000 }], 'Vergleichsmiete: erst die Zustimmung schreibt')
     const [top] = await journalOf(c.s, '?limit=1')
     assert.equal(top?.title.startsWith('Mieterhöhung als versendet gespeichert'), true, top?.title)
@@ -152,6 +154,78 @@ test('Mieterhöhung, Versand: neu gerechnet und eingefroren; zu früh gesperrt; 
     const twice = await c.sent(sent)
     assert.equal(twice.status, 400)
   } finally {
+    c.s.stop()
+  }
+})
+
+// Den Server beenden, ohne den Ordner zu löschen (`stop` räumt ihn weg), und mit demselben Ordner und einem Tag neu starten.
+async function halt(s: Server): Promise<void> {
+  if (s.child.exitCode !== null) return
+  const exited = new Promise((resolve) => s.child.once('exit', resolve))
+  s.child.kill()
+  await exited
+}
+async function restartOn(s: Server, day: string): Promise<Server> {
+  await halt(s)
+  return startServerIn(s.dataDir, { NKA_TEST_TODAY: day })
+}
+
+test('Mieterhöhung, Versand: der Nachdruck bleibt das Schreiben des Entwurfs, der tatsächliche Zugang steht getrennt (Durchsicht M1)', async () => {
+  const c = await setup()
+  let later: Server | null = null
+  try {
+    const draft = await jsonOf<RentIncreaseView>(await c.create())
+    assert.equal(draft.basis.plan.receivedOn, TODAY)
+    assert.equal(draft.basis.sentPlan, null)
+    later = await restartOn(c.s, '2026-11-25')
+    const res = await send(later, 'POST', `/api/rent-increases/${draft.id}/send`, { receivedOn: '2026-11-25', token: draft.token })
+    assert.equal(res.status, 200, await res.clone().text())
+    const sent = await jsonOf<RentIncreaseView>(res)
+    assert.equal(sent.receivedOn, '2026-11-25')
+    // Die Grundlage des gedruckten Schreibens bleibt Wort für Wort; die Rechnung zum Zugang steht daneben.
+    assert.deepEqual({ ...sent.basis, sentPlan: null }, draft.basis)
+    assert.equal(sent.basis.sentPlan?.receivedOn, '2026-11-25')
+    assert.equal(sent.basis.sentPlan?.consent?.consentEndOnWorkday, draft.basis.plan.consent?.consentEndOnWorkday)
+  } finally {
+    later?.stop()
+    c.s.stop()
+  }
+})
+
+test('Mieterhöhung, Versand: ändert sich zwischen Entwurf und Versand die Staffel, wird nicht gespeichert (Durchsicht M1)', async () => {
+  const c = await setup()
+  try {
+    await c.create()
+    const changed = await send(c.s, 'PUT', `/api/tenancies/${c.t.id}?property=${c.p.id}`, { baseRents: [{ from: '2020-01', monthlyCents: 52000 }] })
+    assert.equal(changed.status, 200, await changed.clone().text())
+    const res = await c.sent(await c.one())
+    assert.equal(res.status, 409, await res.clone().text())
+    const text = await errorFrom(res)
+    assert.match(text, /bisherige Miete 520,00 € statt 500,00 €/)
+    assert.match(text, /Bitte legen Sie das Schreiben neu an und drucken Sie es neu\.$/)
+    assert.equal((await c.one()).status, 'draft')
+  } finally {
+    c.s.stop()
+  }
+})
+
+test('Mieterhöhung: eine Grundlage aus einer anderen Fassung lässt die Liste stehen und den Versand mit Satz ablehnen (Durchsicht K1)', async () => {
+  const c = await setup()
+  let later: Server | null = null
+  try {
+    const draft = await jsonOf<RentIncreaseView>(await c.create())
+    await halt(c.s)
+    const db = await connect(path.join(c.dataDir, 'mietfuchs.sqlite'))
+    db.exec(`UPDATE rent_increases SET basis = '{"version":2,"anders":true}'`)
+    db.close()
+    later = await startServerIn(c.dataDir, { NKA_TEST_TODAY: TODAY })
+    const list = await later.api<RentIncreaseView[]>(`/api/tenancies/${c.t.id}/rent-increases`)
+    assert.equal(list.length, 1)
+    const res = await send(later, 'POST', `/api/rent-increases/${draft.id}/send`, { receivedOn: TODAY, token: list[0]?.token })
+    assert.equal(res.status, 409, await res.clone().text())
+    assert.match(await errorFrom(res), /^Dieses Schreiben stammt aus einer anderen Fassung/)
+  } finally {
+    later?.stop()
     c.s.stop()
   }
 })

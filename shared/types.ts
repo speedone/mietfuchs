@@ -288,6 +288,9 @@ export type RentIncreaseLetterInput = {
   qualified: RentSurveyInfo | null // bei „ja“ und einem anderen Begründungsmittel
   // An wen das Schreiben geht: alle Mieter laut Vertrag (Gegenprüfung S4), vorbelegt mit `tenantName`.
   recipientName: string
+  // Gehen vom Schreiben mehrere Vermieter aus (Eheleute, Erbengemeinschaft; Recherche 7.2)? Dann spricht es in der Mehrzahl.
+  // Eine ausdrückliche Angabe im Formular (Durchsicht S3), nicht aus dem Namen erraten.
+  severalLandlords: boolean
   allLandlordsNamed: boolean
   allTenantsNamed: boolean
   // Der einzige freie Text; er darf weder die Mietstruktur noch die Vorauszahlungen ändern (VIII ZR 108/20 Rn. 18 f.).
@@ -298,8 +301,10 @@ export type RentIncreaseLetterInput = {
 export type RentIncreaseBasis = {
   version: 1
   letterDate: string // 'JJJJ-MM-TT', der Tag des Entwurfs und Datum des Briefs
-  request: RentIncreaseRequest // die Eingaben der Rechnung, nach dem Versand mit dem tatsächlichen Zugang
-  plan: RentIncreasePlan // die Rechnung samt Registerstand (`legalValues`), nach dem Versand zum tatsächlichen Zugang
+  request: RentIncreaseRequest // die Eingaben der Rechnung des Entwurfs
+  // Die Rechnung des Entwurfs samt Registerstand (`legalValues`): die Grundlage des gedruckten Schreibens, auch nach dem
+  // Versand unverändert, damit ein Nachdruck Wort für Wort das verschickte Schreiben ergibt (Durchsicht M1).
+  plan: RentIncreasePlan
   letter: RentIncreaseLetterInput
   // Die Angabe zur Kappungsgrenzen-Verordnung mit dem Tag, an dem sie gemacht wurde (Gegenprüfung S2); nur Vergleichsmiete.
   rentCap: { answer: RentCapAnswer; answeredOn: string } | null
@@ -310,6 +315,9 @@ export type RentIncreaseBasis = {
   inclusive: boolean // die Kaltmiete enthält Betriebskosten (`costModel` oder `heatingModel` `inclusive`)
   // Monatliche Vorauszahlungen bzw. Pauschale im Monat des Wirksamwerdens; das Schreiben nennt sie als unverändert.
   prepayments: { operatingCents: number; heatingCents: number; flatRateCents: number }
+  // Die Rechnung zum tatsächlichen Zugang, eingefroren beim Versand (vorher `null`). Sie nennt dieselben Zahlen und Fristen
+  // wie `plan`, sonst lehnt der Versand ab (rentIncreaseSave.ts); nur Zugang und Tag der Rechnung weichen ab.
+  sentPlan: RentIncreasePlan | null
 }
 export type RentIncrease = {
   id: string

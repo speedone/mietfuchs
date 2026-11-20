@@ -8,8 +8,10 @@
 //   (§ 558b Abs. 2 BGB, Gegenprüfung S8): Nach Ablauf der Frist geschieht nichts von selbst.
 // - **Höchstens ein offenes Verlangen je Mietverhältnis**: ein Entwurf, oder ein versandtes Verlangen nach § 558 ohne Antwort.
 // - **Zurücknehmen** entfernt eine so geschriebene Stufe nur, wenn sie unverändert ist; sonst 409 mit Satz.
-// - **Versand rechnet neu** mit dem tatsächlichen Zugang und friert diese Rechnung ein; nennt das gedruckte Schreiben dann
-//   andere Zahlen (Miete, Monat, Zustimmungsfrist), wird nicht gespeichert, sondern neu angelegt.
+// - **Versand rechnet neu** mit dem tatsächlichen Zugang und friert diese Rechnung getrennt ein (`basis.sentPlan`); die
+//   Grundlage des gedruckten Schreibens (`basis.plan`) bleibt, damit ein Nachdruck das verschickte Schreiben ergibt
+//   (Durchsicht M1). Nennt das gedruckte Schreiben zum tatsächlichen Zugang andere Zahlen (bisherige Miete,
+//   Kappungsgrenze, Monat, verlangte Miete, Ende der Zustimmungsfrist), wird nicht gespeichert, sondern neu angelegt.
 import { createHash } from 'node:crypto'
 import type {
   Property, RentEntry, RentIncrease, RentIncreaseBasis, RentIncreaseDecision, RentIncreaseLetterInput, RentIncreasePlan,
@@ -92,6 +94,7 @@ export function buildBasis(i: BasisInput): RentIncreaseBasis {
     premises: { propertyName: property?.name ?? '', address: (property?.address ?? '').trim(), unitName: i.unit.name, areaM2: i.unit.areaM2 },
     inclusive: t.costModel === 'inclusive' || t.heatingModel === 'inclusive',
     prepayments: { operatingCents: rateAtMonth(t.prepayments, month), heatingCents: rateAtMonth(t.heatingPrepayments ?? [], month), flatRateCents: rateAtMonth(t.flatRates ?? [], month) },
+    sentPlan: null,
   }
 }
 
@@ -121,23 +124,45 @@ export function sendRequest(x: RentIncrease, receivedOn: string): RentIncreaseRe
   return { ...x.basis.request, receivedOn, effectiveFrom: x.effectiveFrom, ...(x.kind === 'comparison' ? { requestedCents: x.toCents } : {}) }
 }
 
-// Darf mit diesem Zugang als versendet gespeichert werden? Nur wenn die Rechnung dazu `possible` ist und das gedruckte
-// Schreiben dieselben Zahlen nennt; sonst der Satz der Ablehnung.
-export function sendProblem(x: RentIncrease, plan: RentIncreasePlan, receivedOn: string, today: string): string | null {
-  if (x.status !== 'draft') return 'Das Schreiben ist schon als versendet gespeichert. Bitte laden Sie die Seite neu.'
-  if (compareText(receivedOn, today) > 0) return `Der Zugang am ${germanDate(receivedOn)} liegt in der Zukunft. Speichern Sie das Schreiben als versendet, sobald es beim Mieter angekommen ist.`
-  if (compareText(receivedOn, x.createdOn) < 0) return `Der Zugang am ${germanDate(receivedOn)} liegt vor dem Tag des Schreibens (${germanDate(x.createdOn)}).`
+// Was das gedruckte Schreiben aus der Rechnung nennt (client/src/rentIncreaseLetter.ts) und beim Versand gleich bleiben
+// muss, je mit dem Wort für den Satz der Ablehnung. Der Zugang selbst gehört nicht dazu: Das Schreiben nennt ihn als
+// Annahme („bei Zugang am …“), maßgeblich ist das Ende der Zustimmungsfrist.
+const PRINTED: readonly { label: string; of: (p: RentIncreasePlan) => unknown; show: (p: RentIncreasePlan) => string }[] = [
+  { label: 'bisherige Miete', of: (p) => p.currentCents, show: (p) => (p.currentCents === null ? 'keine' : euro(p.currentCents)) },
+  { label: 'verlangte Miete', of: (p) => p.newCents, show: (p) => (p.newCents === null ? 'keine' : euro(p.newCents)) },
+  { label: 'Wirksamwerden', of: (p) => p.effectiveFrom, show: (p) => (p.effectiveFrom === null ? 'keines' : `ab ${monthName(p.effectiveFrom)}`) },
+  {
+    label: 'Kappungsgrenze',
+    of: (p) => (p.cap ? [p.cap.percent, p.cap.baseDay, p.cap.baseCents, p.cap.modernizationCents, p.cap.limitCents] : null),
+    show: (p) => (p.cap ? `${euro(p.cap.limitCents)} (Ausgangsmiete ${euro(p.cap.baseCents)} am ${germanDate(p.cap.baseDay)}, ${p.cap.percent} %)` : 'keine'),
+  },
+  { label: 'Ende der Zustimmungsfrist', of: (p) => p.consent?.consentEndOnWorkday ?? null, show: (p) => (p.consent ? germanDate(p.consent.consentEndOnWorkday) : 'keines') },
+  { label: 'Vergleichsrechnung', of: (p) => p.comparison, show: (p) => (p.comparison ? `${euro(p.comparison.limitCents)}` : 'keine') },
+  { label: 'Indexwerte', of: (p) => p.index, show: (p) => (p.index ? `${p.index.from.value.toLocaleString('de-DE')} und ${p.index.to.value.toLocaleString('de-DE')}` : 'keine') },
+]
+
+// Darf mit diesem Zugang als versendet gespeichert werden? Nur wenn die Rechnung dazu `possible` ist (sonst 400) und das
+// gedruckte Schreiben dieselben Zahlen und Fristen nennt (sonst 409); `null`, wenn ja.
+export function sendProblem(x: RentIncrease, plan: RentIncreasePlan, receivedOn: string, today: string): RentIncreaseError | null {
+  const no = (message: string) => new RentIncreaseError(400, message)
+  if (x.status !== 'draft') return no('Das Schreiben ist schon als versendet gespeichert. Bitte laden Sie die Seite neu.')
+  if (compareText(receivedOn, today) > 0) return no(`Der Zugang am ${germanDate(receivedOn)} liegt in der Zukunft. Speichern Sie das Schreiben als versendet, sobald es beim Mieter angekommen ist.`)
+  if (compareText(receivedOn, x.createdOn) < 0) return no(`Der Zugang am ${germanDate(receivedOn)} liegt vor dem Tag des Schreibens (${germanDate(x.createdOn)}).`)
   if (plan.state !== 'possible') {
-    return `Bei Zugang am ${germanDate(receivedOn)} ist die Erhöhung so nicht möglich. ${plan.refusals.join(' ')}`.trim()
+    return no(`Bei Zugang am ${germanDate(receivedOn)} ist die Erhöhung so nicht möglich. ${plan.refusals.join(' ')}`.trim())
   }
-  if (plan.newCents !== x.toCents) {
-    return `Bei Zugang am ${germanDate(receivedOn)} ergibt die Rechnung ${plan.newCents === null ? 'keine neue Miete' : euro(plan.newCents)}, das Schreiben nennt ${euro(x.toCents)}. Bitte legen Sie das Schreiben neu an und drucken Sie es neu.`
-  }
-  const before = x.basis.plan.consent
-  if (x.kind === 'comparison' && before && plan.consent && before.consentEnd !== plan.consent.consentEnd) {
-    return `Das Schreiben nennt als Ende der Zustimmungsfrist den ${germanDate(before.consentEnd)}; bei Zugang am ${germanDate(receivedOn)} endet sie am ${germanDate(plan.consent.consentEnd)}. Bitte legen Sie das Schreiben mit diesem Zugang neu an und drucken Sie es neu.`
+  const printed = x.basis.plan
+  const changed = PRINTED.filter((f) => JSON.stringify(f.of(printed)) !== JSON.stringify(f.of(plan)))
+  if (changed.length > 0) {
+    const what = changed.map((f) => `${f.label} ${f.show(plan)} statt ${f.show(printed)}`).join(', ')
+    return new RentIncreaseError(409, `Bei Zugang am ${germanDate(receivedOn)} und nach dem heutigen Stand nennt die Rechnung andere Angaben als das gedruckte Schreiben: ${what}. Bitte legen Sie das Schreiben neu an und drucken Sie es neu.`)
   }
   return null
+}
+
+// Das versandte Verlangen: Zugang und Stand neu, die Rechnung zum Zugang daneben; die Grundlage des Schreibens bleibt.
+export function sentOf(x: RentIncrease, plan: RentIncreasePlan, receivedOn: string): RentIncrease {
+  return { ...x, receivedOn, status: 'sent', basis: { ...x.basis, sentPlan: plan } }
 }
 
 // ---------- Staffel ----------

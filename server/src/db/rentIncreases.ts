@@ -10,7 +10,10 @@ import type { RentIncrease, RentIncreaseBasis } from '../../../shared/types.ts'
 type Row = typeof rentIncreases.$inferSelect
 
 function fromRow(r: Row): RentIncrease {
-  // Geschrieben wird `basis` nur über `toRow` aus dem Typ; die Bedingung der Tabelle sichert, dass es ein Objekt ist.
+  // Geschrieben wird `basis` nur über `toRow` aus dem Typ; die Bedingung der Tabelle sichert, dass es ein Objekt ist. Die
+  // Gestalt prüft hier niemand, damit Liste, Verlauf und Backup auch eine Grundlage aus einer anderen Fassung tragen
+  // (Durchsicht K1): Wer sie liest (Schreiben, Versand, Antwort), prüft vorher `rentIncreaseBasisProblem`
+  // (shared/rentIncreaseLetter.ts) und nennt dessen Satz statt abzustürzen.
   const basis = JSON.parse(r.basis) as RentIncreaseBasis
   return {
     id: r.id,

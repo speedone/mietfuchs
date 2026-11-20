@@ -33,9 +33,9 @@ import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, 
 import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Tenancy, Unit, RentEntry, RentIncrease, RentIncreasePlanView, Property } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
-import { buildBasis, decided as decidedRentIncrease, decisionProblem, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
+import { buildBasis, decided as decidedRentIncrease, decisionProblem, sentOf as sentRentIncrease, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
 import { deleteRentIncrease, insertRentIncrease, readRentIncrease, readRentIncreases, replaceRentIncrease } from './db/rentIncreases.ts'
-import { rentIncreaseLetterOf } from '../../shared/rentIncreaseLetter.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf } from '../../shared/rentIncreaseLetter.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
@@ -2007,6 +2007,11 @@ async function rentIncreaseOf(db: Executor, id: string, token: unknown) {
   const stale = token !== rentIncreaseToken(increase, ctx.tenancy) ? rentIncreaseViewOf(increase, ctx.tenancy) : null
   return { increase, ctx, stale }
 }
+// Versand und Antwort lesen die eingefrorene Grundlage; aus einer anderen Fassung lehnen sie mit Satz ab (Durchsicht K1).
+function readableBasis(x: RentIncrease): void {
+  const problem = rentIncreaseBasisProblem(x.basis)
+  if (problem) throw new RentIncreaseError(409, problem)
+}
 app.post('/api/rent-increases/:id/send', async (req: Request, res: Response) => {
   const body = bodyObject(req)
   const receivedOn = body.receivedOn
@@ -2014,12 +2019,12 @@ app.post('/api/rent-increases/:id/send', async (req: Request, res: Response) => 
   const result = await writeData(async (db) => {
     const { increase, ctx, stale } = await rentIncreaseOf(db, String(req.params.id), body.token)
     if (stale) return { stale }
+    readableBasis(increase)
     const day = today()
-    const request = sendRequest(increase, receivedOn)
-    const plan = planRentIncrease({ today: day, ...ctx, request })
+    const plan = planRentIncrease({ today: day, ...ctx, request: sendRequest(increase, receivedOn) })
     const problem = sendProblem(increase, plan, receivedOn, day)
-    if (problem) throw new RentIncreaseError(400, problem)
-    const next: RentIncrease = { ...increase, receivedOn, status: 'sent', basis: { ...increase.basis, request, plan } }
+    if (problem) throw problem
+    const next = sentRentIncrease(increase, plan, receivedOn)
     await db.transaction(async (tx) => {
       await replaceRentIncrease(tx, next)
       // Indexmiete: Die Erklärung wirkt mit dem Zugang (§ 557b Abs. 3 BGB), die Stufe gehört gleich in die Staffel.
@@ -2042,6 +2047,7 @@ app.post('/api/rent-increases/:id/status', async (req: Request, res: Response) =
   const result = await writeData(async (db) => {
     const { increase, ctx, stale } = await rentIncreaseOf(db, String(req.params.id), body.token)
     if (stale) return { stale }
+    readableBasis(increase)
     const problem = decisionProblem(increase, decision, agreedCents, decidedOn, today())
     if (problem) throw new RentIncreaseError(400, problem)
     const next = decidedRentIncrease(increase, decision, agreedCents, decidedOn)

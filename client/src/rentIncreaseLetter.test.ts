@@ -22,13 +22,13 @@ const BASIS: RentIncreaseBasis = {
       { address: 'Ahornweg 5, 12345 Musterstadt', location: 'EG rechts', areaM2: 62, centsPerM2: 1010 },
       { address: 'Birkenstraße 8, 12345 Musterstadt', location: '2. OG Mitte', areaM2: 60, centsPerM2: 1050 },
     ],
-    qualifiedSurvey: 'yes', qualified: QUALIFIED, recipientName: 'Anna und Ben Becker', allLandlordsNamed: true, allTenantsNamed: true, extraParagraph: 'Für Rückfragen bin ich gern erreichbar.',
+    qualifiedSurvey: 'yes', qualified: QUALIFIED, recipientName: 'Anna und Ben Becker', severalLandlords: false, allLandlordsNamed: true, allTenantsNamed: true, extraParagraph: 'Für Rückfragen bin ich gern erreichbar.',
   },
   rentCap: { answer: 'no', answeredOn: '2026-11-20' },
   sender: { name: 'Max Vermieter', address: 'Ahornstraße 3, 12345 Musterstadt', contact: 'Tel. 0123 456', returnLine: 'Max Vermieter · Ahornstraße 3, 12345 Musterstadt', footer: '' },
   recipient: ['Anna und Ben Becker', 'Lindenweg 12', '12345 Musterstadt'], salutation: 'Guten Tag Anna und Ben Becker,',
   premises: { propertyName: 'Haus', address: 'Lindenweg 12, 12345 Musterstadt', unitName: 'EG', areaM2: 60 }, inclusive: false,
-  prepayments: { operatingCents: 15000, heatingCents: 6000, flatRateCents: 0 },
+  prepayments: { operatingCents: 15000, heatingCents: 6000, flatRateCents: 0 }, sentPlan: null,
 }
 const text = (b: RentIncreaseBasis): string => {
   const v = rentIncreaseLetterView(b)
@@ -71,7 +71,7 @@ test('Vergleichswohnungen als Begründung: Tabelle mit Anschrift und Lage, und d
 })
 
 test('Mietspiegel ohne Angabe, wo er zugänglich ist: Er liegt bei; mehrere Vermieter sprechen in der Mehrzahl', () => {
-  const b: RentIncreaseBasis = { ...BASIS, sender: { ...BASIS.sender, name: 'Max und Erika Vermieter' }, letter: { ...BASIS.letter, justification: 'survey', comparables: [], qualifiedSurvey: 'no', qualified: null, survey: { ...QUALIFIED, name: 'Mietspiegel Musterstadt', availableAt: '', rangeLowCentsPerM2: null, rangeHighCentsPerM2: null } } }
+  const b: RentIncreaseBasis = { ...BASIS, sender: { ...BASIS.sender, name: 'Max und Erika Vermieter' }, letter: { ...BASIS.letter, severalLandlords: true, justification: 'survey', comparables: [], qualifiedSurvey: 'no', qualified: null, survey: { ...QUALIFIED, name: 'Mietspiegel Musterstadt', availableAt: '', rangeLowCentsPerM2: null, rangeHighCentsPerM2: null } } }
   const t = text(b)
   expect(t).toMatch(/^Wir bitten Sie/m)
   expect(t).toMatch(/ergibt sich aus dem Mietspiegel „Mietspiegel Musterstadt“ \(Stand April 2025\)\..*Der Mietspiegel liegt diesem Schreiben bei\./)
@@ -87,13 +87,43 @@ test('Inklusivmiete: Betriebskostenanteil und Vergleichsrechnung (VIII ZR 108/20
   expect(t).not.toMatch(/Vorauszahlungen/)
 })
 
+test('Inklusivmiete: Der Gesamtbetrag heißt nicht Nettokaltmiete, auch nicht in der Zustimmungserklärung (Durchsicht M2)', () => {
+  const plan: RentIncreasePlan = { ...PLAN, newCents: 66000, comparison: { centsPerM2: 1000, areaM2: 60, rentCents: 60000, operatingCostsCents: 8000, limitCents: 68000 } }
+  const b: RentIncreaseBasis = { ...BASIS, plan, inclusive: true, prepayments: { operatingCents: 0, heatingCents: 0, flatRateCents: 0 }, letter: { ...BASIS.letter, justification: 'expert', expert: { name: 'Dipl.-Ing. Muster', date: '2026-10-01' }, comparables: [], qualifiedSurvey: 'no', qualified: null } }
+  const v = rentIncreaseLetterView(b)
+  expect(plain(v.paragraphs[0])).toMatch(/einer Erhöhung der monatlichen Miete \(einschließlich Betriebskosten\) für die Wohnung EG/)
+  expect(text(b)).not.toMatch(/Nettokaltmiete/)
+  const form = plain(v.consentForm?.lines.join(' ') ?? '')
+  expect(form).toMatch(/Der Erhöhung der monatlichen Miete einschließlich Betriebskosten \(darin 80,00 € Betriebskosten\) für die Wohnung EG, Lindenweg 12, 12345 Musterstadt von 500,00 € auf 660,00 € ab Februar 2027/)
+  expect(form).not.toMatch(/Nettokaltmiete/)
+  // Ohne Inklusivmiete bleibt es die Nettokaltmiete.
+  expect(plain(rentIncreaseLetterView(BASIS).consentForm?.lines.join(' ') ?? '')).toMatch(/monatlichen Nettokaltmiete für die Wohnung/)
+})
+
+test('Mehrzahl nur nach der Angabe „mehrere Vermieter“, nicht nach dem Namen (Durchsicht S3)', () => {
+  const sender = { ...BASIS.sender, name: 'Max und Erika Vermieter' }
+  expect(text({ ...BASIS, sender })).toMatch(/^Ich bitte Sie/m)
+  expect(text({ ...BASIS, sender })).toMatch(/nenne ich drei/)
+  const we = { ...BASIS, sender: { ...BASIS.sender, name: 'Max Vermieter' }, letter: { ...BASIS.letter, severalLandlords: true } }
+  expect(text(we)).toMatch(/^Wir bitten Sie/m)
+  expect(text(we)).toMatch(/nennen wir drei/)
+  expect(text(we)).toMatch(/Bitte teilen Sie uns/)
+})
+
+test('Nachdruck nach dem Versand: dasselbe Schreiben wie der Entwurf, auch bei anderem tatsächlichem Zugang (Durchsicht M1)', () => {
+  const sentPlan: RentIncreasePlan = { ...PLAN, receivedOn: '2026-11-25', today: '2026-11-25' }
+  expect(rentIncreaseLetterView({ ...BASIS, sentPlan })).toEqual(rentIncreaseLetterView(BASIS))
+  expect(text({ ...BASIS, sentPlan })).toMatch(/bei Zugang am 20\.11\.2026 also bis zum 01\.02\.2027/)
+})
+
 test('Indexmiete: beide Indexwerte mit Monat und Basis, bisherige und neue Miete, Erhöhung in Euro, ab Monat; keine Zustimmungserklärung', () => {
   const plan: RentIncreasePlan = { ...PLAN, kind: 'index', consent: null, cap: null, comparison: null, currentCents: 77153, newCents: 79988, effectiveFrom: '2027-01', index: { from: { month: '2024-12', value: 106.1, base: 2020 }, to: { month: '2026-10', value: 110, base: 2020 } } }
   const b: RentIncreaseBasis = { ...BASIS, plan, rentCap: null, letter: { ...BASIS.letter, justification: null, comparables: [], qualifiedSurvey: null, qualified: null, extraParagraph: '' } }
   const v = rentIncreaseLetterView(b)
   const t = text(b)
   expect(v.subject).toBe('Anpassung der Miete nach § 557b BGB (Indexmiete)')
-  expect(t).toMatch(/106,1 Punkte im Dezember 2024 \(Basis 2020 = 100\).*110,0 Punkte im Oktober 2026 \(Basis 2020 = 100\)/)
+  expect(t).toMatch(/106,1 Punkte im Dezember 2024 \(Basis 2020 = 100\)\. Im Oktober 2026 betrug er 110,0 Punkte \(Basis 2020 = 100\)\./)
+  expect(t).not.toMatch(/zuletzt veröffentlicht/)
   expect(t).toMatch(/bisherige Nettokaltmiete von 771,53 € ändert sich .* auf 799,88 €.*Erhöhung um 28,35 € im Monat/)
   expect(t).toMatch(/ab dem 01\.01\.2027 zu zahlen/)
   expect(v.consentForm).toBeNull()

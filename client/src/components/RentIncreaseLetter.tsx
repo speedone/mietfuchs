@@ -1,6 +1,7 @@
 // Das Schreiben einer Mieterhöhung (#191, PR 3) mit den Bausteinen des Anschreibens: Briefkopf nach DIN 5008 (`LetterHead`,
 // letter.css), Logo und Briefpapier des Objekts wie im Druck der Abrechnung (letterDesignView.ts). Der Text kommt aus
-// rentIncreaseLetter.ts und nur aus der eingefrorenen Grundlage. Am Bildschirm eine Vorschau im Kasten; gedruckt wird ein
+// rentIncreaseLetter.ts und nur aus der eingefrorenen Grundlage; Logo und Briefpapier lädt jeder Druck aktuell (nicht
+// eingefroren, Entwurf „Umsetzung PR 3“). Eine Grundlage aus einer anderen Fassung zeigt nur ihren Satz (Durchsicht K1). Am Bildschirm eine Vorschau im Kasten; gedruckt wird ein
 // Blatt am Ende von body (`print-rent-increase`, letter.css), die Zustimmungserklärung auf eigener Seite.
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -8,6 +9,7 @@ import type { LetterDesigns, RentIncrease } from '../types'
 import { api } from '../api'
 import { withProperty } from '../property'
 import { rentIncreaseLetterView } from '../rentIncreaseLetter'
+import { rentIncreaseBasisProblem } from '../../../shared/rentIncreaseLetter.ts'
 import { PAPER_PAGE_CSS, asLetterDesigns, canPagePaper, designKey, paperVars, printDesign, printedDesign, type LoadedDesign, type PrintedDesign } from '../letterDesignView'
 import { designImage } from '../letterPaper'
 import { softBreak } from '../softBreak'
@@ -17,6 +19,8 @@ import { LetterHead } from './Letter'
 import Table from './Table'
 
 export function RentIncreaseLetterSheet({ increase, design = null }: { increase: Pick<RentIncrease, 'basis'>; design?: PrintedDesign | null }) {
+  const foreign = rentIncreaseBasisProblem(increase.basis)
+  if (foreign) return <p>{foreign}</p>
   const v = rentIncreaseLetterView(increase.basis)
   return (
     <>
