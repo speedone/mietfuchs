@@ -99,14 +99,16 @@ test('Einlesen: Vorschau mit Rückfrage zum Konto, Antwort plant neu, „Einlese
   expect(within(drawer).getByText(`Das Konto ${OWN} wurde noch nie eingelesen. Ist es Ihr Konto für Mieteingänge?`)).toBeTruthy()
   expect(within(drawer).getByText('Ein Kautionskonto lesen Sie hier bitte nicht ein.')).toBeTruthy()
   // #644: Mit offener Rückfrage steht noch kein Satz zum Ergebnis da
-  expect(within(drawer).queryByText('2 Umsätze übernommen.')).toBeNull()
+  expect(within(drawer).queryByText(/Umsätze (übernommen|werden eingelesen)/)).toBeNull()
   const read = within(drawer).getByRole('button', { name: 'Einlesen' }) as HTMLButtonElement
   expect(read.disabled).toBe(true)
   fireEvent.click(within(drawer).getByLabelText('Ja, mein Konto für Mieteingänge'))
   await waitFor(() => expect(posts('/api/bank/import/plan').length).toBe(2))
   expect(JSON.parse(String((posts('/api/bank/import/plan')[1]?.body as Record<string, string>).decisions))).toEqual([{ type: 'account', iban: OWN, accept: true }])
   await waitFor(() => expect(read.disabled).toBe(false))
-  expect(within(drawer).getByText('2 Umsätze übernommen.')).toBeTruthy()
+  // Durchsicht: Die Vorschau sagt, was das Einlesen tun wird, mit demselben Wort wie die Mitteilung danach.
+  expect(within(drawer).getByText('2 Umsätze werden eingelesen; gebucht wird dabei noch nichts.')).toBeTruthy()
+  expect(within(drawer).queryByText(/übernommen/)).toBeNull()
   fireEvent.click(read)
   await waitFor(() => expect(posts('/api/bank/import').length).toBe(1))
   expect(posts('/api/bank/import')[0]?.body).toEqual({ statement: 'Datei juni.xml', decisions: JSON.stringify([{ type: 'account', iban: OWN, accept: true }]), token: 'marke-2' })
@@ -132,7 +134,7 @@ test('Einlesen: Rückfrage je Eingang mit Mietverhältnis und „als Zahler merk
 })
 
 test('Einlesen: 409 zeigt die neue Vorschau mit Satz; Abbrechen verwirft alles', async () => {
-  importReply = () => json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Vorschau noch einmal.', preview: preview({ questions: [], ready: true, token: 'marke-3', sentence: '1 Umsatz übernommen.' }) }, 409)
+  importReply = () => json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Vorschau noch einmal.', preview: preview({ questions: [], ready: true, token: 'marke-3', sentence: '1 Umsatz übernommen.', summary: { stored: 1, knownDays: 0, pending: 0 } }) }, 409)
   planReply = () => preview({ questions: [], ready: true })
   renderPage()
   await chooseFile()
@@ -140,12 +142,12 @@ test('Einlesen: 409 zeigt die neue Vorschau mit Satz; Abbrechen verwirft alles',
   await waitFor(() => expect((within(drawer).getByRole('button', { name: 'Einlesen' }) as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(within(drawer).getByRole('button', { name: 'Einlesen' }))
   expect(await within(drawer).findByText('Der Stand hat sich geändert. Bitte prüfen Sie die Vorschau noch einmal.')).toBeTruthy()
-  expect(within(drawer).getByText('1 Umsatz übernommen.')).toBeTruthy()
+  expect(within(drawer).getByText('1 Umsatz wird eingelesen; gebucht wird dabei noch nichts.')).toBeTruthy()
   fireEvent.click(within(drawer).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   await chooseFile()
   const again = await screen.findByRole('dialog')
-  expect(within(again).queryByText('1 Umsatz übernommen.')).toBeNull()
+  expect(within(again).queryByText(/1 Umsatz wird eingelesen/)).toBeNull()
 })
 
 test('Offene Umsätze: Zeile mit Ampel und Grund als Text, „Alle grünen übernehmen (n)“ fragt einmal und bucht genau die grünen', async () => {
@@ -248,7 +250,7 @@ test('Integration D3: ein Konto nur für die Vermietung lässt sich zum Mischkon
 })
 
 test('Klicktest B2: „schon eingelesen“ steht einmal, ohne Fehlerrahmen', async () => {
-  planReply = () => preview({ questions: [], ready: true, sentence: 'Dieser Auszug wurde am 13.11.2026 schon eingelesen.', findings: [{ where: 'juni.xml, Auszug 2025-06', message: 'Dieser Auszug wurde am 13.11.2026 schon eingelesen.' }] })
+  planReply = () => preview({ questions: [], ready: true, sentence: 'Dieser Auszug wurde am 13.11.2026 schon eingelesen.', summary: { stored: 0, knownDays: 0, pending: 0, alreadyImportedOn: '2026-11-13' }, findings: [{ where: 'juni.xml, Auszug 2025-06', message: 'Dieser Auszug wurde am 13.11.2026 schon eingelesen.' }] })
   renderPage()
   await chooseFile()
   const drawer = await screen.findByRole('dialog')

@@ -63,8 +63,8 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
   const [printing, setPrinting] = useState(false)
   // Gedruckt wird ein Brief (DepositLetter.tsx, Text in depositLetter.ts). Ohne Namen des Vermieters warnt die Aufstellung
   // nur; ob ein Briefpapier den Absender trägt, weiß das Fenster nicht (geladen wird es erst zum Druck).
-  const letter = settlement && depositLetterView({
-    tenancy, unitName: unit?.name ?? '', property, settlement, today: localToday(),
+  const letter = settlement && tenancy.end !== null && depositLetterView({
+    tenancy, end: tenancy.end, unitName: unit?.name ?? '', property, settlement, today: localToday(),
     landlord: effectiveLandlord(property, settings ?? { landlordName: '', iban: '', paymentDeadlineDays: 30, landlordAddress: '', landlordContact: '' }),
   })
 
@@ -204,10 +204,11 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
             {holdShown && <button className="btn secondary" disabled={saving.busy} onClick={() => void saving.run(saveHold)}>Einbehalt speichern</button>}
             <button className="btn secondary" onClick={() => setPrinting(true)}>Aufstellung drucken</button>
           </div>
+          <p className="muted m-0">Der Brief zeigt den Stand von heute und wird nicht gespeichert; ein späterer Druck kann anders ausfallen.</p>
           {letter && depositSenderMissing(letter, false) && <p className="muted">{DEPOSIT_SENDER_MISSING_TEXT}</p>}
         </section>
       )}
-      {printing && settlement && letter && <DepositLetterPrint view={letter} settlement={settlement} propertyId={property?.id} onDone={() => setPrinting(false)} />}
+      {printing && settlement && letter && <DepositLetterPrint title={`Kaution ${tenancy.tenantName}`} view={letter} settlement={settlement} propertyId={property?.id} onDone={() => setPrinting(false)} />}
       {formWithoutMoney(tenancy) && <p className="muted">{NO_MONEY_FORM_TEXT}</p>}
       {entries.length > 0 && (
         <Table aria-label="Kautionsbuchungen">

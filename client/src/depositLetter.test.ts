@@ -7,13 +7,13 @@ import type { DepositSettlement } from './depositSettlement'
 const flat = (s: string) => s.replace(/ /g, ' ')
 const LANDLORD = { landlordName: 'Petra Vermieterin', landlordAddress: 'Gartenweg 3, 54321 Beispielstadt', landlordContact: 'Tel. 0123 456789', iban: 'DE02120300000000202051', paymentDeadlineDays: 30 }
 const PROPERTY = { name: 'Haus Birke', address: 'Lindenweg 12, 12345 Musterstadt' }
-const TENANCY = { tenantName: 'Erika Mustermann', end: '2025-12-31', correspondenceAddress: 'Neue Straße 5, 99999 Anderswo', letterSalutation: 'Sehr geehrte Frau Mustermann' }
+const TENANCY = { tenantName: 'Erika Mustermann', correspondenceAddress: 'Neue Straße 5, 99999 Anderswo', letterSalutation: 'Sehr geehrte Frau Mustermann' }
 const SETTLEMENT: DepositSettlement = {
   rows: [{ label: 'Eingang', cents: 240000, date: '2022-01-05' }],
   balanceCents: 240000, hold: { cents: 30000, note: 'Nebenkosten 2025' }, payoutCents: 210000, lastStatement: null, lastHeatingStatement: null, pending: [],
 }
 const view = (over: Partial<Parameters<typeof depositLetterView>[0]> = {}) =>
-  depositLetterView({ tenancy: TENANCY, unitName: 'EG links', property: PROPERTY, landlord: LANDLORD, settlement: SETTLEMENT, today: '2026-01-15', ...over })
+  depositLetterView({ tenancy: TENANCY, end: '2025-12-31', unitName: 'EG links', property: PROPERTY, landlord: LANDLORD, settlement: SETTLEMENT, today: '2026-01-15', ...over })
 
 test('Briefkopf: Absender, Rücksendeangabe, Anschrift für den Schriftverkehr, Ort und Datum', () => {
   const v = view()
@@ -41,7 +41,11 @@ test('Betreff nennt Wohnung und Objekt, der Text Mietende und Stand, Gruß und U
 test('Ergebnis in einem Satz: Auszahlung mit Frage nach dem Konto, mit hinterlegter IBAN diese', () => {
   expect(flat(view().result)).toBe('Zur Auszahlung an Sie bleiben damit 2.100,00 €. Bitte teilen Sie mit, auf welches Konto der Betrag überwiesen werden soll.')
   expect(flat(view({ tenancy: { ...TENANCY, iban: 'DE89370400440532013000' } }).result))
-    .toBe('Zur Auszahlung an Sie bleiben damit 2.100,00 €. Als Ihre Bankverbindung ist die IBAN DE89 3704 0044 0532 0130 00 hinterlegt; bitte teilen Sie mit, falls der Betrag auf ein anderes Konto gehen soll.')
+    .toBe('Zur Auszahlung an Sie bleiben damit 2.100,00 €. Als Ihre Bankverbindung ist das Konto mit der IBAN-Endung 3000 hinterlegt; bitte teilen Sie mit, falls der Betrag auf ein anderes Konto gehen soll.')
+  // Durchsicht: nie die ganze IBAN (das Feld kann alt sein, der Brief an eine c/o-Anschrift gehen), auch mit Leerzeichen gespeichert.
+  const spaced = view({ tenancy: { ...TENANCY, iban: 'de89 3704 0044 0532 0130 00' } }).result
+  expect(spaced).toContain('IBAN-Endung 3000')
+  expect(spaced.replace(/\s/g, '')).not.toMatch(/DE89|37040044|0532/i)
 })
 
 test('Ergebnis ohne Auszahlung: nach dem Einbehalt nichts, ohne Stand nichts', () => {
@@ -63,4 +67,8 @@ test('ohne Vermieternamen warnt die Seite, mit Briefpapier nicht', () => {
   expect(depositSenderMissing(v, true)).toBe(false)
   expect(depositSenderMissing(view(), false)).toBe(false)
   expect(DEPOSIT_SENDER_MISSING_TEXT).toContain('Name des Vermieters')
+  // Durchsicht: Die Rücksendezeile druckt trotzdem (Objekt und Anschrift); der Text darf nicht „weder Absender“ behaupten.
+  expect(v.head.returnLine).toBe('Gartenweg 3, 54321 Beispielstadt')
+  expect(DEPOSIT_SENDER_MISSING_TEXT).not.toMatch(/weder Absender/)
+  expect(DEPOSIT_SENDER_MISSING_TEXT).toContain('Rücksendezeile')
 })

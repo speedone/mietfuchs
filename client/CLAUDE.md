@@ -665,8 +665,9 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   [depositLetter.ts](src/depositLetter.ts)): „Aufstellung drucken“ im Fenster „Kaution“ druckt nach demselben Muster
   (`LetterHead`, `useLetterDesign` aus RentIncreaseLetter.tsx, Blatt am Ende von body, `print-deposit` in letter.css).
   Der Text steht fest und kommt aus dem heutigen Bestand; ohne Namen des Vermieters warnt das Fenster nur. Druckbreite:
-  Fall `kaution`. Die Mitteilung nach dem Einlesen eines Kontoauszugs baut `importDoneText` (bankView.ts): eingelesen,
-  nichts gebucht, weiter unter „Offene Umsätze“.
+  Fall `kaution`. Gedruckt über `startPrint` (Dateiname „Kaution {Mieter}“). Vorschau und Mitteilung beim Einlesen
+  eines Kontoauszugs bauen `importPreviewText`/`importDoneText` (bankView.ts) aus `summary`, nie aus dem Satz des
+  Servers: eingelesen, nichts gebucht, weiter unter „Offene Umsätze“.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus

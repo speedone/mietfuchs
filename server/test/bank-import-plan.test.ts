@@ -76,6 +76,9 @@ test('2 schon eingelesen: gleiche Prüfsumme am Konto schreibt nichts und nennt 
   const second = plan(r, apply(stock(), first))
   assert.deepEqual(second.writes, { accounts: [], imports: [], days: [], transactions: [], replaced: [], payers: [] })
   assert.equal(second.sentence, 'Dieser Auszug wurde am 01.07.2025 schon eingelesen.')
+  // Die Oberfläche baut ihre Sätze aus den Zahlen (Durchsicht): Der Tag steht deshalb auch als Angabe da, nur in diesem Fall.
+  assert.deepEqual(second.summary, { stored: 0, knownDays: 0, pending: 0, alreadyImportedOn: '2025-07-01' })
+  assert.deepEqual(first.summary, { stored: 1, knownDays: 0, pending: 0 })
 })
 
 test('3 unbekanntes Konto ist eine Rückfrage; ja legt ein Mischkonto an, nein übernimmt nichts', () => {

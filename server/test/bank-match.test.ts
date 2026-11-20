@@ -92,6 +92,16 @@ test('Vorschlag: Ausgang mit „Kaution“ im Zweck ist eine Rückzahlung der Ka
   assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Rueckzahlung' }), ctx({ tenancies: [inStock] }))?.target, { type: 'newPayment', kind: 'settlement' })
   assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Kaution zurueck' }), ctx({ tenancies: [tenancy({ depositForm: 'guarantee' })] }))?.target, { type: 'newPayment', kind: 'settlement' })
   assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Kaution zurueck' }), ctx({ tenancies: [tenancy({ depositCents: undefined })] }))?.target, { type: 'newPayment', kind: 'settlement' })
+  // Durchsicht: Ist die Kaution laut Buchungen schon ganz zurückgezahlt oder verrechnet, bleibt es beim allgemeinen Rest;
+  // das Buchen lehnte sonst ohne Weg ab. Liegt noch etwas beim Vermieter, bleibt der Vorschlag.
+  const paidOut: DepositEntry[] = [
+    { id: 'e', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 186000 },
+    { id: 'a', tenancyId: 't1', date: '2025-12-01', kind: 'refunded', amountCents: 186000 },
+  ]
+  const none = suggest(tx('2026-02-10', -5000, { purpose: 'Kaution Rest' }), ctx({ tenancies: [inStock], depositEntries: paidOut }))
+  assert.deepEqual(none?.target, { type: 'newPayment', kind: 'settlement' })
+  assert.equal(none?.reason, 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung')
+  assert.deepEqual(suggest(tx('2026-02-10', -5000, { purpose: 'Kaution Rest' }), ctx({ tenancies: [inStock], depositEntries: paidOut.slice(0, 1) }))?.target, { type: 'deposit', kind: 'refunded' })
   // Eine erfasste Rückzahlung gleichen Betrags geht weiter vor (Regel 2).
   const booked: DepositEntry[] = [{ id: 'r', tenancyId: 't1', date: '2026-02-09', kind: 'refunded', amountCents: 186000 }]
   assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Kaution zurueck' }), ctx({ tenancies: [inStock], depositEntries: booked }))?.target, { type: 'existingDeposit', depositEntryId: 'r' })

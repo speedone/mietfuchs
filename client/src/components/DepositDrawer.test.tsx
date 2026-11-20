@@ -241,8 +241,19 @@ test('Drucken druckt nur die Aufstellung', async () => {
   expect(flat(letter)).toContain('Zur Auszahlung an Sie bleiben damit 2.112,34 €')
   expect(flat(letter)).toContain('Mit freundlichen Grüßen')
   expect(flat(letter.querySelector('.letter-signature') ?? expect.fail('keine Unterschrift'))).toBe('Petra Vermieterin')
+  // Wie beim Schreiben der Mieterhöhung (printJob.ts): Dateiname aus dem Titel, aufgeräumt erst bei der nächsten Bedienung,
+  // nicht bei `afterprint` (Safari meldet es, während der Dialog noch offen ist).
+  expect(document.title).toBe('Kaution Erika Mustermann')
   window.dispatchEvent(new Event('afterprint'))
+  expect(document.body.classList.contains('print-deposit')).toBe(true)
+  window.dispatchEvent(new Event('pointerdown'))
   await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
+  expect(document.title).not.toBe('Kaution Erika Mustermann')
+})
+
+test('am Druckknopf steht, dass der Brief den heutigen Stand zeigt und nicht gespeichert wird', () => {
+  const { drawer } = openMoved()
+  expect(within(drawer).getByText('Der Brief zeigt den Stand von heute und wird nicht gespeichert; ein späterer Druck kann anders ausfallen.')).toBeTruthy()
 })
 
 test('ohne Namen des Vermieters warnt die Aufstellung und druckt trotzdem', async () => {
@@ -253,6 +264,7 @@ test('ohne Namen des Vermieters warnt die Aufstellung und druckt trotzdem', asyn
   fireEvent.click(screen.getByRole('button', { name: 'Aufstellung drucken' }))
   await waitFor(() => expect(print).toHaveBeenCalledTimes(1))
   window.dispatchEvent(new Event('afterprint'))
+  window.dispatchEvent(new Event('pointerdown'))
   await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
 })
 

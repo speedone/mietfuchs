@@ -3842,7 +3842,7 @@ export type BankImportDecision =
 export type BankImportPreview = {
   questions: BankImportQuestion[]
   findings: { where: string; message: string }[]
-  summary: { stored: number; knownDays: number; pending: number }
+  summary: { stored: number; knownDays: number; pending: number; alreadyImportedOn?: string }
   sentence: string
   ready: boolean
   token: string

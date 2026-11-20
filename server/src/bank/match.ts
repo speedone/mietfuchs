@@ -154,7 +154,8 @@ function suggestInner(tx: BankTransaction, ctx: MatchContext, takes: (settlement
     // Nennt der Zweck die Kaution, ist der Ausgang kein Guthaben der Abrechnung (Systemprüfung): auch ohne Buchung, wenn nur
     // die Stammdaten die Kaution führen. Der Stand wird beim Buchen geprüft (linkPlan.ts nennt dann den Weg zum Eingang).
     // Wie beim Eingang entscheidet der Zweck nur über die Art, und nur bei einer vereinbarten Geldkaution.
-    if (moneyDeposit && /kaution/i.test(tx.purpose ?? '')) return yellow({ type: 'deposit', kind: 'refunded' }, '„Kaution“ im Verwendungszweck')
+    // Nicht, wenn laut Buchungen nichts mehr beim Vermieter liegt (Durchsicht): Das Buchen lehnte dann nur ab.
+    if (moneyDeposit && /kaution/i.test(tx.purpose ?? '') && (entries.length === 0 || balance > 0)) return yellow({ type: 'deposit', kind: 'refunded' }, '„Kaution“ im Verwendungszweck')
     return yellow({ type: 'newPayment', kind: 'settlement' }, 'Auszahlung an den Mieter, etwa ein Guthaben aus der Abrechnung')
   }
   // Regel 4, zuerst (Durchsicht 642/3): Eine erfasste Zahlung gleichen Betrags in der Nähe geht jedem weiteren Vorschlag vor.

@@ -36,7 +36,9 @@ export type ImportPlan = {
   writes: ImportWrite
   questions: ImportQuestion[]
   findings: ImportFinding[]
-  summary: { stored: number; knownDays: number; pending: number }
+  // `alreadyImportedOn` (JJJJ-MM-TT) nur, wenn der Auszug schon eingelesen war und nichts zu tun bleibt: Die Oberfläche
+  // baut ihre Sätze aus diesen Angaben (client/src/bankView.ts), nicht aus `sentence`.
+  summary: { stored: number; knownDays: number; pending: number; alreadyImportedOn?: string }
   sentence: string
   ready: boolean
   // Die Kennungen, die dieser Plan erzeugt hat; die Prüfmarke sieht von ihnen ab.
@@ -350,10 +352,11 @@ export function planBankImport(
   }
 
   const stored = writes.transactions.length + writes.replaced.reduce((a, r) => a + r.parts.length - 1, 0)
-  const summary = { stored, knownDays, pending }
   const nothingElse = stored === 0 && knownDays === 0 && pending === 0 && writes.days.length === 0
-  const sentence = nothingElse && alreadyImported.length > 0
-    ? `Dieser Auszug wurde am ${germanDate((alreadyImported[0] ?? '').slice(0, 10))} schon eingelesen.`
+  const importedOn = nothingElse && alreadyImported.length > 0 ? (alreadyImported[0] ?? '').slice(0, 10) : null
+  const summary = { stored, knownDays, pending, ...(importedOn !== null ? { alreadyImportedOn: importedOn } : {}) }
+  const sentence = importedOn !== null
+    ? `Dieser Auszug wurde am ${germanDate(importedOn)} schon eingelesen.`
     : [
         `${plural(stored, 'Umsatz', 'Umsätze')} übernommen`,
         ...(knownDays > 0 ? [`${plural(knownDays, 'Tag', 'Tage')} schon eingelesen`] : []),

@@ -8,6 +8,7 @@ import { fmtDate, fmtEuro } from '../api'
 import type { DepositLetterView } from '../depositLetter'
 import type { DepositSettlement } from '../depositSettlement'
 import { PAPER_PAGE_CSS, paperVars, type PrintedDesign } from '../letterDesignView'
+import { startPrint } from '../printJob'
 import { softBreak } from '../softBreak'
 import { LetterHead } from './Letter'
 import { useLetterDesign } from './RentIncreaseLetter'
@@ -53,21 +54,22 @@ export function DepositLetterSheet({ view: v, settlement, design = null }: { vie
   )
 }
 
-// Druckt den Brief, sobald Logo und Briefpapier geladen sind; aufgeräumt nach dem Druck, dann `onDone`.
-export function DepositLetterPrint({ view, settlement, propertyId, onDone }: { view: DepositLetterView; settlement: DepositSettlement; propertyId: string | null | undefined; onDone: () => void }) {
+// Druckt den Brief, sobald Logo und Briefpapier geladen sind, wie `RentIncreasePrint`: über `startPrint` (Dateiname aus
+// `title`, aufgeräumt erst bei der nächsten Bedienung, nicht bei `afterprint`; printJob.ts), danach `onDone`.
+export function DepositLetterPrint({ title, view, settlement, propertyId, onDone }: { title: string; view: DepositLetterView; settlement: DepositSettlement; propertyId: string | null | undefined; onDone: () => void }) {
   const design = useLetterDesign(propertyId)
   useEffect(() => {
     if (!design.ready) return
     document.body.classList.add('print-deposit')
-    const done = () => {
-      document.body.classList.remove('print-deposit')
-      onDone()
-    }
-    window.addEventListener('afterprint', done)
-    const t = setTimeout(() => window.print(), 80)
+    const job = startPrint({
+      title,
+      onDone: () => {
+        document.body.classList.remove('print-deposit')
+        onDone()
+      },
+    })
     return () => {
-      clearTimeout(t)
-      window.removeEventListener('afterprint', done)
+      job.cancel()
       document.body.classList.remove('print-deposit')
     }
   }, [design.ready])
