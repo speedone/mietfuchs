@@ -110,12 +110,16 @@ describe('Laienprobe B11, B3a', () => {
   // deshalb keine abgelaufene Frist. Erst das Speichern mit den eingetragenen Beträgen ergibt die Rückfrage (409 mit
   // neuer Vorschau). Die neue Vorschau darf die Eingaben nicht auf 0,00 zurücksetzen.
   test('eine neue Vorschau des Servers nach „Speichern“ behält die eingetragenen Heizanteile', async () => {
-    const first = { ...separatePreview, share: null, steps: [{ tenancyId: 't1', tenantName: 'Familie Beispiel', rows: [{ from: '2025-05', totalCents: 25000, heatingCents: 0 }] }], effects: [] }
+    const stepsWith = (other: number) => [
+      { tenancyId: 't1', tenantName: 'Familie Beispiel', rows: [{ from: '2025-05', totalCents: 25000, heatingCents: 0 }] },
+      { tenancyId: 't2', tenantName: 'Herr Muster', rows: [{ from: '2025-05', totalCents: 20000, heatingCents: other }] },
+    ]
+    const first = { ...separatePreview, share: null, steps: stepsWith(0), effects: [] }
     const puts: { answers: { steps: unknown; understood: boolean } }[] = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/separate') && init?.method === 'PUT') {
         puts.push(JSON.parse(String(init.body)))
-        if (puts.length === 1) return json({ error: 'Bitte bestätigen Sie das in der Vorschau; gespeichert wurde nichts.', preview: { ...first, effects: separatePreview.effects } }, 409)
+        if (puts.length === 1) return json({ error: 'Bitte bestätigen Sie das in der Vorschau; gespeichert wurde nichts.', preview: { ...first, steps: stepsWith(5000), effects: separatePreview.effects } }, 409)
         return json(plant())
       }
       if (url.endsWith('/separate/preview')) return json(first)
@@ -129,9 +133,11 @@ describe('Laienprobe B11, B3a', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     fireEvent.click(await screen.findByRole('checkbox', { name: /Ich habe verstanden/ }))
     expect((screen.getByRole('textbox', { name }) as HTMLInputElement).value).toBe('120,00')
+    // Durchsicht: Ein unberührtes Feld nimmt die Vorbelegung der neuen Vorschau.
+    expect((screen.getByRole('textbox', { name: /Herr Muster ab 05\/2025: davon Heizung/ }) as HTMLInputElement).value).toBe('50,00')
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() => expect(puts).toHaveLength(2))
-    expect(puts[1].answers).toMatchObject({ steps: { t1: { '2025-05': 12000 } }, understood: true })
+    expect(puts[1].answers).toMatchObject({ steps: { t1: { '2025-05': 12000 }, t2: { '2025-05': 5000 } }, understood: true })
   })
 })
 

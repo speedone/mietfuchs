@@ -64,6 +64,9 @@ test('Zurück auf „Niemand“: die Angaben der Einrichtung sind weg, der Zeitr
   await withDatabase(async (opened) => {
     await haus(opened)
     await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, above70Agreed: true, heatConsumptionPct: 80 }, TODAY, newId))
+    // Durchsicht: Die Rückfrage nennt alles, was mit entfällt, nicht nur die Anteile.
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual' })),
+      (e: unknown) => e instanceof Error && /Anteile nach Verbrauch der offenen Heizperioden werden dabei verworfen, ebenso die Angabe, dass ein höherer Anteil nach Verbrauch vereinbart ist \(§ 10 HeizkostenV\), und beim Warmwasser die Angabe „gemessen“ aus der Einrichtung/.test(e.message))
     await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual', convertItems: 'area' }))
     assert.deepEqual(await opened.read((db) => db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, 'hp'))), [])
     assert.deepEqual((await preview(opened)).blocked, [])

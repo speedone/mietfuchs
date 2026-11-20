@@ -81,9 +81,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Eigene Heizkostenabrechnung: Der Block „Heizkostenabrechnung“ nennt je Mieter und Topf jetzt genau den Betrag seiner
-  Kostenzeilen. Bei mehreren Heizpositionen konnte er um einen Cent von der Kostentabelle desselben Blatts abweichen.
-  Kosten, Vorauszahlungen und Salden waren und bleiben richtig; abgeschlossene Abrechnungen bleiben, wie sie sind.
+- Eigene Heizkostenabrechnung: Der Block „Heizkostenabrechnung“ nennt je Mieter für Heizung und Warmwasser zusammen
+  jetzt den Betrag seiner Kostenzeilen. Bei mehreren Heizpositionen konnte er um einen Cent von der Kostentabelle
+  desselben Blatts abweichen. Der Hinweis zur Kürzung nur auf den Anteil Warmwasser rechnet mit demselben Betrag wie
+  der Block und kann sich dadurch um einen Cent ändern. Kosten, Vorauszahlungen und Salden waren und bleiben richtig;
+  abgeschlossene Abrechnungen bleiben, wie sie sind. Für eine Heizposition, die wegen eines Fehlers nicht verteilt
+  wird, gilt das nicht; den Fehler nennt die Abrechnung wie bisher.
 - Getrennte Heizkostenabrechnung einschalten: Verlangt Mietfuchs nach „Speichern“ die Bestätigung zu einer abgelaufenen
   Frist, bleiben die eingetragenen Heizanteile stehen. Vorher standen sie danach wieder auf der Vorbelegung, ohne
   bekannten Anteil auf 0,00 €.

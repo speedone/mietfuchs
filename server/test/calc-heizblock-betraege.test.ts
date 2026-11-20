@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { selfSnapshot } from '../testing/selfHeating.ts'
+import { selfDelivery, selfSnapshot } from '../testing/selfHeating.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem, HeatingPart, HeatingTarget } from '../../shared/types.ts'
@@ -76,4 +76,49 @@ test('Der CO₂-Abzug im Block teilt den gedruckten Abzug des Mieters ganz auf b
     if (relief > 0) seen++
   }
   assert.ok(seen > 0, 'Beispiel A hat einen CO₂-Abzug')
+})
+
+// ---------- Durchsicht vom 20.11.2026 ----------
+
+const BOTH = AMOUNTS.map((a, i) => item(`b${i}`, a, i === 0 ? 'fuel' : 'operating', 'both', i === 0 ? { fuelDeliveryId: 'd1' } : {}))
+const potOf = (s: ComputedSettlement, p: 'heating' | 'water') => selfOf(s).pots.find((x) => x.pot === p) ?? assert.fail(`kein Topf ${p}`)
+
+// Die Grenze je Topf: Positionen für Heizung und Warmwasser werden je Nutzer einmal geteilt, und zwar so, dass alle
+// Nutzer zusammen den gedruckten Topf Heizung ergeben; der Rest ist Warmwasser. Der Topf Heizung stimmt damit genau,
+// der Topf Warmwasser bis auf den einen Cent, um den zwei gerundete Topfbeträge zusammen von der Summe abweichen können.
+test('Durchsicht: je Topf ergeben die Nutzer den gedruckten Topf, Heizung genau, Warmwasser auf einen Cent', () => {
+  for (const extra of [[], [item('wz', 12001, 'metering', 'heating'), item('wwz', 6001, 'metering', 'water')]]) {
+    for (const tenancies of [undefined, selfSnapshot().tenancies.filter((t) => t.id !== 'C2')]) {
+      const s = computeSettlement(selfSnapshot({ costItems: [...BOTH, ...extra], ...(tenancies ? { tenancies } : {}) }))
+      assert.equal(selfOf(s).ok, true)
+      assert.equal(users(s).reduce((a, u) => a + u.heatingCents, 0), potOf(s, 'heating').costCents, 'Heizung')
+      assert.ok(Math.abs(users(s).reduce((a, u) => a + u.waterCents, 0) - potOf(s, 'water').costCents) <= 1, 'Warmwasser')
+      for (const u of users(s)) assert.ok(u.heatingCents >= 0 && u.waterCents >= 0, `${u.label}: kein negativer Topfbetrag`)
+    }
+  }
+})
+
+test('Durchsicht: der Ausweis nennt je Nutzer und Topf die Zahl der verteilten Zeilen', () => {
+  const s = computeSettlement(selfSnapshot({ costItems: [...BOTH, item('wz', 12001, 'metering', 'heating'), item('wz2', 501, 'metering', 'heating'), item('wwz', 6001, 'metering', 'water')] }))
+  for (const u of users(s)) assert.deepEqual([u.heatingRows, u.waterRows], [BOTH.length + 2, BOTH.length + 1], u.label)
+})
+
+test('Durchsicht: die Kürzung auf den Anteil Warmwasser im Hinweis rechnet mit dem Betrag des Ausweises', () => {
+  const formel = { dhwMethod: 'volumeFormula' as const, dhwVolumeM3: 120, dhwTempC: 60, dhwUnmeasurable: null, exemption: 'lowDemand' as const, exemptionScope: 'heat' as const }
+  const euro = (cents: number) => `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+  const unitOf = (tenancyId: string) => (tenancyId.startsWith('C') ? 'C' : tenancyId)
+  let seen = 0
+  for (let add = 0; add < 60; add++) {
+    const costItems = [...BOTH.map((c, i) => ({ ...c, amountCents: c.amountCents + add * (i + 1) })), item('wwz', 6001 + add, 'metering', 'water')]
+    const s = computeSettlement(selfSnapshot({ plant: { heatGeneration: 'single' }, row: formel, deliveries: [selfDelivery({ gasBasis: 'hs' })], costItems }))
+    const text = (s.notices.find((n) => n.code === 'heating.dhw-not-metered') ?? assert.fail('kein Hinweis')).text
+    const part = /des Anteils am Warmwasser, hier: ([^:]*?): Gekürzt/.exec(text)?.[1] ?? assert.fail(text)
+    for (const u of users(s)) {
+      if (!u.tenancyId) continue
+      const want = `${u.label} (${unitOf(u.tenancyId)}) ${euro(Math.round((u.waterCents - u.waterCo2Cents) * 0.15))}`
+      assert.ok(part.includes(want), `„${want}“ fehlt in „${part}“`)
+      seen++
+    }
+  }
+  assert.ok(seen >= 240)
 })

@@ -5393,34 +5393,89 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       why, boundary: problem?.boundary ?? null, estimated: u.estimated[p], partlyMeasured, proposals, comparable,
     }]
   }))
+  // Die Beträge des Blocks „Heizkostenabrechnung“ je Nutzer und Topf: die Summe seiner verteilten Zeilen
+  // (`selfBlockCents`), dazu je Topf die Zahl dieser Zeilen. Eine Position nur für Heizung oder nur für Warmwasser zählt
+  // ganz in ihrem Topf. Positionen für Heizung und Warmwasser stehen je in einer Zeile; das Verhältnis der Töpfe ist je
+  // Nutzer für alle dieselbe ((1 − α) · Gewicht Heizung zu α · Gewicht Warmwasser), deshalb wird die Summe dieser Zeilen
+  // je Nutzer **einmal** geteilt, und zwar über alle Nutzer zugleich nach dem Restverfahren auf den gedruckten Topf
+  // Heizung: Alle Nutzer zusammen ergeben ihn genau, der Rest jedes Nutzers ist Warmwasser (dieser Topf stimmt bis auf
+  // den einen Cent, um den zwei gerundete Topfbeträge zusammen von ihrer Summe abweichen können). Träfe das einen Nutzer
+  // außerhalb seiner Zeilen (weniger als 0 oder mehr als ihre Summe), rundet jeder für sich. Eine Position, die nicht
+  // verteilt wurde (Fehler an der Position, `heating.target-invalid`), zählt wie bisher mit Topf mal Gewicht.
+  type SelfBlockCents = { heating: number; water: number; heatingRows: number; waterRows: number }
+  const selfBlockMemo = new Map<SelfPlantPlan, Map<string, SelfBlockCents>>()
+  const selfBlocksOf = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[]): Map<string, SelfBlockCents> => {
+    const known = selfBlockMemo.get(sp)
+    if (known) return known
+    const users = sp.plan.units.flatMap((u) => u.users)
+    const out = new Map<string, SelfBlockCents>(users.map((u) => [u.key, { heating: 0, water: 0, heatingRows: 0, waterRows: 0 }]))
+    const both = new Map<string, number>()
+    const loose = new Map<string, { heating: number; water: number }>()
+    let looseHeating = 0
+    for (const c of potItems) {
+      if (c.key !== 'heatingSystem') continue
+      const ph = partOf(sp, c, 'heating')
+      const pw = partOf(sp, c, 'water')
+      const booked = selfBlockCents.get(c.id)
+      if (!booked) looseHeating += c.amountCents * ph
+      for (const u of users) {
+        const b = out.get(u.key)
+        if (!b) continue
+        if (!booked) {
+          const w = sp.weights?.get(u.key)
+          const l = loose.get(u.key) ?? { heating: 0, water: 0 }
+          loose.set(u.key, { heating: l.heating + c.amountCents * ph * (w?.heating ?? 0), water: l.water + c.amountCents * pw * (w?.water ?? 0) })
+          continue
+        }
+        const cents = booked.get(u.key) ?? 0
+        if (ph > 0) b.heatingRows++
+        if (pw > 0) b.waterRows++
+        if (pw === 0) b.heating += cents
+        else if (ph === 0) b.water += cents
+        else both.set(u.key, (both.get(u.key) ?? 0) + cents)
+      }
+    }
+    if (both.size > 0) {
+      const a = sp.alpha?.value ?? 0
+      const list = users.filter((u) => both.has(u.key)).map((u) => {
+        const w = sp.weights?.get(u.key)
+        const h = (1 - a) * (w?.heating ?? 0)
+        const wa = a * (w?.water ?? 0)
+        const cents = both.get(u.key) ?? 0
+        return { key: u.key, landlord: u.role !== 'tenancy', cents, raw: h + wa !== 0 ? (cents * h) / (h + wa) : cents }
+      })
+      const pure = [...out.values()].reduce((s, b) => s + b.heating, 0)
+      const target = Math.round(potCostOf(sp, potItems, 'heating') - looseHeating) - pure
+      const joint = distributeCents(target, list)
+      const inside = (x: { cents: number }, part: number): boolean => part >= Math.min(0, x.cents) && part <= Math.max(0, x.cents)
+      const usable = Math.abs(target - list.reduce((s, x) => s + x.raw, 0)) <= list.length && list.every((x, k) => inside(x, joint[k]))
+      list.forEach((x, k) => {
+        const b = out.get(x.key)
+        if (!b) return
+        const part = usable ? joint[k] : roundHalfAway(x.raw)
+        b.heating += part
+        b.water += x.cents - part
+      })
+    }
+    for (const [key, l] of loose) {
+      const b = out.get(key)
+      if (!b) continue
+      b.heating += Math.round(l.heating)
+      b.water += Math.round(l.water)
+    }
+    selfBlockMemo.set(sp, out)
+    return out
+  }
+  // Der gedruckte CO₂-Abzug eines Mieters ganz auf beide Töpfe: Heizung gerundet, der Rest ist Warmwasser.
+  const selfCo2Of = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null, tenancyId: string | null, w: SelfWeights | undefined): Record<SelfPot, number> => {
+    const co2 = potCo2Of(sp, potItems, reliefKey, tenancyId, w)
+    const heating = Math.round(co2.heating)
+    return { heating, water: Math.round(co2.heating + co2.water) - heating }
+  }
   // Der Ausweis je Anlage und Heizperiode (Entwurf 8.8 ohne § 6a, der mit PR 14 kommt).
   const selfStatementOf =(sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null): SelfHeatingStatement => {
     const cost = { heating: potCostOf(sp, potItems, 'heating'), water: potCostOf(sp, potItems, 'water') }
-    // Die Beträge des Blocks je Nutzer und Topf: die Summe seiner verteilten Zeilen (`selfBlockCents`). Eine Position
-    // für Heizung und Warmwasser steht in einer Zeile; sie wird nach dem Warmwasseranteil und den Gewichten geteilt, der
-    // Teil Heizung gerundet, der Rest ist Warmwasser, damit beide zusammen die Zeile ergeben. Eine Position, die nicht
-    // verteilt wurde (Fehler an der Position), zählt wie bisher mit Topf mal Gewicht.
-    const blockOf = (userKey: string, w: SelfWeights | undefined): Record<SelfPot, number> => {
-      let heating = 0
-      let water = 0
-      const loose = { heating: 0, water: 0 }
-      for (const c of potItems) {
-        if (c.key !== 'heatingSystem') continue
-        const h = c.amountCents * partOf(sp, c, 'heating') * (w?.heating ?? 0)
-        const wa = c.amountCents * partOf(sp, c, 'water') * (w?.water ?? 0)
-        const booked = selfBlockCents.get(c.id)
-        if (!booked) {
-          loose.heating += h
-          loose.water += wa
-          continue
-        }
-        const cents = booked.get(userKey) ?? 0
-        const part = h + wa !== 0 ? roundHalfAway((cents * h) / (h + wa)) : cents
-        heating += part
-        water += cents - part
-      }
-      return { heating: heating + Math.round(loose.heating), water: water + Math.round(loose.water) }
-    }
+    const blocks = selfBlocksOf(sp, potItems)
     const offDays = (d: string, b: string): number => Math.abs(Math.round((toUTC(d) - toUTC(b)) / MS_DAY))
     return {
       capture: sp.capture,
@@ -5469,10 +5524,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }),
         users: u.users.map((x): SelfUserView => {
           const w = sp.weights?.get(x.key)
-          const co2 = potCo2Of(sp, potItems, reliefKey, x.tenancyId, w)
-          const block = blockOf(x.key, w)
-          // Der gedruckte Abzug ganz auf beide Töpfe: Heizung gerundet, der Rest ist Warmwasser.
-          const heatingCo2 = Math.round(co2.heating)
+          const co2 = selfCo2Of(sp, potItems, reliefKey, x.tenancyId, w)
+          const block = blocks.get(x.key) ?? { heating: 0, water: 0, heatingRows: 0, waterRows: 0 }
           return {
             key: x.key, role: x.role, tenancyId: x.tenancyId, label: x.label, from: x.from, to: x.to, days: x.days, degreeDayPermille: x.degreeDayPermille,
             heatingConsumption: x.pots.heating.value,
@@ -5481,8 +5534,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             waterGroup: x.pots.water.group,
             heatingCents: w ? block.heating : 0,
             waterCents: w ? block.water : 0,
-            heatingCo2Cents: heatingCo2,
-            waterCo2Cents: Math.round(co2.heating + co2.water) - heatingCo2,
+            heatingCo2Cents: co2.heating,
+            waterCo2Cents: co2.water,
+            ...(w ? { heatingRows: block.heatingRows, waterRows: block.waterRows } : {}),
             heatingEstimated: x.pots.heating.estimated === true,
             waterEstimated: x.pots.water.estimated === true,
           }
@@ -7598,8 +7652,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return list.length > 0 ? `, hier: ${andList(list)}` : ''
   }
   // Die Grundlage einer Kürzung, wenn nach § 11 nur die Wärme ausgenommen ist (Durchsicht von #243, G-W2): je Mieter
-  // sein Anteil am Topf Warmwasser der Anlagen, nach dem CO₂-Abzug (Entwurf 6.5). Bei der eigenen Abrechnung aus dem
-  // Plan (Kosten des Topfs mal Gewicht, abzüglich seines CO₂-Abzugs im Topf); bei freien Schlüsseln die Positionen
+  // sein Anteil am Topf Warmwasser der Anlagen, nach dem CO₂-Abzug (Entwurf 6.5). Bei der eigenen Abrechnung der
+  // Betrag des Ausweises (sein Topfbetrag Warmwasser abzüglich seines CO₂-Abzugs im Topf); bei freien Schlüsseln die Positionen
   // mit Ziel Warmwasser. Eine Position für Heizung und Warmwasser mit freiem Schlüssel hat einen Anteil Warmwasser,
   // den Mietfuchs nicht kennt (`unknown`).
   const waterBaseOf = (plantIds: readonly string[], tenancyId: string): { cents: number; unknown: boolean } => {
@@ -7613,11 +7667,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const sp = selfPlans.get(plantId)
       const weights = sp?.weights ?? null
       if (sp && weights) {
-        const w = sp.plan.units.flatMap((u) => u.users).filter((u) => u.tenancyId === tenancyId).reduce<SelfWeights>((a, u) => {
-          const x = weights.get(u.key)
-          return x ? { heating: a.heating + x.heating, water: a.water + x.water, both: a.both + x.both } : a
-        }, { heating: 0, water: 0, both: 0 })
-        cents += potCostOf(sp, pot.items, 'water') * w.water - potCo2Of(sp, pot.items, pot.reliefKey, tenancyId, w).water
+        // Wie im Ausweis (`selfStatementOf`): der Topfbetrag Warmwasser jedes seiner Nutzer abzüglich seines CO₂-Abzugs
+        // im Topf, damit Hinweis und Ausweis denselben Betrag nennen (Durchsicht vom 20.11.2026).
+        const blocks = selfBlocksOf(sp, pot.items)
+        for (const u of sp.plan.units.flatMap((x) => x.users)) {
+          if (u.tenancyId !== tenancyId) continue
+          cents += (blocks.get(u.key)?.water ?? 0) - selfCo2Of(sp, pot.items, pot.reliefKey, tenancyId, weights.get(u.key)).water
+        }
       }
       for (const c of pot.items) {
         if (weights && c.key === 'heatingSystem') continue

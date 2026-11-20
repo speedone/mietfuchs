@@ -646,7 +646,7 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
       `Diese Heizanlage hat ${offen.length === 1 ? 'eine Position' : `${offen.length} Positionen`} in offenen Zeiträumen, die nach der Heizkostenverordnung verteilt ${offen.length === 1 ? 'wird' : 'werden'}. Bestätigen Sie, dass sie künftig nach Wohnfläche verteilt ${offen.length === 1 ? 'wird' : 'werden'}; prüfen Sie danach die Schlüssel. ` +
         `Fällt die Anlage unter die Heizkostenverordnung, verteilen Sie damit nicht nach Verbrauch, und jeder Mieter darf seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). ` +
         'Einen anderen Abrechnungsmaßstab dürfen Sie nur für künftige Abrechnungszeiträume und zu ihrem Beginn wählen, durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV). ' +
-        'Die Anteile nach Verbrauch der offenen Heizperioden werden dabei verworfen; abgeschlossene Heizperioden rechnen weiter nach der Heizkostenverordnung, wie sie zugestellt wurden.',
+        'Die Anteile nach Verbrauch der offenen Heizperioden werden dabei verworfen, ebenso die Angabe, dass ein höherer Anteil nach Verbrauch vereinbart ist (§ 10 HeizkostenV), und beim Warmwasser die Angabe „gemessen“ aus der Einrichtung; abgeschlossene Heizperioden rechnen weiter nach der Heizkostenverordnung, wie sie zugestellt wurden.',
       offen,
     )
   }
