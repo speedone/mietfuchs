@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   adjustedCents, adjustmentHint, buildLetter, chooseLetterBlocks, DEFAULT_LETTER_TEXTS, LETTER_BLOCK_IDS, LETTER_FIELDS, mergeLetterTexts, parseLetterAdjustment,
-  exceedsOnePage, lettersOf, parseLetterTexts, printsLetter, renderLetterText, resolveTemplate, statementBlocks, templateProblems, type LetterFacts,
+  exceedsOnePage, lettersOf, parseLetterTexts, sameAmountHint, printsLetter, renderLetterText, resolveTemplate, statementBlocks, templateProblems, type LetterFacts,
 } from '../../shared/letter.ts'
 import type { LetterAdjustment, Property, Settings, Tenancy } from '../../shared/types.ts'
 import { calendarYearPeriod, settlementPeriod } from '../../shared/period.ts'
@@ -281,6 +281,53 @@ test('M1: die Vorgabe des Monats liegt nach dem abgerechneten Zeitraum', () => {
   // Zeitraum 2025, Brief im März 2025: übernächster Monat wäre Mai 2025, es gilt Januar 2026.
   assert.equal(lettersOf(st, { ...base, asOf: '2025-03-01' }).t1?.adjustment.from, '2026-01')
   assert.equal(lettersOf(st, { ...base, asOf: '2025-12-15' }).t1?.adjustment.from, '2026-02')
+})
+
+// Systemprüfung: „auf 160,00 € angepasst“, obwohl der Mieter 160 € schon zahlt. Verglichen wird mit der Staffel am Ende des
+// Zeitraums und im Monat der Anpassung; ein eingefrorenes Anschreiben (mit Betrag im Stand) druckt seinen Satz weiter.
+test('keine Anpassung im Anschreiben, wenn der neue Betrag am Ende des Zeitraums galt und im Monat der Anpassung weiter gilt', () => {
+  const st = { ...oneStatement, statements: oneStatement.statements.map((x) => ({ ...x, suggestedMonthlyCents: 16000 })) }
+  const base = { settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 }, property: house, installation: {}, propertyTexts: {}, asOf: '2026-11-01' }
+  const tenancy = (prepayments: { from: string, monthlyCents: number }[]) => ({ id: 't1', end: null, prepayments, correspondenceAddress: '' })
+  const blocks = (l: ReturnType<typeof lettersOf>[string] | undefined) => (l ? chooseLetterBlocks(l, -1, 0).filter((b) => b.startsWith('adjust')) : assert.fail('Anschreiben fehlt'))
+
+  // Vorschlag gleich der Vorauszahlung: kein Satz, kein Betrag, kein Monat.
+  const same = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 16000 }])], own: {} }).t1
+  assert.deepEqual(blocks(same), [])
+  assert.deepEqual(same?.adjustment, { mode: 'suggestion', newCents: null, from: null })
+  // Anders als die Vorauszahlung: wie bisher.
+  const other = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }])], own: {} }).t1
+  assert.deepEqual(blocks(other), ['adjustSuggestion'])
+  assert.equal(other?.adjustment.newCents, 16000)
+  // Durchsicht (M1): Im Zeitraum 150 €, seit Januar 2026 schon 160 € (von Hand oder übernommen): Die Stufe nach dem
+  // Zeitraum ist die Anpassung selbst, der Brief erklärt sie weiter.
+  const raised = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }, { from: '2026-01', monthlyCents: 16000 }])], own: {} }).t1
+  assert.deepEqual(blocks(raised), ['adjustSuggestion'])
+  // Im Zeitraum 160 €, danach gesenkt: Der Vorschlag weicht vom laufenden Betrag ab.
+  const lowered = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 16000 }, { from: '2026-06', monthlyCents: 15000 }])], own: {} }).t1
+  assert.deepEqual(blocks(lowered), ['adjustSuggestion'])
+  // Eine Stufe erst nach dem Monat der Anpassung zählt nicht.
+  const later = lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }, { from: '2027-06', monthlyCents: 16000 }])], own: {} }).t1
+  assert.deepEqual(blocks(later), ['adjustSuggestion'])
+  // Ein eigener Betrag gleich der Vorauszahlung ebenso; ein anderer wird angekündigt.
+  const own = (cents: number) => ({ t1: { texts: {}, adjustment: { mode: 'custom' as const, cents, from: null } } })
+  assert.deepEqual(blocks(lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }])], own: own(15000) }).t1), [])
+  assert.deepEqual(blocks(lettersOf(st, { ...base, tenancies: [tenancy([{ from: '2024-01', monthlyCents: 15000 }])], own: own(15500) }).t1), ['adjustCustom'])
+  // Ohne Mietverhältnis in den Daten (Testattrappe) wird nicht verglichen.
+  assert.deepEqual(blocks(lettersOf(st, { ...base, tenancies: [], own: {} }).t1), ['adjustSuggestion'])
+})
+
+test('ein eingefrorenes Anschreiben mit angekündigtem Betrag druckt den Satz weiter, auch bei gleichem Betrag', () => {
+  const frozen = letter({ prepaymentBeforeCents: 10500 })
+  assert.equal(frozen.values.VorauszahlungBisher, frozen.values.VorauszahlungNeu)
+  assert.ok(chooseLetterBlocks(frozen, -4000, 0).includes('adjustSuggestion'))
+})
+
+test('das Seitenfenster sagt, wenn der gewählte Betrag ohnehin gilt', () => {
+  assert.equal(sameAmountHint(16000, 15000, '2027-01'), null)
+  assert.equal(sameAmountHint(null, 15000, '2027-01'), null)
+  assert.equal(sameAmountHint(16000, null, '2027-01'), null)
+  assert.match(plain(sameAmountHint(16000, 16000, '2027-01')), /160,00 € .*Januar 2027 ohnehin.*kündigt.*keine Anpassung an/)
 })
 
 // ---------- Zahlungs-QR-Code (#624) ----------

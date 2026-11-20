@@ -5,7 +5,7 @@ import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate, loadErrorText } from '../api'
 import { usePeriod } from '../period'
@@ -26,6 +26,9 @@ import HcaFields from '../components/HcaFields'
 import CutoffReadingForm from '../components/CutoffReadingForm'
 import { hcaSummary, isCutoffReading, ratedText } from '../hcaForm'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
+import { ifUnchanged, isStale, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
+
+const METER_STALE_FIELDS: StaleFields = { name: 'Name', unitId: 'Wohnung', type: 'Zählertyp', meterNumber: 'Zählernummer', unit: 'Einheit' }
 
 type Props = { units: Unit[] } & FocusProps
 
@@ -44,6 +47,15 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [readings, setReadings] = useState<Reading[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
   const [meterForm, setMeterForm] = useState<MeterForm | null>(null)
+  // Der Stand des Zählers beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
+  // Beim Öffnen gegen den Bestand abgeglichen: Ein Zählerwechsel mit Eichjahr oder ein anderes Fenster ändert den Zähler.
+  const seenMeter = useSeenRecord(meterForm?.id, meters, {
+    load: () => api<Meter[]>(withProperty('/api/meters', propertyId)),
+    adopt: (now) => {
+      setMeterForm(meterToForm(now))
+      load().catch(() => { /* das Formular zeigt den Stand schon */ })
+    },
+  })
   // Heizung PR 21: die Jahreszahl auf dem Zähler, nur für den Vorschlag; gespeichert wird „geeicht bis“.
   const [markedYear, setMarkedYear] = useState('')
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
@@ -99,14 +111,16 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       return
     }
     meterErrors.clear()
-    const body = JSON.stringify(result.body)
     const editing = !!meterForm.id
+    const body = JSON.stringify({ ...result.body, ...(editing ? ifUnchanged(seenMeter.current) : {}) })
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
       if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
       else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
     } catch (e) {
-      meterErrors.show(errorText(e))
+      meterErrors.show(staleText(e, seenMeter.current, METER_STALE_FIELDS) ?? errorText(e))
+      // Abgelehnt, weil der Stand älter ist: Die Liste lädt neu, damit das erneut geöffnete Formular den von jetzt zeigt.
+      if (isStale(e)) load().catch(() => { /* die Meldung im Fenster steht schon */ })
       return
     }
     const name = meterForm.name.trim()
@@ -453,13 +467,14 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     <option value="no">Nein</option>
                   </select>
                 </label>
-                <label className="field">
-                  Eingebaut am
-                  <input type="date" value={meterForm.installedOn} onChange={(e) => setMeterForm({ ...meterForm, installedOn: e.target.value })} />
-                  <small className="muted">{REMOTE_RULE_TEXT}</small>
-                </label>
               </>
             )}
+            {/* Bei jedem Zähler (Systemprüfung): Ab dem Einbau verlangt die Ampel „Zählerstände“ Ablesungen. */}
+            <label className="field">
+              Eingebaut am
+              <input type="date" value={meterForm.installedOn} onChange={(e) => setMeterForm({ ...meterForm, installedOn: e.target.value })} />
+              <small className="muted">{asksRemote(meterForm, plants.length > 0) ? REMOTE_RULE_TEXT : INSTALLED_ON_HINT}</small>
+            </label>
             {asksCalibration(meterForm) && (
               <>
                 <YearField

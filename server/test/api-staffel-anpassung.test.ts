@@ -85,3 +85,45 @@ test('#317: In die Staffel übernehmen, mit Marke, Rückfrage bei einer Stufe ab
     s.stop()
   }
 })
+
+// Durchsicht (M1): Der Anpassungssatz entfällt nur, wenn der Betrag schon am Ende des abgerechneten Zeitraums galt. Eine
+// Stufe danach, ob übernommen oder vorab von Hand eingetragen, ist gerade die Anpassung, die der Brief erklären muss
+// (§ 560 Abs. 4 BGB); sonst forderte das Mietkonto 50 €, ohne dass der Mieter die Erklärung bekommt.
+test('nach dem Übernehmen wieder geöffnet und neu abgeschlossen: Satz und Plan bleiben', async () => {
+  const s = await start()
+  try {
+    const t = await house(s)
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', {})).status, 201)
+    const p = await plan(s)
+    assert.equal((await send(s, '/api/settlement/2025/prepayment-steps', 'POST', { tenancyIds: [t.id], token: p.token })).status, 200)
+    assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).find((x) => x.id === t.id)?.prepayments, [{ from: '2024-01', monthlyCents: 4000 }, { from: '2026-05', monthlyCents: 5000 }])
+    // Wieder öffnen (etwa weil der Absender fehlte): Das Anschreiben kündigt die Anpassung weiter an.
+    assert.equal((await send(s, '/api/settlement/2025/close', 'DELETE')).status, 200)
+    const open = (await s.api<Settlement>('/api/settlement/2025')).letters?.[t.id] ?? assert.fail('kein Anschreiben')
+    assert.deepEqual(open.adjustment, { mode: 'suggestion', newCents: 5000, from: '2026-05' })
+    assert.match(plain(open.texts.adjustSuggestion), /ab Mai 2026 auf 50,00 € angepasst/)
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', {})).status, 201)
+    const frozen = (await s.api<Settlement>('/api/settlement/2025')).letters?.[t.id] ?? assert.fail('kein Anschreiben')
+    assert.deepEqual(frozen.adjustment, { mode: 'suggestion', newCents: 5000, from: '2026-05' })
+    const again = (await plan(s)).items[0] ?? assert.fail('kein Eintrag')
+    assert.deepEqual([again.cents, again.from, again.state], [5000, '2026-05', 'taken'])
+  } finally {
+    s.stop()
+  }
+})
+
+test('eine vorab zum Monat der Anpassung eingetragene Stufe nimmt dem Brief den Satz nicht', async () => {
+  const s = await start()
+  try {
+    const t = await house(s)
+    await s.api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify({ prepayments: [{ from: '2024-01', monthlyCents: 4000 }, { from: '2026-05', monthlyCents: 5000 }] }) })
+    const live = (await s.api<Settlement>('/api/settlement/2025')).letters?.[t.id] ?? assert.fail('kein Anschreiben')
+    assert.deepEqual(live.adjustment, { mode: 'suggestion', newCents: 5000, from: '2026-05' })
+    // Galt der Betrag dagegen schon im abgerechneten Zeitraum und gilt weiter, gibt es nichts anzupassen.
+    await s.api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify({ prepayments: [{ from: '2024-01', monthlyCents: 5000 }] }) })
+    const same = (await s.api<Settlement>('/api/settlement/2025')).letters?.[t.id] ?? assert.fail('kein Anschreiben')
+    assert.equal(same.adjustment.newCents, null)
+  } finally {
+    s.stop()
+  }
+})
