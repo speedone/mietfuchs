@@ -187,6 +187,8 @@ export type MeterBody = {
 }
 
 // Der Hilfetext am Einbaudatum, mit den Stichtagen aus dem Register (Durchsicht von #230, M5).
+// Der Hinweis am Feld „Eingebaut am“ bei einem Zähler, für den § 12 HeizkostenV nicht gefragt wird.
+export const INSTALLED_ON_HINT = 'Freiwillig. Wurde der Zähler erst im Lauf eines Abrechnungszeitraums eingebaut, erwartet Mietfuchs Ablesungen erst ab diesem Tag.'
 export const REMOTE_RULE_TEXT =
   `Für die Kürzung nach § 12 HeizkostenV: Geräte, die nach dem ${germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)} ` +
   `eingebaut wurden, müssen ab dem Einbau aus der Ferne ablesbar sein, ältere ab dem ${germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')}.`
@@ -259,8 +261,11 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
       scope: asksScope({ ...form, heatingRole: role ?? '' }) && form.scope === 'common' ? 'common' : null,
       ...(plantId === null ? {} : {
         remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
-        installedOn: asks && form.installedOn !== '' ? form.installedOn : null,
       }),
+      // Das Einbaudatum steht bei jedem Zähler im Formular (Systemprüfung): Ab ihm verlangt die Ampel „Zählerstände“
+      // Ablesungen. Die Regeln zur Fernablesbarkeit lesen es weiter nur bei Geräten nach § 5 HeizkostenV mit Antwort
+      // „nicht fernablesbar“ (remoteReading.ts, monthlyInfo.ts), für andere Zähler ändert es dort nichts.
+      installedOn: form.installedOn !== '' ? form.installedOn : null,
       ...hca.body,
     },
   }

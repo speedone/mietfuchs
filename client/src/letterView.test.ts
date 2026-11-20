@@ -2,7 +2,7 @@
 // § 35a EStG, ohne DOM geprüft. Die Werte kommen aus dem Anschreiben (abgeschlossen also eingefroren) und der Abrechnung.
 import { describe, expect, test } from 'vitest'
 import type { Statement, StatementLetter } from './types'
-import { contactRows, footnoteText, infoRows, labor35aTable, resultRows, statementHeadRows, senderMissing } from './letterView'
+import { contactRows, footnoteText, infoRows, labor35aTable, resultRows, statementHeadRows, senderMissing, ibanMissing } from './letterView'
 
 const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ')
 
@@ -127,5 +127,39 @@ describe('Absender fehlt (senderMissing)', () => {
 
   test('mit Briefpapier trägt das Papier den Absender; Mietfuchs sieht es nicht und warnt nicht', () => {
     expect(senderMissing({ sender: '', signature: '', paper: true })).toBe(false)
+  })
+})
+
+// Systemprüfung: Ohne IBAN bat der Brief um Überweisung der Nachzahlung, ohne ein Konto zu nennen, und nichts wies darauf hin.
+describe('Bankverbindung fehlt (ibanMissing)', () => {
+  const sentence = 'Es ergibt sich eine Nachzahlung von 120,00 €. Bitte überweisen Sie den Betrag innerhalb von 30 Tagen nach Zugang dieser Abrechnung.'
+  const missing = (over: Partial<Parameters<typeof ibanMissing>[0]> = {}) => ibanMissing({ balanceCents: -12000, iban: '', sentence, paper: false, ...over })
+
+  test('nur bei einer Nachzahlung, deren Satz zur Überweisung auffordert und kein Konto nennt', () => {
+    expect(missing()).toBe(true)
+    expect(missing({ iban: 'DE02 1203 0000 0000 2020 51' })).toBe(false)
+    // Guthaben und ausgeglichen: Es ist nichts zu überweisen.
+    expect(missing({ balanceCents: 12000 })).toBe(false)
+    expect(missing({ balanceCents: 0 })).toBe(false)
+  })
+
+  // Durchsicht (S2): wie beim Absender. Mit Briefpapier trägt das Papier die Bankverbindung, und Mietfuchs sieht es nicht.
+  test('mit Briefpapier kein Hinweis', () => {
+    expect(missing({ paper: true })).toBe(false)
+  })
+
+  test('wer bar oder per Lastschrift kassiert und den Satz so schreibt, bekommt keinen Hinweis; im Zweifel keiner', () => {
+    expect(missing({ sentence: 'Die Nachzahlung von 120,00 € ziehe ich mit der nächsten Miete per Lastschrift ein.' })).toBe(false)
+    expect(missing({ sentence: '' })).toBe(false)
+    expect(missing({ sentence: null })).toBe(false)
+    // Durchsicht (S2): Das Wort allein ist keine Aufforderung, und eine verneinte ist keine.
+    expect(missing({ sentence: 'Bitte keine Überweisung, ich buche den Betrag ab.' })).toBe(false)
+    expect(missing({ sentence: 'Bitte überweisen Sie nichts, ich buche den Betrag von 120,00 € ab.' })).toBe(false)
+    expect(missing({ sentence: 'Eine Überweisung ist nicht nötig.' })).toBe(false)
+    // Die Verneinung eines anderen Satzes zählt nicht.
+    expect(missing({ sentence: 'Ihre Vorauszahlungen haben nicht gereicht. Bitte überweisen Sie 120,00 €.' })).toBe(true)
+    // Das Konto steht im eigenen Text statt im Platzhalter.
+    expect(missing({ sentence: 'Bitte überweisen Sie 120,00 € auf das Konto DE02 1203 0000 0000 2020 51.' })).toBe(false)
+    expect(missing({ sentence: 'Bitte überweisen Sie 120,00 € auf das Konto DE02120300000000202051.' })).toBe(false)
   })
 })

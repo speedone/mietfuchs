@@ -54,7 +54,9 @@ let pdfjs = null
 
 /**
  * Ein Fall: welches Objekt, wie man zur gedruckten Ansicht kommt, und was die PDF zeigen muss.
- * @typedef {{ name: string, label: string, property: string, paper?: boolean, letters?: boolean, footer?: boolean,
+ * `band`: Ränder des Textbereichs mit Briefpapier in mm; dann steht auf jeder Seite der PDF aller Text dazwischen, und
+ * die PDF hat mehr als eine Seite (Mieterhöhung mit Briefpapier: vorher lief der Text über den Fuß des Papiers).
+ * @typedef {{ name: string, label: string, property: string, paper?: boolean, letters?: boolean, footer?: boolean, band?: { top: number, bottom: number },
  *   before?: (api: any, ids: any) => Promise<void>, after?: (api: any, ids: any) => Promise<void>,
  *   open: (page: any, ids: any) => Promise<void>, brake?: boolean }} PrintCase
  */
@@ -202,6 +204,25 @@ function settlementCases(images, base) {
   ]
 }
 
+// Das Schreiben der Mieterhöhung mit Briefpapier (#191): derselbe Weg wie die Ansicht `mieterhoehung`, mit Rändern, die
+// man am Text erkennt (oben 42, unten 38 mm). Das Schreiben hat mehrere Seiten; jede hält die Ränder ein.
+/** @param {any[]} views @returns {PrintCase[]} */
+function rentIncreasePaperCases(views, images, base) {
+  const view = views.find((v) => v.name === 'mieterhoehung')
+  if (!view) throw new Error('Ansicht „mieterhoehung“ fehlt in print-width-views.mjs')
+  const margins = { top: 42, right: 20, bottom: 38, left: 25 }
+  return [{
+    name: 'mieterhoehung-briefpapier', label: 'Mieterhöhung, Schreiben mit Briefpapier (Ränder je Seite)', property: 'haus', paper: true, band: { top: margins.top, bottom: margins.bottom },
+    before: () => putDesign(base, { logo: 'keep', paper: 'new', paperNextFile: 'keep', paperNext: 'same', margins }, { paper: images.paper }),
+    after: () => putDesign(base, { logo: 'keep', paper: 'remove', paperNextFile: 'keep', paperNext: 'none', margins }),
+    open: async (page, ids) => {
+      await view.open(page, ids)
+      // Logo und Briefpapier lädt das Blatt nach; gedruckt wird erst danach
+      await page.waitForFunction(() => [.../** @type {any} */ (globalThis).document.images].every((img) => img.complete))
+    },
+  }]
+}
+
 /** @param {PrintCase} c @param {string} engine */
 const tagOf = (c, engine) => (engines.length > 1 ? `${c.label} [${engine}]` : c.label)
 
@@ -232,6 +253,7 @@ async function main() {
     const cases = [
       ...settlementCases(images, demo.base),
       ...views.map((v) => ({ name: v.name, label: v.label, property: v.property ?? 'haus', open: v.open })),
+      ...rentIncreasePaperCases(views, images, demo.base),
     ].filter((c) => !only || only.includes(c.name))
     if (cases.length === 0) throw new Error('Kein Fall gewählt')
 
@@ -335,6 +357,17 @@ async function main() {
                 else if (footer.y < FOOTER_MIN_MM) findings.push(`${tag}: Seite ${i + 1} (Anschreiben): Fußzeile bei ${footer.y.toFixed(1)} mm statt unten (ab ${FOOTER_MIN_MM} mm), der Druck ist verkleinert`)
               })
               if (c.letters && letters === 0) findings.push(`${tag}: kein Anschreiben im Druck, die Prüfung von Betreff und Fußzeile lief ins Leere`)
+              const band = c.band
+              if (band) {
+                if (pages.length < 2) findings.push(`${tag}: nur ${pages.length} Seite, die Prüfung der Ränder je Seite lief ins Leere`)
+                pages.forEach((p, i) => {
+                  const ys = p.items.map((it) => it.y)
+                  if (ys.length === 0) return findings.push(`${tag}: Seite ${i + 1} ohne Text`)
+                  const [first, last] = [Math.min(...ys), Math.max(...ys)]
+                  if (first < band.top) findings.push(`${tag}: Seite ${i + 1}: Text ab ${first.toFixed(1)} mm, über dem oberen Rand des Briefpapiers (${band.top} mm)`)
+                  if (last > 297 - band.bottom) findings.push(`${tag}: Seite ${i + 1}: Text bis ${last.toFixed(1)} mm, im Fuß des Briefpapiers (ab ${297 - band.bottom} mm)`)
+                })
+              }
               summary = `${pages.length} Seiten${c.letters ? `, ${letters} Anschreiben` : ''}, ${summary}`
             }
             console.log(`${tag}: ${summary}`)

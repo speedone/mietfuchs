@@ -109,14 +109,17 @@ test('Zähler der Heizanlage: nur ohne Wohnung und mit Anlage; Fernablesbarkeit 
   const ohneAnlage = meterBody(speicher, null)
   expect(ohneAnlage).toMatchObject({ body: { heatingPlantId: null, heatingRole: null } })
   expect('body' in ohneAnlage && Object.hasOwn(ohneAnlage.body, 'remoteReadable')).toBe(false)
-  expect('body' in ohneAnlage && Object.hasOwn(ohneAnlage.body, 'installedOn')).toBe(false)
+  // Das Einbaudatum steht bei jedem Zähler im Formular und geht deshalb immer mit.
+  expect(ohneAnlage).toMatchObject({ body: { installedOn: '2022-03-01' } })
+  expect(meterBody({ ...emptyMeterForm(), name: 'Wasser EG', unitId: 'eg', installedOn: '2025-06-30' }, null)).toMatchObject({ body: { type: 'kaltwasser', installedOn: '2025-06-30' } })
+  expect(meterBody({ ...emptyMeterForm(), name: 'Wasser EG', unitId: 'eg' }, null)).toMatchObject({ body: { installedOn: null } })
   const hkvOhneAnlage = meterBody({ ...emptyMeterForm(), name: 'HKV', unitId: 'eg', type: 'hkv', unit: 'Einheiten', remote: 'no' }, null)
   expect('body' in hkvOhneAnlage && Object.hasOwn(hkvOhneAnlage.body, 'remoteReadable')).toBe(false)
   expect(asksRemote({ ...emptyMeterForm(), unitId: 'eg', type: 'hkv' }, false)).toBe(false)
   expect(asksRemote({ ...emptyMeterForm(), unitId: 'eg', type: 'hkv' }, true)).toBe(true)
   // Der Gaszähler gehört dem Versorger: Rolle ja, Fernablesbarkeit nein.
   expect(meterBody({ ...speicher, name: 'Gas', type: 'sonstig', heatingRole: 'supply' }, 'hp1'))
-    .toMatchObject({ body: { heatingPlantId: 'hp1', heatingRole: 'supply', remoteReadable: null, installedOn: null } })
+    .toMatchObject({ body: { heatingPlantId: 'hp1', heatingRole: 'supply', remoteReadable: null, installedOn: '2022-03-01' } })
   // An einer Wohnung: Kaltwasser ohne, Heizkostenverteiler mit Fernablesbarkeit.
   expect(meterBody({ ...emptyMeterForm(), name: 'Küche', unitId: 'eg', remote: 'yes' }, 'hp1')).toMatchObject({ body: { unitId: 'eg', heatingPlantId: null, remoteReadable: null } })
   const hkv = { ...emptyMeterForm(), name: 'HKV Bad', unitId: 'eg', type: 'hkv' as const, unit: 'Einheiten', remote: 'yes' as const }

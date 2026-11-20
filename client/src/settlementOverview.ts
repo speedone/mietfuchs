@@ -1,7 +1,9 @@
 // Die Ordnung der Seite Abrechnung (drei Zonen): was „Zu prüfen“ zeigt, die Tabelle je Mieter der Übersicht und das
 // Blättern in der Vorschau eines Mieters. Reine Funktionen ohne DOM; die Seite rendert nur.
 import { fmtDate, fmtEuro } from './api'
-import type { NotSettled, Notice, Settlement } from './types'
+import type { NotSettled, Notice, Settlement, Statement, StatementLetter } from './types'
+import { chooseLetterBlocks } from '../../shared/letter.ts'
+import { monthName } from '../../shared/monthlyInfo.ts'
 import { isAction, PROTECTED, sentences } from './noticeText'
 import { notSettledReason } from './tenancyModel'
 
@@ -70,6 +72,36 @@ export function tenantRows(data: Pick<Settlement, 'statements'> & { notSettled?:
     })),
     ...(data.notSettled ?? []).map((n): TenantRow => ({ settled: false, tenancyId: n.tenancyId, tenantName: n.tenantName, unitName: n.unitName, reason: notSettledReason(n) })),
   ]
+}
+
+// Was der Brief eines Mieters an neuer Vorauszahlung ankündigt (§ 560 Abs. 4 BGB), als Zeile der Übersicht vor dem
+// Abschluss (Systemprüfung: Die Vorgabe kündigt den Vorschlag an, und die Seite sagte es erst im Brief selbst). Nur, wenn
+// der Baustein gedruckt wird (`chooseLetterBlocks`). Ohne „bisher“: Der Brief nennt es in der Vorgabe nicht, und die Rate
+// am Ende des Zeitraums kann vom laufenden Betrag abweichen.
+export function announcedAdjustment(letter: Pick<StatementLetter, 'adjustment' | 'texts'> | null | undefined, balanceCents: number): string | null {
+  const cents = letter?.adjustment.newCents ?? null
+  if (!letter || cents === null || !chooseLetterBlocks(letter, balanceCents, 0).some((b) => b === 'adjustSuggestion' || b === 'adjustCustom')) return null
+  const from = letter.adjustment.from
+  return `Brief kündigt an: Vorauszahlung ${fmtEuro(cents)}${from ? ` ab ${monthName(from)}` : ''}`
+}
+// Durchsicht (S1): Der gewählte Betrag (Vorschlag oder eigener, `chosenCents`) gilt schon (`currentPrepaymentAt`), der Brief
+// lässt den Satz deshalb weg. Die Übersicht sagt es, statt gar nichts zu zeigen.
+export function alreadyAppliesNote(letter: Pick<StatementLetter, 'adjustment'> | null | undefined, chosenCents: number | null, currentCents: number | null): string | null {
+  if (!letter || letter.adjustment.mode === 'none' || letter.adjustment.newCents !== null) return null
+  if (chosenCents === null || currentCents === null || chosenCents !== currentCents) return null
+  return `Brief kündigt keine Anpassung an: ${fmtEuro(currentCents)} gelten schon`
+}
+// Der Weg, es zu ändern, einmal unter der Tabelle.
+export const ADJUSTMENT_NOTE =
+  'Die neue Vorauszahlung kündigt der Brief nach § 560 Abs. 4 BGB an. Sie ändern Betrag und Monat je Mieter über „Ansehen“ und dort „Anschreiben bearbeiten“ oder kündigen dort nichts an; ' +
+  'die Vorgabe für alle Mieter steht in den Einstellungen unter „Anschreiben zur Abrechnung“.'
+
+// Systemprüfung: Ohne erfasste Zahlungen im Mietkonto steht das Soll als „geleistet“ in der Abrechnung, und der Hinweis
+// `prepayment.arrears` kommt erst mit einem geführten Mietkonto. Ein ruhiger Satz der Seite, solange sie offen ist und
+// mindestens eine Vorauszahlung nicht von Hand angepasst wurde; kein Hinweis der Berechnung.
+export function prepaymentBasisNote(data: { statements: readonly Pick<Statement, 'prepaymentCents' | 'prepaymentOverridden'>[], closed?: Settlement['closed'] | null }): string | null {
+  if (data.closed || !data.statements.some((st) => !st.prepaymentOverridden && st.prepaymentCents > 0)) return null
+  return 'Als Vorauszahlungen ist angesetzt, was laut Vertrag zu zahlen war. Hat ein Mieter weniger gezahlt, tragen Sie den gezahlten Betrag in seiner Abrechnung ein: über „Ansehen“ und dort „✎ anpassen“.'
 }
 
 // Voriger und nächster Mieter der Vorschau.

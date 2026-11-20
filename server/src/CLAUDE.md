@@ -733,6 +733,14 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
 - **Je Mieter gespeichert, nicht nur für den Druck**: Druckte der Vermieter einen angepassten Text und schlösse
   danach ab, fröre sonst ein anderer Text ein als der, der beim Mieter liegt. Gespeichert wird nur, solange die
   Abrechnung offen ist (409 danach); beim Wiederöffnen gilt die gespeicherte Anpassung wieder.
+- **Kein Anpassungssatz bei gleichem Betrag** (Systemprüfung): Entspricht der neue Betrag (Vorschlag oder eigener) der
+  Vorauszahlung, die schon am Ende des abgerechneten Zeitraums galt (`prepaymentBefore`, das „bisher“ des Briefs) **und**
+  im Monat der Anpassung weiter gilt (`unchangedPrepayment`, in der Abgrenzung des Vorschlags), setzt `buildLetter`
+  `newCents` und `from` auf `null`, und `chooseLetterBlocks` wählt keinen Baustein. **Beides, nie nur der Monat**: Eine
+  Stufe nach dem Zeitraum, ob mit „In die Staffel übernehmen“ oder vorab von Hand eingetragen, ist die Anpassung, die der
+  Brief nach § 560 Abs. 4 BGB erklärt; nach Übernehmen, Wiederöffnen und Neuabschluss bleiben Satz und Plan
+  (api-staffel-anpassung.test.ts). Entschieden wird beim Erzeugen, nicht bei der Auswahl: Ein eingefrorenes Anschreiben
+  trägt seinen Betrag im Stand und druckt weiter wie zugestellt.
 - **Der Server setzt die Werte ein** (`lettersOf` in shared/letter.ts, gelesen über `lettersFor` in
   [letter.ts](letter.ts)) und liefert `letters` neben `statements`, offen wie abgeschlossen. **Der Abschluss friert
   es im Stand ein** (im selben Vorgang wie die Zahlen); danach ändert keine Vorlage mehr, was zugestellt wurde.
@@ -946,7 +954,15 @@ fällig“ (PR 4, Abschnitt „Demnächst fällig“).
   `planToken`/`increaseToken`; die Plan-Route liefert sie mit), sonst 409 mit dem neuen Plan bzw. `increase`; Lesen und
   Schreiben in einem `writeData`, eine Transaktion, Stufe über `patchTenancyIn`, `RentIncreaseError` mit Satz. **Höchstens
   ein offenes Verlangen** je Mietverhältnis (Entwurf oder versandtes nach § 558). Entwurf nur aus einem Plan, der nicht
-  `blocked` ist (zu früh geht, der Zugang kommt beim Versand). **`basis`** friert ein: Eingaben der Rechnung und des
+  `blocked` ist (zu früh geht, der Zugang kommt beim Versand). **Ohne Namen des Vermieters entsteht der Entwurf trotzdem**
+  (`rentSenderWarning` in shared/rentIncreaseLetter.ts): § 558a Abs. 1 und § 557b Abs. 3 BGB verlangen Textform, § 126b
+  BGB dafür die Nennung des Erklärenden; setzt der Vermieter Namen und Unterschrift von Hand auf den Ausdruck, ist er
+  genannt, und Mietfuchs sieht das nicht. Deshalb wie bei „Absender fehlt“ der Abrechnung eine Warnung der Oberfläche
+  (Fenster, Entwurf, Rückfrage vor dem Versand) und keine Sperre des Servers, auch nicht beim Versand. Nur die
+  Bestätigung `allLandlordsNamed` ist ohne Namen und ohne Briefpapier nicht verlangt (`senderMissing` an
+  `rentIncreaseLetterOf`; geprüft im Vorgang, wo der wirksame Name aus `effectiveLandlord` und das Briefpapier bekannt
+  sind: eigene Gestaltung des Objekts vor der Installation, eine fehlende Datei zählt nicht); mit Namen oder Briefpapier
+  bleibt sie Pflicht. **`basis`** friert ein: Eingaben der Rechnung und des
   Schreibens, Plan samt `legalValues`, Angabe zur Kappungsgrenzen-Verordnung mit Tag (S2), Absender, Empfänger und Anrede
   zum Zeitpunkt, Wohnung, Inklusivmiete, Vorauszahlungen im Monat des Wirksamwerdens; das Schreiben druckt nur daraus.
   **Versand** rechnet mit dem tatsächlichen Zugang neu (Monat und verlangte Miete bleiben die des Schreibens): nur bei
@@ -1197,6 +1213,12 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   vorher. Ziele nur im Objekt und Jahr der Auswertung; `amounts` und `external` sind keine Ziele
   („Position öffnen“). **Gutschriften werden nie verrechnet**: Gutschrift-Positionen sind keine
   Ziele, eine Gutschrift-Zeile hat nur Gutschriften als Kandidaten.
+- **Eine Rechnung mit vielen Zeilen als eine Position**: Die aus dieser Auswertung gebuchten Positionen sind für ihre
+  übrigen Zeilen keine Kandidaten (keine Doppelung, keine Farbe, keine Rückfrage), aber Ziele zum Verknüpfen
+  (`LineSuggestion.sameReceipt`): nur im Zeitraum der Buchung, nie eine Gutschrift (Position oder Zeile), nie `amounts`,
+  `external`, ein Teil einer aufgeteilten Rechnung oder eine Position mit einem Beleg gleichen Inhalts, also nur, was der
+  Planer annimmt. Bei einer `reassessed`-Zeile
+  bleiben sie Kandidaten mit Rückfrage und stehen dort nicht noch einmal.
 - **Hängt der Beleg (oder einer gleicher Prüfsumme) schon von Hand an einer Position**, ist sie
   Kandidat jeder seiner Zeilen, gleich welcher Kostenart (`lineCandidates`): rot, Anlegen nur mit
   Bestätigung. Derselbe Beleg kann nicht zweimal an dieselbe Position.
@@ -1212,6 +1234,9 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
 - **Prüfungen in shared/**: `amountProblem`, `costItemBody` (shared/costItem.ts), Ampel und
   Vorauswahl (shared/assessment.ts), Kostenarten (shared/categories.ts). `POST`/`PUT /api/costItems`
   prüfen noch nicht damit.
+- **Verlauf**: Der Eintrag einer Buchung nennt, was sie getan hat („Beleg gebucht (1 Zeile angelegt)“, „… (13 Zeilen
+  verknüpft)“; `bookingTitle` in bookingPlan.ts, `retitleCurrentGroup` in der Route): Die Oberfläche bucht eine Rechnung
+  mit vielen Zeilen in zwei Schritten zu einer Position, und „Rückgängig“ nimmt nur den obersten zurück.
 - **Routen**: `/api/extract` und `/api/intake` liefern `assessment`; `GET /api/assessments`,
   `GET`/`PUT …/:id`, `POST …/plan`, `POST …/book`. `GET /api/uploads` nennt `bookedItemIds` und
   `bookedCents`; ein nur über eine gebuchte Zeile verknüpfter Beleg zählt als verknüpft
@@ -1225,7 +1250,11 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   `invoiceNumber`, `eInvoiceNotes`, je Zeile `laborGuessed`; Verlauf „Beleg aus der E-Rechnung übernommen“. `refused`: der
   KI-Weg wie bisher, der Grund in `eInvoiceRefusal` der Antwort und als Notiz an der Auswertung (`source: 'ki'`). Spalten
   `assessments.source`/`invoice_number`/`e_invoice_notes`, `assessment_lines.labor_guessed` (Schritte 0095/0096, ohne
-  Angabe eine KI-Auswertung). Ampel in `suggestLine`: jede Notiz rot, `laborGuessed` gelb und nie vorab angehakt, gleiche
+  Angabe eine KI-Auswertung). Ampel in `suggestLine`: jede Notiz rot außer einer, die nur informiert (`informsOnly` in shared/assessment.ts: heute allein die
+  zu bezahlten Abschlägen, BT-113, denn die Zeilen ergeben den Gesamtbetrag und fast jede Jahresrechnung eines Versorgers
+  trägt sie; sie macht **gelb und nie vorab angehakt**, weil einzeln gebuchte Abschläge sonst doppelt zählten und in einem
+  anderen Zeitraum oder unter anderer Kostenart kein Kandidat warnt; sie steht einmal als Hinweis an der Auswertung; im
+  Zweifel ist eine Notiz keine Information, auch der Grund einer Ablehnung bleibt rot), `laborGuessed` gelb und nie vorab angehakt, gleiche
   Nummer und gleicher Steller in einem anderen Beleg rot (`otherInvoices`, über alle Objekte). **Reine XML-Datei** (PR 3):
   Der Filter lässt `.xml` nur auf `/api/upload`, `/api/intake`, `/api/extract` durch (`E_INVOICE_XML_ROUTES`,
   `carriesScript` mit `eInvoiceXml`), `checkXmlReceipt` liest danach den Inhalt (`isEInvoiceDocument`) und löscht alles
@@ -1445,7 +1474,60 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Einzige, was darauf stößt. Validator und Schema lehnen solche Bestände bewusst nicht ab.
 - **Diese Warnungen erscheinen nie auf der Abrechnung**, nur über `consumptionOverview` auf der
   Zähler-Seite und im Cockpit (Ampel „Zählerstände“ rot): Die Abrechnung ist das Dokument für den
-  Mieter.
+  Mieter. **Ausnahme, mit eigenen Codes** (die Stufe hängt am Code), sobald der Zähler in den Verbrauchsschlüssel
+  einer Position eingeht (Schlüssel `meter`, mit und ohne Bezugszähler; `negativeInKey`, `futureInKey`):
+  `meter.negative-in-key` (`error`), **gefragt je Empfänger, nicht je Segment** (`recipientSpans`): Empfänger eines
+  Wohnungszählers sind jedes Mietverhältnis der Einheit über seine Zeit im Zeitraum und jede Spanne dazwischen
+  (Leerstand, Eigennutzung, außerhalb; geteilt, wo die Nutzung wechselt), und ein Empfänger mit negativem Verbrauch
+  dieses Zählers ist der Fehler; der gemeinsame Abschnitt einer Überschneidung zählt nicht für sich (dort steht
+  `tenancy.overlap`). Ein Zwischenzähler geht nur als Summe des Zeitraums ein. Verglichen wird ungerundet gegen
+  `NEGATIVE_NOISE` (nur Gleitkommarest): 12,345 auf 12,344 MWh ergibt sonst negative Cent ohne Hinweis. Der Fehler wird
+  vor dem Plan des Rests geprüft und kann deshalb `meter.rest-mixed`, `meter.sub-incomplete` und
+  `meter.rest-unavailable` derselben Position verdrängen; die Zahlen sind dieselben (nicht verteilt). Ein Rücksprung, der sich
+  beim selben Empfänger ausgleicht (Schätzwert mitten im Jahr), bleibt die Warnung `meter.negative` der Übersicht und
+  ändert keine Abrechnung. Haupt- und Bezugszähler lösen nie aus: Sie gehen nur als Summe ein, und eine Summe, die nicht
+  trägt, behandelt wie bisher der Plan des Rests (`meter.sub-exceeds-main`, `meter.rest-unavailable`). **Die Position
+  wird beim Fehler nicht verteilt**, der Vermieter trägt sichtbar (wie `meter.sub-incomplete`, nicht wie
+  `tenancy.overlap`): Wie erfasst gerechnet wäre ein Anteil negativ und die übrigen entsprechend zu hoch, das heilt
+  keine Kürzung. `meter.reading-future` (`warning`) bei einer benutzten Ablesung (`readingsUsedFor`) mit Datum mehr als
+  einen Tag nach dem Stichtag `asOf`; verteilt wird wie erfasst, denn tagesanteilig zwischen zwei Ablesungen zu rechnen
+  ist die Regel, und ob das Datum falsch ist, weiß nur der Vermieter. Derselbe Code steht in `consumptionOverview` (dort
+  mit `asOf` der Route; ohne Stichtag kein Hinweis). Die eigene Heizkostenabrechnung (`heatingSystem`) hat dafür ihre
+  eigene Prüfung: Ein rückwärts laufender Wärmezähler und ein Endstand weit in der Zukunft ergeben dort
+  `heating.self-incomplete` (`error`, nicht verteilt; docs/heizung.md). Hinweise der Abrechnung stehen nur in der Zone
+  „Zu prüfen“ (`no-print`), nie auf dem Blatt des Mieters.
+- **Zeitraum gedeckt** (`ConsumptionOverviewRow.periodCovered`, `periodGap`, `periodSlack`, `lastReadingOn`,
+  `longUnread`; `uncoveredSpan`): Die Ampel „Zählerstände“ fragt nicht mehr nach `readingCount` (alle Ablesungen aller
+  Jahre, ab dem zweiten Jahr immer mindestens zwei; das Feld bleibt für die Zähler-Seite), sondern ob jeder Tag in einem
+  Segment liegt (wie `coveredDays`, die Regel des Hauptzählers und von `meter.unit-partial`). **Beide Enden gleich**:
+  Die Spanne ist der Zeitraum. Sie beginnt später nur, wenn der Zähler nachweislich erst im Zeitraum eingebaut ist
+  (`installedOn`, oder er ist Nachfolger) oder wenn in der Wohnung vorher niemand wohnte (erstes Mietverhältnis im
+  Zeitraum, keine Eigennutzung, kein Nutzungswechsel; wie `neededDays`: neu angelegter Bestand mit Anfangsstand beim
+  Einzug). Sie endet früher nur, wenn ein Nachfolger anschließt. Eine späte erste Ablesung allein verschiebt nichts.
+  **Nachfolger** ist nach der Regel von `inUseAt` (monthlyInfo.ts) ein Zähler am selben Platz (dieselbe Wohnung; ohne
+  Wohnung dieselbe Sparte, derselbe `scope`, dieselbe Anlage, also Hauptzähler durch Hauptzähler), dessen Ablesungen
+  alle nicht vor der letzten des alten liegen, und der anschließt (erste Ablesung höchstens `READING_EDGE_DAYS`, 14
+  Tage, danach): Ein Monate später eingebauter zweiter Heizkostenverteiler verdeckt keinen fehlenden Endstand.
+  **Spielraum am Rand** (`readingSlackDays`): Einem Wohnungszähler dürfen am Anfang und Ende zusammen höchstens 14
+  Tage und höchstens 4 % der Tage des Zeitraums fehlen (Rumpf von vier Monaten: 4 Tage). Die Abrechnung rechnet solche
+  Tage ohne Hinweis nicht mit (hochgerechnet wird nichts); das Cockpit bleibt grün und nennt sie als Zusatz
+  (`periodSlack`, `slackDetail`). Der Zähler ohne Wohnung hat an keinem Ende Spielraum: Das Cockpit ist nie grün, wo
+  die Abrechnung `meter.main-partial` meldet. Die Zahlen stehen als Konstanten in calc.ts, nicht im Register: An ihnen
+  hängt kein Betrag und kein Hinweis der Abrechnung. Die rote Zeile nennt die fehlenden Tage (`incompleteDetail` in
+  client/src/meterCheck.ts) und bei `longUnread` (letzte Ablesung weiter als der Spielraum vor dem Zeitraum) den Tag
+  und den Weg für einen getauschten Zähler. **Zum Löschen rät sie nie**: Mit dem Zähler gingen seine Ablesungen, und
+  eine offene Abrechnung früherer Jahre rechnete die Wohnung ohne Zähler. **Einbaudatum bei jedem Zähler**: Das
+  Feld „Eingebaut am“ (`installedOn`) steht im Zählerformular für jede Sparte (`meterBody` schickt es immer, der Server
+  nahm es schon für jeden Zähler an), und fehlt einem Zähler der Anfang, nennt die Zeile es als Ausweg. Die Regeln der
+  Fernablesbarkeit lesen es weiter nur bei Geräten der Heizanlage mit Antwort „nicht fernablesbar“ (remoteReading.ts,
+  monthlyInfo.ts); für andere Zähler ändert es dort nichts. Bekannte Grenze: Ein ausgebauter Wohnungszähler ohne
+  Nachfolger bleibt in jedem Folgejahr rot (ein Feld „ausgebaut am“ kennt das Modell nicht).
+- **Zähler vorhanden, aber nicht abgelesen** (`meter.unit-not-read`, `warning`, Ziel der Zähler): Hat eine Einheit einen
+  Zähler der Sparte, dessen Ablesungen den Zeitraum gar nicht decken, rechnet der Schlüssel `meter` (ohne
+  Bezugszähler) wie ohne Zähler, sagt es aber mit eigenem Text; `meter.unit-without-meter` nennt nur noch Einheiten
+  ohne Zähler, Wortlaut unverändert. Je Zähler einmal (der Zähler einer Wohnung mit Zimmern nennt seine Zimmer, dann
+  mit dem Rat zum fehlenden Anschluss). Neben „Kein Verbrauch erfasst“ steht er zusätzlich. Im Zweig mit Bezugszähler
+  (`meterRest`) bleibt es beim bisherigen Text.
 - **Einheiten** (#342, [shared/meterUnits.ts](../../shared/meterUnits.ts)): Text am Zähler, beim Lesen
   normiert (`unitKey`), keine Migration. Wärme kWh/MWh/GJ, Wasser m³/l, Strom kWh/MWh als exakte
   Brüche; Heizkostenverteiler und „Sonstiges“ (auch Gas) ohne Umrechnung. **Leitsatz: Ein Bestand,

@@ -4,7 +4,7 @@
 // abweichend je Objekt und einmalig je Mieter (Abrechnung).
 import { useEffect, useRef, useState } from 'react'
 import type { LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts } from '../types'
-import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS } from '../../../shared/letter.ts'
+import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS, sameAmountHint } from '../../../shared/letter.ts'
 import { EPC_PURPOSE_MAX, epcText } from '../../../shared/epcQr.ts'
 import MonthField from './MonthField'
 import { monthLabel } from '../monthText'
@@ -39,7 +39,8 @@ type Props = {
   // Installation: die Vorgabe der Anpassung; Mieter: seine Wahl und der Vorschlag von Mietfuchs
   // `own`: Der Mieter hat eine eigene Wahl gespeichert; `defaultMode`: die Vorgabe, die sonst gilt.
   // `from`: der eigene Monat des Mieters (#317, `null` = Vorgabe), `defaultFrom`: der Monat der Vorgabe.
-  adjust?: { mode: LetterAdjustmentMode, cents: number | null, suggestedCents?: number, own?: boolean, defaultMode?: LetterAdjustmentMode, from?: string | null, defaultFrom?: string }
+  // `currentAt`: die Vorauszahlung, die in einem Monat laut Staffel ohnehin gilt; bei gleichem Betrag kündigt der Brief nichts an.
+  adjust?: { mode: LetterAdjustmentMode, cents: number | null, suggestedCents?: number, own?: boolean, defaultMode?: LetterAdjustmentMode, from?: string | null, defaultFrom?: string, currentAt?: (month: string) => number | null }
   // Mieter: welche Bausteine sein Anschreiben zeigt; die übrigen tragen „erscheint hier nicht“
   shown?: readonly LetterBlock[]
   // Teil 2: „Anschreiben mitdrucken“. Installation: ja oder nein (`base` fehlt); Objekt: wie die Vorgabe (`null`,
@@ -72,6 +73,8 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
   // #317: der Monat der Anpassung, wie der Entwurf ihn nennt
   const shownFrom = draft.adjustFrom ?? adjust?.defaultFrom ?? ''
   const fromHint = level === 'tenancy' && draft.adjust !== 'none' ? adjustFromHint(shownFrom, localToday()) : null
+  const draftCents = draft.adjust === 'custom' ? customCents : draft.adjust === 'suggestion' && suggested > 0 ? suggested : null
+  const sameHint = level === 'tenancy' && adjust?.currentAt && /^\d{4}-\d{2}$/.test(shownFrom) ? sameAmountHint(draftCents, adjust.currentAt(shownFrom), shownFrom) : null
   const lacksMonth = monthlessAdjustTexts(draft, base, level).length > 0
   const previewValues = level === 'tenancy' ? { ...values, VorauszahlungNeu: draftNewCents(draft, suggested), AnpassungAb: /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : '' } : values
   // #624: Der Verwendungszweck ist kein Absatz des Briefs, er steht nur im QR-Code.
@@ -180,6 +183,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
           />
         )}
         {fromHint && <NoticeBox level="hint" action={fromHint} />}
+        {sameHint && <NoticeBox level="hint" action={sameHint} />}
         {level === 'tenancy' && draft.adjustOwn && adjust?.defaultMode && (
           <button type="button" className="btn small ghost" onClick={() => setDraft((d) => ({ ...d, adjust: adjust.defaultMode ?? d.adjust, adjustOwn: false, customCents: '', adjustFrom: null }))}>
             Anpassung auf Vorgabe zurücksetzen

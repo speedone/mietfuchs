@@ -39,6 +39,7 @@ import HeatingCard from '../components/HeatingCard'
 import { focusOpener, useFocusTarget, useNewTarget, useScrollToFocus, useSectionJump, type FocusProps } from '../focus'
 import { splitTenancies } from '../tenancyList'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
+import { ifUnchanged, isStale, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
 import { salutationOf } from '../../../shared/letter.ts'
 import { NoticeBox } from '../components/Notice'
 
@@ -92,6 +93,8 @@ type TenancyForm = {
 }
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
+// Was die Meldung „inzwischen an anderer Stelle geändert“ an der Wohnung beim Namen nennt (staleRecord.ts).
+const UNIT_STALE_FIELDS: StaleFields = { name: 'Name', areaM2: 'Wohnfläche', rooms: 'Zimmer', floor: 'Etage', propertyId: 'Objekt' }
 
 // Form der Sicherheit (#228) als Auswahl: jeder Wert, den das Formular halten kann, steht in der Liste.
 const DEPOSIT_FORM_OPTIONS: readonly { value: DepositForm | ''; label: string }[] = [
@@ -182,6 +185,15 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const { property, properties } = useProperty()
   const propertyId = property?.id
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
+  // Der Stand der Wohnung beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
+  // Die Liste hält die App und lädt sie nur auf Zuruf; beim Öffnen holt das Formular deshalb den Stand von jetzt.
+  const seenUnit = useSeenRecord(unitForm?.id, units, {
+    load: () => api<Unit[]>(withProperty('/api/units', propertyId)),
+    adopt: (now) => {
+      setUnitForm(unitToForm(now))
+      reload().catch(() => { /* das Formular zeigt den Stand schon */ })
+    },
+  })
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   // Der Mieterwechsel ist gespeichert, aber die Ansicht ließ sich nicht neu laden (#150).
@@ -205,6 +217,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [depositFor, setDepositFor] = useState<string | null>(null)
   // Mieterhöhung (#191): das Seitenfenster mit der Rechnung je Mietverhältnis.
   const [rentIncreaseFor, setRentIncreaseFor] = useState<string | null>(null)
+  // „Hier beheben“ im Fenster „Mieterhöhung“, wenn die Art der Miete fehlt: Das Formular des Mietverhältnisses beginnt
+  // dann am Feld „Art der Miete“ (`data-autofocus`, Drawer.tsx). Gilt nur für dieses eine Öffnen.
+  const [rentKindJump, setRentKindJump] = useState(false)
+  const tenFormOpen = tenForm !== null
+  useEffect(() => { if (!tenFormOpen) setRentKindJump(false) }, [tenFormOpen])
   // Für die Aufstellung zum Auszug: letzte Abrechnung und Ausstehendes je Mietverhältnis.
   const [depositInfo, setDepositInfo] = useState<DepositStatementInfo[]>([])
   useEffect(() => {
@@ -322,8 +339,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       return
     }
     unitErrors.clear()
-    const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
+    const body = JSON.stringify({ ...built.body, ...(editing ? ifUnchanged(seenUnit.current) : {}) })
     // Wechselt die Wohnung das Objekt (#180), fragt die Seite vorher, was mitwandert.
     const saved = units.find((u) => u.id === unitForm.id)
     const move = saved ? unitMoveQuestion({
@@ -335,7 +352,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
       else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
     } catch (e) {
-      unitErrors.show(errorText(e))
+      unitErrors.show(staleText(e, seenUnit.current, UNIT_STALE_FIELDS) ?? errorText(e))
+      // Abgelehnt, weil der Stand älter ist: Die Liste lädt neu, damit das erneut geöffnete Formular den von jetzt zeigt.
+      if (isStale(e)) reload().catch(() => { /* die Meldung im Fenster steht schon */ })
       return
     }
     setUnitForm(null)
@@ -852,7 +871,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <div className="field-group">
               <div className="field-group-label">Kaltmiete je Monat - Staffel (leer = nur NK)</div>
               {/* #191: Art der Miete und Ausschluss von Erhöhungen; gerechnet wird damit nur bei einer Mieterhöhung. */}
-              <div className="field-grid">
+              <div className="field-grid" data-autofocus={rentKindJump || undefined}>
                 <Field label="Art der Miete" hint={RENT_KIND_HINT}>
                   <select aria-label="Art der Miete" value={tenForm.rentKind} onChange={(e) => setTenForm({ ...tenForm, rentKind: rentKindOptions().find((o) => o.value === e.target.value)?.value ?? '' })}>
                     {rentKindOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -1217,7 +1236,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
       {rentIncreaseTenancy && (
         <RentIncreaseDrawer key={rentIncreaseTenancy.id} tenancy={rentIncreaseTenancy} unit={units.find((u) => u.id === rentIncreaseTenancy.unitId)}
-          property={property} settings={settings} onClose={() => setRentIncreaseFor(null)} />
+          property={property} settings={settings} onClose={() => setRentIncreaseFor(null)}
+          // Zustimmung, Versand einer Indexanpassung und Rücknahme ändern die Kaltmiete-Staffel: neu laden, sonst zeigte
+          // das Formular den alten Stand und scheiterte beim Speichern an der Marke (409).
+          onChanged={reload}
+          onEditTenancy={() => { setRentIncreaseFor(null); tenErrors.clear(); setRentKindJump(true); setTenForm(tenancyToForm(rentIncreaseTenancy)) }} />
       )}
 
       {wizardFor && (

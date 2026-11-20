@@ -113,6 +113,9 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
   test('Betriebsstrom fehlt: nein; Strom der Wärmepumpe im Allgemeinstrom: ja (gelb)', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe(false)
     expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe('gruen')
+    // Heizkosten ganz nach Zählern: mit einer Bestimmung nach § 10 HeizkostenV rechtmäßig, färbt nicht; der Mischfall färbt weiter.
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.all-by-consumption', level: 'hint' })] })).toBe('gruen')
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.consumption-share', level: 'hint' })] })).toBe('gelb')
     expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.generation-power-missing', level: 'hint' })] })).toBe('gelb')
   })
   // Heizung PR 16 (Prüfung C-S8): Der Hinweis zur Umstellung auf Wärmelieferung erscheint jedes Jahr, solange ein Mieter
