@@ -12,6 +12,7 @@ import AdmZip from 'adm-zip'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import type { JournalGroupView } from '../src/db/journal.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
+import { newest, revert } from '../testing/revert.ts'
 import type {
   CostItem, Meter, Payment, Property, Reading, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
 } from '../../shared/types.ts'
@@ -828,3 +829,61 @@ function entryData(zip: AdmZip, name: string): Buffer {
   if (!entry) return assert.fail(`im Archiv fehlt der Eintrag ${name}`)
   return entry.getData()
 }
+
+test('Gemerkte Ergebnisse (#651): je Objekt und Jahr getrennt, nach dem Schreiben neu gerechnet', async () => {
+  // Abrechnung, Steuer, Verbrauch und Mietkonto werden je Bestand gemerkt (stockMemo.ts). Ohne Schreiben dazwischen
+  // fragt dieser Test abwechselnd zwei Objekte und zwei Jahre: Jede Antwort muss ihre eigene sein.
+  await withProperties(async (s, b) => {
+    await s.api('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'A-EG', areaM2: 50, participates: true }) })
+    await s.api(`/api/units?property=${b.id}`, { method: 'POST', body: JSON.stringify({ name: 'B-EG', areaM2: 50, participates: true }) })
+    const cost = (property: string, year: number, amountCents: number) => s.api(`/api/costItems?property=${property}`, {
+      method: 'POST', body: JSON.stringify({ year, category: 'Grundsteuer', description: `Grundsteuer ${year}`, amountCents, key: 'area' }),
+    })
+    await cost('objekt-1', 2024, 10000)
+    await cost('objekt-1', 2025, 20000)
+    await cost(b.id, 2025, 30000)
+    const total = async (property: string, year: number) =>
+      (await s.api<{ totalCostsCents: number }>(`/api/settlement/${year}?property=${property}`)).totalCostsCents
+    const expenses = async (property: string, year: number) =>
+      (await s.api<{ expenses: { totalCents: number } }>(`/api/taxreport/${year}?property=${property}`)).expenses.totalCents
+    for (let round = 0; round < 2; round++) {
+      assert.equal(await total('objekt-1', 2025), 20000)
+      assert.equal(await total(b.id, 2025), 30000)
+      assert.equal(await total('objekt-1', 2024), 10000)
+      assert.equal(await expenses('objekt-1', 2025), 20000)
+      assert.equal(await expenses(b.id, 2025), 30000)
+      assert.equal(await expenses('objekt-1', 2024), 10000)
+    }
+    await cost('objekt-1', 2025, 5000)
+    assert.equal(await total('objekt-1', 2025), 25000, 'nach dem Schreiben neu gerechnet')
+    assert.equal(await expenses('objekt-1', 2025), 25000)
+    assert.equal(await total(b.id, 2025), 30000)
+  })
+})
+
+test('Gemerkte Ergebnisse (#651): nach Rücksprung und Wiederherstellen frisch', async () => {
+  // Beide tauschen den Stand aus, ohne dass eine gewöhnliche Route schreibt: der Rücksprung in `write`, das
+  // Wiederherstellen mit einer neuen Verbindung. Ein gemerktes Ergebnis von davor darf danach nie herauskommen.
+  const s = await startServer()
+  try {
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 50, participates: true }) })
+    const cost = (amountCents: number) => s.api('/api/costItems', {
+      method: 'POST', body: JSON.stringify({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents, key: 'area' }),
+    })
+    const total = async () => (await s.api<{ totalCostsCents: number }>('/api/settlement/2025')).totalCostsCents
+    await cost(10000)
+    assert.equal(await total(), 10000)
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    await cost(5000)
+    assert.equal(await total(), 15000)
+    assert.equal(await total(), 15000, 'zweimal gefragt, einmal gemerkt')
+    await revert(s, (await newest(s)).id, 'including')
+    assert.equal(await total(), 10000, 'nach dem Rücksprung')
+    await cost(7000)
+    assert.equal(await total(), 17000)
+    assert.equal((await restore(s, backup)).status, 200)
+    assert.equal(await total(), 10000, 'nach dem Wiederherstellen')
+  } finally {
+    s.stop()
+  }
+})

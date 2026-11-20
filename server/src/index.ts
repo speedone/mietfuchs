@@ -28,6 +28,7 @@ import { markPaidRequestOf, markPaidTitle, markPaidToken, markPaidWrites, planMa
 import { taxOverview } from './taxOverview.ts'
 import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor, type Snapshot } from './snapshot.ts'
+import { onStock } from './stockMemo.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
 import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
@@ -1563,11 +1564,11 @@ app.get('/api/settlement/:period', async (req, res) => {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     // Daneben die heutige Berechnung, nur zum Vergleich (#56): Der eingefrorene Stand bleibt das
     // Dokument, das der Mieter hat; weicht die heutige Rechnung ab, erfährt es der Vermieter.
-    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, period), { asOf: today() }), frame.deadline, today())
+    const deviation = compareWithFrozen(closed.settlement, () => settlementOf(stock, property, period), frame.deadline, today())
     const letters = frozenLetters(stand)
     return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation, letters })
   }
-  const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
+  const computed = settlementOf(stock, property, period)
   res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: property, period: period.key })) })
 })
 
@@ -1590,7 +1591,7 @@ app.get('/api/settlement/:period/export', async (req, res) => {
     if (!stand) return res.status(409).json({ error: 'Der eingefrorene Stand dieser Abrechnung lässt sich nicht als Daten ausgeben. Öffnen Sie die Abrechnung wieder und schließen Sie sie neu ab.' })
     data = { ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } }
   } else {
-    const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
+    const computed = settlementOf(stock, property, period)
     data = { ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: property, period: period.key })) }
   }
   res.attachment(exportFilename(propertyName, frame.period.label, format))
@@ -2093,7 +2094,9 @@ app.delete('/api/settlement/:period/close', async (req, res) => {
 app.get('/api/consumption/:period', async (req, res) => {
   res.json(await readData(async (db) => {
     const property = await propertyOf(db, req)
-    return consumptionOverview(snapshotFor(await readStock(db), property, await periodOf(db, req, property)))
+    const period = await periodOf(db, req, property)
+    const stock = await readStock(db)
+    return onStock(stock, `consumption:${property}:${period.from}:${period.to}`, () => consumptionOverview(snapshotFor(stock, property, period)))
   }))
 })
 
@@ -2102,7 +2105,7 @@ app.get('/api/consumption/:period', async (req, res) => {
 // Abrechnungen des Objekts (Grenzen, Frist, Versand, eingefrorene Anrechnung) kommen für die Abrechnungsreife mit
 // (#281 E5, ledgerStatements.ts); calc.ts liest den Speicher nicht selbst.
 // Schnappschuss und Optionen des Mietkontos eines Kalenderjahrs, eine Stelle für die Ansicht und „als bezahlt erfassen“.
-async function ledgerInputOf(db: Database, req: Request, year: number): Promise<{ snapshot: Snapshot, options: LedgerOptions & { asOf: string } }> {
+async function ledgerInputOf(db: Database, req: Request, year: number): Promise<{ snapshot: Snapshot, options: LedgerOptions & { asOf: string }, stock: Stock, property: string }> {
   const stock = await readStock(db)
   const property = await propertyOf(db, req)
   const span = calendarYearPeriod(year)
@@ -2117,7 +2120,7 @@ async function ledgerInputOf(db: Database, req: Request, year: number): Promise<
     closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)),
     span.to,
   )
-  return { snapshot, options: { asOf: today(), statements } }
+  return { snapshot, options: { asOf: today(), statements }, stock, property }
 }
 const ledgerYearOf = (req: Request): number => {
   const year = Number(req.params.year)
@@ -2128,8 +2131,10 @@ const ledgerYearOf = (req: Request): number => {
 app.get('/api/rentledger/:year', async (req, res) => {
   const year = ledgerYearOf(req)
   res.json(await readData(async (db) => {
-    const { snapshot, options } = await ledgerInputOf(db, req, year)
-    return rentLedger(snapshot, options)
+    // Gemerkt am selben Bestand, aus dem Schnappschuss und Abschlüsse stammen (Durchsicht: ein zweites `readStock`
+    // könnte nach einer Änderung über eine andere Verbindung ein anderer sein).
+    const { snapshot, options, stock, property } = await ledgerInputOf(db, req, year)
+    return onStock(stock, `ledger:${property}:${year}:${options.asOf}`, () => rentLedger(snapshot, options))
   }))
 })
 
@@ -2168,13 +2173,24 @@ app.post('/api/rentledger/:year/mark-paid', async (req, res) => {
   res.json({ ok: true, count: result.created.length, payments: result.created })
 })
 
+// Abrechnung und Steuer je Bestand gemerkt (#651, stockMemo.ts): dieselbe Frage an denselben, eingefrorenen Bestand
+// rechnet einmal. Der Schlüssel nennt alles außer dem Bestand, woran das Ergebnis hängt, auch den Tag.
+// Der Zeitraum steht mit Beginn und Ende im Schlüssel: `periodOf` liest die Regeln vor dem Bestand, und `key` allein
+// ist nur der Monat des Beginns. Der Tag wird einmal gelesen, für Schlüssel und Rechnung zugleich.
+const settlementOf = (stock: Stock, property: string, period: BillingPeriod) => {
+  const day = today()
+  return onStock(stock, `settlement:${property}:${period.from}:${period.to}:${day}`, () => computeSettlement(snapshotFor(stock, property, period), { asOf: day }))
+}
+const taxReportOf = (stock: Parameters<typeof taxReportFor>[0], property: string, year: number) =>
+  onStock(stock, `tax:${property}:${year}:${today()}`, () => taxReportFor(stock, property, year))
+
 // Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss.
 // Aus den Abrechnungen, die das Jahr berühren, nach dem Jahr der Zahlung (#208, #255);
 // Begründung in calc.ts (`taxPartsFor`).
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => withoutBoundDeposits(db, taxReportFor(await readStock(db), await propertyOf(db, req), year))))
+  res.json(await readData(async (db) => withoutBoundDeposits(db, taxReportOf(await readStock(db), await propertyOf(db, req), year))))
 })
 
 // Gesamtsicht über alle Objekte (#96 PR 3): installationsweit wie Belege und Backup, ohne `?property=`. Je Objekt
@@ -2183,7 +2199,7 @@ app.get('/api/tax/overview', async (req, res) => {
   const raw = req.query.year
   const year = typeof raw === 'string' && /^\d{4}$/.test(raw) ? Number(raw) : NaN
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => taxOverview(await readStock(db), await listProperties(db), year)))
+  res.json(await readData(async (db) => taxOverview(await readStock(db), await listProperties(db), year, taxReportOf)))
 })
 
 // ---------- Belege & KI-Auswertung ----------
