@@ -265,17 +265,71 @@ test('Mieterhöhung: nach dem Anlegen des Entwurfs fragt „Schließen“ nicht 
 
 const NAMELESS = { landlordName: '', iban: '', paymentDeadlineDays: 14, landlordAddress: '', landlordContact: '' }
 
-test('Mieterhöhung, Schreiben: ohne Namen des Vermieters lässt sich der Briefkopf nicht bestätigen und kein Entwurf anlegen (§ 126b BGB)', async () => {
+test('Mieterhöhung, Schreiben: ohne Namen des Vermieters eine Warnung mit beiden Auswegen, der Briefkopf bleibt unbestätigt, der Entwurf entsteht', async () => {
   reply = () => POSSIBLE
   open(TENANCY, PROPERTY, NAMELESS)
   await fillLetter()
-  expect((await screen.findByText(/Im Briefkopf steht kein Vermieter/)).textContent).toMatch(/§ 126b BGB/)
+  const warning = await screen.findByText(/Es ist kein Name des Vermieters eingetragen: Im Briefkopf/)
+  expect(warning.textContent).toMatch(/§ 126b BGB/)
+  expect(warning.textContent).toMatch(/„Name des Vermieters“/)
+  expect(warning.textContent).toMatch(/von Hand/)
+  expect(warning.closest('.notice-item')?.textContent).toMatch(/Warnung/)
   const head = screen.getByLabelText(/alle Vermieter laut Mietvertrag/) as HTMLInputElement
   expect(head.disabled).toBe(true)
   expect(head.checked).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: 'Schreiben als Entwurf anlegen' }))
-  await screen.findByText(/Bitte prüfen Sie 1 Angabe/)
-  expect(drafts()).toEqual([])
+  await waitFor(() => expect(drafts().length).toBe(1))
+  expect(drafts()[0]?.body).toMatchObject({ letter: { allLandlordsNamed: false, allTenantsNamed: true } })
+})
+
+test('Mieterhöhung, Versand: bei einem Schreiben ohne Namen des Vermieters nennt die Rückfrage den Mangel, sonst nicht', async () => {
+  increases = [{ ...DRAFT, basis: { ...BASIS, sender: { ...BASIS.sender, name: '' } } }]
+  open()
+  fireEvent.click(await screen.findByRole('button', { name: 'Als versendet speichern …' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/nennt keinen Namen des Vermieters/)
+  expect(dialog.textContent).toMatch(/von Hand/)
+  expect(dialog.textContent).toMatch(/§ 126b BGB/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(sent.some((x) => x.url === '/api/rent-increases/r2/send')).toBe(true))
+  cleanup()
+  increases = [DRAFT]
+  open()
+  fireEvent.click(await screen.findByRole('button', { name: 'Als versendet speichern …' }))
+  expect((await screen.findByRole('alertdialog')).textContent).not.toMatch(/Namen des Vermieters/)
+})
+
+test('Mieterhöhung: nach „Entwurf löschen“ gelten die Eingaben wieder als ungespeichert, „Schließen“ fragt', async () => {
+  reply = () => POSSIBLE
+  const onClose = vi.fn()
+  render(<UIProvider><RentIncreaseDrawer tenancy={TENANCY} unit={UNIT} property={PROPERTY} onClose={onClose} /></UIProvider>)
+  await fillLetter()
+  // Nach dem Anlegen kennt der Server den Entwurf; gelöscht wird er über seine Karte.
+  increases = [DRAFT]
+  fireEvent.click(screen.getByRole('button', { name: 'Schreiben als Entwurf anlegen' }))
+  await waitFor(() => expect(drafts().length).toBe(1))
+  await screen.findByText('Schreiben als Entwurf angelegt.')
+  fireEvent.click(await screen.findByRole('button', { name: 'Entwurf löschen …' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Löschen' }))
+  await screen.findByText('Entwurf gelöscht.')
+  fireEvent.click(screen.getAllByRole('button', { name: 'Schließen' })[0] ?? missing())
+  expect((await screen.findByRole('alertdialog')).textContent).toMatch(/Änderungen verwerfen/)
+  expect(onClose).not.toHaveBeenCalled()
+})
+
+test('Mieterhöhung: die Meldung nach einer Antwort kommt erst, wenn die Seite neu geladen hat', async () => {
+  increases = [SENT]
+  let loaded: () => void = () => {}
+  const onChanged = vi.fn(() => new Promise<void>((resolve) => { loaded = resolve }))
+  render(<UIProvider><RentIncreaseDrawer tenancy={TENANCY} unit={UNIT} property={PROPERTY} onClose={() => {}} onChanged={onChanged} /></UIProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Zugestimmt …' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Eintragen' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(screen.queryByText('Zugestimmt: gespeichert.')).toBeNull()
+  // Solange gilt das Fenster als beschäftigt: Schließen geht nicht.
+  expect((screen.getAllByRole('button', { name: 'Schließen' })[0] as HTMLButtonElement).disabled).toBe(true)
+  loaded()
+  expect(await screen.findByText('Zugestimmt: gespeichert.')).toBeTruthy()
 })
 
 test('Mieterhöhung, Schreiben: mit Briefpapier ohne Namen nur eine Warnung, der Entwurf entsteht; am Objekt eingetragen gilt der Name', async () => {
@@ -283,7 +337,7 @@ test('Mieterhöhung, Schreiben: mit Briefpapier ohne Namen nur eine Warnung, der
   paper = true
   open(TENANCY, PROPERTY, NAMELESS)
   expect(await screen.findByText(/nur, wenn Ihr Briefpapier ihn trägt/)).toBeTruthy()
-  expect(screen.queryByText(/Im Briefkopf steht kein Vermieter/)).toBeNull()
+  expect(screen.queryByText(/Es ist kein Name des Vermieters eingetragen: Im Briefkopf/)).toBeNull()
   await fillLetter()
   fireEvent.click(screen.getByRole('button', { name: 'Schreiben als Entwurf anlegen' }))
   await waitFor(() => expect(drafts().length).toBe(1))
@@ -292,10 +346,10 @@ test('Mieterhöhung, Schreiben: mit Briefpapier ohne Namen nur eine Warnung, der
   paper = false
   open(TENANCY, { ...PROPERTY, landlordName: 'Erika Eigentümerin' }, NAMELESS)
   await fillLetter()
-  expect(screen.queryByText(/Im Briefkopf steht kein Vermieter/)).toBeNull()
+  expect(screen.queryByText(/Es ist kein Name des Vermieters eingetragen: Im Briefkopf/)).toBeNull()
 })
 
-test('Mieterhöhung: kann der Browser kein Briefpapier je Druckseite, sagt das Fenster es, und ohne Namen zählt das Briefpapier nicht', async () => {
+test('Mieterhöhung: kann der Browser kein Briefpapier je Druckseite, sagt das Fenster es, und ohne Namen warnt es wie ohne Briefpapier', async () => {
   // jsdom kennt `box-decoration-break: clone` nicht (wie Safari): Das Schreiben druckt dann ohne Briefpapier.
   vi.stubGlobal('CSS', { supports: () => false })
   reply = () => POSSIBLE
@@ -303,7 +357,7 @@ test('Mieterhöhung: kann der Browser kein Briefpapier je Druckseite, sagt das F
   increases = [DRAFT]
   open(TENANCY, PROPERTY, NAMELESS)
   expect(await screen.findByText('Briefpapier druckt dieser Browser nicht')).toBeTruthy()
-  expect(await screen.findByText(/Im Briefkopf steht kein Vermieter/)).toBeTruthy()
+  expect(await screen.findByText(/Es ist kein Name des Vermieters eingetragen: Im Briefkopf/)).toBeTruthy()
   cleanup()
   paper = false
   open(TENANCY, PROPERTY, NAMELESS)
@@ -342,7 +396,19 @@ test('Mieterhöhung: fehlt die Art der Miete, führt „Hier beheben“ ins Miet
   render(<UIProvider><RentIncreaseDrawer tenancy={noKind} unit={UNIT} property={PROPERTY} onClose={() => {}} onEditTenancy={onEditTenancy} /></UIProvider>)
   expect(screen.getByText('Art der Miete fehlt')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Hier beheben → Mietverhältnis' }))
+  await waitFor(() => expect(onEditTenancy).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  // Mit Eingaben fragt der Knopf wie jedes Schließen; „Abbrechen“ bleibt im Fenster.
+  fireEvent.change(screen.getByLabelText(/Vergleichsmiete/), { target: { value: '9,50' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Hier beheben → Mietverhältnis' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/Änderungen verwerfen/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(onEditTenancy).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Hier beheben → Mietverhältnis' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Verwerfen' }))
+  await waitFor(() => expect(onEditTenancy).toHaveBeenCalledTimes(2))
   cleanup()
   open()
   expect(screen.queryByText('Art der Miete fehlt')).toBeNull()

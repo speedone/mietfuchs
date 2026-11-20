@@ -2,7 +2,7 @@
 // Mietspiegel (M6), auffindbare Vergleichswohnungen (M7), alle Vermieter und Mieter (S4), Alter des Mietspiegels (S5).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rentIncreaseBasisProblem, rentIncreaseLetterOf, rentSenderProblem, surveyStale } from '../../shared/rentIncreaseLetter.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf, rentSenderWarning, surveyStale } from '../../shared/rentIncreaseLetter.ts'
 import type { RentIncreaseLetterInput } from '../../shared/types.ts'
 
 const SURVEY = { name: 'Mietspiegel Musterstadt 2025', asOf: '2025-04', field: 'Baujahr 1950 bis 1964', rangeLowCentsPerM2: 850, rangeHighCentsPerM2: 1100, availableAt: 'www.musterstadt.de' }
@@ -63,12 +63,19 @@ test('Grundlage: Fassung und Grundgestalt geprüft, sonst ein ganzer Satz statt 
   }
 })
 
-test('Schreiben: ohne Namen des Vermieters kein Schreiben (§ 126b BGB), außer das Briefpapier trägt den Absender', () => {
-  assert.equal(rentSenderProblem('Max Vermieter', false), null)
-  assert.equal(rentSenderProblem('', true), null)
-  const p = rentSenderProblem('  ', false)
-  assert.equal(p?.field, 'allLandlordsNamed')
-  assert.match(p?.text ?? '', /§ 558a Abs\. 1/)
-  assert.match(p?.text ?? '', /§ 557b Abs\. 3/)
-  assert.match(p?.text ?? '', /§ 126b BGB/)
+test('Schreiben: ohne Namen des Vermieters eine Warnung mit beiden Auswegen, und die Bestätigung zum Briefkopf ist dann nicht verlangt', () => {
+  assert.equal(rentSenderWarning('Max Vermieter', false), null)
+  assert.equal(rentSenderWarning('', true), null, 'mit Briefpapier trägt das Papier den Absender')
+  const text = rentSenderWarning('  ', false) ?? assert.fail('keine Warnung')
+  assert.match(text, /§ 558a Abs\. 1/)
+  assert.match(text, /§ 557b Abs\. 3/)
+  assert.match(text, /§ 126b BGB/)
+  assert.match(text, /„Name des Vermieters“/)
+  assert.match(text, /von Hand/)
+  assert.doesNotMatch(text, /fehlt die Textform|nichtig|unwirksam/, 'nichts Absolutes: Der Name kann von Hand dazukommen')
+  const open = { ...BASE, allLandlordsNamed: false }
+  assert.deepEqual(fields(rentIncreaseLetterOf(open, 'index')), ['allLandlordsNamed'])
+  assert.equal(ok(rentIncreaseLetterOf(open, 'index', { senderMissing: true })).allLandlordsNamed, false)
+  assert.equal(ok(rentIncreaseLetterOf(BASE, 'index', { senderMissing: true })).allLandlordsNamed, true, 'eine gegebene Bestätigung bleibt, wie sie kam')
+  assert.deepEqual(fields(rentIncreaseLetterOf({ ...open, allTenantsNamed: false }, 'index', { senderMissing: true })), ['allTenantsNamed'])
 })

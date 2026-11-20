@@ -76,8 +76,6 @@ test('Demnächst fällig: Staffelstufe, Mieterhöhung möglich, nach dem Versand
 
     // Ein Entwurf unterdrückt „möglich“; versandt steht die Zustimmungsfrist da (31.01.2027, Klage bis 30.04.2027).
     const request = { kind: 'comparison', allStepsEntered: true, residential: true, noThirdPartyFunds: true, comparisonCentsPerM2: 1000 }
-    // Ohne Namen des Vermieters legt der Server kein Schreiben an (§ 126b BGB).
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Max Vermieter' }) })
     const plan = await post<{ token: string }>(s, `/api/tenancies/${free.id}/rent-increase/plan`, request)
     const letter = {
       justification: 'comparables', survey: null, expert: null, database: null,

@@ -102,9 +102,11 @@ export function RentIncreasePrint({ increase, propertyId, onDone }: { increase: 
     document.body.classList.add('print-rent-increase')
     const job = startPrint({
       title: `Mieterhöhung ${increase.basis.letter.recipientName} ab ${monthLabel(increase.effectiveFrom)}`,
-      // Schreiben und Zustimmungserklärung sind zwei Seiten: „Seite x von y“ im Seitenrand wie bei der Abrechnung, mit
-      // Briefpapier nicht (dessen Ränder gehören dem Papier). Der Seitenrand zählt nicht zur Druckbreite.
-      pageNumbers: !design.paper,
+      // Schreiben und Zustimmungserklärung sind mindestens zwei Seiten: „Seite x von y“ im Seitenrand wie bei der
+      // Abrechnung, mit Briefpapier nicht (dessen Ränder gehören dem Papier). Die Erklärung zur Indexmiete hat keine
+      // Zustimmungserklärung und in aller Regel eine Seite; ein Randfeld kann sich nicht nach der Seitenzahl richten,
+      // deshalb dort keine Seitenzahl statt „Seite 1 von 1“. Der Seitenrand zählt nicht zur Druckbreite.
+      pageNumbers: !design.paper && increase.kind === 'comparison',
       onDone: () => {
         document.body.classList.remove('print-rent-increase')
         onDone()

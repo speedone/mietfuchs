@@ -46,10 +46,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     „Mieterhöhungsverlangen“, „Zustimmungsfrist“, „Begründungsmittel“ und „Qualifizierter Mietspiegel“.
   - Nacharbeit am Fenster „Mieterhöhung“ ([#191](https://github.com/speedone/mietfuchs/issues/191)): Nach Zustimmung,
     Versand einer Indexanpassung und Rücknahme zeigen die Stammdaten sofort die neue Kaltmiete-Staffel; vorher zeigte
-    das Mietverhältnis die alte, und Speichern scheiterte. Ohne Namen des Vermieters legt Mietfuchs kein Schreiben mehr
-    an, denn die Erhöhung braucht Textform, und dafür muss der Erklärende genannt sein (§ 558a Abs. 1, § 557b Abs. 3,
-    § 126b BGB); mit hinterlegtem Briefpapier bleibt es bei einer Warnung, und ein schon angelegter Entwurf ohne Namen
-    trägt einen Hinweis. Nach dem Anlegen des Entwurfs fragt „Schließen“ nicht mehr „Änderungen verwerfen?“. Fehlt die
+    das Mietverhältnis die alte, und Speichern scheiterte. Ohne Namen des Vermieters warnt Mietfuchs im Fenster,
+    am Entwurf und vor „Als versendet speichern“, denn die Erhöhung braucht Textform, und dafür muss der Erklärende
+    genannt sein (§ 558a Abs. 1, § 557b Abs. 3, § 126b BGB); die Warnung nennt beide Wege (Namen eintragen und neu
+    anlegen, oder Namen und Unterschrift von Hand auf den Ausdruck). Gesperrt wird nichts, nur die Bestätigung zum
+    Briefkopf bleibt ohne Namen leer. Nach dem Anlegen des Entwurfs fragt „Schließen“ nicht mehr „Änderungen
+    verwerfen?“, nach dem Löschen des Entwurfs wieder. Fehlt die
     Art der Miete, führt „Hier beheben“ an das Feld im Mietverhältnis. Das Schreiben druckt ohne Briefpapier „Seite x
     von y“ (Chromium). Mit Briefpapier hält es auf jeder Seite die eingestellten Ränder ein und druckt das Papier der
     Folgeseiten; vorher lief der Text über den Fuß des Briefpapiers, und die zweite Seite begann an der Blattkante. Neu ist die Anleitung „Miete erhöhen: Vergleichsmiete oder Indexmiete, Schreiben und

@@ -1202,7 +1202,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           property={property} settings={settings} onClose={() => setRentIncreaseFor(null)}
           // Zustimmung, Versand einer Indexanpassung und Rücknahme ändern die Kaltmiete-Staffel: neu laden, sonst zeigte
           // das Formular den alten Stand und scheiterte beim Speichern an der Marke (409).
-          onChanged={() => void reload()}
+          onChanged={reload}
           onEditTenancy={() => { setRentIncreaseFor(null); tenErrors.clear(); setRentKindJump(true); setTenForm(tenancyToForm(rentIncreaseTenancy)) }} />
       )}
 

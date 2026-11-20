@@ -81,8 +81,11 @@ function comparablesOf(raw: unknown, problems: RentLetterProblem[]): RentCompara
   })
 }
 
+const ALL_LANDLORDS_NAMED = 'Bitte bestätigen Sie, dass im Briefkopf alle Vermieter laut Mietvertrag genannt sind. Das Schreiben muss von allen ausgehen (§ 126b BGB).'
 // Die Eingaben aus einem Rumpf, geprüft. Alle Sätze auf einmal, je mit Feld.
-export function rentIncreaseLetterOf(raw: unknown, kind: RentIncreaseKind): { letter: RentIncreaseLetterInput } | { problems: RentLetterProblem[] } {
+// `senderMissing`: Es ist kein Name des Vermieters eingetragen und kein Briefpapier hinterlegt (siehe `rentSenderWarning`);
+// die Bestätigung zum Briefkopf ist dann nicht verlangt und bleibt, wie sie kommt.
+export function rentIncreaseLetterOf(raw: unknown, kind: RentIncreaseKind, options: { senderMissing?: boolean } = {}): { letter: RentIncreaseLetterInput } | { problems: RentLetterProblem[] } {
   const problems: RentLetterProblem[] = []
   const o = isObject(raw) ? raw : {}
   const recipientName = text(o.recipientName)
@@ -90,7 +93,7 @@ export function rentIncreaseLetterOf(raw: unknown, kind: RentIncreaseKind): { le
   const severalLandlords = o.severalLandlords === true
   const allLandlordsNamed = o.allLandlordsNamed === true
   const allTenantsNamed = o.allTenantsNamed === true
-  if (!allLandlordsNamed) problems.push({ field: 'allLandlordsNamed', text: 'Bitte bestätigen Sie, dass im Briefkopf alle Vermieter laut Mietvertrag genannt sind. Das Schreiben muss von allen ausgehen (§ 126b BGB).' })
+  if (!allLandlordsNamed && options.senderMissing !== true) problems.push({ field: 'allLandlordsNamed', text: ALL_LANDLORDS_NAMED })
   if (!allTenantsNamed) problems.push({ field: 'allTenantsNamed', text: 'Bitte bestätigen Sie, dass als Empfänger alle Mieter laut Mietvertrag genannt sind. Das Schreiben muss an alle gerichtet sein.' })
   const extraParagraph = typeof o.extraParagraph === 'string' ? o.extraParagraph.trim() : ''
   if (extraParagraph.length > EXTRA_PARAGRAPH_MAX) problems.push({ field: 'extraParagraph', text: `Bitte fassen Sie den Zusatzabsatz kürzer (höchstens ${EXTRA_PARAGRAPH_MAX} Zeichen).` })
@@ -115,23 +118,24 @@ export function rentIncreaseLetterOf(raw: unknown, kind: RentIncreaseKind): { le
 }
 
 // Der Vermieter muss im Schreiben genannt sein: Das Verlangen nach § 558 BGB ist „in Textform zu erklären“ (§ 558a Abs. 1
-// BGB), die Änderung der Indexmiete „durch Erklärung in Textform“ geltend zu machen (§ 557b Abs. 3 Satz 1 BGB), und
-// Textform heißt „eine lesbare Erklärung, in der die Person des Erklärenden genannt ist“ (§ 126b Satz 1 BGB); ohne die
-// Form ist die Erklärung nichtig (§ 125 Satz 1 BGB). Wortlaute gelesen am 20.11.2026. Ohne Namen des Vermieters stünde
-// im Briefkopf nur das Objekt, unter dem Gruß nichts und in der Zustimmungserklärung ein leeres „An:“; die Bestätigung
-// „Im Briefkopf sind alle Vermieter genannt“ wäre dann falsch. Deshalb eine Sperre beim Anlegen, an diesem Feld, für
-// Server und Oberfläche. **Mit Briefpapier** (`paper`) trägt das Papier den Absender, und Mietfuchs sieht nicht, was
-// darauf steht (wie `senderMissing` der Abrechnung): keine Sperre, die Oberfläche warnt mit `SENDER_ON_PAPER_ONLY`.
-export function rentSenderProblem(landlordName: string, paper: boolean): RentLetterProblem | null {
+// BGB), die Änderung der Indexmiete durch Erklärung in Textform geltend zu machen (§ 557b Abs. 3 BGB), und Textform heißt
+// „eine lesbare Erklärung, in der die Person des Erklärenden genannt ist“ (§ 126b Satz 1 BGB). Ohne Namen des Vermieters
+// steht im Briefkopf nur das Objekt, unter dem Gruß nichts und in der Zustimmungserklärung ein leeres „An:“.
+// **Eine Warnung, keine Sperre**, wie bei „Absender fehlt“ der Abrechnung (client/src/letterView.ts, derselbe § 126b BGB):
+// Setzt der Vermieter Namen und Unterschrift von Hand unter den Ausdruck, ist er genannt, und Mietfuchs sieht das nicht.
+// Der Server legt den Entwurf deshalb an; die Oberfläche warnt im Fenster, am Entwurf und fragt vor „Als versendet
+// speichern“. Kein Text behauptet, die Form fehle: Das gilt nur, wenn der Name auf dem Schriftstück nirgends steht.
+// **Mit Briefpapier** (`paper`) trägt das Papier den Absender (wie `senderMissing` der Abrechnung): dafür
+// `SENDER_ON_PAPER_ONLY`. Die Bestätigung „Im Briefkopf sind alle Vermieter genannt“ lässt sich ohne Namen und ohne
+// Briefpapier nicht geben; `rentIncreaseLetterOf` verlangt sie dann nicht (`senderMissing`).
+export function rentSenderWarning(landlordName: string, paper: boolean): string | null {
   if (landlordName.trim() !== '' || paper) return null
-  return {
-    field: 'allLandlordsNamed',
-    text: 'Im Briefkopf steht kein Vermieter: Das Schreiben nennt weder im Absender noch unter dem Gruß einen Namen, und in der Zustimmungserklärung bliebe „An:“ leer. Eine Mieterhöhung ist in Textform zu erklären (§ 558a Abs. 1, § 557b Abs. 3 BGB), und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). Tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein oder, nur für dieses Objekt, in den Stammdaten beim Objekt.',
-  }
+  return 'Es ist kein Name des Vermieters eingetragen: Im Briefkopf steht dann nur das Objekt, unter dem Gruß kein Name, und in der Zustimmungserklärung bleibt „An:“ leer. Eine Mieterhöhung ist in Textform zu erklären (§ 558a Abs. 1, § 557b Abs. 3 BGB), und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). Tragen Sie Ihren Namen vor dem Anlegen in den Einstellungen unter „Name des Vermieters“ ein (oder, nur für dieses Objekt, in den Stammdaten beim Objekt), oder setzen Sie Namen und Unterschrift von Hand auf den Ausdruck. Die Bestätigung zum Briefkopf bleibt ohne Namen leer.'
 }
-export const SENDER_ON_PAPER_ONLY = 'Es ist kein Name des Vermieters eingetragen. Das Schreiben nennt den Vermieter dann nur, wenn Ihr Briefpapier ihn trägt; Mietfuchs sieht nicht, was darauf steht. Unter dem Gruß steht kein Name, und in der Zustimmungserklärung bleibt „An:“ leer. Eine Mieterhöhung ist in Textform zu erklären, und dafür muss die Person des Erklärenden genannt sein (§ 558a Abs. 1, § 557b Abs. 3, § 126b BGB). Am sichersten tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein.'
-// Ein Entwurf, dessen eingefrorener Absender keinen Namen trägt (vor dieser Prüfung angelegt oder mit Briefpapier).
-export const SENDER_MISSING_DRAFT = 'Dieses Schreiben nennt keinen Namen des Vermieters: Unter dem Gruß steht nichts, und in der Zustimmungserklärung ist „An:“ leer. Trägt auch Ihr Briefpapier den Namen nicht, fehlt die Textform (§ 126b BGB). Löschen Sie dann den Entwurf, tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein und legen Sie das Schreiben neu an; der Absender eines Entwurfs ändert sich nicht mehr.'
+export const SENDER_ON_PAPER_ONLY = 'Es ist kein Name des Vermieters eingetragen. Das Schreiben nennt den Vermieter dann nur, wenn Ihr Briefpapier ihn trägt oder Sie Namen und Unterschrift von Hand daruntersetzen; Mietfuchs sieht nicht, was auf dem Papier steht. Unter dem Gruß steht kein Name, und in der Zustimmungserklärung bleibt „An:“ leer. Eine Mieterhöhung ist in Textform zu erklären, und dafür muss die Person des Erklärenden genannt sein (§ 558a Abs. 1, § 557b Abs. 3, § 126b BGB). Am sichersten tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein.'
+// Ein Schreiben, dessen eingefrorener Absender keinen Namen trägt: am Entwurf und in der Rückfrage vor dem Versand.
+export const SENDER_MISSING_DRAFT = 'Dieses Schreiben nennt keinen Namen des Vermieters: Unter dem Gruß steht nichts, und in der Zustimmungserklärung ist „An:“ leer. Eine Mieterhöhung ist in Textform zu erklären, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). Zwei Wege: Löschen Sie den Entwurf, tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein und legen Sie das Schreiben neu an (der Absender eines Entwurfs ändert sich nicht mehr); oder setzen Sie Namen und Unterschrift von Hand auf den Ausdruck, falls Ihr Briefpapier den Namen nicht schon trägt.'
+export const SENDER_MISSING_SEND = 'Das Schreiben nennt keinen Namen des Vermieters. Speichern Sie es nur als versendet, wenn der Name auf dem Schriftstück steht, das der Mieter bekommen hat, etwa von Hand mit Ihrer Unterschrift oder auf Ihrem Briefpapier; eine Mieterhöhung ist in Textform zu erklären, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB).'
 
 // Ein Mietspiegel, dessen Stand länger zurückliegt als der Abstand seiner Anpassung (Gegenprüfung S5,
 // `bgb.rent-survey-update-years`, § 558d Abs. 2 Satz 1 BGB): Ein älterer darf nur verwendet werden, wenn es keinen neueren

@@ -66,3 +66,10 @@ test('Mieterhöhung, Druck mit Briefpapier: Schreiben und Zustimmungserklärung 
   expect(plain.container.querySelector('.print-pages-frame, .print-pages, .rent-increase-paged')).toBeNull()
   expect(plain.container.querySelectorAll('section.letter')).toHaveLength(2)
 })
+
+test('Mieterhöhung, Druck: die Erklärung zur Indexmiete hat keine Zustimmungserklärung und druckt keine Seitenzahl („Seite 1 von 1“)', async () => {
+  const index: RentIncrease = { ...INCREASE, kind: 'index', basis: { ...BASIS, plan: { ...PLAN, kind: 'index', consent: null, comparison: null, index: { from: { month: '2024-01', value: 100, base: 2020 }, to: { month: '2026-09', value: 106.1, base: 2020 } } }, letter: { ...BASIS.letter, justification: null, expert: null, qualifiedSurvey: null } } }
+  render(<RentIncreasePrint increase={index} propertyId="p1" onDone={() => {}} />)
+  await waitFor(() => expect(document.body.classList.contains('print-rent-increase')).toBe(true))
+  expect(document.head.querySelector('style[data-page-numbers]')).toBeNull()
+})

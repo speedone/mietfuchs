@@ -38,8 +38,8 @@ const LETTER: RentIncreaseLetterInput = {
 }
 const INDEX_LETTER: RentIncreaseLetterInput = { ...LETTER, justification: null, comparables: [], qualifiedSurvey: null, qualified: null }
 
-// Mit Namen des Vermieters: Ohne ihn (und ohne Briefpapier) legt der Server kein Schreiben an (§ 126b BGB), siehe unten.
-async function setup(baseRents: RentEntry[] = [{ from: '2020-01', monthlyCents: 50000 }], more: Partial<Tenancy> = {}, landlordName: string | null = 'Max Vermieter') {
+// Ohne Namen des Vermieters, wie ein frischer Bestand: Der Entwurf entsteht trotzdem (Warnung, keine Sperre, siehe unten).
+async function setup(baseRents: RentEntry[] = [{ from: '2020-01', monthlyCents: 50000 }], more: Partial<Tenancy> = {}, landlordName: string | null = null) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
   const s = await startServerIn(dataDir, { NKA_TEST_TODAY: TODAY })
   if (landlordName !== null) await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName }) })
@@ -100,7 +100,8 @@ test('Mieterhöhung, Schreiben: Entwurf anlegen mit Marke, eingefrorener Grundla
 })
 
 test('Mieterhöhung, Schreiben: Eingaben des Schreibens werden geprüft, 400 mit ganzem Satz', async () => {
-  const c = await setup()
+  // Mit Namen des Vermieters: Nur dann ist die Bestätigung zum Briefkopf Pflicht (ohne Namen ließe sie sich nicht geben).
+  const c = await setup(undefined, {}, 'Max Vermieter')
   try {
     const cases: [Partial<RentIncreaseLetterInput>, RegExp][] = [
       [{ qualifiedSurvey: 'unknown' }, /qualifizierten Mietspiegel/],
@@ -467,41 +468,44 @@ test('Mieterhöhung: eine Wohnung mit offenem Verlangen wechselt nicht das Objek
 })
 
 // § 558a Abs. 1 und § 557b Abs. 3 BGB verlangen Textform, § 126b BGB dafür, dass die Person des Erklärenden genannt ist.
-// Ohne Namen des Vermieters stünde im Briefkopf nur das Objekt, unter dem Gruß nichts und in der Zustimmungserklärung
-// ein leeres „An:“. Mit Briefpapier trägt das Papier den Absender (wie bei „Absender fehlt“ der Abrechnung).
-test('Mieterhöhung, Schreiben: ohne Namen des Vermieters kein Entwurf (400 mit Satz), mit Namen am Objekt oder mit Briefpapier schon', async () => {
-  const c = await setup(undefined, {}, null)
+// Ohne Namen des Vermieters steht im Briefkopf nur das Objekt und unter dem Gruß nichts; setzt der Vermieter Namen und
+// Unterschrift von Hand darunter, ist er genannt. Deshalb wie bei „Absender fehlt“ der Abrechnung eine Warnung der
+// Oberfläche und keine Sperre des Servers. Die Bestätigung „Im Briefkopf sind alle Vermieter genannt“ lässt sich ohne
+// Namen nicht geben und ist dann nicht verlangt; mit Namen oder mit Briefpapier (das den Absender trägt) bleibt sie Pflicht.
+test('Mieterhöhung, Schreiben: ohne Namen des Vermieters entsteht der Entwurf; die Bestätigung zum Briefkopf ist nur mit Namen oder Briefpapier Pflicht', async () => {
+  const c = await setup()
   try {
-    const none = await c.create()
-    assert.equal(none.status, 400, await none.clone().text())
-    const text = await errorFrom(none)
-    assert.match(text, /kein Vermieter/)
-    assert.match(text, /§ 126b BGB/)
-    assert.match(text, /„Name des Vermieters“/)
-    assert.equal((await c.list()).length, 0)
-    // Auch die Erklärung zur Indexmiete braucht Textform; hier scheitert schon das Schreiben, nicht erst die Rechnung.
-    const spaces = await c.s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: '   ' }) })
-    assert.ok(spaces)
-    assert.equal((await c.create()).status, 400)
-    // Briefpapier der Installation: Das Papier trägt den Absender, Mietfuchs sieht nicht, was darauf steht.
-    const fd = new FormData()
-    fd.append('design', JSON.stringify({ logo: 'keep', paper: 'new', paperNextFile: 'keep', paperNext: 'same', margins: { top: 45, right: 20, bottom: 30, left: 25 } }))
-    fd.append('paper', new Blob([Buffer.from('%PDF-1.4\n%Briefpapier\n')]), 'Briefbogen.pdf')
-    assert.equal((await fetch(`${c.s.base}/api/letter-design`, { method: 'PUT', body: fd })).status, 200)
-    const onPaper = await c.create()
-    assert.equal(onPaper.status, 201, await onPaper.clone().text())
-    const draft = await jsonOf<RentIncreaseView>(onPaper)
-    assert.equal(draft.basis.sender.name, '')
-    assert.equal((await send(c.s, 'DELETE', `/api/rent-increases/${draft.id}`, { token: draft.token })).status, 200)
-    // Ohne Briefpapier, mit Namen nur am Objekt.
-    const off = new FormData()
-    off.append('design', JSON.stringify({ logo: 'keep', paper: 'remove', paperNextFile: 'keep', paperNext: 'same', margins: { top: 45, right: 20, bottom: 30, left: 25 } }))
-    assert.equal((await fetch(`${c.s.base}/api/letter-design`, { method: 'PUT', body: off })).status, 200)
-    assert.equal((await c.create()).status, 400)
+    const drop = async (res: Response) => {
+      assert.equal(res.status, 201, await res.clone().text())
+      const draft = await jsonOf<RentIncreaseView>(res)
+      assert.equal((await send(c.s, 'DELETE', `/api/rent-increases/${draft.id}`, { token: draft.token })).status, 200)
+      return draft
+    }
+    const confirmed = await drop(await c.create())
+    assert.equal(confirmed.basis.sender.name, '')
+    const open = await drop(await c.create(COMPARISON, { ...LETTER, allLandlordsNamed: false }))
+    assert.equal(open.basis.letter.allLandlordsNamed, false)
+    // Die Bestätigung zu den Mietern bleibt Pflicht.
+    assert.equal((await c.create(COMPARISON, { ...LETTER, allLandlordsNamed: false, allTenantsNamed: false })).status, 400)
+    // Briefpapier der Installation: Das Papier trägt den Absender, die Bestätigung gilt ihm.
+    const design = async (paper: 'new' | 'remove') => {
+      const fd = new FormData()
+      fd.append('design', JSON.stringify({ logo: 'keep', paper, paperNextFile: 'keep', paperNext: 'same', margins: { top: 45, right: 20, bottom: 30, left: 25 } }))
+      if (paper === 'new') fd.append('paper', new Blob([Buffer.from('%PDF-1.4\n%Briefpapier\n')]), 'Briefbogen.pdf')
+      assert.equal((await fetch(`${c.s.base}/api/letter-design`, { method: 'PUT', body: fd })).status, 200)
+    }
+    await design('new')
+    const onPaper = await c.create(COMPARISON, { ...LETTER, allLandlordsNamed: false })
+    assert.equal(onPaper.status, 400)
+    assert.match(await errorFrom(onPaper), /alle Vermieter/)
+    await drop(await c.create())
+    await design('remove')
+    // Mit Namen am Objekt: Pflicht, und der Name steht im Schreiben.
     await c.s.api(`/api/properties/${c.p.id}`, { method: 'PUT', body: JSON.stringify({ landlordName: 'Erika Eigentümerin' }) })
-    const own = await c.create()
-    assert.equal(own.status, 201, await own.clone().text())
-    assert.equal((await jsonOf<RentIncreaseView>(own)).basis.sender.name, 'Erika Eigentümerin')
+    const named = await c.create(COMPARISON, { ...LETTER, allLandlordsNamed: false })
+    assert.equal(named.status, 400)
+    assert.match(await errorFrom(named), /alle Vermieter/)
+    assert.equal((await drop(await c.create())).basis.sender.name, 'Erika Eigentümerin')
   } finally {
     c.s.stop()
   }

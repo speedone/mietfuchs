@@ -41,7 +41,7 @@ import { DEFAULT_PORTS } from '../src/instanceGuard.ts'
 import { depositLimit, depositProblem, depositState } from '../../shared/deposit.ts'
 import type { DepositEntry } from '../../shared/types.ts'
 import { planRentIncrease } from '../src/rentIncrease.ts'
-import { rentSenderProblem } from '../../shared/rentIncreaseLetter.ts'
+import { rentSenderWarning } from '../../shared/rentIncreaseLetter.ts'
 import { fingerprintOf, type BankEntry } from '../src/bank/statement.ts'
 import { planBankImport } from '../src/bank/importPlan.ts'
 import { SAME_PAYMENT_DAYS, suggest, type MatchContext } from '../src/bank/match.ts'
@@ -551,10 +551,16 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
       eur(50000), '60 m²', eur(1100), eur(plan.comparison.rentCents), `${plan.cap.percent} %`, eur(plan.cap.baseCents), eur(plan.cap.limitCents),
       '15.10.2026', plan.consent.consentEnd.split('-').reverse().join('.'), 'Januar 2027', eur(plan.newCents),
     ], 'rentIncrease')
-    // Was die Anleitung zum Absender sagt, ist die Prüfung von Server und Oberfläche.
-    assert.ok(rentSenderProblem('', false), 'ohne Namen kein Schreiben')
-    assert.equal(rentSenderProblem('', true), null, 'mit Briefpapier schon')
     const all = JSON.stringify(GUIDES.rentIncrease)
+    // Was die Anleitung zum Absender sagt, ist die Warnung der Oberfläche: kein Verbot, und beide Auswege.
+    assert.ok(rentSenderWarning('', false), 'ohne Namen eine Warnung')
+    assert.equal(rentSenderWarning('', true), null, 'mit Briefpapier nicht')
+    const sender = [...GUIDES.rentIncrease.steps.map((x) => x.text), ...GUIDES.rentIncrease.caveats.map((x) => x.text)].filter((x) => /Name des Vermieters|Namen des Vermieters/.test(x)).join(' ')
+    assert.match(sender, /warnt/)
+    assert.match(sender, /von Hand/)
+    assert.doesNotMatch(all, /legt Mietfuchs (ohne Namen des Vermieters )?kein Schreiben an|Ohne ihn legt Mietfuchs kein Schreiben an/)
+    assert.match(GUIDES.rentIncrease.example, /für Ihre Gemeinde/)
+    assert.doesNotMatch(all, /Verordnung der Gemeinde/, 'die Verordnung erlässt die Landesregierung (§ 558 Abs. 3 Satz 3 BGB)')
     assert.match(all, /Schweigen ist keine Zustimmung/)
     assert.doesNotMatch(all, /sollten Sie klagen|klagen Sie|empfehlen/i, 'kein Rat zur Klage')
     assert.match(GUIDES.rentIncrease.caveats.map((c) => c.text).join(' '), /Auslegung/)

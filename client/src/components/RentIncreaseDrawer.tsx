@@ -9,7 +9,7 @@ import type { Property, RentIncreaseDecision, RentIncreasePlan, RentIncreasePlan
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { localToday } from '../periodForm'
 import { DECISION_LABELS, EXTRA_PARAGRAPH_HINT, PAPER_BROWSER_NOTE, PARTIES_HINT, RENT_INCREASE_STATUS_LABELS, SEVERAL_LANDLORDS_LABEL, decisionQuestion, followPlanRange, justificationOptions, notYetNote, qualifiedSurveyOptions, rentIncreaseDecisions, rentLetterInput, rentLetterStart, rentLetterWarnings, sendQuestion, senderNote, type RentLetterValue, type RentSurveyValue } from '../rentIncreaseLetterForm'
-import { SENDER_MISSING_DRAFT, SENDER_ON_PAPER_ONLY, rentIncreaseBasisProblem, rentSenderProblem } from '../../../shared/rentIncreaseLetter.ts'
+import { SENDER_MISSING_DRAFT, SENDER_ON_PAPER_ONLY, rentIncreaseBasisProblem, rentSenderWarning } from '../../../shared/rentIncreaseLetter.ts'
 import { asLetterDesigns, canPagePaper, printDesign } from '../letterDesignView'
 import { withProperty } from '../property'
 import { sameDraft } from '../draft'
@@ -42,8 +42,9 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   settings?: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact'> | null
   onClose: () => void
   // Nach Versand, Antwort und Rücknahme: Sie können die Kaltmiete-Staffel ändern, die Seite lädt die Mietverhältnisse neu.
-  // Sonst zeigte das Formular des Mietverhältnisses die alte Staffel, und Speichern scheiterte an der Marke (409).
-  onChanged?: () => void
+  // Sonst zeigte das Formular des Mietverhältnisses die alte Staffel, und Speichern scheiterte an der Marke (409). Das
+  // Fenster wartet das Neuladen ab, bevor es die Aktion als erledigt zeigt.
+  onChanged?: () => void | Promise<void>
   // Fehlt die „Art der Miete“: das Mietverhältnis an diesem Feld öffnen (die Seite schließt dazu dieses Fenster).
   onEditTenancy?: () => void
 }) {
@@ -57,9 +58,9 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   const [saved, setSaved] = useState<{ value: RentIncreaseValue; letter: RentLetterValue } | null>(null)
   const edited = { value, letter }
   const shown = saved !== null && sameDraft(edited, saved) ? opened : edited
-  // Ohne Namen des Vermieters kein Schreiben, außer ein Briefpapier trägt den Absender (shared/rentIncreaseLetter.ts,
-  // dieselbe Prüfung wie der Server). Bis zur Antwort gilt das Briefpapier als vorhanden, damit die Sperre nicht kurz
-  // aufblinkt (der Server prüft ohnehin). Es zählt, was dieser Browser druckt: Ohne Ränder je Druckseite (`canPagePaper`,
+  // Ohne Namen des Vermieters warnt das Fenster, außer ein Briefpapier trägt den Absender (shared/rentIncreaseLetter.ts;
+  // keine Sperre, der Name kann von Hand auf den Ausdruck kommen). Bis zur Antwort gilt das Briefpapier als vorhanden,
+  // damit die Warnung nicht kurz aufblinkt. Es zählt, was dieser Browser druckt: Ohne Ränder je Druckseite (`canPagePaper`,
   // etwa Safari) druckt das Schreiben wie ohne Briefpapier, und das Fenster sagt es (`paperSkipped`, wie die Abrechnung).
   const nameless = landlord !== null && landlord.landlordName.trim() === ''
   const propertyId = property?.id ?? unit?.propertyId
@@ -77,7 +78,8 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
       .catch(() => { if (alive) setPaper(false) })
     return () => { alive = false }
   }, [propertyId])
-  const noSender = nameless ? rentSenderProblem(landlord.landlordName, paper ?? true) : null
+  const noSender = nameless ? rentSenderWarning(landlord.landlordName, paper ?? true) : null
+  const senderMissing = noSender !== null
   const [plan, setPlan] = useState<PlanWithToken | null>(null)
   const [note, setNote] = useState<string | null>(null)
   // Was der letzte Plan sagte und über das Neurechnen hinweg gilt: der Tag des Servers (Durchsicht S4) und der Tag der
@@ -139,11 +141,9 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   // Ein Schreiben als Entwurf: Rechnung mit der Marke des gezeigten Plans, Eingaben des Schreibens geprüft wie auf dem Server.
   async function createDraft() {
     const built = rentIncreaseRequest(value)
-    const checked = rentLetterInput(letter, value.kind)
-    if ('problems' in built || 'problems' in checked || noSender) {
-      // Der Satz zum fehlenden Vermieter steht am Häkchen zum Briefkopf und geht dessen eigener Meldung vor.
-      const own = [...('problems' in built ? built.problems : []), ...('problems' in checked ? checked.problems : [])]
-      errors.report(noSender ? [...own.filter((p) => p.field !== noSender.field), noSender] : own)
+    const checked = rentLetterInput(letter, value.kind, senderMissing)
+    if ('problems' in built || 'problems' in checked) {
+      errors.report([...('problems' in built ? built.problems : []), ...('problems' in checked ? checked.problems : [])])
       return
     }
     if (!plan) return
@@ -160,18 +160,23 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   }
   // `steps`: Die Aktion kann die Kaltmiete-Staffel ändern. Auch nach einer Ablehnung wird neu geladen: Eine 409 heißt
   // gerade, dass sich der Stand geändert hat.
-  async function act(url: string, init: RequestInit, done: string, steps = false) {
+  // Ob die Aktion gelungen ist.
+  async function act(url: string, init: RequestInit, done: string, steps = false): Promise<boolean> {
+    let failed: string | null = null
     try {
       await api<unknown>(url, init)
-      toast(done)
     } catch (e) {
-      toast(errorText(e), 'error')
+      failed = errorText(e)
     }
     loadIncreases()
-    if (steps) onChanged?.()
+    // Erst neu laden, dann melden: Wer nach der Meldung schließt und das Mietverhältnis öffnet, sieht den neuen Stand.
+    if (steps) await Promise.resolve(onChanged?.()).catch(() => {})
+    if (failed === null) toast(done)
+    else toast(failed, 'error')
+    return failed === null
   }
   async function send(x: RentIncreaseView, receivedOn: string) {
-    if (!(await confirm(sendQuestion(x, receivedOn)))) return
+    if (!(await confirm(sendQuestion(x, receivedOn, x.basis.sender.name.trim() === '')))) return
     await act(`/api/rent-increases/${x.id}/send`, { method: 'POST', body: JSON.stringify({ receivedOn, token: x.token }) }, 'Als versendet gespeichert.', true)
   }
   async function decide(x: RentIncreaseView, decision: RentIncreaseDecision, agreedCents: number | null, decidedOn: string) {
@@ -186,7 +191,15 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   }
   async function remove(x: RentIncreaseView) {
     if (!(await confirm({ title: 'Entwurf löschen?', message: 'Der Entwurf des Schreibens wird gelöscht. Ihre Eingaben in diesem Fenster bleiben stehen.', confirmLabel: 'Löschen', danger: true }))) return
-    await act(`/api/rent-increases/${x.id}`, { method: 'DELETE', body: JSON.stringify({ token: x.token }) }, 'Entwurf gelöscht.')
+    // Mit dem Entwurf ist auch weg, was die Eingaben als gespeichert gelten ließ: Sie sind wieder ungespeichert, und
+    // „Schließen“ fragt.
+    if (await act(`/api/rent-increases/${x.id}`, { method: 'DELETE', body: JSON.stringify({ token: x.token }) }, 'Entwurf gelöscht.')) setSaved(null)
+  }
+  // „Hier beheben“ zur Art der Miete verlässt das Fenster: mit Eingaben fragen wie jedes Schließen (Drawer.tsx).
+  async function editTenancy() {
+    if (!onEditTenancy) return
+    if (!sameDraft(shown, opened) && !(await confirm({ title: 'Änderungen verwerfen?', message: 'Ihre Eingaben in diesem Fenster sind noch nicht gespeichert und gehen beim Schließen verloren.', confirmLabel: 'Verwerfen', cancelLabel: 'Abbrechen', danger: true }))) return
+    onEditTenancy()
   }
 
   const comparison = value.kind === 'comparison'
@@ -199,7 +212,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
         {' '}Gespeichert wird erst ein Schreiben, als Entwurf.
       </p>
       {!tenancy.rentKind && (
-        <NoticeBox level="hint" title="Art der Miete fehlt" fix={onEditTenancy ? { label: 'Hier beheben → Mietverhältnis', onClick: onEditTenancy } : null}>
+        <NoticeBox level="hint" title="Art der Miete fehlt" fix={onEditTenancy ? { label: 'Hier beheben → Mietverhältnis', onClick: () => void editTenancy() } : null}>
           Am Mietverhältnis ist die „Art der Miete“ nicht angegeben. Ohne sie rechnet Mietfuchs keine Mieterhöhung; Sie tragen sie im Mietverhältnis bei der Kaltmiete ein.
         </NoticeBox>
       )}
@@ -307,7 +320,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
 
       {plan && plan.state !== 'blocked' && plan.newCents !== null && (
         <LetterInputs kind={value.kind} letter={letter} setL={setL} setLetter={setLetter} errors={errors} plan={plan}
-          noSender={noSender?.text ?? null} paperOnly={nameless && paper === true}
+          noSender={noSender} paperOnly={nameless && paper === true}
           busy={saving.busy} onCreate={() => void saving.run(createDraft)} />
       )}
 
@@ -386,14 +399,14 @@ function LetterInputs({ kind, letter, setL, setLetter, errors, plan, noSender, p
   setLetter: (f: (old: RentLetterValue) => RentLetterValue) => void
   errors: ReturnType<typeof useFormError<string>>
   plan: RentIncreasePlan
-  // Der Satz, wenn kein Vermieter eingetragen ist und kein Briefpapier ihn tragen kann; dann lässt sich der Briefkopf
-  // nicht bestätigen. `paperOnly`: kein Name, aber Briefpapier (nur Warnung).
+  // Die Warnung, wenn kein Vermieter eingetragen ist und kein Briefpapier ihn tragen kann; dann lässt sich der Briefkopf
+  // nicht bestätigen (das Häkchen ist gesperrt und nicht verlangt). `paperOnly`: kein Name, aber Briefpapier.
   noSender: string | null
   paperOnly: boolean
   busy: boolean
   onCreate: () => void
 }) {
-  const checked = rentLetterInput(letter, kind)
+  const checked = rentLetterInput(letter, kind, noSender !== null)
   const warnings = 'body' in checked ? rentLetterWarnings(checked.body, plan, localToday()) : []
   const survey = (at: 'survey' | 'qualified', s: RentSurveyValue, title: string) => {
     const setS = (k: keyof RentSurveyValue, v: string) => setLetter((old) => ({ ...old, [at]: { ...old[at], [k]: v } }))
@@ -474,7 +487,7 @@ function LetterInputs({ kind, letter, setL, setLetter, errors, plan, noSender, p
         <input type="checkbox" checked={letter.severalLandlords} onChange={(e) => setL('severalLandlords', e.target.checked)} />
         <span>{SEVERAL_LANDLORDS_LABEL}</span>
       </label>
-      {noSender && <NoticeBox level="error" title="Vermieter fehlt">{noSender}</NoticeBox>}
+      {noSender && <NoticeBox level="warning" title="Name des Vermieters fehlt">{noSender}</NoticeBox>}
       {paperOnly && <NoticeBox level="warning" title="Vermieter nur auf dem Briefpapier">{SENDER_ON_PAPER_ONLY}</NoticeBox>}
       <label className="checkline">
         <input type="checkbox" checked={letter.allLandlordsNamed && !noSender} disabled={noSender !== null} onChange={(e) => setL('allLandlordsNamed', e.target.checked)} />

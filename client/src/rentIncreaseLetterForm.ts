@@ -7,7 +7,7 @@ import type { Checked, Problem } from './formProblems'
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { monthLabel, parseMonthText } from './monthText'
-import { RENT_COMPARABLES, rentIncreaseLetterOf, surveyStale } from '../../shared/rentIncreaseLetter.ts'
+import { RENT_COMPARABLES, SENDER_MISSING_SEND, rentIncreaseLetterOf, surveyStale } from '../../shared/rentIncreaseLetter.ts'
 
 export type RentSurveyValue = { name: string; asOf: string; field: string; low: string; high: string; availableAt: string }
 export type RentComparableValue = { address: string; location: string; area: string; perM2: string }
@@ -78,7 +78,9 @@ export const SEVERAL_LANDLORDS_LABEL = 'Mehrere Vermieter, etwa Eheleute oder ei
 
 // Der Rumpf aus den Texten, oder die Meldungen am Feld. Was sich nicht lesen lässt (Betrag, Monat, Fläche), meldet diese
 // Funktion; alles Übrige die gemeinsame Prüfung.
-export function rentLetterInput(v: RentLetterValue, kind: RentIncreaseKind): Checked<RentIncreaseLetterInput, string> {
+// `senderMissing`: kein Name des Vermieters und kein Briefpapier; die Bestätigung zum Briefkopf ist dann gesperrt, geht
+// als „nein“ an den Server und ist nicht verlangt (shared/rentIncreaseLetter.ts).
+export function rentLetterInput(v: RentLetterValue, kind: RentIncreaseKind, senderMissing = false): Checked<RentIncreaseLetterInput, string> {
   const problems: Problem<string>[] = []
   const cents = (field: string, text: string): number | null => {
     if (text.trim() === '') return null
@@ -113,11 +115,11 @@ export function rentLetterInput(v: RentLetterValue, kind: RentIncreaseKind): Che
     }) : [],
     recipientName: v.recipientName,
     severalLandlords: v.severalLandlords,
-    allLandlordsNamed: v.allLandlordsNamed,
+    allLandlordsNamed: v.allLandlordsNamed && !senderMissing,
     allTenantsNamed: v.allTenantsNamed,
     extraParagraph: v.extraParagraph,
   }
-  const checked = rentIncreaseLetterOf(raw, kind)
+  const checked = rentIncreaseLetterOf(raw, kind, { senderMissing })
   if ('problems' in checked) {
     for (const p of checked.problems) if (!problems.some((x) => x.field === p.field)) problems.push({ field: p.field, text: p.text })
   }
@@ -197,10 +199,13 @@ export function rentIncreaseDecisions(x: Pick<RentIncrease, 'kind' | 'status'>):
 
 export type RentQuestion = { title: string; message: string; confirmLabel: string; danger?: boolean }
 
-export function sendQuestion(x: Pick<RentIncrease, 'kind' | 'toCents' | 'effectiveFrom'>, receivedOn: string): RentQuestion {
-  return x.kind === 'index'
-    ? { title: 'Als versendet speichern?', confirmLabel: 'Speichern', message: `Gespeichert wird der Zugang am ${fmtDate(receivedOn)}. Eine Anpassung der Indexmiete wirkt ohne Zustimmung: Mietfuchs trägt die neue Miete von ${fmtEuro(x.toCents)} ab ${monthLabel(x.effectiveFrom)} in die Kaltmiete-Staffel ein.` }
-    : { title: 'Als versendet speichern?', confirmLabel: 'Speichern', message: `Gespeichert wird der Zugang am ${fmtDate(receivedOn)}; Mietfuchs rechnet die Fristen damit neu. Die neue Miete trägt Mietfuchs erst ein, wenn Sie die Zustimmung des Mieters eintragen.` }
+// `nameless`: Der eingefrorene Absender trägt keinen Namen. Mit dem Versand wird das wirksam, deshalb steht der Satz in
+// der Rückfrage (`SENDER_MISSING_SEND`); gesperrt wird nichts, der Name kann von Hand auf dem Schriftstück stehen.
+export function sendQuestion(x: Pick<RentIncrease, 'kind' | 'toCents' | 'effectiveFrom'>, receivedOn: string, nameless = false): RentQuestion {
+  const message = x.kind === 'index'
+    ? `Gespeichert wird der Zugang am ${fmtDate(receivedOn)}. Eine Anpassung der Indexmiete wirkt ohne Zustimmung: Mietfuchs trägt die neue Miete von ${fmtEuro(x.toCents)} ab ${monthLabel(x.effectiveFrom)} in die Kaltmiete-Staffel ein.`
+    : `Gespeichert wird der Zugang am ${fmtDate(receivedOn)}; Mietfuchs rechnet die Fristen damit neu. Die neue Miete trägt Mietfuchs erst ein, wenn Sie die Zustimmung des Mieters eintragen.`
+  return { title: 'Als versendet speichern?', confirmLabel: 'Speichern', message: nameless ? `${message} ${SENDER_MISSING_SEND}` : message }
 }
 
 export function decisionQuestion(x: Pick<RentIncrease, 'kind' | 'toCents' | 'effectiveFrom'>, decision: RentIncreaseDecision, agreedCents: number | null): RentQuestion {
