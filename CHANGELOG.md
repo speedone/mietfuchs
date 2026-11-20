@@ -83,7 +83,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - Belege: Eine Rechnung mit vielen Zeilen, etwa die Jahresrechnung eines Versorgers als E-Rechnung, lässt sich als eine
   Kostenposition buchen. Unter der Tabelle steht dafür „Alle Zeilen als eine Position anlegen“: Kostenart und
-  Beschreibung wählen, das Fenster nennt vorher Position und Summe; Gutschriften bleiben offen. Wer Zeile für Zeile
+  Beschreibung wählen, das Fenster nennt vorher Position und Summe. Gutschriften bleiben offen und werden mit Betrag
+  genannt, ein §35a-Lohnanteil kommt nur mit Häkchen mit, und im Verlauf stehen die beiden Schritte der Buchung
+  unterscheidbar („1 Zeile angelegt“, „13 Zeilen verknüpft“). Wer Zeile für Zeile
   bucht, findet nach dem Anlegen der ersten Zeile deren Position bei den übrigen unter „Was geschieht?“. Bereits
   bezahlte Abschläge stehen als Hinweis an der Auswertung und färben nicht mehr jede Zeile rot; die Zeilen sind dann
   gelb und nicht vorab angehakt, weil einzeln gebuchte Abschläge sonst doppelt zählten. Gleichlautende Begründungen

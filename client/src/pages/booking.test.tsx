@@ -723,16 +723,91 @@ test('viele Zeilen: „Alle Zeilen als eine Position anlegen“ zeigt Position u
   if (!(name instanceof HTMLInputElement)) return assert.fail('die Beschreibung ist kein Textfeld')
   expect(name.value).toBe('Stadtwerke')
   fireEvent.change(name, { target: { value: 'Wasser Stadtwerke' } })
-  expect(within(dialog).getByText(/Es entsteht eine Position „Wasser Stadtwerke“ \(Wasser\/Abwasser\) über 353,87\s€ aus 3 Zeilen\. 1 Zeile bleibt offen/)).toBeTruthy()
+  expect(within(dialog).getByText(/Es entsteht eine Position „Wasser Stadtwerke“ \(Wasser\/Abwasser\) über 353,87\s€ aus 3 Zeilen\./)).toBeTruthy()
+  expect(within(dialog).getByText(/Die Gutschrift über 20,00\s€ bleibt offen, denn Gutschriften werden nie verrechnet/)).toBeTruthy()
   expect(fake.items).toHaveLength(0)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(fake.items.map((i) => [i.description, i.amountCents])).toEqual([['Wasser Stadtwerke', 35387]]), SLOW)
   const done = await screen.findByLabelText('Gebucht', {}, SLOW)
   expect(done.textContent).toMatch(/„Wasser Stadtwerke“: 200,00\s€ → 353,87\s€/)
   await waitFor(() => expect(screen.queryByRole('dialog', { name: /Eine Position aus allen Zeilen/ })).toBeNull(), SLOW)
-  // Die Gutschrift bleibt offen und wird nie verrechnet.
+  // Die Gutschrift bleibt offen und wird nie verrechnet; die Karte weist danach auf sie hin.
   expect((await actionOf('Gutschrift Vorjahr')).value).not.toMatch(/^link:/)
   expect(fake.assessments[0]?.lines.map((l) => l.state)).toEqual(['created', 'linked', 'linked', 'open'])
+  expect(await screen.findByText(/Eine Gutschrift über 20,00\s€ ist noch offen/, {}, SLOW)).toBeTruthy()
+  // Der Knopf ist mit dem Buchen verschwunden: Der Fokus steht auf der Erfolgsmeldung, nicht auf der Seite.
+  expect(document.activeElement).toBe(done)
+  // In diesem Zustand legt nichts eine zweite Position an.
+  expect(screen.queryByRole('button', { name: 'Alle Zeilen als eine Position anlegen' })).toBeNull()
+})
+
+// Durchsicht 2, Punkt 4: Teilzustand (zweiter Schritt gescheitert, neu geladen, „Rückgängig“ im Verlauf).
+test('viele Zeilen: ist schon eine Position aus dem Beleg gebucht, verknüpft eine Aktion alle offenen Zeilen mit ihr', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  const first = fake.evaluate('w.pdf', invoice([
+    { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 200 },
+    { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 103.87 },
+    { description: 'Niederschlagswasser', category: 'Wasser/Abwasser', amountEur: 50 },
+  ]), { year: YEAR })
+  const decisions = [{ idx: 0, action: 'create', fields: first.lines[0]?.suggestion?.fields ?? assert.fail('kein Vorschlag') }]
+  const post = (p: string, body: unknown) => fake.handle(p, { method: 'POST', body: JSON.stringify(body) })
+  const plan = await (await post(`/api/assessments/${first.id}/plan`, { decisions }))?.json()
+  expect((await post(`/api/assessments/${first.id}/book`, { decisions, token: plan.token }))?.status).toBe(200)
+  const partial = fake.assessments[0] ?? assert.fail('keine Auswertung')
+  let current = partial
+  const { rerender } = render(<UIProvider><AssessmentReview assessment={partial} units={UNITS} onChange={(next) => { current = next }} /></UIProvider>)
+  expect(screen.queryByRole('button', { name: 'Alle Zeilen als eine Position anlegen' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Alle offenen Zeilen mit „Frischwasser“ verknüpfen' }))
+  const panel = await screen.findByLabelText('Vorschau', {}, SLOW)
+  expect(within(panel).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringMatching(/^„Frischwasser“: 200,00\s€ → 353,87\s€/)])
+  expect((await actionOf('Abwasser')).value).toBe(`link:${fake.items[0]?.id}`)
+  fireEvent.click(screen.getByRole('button', { name: 'Buchen' }))
+  await waitFor(() => expect(fake.items.map((i) => i.amountCents)).toEqual([35387]), SLOW)
+  rerender(<UIProvider><AssessmentReview assessment={current} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(current.lines.map((l) => l.state)).toEqual(['created', 'linked', 'linked'])
+})
+
+// Durchsicht 2, Punkt 2 und 5
+test('viele Zeilen: ein gelesener §35a-Lohn steht angehakt im Fenster, abgewählt entsteht die Position ohne Lohnanteil', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([
+    { description: 'Hauswart Arbeitslohn', category: 'Hauswart', amountEur: 1190, labor35aEur: 1190 },
+    { description: 'Hauswart Material', category: 'Hauswart', amountEur: 238 },
+  ], 'Hausmeisterdienst')
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Hauswart Arbeitslohn')
+  fireEvent.click(screen.getByRole('button', { name: 'Alle Zeilen als eine Position anlegen' }))
+  const dialog = await screen.findByRole('dialog', { name: /Eine Position aus allen Zeilen/ }, SLOW)
+  const labor = within(dialog).getByRole('checkbox', { name: /§35a-Lohnanteil von 1\.190,00\s€ übernehmen/ })
+  if (!(labor instanceof HTMLInputElement)) return assert.fail('kein Häkchen')
+  expect(labor.checked).toBe(true)
+  expect(within(dialog).getByText(/über 1\.428,00\s€ aus 2 Zeilen, davon §35a-Lohn 1\.190,00\s€\./)).toBeTruthy()
+  fireEvent.click(labor)
+  expect(within(dialog).getByText(/über 1\.428,00\s€ aus 2 Zeilen, ohne §35a-Lohnanteil\./)).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(fake.items.map((i) => [i.amountCents, i.labor35aCents ?? null])).toEqual([[142800, null]]), SLOW)
+})
+
+test('viele Zeilen: ein nur vorgeschlagener Lohnanteil ist im Fenster nicht angehakt, und der Abschlags-Hinweis steht auch dort', () => {
+  const one = crafted({}, { level: 'gelb', preselected: false })
+  const base = one.lines[0] ?? assert.fail('keine Zeile')
+  const s = base.suggestion ?? assert.fail('kein Vorschlag')
+  const prepaid = 'Abschläge über 500,00\u00a0€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 1.428,00\u00a0€.'
+  const lines = [
+    { ...base, idx: 0, description: 'Hauswart Arbeitslohn', amountCents: 119000, labor35aCents: 119000, laborGuessed: true, suggestion: { ...s, fields: { ...s.fields, amountCents: 119000, labor35aCents: 119000 } } },
+    { ...base, idx: 1, description: 'Material', amountCents: 23800, suggestion: { ...s, fields: { ...s.fields, amountCents: 23800 } } },
+  ]
+  render(<UIProvider><AssessmentReview assessment={{ ...one, lines, nextIdx: 2, source: 'e-rechnung', eInvoiceNotes: [prepaid] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Alle Zeilen als eine Position anlegen' }))
+  const dialog = screen.getByRole('dialog', { name: /Eine Position aus allen Zeilen/ })
+  const labor = within(dialog).getByRole('checkbox', { name: /§35a-Lohnanteil von 1\.190,00\s€ übernehmen/ })
+  if (!(labor instanceof HTMLInputElement)) return assert.fail('kein Häkchen')
+  expect(labor.checked).toBe(false)
+  expect(within(dialog).getByText(/nur aus der Art der Position vorgeschlagen/)).toBeTruthy()
+  expect(within(dialog).getByText(/ohne §35a-Lohnanteil\./)).toBeTruthy()
+  expect(within(dialog).getByText(/Abschläge über 500,00\s€ sind bereits bezahlt/)).toBeTruthy()
+  expect(within(dialog).getByText(/Haben Sie diese Abschläge oder Anzahlungen schon einzeln als Kosten gebucht/)).toBeTruthy()
 })
 
 test('viele Zeilen: bei einer einzigen offenen Zeile gibt es die Aktion nicht', async () => {

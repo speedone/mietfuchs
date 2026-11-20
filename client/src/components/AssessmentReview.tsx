@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
-  ampelNote, bookDecisions, bookedLines, categoryOptions, combinableLines, changeAssessmentYear, decisionsOf, fromSameReceipt, initialRows, linesShape, linkChoices, noteGroups, planDecisions, previewLines, reasonChips, shownRow, withConfirmed, yearOptions, confirmLabel, PREPAID_ADVICE, type RowAction, type RowDraft,
+  ampelNote, bookDecisions, bookedLines, categoryOptions, combinableLines, linkAllRows, openCredits, sameReceiptTargets, changeAssessmentYear, decisionsOf, fromSameReceipt, initialRows, linesShape, linkChoices, noteGroups, planDecisions, previewLines, reasonChips, shownRow, withConfirmed, yearOptions, confirmLabel, PREPAID_ADVICE, type RowAction, type RowDraft,
 } from '../assessment'
 import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
@@ -91,11 +91,11 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     setBooked(null)
   }
 
-  async function showPreview() {
+  async function showPreview(planned = decisions) {
     setBusy(true)
     setError('')
     try {
-      setPreview(await planDecisions(a.id, decisions))
+      setPreview(await planDecisions(a.id, planned))
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -173,6 +173,31 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   const notes = noteGroups(a)
   // „Alle Zeilen als eine Position anlegen“ (CombineLinesDrawer): der ausdrückliche Weg für eine Rechnung mit vielen Zeilen
   const [combining, setCombining] = useState(false)
+  // Ist aus diesem Beleg schon eine Position gebucht (Teilzustand), legt die Karte keine zweite an: Sie verknüpft alle
+  // offenen Zeilen mit ihr, über die gewohnte Vorschau.
+  const ownTargets = sameReceiptTargets(a)
+  const [ownChoice, setOwnChoice] = useState('')
+  const ownTarget = ownTargets.find((c) => c.id === ownChoice) ?? ownTargets[0] ?? null
+  const credit = openCredits(a)
+  function linkAll(costItemId: string) {
+    const next = linkAllRows(a, rows, costItemId)
+    setRows(next)
+    setBooked(null)
+    const nextShown: Record<number, RowDraft> = {}
+    for (const line of a.lines) {
+      const row = next[line.idx]
+      if (row) nextShown[line.idx] = shownRow(line, row)
+    }
+    void showPreview(decisionsOf(a, nextShown))
+  }
+  // Nach „Anlegen“ im Fenster ist sein Knopf verschwunden: Der Fokus geht auf die Erfolgsmeldung, nicht auf die Seite.
+  const bookedBox = useRef<HTMLDivElement>(null)
+  const focusBooked = useRef(false)
+  useEffect(() => {
+    if (!focusBooked.current || !booked) return
+    focusBooked.current = false
+    bookedBox.current?.focus()
+  })
 
   return (
     <div className="stack assessment-review">
@@ -300,19 +325,37 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
             )
           })}
       </Table>
-      {combinableLines(a).length > 0 && (
+      {ownTarget ? (
+        <div className="row center">
+          <span className="muted">Aus diesem Beleg ist schon eine Position gebucht.</span>
+          {ownTargets.length > 1 && (
+            <select aria-label="Position für alle offenen Zeilen" value={ownTarget.id} disabled={busy} onChange={(e) => { setOwnChoice(e.target.value); setPreview(null) }}>
+              {ownTargets.map((c) => <option key={c.id} value={c.id}>{c.description}</option>)}
+            </select>
+          )}
+          <button type="button" className="btn small secondary" disabled={busy || year.dirty || year.saving} onClick={() => linkAll(ownTarget.id)}>Alle offenen Zeilen mit „{ownTarget.description}“ verknüpfen</button>
+        </div>
+      ) : combinableLines(a).length > 0 && (
         <div className="row center">
           <span className="muted">Eine Rechnung, eine Kostenposition (etwa Strom, Gas, Wasser)?</span>
           <button type="button" className="btn small secondary" disabled={busy || year.dirty || year.saving} onClick={() => setCombining(true)}>Alle Zeilen als eine Position anlegen</button>
         </div>
+      )}
+      {credit && (
+        <NoticeBox level="warning" action={<>
+          {credit.count === 1 ? `Eine Gutschrift über ${fmtEuro(credit.cents)} ist noch offen.` : `${credit.count} Gutschriften über zusammen ${fmtEuro(credit.cents)} sind noch offen.`}{' '}
+          Gutschriften werden nie verrechnet: Legen Sie sie als eigene Position an (Neu anlegen), sonst legen Sie {fmtEuro(credit.cents)} zu viel um.
+        </>} />
       )}
       {combining && (
         <CombineLinesDrawer key={a.id} assessment={a} units={units} keyContext={keyContext} onClose={() => setCombining(false)}
           onBooked={(result) => {
             setCombining(false)
             setPreview(null)
-            if (result.kind === 'done') setBooked({ lines: result.lines, shape: linesShape(result.assessment) })
-            else setError(result.message)
+            if (result.kind === 'done') {
+              setBooked({ lines: result.lines, shape: linesShape(result.assessment) })
+              focusBooked.current = true
+            } else setError(result.message)
             onChange(result.assessment)
           }} />
       )}
@@ -346,7 +389,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       )}
       <ErrorSummary errors={errors} />
       {/* Ein Erfolg, kein Hinweis (Durchsicht der Hinweiskästen): grün, als Statusmeldung; das aria-label braucht die Rolle */}
-      {booked && <div className="ok" role="status" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
+      {booked && <div ref={bookedBox} tabIndex={-1} className="ok" role="status" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
       <div className="row center">
         <a href={receiptHref(a.file)} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />

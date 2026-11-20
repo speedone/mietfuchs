@@ -1,7 +1,7 @@
 // Die Entscheidungen der Komponente „Auswertung prüfen“ (Belegbuchung, #170), ohne DOM.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssessmentLine, AssessmentView, BookingPreview, LineCandidate, LineSuggestion } from './types'
-import { bookDecisions, openBadgeClass, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, fromSameReceipt, ampelNote, combinableLines, combineStart, combineSummary, combineFirst, combineRest, noteGroups, reasonChips, yearOptions, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
+import { bookDecisions, openBadgeClass, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, fromSameReceipt, ampelNote, combinableLines, combineStart, combineSummary, combineFirst, combineRest, combineLabor, openCredits, sameReceiptTargets, linkAllRows, type CombineDraft, noteGroups, reasonChips, yearOptions, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
 import { CATEGORIES } from './types'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 
@@ -64,22 +64,28 @@ describe('Begründungen, Notizen und Jahre der Karte (Systemprüfung)', () => {
   it('eine Zeile, deren Grund nur im Kasten der Rechnung steht, sagt das Vorlesern an der Ampel', () => {
     const v = { ...view([
       line(0, { suggestion: suggestion({ level: 'rot', reasons: [ZWEIFEL] }) }),
-      line(1, { suggestion: suggestion({ level: 'gelb', reasons: [PREPAID, 'Kategorie unklar'] }) }),
+      line(1, { suggestion: suggestion({ level: 'gelb', reasons: [PREPAID] }) }),
       line(2, { suggestion: suggestion({ level: 'gelb', reasons: ['Kategorie unklar'] }) }),
       line(3),
+      // Der Grund der Farbe steht in den Begründungen unter der Tabelle (Gutschrift, erratene Kostenart): kein Verweis.
+      line(4, { suggestion: suggestion({ level: 'rot', reasons: ['Gutschrift - bitte prüfen', PREPAID] }) }),
+      line(5, { suggestion: suggestion({ level: 'gelb', reasons: [PREPAID, 'Kategorie unklar'] }) }),
+      line(6, { suggestion: suggestion({ level: 'rot', reasons: ['Kategorie unklar', ZWEIFEL] }) }),
     ]), eInvoiceNotes: [PREPAID, ZWEIFEL] }
     expect(v.lines.map((l) => ampelNote(v, l))).toEqual([
-      'Rot: siehe Hinweis zur Rechnung über der Tabelle', 'Gelb: siehe Hinweis zur Rechnung über der Tabelle', null, null,
+      'Rot: siehe Hinweis zur Rechnung über der Tabelle', 'Gelb: siehe Hinweis zur Rechnung über der Tabelle', null, null, null, null,
+      'Rot: siehe Hinweis zur Rechnung über der Tabelle',
     ])
   })
 })
 
 // Durchsicht der Systemprüfung: Der Weg „eine Rechnung, eine Position“ ist eine eigene Aktion der Karte.
 describe('Alle Zeilen als eine Position', () => {
-  const fields = (amountCents: number | null, category = 'Wasser/Abwasser') => ({ ...suggestion().fields, amountCents, category })
+  const fields = (amountCents: number | null, category = 'Wasser/Abwasser', labor35aCents: number | null = null) => ({ ...suggestion().fields, amountCents, category, labor35aCents })
   const l = (idx: number, amountCents: number | null, patch: Partial<AssessmentLine> = {}, category = 'Wasser/Abwasser') =>
-    line(idx, { amountCents, category, suggestion: suggestion({ fields: fields(amountCents, category) }), ...patch })
+    line(idx, { amountCents, category, suggestion: suggestion({ fields: fields(amountCents, category, patch.labor35aCents ?? null) }), ...patch })
   const v = { ...view([l(0, 20000), l(1, 10387), l(2, -5000), l(3, null), l(4, 5000, { state: 'created', costItemId: 'x', suggestion: null }), l(5, 7000, { state: 'dismissed', dismissed: true })]), invoiceNumber: 'R-17' }
+  const draft = (patch: Partial<CombineDraft> = {}): CombineDraft => ({ category: 'Wasser/Abwasser', description: 'Stadtwerke', labor: false, ...patch })
 
   it('zusammen gehen nur offene Zeilen mit Betrag über 0: keine Gutschrift, keine ungelesene, gebuchte oder verworfene', () => {
     expect(combinableLines(v).map((x) => x.idx)).toEqual([0, 1])
@@ -88,23 +94,77 @@ describe('Alle Zeilen als eine Position', () => {
   })
 
   it('vorbelegt: die gemeinsame Kostenart, sonst keine; Beschreibung aus Rechnungssteller und Rechnungsnummer', () => {
-    expect(combineStart(v)).toEqual({ category: 'Wasser/Abwasser', description: 'Stadtwerke, Rechnung R-17' })
+    expect(combineStart(v)).toEqual({ category: 'Wasser/Abwasser', description: 'Stadtwerke, Rechnung R-17', labor: false })
     const mixed = view([l(0, 20000), l(1, 10387, {}, 'Müllabfuhr')])
-    expect(combineStart(mixed)).toEqual({ category: '', description: 'Stadtwerke' })
-    expect(combineStart({ ...mixed, vendor: null })).toEqual({ category: '', description: 'w.pdf' })
+    expect(combineStart(mixed)).toEqual({ category: '', description: 'Stadtwerke', labor: false })
+    expect(combineStart({ ...mixed, vendor: null })).toEqual({ category: '', description: 'w.pdf', labor: false })
   })
 
-  it('die Zusammenfassung nennt die eine Position mit Summe und was offen bleibt', () => {
-    expect(combineSummary(v, { category: 'Wasser/Abwasser', description: 'Stadtwerke' }))
-      .toBe('Es entsteht eine Position „Stadtwerke“ (Wasser/Abwasser) über 303,87\u00a0€ aus 2 Zeilen. 2 Zeilen bleiben offen (Gutschriften und Zeilen ohne Betrag).')
-    expect(combineSummary(view([l(0, 20000), l(1, 10387)]), { category: '', description: 'Stadtwerke' }))
-      .toBe('Es entsteht eine Position „Stadtwerke“ über 303,87\u00a0€ aus 2 Zeilen.')
+  // Durchsicht 2, Punkt 1: Wer die Gutschrift liegen lässt, legt ihren Betrag zu viel um; das Fenster sagt es mit Zahlen.
+  it('die Zusammenfassung nennt Position und Summe, die offene Gutschrift mit Betrag und den Rechnungsbetrag', () => {
+    const invoice = { ...view([l(0, 53500), l(1, 42800), l(2, 6420), l(3, -5350)]), totalGrossCents: 97370 }
+    expect(combineSummary(invoice, draft())).toEqual([
+      'Es entsteht eine Position „Stadtwerke“ (Wasser/Abwasser) über 1.027,20\u00a0€ aus 3 Zeilen.',
+      'Die Gutschrift über 53,50\u00a0€ bleibt offen, denn Gutschriften werden nie verrechnet. Legen Sie sie danach als eigene Position an, sonst legen Sie 53,50\u00a0€ zu viel um.',
+      'Rechnungsbetrag laut Beleg: 973,70\u00a0€.',
+    ])
+    expect(combineSummary(v, draft())).toEqual([
+      'Es entsteht eine Position „Stadtwerke“ (Wasser/Abwasser) über 303,87\u00a0€ aus 2 Zeilen.',
+      'Die Gutschrift über 50,00\u00a0€ bleibt offen, denn Gutschriften werden nie verrechnet. Legen Sie sie danach als eigene Position an, sonst legen Sie 50,00\u00a0€ zu viel um.',
+      '1 Zeile ohne Betrag bleibt offen.',
+    ])
+    expect(combineSummary(view([l(0, 20000), l(1, 10387), l(2, -5000), l(3, -1000)]), draft({ category: '' }))).toEqual([
+      'Es entsteht eine Position „Stadtwerke“ über 303,87\u00a0€ aus 2 Zeilen.',
+      '2 Gutschriften über zusammen 60,00\u00a0€ bleiben offen, denn Gutschriften werden nie verrechnet. Legen Sie sie danach als eigene Positionen an, sonst legen Sie 60,00\u00a0€ zu viel um.',
+    ])
+  })
+
+  it('nach dem Buchen: eine offene Gutschrift neben gebuchten Zeilen nennt die Karte', () => {
+    expect(openCredits(v)).toEqual({ count: 1, cents: 5000 })
+    expect(openCredits(view([l(0, 20000), l(1, -5000)]))).toBeNull()
+    expect(openCredits(view([l(0, 20000, { state: 'linked', costItemId: 'x', suggestion: null })]))).toBeNull()
+  })
+
+  // Durchsicht 2, Punkt 2: Ein nur vorgeschlagener Lohnanteil (`laborGuessed`) kommt nie ungesehen mit.
+  it('§35a-Lohn: gelesen ist er vorausgewählt, nur vorgeschlagen nicht; ohne Zustimmung entsteht die Position ohne Lohnanteil', () => {
+    const read = view([l(0, 119000, { labor35aCents: 30000 }), l(1, 23800, { labor35aCents: 0 }), l(2, 10000)])
+    const guessed = view([l(0, 119000, { labor35aCents: 119000, laborGuessed: true }), l(1, 23800)])
+    expect(combineLabor(read)).toEqual({ cents: 30000, guessed: false })
+    expect(combineLabor(guessed)).toEqual({ cents: 119000, guessed: true })
+    expect(combineLabor(v)).toBeNull()
+    expect(combineStart(read).labor).toBe(true)
+    expect(combineStart(guessed).labor).toBe(false)
+    expect(combineSummary(read, draft({ labor: true }))[0]).toBe('Es entsteht eine Position „Stadtwerke“ (Wasser/Abwasser) über 1.528,00\u00a0€ aus 3 Zeilen, davon §35a-Lohn 300,00\u00a0€.')
+    expect(combineSummary(guessed, draft())[0]).toBe('Es entsteht eine Position „Stadtwerke“ (Wasser/Abwasser) über 1.428,00\u00a0€ aus 2 Zeilen, ohne §35a-Lohnanteil.')
+    // Mit Zustimmung gehen die Angaben der Zeilen an den Planer (Summenregel: Summe der gelesenen).
+    expect(combineFirst(guessed, draft({ labor: true }), { key: 'area', allocation: null })[0]).toMatchObject({ fields: { labor35aCents: 119000 } })
+    expect(combineRest(guessed, 'neu', draft({ labor: true }))).toEqual([{ idx: 1, action: 'link', costItemId: 'neu' }])
+    // Ohne: jede Zeile ausdrücklich ohne Lohn, sonst zählte der Planer den der verknüpften Zeilen wieder dazu.
+    expect(combineFirst(guessed, draft(), { key: 'area', allocation: null })[0]).toMatchObject({ fields: { labor35aCents: null } })
+    expect(combineRest(read, 'neu', draft())).toEqual([{ idx: 1, action: 'link', costItemId: 'neu', labor35aCents: null }, { idx: 2, action: 'link', costItemId: 'neu', labor35aCents: null }])
   })
 
   it('gebucht wird in zwei Schritten: die erste Zeile anlegen, die übrigen mit ihrer Position verknüpfen', () => {
-    const first = combineFirst(v, { category: 'Müllabfuhr', description: 'Stadtwerke' }, { key: 'units', allocation: null })
+    const first = combineFirst(v, draft({ category: 'Müllabfuhr' }), { key: 'units', allocation: null })
     expect(first).toEqual([{ idx: 0, action: 'create', fields: { ...fields(20000), category: 'Müllabfuhr', description: 'Stadtwerke', key: 'units', allocation: null, externalTotalCents: null } }])
-    expect(combineRest(v, 'neu')).toEqual([{ idx: 1, action: 'link', costItemId: 'neu' }])
+    expect(combineRest(v, 'neu', draft())).toEqual([{ idx: 1, action: 'link', costItemId: 'neu' }])
+  })
+
+  // Durchsicht 2, Punkt 4: Ist aus dieser Auswertung schon eine Position gebucht, legt die Karte keine zweite an.
+  it('gibt es schon eine Position aus diesem Beleg, werden alle offenen Zeilen mit ihr verknüpft; Gutschriften nicht', () => {
+    const own: LineCandidate = { ...KANDIDAT, id: 'neu', description: 'Stadtwerke', invoiceFile: 'w.pdf' }
+    const other: LineCandidate = { ...own, id: 'zwei', description: 'Zweite' }
+    const withOwn = (idx: number, amountCents: number | null, sameReceipt: LineCandidate[]) => line(idx, { amountCents, suggestion: suggestion({ fields: fields(amountCents), sameReceipt, preselected: false }) })
+    const partial = view([l(0, 20000, { state: 'created', costItemId: 'neu', suggestion: null }), withOwn(1, 10387, [own, other]), withOwn(2, 5000, [own]), withOwn(3, -5000, [])])
+    expect(sameReceiptTargets(partial).map((c) => c.id)).toEqual(['neu', 'zwei'])
+    expect(sameReceiptTargets(v)).toEqual([])
+    const rows = linkAllRows(partial, initialRows(partial), 'neu')
+    expect([1, 2, 3].map((i) => rows[i]?.action)).toEqual(['link:neu', 'link:neu', ''])
+    expect(decisionsOf(partial, rows)).toEqual([
+      { idx: 1, action: 'link', costItemId: 'neu', amountCents: 10387, labor35aCents: null },
+      { idx: 2, action: 'link', costItemId: 'neu', amountCents: 5000, labor35aCents: null },
+    ])
+    expect([1, 2].map((i) => linkAllRows(partial, initialRows(partial), 'zwei')[i]?.action)).toEqual(['link:zwei', ''])
   })
 })
 

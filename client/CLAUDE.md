@@ -740,8 +740,16 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   ([CombineLinesDrawer.tsx](src/components/CombineLinesDrawer.tsx)): Seitenfenster mit Kostenart (vorbelegt nur, wenn
   alle Zeilen dieselbe tragen) und Beschreibung (Rechnungssteller, Rechnungsnummer), dem Satz, was entsteht, und
   „Anlegen“. Gebucht wird in zwei Schritten über den Planer (`bookAsOne`: erste Zeile anlegen, übrige verknüpfen);
-  Gutschriften bleiben offen, eine Rückfrage des Planers kommt vor dem ersten Schritt, und scheitert der zweite, sagt die
-  Karte, dass die Position angelegt ist und wie es weitergeht. „Jahr der Buchung“ enthält immer das gewählte Jahr
+  eine Rückfrage des Planers kommt vor dem ersten Schritt, lehnt er das Anlegen ab (etwa „laut Gemeinschaftsabrechnung“),
+  nennt der Fuß den Weg über die Zeilen. **Gutschriften bleiben offen**: Das Fenster nennt ihren Betrag, die Folge
+  („… zu viel um“) und den Rechnungsbetrag, die Karte danach „… ist noch offen“ (`openCredits`). **§35a-Lohn** steht als
+  Häkchen mit Betrag da, angehakt nur, wenn er gelesen ist; ein nur vorgeschlagener (`laborGuessed`) kommt nie ungesehen
+  mit, ohne Häkchen trägt jede Zeile ausdrücklich keinen (`combineRest`, wegen der Summenregel). Trägt die Auswertung die
+  Notiz zu bezahlten Abschlägen, steht ihr Hinweis auch im Fenster. Scheitert der zweite Schritt, liest die Karte den
+  Stand neu und sagt nur, was stimmt. **Ist aus dem Beleg schon eine Position gebucht** (`sameReceiptTargets`:
+  Teilzustand, „Rückgängig“ im Verlauf, Zeile für Zeile begonnen), entfällt der Knopf zum Anlegen; stattdessen „Alle
+  offenen Zeilen mit „…“ verknüpfen“ (bei mehreren Positionen mit Auswahl): Es setzt die Zeilen und zeigt die gewohnte
+  Vorschau, gebucht wird mit „Buchen“. Nach „Anlegen“ im Fenster steht der Fokus auf der Erfolgsmeldung. „Jahr der Buchung“ enthält immer das gewählte Jahr
   (`yearOptions`), nicht das Beginnjahr eines abweichenden Zeitraums.
 - **Was an einem gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Ein
   ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle

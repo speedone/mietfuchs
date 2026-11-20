@@ -17,7 +17,7 @@ import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } fro
 import { cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
 import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UpdateStatus, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
-import { bookingResponse, parseDecisions } from './bookingPlan.ts'
+import { bookingResponse, bookingTitle, parseDecisions } from './bookingPlan.ts'
 import { followInvoiceDate, forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, viewRecord } from './db/booking.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
@@ -2958,6 +2958,8 @@ app.post('/api/assessments/:id/book', async (req, res) => {
   // den Stand.
   const { outcome, assessment } = await writeData(async (db) => {
     const result = await bookAssessment(db, req.params.id, decisions, token, { uploadDir: UPLOAD_DIR, newId })
+    // Der Verlauf nennt, was die Buchung getan hat (`bookingTitle`), damit zwei Schritte derselben Rechnung unterscheidbar sind.
+    if (result.kind === 'done' && result.changed) await retitleCurrentGroup(db, bookingTitle(decisions))
     return { outcome: result, assessment: await viewAssessment(db, req.params.id, UPLOAD_DIR) }
   })
   const reply = bookingResponse(outcome, assessment)

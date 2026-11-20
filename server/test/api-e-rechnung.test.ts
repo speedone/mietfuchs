@@ -200,6 +200,10 @@ test('E-Rechnung mit vielen Zeilen: bezahlte Abschläge färben nicht rot, und d
     const sum = [first, ...linked].reduce((t, l) => t + (l.amountCents ?? 0), 0)
     assert.deepEqual(items.filter((i) => i.id === itemId).map((i) => i.amountCents), [sum])
     if (linked.length === 13) assert.equal(sum, 80486, 'die Zeilen ergeben den Gesamtbetrag der Rechnung')
+    // Durchsicht: Die zwei Schritte stehen unterscheidbar im Verlauf; „Rückgängig“ am obersten nimmt nur das Verknüpfen zurück.
+    const journal = await jsonOf<JournalGroupView[]>(await fetch(`${s.base}/api/journal?limit=5`))
+    const booked = journal.map((g) => g.description).filter((d) => d.startsWith('Beleg gebucht'))
+    assert.deepEqual(booked, [`Beleg gebucht (${linked.length} Zeilen verknüpft)`, 'Beleg gebucht (1 Zeile angelegt)'])
   })
 })
 

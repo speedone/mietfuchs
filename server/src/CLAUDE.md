@@ -1201,6 +1201,9 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
 - **Prüfungen in shared/**: `amountProblem`, `costItemBody` (shared/costItem.ts), Ampel und
   Vorauswahl (shared/assessment.ts), Kostenarten (shared/categories.ts). `POST`/`PUT /api/costItems`
   prüfen noch nicht damit.
+- **Verlauf**: Der Eintrag einer Buchung nennt, was sie getan hat („Beleg gebucht (1 Zeile angelegt)“, „… (13 Zeilen
+  verknüpft)“; `bookingTitle` in bookingPlan.ts, `retitleCurrentGroup` in der Route): Die Oberfläche bucht eine Rechnung
+  mit vielen Zeilen in zwei Schritten zu einer Position, und „Rückgängig“ nimmt nur den obersten zurück.
 - **Routen**: `/api/extract` und `/api/intake` liefern `assessment`; `GET /api/assessments`,
   `GET`/`PUT …/:id`, `POST …/plan`, `POST …/book`. `GET /api/uploads` nennt `bookedItemIds` und
   `bookedCents`; ein nur über eine gebuchte Zeile verknüpfter Beleg zählt als verknüpft
