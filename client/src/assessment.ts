@@ -2,9 +2,10 @@
 // Zeile hier, gerechnet und gebucht auf dem Server: Die Vorschau kommt von dort, und gebucht wird
 // genau das, was sie zeigt. Ohne DOM prüfbar (assessment.test.ts); die Komponente
 // components/AssessmentReview.tsx rendert nur.
-import type { AssessmentLine, AssessmentView, BookingPreview, CostKey, LineCandidate, LineDecision, LineFields } from './types'
+import type { AssessmentLine, AssessmentView, BookingPreview, CostKey, LineCandidate, LineDecision, LineFields, TrafficLight } from './types'
 import { CATEGORIES } from './types'
 import type { Allocation } from '../../shared/allocation.ts'
+import { informsOnly } from '../../shared/assessment.ts'
 import { api, ApiError, fmtEuro, parseEuro } from './api'
 import { withProperty } from './property'
 
@@ -87,11 +88,51 @@ export function decisionsOf(view: AssessmentView, rows: Record<number, RowDraft>
 }
 
 // Womit eine Zeile verknüpft werden kann: Kandidaten, deren Betrag nicht an weiteren Angaben hängt
-// (die öffnet man im Formular), und nie, wenn die Zeile eine Gutschrift ist.
+// (die öffnet man im Formular), dazu die Positionen, die aus diesem Beleg schon gebucht sind (`sameReceipt`: eine
+// Rechnung mit vielen Zeilen als eine Position), und nie, wenn die Zeile eine Gutschrift ist.
 export function linkChoices(line: AssessmentLine, row: RowDraft): LineCandidate[] {
   const amount = cents(row.amount)
   if (amount !== null && amount < 0) return []
-  return (line.suggestion?.candidates ?? []).filter((c) => !c.formOnly)
+  const candidates = (line.suggestion?.candidates ?? []).filter((c) => !c.formOnly)
+  return [...candidates, ...(line.suggestion?.sameReceipt ?? []).filter((c) => !candidates.some((k) => k.id === c.id))]
+}
+
+// Ist das Ziel eine Position, die aus diesem Beleg schon gebucht ist? Die Auswahl sagt dann, dass der Betrag dazukommt.
+export const fromSameReceipt = (line: AssessmentLine, id: string): boolean =>
+  (line.suggestion?.sameReceipt ?? []).some((c) => c.id === id) && !(line.suggestion?.candidates ?? []).some((c) => c.id === id)
+
+// Die Notizen einer E-Rechnung, getrennt nach dem, was sie sagen (shared/assessment.ts, `informsOnly`): Zweifel an der
+// Rechnung (färben jede Zeile rot) und bloße Information (bezahlte Abschläge).
+export function noteGroups(v: Pick<AssessmentView, 'eInvoiceNotes'>): { doubts: string[]; info: string[] } {
+  return { doubts: v.eInvoiceNotes.filter((n) => !informsOnly(n)), info: v.eInvoiceNotes.filter(informsOnly) }
+}
+
+// Die Begründungen unter der Tabelle: jede einmal, in der schlechtesten Farbe der Zeilen, die sie nennen. Eine Rechnung
+// mit 14 Zeilen zeigte sonst dieselben Sätze 14-mal. Was schon als Notiz der E-Rechnung im Kasten darüber steht, kommt
+// hier nicht noch einmal.
+export function reasonChips(v: Pick<AssessmentView, 'lines' | 'eInvoiceNotes'>): { text: string; level: TrafficLight }[] {
+  const chips = new Map<string, TrafficLight>()
+  for (const l of v.lines) {
+    const s = l.suggestion
+    if (l.state !== 'open' || !s || s.level === 'gruen') continue
+    for (const r of s.reasons) {
+      if (v.eInvoiceNotes.includes(r)) continue
+      chips.set(r, chips.get(r) === 'rot' ? 'rot' : s.level)
+    }
+  }
+  return [...chips].map(([text, level]) => ({ text, level }))
+}
+
+// Die Jahre zur Wahl im Feld „Jahr der Buchung“: um das gespeicherte herum, dazu immer das gewählte Jahr
+// (`requestedYear`) und der Beginn des gewählten Zeitraums. Liest die KI ein weit früheres Jahr aus dem Beleg, rät der
+// Hinweis der Zeile, das Jahr der Buchung zu ändern; das gewählte muss dann in der Liste stehen. Das gespeicherte steht
+// immer darin (der angezeigte Wert eines Auswahlfelds muss dem gespeicherten entsprechen).
+export function yearOptions(v: Pick<AssessmentView, 'year' | 'requestedYear' | 'requestedPeriod'>): number[] {
+  const years = new Set([v.year - 2, v.year - 1, v.year, v.year + 1])
+  if (v.requestedYear !== null) years.add(v.requestedYear)
+  const start = v.requestedPeriod === null ? NaN : Number(v.requestedPeriod.slice(0, 4))
+  if (Number.isInteger(start)) years.add(start)
+  return [...years].sort((a, b) => a - b)
 }
 
 // Was die Auswahl einer Zeile zeigt und was von ihr gebucht wird, ist dasselbe: Ein Ziel zum

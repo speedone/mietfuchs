@@ -1,9 +1,9 @@
 // Die Entscheidungen der Komponente „Auswertung prüfen“ (Belegbuchung, #170), ohne DOM.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssessmentLine, AssessmentView, BookingPreview, LineCandidate, LineSuggestion } from './types'
-import { bookDecisions, openBadgeClass, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
+import { bookDecisions, openBadgeClass, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, fromSameReceipt, noteGroups, reasonChips, yearOptions, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
 import { CATEGORIES } from './types'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
 
 const suggestion = (patch: Partial<LineSuggestion> = {}): LineSuggestion => ({
   fields: { description: 'Frischwasser', category: 'Wasser/Abwasser', amountCents: 70000, labor35aCents: null, key: 'persons', allocation: null, externalTotalCents: null },
@@ -20,6 +20,43 @@ const view = (lines: AssessmentLine[]): AssessmentView => ({
 })
 const KANDIDAT: LineCandidate = { id: 'wa', description: 'Wasser 2025', amountCents: 150000, invoiceFile: null, key: 'area', formOnly: false }
 const PREVIEW: BookingPreview = { items: [], notices: [], errors: [], confirm: [], token: 't' }
+
+describe('Begründungen, Notizen und Jahre der Karte (Systemprüfung)', () => {
+  const PREPAID = 'Abschläge über 1.030,00\u00a0€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 804,86\u00a0€.'
+  const ZWEIFEL = 'Diese Rechnung korrigiert eine frühere Rechnung. Diese darf nicht zusätzlich gebucht sein.'
+
+  it('gleichlautende Begründungen stehen einmal, in der schlechtesten Farbe; grüne und gebuchte Zeilen nennen nichts', () => {
+    const v = view([
+      line(0, { suggestion: suggestion({ level: 'gelb', reasons: ['Kategorie unklar', 'nur hier'] }) }),
+      line(1, { suggestion: suggestion({ level: 'rot', reasons: ['Kategorie unklar', 'Betrag fehlt'] }) }),
+      line(2, { suggestion: suggestion({ level: 'gruen', reasons: ['grün begründet'] }) }),
+      line(3, { state: 'dismissed', dismissed: true, suggestion: suggestion({ level: 'rot', reasons: ['verworfen'] }) }),
+    ])
+    expect(reasonChips(v)).toEqual([
+      { text: 'Kategorie unklar', level: 'rot' },
+      { text: 'nur hier', level: 'gelb' },
+      { text: 'Betrag fehlt', level: 'rot' },
+    ])
+  })
+
+  it('eine Notiz der E-Rechnung steht im Kasten der Auswertung und nicht noch einmal je Zeile', () => {
+    const v = { ...view(Array.from({ length: 14 }, (_, i) => line(i, { suggestion: suggestion({ level: 'rot', reasons: [ZWEIFEL, 'Kategorie unklar'] }) }))), eInvoiceNotes: [PREPAID, ZWEIFEL] }
+    expect(reasonChips(v)).toEqual([{ text: 'Kategorie unklar', level: 'rot' }])
+    expect(noteGroups(v)).toEqual({ doubts: [ZWEIFEL], info: [PREPAID] })
+  })
+
+  it('Jahr der Buchung: das gewählte und das gespeicherte Jahr stehen immer zur Wahl, aufsteigend und ohne Doppel', () => {
+    expect(yearOptions(view([]))).toEqual([2023, 2024, 2025, 2026])
+    // Die KI las 2023, abgelegt war der Beleg für 2025: Der Hinweis rät, das Jahr zu ändern, also muss 2025 wählbar sein.
+    expect(yearOptions({ ...view([]), year: 2023, requestedYear: 2025 })).toEqual([2021, 2022, 2023, 2024, 2025])
+    expect(yearOptions({ ...view([]), year: 2025, requestedYear: 2019 })).toEqual([2019, 2023, 2024, 2025, 2026])
+    expect(yearOptions({ ...view([]), requestedYear: null, requestedPeriod: null })).toEqual([2023, 2024, 2025, 2026])
+  })
+
+  it('Jahr der Buchung bei abweichendem Zeitraum: auch das Jahr, in dem der gewählte Zeitraum beginnt', () => {
+    expect(yearOptions({ ...view([]), year: 2022, requestedYear: null, requestedPeriod: periodKey('2025-05') })).toEqual([2020, 2021, 2022, 2023, 2025])
+  })
+})
 
 describe('Zeilenentwurf', () => {
   it('ein vorab angehakter Vorschlag wird angelegt, sonst bleibt die Zeile offen; Beträge in deutscher Schreibweise', () => {
@@ -48,6 +85,19 @@ describe('Zeilenentwurf', () => {
     const l = line(0, { suggestion: suggestion({ candidates: [KANDIDAT, { ...KANDIDAT, id: 'hg', key: 'external', formOnly: true }] }) })
     expect(linkChoices(l, initialRow(l)).map((c) => c.id)).toEqual(['wa'])
     expect(linkChoices(l, { ...initialRow(l), amount: '-50,00' })).toEqual([])
+  })
+
+  // Systemprüfung: eine Rechnung mit vielen Zeilen als eine Position
+  it('verknüpfen auch mit einer Position, die aus diesem Beleg schon gebucht ist; nie eine Gutschrift', () => {
+    const eigen: LineCandidate = { ...KANDIDAT, id: 'neu', description: 'Arbeitspreis', invoiceFile: 'w.pdf' }
+    const l = line(0, { suggestion: suggestion({ candidates: [KANDIDAT], sameReceipt: [eigen] }) })
+    expect(linkChoices(l, initialRow(l)).map((c) => c.id)).toEqual(['wa', 'neu'])
+    expect(fromSameReceipt(l, 'neu')).toBe(true)
+    expect(fromSameReceipt(l, 'wa')).toBe(false)
+    expect(linkChoices(l, { ...initialRow(l), amount: '-50,00' })).toEqual([])
+    expect(shownRow(l, { ...initialRow(l), action: 'link:neu' }).action).toBe('link:neu')
+    // Ein älterer Server nennt das Feld nicht.
+    expect(linkChoices(line(0), initialRow(line(0)))).toEqual([])
   })
 
   it('ein Ziel, das nicht mehr angeboten wird, steht als „offen lassen“ da und wird nicht gebucht', () => {

@@ -16,6 +16,7 @@ import { toRawExtraction } from '../src/eInvoice/toRaw.ts'
 import { readEInvoice, type EInvoiceResult } from '../src/eInvoice/index.ts'
 import { normalizeAmounts } from '../src/invoiceAmounts.ts'
 import { toExtraction } from '../src/extract.ts'
+import { informsOnly } from '../../shared/assessment.ts'
 import type { EInvoice, EInvoiceSyntax } from '../src/eInvoice/model.ts'
 import { ciiOf, consistent, docCharge, invoice, line, S7, ublOf, vat, xmlOf } from '../testing/eInvoiceXml.ts'
 
@@ -287,6 +288,20 @@ test('E-Rechnung prüfen: bereits bezahlte Abschläge werden genannt, der Gesamt
   const notes = notesOf(inv)
   assert.equal(notes.length, 1)
   assert.match(notes[0], /Abschläge über 50,00\s€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 119,00\s€/)
+})
+
+// Systemprüfung: Welche Notiz nur informiert, erkennt die Ansicht am Satz (shared/assessment.ts, `informsOnly`), denn
+// gespeichert sind nur die Sätze. Dieser Test hält Satz und Erkennung zusammen; alle anderen Notizen bleiben Zweifel.
+test('E-Rechnung prüfen: nur die Notiz zu bezahlten Abschlägen informiert, jede andere stellt die Rechnung in Frage', () => {
+  const prepaid = notesOf(consistent(invoice({ totals: { ...invoice().totals, prepaid: 5000 } })))
+  assert.deepEqual(prepaid.map(informsOnly), [true])
+  const fixture = readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, '03.01a-INVOICE_uncefact.xml'))))
+  assert.deepEqual(fixture.notes.map(informsOnly), [true], fixture.notes.join(' | '))
+  const corrected = readOf(readEInvoice(fs.readFileSync(path.join(FIXTURES, '01.18a-INVOICE_ubl.xml'))))
+  assert.ok(corrected.notes.length > 0 && corrected.notes.every((n) => !informsOnly(n)), corrected.notes.join(' | '))
+  const inv = invoice()
+  const off = notesOf({ ...inv, totals: { ...inv.totals, lineNet: (inv.totals.lineNet ?? 0) + 500 } })
+  assert.ok(off.length > 0 && off.every((n) => !informsOnly(n)), off.join(' | '))
 })
 
 test('E-Rechnung prüfen: Summenregeln BR-CO mit einem Cent Spielraum', () => {

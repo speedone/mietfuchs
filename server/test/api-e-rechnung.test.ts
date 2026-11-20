@@ -152,6 +152,51 @@ test('E-Rechnung: dieselbe Rechnung als zweites PDF wird erkannt (gleiche Nummer
 const KOSIT_UBL = fs.readFileSync(path.join(FIXTURES, '03.06a-INVOICE_ubl.xml'))
 const SVG_MIT_SKRIPT = '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/uploads")</script></svg>'
 
+// Systemprüfung: Die Jahresrechnung eines Versorgers (14 Zeilen, bezahlte Abschläge) ließ sich nicht als eine Position
+// buchen: Jede Zeile war wegen der Notiz zu den Abschlägen rot, und nach dem Anlegen der ersten bot keine weitere deren
+// Position an.
+test('E-Rechnung mit vielen Zeilen: bezahlte Abschläge färben nicht rot, und die Zeilen lassen sich zu einer Position buchen', async () => {
+  await withOllama(async (s) => {
+    const r = await send(s, '/api/intake', { xml: fs.readFileSync(path.join(FIXTURES, '03.01a-INVOICE_uncefact.xml')), text: LONG_TEXT })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const a = assessmentOf(r.body)
+    assert.equal(a.lines.length, 14)
+    assert.equal(a.eInvoiceNotes.length, 1)
+    const [note] = a.eInvoiceNotes
+    assert.match(note ?? '', /Abschläge über 1\.030,00\s€ sind bereits bezahlt/)
+    for (const l of a.lines) assert.ok(!l.suggestion?.reasons.includes(note ?? ''), `Zeile ${l.idx} nennt die Notiz der Rechnung als eigenen Grund`)
+    const post = async (route: string, body: unknown) => {
+      const res = await fetch(`${s.base}/api/assessments/${a.id}/${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      return { status: res.status, body: await jsonOf<{ token?: string, assessment?: AssessmentView, confirm?: unknown[], errors?: unknown[] }>(res) }
+    }
+    const book = async (decisions: unknown[]) => {
+      const plan = await post('plan', { decisions })
+      assert.equal(plan.status, 200, JSON.stringify(plan.body))
+      assert.deepEqual(plan.body.errors, [], JSON.stringify(plan.body))
+      assert.deepEqual(plan.body.confirm, [], 'keine Rückfrage')
+      const done = await post('book', { decisions, token: plan.body.token })
+      assert.equal(done.status, 200, JSON.stringify(done.body))
+      return done.body.assessment ?? assert.fail('keine Auswertung nach dem Buchen')
+    }
+    const first = a.lines[0] ?? assert.fail('keine Zeile')
+    const fields = first.suggestion?.fields ?? assert.fail('kein Vorschlag')
+    const after = await book([{ idx: first.idx, action: 'create', fields: { ...fields, category: 'Allgemeinstrom' } }])
+    const itemId = after.lines[0]?.costItemId ?? assert.fail('die erste Zeile ist nicht gebucht')
+    const rest = after.lines.filter((l) => l.state === 'open')
+    assert.equal(rest.length, 13)
+    for (const l of rest) {
+      assert.deepEqual(l.suggestion?.sameReceipt?.map((c) => c.id), (l.amountCents ?? 0) < 0 ? [] : [itemId], `Zeile ${l.idx}`)
+      assert.deepEqual(l.suggestion?.candidates, [], `Zeile ${l.idx}: die eigene Position ist keine Doppelung`)
+    }
+    const linked = rest.filter((l) => (l.amountCents ?? 0) >= 0)
+    await book(linked.map((l) => ({ idx: l.idx, action: 'link', costItemId: itemId })))
+    const items = await jsonOf<{ id: string, amountCents: number }[]>(await fetch(`${s.base}/api/costItems`))
+    const sum = [first, ...linked].reduce((t, l) => t + (l.amountCents ?? 0), 0)
+    assert.deepEqual(items.filter((i) => i.id === itemId).map((i) => i.amountCents), [sum])
+    if (linked.length === 13) assert.equal(sum, 80486, 'die Zeilen ergeben den Gesamtbetrag der Rechnung')
+  })
+})
+
 async function sendXml(s: Server, route: string, content: Buffer | string, name = 'xrechnung.xml', type = 'application/xml') {
   const fd = new FormData()
   fd.append('file', new Blob([content], { type }), name)

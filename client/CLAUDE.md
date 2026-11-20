@@ -730,6 +730,12 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Typ checkbox, radio oder date, dessen `onChange` speichert, ist verboten, ohne Ausnahme (seit #281
   sind auch Art und Monat einer Zahlung im Mietkonto ein Entwurf). Rückrufe aus Props mit anderem Namen
   sieht er nicht.
+- **Auswertung prüfen** ([AssessmentReview.tsx](src/components/AssessmentReview.tsx), Logik in
+  [assessment.ts](src/assessment.ts)): Begründungen unter der Tabelle stehen je Wortlaut einmal, in der schlechtesten
+  Farbe (`reasonChips`), Notizen der E-Rechnung nur im Kasten darüber (`noteGroups`: Zweifel als Warnung, bezahlte
+  Abschläge als Hinweis). „Was geschieht?“ bietet auch die aus diesem Beleg schon gebuchten Positionen an
+  (`sameReceipt`, „… aus diesem Beleg … verknüpfen: Betrag kommt dazu“). „Jahr der Buchung“ enthält immer das gewählte
+  Jahr (`yearOptions`).
 - **Was an einem gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Ein
   ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle
   grünen übernehmen“; ein ungespeichertes Objekt oder Jahr eines Belegs ohne Position sperrt „Per KI auswerten“

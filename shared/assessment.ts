@@ -207,3 +207,14 @@ export function bookingTaxYear(period: BillingPeriod, a: Pick<StoredAssessment, 
   // gilt hier das Jahr des Belegs.
   return paymentYear(period, a.invoiceDate, a.year).year
 }
+
+// ---------- Notizen einer E-Rechnung (#189) ----------
+
+// Eine Notiz, die nur informiert: Sie stellt weder einen Betrag der Zeilen in Frage noch warnt sie vor einer zweiten
+// Buchung. Heute genau eine, die zu bereits bezahlten Abschlägen (BT-113, server/src/eInvoice/check.ts): Kosten sind der
+// Gesamtbetrag, und die Zeilen ergeben ihn. Fast jede Jahresrechnung eines Versorgers trägt sie; färbte sie rot, wäre
+// keine davon je grün. Erkannt wird sie am Satz, denn gespeichert sind nur die Sätze (`assessments.e_invoice_notes`);
+// e-invoice.test.ts hält Satz und Erkennung zusammen. **Im Zweifel ist eine Notiz keine Information**: Jede andere,
+// auch eine künftige und der Grund einer Ablehnung, macht die Zeilen weiter rot.
+const PREPAID_NOTE = /^Abschläge über \S+\s€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von \S+\s€\.$/
+export const informsOnly = (note: string): boolean => PREPAID_NOTE.test(note)

@@ -2344,6 +2344,10 @@ export type LineCandidate = { id: string; description: string; amountCents: numb
 export type LineSuggestion = {
   fields: LineFields
   candidates: LineCandidate[]
+  // Die aus **dieser** Auswertung schon gebuchten Positionen, mit denen sich die Zeile verknüpfen lässt (eine Rechnung
+  // mit vielen Zeilen als eine Position). Keine Kandidaten: Sie färben nicht und fragen nicht nach. Fehlt bei einer
+  // älteren Fassung des Servers.
+  sameReceipt?: LineCandidate[]
   level: TrafficLight
   reasons: string[]
   preselected: boolean

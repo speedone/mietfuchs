@@ -79,6 +79,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Belege: Eine E-Rechnung mit vielen Zeilen, etwa die Jahresrechnung eines Versorgers, lässt sich als eine
+  Kostenposition buchen. Nach dem Anlegen der ersten Zeile bietet „Was geschieht?“ bei den übrigen deren Position zum
+  Verknüpfen an, und die Vorschau nennt den Betrag danach. Bereits bezahlte Abschläge stehen als Hinweis an der
+  Auswertung und färben nicht mehr jede Zeile rot; gleichlautende Begründungen mehrerer Zeilen stehen einmal.
+- Belege: „Jahr der Buchung“ bietet immer auch das Jahr an, für das der Beleg abgelegt wurde, auch wenn die Auswertung
+  ein weit früheres Jahr aus dem Beleg liest.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
-  bookDecisions, bookedLines, categoryOptions, changeAssessmentYear, decisionsOf, initialRows, linesShape, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, confirmLabel, type RowAction, type RowDraft,
+  bookDecisions, bookedLines, categoryOptions, changeAssessmentYear, decisionsOf, fromSameReceipt, initialRows, linesShape, linkChoices, noteGroups, planDecisions, previewLines, reasonChips, shownRow, withConfirmed, yearOptions, confirmLabel, type RowAction, type RowDraft,
 } from '../assessment'
 import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
@@ -143,8 +143,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   // Das Jahr der Buchung ist ein Entwurf am Feld (#309): Erst „Speichern“ schickt es. Solange er offen
   // ist, gibt es weder Vorschau noch Buchung, denn beide gälten noch für das bisherige Jahr.
   // Die Liste der Jahre hängt am gespeicherten Jahr; zieht es sich von außen nach, verfällt ein Entwurf
-  // außerhalb der neuen Liste (MUSS 2).
-  const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
+  // außerhalb der neuen Liste (MUSS 2). Das gewählte Jahr steht immer darin (`yearOptions`).
+  const years = yearOptions(a)
   const year = useDraft(a.year, { scope: a.id, isValid: (y) => years.includes(y) })
   const reportYear = useRef(onYearDraft)
   reportYear.current = onYearDraft
@@ -168,6 +168,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     setError('')
     onChange(await changeAssessmentYear(a.id, next))
   }
+
+  const notes = noteGroups(a)
 
   return (
     <div className="stack assessment-review">
@@ -195,8 +197,12 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       {a.source === 'e-rechnung' && (
         <NoticeBox level="hint" action={<>Aus der <Term id="eInvoice">E-Rechnung</Term> übernommen: Betrag, Datum und Positionen stehen maschinenlesbar in der Rechnung, die KI wurde nicht gefragt.</>} />
       )}
-      {a.eInvoiceNotes.length > 0 && (
-        <NoticeBox level="warning" action={<>{a.eInvoiceNotes.map((n) => <span key={n} className="block">{n}</span>)}</>} />
+      {notes.doubts.length > 0 && (
+        <NoticeBox level="warning" action={<>{notes.doubts.map((n) => <span key={n} className="block">{n}</span>)}</>} />
+      )}
+      {/* Was nur informiert (bezahlte Abschläge), färbt keine Zeile und steht als Hinweis da */}
+      {notes.info.length > 0 && (
+        <NoticeBox level="hint" action={<>{notes.info.map((n) => <span key={n} className="block">{n}</span>)}</>} />
       )}
       {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
       {a.amountsAdjusted === 'netto' && (
@@ -263,8 +269,10 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                         ? <option value="dismiss">✗ verworfen</option>
                         : <option value="">Offen lassen</option>}
                       <option value="create">Neu anlegen</option>
-                      {linkChoices(line, row).map((c) => (
-                        <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
+                      {linkChoices(line, row).map((c) => (fromSameReceipt(line, c.id)
+                        // Eine Rechnung mit vielen Zeilen als eine Position: Die Summenregel zählt die Zeile dazu.
+                        ? <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ aus diesem Beleg (bisher {fmtEuro(c.amountCents)}) verknüpfen: Betrag kommt dazu</option>
+                        : <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
                       ))}
                       {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
                     </select>
@@ -289,9 +297,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       {/* Begründungen und Positionen, die im Formular gepflegt werden, stehen unter der Tabelle:
           in einer Zeile scrollten sie auf dem Handy mit (Durchsicht zu #170). */}
       <div>
-        {a.lines.flatMap((l) => (l.state === 'open' && l.suggestion && l.suggestion.level !== 'gruen'
-          ? l.suggestion.reasons.map((r) => <span key={`${l.idx}-${r}`} className={`chip ${l.suggestion?.level ?? 'gelb'}`}>{r}</span>)
-          : []))}
+        {/* Jede Begründung einmal (`reasonChips`): Eine Rechnung mit vielen Zeilen nannte sonst dieselbe je Zeile. */}
+        {reasonChips(a).map((c) => <span key={c.text} className={`chip ${c.level}`}>{c.text}</span>)}
       </div>
       {a.lines.flatMap((l) => (l.state === 'open' ? (l.suggestion?.candidates ?? []).filter((c) => c.formOnly).map((c) => (
         <div key={`${l.idx}-${c.id}`} className="warn">

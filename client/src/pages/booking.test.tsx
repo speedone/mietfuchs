@@ -666,7 +666,68 @@ test('Eingang: nach dem Buchen führen „→ Kosten ansehen“ und „→ Zur A
   expect(onNavigate).toHaveBeenLastCalledWith('abrechnung')
 })
 
+// ---------- Systemprüfung: eine Rechnung mit vielen Zeilen als eine Position ----------
+
+test('viele Zeilen: nach dem Anlegen der ersten Zeile lassen sich die übrigen mit ihrer Position verknüpfen, ohne Rückfrage', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([
+    { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 200 },
+    { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 103.87 },
+    { description: 'Niederschlagswasser', category: 'Wasser/Abwasser', amountEur: 50 },
+  ])
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Frischwasser')
+  fireEvent.change(await actionOf('Abwasser'), { target: { value: '' } })
+  fireEvent.change(await actionOf('Niederschlagswasser'), { target: { value: '' } })
+  await previewAndBook()
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  const first = fake.items[0] ?? assert.fail('die erste Zeile ist nicht angelegt')
+  expect(fake.items).toHaveLength(1)
+  for (const name of ['Abwasser', 'Niederschlagswasser']) {
+    const action = await actionOf(name)
+    await waitFor(() => expect([...action.options].map((o) => o.value)).toContain(`link:${first.id}`), SLOW)
+    const option = [...action.options].find((o) => o.value === `link:${first.id}`) ?? assert.fail('kein Ziel')
+    expect(option.textContent).toMatch(/^Mit „Frischwasser“ aus diesem Beleg \(bisher 200,00\s€\) verknüpfen: Betrag kommt dazu$/)
+    fireEvent.change(action, { target: { value: `link:${first.id}` } })
+  }
+  // Die übrigen Zeilen einer Rechnung sind keine Doppelung: keine rote Ampel, keine Begründung.
+  expect([...container.querySelectorAll('.chip')].map((c) => c.textContent)).toEqual([])
+  expect(container.querySelectorAll('.assessment-table .ampel.rot')).toHaveLength(0)
+  const { shown } = await previewAndBook()
+  expect(shown).toHaveLength(1)
+  expect(shown[0]).toMatch(/^„Frischwasser“: 200,00\s€ → 353,87\s€/)
+  await waitFor(() => expect(fake.items[0]?.amountCents).toBe(35387), SLOW)
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(fake.items).toHaveLength(1)
+})
+
+test('gleichlautende Begründungen mehrerer Zeilen stehen unter der Tabelle einmal', () => {
+  const one = crafted({}, { level: 'gelb', reasons: ['Kategorie unklar'] })
+  const base = one.lines[0] ?? assert.fail('keine Zeile')
+  const lines = [0, 1, 2].map((idx) => ({ ...base, idx, description: `Zeile ${idx}` }))
+  render(<UIProvider><AssessmentReview assessment={{ ...one, lines, nextIdx: 3 }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getAllByText('Kategorie unklar')).toHaveLength(1)
+})
+
+test('Jahr der Buchung: das gewählte Jahr steht zur Wahl, auch wenn der Beleg ein weit früheres nennt', () => {
+  render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), year: YEAR - 2, detectedYear: YEAR - 2, requestedYear: YEAR }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  const box = screen.getByRole('combobox', { name: 'Jahr der Buchung' })
+  if (!(box instanceof HTMLSelectElement)) return assert.fail('das Jahr ist kein Auswahlfeld')
+  expect(box.value).toBe(String(YEAR - 2))
+  expect([...box.options].map((o) => o.value)).toEqual([YEAR - 4, YEAR - 3, YEAR - 2, YEAR - 1, YEAR].map(String))
+})
+
 // ---------- E-Rechnung (#189): Herkunft und Notizen an der Auswertung ----------
+
+test('E-Rechnung: bezahlte Abschläge stehen als Hinweis da, eine Notiz mit Zweifel als Warnung, jede einmal', () => {
+  const prepaid = 'Abschläge über 1.030,00\u00a0€ sind bereits bezahlt; als Kosten zählt der Gesamtbetrag von 804,86\u00a0€.'
+  const doubt = 'Diese Rechnung korrigiert eine frühere Rechnung. Diese darf nicht zusätzlich gebucht sein.'
+  const { container } = render(<UIProvider><AssessmentReview assessment={{ ...crafted({}, { level: 'rot', reasons: [doubt] }), source: 'e-rechnung', eInvoiceNotes: [prepaid, doubt] }} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.getAllByText(doubt)).toHaveLength(1)
+  expect(screen.getAllByText(/Abschläge über 1\.030,00\s€ sind bereits bezahlt/)).toHaveLength(1)
+  expect(container.querySelectorAll('.chip')).toHaveLength(0)
+})
 
 test('E-Rechnung: die Prüfung sagt, woher die Angaben stammen, und nennt die Notizen', () => {
   render(<UIProvider><AssessmentReview assessment={{ ...crafted({}), source: 'e-rechnung', invoiceNumber: 'R-1', eInvoiceNotes: ['Abschläge über 50,00 € sind bereits bezahlt.'] }} units={UNITS} onChange={() => {}} /></UIProvider>)

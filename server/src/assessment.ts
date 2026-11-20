@@ -11,7 +11,7 @@ import { calendarPeriod, periodContext, periodLabel, periodOfKey } from '../../s
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
 import { isInvoicePart } from '../../shared/splitPart.ts'
-import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, bookingPeriod, bookingTaxYear, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
+import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, bookingPeriod, bookingTaxYear, categoryDeviationPct, informsOnly, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
 
 // Eine Zeile, wie sie aus der KI kommt, noch ohne Nummer und ohne Buchung.
 export type NewLine = Pick<StoredAssessmentLine, 'description' | 'category' | 'categoryGuessed' | 'amountCents' | 'labor35aCents'> & { laborGuessed?: boolean }
@@ -341,10 +341,13 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     level = 'rot'
     reasons.push(`gleicher Inhalt wie „${ctx.twinOf}“ - dieser Beleg ist schon gebucht`)
   }
-  // E-Rechnung (#189): Was check.ts notiert hat, sieht der Vermieter vor dem Buchen, nie ungesehen.
-  if (a.eInvoiceNotes.length > 0) {
+  // E-Rechnung (#189): Was check.ts notiert hat, sieht der Vermieter vor dem Buchen, nie ungesehen. Rot macht jede
+  // Notiz, die einen Betrag in Frage stellt oder vor einer zweiten Buchung warnt; eine, die nur informiert (`informsOnly`,
+  // bezahlte Abschläge), steht einmal an der Auswertung und färbt keine Zeile.
+  const doubts = a.eInvoiceNotes.filter((n) => !informsOnly(n))
+  if (doubts.length > 0) {
     level = 'rot'
-    reasons.push(...a.eInvoiceNotes)
+    reasons.push(...doubts)
   }
   const twinInvoice = a.invoiceNumber === null ? undefined
     // Dieselbe Rechnung: gleiche Nummer, gleicher Steller und, wo beide eines tragen, gleiches Rechnungsdatum (manche
@@ -360,6 +363,13 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     if (level === 'gruen') level = 'gelb'
     reasons.push(LABOR_GUESSED)
   }
+  // Eine Rechnung mit vielen Zeilen als eine Position (Systemprüfung): Die aus dieser Auswertung gebuchten Positionen sind
+  // für die übrigen Zeilen keine Doppelung (oben), aber Ziele zum Verknüpfen; der Planer nimmt das ohne Rückfrage an und
+  // die Summenregel addiert. Angeboten wird nur, was er auch annimmt: derselbe Zeitraum, keine Gutschrift auf einer der
+  // beiden Seiten, kein Betrag, der an weiteren Angaben hängt, kein Teil einer aufgeteilten Rechnung. Bei einer erneut
+  // ausgewerteten Zeile sind dieselben Positionen schon Kandidaten (rot, mit Rückfrage) und stehen hier nicht noch einmal.
+  const sameReceipt = line.reassessed || (line.amountCents !== null && line.amountCents < 0) ? [] : ownItems.filter((i) =>
+    i.period === target.key && !carriesCredit(i, ctx.booked) && i.key !== 'amounts' && i.key !== 'external' && !isInvoicePart(rules, i))
   return {
     fields,
     candidates: candidates.map((c) => ({
@@ -368,6 +378,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
       formOnly: c.key === 'amounts' || c.key === 'external' || isInvoicePart(rules, c),
       part: isInvoicePart(rules, c),
     })),
+    sameReceipt: sameReceipt.map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, invoiceFile: c.invoiceFile ?? null, key: c.key, formOnly: false })),
     level,
     reasons,
     preselected: ctx.twinOf === null && !otherYear && !line.laborGuessed && aiRowPreselected({ category: line.category, preselect: aiPositionPreselect(defaults), problem, level, candidates }),

@@ -136,7 +136,11 @@ Abbildung:
   - `assessments.invoice_number` (BT-1), um eine zweimal hochgeladene E-Rechnung als Doppel zu erkennen (rot, Satz).
   - `assessments.e_invoice_notes`: die Sätze dieses Wegs (BR-CO-Abweichung, BT-113, Rechnungsart 384, Abzug mit
     Bezug). Eine solche Notiz macht die Auswertung rot; `sumWarning` greift hier nicht, weil die verteilten Positionen
-    immer genau BT-112 ergeben.
+    immer genau BT-112 ergeben. **Nachtrag (Systemprüfung, 20.11.2026)**: Die Notiz zu BT-113 informiert nur und färbt
+    keine Zeile mehr (`informsOnly` in shared/assessment.ts). Sie stellt keinen Betrag in Frage, und weil jede
+    Jahresrechnung eines Versorgers Abschläge nennt, war sonst keine davon je grün. Die drei anderen bleiben rot: 384
+    und der Abzug mit Bezug warnen vor doppelten bzw. zu niedrigen Kosten, eine BR-CO-Abweichung stellt die Beträge in
+    Frage; ebenso der Grund einer Ablehnung an einer KI-Auswertung.
   - `assessment_lines.labor_guessed`: gelb in `scorePosition` (shared/assessment.ts) und nicht vorab angehakt.
 - **Nicht übernommen** (nur angezeigt): Fälligkeit, IBAN, USt-IdNr.; IBAN und Fälligkeit sind Stoff für den Zahlungsabgleich aus #188. **Der
   Leistungszeitraum bestimmt wie heute nur das Jahr** (`detectedYear`) und setzt nicht `serviceFrom`/`serviceTo`.
