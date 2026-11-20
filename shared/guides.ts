@@ -678,6 +678,38 @@ const GUIDE_DATA = {
     ],
     terms: ['signIn', 'pairingCode'],
   },
+  // Datensicherung: Backup herunterladen, aufbewahren, wiederherstellen; der Unterschied zu den Sicherungen im Verlauf.
+  backup: {
+    group: 'operation',
+    title: 'Backup herunterladen, aufbewahren und wiederherstellen',
+    applies: 'Mietfuchs speichert alles auf Ihrem eigenen Rechner oder Gerät, nirgends sonst. Geht er kaputt, wird er gestohlen oder löschen Sie den Datenordner, sind die Daten weg, wenn es kein Backup an einem anderen Ort gibt. Das betrifft jeden, der Mietfuchs benutzt.',
+    steps: [
+      { page: 'einstellungen', text: 'Öffnen Sie in den Einstellungen die Karte „Daten & Sicherung“ und klicken Sie auf „⬇ Backup herunterladen (ZIP)“. Der Browser speichert eine Datei, deren Name mit mietfuchs-backup beginnt und das Datum trägt, meist im Ordner Downloads.' },
+      { text: 'Kopieren Sie die Datei auf einen Datenträger, der nicht in diesem Rechner steckt, etwa einen USB-Stick oder eine externe Festplatte, und bewahren Sie ihn getrennt vom Rechner auf. Ein Backup, das nur im Ordner Downloads liegt, geht mit dem Rechner verloren.' },
+      { page: 'einstellungen', text: 'Das Häkchen „Verlauf der Änderungen mitsichern“ setzen Sie nur, wenn das Backup auch den Verlauf mitnehmen soll. Er enthält gelöschte Angaben früherer Mieter; ein solches Backup geben Sie nicht weiter.' },
+      { page: 'einstellungen', text: 'Wiederherstellen, auch auf einem neuen Rechner mit frisch installiertem Mietfuchs: Klicken Sie in derselben Karte auf „⬆ Backup wiederherstellen …“, wählen Sie die ZIP-Datei und bestätigen Sie mit „Wiederherstellen“. Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.' },
+      { text: 'Einen Bedienfehler der letzten Tage nehmen Sie ohne Backup zurück: Auf der Seite Verlauf lässt sich eine Änderung zurücknehmen, und an jeder automatischen Sicherung steht „Zu diesem Stand zurückkehren …“.' },
+    ],
+    result: [
+      'Das Backup ist eine ZIP-Datei mit der Datenbank, allen hochgeladenen Belegen sowie Logo und Briefpapier. Die Karte „Daten & Sicherung“ nennt danach, wann zuletzt ein Backup heruntergeladen wurde; ob und wo Sie die Datei gespeichert haben, sieht Mietfuchs nicht.',
+      'Das Cockpit erinnert mit einem Hinweis, wenn es Daten gibt und noch kein Backup heruntergeladen wurde, das letzte zu lange her ist oder seither eine Abrechnung abgeschlossen wurde.',
+      'Nach dem Wiederherstellen lädt die Seite neu und zeigt einmal „Ihr Backup ist eingespielt“. Den Stand von vorher behält Mietfuchs als Sicherheitskopie mit dem Namen mietfuchs.sqlite.vor-restore im Datenordner.',
+      'Lässt sich eine Datei nicht einspielen, etwa weil der Download unvollständig war, sagt Mietfuchs das und ändert nichts an Ihren Daten.',
+    ],
+    example: 'Das Cockpit erinnert, wenn das letzte Backup älter als 30 Tage ist. Unabhängig davon legt Mietfuchs selbst höchstens alle 7 Tage eine Sicherung im Datenordner an und behält davon die 4 jüngsten; der Verlauf der Änderungen reicht 12 Monate zurück. Beides liegt auf demselben Rechner wie Ihre Daten.',
+    caveats: [
+      { text: 'Nicht im Backup stehen die API-Schlüssel externer KI-Dienste, das Passwort der Anmeldung, das Zertifikat für die verschlüsselte Verbindung und die automatischen Sicherungen aus dem Verlauf. Nach dem Wiederherstellen auf einem anderen Rechner tragen Sie den API-Schlüssel dort neu ein und legen das Passwort neu fest; ein gekoppeltes Programmfenster koppeln Sie neu.' },
+      { text: 'Zustimmungen (Übermittlung an einen KI-Dienst, Abfrage nach Updates) bringt ein Backup nicht mit. Es gelten die des Rechners, auf dem Sie es einspielen, auf einem neuen also keine.' },
+      { text: 'Die automatischen Sicherungen im Verlauf ersetzen kein Backup. Sie liegen im selben Datenordner wie Ihre Daten und gehen bei einem Defekt der Festplatte, einem Diebstahl oder dem Löschen des Ordners mit verloren. Sie helfen gegen einen Bedienfehler, das Backup gegen den Verlust des Rechners.' },
+      { text: 'Ein Backup enthält Namen, Anschriften, Bankverbindungen und Belege Ihrer Mieter und ist nicht verschlüsselt. Bewahren Sie es so sorgfältig auf wie Ihre Papierordner, und legen Sie es nur dann in einen Speicher im Internet, wenn Sie es vorher selbst verschlüsseln.' },
+      { text: 'Ein Backup aus einer neueren Version von Mietfuchs lässt sich in einer älteren nicht einspielen. Aktualisieren Sie dann zuerst Mietfuchs.' },
+    ],
+    gaps: [
+      { text: 'Mietfuchs legt ein Backup nicht von selbst an einem anderen Ort ab und verschlüsselt es nicht; Herunterladen und Aufbewahren bleiben Ihre Aufgabe.' },
+      { text: 'Einzelne Angaben lassen sich aus einem Backup nicht zurückholen; eingespielt wird immer der ganze Stand.' },
+    ],
+    terms: ['backup'],
+  },
 } satisfies Record<string, Guide>
 
 export type GuideId = keyof typeof GUIDE_DATA

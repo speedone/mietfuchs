@@ -262,6 +262,14 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   Mietverhältnisse) und springt in den Zeitraum mit den jüngsten Kosten (`arrivalSummary`); die Frage zu Updates im
   Cockpit wartet, bis sie geschlossen ist. Ohne geöffnete Datenbank zeigt App.tsx statt der Seite nur den Hinweis oben
   (mit „Mietfuchs beenden“), außer in der Hilfe.
+- **Backup** ([backupView.ts](src/backupView.ts)): Die Karte „Daten & Sicherung“ nennt aus `GET /api/backup/status`,
+  wann zuletzt ein Backup heruntergeladen wurde (neu gefragt kurz nach dem Klick und beim Fokus des Fensters), immer
+  „heruntergeladen“, nie „gesichert“. Der Knopf ist ein Link **in einen unsichtbaren Rahmen** (`target`, kein
+  `download`): Nachgemessen in Chromium speicherte `download` eine Ablehnung des Servers als „backup.json“, und ein
+  gewöhnlicher Link fragte bei offenem Formular „Seite verlassen?“. Lädt der Rahmen ein Dokument, war es eine
+  Ablehnung; ihr Satz (`frameMessage`) steht als `NoticeBox level="error"` in der Karte. Das Cockpit erinnert über [BackupReminder.tsx](src/components/BackupReminder.tsx) (eigener Abruf,
+  `NoticeBox` Stufe `hint`, Sprung `BACKUP_TARGET`); wann, entscheidet der Server. Nach dem Wiederherstellen lädt die
+  Seite mit `reloadWithArrival('backup')` neu; mit Hinweisen des Servers bleibt die Meldung stehen wie bisher.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene

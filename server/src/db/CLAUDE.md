@@ -291,6 +291,19 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `db.json.vor-restore` wird beim nächsten Einspielen wie die der Datenbank mit Datum beiseitegelegt (`setAsideName`).
   Der Kontoauszugsleser (`server/src/bank/read.ts`) liest noch mit adm-zip und eigenen Grenzen.
 - Wiederherstellen setzt **keinen vorhandenen Stand voraus** (siehe server/src/CLAUDE.md, API).
+- **Letztes Backup** ([../backupMark.ts](../backupMark.ts)): Wann zuletzt ein Archiv **vollständig gesendet** wurde
+  (`sendZip` meldet es), steht in `letztes-backup.json` im Datenordner (Zwischendatei und Umbenennen wie secrets.json),
+  **nie in der Datenbank**: Ein eingespieltes Backup oder eine Vorversion brächte sonst den alten Zeitpunkt mit. Nicht
+  im Backup, nicht im Umzug; im umgezogenen und im nicht beschreibbaren Ordner wird nicht geschrieben (der Zeitpunkt
+  gilt dann, solange der Server läuft), ein Fehler steht nur auf der Konsole. `GET /api/backup/status` (`BackupStatus`)
+  nennt Zeitpunkt, Alter in Tagen und `reminder` (`never`, `old` nach `BACKUP_REMINDER_DAYS`, `closed` bei einem
+  Abschluss seit dem Backup; nur mit Bestand nach `carriesStock`, nie im umgezogenen Ordner oder ohne lesbare
+  Datenbank). Die Oberfläche sagt „heruntergeladen“, nie „gesichert“ (client/src/backupView.ts). Tests:
+  api-backup-fuehrung.test.ts.
+- **Nicht beschreibbarer Datenordner**: Der Schnappschuss weicht in einen eigenen Ordner unter `os.tmpdir()` aus (`mkdtemp`, `VACUUM INTO` liest nur) und wird mit ihm weggeräumt.
+  **Fehler von `GET /api/backup` gehen über `backupFailure`**: Der Knopf ist ein Link in einen unsichtbaren Rahmen (client/CLAUDE.md), und wer
+  `text/html` verlangt, bekommt eine lesbare Seite statt JSON. Was kein ZIP ist, nennt den unvollständigen Download
+  und `NOTHING_CHANGED` (`NOT_A_ZIP`).
 
 ## Automatische Vorversionen (#318, Schritt 1)
 

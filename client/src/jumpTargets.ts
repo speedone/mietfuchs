@@ -23,6 +23,8 @@ export const AI_SETTINGS_TARGET: JumpTarget = { kind: 'section', section: 'ai' }
 export const UPDATE_GUIDE_TARGET: JumpTarget = { kind: 'section', section: 'about' }
 // „Ohne Passwort im Netz“ in der Seitenleiste (#528): die Karte „Anmeldung“ der Einstellungen
 export const ACCESS_TARGET: JumpTarget = { kind: 'section', section: 'access' }
+// Die Erinnerung ans Backup im Cockpit: die Karte „Daten & Sicherung“ der Einstellungen
+export const BACKUP_TARGET: JumpTarget = { kind: 'section', section: 'backup' }
 
 // Eine betroffene Wohnung öffnet sich selbst, mehrere führen zur Karte „Wohnungen“.
 export function unitsTarget(ids: readonly string[]): JumpTarget {

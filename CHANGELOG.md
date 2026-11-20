@@ -8,6 +8,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Datensicherung: Die Karte „Daten & Sicherung“ der Einstellungen nennt, wann zuletzt ein Backup heruntergeladen
+  wurde, und das Cockpit erinnert mit einem ruhigen Hinweis, wenn es Daten gibt und noch kein Backup heruntergeladen
+  wurde, das letzte älter als 30 Tage ist oder seither eine Abrechnung abgeschlossen wurde. Den Zeitpunkt merkt sich
+  Mietfuchs in `letztes-backup.json` im Datenordner; die Datei geht nicht ins Backup und nicht in den Umzug. In
+  „Hilfe & Begriffe“ gibt es dazu die Anleitung „Backup herunterladen, aufbewahren und wiederherstellen“ und den
+  Begriff „Backup“ (was nicht enthalten ist, und der Unterschied zu den automatischen Sicherungen im Verlauf).
 - Mieterhöhung: Am Mietverhältnis in den Stammdaten rechnet Mietfuchs eine Erhöhung bis zur ortsüblichen
   Vergleichsmiete (§ 558 BGB) oder die Anpassung einer Indexmiete (§ 557b BGB), macht daraus ein Schreiben und trägt
   die neue Miete in die Kaltmiete-Staffel ein. Ohne Mieterhöhung rechnen Mietkonto, Abrechnung und Steuer unverändert
@@ -78,6 +84,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Antworten zu fehlenden Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
+
+### Behoben
+
+- Backup und Wiederherstellen: Lässt sich im Datenordner gerade nicht schreiben, entsteht das Backup trotzdem (vorher
+  kam ein Serverfehler mit einer Meldung der Datenbank); scheitert ein Backup, zeigt der Browser eine lesbare Seite mit
+  dem Weg zurück statt einer rohen Fehlermeldung. Eine Datei, die kein ZIP-Archiv ist, wird mit dem Hinweis auf einen
+  unvollständigen Download abgelehnt und dem Satz, dass Ihre Daten unverändert sind. Nach dem Wiederherstellen aus den
+  Einstellungen bestätigt Mietfuchs einmal „Ihr Backup ist eingespielt“. Startet Mietfuchs in einem schreibgeschützten
+  Ordner ohne `db.json`, verweist die Konsole nicht mehr auf diese Datei.
 
 ## [0.18.1] – 2026-11-19
 
