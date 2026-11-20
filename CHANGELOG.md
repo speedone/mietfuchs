@@ -27,6 +27,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
 
+### Geändert
+
+- Schneller mit großem Bestand: Mietfuchs liest die Daten nur noch neu, wenn sich etwas geändert hat. Listen
+  antworten bei fünf Häusern und zehn Jahren in unter 20 statt rund 200 ms, Mietkonto, Abrechnung und Steuer
+  deutlich schneller ([#651](https://github.com/speedone/mietfuchs/issues/651)).
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

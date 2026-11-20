@@ -26,6 +26,7 @@ import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
+import { stockMarkOf } from './stockCache.ts'
 import {
   aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemMeterRest, costItemMeterRestBehind, costItemMeterRestSubs, costItemMeterRestUnits, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, depositEntries, unitLocalRents, unitNoConnection, unitUsageChanges, meters, payments,
   flatRates, tenancyDirectCharges, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
@@ -647,7 +648,37 @@ export async function readMonthlyInfoRows(db: Executor): Promise<MonthlyInfoRow[
 
 // Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes
 // vergleicht (der Umstieg und sein Gleichstand).
+//
+// **Er wird nur gelesen, wenn sich seit dem letzten Mal etwas geändert haben kann** (#651): Die
+// Verbindung des Servers meldet dafür eine Marke (stockCache.ts), solange keine Änderung dazwischen
+// lag, kommt derselbe Bestand zurück. Eine Transaktion, eine zweite Verbindung und jedes Lesen
+// während eines Schreibvorgangs lesen frisch.
+//
+// **Der Bestand ist tief eingefroren**, auch ein frisch gelesener. Er gehört allen folgenden
+// Anfragen; wer darin sortierte, anhängte oder ein Feld setzte, änderte deren Zahlen. So wirft der
+// Versuch sofort (`TypeError` im strikten Modus der Module), und zwar auf jedem Weg gleich, nicht
+// nur auf dem zwischengespeicherten. Wer verändern will, kopiert vorher.
+const keptStocks = new WeakMap<object, { mark: string; stock: Stock }>()
+
 export async function readStock(db: Executor): Promise<Stock> {
+  const mark = stockMarkOf(db)
+  const kept = keptStocks.get(db)
+  if (mark !== null && kept?.mark === mark) return kept.stock
+  const stock = deepFreeze(await readWholeStock(db))
+  if (mark !== null) keptStocks.set(db, { mark, stock })
+  return stock
+}
+
+// Auch in ein schon (flach) eingefrorenes Objekt hinein; `seen` hält Kreise aus, die es im Bestand nicht gibt.
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return value
+  seen.add(value)
+  Object.freeze(value)
+  for (const key of Object.keys(value)) deepFreeze(Reflect.get(value, key), seen)
+  return value
+}
+
+async function readWholeStock(db: Executor): Promise<Stock> {
   return {
     properties: await readProperties(db),
     units: await readUnits(db),

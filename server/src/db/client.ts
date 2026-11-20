@@ -104,6 +104,8 @@ type Handle = {
   rows: (sql: string, params: SqlValue[]) => unknown[][]
   run: (sql: string, params: SqlValue[]) => void
   exec: (sql: string) => void
+  // Ob die Verbindung gerade in einer Transaktion steht (#651: dann wird der Bestand nicht gemerkt).
+  inTransaction: () => boolean
   close: () => void
 }
 
@@ -130,6 +132,7 @@ async function openNode(file: string, readOnly: boolean): Promise<Handle> {
       handle.prepare(sql).run(...params)
     },
     exec: (sql) => handle.exec(sql),
+    inTransaction: () => handle.isTransaction,
     close: () => handle.close(),
   }
 }
@@ -144,6 +147,7 @@ async function openBun(file: string, readOnly: boolean): Promise<Handle> {
       handle.query(sql).run(...params)
     },
     exec: (sql) => handle.exec(sql),
+    inTransaction: () => handle.inTransaction,
     close: () => handle.close(),
   }
 }
@@ -155,6 +159,7 @@ export type Connection = {
   // gar nicht gibt, und hat deshalb vom Schema nichts.
   exec: (sql: string) => void
   rows: (sql: string) => unknown[][]
+  inTransaction: () => boolean
   close: () => void
 }
 
@@ -198,7 +203,7 @@ export async function connect(file: string, { readOnly = false }: { readOnly?: b
     { schema },
   )
 
-  return { db, exec: handle.exec, rows: (sql) => handle.rows(sql, []), close: handle.close }
+  return { db, exec: handle.exec, rows: (sql) => handle.rows(sql, []), inTransaction: handle.inTransaction, close: handle.close }
 }
 
 // ---------- Migrationen ----------
