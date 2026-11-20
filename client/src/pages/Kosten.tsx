@@ -1103,7 +1103,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
               {assessment && !meter && (entry.status === 'fertig' || entry.status === 'übernommen') && (
                 <AssessmentReview assessment={assessment} units={units} keyContext={keyCtxOf(assessment)}
                   onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
-                  onOpenItem={(id) => { const it = items.find((i) => i.id === id); if (it) { setError(''); setForm(itemToForm(it)) } }} />
+                  onOpenItem={(id) => { const it = items.find((i) => i.id === id); if (it) { setError(''); setForm(itemToForm(it)) } }} page="kosten" />
               )}
             </div>
           )

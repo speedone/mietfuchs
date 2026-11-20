@@ -58,6 +58,12 @@ type Props = {
   // Ein Beleg, zu dem die Ansicht springen soll (ein Beleg ohne Position, etwa aus „Im Eingang zeigen“)
   focusFile?: string | null
   onFocusDone?: () => void
+  // Eine Auswertung, die der Eingang wieder zeigen soll, auch wenn sie fertig gebucht ist („Auswertung zeigen“ am Beleg
+  // im Ordner): Er lädt sie nach, stellt sie unter „Zu prüfen“ und springt zu ihr.
+  recallAssessment?: string | null
+  onRecallDone?: () => void
+  // Ob „Betrag prüfen“ dieser Ansicht offen ist, mit der Position (für den Hinweis in der anderen Ansicht)
+  onAmountCheck?: (item: CostItem | null) => void
   // Die Zahl der offenen Einträge, für den Reiter „Eingang“
   onCount?: (count: number) => void
   // Für Tests: ohne pdf.js
@@ -74,7 +80,7 @@ function Group({ id, title, children }: { id: string; title: string; children: R
   )
 }
 
-export default function BelegeEingang({ stock, units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, onNewCostItem, focusFile, onFocusDone, onCount, renderThumb = renderThumbnail }: Props) {
+export default function BelegeEingang({ stock, units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, onNewCostItem, focusFile, onFocusDone, recallAssessment, onRecallDone, onAmountCheck, onCount, renderThumb = renderThumbnail }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   // Das Kalenderjahr, in dem der gewählte Zeitraum beginnt (#208): Ein Beleg ohne erkanntes Jahr
@@ -101,7 +107,8 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // (Durchsicht S3, Nachdurchsicht S-A); sonst stünde es als „übernommen“ oder mit „Erneut versuchen“ da.
   const forgetKept = (file: string) => forgetFile(file)
   const attach = useAttach(stock, properties, setError, forgetKept)
-
+  const checkItem = attach.check?.item ?? null
+  useEffect(() => { onAmountCheck?.(checkItem) }, [checkItem, onAmountCheck])
 
   // Gespeicherte Auswertungen dieses Objekts (#170): die offenen vom Server, dazu die in dieser
   // Sitzung gebuchten, damit „✓ übernommen“ stehen bleibt.
@@ -501,6 +508,21 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     setHighlighted(`a:${jumpTo}`)
   })
 
+  // „Auswertung zeigen“ aus dem Ordner: Der Eingang lädt nur offene Auswertungen (und behält die in dieser Sitzung
+  // gebuchten, bis die Seite verlassen wird). Eine fertig gebuchte holt er auf Wunsch einzeln zurück; sie steht dann wie
+  // eine eben gebuchte unter „Zu prüfen“, und eine verknüpfte Zeile lässt sich dort lösen.
+  const recalled = useRef<string | null>(null)
+  const recallDone = useRef(onRecallDone)
+  recallDone.current = onRecallDone
+  useEffect(() => {
+    if (!recallAssessment) { recalled.current = null; return }
+    if (recalled.current === recallAssessment) return
+    recalled.current = recallAssessment
+    api<AssessmentView>(`/api/assessments/${encodeURIComponent(recallAssessment)}`)
+      .then((v) => { upsert(v); setJumpTo(v.id) }, (e: unknown) => setError(`Die Auswertung ließ sich nicht laden: ${errorText(e)}`))
+      .finally(() => recallDone.current?.())
+  }, [recallAssessment])
+
   // Ein angesprungener Beleg ohne Position (etwa „Im Eingang zeigen“ aus der Suche des Ordners): erst wenn die Liste da
   // ist; steht er hinter „Ältere anzeigen“, wird die Liste bis zu ihm aufgeklappt.
   const focusedFile = useRef<string | null>(null)
@@ -710,6 +732,14 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Sprung zu diesem Beleg steht sie offen.
   const [placing, setPlacing] = useState<ReadonlySet<string>>(new Set())
   const togglePlacing = (id: string) => setPlacing((s) => { const next = new Set(s); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  // „Position öffnen“ aus einer Auswertung: über den Weg der Seite, der vorher in Objekt und Zeitraum der Position
+  // wechselt (App.tsx `openCostItem`). Der Eingang zeigt Auswertungen aller Jahre, und eine zurückgeholte gehört oft
+  // nicht zum gewählten; der bloße Seitenwechsel öffnete das Fenster dann über einer Liste ohne die Position.
+  const openItemById = (id: string) => {
+    const item = stock.costItems.find((c) => c.id === id)
+    if (item && onOpenItem) onOpenItem(item)
+    else onNavigate('kosten', { kind: 'costItem', id })
+  }
   const renderAssessment = (v: AssessmentView) => {
     const shown = beside.has(v.id) && v.open
     const jumpedHere = highlighted === `a:${v.id}` || highlighted === `f:${v.file}`
@@ -718,8 +748,10 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     const own = v.open ? allCards.find((c) => c.upload.file === v.file && c.items.length === 0 && c.upload.kind !== 'meterPhoto') : undefined
     return (
       <div className={`card no-print${jumpedHere ? ' bg-accent-soft border-accent' : ''}`} key={v.id} data-assessment={v.id} data-file={own ? v.file : undefined} tabIndex={-1}>
-        <div className="row center">
+        <div className="row center" data-assessment-head>
           <strong>🧾 {v.vendor || v.originalName}</strong>
+          {/* Zwei Belege desselben Rechnungsstellers wären sonst nur über „Beleg daneben zeigen“ zu unterscheiden */}
+          {v.vendor && v.originalName && <span className="muted break-words min-w-0">{v.originalName}</span>}
           {v.open
             ? <span className={openBadgeClass(v)}>{v.lines.filter((l) => l.state === 'open').length} offen - bitte prüfen</span>
             : <span className="badge green">✓ übernommen</span>}
@@ -750,7 +782,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           <div className="min-w-0 flex-1">
             <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v)}
               onChange={(next) => { upsert(next); keepInQueue(next); void reloadAll() }}
-              onOpenItem={(id) => onNavigate('kosten', { kind: 'costItem', id })} onYearDraft={onYearDraft} />
+              onOpenItem={openItemById} onYearDraft={onYearDraft} />
           </div>
         </div>
       </div>
@@ -787,7 +819,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           <strong>Rechnungen und Zählerfotos hierher ziehen</strong> oder klicken, auch den ganzen Stapel gemischt.
           <div className="muted">
             {mode === 'ohne'
-              ? 'Mietfuchs speichert jeden Beleg; danach ordnen Sie ihn einer Position zu.'
+              ? 'Mietfuchs speichert jeden Beleg; danach erfassen Sie ihn von Hand oder ordnen ihn einer Position zu.'
               : 'Mietfuchs speichert jeden Beleg, der Reihe nach, und wertet ihn danach aus, einen nach dem anderen (je Beleg 1–2 Min.). Steht an einem Beleg „gespeichert“, können Sie die Seite verlassen; ohne Auswertung steht er unter „Ohne Position“.'}
             {' '}{ai.notice ?? 'Alles bleibt lokal.'}
           </div>
@@ -812,7 +844,10 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             </label>
           ) : (
             <>
-              <span className="muted">Die KI ist gerade nicht erreichbar. Belege werden nur gespeichert; „Per KI auswerten“ steht an jedem Beleg.</span>
+              {/* Ob nie eine KI eingerichtet war oder die eingerichtete gerade nicht antwortet, weiß der Server nicht (es
+                  gibt immer eine Voreinstellung): Der Satz nennt deshalb beides und beschreibt den Weg ohne KI als normalen. */}
+              <span className="muted">Ohne KI-Auswertung: Mietfuchs speichert die Belege; Rechnungen erfassen Sie danach mit „Von Hand erfassen“, Kosten ohne Beleg auf der Seite Kosten mit „+ Kostenposition anlegen“. Eine KI ist nicht eingerichtet oder antwortet gerade nicht.</span>
+              <button type="button" className="btn small ghost" onClick={() => onNavigate('kosten')}>Zur Seite Kosten</button>
               <button type="button" className="btn small ghost" onClick={() => void checkAi()}>Erneut prüfen</button>
               {checking && <span className="muted" role="status">Mietfuchs fragt die KI …</span>}
               {uploading > 0 && <span className="muted">Wird gespeichert … ({uploading})</span>}

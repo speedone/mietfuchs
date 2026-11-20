@@ -294,6 +294,13 @@ export function useAttach(stock: ReceiptStock, properties: readonly Property[], 
   return { check, setCheck, attachExisting, attachById, uploadFor, saveAmount }
 }
 
+// „Betrag prüfen“ in den Blick holen und den Fokus darauf setzen (jsdom kennt scrollIntoView nicht).
+export function showAmountCheck(box: HTMLElement | null | undefined): void {
+  if (!box) return
+  box.scrollIntoView?.({ block: 'center' })
+  box.focus({ preventScroll: true })
+}
+
 // Der Kasten „Betrag prüfen“ nach dem Zuordnen.
 export function AmountCheckBox({ attach, properties, onOpenItem }: {
   attach: ReturnType<typeof useAttach>
@@ -301,6 +308,15 @@ export function AmountCheckBox({ attach, properties, onOpenItem }: {
   onOpenItem?: (item: CostItem) => void
 }) {
   const { check, setCheck, saveAmount } = attach
+  // Der Kasten steht oben in der Ansicht, zugeordnet wird oft weit darunter (Register, „Ohne Position“): Sobald er
+  // erscheint, kommt er in den Blick und bekommt den Fokus, sonst bliebe er ungesehen offen und jeder Seitenwechsel
+  // fragte nach ungespeicherten Änderungen. In der ausgeblendeten Ansicht nennt ihn die Seite (Belege.tsx).
+  const box = useRef<HTMLDivElement>(null)
+  const shownFor = check ? `${check.item.id}|${check.file}` : null
+  useEffect(() => {
+    if (shownFor === null) return
+    showAmountCheck(box.current)
+  }, [shownFor])
   if (!check) return null
   // Die Regeln des Objekts der Position, damit auch ein alter Teil ohne Quelle als Teil zählt (#455).
   const rules = rulesOf(properties.find((p) => p.id === check.item.propertyId))
@@ -309,7 +325,7 @@ export function AmountCheckBox({ attach, properties, onOpenItem }: {
   // gesetzt und fragte nach dem Kasten, den er gerade schließt.
   const leave = () => { const it = check.item; flushSync(() => setCheck(null)); onOpenItem?.(it) }
   return (
-    <div role="status" aria-label="Betrag prüfen"><NoticeBox level="warning" className="stack no-print">
+    <div ref={box} role="status" aria-label="Betrag prüfen" data-amount-check tabIndex={-1}><NoticeBox level="warning" className="stack no-print">
       Beleg an „{check.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(check.item.amountCents)}</strong>.
       {check.closed && <div>{closedPeriodNotice(labelOfKey(rules, check.item.period))}</div>}
       {/* Ein Teil trägt nur den Anteil seines Zeitraums; mit dem Beleg verglichen, lüde der Satz zum Fehler ein (#455). */}

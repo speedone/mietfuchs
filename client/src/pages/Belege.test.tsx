@@ -179,7 +179,8 @@ test('„alle Objekte“ zeigt auch die Belege des anderen Objekts, mit dessen N
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.click(screen.getByRole('checkbox', { name: 'Belege aller Objekte zeigen' }))
-  await screen.findByText(/Grundsteuer Ahornweg/)
+  // Die Position steht an der Karte und, für Vorleser, im Namen von „Zuordnung lösen …“
+  await screen.findAllByText(/Grundsteuer Ahornweg/)
   expect(screen.getAllByText(/Ahornweg/).length).toBeGreaterThan(0)
 })
 
@@ -294,7 +295,7 @@ const dropInto = (container: HTMLElement, files: File[]) =>
 test('Eingang ohne KI: die Ablage speichert nur, „Erneut prüfen“ fragt die KI noch einmal', async () => {
   aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
   const { container } = renderInboxWith(LOCAL)
-  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar\. Belege werden nur gespeichert/)).toBeTruthy()
+  expect(await screen.findByText(/Ohne KI-Auswertung: Mietfuchs speichert die Belege/)).toBeTruthy()
   expect(screen.queryByLabelText('Belege nur ablegen, ohne Auswertung')).toBeNull()
   dropInto(container, [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })])
   await waitFor(() => expect(sent).toEqual([{ url: '/api/upload', method: 'POST', body: { file: 'eins.pdf', propertyId: 'p1', year: String(YEAR) } }]))
@@ -302,7 +303,7 @@ test('Eingang ohne KI: die Ablage speichert nur, „Erneut prüfen“ fragt die 
   // Läuft die KI wieder, genügt „Erneut prüfen“
   aiStatus = { ok: true }
   fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
-  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+  await waitFor(() => expect(screen.queryByText(/Ohne KI-Auswertung/)).toBeNull())
   expect(screen.getByLabelText('Belege nur ablegen, ohne Auswertung')).toBeTruthy()
 })
 
@@ -312,7 +313,7 @@ test('Eingang: eine Zeitüberschreitung beim Fragen der KI ist kein „ohne KI�
   const { container } = renderInboxWith(LOCAL)
   await screen.findByLabelText('Jahr für lose.pdf')
   await waitFor(() => expect(fetched).toContain('/api/ai/status'))
-  expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
+  expect(screen.queryByText(/Ohne KI-Auswertung/)).toBeNull()
   dropInto(container, [new File(['jpg'], 'zwei.jpg', { type: 'image/jpeg' })])
   await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
   // Erst gespeichert, dann der gespeicherte Beleg ausgewertet (nicht nur abgelegt)
@@ -343,10 +344,10 @@ test('Eingang: solange eine Auswertung läuft, steht kein „nicht erreichbar“
   holdIntake = true
   extraUploads = [{ ...up('7_foto.jpg'), mimeType: 'image/jpeg' }]
   renderInboxWith(LOCAL)
-  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  expect(await screen.findByText(/Ohne KI-Auswertung/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'foto.jpg per KI auswerten' }))
   await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
-  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+  await waitFor(() => expect(screen.queryByText(/Ohne KI-Auswertung/)).toBeNull())
 })
 
 // Ohne Einstellungen (noch nicht geladen) wird die KI nicht gefragt
@@ -1288,23 +1289,23 @@ test('Eingang ohne KI: beim Ablegen „Mietfuchs fragt die KI …“, eine versp
   const { container } = renderInboxWith(LOCAL)
   await waitFor(() => expect(answers).toHaveLength(1))
   answers[0]?.(json({ ok: false, reason: 'unreachable' }))
-  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  expect(await screen.findByText(/Ohne KI-Auswertung/)).toBeTruthy()
   // Zweimal „Erneut prüfen“: Die erste Antwort kommt zuletzt und sagt „nicht erreichbar“; gilt die zweite („läuft“)
   fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
   fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
   await waitFor(() => expect(answers).toHaveLength(3))
   answers[2]?.(json({ ok: true }))
-  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+  await waitFor(() => expect(screen.queryByText(/Ohne KI-Auswertung/)).toBeNull())
   answers[1]?.(json({ ok: false, reason: 'unreachable' }))
   await new Promise((r) => setTimeout(r, 50))
-  expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
+  expect(screen.queryByText(/Ohne KI-Auswertung/)).toBeNull()
   void container
 })
 
 test('Eingang ohne KI: beim Ablegen steht „Mietfuchs fragt die KI …“, bis die Antwort da ist', async () => {
   aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
   const { container } = renderInboxWith(LOCAL)
-  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  expect(await screen.findByText(/Ohne KI-Auswertung/)).toBeTruthy()
   let release: ((v: Response) => void) | null = null
   const inner = globalThis.fetch
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url === '/api/ai/status'
@@ -1367,7 +1368,7 @@ test('Ohne Position: „Von Hand erfassen“ an jedem Beleg, ohne KI als erster 
     </PeriodProvider>,
   )
   const manual = await screen.findByRole('button', { name: 'lose.pdf von Hand erfassen' })
-  await screen.findByText(/Die KI ist gerade nicht erreichbar/)
+  await screen.findByText(/Ohne KI-Auswertung/)
   expect(manual.className).toBe('btn')
   expect(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }).className).toBe('btn secondary')
   fireEvent.click(manual)
@@ -1397,7 +1398,7 @@ test('Eingang ohne KI: E-Rechnung wird ausgewertet, der Scan abgelegt, und ein g
   aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
   failUpload = 'scan.pdf'
   const { container } = renderInboxWith(LOCAL)
-  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  expect(await screen.findByText(/Ohne KI-Auswertung/)).toBeTruthy()
   dropInto(container, [new File(['%PDF'], 'zugferd.pdf', { type: 'application/pdf' }), new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' })])
   // In die Warteschlange (das Lesen des Test-PDFs mit pdf.js scheitert hier, die Karte nennt den Beleg trotzdem)
   expect((await screen.findAllByText(/zugferd\.pdf/)).length).toBeGreaterThan(0)
@@ -1405,4 +1406,160 @@ test('Eingang ohne KI: E-Rechnung wird ausgewertet, der Scan abgelegt, und ein g
   // Auch die E-Rechnung ist gespeichert, bevor sie ausgewertet wird; nur abgelegt (mit der Mitteilung dazu) wird der Scan
   expect(sent.some((r) => r.url === '/api/upload' && (r.body as Record<string, unknown>).file === 'zugferd.pdf')).toBe(true)
   expect(await screen.findByText(/„scan\.pdf“ wurde nicht hochgeladen/)).toBeTruthy()
+})
+
+// ---------- Rückwege (Systemprüfung): Position öffnen und Zuordnung lösen im Ordner, „Betrag prüfen“ im Blick ----------
+
+const renderWithUi = (view: 'eingang' | 'ordner', onOpenItem?: (c: CostItem) => void, settings: Settings | null = null, onNavigate: (tab: string) => void = () => {}) =>
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} view={view} settings={settings} onNavigate={onNavigate} renderThumb={() => Promise.resolve('')} onOpenItem={onOpenItem} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+
+const folderCard = async (file: string) =>
+  within(await waitFor(() => document.querySelector<HTMLElement>(`[data-view="ordner"] li[data-file="${file}"]`) ?? expect.fail(`kein Beleg ${file} im Ordner`)))
+
+test('Ordner: am Beleg „Position öffnen“ und „Zuordnung lösen …“ mit Rückfrage; danach steht der Beleg im Eingang', async () => {
+  const onOpenItem = vi.fn()
+  renderWithUi('ordner', onOpenItem)
+  const card = await folderCard('2_wasser.pdf')
+  fireEvent.click(card.getByRole('button', { name: 'Position öffnen (Wasser)' }))
+  expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'w1' }))
+  const release = card.getByRole('button', { name: /^Zuordnung lösen …\s*\(wasser\.pdf von Wasser\)$/ })
+  expect(release.className).toMatch(/\bdanger-ghost\b/)
+  fireEvent.click(release)
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/„wasser\.pdf“ hängt danach nicht mehr an „Wasser“\. Betrag und Angaben der Position bleiben\. Der Beleg bleibt gespeichert und steht danach im Eingang unter „Ohne Position“\./)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(sent).toEqual([])
+  fireEvent.click(release)
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Zuordnung lösen' }))
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/w1', method: 'PUT', body: { invoiceFile: null } }]))
+})
+
+test('Ordner: hängt ein Beleg an mehreren Positionen, löst „Zuordnung lösen …“ nur die genannte, und die Rückfrage sagt es', async () => {
+  extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer Garage', amountCents: 5000, key: 'area', invoiceFile: '1_gs.pdf' }]
+  renderWithUi('ordner')
+  const card = await folderCard('1_gs.pdf')
+  fireEvent.click(await card.findByRole('button', { name: /^Zuordnung lösen …\s*\(gs\.pdf von Grundsteuer Garage\)$/ }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/Der Beleg bleibt an 1 weiteren Position\./)
+  expect(dialog.textContent).not.toMatch(/Ohne Position/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnung lösen' }))
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/gs2', method: 'PUT', body: { invoiceFile: null } }]))
+})
+
+// Durchsicht: Nach dem Aufteilen tragen beide Teile denselben Beleg. Wer einen löst, lässt die Rechnung belegt (der
+// Beleg eines Teils deckt die übrigen); erst der letzte Teil mit Beleg macht sie unbelegt. Die Rückfrage sagt, was gilt.
+const PART = { propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Versicherung', amountCents: 30000, key: 'area', sourceId: 'q1' } as const
+test('Ordner: ein Teil einer aufgeteilten Rechnung, der andere Teil trägt den Beleg weiter: die Rückfrage sagt „weiter belegt“', async () => {
+  extraItems = [
+    { ...PART, id: 'vt1', description: 'Gebäudeversicherung (Teil 1)', invoiceFile: '7_vers.pdf' },
+    { ...PART, id: 'vt2', description: 'Gebäudeversicherung (Teil 2)', invoiceFile: '7_vers.pdf' },
+  ]
+  extraUploads = [up('7_vers.pdf')]
+  renderWithUi('ordner')
+  const card = await folderCard('7_vers.pdf')
+  fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …\s*\(vers\.pdf von Gebäudeversicherung \(Teil 1\)\)$/ }))
+  const text = (await screen.findByRole('alertdialog')).textContent ?? ''
+  expect(text).toMatch(/Der Beleg bleibt an 1 weiteren Position\./)
+  expect(text).toMatch(/Die Position ist ein Teil einer aufgeteilten Rechnung und gilt weiter als belegt, weil ein anderer Teil den Beleg der Rechnung trägt\./)
+  expect(text).not.toMatch(/ohne Beleg/)
+})
+
+test('Ordner: der letzte Teil mit Beleg einer aufgeteilten Rechnung: die Rückfrage sagt, dass danach die ganze Rechnung ohne Beleg ist', async () => {
+  extraItems = [
+    { ...PART, id: 'vt1', description: 'Gebäudeversicherung (Teil 1)', invoiceFile: '7_vers.pdf' },
+    { ...PART, id: 'vt2', description: 'Gebäudeversicherung (Teil 2)' },
+  ]
+  extraUploads = [up('7_vers.pdf')]
+  renderWithUi('ordner')
+  const card = await folderCard('7_vers.pdf')
+  fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …/ }))
+  const text = (await screen.findByRole('alertdialog')).textContent ?? ''
+  expect(text).toMatch(/Die Position ist ein Teil einer aufgeteilten Rechnung: Danach trägt kein Teil mehr einen Beleg, die ganze Rechnung ist ohne Beleg\./)
+  expect(text).not.toMatch(/weiter als belegt/)
+})
+
+test('Ordner: „Zuordnung lösen …“ in einem abgeschlossenen Zeitraum nennt die abgeschlossene Abrechnung und was sich ändert', async () => {
+  closed = { closedAt: '2026-02-01T10:00:00.000Z' }
+  renderWithUi('ordner')
+  const card = await folderCard('2_wasser.pdf')
+  fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …/ }))
+  const text = (await screen.findByRole('alertdialog')).textContent ?? ''
+  expect(text).toContain(`Die Abrechnung ${YEAR} ist abgeschlossen und bleibt, wie sie verschickt wurde. Belegmappe, Belege für die Steuer und Belegkopien dieses Zeitraums führen den Beleg an dieser Position danach nicht mehr.`)
+})
+
+test('Ordner: „Zuordnung lösen …“ in einem offenen Zeitraum nennt keine abgeschlossene Abrechnung', async () => {
+  renderWithUi('ordner')
+  const card = await folderCard('2_wasser.pdf')
+  fireEvent.click(card.getByRole('button', { name: /^Zuordnung lösen …/ }))
+  expect((await screen.findByRole('alertdialog')).textContent).not.toMatch(/abgeschlossen/)
+})
+
+test('Ordner: nur über eine gebuchte Zeile verknüpft gibt es kein „Zuordnung lösen …“, dafür „Auswertung zeigen“', async () => {
+  extraUploads = [{ ...up('8_rest.pdf'), bookedItemIds: ['w2'], bookedCents: { w2: 26000 }, assessment: { id: 'a8', propertyId: 'p1', open: false } }]
+  renderWithUi('ordner', vi.fn())
+  const card = await folderCard('8_rest.pdf')
+  expect(card.getByRole('button', { name: 'Position öffnen (Abwasser)' })).toBeTruthy()
+  expect(card.queryByRole('button', { name: /Zuordnung lösen/ })).toBeNull()
+  expect(card.getByRole('button', { name: 'Auswertung zeigen (rest.pdf)' })).toBeTruthy()
+  // Ein von Hand angehängter Beleg hat keine Auswertung
+  expect((await folderCard('2_wasser.pdf')).queryByRole('button', { name: /Auswertung zeigen/ })).toBeNull()
+})
+
+test('„Betrag prüfen“ bekommt nach dem Nachreichen den Fokus und wird in den Blick gerollt', async () => {
+  const scrolled: Element[] = []
+  const proto = HTMLElement.prototype as { scrollIntoView?: () => void }
+  const before = proto.scrollIntoView
+  proto.scrollIntoView = function (this: Element) { scrolled.push(this) }
+  try {
+    renderWithUi('ordner')
+    await screen.findByText('Wasser/Abwasser')
+    fireEvent.change(screen.getByLabelText('Beleg für Abwasser hochladen'), { target: { files: [new File(['x'], 'abwasser.pdf', { type: 'application/pdf' })] } })
+    const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+    await waitFor(() => expect(document.activeElement).toBe(check))
+    expect(scrolled).toContain(check)
+  } finally {
+    if (before) proto.scrollIntoView = before
+    else delete proto.scrollIntoView
+  }
+})
+
+test('„Betrag prüfen“ in der anderen Ansicht: die Seite sagt, wo er offen ist, und führt dorthin', async () => {
+  renderWithUi('eingang')
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'w2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  await waitFor(() => expect(document.activeElement).toBe(check))
+  expect(screen.queryByText(/ist noch „Betrag prüfen“ offen/)).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  expect((await screen.findByText(/In der Ansicht „Eingang“ ist noch „Betrag prüfen“ offen/)).textContent).toMatch(/Abwasser/)
+  fireEvent.click(screen.getByRole('button', { name: 'Zu „Betrag prüfen“' }))
+  await waitFor(() => expect(screen.getByRole('tab', { name: /Eingang/ }).getAttribute('aria-selected')).toBe('true'))
+  await waitFor(() => expect(document.activeElement).toBe(check))
+  expect(screen.queryByText(/ist noch „Betrag prüfen“ offen/)).toBeNull()
+})
+
+test('Eingang ohne KI: der Zustand ist ein normaler Weg, mit Verweis auf „Von Hand erfassen“ und die Seite Kosten', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const onNavigate = vi.fn()
+  renderWithUi('eingang', undefined, LOCAL, onNavigate)
+  const note = await screen.findByText(/Ohne KI-Auswertung/)
+  expect(note.textContent).toMatch(/„Von Hand erfassen“/)
+  // Durchsicht: zwei Sätze, und „Von Hand erfassen“ gilt Rechnungen, nicht Zählerfotos
+  expect(note.textContent).toMatch(/Rechnungen erfassen Sie danach mit „Von Hand erfassen“/)
+  expect((note.textContent ?? '').split(/[.!?](?:\s|$)/).filter((x) => x.trim()).length).toBe(2)
+  expect(note.textContent).toMatch(/Seite Kosten mit „\+ Kostenposition anlegen“/)
+  expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Zur Seite Kosten' }))
+  expect(onNavigate).toHaveBeenCalledWith('kosten')
+  expect(screen.getByRole('button', { name: 'Erneut prüfen' })).toBeTruthy()
 })
