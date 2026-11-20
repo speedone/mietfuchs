@@ -62,6 +62,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
+- Zähler: Eine Ablesung lässt sich bearbeiten (✎ in ihrer Zeile), statt sie zu löschen und neu anzulegen. Vor dem
+  Speichern fragt Mietfuchs nach, wenn der Stand unter dem vorigen Stand desselben Zählers liegt und kein Zählerwechsel
+  angehakt ist, wenn er über dem folgenden Stand liegt oder wenn das Datum in der Zukunft liegt; speichern können Sie
+  trotzdem. Bei einem Zählerwechsel zählt dabei der Endstand des alten Zählers, beim Heizkostenverteiler verweist die
+  Rückfrage auf den Stichtagswert. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt, wenn heute im
+  gewählten Abrechnungszeitraum liegt; ein Hinweis am Feld sagt es, solange Sie es nicht geändert haben.
 
 ### Geändert
 
@@ -81,19 +87,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Belege: Eine Rechnung mit vielen Zeilen, etwa die Jahresrechnung eines Versorgers als E-Rechnung, lässt sich als eine
-  Kostenposition buchen. Unter der Tabelle steht dafür „Alle Zeilen als eine Position anlegen“: Kostenart und
-  Beschreibung wählen, das Fenster nennt vorher Position und Summe. Gutschriften bleiben offen und werden mit Betrag
-  genannt, ein §35a-Lohnanteil kommt nur mit Häkchen mit, und im Verlauf stehen die beiden Schritte der Buchung
-  unterscheidbar („1 Zeile angelegt“, „13 Zeilen verknüpft“). Wer Zeile für Zeile
-  bucht, findet nach dem Anlegen der ersten Zeile deren Position bei den übrigen unter „Was geschieht?“. Bereits
-  bezahlte Abschläge stehen als Hinweis an der Auswertung und färben nicht mehr jede Zeile rot; die Zeilen sind dann
-  gelb und nicht vorab angehakt, weil einzeln gebuchte Abschläge sonst doppelt zählten. Gleichlautende Begründungen
-  mehrerer Zeilen stehen einmal.
-- E-Rechnung: Ein Abzug früherer Zahlungen wird auch unter den Namen Teilrechnung, Teilzahlung, Akonto, Vorauskasse
-  und Vorschuss erkannt und als Warnung genannt.
-- Belege: „Jahr der Buchung“ bietet immer auch das Jahr an, für das der Beleg abgelegt wurde, auch wenn die Auswertung
-  ein weit früheres Jahr aus dem Beleg liest.
+- Navigation und Sprünge: Die Seite „Heizkosten“ steht in der Navigation, sobald die Heizung in den Stammdaten
+  eingerichtet ist, nicht erst nach einem Seitenwechsel; die Mitteilung nach dem Einrichten nennt die Seite. „Hier
+  beheben → Heizkosten“ führt zur betroffenen Heizanlage und hebt sie hervor, „Heizung einrichten →“ zur Karte
+  „Heizung“ der Stammdaten. Nach „Rückgängig“ im Verlauf zeigen die Stammdaten den wiederhergestellten Stand, ohne dass
+  die Seite neu geladen werden muss. Mietkonto, Heizkosten und Steuer führen aus dem leeren Zustand mit einem Knopf zum
+  fehlenden Schritt. Im Cockpit heißt die Zeile, die Kostenpositionen zählt, „Kosten erfasst“ statt „Belege erfasst“.
+- Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
+  Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
+  Issue, in dem sie tatsächlich geplant ist.
 
 ## [0.18.1] – 2026-11-19
 

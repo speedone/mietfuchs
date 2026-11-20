@@ -192,7 +192,9 @@ function Filters({ filter, onChange, propertyName }: { filter: JournalFilter, on
   )
 }
 
-export default function Verlauf({ reloadPage = () => window.location.reload() }: { reloadPage?: () => void } = {}) {
+// `onReverted`: der Bestand der App (Wohnungen, Mietverhältnisse, Heizanlagen, Einstellungen), der nach einem Rücksprung neu
+// zu laden ist; sonst zeigten die Stammdaten den Stand von vorher, bis der Browser neu lädt (Systemprüfung).
+export default function Verlauf({ reloadPage = () => window.location.reload(), onReverted }: { reloadPage?: () => void; onReverted?: () => Promise<void> | void } = {}) {
   const propertyCtx = useOptionalProperty()
   const propertyId = propertyCtx?.property?.id ?? null
   const confirm = useConfirm()
@@ -320,8 +322,14 @@ export default function Verlauf({ reloadPage = () => window.location.reload() }:
     try {
       await api(`/api/journal/${group.id}/revert`, { method: 'POST', body: JSON.stringify({ mode, token: preview.token }) })
       toast(revertedMessage(preview), 'ok')
-      // Objekte und ihr Zeitraum können sich mit dem Rücksprung geändert haben.
-      await propertyCtx?.reload()
+      // Objekte und ihr Zeitraum können sich mit dem Rücksprung geändert haben, ebenso der Bestand der App. Deren
+      // `reload` lädt die Objekte mit; scheitert das Neuladen, ist der Rücksprung trotzdem geschehen.
+      try {
+        if (onReverted) await onReverted()
+        else await propertyCtx?.reload()
+      } catch (e) {
+        console.error(e)
+      }
       setReloads((n) => n + 1)
       return []
     } catch (e) {
