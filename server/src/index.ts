@@ -73,7 +73,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleRecordError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -728,6 +728,17 @@ app.put('/api/costItems/:id/split', async (req, res) => {
   res.json(await writeData((db) => saveCostItemSplit(db, null, bodyObject(req), req.params.id, newId)))
 })
 
+// Jemand speichert an einem Datensatz, den ein anderes Fenster oder Gerät inzwischen gelöscht hat: ein Satz statt
+// „Nicht gefunden“. Er stimmt mit und ohne Formular (auch „Beleg zuordnen“ oder „Betrag prüfen“ kommen hier an).
+const GONE_REST = 'wurde inzwischen gelöscht. Gespeichert wurde nichts. Bitte laden Sie die Seite neu.'
+const GONE: Record<CollectionName, string> = {
+  units: `Diese Wohnung ${GONE_REST}`,
+  tenancies: `Dieses Mietverhältnis ${GONE_REST}`,
+  costItems: `Diese Kostenposition ${GONE_REST}`,
+  meters: `Dieser Zähler ${GONE_REST}`,
+  readings: `Diese Ablesung ${GONE_REST}`,
+  payments: `Diese Zahlung ${GONE_REST}`,
+}
 for (const coll of COLLECTIONS) {
   // Aufgelistet wird über `narrowToProperty`, dieselbe Regel wie beim Rechnen; eine zweite
   // Fassung für die Listen liefe irgendwann anders als die der Abrechnung.
@@ -775,7 +786,7 @@ for (const coll of COLLECTIONS) {
       }
       return updateEntity(db, coll, req.params.id, bodyObject(req))
     })
-    if (!item) return res.status(404).json({ error: 'Nicht gefunden' })
+    if (!item) return res.status(404).json({ error: GONE[coll] })
     res.json(item)
   })
   app.delete(`/api/${coll}/:id`, async (req, res) => {
@@ -5140,6 +5151,9 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   if (err instanceof TaxYearQuestion) return res.status(409).json({ error: err.message, question: 'taxYear' })
   // Die Verteilung nach § 82b EStDV (#262, E-9): dieselbe Gestalt, bestätigt mit `confirmSpread`.
   if (err instanceof SpreadQuestion) return res.status(409).json({ error: err.message, question: 'spread' })
+  // Das Formular kennt einen älteren Stand (repository.ts, `requireUnchanged`): mit dem Stand von jetzt, damit die
+  // Oberfläche sagen kann, was sich geändert hat.
+  if (err instanceof StaleRecordError) return res.status(409).json({ error: err.message, stale: true, current: err.current })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
   if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError || err instanceof RentIncreaseError) {
     return res.status(err.status).json({ error: err.message })
