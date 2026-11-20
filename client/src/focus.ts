@@ -129,6 +129,18 @@ export function useNewTarget(
 // Ziel ist, die Hervorhebung `.focus-target` (wie ein Eintrag, index.css).
 export type JumpProps = { 'data-jump': SectionId; className?: string }
 
+// Eine Karte, zu der gesprungen wurde, ins Bild holen und den Fokus auf ihr Feld (`data-jump-focus`) oder ihre
+// Überschrift setzen. jsdom kennt scrollIntoView nicht.
+export function revealJump(card: HTMLElement | null | undefined): void {
+  if (!card) return
+  if (typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const target = card.querySelector<HTMLElement>('[data-jump-focus]') ?? card.querySelector<HTMLElement>('h2, h3')
+  if (!target) return
+  // Eine Überschrift nimmt den Fokus nur mit tabindex, in der Tabulatorfolge steht sie damit nicht.
+  if (!target.hasAttribute('tabindex') && !target.matches('input, select, textarea, button')) target.tabIndex = -1
+  target.focus({ preventScroll: true })
+}
+
 // „Prüfen“ und „Beheben“ aus einer anderen Seite (#554): die Karte des Ziels hervorheben, ins Bild holen und den Fokus
 // auf ihr Feld (`data-jump-focus`) oder ihre Überschrift setzen. `sections` sind die Karten dieser Seite; `ready`,
 // sobald sie gezeichnet sein können. Ergibt die Angaben je Karte, `className` sind deren eigene Klassen.
@@ -147,20 +159,43 @@ export function useSectionJump(
     setActive((a) => ({ section: own, seq: (a?.seq ?? 0) + 1 }))
     doneRef.current?.()
   }, [focus, own, ready])
-  // Nach dem Zeichnen, mit der Hervorhebung. jsdom kennt scrollIntoView nicht.
+  // Nach dem Zeichnen, mit der Hervorhebung.
   useEffect(() => {
-    if (!active) return
-    const card = document.querySelector<HTMLElement>(`[data-jump="${active.section}"]`)
-    if (!card) return
-    if (typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    const target = card.querySelector<HTMLElement>('[data-jump-focus]') ?? card.querySelector<HTMLElement>('h2, h3')
-    if (!target) return
-    // Eine Überschrift nimmt den Fokus nur mit tabindex, in der Tabulatorfolge steht sie damit nicht.
-    if (!target.hasAttribute('tabindex') && !target.matches('input, select, textarea, button')) target.tabIndex = -1
-    target.focus({ preventScroll: true })
+    if (active) revealJump(document.querySelector<HTMLElement>(`[data-jump="${active.section}"]`))
   }, [active])
   return useCallback((section: SectionId, className?: string): JumpProps => {
     const classes = [className, active?.section === section ? 'focus-target' : null].filter(Boolean).join(' ')
     return { 'data-jump': section, ...(classes ? { className: classes } : {}) }
   }, [active])
+}
+
+// „Hier beheben →“ zu einem Eintrag, der auf seiner Seite kein Formular hat, sondern einen Bereich (eine Heizanlage auf
+// der Seite Heizkosten): Der Bereich des Eintrags wird hervorgehoben und ins Bild geholt wie eine Karte. `ids` sind die
+// Einträge der Seite, `null`, solange sie lädt; ein Eintrag, den es hier nicht gibt, bleibt als Ziel stehen und die
+// Seite am Anfang. Die Kennung im Dokument ist „Art:Kennung“.
+export function useSubjectJump(
+  focus: JumpTarget | null | undefined,
+  kind: NoticeSubject['kind'],
+  ids: readonly string[] | null,
+  done: (() => void) | undefined,
+): (id: string, className?: string) => { 'data-jump': string; className?: string } {
+  const [active, setActive] = useState<{ id: string; seq: number } | null>(null)
+  const doneRef = useRef(done)
+  doneRef.current = done
+  const own = focus && isSubject(focus) && focus.kind === kind && ids?.includes(focus.id) ? focus.id : null
+  useEffect(() => {
+    if (own === null) return
+    setActive((a) => ({ id: own, seq: (a?.seq ?? 0) + 1 }))
+    doneRef.current?.()
+  }, [focus, own])
+  useEffect(() => {
+    if (active) revealJump([...document.querySelectorAll<HTMLElement>('[data-jump]')].find((el) => el.dataset.jump === `${kind}:${active.id}`))
+  }, [active, kind])
+  return useCallback((id: string, className?: string) => {
+    // Ein Bereich ist keine Karte: Die Hervorhebung `.card.focus-target` aus index.css greift nicht, deshalb ein Rahmen
+    // aus Utilities in derselben Farbe.
+    // `scroll-mt-4`: Beim Rollen bleibt über dem Bereich Platz für den Rahmen, sonst klebt er am Fensterrand (Sichtprüfung).
+    const classes = [className, 'scroll-mt-4', active?.id === id ? 'focus-target rounded-l outline-2 outline-offset-4 outline-accent' : null].filter(Boolean).join(' ')
+    return { 'data-jump': `${kind}:${id}`, className: classes }
+  }, [active, kind])
 }

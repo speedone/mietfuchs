@@ -49,7 +49,7 @@ test('Zeile „Mietverhältnisse & Flächen“: Ein- und Mehrzahl, Aufzählung m
 // fmtEuro setzt ein geschütztes Leerzeichen vor das Eurozeichen.
 const plain = (s: string) => s.replace(/\u00a0/g, ' ')
 
-test('Zeile „Belege erfasst“: Ein- und Mehrzahl', () => {
+test('Zeile „Kosten erfasst“: Ein- und Mehrzahl', () => {
   expect(plain(itemsDetail(1, 12345, 0))).toBe('1 Position · Summe 123,45 €')
   expect(plain(itemsDetail(12, 100, 1))).toBe('12 Positionen · Summe 1,00 € · 1 Belegdatei')
   expect(plain(itemsDetail(12, 100, 3))).toBe('12 Positionen · Summe 1,00 € · 3 Belegdateien')
@@ -69,7 +69,7 @@ test('Unterzeile beim Erststart nennt keine Zahl offener Punkte, sondern den ers
 test('Unterzeile mit Checkliste: Zahl offener Punkte in Ein- und Mehrzahl, sonst bereit', () => {
   expect(cockpitSubtitle({ loaded: false, fresh: false, open: [] })).toBe('Lade Abrechnungsstand …')
   expect(cockpitSubtitle({ loaded: true, fresh: false, open: [] })).toBe('Nichts mehr offen.')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Belege erfasst'] })).toBe('Noch 1 Punkt offen.')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Kosten erfasst'] })).toBe('Noch 1 Punkt offen.')
   expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['a', 'b', 'c'] })).toBe('Noch 3 Punkte offen.')
 })
 
@@ -102,7 +102,7 @@ test('Eigentumswohnung ohne Positionen aus der Hausgeldabrechnung (#409)', () =>
   expect(condoWithoutHousingMoney('etw', [item('Grundsteuer', {}), item('Beleuchtung/Allgemeinstrom', { key: 'external' })])).toBe(false)
   // Durchsicht zu #409, Befund 2: ohne Grundsteuer ist „Erfasst ist nur die Grundsteuer“ falsch.
   expect(condoWithoutHousingMoney('etw', [item('Nicht umlagefähig', {})])).toBe(false)
-  // Ohne Kosten sagt schon „Belege erfasst“, dass nichts da ist.
+  // Ohne Kosten sagt schon „Kosten erfasst“, dass nichts da ist.
   expect(condoWithoutHousingMoney('etw', [])).toBe(false)
   expect(condoWithoutHousingMoney('mfh', [item('Grundsteuer', {})])).toBe(false)
   expect(condoWithoutHousingMoney(undefined, [item('Grundsteuer', {})])).toBe(false)

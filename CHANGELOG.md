@@ -44,18 +44,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Entwurf offen ist, sagt das Fenster, dass das Cockpit nicht erinnert.
   - Neu im Lexikon: „Ortsübliche Vergleichsmiete“, „Kappungsgrenze“, „Indexmiete“, „Staffelmiete“,
     „Mieterhöhungsverlangen“, „Zustimmungsfrist“, „Begründungsmittel“ und „Qualifizierter Mietspiegel“.
-  - Nacharbeit am Fenster „Mieterhöhung“ ([#191](https://github.com/speedone/mietfuchs/issues/191)): Nach Zustimmung,
-    Versand einer Indexanpassung und Rücknahme zeigen die Stammdaten sofort die neue Kaltmiete-Staffel; vorher zeigte
-    das Mietverhältnis die alte, und Speichern scheiterte. Ohne Namen des Vermieters warnt Mietfuchs im Fenster,
-    am Entwurf und vor „Als versendet speichern“, denn die Erhöhung braucht Textform, und dafür muss der Erklärende
-    genannt sein (§ 558a Abs. 1, § 557b Abs. 3, § 126b BGB); die Warnung nennt beide Wege (Namen eintragen und neu
-    anlegen, oder Namen und Unterschrift von Hand auf den Ausdruck). Gesperrt wird nichts, nur die Bestätigung zum
-    Briefkopf bleibt ohne Namen leer. Nach dem Anlegen des Entwurfs fragt „Schließen“ nicht mehr „Änderungen
-    verwerfen?“, nach dem Löschen des Entwurfs wieder. Fehlt die
-    Art der Miete, führt „Hier beheben“ an das Feld im Mietverhältnis. Das Schreiben druckt ohne Briefpapier „Seite x
-    von y“ (Chromium). Mit Briefpapier hält es auf jeder Seite die eingestellten Ränder ein und druckt das Papier der
-    Folgeseiten; vorher lief der Text über den Fuß des Briefpapiers, und die zweite Seite begann an der Blattkante. Neu ist die Anleitung „Miete erhöhen: Vergleichsmiete oder Indexmiete, Schreiben und
-    Zustimmung“.
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und
@@ -74,6 +62,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
+- Zähler: Eine Ablesung lässt sich bearbeiten (✎ in ihrer Zeile), statt sie zu löschen und neu anzulegen. Vor dem
+  Speichern fragt Mietfuchs nach, wenn der Stand unter dem vorigen Stand desselben Zählers liegt und kein Zählerwechsel
+  angehakt ist, wenn er über dem folgenden Stand liegt oder wenn das Datum in der Zukunft liegt; speichern können Sie
+  trotzdem. Bei einem Zählerwechsel zählt dabei der Endstand des alten Zählers, beim Heizkostenverteiler verweist die
+  Rückfrage auf den Stichtagswert. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt, wenn heute im
+  gewählten Abrechnungszeitraum liegt; ein Hinweis am Feld sagt es, solange Sie es nicht geändert haben.
 
 ### Geändert
 
@@ -90,6 +84,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Antworten zu fehlenden Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
+
+### Behoben
+
+- Navigation und Sprünge: Die Seite „Heizkosten“ steht in der Navigation, sobald die Heizung in den Stammdaten
+  eingerichtet ist, nicht erst nach einem Seitenwechsel; die Mitteilung nach dem Einrichten nennt die Seite. „Hier
+  beheben → Heizkosten“ führt zur betroffenen Heizanlage und hebt sie hervor, „Heizung einrichten →“ zur Karte
+  „Heizung“ der Stammdaten. Nach „Rückgängig“ im Verlauf zeigen die Stammdaten den wiederhergestellten Stand, ohne dass
+  die Seite neu geladen werden muss. Mietkonto, Heizkosten und Steuer führen aus dem leeren Zustand mit einem Knopf zum
+  fehlenden Schritt. Im Cockpit heißt die Zeile, die Kostenpositionen zählt, „Kosten erfasst“ statt „Belege erfasst“.
+- Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
+  Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
+  Issue, in dem sie tatsächlich geplant ist.
 
 ## [0.18.1] – 2026-11-19
 
