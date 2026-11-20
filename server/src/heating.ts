@@ -147,7 +147,9 @@ export type SelfPlan = {
   units: SelfUnitPlan[]
   // `estimatedArea`: Fläche des Topfs mit geschätztem Verbrauch; `overThreshold`: sie überschreitet die
   // Grenze des § 9a Abs. 2, der Topf wird ausschließlich nach Fläche verteilt (Heizung PR 13).
-  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean; estimatedArea: number; overThreshold: boolean }>
+  // `devices`: Für den Topf ist an mindestens einer Wohnung ein Gerät angelegt (bzw. ein Wert des Ablesedienstes
+  // eingetragen). Ohne ist nichts abzulesen, und der Topf geht nur nach Fläche (Systemprüfung).
+  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean; devices: boolean; estimatedArea: number; overThreshold: boolean }>
   problems: SelfProblem[]
   findings: SelfFinding[]
 }
@@ -349,7 +351,7 @@ export function planSelf(input: SelfInput): SelfPlan {
   }))
 
   const totals = Object.fromEntries(pots.map((p) => [p, {
-    area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false, estimatedArea: 0, overThreshold: false,
+    area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false, devices: false, estimatedArea: 0, overThreshold: false,
   }])) as SelfPlan['totals']
   // Ein Topf ohne einen einzigen Zähler ist nicht erfasst (nur nach Fläche, `heating.no-consumption`);
   // ein Topf mit Zählern verlangt einen an jeder Wohnung mit Fläche.
@@ -592,6 +594,7 @@ export function planSelf(input: SelfInput): SelfPlan {
   // Summe des Verbrauchs je Topf, dann die Bruchteile.
   for (const p of pots) {
     totals[p].consumption = units.reduce((a, u) => a + u.consumption[p], 0)
+    totals[p].devices = potHasMeters[p]
     totals[p].measured = potHasMeters[p] && totals[p].consumption > 0
     // § 9a Abs. 2 (Heizung PR 13): Überschreitet die geschätzte Fläche die Grenze der für die Verteilung
     // maßgeblichen Fläche dieses Topfs, wird er ausschließlich nach Fläche verteilt. „Überschreitet“:
