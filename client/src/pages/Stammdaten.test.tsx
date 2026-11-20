@@ -945,6 +945,8 @@ test('Kaution: die Rückfrage beim Löschen nennt die Kautionsbuchungen', async 
   depositEntries = [{ id: 'd1', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 80000 }]
   page([tenancy('t1', 'Erika', { depositCents: 240000 })])
   await screen.findByText('Erika', undefined, SLOW)
+  // Erst wenn die Buchungen geladen sind (die Zeile zeigt dann ihren Stand), kann die Frage sie zählen.
+  await rowOf('Erika').findByText('teilweise erhalten', undefined, SLOW)
   fireEvent.click(rowOf('Erika').getByLabelText('Mietverhältnis löschen'))
   const dialog = await screen.findByRole('alertdialog', undefined, SLOW)
   // Zahl der Buchungen, der Ausweg „Auszug eintragen“ und der Verlauf (Wortlaut in tenancyModel.test.ts).

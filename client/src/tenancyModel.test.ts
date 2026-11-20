@@ -372,37 +372,57 @@ test('Pflichtangaben: ein Auszug vor dem Einzug wird am Feld „Auszug“ gemeld
   expect(tenancyRequired({ ...form, end: '2025-04-30' }, { start: '2025-06-01', end: '2025-03-31' }).map((p) => p.field)).toEqual(['end'])
 })
 
-const UNDO = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen, am einfachsten gleich danach.'
+const UNDO = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.'
 const INSTEAD = 'Ist der Mieter nur ausgezogen, löschen Sie nicht: Tragen Sie beim Mietverhältnis den Auszug ein, dann bleibt alles erhalten.'
+
+const ELSE = 'Dazu alle weiteren Angaben zu diesem Mietverhältnis, etwa eigene Texte im Anschreiben und CO₂-Erstattungen.'
+const facts = { paymentDates: [], depositEntries: 0, closed: [], costItemLinks: 0, bankLinks: 0, rentIncreases: 0 }
 
 test('Löschfrage eines Mietverhältnisses: Zahlungen mit Zeitraum, Kautionsbuchungen, Abschluss, Folgen, Ausweg, Verlauf', () => {
   const dates = Array.from({ length: 12 }, (_, i) => `2025-${String(i + 1).padStart(2, '0')}-03`)
-  expect(tenancyDeleteMessage({ paymentDates: dates, depositEntries: 1, closed: ['2025'] })).toBe(
-    'Mit dem Mietverhältnis werden gelöscht: 12 Zahlungen (03.01.2025 bis 03.12.2025) und 1 Kautionsbuchung. ' +
+  expect(tenancyDeleteMessage({ ...facts, paymentDates: dates, depositEntries: 1, closed: ['2025'] })).toBe(
+    `Mit dem Mietverhältnis werden gelöscht: 12 Zahlungen (03.01.2025 bis 03.12.2025) und 1 Kautionsbuchung. ${ELSE} ` +
       'Mietkonto und Steuerübersicht für 2025 zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
       'Das Mietverhältnis steht in einer abgeschlossenen Abrechnung (zuletzt 2025); sie bleibt, wie sie ist, führt den Mieter aber nicht mehr, sobald Sie sie wieder öffnen. ' +
       `${INSTEAD} ${UNDO}`,
   )
 })
 
+// Durchsicht, Sollte 3: Mit dem Mietverhältnis fallen auch Angaben an Kostenpositionen (das ändert eine offene
+// Abrechnung), Zuordnungen zum Kontoauszug und Mieterhöhungen weg; die Frage behauptet keine Vollständigkeit.
+test('Löschfrage eines Mietverhältnisses: Angaben an Kostenpositionen, Zuordnungen zum Kontoauszug, Mieterhöhungen', () => {
+  expect(tenancyDeleteMessage({ ...facts, paymentDates: ['2025-01-03', '2025-02-03'], costItemLinks: 3, bankLinks: 2, rentIncreases: 1 })).toBe(
+    'Mit dem Mietverhältnis werden gelöscht: 2 Zahlungen (03.01.2025 bis 03.02.2025), 2 Zuordnungen zum Kontoauszug, 1 Mieterhöhung und ' +
+      `3 Angaben an Kostenpositionen (Einzelbeträge, Angaben zum Mietvertrag). ${ELSE} ` +
+      'Mietkonto und Steuerübersicht für 2025 zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
+      'Eine offene Abrechnung rechnet danach ohne die Angaben an den Kostenpositionen. ' +
+      `${INSTEAD} ${UNDO}`,
+  )
+  expect(tenancyDeleteMessage({ ...facts, costItemLinks: 1, bankLinks: 1 })).toBe(
+    `Mit dem Mietverhältnis werden gelöscht: 1 Zuordnung zum Kontoauszug und 1 Angabe an einer Kostenposition (Einzelbeträge, Angaben zum Mietvertrag). ${ELSE} ` +
+      'Eine offene Abrechnung rechnet danach ohne die Angaben an den Kostenpositionen. ' +
+      `${INSTEAD} ${UNDO}`,
+  )
+})
+
 test('Löschfrage eines Mietverhältnisses: Einzahl, mehrere Jahre, nichts dran, ohne Antwort des Servers', () => {
-  expect(tenancyDeleteMessage({ paymentDates: ['2024-12-30'], depositEntries: 2, closed: [] })).toBe(
-    'Mit dem Mietverhältnis werden gelöscht: 1 Zahlung (vom 30.12.2024) und 2 Kautionsbuchungen. ' +
+  expect(tenancyDeleteMessage({ ...facts, paymentDates: ['2024-12-30'], depositEntries: 2 })).toBe(
+    `Mit dem Mietverhältnis werden gelöscht: 1 Zahlung (vom 30.12.2024) und 2 Kautionsbuchungen. ${ELSE} ` +
       'Mietkonto und Steuerübersicht für 2024 zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
       `${INSTEAD} ${UNDO}`,
   )
-  expect(tenancyDeleteMessage({ paymentDates: ['2025-01-03', '2022-05-01', '2023-01-01'], depositEntries: 0, closed: ['2024', 'Heizkosten 07/2023 bis 06/2024'] })).toBe(
-    'Mit dem Mietverhältnis werden gelöscht: 3 Zahlungen (01.05.2022 bis 03.01.2025). ' +
+  expect(tenancyDeleteMessage({ ...facts, paymentDates: ['2025-01-03', '2022-05-01', '2023-01-01'], closed: ['2024', 'Heizkosten 07/2023 bis 06/2024'] })).toBe(
+    `Mit dem Mietverhältnis werden gelöscht: 3 Zahlungen (01.05.2022 bis 03.01.2025). ${ELSE} ` +
       'Mietkonto und Steuerübersicht für 2022 bis 2025 zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
       'Das Mietverhältnis steht in einer abgeschlossenen Abrechnung (zuletzt 2024 und Heizkosten 07/2023 bis 06/2024); sie bleibt, wie sie ist, führt den Mieter aber nicht mehr, sobald Sie sie wieder öffnen. ' +
       `${INSTEAD} ${UNDO}`,
   )
-  expect(tenancyDeleteMessage({ paymentDates: [], depositEntries: 0, closed: [] })).toBe(
-    `An dem Mietverhältnis hängen weder Zahlungen noch Kautionsbuchungen. ${INSTEAD} ${UNDO}`,
+  expect(tenancyDeleteMessage(facts)).toBe(
+    `Gelöscht werden das Mietverhältnis und alle Angaben dazu; Zahlungen, Kautionsbuchungen oder Angaben an Kostenpositionen hängen nicht daran. ${INSTEAD} ${UNDO}`,
   )
   // Ließen sich Zahlungen oder Abschlüsse nicht laden, steht die vollständige Liste ohne Zahlen da.
-  expect(tenancyDeleteMessage({ paymentDates: null, depositEntries: 0, closed: null })).toBe(
-    'Mit dem Mietverhältnis werden auch seine Zahlungen und Kautionsbuchungen gelöscht. ' +
+  expect(tenancyDeleteMessage({ ...facts, paymentDates: null, closed: null, rentIncreases: null })).toBe(
+    'Mit dem Mietverhältnis werden auch seine Zahlungen samt Zuordnungen zum Kontoauszug, seine Kautionsbuchungen, Mieterhöhungen und alle weiteren Angaben zu diesem Mietverhältnis gelöscht. ' +
       'Mietkonto und Steuerübersicht der betroffenen Jahre zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
       'Steht das Mietverhältnis in einer abgeschlossenen Abrechnung, bleibt sie, wie sie ist, führt den Mieter aber nicht mehr, sobald Sie sie wieder öffnen. ' +
       `${INSTEAD} ${UNDO}`,

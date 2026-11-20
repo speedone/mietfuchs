@@ -225,8 +225,13 @@ export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], period: 
 // Fremdschlüssel nehmen aber auch Zähler, Ablesungen, Zahlungen und die Angaben der Wohnung an
 // Kostenpositionen mit. Die Zahlen kommen vom Server (`/api/units/:id/dependents`); ist er nicht
 // erreichbar (`null`), steht die vollständige Liste ohne Zahlen da.
-// Der Verlauf nimmt ein Löschen vollständig zurück (#318); vorher stand hier „Das lässt sich nicht rückgängig machen“.
-export const DELETE_UNDO = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen, am einfachsten gleich danach.'
+// Der Verlauf kann ein Löschen zurücknehmen (#318); vorher stand hier „Das lässt sich nicht rückgängig machen“. Der Satz
+// nennt die Grenzen aus server/src/db/CLAUDE.md („Rücksprung“): zurückgenommen wird immer ein Ende des Verlaufs, also
+// alles Spätere mit; nicht über einen Abschluss, ein Wiederöffnen oder ein Versanddatum, ein eingespieltes Backup oder
+// eine Sicherung und ein Update mit Migration hinweg (dort höchstens über eine ganze Sicherung); aufbewahrt wird er
+// zwölf Monate.
+export const DELETE_UNDO = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, ' +
+  'was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.'
 // Kautionsbuchungen und abgeschlossene Abrechnungen ihrer Mietverhältnisse kennt die Seite schon (Buchungen geladen,
 // Abschlüsse aus `/api/deposit-entries/statements`); fehlt die Angabe, steht nichts davon da.
 export function unitDeleteMessage(deps: UnitDependents | null, more?: { depositEntries: number; closed: readonly string[] }): string {

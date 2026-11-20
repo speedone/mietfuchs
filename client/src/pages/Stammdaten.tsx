@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, DepositForm, DepositStatementInfo, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Payment, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, DepositForm, DepositStatementInfo, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, PaymentListItem, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
@@ -17,7 +17,7 @@ import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, EMPTY_RENT_DUE, overlapQuestion, partialMonthNote, prepaymentColumn, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyDeleteMessage, tenancyRequired, type RentDueChoice, type RentDueForm, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, EMPTY_RENT_DUE, overlapQuestion, partialMonthNote, prepaymentColumn, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyCostLinks, tenancyDeleteMessage, tenancyRequired, type RentDueChoice, type RentDueForm, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, contactForm, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type ContactForm, type NewTenantForm, type TenantChangeField } from '../tenantChange'
 import { DEADLINE_SENTENCE, ownAddressWarning } from '../landlord'
@@ -501,11 +501,16 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
   async function deleteTenancy(t: Tenancy) {
     // Was mitgelöscht wird und wo es danach fehlt, aus vorhandenen Routen; ohne Antwort der Satz ohne Zahlen.
-    const payments = await api<Payment[]>(withProperty('/api/payments', propertyId)).catch(() => null)
+    const payments = await api<PaymentListItem[]>(withProperty('/api/payments', propertyId)).catch(() => null)
+    const mine = Array.isArray(payments) ? payments.filter((p) => p.tenancyId === t.id) : null
+    const increases = await api<unknown[]>(`/api/tenancies/${t.id}/rent-increases`).catch(() => null)
     const ok = await confirm({
       title: `Mietverhältnis „${t.tenantName}“ löschen?`,
       message: tenancyDeleteMessage({
-        paymentDates: Array.isArray(payments) ? payments.filter((p) => p.tenancyId === t.id).map((p) => p.date) : null,
+        paymentDates: mine === null ? null : mine.map((p) => p.date),
+        bankLinks: mine === null ? 0 : mine.filter((p) => p.fromBank === true).length,
+        costItemLinks: tenancyCostLinks(t.id, objectCosts),
+        rentIncreases: Array.isArray(increases) ? increases.length : null,
         depositEntries: depositEntries.filter((e) => e.tenancyId === t.id).length,
         closed: await closedLabelsOf(new Set([t.id])),
       }),

@@ -85,12 +85,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   stand der Mieter danach in keiner Abrechnung, und sein Anteil lief ohne Hinweis als Leerstand zum Vermieter. Ebenso
   lehnt Mietfuchs ein Datum ab, das es nicht gibt (Einzug, Auszug, Vertragsdatum, Zahlung, Ablesung, Einbau eines
   Zählers); ein leerer Einzug ließ vorher Abrechnung, Mietkonto und Steuer des ganzen Objekts scheitern. Geprüft wird
-  nur, was neu eingetragen oder geändert wird: Ein Bestand, der so etwas schon enthält, bleibt bearbeitbar.
+  nur, was neu eingetragen oder geändert wird: Ein Bestand, der so etwas schon enthält, bleibt bearbeitbar. Steht in
+  einem Bestand schon ein Mietverhältnis ohne lesbaren Einzug, nennen Abrechnung, Mietkonto, Steuer und Cockpit es jetzt
+  mit Namen und Wohnung, statt mit einer technischen Meldung zu scheitern. Ein Zählerfoto, auf dem die KI-Auswertung
+  das Datum deutsch geschrieben liest, wird weiter übernommen.
 - Löschen: Die Rückfrage zu einem Mietverhältnis nennt jetzt Zahl und Zeitraum der Zahlungen, die Kautionsbuchungen,
   ob eine abgeschlossene Abrechnung das Mietverhältnis nennt, und dass Mietkonto und Steuerübersicht der betroffenen
   Jahre die Zahlungen verlieren, dazu den Weg „Auszug eintragen statt löschen“. Die Rückfrage zu einer Wohnung nennt
-  auch Kautionsbuchungen und abgeschlossene Abrechnungen, die zu einem Zähler Zahl und Jahre der Ablesungen. Alle drei
-  sagen, dass sich das Löschen auf der Seite „Verlauf“ zurücknehmen lässt; bei der Wohnung stand vorher das Gegenteil.
+  auch Kautionsbuchungen und abgeschlossene Abrechnungen, die zu einem Zähler Zahl und Jahre der Ablesungen. Beim
+  Mietverhältnis stehen auch Zuordnungen zum Kontoauszug, Mieterhöhungen und Angaben an Kostenpositionen dabei. Alle drei
+  sagen, wie weit sich das Löschen auf der Seite „Verlauf“ zurücknehmen lässt (gleich danach für sich allein, später nur
+  mit allem Späteren und nicht über einen Abschluss, ein eingespieltes Backup oder ein Update hinweg); bei der Wohnung
+  stand vorher, es lasse sich gar nicht rückgängig machen.
 - Meldungen: Eine negative Wohnfläche und ein Verweis auf eine inzwischen gelöschte Wohnung, ein gelöschtes
   Mietverhältnis oder einen gelöschten Zähler bekommen einen Satz ohne technischen Befund.
 

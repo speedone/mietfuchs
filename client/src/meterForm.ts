@@ -352,9 +352,10 @@ export function meterUnitChoices<U extends Pick<Unit, 'id' | 'parentUnitId'>>(un
 // schon geladen.
 export function meterDeleteMessage(readingDates: readonly string[]): string {
   if (readingDates.length === 0) return `Der Zähler hat keine Ablesungen. ${DELETE_UNDO}`
-  const years = [...new Set(readingDates.map((d) => d.slice(0, 4)))].sort()
-  const span = years.length === 1 ? `aus dem Jahr ${years[0]}` : `aus den Jahren ${years[0]} bis ${years[years.length - 1]}`
+  // Nur lesbare Tage nennen ein Jahr; ein krummes Datum im Bestand („1.1.2024“) zählt mit, aber ohne Jahr.
+  const years = [...new Set(readingDates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).map((d) => d.slice(0, 4)))].sort()
+  const span = years.length === 0 ? '' : years.length === 1 ? ` aus dem Jahr ${years[0]}` : ` aus den Jahren ${years[0]} bis ${years[years.length - 1]}`
   const n = readingDates.length
-  return `Mit dem Zähler ${n === 1 ? 'wird 1 Ablesung' : `werden ${n} Ablesungen`} ${span} gelöscht. ` +
+  return `Mit dem Zähler ${n === 1 ? 'wird 1 Ablesung' : `werden ${n} Ablesungen`}${span} gelöscht. ` +
     `Der Verbrauch dieser Zeit lässt sich danach nicht mehr berechnen; abgeschlossene Abrechnungen bleiben, wie sie sind. ${DELETE_UNDO}`
 }

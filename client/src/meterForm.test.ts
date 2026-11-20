@@ -344,11 +344,14 @@ test('houseLabel: Hauptzähler oder Teil des Hauses, wie gesendet würde', () =>
 })
 
 test('Löschfrage eines Zählers: wie viele Ablesungen aus welchen Jahren, und dass der Verlauf es zurücknimmt', () => {
-  const undo = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen, am einfachsten gleich danach.'
+  const undo = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.'
   expect(meterDeleteMessage(['2023-12-31', '2025-12-31', '2024-12-31'])).toBe(
     `Mit dem Zähler werden 3 Ablesungen aus den Jahren 2023 bis 2025 gelöscht. Der Verbrauch dieser Zeit lässt sich danach nicht mehr berechnen; abgeschlossene Abrechnungen bleiben, wie sie sind. ${undo}`,
   )
   expect(meterDeleteMessage(['2025-01-01', '2025-12-31'])).toMatch(/^Mit dem Zähler werden 2 Ablesungen aus dem Jahr 2025 gelöscht\. /)
   expect(meterDeleteMessage(['2025-01-01'])).toMatch(/^Mit dem Zähler wird 1 Ablesung aus dem Jahr 2025 gelöscht\. /)
   expect(meterDeleteMessage([])).toBe(`Der Zähler hat keine Ablesungen. ${undo}`)
+  // Ein krummes Datum im Bestand ergibt kein Jahr „1.1.“: Gezählt wird die Ablesung, genannt werden nur lesbare Jahre.
+  expect(meterDeleteMessage(['1.1.2024', '2025-12-31'])).toMatch(/^Mit dem Zähler werden 2 Ablesungen aus dem Jahr 2025 gelöscht\. /)
+  expect(meterDeleteMessage(['1.1.2024'])).toMatch(/^Mit dem Zähler wird 1 Ablesung gelöscht\. /)
 })

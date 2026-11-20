@@ -1,4 +1,4 @@
-import type { CostModel, HeatingModel, NotSettled, RentDueRule, SelfSupplyKind, Tenancy, Unit } from './types'
+import type { CostItem, CostModel, HeatingModel, NotSettled, RentDueRule, SelfSupplyKind, Tenancy, Unit } from './types'
 import { effectiveRentDue } from '../../shared/rentDue.ts'
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { usageAt } from '../../shared/unitUsage.ts'
@@ -302,29 +302,59 @@ export function tenancyRequired(form: { tenantName: string; unitId: string; star
 // Angaben hat die Seite schon oder holt sie über vorhandene Routen (Zahlungen, `/api/deposit-entries/statements`);
 // `null` heißt, sie ließen sich nicht laden, dann steht der Satz ohne Zahlen da. `closed`: die Bezeichnungen der zuletzt
 // abgeschlossenen Abrechnungen (Betriebskosten, getrennte Heizkosten), die das Mietverhältnis nennen.
-export type TenancyDeleteFacts = { paymentDates: readonly string[] | null; depositEntries: number; closed: readonly string[] | null }
+// Dazu, was sonst mit dem Mietverhältnis wegfällt und die Seite zählen kann: Angaben an Kostenpositionen (Einzelbeträge,
+// „nicht vereinbart“, ausdrücklich genannt; aus den geladenen Positionen, `tenancyCostLinks`), Zuordnungen seiner
+// Zahlungen zum Kontoauszug (`fromBank` der Zahlungsliste) und Mieterhöhungen (`null`: nicht geladen). Die Frage
+// behauptet keine Vollständigkeit: Eigene Texte im Anschreiben und CO₂-Erstattungen zählt hier niemand.
+export type TenancyDeleteFacts = {
+  paymentDates: readonly string[] | null
+  depositEntries: number
+  closed: readonly string[] | null
+  costItemLinks: number
+  bankLinks: number
+  rentIncreases: number | null
+}
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 export function tenancyDeleteMessage(facts: TenancyDeleteFacts): string {
-  const dates = facts.paymentDates === null ? null : [...facts.paymentDates].sort()
+  // Ein krummes Datum im Bestand zählt als Zahlung mit, nennt aber keinen Tag.
+  const dates = facts.paymentDates === null ? null : facts.paymentDates.filter((d) => ISO_DAY.test(d)).sort()
+  const count = facts.paymentDates?.length ?? 0
   const first = dates?.[0]
   const last = dates?.[dates.length - 1]
-  const parts: string[] = []
-  if (dates !== null && first !== undefined && last !== undefined) {
-    parts.push(dates.length === 1 ? `1 Zahlung (vom ${fmtDate(first)})` : `${dates.length} Zahlungen (${fmtDate(first)} bis ${fmtDate(last)})`)
-  }
-  if (facts.depositEntries > 0) parts.push(facts.depositEntries === 1 ? '1 Kautionsbuchung' : `${facts.depositEntries} Kautionsbuchungen`)
+  const n = (k: number, one: string, many: string) => (k > 0 ? [`${k} ${k === 1 ? one : many}`] : [])
+  const parts = [
+    ...(count === 0 ? [] : first === undefined || last === undefined ? n(count, 'Zahlung', 'Zahlungen')
+      : count === 1 ? [`1 Zahlung (vom ${fmtDate(first)})`] : [`${count} Zahlungen (${fmtDate(first)} bis ${fmtDate(last)})`]),
+    ...n(facts.bankLinks, 'Zuordnung zum Kontoauszug', 'Zuordnungen zum Kontoauszug'),
+    ...n(facts.depositEntries, 'Kautionsbuchung', 'Kautionsbuchungen'),
+    ...n(facts.rentIncreases ?? 0, 'Mieterhöhung', 'Mieterhöhungen'),
+    ...n(facts.costItemLinks, 'Angabe an einer Kostenposition', 'Angaben an Kostenpositionen').map((t) => `${t} (Einzelbeträge, Angaben zum Mietvertrag)`),
+  ]
   const head = dates === null
-    ? 'Mit dem Mietverhältnis werden auch seine Zahlungen und Kautionsbuchungen gelöscht.'
-    : parts.length > 0 ? `Mit dem Mietverhältnis werden gelöscht: ${andList(parts)}.` : 'An dem Mietverhältnis hängen weder Zahlungen noch Kautionsbuchungen.'
+    ? 'Mit dem Mietverhältnis werden auch seine Zahlungen samt Zuordnungen zum Kontoauszug, seine Kautionsbuchungen, Mieterhöhungen und alle weiteren Angaben zu diesem Mietverhältnis gelöscht.'
+    : parts.length > 0
+      ? `Mit dem Mietverhältnis werden gelöscht: ${andList(parts)}. Dazu alle weiteren Angaben zu diesem Mietverhältnis, etwa eigene Texte im Anschreiben und CO₂-Erstattungen.`
+      : 'Gelöscht werden das Mietverhältnis und alle Angaben dazu; Zahlungen, Kautionsbuchungen oder Angaben an Kostenpositionen hängen nicht daran.'
   const years = first === undefined || last === undefined ? null
     : first.slice(0, 4) === last.slice(0, 4) ? `für ${first.slice(0, 4)}` : `für ${first.slice(0, 4)} bis ${last.slice(0, 4)}`
-  const ledger = dates === null || years !== null
+  const ledger = dates === null || count > 0
     ? ` Mietkonto und Steuerübersicht ${years ?? 'der betroffenen Jahre'} zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend.`
     : ''
+  const open = facts.costItemLinks > 0 ? ' Eine offene Abrechnung rechnet danach ohne die Angaben an den Kostenpositionen.' : ''
   const reopened = 'führt den Mieter aber nicht mehr, sobald Sie sie wieder öffnen.'
   const closed = facts.closed === null
     ? ` Steht das Mietverhältnis in einer abgeschlossenen Abrechnung, bleibt sie, wie sie ist, ${reopened}`
     : facts.closed.length > 0 ? ` Das Mietverhältnis steht in einer abgeschlossenen Abrechnung (zuletzt ${andList([...facts.closed])}); sie bleibt, wie sie ist, ${reopened}` : ''
-  return `${head}${ledger}${closed} Ist der Mieter nur ausgezogen, löschen Sie nicht: Tragen Sie beim Mietverhältnis den Auszug ein, dann bleibt alles erhalten. ${DELETE_UNDO}`
+  return `${head}${ledger}${open}${closed} Ist der Mieter nur ausgezogen, löschen Sie nicht: Tragen Sie beim Mietverhältnis den Auszug ein, dann bleibt alles erhalten. ${DELETE_UNDO}`
+}
+
+// Wie viele Angaben an Kostenpositionen ein Mietverhältnis nennen: je Position ein Einzelbetrag, „nicht vereinbart“
+// und „ausdrücklich genannt“ (die Tabellen, die mit dem Mietverhältnis wegfallen; server/src/db/schema.ts).
+export function tenancyCostLinks(tenancyId: string, items: readonly Pick<CostItem, 'tenancyAmounts' | 'notAgreedTenancyIds' | 'namedTenancyIds'>[]): number {
+  return items.reduce((sum, c) => sum +
+    (c.tenancyAmounts && Object.hasOwn(c.tenancyAmounts, tenancyId) ? 1 : 0) +
+    (c.notAgreedTenancyIds?.includes(tenancyId) ? 1 : 0) +
+    (c.namedTenancyIds?.includes(tenancyId) ? 1 : 0), 0)
 }
 
 // ---------- Fälligkeit der Miete (#334) ----------
