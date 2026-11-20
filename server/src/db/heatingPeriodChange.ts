@@ -137,7 +137,14 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
   }
   for (const r of periodRows) {
     const a = changed(r.period)
-    if (a) blocked.add(`Für die Heizperiode ${periodLabel(a.old)} sind Angaben zur Heizung erfasst (Warmwasser, Verteilung). Den Zeitraum einer solchen Heizperiode zu ändern, kommt mit einer späteren Version.`)
+    // Systemprüfung 20.11.2026: Der Satz nennt den Weg. Er stimmt, weil das Zurückstellen auf „Niemand“ die Angaben der
+    // Einrichtung entfernt (`updateHeatingPlant`); was der Vermieter darüber hinaus eingetragen hat, bleibt und sperrt.
+    if (a) {
+      blocked.add(`Für die Heizperiode ${periodLabel(a.old)} sind Angaben zur Heizung erfasst (etwa Anteil nach Verbrauch, Warmwasser, Vorrat oder CO₂-Angaben). Den Zeitraum einer solchen Heizperiode ändert Mietfuchs nicht. ` +
+        'Stammen die Angaben aus der eigenen Heizkostenabrechnung, geht es so: Öffnen Sie in der Karte „Heizung“ das Fenster „Heizung ändern“, wählen Sie bei der Frage, wer die Heizkostenabrechnung erstellt, „Niemand“ und speichern Sie. ' +
+        'Ändern Sie dann den Zeitraum mit „Zeitraum der Heizung ändern“ und richten Sie die eigene Heizkostenabrechnung danach neu ein. ' +
+        'Bleibt die Sperre, hängen an der Heizperiode weitere Angaben von der Seite Heizkosten (Warmwasser nach einer Formel, Vorrat, CO₂-Angaben, Schätzungen, Pflichtangaben); entfernen Sie diese zuerst.')
+    }
   }
   for (const p of closedP) {
     const closed = periodOfKey(objectRules, p.period)

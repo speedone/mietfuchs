@@ -79,6 +79,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Eigene Heizkostenabrechnung: Der Block „Heizkostenabrechnung“ nennt je Mieter und Topf jetzt genau den Betrag seiner
+  Kostenzeilen. Bei mehreren Heizpositionen konnte er um einen Cent von der Kostentabelle desselben Blatts abweichen.
+  Kosten, Vorauszahlungen und Salden waren und bleiben richtig; abgeschlossene Abrechnungen bleiben, wie sie sind.
+- Getrennte Heizkostenabrechnung einschalten: Verlangt Mietfuchs nach „Speichern“ die Bestätigung zu einer abgelaufenen
+  Frist, bleiben die eingetragenen Heizanteile stehen. Vorher standen sie danach wieder auf der Vorbelegung, ohne
+  bekannten Anteil auf 0,00 €.
+- Eigene Heizkostenabrechnung und eigener Zeitraum der Heizung: Das Fenster „Heizkosten selbst abrechnen“ sagt vor dem
+  Speichern, dass ein abweichender Zeitraum der Heizung zuerst einzustellen ist. Wer die Reihenfolge schon anders
+  gewählt hat, stellt die Heizung auf „Niemand“ zurück, ändert den Zeitraum und richtet die eigene Abrechnung neu ein;
+  die Ablehnung nennt diesen Weg, und er war vorher versperrt, weil nach dem Zurückstellen eine Angabe der Einrichtung
+  stehen blieb.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

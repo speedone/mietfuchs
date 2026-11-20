@@ -627,6 +627,10 @@ export const connectionNote = (u: Pick<Unit, 'noConnection'>): string | null =>
 export const MANUAL_SUMMARY = 'nach den Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung'
 // Derselbe Satz in Schritt 7 und in der Mitteilung nach „Später“.
 export const SELF_UNTIL_SWITCH = 'Die Abrechnung wechselt erst, wenn Sie das Fenster „Heizkosten selbst abrechnen“ speichern; bis dahin verteilt Mietfuchs die Heizkosten nach den Umlageschlüsseln der Kostenpositionen.'
+// Systemprüfung 20.11.2026: Mit dem Speichern der eigenen Abrechnung trägt die Heizperiode Angaben, und ihr Zeitraum lässt
+// sich nicht mehr ändern (server/src/db/heatingPeriodChange.ts). Deshalb steht die Reihenfolge vorher da, solange die
+// Heizung im Zeitraum des Objekts rechnet.
+export const SELF_PERIOD_FIRST = 'Rechnet diese Heizung in einem anderen Zeitraum ab als das Objekt, etwa von Mai bis April? Dann stellen Sie zuerst den Zeitraum ein: Schließen Sie dieses Fenster mit „Später“ und klicken Sie in der Karte „Heizung“ auf „Zeitraum der Heizung ändern“. Danach öffnen Sie dieses Fenster wieder mit „Eigene Heizkostenabrechnung einrichten“. Nach dem Speichern hier lässt sich der Zeitraum der Heizung erst wieder ändern, wenn Sie die eigene Heizkostenabrechnung zurückstellen.'
 
 // Die Zeilen der Karte, wenn eine Anlage eingerichtet ist. Ohne Liste versorgt die Anlage jede
 // Einheit mit Wärmeanschluss (`servesUnit`); die übrigen nennt die Zeile, sonst hieße es „alle“.

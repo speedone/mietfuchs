@@ -233,7 +233,10 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
 - **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
   [db/heatingSelf.ts](../server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und Positionen offener
   Zeiträume in einer Transaktion; fehlen Teil und Ziel, 409 mit Liste. Zurück auf „Niemand“ verlangt
-  `convertItems: 'area'`. Bei Heizkostenverteilern und Ablesedienst werden keine Wärmezähler angelegt.
+  `convertItems: 'area'` und nimmt aus offenen Heizperioden mit, was die Einrichtung eintrug (Anteile,
+  `above_70_agreed`, das automatische `dhw_method = 'heatMeter'` ohne eigene Warmwasserangaben; danach `dropIfEmpty`),
+  sonst sperrte die Zeile den Wechsel des Zeitraums der Heizung. Der Zeitraum gehört **vor** die eigene Abrechnung
+  (`SELF_PERIOD_FIRST` im Fenster); die Ablehnung in heatingPeriodChange.ts nennt den Weg über „Niemand“. Bei Heizkostenverteilern und Ablesedienst werden keine Wärmezähler angelegt.
 - **Zeiträume der eigenen Abrechnung** stehen in `heating_self_spans` (von, bis ausschließlich), mit
   **Erfassung und Warmwasserbereitung** je Spanne (`captureOf`, `hotWaterOf`). Die Einrichtung öffnet
   einen Zeitraum nie vor oder in einer abgeschlossenen Heizperiode; das Zurückschalten schließt ihn
@@ -341,6 +344,12 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
 - **Ausweis je Gerät** (`self.devices`) aus den Differenzen des Plans, nicht aus einer zweiten Lesart;
   jeder Mieter bekommt nur seine Geräte und Zeilen. Dass der Faktor genannt wird, ist Praxis, keine
   Norm (so in Lexikon und Sätzen).
+- **Beträge je Nutzer und Topf** (`heatingCents`, `waterCents`) sind die Summe seiner verteilten Zeilen
+  (`selfBlockCents` in calc.ts: beim Mieter die Kostenzeile jeder Position, sonst sein Teil der Zeilen des
+  Vermieters), nicht Topf mal Gewicht einmal gerundet; alle Nutzer zusammen ergeben die Positionen. Eine Position für
+  Heizung und Warmwasser wird je Zeile nach α und den Gewichten geteilt (Heizung gerundet, Rest Warmwasser); deshalb
+  können die Nutzer je Topf zusammen um Cent von `pots[].costCents` abweichen, beide Töpfe zusammen nie. Der CO₂-Abzug
+  ebenso: Heizung gerundet, Rest Warmwasser (calc-heizblock-betraege.test.ts).
 
 ### Schätzung nach § 9a
 

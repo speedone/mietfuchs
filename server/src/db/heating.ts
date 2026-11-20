@@ -28,7 +28,7 @@ import { billingEnergy, CONTRACTING_ENERGIES, isHeatDelivery } from '../../../sh
 import { STOCK_ENERGIES } from '../fuel.ts'
 import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodContaining, periodKey, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
-import { closedHeatingKeys, heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
+import { closedHeatingKeys, dropIfEmpty, heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readMeters, readProperties, readUnits } from './read.ts'
 import { andList } from '../../../shared/wording.ts'
@@ -676,7 +676,15 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
       await tx.update(costItems).set({ key: 'area', heatingTarget: null }).where(eq(costItems.id, c.id))
     }
     for (const rowId of clearShares) {
-      await tx.update(heatingPeriods).set({ heatConsumptionPct: null, waterConsumptionPct: null, insulationRule: null }).where(eq(heatingPeriods.id, rowId))
+      await tx.update(heatingPeriods).set({ heatConsumptionPct: null, waterConsumptionPct: null, insulationRule: null, above70Agreed: null }).where(eq(heatingPeriods.id, rowId))
+      // Systemprüfung 20.11.2026: „gemessen“ beim Warmwasser trägt die Einrichtung selbst ein (`setUpSelf`). Steht daneben
+      // keine eigene Angabe zum Warmwasser, geht es mit den Anteilen; sonst bliebe die Zeile allein deshalb stehen und
+      // sperrte den Wechsel des Zeitraums der Heizung (jede Zeile gilt dort als Angabe). Eine Formel mit ihren Werten bleibt.
+      await tx.update(heatingPeriods).set({ dhwMethod: null }).where(and(
+        eq(heatingPeriods.id, rowId), eq(heatingPeriods.dhwMethod, 'heatMeter'),
+        isNull(heatingPeriods.dhwHeatKwh), isNull(heatingPeriods.totalHeatKwh), isNull(heatingPeriods.dhwVolumeM3), isNull(heatingPeriods.dhwTempC), isNull(heatingPeriods.dhwUnmeasurable),
+      ))
+      await dropIfEmpty(tx, rowId)
     }
     await writePlantUnits(tx, next)
     if (zurueck) await writeSelfSpans(tx, id, next.selfSpans ?? [])
