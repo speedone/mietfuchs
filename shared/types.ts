@@ -2344,6 +2344,10 @@ export type LineCandidate = { id: string; description: string; amountCents: numb
 export type LineSuggestion = {
   fields: LineFields
   candidates: LineCandidate[]
+  // Die aus **dieser** Auswertung schon gebuchten Positionen, mit denen sich die Zeile verknüpfen lässt (eine Rechnung
+  // mit vielen Zeilen als eine Position). Keine Kandidaten: Sie färben nicht und fragen nicht nach. Fehlt bei einer
+  // älteren Fassung des Servers.
+  sameReceipt?: LineCandidate[]
   level: TrafficLight
   reasons: string[]
   preselected: boolean
@@ -3350,6 +3354,9 @@ export type SelfPotView = {
   // #322: Steht der Topf Heizung nach umbautem Raum, sind `areaM2`, `estimatedAreaM2` und `baseCentsPerM2`
   // Kubikmeter; dann steht hier 'm³'. Fehlt: Quadratmeter.
   basisUnit?: 'm³'
+  // Systemprüfung: Für diesen Topf ist an keiner Wohnung ein Gerät angelegt (bei einem Ablesedienst: kein Wert
+  // eingetragen); er geht deshalb nur nach Fläche. Fehlt sonst und in älteren Abrechnungen.
+  noDevices?: true
 }
 // Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
 // `oldEndValue` (Durchsicht von #241, Recht-I2): bei einem Wechsel oder Stichtag an der Grenze der Stand davor; beim
@@ -3371,6 +3378,10 @@ export type SelfBoundaryView = {
   // Die Zähler ohne Stand an dieser Grenze, mit Zählernummer, wenn eingetragen (Befund M7 aus #341);
   // fehlt in älteren Abrechnungen.
   missingMeters?: { name: string; number?: string }[]
+  // Systemprüfung: Die Töpfe, für die an dieser Wohnung kein Gerät angelegt ist, obwohl die Verordnung eine Erfassung
+  // verlangt. `status` beschreibt nur die Zähler, die es gibt (ohne einen ist es 'read'); die Oberfläche zeigt für diese
+  // Töpfe den fehlenden Schritt. Fehlt, wenn nichts fehlt, und in älteren Abrechnungen.
+  noDevicePots?: SelfPot[]
 }
 // Ein Nutzer einer Wohnung (Mieter, Leerstand, Eigennutzung, außerhalb) mit seinen Werten.
 export type SelfUserView = {
@@ -3386,8 +3397,18 @@ export type SelfUserView = {
   waterConsumption: number | null
   heatingGroup: boolean
   waterGroup: boolean
+  // Der Betrag des Nutzers im Topf: die Summe seiner verteilten Zeilen (beim Mieter seine Kostenzeilen, sonst sein
+  // Teil der Zeilen des Vermieters), nicht Topf mal Gewicht einmal gerundet. Eine Zeile für Heizung und Warmwasser
+  // ist auf beide Töpfe geteilt; beide Beträge zusammen sind genau die Zeilen.
   heatingCents: number
   waterCents: number
+  // Die Zahl der verteilten Zeilen (Positionen und Überträge), aus denen der Betrag des Topfs summiert ist; eine
+  // Zeile für Heizung und Warmwasser zählt in beiden. Jede ist für sich gerundet: Um so viele Cent kann der Betrag
+  // von Topf mal Gewicht abweichen, dazu einer für das Teilen solcher Zeilen auf die Töpfe (Grenze der Invarianten in
+  // fuel-invariant.test.ts, gemessen, nicht bewiesen). Fehlt in Ständen, die vor dieser Angabe eingefroren wurden, und
+  // ohne Verteilung.
+  heatingRows?: number
+  waterRows?: number
   // Der Teil seines CO₂-Abzugs, der auf den Topf entfällt (Abweichung 15): Topfbetrag nach Abzug =
   // heatingCents − heatingCo2Cents. 0 ohne Abzug.
   heatingCo2Cents: number

@@ -10,7 +10,7 @@ import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
 import {
-  boundaryLight, boundaryText, distributionLines, gapConsequence, INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained,
+  boundaryLight, boundaryText, distributionLines, missingDevicesLines, gapConsequence, INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained,
   heatUnitOf, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine, type Light,
 } from '../heatingSelfView'
 import { forcedShare, shareBounds } from '../heatingSelfForm'
@@ -185,6 +185,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
             Je Wohnung die Ablesung zu Beginn und Ende der Heizperiode und bei jedem Mieterwechsel (<Term id="interimReading">Zwischenablesung</Term>).
             Fehlt eine Zwischenablesung, sagen Sie, warum.
           </p>
+          {/* Systemprüfung: Erfassung gewählt, aber kein Gerät angelegt. */}
+          {missingDevicesLines(self).map((line) => <div key={line} className="warn">{line}</div>)}
           <div>
             {self.units.flatMap((u) => u.boundaries.map((b) => {
               const light = boundaryLight(b)
@@ -193,7 +195,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
                 <div key={key} className={`check-row ${light === 'green' ? '' : AMPEL[light]}`}>
                   <span className={`ampel ${AMPEL[light]}`} />
                   <div className="grow">
-                    {boundaryText(b, u.unitName)}
+                    {boundaryText(b, u.unitName, self.capture)}
                     {b.status === 'off' && b.kind === 'change' && b.far && (
                       <div className="row no-print">
                         <button className="btn ghost" onClick={() => answer(u.unitId, b.date, 'useReading')}>Ablesung verwenden</button>

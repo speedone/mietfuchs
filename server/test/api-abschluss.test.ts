@@ -86,6 +86,34 @@ test('Abschließen (#319): Hinweise der Stufe warning und hint brauchen keine Be
   }
 })
 
+// Systemprüfung: drei Wohnungen mit Kaltwasserzähler, einer läuft rückwärts (Endstand 250 nach Anfang 300). Vorher
+// verteilte die Abrechnung 900 € als 900, 900 und -900, ohne Hinweis, und ließ sich mit 201 abschließen.
+test('Abschließen: negativer Verbrauch im Verteilschlüssel ist ein Fehler der Abrechnung und fragt nach', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    for (const [name, from, to] of [['A', 100, 150], ['B', 200, 250], ['C', 300, 250]] as const) {
+      const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name, areaM2: 60, participates: true }) })
+      await s.api('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: name, persons: 1, start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 10000 }] }) })
+      const meter = await s.api<{ id: string }>('/api/meters', { method: 'POST', body: JSON.stringify({ name: `Wasser ${name}`, unitId: unit.id, type: 'kaltwasser', unit: 'm³' }) })
+      await s.api('/api/readings', { method: 'POST', body: JSON.stringify({ meterId: meter.id, date: '2024-12-31', value: from }) })
+      await s.api('/api/readings', { method: 'POST', body: JSON.stringify({ meterId: meter.id, date: '2025-12-31', value: to }) })
+    }
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 90000, key: 'meter', meterType: 'kaltwasser' }) })
+    const live = await s.api<Settlement>('/api/settlement/2025')
+    assert.deepEqual((live.notices ?? []).filter((n) => n.level === 'error').map((n) => [n.code, n.subject?.kind]), [['meter.negative-in-key', 'meter']])
+    assert.deepEqual(live.statements.map((st) => st.totalShareCents), [0, 0, 0], 'kein Mieter trägt mehr als die Rechnung, keiner einen negativen Anteil')
+    const gefragt = await send('/api/settlement/2025/close', 'POST', {})
+    assert.equal(gefragt.status, 409)
+    const body = await jsonOf<Question>(gefragt)
+    assert.deepEqual(body.errorNotices?.map((n) => n.code), ['meter.negative-in-key'])
+    assert.equal((await s.api<Settlement>('/api/settlement/2025')).closed, null, 'nichts eingefroren')
+    assert.equal((await send('/api/settlement/2025/close', 'POST', { despiteErrors: body.errorToken })).status, 201)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Abschließen der Heizkostenabrechnung (#319): Fehler fragen nach, Bestätigung schließt ab', async () => {
   const s = await startServer()
   try {

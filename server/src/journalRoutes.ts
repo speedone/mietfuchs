@@ -115,6 +115,7 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'POST /api/heating-plants/:id/service-statement': s('Messdienstabrechnung hochgeladen', 'uploads'),
   'POST /api/heating-plants/:id/fuel-invoice': s('Lieferantenrechnung hochgeladen', 'uploads'),
   'PUT /api/assessments/:id': s('Auswertung eines Belegs geändert'),
+  // Der Satz nennt danach, was gebucht wurde („Beleg gebucht (13 Zeilen verknüpft)“, `bookingTitle`, `retitleCurrentGroup`).
   'POST /api/assessments/:id/book': s('Beleg gebucht', 'cost_items'),
   'PUT /api/uploads/:file': s('Objekt oder Jahr eines Belegs geändert', 'uploads'),
   'DELETE /api/uploads/:file': s('Beleg gelöscht', 'uploads'),

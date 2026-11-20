@@ -81,7 +81,7 @@ test('Rechtsdurchsicht 2026: Abrechnung 2027: kein Hinweis, wenn kein Mieter üb
 test('Rechtsdurchsicht 2026: Lexikon: die Nachrüstfrist 31.12.2026 steht bei der Heizkostenverordnung', () => {
   assert.match(GLOSSARY.heatingCostOrdinance.needed, /31\.12\.2026/)
   assert.match(GLOSSARY.heatingCostOrdinance.needed, /Abrechnungsjahr 2027/)
-  assert.match(GLOSSARY.heatingCostOrdinance.norm, /§§ 1, 2, 5, 6a, 7, 8, 11, 12 HeizkostenV/)
+  assert.match(GLOSSARY.heatingCostOrdinance.norm, /§§ 1, 2, 5, 6a, 7, 8, 10, 11, 12 HeizkostenV/)
 })
 
 test('Rechtsdurchsicht 2026: Lexikon: Abrechnungsfrist bei fehlendem oder angefochtenem Grundsteuerbescheid (BGH VIII ZR 6/24)', () => {

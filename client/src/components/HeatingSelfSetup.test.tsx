@@ -9,6 +9,21 @@ const plant = { id: 'hp', energy: 'gas', hotWater: 'combined', capture: null, ar
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('HeatingSelfSetup', () => {
+  // Systemprüfung 20.11.2026: Wer hier speichert, kann den Zeitraum der Heizung danach nicht mehr ändern; die Reihenfolge
+  // steht deshalb vor dem Speichern da.
+  it('sagt vor dem Speichern, dass ein abweichender Zeitraum der Heizung zuerst einzustellen ist; mit eigenem Zeitraum und beim Ändern nicht', () => {
+    const satz = /Dann stellen Sie zuerst den Zeitraum ein: Schließen Sie dieses Fenster mit „Später“ und klicken Sie in der Karte „Heizung“ auf „Zeitraum der Heizung ändern“/
+    render(<HeatingSelfSetup plant={{ ...plant, method: 'manual', periodStartMonth: null }} period="2025-01" onDone={() => {}} onCancel={() => {}} />)
+    expect(screen.getByText(satz)).toBeTruthy()
+    cleanup()
+    render(<HeatingSelfSetup plant={{ ...plant, method: 'manual', periodStartMonth: 5 }} period="2025-05" onDone={() => {}} onCancel={() => {}} />)
+    expect(screen.queryByText(satz)).toBeNull()
+    cleanup()
+    render(<HeatingSelfSetup plant={{ ...plant, method: 'self', periodStartMonth: null }} period="2025-01" onDone={() => {}} onCancel={() => {}} />)
+    expect(screen.queryByText(satz)).toBeNull()
+  })
+
+
   it('nennt bei 409 die Positionen und schickt Teil und Ziel beim zweiten Versuch mit', async () => {
     const bodies: unknown[] = []
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
