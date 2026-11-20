@@ -61,3 +61,29 @@ test('„Position öffnen“ bei einer Position eines anderen Objekts schaltet e
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'), SLOW)
   await waitFor(() => expect((screen.getByLabelText(/Beschreibung/) as HTMLInputElement).value).toBe('Hauswart laut Hausgeld'), SLOW)
 })
+
+// Rückwege im Ordner: „Position öffnen“ am Beleg einer Position eines anderen Jahres (Ordner mit „Belege aller Jahre
+// zeigen“). Die Kostenliste zeigt nur den gewählten Zeitraum; ohne Wechsel stünde das Formular über einer Liste, in der
+// die Position fehlt.
+test('„Position öffnen“ am Beleg im Ordner wechselt erst in Objekt und Zeitraum der Position', async () => {
+  const OLD: CostItem = { id: 'alt', propertyId: 'objekt-2', period: calendarPeriod(YEAR - 1), category: 'Hauswart', description: 'Hauswart Vorjahr', amountCents: 30000, key: 'area', invoiceFile: '6_vorjahr.pdf' }
+  const receipt: UploadInfo = { ...INBOX, file: '6_vorjahr.pdf', originalName: 'vorjahr.pdf', year: YEAR - 1 }
+  const fetchBefore = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const [path, query = ''] = url.split('?')
+    if ((init?.method ?? 'GET') === 'GET' && path === '/api/uploads') return json([receipt])
+    if ((init?.method ?? 'GET') === 'GET' && path === '/api/costItems') return json(new URLSearchParams(query).get('property') === 'objekt-2' ? [OLD] : [])
+    return fetchBefore(url, init)
+  })
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Belege$/ }, SLOW))
+  fireEvent.click(await screen.findByRole('tab', { name: 'Ordner' }, SLOW))
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Belege aller Objekte zeigen' }, SLOW))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Belege aller Jahre zeigen' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Position öffnen (Hauswart Vorjahr)' }, SLOW))
+  await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'), SLOW)
+  await waitFor(() => expect((screen.getByLabelText(/Beschreibung/) as HTMLInputElement).value).toBe('Hauswart Vorjahr'), SLOW)
+  // Die Liste darunter zeigt den Zeitraum der Position
+  expect(document.querySelector('tr[data-item="alt"]')).not.toBeNull()
+})

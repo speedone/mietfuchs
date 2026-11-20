@@ -9,6 +9,7 @@ import { hkvEstimateThreshold } from '../../../shared/law/heizkostenv.ts'
 import { valueAt } from '../../../shared/law/register.ts'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import Drawer from './Drawer'
+import { estimateIdleText } from '../heatingSelfView'
 import { useSaving } from '../useSaving'
 
 const POT_TEXT = { heat: 'Heizung', water: 'Warmwasser' } as const
@@ -101,7 +102,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
         ist er nach § 9a HeizkostenV zu ermitteln; ohne Schätzung verteilt Mietfuchs die Anlage nicht. Liegt eine Ablesung einige Tage neben dem Stichtag, gilt sie, wie sie ist.
         Der geschätzte Verbrauch gilt für die ganze Heizperiode der Wohnung, auch für Zeiten, die abgelesen sind; nur wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert.
       </p>
-      {needs.length === 0 && <p>Für keine Wohnung fehlt ein Wert.</p>}
+      {needs.length === 0 && <p>{estimateIdleText(self)}</p>}
       {needs.map((o) => {
         const e = existingOf(o)
         const unit = e?.valueUnit ?? unitOf(o)

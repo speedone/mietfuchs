@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
-  bookDecisions, bookedLines, categoryOptions, changeAssessmentYear, decisionsOf, initialRows, linesShape, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, confirmLabel, type RowAction, type RowDraft,
+  ampelNote, bookDecisions, bookedLines, categoryOptions, combinableLines, linkAllRows, openCredits, sameReceiptTargets, changeAssessmentYear, decisionsOf, fromSameReceipt, initialRows, linesShape, linkChoices, noteGroups, planDecisions, previewLines, reasonChips, shownRow, withConfirmed, yearOptions, confirmLabel, PREPAID_ADVICE, type RowAction, type RowDraft,
 } from '../assessment'
 import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
@@ -19,6 +19,7 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import { receiptHref } from '../eInvoiceView'
 import Term from './Term'
+import CombineLinesDrawer from './CombineLinesDrawer'
 
 type Props = {
   assessment: AssessmentView
@@ -30,12 +31,15 @@ type Props = {
   // Ob das Jahr der Buchung einen ungespeicherten Entwurf hat (Durchsicht zu #309, MUSS 1): „Alle grünen
   // übernehmen“ im Eingang bucht eine solche Auswertung nicht.
   onYearDraft?: (assessmentId: string, dirty: boolean) => void
+  // Auf der Seite Kosten steht die Liste der Kostenpositionen auf derselben Seite: Der Rückweg einer angelegten Zeile
+  // nennt sie dort, ohne Sprung.
+  page?: 'kosten'
 }
 
 const ACTIONS: readonly string[] = ['', 'create', 'dismiss', 'release']
 const isAction = (v: string): v is RowAction => ACTIONS.includes(v) || v.startsWith('link:')
 
-export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem, onYearDraft }: Props) {
+export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem, onYearDraft, page }: Props) {
   const confirm = useConfirm()
   const [rows, setRows] = useState<Record<number, RowDraft>>(() => initialRows(a))
   const [preview, setPreview] = useState<BookingPreview | null>(null)
@@ -90,11 +94,11 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     setBooked(null)
   }
 
-  async function showPreview() {
+  async function showPreview(planned = decisions) {
     setBusy(true)
     setError('')
     try {
-      setPreview(await planDecisions(a.id, decisions))
+      setPreview(await planDecisions(a.id, planned))
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -143,8 +147,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   // Das Jahr der Buchung ist ein Entwurf am Feld (#309): Erst „Speichern“ schickt es. Solange er offen
   // ist, gibt es weder Vorschau noch Buchung, denn beide gälten noch für das bisherige Jahr.
   // Die Liste der Jahre hängt am gespeicherten Jahr; zieht es sich von außen nach, verfällt ein Entwurf
-  // außerhalb der neuen Liste (MUSS 2).
-  const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
+  // außerhalb der neuen Liste (MUSS 2). Das gewählte Jahr steht immer darin (`yearOptions`).
+  const years = yearOptions(a)
   const year = useDraft(a.year, { scope: a.id, isValid: (y) => years.includes(y) })
   const reportYear = useRef(onYearDraft)
   reportYear.current = onYearDraft
@@ -168,6 +172,35 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     setError('')
     onChange(await changeAssessmentYear(a.id, next))
   }
+
+  const notes = noteGroups(a)
+  // „Alle Zeilen als eine Position anlegen“ (CombineLinesDrawer): der ausdrückliche Weg für eine Rechnung mit vielen Zeilen
+  const [combining, setCombining] = useState(false)
+  // Ist aus diesem Beleg schon eine Position gebucht (Teilzustand), legt die Karte keine zweite an: Sie verknüpft alle
+  // offenen Zeilen mit ihr, über die gewohnte Vorschau.
+  const ownTargets = sameReceiptTargets(a)
+  const [ownChoice, setOwnChoice] = useState('')
+  const ownTarget = ownTargets.find((c) => c.id === ownChoice) ?? ownTargets[0] ?? null
+  const credit = openCredits(a)
+  function linkAll(costItemId: string) {
+    const next = linkAllRows(a, rows, costItemId)
+    setRows(next)
+    setBooked(null)
+    const nextShown: Record<number, RowDraft> = {}
+    for (const line of a.lines) {
+      const row = next[line.idx]
+      if (row) nextShown[line.idx] = shownRow(line, row)
+    }
+    void showPreview(decisionsOf(a, nextShown))
+  }
+  // Nach „Anlegen“ im Fenster ist sein Knopf verschwunden: Der Fokus geht auf die Erfolgsmeldung, nicht auf die Seite.
+  const bookedBox = useRef<HTMLDivElement>(null)
+  const focusBooked = useRef(false)
+  useEffect(() => {
+    if (!focusBooked.current || !booked) return
+    focusBooked.current = false
+    bookedBox.current?.focus()
+  })
 
   return (
     <div className="stack assessment-review">
@@ -195,8 +228,12 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       {a.source === 'e-rechnung' && (
         <NoticeBox level="hint" action={<>Aus der <Term id="eInvoice">E-Rechnung</Term> übernommen: Betrag, Datum und Positionen stehen maschinenlesbar in der Rechnung, die KI wurde nicht gefragt.</>} />
       )}
-      {a.eInvoiceNotes.length > 0 && (
-        <NoticeBox level="warning" action={<>{a.eInvoiceNotes.map((n) => <span key={n} className="block">{n}</span>)}</>} />
+      {notes.doubts.length > 0 && (
+        <NoticeBox level="warning" action={<>{notes.doubts.map((n) => <span key={n} className="block">{n}</span>)}</>} />
+      )}
+      {/* Was nur informiert (bezahlte Abschläge), färbt keine Zeile und steht als Hinweis da */}
+      {notes.info.length > 0 && (
+        <NoticeBox level="hint" action={<>{notes.info.map((n) => <span key={n} className="block">{n}</span>)}<span className="block">{PREPAID_ADVICE}</span></>} />
       )}
       {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
       {a.amountsAdjusted === 'netto' && (
@@ -235,6 +272,20 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                           onChange={(e) => patch(line.idx, { action: e.target.checked ? 'release' : '' })} /> lösen
                       </label>
                     )}
+                    {/* Der Rückweg einer angelegten Zeile: Sie wird wieder offen, wenn ihre Position gelöscht ist. Gelöscht
+                        wird in der Liste der Seite Kosten (das Fenster „Kostenposition bearbeiten“ hat kein Löschen). */}
+                    {line.state === 'created' && page === 'kosten' && (
+                      <div className="muted">Rückgängig machen Sie das in der Liste der Kostenpositionen auf dieser Seite: Löschen Sie die Position mit dem Papierkorb an ihrer Zeile („Kostenposition löschen“).</div>
+                    )}
+                    {line.state === 'created' && page !== 'kosten' && onOpenItem && line.costItemId && (() => {
+                      const id = line.costItemId
+                      return (
+                        <div className="muted">
+                          <span>Rückgängig machen Sie das auf der Seite Kosten: In der Liste der Kostenpositionen löschen Sie die Position mit dem Papierkorb an ihrer Zeile („Kostenposition löschen“).</span>{' '}
+                          <button type="button" className="btn small ghost" onClick={() => onOpenItem(id)}>Position öffnen{' '}<span className="sr-only">({line.itemDescription ?? line.description})</span></button>
+                        </div>
+                      )
+                    })()}
                   </td>
                   <td className="num">
                     {line.amountCents === null ? '-' : fmtEuro(line.amountCents)}
@@ -251,7 +302,10 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                     1440 px seitlich scrollen. Ampel und Betrag stehen in der ersten Zeile wie vorher neben der Wahl, der Lohn darunter.
                     Je Position ein <tbody>, damit die zwei Zeilen als Gruppe erkennbar sind (row-groups, Durchsicht von M10). */}
                 <tr>
-                  <td rowSpan={2}><span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} /></td>
+                  <td rowSpan={2}>
+                    <span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} />
+                    {ampelNote(a, line) && <span className="sr-only" data-ampel-note>{ampelNote(a, line)}</span>}
+                  </td>
                   <td colSpan={3}>
                     {/* Der Name der Auswahl nennt die Position; die sichtbare Frage hören Vorleser nicht doppelt */}
                     <span className="muted" aria-hidden="true">Was geschieht? </span>
@@ -263,8 +317,10 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                         ? <option value="dismiss">✗ verworfen</option>
                         : <option value="">Offen lassen</option>}
                       <option value="create">Neu anlegen</option>
-                      {linkChoices(line, row).map((c) => (
-                        <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
+                      {linkChoices(line, row).map((c) => (fromSameReceipt(line, c.id)
+                        // Eine Rechnung mit vielen Zeilen als eine Position. Ohne Betrag: Was aus ihm wird, sagt die Vorschau.
+                        ? <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ aus diesem Beleg verknüpfen</option>
+                        : <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
                       ))}
                       {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
                     </select>
@@ -286,12 +342,45 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
             )
           })}
       </Table>
+      {ownTarget ? (
+        <div className="row center">
+          <span className="muted">Aus diesem Beleg ist schon eine Position gebucht.</span>
+          {ownTargets.length > 1 && (
+            <select aria-label="Position für alle offenen Zeilen" value={ownTarget.id} disabled={busy} onChange={(e) => { setOwnChoice(e.target.value); setPreview(null) }}>
+              {ownTargets.map((c) => <option key={c.id} value={c.id}>{c.description}</option>)}
+            </select>
+          )}
+          <button type="button" className="btn small secondary" disabled={busy || year.dirty || year.saving} onClick={() => linkAll(ownTarget.id)}>Alle offenen Zeilen mit „{ownTarget.description}“ verknüpfen</button>
+        </div>
+      ) : combinableLines(a).length > 0 && (
+        <div className="row center">
+          <span className="muted">Eine Rechnung, eine Kostenposition (etwa Strom, Gas, Wasser)?</span>
+          <button type="button" className="btn small secondary" disabled={busy || year.dirty || year.saving} onClick={() => setCombining(true)}>Alle Zeilen als eine Position anlegen</button>
+        </div>
+      )}
+      {credit && (
+        <NoticeBox level="warning" action={<>
+          {credit.count === 1 ? `Eine Gutschrift über ${fmtEuro(credit.cents)} ist noch offen.` : `${credit.count} Gutschriften über zusammen ${fmtEuro(credit.cents)} sind noch offen.`}{' '}
+          Gutschriften werden nie verrechnet: Legen Sie sie als eigene Position an (Neu anlegen), sonst legen Sie {fmtEuro(credit.cents)} zu viel um.
+        </>} />
+      )}
+      {combining && (
+        <CombineLinesDrawer key={a.id} assessment={a} units={units} keyContext={keyContext} onClose={() => setCombining(false)}
+          onBooked={(result) => {
+            setCombining(false)
+            setPreview(null)
+            if (result.kind === 'done') {
+              setBooked({ lines: result.lines, shape: linesShape(result.assessment) })
+              focusBooked.current = true
+            } else setError(result.message)
+            onChange(result.assessment)
+          }} />
+      )}
       {/* Begründungen und Positionen, die im Formular gepflegt werden, stehen unter der Tabelle:
           in einer Zeile scrollten sie auf dem Handy mit (Durchsicht zu #170). */}
       <div>
-        {a.lines.flatMap((l) => (l.state === 'open' && l.suggestion && l.suggestion.level !== 'gruen'
-          ? l.suggestion.reasons.map((r) => <span key={`${l.idx}-${r}`} className={`chip ${l.suggestion?.level ?? 'gelb'}`}>{r}</span>)
-          : []))}
+        {/* Jede Begründung einmal (`reasonChips`): Eine Rechnung mit vielen Zeilen nannte sonst dieselbe je Zeile. */}
+        {reasonChips(a).map((c) => <span key={c.text} className={`chip ${c.level}`}>{c.text}</span>)}
       </div>
       {a.lines.flatMap((l) => (l.state === 'open' ? (l.suggestion?.candidates ?? []).filter((c) => c.formOnly).map((c) => (
         <div key={`${l.idx}-${c.id}`} className="warn">
@@ -317,7 +406,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       )}
       <ErrorSummary errors={errors} />
       {/* Ein Erfolg, kein Hinweis (Durchsicht der Hinweiskästen): grün, als Statusmeldung; das aria-label braucht die Rolle */}
-      {booked && <div className="ok" role="status" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
+      {booked && <div ref={bookedBox} tabIndex={-1} className="ok" role="status" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
       <div className="row center">
         <a href={receiptHref(a.file)} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />

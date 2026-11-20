@@ -17,7 +17,7 @@ import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } fro
 import { cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
 import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UpdateStatus, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
-import { bookingResponse, parseDecisions } from './bookingPlan.ts'
+import { bookingResponse, bookingTitle, parseDecisions } from './bookingPlan.ts'
 import { followInvoiceDate, forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, viewRecord } from './db/booking.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
@@ -35,7 +35,8 @@ import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './close
 import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
 import { buildBasis, decided as decidedRentIncrease, decisionProblem, sentOf as sentRentIncrease, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
 import { deleteRentIncrease, insertRentIncrease, readRentIncrease, readRentIncreases, readRentIncreasesOf, replaceRentIncrease } from './db/rentIncreases.ts'
-import { rentIncreaseBasisProblem, rentIncreaseLetterOf } from '../../shared/rentIncreaseLetter.ts'
+import { rentIncreaseBasisProblem, rentIncreaseLetterOf, rentSenderWarning } from '../../shared/rentIncreaseLetter.ts'
+import { effectiveLandlord } from '../../shared/landlord.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
@@ -72,7 +73,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleRecordError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -727,6 +728,17 @@ app.put('/api/costItems/:id/split', async (req, res) => {
   res.json(await writeData((db) => saveCostItemSplit(db, null, bodyObject(req), req.params.id, newId)))
 })
 
+// Jemand speichert an einem Datensatz, den ein anderes Fenster oder Gerät inzwischen gelöscht hat: ein Satz statt
+// „Nicht gefunden“. Er stimmt mit und ohne Formular (auch „Beleg zuordnen“ oder „Betrag prüfen“ kommen hier an).
+const GONE_REST = 'wurde inzwischen gelöscht. Gespeichert wurde nichts. Bitte laden Sie die Seite neu.'
+const GONE: Record<CollectionName, string> = {
+  units: `Diese Wohnung ${GONE_REST}`,
+  tenancies: `Dieses Mietverhältnis ${GONE_REST}`,
+  costItems: `Diese Kostenposition ${GONE_REST}`,
+  meters: `Dieser Zähler ${GONE_REST}`,
+  readings: `Diese Ablesung ${GONE_REST}`,
+  payments: `Diese Zahlung ${GONE_REST}`,
+}
 for (const coll of COLLECTIONS) {
   // Aufgelistet wird über `narrowToProperty`, dieselbe Regel wie beim Rechnen; eine zweite
   // Fassung für die Listen liefe irgendwann anders als die der Abrechnung.
@@ -774,7 +786,7 @@ for (const coll of COLLECTIONS) {
       }
       return updateEntity(db, coll, req.params.id, bodyObject(req))
     })
-    if (!item) return res.status(404).json({ error: 'Nicht gefunden' })
+    if (!item) return res.status(404).json({ error: GONE[coll] })
     res.json(item)
   })
   app.delete(`/api/${coll}/:id`, async (req, res) => {
@@ -1983,7 +1995,8 @@ app.post('/api/tenancies/:id/rent-increases', async (req: Request, res: Response
   // Die Miete am Stichtag friert nur mit ihrem Tag ein (Durchsicht PR 2, K1): Ohne ihn wüsste ein Nachdruck nicht, zu
   // welchem Stichtag sie gehört.
   if (request.rentAtCapDateCents != null && request.rentAtCapDateOn == null) return res.status(400).json({ error: 'Zur Miete am Stichtag fehlt der Tag, zu dem sie gehört. Bitte rechnen Sie neu und speichern Sie dann.' })
-  const letter = rentIncreaseLetterOf(body.letter, request.kind)
+  // Die Bestätigung zum Briefkopf prüft erst der Vorgang unten: Ob sie verlangt ist, hängt am Absender.
+  const letter = rentIncreaseLetterOf(body.letter, request.kind, { senderMissing: true })
   if ('problems' in letter) return res.status(400).json({ error: letter.problems[0]?.text ?? 'Die Angaben für das Schreiben sind unvollständig.' })
   const result = await writeData(async (db) => {
     const ctx = await rentIncreaseContextOf(db, String(req.params.id))
@@ -1994,9 +2007,19 @@ app.post('/api/tenancies/:id/rent-increases', async (req: Request, res: Response
     const token = planToken(plan, increases)
     if (body.token !== token) return { stale: { ...plan, token } satisfies RentIncreasePlanView }
     if (increases.some(isOpenRentIncrease)) throw new RentIncreaseError(409, 'Für dieses Mietverhältnis gibt es schon ein offenes Verlangen (Entwurf oder versandt ohne Antwort). Löschen Sie den Entwurf oder tragen Sie die Antwort ein, bevor Sie ein neues anlegen.')
+    const settings = await readSettings(db)
+    // Ohne Namen des Vermieters entsteht der Entwurf trotzdem (Warnung der Oberfläche, keine Sperre: Der Name kann von
+    // Hand auf den Ausdruck kommen, shared/rentIncreaseLetter.ts). Nur die Bestätigung zum Briefkopf ist dann nicht
+    // verlangt; mit Namen oder mit Briefpapier (das den Absender trägt) bleibt sie Pflicht. Das Briefpapier wie in GET
+    // /api/letter-design: die eigene Gestaltung des Objekts geht vor, eine fehlende Datei zählt nicht.
+    const ownDesign = ctx.property ? await readPropertyDesign(db, ctx.property.id) : null
+    const paper = presentDesign(DATA_DIR, ownDesign ?? await readInstallationDesign(db), new Set()).paper !== null
+    const senderMissing = rentSenderWarning(effectiveLandlord(ctx.property, settings).landlordName, paper) !== null
+    const strict = rentIncreaseLetterOf(body.letter, request.kind, { senderMissing })
+    if ('problems' in strict) throw new RentIncreaseError(400, strict.problems[0]?.text ?? 'Die Angaben für das Schreiben sind unvollständig.')
     const problem = draftProblem(plan)
     if (problem) throw new RentIncreaseError(400, problem)
-    const basis = buildBasis({ today: day, request, plan, letter: letter.letter, ...ctx, settings: await readSettings(db) })
+    const basis = buildBasis({ today: day, request, plan, letter: letter.letter, ...ctx, settings })
     const draft = draftOfRentIncrease({ id: newId(), tenancyId: ctx.tenancy.id, today: day, basis })
     await db.transaction(async (tx) => insertRentIncrease(tx, draft))
     return { created: rentIncreaseViewOf(draft, ctx.tenancy) }
@@ -2254,7 +2277,9 @@ app.get('/api/consumption/:period', async (req, res) => {
     const property = await propertyOf(db, req)
     const period = await periodOf(db, req, property)
     const stock = await readStock(db)
-    return onStock(stock, `consumption:${property}:${period.from}:${period.to}`, () => consumptionOverview(snapshotFor(stock, property, period)))
+    // Der Tag gehört in den Schlüssel: Der Hinweis auf eine Ablesung in der Zukunft hängt an heute.
+    const day = today()
+    return onStock(stock, `consumption:${property}:${period.from}:${period.to}:${day}`, () => consumptionOverview(snapshotFor(stock, property, period), { asOf: day }))
   }))
 })
 
@@ -2958,6 +2983,8 @@ app.post('/api/assessments/:id/book', async (req, res) => {
   // den Stand.
   const { outcome, assessment } = await writeData(async (db) => {
     const result = await bookAssessment(db, req.params.id, decisions, token, { uploadDir: UPLOAD_DIR, newId })
+    // Der Verlauf nennt, was die Buchung getan hat (`bookingTitle`), damit zwei Schritte derselben Rechnung unterscheidbar sind.
+    if (result.kind === 'done' && result.changed) await retitleCurrentGroup(db, bookingTitle(decisions))
     return { outcome: result, assessment: await viewAssessment(db, req.params.id, UPLOAD_DIR) }
   })
   const reply = bookingResponse(outcome, assessment)
@@ -5126,6 +5153,9 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   if (err instanceof TaxYearQuestion) return res.status(409).json({ error: err.message, question: 'taxYear' })
   // Die Verteilung nach § 82b EStDV (#262, E-9): dieselbe Gestalt, bestätigt mit `confirmSpread`.
   if (err instanceof SpreadQuestion) return res.status(409).json({ error: err.message, question: 'spread' })
+  // Das Formular kennt einen älteren Stand (repository.ts, `requireUnchanged`): mit dem Stand von jetzt, damit die
+  // Oberfläche sagen kann, was sich geändert hat.
+  if (err instanceof StaleRecordError) return res.status(409).json({ error: err.message, stale: true, current: err.current })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
   if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError || err instanceof RentIncreaseError) {
     return res.status(err.status).json({ error: err.message })

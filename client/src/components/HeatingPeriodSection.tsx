@@ -198,7 +198,16 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       const fresh = freshPreview<SeparatePreview>(e)
       if (fresh) {
         setSeparatePreview(fresh)
-        setSeparateAnswers({ ...initialSeparateAnswers(fresh), amounts: separateAnswers.amounts, none: separateAnswers.none, merge: separateAnswers.merge })
+        // Die neue Vorschau setzt keine Eingabe zurück: Ein vom Nutzer geänderter Heizanteil bleibt für jede Stufe, die es
+        // in ihr noch gibt (sonst stünde dort wieder die Vorbelegung, ohne Anteil 0,00 €, und „Speichern“ schriebe sie).
+        // Ein unberührtes Feld nimmt die Vorbelegung der neuen Vorschau.
+        const initial = initialSeparateAnswers(fresh)
+        const before = initialSeparateAnswers(separatePreview).steps
+        const steps = Object.fromEntries(Object.keys(initial.steps).map((key) => {
+          const typed = separateAnswers.steps[key]
+          return [key, typed !== undefined && typed !== before[key] ? typed : initial.steps[key]]
+        }))
+        setSeparateAnswers({ ...initial, steps, amounts: separateAnswers.amounts, none: separateAnswers.none, merge: separateAnswers.merge })
       }
       // Review Runde 1: Nach einer 409 gilt die alte Bestätigung nicht für die neue Vorschau.
       setUnderstood(false)

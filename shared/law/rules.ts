@@ -95,9 +95,10 @@ export const RULES: readonly Rule[] = [
   {
     code: 'heating-consumption',
     title: 'Heizung und Warmwasser nach Verbrauch',
-    norm: '§§ 2, 7 Abs. 1, 8 Abs. 1, 12 Abs. 1 HeizkostenV',
+    norm: '§§ 2, 7 Abs. 1, 8 Abs. 1, 10, 12 Abs. 1 HeizkostenV',
     summary:
       `Von den Kosten der zentralen Heizungs- und Warmwasseranlage sind mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen, der Rest nach Wohn- oder Nutzfläche (bei der Heizung auch nach umbautem Raum). ` +
+      'Ein höherer Anteil nach Verbrauch bleibt nur bestehen, wenn er rechtsgeschäftlich bestimmt ist, etwa im Mietvertrag vereinbart (§ 10). ' +
       `Wird nicht verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um ${cut} % kürzen. ` +
       'Im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden; ohne eine solche Vereinbarung gilt die Verordnung auch dort.',
   },

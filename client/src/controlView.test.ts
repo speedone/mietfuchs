@@ -14,7 +14,7 @@ function statement(id: string, name: string, rows: SettlementRow[], prepayment =
   return {
     tenancyId: id, unitId: `u-${id}`, tenantName: name, unitName: `Wohnung ${id}`, persons: 1, days: 365, personDays: 365,
     periodStart: '2025-01-01', periodEnd: '2025-12-31', rows, totalShareCents: total, total35aCents: 0,
-    prepaymentCents: prepayment, prepaymentOverridden: false, suggestedMonthlyCents: 0, balanceCents: total - prepayment,
+    prepaymentCents: prepayment, prepaymentOverridden: false, suggestedMonthlyCents: 0, balanceCents: prepayment - total,
   }
 }
 
@@ -34,7 +34,17 @@ test('je Position stehen Mieter und Gründe des Vermieters nebeneinander, die Su
   const [item] = view.items
   expect(item).toMatchObject({ id: 'k1', totalCents: 1000, tenantCents: [400, 300], landlordCents: [200, 100], sumCents: 1000, differenceCents: 0 })
   expect(view.hasDifference).toBe(false)
-  expect(view.tenants.map((t) => [t.costCents, t.prepaymentCents, t.balanceCents])).toEqual([[400, 500, -100], [300, 200, 100]])
+  expect(view.tenants.map((t) => [t.costCents, t.prepaymentCents, t.balanceCents])).toEqual([[400, 500, 100], [300, 200, -100]])
+})
+
+// Systemprüfung: Die Zeile hieß „Saldo (Nachzahlung, bei Guthaben negativ)“ und zeigte den Saldo der Abrechnung, der bei
+// einem Guthaben positiv ist (Vorauszahlung minus Kosten). Jetzt steht das Ergebnis in Worten wie in der Übersicht.
+test('das Ergebnis je Mieter steht in Worten: Guthaben bei mehr Vorauszahlung als Kosten, sonst Nachzahlung', () => {
+  const view = controlView(settle(
+    [statement('a', 'Anna', [row('k1', 30000)], 180000), statement('b', 'Ben', [row('k1', 50000)], 20000), statement('c', 'Cem', [row('k1', 20000)], 20000)],
+    [],
+  ))
+  expect(view.tenants.map((t) => t.result.replace(/[\u00a0\u202f]/g, ' '))).toEqual(['Guthaben 1.500,00 €', 'Nachzahlung 300,00 €', 'ausgeglichen'])
 })
 
 test('ein Mieter ohne Zeile in einer Position steht dort mit 0, ein Grund ohne Wert ebenfalls', () => {
