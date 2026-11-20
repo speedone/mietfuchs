@@ -3397,8 +3397,18 @@ export type SelfUserView = {
   waterConsumption: number | null
   heatingGroup: boolean
   waterGroup: boolean
+  // Der Betrag des Nutzers im Topf: die Summe seiner verteilten Zeilen (beim Mieter seine Kostenzeilen, sonst sein
+  // Teil der Zeilen des Vermieters), nicht Topf mal Gewicht einmal gerundet. Eine Zeile für Heizung und Warmwasser
+  // ist auf beide Töpfe geteilt; beide Beträge zusammen sind genau die Zeilen.
   heatingCents: number
   waterCents: number
+  // Die Zahl der verteilten Zeilen (Positionen und Überträge), aus denen der Betrag des Topfs summiert ist; eine
+  // Zeile für Heizung und Warmwasser zählt in beiden. Jede ist für sich gerundet: Um so viele Cent kann der Betrag
+  // von Topf mal Gewicht abweichen, dazu einer für das Teilen solcher Zeilen auf die Töpfe (Grenze der Invarianten in
+  // fuel-invariant.test.ts, gemessen, nicht bewiesen). Fehlt in Ständen, die vor dieser Angabe eingefroren wurden, und
+  // ohne Verteilung.
+  heatingRows?: number
+  waterRows?: number
   // Der Teil seines CO₂-Abzugs, der auf den Topf entfällt (Abweichung 15): Topfbetrag nach Abzug =
   // heatingCents − heatingCo2Cents. 0 ohne Abzug.
   heatingCo2Cents: number

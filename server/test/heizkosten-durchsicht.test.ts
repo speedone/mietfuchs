@@ -260,7 +260,9 @@ test('Nachprüfung #239 W1: zurück auf freie Schlüssel und erneut ab 2026; 202
     // Runde 3: Der Zeitraum mit der abgeschlossenen Heizperiode 2024 endet vor 2025, statt zu verschwinden.
     assert.deepEqual(stock.heatingPlants.find((p) => p.id === 'hp')?.selfSpans, [{ from: '2024-01', until: '2025-01', capture: 'heatMeter', hotWater: 'none' }])
     const rows = stock.heatingPeriodRows.filter((r) => r.plantId === 'hp')
-    assert.deepEqual(rows.map((r) => [String(r.period), r.heatConsumptionPct]).sort(), [['2024-01', 70], ['2025-01', null]], 'abgeschlossene bleiben, offene werden geleert')
+    // Systemprüfung 20.11.2026: Die geleerte Zeile einer offenen Heizperiode ohne weitere Angabe wird entfernt
+    // (`dropIfEmpty`), sonst sperrte sie den Wechsel des Zeitraums der Heizung; vorher blieb sie mit `null` stehen.
+    assert.deepEqual(rows.map((r) => [String(r.period), r.heatConsumptionPct]).sort(), [['2024-01', 70]], 'abgeschlossene bleiben, offene werden geleert')
     await opened.write((db) => createEntity(db, 'costItems', 'g25', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas 2025', amountCents: 400000, key: 'area', heatingPlantId: 'hp', heatingPart: 'fuel' }))
     await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2026-01' }, '2025-12-01', newId))
     stock = await opened.read(readStock)

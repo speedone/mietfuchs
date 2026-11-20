@@ -246,7 +246,10 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
 - **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
   [db/heatingSelf.ts](../server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und Positionen offener
   Zeiträume in einer Transaktion; fehlen Teil und Ziel, 409 mit Liste. Zurück auf „Niemand“ verlangt
-  `convertItems: 'area'`. Bei Heizkostenverteilern und Ablesedienst werden keine Wärmezähler angelegt.
+  `convertItems: 'area'` (die Rückfrage nennt, was entfällt) und nimmt aus offenen Heizperioden mit, was die Einrichtung eintrug (Anteile,
+  `above_70_agreed`, das automatische `dhw_method = 'heatMeter'` ohne eigene Warmwasserangaben; danach `dropIfEmpty`),
+  sonst sperrte die Zeile den Wechsel des Zeitraums der Heizung. Der Zeitraum gehört **vor** die eigene Abrechnung
+  (`SELF_PERIOD_FIRST` im Fenster); die Ablehnung in heatingPeriodChange.ts nennt den Weg über „Niemand“. Bei Heizkostenverteilern und Ablesedienst werden keine Wärmezähler angelegt.
 - **Zeiträume der eigenen Abrechnung** stehen in `heating_self_spans` (von, bis ausschließlich), mit
   **Erfassung und Warmwasserbereitung** je Spanne (`captureOf`, `hotWaterOf`). Die Einrichtung öffnet
   einen Zeitraum nie vor oder in einer abgeschlossenen Heizperiode; das Zurückschalten schließt ihn
@@ -362,6 +365,17 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
 - **Ausweis je Gerät** (`self.devices`) aus den Differenzen des Plans, nicht aus einer zweiten Lesart;
   jeder Mieter bekommt nur seine Geräte und Zeilen. Dass der Faktor genannt wird, ist Praxis, keine
   Norm (so in Lexikon und Sätzen).
+- **Beträge je Nutzer und Topf** (`heatingCents`, `waterCents`) sind die Summe seiner verteilten Zeilen
+  (`selfBlockCents` in calc.ts: beim Mieter die Kostenzeile jeder Position, sonst sein Teil der Zeilen des
+  Vermieters), nicht Topf mal Gewicht einmal gerundet (`selfBlocksOf`); alle Nutzer zusammen ergeben die Positionen
+  und Überträge, je Mieter beide Töpfe zusammen genau seine Heizkostenzeilen. Die Zeilen für Heizung und Warmwasser
+  werden je Nutzer **einmal** geteilt (das Verhältnis ist für alle solchen Positionen dasselbe), über alle Nutzer
+  zugleich nach dem Restverfahren auf den gedruckten Topf Heizung: Der stimmt genau, Warmwasser bis auf einen Cent
+  (zwei gerundete Topfbeträge). `heatingRows`/`waterRows` nennen je Nutzer und Topf die Zahl der Zeilen, damit der
+  Druck seine Toleranz gegen Fläche mal Preis daran binden kann (fehlt in älteren eingefrorenen Ständen). Der
+  CO₂-Abzug: Heizung gerundet, Rest Warmwasser (`selfCo2Of`). Die Kürzungsgrundlage „Anteil Warmwasser“ der Hinweise
+  (`waterBaseOf`) liest dieselben Beträge. Eine nicht verteilte Position (`heating.target-invalid`) zählt im Block
+  weiter mit Topf mal Gewicht. Tests: calc-heizblock-betraege.test.ts, (s1a) bis (s1d) in fuel-invariant.test.ts.
 
 ### Schätzung nach § 9a
 
