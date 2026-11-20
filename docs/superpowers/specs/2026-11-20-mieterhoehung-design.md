@@ -381,3 +381,35 @@ index.ts, shared/rentIncreaseLetter.ts (Prüfung der Eingaben für Server und Ob
   „Im {Monat} betrug er …“ für den neuen Indexwert (Durchsicht K4). Die Zustimmungsfrist steht als Regel und als Datum zum Zugang laut Rechnung, mit dem nach § 193
   BGB verlängerten Ende (`consentEndOnWorkday`). Die Klage steht als Satz zum Gesetz, nicht als Ankündigung. Bei
   Vergleichsmiete folgt auf eigener Seite eine Zustimmungserklärung. Ohne Fußzeile mit Bank (nicht nötig).
+
+## Umsetzung PR 4 (Cockpit), 20.11.2026
+
+Umgesetzt in server/src/upcomingDeadlines.ts (rein, über `nextRentEvents`), der Route `GET /api/upcoming` und
+client/src/upcomingView.ts; das Sprungziel `{ kind: 'rentIncrease', tenancyId }` öffnet das Seitenfenster in den
+Stammdaten. Schließt den letzten Punkt von #190. Abweichungen und Festlegungen:
+
+- **Ohne Art der Miete kein `rentIncrease`.** Die Angabe ist neu und freiwillig; wer sie nicht macht, erhöht nicht über
+  Mietfuchs. Eine Erinnerung an jedes Mietverhältnis, dessen Sperrfrist längst vorbei ist, wäre für ihn Lärm und
+  widerspräche „wer nichts erhöht, merkt nichts“. Eine Voreinstellung „nach Vertrag“ verbietet R14 ohnehin. Die offene
+  Frage zum Ausschluss (§ 557 Abs. 3) sperrt den Eintrag dagegen nicht: Wer die Art angibt, will erhöhen, und die
+  Antwort lässt sich nachtragen; der Text sagt es (`exclusionOpen`). `nextRentEvents` rechnet deshalb auch bei
+  `rentIncreaseExcluded == null`, nur `true` sperrt.
+- **Gesperrt, was keine Eingabe löst**: Ausschluss, keine Wohnfläche (Garage, Gewerbe), Mietende vor dem frühesten
+  Wirksamwerden, Indexmiete nach einer Modernisierungsstufe (PR 2, nicht recherchiert). Fehlende Bestätigungen und
+  Eingaben des Fensters sperren nicht.
+- **„Schon erreicht“** steht mit dem frühesten Zugang als Datum, solange kein Verlangen offen ist; `effectiveFrom` ist der
+  Monat bei Zugang ab heute (am Monatsersten wie die Rechnung am Zweiten), nicht der zum vergangenen frühesten Zugang.
+- **Unterdrückt** wird `rentIncrease` bei einem offenen Verlangen (Entwurf jeder Art, versandtes nach § 558) und bei jeder
+  versandten oder angenommenen Erhöhung, die erst nach dem laufenden Monat wirkt.
+- **`rentStep`** nur bei Staffelmiete (Art der Miete oder der Stufe `staggered`); eine künftige Stufe nach Vertrag,
+  Index oder Zustimmung erscheint nicht, der Vermieter hat sie selbst angelegt. „Danach § 558 möglich“ nur bei der
+  letzten zählenden Stufe, ausdrücklichem „nein“ zum Ausschluss, Wohnfläche und Mietverhältnis bis zum Wirksamwerden,
+  mit dem frühesten Zugang als Datum. Kein Hinweis auf einen Dauerauftrag.
+- **`rentConsent`** ohne Fenster: offen bis zum nach § 193 BGB verschobenen Ende (Klage erst danach, O2), dann
+  abgelaufen mit dem Ende der Klagefrist, danach zur Information, bis die Antwort eingetragen oder das Verlangen
+  zurückgenommen ist (S8: nichts erledigt sich von selbst). Gerechnet aus dem tatsächlichen Zugang `receivedOn` und dem
+  Register am Tag des Zugangs, nicht aus dem Plan in `basis`. Kein Text rät zur Klage.
+- **Route** liest wie bisher je Sammlung (nicht über `readStock`) und dazu Wohnungen, Land des Objekts und die Verlangen
+  (`readRentIncreasesOf`, eine Abfrage). Kein `onStock`: Kautionen und Verlangen liegen nicht im Bestand, und
+  db/CLAUDE.md lässt im gemerkten Ergebnis nichts zu, was außerhalb des Bestands gelesen wird.
+- **Lexikon** unverändert: „Staffelmiete“, „Indexmiete“, „Mieterhöhungsverlangen“ und „Zustimmungsfrist“ gibt es seit PR 1.

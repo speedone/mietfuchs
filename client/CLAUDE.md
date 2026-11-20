@@ -273,6 +273,10 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   zur Information), nie nur als Farbe; kein Personenname im Titel. Ein Eintrag mit Zeitraum wechselt erst mit
   `useSwitchPeriod` dorthin und springt dann (Abrechnung, abgeschlossen ohne Versanddatum zu `SENT_AT_TARGET`); die
   Kaution öffnet ihr Seitenfenster, die Eichfrist den Zähler. Sie ersetzt die frühere Karte „Kaution nach Auszug“.
+  Mieterhöhung (#191): Staffelstufe und „möglich“ zur Information, Zustimmungsfrist offen, danach Klagefrist
+  abgelaufen, nach ihrem Ende wieder zur Information; Titel mit der Wohnung, der Mieter nur im Text. Alle drei öffnen
+  das Fenster „Mieterhöhung“ (`{ kind: 'rentIncrease', tenancyId }`, in Stammdaten.tsx wie die Kaution). Kein Text
+  unterstellt, Schweigen sei Zustimmung, und keiner rät zur Klage.
 - **Sprungziele** (#554, [focus.ts](src/focus.ts), Ziele je Knopf in [jumpTargets.ts](src/jumpTargets.ts)): `navigate(tab,
   focus)` nimmt ein `JumpTarget`, nicht nur einen Eintrag des Servers (`NoticeSubject`, bleibt in shared/types.ts).
   `new` öffnet das Formular des eigenen Knopfs der Seite (`useNewTarget`, den Fokus ins erste Feld setzt das

@@ -54,5 +54,5 @@ Rechtsrecherche und Gegenprüfung: Fundstellen im Register (shared/law/bgb-betrk
 
 ## PR 4: Cockpit (`feat/mieterhoehung-cockpit`)
 
-- [ ] „Demnächst fällig“: `rentStep`, `rentIncrease`, `rentConsent` mit Sprungzielen ins Seitenfenster.
-- [ ] Doku (docs/, README-Funktionsliste), CHANGELOG, Rest von #190.
+- [x] „Demnächst fällig“: `rentStep`, `rentIncrease`, `rentConsent` mit Sprungzielen ins Seitenfenster.
+- [x] Doku (docs/, README-Funktionsliste), CHANGELOG, Rest von #190.

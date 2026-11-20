@@ -37,6 +37,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nehmen das Verlangen zurück. Mit der Zustimmung bzw. beim Versand einer Indexanpassung trägt Mietfuchs die neue
   Miete in die Kaltmiete-Staffel ein; Schweigen des Mieters gilt nie als Zustimmung. Neu im Lexikon:
   „Begründungsmittel“ und „Qualifizierter Mietspiegel“ ([#191](https://github.com/speedone/mietfuchs/issues/191)).
+- Mieterhöhung, vierter Teil: „Demnächst fällig“ im Cockpit nennt je Mietverhältnis die nächste Stufe einer
+  Staffelmiete in den nächsten 90 Tagen (bei der letzten Stufe, ab wann danach ein Verlangen nach § 558 BGB zugehen
+  kann), den frühesten Zugang eines Verlangens bzw. einer Indexerklärung, sobald er in 90 Tagen erreicht ist oder schon
+  vorbei, und bei einem versandten Verlangen ohne Antwort die Zustimmungsfrist, danach die Klagefrist und zuletzt, dass
+  sie verstrichen ist. Der Knopf öffnet das Fenster „Mieterhöhung“. Ohne Angabe der Art der Miete erscheint nichts davon
+  ([#190](https://github.com/speedone/mietfuchs/issues/190), [#191](https://github.com/speedone/mietfuchs/issues/191)).
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und

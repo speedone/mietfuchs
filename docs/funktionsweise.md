@@ -25,7 +25,13 @@ Kurzfassung steht im [README](../README.md#funktionen).
    **Abrechnungszeitraum** (Kalenderjahr oder etwa Mai bis April). Unter **Heizung** gibst du an,
    womit geheizt wird, wer den Vertrag hat und wer abrechnet: ein Messdienst, du selbst oder
    niemand, weil jede Wohnung ihre eigene Heizung hat. Daraus richtet Mietfuchs die Seite
-   **Heizkosten** ein.
+   **Heizkosten** ein. **Mieterhöhung** am Mietverhältnis: Gibst du die Art der Miete an (nach
+   Vertrag, Staffelmiete, Indexmiete), rechnet Mietfuchs, ab wann und um wie viel die Kaltmiete
+   steigen darf (Vergleichsmiete mit Kappungsgrenze nach § 558 BGB oder Indexanpassung nach § 557b
+   BGB), erstellt das Schreiben zum Drucken und trägt die neue Miete nach Zustimmung bzw. Versand
+   in die Staffel ein. Das Cockpit nennt unter „Demnächst fällig“ die nächste Staffelstufe, den
+   frühesten Zugang einer Erhöhung und die Zustimmungs- und Klagefrist eines versandten Verlangens.
+   Ohne Angabe der Art der Miete bleibt alles, wie es war.
 2. **Kosten**: Rechnungen pro Abrechnungsjahr erfassen, manuell oder per
    KI-Belegauswertung. Eine Rechnung kann in mehrere Positionen mit unterschiedlichen
    Umlageschlüsseln zerlegt werden (z. B. Wasserrechnung: Grundgebühr + Verbrauch).
