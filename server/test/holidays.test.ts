@@ -267,6 +267,7 @@ test('Feiertage: an einem Tag mit übernommener Fassung ist nichts geprüft', ()
 const HOLIDAY_USERS: Readonly<Record<string, string>> = {
   'calc.ts': 'Rückstand im Mietkonto und prepayment.arrears über monthDue (Feiertage nur an geprüften Tagen, #334); Zehn-Tage-Regel beim festen Tag nur, wenn jeder Tag bis zur Fälligkeit geprüft ist',
   'rentAllocation.ts': 'nur die Regel des Mietverhältnisses (effectiveRentDue, #334) für den Beginn der Erfassung, ohne Feiertage',
+  'rentIncrease.ts': 'Zustimmungsfrist bei der Mieterhöhung (#191): § 193 BGB verschiebt nur den Beginn der Klage nach hinten (deadlineOnWorkday), das Ende der Klagefrist rechnet vom Monatsende; ein fehlender Feiertag kann nichts früher machen als den Beginn der Klage',
   'markPaid.ts': 'Datum einer als bezahlt erfassten Miete: der Fälligkeitstag wie im Mietkonto (rentDueOn, #608), nur als Datum der Zahlung, nie für den Rückstand',
 }
 

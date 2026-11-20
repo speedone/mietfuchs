@@ -273,6 +273,93 @@ export type RentIncrease = {
   decidedOn: string | null
 }
 
+// ---------- Rechnung einer Mieterhöhung (#191, PR 2: server/src/rentIncrease.ts, POST /api/tenancies/:id/rent-increase/plan)
+// Die Eingaben des Vermieters im Seitenfenster „Mieterhöhung“. Fehlt eine Angabe, gilt die Vorgabe der Rechnung (Zugang
+// heute, nie am Monatsersten; Wirksamwerden frühestmöglich; Kappungsgrenzen-Verordnung wie am Objekt; Fläche der Wohnung;
+// verlangt wird der Höchstbetrag). Geld in Cent, Vergleichsmiete und Spanne in Cent je m².
+export type RentCapAnswer = 'yes' | 'no' | 'unknown'
+export type RentIncreaseRequest = {
+  kind: RentIncreaseKind
+  receivedOn?: string | null // geplanter Zugang beim Mieter, 'JJJJ-MM-TT'
+  effectiveFrom?: string | null // gewünschter erster Monat der neuen Miete, 'JJJJ-MM'
+  // Bestätigungen (Entwurf R13, R14): alle Änderungen der Kaltmiete sind in der Staffel eingetragen (bei Staffelmiete auch
+  // die künftigen Stufen); Wohnraum, nicht preisgebunden und nicht nach § 549 Abs. 2, 3 BGB ausgenommen.
+  allStepsEntered?: boolean
+  residential?: boolean
+  // Nur Vergleichsmiete: keine Drittmittel (§ 558 Abs. 5 BGB), Kappungsgrenzen-Verordnung, Miete am Stichtag (Entwurf M3),
+  // Vergleichsmiete mit Spanne, tatsächliche Fläche, enthaltener Betriebskostenanteil, gewünschte neue Miete.
+  noThirdPartyFunds?: boolean
+  rentCap?: RentCapAnswer | null
+  rentAtCapDateCents?: number | null
+  // Der Tag, zu dem die eingegebene Miete am Stichtag gehört ('JJJJ-MM-TT', aus `capBaseDay` des Plans). Weicht er vom
+  // Stichtag der Rechnung ab, sperrt sie (Durchsicht K1): Die Eingabe gehört dann zu einem anderen Tag.
+  rentAtCapDateOn?: string | null
+  comparisonCentsPerM2?: number | null
+  rangeLowCentsPerM2?: number | null
+  rangeHighCentsPerM2?: number | null
+  areaM2?: number | null
+  operatingCostsCents?: number | null
+  requestedCents?: number | null
+  // Nur Indexmiete: Ausgangsindex (ohne Angabe der Wert an der Stufe der bisherigen Miete) und neuer Index.
+  fromIndex?: RentIndexValue | null
+  toIndex?: RentIndexValue | null
+}
+// `possible`: zum geplanten Zugang möglich; `notYet`: erst später (frühester Zugang und Wirksamwerden stehen dabei);
+// `blocked`: nicht möglich, weil eine Angabe fehlt oder das Gesetz die Erhöhung ausschließt (die Gründe sagen, was).
+export type RentIncreaseState = 'possible' | 'notYet' | 'blocked'
+// Was der Vermieter noch angeben muss, damit gerechnet werden kann; die Oberfläche hebt das Feld hervor.
+export type RentIncreaseNeed =
+  | 'baseRents' | 'rentKind' | 'exclusion' | 'allStepsEntered' | 'residential' | 'thirdPartyFunds' | 'rentAtCapDate'
+  | 'comparisonRent' | 'operatingCosts' | 'fromIndex' | 'toIndex'
+// Fristen nach § 558b BGB (Entwurf R6, Recherche O2): Ende der Zustimmungsfrist am Monatsende und nach § 193 BGB auf den
+// nächsten Werktag verschoben; Klage frühestens am Tag danach, spätestens drei Monate nach dem nicht verschobenen Ende.
+export type RentIncreaseConsent = { consentEnd: string; consentEndOnWorkday: string; suitFrom: string; suitEnd: string }
+// Die Kappungsgrenze mit Herleitung (§ 558 Abs. 3 BGB): Ausgangsmiete am Stichtag (oder bei Mietbeginn, wenn das
+// Mietverhältnis jünger ist), Prozentsatz, Modernisierungserhöhungen nach dem Stichtag, Grenze.
+export type RentCapDerivation = {
+  capDate: string // drei Jahre vor dem Wirksamwerden
+  baseDay: string // der Tag der Ausgangsmiete: Stichtag oder Mietbeginn
+  baseCents: number
+  baseSource: 'schedule' | 'entered'
+  percent: number
+  reduced: boolean
+  modernizationCents: number
+  limitCents: number
+}
+export type RentComparisonDerivation = { centsPerM2: number; areaM2: number; rentCents: number; operatingCostsCents: number | null; limitCents: number }
+// Übersicht einer Staffelmiete (§ 557a BGB): die Stufen mit Art, die nächste und die letzte, Hinweise.
+export type RentStaggeredOverview = { steps: { from: string; cents: number; reason: RentChangeReason }[]; nextFrom: string | null; lastFrom: string | null; notes: string[] }
+export type RentIncreasePlan = {
+  kind: RentIncreaseKind
+  state: RentIncreaseState
+  reasons: string[] // ganze Sätze mit Norm
+  warnings: string[]
+  needs: RentIncreaseNeed[]
+  currentCents: number | null // die bisherige Miete laut Staffel
+  currentSince: string | null // Bezugstag der letzten Änderung, die für die Fristen zählt
+  receivedOn: string // der gerechnete Zugang
+  today: string // der Tag des Servers, an dem gerechnet wurde ('JJJJ-MM-TT')
+  capBaseDay: string | null // der Tag, dessen Miete die Kappungsgrenze trägt (Stichtag oder Mietbeginn), sobald er feststeht
+  earliestReceivedOn: string | null
+  effectiveFrom: string | null // 'JJJJ-MM'
+  earliestEffectiveFrom: string | null
+  consent: RentIncreaseConsent | null
+  cap: RentCapDerivation | null
+  comparison: RentComparisonDerivation | null
+  index: { from: RentIndexValue; to: RentIndexValue } | null
+  maxCents: number | null
+  newCents: number | null
+  steps: CalcStep[] // Herleitung zum Anzeigen
+  staggered: RentStaggeredOverview | null
+  legalValues: AppliedValue[]
+}
+// Für das Cockpit (PR 4): nächste Stufe, frühester Zugang einer Erhöhung, Fristen offener Verlangen.
+export type RentEvents = {
+  nextStep: { from: string; cents: number } | null
+  earliest: { kind: RentIncreaseKind; receivedOn: string; effectiveFrom: string } | null
+  open: ({ id: string } & RentIncreaseConsent)[]
+}
+
 export type DepositStatus = 'offen' | 'erhalten' | 'teilweise' | 'zurückgezahlt'
 
 // Kautionsbuchungen (#228): was mit der Sicherheit eines Mietverhältnisses geschehen ist. Jede Buchung bewegt Geld,

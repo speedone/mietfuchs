@@ -25,6 +25,7 @@ import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
 import Card from '../components/Card'
 import DepositDrawer from '../components/DepositDrawer'
+import RentIncreaseDrawer from '../components/RentIncreaseDrawer'
 import { depositState } from '../../../shared/deposit.ts'
 import { depositStatusLabel } from '../depositForm'
 import { CURRENT_INDEX_BASE, defaultRentReason, EMPTY_RENT_EXTRA, EXCLUSION_HINT, exclusionOf, exclusionOptions, RENT_KIND_HINT, rentKindBody, rentKindOptions, rentReasonOptions, rentRowExtraOf, staggeredGapNote, withRentDetails, type ExclusionChoice, type RentKindChoice, type RentRow } from '../rentKindForm'
@@ -202,6 +203,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [depositEntries, setDepositEntries] = useState<DepositEntry[]>([])
   const [depositVersion, setDepositVersion] = useState(0)
   const [depositFor, setDepositFor] = useState<string | null>(null)
+  // Mieterhöhung (#191): das Seitenfenster mit der Rechnung je Mietverhältnis.
+  const [rentIncreaseFor, setRentIncreaseFor] = useState<string | null>(null)
   // Für die Aufstellung zum Auszug: letzte Abrechnung und Ausstehendes je Mietverhältnis.
   const [depositInfo, setDepositInfo] = useState<DepositStatementInfo[]>([])
   useEffect(() => {
@@ -523,6 +526,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // wird er nicht.
   const formTenancy = tenForm?.id === undefined ? undefined : tenancies.find((t) => t.id === tenForm.id)
   const depositTenancy = depositFor === null ? undefined : tenancies.find((t) => t.id === depositFor)
+  const rentIncreaseTenancy = rentIncreaseFor === null ? undefined : tenancies.find((t) => t.id === rentIncreaseFor)
 
   // Eine Zeile der Tabelle der Mietverhältnisse, für laufende und frühere gleich.
   const tenancyRow = (t: Tenancy) => (
@@ -606,6 +610,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         )}
         {/* Immer, auch ohne vereinbarte Höhe (Durchsicht G4): Sonst ließe sich die erste Buchung nicht anlegen. */}
         <button className="btn small secondary" onClick={() => setDepositFor(t.id)}>Kaution führen</button>
+        {/* Durchsicht K5: auch bei gekündigtem Mietverhältnis; nur nach dem Auszug nicht mehr. */}
+        {(t.end === null || t.end >= todayIso()) && <button className="btn small secondary" onClick={() => setRentIncreaseFor(t.id)}>Mieterhöhung</button>}
         </div>
       </td>
     </tr>
@@ -1178,6 +1184,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       {depositTenancy && (
         <DepositDrawer tenancy={depositTenancy} entries={entriesOf(depositTenancy.id)} info={depositInfo.find((i) => i.tenancyId === depositTenancy.id)}
           onChanged={() => { setDepositVersion((v) => v + 1); void reload() }} onClose={() => setDepositFor(null)} />
+      )}
+
+      {rentIncreaseTenancy && (
+        <RentIncreaseDrawer key={rentIncreaseTenancy.id} tenancy={rentIncreaseTenancy} unit={units.find((u) => u.id === rentIncreaseTenancy.unitId)}
+          property={property} onClose={() => setRentIncreaseFor(null)} />
       )}
 
       {wizardFor && (
