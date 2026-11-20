@@ -687,11 +687,16 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   (geöffnet aus der Zeile der Wohnung, „Schätzen“/„Ändern“) und das Objekt (die Karte „Objekt“ zeigt nur an,
   `propertySummary`). **Ablesung** (Zaehler.tsx, Logik in [readingForm.ts](src/readingForm.ts)): ein Fenster für
   Anlegen und Bearbeiten (✎ je Zeile, `PUT /api/readings/:id` mit `buildReadingUpdate`: Abgewähltes ausdrücklich, nie
-  der Zähler und nie das Eichjahr des neuen Zählers, das der Server im PUT ablehnt; ein Stichtagswert des
-  Heizkostenverteilers hat kein ✎, er hat sein eigenes Formular). Vor dem Speichern fragt `readingQuestion` (Datum nach
-  heute; negativer Verbrauch zum Stand unmittelbar davor oder danach, außer die spätere Ablesung ist ein Zählerwechsel),
-  **Rückfrage, kein Verbot**. Das Datum einer neuen Ablesung ist heute (`newReadingForm`), ohne `changedFrom`:
-  vorbelegt gilt hier nicht als geändert. Der Mieterwechsel erfasst seine Stände über tenantChange.ts und fragt nicht.
+  der Zähler und nie das Eichjahr des neuen Zählers, das der Server im PUT ablehnt; Abgewähltes als `null`, damit kein
+  `replacement: false` gespeichert wird; ein Stichtagswert des Heizkostenverteilers hat kein ✎, er hat sein eigenes
+  Formular). Vor dem Speichern fragt `readingQuestion`: Datum nach heute oder ein negatives Segment zur Ablesung
+  unmittelbar davor oder danach, **verglichen wie `meterSegments` in calc.ts** (ist die spätere Ablesung ein
+  Zählerwechsel, zählt ihr Endstand des alten Zählers, ohne Endstand keine Frage; am selben Tag gilt die letzte der
+  Liste, `latestReading`, wie beim Anhalt „Letzter Stand“); beim Heizkostenverteiler rät sie zum Stichtagswert statt
+  zum Zählerwechsel. **Rückfrage, kein Verbot**. Das Datum einer neuen Ablesung ist nur dann mit heute vorbelegt, wenn
+  heute im gewählten Zeitraum liegt (`newReadingForm`; sonst leer, denn ein übersehenes Datum verschiebt Geld zwischen
+  Mietern), ohne `changedFrom` (vorbelegt gilt hier nicht als geändert), und solange es unberührt ist, steht
+  `PREFILLED_DATE_HINT` am Feld. Der Mieterwechsel erfasst seine Stände über tenantChange.ts und fragt nicht.
   Mit Vorschau
   verwirft **jede Änderung nach der Vorschau die Vorschau** (auch eine verspätete Antwort gilt dann
   nicht, Folgenummer je Anfrage), und ein Satz sagt, dass sie neu nötig ist.

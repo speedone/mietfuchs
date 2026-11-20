@@ -76,14 +76,16 @@ test('Ablesung bearbeiten: der Rumpf der Oberfläche wird angenommen, Abgewählt
     const same = await send(s, `/api/readings/${r.id}`, 'PUT', full)
     assert.equal(same.status, 200, await same.clone().text())
     assert.deepEqual(await jsonOf<Reading>(same), r)
-    const res = await send(s, `/api/readings/${r.id}`, 'PUT', { date: '2025-07-01', value: 985.5, replacement: false, oldEndValue: null, note: null, estimated: false })
+    // Abgewählt geht als `null` hinaus (ein weggelassenes Feld bliebe stehen): Die Ablesung ist danach, was eine
+    // frisch angelegte ohne diese Angaben ist, ohne ein gespeichertes `replacement: false`.
+    const res = await send(s, `/api/readings/${r.id}`, 'PUT', { date: '2025-07-01', value: 985.5, replacement: null, oldEndValue: null, note: null, estimated: false })
     assert.equal(res.status, 200, await res.clone().text())
-    const [stored] = await s.api<Reading[]>('/api/readings?property=objekt-1')
-    if (!stored) assert.fail('die Ablesung fehlt nach dem Ändern')
-    assert.deepEqual(
-      [stored.id, stored.meterId, stored.date, stored.value, stored.replacement === true, stored.oldEndValue ?? null, stored.note ?? null, stored.estimated === true, stored.estimateReason ?? null],
-      [r.id, m.id, '2025-07-01', 985.5, false, null, null, false, null],
-    )
+    const fresh = await created<Reading>(await send(s, '/api/readings', 'POST', { meterId: m.id, date: '2025-07-01', value: 985.5 }))
+    const list = await s.api<Reading[]>('/api/readings?property=objekt-1')
+    const stored = list.find((x) => x.id === r.id)
+    const plain = list.find((x) => x.id === fresh.id)
+    if (!stored || !plain) assert.fail('eine Ablesung fehlt nach dem Ändern')
+    assert.deepEqual(stored, { ...plain, id: r.id })
     await rejected(await send(s, `/api/readings/${r.id}`, 'PUT', { value: 1, newCalibratedUntil: 2031 }), 'Eichjahr im PUT')
   } finally { s.stop() }
 })

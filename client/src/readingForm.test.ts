@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildReadingBody, buildReadingUpdate, EMPTY_READING, newReadingForm, readingQuestion, readingToForm, type ReadingForm } from './readingForm'
+import { buildReadingBody, buildReadingUpdate, EMPTY_READING, latestReading, newReadingForm, readingQuestion, readingToForm, type ReadingForm } from './readingForm'
 import type { Reading } from './types'
 
 const form = (patch: Partial<ReadingForm>): ReadingForm => ({ ...EMPTY_READING, date: '2025-12-31', value: '123', ...patch })
@@ -96,7 +96,7 @@ describe('Ablesung bearbeiten: Formular aus der Ablesung und Rumpf für PUT', ()
   // und den Zähler selbst schickt das Bearbeiten nie (das Eichjahr lehnt der Server im PUT mit 400 ab).
   test('abgewählter Wechsel, geleerter Hinweis und abgewählte Schätzung gehen ausdrücklich hinaus', () => {
     const r = buildReadingUpdate({ ...readingToForm(stored), replacement: false, note: ' ', estimated: false, newCalibratedUntil: '2031' })
-    expect(r).toEqual({ body: { date: '2025-06-30', value: 1234.5, replacement: false, oldEndValue: null, note: null, estimated: false } })
+    expect(r).toEqual({ body: { date: '2025-06-30', value: 1234.5, replacement: null, oldEndValue: null, note: null, estimated: false } })
   })
 
   test('dieselben Meldungen wie beim Anlegen', () => {
@@ -156,6 +156,60 @@ describe('Rückfrage vor dem Speichern einer Ablesung', () => {
   })
 })
 
-test('eine neue Ablesung ist mit dem heutigen Datum vorbelegt, sonst leer', () => {
-  expect(newReadingForm('2026-11-20')).toEqual({ ...EMPTY_READING, date: '2026-11-20' })
+// Durchsicht: Mit heute vorbelegt verschob eine übersehene Jahresablesung still Geld (15.01.2026 statt 31.12.2025:
+// 979,87 € und 1.020,13 € statt je 1.000,00 €). Vorbelegt wird deshalb nur, wenn heute im gewählten Zeitraum liegt.
+describe('Datum einer neuen Ablesung', () => {
+  const period = { from: '2026-01-01', to: '2026-12-31' }
+  test('heute im gewählten Zeitraum: vorbelegt, an beiden Grenzen', () => {
+    expect(newReadingForm('2026-11-20', period)).toEqual({ ...EMPTY_READING, date: '2026-11-20' })
+    expect(newReadingForm('2026-01-01', period).date).toBe('2026-01-01')
+    expect(newReadingForm('2026-12-31', period).date).toBe('2026-12-31')
+  })
+  test('heute außerhalb des gewählten Zeitraums: leer wie bisher', () => {
+    expect(newReadingForm('2026-01-15', { from: '2025-01-01', to: '2025-12-31' })).toEqual(EMPTY_READING)
+    expect(newReadingForm('2025-12-31', period)).toEqual(EMPTY_READING)
+  })
+})
+
+describe('Rückfrage: verglichen wird wie die Berechnung die Segmente bildet', () => {
+  const ask = (c: { date: string; value: number; replacement?: boolean; oldEndValue?: number | null }, list: Reading[], meterType?: 'hkv' | 'kaltwasser') =>
+    readingQuestion({ meterId: 'm1', replacement: false, ...c }, list, { today: '2026-11-20', unit: 'm³', meterType })
+
+  test('vor einem Zählerwechsel zählt dessen Endstand, nicht der Startstand des neuen Zählers', () => {
+    const list: Reading[] = [{ id: 'w', meterId: 'm1', date: '2025-12-31', value: 3, replacement: true, oldEndValue: 150 }]
+    expect(ask({ date: '2025-06-30', value: 400 }, list)?.message).toBe('Der Stand 400 m³ liegt über dem Endstand des alten Zählers 150 m³ beim Zählerwechsel am 31.12.2025; der Verbrauch dazwischen wäre negativ.')
+    expect(ask({ date: '2025-06-30', value: 140 }, list)).toBeNull()
+    // Ohne Endstand bildet die Berechnung kein Segment (sie meldet den fehlenden Endstand selbst).
+    expect(ask({ date: '2025-06-30', value: 400 }, [{ id: 'w', meterId: 'm1', date: '2025-12-31', value: 3, replacement: true }])).toBeNull()
+  })
+
+  test('beim eigenen Zählerwechsel zählt der eigene Endstand gegen den vorigen Stand', () => {
+    const list: Reading[] = [{ id: 'a', meterId: 'm1', date: '2024-12-31', value: 450.8 }]
+    expect(ask({ date: '2025-06-30', value: 2, replacement: true, oldEndValue: 400 }, list)?.message).toBe('Der Endstand des alten Zählers 400 m³ liegt unter dem vorigen Stand 450,8 m³ vom 31.12.2024; der Verbrauch dazwischen wäre negativ.')
+    expect(ask({ date: '2025-06-30', value: 2, replacement: true, oldEndValue: 460 }, list)).toBeNull()
+    expect(ask({ date: '2025-06-30', value: 2, replacement: true, oldEndValue: null }, list)).toBeNull()
+  })
+
+  // Ein Heizkostenverteiler wird nicht getauscht, er setzt am Stichtag auf null: Der Rat nennt das Formular darunter.
+  test('Heizkostenverteiler: Verweis auf den Stichtagswert statt auf den Zählerwechsel', () => {
+    const list: Reading[] = [{ id: 'a', meterId: 'm1', date: '2024-12-31', value: 800 }]
+    const q = readingQuestion({ meterId: 'm1', date: '2025-12-31', value: 300, replacement: false }, list, { today: '2026-11-20', unit: 'Einheiten', meterType: 'hkv' })
+    expect(q?.message).toBe('Der Stand 300 Einheiten liegt unter dem vorigen Stand 800 Einheiten vom 31.12.2024; der Verbrauch dazwischen wäre negativ. Hat der Heizkostenverteiler am Stichtag auf null gesetzt, tragen Sie den Wert davor unter den Ablesungen bei „Stichtagswert laut Anzeige“ ein und klicken Sie auf „Stichtagswert speichern“.')
+    expect(q?.message).not.toMatch(/Zählerwechsel/)
+    // Nach einem Stichtagswert nennt die Rückfrage ihn beim Namen.
+    const cutoff: Reading[] = [{ id: 's', meterId: 'm1', date: '2025-12-31', value: 0, replacement: true, oldEndValue: 40 }]
+    expect(readingQuestion({ meterId: 'm1', date: '2025-06-30', value: 50, replacement: false }, cutoff, { today: '2026-11-20', meterType: 'hkv' })?.message)
+      .toBe('Der Stand 50 liegt über dem Stichtagswert 40 vom 31.12.2025; der Verbrauch dazwischen wäre negativ.')
+  })
+
+  // Zwei Ablesungen am selben Tag: „Letzter Stand“ unter dem Feld und die Rückfrage meinen dieselbe, die spätere der Liste.
+  test('am selben Tag gilt die letzte der Liste, wie beim Anhalt unter dem Feld', () => {
+    const list: Reading[] = [
+      { id: 'a', meterId: 'm1', date: '2025-06-30', value: 980 },
+      { id: 'b', meterId: 'm1', date: '2025-06-30', value: 5 },
+    ]
+    expect(latestReading(list)?.id).toBe('b')
+    expect(ask({ date: '2025-12-31', value: 60 }, list)).toBeNull()
+    expect(ask({ date: '2025-12-31', value: 3 }, list)?.message).toMatch(/unter dem vorigen Stand 5 m³/)
+  })
 })

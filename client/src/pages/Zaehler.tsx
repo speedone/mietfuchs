@@ -4,7 +4,7 @@ import Field from '../components/Field'
 import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, newReadingForm, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
+import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate, loadErrorText } from '../api'
@@ -32,7 +32,7 @@ type Props = { units: Unit[] } & FocusProps
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
-  const { param, label } = usePeriod()
+  const { param, label, period } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -52,6 +52,9 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   // Die Ablesung, die das Fenster bearbeitet; `null` heißt: eine neue.
   const [editedReading, setEditedReading] = useState<Reading | null>(null)
+  // Das vorbelegte Datum einer neuen Ablesung, solange es unberührt ist; dann steht der Hinweis am Feld. Bloße Hilfe,
+  // kein Teil von `value` des Fensters.
+  const [prefilledDate, setPrefilledDate] = useState('')
   const estimateHelpId = useId()
   const [error, setError] = useState('')
   // Ableseformular (#320): Auswahl im Seitenfenster, danach das Blatt zum Drucken.
@@ -135,13 +138,17 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   function openReading(meterId: string) {
     readingError.clear()
     setEditedReading(null)
-    setReadingForm(newReadingForm(todayIso()))
+    // Heute nur, wenn heute im gewählten Zeitraum liegt; sonst bleibt das Pflichtfeld leer.
+    const form = newReadingForm(todayIso(), period)
+    setReadingForm(form)
+    setPrefilledDate(form.date)
     setReadingFor(meterId)
   }
 
   function openEditReading(r: Reading) {
     readingError.clear()
     setEditedReading(r)
+    setPrefilledDate('')
     setReadingForm(readingToForm(r))
     setReadingFor(r.meterId)
   }
@@ -166,9 +173,9 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     // Rückfrage statt Verbot: Ein Stand unter dem vorigen oder ein Datum nach heute ist meist ein Tippfehler,
     // speichern darf der Vermieter trotzdem. „Abbrechen“ lässt das Fenster mit der Eingabe offen.
     const question = readingQuestion(
-      { meterId, date: built.body.date, value: built.body.value, replacement: built.body.replacement === true },
+      { meterId, date: built.body.date, value: built.body.value, replacement: built.body.replacement === true, oldEndValue: built.body.oldEndValue },
       readings,
-      { today: todayIso(), unit: meter?.unit, editingId: editedReading?.id },
+      { today: todayIso(), unit: meter?.unit, editingId: editedReading?.id, meterType: meter?.type },
     )
     if (question && !(await confirm(question))) return
     try {
@@ -297,8 +304,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(() => saveReading(readingMeter.id))}>{editedReading ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="field-grid">
-            <Field label="Datum" required {...readingError.field('date')}>
-              <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
+            <Field label="Datum" required hint={prefilledDate !== '' && readingForm.date === prefilledDate ? PREFILLED_DATE_HINT : undefined} {...readingError.field('date')}>
+              <input type="date" value={readingForm.date} onChange={(e) => { setPrefilledDate(''); setReadingForm({ ...readingForm, date: e.target.value }) }} />
             </Field>
             <Field label={`${readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} required hint={lastReadingText(readingMeter, editedReading ? readings.filter((r) => r.id !== editedReading.id) : readings)} {...readingError.field('value')}>
               <input value={readingForm.value} inputMode="decimal" onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
@@ -490,7 +497,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
 
 // Der letzte Stand des Zählers als Anhalt im Fenster „Neue Ablesung“ (Durchsicht K1): Die Liste dahinter ist verdeckt.
 export function lastReadingText(meter: Pick<Meter, 'id' | 'unit'>, readings: readonly Reading[]): string | undefined {
-  const last = readings.filter((r) => r.meterId === meter.id).reduce<Reading | null>((a, r) => (a === null || r.date >= a.date ? r : a), null)
+  const last = latestReading(readings.filter((r) => r.meterId === meter.id))
   if (!last) return undefined
   return `Letzter Stand: ${last.value.toLocaleString('de-DE')}${meter.unit ? ` ${meter.unit}` : ''} am ${fmtDate(last.date)}`
 }

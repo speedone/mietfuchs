@@ -7,6 +7,7 @@ import type { Meter, Reading, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
+import { PeriodSelect } from '../components/PeriodSelect'
 import Zaehler from './Zaehler'
 import { todayIso } from '../readingSheet'
 
@@ -454,7 +455,7 @@ test('Ablesung bearbeiten: das Fenster zeigt die gespeicherten Werte und speiche
     fireEvent.change(stand, { target: { value: '1.240' } })
     fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
     await waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ url: '/api/readings/r2', method: 'PUT', body: { date: '2025-06-30', value: 1240, replacement: false, oldEndValue: null, note: 'Zwischenablesung', estimated: false } })
+    expect(calls[0]).toEqual({ url: '/api/readings/r2', method: 'PUT', body: { date: '2025-06-30', value: 1240, replacement: null, oldEndValue: null, note: 'Zwischenablesung', estimated: false } })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
@@ -535,14 +536,95 @@ test('Ablesung bearbeiten: die Rückfrage heißt „Trotzdem speichern“ und ve
   })
 })
 
+/** Öffnet „Neue Ablesung“ im Abrechnungsjahr `year`; ohne Wahl steht die Seite im Vorjahr. */
+const openReadingFormIn = async (year: number): Promise<HTMLElement> => {
+  render(
+    <UIProvider>
+      <PeriodProvider>
+        <PropertyProvider>
+          <PeriodSelect />
+          <Zaehler units={UNITS} />
+        </PropertyProvider>
+      </PeriodProvider>
+    </UIProvider>,
+  )
+  await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 })
+  const select = screen.getByRole('combobox', { name: 'Abrechnungsjahr' }) as HTMLSelectElement
+  fireEvent.change(select, { target: { value: String(year) } })
+  await waitFor(() => expect(select.value).toBe(String(year)))
+  fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }))
+  fireEvent.click(await screen.findByRole('button', { name: '+ Ablesung anlegen' }))
+  return screen.getByRole('dialog', { name: /Neue Ablesung/ })
+}
+const thisYear = () => Number(todayIso().slice(0, 4))
+
 // Vorbelegt ist nicht geändert: Wer das Fenster ohne Eingabe schließt, wird nicht nach „Verwerfen“ gefragt.
-test('Neue Ablesung: das Datum ist mit heute vorbelegt, und ohne Eingabe schließt das Fenster ohne Rückfrage', async () => {
+test('Neue Ablesung im laufenden Zeitraum: das Datum ist mit heute vorbelegt, und ohne Eingabe schließt das Fenster ohne Rückfrage', async () => {
   stubWithUrls()
-  const box = await openReadingForm()
-  expect((within(box).getByLabelText(/^Datum/) as HTMLInputElement).value).toBe(todayIso())
+  const box = await openReadingFormIn(thisYear())
+  const date = within(box).getByLabelText(/^Datum/) as HTMLInputElement
+  expect(date.value).toBe(todayIso())
+  // Solange das vorbelegte Datum unberührt ist, sagt ein Hinweis am Feld, dass es das heutige ist.
+  expect(description(date)).toBe('Vorbelegt ist das heutige Datum. Für die Ablesung zum Ende des Zeitraums tragen Sie den Ablesetag ein.')
   fireEvent.click(within(box).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+test('Neue Ablesung: der Hinweis zum vorbelegten Datum verschwindet, sobald das Datum geändert ist', async () => {
+  stubWithUrls()
+  const box = await openReadingFormIn(thisYear())
+  const date = within(box).getByLabelText(/^Datum/) as HTMLInputElement
+  fireEvent.change(date, { target: { value: '2025-12-31' } })
+  expect(description(date)).toBe('')
+  expect(within(box).queryByText(/Vorbelegt ist das heutige Datum/)).toBeNull()
+})
+
+// Durchsicht: Wer im Januar die Jahresablesung des abgelaufenen Zeitraums einträgt, bekam heute vorbelegt; übersehen
+// verschob das Geld zwischen den Mietern. Liegt heute nicht im gewählten Zeitraum, bleibt das Pflichtfeld leer.
+test('Neue Ablesung in einem anderen Zeitraum als dem heutigen: das Datum bleibt leer, ohne Hinweis', async () => {
+  stubWithUrls()
+  const box = await openReadingFormIn(thisYear() - 1)
+  const date = within(box).getByLabelText(/^Datum/) as HTMLInputElement
+  expect(date.value).toBe('')
+  expect(within(box).queryByText(/Vorbelegt ist das heutige Datum/)).toBeNull()
+})
+
+// Durchsicht: Der Endstand des eigenen Wechsels ging nicht in die Rückfrage ein.
+test('Zählerwechsel mit Endstand unter dem vorigen Stand: Rückfrage nennt den Endstand', async () => {
+  await withReadings([{ id: 'r1', meterId: 'm1', date: '2025-12-31', value: 450.8 }], async () => {
+    fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+    const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
+    fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2026-06-30' } })
+    fireEvent.click(within(box).getByLabelText(/Zählerwechsel/))
+    fireEvent.change(within(box).getByLabelText(/^Startstand neuer Zähler/), { target: { value: '2' } })
+    fireEvent.change(within(box).getByLabelText(/^Endstand alter Zähler/), { target: { value: '400' } })
+    saveReadingIn(box)
+    expect((await screen.findByRole('alertdialog')).textContent).toMatch(/Der Endstand des alten Zählers 400 m³ liegt unter dem vorigen Stand 450,8 m³ vom 31\.12\.2025/)
+    expect(calls).toEqual([])
+  })
+})
+
+test('Heizkostenverteiler mit Stand unter dem vorigen: die Rückfrage verweist auf den Stichtagswert', async () => {
+  const before = METERS
+  METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten' }]
+  try {
+    await withReadings([{ id: 'r1', meterId: 'm1', date: '2024-12-31', value: 800 }], async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+      const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
+      fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2025-12-31' } })
+      fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '300' } })
+      saveReadingIn(box)
+      const frage = await screen.findByRole('alertdialog')
+      expect(frage.textContent).toMatch(/„Stichtagswert laut Anzeige“/)
+      expect(frage.textContent).not.toMatch(/Zählerwechsel/)
+      // Die zitierten Beschriftungen stehen so auf der Seite.
+      expect(screen.getByLabelText(/Stichtagswert laut Anzeige/)).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Stichtagswert speichern', hidden: true })).toBeTruthy()
+    })
+  } finally {
+    METERS = before
+  }
 })
 
 // Ein Stichtagswert (Heizkostenverteiler) hat sein eigenes Formular; das allgemeine Fenster passte nicht zu ihm.
