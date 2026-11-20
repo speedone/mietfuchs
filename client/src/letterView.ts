@@ -3,7 +3,7 @@
 import type { LetterBlock, LetterTemplates, Property, Settings, Settlement, Statement, StatementLetter, Tenancy } from './types'
 import { chooseLetterBlocks, lettersOf, renderLetterText } from '../../shared/letter.ts'
 import { fmtDate, fmtEuro } from './api'
-import { countOf } from '../../shared/wording.ts'
+import { andList, countOf } from '../../shared/wording.ts'
 import { localToday } from './periodForm'
 
 // Eine Antwort von /api/letter-texts, wie sie sein soll; ein älterer Server oder eine Testattrappe liefert
@@ -192,3 +192,45 @@ export const SENDER_MISSING_CLOSED_TEXT =
   'Im abgeschlossenen Anschreiben steht kein Name des Vermieters: Gedruckt werden weder Absender noch Unterschrift. ' +
   'Eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). ' +
   'Absender und Unterschrift sind mit der Abrechnung eingefroren: Bitte wieder öffnen, Ihren Namen eintragen und erneut abschließen.'
+
+// Systemprüfung: Ohne IBAN (Einstellungen bzw. Objekt) bittet der Satz zur Nachzahlung um Überweisung, ohne ein Konto zu
+// nennen ({Konto} wird leer). Geprüft wird, was im Anschreiben steht, abgeschlossen also das eingefrorene: die eingesetzte
+// IBAN und der Satz selbst. **Ein Hinweis, keine Sperre**: Wer bar oder per Lastschrift kassiert, schreibt den Satz ohne
+// „überweisen“ oder lässt ihn weg und bekommt dann keinen; ebenso, wer das Konto in den eigenen Text schreibt.
+const IBAN_IN_TEXT = /[A-Z]{2}\d{2}(?: ?[0-9A-Z]{4}){2,}/
+export function ibanMissing(p: { balanceCents: number, iban: string | null | undefined, sentence: string | null | undefined }): boolean {
+  if (p.balanceCents >= 0 || (p.iban ?? '').trim() !== '') return false
+  const sentence = (p.sentence ?? '').trim()
+  return /überweis/i.test(sentence) && !IBAN_IN_TEXT.test(sentence)
+}
+export const IBAN_MISSING_TITLE = 'Bankverbindung fehlt'
+export const IBAN_MISSING_TEXT =
+  'Das Anschreiben bittet um Überweisung der Nachzahlung, nennt aber kein Konto: Es ist keine IBAN eingetragen. ' +
+  'Tragen Sie die IBAN in den Einstellungen ein oder, nur für dieses Objekt, in den Stammdaten beim Objekt. ' +
+  'Zahlt der Mieter bar oder per Lastschrift, ändern Sie stattdessen den Satz zur Nachzahlung über „Anschreiben bearbeiten“.'
+// Abgeschlossen ist der Satz eingefroren: Eine IBAN in den Einstellungen ändert das Anschreiben nicht mehr.
+export const IBAN_MISSING_CLOSED_TEXT =
+  'Das abgeschlossene Anschreiben bittet um Überweisung der Nachzahlung, nennt aber kein Konto. ' +
+  'Der Satz ist mit der Abrechnung eingefroren: Bitte wieder öffnen, die IBAN eintragen und erneut abschließen, oder nennen Sie dem Mieter das Konto auf anderem Weg.'
+
+// Fürs Cockpit: die Mieter, deren Anschreiben so zur Nachzahlung auffordert, bis zum Versand. Eine vor #415 abgeschlossene
+// Abrechnung trägt kein Anschreiben.
+export function missingAccountFindings(s: {
+  statements: readonly Pick<Statement, 'tenancyId' | 'tenantName' | 'balanceCents'>[]
+  letters?: Record<string, Pick<StatementLetter, 'texts' | 'values'>>
+  closed?: { sentAt?: string | null } | null
+}): string[] {
+  if (s.closed?.sentAt) return []
+  return s.statements
+    .filter((st) => {
+      const letter = s.letters?.[st.tenancyId]
+      return !!letter && ibanMissing({ balanceCents: st.balanceCents, iban: letter.values?.IBAN, sentence: letter.texts.backPayment })
+    })
+    .map((st) => st.tenantName)
+}
+// Die Zeile im Cockpit dazu, alle betroffenen Mieter beim Namen.
+export function missingAccountDetail(names: readonly string[], closed: boolean): string {
+  return `Das Anschreiben an ${andList(names)} bittet um Überweisung der Nachzahlung, nennt aber kein Konto. ${closed
+    ? 'Es ist mit der Abrechnung eingefroren: Öffnen Sie sie wieder, tragen Sie die IBAN ein und schließen Sie erneut ab.'
+    : 'Tragen Sie die IBAN in den Einstellungen oder beim Objekt ein, oder ändern Sie den Satz zur Nachzahlung im Anschreiben.'}`
+}

@@ -567,6 +567,117 @@ test('mit Namen des Vermieters: kein „Absender fehlt“', async () => {
   expect(screen.queryByText('Absender fehlt')).toBeNull()
 })
 
+// ---------- Systemprüfung: vor dem Versand ----------
+
+const PROPERTY = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+const NO_IBAN: Settings = { ...SETTINGS, iban: '' }
+const lettersFor = (settings: Settings, over: Partial<Statement> = {}) => {
+  const s = { ...settlement, statements: settlement.statements.map((st) => ({ ...st, ...over })) }
+  return { ...s, letters: lettersOf(s, { settings, property: PROPERTY, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
+}
+
+// Ohne IBAN bat der Brief um Überweisung der Nachzahlung, ohne ein Konto zu nennen, und nichts wies darauf hin.
+test('Nachzahlung ohne IBAN: „Bankverbindung fehlt“ in „Zu prüfen“, am Mieter, im Fenster „Drucken“, mit Weg in die Einstellungen', async () => {
+  const navigated: unknown[] = []
+  settlement = lettersFor(NO_IBAN)
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={NO_IBAN} units={[]} tenancies={TENANCIES} reload={async () => {}} onNavigate={(t) => navigated.push(t)} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  // In „Zu prüfen“ und am Brief (in der Vorschau des Mieters, wo „Zu prüfen“ nicht steht)
+  await screen.findAllByText('Bankverbindung fehlt', {}, SLOW)
+  expect(screen.getAllByText('Bankverbindung fehlt')).toHaveLength(2)
+  // Als Merker in der Zeile des Mieters
+  expect(screen.getByText('⚠︎ Bankverbindung fehlt')).toBeTruthy()
+  expect(screen.getAllByText(/bar oder per Lastschrift/).length).toBeGreaterThan(0)
+  expect(within(await openPrintDrawer()).getByText('Bankverbindung fehlt')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  const fix = screen.getAllByRole('button', { name: /Hier beheben → Einstellungen/ })[0]
+  if (!fix) throw new Error('kein Knopf')
+  fireEvent.click(fix)
+  expect(navigated).toEqual(['einstellungen'])
+})
+
+test('abgeschlossen ohne IBAN: Hinweis bis zum Versand, mit Wieder öffnen statt Einstellungen', async () => {
+  settlement = { ...lettersFor(NO_IBAN), closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
+  show(NO_IBAN)
+  await screen.findAllByText('Bankverbindung fehlt', {}, SLOW)
+  expect(screen.getAllByText(/Bitte wieder öffnen, die IBAN eintragen/).length).toBeGreaterThan(0)
+  expect(screen.queryByRole('button', { name: /Hier beheben → Einstellungen/ })).toBeNull()
+  cleanup()
+  // Eingefroren mit IBAN, heute ohne: Es zählt das Anschreiben, nicht die Einstellung von heute.
+  settlement = { ...lettersFor(SETTINGS), closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
+  show(NO_IBAN)
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(screen.queryByText('Bankverbindung fehlt')).toBeNull()
+  cleanup()
+  settlement = { ...lettersFor(NO_IBAN), closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: `${YEAR + 1}-02-02` } }
+  show(NO_IBAN)
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(screen.queryByText('Bankverbindung fehlt')).toBeNull()
+})
+
+test('kein „Bankverbindung fehlt“ mit IBAN und keines bei einem Guthaben', async () => {
+  show()
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(screen.queryByText('Bankverbindung fehlt')).toBeNull()
+  cleanup()
+  settlement = lettersFor(NO_IBAN, { prepaymentCents: 72000, balanceCents: 12000 })
+  show(NO_IBAN)
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(screen.queryByText('Bankverbindung fehlt')).toBeNull()
+})
+
+// Der Brief kündigt in der Voreinstellung eine neue Vorauszahlung an; die Übersicht sagte es vor dem Abschluss nicht.
+test('die Übersicht nennt vor dem Abschluss, welche Vorauszahlung der Brief ab wann ankündigt, und den Weg, es zu ändern', async () => {
+  show()
+  const table = await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  expect(plain(within(table).getByText(/Brief kündigt an/).textContent).replace(/\u202f/g, ' ')).toBe(`Brief kündigt an: Vorauszahlung 50,00 € ab Dezember ${YEAR + 1} (bisher 40,00 €)`)
+  expect(screen.getByText(/Sie ändern Betrag und Monat je Mieter über „Ansehen“ und dort „Anschreiben bearbeiten“/)).toBeTruthy()
+  cleanup()
+  // Abgeschlossen übernimmt die Karte „Neue Vorauszahlung“ (#317); ohne Ankündigung steht nichts.
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
+  show()
+  await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  expect(screen.queryByText(/Brief kündigt an/)).toBeNull()
+  cleanup()
+  const none: Settings = { ...SETTINGS, printAdjustSuggestion: false }
+  settlement = { ...lettersFor(none), closed: null }
+  show(none)
+  await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  expect(screen.queryByText(/Brief kündigt an/)).toBeNull()
+  expect(screen.queryByText(/Sie ändern Betrag und Monat je Mieter/)).toBeNull()
+})
+
+// Ohne Mietkonto steht das Soll als „geleistet“ in der Abrechnung; die Übersicht sagt es, solange sie offen ist.
+test('die Übersicht sagt, dass die Vorauszahlungen laut Vertrag angesetzt sind', async () => {
+  show()
+  await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  expect(screen.getByText(/Als Vorauszahlungen ist angesetzt, was laut Vertrag zu zahlen war/)).toBeTruthy()
+  cleanup()
+  settlement = { ...settlement, statements: settlement.statements.map((st) => ({ ...st, prepaymentOverridden: true })) }
+  show()
+  await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  expect(screen.queryByText(/Als Vorauszahlungen ist angesetzt/)).toBeNull()
+})
+
+// „auf 40,00 € angepasst“, obwohl der Mieter 40 € schon zahlt: Der Brief lässt den Satz weg, und das Seitenfenster sagt es.
+test('eigener Betrag gleich der geltenden Vorauszahlung: das Seitenfenster sagt, dass der Brief nichts ankündigt', async () => {
+  show()
+  await openPreview()
+  fireEvent.click(await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  expect(plain(dialog.textContent)).not.toContain('kündigt deshalb keine Anpassung an')
+  fireEvent.click(within(dialog).getByRole('radio', { name: /Eigenen Betrag ankündigen/ }))
+  fireEvent.change(within(dialog).getByRole('textbox', { name: /Neue monatliche Vorauszahlung/ }), { target: { value: '40' } })
+  await waitFor(() => expect(plain(dialog.textContent).replace(/\u202f/g, ' ')).toMatch(/Die Vorauszahlung beträgt 40,00 € und gilt ab \S+ \d{4} ohnehin\. Das Anschreiben kündigt deshalb keine Anpassung an\./), SLOW)
+  fireEvent.change(within(dialog).getByRole('textbox', { name: /Neue monatliche Vorauszahlung/ }), { target: { value: '45' } })
+  await waitFor(() => expect(plain(dialog.textContent)).not.toContain('kündigt deshalb keine Anpassung an'), SLOW)
+})
+
 // ---------- Zahlungs-QR-Code (#624) ----------
 
 test('#624: der Schalter für den QR-Code steht ab Werk aus und speichert mit den Druckeinstellungen', async () => {

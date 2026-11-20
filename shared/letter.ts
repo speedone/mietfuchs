@@ -265,8 +265,13 @@ export function buildLetter(i: {
   suggestedCents: number
   // #317: der Monat, ab dem die Anpassung gilt (eigene Angabe des Mieters, sonst die Vorgabe)
   from: string
+  // Die Vorauszahlung, die in diesem Monat laut Staffel ohnehin gilt (`prepaymentAt`). Ist der neue Betrag derselbe, wird
+  // nichts angekündigt: „auf 160,00 € angepasst“ stand sonst im Brief eines Mieters, der 160 € schon zahlt. Entschieden
+  // wird hier, beim Erzeugen; ein eingefrorenes Anschreiben trägt seinen Betrag im Stand und druckt weiter wie zugestellt.
+  currentCents?: number | null
 }): StatementLetter {
-  const newCents = adjustedCents(i.adjustment, i.suggestedCents)
+  const chosen = adjustedCents(i.adjustment, i.suggestedCents)
+  const newCents = chosen !== null && chosen === (i.currentCents ?? null) ? null : chosen
   const from = newCents === null ? null : i.from
   const values = letterValues(i.facts, newCents, from)
   const texts = Object.fromEntries(LETTER_BLOCK_IDS.map((b) => [b, resolveTemplate(i.texts[b], values)])) as Record<LetterBlock, string>
@@ -327,6 +332,13 @@ export function exceedsOnePage(paragraphs: readonly string[], extraLines = 0): b
 export function adjustmentHint(mode: LetterAdjustmentMode, cents: number | null, suggestedCents: number): string | null {
   if (mode !== 'custom' || cents === null || suggestedCents <= 0 || cents <= suggestedCents) return null
   return `Der Betrag liegt über dem Vorschlag von ${euro(suggestedCents)}. Nach § 560 Abs. 4 BGB ist eine Anpassung nur auf eine angemessene Höhe zulässig; prüfen Sie, ob Sie den höheren Betrag begründen können.`
+}
+
+// Systemprüfung: Der gewählte Betrag gilt im Monat der Anpassung laut Staffel ohnehin. Dann gibt es nichts anzupassen, und
+// das Anschreiben lässt den Satz weg (`buildLetter`); das Seitenfenster sagt es, statt den Satz still zu verlieren.
+export function sameAmountHint(newCents: number | null, currentCents: number | null, month: string | null): string | null {
+  if (newCents === null || currentCents === null || newCents !== currentCents) return null
+  return `Die Vorauszahlung beträgt ${euro(currentCents)}${month && isMonthKey(month) ? ` und gilt ab ${monthName(month)} ohnehin` : ''}. Das Anschreiben kündigt deshalb keine Anpassung an.`
 }
 
 export const ADJUSTMENT_MODES: readonly { id: LetterAdjustmentMode; label: string }[] = [
@@ -390,31 +402,44 @@ export const adjustmentDefault = (s: Pick<Settings, 'printAdjustSuggestion'>): L
 // Die bisherige monatliche Vorauszahlung: die Rate im letzten Monat des Mieters im Zeitraum, in
 // derselben Abgrenzung wie der Vorschlag (Heizkostenabrechnung nur die Heizstaffel, bei getrennt
 // abgerechneter Heizung ohne sie).
-function prepaymentBefore(st: Settlement['statements'][number], t: LetterSource['tenancies'][number] | undefined, separate: boolean): number | null {
+type LetterTenancy = Pick<Tenancy, 'end' | 'prepayments' | 'heatingPrepayments'>
+function prepaymentBefore(st: Settlement['statements'][number], t: LetterTenancy | undefined, separate: boolean): number | null {
   if (!t) return null
-  const last = (t.end && t.end < st.periodEnd ? t.end : st.periodEnd).slice(0, 7)
-  const heating = rateAtMonth(t.heatingPrepayments ?? [], last)
-  if (st.scope === 'heating') return heating
-  return rateAtMonth(t.prepayments, last) + (separate ? 0 : heating)
+  return prepaymentAt(st, t, separate, (t.end && t.end < st.periodEnd ? t.end : st.periodEnd).slice(0, 7))
 }
+// Die Vorauszahlung laut Staffel in einem Monat, in derselben Abgrenzung.
+function prepaymentAt(st: Pick<Settlement['statements'][number], 'scope'>, t: LetterTenancy | undefined, separate: boolean, month: string): number | null {
+  if (!t) return null
+  const heating = rateAtMonth(t.heatingPrepayments ?? [], month)
+  if (st.scope === 'heating') return heating
+  return rateAtMonth(t.prepayments, month) + (separate ? 0 : heating)
+}
+// Wie der Vorschlag abgegrenzt ist. Wie die Seite bisher (Durchsicht #297 S-C): Eine vorher abgeschlossene Abrechnung
+// kennt das Feld nicht, dann zählt, ob in ihrem Zeitraum eine getrennte Heizkostenabrechnung endet.
+const separateOf = (s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>): boolean =>
+  s.scope?.kind !== 'heating' && (s.suggestionWithoutHeating ?? (s.separateHeating ?? []).length > 0)
+// Für das Seitenfenster des Mieters: die Vorauszahlung, mit der `lettersOf` den neuen Betrag vergleicht.
+export const currentPrepaymentAt = (
+  s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>, st: Pick<Settlement['statements'][number], 'scope'>, t: LetterTenancy | undefined, month: string,
+): number | null => prepaymentAt(st, t, separateOf(s), month)
 
 // Das Anschreiben je Mietverhältnis einer Abrechnung. Der Server ruft es mit den Texten aller Ebenen auf; die
 // Oberfläche nur, wenn eine Antwort keines trägt (dann mit den Vorgaben von Mietfuchs).
 export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heatingPeriods' | 'scope' | 'daysInYear' | 'suggestionWithoutHeating' | 'separateHeating'>, src: LetterSource): Record<string, StatementLetter> {
   const landlord = effectiveLandlord(src.property, src.settings)
   const title = settlementTitle(s)
-  // Wie die Seite bisher (Durchsicht #297 S-C): Eine vorher abgeschlossene Abrechnung kennt das Feld
-  // nicht, dann zählt, ob in ihrem Zeitraum eine getrennte Heizkostenabrechnung endet.
-  const separate = s.scope?.kind !== 'heating' && (s.suggestionWithoutHeating ?? (s.separateHeating ?? []).length > 0)
+  const separate = separateOf(s)
   const out: Record<string, StatementLetter> = {}
   for (const st of s.statements) {
     const own = src.own[st.tenancyId]
     const tenancy = src.tenancies.find((t) => t.id === st.tenancyId)
+    const from = own?.adjustment?.from ?? adjustFromFor(src.asOf, s.period.to)
     const built = buildLetter({
       texts: mergeLetterTexts(src.installation, src.propertyTexts, own?.texts),
       adjustment: own?.adjustment ?? adjustmentDefault(src.settings),
       suggestedCents: st.suggestedMonthlyCents,
-      from: own?.adjustment?.from ?? adjustFromFor(src.asOf, s.period.to),
+      from,
+      currentCents: prepaymentAt(st, tenancy, separate, from),
       facts: {
         tenantName: st.tenantName,
         unitName: st.unitName,

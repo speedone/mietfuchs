@@ -733,6 +733,11 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
 - **Je Mieter gespeichert, nicht nur für den Druck**: Druckte der Vermieter einen angepassten Text und schlösse
   danach ab, fröre sonst ein anderer Text ein als der, der beim Mieter liegt. Gespeichert wird nur, solange die
   Abrechnung offen ist (409 danach); beim Wiederöffnen gilt die gespeicherte Anpassung wieder.
+- **Kein Anpassungssatz bei gleichem Betrag** (Systemprüfung): Entspricht der neue Betrag (Vorschlag oder eigener) der
+  Vorauszahlung, die im Monat der Anpassung laut Staffel ohnehin gilt (`prepaymentAt`, in der Abgrenzung des Vorschlags),
+  setzt `buildLetter` `newCents` und `from` auf `null`, und `chooseLetterBlocks` wählt keinen Baustein. Entschieden wird
+  beim Erzeugen, nicht bei der Auswahl: Ein eingefrorenes Anschreiben trägt seinen Betrag im Stand und druckt weiter wie
+  zugestellt. „In die Staffel übernehmen“ findet dann nichts.
 - **Der Server setzt die Werte ein** (`lettersOf` in shared/letter.ts, gelesen über `lettersFor` in
   [letter.ts](letter.ts)) und liefert `letters` neben `statements`, offen wie abgeschlossen. **Der Abschluss friert
   es im Stand ein** (im selben Vorgang wie die Zahlen); danach ändert keine Vorlage mehr, was zugestellt wurde.

@@ -2,7 +2,7 @@
 // § 35a EStG, ohne DOM geprüft. Die Werte kommen aus dem Anschreiben (abgeschlossen also eingefroren) und der Abrechnung.
 import { describe, expect, test } from 'vitest'
 import type { Statement, StatementLetter } from './types'
-import { contactRows, footnoteText, infoRows, labor35aTable, resultRows, statementHeadRows, senderMissing } from './letterView'
+import { contactRows, footnoteText, infoRows, labor35aTable, resultRows, statementHeadRows, senderMissing, missingAccountFindings, ibanMissing } from './letterView'
 
 const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ')
 
@@ -127,5 +127,40 @@ describe('Absender fehlt (senderMissing)', () => {
 
   test('mit Briefpapier trägt das Papier den Absender; Mietfuchs sieht es nicht und warnt nicht', () => {
     expect(senderMissing({ sender: '', signature: '', paper: true })).toBe(false)
+  })
+})
+
+// Systemprüfung: Ohne IBAN bat der Brief um Überweisung der Nachzahlung, ohne ein Konto zu nennen, und nichts wies darauf hin.
+describe('Bankverbindung fehlt (ibanMissing)', () => {
+  const sentence = 'Es ergibt sich eine Nachzahlung von 120,00 €. Bitte überweisen Sie den Betrag innerhalb von 30 Tagen nach Zugang dieser Abrechnung.'
+
+  test('nur bei einer Nachzahlung, deren Satz um Überweisung bittet und kein Konto nennt', () => {
+    expect(ibanMissing({ balanceCents: -12000, iban: '', sentence })).toBe(true)
+    expect(ibanMissing({ balanceCents: -12000, iban: 'DE02 1203 0000 0000 2020 51', sentence })).toBe(false)
+    // Guthaben und ausgeglichen: Es ist nichts zu überweisen.
+    expect(ibanMissing({ balanceCents: 12000, iban: '', sentence })).toBe(false)
+    expect(ibanMissing({ balanceCents: 0, iban: '', sentence })).toBe(false)
+  })
+
+  test('wer bar oder per Lastschrift kassiert und den Satz so schreibt, bekommt keinen Hinweis', () => {
+    expect(ibanMissing({ balanceCents: -12000, iban: '', sentence: 'Die Nachzahlung von 120,00 € ziehe ich mit der nächsten Miete per Lastschrift ein.' })).toBe(false)
+    expect(ibanMissing({ balanceCents: -12000, iban: '', sentence: '' })).toBe(false)
+    expect(ibanMissing({ balanceCents: -12000, iban: '', sentence: null })).toBe(false)
+    // Das Konto steht im eigenen Text statt im Platzhalter.
+    expect(ibanMissing({ balanceCents: -12000, iban: '', sentence: 'Bitte überweisen Sie 120,00 € auf das Konto DE02 1203 0000 0000 2020 51.' })).toBe(false)
+    expect(ibanMissing({ balanceCents: -12000, iban: '', sentence: 'Bitte überweisen Sie 120,00 € auf das Konto DE02120300000000202051.' })).toBe(false)
+  })
+
+  test('fürs Cockpit: die Mieter mit Nachzahlung aus dem Anschreiben der Abrechnung, bis zum Versand', () => {
+    const texts = { backPayment: sentence } as StatementLetter['texts']
+    const s = {
+      statements: [st({ tenancyId: 't1', tenantName: 'Anna Becker', balanceCents: -14054 }), st({ tenancyId: 't2', tenantName: 'Ben Kurz', balanceCents: 5000 }), st({ tenancyId: 't3', tenantName: 'Cem Lang', balanceCents: -100 })],
+      letters: { t1: letter({ texts }), t2: letter({ texts }), t3: letter({ texts, values: { ...values, IBAN: 'DE02 1203 0000 0000 2020 51' } as StatementLetter['values'] }) },
+    }
+    expect(missingAccountFindings(s)).toEqual(['Anna Becker'])
+    expect(missingAccountFindings({ ...s, closed: { sentAt: null } })).toEqual(['Anna Becker'])
+    expect(missingAccountFindings({ ...s, closed: { sentAt: '2026-02-02' } })).toEqual([])
+    // Vor #415 abgeschlossen: kein Anschreiben, also auch kein Satz darin.
+    expect(missingAccountFindings({ statements: s.statements })).toEqual([])
   })
 })

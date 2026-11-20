@@ -79,6 +79,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Abrechnung vor dem Versand: Die Kontrollansicht zeigte den Saldo je Mieter mit umgekehrtem Vorzeichen zur Beschriftung;
+  dort steht jetzt das Ergebnis in Worten („Nachzahlung 300,00 €“, „Guthaben 1.500,00 €“) wie in der Übersicht. Hat ein
+  Mieter eine Nachzahlung und nennt das Anschreiben kein Konto, weil keine IBAN eingetragen ist, weisen „Zu prüfen“, das
+  Fenster „Drucken“ und das Cockpit bis zum Versand darauf hin (ein Hinweis, gedruckt wird trotzdem). Das Anschreiben
+  kündigt keine Anpassung der Vorauszahlung mehr an, wenn der neue Betrag der Vorauszahlung entspricht, die ab dem Monat
+  ohnehin gilt; das Seitenfenster „Anschreiben bearbeiten“ sagt es. Die Übersicht je Mieter nennt vor dem Abschluss, welche
+  neue Vorauszahlung der Brief ab wann ankündigt, und wo sich das ändern lässt, und sie sagt, dass als Vorauszahlungen
+  angesetzt ist, was laut Vertrag zu zahlen war. Abgeschlossene Abrechnungen bleiben, wie sie sind.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert
