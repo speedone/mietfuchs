@@ -130,10 +130,10 @@ test('ohne geladene Einstellungen und nach dem Abschluss keine Zeile: abgeschlos
   expect(screen.queryByText('Vermieter und Bankverbindung')).toBeNull()
 })
 
-test('ohne Kosten nennt die Zeile „Belege erfasst“ beide Wege, Hochladen und von Hand', async () => {
+test('ohne Kosten nennt die Zeile „Kosten erfasst“ beide Wege, Hochladen und von Hand', async () => {
   page({ settings: settings() })
   await screen.findByText('Fertigstellung', undefined, SLOW)
-  expect(row('Belege erfasst').textContent).toContain('erfassen Sie die Kosten von Hand auf der Seite Kosten mit „+ Kostenposition anlegen“')
+  expect(row('Kosten erfasst').textContent).toContain('erfassen Sie die Kosten von Hand auf der Seite Kosten mit „+ Kostenposition anlegen“')
 })
 
 test('leeres Cockpit: Verweis auf die Anleitung zur ersten Abrechnung, und neben „Belege erfassen“ der Weg von Hand', async () => {

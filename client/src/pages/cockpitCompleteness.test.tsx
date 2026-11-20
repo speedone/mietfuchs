@@ -63,7 +63,7 @@ test('Eigentumswohnung mit nur der Grundsteuer: Zeile „Hausgeldabrechnung“, 
 test('Mehrfamilienhaus mit nur der Grundsteuer: keine Zeile „Hausgeldabrechnung“ (#409)', async () => {
   stub('mfh', [item('g', YEAR, 'Grundsteuer')])
   page()
-  await screen.findByText('Belege erfasst', { selector: '.check-title' }, SLOW)
+  await screen.findByText('Kosten erfasst', { selector: '.check-title' }, SLOW)
   expect(screen.queryByText('Hausgeldabrechnung', { selector: '.check-title' })).toBeNull()
 })
 

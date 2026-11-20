@@ -20,7 +20,7 @@ export function usesUnitBasis(items: CostItem[]): boolean {
   return allocable(items).some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons' || c.key === 'external')
 }
 
-// Die grünen Zeilen „Mietverhältnisse & Flächen“ und „Belege erfasst“, mit Ein- und Mehrzahl statt
+// Die grünen Zeilen „Mietverhältnisse & Flächen“ und „Kosten erfasst“, mit Ein- und Mehrzahl statt
 // „Mietverhältnis(se)“ oder „Position(en)“ (#180).
 //
 // Einheiten ohne Wohnfläche und ohne Bewohner (`zeroArea`, Garage-artig nach `isGarageLike` in calc.ts, #135)
@@ -67,7 +67,7 @@ export function missingSincePrevious(items: CostItem[], previous: CostItem[]): s
 
 // Eine Eigentumswohnung, bei der von den umlagefähigen Kosten nur die Grundsteuer erfasst ist (#409): Alle
 // übrigen stehen in der Hausgeldabrechnung der Gemeinschaft (shared/assessment.ts), die oft erst Monate
-// nach dem Jahr kommt. Ohne Kosten sagt schon „Belege erfasst“, dass nichts da ist; ohne Grundsteuer stimmte
+// nach dem Jahr kommt. Ohne Kosten sagt schon „Kosten erfasst“, dass nichts da ist; ohne Grundsteuer stimmte
 // der Text der Zeile nicht.
 export function condoWithoutHousingMoney(kind: PropertyKind | undefined, items: CostItem[]): boolean {
   const allocated = allocable(items)
@@ -78,7 +78,7 @@ export function itemsDetail(items: number, sumCents: number, files: number): str
   return `${countOf(items, 'Position', 'Positionen')} · Summe ${fmtEuro(sumCents)}${files ? ` · ${countOf(files, 'Belegdatei', 'Belegdateien')}` : ''}`
 }
 
-// „Belege erfasst“ ohne Kosten (#447): Der Knopf führt in den Eingang der Belege. Wer nur Papier hat, fand dort keinen
+// „Kosten erfasst“ ohne Kosten (#447): Der Knopf führt in den Eingang der Belege. Wer nur Papier hat, fand dort keinen
 // Weg zu den Kosten; die Zeile nennt deshalb beide.
 export function noCostsDetail(label: string): string {
   return `Für ${label} sind noch keine Kosten erfasst. Laden Sie Belege im Eingang hoch, oder erfassen Sie die Kosten von Hand auf der Seite Kosten mit „+ Kostenposition anlegen“.`
