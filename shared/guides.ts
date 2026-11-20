@@ -402,7 +402,7 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Klicken Sie beim laufenden Mietverhältnis auf „Mieterwechsel“. Im Fenster tragen Sie das „Auszugsdatum (letzter Miettag)“ ein, dann die Zählerstände zum Auszug („Zwischenablesung der Zähler“) und zuletzt den neuen Mieter.' },
       { page: 'stammdaten', text: 'Steht die Wohnung danach leer, setzen Sie den Haken „Wohnung bleibt vorerst leer (Leerstand)“. Mit „Speichern“ wird alles auf einmal gespeichert; den neuen Mieter legen Sie später mit „+ Mietverhältnis anlegen“ an.' },
       { page: 'stammdaten', text: 'Die neue Anschrift des ausgezogenen Mieters tragen Sie an seinem Mietverhältnis ein: ✎ klicken, „Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ aufklappen und „Abweichende Anschrift (Schriftverkehr)“ ausfüllen. So haben Sie sie beim Versand der Abrechnung zur Hand; auf den Ausdruck kommt sie nicht.' },
-      { page: 'zaehler', text: 'Eine Zwischenablesung können Sie auch später nachtragen: Ablesungen des Zählers aufklappen, „+ Ablesung anlegen“ klicken, Datum und Stand eintragen und „Anlegen“. Konnten Sie zum Auszug nicht ablesen und haben den Stand geschätzt, haken Sie dabei „Stand geschätzt (nicht abgelesen)“ an und tragen die „Begründung der Schätzung“ ein.' },
+      { page: 'zaehler', text: 'Eine Zwischenablesung können Sie auch später nachtragen: Ablesungen des Zählers aufklappen, „+ Ablesung anlegen“ klicken, Datum und Stand eintragen und „Anlegen“. Eine vertippte Ablesung korrigieren Sie mit ✎ in ihrer Zeile und „Speichern“. Konnten Sie zum Auszug nicht ablesen und haben den Stand geschätzt, haken Sie dabei „Stand geschätzt (nicht abgelesen)“ an und tragen die „Begründung der Schätzung“ ein.' },
       { page: 'mietkonto', text: 'Prüfen Sie im Mietkonto, ob die Vorauszahlungen bis zum Auszug eingegangen sind.' },
       { page: 'abrechnung', text: 'Jedes Mietverhältnis bekommt seine eigene Abrechnung. Hat ein Mieter anders gezahlt als angesetzt, auch im Auszugs- oder Einzugsmonat, tragen Sie den gezahlten Betrag mit „✎ anpassen“ ein.' },
       { page: 'stammdaten', text: 'Ziehen Sie nach dem Auszug selbst ein oder vermieten Sie Ihre bisher eigene Wohnung zum ersten Mal, öffnen Sie die Wohnung mit ✎ und tragen Sie unter „Nutzungswechsel“ mit „+ Wechsel ab Datum …“ den Tag und die neue Nutzung ein.' },
@@ -425,7 +425,7 @@ const GUIDE_DATA = {
       { text: 'Abgerechnet wird gegen die Vorauszahlungen, die der Mieter für den Abrechnungszeitraum tatsächlich geleistet hat.', norm: 'BGH, Urteil vom 18.05.2011, VIII ZR 240/10' },
     ],
     gaps: [
-      { text: 'Im Fenster „Mieterwechsel“ lässt sich ein Zählerstand nicht als geschätzt kennzeichnen. Löschen Sie die Zwischenablesung dann auf der Seite Zähler und legen Sie sie dort mit „Stand geschätzt (nicht abgelesen)“ neu an.' },
+      { text: 'Im Fenster „Mieterwechsel“ lässt sich ein Zählerstand nicht als geschätzt kennzeichnen. Öffnen Sie die Zwischenablesung dann auf der Seite Zähler mit ✎ in ihrer Zeile, haken Sie „Stand geschätzt (nicht abgelesen)“ an, tragen Sie die „Begründung der Schätzung“ ein und klicken Sie auf „Speichern“.' },
     ],
     terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'partialMonth', 'settlementDeadline', 'usageChange'],
   },
