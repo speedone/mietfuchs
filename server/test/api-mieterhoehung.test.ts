@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import type { Property, RentEntry, Tenancy, Unit } from '../../shared/types.ts'
 import { errorFrom, restore, startServer, type Server } from '../testing/api.ts'
 import { journalOf, revert } from '../testing/revert.ts'
+import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 
 const post = <T>(s: Server, url: string, body: unknown) => s.api<T>(url, { method: 'POST', body: JSON.stringify(body) })
 const put = (s: Server, url: string, body: unknown) =>
@@ -82,4 +83,32 @@ test('Mieterhöhung, Daten: im Backup erhalten, im Verlauf zurückzunehmen', asy
   } finally {
     s.stop()
   }
+})
+
+test('Mieterhöhung, Daten: die Marke des Formulars erfasst Art, Indexwert, Art der Miete und Ausschluss (Durchsicht)', async () => {
+  const s = await startServer()
+  try {
+    const u = await post<Unit>(s, '/api/units', { name: 'EG', areaM2: 50, participates: true })
+    const t = await post<Tenancy>(s, '/api/tenancies', { ...BASE, unitId: u.id, tenantName: 'Index', persons: 1, start: '2024-01-01', baseRents: [{ from: '2024-01', monthlyCents: 68500 }] })
+    const read = async () => (await s.api<Tenancy[]>('/api/tenancies')).find((x) => x.id === t.id) ?? assert.fail('Mietverhältnis fehlt')
+    const alt = tenancyStamp(await read())
+    // Ein anderer Weg (zweiter Tab) ergänzt Art und Index der Stufe; das Formular kennt das nicht.
+    const first = await put(s, `/api/tenancies/${t.id}`, { ifUnchanged: alt, rentKind: 'index', baseRents: INDEXED })
+    assert.equal(first.status, 200)
+    const stale = await put(s, `/api/tenancies/${t.id}`, { ifUnchanged: alt, baseRents: [{ from: '2024-01', monthlyCents: 68500 }] })
+    assert.equal(stale.status, 409)
+    assert.deepEqual((await read()).baseRents, INDEXED)
+    // Auch eine Änderung nur an Art der Miete oder Ausschluss ändert die Marke.
+    const neu = tenancyStamp(await read())
+    assert.equal((await put(s, `/api/tenancies/${t.id}`, { ifUnchanged: neu, rentIncreaseExcluded: true })).status, 200)
+    const staleExcl = await put(s, `/api/tenancies/${t.id}`, { ifUnchanged: neu, tenantName: 'X' })
+    assert.equal(staleExcl.status, 409)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Mieterhöhung, Daten: die Marke eines Mietverhältnisses ohne die neuen Felder bleibt, wie sie war', () => {
+  const stamp = tenancyStamp({ start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 10000 }], heatingPrepayments: [], flatRates: [], baseRents: [{ from: '2024-01', monthlyCents: 50000 }], personHistory: [] })
+  assert.equal(stamp, '["2024-01-01",null,["2024-01=10000"],[],[],["2024-01=50000"],[]]')
 })

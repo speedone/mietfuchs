@@ -77,6 +77,11 @@ describe('withRentDetails', () => {
     ], 'free')
     expect('problems' in r && r.problems.map((p) => p.field)).toEqual(['baseRent.0.indexValue', 'baseRent.1.reason', 'baseRent.2.reason'])
   })
+  it('meldet ein Basisjahr ohne Monat und Wert, statt es still zu verwerfen', () => {
+    const r = details([row('', '700,00', { indexBase: '2020' })], 'index')
+    expect('problems' in r && r.problems.map((p) => p.field)).toContain('baseRent.0.indexMonth')
+    expect('problems' in r && r.problems.find((p) => p.field === 'baseRent.0.indexMonth')?.text).toMatch(/Monat des Indexwerts/)
+  })
   it('meldet einen unvollständigen oder ungültigen Indexwert', () => {
     const r = details([
       row('', '700,00', { indexMonth: '10.2023', indexValue: '' }),

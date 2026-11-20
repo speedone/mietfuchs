@@ -129,7 +129,7 @@ export function withRentDetails(
 }
 
 function rowIndex(row: RentRow, i: number, where: string, problems: Problem<RentRowField>[]): RentIndexValue | undefined {
-  if (!row.indexMonth.trim() && !row.indexValue.trim()) return undefined
+  if (!row.indexMonth.trim() && !row.indexValue.trim() && !row.indexBase.trim()) return undefined
   const month = parseMonthText(row.indexMonth)
   const tenths = indexTenthsOf(row.indexValue)
   const baseText = row.indexBase.trim() || CURRENT_INDEX_BASE

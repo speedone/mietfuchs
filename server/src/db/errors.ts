@@ -74,7 +74,8 @@ const FIELD_NAMES: Record<string, string> = {
   deposit_status: 'Stand der Kaution',
   deposit_form: 'Form der Sicherheit',
   // Mieterhöhung (#191)
-  reason: 'Art der Stufe',
+  // Nach Tabelle und Spalte, weil „reason“ auch bei Schätzungen und Zählerlücken vorkommt und dort etwas anderes meint.
+  base_rents_reason: 'Art der Stufe',
   rent_kind: 'Art der Miete',
   from_cents: 'bisherige Miete',
   to_cents: 'neue Miete',
@@ -86,7 +87,7 @@ const FIELD_NAMES: Record<string, string> = {
   mode: 'die Anpassung der Vorauszahlung',
 }
 
-const fieldName = (column: string): string => FIELD_NAMES[column] ?? `„${column}“`
+const fieldName = (column: string, table?: string): string => (table ? FIELD_NAMES[`${table}_${column}`] : undefined) ?? FIELD_NAMES[column] ?? `„${column}“`
 
 // Der Feldname aus dem Namen einer Prüfbedingung. Die Namen sind durchgehend
 // `<tabelle>_<feld>_not_negative`, `_known`, `_positive` oder `_complete`, und ein Test hält
@@ -98,7 +99,7 @@ function fieldOfConstraint(name: string, suffix: string): string {
   // in der er gerade arbeitet. Der längste passende Feldname gewinnt, weil manche Felder
   // Unterstriche enthalten (`old_end_value`).
   const treffer = Object.keys(FIELD_NAMES)
-    .filter((feld) => rest.endsWith(`_${feld}`))
+    .filter((feld) => rest === feld || rest.endsWith(`_${feld}`))
     .sort((a, b) => b.length - a.length)[0]
   return treffer ? fieldName(treffer) : `„${rest}“`
 }
@@ -401,8 +402,8 @@ function classify(grund: string): DatabaseProblem | null {
   const check = /CHECK constraint failed:\s*([a-z0-9_]+)/i.exec(grund)
   if (check) return withFinding(400, checkMessage(check[1]), grund)
 
-  const notNull = /NOT NULL constraint failed:\s*\S+\.(\w+)/i.exec(grund)
-  if (notNull) return withFinding(400, `Das Feld ${fieldName(notNull[1])} muss ausgefüllt sein.`, grund)
+  const notNull = /NOT NULL constraint failed:\s*(\w+)\.(\w+)/i.exec(grund)
+  if (notNull) return withFinding(400, `Das Feld ${fieldName(notNull[2], notNull[1])} muss ausgefüllt sein.`, grund)
 
   // Kein Fehler in den Daten, sondern am Rechner. Beide kommen vor, wenn jemand seinen
   // Datenordner auf einen vollen oder schreibgeschützten Datenträger legt.

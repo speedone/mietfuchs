@@ -414,3 +414,15 @@ test('Mieterhöhung: jede Bedingung, deren Endung allein den falschen Satz ergä
     for (const text of [complete, tenths, base, received, agreed, json]) assert.doesNotMatch(text, /Gemeinschaft|JJJJ-MM\)/, text)
   })
 })
+
+test('Mieterhöhung: „Art der Stufe“ gilt nur für die Kaltmiete-Staffel, nicht für jede Spalte „reason“ (Durchsicht von #191)', async () => {
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw(`INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('u', 'objekt-1', 'EG', 50, 1)`)))
+    await opened.write((db) => db.run(sql.raw(`INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t', 'u', 'M', 1, '2025-01-01')`)))
+    const gap = await run(`INSERT INTO interim_reading_gaps (unit_id, date, status, reason) VALUES ('u', '2025-01-01', 'missed', NULL)`)
+    assert.doesNotMatch(gap, /Art der Stufe/, gap)
+    const rent = await run(`INSERT INTO base_rents (tenancy_id, "from", monthly_cents, reason) VALUES ('t', '2025-05', 50000, 'mietspiegel')`)
+    assert.match(rent, /Art der Stufe/, rent)
+  })
+})
