@@ -84,16 +84,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Antworten zu fehlenden Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
-- Kaution: „Aufstellung drucken“ druckt die Aufstellung zum Auszug jetzt als Brief wie Abrechnung und Mieterhöhung, mit
-  Absender, Anschrift des Mieters für den Schriftverkehr, Ort und Datum, Wohnung und Objekt im Betreff, Gruß und
-  Unterschriftszeile, auf Wunsch mit Logo und Briefpapier. Bleibt etwas auszuzahlen, fragt der Brief nach dem Konto
-  oder nennt die letzten vier Stellen der beim Mietverhältnis hinterlegten IBAN. Der Text steht fest; er nennt, was gebucht und was mit Grund
-  einbehalten ist, und keine Frist. Fehlt der Name des Vermieters, weist das Fenster darauf hin.
-- Kontoauszug: Nennt der Verwendungszweck einer Auszahlung an den Mieter die Kaution, ist „Kaution zurückgezahlt“
-  vorbelegt statt „Nachzahlung oder Guthaben“, solange laut Buchungen noch Kaution bei Ihnen liegt oder keine gebucht ist. Ist für das Mietverhältnis noch kein Eingang der Kaution gebucht, sagt
-  die Ablehnung beim Buchen, dass zuerst der Eingang unter „Kaution führen“ in den Stammdaten zu buchen ist.
-- Kontoauszug: Vorschau und Mitteilung beim Einlesen sagen „eingelesen“ statt „übernommen“: vorher, wie viele Umsätze
-  eingelesen werden und dass dabei nichts gebucht wird, danach, dass sie unter „Offene Umsätze“ zuzuordnen sind.
 
 ### Behoben
 
