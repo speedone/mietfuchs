@@ -62,6 +62,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Kaution ausgezogener Mieter, solange noch Geld bei Ihnen liegt (ohne feste Frist, die das Gesetz nicht nennt), und
   die Eichfristen der Zähler schon ein Jahr vorher. Die bisherige Karte „Kaution nach Auszug“ ist darin aufgegangen.
   Neu im Lexikon: „Einwendungsfrist“ ([#190](https://github.com/speedone/mietfuchs/issues/190)).
+- Zähler: Eine Ablesung lässt sich bearbeiten (✎ in ihrer Zeile), statt sie zu löschen und neu anzulegen. Vor dem
+  Speichern fragt Mietfuchs nach, wenn der Stand unter dem vorigen Stand desselben Zählers liegt und kein Zählerwechsel
+  angehakt ist, wenn er über dem folgenden Stand liegt oder wenn das Datum in der Zukunft liegt; speichern können Sie
+  trotzdem. Bei einem Zählerwechsel zählt dabei der Endstand des alten Zählers, beim Heizkostenverteiler verweist die
+  Rückfrage auf den Stichtagswert. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt, wenn heute im
+  gewählten Abrechnungszeitraum liegt; ein Hinweis am Feld sagt es, solange Sie es nicht geändert haben.
 
 ### Geändert
 
@@ -81,15 +87,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Abrechnung vor dem Versand: Die Kontrollansicht zeigte den Saldo je Mieter mit umgekehrtem Vorzeichen zur Beschriftung;
-  dort steht jetzt das Ergebnis in Worten („Nachzahlung 300,00 €“, „Guthaben 1.500,00 €“) wie in der Übersicht. Hat ein
-  Mieter eine Nachzahlung und fordert das Anschreiben zur Überweisung auf, ohne ein Konto zu nennen, weil keine IBAN
-  eingetragen ist, weisen „Zu prüfen“ und das Fenster „Drucken“ bis zum Versand darauf hin (ein Hinweis, gedruckt wird
-  trotzdem; nicht mit Briefpapier). Das Anschreiben kündigt keine Anpassung der Vorauszahlung mehr an, wenn der neue Betrag
-  schon im abgerechneten Zeitraum galt und weiter gilt; das Seitenfenster „Anschreiben bearbeiten“ und die Übersicht sagen
-  es. Die Übersicht je Mieter nennt vor dem Abschluss, welche
-  neue Vorauszahlung der Brief ab wann ankündigt, und wo sich das ändern lässt, und sie sagt, dass als Vorauszahlungen
-  angesetzt ist, was laut Vertrag zu zahlen war. Abgeschlossene Abrechnungen bleiben, wie sie sind.
+- Navigation und Sprünge: Die Seite „Heizkosten“ steht in der Navigation, sobald die Heizung in den Stammdaten
+  eingerichtet ist, nicht erst nach einem Seitenwechsel; die Mitteilung nach dem Einrichten nennt die Seite. „Hier
+  beheben → Heizkosten“ führt zur betroffenen Heizanlage und hebt sie hervor, „Heizung einrichten →“ zur Karte
+  „Heizung“ der Stammdaten. Nach „Rückgängig“ im Verlauf zeigen die Stammdaten den wiederhergestellten Stand, ohne dass
+  die Seite neu geladen werden muss. Mietkonto, Heizkosten und Steuer führen aus dem leeren Zustand mit einem Knopf zum
+  fehlenden Schritt. Im Cockpit heißt die Zeile, die Kostenpositionen zählt, „Kosten erfasst“ statt „Belege erfasst“.
+- Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
+  Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
+  Issue, in dem sie tatsächlich geplant ist.
 
 ## [0.18.1] – 2026-11-19
 
