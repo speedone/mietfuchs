@@ -1011,6 +1011,26 @@ export function deductionsOf(
     })
 }
 
+// Ein Mietverhältnis ohne lesbaren Einzug (leer oder kein Datum; so etwas kommt nur über ein Backup, den Umstieg oder
+// aus der Zeit vor der Prüfung beim Speichern herein). Die Berechnung rät keinen Einzug und fängt nichts auf (siehe
+// „Aufgefangen wird nichts“ in CLAUDE.md); mit ihm scheiterte sie mitten im Rechnen mit „Invalid time value“, ohne zu
+// sagen, woran. Deshalb sagt es der Schnappschuss vorher, mit Mietverhältnis und Wohnung. Gefragt wird genau das, woran
+// die Rechnung scheitert: ob sich aus dem Einzug ein Tag bilden lässt (wie `toUTC` in calc.ts), keine strengere Form.
+export class TenancyStartMissing extends Error {
+  status = 409 as const
+}
+export function requireTenancyStarts(tenancies: readonly Pick<Tenancy, 'tenantName' | 'unitId' | 'start'>[], units: readonly Pick<Unit, 'id' | 'name'>[]): void {
+  for (const t of tenancies) {
+    const [y, m, d] = String(t.start ?? '').split('-').map(Number)
+    if (t.start !== '' && y !== undefined && m !== undefined && d !== undefined && Number.isFinite(Date.UTC(y, m - 1, d))) continue
+    const unit = units.find((u) => u.id === t.unitId)?.name ?? ''
+    throw new TenancyStartMissing(
+      `Beim Mietverhältnis „${t.tenantName}“ (Wohnung „${unit}“) fehlt der Einzug oder er ist kein Datum. Tragen Sie ihn in den Stammdaten ein; ` +
+        'bis dahin lässt sich für dieses Objekt nichts berechnen.',
+    )
+  }
+}
+
 export function snapshotFor(
   source: PropertyScopedSource & {
     // `spreadRestYear` (§ 82b Abs. 2 EStDV, #262) liest nur `taxReportFor`; in den Schnappschuss kommt es nicht.
@@ -1040,6 +1060,7 @@ export function snapshotFor(
   const found = source.properties?.find((p) => p.id === propertyId)
   const objectRules = rulesOf(found)
   const narrowed = narrowToProperty(source, propertyId)
+  requireTenancyStarts(narrowed.tenancies, narrowed.units)
   // Heizung PR 16: Contracting rechnet wie Fernwärme (die Naht `asBilledPlant`).
   const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId).map(asBilledPlant),
     (p) => (hasOwnRhythm(wayOf(p)) ? heatingPeriodsEndingIn(plantRules(wayOf(p), objectRules), period).map((h) => String(h.key)) : [String(period.key)]))

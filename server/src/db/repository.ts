@@ -175,7 +175,26 @@ function requireDay(stored: string | null | undefined, value: string | null | un
     return
   }
   if (!isCalendarDay(value)) throw new HeatingError(400, `${what} ist kein Datum, das es gibt. Bitte wählen Sie den Tag im Kalender.`)
+  const year = Number(value.slice(0, 4))
+  if (year < DAY_YEAR_MIN || year > DAY_YEAR_MAX) {
+    throw new HeatingError(400, `${what} liegt außerhalb der Jahre ${DAY_YEAR_MIN} bis ${DAY_YEAR_MAX}. Bitte prüfen Sie das Jahr.`)
+  }
 }
+// Die Grenzen der Jahre, wie die Felder der Oberfläche sie kennen (`YEAR_MIN`/`YEAR_MAX` in client/src/monthText.ts).
+const DAY_YEAR_MIN = 1900
+const DAY_YEAR_MAX = 2100
+
+// Ein Tag aus dem Rumpf: Text, oder `null` für keine Angabe. Eine Angabe anderer Art (eine Zahl, ein Wahrheitswert)
+// ist eine 400 mit Satz und wird nicht still zu „fehlt“ oder „kein Auszug“.
+const dayInput = (what: string) => (v: unknown): string | null => {
+  if (v === null || v === undefined) return null
+  if (typeof v !== 'string') throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie den Tag im Kalender.`)
+  return v
+}
+const DAY_LABELS = {
+  start: 'Der Einzug', end: 'Der Auszug', contractDate: 'Das Vertragsdatum', paymentDate: 'Das Datum der Zahlung',
+  readingDate: 'Das Datum der Ablesung', installedOn: 'Der Tag, an dem der Zähler eingebaut wurde,',
+} as const
 
 // Ein Verweis auf etwas, das es nicht (mehr) gibt, mit einem Satz statt des Fremdschlüsselfehlers der Datenbank.
 const goneText = (what: string): string => `${what} gibt es nicht (mehr), vermutlich wurde ${what.startsWith('Das') ? 'es' : what.startsWith('Die') ? 'sie' : 'er'} inzwischen gelöscht. Bitte laden Sie die Seite neu; gespeichert wurde nichts.`
@@ -551,7 +570,7 @@ function mergedRentDue(current: Tenancy, body: unknown): Pick<Tenancy, 'rentDue'
 function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
   // Der Einzugstag zuerst: Die Personen-Staffel wird gegen ihn geradegerückt, und im selben
   // Rumpf kann beides stehen.
-  const start = merged(body, 'start', current.start, (v) => asText(v, ''))
+  const start = merged(body, 'start', current.start, (v) => dayInput(DAY_LABELS.start)(v) ?? '')
   const { rentDue, rentDueDay } = mergedRentDue(current, body)
   return {
     id: current.id,
@@ -561,7 +580,7 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     personHistory: merged(body, 'personHistory', current.personHistory, (v) => readPersonHistory(v, start)),
     start,
     // Ein leerer Auszug heißt wie `null`: Das Mietverhältnis läuft.
-    end: merged(body, 'end', current.end, asNullableFilled),
+    end: merged(body, 'end', current.end, (v) => asNullableFilled(dayInput(DAY_LABELS.end)(v))),
     prepayments: merged(body, 'prepayments', current.prepayments, (v) => readSchedule<PrepaymentEntry>(v, moneyEntry)),
     flatRates: merged(body, 'flatRates', current.flatRates, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
     // #257: wie die Pauschale ganz ersetzt; `null` entfernt. Ein Monat, der keiner ist, oder ein negativer Betrag ist
@@ -579,7 +598,7 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     letterSalutation: merged(body, 'letterSalutation', current.letterSalutation, (v) => (nullableLine(v, 'Die Anrede im Brief') ?? '') || undefined),
     // Geprüft nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
     iban: merged(body, 'iban', current.iban, (v) => acceptIban(v, current.iban, IBAN_LABELS.tenancy) ?? undefined),
-    contractDate: merged(body, 'contractDate', current.contractDate, asOptionalText),
+    contractDate: merged(body, 'contractDate', current.contractDate, (v) => dayInput(DAY_LABELS.contractDate)(v) ?? undefined),
     depositCents: merged(body, 'depositCents', current.depositCents, asOptionalNumber),
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
     // Form der Sicherheit (#228): null oder ein unbekannter Wert heißt keine Angabe.
@@ -759,7 +778,7 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     heatingRole: heatingPlantId === null ? null : merged(body, 'heatingRole', current.heatingRole ?? null, (v) => oneOfOrUndefined(HEATING_ROLES, v) ?? null),
     // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); `null` heißt unbekannt.
     remoteReadable: merged(body, 'remoteReadable', current.remoteReadable ?? null, (v) => (typeof v === 'boolean' ? v : null)),
-    installedOn: merged(body, 'installedOn', current.installedOn ?? null, asNullableFilled),
+    installedOn: merged(body, 'installedOn', current.installedOn ?? null, (v) => asNullableFilled(dayInput(DAY_LABELS.installedOn)(v))),
     // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12, Entwurf 8.1). Eine unbekannte
     // Skala ist keine Angabe; ein Faktor, der keine Zahl ist, wird nicht still geleert, sondern abgelehnt
     // (`guardMeter`), denn mit ihm steht ein Betrag in der Abrechnung.
@@ -787,7 +806,7 @@ function mergeReading(current: Reading, body: unknown): Reading {
   return {
     id: current.id,
     meterId: merged(body, 'meterId', current.meterId, (v) => asText(v, '')),
-    date: merged(body, 'date', current.date, (v) => asText(v, '')),
+    date: merged(body, 'date', current.date, (v) => dayInput(DAY_LABELS.readingDate)(v) ?? ''),
     value: merged(body, 'value', current.value, (v) => asNumber(v, 0)),
     replacement: merged(body, 'replacement', current.replacement, asOptionalBoolean),
     oldEndValue: merged(body, 'oldEndValue', current.oldEndValue, asOptionalNumber),
@@ -822,7 +841,7 @@ function mergePayment(current: Payment, body: unknown): Payment {
   return {
     id: current.id,
     tenancyId: merged(body, 'tenancyId', current.tenancyId, (v) => asText(v, '')),
-    date: merged(body, 'date', current.date, (v) => asText(v, '')),
+    date: merged(body, 'date', current.date, (v) => dayInput(DAY_LABELS.paymentDate)(v) ?? ''),
     amountCents: merged(body, 'amountCents', current.amountCents, (v) => asNumber(v, 0)),
     note: merged(body, 'note', current.note, asOptionalText),
     // Die Art (#280): ein fehlender Schlüssel lässt sie stehen, beim Anlegen also Miete. Ein
@@ -853,7 +872,7 @@ function mergePayment(current: Payment, body: unknown): Payment {
 // Mietverhältnis ändert nur die Kautionsbuchung (db/deposits.ts, über `replaceBoundPaymentIn`). Notiz und Monat laut
 // Verwendungszweck bleiben frei. Unverändert gesendet ist keine Änderung.
 async function guardPayment(db: Executor, before: Payment | null, after: Payment): Promise<void> {
-  requireDay(before?.date, after.date, 'Das Datum der Zahlung', true)
+  requireDay(before?.date, after.date, DAY_LABELS.paymentDate, true)
   if (before === null || before.tenancyId !== after.tenancyId) {
     const [t] = await db.select({ id: tenancies.id }).from(tenancies).where(eq(tenancies.id, after.tenancyId))
     if (!t) throw new PaymentError(goneText('Das Mietverhältnis dieser Zahlung'))
@@ -1101,7 +1120,7 @@ async function guardSupplyReading(db: Executor, reading: Pick<Reading, 'meterId'
 
 async function guardReading(db: Executor, before: Reading | null, after: Reading): Promise<void> {
   // Nur die Form: Rückfragen zu Rücklauf und Zukunft gehören nicht hierher.
-  requireDay(before?.date, after.date, 'Das Datum der Ablesung', true)
+  requireDay(before?.date, after.date, DAY_LABELS.readingDate, true)
   if (before === null || before.meterId !== after.meterId) {
     const [m] = await db.select({ id: meters.id }).from(meters).where(eq(meters.id, after.meterId))
     if (!m) throw new HeatingError(400, goneText('Der Zähler dieser Ablesung'))
@@ -1731,7 +1750,7 @@ async function closedHcaPeriodOf(db: Executor, m: Meter): Promise<string | null>
 }
 
 async function guardMeter(db: Executor, before: Meter | null, after: Meter): Promise<void> {
-  requireDay(before === null ? undefined : before.installedOn ?? null, after.installedOn, 'Der Tag, an dem der Zähler eingebaut wurde,', false)
+  requireDay(before === null ? undefined : before.installedOn ?? null, after.installedOn, DAY_LABELS.installedOn, false)
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
   await guardRoomMeter(db, after)
   // Ein Zähler für einen Teil des Hauses (#98) hat keine Wohnung und gehört nicht zur Heizanlage.
@@ -1752,9 +1771,6 @@ async function guardMeter(db: Executor, before: Meter | null, after: Meter): Pro
   }
   if (after.type === 'hkv' && !after.unitId) {
     throw new HeatingError(400, 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie bei der Zuordnung die Wohnung.')
-  }
-  if (after.installedOn && !ISO_DATE.test(after.installedOn)) {
-    throw new HeatingError(400, 'Das Einbaudatum ist kein Datum. Bitte wählen Sie es im Kalender oder lassen Sie das Feld leer.')
   }
   // Eichjahr (Heizung PR 21); sonst lehnten die Prüfbedingungen ohne Satz ab.
   const until = after.calibratedUntil ?? null
@@ -2290,9 +2306,9 @@ function holdNoteOf(v: unknown): string | undefined {
 }
 
 async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
-  requireDay(before?.start, after.start, 'Der Einzug', true)
-  requireDay(before?.end, after.end, 'Der Auszug', false)
-  requireDay(before === null ? undefined : before.contractDate ?? null, after.contractDate, 'Das Vertragsdatum', false)
+  requireDay(before?.start, after.start, DAY_LABELS.start, true)
+  requireDay(before?.end, after.end, DAY_LABELS.end, false)
+  requireDay(before === null ? undefined : before.contractDate ?? null, after.contractDate, DAY_LABELS.contractDate, false)
   // Auszug vor Einzug: Der Mieter stünde in keiner Abrechnung, und sein Anteil liefe still als Leerstand zum Vermieter.
   // Geprüft wie die Tage selbst nur, wenn eines der beiden Daten neu oder geändert ist.
   const moved = before === null || before.start !== after.start || before.end !== after.end

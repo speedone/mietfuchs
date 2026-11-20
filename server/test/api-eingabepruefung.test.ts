@@ -121,11 +121,15 @@ test('Ungültige Datumsangaben: was so im Bestand steht und unverändert mitkomm
     await directly(s, `UPDATE tenancies SET contract_date = 'Januar 2025' WHERE id = '${t.id}'`)
     await directly(s, `UPDATE payments SET date = '3.1.2025' WHERE id = '${p.id}'`)
     await directly(s, `UPDATE readings SET date = '1.1.2025' WHERE id = '${r.id}'`)
+    await directly(s, `UPDATE meters SET installed_on = 'neulich' WHERE id = '${m.id}'`)
 
     for (const res of [
       await send(s, 'PUT', `/api/tenancies/${t.id}`, { contractDate: 'Januar 2025', phone: '030 1234' }),
       await send(s, 'PUT', `/api/payments/${p.id}`, { date: '3.1.2025', note: 'bar' }),
       await send(s, 'PUT', `/api/readings/${r.id}`, { date: '1.1.2025', note: 'Keller' }),
+      // Durchsicht, Sollte 2: Die ältere, unbedingte Prüfung des Einbautags lehnte beides ab.
+      await send(s, 'PUT', `/api/meters/${m.id}`, { name: 'Wasser Keller' }),
+      await send(s, 'PUT', `/api/meters/${m.id}`, { installedOn: 'neulich', name: 'Wasser EG' }),
     ]) assert.equal(res.status, 200, res.error)
   } finally {
     s.stop()
@@ -144,6 +148,51 @@ test('Häufige Fehleingaben bekommen einen Satz für Laien statt eines Befunds d
     refused(await send(s, 'PUT', `/api/tenancies/${t.id}`, { unitId: 'gibt-es-nicht' }), /Wohnung.*gibt es nicht/)
     refused(await send(s, 'POST', '/api/payments', { tenancyId: 'gibt-es-nicht', date: '2025-01-03', amountCents: 100 }), /Mietverhältnis.*gibt es nicht/)
     refused(await send(s, 'POST', '/api/readings', { meterId: 'gibt-es-nicht', date: '2025-01-01', value: 1 }), /Zähler.*gibt es nicht/)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Datumsangaben: eine Angabe falscher Art und ein Jahr außerhalb von 1900 bis 2100 werden mit Satz abgelehnt', async () => {
+  const s = await startServer()
+  try {
+    const eg = await post<Unit>(s, '/api/units', { name: 'EG', areaM2: 80, participates: true })
+    refused(await send(s, 'POST', '/api/tenancies', tenancyBody(eg.id, { start: 20250101 })), /Einzug ist kein Datum/)
+    refused(await send(s, 'POST', '/api/tenancies', tenancyBody(eg.id, { end: 5 })), /Auszug ist kein Datum/)
+    refused(await send(s, 'POST', '/api/tenancies', tenancyBody(eg.id, { start: '0000-01-01' })), /Einzug.*1900 bis 2100/)
+    const t = await post<Tenancy>(s, '/api/tenancies', tenancyBody(eg.id))
+    refused(await send(s, 'PUT', `/api/tenancies/${t.id}`, { end: false }), /Auszug ist kein Datum/)
+    refused(await send(s, 'PUT', `/api/tenancies/${t.id}`, { contractDate: 2025 }), /Vertragsdatum ist kein Datum/)
+    refused(await send(s, 'POST', '/api/payments', { tenancyId: t.id, date: '2200-12-31', amountCents: 100 }), /Zahlung.*1900 bis 2100/)
+    refused(await send(s, 'POST', '/api/payments', { tenancyId: t.id, date: 20250103, amountCents: 100 }), /Datum der Zahlung ist kein Datum/)
+    const m = await post<Meter>(s, '/api/meters', { name: 'Wasser EG', unitId: eg.id, type: 'kaltwasser', unit: 'm³' })
+    refused(await send(s, 'POST', '/api/readings', { meterId: m.id, date: 20250101, value: 1 }), /Datum der Ablesung ist kein Datum/)
+    refused(await send(s, 'PUT', `/api/meters/${m.id}`, { installedOn: 2020 }), /eingebaut.*kein Datum/)
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies')).length, 1)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht, Sollte 4: Die Berechnung rät keinen Einzug und fängt nichts auf; die Routen sagen aber vorher, welches
+// Mietverhältnis es ist, statt mit 500 „Invalid time value“ zu antworten.
+test('Leerer Einzug im Bestand: die Rechnungen des Objekts nennen das Mietverhältnis mit einem Satz, die Stammdaten bleiben erreichbar', async () => {
+  const s = await startServer()
+  try {
+    const eg = await post<Unit>(s, '/api/units', { name: 'EG', areaM2: 80, participates: true })
+    const t = await post<Tenancy>(s, '/api/tenancies', tenancyBody(eg.id, { tenantName: 'Familie Krumm' }))
+    await directly(s, `UPDATE tenancies SET start = '' WHERE id = '${t.id}'`)
+    for (const route of ['/api/settlement/2025', '/api/rentledger/2025', '/api/taxreport/2025', '/api/consumption/2025', '/api/upcoming']) {
+      const res = await fetch(`${s.base}${route}`)
+      const body = await jsonOf<{ error?: string }>(res)
+      assert.equal(res.status, 409, `${route}: ${body.error ?? ''}`)
+      assert.match(body.error ?? '', /^Beim Mietverhältnis „Familie Krumm“ \(Wohnung „EG“\) fehlt der Einzug oder er ist kein Datum\. Tragen Sie ihn in den Stammdaten ein/, route)
+    }
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies')).length, 1)
+    assert.equal((await s.api<Unit[]>('/api/units')).length, 1)
+    const fixed = await send(s, 'PUT', `/api/tenancies/${t.id}`, { start: '2025-01-01' })
+    assert.equal(fixed.status, 200, fixed.error)
+    assert.equal((await fetch(`${s.base}/api/settlement/2025`)).status, 200)
   } finally {
     s.stop()
   }

@@ -453,6 +453,20 @@ export async function classifyDocType(filePath: string, mimetype: string, settin
   return docType === 'zaehlerstand' ? 'zaehlerstand' : 'rechnung'
 }
 
+// Das Datum auf einem Zählerfoto: ein Kalendertag 'JJJJ-MM-TT' oder `null`. Verlangt ist die ISO-Form, erzwungen ist
+// sie nicht (siehe numberFromModel); deutsch geschrieben (12.03.2025) wird umgewandelt. Alles andere gilt als nicht
+// gelesen: Die Oberfläche nimmt dann das Datum des Fotos oder heute und weist darauf hin. Durchgereicht scheiterte
+// die Übernahme der Ablesung an der Prüfung des Ablesedatums.
+export function dayFromModel(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  const german = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(text)
+  const iso = german ? `${german[3]}-${(german[2] ?? '').padStart(2, '0')}-${(german[1] ?? '').padStart(2, '0')}` : text
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const day = new Date(`${iso}T00:00:00Z`)
+  return !Number.isNaN(day.getTime()) && day.toISOString().slice(0, 10) === iso ? iso : null
+}
+
 const METER_SCHEMA = {
   type: 'object',
   properties: {
@@ -491,6 +505,6 @@ export async function extractMeterReading(
   return {
     meterNumber: textOrNull(answer.meterNumber),
     value: numberFromModel(answer.value),
-    dateOnImage: typeof answer.dateOnImage === 'string' ? answer.dateOnImage : null,
+    dateOnImage: dayFromModel(answer.dateOnImage),
   }
 }

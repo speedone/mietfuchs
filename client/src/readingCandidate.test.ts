@@ -1,7 +1,7 @@
 // Fehlender Test aus der Bestandsaufnahme (#490): das Aufnahmedatum aus dem Foto eines Zählers (EXIF), damit niemand
 // das Ablesedatum tippen muss. Gebaut wird ein kleines JPEG mit APP1-Block, wie Kameras ihn schreiben.
 import { expect, test } from 'vitest'
-import { readExifDate } from './readingCandidate'
+import { initialCandidate, readExifDate } from './readingCandidate'
 
 // Ein JPEG mit TIFF-Kopf (`II`, little endian oder `MM`) und den angegebenen Datumsfeldern: DateTimeOriginal im
 // Exif-Verzeichnis, DateTime in IFD0.
@@ -47,4 +47,15 @@ test('Aufnahmedatum: kein JPEG, kein Exif oder ein kaputtes Datum ergibt nichts,
   expect(await readExifDate(file(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])))).toBeNull()
   expect(await readExifDate(file(Uint8Array.from([0x00, 0x01, 0x02])))).toBeNull()
   expect(await readExifDate(file(jpegWith({ original: 'gestern' })))).toBeNull()
+})
+
+// Der Server lehnt ein Ablesedatum ab, das kein Kalendertag ist. Ein Datum aus der Auswertung, das (etwa aus einer
+// älteren Fassung des Servers) deutsch geschrieben ankommt, wird umgewandelt; ein unlesbares gilt als nicht erkannt.
+test('Datum aus der Auswertung: deutsch geschrieben wird ISO, Unlesbares weicht dem Datum des Fotos', () => {
+  const of = (dateOnImage: string | null, exif: string | null) => initialCandidate({ meterNumber: null, value: 5, dateOnImage }, exif, [], [])
+  expect(of('2025-03-12', null)).toMatchObject({ date: '2025-03-12', hasDate: true })
+  expect(of('12.03.2025', null)).toMatchObject({ date: '2025-03-12', hasDate: true })
+  expect(of('irgendwann im März', '2025-03-10')).toMatchObject({ date: '2025-03-10', hasDate: true })
+  expect(of('irgendwann im März', null).hasDate).toBe(false)
+  expect(of('irgendwann im März', null).date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
