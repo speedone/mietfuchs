@@ -152,7 +152,7 @@ export function rentLetterWarnings(letter: RentIncreaseLetterInput, plan: RentIn
 export function notYetNote(x: { status: RentIncrease['status']; basis: Pick<RentIncreaseBasis, 'plan'> }): string | null {
   const p = x.basis.plan
   if (x.status !== 'draft' || p.state !== 'notYet' || p.earliestReceivedOn === null) return null
-  return `Nicht vor dem ${fmtDate(p.earliestReceivedOn)} zugehen lassen. Früher ist es nach der Rechnung zu früh; als versendet speichern lässt sich das Schreiben erst mit einem Zugang ab diesem Tag.`
+  return `Nicht vor dem ${fmtDate(p.earliestReceivedOn)} zugehen lassen. Ein früherer Zugang hält die gesetzlichen Fristen nicht ein; als versendet speichern lässt sich das Schreiben erst mit einem Zugang ab diesem Tag.`
 }
 
 // Weicht der heutige Absender (Einstellungen bzw. Objekt) vom eingefrorenen ab, etwa nach dem Verschieben der Wohnung in
