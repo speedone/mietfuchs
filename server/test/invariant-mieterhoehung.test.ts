@@ -10,6 +10,8 @@
 // 3. Das Soll der Kaltmiete im Mietkonto ist je Monat die Stufe der Staffel (anteilig im Ein- und Auszugsmonat), die
 //    Jahressumme im Mietkonto passt.
 // 4. Ein möglicher Plan nach § 558: verlangte Miete ≤ Kappungsgrenze, und deren Ausgangsmiete ist die Stufe am Stichtag.
+// 5. Erscheint im Cockpit („Demnächst fällig“, upcomingDeadlines) der früheste Zugang (`rentIncrease`), nennt er dasselbe
+//    Datum wie `plan.earliestReceivedOn` der Rechnung bei Zugang an diesem Tag (#190).
 //
 // Mehr Startwerte mit INV_FROM und INV_TO.
 import { test } from 'node:test'
@@ -23,6 +25,8 @@ import { monthSoll } from '../../shared/monthRate.ts'
 import { rentLedger } from '../src/calc.ts'
 import { snapshotOf, type SnapshotSource } from '../src/snapshot.ts'
 import { makeRng } from '../testing/rentStock.ts'
+import { upcomingDeadlines, type UpcomingInput } from '../src/upcomingDeadlines.ts'
+import { CALENDAR_RULES } from '../../shared/period.ts'
 
 const FROM = Number(process.env.INV_FROM ?? 1)
 const TO = Number(process.env.INV_TO ?? 80)
@@ -108,7 +112,21 @@ function checkCap(c: Case, p: RentIncreasePlan, at: string): void {
   if (cap.baseSource === 'schedule') assert.equal(cap.baseCents, stepAt(c.tenancy.baseRents, cap.baseDay.slice(0, 7))?.monthlyCents, `(4) Ausgangsmiete am ${cap.baseDay} ${at}`)
 }
 
-function runCase(seed: number): { written: number; refusedWithdrawals: number; endedRefusals: number } {
+// (5) Cockpit und Rechnung nennen denselben frühesten Zugang.
+function checkCockpit(c: Case, today: string, at: string): boolean {
+  const input: UpcomingInput = {
+    rules: CALENDAR_RULES, tenancies: [c.tenancy], costPeriods: new Set(), closed: [], meters: [], readings: [], deposits: [],
+    units: [{ id: c.tenancy.unitId, name: unit.name, areaM2: unit.areaM2 }], state: property.state ?? null, rentIncreases: c.increases,
+  }
+  const entry = upcomingDeadlines(input, today).items.find((i) => i.kind === 'rentIncrease' && i.tenancyId === c.tenancy.id)
+  if (!entry || entry.kind !== 'rentIncrease') return false
+  const kind = entry.increaseKind
+  const p = planRentIncrease({ today, tenancy: c.tenancy, unit, property, request: { kind, ...confirmed, receivedOn: entry.date } })
+  assert.equal(p.earliestReceivedOn, entry.date, `(5) Cockpit ${entry.date}, Rechnung ${p.earliestReceivedOn} ${at}\n${c.log.join('\n')}`)
+  return true
+}
+
+function runCase(seed: number): { written: number; refusedWithdrawals: number; endedRefusals: number; cockpit: number } {
   const rnd = makeRng(seed * 31 + 7)
   const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1))
   const kind: 'comparison' | 'index' = rnd() < 0.5 ? 'comparison' : 'index'
@@ -128,8 +146,9 @@ function runCase(seed: number): { written: number; refusedWithdrawals: number; e
     },
   }
   let today = dayIn(addMonths(startMonth, int(12, 15)), int(2, 28))
-  const stats = { written: 0, refusedWithdrawals: 0, endedRefusals: 0 }
+  const stats = { written: 0, refusedWithdrawals: 0, endedRefusals: 0, cockpit: 0 }
   for (let round = 0; round < 6 && today < '2036-01-01' && (c.tenancy.end === null || today < c.tenancy.end); round++) {
+    if (checkCockpit(c, today, `Runde ${round} am ${today}, Cockpit`)) stats.cockpit++
     const current = stepAt(c.tenancy.baseRents, today.slice(0, 7)) ?? c.initial
     const request = (receivedOn: string): RentIncreaseRequest => {
       if (kind === 'index') {
@@ -225,18 +244,20 @@ function runCase(seed: number): { written: number; refusedWithdrawals: number; e
   return stats
 }
 
-test('Invariante Mieterhöhung: Staffel, bisherige Miete, Soll im Mietkonto und Kappungsgrenze nach jeder Antwort', () => {
-  const total = { written: 0, refusedWithdrawals: 0, endedRefusals: 0 }
+test('Invariante Mieterhöhung: Staffel, bisherige Miete, Soll im Mietkonto, Kappungsgrenze und Cockpit nach jeder Antwort', () => {
+  const total = { written: 0, refusedWithdrawals: 0, endedRefusals: 0, cockpit: 0 }
   for (let seed = FROM; seed <= TO; seed++) {
     const s = runCase(seed)
     total.written += s.written
     total.refusedWithdrawals += s.refusedWithdrawals
     total.endedRefusals += s.endedRefusals
+    total.cockpit += s.cockpit
   }
   // Die Folgen erreichen die schiefen Fälle wirklich.
   if (FROM === 1 && TO >= 80) {
     assert.ok(total.written >= 150, `nur ${total.written} geschriebene Stufen`)
     assert.ok(total.refusedWithdrawals >= 20, `nur ${total.refusedWithdrawals} abgelehnte Rücknahmen`)
     assert.ok(total.endedRefusals >= 3, `nur ${total.endedRefusals} Auszüge vor dem Wirksamwerden`)
+    assert.ok(total.cockpit >= 100, `nur ${total.cockpit} Einträge im Cockpit`)
   }
 })
