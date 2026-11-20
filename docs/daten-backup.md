@@ -110,7 +110,7 @@ bleibt immer gleich. Beträge sind Cent als ganze Zahlen, Datumsangaben `JJJJ-MM
 | `statements` | Je Mietverhältnis: `tenancyId`, `unitId`, `unitName`, `tenantName`, `persons`, `days`, `periodStart`, `periodEnd`, `rows`, `totalShareCents`, `total35aCents`, `prepaymentCents`, `balanceCents` (positiv ist ein Guthaben, negativ eine Nachzahlung), `prepaymentOverridden`, `suggestedMonthlyCents`, `heatingPrepaymentCents`, `prepaymentNote`, `scope`, `heatingOnly`, `recommendedDeadline`, `adjustment`. |
 | `rows` (je Zeile) | `costItemId`, `category`, `description`, `totalCents`, `kind`, `key`, `keyLabel`, `basisText`, `shareCents`, `labor35aCents`. |
 | `landlord` | Anteil des Vermieters: `totalCents`, `rows`. |
-| `heating` | Die Angaben der Heizkostenabrechnung je Heizanlage (§ 6a HeizkostenV, CO₂, Vorrat, Lieferungen); leer ohne Heizanlage. |
+| `heating` | Die Angaben der Heizkostenabrechnung je Heizanlage (§ 6a HeizkostenV, CO₂, Vorrat, Lieferungen); leer ohne Heizanlage. Bei der eigenen Heizkostenabrechnung je Nutzer `heatingCents` und `waterCents` als Summe seiner verteilten Zeilen, dazu `heatingRows` und `waterRows` (Zahl dieser Zeilen; neu, ohne Verteilung fehlen sie) und je Wohnung `noDevicePots` (neu; nur, wenn für Heizung oder Warmwasser ein Gerät fehlt). |
 
 Ein vollständiges Beispiel der Fassung 1 liegt im Quellcode:
 [abrechnung-v1.json](../server/test/fixtures/export/abrechnung-v1.json). Ein Test vergleicht den Export

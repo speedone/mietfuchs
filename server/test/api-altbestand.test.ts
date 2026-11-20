@@ -38,8 +38,12 @@ const ROUTES = [['settlement', 'settlement'], ['consumption', 'consumption'], ['
 // Was sich seit einer Version bewusst geändert hat: Pfade (als regulärer Ausdruck über `Objekt/Route/Pfad`) mit Grund.
 // Ein Eintrag nimmt den Pfad aus dem Vergleich; er gehört zu einer im CHANGELOG genannten Änderung.
 const KNOWN: Record<string, { path: RegExp, why: string }[]> = {
-  '0.13.1': [],
-  '0.18.1': [],
+  '0.13.1': [
+    { path: /\/settlement\.legalBasis\.rules\[code=heating-consumption\]\.norm: /, why: 'die Norm der Regel zum Verbrauchsanteil nennt zusätzlich § 10 HeizkostenV (Hinweis „ganz nach Zählern“, rechtsgeschäftliche Bestimmung); nur die Fundstelle einer offenen Abrechnung, keine Zahl ändert sich' },
+  ],
+  '0.18.1': [
+    { path: /\/settlement\.legalBasis\.rules\[code=heating-consumption\]\.norm: /, why: 'die Norm der Regel zum Verbrauchsanteil nennt zusätzlich § 10 HeizkostenV (Hinweis „ganz nach Zählern“, rechtsgeschäftliche Bestimmung); nur die Fundstelle einer offenen Abrechnung, keine Zahl ändert sich' },
+  ],
 }
 // Was mit jeder Version wandern darf, ohne dass sich am Bestand etwas ändert. **Nur an einer offenen Abrechnung**: Eine
 // abgeschlossene ist eingefroren, an ihr wandert nichts.

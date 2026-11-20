@@ -763,10 +763,12 @@
                 "waterConsumption": 30,
                 "heatingGroup": false,
                 "waterGroup": false,
-                "heatingCents": 168840,
+                "heatingCents": 168841,
                 "waterCents": 27348,
                 "heatingCo2Cents": 14501,
                 "waterCo2Cents": 2260,
+                "heatingRows": 5,
+                "waterRows": 5,
                 "heatingEstimated": false,
                 "waterEstimated": false
               }
@@ -853,6 +855,8 @@
                 "waterCents": 36464,
                 "heatingCo2Cents": 19334,
                 "waterCo2Cents": 3014,
+                "heatingRows": 5,
+                "waterRows": 5,
                 "heatingEstimated": false,
                 "waterEstimated": false
               }
@@ -962,10 +966,12 @@
                 "waterConsumption": 38,
                 "heatingGroup": false,
                 "waterGroup": false,
-                "heatingCents": 103330,
+                "heatingCents": 103329,
                 "waterCents": 29823,
                 "heatingCo2Cents": 8875,
                 "waterCo2Cents": 2465,
+                "heatingRows": 5,
+                "waterRows": 5,
                 "heatingEstimated": false,
                 "waterEstimated": false
               },
@@ -986,6 +992,8 @@
                 "waterCents": 9565,
                 "heatingCo2Cents": 5626,
                 "waterCo2Cents": 791,
+                "heatingRows": 5,
+                "waterRows": 5,
                 "heatingEstimated": false,
                 "waterEstimated": false
               }
