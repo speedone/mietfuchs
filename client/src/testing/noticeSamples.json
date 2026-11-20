@@ -714,5 +714,21 @@
  {
   "code": "heating.reading-estimate-over-25",
   "text": "Heizanlage, Heizperiode 2025: Der Verbrauch für die Heizung beruht auf geschätzten Ablesungen bei C; betroffen sind 60 von 200 m² (30 %). Das überschreitet 25 % der für die Verteilung maßgeblichen Fläche; dann sind die Kosten der Heizung ausschließlich nach Fläche zu verteilen (§ 9a Abs. 2 HeizkostenV). Mietfuchs rechnet weiter nach Verbrauch mit den geschätzten Ständen. Tragen Sie die Schätzung stattdessen auf der Seite Heizkosten unter „Schätzung (§ 9a)“ ein; dann verteilt Mietfuchs die Heizung nach Fläche. Lassen sich die Stände noch ablesen, tragen Sie die Ablesungen nach."
+ },
+ {
+  "code": "meter.negative-in-key",
+  "text": "„Wasser“: Negativer Verbrauch am Zähler „Wasser zc“ vom 01.01.2025 bis zum 31.12.2025 (-50). So ginge er in den Verteilschlüssel ein: Er senkte den Anteil dessen, dem er zugerechnet wird, und höbe die Anteile der übrigen. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. Prüfen Sie die Ablesungen, oder kennzeichnen Sie einen Zählerwechsel."
+ },
+ {
+  "code": "meter.reading-future",
+  "text": "„Wasser“: Die Ablesung des Zählers „Wasser zc“ vom 31.12.2052 liegt in der Zukunft. Der Verbrauch des Abrechnungszeitraums ist deshalb nicht gemessen, sondern nach Tagen aus dem Unterschied zum Stand davor gerechnet. Stimmt das Datum nicht, verschiebt das die Anteile aller Mieter dieser Position. Prüfen Sie das Datum der Ablesung."
+ },
+ {
+  "code": "meter.reading-future",
+  "text": "Zähler „Wasser zc“: Die Ablesung vom 31.12.2052 liegt in der Zukunft. Mietfuchs verteilt den Unterschied zum Stand davor gleichmäßig auf alle Tage bis zu diesem Datum und rechnet dem Zeitraum nur seinen Teil davon zu. Stimmt das Datum nicht, ist der Verbrauch des Zeitraums falsch. Prüfen Sie das Datum der Ablesung."
+ },
+ {
+  "code": "meter.unit-not-read",
+  "text": "„Wasser“: Der Zähler „Wasser zc“ (Wohnung C) hat keine Ablesungen, die den Abrechnungszeitraum decken; es fehlt der Stand zu Beginn oder zum Ende - ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen Wohnungen mitgetragen. Mit einem Hauptzähler (Zähler ohne Wohnung) gilt für sie der Rest des Hauptzählers. Tragen Sie die fehlenden Stände nach."
  }
 ]

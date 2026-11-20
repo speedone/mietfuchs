@@ -3086,10 +3086,11 @@ test('Eine Rundungsregel (Durchsicht #203): der Rechenweg einer Gutschrift runde
   assert.deepEqual(['ta', 'tb', 'tc'].map(hinted), [false, true, true])
 })
 
-test('Eine Rundungsregel (Durchsicht #203): ein rückwärts laufender Zähler außerhalb bleibt bei „außerhalb“', () => {
-  // Datenfehler: Der Zähler der Wohnung außerhalb läuft von 100 auf 50 zurück. Die Basis ist
-  // 100 − 50 = 50, der Mieter trägt rechnerisch 200 %, „außerhalb“ −100 %. Der negative Wert bleibt
-  // bei seinem Grund, statt als Leerstand zu erscheinen (die Meldung zum Zähler gibt es schon).
+test('Eine Rundungsregel (Durchsicht #203): ein rückwärts laufender Zähler außerhalb wird nicht verteilt', () => {
+  // Datenfehler: Der Zähler der Wohnung außerhalb läuft von 100 auf 50 zurück. Die Basis wäre
+  // 100 − 50 = 50, der Mieter trüge rechnerisch 200 %, „außerhalb“ −100 %. Bis zur Systemprüfung wurde genau so
+  // verteilt (20.000 Cent beim Mieter einer Rechnung über 10.000), ohne Hinweis an der Abrechnung. Seitdem ist das ein
+  // Fehler (`meter.negative-in-key`), und der Vermieter trägt die Position, bis die Ablesung stimmt.
   const db: Db = {
     ...emptyDb(),
     units: [
@@ -3108,8 +3109,9 @@ test('Eine Rundungsregel (Durchsicht #203): ein rückwärts laufender Zähler au
     costItems: [{ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 10000, key: 'meter', meterType: 'kaltwasser' }],
   }
   const s = computeSettlement(snapshotFromDb(db, 2025))
-  assert.equal(statementOf(s, 't1').totalShareCents, 20000)
-  assert.deepEqual(s.landlord.rows[0]?.landlordParts, [{ reason: 'outsideUnit', cents: -10000 }])
+  assert.equal(statementOf(s, 't1').totalShareCents, 0)
+  assert.equal(s.landlord.totalCents, 10000)
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => [n.code, n.subject]), [['meter.negative-in-key', { kind: 'meter', id: 'm2' }]])
 })
 
 // #311: Abrechnung und Mietkonto sagen dieselbe Vorauszahlung, je Mietverhältnis. Beide rechnen über

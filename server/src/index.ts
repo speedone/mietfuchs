@@ -2277,7 +2277,9 @@ app.get('/api/consumption/:period', async (req, res) => {
     const property = await propertyOf(db, req)
     const period = await periodOf(db, req, property)
     const stock = await readStock(db)
-    return onStock(stock, `consumption:${property}:${period.from}:${period.to}`, () => consumptionOverview(snapshotFor(stock, property, period)))
+    // Der Tag gehört in den Schlüssel: Der Hinweis auf eine Ablesung in der Zukunft hängt an heute.
+    const day = today()
+    return onStock(stock, `consumption:${property}:${period.from}:${period.to}:${day}`, () => consumptionOverview(snapshotFor(stock, property, period), { asOf: day }))
   }))
 })
 
