@@ -142,8 +142,9 @@ zugestimmt haben:
    Dann gelten die Bedingungen der jeweiligen Seite.
 
 Die Schlüssel für KI-Dienste speichert Mietfuchs in `secrets.json` im Datenordner. Sie gehen nicht
-in Backups ein. Beim Umzug in einen neuen Datenordner nimmt Mietfuchs sie mit, wenn dort noch keine
-liegen.
+in Backups ein. Übernehmen Sie Ihre Daten zum ersten Mal in einen neuen Datenordner, nimmt Mietfuchs
+die Schlüssel mit, wenn dort noch keine liegen. Wenn Sie die Daten dort später ersetzen oder einen
+neueren Stand erneut übernehmen, bleiben die Schlüssel im neuen Ordner, wie sie sind.
 
 Wann Sie zuletzt ein Backup heruntergeladen haben, merkt sich Mietfuchs in `letztes-backup.json` im
 Datenordner (nur den Zeitpunkt), um Sie im Cockpit an ein Backup zu erinnern. Diese Datei geht
