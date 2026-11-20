@@ -406,6 +406,29 @@ export function amountCheckFormReason(item: CostItem, rules?: PeriodRules): stri
   return 'Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).'
 }
 
+// ---------- Zuordnung lösen (Ordner) ----------
+
+// Ob sich ein Beleg im Ordner von einer Position lösen lässt: nur, wenn er von Hand an ihr hängt (`invoiceFile`) und
+// keine gebuchte Zeile seiner Auswertung an ihr. Was die Belegbuchung verknüpft hat, löst die Auswertung („Auswertung
+// zeigen“), sonst bliebe die Zeile gebucht und der Beleg hinge weiter an der Position.
+export function canReleaseReceipt(upload: ReceiptUpload, item: CostItem): boolean {
+  return item.invoiceFile === upload.file && !(upload.bookedItemIds ?? []).includes(item.id)
+}
+
+// Die Rückfrage vor dem Lösen. `others`: an wie vielen weiteren Positionen der Beleg hängt; ohne weitere steht er
+// danach im Eingang. `part`: Die Position ist ein Teil einer aufgeteilten Rechnung (#455), ihr Beleg belegt auch die
+// übrigen Teile ohne eigenen Beleg.
+export function releaseQuestion(upload: Pick<UploadInfo, 'originalName' | 'file'>, item: Pick<CostItem, 'description'>, others: number, part: boolean): { title: string; message: string } {
+  const after = others === 0
+    ? 'Der Beleg bleibt gespeichert und steht danach im Eingang unter „Ohne Position“.'
+    : `Der Beleg bleibt an ${others === 1 ? '1 weiteren Position' : `${others} weiteren Positionen`}.`
+  const split = part ? ' Die Position ist ein Teil einer aufgeteilten Rechnung: Teile ohne eigenen Beleg sind danach ebenfalls ohne Beleg.' : ''
+  return {
+    title: 'Zuordnung lösen?',
+    message: `„${receiptName(upload)}“ hängt danach nicht mehr an „${item.description}“. Betrag und Angaben der Position bleiben. ${after}${split}`,
+  }
+}
+
 // „Betrag prüfen“ nach dem Zuordnen: Eine aus dem Vorjahr übernommene Position trägt einen
 // geschätzten Betrag, der Beleg den wirklichen. Gespeichert wird nur der Betrag, mit derselben
 // Prüfung wie im Formular; der Lohnanteil der Position bleibt.

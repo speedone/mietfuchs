@@ -79,6 +79,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Belege, Rückwege: Am Beleg im Ordner stehen „Position öffnen“, „Zuordnung lösen …“ (mit Rückfrage, für von Hand
+  angehängte Belege) und „Auswertung zeigen“. Eine fertig gebuchte Auswertung war nach dem Seitenwechsel nirgends mehr
+  zu finden; jetzt holt „Auswertung zeigen“ sie in den Eingang zurück, und eine verknüpfte Zeile lässt sich dort lösen.
+  An einer angelegten Zeile steht, wie sie sich rückgängig machen lässt. „Betrag prüfen“ kommt nach dem Zuordnen in den
+  Blick und bekommt den Fokus; steht der Kasten in der anderen Ansicht, nennt die Seite ihn und führt hin. Die Karte
+  einer Auswertung nennt neben dem Rechnungssteller den Dateinamen. Ohne KI beschreibt der Eingang das Erfassen von Hand
+  als normalen Weg und verweist auf die Seite Kosten. „Position öffnen“ wechselt bei einer Position eines anderen
+  Zeitraums erst dorthin.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

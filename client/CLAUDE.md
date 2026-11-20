@@ -87,7 +87,19 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   „Weiter prüfen“ springt zur Auswertung (`data-assessment`). Belege ohne Position anderer Objekte oder Jahre nennt eine
   Zeile mit Sprung (`elsewhereGroups`). **Ordner** ([pages/BelegeOrdner.tsx](src/pages/BelegeOrdner.tsx)): wie früher
   der Belegordner ohne Posteingang; die Suche gilt immer allen Objekten und Jahren, Treffer ohne Position stehen unter
-  „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. Die Seite Kosten behält ihre eigene Ablage und Prüfung
+  „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. **Rückwege am Beleg im Ordner**: je Position „Position
+  öffnen“ (`openCostItem` in App.tsx wechselt vorher mit `useSwitchTo` in Objekt und Zeitraum der Position) und, nur wenn
+  der Beleg von Hand an ihr hängt (`canReleaseReceipt`: ihr `invoiceFile`, keine gebuchte Zeile), „Zuordnung lösen …“ mit
+  Rückfrage (`releaseQuestion`, `PUT /api/costItems/:id` mit `invoiceFile: null`; nennt weitere Positionen und Teile einer
+  aufgeteilten Rechnung). Hat der Beleg eine Auswertung, steht „Auswertung zeigen“: Der Eingang lädt nur offene
+  Auswertungen und behält gebuchte nur, bis die Seite verlassen wird; auf Wunsch holt er eine einzeln zurück
+  (`focusAssessment`/`onOpenAssessment` über App.tsx wie `openReceipt`, in Belege.tsx `recall`, im Eingang
+  `recallAssessment` mit `GET /api/assessments/:id`), dieselbe Karte mit `AssessmentReview`, in der sich eine verknüpfte
+  Zeile lösen lässt; gehört sie einem anderen Objekt, wird erst gewechselt. **„Betrag prüfen“** rollt beim Erscheinen in
+  den Blick und bekommt den Fokus (`showAmountCheck`); steht er in der ausgeblendeten Ansicht, nennt ihn ein Hinweis über
+  den Reitern mit „Zu „Betrag prüfen““ (`onAmountCheck`). **Ohne KI** kann die Seite „nie eingerichtet“ nicht von „nicht
+  erreichbar“ unterscheiden (der Server hat immer eine Voreinstellung); der Satz nennt beides, beschreibt das Erfassen von
+  Hand als normalen Weg und führt mit „Zur Seite Kosten“ weiter. Die Seite Kosten behält ihre eigene Ablage und Prüfung
   (Regel 4). sessionStorage leert vitestSetup.ts vor jedem Test.
 - **Seite „Kontoauszug“** (#188, [pages/Kontoauszug.tsx](src/pages/Kontoauszug.tsx), Logik in [bankView.ts](src/bankView.ts)):
   unabhängig vom gewählten Objekt (`context="none"`), denn ein Konto empfängt Mieten mehrerer Häuser; die

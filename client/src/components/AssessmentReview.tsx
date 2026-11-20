@@ -235,6 +235,16 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                           onChange={(e) => patch(line.idx, { action: e.target.checked ? 'release' : '' })} /> lösen
                       </label>
                     )}
+                    {/* Der Rückweg einer angelegten Zeile: Sie wird wieder offen, wenn ihre Position gelöscht ist */}
+                    {line.state === 'created' && onOpenItem && line.costItemId && (() => {
+                      const id = line.costItemId
+                      return (
+                        <div className="muted">
+                          Rückgängig machen Sie das, indem Sie die Position auf der Seite Kosten löschen.{' '}
+                          <button type="button" className="btn small ghost" onClick={() => onOpenItem(id)}>Position öffnen{' '}<span className="sr-only">({line.itemDescription ?? line.description})</span></button>
+                        </div>
+                      )
+                    })()}
                   </td>
                   <td className="num">
                     {line.amountCents === null ? '-' : fmtEuro(line.amountCents)}

@@ -216,6 +216,9 @@ function Shell() {
   const setBelegeView = useCallback((v: BelegeView) => { writeView(v); setBelegeViewState(v) }, [])
   // Der Beleg, zu dem die Seite Belege springen soll (Fehler mit Ausweg, #487)
   const [receiptFocus, setReceiptFocus] = useState<string | null>(null)
+  // Die Auswertung eines Belegs im Eingang zeigen („Auswertung zeigen“ im Ordner): überlebt wie `receiptFocus` den
+  // Wechsel des Objekts, bei dem die Seite neu aufgestellt wird.
+  const [assessmentFocus, setAssessmentFocus] = useState<string | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
   // sind, stehen noch die des vorigen hier.
@@ -342,8 +345,15 @@ function Shell() {
   const openMeters = () => { void navigate('zaehler') }
   // „Position öffnen“ von der Seite Belege: Die zeigt alle Objekte, die Seite Kosten nur das
   // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
+  // Ebenso der Zeitraum: Die Kostenliste zeigt nur den gewählten, das Formular gehörte sonst zu einer Position, die
+  // darunter nicht steht (Ordner mit „Belege aller Jahre zeigen“).
   const openCostItem = async (item: CostItem) => {
-    await goViaProperty(item.propertyId, 'kosten', { kind: 'costItem', id: item.id })
+    const target: JumpTarget = { kind: 'costItem', id: item.id }
+    if (item.period !== periodKeyNow && properties.some((p) => p.id === item.propertyId)) {
+      if (await switchTo(item.propertyId, item.period)) setTab('kosten', target)
+      return
+    }
+    await goViaProperty(item.propertyId, 'kosten', target)
   }
   // „Von Hand erfassen“ an einem gespeicherten Beleg (#490 PR 3, #487 Teil 2): auf die Seite Kosten, in Objekt und Zeitraum
   // des Belegs (ein Beleg ohne Zuordnung bleibt im gewählten), und dort das Formular „Neue Kostenposition“ mit dem Beleg.
@@ -623,7 +633,8 @@ function Shell() {
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)}
           onOpenItem={(item) => void openCostItem(item)} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} onNewCostItem={(u) => void openNewCostItem(u)}
-          view={belegeView} onViewChange={setBelegeView} focusFile={receiptFocus} onOpenReceipt={openReceipt} onFocusDone={() => setReceiptFocus(null)} />}
+          view={belegeView} onViewChange={setBelegeView} focusFile={receiptFocus} onOpenReceipt={openReceipt}
+          focusAssessment={assessmentFocus} onOpenAssessment={setAssessmentFocus} onFocusDone={() => { setReceiptFocus(null); setAssessmentFocus(null) }} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}
