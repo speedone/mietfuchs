@@ -24,7 +24,8 @@ beforeEach(() => {
     if (url === '/api/extract' || url === '/api/intake') {
       return new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('abgebrochen', 'AbortError'))))
     }
-    const data = method === 'GET' ? [] : { ok: true }
+    // Der Beleg ist gespeichert, bevor er ausgewertet wird
+    const data = method === 'GET' ? [] : url === '/api/upload' ? { file: '1_foto.jpg' } : { ok: true }
     return Promise.resolve(new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } }))
   })
 })
@@ -45,6 +46,9 @@ async function uploadAndCancel(container: HTMLElement) {
   fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }))
   expect(await screen.findByText('abgebrochen')).toBeTruthy()
   expect(screen.queryByText('Fehler')).toBeNull()
+  // Der Beleg ging vor der Auswertung in die Ablage und nur mit seinem Namen an die KI: Ein Abbruch löscht ihn nicht.
+  expect(calls.filter((c) => c === 'POST /api/upload' || c === 'POST /api/intake')).toEqual(['POST /api/upload', 'POST /api/intake'])
+  expect(screen.getByText('Der Beleg ist gespeichert und steht auf der Seite Belege im Eingang unter „Ohne Position“.')).toBeTruthy()
   await waitFor(() => expect(calls.some((c) => /^POST \/api\/ai\/cancel\/[a-f0-9]{32}$/.test(c))).toBe(true))
 }
 

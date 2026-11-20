@@ -79,6 +79,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
+### Behoben
+
+- Belege: Ein abgelegter Beleg ist jetzt gespeichert, bevor die KI ihn auswertet, auch jeder weitere eines Stapels.
+  Vorher lag nur der Beleg auf dem Rechner, der gerade ausgewertet wurde: Wer das Fenster schloss oder die Seite neu
+  lud, während die KI arbeitete oder hing, verlor die wartenden Belege, und „Abbrechen“ an der laufenden Auswertung
+  löschte auch diesen. Jetzt geht dabei nur die Auswertung verloren; der Beleg steht im Eingang unter „Ohne Position“
+  und lässt sich von Hand erfassen oder erneut auswerten. Das gilt auch für die Ablage auf der Seite Kosten.
+
 ## [0.18.1] – 2026-11-19
 
 ### Geändert

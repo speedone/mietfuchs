@@ -9,6 +9,7 @@ import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 import Belege from './Belege'
+import { uploadAnswer } from '../testing/storedUpload'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const YEAR = new Date().getFullYear() - 1
@@ -23,6 +24,7 @@ beforeEach(() => {
   posted = []
   answer = { file: 'beleg.jpg', kind: 'rechnung', extraction: { positions: [] }, assessment: null }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return uploadAnswer(init)
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
     if (url === '/api/extract' || url === '/api/intake') {
       urls.push(url)

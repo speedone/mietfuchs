@@ -401,6 +401,50 @@ test('Abbrechen per Kennung (#170): ein Beleg aus dem Posteingang bleibt samt An
   }, { chat: 'hang' })
 })
 
+// Der Eingang speichert jeden Beleg zuerst (/api/upload) und wertet danach den gespeicherten aus (`existingFile`).
+// Der Abbruch der Auswertung, das Schließen des Tabs und das Neuladen lassen ihn im Posteingang liegen, mit Objekt
+// und Jahr der Ablage, auch wenn der Schuhkarton erst nach der Belegart fragt (Bild).
+test('Erst speichern, dann auswerten: ein Abbruch am Schuhkarton lässt den Beleg im Posteingang des Objekts', async () => {
+  await withOllama(async (s, ollama) => {
+    const file = await uploadBelegFile(s, Buffer.from('JPEG-Rechnung'), 'foto.jpg', { propertyId: 'objekt-1', year: '2025' })
+    const requestId = '0123456789abcdef0123456789abcdef'
+    const fd = new FormData()
+    fd.append('existingFile', file)
+    fd.append('propertyId', 'objekt-1')
+    fd.append('year', '2025')
+    fd.append('period', '2025')
+    fd.append('requestId', requestId)
+    const pending = fetch(`${s.base}/api/intake`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } }).then((r) => r.text())
+    assert.ok(await until(() => chatRequests(ollama).length > 0), 'Ollama wurde nicht gefragt')
+    assert.equal((await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })).status, 200)
+    assert.ok(await until(() => ollama.closedEarly > 0), 'die Anfrage an Ollama lief weiter')
+    await pending
+    const u = await listedUpload(s, file)
+    assert.deepEqual([u.propertyId, u.year, u.kind], ['objekt-1', 2025, 'receipt'], 'der Beleg liegt weiter im Posteingang des Objekts')
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'uploads', file)), 'die Datei ist noch da')
+    assert.deepEqual(await s.api<unknown[]>('/api/assessments?property=objekt-1'), [], 'ein Abbruch speichert keine Auswertung')
+  }, { chat: 'hang' })
+})
+
+// Ein gespeicherter Beleg trägt seinen Typ in `uploads`. Früher kam er bei der ersten Auswertung vom Browser mit; seit
+// die Warteschlange jeden Beleg vor der Auswertung speichert, kennt die KI-Route nur den Namen. Die Endung allein
+// genügt nicht: Ein Bild mit einer Endung, die Mietfuchs nicht kennt (BMP, AVIF), bliebe sonst unausgewertet.
+test('Erst speichern, dann auswerten: ein Bild mit unbekannter Endung wird als Bild ausgewertet', async () => {
+  await withOllama(async (s, ollama) => {
+    const up = new FormData()
+    up.append('file', new Blob([Buffer.from('BMP-Rechnung')], { type: 'image/bmp' }), 'scan.bmp')
+    const stored = await fetch(`${s.base}/api/upload`, { method: 'POST', body: up })
+    assert.equal(stored.status, 200)
+    const file = fileOf(await jsonOf<UploadBody>(stored))
+    const fd = new FormData()
+    fd.append('existingFile', file)
+    fd.append('docType', 'rechnung')
+    const res = await fetch(`${s.base}/api/intake`, { method: 'POST', body: fd })
+    assert.equal(res.status, 200, await res.clone().text())
+    assert.equal(chatRequests(ollama).length > 0, true, 'Ollama wurde gefragt')
+  })
+})
+
 test('Schuhkarton (#170): ein Zählerfoto ist kein Beleg und steht nicht im Posteingang des Objekts', async () => {
   await withOllama(async (s) => {
     const fd = new FormData()

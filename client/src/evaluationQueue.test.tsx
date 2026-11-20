@@ -6,9 +6,9 @@
 import { createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
-import { EvaluationQueueProvider, useEvaluationQueue, type QueueTarget } from './evaluationQueue'
+import { EvaluationQueueProvider, storedNote, useEvaluationQueue, type QueueTarget } from './evaluationQueue'
 
-type Pending = { path: string; form: FormData; signal: AbortSignal; resolve: (v: unknown) => void; reject: (e: Error) => void }
+type Pending = { path: string; form: FormData; signal: AbortSignal; onProgress?: (p: unknown) => void; resolve: (v: unknown) => void; reject: (e: Error) => void }
 const pending: Pending[] = []
 
 vi.mock('./pdfIntake', () => ({
@@ -19,17 +19,36 @@ vi.mock('./pdfIntake', () => ({
   },
 }))
 vi.mock('./aiRequest', () => ({
-  aiRequest: (path: string, form: FormData, opts: { signal: AbortSignal }) => new Promise((resolve, reject) => {
-    pending.push({ path, form, signal: opts.signal, resolve, reject })
+  aiRequest: (path: string, form: FormData, opts: { signal: AbortSignal; onProgress?: (p: unknown) => void }) => new Promise((resolve, reject) => {
+    pending.push({ path, form, signal: opts.signal, onProgress: opts.onProgress, resolve, reject })
     opts.signal.addEventListener('abort', () => reject(new Error('abgebrochen')))
   }),
 }))
 
-// Ein neuer Versuch holt den Beleg aus dem Ordner der Seite Belege (die Datei bleibt nicht im Browser, Durchsicht K2)
+// Ein neuer Versuch holt den Beleg aus dem Ordner der Seite Belege (die Datei bleibt nicht im Browser, Durchsicht K2).
+// Jede abgelegte Datei geht zuerst an `/api/upload`: Der nachgestellte Server nennt sie `srv-<Name>`; `uploadGate` hält
+// einen Upload an, `uploadRefusal` lehnt einen ab.
+type Upload = { name: string; propertyId: unknown; year: unknown; signal: AbortSignal | null | undefined }
 let fetched: string[] = []
+let uploads: Upload[] = []
+let uploadGate: Map<string, Promise<void>> = new Map()
+let uploadRefusal: Map<string, { status: number; error: string }> = new Map()
 beforeEach(() => {
   fetched = []
-  vi.stubGlobal('fetch', async (url: string) => {
+  uploads = []
+  uploadGate = new Map()
+  uploadRefusal = new Map()
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload' && init?.body instanceof FormData) {
+      const file = init.body.get('file')
+      const name = file instanceof File ? file.name : ''
+      uploads.push({ name, propertyId: init.body.get('propertyId'), year: init.body.get('year'), signal: init.signal })
+      await uploadGate.get(name)
+      if (init.signal?.aborted) throw new DOMException('abgebrochen', 'AbortError')
+      const refusal = uploadRefusal.get(name)
+      if (refusal) return new Response(JSON.stringify({ error: refusal.error }), { status: refusal.status })
+      return new Response(JSON.stringify({ file: `srv-${name}` }), { status: 200 })
+    }
     fetched.push(url)
     return new Response(new Blob(['PDF'], { type: 'application/pdf' }), { status: 200 })
   })
@@ -79,7 +98,7 @@ test('ein gespeicherter Beleg ohne Auswertung lässt sich erneut auswerten, ohne
   const failure = { error: 'Ollama ist nicht erreichbar.', file: 'srv-a.pdf', reason: 'unreachable' as const, kept: true as const }
   await act(async () => pending[0]?.reject(Object.assign(new Error(failure.error), { failure })))
   await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'gespeichert', failure }))
-  expect(pending[0]?.form.get('file')).toBeInstanceOf(File)
+  expect([pending[0]?.form.get('file'), pending[0]?.form.get('existingFile')]).toEqual([null, 'srv-a.pdf'])
   const id = result.current.queue[0]?.id ?? -1
   act(() => result.current.retry(id))
   await waitFor(() => expect(pending).toHaveLength(2))
@@ -164,4 +183,102 @@ test('Erledigtes räumt `sweep`; ein Zählerfoto lässt sich als Rechnung neu au
   act(() => result.current.asInvoice(result.current.queue[0]?.id ?? -1))
   await waitFor(() => expect(pending).toHaveLength(3))
   expect([pending[2]?.form.get('docType'), pending[2]?.form.get('existingFile'), pending[2]?.form.get('file')]).toEqual(['rechnung', 'srv-foto.jpg', null])
+})
+
+// ---------- Erst speichern, dann auswerten (Befund der Systemprüfung: ein Stapel mit hängender KI ging verloren) ----------
+
+test('ein Stapel wird sofort gespeichert, bevor irgendetwas ausgewertet ist; ausgewertet wird der gespeicherte Beleg', async () => {
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')], target))
+  // Die KI hängt (die erste Anfrage wird nie beantwortet): trotzdem liegen alle drei auf dem Server
+  await waitFor(() => expect(uploads.map((u) => u.name)).toEqual(['a.pdf', 'b.pdf', 'c.pdf']))
+  expect(uploads.map((u) => [u.propertyId, u.year])).toEqual([['objekt-1', '2025'], ['objekt-1', '2025'], ['objekt-1', '2025']])
+  await waitFor(() => expect(result.current.queue.map((x) => x.file)).toEqual(['srv-a.pdf', 'srv-b.pdf', 'srv-c.pdf']))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  expect([pending[0]?.form.get('file'), pending[0]?.form.get('existingFile')]).toEqual([null, 'srv-a.pdf'])
+  expect(result.current.queue.map((x) => x.status)).toEqual(['läuft', 'wartend', 'wartend'])
+})
+
+test('hochgeladen wird nacheinander, in der Reihenfolge der Ablage', async () => {
+  let open: () => void = () => {}
+  uploadGate.set('a.pdf', new Promise((resolve) => { open = resolve }))
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf'), pdf('b.pdf')], target))
+  await waitFor(() => expect(uploads).toHaveLength(1))
+  expect(result.current.queue.map((x) => x.file)).toEqual([undefined, undefined])
+  expect(pending).toHaveLength(0)
+  await act(async () => open())
+  await waitFor(() => expect(uploads.map((u) => u.name)).toEqual(['a.pdf', 'b.pdf']))
+})
+
+test('Abbrechen der laufenden Auswertung: der Beleg bleibt gespeichert, der Eintrag nennt ihn', async () => {
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf')], target))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  // Der Server löscht nur einen Beleg, der mit der Auswertung hochgeladen wurde; dieser kam als `existingFile`
+  expect([pending[0]?.form.get('file'), pending[0]?.form.get('existingFile')]).toEqual([null, 'srv-a.pdf'])
+  await act(async () => result.current.cancel(result.current.queue[0]?.id ?? -1))
+  await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'abgebrochen', file: 'srv-a.pdf' }))
+})
+
+test('ein gescheiterter Upload ist ein Fehler dieses einen Belegs; die übrigen werden gespeichert und ausgewertet', async () => {
+  uploadRefusal.set('a.pdf', { status: 422, error: 'Das ist ein Kontoauszug. Kontoauszüge lesen Sie auf der Seite Kontoauszug ein.' })
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf'), pdf('b.pdf')], target))
+  await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'fehler', error: 'Das ist ein Kontoauszug. Kontoauszüge lesen Sie auf der Seite Kontoauszug ein.' }))
+  expect(result.current.queue[0]?.file).toBeUndefined()
+  await waitFor(() => expect(pending).toHaveLength(1))
+  expect(pending[0]?.form.get('existingFile')).toBe('srv-b.pdf')
+})
+
+test('„Entfernen“ an einem wartenden Beleg: gespeichert bleibt er liegen (abgebrochen), noch nicht hochgeladen verschwindet er', async () => {
+  let open: () => void = () => {}
+  uploadGate.set('b.pdf', new Promise((resolve) => { open = resolve }))
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')], target))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  await waitFor(() => expect(uploads).toHaveLength(2))
+  const [, b, c] = result.current.queue
+  // c wartet noch auf seinen Upload: nichts ist gespeichert, der Eintrag geht
+  act(() => result.current.remove(c?.id ?? -1))
+  expect(result.current.queue.map((x) => x.fileName)).toEqual(['a.pdf', 'b.pdf'])
+  // b wird gerade hochgeladen: Der Upload wird abgebrochen
+  act(() => result.current.remove(b?.id ?? -1))
+  expect(uploads[1]?.signal?.aborted).toBe(true)
+  await act(async () => open())
+  expect(result.current.queue.map((x) => x.fileName)).toEqual(['a.pdf'])
+  expect(uploads).toHaveLength(2)
+})
+
+test('„Entfernen“ an einem gespeicherten, wartenden Beleg lässt ihn als „abgebrochen“ mit seinem Namen stehen', async () => {
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([pdf('a.pdf'), pdf('b.pdf')], target))
+  await waitFor(() => expect(result.current.queue[1]?.file).toBe('srv-b.pdf'))
+  act(() => result.current.remove(result.current.queue[1]?.id ?? -1))
+  expect(result.current.queue[1]).toMatchObject({ status: 'abgebrochen', file: 'srv-b.pdf' })
+  // und wird nicht mehr ausgewertet
+  await act(async () => pending[0]?.resolve(invoice('srv-a.pdf')))
+  await waitFor(() => expect(result.current.queue[0]?.status).toBe('fertig'))
+  expect(pending).toHaveLength(1)
+  // „Entfernen“ am abgebrochenen Eintrag nimmt ihn aus der Liste
+  act(() => result.current.remove(result.current.queue[1]?.id ?? -1))
+  expect(result.current.queue.map((x) => x.fileName)).toEqual(['a.pdf'])
+})
+
+// Ein Bild, das der Server schon als Zählerfoto erkannt hat (er liest gerade den Stand), liegt nach dem Abbruch nicht
+// unter „Ohne Position“, sondern im Ordner unter „Zählerfotos“: Der Satz am Eintrag nennt den richtigen Ort.
+test('abgebrochen beim Lesen des Zählerstands: der Eintrag nennt die Zählerfotos, sonst „Ohne Position“', async () => {
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' }), pdf('b.pdf')], target))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  act(() => pending[0]?.onProgress?.({ step: 'meterReading', phase: 'waiting' }))
+  await act(async () => result.current.cancel(result.current.queue[0]?.id ?? -1))
+  await waitFor(() => expect(result.current.queue[0]?.status).toBe('abgebrochen'))
+  expect(storedNote(result.current.queue[0] ?? { status: 'fertig' })).toMatch(/im Ordner unter „Zählerfotos“/)
+  await waitFor(() => expect(pending).toHaveLength(2))
+  await act(async () => result.current.cancel(result.current.queue[1]?.id ?? -1))
+  await waitFor(() => expect(result.current.queue[1]?.status).toBe('abgebrochen'))
+  expect(storedNote(result.current.queue[1] ?? { status: 'fertig' })).toMatch(/im Eingang unter „Ohne Position“/)
+  // Ohne Beleg in der Ablage kein Satz
+  expect(storedNote({ status: 'fehler' })).toBe('')
 })

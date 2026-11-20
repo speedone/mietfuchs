@@ -15,7 +15,7 @@ import { aiSummary } from '../aiForm'
 import { type KeyContext } from '../costForm'
 import { keepDraft } from '../useDraft'
 import { bookDecisions, greenDecisions, loadOpenAssessments, openBadgeClass, planDecisions } from '../assessment'
-import { assessmentOf, belongsTo, isBusy, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
+import { assessmentOf, belongsTo, isBusy, storedNote, useEvaluationQueue, waitingLabel, type QueueEntry, type QueueTarget } from '../evaluationQueue'
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
 import AssessmentReview from '../components/AssessmentReview'
 import DisclosureButton from '../components/DisclosureButton'
@@ -655,7 +655,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
       <div className="card no-print" key={entry.id} data-queue-entry={entry.id} data-file={entry.file} tabIndex={-1}>
         <div className="row center">
           <strong>{meter ? '🔢 ' : '🧾 '}{entry.fileName}</strong>
-          {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
+          {entry.status === 'wartend' && <span className="badge gray">{waitingLabel(entry)}</span>}
           {entry.status === 'läuft' && (
             <AiProgressBadge
               progress={entry.progress ?? null}
@@ -683,6 +683,8 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
         {entry.status === 'fehler' && (isBankFileError(entry.error)
           ? <NoticeBox level="error" action={entry.error}><button type="button" className="btn small secondary" onClick={() => onNavigate('kontoauszug')}>Zur Seite Kontoauszug</button></NoticeBox>
           : <NoticeBox level="error" action={entry.error} />)}
+        {/* Abgebrochen oder gescheitert, der Beleg liegt aber in der Ablage: sagen, wo */}
+        {storedNote(entry) && <p className="muted" role="status">{storedNote(entry)}</p>}
         {entry.status === 'gespeichert' && entry.failure && (
           <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : (file) => manual(file, entry.fileName)}
             onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
@@ -783,7 +785,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           <div className="muted">
             {mode === 'ohne'
               ? 'Mietfuchs speichert jeden Beleg; danach ordnen Sie ihn einer Position zu.'
-              : 'Mietfuchs speichert jeden Beleg und wertet ihn danach aus, einen nach dem anderen (je Beleg 1–2 Min.). Sie können die Seite dabei verlassen.'}
+              : 'Mietfuchs speichert jeden Beleg sofort und wertet ihn danach aus, einen nach dem anderen (je Beleg 1–2 Min.). Sie können die Seite dabei verlassen; ein Beleg ohne Auswertung steht unter „Ohne Position“.'}
             {' '}{ai.notice ?? 'Alles bleibt lokal.'}
           </div>
           <input

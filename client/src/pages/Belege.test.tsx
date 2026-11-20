@@ -315,7 +315,26 @@ test('Eingang: eine Zeitüberschreitung beim Fragen der KI ist kein „ohne KI�
   expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
   dropInto(container, [new File(['jpg'], 'zwei.jpg', { type: 'image/jpeg' })])
   await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
-  expect(sent.some((r) => r.url === '/api/upload')).toBe(false)
+  // Erst gespeichert, dann der gespeicherte Beleg ausgewertet (nicht nur abgelegt)
+  expect(sent.filter((r) => r.url === '/api/upload' || r.url === '/api/intake').map((r) => [r.url, (r.body as Record<string, unknown>).file ?? (r.body as Record<string, unknown>).existingFile]))
+    .toEqual([['/api/upload', 'zwei.jpg'], ['/api/intake', '99_nachgereicht.pdf']])
+})
+
+// Befund der Systemprüfung: Mit hängender KI lag nur der Beleg auf dem Server, der gerade ausgewertet wurde; die
+// wartenden waren nach dem Schließen des Tabs weg. Jetzt ist der ganze Stapel gespeichert, bevor etwas ausgewertet ist.
+test('Eingang: ein Stapel ist gespeichert, auch wenn die KI nie antwortet', async () => {
+  holdIntake = true
+  const { container } = renderInboxWith(LOCAL)
+  await screen.findByLabelText('Jahr für lose.pdf')
+  dropInto(container, [new File(['a'], 'a.jpg', { type: 'image/jpeg' }), new File(['b'], 'b.jpg', { type: 'image/jpeg' }), new File(['c'], 'c.jpg', { type: 'image/jpeg' })])
+  await waitFor(() => expect(sent.filter((r) => r.url === '/api/upload').map((r) => r.body)).toEqual([
+    { file: 'a.jpg', propertyId: 'p1', year: String(YEAR) },
+    { file: 'b.jpg', propertyId: 'p1', year: String(YEAR) },
+    { file: 'c.jpg', propertyId: 'p1', year: String(YEAR) },
+  ]))
+  // Ausgewertet wird einer, die anderen warten und sagen, dass sie gespeichert sind
+  await waitFor(() => expect(sent.filter((r) => r.url === '/api/intake')).toHaveLength(1))
+  await waitFor(() => expect(screen.getAllByText('gespeichert, wartet …')).toHaveLength(2))
 })
 
 // Durchsicht S2: Während eine Auswertung läuft, ist die KI offensichtlich erreichbar; kein „nicht erreichbar“ daneben.
@@ -1383,6 +1402,7 @@ test('Eingang ohne KI: E-Rechnung wird ausgewertet, der Scan abgelegt, und ein g
   // In die Warteschlange (das Lesen des Test-PDFs mit pdf.js scheitert hier, die Karte nennt den Beleg trotzdem)
   expect((await screen.findAllByText(/zugferd\.pdf/)).length).toBeGreaterThan(0)
   await waitFor(() => expect(sent.some((r) => r.url === '/api/upload' && (r.body as Record<string, unknown>).file === 'scan.pdf')).toBe(true))
-  expect(sent.some((r) => r.url === '/api/upload' && (r.body as Record<string, unknown>).file === 'zugferd.pdf')).toBe(false)
+  // Auch die E-Rechnung ist gespeichert, bevor sie ausgewertet wird; nur abgelegt (mit der Mitteilung dazu) wird der Scan
+  expect(sent.some((r) => r.url === '/api/upload' && (r.body as Record<string, unknown>).file === 'zugferd.pdf')).toBe(true)
   expect(await screen.findByText(/„scan\.pdf“ wurde nicht hochgeladen/)).toBeTruthy()
 })

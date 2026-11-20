@@ -82,7 +82,7 @@ import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro, loadErrorText } from '../api'
 import { aiSummary } from '../aiForm'
-import { assessmentOf, belongsTo, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
+import { assessmentOf, belongsTo, storedNote, useEvaluationQueue, waitingLabel, type QueueEntry, type QueueTarget } from '../evaluationQueue'
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
 import { ReadingReview } from '../components/ReadingReview'
 import { OtherQueueEntries } from '../components/OtherQueueEntries'
@@ -1029,7 +1029,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           onDrop={(e) => { e.preventDefault(); setDragOver(false); setSkipped(addFiles(e.dataTransfer.files, target) > 0) }}
         >
           <strong>Belege hierher ziehen</strong> oder klicken zum Auswählen - auch mehrere auf einmal.
-          <div className="muted">Sie werden nacheinander verarbeitet (PDF oder Foto).</div>
+          <div className="muted">Jeder Beleg wird sofort gespeichert und danach ausgewertet, einen nach dem anderen (PDF oder Foto).</div>
           <input
             ref={fileInputRef}
             type="file"
@@ -1057,7 +1057,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             <div key={entry.id} className="stack" data-queue-entry={entry.id} tabIndex={-1}>
               <div className="row center">
                 <strong>{meter ? '🔢 ' : ''}{entry.fileName}</strong>
-                {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
+                {entry.status === 'wartend' && <span className="badge gray">{waitingLabel(entry)}</span>}
                 {entry.status === 'läuft' && (
                   <AiProgressBadge
                     progress={entry.progress ?? null}
@@ -1085,6 +1085,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 )}
               </div>
               {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
+              {storedNote(entry) && <p className="muted" role="status">{storedNote(entry)}</p>}
               {entry.status === 'gespeichert' && entry.failure && (
                 <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : (file) => void manualFromReceipt(file, entry.fileName)}
                   onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />

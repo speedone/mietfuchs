@@ -16,6 +16,7 @@ import { PeriodSelect } from '../components/PeriodSelect'
 import AssessmentReview from '../components/AssessmentReview'
 import { fakeBooking, type FakeBooking } from '../testing/fakeBooking'
 import { calendarPeriod } from '../../../shared/period.ts'
+import { uploadAnswer } from '../testing/storedUpload'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
@@ -40,6 +41,7 @@ beforeEach(() => {
   hold = null
   openViews = null
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return uploadAnswer(init)
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
     if (url === '/api/intake' || url === '/api/extract') {
       const file = `beleg-${++evaluated}.pdf`

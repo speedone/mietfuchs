@@ -648,7 +648,8 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   Positionen. Hochladen nimmt `propertyId`/`year`; ein unbekanntes Objekt oder Jahr wird abgelehnt
   und die Datei entfernt, ein Fehler der Datenbank verhindert das Hochladen nicht.
 - **Ein Beleg aus dem Posteingang wird nicht erneut hochgeladen**: KI-Routen nehmen `existingFile`
-  (`path.basename`), ein Abbruch löscht ihn nicht.
+  (`path.basename`), ein Abbruch löscht ihn nicht. Eingang und Kosten gehen immer diesen Weg: erst `/api/upload`,
+  dann die Auswertung des gespeicherten Belegs (ai/CLAUDE.md, „Erst speichern, dann auswerten“).
 - **Zuordnen an eine bestehende Position** (`attachChoices`, `amountCheckBody`): passende Positionen
   oben, danach „Betrag prüfen“ (eine übernommene Position trägt einen Schätzbetrag). Bei `amounts`,
   `external`, einem Teil einer aufgeteilten Rechnung (`amountCheckIsPart`, #455: sein Betrag ist nur der Anteil des

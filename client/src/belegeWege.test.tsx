@@ -9,6 +9,7 @@ import App from './App'
 import { GUIDES } from '../../shared/guides.ts'
 import { MOBILE_QUERY } from './components/MobileNav'
 import { splitTarget, type NavTarget } from './nav'
+import { uploadAnswer } from './testing/storedUpload'
 
 const PROPERTIES: Property[] = [{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }]
 
@@ -31,6 +32,7 @@ beforeEach(() => {
     removeEventListener: () => {},
   }))
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return uploadAnswer(init)
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     const path = url.split('?')[0] ?? ''
     if (path === '/api/intake') return json({ error: 'Ollama ist nicht erreichbar.', file: '9_fremd.jpg', reason: 'unreachable', kept: true }, 502)

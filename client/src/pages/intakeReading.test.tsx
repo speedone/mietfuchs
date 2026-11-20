@@ -8,6 +8,7 @@ import type { Meter, MeterReadingExtraction, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Belege from './Belege'
+import { uploadAnswer } from '../testing/storedUpload'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³', meterNumber: '4711' }]
@@ -20,6 +21,7 @@ beforeEach(() => {
   posted = []
   metersServed = false
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return uploadAnswer(init)
     const method = init?.method ?? 'GET'
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
     if (url === '/api/intake') return json({ file: 'foto.jpg', kind: 'zaehler', reading })

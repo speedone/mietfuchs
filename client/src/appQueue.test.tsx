@@ -12,6 +12,7 @@ import { fakeBooking } from './testing/fakeBooking'
 import { PeriodProvider, useSwitchTo } from './period'
 import { PropertyProvider, useProperty } from './property'
 import { UIProvider } from './components/feedback'
+import { uploadAnswer } from './testing/storedUpload'
 
 const objekt = (id: string, name: string): Property => ({ id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null })
 let properties: Property[]
@@ -45,6 +46,7 @@ beforeEach(() => {
   try { localStorage.clear() } catch { /* ohne Speicher nichts zu räumen */ }
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }))
   vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return uploadAnswer(init)
     const method = init?.method ?? 'GET'
     calls.push(`${method} ${url}`)
     const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }))

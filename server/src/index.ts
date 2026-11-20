@@ -2457,8 +2457,10 @@ app.post('/api/upload', upload.single('file'), refuseBankFile, checkXmlReceipt, 
 // etwa für Tabs von vor einem Update.
 //
 // Bricht der Browser ab (Knopf „Abbrechen“, Seite verlassen), soll das Modell nicht umsonst
-// weiterrechnen: Das Signal bricht dann die Anfrage an den Anbieter ab, und der gerade
-// hochgeladene Beleg, auf den noch nichts verweist, verschwindet wieder aus dem Archiv. Den
+// weiterrechnen: Das Signal bricht dann die Anfrage an den Anbieter ab, und ein Beleg, der mit dieser
+// Anfrage hochgeladen wurde (Feld `file`), verschwindet wieder aus dem Archiv. Eingang und Kosten schicken die
+// Datei nicht mehr mit: Sie speichern jeden Beleg vorher über /api/upload und nennen ihn hier nur (`existingFile`),
+// er bleibt also liegen. Mit der Datei kommen noch die Heizrouten und Tabs aus älteren Fassungen. Den
 // Abbruch erfährt der Server auf zwei Wegen: Express meldet das Schließen der Verbindung, und
 // der Browser schickt jeder Auswertung eine Kennung (`requestId`) mit, mit der er beim Abbrechen
 // POST /api/ai/cancel/<id> aufruft. Die Kennung wirkt unabhängig von der Laufzeit (unter Bun 1.3
@@ -2603,7 +2605,12 @@ async function documentOf(req: Request, res: Response): Promise<DocumentSource |
   const existing = existingDocument(req)
   if (existing === undefined) res.status(400).json({ error: 'Keine Datei' })
   else if (existing === null) res.status(400).json({ error: NO_EXISTING })
-  return existing ?? null
+  if (!existing) return null
+  // Sagt die Endung nichts (ein Bild als .bmp oder .avif), gilt der Typ, mit dem der Beleg hochgeladen wurde: Der
+  // Eingang speichert jeden Beleg vor der Auswertung, die KI-Route sieht den Typ des Browsers also nicht mehr selbst.
+  if (existing.mimetype !== 'application/octet-stream') return existing
+  const stored = await readData(uploadRows).then((rows) => rows.get(existing.filename)?.mimeType, () => undefined)
+  return stored ? { ...existing, mimetype: stored } : existing
 }
 
 // Das Rechnungsdatum, das die KI gelesen hat, kommt zum Beleg (#170): Der Belegordner nennt es
