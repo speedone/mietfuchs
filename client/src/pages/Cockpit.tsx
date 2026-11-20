@@ -183,11 +183,13 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     if (!settlement) return []
     const list: Check[] = []
 
-    // 0. Vermieter und Bankverbindung (#447, Logik in cockpitChecks.ts): höchstens gelb. Nur bis zum Abschluss, danach
-    // ist der Absender im Anschreiben eingefroren; ohne geladene Einstellungen keine Zeile.
+    // 0. Vermieter und Bankverbindung (#447, Logik in cockpitChecks.ts): eine Hilfe, die nie zum Fortschritt zählt. Nur
+    // bis zum Abschluss, danach ist der Absender im Anschreiben eingefroren; ohne geladene Einstellungen keine Zeile.
     if (settings && !settlement.closed) {
       const own = property?.landlordName != null
-      const check = landlordCheck(effectiveLandlord(property ?? null, settings), own)
+      // Eine eigene Unterschrift in jedem Anschreiben nennt den Erklärenden (wie `senderMissing`)
+      const ownSignature = settlement.statements.length > 0 && settlement.statements.every((st) => (settlement.letters?.[st.tenancyId]?.texts?.signature ?? '').trim() !== '')
+      const check = landlordCheck(effectiveLandlord(property ?? null, settings), own, ownSignature)
       const fix = senderFix(own)
       list.push({ title: LANDLORD_CHECK, ...check, ...(check.level === 'gelb' ? { tab: fix.tab, focus: fix.focus } : {}) })
     }

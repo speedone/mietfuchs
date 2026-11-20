@@ -82,21 +82,41 @@ test('führt das Objekt einen eigenen Vermieter, springt die Zeile zu dessen Ang
   expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'property', part: 'landlord' })
 })
 
-test('mit Name und Anschrift grün, die fehlende IBAN wird nur genannt; ohne Anschrift zählt die Zeile nicht als offener Punkt', async () => {
-  const { unmount } = page({ settings: settings({ landlordName: 'Erika Muster', landlordAddress: 'Weg 1, 12345 Ort' }) })
+const progress = () => screen.getByText(/von \d+ erledigt/).textContent
+
+test('die Zeile zählt in keinem Zustand zum Fortschritt: Der Nenner springt nicht, ohne Anschrift bleibt sie grün und ruhig', async () => {
+  const states: [Settings, string][] = [
+    [settings(), 'gelb'],
+    [settings({ landlordName: 'Erika Muster' }), 'gruen'],
+    [settings({ landlordName: 'Erika Muster', landlordAddress: 'Weg 1, 12345 Ort' }), 'gruen'],
+  ]
+  const seen: (string | null)[] = []
+  for (const [s, level] of states) {
+    const { unmount } = page({ settings: s })
+    await screen.findByText('Fertigstellung', undefined, SLOW)
+    expect(row('Vermieter und Bankverbindung').className).toContain(level)
+    seen.push(progress())
+    unmount()
+  }
+  expect(new Set(seen).size).toBe(1)
+  // Ohne Einstellungen fehlt die Zeile; der Fortschritt ist derselbe
+  page({ settings: null })
   await screen.findByText('Fertigstellung', undefined, SLOW)
-  const green = row('Vermieter und Bankverbindung')
-  expect(green.className).toContain('gruen')
-  expect(green.textContent).toContain('Keine IBAN eingetragen')
-  expect(green.getAttribute('role')).toBeNull()
-  const done = screen.getByText(/von \d+ erledigt/).textContent
+  expect(progress()).toBe(seen[0])
+})
+
+test('ohne Namen ist die Zeile kein „Nächster Schritt“ und kein offener Punkt; mit eigener Unterschrift im Anschreiben ist sie grün', async () => {
+  const { unmount } = page({ settings: settings() })
+  await screen.findByText('Fertigstellung', undefined, SLOW)
+  expect(screen.queryByRole('button', { name: /Nächster Schritt: Vermieter eintragen/ })).toBeNull()
   unmount()
-  page({ settings: settings({ landlordName: 'Erika Muster' }) })
+  const letter = { texts: { signature: 'Erika Muster, Hausverwaltung in eigener Sache' } }
+  settlement = { ...settlement, letters: { t1: letter } as unknown as Settlement['letters'] }
+  page({ settings: settings() })
   await screen.findByText('Fertigstellung', undefined, SLOW)
-  expect(row('Vermieter und Bankverbindung').className).toContain('gelb')
-  // Eine Hilfe, kein offener Punkt: Die Rücksendeangabe nennt ohne Anschrift die des Objekts.
-  const [, of] = /(\d+) von (\d+)/.exec(done ?? '')?.slice(1).map(Number) ?? []
-  expect(screen.getByText(/von \d+ erledigt/).textContent).toContain(`von ${(of ?? 0) - 1} erledigt`)
+  const r = row('Vermieter und Bankverbindung')
+  expect(r.className).toContain('gruen')
+  expect(r.textContent).toContain('eigene Unterschrift')
 })
 
 test('ohne geladene Einstellungen und nach dem Abschluss keine Zeile: abgeschlossen ist der Absender eingefroren', async () => {

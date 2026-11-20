@@ -271,9 +271,12 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   „Belege erfasst“ (`noCostsDetail`). Unter dem Leerzustand des Cockpits steht „Anleitung: Die erste Abrechnung von
   Anfang bis Ende“ (`onOpenGuide`, in App.tsx `openGuide` ohne Schritt: Die Hilfe öffnet die Anleitung oben). Die
   Checkliste beginnt bis zum Abschluss mit „Vermieter und Bankverbindung“ (`landlordCheck` in cockpitChecks.ts, mit
-  `effectiveLandlord`): ohne Namen gelb und offen, nur ohne Anschrift gelb als Hilfe (`hint`), sonst grün; die fehlende
-  IBAN wird nur genannt, Ziel wie `senderFix`. Im Kostenformular steht bei Wasser/Abwasser ohne Kaltwasserzähler an
-  einer Wohnung ein Satz am Umlageschlüssel (`waterMeterHint` in costForm.ts); die Auswahl selbst bleibt.
+  `effectiveLandlord`): **in jedem Zustand eine Hilfe (`hint`), sie zählt nie zum Fortschritt**, denn ob Briefpapier den
+  Absender trägt, weiß das Cockpit nicht (`senderMissing`), und der Nenner soll nicht springen. Gelb mit Sprung (Ziel
+  wie `senderFix`) nur ohne Namen und ohne eigene Unterschrift in den Anschreiben der Abrechnung, sonst grün; fehlende
+  Anschrift und IBAN werden nur genannt. Im Kostenformular steht bei Wasser/Abwasser ohne Kaltwasserzähler an einer
+  Wohnung ein Satz am Umlageschlüssel (`waterMeterHint` in costForm.ts), mit den Ausnahmen von
+  `key.water-not-by-meter` (keine Eigentumswohnung, mindestens zwei genutzte Einheiten); die Auswahl selbst bleibt.
 - **„Demnächst fällig“** (#190, [UpcomingCard.tsx](src/components/UpcomingCard.tsx), Texte und Ziele in
   [upcomingView.ts](src/upcomingView.ts)): im Cockpit über der Checkliste, für das gewählte Objekt, auch im leeren
   Zeitraum; ohne Einträge fehlt die Karte. Welche Fristen darin stehen, entscheidet der Server (server/src/CLAUDE.md,

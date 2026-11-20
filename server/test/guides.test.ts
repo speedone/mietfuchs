@@ -864,6 +864,18 @@ test('#447: „Die erste Abrechnung von Anfang bis Ende“ führt in der Reihenf
   assert.match(all, /Vorauszahlung/)
   // Wer nur Papier hat: Kosten lassen sich ohne Beleg von Hand erfassen.
   assert.match(all, /ohne (eine )?Datei|von Hand/)
+  // Durchsicht: § 556a Abs. 1 BGB vollständig. Satz 1 (Wohnfläche, vorbehaltlich anderweitiger Vorschriften) mit der
+  // Ausnahme des Satzes 2 (erfasster Verbrauch) und der Heizkostenverordnung; sonst widerspräche Schritt 5 dem Hinweis.
+  const key = g.caveats.find((c) => /Wohnfläche/.test(c.text))
+  if (!key) return assert.fail('kein Hinweis zum Umlageschlüssel')
+  assert.match(key.norm ?? '', /§ 556a Abs\. 1 Satz 1 und 2 BGB/)
+  assert.match(key.norm ?? '', /§ 1 Abs\. 1 HeizkostenV/)
+  assert.match(key.text, /vorbehaltlich anderweitiger Vorschriften/)
+  assert.match(key.text, /erfassten Verbrauch oder einer erfassten Verursachung/)
+  assert.match(key.text, /Heizkostenverordnung/)
+  // Die Kostenart heißt im Beispiel wie in der Oberfläche
+  assert.match(g.example, /Sach- und Haftpflichtversicherung 960 €/)
+  assert.doesNotMatch(g.example, /Gebäudeversicherung/)
   // Die Frist steht mit Norm da.
   assert.ok(g.caveats.some((c) => /zwölf Monate|zwölften Monats/.test(c.text) && /§ 556 Abs\. 3/.test(c.norm ?? '')))
 })

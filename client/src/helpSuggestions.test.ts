@@ -51,6 +51,12 @@ describe('leerer Bestand: die erste Abrechnung von Anfang bis Ende', () => {
     expect(suggestGuides(stock({ units: [], tenancies: [] }))).toEqual([{ guideId: 'firstSettlement', reason: 'Weil in Lindenweg 12 noch keine Wohnung angelegt ist' }])
     expect(suggestGuides(stock({ tenancies: [] }))[0]).toEqual({ guideId: 'firstSettlement', reason: 'Weil in Lindenweg 12 noch kein Mietverhältnis angelegt ist' })
   })
+  // Durchsicht: Ein frisches Objekt hat keinen Namen; „in Ihr Objekt“ ist falsch gebeugt.
+  test('Objekt ohne Namen: der Satz stimmt auch dann', () => {
+    const p = property({ name: ' ' })
+    expect(suggestGuides(stock({ property: p, properties: [p], units: [], tenancies: [] }))[0]?.reason).toBe('Weil in Ihrem Objekt noch keine Wohnung angelegt ist')
+    expect(suggestGuides(stock({ property: p, properties: [p], tenancies: [] }))[0]?.reason).toBe('Weil in Ihrem Objekt noch kein Mietverhältnis angelegt ist')
+  })
   test('nicht mit Mietverhältnis, und nicht, wenn nur selbst genutzt wird', () => {
     expect(ids(stock())).not.toContain('firstSettlement')
     expect(ids(stock({ units: [unit({ participates: false, selfUsed: true })], tenancies: [] }))).not.toContain('firstSettlement')

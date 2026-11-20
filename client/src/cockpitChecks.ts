@@ -85,32 +85,31 @@ export function noCostsDetail(label: string): string {
 }
 
 // „Vermieter und Bankverbindung“ (#447): Name, Anschrift und IBAN des Vermieters gehörten zu keinem Schritt; dass der
-// Absender fehlt, sagte erst die Seite Abrechnung. Höchstens gelb, denn keine der Angaben ändert eine Zahl.
-// - Ohne Namen ein offener Punkt: Das Anschreiben druckt dann weder Absender noch Unterschrift (`senderMissing`).
-// - Nur ohne Anschrift eine Hilfe (`hint`), kein offener Punkt: Die Rücksendeangabe nennt dann die Adresse des Objekts,
-//   und wer im Haus wohnt, braucht keine andere.
-// - Die fehlende IBAN wird nur genannt; ob sie bei einer Nachzahlung fehlt, prüft die Seite Abrechnung.
+// Absender fehlt, sagte erst die Seite Abrechnung. Keine der Angaben ändert eine Zahl.
+// **In jedem Zustand eine Hilfe (`hint`), nie ein offener Punkt** (Durchsicht): Die Seite Abrechnung meldet „Absender
+// fehlt“ nicht, wenn Briefpapier oder eine eigene Unterschrift den Absender trägt (`senderMissing` in letterView.ts).
+// Die Unterschrift kennt das Cockpit aus den Anschreiben der Abrechnung (`ownSignature`), das Briefpapier lädt es nicht;
+// ein offener Punkt bliebe dort für immer stehen. Und zählte die Zeile nur in manchen Zuständen, spränge der Nenner
+// des Fortschritts.
+// - Ohne Namen und ohne eigene Unterschrift gelb, mit Sprung; der Text stimmt mit und ohne Briefpapier.
+// - Sonst grün. Fehlende Anschrift und IBAN werden nur genannt: Die Rücksendeangabe nennt ohne Anschrift die Adresse
+//   des Objekts, und ob die IBAN bei einer Nachzahlung fehlt, prüft die Seite Abrechnung.
 // `own`: Das Objekt führt einen eigenen Vermieter; dann stehen die Angaben beim Objekt (`senderFix`).
-// Ob Briefpapier oder eine eigene Unterschrift den Absender trägt, weiß das Cockpit nicht; das prüft die Abrechnung.
 export const LANDLORD_CHECK = 'Vermieter und Bankverbindung'
 export function landlordCheck(
   landlord: { landlordName: string; landlordAddress: string; iban: string },
   own: boolean,
-): { level: 'gruen' | 'gelb'; detail: string; cta?: string; hint?: true } {
+  ownSignature = false,
+): { level: 'gruen' | 'gelb'; detail: string; cta?: string; hint: true } {
   const name = landlord.landlordName.trim()
   const address = landlord.landlordAddress.trim()
-  const hasIban = landlord.iban.trim() !== ''
-  const where = own ? 'in den Stammdaten beim Objekt' : 'in den Einstellungen'
-  const noIban = 'Keine IBAN eingetragen: Für eine Nachzahlung brauchen Ihre Mieter die Bankverbindung.'
-  if (name === '') {
-    return { level: 'gelb', cta: 'Vermieter eintragen',
-      detail: `Der Name des Vermieters fehlt: Das Anschreiben druckt dann weder Absender noch Unterschrift. Tragen Sie Name, Anschrift und Bankverbindung ${where} ein.${hasIban ? '' : ` ${noIban}`}` }
+  if (name === '' && !ownSignature) {
+    return { level: 'gelb', hint: true, cta: 'Vermieter eintragen',
+      detail: `Der Name des Vermieters fehlt. Ohne ihn stehen im Anschreiben weder Absender noch Unterschrift; das genügt nur, wenn Ihr Briefpapier den Absender nennt. Tragen Sie Name, Anschrift und Bankverbindung ${own ? 'in den Stammdaten beim Objekt' : 'in den Einstellungen'} ein.` }
   }
-  if (address === '') {
-    return { level: 'gelb', hint: true, cta: 'Anschrift eintragen',
-      detail: `${name} · Ohne Anschrift des Vermieters nennt die Rücksendeangabe die Adresse des Objekts; Briefkopf und Fußzeile bleiben ohne Anschrift.${hasIban ? '' : ` ${noIban}`}` }
-  }
-  return { level: 'gruen', detail: `${name} · ${address} · ${hasIban ? 'IBAN eingetragen' : noIban}` }
+  const who = name === '' ? 'Kein Name eingetragen, das Anschreiben trägt Ihre eigene Unterschrift' : name
+  const where = address === '' ? 'ohne eigene Anschrift, die Rücksendeangabe nennt die Adresse des Objekts' : address
+  return { level: 'gruen', hint: true, detail: `${who} · ${where} · ${landlord.iban.trim() === '' ? 'keine IBAN eingetragen' : 'IBAN eingetragen'}` }
 }
 
 // Unterzeile unter der Überschrift des Cockpits. Beim Erststart (#180) steht dort keine
