@@ -163,6 +163,9 @@ const SHIPPED: readonly string[] = [
   'practice.bank-closed-days|||["12-24","12-31"]',
   // Mietkaution (#228)
   'bgb.deposit-max-months|||3',
+  // Fristen im Cockpit (#190)
+  'bgb.objection-months|||12',
+  'practice.objection-end-of-month|||true',
 ]
 
 const current = (): string[] =>

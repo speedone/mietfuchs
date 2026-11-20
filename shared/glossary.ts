@@ -13,7 +13,7 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { bgbHeatDeliverySwitch, bgbRentDueAtStart } from './law/bgb-betrkv.ts'
+import { bgbHeatDeliverySwitch, bgbObjectionMonths, bgbRentDueAtStart } from './law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow, practiceMeterRestHigh } from './law/practice.ts'
@@ -948,6 +948,17 @@ export const GLOSSARY = {
     example: 'Abrechnung für 2025: Sie muss bis zum 31.12.2026 beim Mieter sein. Kommt sie am 02.01.2027, entfällt eine Nachzahlung von 200 €; ein Guthaben des Mieters bleibt fällig.',
     norm: '§ 556 Abs. 3 BGB; BGH, Urteil vom 20.05.2026, VIII ZR 6/24',
     needed: 'Ja, für jede Abrechnung. Es zählt der Zugang beim Mieter, nicht das Absenden. Bei einer Eigentumswohnung gilt die Frist auch, wenn die Hausgeldabrechnung noch fehlt. Liegt der Grundsteuerbescheid ohne Ihr Verschulden noch nicht vor, oder haben Sie gegen ihn, den Grundsteuerwert- oder den Messbescheid Einspruch eingelegt, dürfen Sie mit der Grundsteuer warten, bis der endgültige Bescheid da oder über den Einspruch entschieden ist. Rechnen Sie das Übrige trotzdem fristgerecht ab, behalten Sie sich die Grundsteuer ausdrücklich vor und fordern Sie sie im Regelfall innerhalb von drei Monaten danach. Mietfuchs zeigt die Frist auf der Seite Abrechnung. Schließen Sie die Abrechnung vor dem Versand ab; ist sie an die Mieter gegangen, halten Sie den Tag mit „Als versendet markieren“ fest, und Mietfuchs vergleicht ihn mit der Frist; planen Sie den Weg bis zum Zugang ein.',
+  },
+  // #190: Einwendungsfrist des Mieters. § 556 Abs. 3 Satz 5 und 6 BGB am 20.11.2026 auf gesetze-im-internet.de gelesen;
+  // die Rechenweise bis zum Monatsende ist eine Auslegung (`practice.objection-end-of-month`), Beispiel nachgerechnet in
+  // server/test/fristen-cockpit.test.ts.
+  objectionDeadline: {
+    topic: 'period',
+    title: 'Einwendungsfrist',
+    short: `Einwendungen gegen die Abrechnung muss der Mieter Ihnen spätestens bis zum Ablauf des ${valueAt(bgbObjectionMonths, LAW_AS_OF)}. Monats nach Zugang mitteilen. Danach kann er sie nicht mehr geltend machen, es sei denn, er hat die Verspätung nicht zu vertreten.`,
+    example: `Sie haben die Abrechnung 2025 am 20.01.2026 versendet. Mietfuchs zeigt die Einwendungsfrist bis etwa 31.01.2027: gerechnet ab dem Versanddatum bis zum Ende des Monats, weil der Tag des Zugangs nicht erfasst ist. Ging die Abrechnung erst am 02.02.2026 zu, läuft die Frist länger.`,
+    norm: '§ 556 Abs. 3 Satz 5 und 6 BGB',
+    needed: 'Nur zur Information: Bis zum Ende der Frist sollten Sie mit Einwendungen rechnen und die Belege bereithalten. Mietfuchs zeigt die Frist im Cockpit unter „Demnächst fällig“, sobald Sie eine Abrechnung als versendet markiert haben. Gerechnet ist bis zum Monatsende und ohne Verschiebung auf den nächsten Werktag; ob das Gesetz den Tag gleicher Zahl oder das Monatsende meint, ist hier nicht an einer Entscheidung geprüft, und Mietfuchs nimmt das spätere Ende.',
   },
   // #208: Abrechnungszeitraum, Rumpf und Leistungsprinzip. § 556 Abs. 3 BGB und VIII ZR 316/10,
   // VIII ZR 49/07, VIII ZR 156/11 gelesen am 05.10.2026 (Entwurf 2).

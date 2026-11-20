@@ -476,7 +476,7 @@ const GUIDE_DATA = {
       'Mehr verrechnen oder auszahlen, als bis zu dem Tag eingegangen ist, lässt sich nicht buchen. Vor einem Datum nach heute und vor einer Verrechnung über den offenen Mietrückstand hinaus fragt das Fenster nach.',
       'Eingang, Ertrag und Rückzahlung stehen weder im Mietkonto noch in der Steuerübersicht. Eine Verrechnung mit Mietrückstand oder Nachzahlung legt im Mietkonto eine Zahlung an diesem Tag an, die wie jede Zahlung zählt; ändern lässt sie sich nur an der Kaution. Was Sie für einen Schaden oder Sonstiges einbehalten, ist eine Einnahme aus Vermietung; die Steuerübersicht nennt es nur mit dem Betrag, eintragen tun Sie es selbst.',
       'Die Aufstellung zum Auszug nennt jede Buchung, den Einbehalt mit Grund und was auszuzahlen bleibt. Darunter steht, nur für Sie und nicht im Druck, das Ergebnis der letzten Nebenkostenabrechnung, auch einer getrennten Heizkostenabrechnung, und welche Abrechnung noch aussteht.',
-      'Solange nach dem Auszug laut den Buchungen noch Geld bei Ihnen liegt, nennt das Cockpit es unter „Kaution nach Auszug“.',
+      'Solange nach dem Auszug laut den Buchungen noch Geld bei Ihnen liegt, nennt das Cockpit es unter „Demnächst fällig“ als „Kaution abrechnen“.',
     ],
     example: 'Kaltmiete 800 €, vereinbart sind 2.400 € Kaution, das Dreifache. Der Mieter zahlt drei Raten zu 800 €; nach der zweiten liegen 1.600 € bei Ihnen, die Kaution ist teilweise erhalten. Mit der dritten Rate und 18,20 € Zinsen sind es 2.418,20 €. Nach dem Auszug verrechnen Sie 450 € Mietrückstand, es bleiben 1.968,20 €. Halten Sie bis zur nächsten Nebenkostenabrechnung 300 € zurück, bleiben 1.668,20 € auszuzahlen.',
     caveats: [

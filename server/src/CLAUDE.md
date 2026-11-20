@@ -571,6 +571,32 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
 - Bewusst nicht: Land aus der Postleitzahl, Sonntage in Hessen, ob § 193 BGB auf eine Frist
   anzuwenden ist (entscheidet der Aufrufer).
 
+## Demnächst fällig (#190)
+
+[upcomingDeadlines.ts](upcomingDeadlines.ts), Route `GET /api/upcoming?property=` (`UpcomingDeadlines` in shared/types.ts),
+Texte und Sprünge in client/src/upcomingView.ts, Karte `UpcomingCard` im Cockpit. Entwurf:
+`docs/superpowers/specs/2026-11-12-fristen-design.md`; umgesetzt ist der erste Schritt, nur aus vorhandenen Daten (keine
+Einwendungen erfassen, keine eigenen Termine, keine Kalenderdatei, keine Verjährung nach § 548). Rein, `today()` kommt
+von der Route (NKA_TEST_TODAY wirkt).
+
+- **Je Objekt** (Objektauswahl der Seitenleiste), nicht über alle; Fenster `UPCOMING_HORIZON_DAYS` (90) ab heute.
+- **Abrechnungsfrist**: `settlementDeadline` wie in der Abrechnung, ohne § 193 (früher ist sicher), je beendetem Zeitraum
+  mit einem abgerechneten Mietverhältnis (Regel wie in `depositStatements`), solange nicht abgeschlossen **und** mit
+  Versanddatum; `closed` kennzeichnet „abgeschlossen ohne Versanddatum“. Abgelaufen nur mit Kosten oder Abschluss im
+  Zeitraum und Ende höchstens 36 Monate zurück. Getrennte Heizkostenabrechnungen (Weg d) nicht; die nennt die Checkliste.
+- **Einwendungsfrist** (`objectionDeadline` in shared/period.ts): `bgb.objection-months` (§ 556 Abs. 3 Satz 5,
+  `checked`) ab dem Versanddatum, Ende am Monatsletzten (`practice.objection-end-of-month`, Auslegung, das spätere der
+  beiden Lesarten), ohne § 193; nur solange sie läuft und im Fenster endet. Die Oberfläche sagt „bis etwa“ und dass sich
+  das Ende durch späteren Zugang oder ein Wochenende nach hinten schiebt.
+- **Kaution**: `depositsAfterMoveOut`, ohne Fenster und ohne Frist (§ 551 BGB nennt keine; BGH VIII ZR 71/05, Rn. 9 f.:
+  angemessene, nicht allgemein bestimmbare Frist, gelesen über die Zitate in VIII ZR 141/17 und VIII ZR 184/23, der
+  Volltext war nicht abrufbar). Keine Zahl von Monaten.
+- **Eichfrist**: 31.12. von `calibratedUntil`, zwölf Monate vorher (`CALIBRATION_LEAD_MONTHS`, ein Tausch braucht
+  Vorlauf); abgelaufen im ersten Jahr danach oder, solange eine Ablesung nach dem Ende liegt. Die gelbe Zeile
+  „Eichfrist“ der Checkliste bleibt daneben.
+- Sortiert nach `date`, Art, Kennung (`compareText`); Kennungen `art:bezug`, stabil. Tests: fristen-cockpit.test.ts
+  (Regeln), api-fristen.test.ts (Route), client upcomingView.test.ts und cockpitSprungziele.test.tsx.
+
 ## Belege: Eingang und Ordner (#170, #490)
 
 Die Seite „Belege“ ([client/src/pages/Belege.tsx](../../client/src/pages/Belege.tsx), Oberfläche in client/CLAUDE.md)
@@ -830,8 +856,9 @@ Cockpit und Hinweis der Steuer.
   abgerechnete Heizperioden einer Anlage, die die Wohnung versorgt (Weg d), als `lastHeating` und „Heizkosten …“.
   Dazu `openRentCents` aus dem Mietkonto des laufenden Jahres (Endsaldo zum 31.12. als Schuld, auch noch nicht Fälliges): Das
   Seitenfenster fragt nach, bevor eine Verrechnung mit Miete darüber hinausgeht.
-- **Cockpit und Steuer**: „Kaution nach Auszug“ je Mietverhältnis mit erreichtem Ende, Buchungen und Stand über 0,
-  ohne Frist; der Sprung öffnet das Seitenfenster (`{ kind: 'deposit' }` in client/src/focus.ts). Die Steuer nennt,
+- **Cockpit und Steuer**: „Kaution abrechnen“ in „Demnächst fällig“ (#190) je Mietverhältnis mit erreichtem Ende,
+  Buchungen und Stand über 0 (`depositsAfterMoveOut` in shared/deposit.ts), ohne Frist; der Sprung öffnet das
+  Seitenfenster (`{ kind: 'deposit' }` in client/src/focus.ts). Die Steuer nennt,
   was mit Schaden oder Sonstigem verrechnet wurde, nur mit Betrag.
 - **Routen** `GET/POST /api/deposit-entries`, `PUT/DELETE /api/deposit-entries/:id`; das Objekt ergibt sich aus dem
   Mietverhältnis, eine Buchung wechselt es nicht. `insertDepositEntries` schreibt mehrere in einer Transaktion mit

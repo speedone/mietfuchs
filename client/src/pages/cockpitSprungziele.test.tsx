@@ -4,7 +4,7 @@
 // Seite, damit eine vertauschte Zuordnung (etwa die Karte „Mietverhältnisse“ statt der Wohnung) auffällt.
 import { afterEach, assert, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { CostItem, DepositEntry, Meter, Notice, Settings, Settlement, Statement, Tenancy, Unit } from '../types'
+import type { CostItem, Meter, Notice, Settings, Settlement, Statement, Tenancy, Unit, UpcomingDeadline } from '../types'
 import { PeriodProvider } from '../period'
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 import { PropertyProvider } from '../property'
@@ -31,7 +31,7 @@ const item = (id: string, patch: Partial<CostItem> = {}, year = YEAR): CostItem 
 const meter = (id: string): Meter => ({ id, propertyId: 'objekt-1', name: `Wasser ${id}`, unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
-type Stock = { units: Unit[]; tenancies: Tenancy[]; settlement?: Partial<Settlement>; items?: CostItem[]; meters?: Meter[]; consumption?: Consumption[]; deposits?: DepositEntry[]; bankOpen?: number }
+type Stock = { units: Unit[]; tenancies: Tenancy[]; settlement?: Partial<Settlement>; items?: CostItem[]; meters?: Meter[]; consumption?: Consumption[]; upcoming?: UpcomingDeadline[]; bankOpen?: number }
 
 function page(stock: Stock): ReturnType<typeof vi.fn> {
   const settlement: Settlement = {
@@ -43,11 +43,12 @@ function page(stock: Stock): ReturnType<typeof vi.fn> {
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     const path = url.split('?')[0] ?? url
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }])
-    if (path === `/api/settlement/${YEAR}`) return json(settlement)
+    // Auch das Vorjahr, in das „Demnächst fällig“ wechselt (#190)
+    if (path === `/api/settlement/${YEAR}` || path === `/api/settlement/${YEAR - 1}`) return json(settlement)
     if (path === '/api/costItems') return json(stock.items ?? [item('k1')])
     if (path === '/api/meters') return json(stock.meters ?? [])
     if (path === `/api/consumption/${YEAR}`) return json(stock.consumption ?? [])
-    if (path === '/api/deposit-entries') return json(stock.deposits ?? [])
+    if (path === '/api/upcoming') return json({ today: `${YEAR + 1}-11-20`, until: `${YEAR + 2}-02-18`, items: stock.upcoming ?? [] })
     if (path === '/api/bank/open-count') return json({ count: stock.bankOpen ?? 0 })
     return json([])
   })
@@ -187,23 +188,40 @@ test('Versanddatum vor dem Ende des Zeitraums: gelb, ohne „gewahrt“, „Vers
   expect(navigate).toHaveBeenCalledWith('abrechnung', { kind: 'section', section: 'sentAt' })
 })
 
-// ---------- Kaution nach Auszug (#228, Teil 2) ----------
+// ---------- Demnächst fällig (#190), darin die Kaution nach Auszug (#228) ----------
 
-test('Kaution nach Auszug: eine Zeile je ausgezogenem Mieter mit Stand, der Sprung öffnet sein Seitenfenster', async () => {
-  const gone = tenancy('t1', 'u1', { end: '2020-06-30' })
-  const navigate = page({ units: [unit('u1')], tenancies: [gone, tenancy('t2', 'u1', { start: '2020-07-01' })], deposits: [
-    { id: 'd1', tenancyId: 't1', date: '2020-01-05', kind: 'received', amountCents: 160000 },
-    { id: 'd2', tenancyId: 't2', date: '2020-07-05', kind: 'received', amountCents: 160000 },
+test('Demnächst fällig: Kaution nach Auszug mit Stand, ohne Frist, der Sprung öffnet ihr Seitenfenster', async () => {
+  const navigate = page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1', { end: '2020-06-30' })], upcoming: [
+    { kind: 'deposit', id: 'deposit:t1', date: '2020-06-30', tenancyId: 't1', tenantName: 'Mieter t1', balanceCents: 160000 },
   ] })
-  const line = await screen.findByText(/Bei Ihnen liegen noch 1\.600,00\s€ von Mieter t1 \(ausgezogen am 30\.06\.2020\)\./, undefined, SLOW)
-  expect(screen.queryByText(/von Mieter t2/)).toBeNull()
-  fireEvent.click(line.closest('li')?.querySelector('button') ?? assert.fail('kein Knopf'))
+  const line = await screen.findByText(/Bei Ihnen liegen noch 1\.600,00\s€ von Mieter t1\./, undefined, SLOW)
+  const row = line.closest('li') ?? assert.fail('keine Zeile')
+  expect(row.textContent).toContain('Kaution abrechnen')
+  expect(row.textContent).toContain('ausgezogen am 30.06.2020')
+  fireEvent.click(row.querySelector('button') ?? assert.fail('kein Knopf'))
   expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'deposit', tenancyId: 't1' })
 })
 
-test('Kaution nach Auszug: ohne Buchungen keine Karte', async () => {
+test('Demnächst fällig: Stufe als Wort, Sprung zur Abrechnung des Zeitraums, abgeschlossen zum Versanddatum', async () => {
+  const navigate = page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1')], upcoming: [
+    { kind: 'settlement', id: `settlement:${YEAR - 1}-01`, date: `${YEAR}-12-31`, period: calendarPeriod(YEAR - 1), label: String(YEAR - 1), closed: true },
+    { kind: 'settlement', id: `settlement:${YEAR}-01`, date: `${YEAR + 1}-12-31`, period: calendarPeriod(YEAR), label: String(YEAR), closed: false },
+  ] })
+  await screen.findByRole('heading', { name: 'Demnächst fällig' }, SLOW)
+  const older = (await screen.findByText(`Abrechnung ${YEAR - 1} versenden`)).closest('li') ?? assert.fail('keine Zeile')
+  expect(older.querySelector('.badge')?.textContent).toBe('abgelaufen')
+  const current = screen.getByText(`Abrechnung ${YEAR} versenden`).closest('li') ?? assert.fail('keine Zeile')
+  expect(current.querySelector('.badge')?.textContent).toBe('offen')
+  fireEvent.click(current.querySelector('button') ?? assert.fail('kein Knopf'))
+  await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('abrechnung', undefined))
+  fireEvent.click(older.querySelector('button') ?? assert.fail('kein Knopf'))
+  await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('abrechnung', { kind: 'section', section: 'sentAt' }))
+})
+
+test('Demnächst fällig: ohne Einträge keine Karte', async () => {
   page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1', { end: '2020-06-30', depositCents: 160000 })] })
   await screen.findAllByText('Mietverhältnisse & Flächen', { selector: '.check-title' }, SLOW)
+  expect(screen.queryByText('Demnächst fällig')).toBeNull()
   expect(screen.queryByText('Kaution nach Auszug')).toBeNull()
 })
 

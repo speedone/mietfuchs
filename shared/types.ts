@@ -259,6 +259,25 @@ export type DepositEntry = {
   note?: string
 }
 
+// „Demnächst fällig“ im Cockpit (#190): Fristen und Erinnerungen eines Objekts, aus den Daten gerechnet
+// (server/src/upcomingDeadlines.ts, GET /api/upcoming). `date` ist der Tag, nach dem die Liste ordnet: das Fristende,
+// bei der Kaution der Tag des Auszugs (eine feste Frist gibt es dort nicht). Die Texte setzt die Oberfläche
+// (client/src/upcomingView.ts).
+export type UpcomingDeadline =
+  // Abrechnungsfrist (§ 556 Abs. 3 Satz 2 BGB) eines Zeitraums ohne Versanddatum; `closed`: abgeschlossen, aber nicht
+  // als versendet markiert.
+  | { kind: 'settlement'; id: string; date: string; period: PeriodKey; label: string; closed: boolean }
+  // Einwendungsfrist des Mieters (§ 556 Abs. 3 Satz 5 BGB), gerechnet ab dem Versanddatum statt ab dem Zugang.
+  | { kind: 'objection'; id: string; date: string; period: PeriodKey; label: string; sentAt: string }
+  // Kaution nach Auszug, solange laut den Buchungen noch Geld beim Vermieter liegt; `date` ist das Mietende.
+  | { kind: 'deposit'; id: string; date: string; tenancyId: string; tenantName: string; balanceCents: number }
+  // Ende der Eichfrist eines Zählers (§ 34 Abs. 2 MessEV), der 31.12. des eingetragenen Jahres.
+  | { kind: 'calibration'; id: string; date: string; meterId: string; meterName: string }
+export type UpcomingDeadlineKind = UpcomingDeadline['kind']
+// `today` ist der Tag des Servers (NKA_TEST_TODAY in Tests), `until` das Ende des Fensters für Abrechnungs- und
+// Einwendungsfrist; die Oberfläche rechnet „in N Tagen“ gegen `today`, damit Server und Anzeige denselben Tag meinen.
+export type UpcomingDeadlines = { today: string; until: string; items: UpcomingDeadline[] }
+
 // Die Art einer Zahlung (#280). `rent`: Miete (Kaltmiete, Vorauszahlungen, Pauschale), die das
 // Mietkonto von Januar an auf das Monats-Soll verteilt. `settlement`: Nachzahlung oder Guthaben aus
 // der Nebenkostenabrechnung, ein Guthaben negativ; das Mietkonto führt sie gesondert. Die Kaution

@@ -33,6 +33,8 @@ import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_
 import { epcPayload } from '../../../shared/epcQr.ts'
 import type { PaymentQrData } from '../paymentQr'
 import { EInvoiceView } from '../components/EInvoiceView'
+import UpcomingCard from '../components/UpcomingCard'
+import { calendarPeriod } from '../../../shared/period.ts'
 import type { EInvoiceView as EInvoiceViewData } from '../types'
 
 // Eine erfundene E-Rechnung für die Rechnungsansicht (#189)
@@ -209,6 +211,17 @@ export default function Muster() {
       <Card title="Faden einer Anleitung">
         <GuideThread guide="garage" step={3} sticky={false} onNext={async () => { toast('Nächster Schritt.'); return true }} onBack={() => toast('Zurück zur Anleitung.')} onClose={() => toast('Leiste geschlossen.')} />
       </Card>
+
+      {/* „Demnächst fällig“ im Cockpit (#190): jede Art einmal, abgelaufen, offen und zur Information. */}
+      <UpcomingCard
+        list={{ today: '2026-11-20', until: '2027-02-18', items: [
+          { kind: 'deposit', id: 'deposit:t1', date: '2026-08-31', tenancyId: 't1', tenantName: 'Erika Mustermann', balanceCents: 160000 },
+          { kind: 'calibration', id: 'calibration:m1', date: '2025-12-31', meterId: 'm1', meterName: 'Warmwasser OG' },
+          { kind: 'settlement', id: 'settlement:2025-01', date: '2026-12-31', period: calendarPeriod(2025), label: '2025', closed: true },
+          { kind: 'objection', id: 'objection:2024-01', date: '2027-01-31', period: calendarPeriod(2024), label: '2024', sentAt: '2026-01-20' },
+        ] }}
+        onAction={(a) => toast(`Sprung: ${a.label}`)}
+      />
 
       {/* Die Anmeldung (#528): das Formular der Anmeldeseite und des Dialogs, der Hinweis im Übergang aus der Seitenleiste */}
       <Card title="Anmeldung">

@@ -67,6 +67,23 @@ export const bgbDeadlineMonths: LawParam<number, 'periodStart'> = {
   describe: (v) => `Zugang bis zum Ablauf des ${v}. Monats nach Ende des Zeitraums`,
 }
 
+// Einwendungen gegen die Abrechnung hat der Mieter dem Vermieter spätestens bis zum Ablauf des zwölften Monats nach
+// Zugang der Abrechnung mitzuteilen; danach kann er sie nicht mehr geltend machen, es sei denn, er hat die Verspätung
+// nicht zu vertreten (§ 556 Abs. 3 Satz 5 und 6 BGB, Wortlaut am 20.11.2026 gelesen; #190). `eventDate`: der Tag des
+// Zugangs. Wie das Ende zu rechnen ist, steht in `practice.objection-end-of-month` (shared/period.ts, `objectionDeadline`).
+export const bgbObjectionMonths: LawParam<number, 'eventDate'> = {
+  id: 'bgb.objection-months',
+  title: 'Einwendungsfrist des Mieters',
+  norm: '§ 556 Abs. 3 Satz 5 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: 12,
+    source: { rank: 'law', cite: '§ 556 Abs. 3 Satz 5 und 6 BGB', url: 'https://www.gesetze-im-internet.de/bgb/__556.html', retrieved: '2026-11-20', checked: 'checked' },
+    enacted: '§ 556 Abs. 3 BGB',
+  }],
+  describe: (v) => `Einwendungen bis zum Ablauf des ${v}. Monats nach Zugang der Abrechnung`,
+}
+
 // Umstellung auf Wärmelieferung im laufenden Mietverhältnis (Heizung PR 16, #213). Wortlaut am 11.10.2026
 // gelesen: § 556c BGB (Abs. 1 Satz 2: „Beträgt der Jahresnutzungsgrad der bestehenden Anlage vor der
 // Umstellung mindestens 80 Prozent, kann sich der Wärmelieferant … auf die Verbesserung der Betriebsführung

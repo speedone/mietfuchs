@@ -78,3 +78,21 @@ export function depositLimit(tenancy: Pick<Tenancy, 'start' | 'baseRents' | 'cos
   if (rent === null || rent <= 0) return null
   return valueAt(bgbDepositMaxMonths, at ?? tenancy.start) * rent
 }
+
+// Die Kautionen nach Auszug (#228, seit #190 in „Demnächst fällig“ im Cockpit, server/src/upcomingDeadlines.ts): Mietverhältnisse, deren Ende erreicht ist und bei denen laut den
+// Buchungen noch Geld liegt. Ohne Buchungen keine Zeile: Dann weiß Mietfuchs nicht, was wo liegt. Keine Frist, denn eine
+// gesetzliche gibt es nicht (§ 551 BGB); der Bundesgerichtshof gesteht eine angemessene Frist zu, deren Länge vom Einzelfall
+// abhängt.
+export function depositsAfterMoveOut(
+  tenancies: readonly Pick<Tenancy, 'id' | 'tenantName' | 'end' | 'depositCents' | 'depositStatus'>[],
+  entries: readonly DepositEntry[],
+  today: string,
+): { tenancyId: string; tenantName: string; end: string; balanceCents: number }[] {
+  return tenancies.flatMap((t) => {
+    if (t.end === null || t.end > today) return []
+    const own = entries.filter((e) => e.tenancyId === t.id)
+    if (own.length === 0) return []
+    const balanceCents = depositState(t, own).balanceCents
+    return balanceCents > 0 ? [{ tenancyId: t.id, tenantName: t.tenantName, end: t.end, balanceCents }] : []
+  })
+}
