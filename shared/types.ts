@@ -78,6 +78,10 @@ export type Property = {
   // aller verteilten Positionen des Objekts abgezogen wird (Verkauf, Schenkung, Erbfall, Ende der Vermietung). `null`
   // oder fehlend heißt kein Ende. Die Abrechnung liest es nie.
   spreadRestYear?: number | null
+  // Gilt in der Gemeinde eine Verordnung nach § 558 Abs. 3 Satz 2, 3 BGB (Kappungsgrenze 15 %, #191)? `true` ja, `false`
+  // nein (20 %), `null` oder fehlend unbekannt; die Rechnung nimmt dann sicher 15 % (Entwurf R12). Getrennt von
+  // `tightMarket`, denn das ist eine andere Verordnung. Mietkonto, Abrechnung und Steuer lesen es nie.
+  rentCapReduced?: boolean | null
 }
 
 export type Unit = {
@@ -133,7 +137,28 @@ export type PrepaymentEntry = {
 export type RentEntry = {
   from: string // 'YYYY-MM'
   monthlyCents: number
+  // Art der Stufe (#191): wie die Kaltmiete zu diesem Betrag kam. Nur die Rechnung einer Mieterhöhung liest sie (Wartefrist,
+  // Sperrfrist, Kappungsgrenze); Mietkonto, Abrechnung und Steuer nie. Fehlt sie, gilt `agreement`: Die Stufe zählt für die
+  // Fristen und erhöht die Kappungsgrenze nicht, für jede unbekannte alte Stufe die sichere Seite.
+  reason?: RentChangeReason
+  // Der Indexwert dieser Stufe bei einer Indexmiete (#191): bei der ersten Stufe der Ausgangsindex laut Vertrag, bei jeder
+  // Anpassung der neue. Nur bei `Tenancy.rentKind === 'index'`.
+  index?: RentIndexValue
 }
+
+// Woher eine Stufe der Kaltmiete kommt (#191, Entwurf Datenmodell 1): Vertragsbeginn oder Vereinbarung nach § 557 Abs. 1
+// BGB (`agreement`), Stufe einer Staffelmiete (§ 557a), Anpassung einer Indexmiete (§ 557b), Zustimmung zur Vergleichsmiete
+// (§ 558) oder Erhöhung nach §§ 559 bis 559e, auch einvernehmlich, soweit § 559 sie getragen hätte (`modernization`).
+// § 560 betrifft nur Betriebskosten und berührt die Kaltmiete nicht.
+export type RentChangeReason = 'agreement' | 'staggered' | 'index' | 'comparison' | 'modernization'
+
+// Ein Wert des Verbraucherpreisindex (#191): Monat 'JJJJ-MM', Wert mit höchstens einer Nachkommastelle, Basisjahr der Reihe
+// (2020 heißt 2020 = 100). Gespeichert in Zehnteln, damit kein Rundungsfehler einer Gleitkommazahl entsteht.
+export type RentIndexValue = { month: string; value: number; base: number }
+
+// Wie die Miete laut Vertrag steigen kann (#191): `free` nach Vertrag, Erhöhung über § 558 BGB; Staffelmiete (§ 557a);
+// Indexmiete (§ 557b).
+export type RentKind = 'free' | 'staggered' | 'index'
 
 export type PersonEntry = {
   from: string // 'YYYY-MM-DD' - ab diesem Tag gilt die Personenzahl
@@ -218,7 +243,34 @@ export type Tenancy = {
   // vom Stand ab. Betrag nur mit Grund.
   depositHoldCents?: number
   depositHoldNote?: string
+  // Art der Miete (#191, Entwurf Datenmodell 3). Fehlend oder `null` heißt nicht beantwortet: Eine Rechnung der
+  // Mieterhöhung ist dann gesperrt und fragt danach (Entwurf R14). Mietkonto, Abrechnung und Steuer lesen es nie.
+  rentKind?: RentKind | null
+  // Schließt der Vertrag Mieterhöhungen aus (§ 557 Abs. 3 BGB)? Fehlend oder `null` heißt nicht beantwortet (gesperrt wie oben).
+  rentIncreaseExcluded?: boolean | null
   notes?: string // freie Notiz zum Mietverhältnis
+}
+
+// Ein Mieterhöhungsverlangen nach § 558 BGB oder eine Erklärung nach § 557b BGB (#191, Entwurf Datenmodell 5). Die Tabelle
+// `rent_increases` legt PR 1 an, sie bleibt bis PR 3 leer und ohne Route.
+export type RentIncreaseKind = 'comparison' | 'index'
+export type RentIncreaseStatus = 'draft' | 'sent' | 'agreed' | 'partial' | 'refused' | 'withdrawn'
+// Die eingefrorenen Eingaben und die Rechnung eines Verlangens (JSON wie ein Abschluss), für Nachdruck und Prüfung. Den
+// Inhalt legt PR 3 fest; bis dahin steht nur fest, dass es ein Objekt ist, und gelesen wird es nicht.
+export type RentIncreaseBasis = { readonly [key: string]: unknown }
+export type RentIncrease = {
+  id: string
+  tenancyId: string
+  kind: RentIncreaseKind
+  createdOn: string // 'JJJJ-MM-TT'
+  receivedOn: string | null // Zugang beim Mieter; ohne Angabe noch nicht versandt
+  effectiveFrom: string // 'JJJJ-MM', erster Monat der neuen Miete
+  fromCents: number
+  toCents: number
+  basis: RentIncreaseBasis
+  status: RentIncreaseStatus
+  agreedCents: number | null // nur bei `partial`
+  decidedOn: string | null
 }
 
 export type DepositStatus = 'offen' | 'erhalten' | 'teilweise' | 'zurückgezahlt'

@@ -375,11 +375,10 @@ test('Vermerk: ein umgezogener Ordner öffnet nur lesend, Schreibrouten sagen wa
 // dort zu Recht nicht läuft. Gezeigt wird jetzt eine Kopie außerhalb des Ordners; der Ordner selbst bleibt, wie er ist,
 // auch eine Datenbank wird darin nicht migriert.
 // Der letzte Schritt der Kette (Index im Journal) und wie seine Wirkung zurückgenommen wird; siehe den Test darunter.
-const LAST_STEP_INDEX = 102
-// Der letzte Schritt (0102, Kontoauszug) legt sechs Tabellen an; ein zweites CREATE TABLE scheiterte.
-const undoLastStep = (db: { exec: (sql: string) => void }): void => {
-  db.exec('DROP TABLE bank_transaction_links; DROP TABLE tenancy_payers; DROP TABLE bank_transactions; DROP TABLE bank_days; DROP TABLE bank_imports; DROP TABLE bank_accounts;')
-}
+const LAST_STEP_INDEX = 104
+// Der letzte Schritt (0104, Bedingungen der Mieterhöhung, #191) baut `base_rents`, `properties` und `tenancies` mit den
+// Bedingungen neu, ohne neue Spalte; das lässt sich wiederholen, zurückzunehmen ist nichts.
+const undoLastStep = (_db: { exec: (sql: string) => void }): void => {}
 
 test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner etwas ändert', async () => {
   for (const kind of ['json', 'database'] as const) {
@@ -388,7 +387,7 @@ test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner e
     if (kind === 'database') {
       // Eine Datenbank aus einer früheren Fassung: Der letzte Schritt der Kette fehlt noch, Marke und Wirkung. Fügt ein
       // neuer letzter Schritt eine Spalte an, scheiterte er sonst an der schon vorhandenen; seine Wirkung nimmt
-      // `undoLastStep` zurück (heute 0102_kontoauszug: die sechs Tabellen).
+      // `undoLastStep` zurück (heute 0104_mieterhoehung_bedingungen, ein Neubau ohne neue Spalte: nichts zurückzunehmen).
       const { DatabaseSync } = await import('node:sqlite')
       const db = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
       const last = db.prepare('SELECT max(id) AS id FROM __drizzle_migrations').get()

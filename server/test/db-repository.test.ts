@@ -403,6 +403,8 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         relative: true,
         // #334: Fälligkeit an einem festen Tag, erste Miete bei Mietbeginn.
         rentDue: 'dayOfMonth', rentDueDay: 15, firstRentAtStart: true,
+        // #191: Art der Miete und Ausschluss von Erhöhungen.
+        rentKind: 'staggered', rentIncreaseExcluded: false,
       },
     },
     {
@@ -541,22 +543,27 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
     // und der Vergleich schlüge aus einem Grund fehl, der mit den Spalten nichts zu tun hat.
     { table: personHistory, feld: 'personHistory', eintrag: { from: '2024-01-01', persons: 3 } },
     { table: prepayments, feld: 'prepayments', eintrag: { from: '2024-03', monthlyCents: 15000 } },
-    { table: baseRents, feld: 'baseRents', eintrag: { from: '2024-03', monthlyCents: 60000 } },
+    // #191: Art und Indexwert der Stufe; der Indexwert steht im Modell als ein Feld über drei Spalten (`COLUMNS_OF_FIELD`).
+    { table: baseRents, feld: 'baseRents', eintrag: { from: '2024-03', monthlyCents: 60000, reason: 'index', index: { month: '2023-12', value: 106.1, base: 2020 } } },
     { table: flatRates, feld: 'flatRates', eintrag: { from: '2024-03', monthlyCents: 8000 } },
   ]
+
+  // Spalten, die im Modell zusammen ein Feld sind: der Indexwert einer Stufe (#191).
+  const COLUMNS_OF_FIELD: Readonly<Record<string, string>> = { indexMonth: 'index', indexTenths: 'index', indexBase: 'index' }
 
   await withDatabase(async (opened) => {
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
 
     for (const { table, feld, eintrag } of staffeln) {
       const gespeichert = await opened.write((db) => createEntity(db, 'tenancies', `t-${feld}`, {
-        unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', [feld]: [eintrag],
+        // Art und Indexwert der Kaltmiete gibt es nur bei einer Indexmiete (#191).
+        unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', [feld]: [eintrag], ...(feld === 'baseRents' ? { rentKind: 'index' } : {}),
       }))
       const zurueck = fieldOf(gespeichert, feld)
       for (const spalte of Object.keys(getTableColumns(table))) {
         if (spalte === 'tenancyId') continue
         assert.ok(
-          Object.hasOwn(eintrag, spalte),
+          Object.hasOwn(eintrag, COLUMNS_OF_FIELD[spalte] ?? spalte),
           `${feld}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,
         )
       }

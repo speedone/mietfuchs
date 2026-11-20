@@ -74,6 +74,10 @@ import type {
   SpreadYears,
   PropertyKind,
   RentDueRule,
+  RentChangeReason,
+  RentIncreaseKind,
+  RentIncreaseStatus,
+  RentKind,
   Settings,
   StoredAssessment,
   UploadKind,
@@ -124,6 +128,12 @@ export const PREVIOUS_SUPPLIES = exactly<PreviousSupply>()(['landlord', 'tenant'
 export const PAYMENT_KINDS = exactly<PaymentKind>()(['rent', 'settlement'] as const)
 // Die Fälligkeit der Miete laut Vertrag (#334); NULL heißt gesetzlich. Beschriftungen in client/src/tenancyModel.ts.
 export const RENT_DUE_RULES = exactly<RentDueRule>()(['startWorkday', 'dayOfMonth', 'inArrears'] as const)
+// Mieterhöhung (#191): Art einer Stufe der Kaltmiete, Art der Miete, Art und Stand eines Verlangens; Beschriftungen im Client
+// (client/src/tenancyModel.ts).
+export const RENT_CHANGE_REASONS = exactly<RentChangeReason>()(['agreement', 'staggered', 'index', 'comparison', 'modernization'] as const)
+export const RENT_KINDS = exactly<RentKind>()(['free', 'staggered', 'index'] as const)
+export const RENT_INCREASE_KINDS = exactly<RentIncreaseKind>()(['comparison', 'index'] as const)
+export const RENT_INCREASE_STATUS = exactly<RentIncreaseStatus>()(['draft', 'sent', 'agreed', 'partial', 'refused', 'withdrawn'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 // Kautionsbuchungen (#228): Art, Zweck einer Verrechnung und Form der Sicherheit; Beschriftungen im Client.
 export const DEPOSIT_ENTRY_KINDS = exactly<DepositEntryKind>()(['received', 'interest', 'applied', 'refunded'] as const)
@@ -220,6 +230,9 @@ export const properties = sqliteTable(
     // aller verteilten Positionen des Objekts abgezogen wird (Verkauf, Schenkung, Erbfall, Ende der Vermietung). NULL
     // heißt kein Ende. Bedingung im zweiten Schritt.
     spreadRestYear: integer('spread_rest_year'),
+    // Kappungsgrenzen-Verordnung nach § 558 Abs. 3 Satz 2, 3 BGB (#191): ja (15 %), nein (20 %), NULL unbekannt (rechnet mit
+    // 15 %). Getrennt von `tight_market`. Bedingung im zweiten Schritt.
+    rentCapReduced: integer('rent_cap_reduced', { mode: 'boolean' }),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
@@ -237,6 +250,8 @@ export const properties = sqliteTable(
     // Kopf der Anlage V (#96 PR 2): Daten als Tag, das Aktenzeichen höchstens 40 Zeichen (Schutz gegen versehentlich
     // Eingefügtes; eine Prüfung der Form wäre geraten, die Formate sind je Land verschieden). `length` zählt Zeichen.
     check('properties_ground_tax_file_number_valid', sql.raw(`"ground_tax_file_number" IS NULL OR length("ground_tax_file_number") <= 40`)),
+    // Kappungsgrenzen-Verordnung (#191): ja oder nein, NULL unbekannt.
+    check('properties_rent_cap_reduced_known', sql.raw(`"rent_cap_reduced" IS NULL OR "rent_cap_reduced" IN (0, 1)`)),
     isoDate('properties_purchase_contract_on_valid', 'purchase_contract_on'),
     isoDate('properties_ownership_transfer_on_valid', 'ownership_transfer_on'),
     isoDate('properties_building_application_on_valid', 'building_application_on'),
@@ -350,6 +365,10 @@ export const tenancies = sqliteTable(
     rentDue: text('rent_due', { enum: RENT_DUE_RULES }),
     rentDueDay: integer('rent_due_day'),
     firstRentAtStart: integer('first_rent_at_start', { mode: 'boolean' }),
+    // Art der Miete und Ausschluss von Erhöhungen (§ 557 Abs. 3 BGB) für die Mieterhöhung (#191); NULL heißt nicht
+    // beantwortet. Bedingungen im zweiten Schritt.
+    rentKind: text('rent_kind', { enum: RENT_KINDS }),
+    rentIncreaseExcluded: integer('rent_increase_excluded', { mode: 'boolean' }),
   },
   (t) => [
     notNegative('tenancies_persons_not_negative', 'persons'),
@@ -373,6 +392,9 @@ export const tenancies = sqliteTable(
     check('tenancies_rent_due_known', sql.raw(`"rent_due" IS NULL OR "rent_due" IN ('startWorkday', 'dayOfMonth', 'inArrears')`)),
     check('tenancies_rent_due_day_valid', sql.raw(`("rent_due" IS 'dayOfMonth') = ("rent_due_day" IS NOT NULL) AND ("rent_due_day" IS NULL OR (typeof("rent_due_day") = 'integer' AND "rent_due_day" BETWEEN 1 AND 31))`)),
     check('tenancies_first_rent_at_start_valid', sql.raw(`"first_rent_at_start" IS NULL OR "first_rent_at_start" IS 1`)),
+    // Mieterhöhung (#191): Art der Miete aus der Liste, Ausschluss ja oder nein; NULL heißt nicht beantwortet.
+    oneOf('tenancies_rent_kind_known', 'rent_kind', RENT_KINDS),
+    check('tenancies_rent_increase_excluded_known', sql.raw(`"rent_increase_excluded" IS NULL OR "rent_increase_excluded" IN (0, 1)`)),
   ],
 )
 
@@ -464,11 +486,25 @@ export const baseRents = sqliteTable(
       .references(() => tenancies.id, { onDelete: 'cascade' }),
     from: text('from').notNull(),
     monthlyCents: integer('monthly_cents').notNull(),
+    // Art der Stufe (#191); NULL heißt `agreement` (Vertragsbeginn oder Vereinbarung), die sichere Seite für die Fristen.
+    reason: text('reason', { enum: RENT_CHANGE_REASONS }),
+    // Indexwert der Stufe bei einer Indexmiete (#191): Monat 'JJJJ-MM', Wert in Zehnteln, Basisjahr; alle drei oder keiner.
+    // Dass er nur bei einer Indexmiete steht, prüft `guardTenancy`. Bedingungen im zweiten Schritt.
+    indexMonth: text('index_month'),
+    indexTenths: integer('index_tenths'),
+    indexBase: integer('index_base'),
   },
   (t) => [
     primaryKey({ columns: [t.tenancyId, t.from] }),
     // Eine negative Kaltmiete gibt es nicht.
     notNegative('base_rents_monthly_not_negative', 'monthly_cents'),
+    // Mieterhöhung (#191): die Art aus der Liste; der Indexwert ganz oder gar nicht, Monat 'JJJJ-MM', Wert über 0, Basisjahr
+    // vierstellig. Mit IS, weil alle Spalten NULL sein dürfen.
+    oneOf('base_rents_reason_known', 'reason', RENT_CHANGE_REASONS),
+    check('base_rents_index_complete', sql.raw(`("index_month" IS NULL) = ("index_tenths" IS NULL) AND ("index_month" IS NULL) = ("index_base" IS NULL)`)),
+    check('base_rents_index_month_valid', sql.raw(`"index_month" IS NULL OR ("index_month" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("index_month", 6, 2) AS INTEGER) BETWEEN 1 AND 12)`)),
+    check('base_rents_index_tenths_positive', sql.raw(`"index_tenths" IS NULL OR (typeof("index_tenths") = 'integer' AND "index_tenths" > 0)`)),
+    check('base_rents_index_base_valid', sql.raw(`"index_base" IS NULL OR (typeof("index_base") = 'integer' AND "index_base" BETWEEN 1950 AND 2100)`)),
   ],
 )
 
@@ -1729,6 +1765,42 @@ export const depositEntries = sqliteTable('deposit_entries', {
   check('deposit_entries_purpose_valid', sql.raw(`("kind" = 'applied') = ("purpose" IS NOT NULL)`)),
   check('deposit_entries_payment_valid', sql.raw(`"payment_id" IS NULL OR "purpose" IN ('rent', 'settlement')`)),
   isoDate('deposit_entries_date_valid', 'date'),
+])
+
+// ---------- Mieterhöhungen (#191) ----------
+// Ein Verlangen nach § 558 BGB oder eine Erklärung nach § 557b BGB je Mietverhältnis (Entwurf Datenmodell 5). PR 1 legt die
+// Tabelle an, gefüllt wird sie ab PR 3. `basis` ist JSON wie der eingefrorene Abschluss: die Eingaben und die Rechnung, wie
+// sie beim Erstellen galten, für Nachdruck und Prüfung, auch wenn eine spätere Version anders rechnet.
+export const rentIncreases = sqliteTable('rent_increases', {
+  id: text('id').primaryKey().notNull(),
+  tenancyId: text('tenancy_id')
+    .notNull()
+    .references(() => tenancies.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: RENT_INCREASE_KINDS }).notNull(),
+  createdOn: text('created_on').notNull(),
+  // Zugang beim Mieter; NULL heißt noch nicht versandt.
+  receivedOn: text('received_on'),
+  // Erster Monat der neuen Miete, 'JJJJ-MM'.
+  effectiveFrom: text('effective_from').notNull(),
+  fromCents: integer('from_cents').notNull(),
+  toCents: integer('to_cents').notNull(),
+  basis: text('basis').notNull(),
+  status: text('status', { enum: RENT_INCREASE_STATUS }).notNull(),
+  // Die Miete, der der Mieter teilweise zugestimmt hat; genau bei `partial`.
+  agreedCents: integer('agreed_cents'),
+  decidedOn: text('decided_on'),
+}, (t) => [
+  index('rent_increases_tenancy_idx').on(t.tenancyId),
+  oneOf('rent_increases_kind_known', 'kind', RENT_INCREASE_KINDS),
+  oneOf('rent_increases_status_known', 'status', RENT_INCREASE_STATUS),
+  isoDate('rent_increases_created_on_valid', 'created_on'),
+  isoDate('rent_increases_received_on_valid', 'received_on'),
+  isoDate('rent_increases_decided_on_valid', 'decided_on'),
+  periodKeyCheck('rent_increases_effective_from_valid', 'effective_from'),
+  notNegative('rent_increases_from_not_negative', 'from_cents'),
+  notNegative('rent_increases_to_not_negative', 'to_cents'),
+  check('rent_increases_agreed_valid', sql.raw(`("status" IS 'partial') = ("agreed_cents" IS NOT NULL) AND ("agreed_cents" IS NULL OR "agreed_cents" >= 0)`)),
+  check('rent_increases_basis_is_json', sql.raw(`json_valid("basis") AND json_type("basis") = 'object'`)),
 ])
 
 // ---------- Kontoauszug (#188) ----------

@@ -37,7 +37,7 @@ import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
-import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, LocalRentEntry, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, SpreadYears, Tenancy, Unit, UnitDependents, UsageChange } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, LocalRentEntry, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, SpreadYears, Tenancy, Unit, UnitDependents, UsageChange, RentChangeReason, RentIndexValue, RentKind } from '../../../shared/types.ts'
 import { usageChangesOf } from '../../../shared/unitUsage.ts'
 import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
@@ -68,13 +68,13 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, depositEntries, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_DUE_RULES, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, depositEntries, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_CHANGE_REASONS, RENT_DUE_RULES, RENT_KINDS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { linkedTargetRefusal } from './bankGuard.ts'
-import { RENT_DUE_TEXTS } from './errors.ts'
+import { RENT_DATA_TEXTS, RENT_DUE_TEXTS } from './errors.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 import { guardRoomMeter, guardRoomRecipients, guardRooms, guardRoomsRemoval, guardRoomTenancy, roomCount, roomSplitOf, roomViolations } from './rooms.ts'
 import { dropUnitFromMeterRest, guardMeterRest, meterRestUnitLinks, meterRestUnitRefs, meterRestUsedText, meterRestUsers, meterRestViolations, MeterRestError, readMeterRest, writeMeterRest } from './meterRest.ts'
@@ -233,6 +233,67 @@ const personEntry = (row: unknown): PersonEntry | null => {
 const moneyEntry = (row: unknown): PrepaymentEntry | null => {
   const from = asOptionalText(raw(row, 'from'))
   return from === undefined ? null : { from, monthlyCents: asNumber(raw(row, 'monthlyCents'), 0) }
+}
+
+// ---------- Mieterhöhung (#191) ----------
+
+// Eine Angabe zur Mieterhöhung, die keine ist: ein Satz statt eines Datenbankfehlers (400).
+export class RentDataError extends Error {
+  status = 400 as const
+}
+const MONTH_FORMAT = /^\d{4}-(0[1-9]|1[0-2])$/
+const monthText = (month: string): string => `${month.slice(5, 7)}.${month.slice(0, 4)}`
+// Art der Miete: fehlend oder `null` heißt nicht beantwortet; ein unbekannter Wert ist ein Satz, denn still „nicht
+// beantwortet“ verlöre die Angabe.
+function rentKindOf(v: unknown): RentKind | undefined {
+  if (v === null || v === undefined || v === '') return undefined
+  const kind = RENT_KINDS.find((k) => k === v)
+  if (kind === undefined) throw new RentDataError(RENT_DATA_TEXTS.kind)
+  return kind
+}
+// Art einer Stufe: fehlend heißt `agreement` (die sichere Seite) und wird nicht gespeichert; ein unbekannter Wert ist ein
+// Satz und wird nicht still zu `agreement`, sonst wäre eine Modernisierung als Vereinbarung erfasst.
+function rentReasonOf(v: unknown): RentChangeReason | undefined {
+  if (v === null || v === undefined || v === '') return undefined
+  const reason = RENT_CHANGE_REASONS.find((r) => r === v)
+  if (reason === undefined) throw new RentDataError(RENT_DATA_TEXTS.reason)
+  return reason
+}
+// Der Indexwert einer Stufe: Monat, Wert mit höchstens einer Nachkommastelle (gespeichert in Zehnteln), Basisjahr.
+function rentIndexOf(v: unknown, from: string): RentIndexValue | undefined {
+  if (v === null || v === undefined) return undefined
+  const where = MONTH_FORMAT.test(from) ? `Stufe ab ${monthText(from)}: ` : ''
+  if (!isObject(v)) throw new RentDataError(`${where}${RENT_DATA_TEXTS.indexComplete}`)
+  const month = raw(v, 'month')
+  const value = raw(v, 'value')
+  const base = raw(v, 'base')
+  if (month === undefined || month === null || value === undefined || value === null || base === undefined || base === null) throw new RentDataError(`${where}${RENT_DATA_TEXTS.indexComplete}`)
+  if (typeof month !== 'string' || !MONTH_FORMAT.test(month)) throw new RentDataError(`${where}${RENT_DATA_TEXTS.indexMonth}`)
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) throw new RentDataError(`${where}${RENT_DATA_TEXTS.indexValue}`)
+  const tenths = Math.round(value * 10)
+  if (Math.abs(value * 10 - tenths) > 1e-6 || tenths <= 0) throw new RentDataError(`${where}${RENT_DATA_TEXTS.indexValue}`)
+  if (typeof base !== 'number' || !Number.isInteger(base) || base < 1950 || base > 2100) throw new RentDataError(`${where}${RENT_DATA_TEXTS.indexBase}`)
+  return { month, value: tenths / 10, base }
+}
+// Eine Stufe der Kaltmiete mit Art und Indexwert (#191). Ohne beides wie jede andere Staffel.
+const rentEntry = (row: unknown): RentEntry | null => {
+  const money = moneyEntry(row)
+  if (money === null) return null
+  const reason = rentReasonOf(raw(row, 'reason'))
+  const index = rentIndexOf(raw(row, 'index'), money.from)
+  return { ...money, ...(reason !== undefined ? { reason } : {}), ...(index !== undefined ? { index } : {}) }
+}
+// Was nur zusammen mit der Art der Miete stimmt (Wächter am Mietverhältnis): ein Indexwert und die Art „Anpassung einer
+// Indexmiete“ nur bei einer Indexmiete, „Stufe einer Staffelmiete“ nur bei einer Staffelmiete. Wer die Art der Miete
+// wechselt, nimmt Stufen, die nicht mehr passen, nicht still mit.
+function rentScheduleProblem(t: Tenancy): string | null {
+  for (const e of t.baseRents) {
+    const at = `Die Stufe ab ${monthText(e.from)}`
+    if (e.index !== undefined && t.rentKind !== 'index') return `${at} trägt einen Indexwert. Einen Indexwert gibt es nur bei einer Indexmiete. Bitte wählen Sie bei „Art der Miete“ „Indexmiete“ oder entfernen Sie den Indexwert.`
+    if (e.reason === 'index' && t.rentKind !== 'index') return `${at} ist als Anpassung einer Indexmiete erfasst. Die gibt es nur bei einer Indexmiete. Bitte wählen Sie bei „Art der Miete“ „Indexmiete“ oder eine andere Art der Stufe.`
+    if (e.reason === 'staggered' && t.rentKind !== 'staggered') return `${at} ist als Stufe einer Staffelmiete erfasst. Die gibt es nur bei einer Staffelmiete. Bitte wählen Sie bei „Art der Miete“ „Staffelmiete“ oder eine andere Art der Stufe.`
+  }
+  return null
 }
 
 // Jahreskorrektur: Zeitraumschlüssel ('JJJJ-MM') auf Betrag (#208). Ein Tab von vor dem Update
@@ -491,7 +552,7 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     heatingPrepayments: merged(body, 'heatingPrepayments', current.heatingPrepayments, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
     heatingPrepaymentOverrides: merged(body, 'heatingPrepaymentOverrides', current.heatingPrepaymentOverrides, readHeatingOverrides),
     prepaymentOverrides: merged(body, 'prepaymentOverrides', current.prepaymentOverrides, readOverrides),
-    baseRents: merged(body, 'baseRents', current.baseRents, (v) => readSchedule<RentEntry>(v, moneyEntry)),
+    baseRents: merged(body, 'baseRents', current.baseRents, (v) => readSchedule<RentEntry>(v, rentEntry)),
     email: merged(body, 'email', current.email, asOptionalText),
     phone: merged(body, 'phone', current.phone, asOptionalText),
     correspondenceAddress: merged(body, 'correspondenceAddress', current.correspondenceAddress, asOptionalText),
@@ -521,9 +582,16 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     ...(rentDue !== undefined ? { rentDue } : {}),
     ...(rentDueDay !== undefined ? { rentDueDay } : {}),
     ...(merged(body, 'firstRentAtStart', current.firstRentAtStart, (v) => (nullableBoolean(v, 'Erste Miete schon bei Mietbeginn fällig') === true ? true : undefined)) === true ? { firstRentAtStart: true } : {}),
+    // Mieterhöhung (#191): Art der Miete und Ausschluss; `null` heißt nicht beantwortet und wird nicht gespeichert.
+    ...withValue('rentKind', merged(body, 'rentKind', current.rentKind ?? undefined, rentKindOf)),
+    ...withValue('rentIncreaseExcluded', merged(body, 'rentIncreaseExcluded', current.rentIncreaseExcluded ?? undefined, (v) => nullableBoolean(v, '„Schließt der Vertrag Mieterhöhungen aus?“') ?? undefined)),
     notes: merged(body, 'notes', current.notes, asOptionalText),
   }
 }
+
+// Ein Feld nur mit Wert: So hat ein Mietverhältnis ohne Angabe den Schlüssel gar nicht, wie es read.ts liest.
+const withValue = <K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } =>
+  (value === undefined ? {} : { [key]: value }) as { [P in K]?: V }
 
 // Der Zeitraum einer Kostenposition (#208). `period` geht vor; ein Tab von vor dem Update schickt
 // stattdessen `year`, und das ist der Kalenderzeitraum dieses Jahres. Ob das Objekt den Zeitraum
@@ -2176,6 +2244,8 @@ function holdNoteOf(v: unknown): string | undefined {
 }
 
 async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  const rentProblem = rentScheduleProblem(after)
+  if (rentProblem !== null) throw new RentDataError(rentProblem)
   if (after.depositHoldCents !== undefined && after.depositHoldNote === undefined) throw new DepositHoldError('Bitte nennen Sie den Grund für den Einbehalt.')
   // Laienprobe B1: Schickt das Formular die Marke des Stands, den es geladen hat, muss sie noch
   // stimmen. Ein Rumpf ohne Marke (Mieterwechsel, Jahreskorrektur aus der Abrechnung, ein alter Tab)
@@ -2526,6 +2596,8 @@ function mergeProperty(current: Property, body: unknown): Property {
     completedOn: merged(body, 'completedOn', current.completedOn ?? null, (v) => headerDateOrNull(v, 'Der Tag der Fertigstellung')),
     // § 82b Abs. 2 EStDV (#262): das Jahr, in dem der Rest aller Verteilungen des Objekts abgezogen wird.
     spreadRestYear: merged(body, 'spreadRestYear', current.spreadRestYear ?? null, readSpreadRestYear),
+    // Kappungsgrenzen-Verordnung (#191): ja, nein oder `null` (weiß nicht); ein anderer Wert ist ein Satz.
+    rentCapReduced: merged(body, 'rentCapReduced', current.rentCapReduced ?? null, rentCapReducedOf),
   }
   // Die Geltung gehört nur zu „ja“; „nein“ und „unbekannt“ nehmen sie mit (Bedingung
   // properties_tight_market_dates_valid).
@@ -2537,6 +2609,12 @@ function mergeProperty(current: Property, body: unknown): Property {
     throw new HeatingError(400, 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.')
   }
   return next
+}
+
+function rentCapReducedOf(v: unknown): boolean | null {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v !== 'boolean') throw new RentDataError('Ob in der Gemeinde eine Kappungsgrenzen-Verordnung gilt, ist ja, nein oder „weiß nicht“. Bitte wählen Sie eins davon.')
+  return v
 }
 
 // Kopf der Anlage V (#96 PR 2): dieselben Sätze wie die Bedingungen in errors.ts. HeatingError, weil die
@@ -2680,6 +2758,8 @@ const tenancyRow = (t: Tenancy) => ({
   rentDue: orNull(t.rentDue),
   rentDueDay: t.rentDue === 'dayOfMonth' ? orNull(t.rentDueDay) : null,
   firstRentAtStart: t.firstRentAtStart === true ? true : null,
+  rentKind: t.rentKind ?? null,
+  rentIncreaseExcluded: t.rentIncreaseExcluded ?? null,
 })
 const costItemRow = (c: CostItem) => ({
   id: c.id, propertyId: c.propertyId, period: c.period, category: c.category, description: c.description, vendor: orNull(c.vendor),
@@ -2749,7 +2829,14 @@ async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
     await db.insert(prepayments).values(byFrom(t.prepayments).map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   }
   if (t.baseRents.length > 0) {
-    await db.insert(baseRents).values(byFrom(t.baseRents).map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
+    await db.insert(baseRents).values(byFrom(t.baseRents).map((e) => ({
+      tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents,
+      // Art und Indexwert der Stufe (#191); der Wert in Zehnteln, wie geprüft (`rentIndexOf`).
+      reason: e.reason ?? null,
+      indexMonth: e.index?.month ?? null,
+      indexTenths: e.index !== undefined ? Math.round(e.index.value * 10) : null,
+      indexBase: e.index?.base ?? null,
+    })))
   }
   const korrekturen = Object.entries(t.prepaymentOverrides).flatMap(([schluessel, betrag]) => {
     const period = parsePeriodKey(schluessel)

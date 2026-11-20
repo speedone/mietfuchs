@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, MeterRest, MeterRestTarget, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, UsageChange, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, MeterRest, MeterRestTarget, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, RentIncrease, RentIndexValue, Settings, Tenancy, Unit, UsageChange, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -88,7 +88,11 @@ type _Tenancies = Assert<Matches<typeof schema.tenancies.$inferSelect, TenancyCo
 
 type _PersonHistory = Assert<Matches<Omit<typeof schema.personHistory.$inferSelect, 'tenancyId'>, PersonEntry>>
 type _Prepayments = Assert<Matches<Omit<typeof schema.prepayments.$inferSelect, 'tenancyId'>, PrepaymentEntry>>
-type _BaseRents = Assert<Matches<Omit<typeof schema.baseRents.$inferSelect, 'tenancyId'>, RentEntry>>
+// Der Indexwert der Stufe (#191) ist im Modell ein Objekt, in der Tabelle drei Spalten (Wert in Zehnteln).
+type BaseRentColumns = Omit<RentEntry, 'index'> & { indexMonth?: RentIndexValue['month']; indexTenths?: number; indexBase?: RentIndexValue['base'] }
+type _BaseRents = Assert<Matches<Omit<typeof schema.baseRents.$inferSelect, 'tenancyId'>, BaseRentColumns>>
+// Die Verlangen der Mieterhöhung (#191): `basis` ist JSON als Text.
+type _RentIncreases = Assert<Matches<typeof schema.rentIncreases.$inferSelect, Omit<RentIncrease, 'basis'> & { basis: string }>>
 
 // `prepaymentOverrides` ist im Modell `Record<string, number>`, Zeitraum auf Betrag (#208). In der
 // Tabelle sind daraus zwei Spalten geworden; geprüft wird, dass der Schlüssel ein Zeitraumschlüssel
@@ -344,6 +348,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'property_letter_designs',
       'property_letter_texts',
       'readings',
+      'rent_increases',
       'settings',
       'sqlite_sequence',
       'tenancies',

@@ -383,3 +383,34 @@ test('Betriebsstrom: jede Bedingung, deren Endung allein den falschen Satz ergä
     for (const text of [included, deduction, link, basis, ohneRechnung, rechnungOhneAbzug]) assert.doesNotMatch(text, /JJJJ-MM/, text)
   })
 })
+
+test('Mieterhöhung: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (#191)', async () => {
+  // Repository und Wächter fangen das vorher ab; die Bedingungen sind das Netz darunter.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw(`INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('u', 'objekt-1', 'EG', 50, 1)`)))
+    await opened.write((db) => db.run(sql.raw(`INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t', 'u', 'M', 1, '2025-01-01')`)))
+    const rent = (from: string, columns: string, values: string) =>
+      `INSERT INTO base_rents (tenancy_id, "from", monthly_cents${columns}) VALUES ('t', '${from}', 50000${values})`
+    const complete = await run(rent('2025-01', ', index_month', ", '2025-01'"))
+    assert.match(complete, /Indexwert.*Monat, Wert und Basisjahr/, complete)
+    const tenths = await run(rent('2025-02', ', index_month, index_tenths, index_base', ", '2025-01', 0, 2020"))
+    assert.match(tenths, /Indexwert.*größer als 0/, tenths)
+    const base = await run(rent('2025-03', ', index_month, index_tenths, index_base', ", '2025-01', 1209, 20"))
+    assert.match(base, /Basisjahr/, base)
+    const month = await run(rent('2025-04', ', index_month, index_tenths, index_base', ", '2025-13', 1209, 2020"))
+    assert.match(month, /Monat des Indexwerts/, month)
+    const reason = await run(rent('2025-05', ', reason', ", 'mietspiegel'"))
+    assert.match(reason, /Art der Stufe/, reason)
+    const increase = (id: string, columns: string, values: string) =>
+      `INSERT INTO rent_increases (id, tenancy_id, kind, created_on, effective_from, from_cents, to_cents, basis, status${columns}) VALUES ('${id}', 't', 'comparison', '2026-11-20', '2027-02', 50000, 55000, '{}', 'draft'${values})`
+    const received = await run(increase('a', ', received_on', ", '20.11.2026'"))
+    assert.match(received, /Zugang.*kein Datum/, received)
+    const agreed = await run(increase('b', ', agreed_cents', ', 52000'))
+    assert.match(agreed, /teilweise/, agreed)
+    const json = await run(`INSERT INTO rent_increases (id, tenancy_id, kind, created_on, effective_from, from_cents, to_cents, basis, status) VALUES ('c', 't', 'comparison', '2026-11-20', '2027-02', 50000, 55000, '[]', 'draft')`)
+    assert.match(json, /Mieterhöhung/, json)
+    assert.doesNotMatch(json, /Abrechnung/, json)
+    for (const text of [complete, tenths, base, received, agreed, json]) assert.doesNotMatch(text, /Gemeinschaft|JJJJ-MM\)/, text)
+  })
+})
