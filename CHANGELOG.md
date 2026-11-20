@@ -96,6 +96,128 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
   Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
   Issue, in dem sie tatsächlich geplant ist.
+- Abrechnung vor dem Versand: Die Kontrollansicht zeigte den Saldo je Mieter mit umgekehrtem Vorzeichen zur Beschriftung;
+  dort steht jetzt das Ergebnis in Worten („Nachzahlung 300,00 €“, „Guthaben 1.500,00 €“) wie in der Übersicht. Hat ein
+  Mieter eine Nachzahlung und fordert das Anschreiben zur Überweisung auf, ohne ein Konto zu nennen, weil keine IBAN
+  eingetragen ist, weisen „Zu prüfen“ und das Fenster „Drucken“ bis zum Versand darauf hin (ein Hinweis, gedruckt wird
+  trotzdem; nicht mit Briefpapier). Das Anschreiben kündigt keine Anpassung der Vorauszahlung mehr an, wenn der neue Betrag
+  schon im abgerechneten Zeitraum galt und weiter gilt; das Seitenfenster „Anschreiben bearbeiten“ und die Übersicht sagen
+  es. Die Übersicht je Mieter nennt vor dem Abschluss, welche
+  neue Vorauszahlung der Brief ab wann ankündigt, und wo sich das ändern lässt, und sie sagt, dass als Vorauszahlungen
+  angesetzt ist, was laut Vertrag zu zahlen war. Abgeschlossene Abrechnungen bleiben, wie sie sind.
+- Stammdaten: Ein Auszug vor dem Einzug wird nicht mehr gespeichert; das Formular meldet es am Feld „Auszug“. Vorher
+  stand der Mieter danach in keiner Abrechnung, und sein Anteil lief ohne Hinweis als Leerstand zum Vermieter. Ebenso
+  lehnt Mietfuchs ein Datum ab, das es nicht gibt (Einzug, Auszug, Vertragsdatum, Zahlung, Ablesung, Einbau eines
+  Zählers); ein leerer Einzug ließ vorher Abrechnung, Mietkonto und Steuer des ganzen Objekts scheitern. Geprüft wird
+  nur, was neu eingetragen oder geändert wird: Ein Bestand, der so etwas schon enthält, bleibt bearbeitbar. Steht in
+  einem Bestand schon ein Mietverhältnis ohne lesbaren Einzug, nennen Abrechnung, Mietkonto, Steuer und Cockpit es jetzt
+  mit Namen und Wohnung, statt mit einer technischen Meldung zu scheitern. Ein Zählerfoto, auf dem die KI-Auswertung
+  das Datum deutsch geschrieben liest, wird weiter übernommen.
+- Löschen: Die Rückfrage zu einem Mietverhältnis nennt jetzt Zahl und Zeitraum der Zahlungen, die Kautionsbuchungen,
+  ob eine abgeschlossene Abrechnung das Mietverhältnis nennt, und dass Mietkonto und Steuerübersicht der betroffenen
+  Jahre die Zahlungen verlieren, dazu den Weg „Auszug eintragen statt löschen“. Die Rückfrage zu einer Wohnung nennt
+  auch Kautionsbuchungen und abgeschlossene Abrechnungen, die zu einem Zähler Zahl und Jahre der Ablesungen. Beim
+  Mietverhältnis stehen auch Zuordnungen zum Kontoauszug, Mieterhöhungen und Angaben an Kostenpositionen dabei. Alle drei
+  sagen, wie weit sich das Löschen auf der Seite „Verlauf“ zurücknehmen lässt (gleich danach für sich allein, später nur
+  mit allem Späteren und nicht über einen Abschluss, ein eingespieltes Backup oder ein Update hinweg); bei der Wohnung
+  stand vorher, es lasse sich gar nicht rückgängig machen.
+- Meldungen: Eine negative Wohnfläche und ein Verweis auf eine inzwischen gelöschte Wohnung, ein gelöschtes
+  Mietverhältnis oder einen gelöschten Zähler bekommen einen Satz ohne technischen Befund.
+- Belege, Rückwege: Am Beleg im Ordner stehen „Position öffnen“, „Zuordnung lösen …“ (mit Rückfrage, für von Hand
+  angehängte Belege) und „Auswertung zeigen“. Eine fertig gebuchte Auswertung war nach dem Seitenwechsel nirgends mehr
+  zu finden; jetzt holt „Auswertung zeigen“ sie in den Eingang zurück, und eine verknüpfte Zeile lässt sich dort lösen.
+  An einer angelegten Zeile steht, wie sie sich rückgängig machen lässt. „Betrag prüfen“ kommt nach dem Zuordnen in den
+  Blick und bekommt den Fokus; steht der Kasten in der anderen Ansicht, nennt die Seite ihn und führt hin. Die Karte
+  einer Auswertung nennt neben dem Rechnungssteller den Dateinamen. Ohne KI beschreibt der Eingang das Erfassen von Hand
+  als normalen Weg und verweist auf die Seite Kosten. „Position öffnen“ wechselt bei einer Position eines anderen
+  Zeitraums erst dorthin.
+- Belege: Ein abgelegter Beleg ist jetzt gespeichert, bevor die KI ihn auswertet, auch jeder weitere eines Stapels.
+  Vorher lag nur der Beleg auf dem Rechner, der gerade ausgewertet wurde: Wer das Fenster schloss oder die Seite neu
+  lud, während die KI arbeitete oder hing, verlor die wartenden Belege, und „Abbrechen“ an der laufenden Auswertung
+  löschte auch diesen. Jetzt geht dabei nur die Auswertung verloren; der Beleg steht im Eingang unter „Ohne Position“
+  und lässt sich von Hand erfassen oder erneut auswerten. Das gilt auch für die Ablage auf der Seite Kosten.
+  Gespeichert wird der Reihe nach: Jeder Beleg zeigt, ob er noch auf das Speichern wartet, gerade gespeichert wird oder
+  gespeichert ist. Der Verlauf führt je Beleg jetzt zwei Einträge („Beleg hochgeladen“ und „Beleg mit KI ausgewertet“);
+  wer die Auswertung rückgängig macht, behält den Beleg. Ein PDF, das sich nicht lesen lässt (beschädigt oder mit
+  Passwort), wird ebenfalls gespeichert und steht unter „Ohne Position“; eine leere Datei wird mit einer Meldung
+  abgelehnt.
+- Belege: Eine Rechnung mit vielen Zeilen, etwa die Jahresrechnung eines Versorgers als E-Rechnung, lässt sich als eine
+  Kostenposition buchen. Unter der Tabelle steht dafür „Alle Zeilen als eine Position anlegen“: Kostenart und
+  Beschreibung wählen, das Fenster nennt vorher Position und Summe. Gutschriften bleiben offen und werden mit Betrag
+  genannt, ein §35a-Lohnanteil kommt nur mit Häkchen mit, und im Verlauf stehen die beiden Schritte der Buchung
+  unterscheidbar („1 Zeile angelegt“, „13 Zeilen verknüpft“). Wer Zeile für Zeile
+  bucht, findet nach dem Anlegen der ersten Zeile deren Position bei den übrigen unter „Was geschieht?“. Bereits
+  bezahlte Abschläge stehen als Hinweis an der Auswertung und färben nicht mehr jede Zeile rot; die Zeilen sind dann
+  gelb und nicht vorab angehakt, weil einzeln gebuchte Abschläge sonst doppelt zählten. Gleichlautende Begründungen
+  mehrerer Zeilen stehen einmal.
+- E-Rechnung: Ein Abzug früherer Zahlungen wird auch unter den Namen Teilrechnung, Teilzahlung, Akonto, Vorauskasse
+  und Vorschuss erkannt und als Warnung genannt.
+- Belege: „Jahr der Buchung“ bietet immer auch das Jahr an, für das der Beleg abgelegt wurde, auch wenn die Auswertung
+  ein weit früheres Jahr aus dem Beleg liest.
+- Backup und Wiederherstellen: Lässt sich im Datenordner gerade nicht schreiben, entsteht das Backup trotzdem (vorher
+  kam ein Serverfehler mit einer Meldung der Datenbank); scheitert ein Backup, zeigt der Browser eine lesbare Seite mit
+  dem Weg zurück statt einer rohen Fehlermeldung. Eine Datei, die kein ZIP-Archiv ist, wird mit dem Hinweis auf einen
+  unvollständigen Download abgelehnt und dem Satz, dass Ihre Daten unverändert sind. Nach dem Wiederherstellen aus den
+  Einstellungen bestätigt Mietfuchs einmal „Ihr Backup ist eingespielt“. Startet Mietfuchs in einem schreibgeschützten
+  Ordner ohne `db.json`, verweist die Konsole nicht mehr auf diese Datei.
+- Gleichzeitig bearbeiten: War dieselbe Kostenposition in zwei Fenstern geöffnet (zwei Tabs, oder Handy und Rechner im
+  Heimnetz), überschrieb das zuletzt gespeicherte Fenster still, was das andere geändert hatte, etwa einen neuen
+  Betrag. Jetzt lehnt Mietfuchs das zweite Speichern ab, nennt im Formular, was sich inzwischen geändert hat, und
+  lässt die Eingabe stehen. Dasselbe gilt für Wohnungen, Zähler und das Objekt und nach einer Belegbuchung oder dem
+  Aufteilen einer Rechnung. Wurde der Datensatz inzwischen gelöscht, sagt die Meldung das statt „Nicht gefunden“.
+- Zählerstände in Abrechnung und Cockpit:
+  - Negativer Verbrauch: Ergab ein Wohnungszähler für einen Mieter, eine Eigennutzung oder einen Leerstand einen
+    negativen Verbrauch (Endstand unter dem Anfangsstand), verteilte Mietfuchs die Position trotzdem nach Verbrauch;
+    ein Mieter bekam einen negativen Anteil, die übrigen zusammen mehr als die Rechnung, und die Abrechnung ließ sich
+    ohne Rückfrage abschließen. Jetzt steht an der Abrechnung der Fehler „Negativer Verbrauch im Verteilschlüssel“, die
+    Position wird nicht verteilt und steht beim Vermieter, bis die Ablesung stimmt, und Abschließen und Drucken fragen
+    nach. **Für offene Abrechnungen heißt das:** Nur eine Position, in der ein solcher negativer Verbrauch steckt,
+    ändert ihre Zahlen (die Anteile der Mieter fallen auf 0). Ein Rücksprung mitten im Zeitraum, der sich beim selben
+    Mieter wieder ausgleicht, und Rücksprünge am Hauptzähler ändern nichts; sie stehen wie bisher als Warnung auf der
+    Seite Zähler. Abgeschlossene Abrechnungen bleiben, wie sie sind. Am häufigsten trifft es einen Leerstand oder
+    Mieterwechsel, bei dem zwei Ableser verschieden runden (Auszug mit 45, Einzug mit 44,8): Der Leerstand dazwischen
+    hat dann negativen Verbrauch, und die Position wird nicht verteilt, bis einer der beiden Stände berichtigt ist.
+  - Cockpit: Die Zeile „Zählerstände“ meldete ab dem zweiten Jahr jeden Zähler als vollständig, weil sie die
+    Ablesungen aller Jahre zählte. Sie prüft jetzt, ob Ablesungen den gewählten Zeitraum von Anfang bis Ende decken,
+    und nennt die Tage, die fehlen. Ein getauschter Zähler gilt bis zu seiner letzten Ablesung, ein Zähler in einer
+    erst im Zeitraum bezogenen Wohnung ab dem Einzug. Bei einem Wohnungszähler dürfen am Anfang und Ende zusammen bis
+    zu zwei Wochen fehlen (im kurzen Zeitraum entsprechend weniger); die Zeile bleibt dann grün und nennt diese Tage.
+    Wurde ein Zähler erst im Lauf des Zeitraums eingebaut, tragen Sie am Zähler das Datum unter „Eingebaut am“ ein;
+    das Feld gibt es jetzt bei jedem Zähler, und Mietfuchs erwartet Ablesungen dann erst ab diesem Tag.
+  - Eine Ablesung mit Datum in der Zukunft (etwa 2052 statt 2025) nennen Zähler-Seite, Cockpit und Abrechnung als
+    Warnung, statt den Verbrauch still nach Tagen herunterzurechnen; gerechnet wird weiter wie erfasst.
+  - Hat eine Wohnung einen Zähler, dem nur die Stände des Zeitraums fehlen, heißt der Hinweis nicht mehr „Wohnung ohne
+    Zähler“, sondern „Zähler im Zeitraum nicht abgelesen“ und führt zum Zähler. Die Zahlen bleiben dieselben.
+- Heizung, Hinweise der Abrechnung: Werden die Heizkosten ganz nach Wärmezählern verteilt, ohne Grundkosten nach Fläche,
+  weist die Abrechnung jetzt darauf hin, dass die Heizkostenverordnung höchstens 70 % nach Verbrauch vorsieht und ein
+  höherer Anteil nur mit einer Vereinbarung bleibt (§ 7 Abs. 1, § 10 HeizkostenV); enthält die Position auch das
+  Warmwasser, nennt der Hinweis, dass es abzutrennen ist. Er ist eine Auskunft und färbt das Cockpit nicht. Liegt der
+  Anteil nach Verbrauch neben Grundkosten über 70 %, nennt der bestehende Hinweis jetzt ebenfalls § 10. Ist bei der eigenen Heizkostenabrechnung eine Erfassung
+  gewählt, aber noch kein Gerät angelegt (etwa Heizkostenverteiler), zeigt die Seite Heizkosten die Wohnungen nicht
+  mehr als „abgelesen“, sondern nennt den fehlenden Schritt, und der Hinweis „Kein Verbrauch erfasst“ sagt, dass die
+  Geräte auf der Seite „Zähler & Stände“ anzulegen sind. Kein Betrag ändert sich; abgeschlossene Abrechnungen bleiben,
+  wie sie sind.
+- Eigene Heizkostenabrechnung: Der Ausweis lässt sich nachrechnen. Verbrauch, Fläche und umbauter Raum stehen so genau
+  da, wie gerechnet wird (35,4 MWh statt „35 MWh“, 72,5 m²), ganze Zahlen weiter ohne Nachkommastellen; der Preis je
+  Einheit bekommt so viele Stellen, dass Menge mal Preis den gedruckten Betrag bis auf Rundung von höchstens einem Cent
+  ergibt. Je Mieter stehen Grund- und Verbrauchskosten jetzt getrennt, die Grundkosten mit der Fläche der Wohnung und,
+  wer nur einen Teil der Heizperiode dort wohnte, mit seinem Anteil an Gradtagen oder Tagen; weil jede Rechnung für
+  sich auf Cent verteilt wird, können sie von Fläche mal Preis um einen Cent je verteilter Rechnung abweichen. Die Beträge ändern sich
+  nicht, auch nicht in abgeschlossenen Abrechnungen.
+- Eigene Heizkostenabrechnung: Der Block „Heizkostenabrechnung“ nennt je Mieter für Heizung und Warmwasser zusammen
+  jetzt den Betrag seiner Kostenzeilen. Bei mehreren Heizpositionen konnte er um einen Cent von der Kostentabelle
+  desselben Blatts abweichen. Der Hinweis zur Kürzung nur auf den Anteil Warmwasser rechnet mit demselben Betrag wie
+  der Block und kann sich dadurch um einen Cent ändern. Kosten, Vorauszahlungen und Salden waren und bleiben richtig;
+  abgeschlossene Abrechnungen bleiben, wie sie sind. Für eine Heizposition, die wegen eines Fehlers nicht verteilt
+  wird, gilt das nicht; den Fehler nennt die Abrechnung wie bisher.
+- Getrennte Heizkostenabrechnung einschalten: Verlangt Mietfuchs nach „Speichern“ die Bestätigung zu einer abgelaufenen
+  Frist, bleiben die eingetragenen Heizanteile stehen. Vorher standen sie danach wieder auf der Vorbelegung, ohne
+  bekannten Anteil auf 0,00 €.
+- Eigene Heizkostenabrechnung und eigener Zeitraum der Heizung: Das Fenster „Heizkosten selbst abrechnen“ sagt vor dem
+  Speichern, dass ein abweichender Zeitraum der Heizung zuerst einzustellen ist. Wer die Reihenfolge schon anders
+  gewählt hat, stellt die Heizung auf „Niemand“ zurück, ändert den Zeitraum und richtet die eigene Abrechnung neu ein;
+  die Ablehnung nennt diesen Weg, und er war vorher versperrt, weil nach dem Zurückstellen eine Angabe der Einrichtung
+  stehen blieb.
 
 ## [0.18.1] – 2026-11-19
 

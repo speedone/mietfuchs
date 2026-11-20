@@ -105,11 +105,12 @@ describe('Ausweis und Ableseergebnis (Entwurf 8.8, § 6 Abs. 1 Satz 2)', () => {
     ])
   })
   // Systemprüfung: Grund- und Verbrauchskosten stehen je Nutzer getrennt (7.200 kWh mal 0,098490 € = 709,13 €).
+  // Der Stand des Servers seit #679 (calc-heizkostenabrechnung.test.ts): C1 Heizung 103.329 ct als Summe seiner Zeilen.
   it('Nutzerzeile mit Verbrauch, Gradtagen und Betrag', () => {
-    const c1 = { key: 'C1', role: 'tenancy' as const, tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7200, waterConsumption: 38, heatingGroup: false, waterGroup: false, heatingCents: 103330, waterCents: 29823, heatingCo2Cents: 0, waterCo2Cents: 0 }
-    expect(userLine({ ...c1, heatingCo2Cents: 9281 }, self)).toContain(`Heizung 7.200 kWh, ${fmtEuro(103330)} (Grundkosten ${fmtEuro(32417)}, Verbrauchskosten ${fmtEuro(70913)}), nach CO₂-Abzug ${fmtEuro(94049)}`)
+    const c1 = { key: 'C1', role: 'tenancy' as const, tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7200, waterConsumption: 38, heatingGroup: false, waterGroup: false, heatingCents: 103329, waterCents: 29823, heatingCo2Cents: 0, waterCo2Cents: 0 }
+    expect(userLine({ ...c1, heatingCo2Cents: 9281 }, self)).toContain(`Heizung 7.200 kWh, ${fmtEuro(103329)} (Grundkosten ${fmtEuro(32416)}, Verbrauchskosten ${fmtEuro(70913)}), nach CO₂-Abzug ${fmtEuro(94048)}`)
     expect(userLine(c1, self))
-      .toBe(`Mieter C1, 01.01.2025 bis 30.09.2025 (273 Tage, 640 ‰ der Gradtage): Heizung 7.200 kWh, ${fmtEuro(103330)} (Grundkosten ${fmtEuro(32417)}, Verbrauchskosten ${fmtEuro(70913)}); Warmwasser 38 m³, ${fmtEuro(29823)} (Grundkosten ${fmtEuro(6947)}, Verbrauchskosten ${fmtEuro(22876)})`)
+      .toBe(`Mieter C1, 01.01.2025 bis 30.09.2025 (273 Tage, 640 ‰ der Gradtage): Heizung 7.200 kWh, ${fmtEuro(103329)} (Grundkosten ${fmtEuro(32416)}, Verbrauchskosten ${fmtEuro(70913)}); Warmwasser 38 m³, ${fmtEuro(29823)} (Grundkosten ${fmtEuro(6947)}, Verbrauchskosten ${fmtEuro(22876)})`)
   })
   it('Ableseergebnis je Wohnung: Zähler, Datum, Stand; fehlend als solcher benannt', () => {
     expect(readingResult(unitC, '2025-09-30')).toEqual(['Wärme C: 7.700 kWh am 30.09.2025', 'Warmwasser C: nicht abgelesen'])
@@ -445,6 +446,28 @@ describe('Ausweis zum Nachrechnen: Durchsicht', () => {
     expect(userLine(a, { pots: [heat], units: [unitOf(a, [])], changeSplit: 'degreeDays' })).toContain(`(Grundkosten ${fmtEuro(13709)}, Verbrauchskosten ${fmtEuro(23719)})`)
     // Ohne Angabe, wie beim Wechsel geteilt wird, ist der Anteil der Heizung nicht bekannt.
     expect(userLine(a, { pots: [heat], units: [unitOf(a)] })).toContain(`(Grundkosten ${fmtEuro(13709)}, Verbrauchskosten ${fmtEuro(23719)})`)
+  })
+  // Integration von #664 und #679: Der Betrag des Nutzers ist die Summe seiner je Position gerundeten Zeilen
+  // (`heatingRows`, `waterRows`); gegen Fläche mal Preis mal Anteil darf er um je Zeile einen Cent abweichen, dazu einen.
+  it('mehrere Heizpositionen: die Fläche steht, solange die Grundkosten um höchstens Zeilenzahl plus einen Cent abweichen', () => {
+    const stand = (a: ReturnType<typeof user>) => ({ pots: [heat, water], units: [unitOf(a)], changeSplit: 'degreeDays' as const })
+    const area = ' für 72,5 m², davon 640 von 1.000 ‰ der Gradtage'
+    // Drei Positionen, je für sich gerundet: 137,12 € statt 72,5 m² · 2,95448 € · 640/1.000 = 137,09 €.
+    const three = user({ heatingCents: 37431, heatingRows: 3, waterRows: 3 })
+    expect(userLine(three, stand(three))).toContain(`(Grundkosten ${fmtEuro(13712)}${area}, Verbrauchskosten ${fmtEuro(23719)})`)
+    const four = user({ heatingCents: 37432, heatingRows: 3, waterRows: 3 })
+    expect(userLine(four, stand(four))).toContain(`(Grundkosten ${fmtEuro(13713)}${area}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Fünf Cent daneben erklären drei Zeilen nicht mehr: nur der Betrag.
+    const five = user({ heatingCents: 37433, heatingRows: 3, waterRows: 3 })
+    expect(userLine(five, stand(five))).toContain(`(Grundkosten ${fmtEuro(13714)}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Ein Stand ohne die Angabe (vorher eingefroren) bleibt bei einem Cent.
+    const old = user({ heatingCents: 37431 })
+    expect(userLine(old, stand(old))).toContain(`(Grundkosten ${fmtEuro(13712)}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Je Topf seine Zeilen: Die der Heizung weiten das Warmwasser nicht (56,12 € statt 56,10 €).
+    const waterOnly = user({ waterCents: 17279, heatingRows: 8, waterRows: 0 })
+    expect(userLine(waterOnly, stand(waterOnly))).toContain(`Warmwasser 20 m³, ${fmtEuro(17279)} (Grundkosten ${fmtEuro(5612)}, Verbrauchskosten ${fmtEuro(11667)})`)
+    const waterRow = user({ waterCents: 17279, heatingRows: 0, waterRows: 1 })
+    expect(userLine(waterRow, stand(waterRow))).toContain(`Warmwasser 20 m³, ${fmtEuro(17279)} (Grundkosten ${fmtEuro(5612)} für 72,5 m², davon 273 von 365 Tagen, Verbrauchskosten ${fmtEuro(11667)})`)
   })
   it('Menge mal Preis ergibt den gedruckten Betrag bis auf Rundung von höchstens einem Cent, mehr nicht', () => {
     // Verbundenes Warmwasser: Der Topfbetrag ist ungerundet 118,635 €, gedruckt wird der gerundete; der Preis kommt vom ungerundeten.

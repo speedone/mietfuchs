@@ -308,13 +308,16 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   genau so (35,4 MWh, 72,5 m², 785 Einheiten); ein gerechneter Anteil und der Preis je Einheit bekommen so viele
   Stellen, dass ihre Rundung den Betrag um höchstens einen Viertelcent verschiebt (Preis mindestens vier Stellen je m²
   bzw. m³, sechs je Verbrauchseinheit). **Zugesagt ist: Menge mal Preis ergibt den gedruckten Betrag bis auf Rundung
-  von höchstens einem Cent**, nicht mehr (bei verbundenem Warmwasser ist der Topfbetrag ungerundet, gedruckt wird der
-  gerundete). Je Nutzer stehen Grund- und Verbrauchskosten getrennt: Verbrauchskosten = Verbrauch mal Preis je Einheit
+  von höchstens einem Cent, je Nutzer bei den Grundkosten je verteilter Rechnung ein Cent**, nicht mehr (bei verbundenem
+  Warmwasser ist der Topfbetrag ungerundet, gedruckt wird der gerundete; der Betrag des Nutzers ist die Summe seiner je
+  Position gerundeten Zeilen). Je Nutzer stehen Grund- und Verbrauchskosten getrennt: Verbrauchskosten = Verbrauch mal Preis je Einheit
   des Topfs (folgt aus `weightsOf`), Grundkosten = Rest zum Betrag der Zeile. Dazu Fläche bzw. Raum der Wohnung und bei
   einem Teilzeitraum der Anteil, mit dem der Server sie in diesem Topf gewichtet („davon 640 von 1.000 ‰ der Gradtage“,
   Warmwasser und zeitanteilige Teilung „273 von 365 Tagen“). Der Stand trägt Gradtage und Tage nur je Nutzer; der Nenner
   ist ihre Summe über die Nutzer der Wohnung, und genannt wird die Rechnung nur, wenn sie die gedruckten Grundkosten
-  bis auf einen Cent ergibt, sonst steht nur der Betrag da (ebenso ohne Fläche im Stand). Das rechnet die Oberfläche
+  bis auf die Rundung ergibt: **Zeilenzahl des Topfs plus einen Cent** (`heatingRows`/`waterRows` des Stands, je verteilter
+  Position oder Übertrag ein Cent), ohne die Angabe (vorher eingefrorene Stände) ein Cent. Sonst steht nur der Betrag da
+  (ebenso ohne Fläche im Stand). Das rechnet die Oberfläche
   aus den vorhandenen Feldern, auch für eingefrorene Stände; keine Aufteilung ohne Anteil nach Verbrauch (nur nach
   Fläche, § 9a Abs. 2, 0 oder 100 %) und ohne Betrag.
 - **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel Gradtage statt Tage; kombinierte
