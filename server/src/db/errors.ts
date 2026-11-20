@@ -33,6 +33,8 @@ function rootCause(err: unknown): string {
 // eine erfundene Übersetzung wäre schlechter als der echte Name.
 const FIELD_NAMES: Record<string, string> = {
   area_m2: 'Wohnfläche',
+  // Die Bedingung heißt `units_area_not_negative`, ohne das `_m2` der Spalte.
+  units_area: 'die Wohnfläche',
   mea: 'Miteigentumsanteile',
   external_total: 'Summe in der Anlage',
   external_measure: 'Maßstab der Gemeinschaft',

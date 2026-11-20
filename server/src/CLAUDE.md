@@ -1097,6 +1097,19 @@ Backup, Wiederherstellen, Umstieg und Validator prüfen bewusst nicht (krumm, ni
 ist erlaubt. Das Cockpit nennt ungültige IBANs des gewählten Objekts als ruhigen Hinweis
 ([client/src/ibanCheck.ts](../../client/src/ibanCheck.ts)).
 
+## Kalendertage und Verweise beim Speichern
+
+Nach dem Muster der IBAN: `requireDay` in [db/repository.ts](db/repository.ts) lehnt in den Wächtern der Sammelrouten
+einen **neu gesetzten oder geänderten** Tag ab, den es nicht gibt (400 mit Satz): Einzug (Pflicht), Auszug und
+Vertragsdatum am Mietverhältnis, Datum einer Zahlung und einer Ablesung (Pflicht, nur die Form), Einbautag eines Zählers.
+Ebenso ein Auszug vor dem Einzug, wenn eines der beiden Daten neu oder geändert ist (derselbe Tag ist erlaubt); das
+Formular meldet es vorher am Feld (`tenancyRequired`). Was unverändert mitkommt, bleibt (krumm, nicht kaputt); Backup,
+Wiederherstellen, Umstieg und Validator prüfen nicht. Ein leerer Auszug wird als `null` gespeichert. Ein neuer oder
+geänderter Verweis auf eine Wohnung, ein Mietverhältnis oder einen Zähler, den es nicht gibt, und eine negative
+Wohnfläche bekommen dort einen Satz statt des Befunds der Datenbank (`goneText`). **Ein schon gespeicherter leerer
+Einzug wird beim Rechnen nicht aufgefangen** (500, wie eine fehlende Sammlung im Schnappschuss): Eine Abrechnung mit
+geratenem Einzug sähe stimmig aus und wäre falsch.
+
 ## Rechenweg (#114)
 
 Jede Mieterzeile trägt `steps` (`CalcStep`), erzeugt dort, wo die Zeile entsteht, aus denselben

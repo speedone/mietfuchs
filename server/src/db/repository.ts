@@ -162,6 +162,24 @@ function isoDateOrNull(v: unknown, what: string): string | null {
   return text
 }
 
+// Ein Kalendertag beim Speichern über die Sammelrouten, nach dem Muster der IBAN (#279, iban.ts): **Abgelehnt wird nur
+// ein neu gesetzter oder geänderter Tag**, den es nicht gibt („gestern“, 2025-02-31, bei einer Pflichtangabe auch leer).
+// Ein gespeicherter, den eine Seite unverändert mitschickt, bleibt, wie er ist: Er kam vor der Prüfung, über ein Backup
+// oder den Umstieg herein, und das Speichern der Telefonnummer darf nicht an ihm scheitern (krumm, nicht kaputt).
+// `stored` ist beim Anlegen `undefined`. HeatingError, weil die Fehlerbehandlung ihren Status weitergibt, wie bei
+// isoDateOrNull. Aufgerufen aus den Wächtern, weil erst sie den Stand von vorher kennen.
+function requireDay(stored: string | null | undefined, value: string | null | undefined, what: string, required: boolean): void {
+  if (stored !== undefined && (stored ?? '') === (value ?? '')) return
+  if (value === null || value === undefined || value === '') {
+    if (required) throw new HeatingError(400, `${what} fehlt. Bitte wählen Sie den Tag im Kalender.`)
+    return
+  }
+  if (!isCalendarDay(value)) throw new HeatingError(400, `${what} ist kein Datum, das es gibt. Bitte wählen Sie den Tag im Kalender.`)
+}
+
+// Ein Verweis auf etwas, das es nicht (mehr) gibt, mit einem Satz statt des Fremdschlüsselfehlers der Datenbank.
+const goneText = (what: string): string => `${what} gibt es nicht (mehr), vermutlich wurde ${what.startsWith('Das') ? 'es' : what.startsWith('Die') ? 'sie' : 'er'} inzwischen gelöscht. Bitte laden Sie die Seite neu; gespeichert wurde nichts.`
+
 // Das Zahlungsdatum einer Kostenposition (#255 PR 3): ein Kalendertag oder keine Angabe.
 function readPaidOn(v: unknown): string | undefined {
   if (v === null || v === undefined || v === '') return undefined
@@ -542,7 +560,8 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     persons: merged(body, 'persons', current.persons, (v) => asNumber(v, 1)),
     personHistory: merged(body, 'personHistory', current.personHistory, (v) => readPersonHistory(v, start)),
     start,
-    end: merged(body, 'end', current.end, asNullableText),
+    // Ein leerer Auszug heißt wie `null`: Das Mietverhältnis läuft.
+    end: merged(body, 'end', current.end, asNullableFilled),
     prepayments: merged(body, 'prepayments', current.prepayments, (v) => readSchedule<PrepaymentEntry>(v, moneyEntry)),
     flatRates: merged(body, 'flatRates', current.flatRates, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
     // #257: wie die Pauschale ganz ersetzt; `null` entfernt. Ein Monat, der keiner ist, oder ein negativer Betrag ist
@@ -834,6 +853,11 @@ function mergePayment(current: Payment, body: unknown): Payment {
 // Mietverhältnis ändert nur die Kautionsbuchung (db/deposits.ts, über `replaceBoundPaymentIn`). Notiz und Monat laut
 // Verwendungszweck bleiben frei. Unverändert gesendet ist keine Änderung.
 async function guardPayment(db: Executor, before: Payment | null, after: Payment): Promise<void> {
+  requireDay(before?.date, after.date, 'Das Datum der Zahlung', true)
+  if (before === null || before.tenancyId !== after.tenancyId) {
+    const [t] = await db.select({ id: tenancies.id }).from(tenancies).where(eq(tenancies.id, after.tenancyId))
+    if (!t) throw new PaymentError(goneText('Das Mietverhältnis dieser Zahlung'))
+  }
   if (before !== null && (before.amountCents !== after.amountCents || before.date !== after.date || before.kind !== after.kind || before.tenancyId !== after.tenancyId)) {
     const [bound] = await db.select({ id: depositEntries.id }).from(depositEntries).where(eq(depositEntries.paymentId, before.id))
     if (bound) throw new BoundPaymentError('Diese Zahlung stammt aus der Kaution. Ändern oder löschen Sie die Verrechnung unter Stammdaten bei „Kaution führen“.')
@@ -1076,6 +1100,12 @@ async function guardSupplyReading(db: Executor, reading: Pick<Reading, 'meterId'
 }
 
 async function guardReading(db: Executor, before: Reading | null, after: Reading): Promise<void> {
+  // Nur die Form: Rückfragen zu Rücklauf und Zukunft gehören nicht hierher.
+  requireDay(before?.date, after.date, 'Das Datum der Ablesung', true)
+  if (before === null || before.meterId !== after.meterId) {
+    const [m] = await db.select({ id: meters.id }).from(meters).where(eq(meters.id, after.meterId))
+    if (!m) throw new HeatingError(400, goneText('Der Zähler dieser Ablesung'))
+  }
   guardReadingEstimate(after)
   if (before) await guardSupplyReading(db, before)
   await guardSupplyReading(db, after)
@@ -1701,6 +1731,7 @@ async function closedHcaPeriodOf(db: Executor, m: Meter): Promise<string | null>
 }
 
 async function guardMeter(db: Executor, before: Meter | null, after: Meter): Promise<void> {
+  requireDay(before === null ? undefined : before.installedOn ?? null, after.installedOn, 'Der Tag, an dem der Zähler eingebaut wurde,', false)
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
   await guardRoomMeter(db, after)
   // Ein Zähler für einen Teil des Hauses (#98) hat keine Wohnung und gehört nicht zur Heizanlage.
@@ -2114,6 +2145,8 @@ async function guardMovePeriods(db: Executor, after: Unit, tenancyIds: readonly 
 }
 
 async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
+  // Ein Satz statt der Prüfbedingung der Datenbank (`units_area_not_negative`).
+  if (after.areaM2 < 0) throw new HeatingError(400, 'Die Wohnfläche ist negativ. Bitte tragen Sie 0 oder mehr Quadratmeter ein.')
   await guardRooms(db, before, after)
   // „Kein Anschluss: Wärme“ ändert, welche Anlage ohne Liste die Wohnung versorgt (#117, Heizung PR 5).
   if (before && before.propertyId === after.propertyId) {
@@ -2257,6 +2290,15 @@ function holdNoteOf(v: unknown): string | undefined {
 }
 
 async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  requireDay(before?.start, after.start, 'Der Einzug', true)
+  requireDay(before?.end, after.end, 'Der Auszug', false)
+  requireDay(before === null ? undefined : before.contractDate ?? null, after.contractDate, 'Das Vertragsdatum', false)
+  // Auszug vor Einzug: Der Mieter stünde in keiner Abrechnung, und sein Anteil liefe still als Leerstand zum Vermieter.
+  // Geprüft wie die Tage selbst nur, wenn eines der beiden Daten neu oder geändert ist.
+  const moved = before === null || before.start !== after.start || before.end !== after.end
+  if (moved && after.end !== null && isCalendarDay(after.end) && isCalendarDay(after.start) && compareText(after.end, after.start) < 0) {
+    throw new HeatingError(400, `Der Auszug (${isoToGerman(after.end)}) liegt vor dem Einzug (${isoToGerman(after.start)}). Bitte prüfen Sie beide Daten; gespeichert wurde nichts.`)
+  }
   const rentProblem = rentScheduleProblem(after)
   if (rentProblem !== null) throw new RentDataError(rentProblem)
   if (after.depositHoldCents !== undefined && after.depositHoldNote === undefined) throw new DepositHoldError('Bitte nennen Sie den Grund für den Einbehalt.')
@@ -2276,6 +2318,7 @@ async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy
   const sent = raw(body, 'prepaymentOverrides')
   const legacyYear = isObject(sent) && Object.keys(Object(sent)).some((k) => YEAR_ONLY.test(k))
   const [unit] = await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, after.unitId))
+  if (!unit) throw new HeatingError(400, goneText('Die Wohnung dieses Mietverhältnisses'))
   if (unit) await requirePeriods(db, unit.propertyId, Object.keys(after.prepaymentOverrides), legacyYear, `Die Jahreskorrektur von „${after.tenantName}“`)
   await guardHeatingOverrides(db, after)
   await guardRoomTenancy(db, after.unitId)
@@ -3438,7 +3481,9 @@ export class TenantChangeError extends Error {
 export type TenantChange = { ended: Tenancy, newTenancy: Tenancy | null, readings: Reading[] }
 
 // „2025-06-30“ als „30.06.2025“, für Meldungen an den Nutzer.
-const isoToGerman = (iso: string): string => iso.split('-').reverse().join('.')
+function isoToGerman(iso: string): string {
+  return iso.split('-').reverse().join('.')
+}
 const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
 
