@@ -7,6 +7,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
+import { deepFreeze } from '../src/db/stockCache.ts'
 import { selfMeter, selfReading, selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
 import { periodKey } from '../../shared/period.ts'
 import { knownUnit } from '../../shared/meterUnits.ts'
@@ -126,6 +127,10 @@ test(`Invariante #342, Verbrauchsschlüssel: Wert und Einheit eines Zählers gem
       return { id: `c-${type}`, propertyId: P, period: periodKey('2025-01'), category: 'Sonstige Betriebskosten', description: `Nach Verbrauch ${k}`, amountCents: rnd() < 0.1 ? -amount : amount, key: 'meter', meterType: type }
     })
     const before = computeSettlement(selfSnapshot({ ...stock, costItems, plant: manual }))
+    // Derselbe Bestand tief eingefroren, wie ihn `readStock` liefert (#651): Die Engine darf ihn nicht verändern
+    // (sonst TypeError), und die gemerkten Zwischenwerte für eingefrorene Listen ergeben dieselbe Abrechnung.
+    const frozen = computeSettlement(deepFreeze(structuredClone(selfSnapshot({ ...stock, costItems, plant: manual }))))
+    assert.deepEqual(frozen, before, `Bestand ${i}: eingefroren gerechnet wie offen`)
     const other = rescaled(rnd, stock.meters, stock.readings)
     changedTotal += other.changed
     const after = computeSettlement(selfSnapshot({ ...stock, meters: other.meters, readings: other.readings, costItems, plant: manual }))
