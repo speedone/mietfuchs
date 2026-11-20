@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useCallback, useState, type ReactNode } from 'react'
-import type { Meter, Unit } from '../types'
+import type { Meter, Reading, Unit } from '../types'
 import { api } from '../api'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -19,6 +19,7 @@ import Stammdaten from './Stammdaten'
 
 const UNIT: Unit = { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }
 const METER: Meter = { id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }
+const READING: Reading = { id: 'r1', meterId: 'm1', date: '2025-06-30', value: 316 }
 const PROPERTY = { id: 'objekt-1', name: 'Haus A', kind: 'mfh', address: 'Weg 1', landlordName: null, iban: null, paymentDeadlineDays: null }
 const STALE = 'wurde inzwischen an anderer Stelle geändert, etwa in einem zweiten Fenster oder auf einem anderen Gerät. Gespeichert wurde nichts.'
 
@@ -29,7 +30,7 @@ let puts: { url: string; body: Row; status: number }[]
 const mark = (x: unknown): string => JSON.stringify(Object.entries(Object(x) as Row).filter(([key, v]) => v != null && key !== 'ifUnchanged').sort())
 
 beforeEach(() => {
-  stock = { '/api/units': [{ ...UNIT }], '/api/meters': [{ ...METER }], '/api/properties': [{ ...PROPERTY }] }
+  stock = { '/api/units': [{ ...UNIT }], '/api/meters': [{ ...METER }], '/api/readings': [{ ...READING }], '/api/properties': [{ ...PROPERTY }] }
   puts = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
@@ -149,6 +150,57 @@ test('Zähler: Die Liste ist alt (Zählerwechsel mit Eichjahr von anderer Stelle
   save()
   await waitFor(() => expect(puts).toHaveLength(1))
   expect(puts[0]?.status).toBe(200)
+})
+
+const openReading = async () => {
+  if (!screen.queryByRole('button', { name: /Ablesung bearbeiten/i })) fireEvent.click(await screen.findByRole('button', { name: /^Ablesungen \(1\)/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /Ablesung bearbeiten/i }))
+  return screen.findByRole('dialog', { name: 'Ablesung bearbeiten' })
+}
+
+// Nachgestellt im Beispielbestand: Fenster A berichtigt einen Zwischenstand von 316 auf 322, Fenster B (alter Stand)
+// ändert nur die Notiz. Ohne `ifUnchanged` schrieb B die 316 still zurück, rund 60 EUR zwischen zwei Mietern.
+test('Ablesung: Das zweite Fenster überschreibt den berichtigten Stand nicht; schließen, öffnen, speichern geht durch', async () => {
+  shell(<Zaehler units={[UNIT]} />)
+  await openReading()
+  fireEvent.change(field(/^Hinweis/i), { target: { value: 'Auszug Müller' } })
+  elsewhere('/api/readings', { value: 322 })
+  save()
+  await refused(1, 'Zählerstand (jetzt 322)')
+  expect(puts[0]?.body.ifUnchanged).toEqual(READING)
+  expect(stock['/api/readings']?.[0]).toMatchObject({ value: 322 })
+  expect(field(/^Hinweis/i).value).toBe('Auszug Müller')
+  await close()
+  await openReading()
+  await waitFor(() => expect(field(/^Zählerstand/i).value).toBe('322'))
+  fireEvent.change(field(/^Hinweis/i), { target: { value: 'Auszug Müller' } })
+  save()
+  await waitFor(() => expect(puts).toHaveLength(2))
+  expect(puts[1]?.status).toBe(200)
+  expect(stock['/api/readings']?.[0]).toMatchObject({ value: 322, note: 'Auszug Müller' })
+})
+
+test('Ablesung: Die Liste ist alt (ein anderes Fenster hat berichtigt); das Formular holt den Stand beim Öffnen', async () => {
+  shell(<Zaehler units={[UNIT]} />)
+  fireEvent.click(await screen.findByRole('button', { name: /^Ablesungen \(1\)/ }))
+  await screen.findByRole('button', { name: /Ablesung bearbeiten/i })
+  elsewhere('/api/readings', { value: 322 })
+  await openReading()
+  await waitFor(() => expect(field(/^Zählerstand/i).value).toBe('322'))
+  fireEvent.change(field(/^Hinweis/i), { target: { value: 'Auszug Müller' } })
+  save()
+  await waitFor(() => expect(puts).toHaveLength(1))
+  expect(puts[0]?.status).toBe(200)
+  expect(stock['/api/readings']?.[0]).toMatchObject({ value: 322, note: 'Auszug Müller' })
+})
+
+test('Zähler: Die Ablehnung nennt das Einbaudatum beim Namen (Feld „Eingebaut am“)', async () => {
+  shell(<Zaehler units={[UNIT]} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler bearbeiten/i }))
+  fireEvent.change(await screen.findByLabelText(/^Name/i), { target: { value: 'Kaltwasser EG' } })
+  elsewhere('/api/meters', { installedOn: '2025-03-01' })
+  save()
+  await refused(1, 'Eingebaut am')
 })
 
 const openProperty = async () => {
