@@ -1974,6 +1974,9 @@ app.post('/api/tenancies/:id/rent-increases', async (req: Request, res: Response
   const body = bodyObject(req)
   const request = rentIncreaseRequestOf(isObject(body.request) ? body.request : {})
   if ('error' in request) return res.status(400).json({ error: request.error })
+  // Die Miete am Stichtag friert nur mit ihrem Tag ein (Durchsicht PR 2, K1): Ohne ihn wüsste ein Nachdruck nicht, zu
+  // welchem Stichtag sie gehört.
+  if (request.rentAtCapDateCents != null && request.rentAtCapDateOn == null) return res.status(400).json({ error: 'Zur Miete am Stichtag fehlt der Tag, zu dem sie gehört. Bitte rechnen Sie neu und speichern Sie dann.' })
   const letter = rentIncreaseLetterOf(body.letter, request.kind)
   if ('problems' in letter) return res.status(400).json({ error: letter.problems[0]?.text ?? 'Die Angaben für das Schreiben sind unvollständig.' })
   const result = await writeData(async (db) => {

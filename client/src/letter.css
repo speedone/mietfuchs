@@ -271,3 +271,13 @@
   .payment-qr-facts { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .payment-qr-facts dd { margin-bottom: var(--space-1); }
 }
+
+/* Schreiben einer Mieterhöhung (#191, PR 3, RentIncreaseLetter.tsx): Das Blatt hängt am Ende von body und erscheint nur im
+   Druck, wie die Aufstellung der Kaution; die Zustimmungserklärung beginnt eine eigene Seite. */
+.rent-increase-print { display: none; }
+.rent-increase-comparables { margin: 0 0 var(--space-3); }
+@media print {
+  body.print-rent-increase > #root { display: none !important; }
+  body.print-rent-increase .rent-increase-print { display: block; }
+  .rent-increase-consent { break-before: page; page-break-before: always; }
+}

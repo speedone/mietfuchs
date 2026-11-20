@@ -114,6 +114,10 @@ test('Mieterhöhung, Schreiben: Eingaben des Schreibens werden geprüft, 400 mit
       assert.match(text, pattern)
       assert.match(text, /\.$/)
     }
+    // Die Miete am Stichtag nur mit ihrem Tag (eingefroren wird beides).
+    const noDay = await c.create({ ...COMPARISON, rentAtCapDateCents: 48000 })
+    assert.equal(noDay.status, 400)
+    assert.match(await errorFrom(noDay), /Tag, zu dem sie gehört/)
     // Gesperrte Rechnung: kein Schreiben.
     const blocked = await c.create({ ...COMPARISON, residential: false })
     assert.equal(blocked.status, 400)

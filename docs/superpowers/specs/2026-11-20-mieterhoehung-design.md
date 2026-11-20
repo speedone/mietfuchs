@@ -319,3 +319,39 @@ Festlegungen:
   wäre ein Eingriff in calc.ts. Bis dahin gibt der Vermieter den Betrag ein, die Rechnung sperrt ohne ihn.
 - **Mit dem Schreiben (PR 3)**: Begründungsmittel mit Angaben, qualifizierter Mietspiegel (M6), Vergleichswohnungen (M7),
   Vermieter und Mieter vollständig (S4), Mietspiegel zugänglich und Alter (S5).
+
+## Umsetzung PR 3 (Schreiben und Übernahme), 20.11.2026
+
+Umgesetzt in server/src/rentIncreaseSave.ts (Regeln, Marken), server/src/db/rentIncreases.ts (Zeilen), den Routen in
+index.ts, shared/rentIncreaseLetter.ts (Prüfung der Eingaben für Server und Oberfläche) und im Client
+(rentIncreaseLetterForm.ts, rentIncreaseLetter.ts, RentIncreaseLetter.tsx, Seitenfenster). Abweichungen und Festlegungen:
+
+- **`RentIncreaseBasis`** (shared/types.ts): `version`, `letterDate`, `request`, `plan` (samt `legalValues`), `letter`
+  (Eingaben des Schreibens), `rentCap` mit `answeredOn` (S2), `sender`, `recipient`, `salutation`, `premises`,
+  `inclusive`, `prepayments` (im Monat des Wirksamwerdens). Die Miete am Stichtag friert mit `request` ein, samt Tag, sobald
+  PR 2 ihn trägt.
+- **Routen**: `POST /api/tenancies/:id/rent-increases` (Entwurf), `POST /api/rent-increases/:id/send`, `POST
+  /api/rent-increases/:id/status`, `DELETE /api/rent-increases/:id`, `GET /api/tenancies/:id/rent-increases`. Die
+  Plan-Route liefert die Marke mit (`RentIncreasePlanView`); sie umfasst auch Kennung und Stand der Verlangen, so legt
+  ein Doppelklick keinen zweiten Entwurf an.
+- **Entwurf auch bei `notYet`**: Gesperrt ist nur `blocked`; der tatsächliche Zugang kommt beim Versand.
+- **Versand**: Monat und verlangte Miete bleiben die des Schreibens. Nur bei `possible`, Zugang nicht in der Zukunft und
+  nicht vor dem Tag des Schreibens; ändern sich mit dem tatsächlichen Zugang die Miete oder das Ende der Zustimmungsfrist,
+  wird nicht gespeichert (neu anlegen und neu drucken), denn das gedruckte Schreiben nennt sie. Der neu gerechnete Plan
+  ersetzt den des Entwurfs. Für den Satz der Ablehnung trägt der Plan `refusals` (die Sätze zu `blocked`/`notYet`).
+- **Übergänge**: Zustimmung und teilweise Zustimmung auch nach einer Ablehnung (Zustimmung im Rechtsstreit); eine
+  Indexerklärung kennt nur die Rücknahme. Zurücknehmen geht aus jedem Stand nach dem Versand; fehlt die geschriebene
+  Stufe schon, bleibt die Staffel, ist sie geändert, 409. Der Tag der Antwort liegt nicht vor dem Zugang und nicht in
+  der Zukunft. Kein Status `judgment` (S8 Kann): Ein Urteil auf Zustimmung trägt der Vermieter als Zustimmung ein.
+- **Offen** ist ein Entwurf oder ein versandtes Verlangen nach § 558; eine versandte Indexerklärung wirkt schon und
+  sperrt kein neues Schreiben.
+- **Eingaben des Schreibens**: Die Frage nach dem qualifizierten Mietspiegel ist bei jedem Begründungsmittel Pflicht;
+  bei Begründung mit einem Mietspiegel und „ja“ ist der genannte der qualifizierte. Spanne nur ganz oder gar nicht. Leere
+  Angabe „wo allgemein zugänglich“ heißt „liegt bei“ (S5). Warnungen ohne Sperre: Mietspiegel älter als
+  `bgb.rent-survey-update-years` (neu im Register, § 558d Abs. 2 Satz 1, 2 Jahre), verlangte Miete je m² über der
+  niedrigsten Vergleichswohnung (M7). Die Bestätigungen zu allen Vermietern und Mietern sind Pflicht (S4); der Empfänger
+  ist eingebbar, der Absender kommt aus Einstellungen bzw. Objekt.
+- **Schreiben**: Mehrere Vermieter (Name mit „und“, „&“, Komma, GbR, Erbengemeinschaft, Eheleute) sprechen in der
+  Mehrzahl, sonst „ich“. Die Zustimmungsfrist steht als Regel und als Datum zum Zugang laut Rechnung, mit dem nach § 193
+  BGB verlängerten Ende (`consentEndOnWorkday`). Die Klage steht als Satz zum Gesetz, nicht als Ankündigung. Bei
+  Vergleichsmiete folgt auf eigener Seite eine Zustimmungserklärung. Ohne Fußzeile mit Bank (nicht nötig).

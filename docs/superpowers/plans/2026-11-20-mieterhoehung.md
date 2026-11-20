@@ -46,10 +46,10 @@ Rechtsrecherche und Gegenprüfung: Fundstellen im Register (shared/law/bgb-betrk
 
 ## PR 3: Schreiben und Übernahme (`feat/mieterhoehung-schreiben`)
 
-- [ ] `RentIncreaseBasis` festlegen; Routen zum Speichern und für den Statuswechsel mit Marke wie #317; beim Übergang
+- [x] `RentIncreaseBasis` festlegen; Routen zum Speichern und für den Statuswechsel mit Marke wie #317; beim Übergang
   `agreed`/`partial` (Vergleichsmiete) bzw. `sent` (Index) die Stufe in `base_rents` mit Art und Indexwert in derselben
   Transaktion; `withdrawn` entfernt nur eine unveränderte Stufe; höchstens ein offenes Verlangen je Mietverhältnis.
-- [ ] Druckansicht im Briefformat (LetterHead, PrintPages), Zusatzabsatz mit Hinweis (VIII ZR 108/20 Rn. 18 f.),
+- [x] Druckansicht im Briefformat (LetterHead, PrintPages), Zusatzabsatz mit Hinweis (VIII ZR 108/20 Rn. 18 f.),
   Zustimmungserklärung; Sätze im Verlauf; Druckbreiten-Fall.
 
 ## PR 4: Cockpit (`feat/mieterhoehung-cockpit`)

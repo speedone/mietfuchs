@@ -13,7 +13,7 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { bgbHeatDeliverySwitch, bgbIndexRent, bgbObjectionMonths, bgbRentCap, bgbRentDueAtStart, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths, bgbStaggeredRent } from './law/bgb-betrkv.ts'
+import { bgbHeatDeliverySwitch, bgbIndexRent, bgbObjectionMonths, bgbRentCap, bgbRentDueAtStart, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths, bgbRentSurveyUpdateYears, bgbStaggeredRent } from './law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, shiftMonths, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow, practiceMeterRestHigh, practiceVpiSeries } from './law/practice.ts'
@@ -398,6 +398,23 @@ export const GLOSSARY = {
     example: `Zugang am Freitag, ${germanDate(RECEIVED)}: Zustimmung bis ${germanDate(CONSENT_END)} (ein Sonntag), neue Miete ab ${germanDate(EFFECTIVE)}, Klage bis ${germanDate(SUIT_END)}. Ob sich das Ende am Sonntag auf den Montag verschiebt (§ 193 BGB), ist nicht geklärt; sicher ist, erst danach zu klagen und die Klagefrist vom ${germanDate(CONSENT_END)} an zu rechnen.`,
     norm: '§ 558b Abs. 1 und 2 BGB; BGH, Urteil vom 25.09.2013, VIII ZR 280/12 (späterer Wirksamkeitstag)',
     needed: 'Nach jedem Mieterhöhungsverlangen. Alle Daten hängen am Zugang beim Mieter; sorgen Sie für einen Zugang, den Sie beweisen können, etwa durch Einwurf mit Zeugen.',
+  },
+  // #191, PR 3: Begriffe des Schreibens. Wortlaut der §§ 558a, 558c, 558d BGB laut Recherche vom 20.11.2026.
+  rentJustification: {
+    topic: 'tenants',
+    title: 'Begründungsmittel',
+    short: 'Womit Sie im Mieterhöhungsverlangen belegen, dass die verlangte Miete die ortsübliche Vergleichsmiete nicht übersteigt: ein Mietspiegel, die Auskunft einer Mietdatenbank, das Gutachten eines öffentlich bestellten und vereidigten Sachverständigen oder drei vergleichbare Wohnungen. Der Mieter muss die Angaben nachprüfen können: beim Mietspiegel Name, Stand und Feld, bei Vergleichswohnungen Anschrift, Geschoss und Lage, Fläche und Miete je m². Ein Gutachten liegt dem Schreiben bei, ein allgemein zugänglicher Mietspiegel muss es nicht.',
+    example: 'Drei Vergleichswohnungen: Ahornweg 3, 1. OG links, 58 m², 10,20 € je m²; Ahornweg 5, EG rechts, 62 m², 10,10 € je m²; Birkenstraße 8, 2. OG Mitte, 60 m², 10,50 € je m². Verlangen Sie für Ihre Wohnung höchstens 10,10 € je m², liegt die Miete bei keiner der drei darunter.',
+    norm: '§ 558a Abs. 1, 2 BGB; BGH, Urteil vom 12.12.2007, VIII ZR 11/07 (Feld des Mietspiegels, Beifügen)',
+    needed: 'Bei jedem Mieterhöhungsverlangen bis zur Vergleichsmiete. Im Seitenfenster „Mieterhöhung“ wählen Sie das Begründungsmittel und geben seine Angaben ein; das Schreiben nennt sie.',
+  },
+  qualifiedRentSurvey: {
+    topic: 'tenants',
+    title: 'Qualifizierter Mietspiegel',
+    short: `Ein Mietspiegel, der nach anerkannten wissenschaftlichen Grundsätzen erstellt und von der Gemeinde oder den Interessenvertretern von Vermietern und Mietern anerkannt ist. Er wird im Abstand von ${numberWord(valueAt(bgbRentSurveyUpdateYears, LAW_AS_OF))} Jahren der Marktentwicklung angepasst. Enthält er Angaben zu Ihrer Wohnung, müssen Sie diese in jedem Mieterhöhungsverlangen mitteilen, auch wenn Sie es mit Vergleichswohnungen oder einem Gutachten begründen. Gemeinden mit mehr als 50 000 Einwohnern müssen einen Mietspiegel haben; ob er qualifiziert ist, sagt die Gemeinde.`,
+    example: 'Sie begründen mit einem Gutachten, und die Stadt hat einen qualifizierten Mietspiegel 2025, der Ihre Wohnung im Feld „Baujahr 1950 bis 1964, 60 bis 80 m², mittlere Lage“ mit 8,50 bis 11,00 € je m² führt. Das Schreiben nennt dann Gutachten und Mietspiegel samt Feld und Spanne.',
+    norm: '§ 558a Abs. 3, § 558c Abs. 4, § 558d Abs. 1 und 2 BGB',
+    needed: 'Im Seitenfenster „Mieterhöhung“ beim Schreiben: Mietfuchs fragt immer danach. Bei „Weiß nicht“ legt es kein Schreiben an, bis Sie es geklärt haben.',
   },
   // #188: Kontoauszug einlesen (Entwurf 2026-11-12). Keine Rechtsaussage außer dem Satz zur Aufbewahrung; die Frage der
   // Aufzeichnungspflichten privater Vermieter ist im Entwurf als offen festgehalten.
