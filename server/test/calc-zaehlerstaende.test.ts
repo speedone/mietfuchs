@@ -4,7 +4,7 @@
 import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, consumptionOverview, type ComputedSettlement, type ConsumptionOverviewRow } from '../src/calc.ts'
+import { computeSettlement, consumptionOverview, readingSlackDays, type ComputedSettlement, type ConsumptionOverviewRow } from '../src/calc.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import type { Notice } from '../../shared/types.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotMeter, type SnapshotReading, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
@@ -74,6 +74,41 @@ test('Rücksprung mitten im Jahr bei Mieterwechsel: der Nachmieter bekäme negat
   assert.equal(more.length, 0)
   assert.match(n.text, /vom 01\.07\.2025 bis zum 31\.12\.2025 \(-50\)/)
   assert.equal(s.landlord.totalCents, 90000)
+})
+
+// Zweite Durchsicht (Sollte 2): Geprüft wird ungerundet. Zähler in MWh mit drei Nachkommastellen, 12,345 auf 12,344.
+test('Kleiner Rücksprung über Mieterwechsel und Leerstand: Fehler, auch unter einem Tausendstel je Abschnitt', () => {
+  const s = settle({
+    units: [unit('a'), unit('b')],
+    tenancies: [tenancy('t-b', 'b'), { ...tenancy('t-a1', 'a'), end: '2025-04-30' }, { ...tenancy('t-a2', 'a'), start: '2025-09-01' }],
+    meters: [meter('za', 'a'), meter('zb', 'b')],
+    readings: [...year('za', 12.345, 12.344), ...year('zb', 200, 200.004)],
+  })
+  assert.equal(notice(s, 'meter.negative-in-key').length, 1)
+  for (const st of s.statements) assert.equal(st.totalShareCents, 0, st.tenancyId)
+})
+
+// Zweite Durchsicht: Auf dem Abschnitt einer Überschneidung zweier Mietverhältnisse ist der Verbrauch für sich negativ,
+// beide Mieter haben über ihre Zeit aber positiven Verbrauch. Der Fehler dort ist `tenancy.overlap`, nicht dieser.
+test('Überschneidung zweier Mietverhältnisse: negativ nur im gemeinsamen Monat, beide Empfänger positiv, kein zweiter Fehler', () => {
+  const s = settle({
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), { ...tenancy('t-c', 'c'), end: '2025-07-31' }, { ...tenancy('t-c2', 'c'), start: '2025-07-01' }],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250),
+      { meterId: 'zc', date: '2024-12-31', value: 300 }, { meterId: 'zc', date: '2025-06-30', value: 330 }, { meterId: 'zc', date: '2025-07-31', value: 320 }, { meterId: 'zc', date: '2025-12-31', value: 370 }],
+  })
+  assert.deepEqual(notice(s, 'meter.negative-in-key'), [])
+  assert.equal(notice(s, 'tenancy.overlap').length, 1)
+})
+
+test('Text des Fehlers: sagt nur, was am Zähler stimmt, auch wenn ein zweiter Zähler der Wohnung positiv ist', () => {
+  const s = settle({
+    meters: [meter('za', 'a'), meter('zb', 'b'), meter('zc', 'c'), { id: 'ww', unitId: 'c', type: 'warmwasser', name: 'Warmwasser C' }],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('zc', 300, 350), ...year('ww', 50, 47)],
+  })
+  const [n] = notice(s, 'meter.negative-in-key')
+  assert.ok(n, 'kein Hinweis meter.negative-in-key')
+  assert.match(n.text, /„Warmwasser C“ vom 01\.01\.2025 bis zum 31\.12\.2025 \(-3\)/)
+  assert.doesNotMatch(n.text, /wäre negativ/)
 })
 
 test('Negativer Verbrauch vor dem Zeitraum oder an einem Zähler anderer Sparte: kein Fehler, verteilt wie bisher', () => {
@@ -151,15 +186,55 @@ test('Übersicht: ab dem zweiten Jahr ohne Endstand ist der Zeitraum nicht gedec
   assert.equal(row(overview({ readings: [...readings, { meterId: 'za', date: '2026-06-30', value: 170 }] }, 2026), 'za').periodCovered, false)
 })
 
-test('Übersicht: ein im Zeitraum eingebauter Zähler ist ab seiner ersten Ablesung gedeckt', () => {
-  const readings: SnapshotReading[] = [{ meterId: 'za', date: '2025-07-01', value: 0 }, { meterId: 'za', date: '2025-12-31', value: 20 }]
-  assert.equal(row(overview({ readings }), 'za').periodCovered, true)
-  // Nur der Einbaustand: Das Ende fehlt.
-  assert.equal(row(overview({ readings: readings.slice(0, 1) }), 'za').periodCovered, false)
+// Zweite Durchsicht (Sollte 3): Beide Enden gleich. Der Anfang ist nur dann später, wenn der Zähler nachweislich erst im
+// Zeitraum eingebaut ist (`installedOn`, Nachfolger) oder vorher niemand in der Wohnung wohnte (wie `neededDays`).
+test('Übersicht: der Anfang zählt wie das Ende, außer der Zähler ist nachweislich erst im Zeitraum eingebaut', () => {
+  const readings: SnapshotReading[] = [{ meterId: 'za', date: '2025-06-30', value: 0 }, { meterId: 'za', date: '2025-12-31', value: 20 }]
+  // Ganzjährig bewohnt, erste Ablesung am 30.06.: Die Wohnung zahlt ein halbes Jahr, das ist nicht gedeckt.
+  const halb = row(overview({ readings }), 'za')
+  assert.equal(halb.periodCovered, false)
+  assert.deepEqual(halb.periodGap, { from: '2025-01-01', to: '2025-06-30' })
+  // Mit Einbaudatum am Zähler ab dem Einbau.
+  const eingebaut = overview({ meters: [{ ...meter('za', 'a'), installedOn: '2025-06-30' }], readings })
+  assert.equal(row(eingebaut, 'za').periodCovered, true)
   // Erst nach dem Zeitraum eingebaut: Für diesen Zeitraum fehlt nichts.
-  assert.equal(row(overview({ readings }, 2024), 'za').periodCovered, true)
+  assert.equal(row(overview({ meters: [{ ...meter('za', 'a'), installedOn: '2025-06-30' }], readings }, 2024), 'za').periodCovered, true)
   // Ohne jede Ablesung fehlt alles.
-  assert.equal(row(overview({ readings }), 'zb').periodCovered, false)
+  assert.deepEqual(row(overview({ readings }), 'zb').periodGap, { from: '2025-01-01', to: '2025-12-31' })
+})
+
+test('Übersicht: neu angelegter Bestand im ersten Jahr bleibt grün, wenn die Abrechnung ihn ohne Hinweis verteilt', () => {
+  // Anfangsstand zum 01.01. statt zum 31.12.: ein Tag am Anfang, im Spielraum.
+  const erster = row(overview({ readings: [{ meterId: 'za', date: '2025-01-01', value: 0 }, { meterId: 'za', date: '2025-12-31', value: 20 }] }), 'za')
+  assert.equal(erster.periodCovered, true)
+  assert.deepEqual(erster.periodSlack, [{ from: '2025-01-01', to: '2025-01-01' }])
+  // Erstbezug am 01.05., Anfangsstand beim Einzug: Vorher wohnte niemand dort, die Abrechnung verlangt nichts.
+  const einzug = (date: string) => row(overview({
+    tenancies: [{ ...tenancy('t-a', 'a'), start: '2025-05-01' }],
+    readings: [{ meterId: 'za', date, value: 0 }, { meterId: 'za', date: '2025-12-31', value: 20 }],
+  }), 'za')
+  assert.equal(einzug('2025-04-30').periodCovered, true)
+  assert.deepEqual(einzug('2025-04-30').periodSlack, [])
+  assert.equal(einzug('2025-05-01').periodCovered, true)
+  assert.deepEqual(einzug('2025-06-30').periodGap, { from: '2025-05-01', to: '2025-06-30' })
+})
+
+test('Übersicht: der Hauptzähler hat an keinem Ende Spielraum, wie `meter.main-partial` in der Abrechnung', () => {
+  const s: Partial<SnapshotSource> = {
+    meters: [meter('za', 'a'), meter('zb', 'b'), meter('haupt', null)],
+    readings: [...year('za', 100, 150), ...year('zb', 200, 250), { meterId: 'haupt', date: '2025-01-02', value: 0 }, { meterId: 'haupt', date: '2025-12-31', value: 400 }],
+  }
+  assert.equal(notice(settle(s), 'meter.main-partial').length, 1)
+  assert.deepEqual(row(overview(s), 'haupt').periodGap, { from: '2025-01-01', to: '2025-01-02' })
+})
+
+// Zweite Durchsicht (Sollte 4): Im kurzen Zeitraum wiegen 14 Tage zu schwer.
+test('Spielraum am Rand: höchstens 14 Tage und höchstens rund 4 % der Tage des Zeitraums', () => {
+  assert.equal(readingSlackDays(365), 14)
+  assert.equal(readingSlackDays(366), 14)
+  assert.equal(readingSlackDays(122), 4)
+  assert.equal(readingSlackDays(31), 1)
+  assert.equal(readingSlackDays(10), 0)
 })
 
 test('Übersicht: Zählerwechsel mit Endstand deckt, ohne Endstand nicht', () => {
@@ -198,6 +273,11 @@ test('Übersicht: Ablesung wenige Tage vor dem Ende des Zeitraums deckt, eine L�
   const dez = (day: string): SnapshotReading[] => [{ meterId: 'za', date: '2024-12-28', value: 0 }, { meterId: 'za', date: `2025-${day}`, value: 50 }]
   assert.equal(row(overview({ readings: dez('12-28') }), 'za').periodCovered, true)
   assert.equal(row(overview({ readings: dez('12-28') }), 'za').periodGap, null)
+  // Was im Spielraum fehlt, steht dabei (das Cockpit nennt es als ruhigen Zusatz); Anfang und Ende teilen ihn.
+  assert.deepEqual(row(overview({ readings: dez('12-28') }), 'za').periodSlack, [{ from: '2025-12-29', to: '2025-12-31' }])
+  assert.deepEqual(row(overview({ readings: [{ meterId: 'za', date: '2025-01-08', value: 0 }, { meterId: 'za', date: '2025-12-25', value: 50 }] }), 'za').periodSlack,
+    [{ from: '2025-01-01', to: '2025-01-08' }, { from: '2025-12-26', to: '2025-12-31' }])
+  assert.equal(row(overview({ readings: [{ meterId: 'za', date: '2025-01-08', value: 0 }, { meterId: 'za', date: '2025-12-24', value: 50 }] }), 'za').periodCovered, false)
   assert.equal(row(overview({ readings: dez('12-17') }), 'za').periodCovered, true)
   const frueh = row(overview({ readings: dez('12-16') }), 'za')
   assert.equal(frueh.periodCovered, false)
@@ -206,6 +286,9 @@ test('Übersicht: Ablesung wenige Tage vor dem Ende des Zeitraums deckt, eine L�
   const offen = row(overview({ readings: year('za', 0, 50) }, 2026), 'za')
   assert.deepEqual(offen.periodGap, { from: '2026-01-01', to: '2026-12-31' })
   assert.equal(offen.lastReadingOn, '2025-12-31')
+  // Die letzte Ablesung liegt am Stichtag davor oder im Spielraum davor: Es fehlt schlicht der Endstand.
+  assert.equal(offen.longUnread, false)
+  assert.equal(row(overview({ readings: dez('12-28') }, 2026), 'za').longUnread, false)
   // Der Hauptzähler taugt der Abrechnung nur über den ganzen Zeitraum als Basis (`meter.main-partial`): kein Spielraum.
   const haupt = row(overview({ meters: [meter('haupt', null)], readings: [{ meterId: 'haupt', date: '2024-12-28', value: 0 }, { meterId: 'haupt', date: '2025-12-28', value: 50 }] }), 'haupt')
   assert.deepEqual(haupt.periodGap, { from: '2025-12-29', to: '2025-12-31' })
@@ -230,6 +313,7 @@ test('Übersicht: Hauptzähler durch einen neu angelegten Hauptzähler ersetzt, 
   const alt = row(overview({ readings: [{ meterId: 'za', date: '2022-12-31', value: 1 }, { meterId: 'za', date: '2023-06-30', value: 5 }] }), 'za')
   assert.equal(alt.periodCovered, false)
   assert.equal(alt.lastReadingOn, '2023-06-30')
+  assert.equal(alt.longUnread, true)
 })
 
 // Durchsicht (Sollte 4): Mehrere Heizkostenverteiler je Wohnung sind der Normalfall; ein später eingebauter zweiter ist
@@ -237,7 +321,7 @@ test('Übersicht: Hauptzähler durch einen neu angelegten Hauptzähler ersetzt, 
 test('Übersicht: ein später eingebauter paralleler Zähler verdeckt keinen fehlenden Endstand', () => {
   const hkv = (id: string): SnapshotMeter => ({ id, unitId: 'a', type: 'hkv', name: id })
   const rows = overview({
-    meters: [hkv('k1'), hkv('k2')],
+    meters: [hkv('k1'), { ...hkv('k2'), installedOn: '2025-03-01' }],
     readings: [{ meterId: 'k1', date: '2023-12-31', value: 1 }, { meterId: 'k1', date: '2024-12-31', value: 5 }, { meterId: 'k2', date: '2025-03-01', value: 0 }, { meterId: 'k2', date: '2025-12-31', value: 5 }],
   })
   assert.equal(row(rows, 'k1').periodCovered, false)

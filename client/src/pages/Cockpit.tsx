@@ -16,7 +16,7 @@ import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending, desktopHintVisible } from '../update'
-import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters } from '../meterCheck'
+import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail, type MeterConsumption } from '../meterCheck'
 import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { DesktopHint, UpdateConsent } from '../components/Update'
@@ -50,7 +50,7 @@ type Props = {
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
-type Consumption = { meterId: string; consumption: number; readingCount: number; periodCovered?: boolean; periodGap?: { from: string; to: string } | null; lastReadingOn?: string | null; warnings: string[]; notices?: Notice[] }
+type Consumption = MeterConsumption & { consumption: number }
 
 type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 
@@ -241,7 +241,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
           detail: incompleteDetail(incomplete, consumption) })
       } else {
         list.push({ title: 'Zählerstände', level: 'gruen',
-          detail: `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.` })
+          detail: `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.${slackDetail(relevant, consumption)}` })
       }
     }
     // 3b. Eichfrist (Heizung PR 21): eine eigene gelbe Zeile, denn Mietfuchs rechnet mit den Werten; die Ampel

@@ -864,47 +864,45 @@ function futureReadingsUsed(readings: readonly SnapshotReading[], period: { from
   return readingsUsedFor(readings, period).filter((r) => compareText(r.date, limit) > 0)
 }
 
-// Wie viele Tage am Ende des Zeitraums ein Wohnungszähler ohne Ablesung sein darf, ohne dass die Ampel „Zählerstände“
-// rot wird, und wie viele Tage nach der letzten Ablesung des alten ein neu angelegter Zähler noch als sein Nachfolger
-// gilt. Abgelesen wird um den Stichtag herum, selten genau an ihm; die Abrechnung rechnet mit einer Ablesung kurz
-// davor ohne Hinweis (die fehlenden Tage zählen dort nicht mit, `consumptionInPeriod`), und das Cockpit soll dann
-// nichts verlangen, was der Vermieter nicht erfüllen kann. Zwei Wochen sind eine Schwelle zum Hinsehen, keine Regel:
-// An der Zahl hängt kein Betrag und kein Hinweis der Abrechnung, deshalb steht sie hier und nicht im Register.
+// **Spielraum am Rand** (Ampel „Zählerstände“): Abgelesen wird um den Stichtag herum, selten genau an ihm. Die
+// Abrechnung rechnet mit einer Ablesung kurz davor oder danach ohne Hinweis (die fehlenden Tage zählen dort nicht mit,
+// hochgerechnet wird nichts, `consumptionInPeriod`), und das Cockpit soll dann nichts verlangen, was der Vermieter
+// nicht erfüllen kann. Einem Wohnungszähler dürfen deshalb am Anfang und am Ende zusammen so viele Tage fehlen:
+// höchstens `READING_EDGE_DAYS` und höchstens `READING_EDGE_SHARE` der Tage des Zeitraums, abgerundet. Der Anteil
+// begrenzt, was dabei an Verbrauch einer Wohnung unverteilt bleibt (im Jahr 14 von 365 Tagen, 3,8 %; im Rumpf von vier
+// Monaten wären 14 Tage 11,7 %, erlaubt sind dort 4). Beides sind Schwellen zum Hinsehen, keine Regel: An den Zahlen
+// hängt kein Betrag und kein Hinweis der Abrechnung, deshalb stehen sie hier und nicht im Register.
+// `READING_EDGE_DAYS` ist auch die Frist, in der ein neu angelegter Zähler an seinen Vorgänger anschließt.
 const READING_EDGE_DAYS = 14
+const READING_EDGE_SHARE = 0.04
+export const readingSlackDays = (periodDays: number): number => Math.min(READING_EDGE_DAYS, Math.floor(periodDays * READING_EDGE_SHARE))
 
-// Welche Tage des Zeitraums decken die Ablesungen eines Zählers nicht (Cockpit, Ampel „Zählerstände“)? `null`: keine.
-// Dieselbe Regel wie für Hauptzähler und lückenhafte Wohnungszähler in der Abrechnung (ein Tag ist gedeckt, wenn er
-// in einem Segment liegt, wie `coveredDays`), nur über die Spanne, in der der Zähler messen konnte: ab dem Tag nach
-// seiner ersten Ablesung, wenn sie im Zeitraum oder danach liegt (im Lauf des Zeitraums eingebaut), und bis zu seiner
-// letzten, wenn ein Nachfolger anschließt (`succeeded`). Eine leere Spanne (vor dem Zeitraum ersetzt, erst danach
-// eingebaut) verlangt nichts; ohne Ablesung fehlt der ganze Zeitraum. Genannt wird die Spanne vom ersten bis zum
-// letzten ungedeckten Tag. `edgeDays`: so viele Tage dürfen allein am Ende fehlen (`READING_EDGE_DAYS`; beim
-// Hauptzähler 0, denn die Abrechnung nimmt ihn nur über den ganzen Zeitraum als Basis, `meter.main-partial`).
-function uncoveredSpan(readings: SnapshotReading[], succeeded: boolean, edgeDays: number, from: string, to: string): { from: string, to: string } | null {
-  const dates = readings.map((r) => r.date).sort(compareText)
-  const first = dates[0]
-  const last = dates[dates.length - 1]
-  if (first === undefined || last === undefined) return { from, to }
-  const start = compareText(first, dayBefore(from)) > 0 ? dayAfter(first) : from
-  const end = succeeded && compareText(last, to) < 0 ? last : to
-  if (compareText(start, end) > 0) return null
+// Welche Tage der Spanne [start, end] decken die Ablesungen eines Zählers nicht (Cockpit, Ampel „Zählerstände“)?
+// Dieselbe Regel wie für Hauptzähler und lückenhafte Wohnungszähler in der Abrechnung: Ein Tag ist gedeckt, wenn er in
+// einem Segment liegt (wie `coveredDays`). `gap`: die Spanne vom ersten bis zum letzten ungedeckten Tag, `null`, wenn
+// nichts fehlt oder nur am Anfang und Ende zusammen höchstens `slackDays` Tage; die stehen dann in `slack`.
+function uncoveredSpan(readings: SnapshotReading[], start: string, end: string, slackDays: number): { gap: { from: string, to: string } | null, slack: { from: string, to: string }[] } {
+  if (compareText(start, end) > 0) return { gap: null, slack: [] }
   const covered = meterSegments(readings).segments
     .map((seg) => ({ from: dayAfter(seg.from), to: seg.to }))
     .filter((iv) => compareText(iv.to, start) >= 0 && compareText(iv.from, end) <= 0)
-  let gapFrom = start
-  for (const iv of covered.slice().sort((a, b) => compareText(a.from, b.from))) {
-    if (compareText(iv.from, gapFrom) > 0) break
-    if (compareText(iv.to, gapFrom) >= 0) gapFrom = dayAfter(iv.to)
+    .sort((a, b) => compareText(a.from, b.from))
+  const holes: { from: string, to: string }[] = []
+  let cursor = start
+  for (const iv of covered) {
+    if (compareText(cursor, end) > 0) break
+    if (compareText(iv.to, cursor) < 0) continue
+    if (compareText(iv.from, cursor) > 0) holes.push({ from: cursor, to: dayBefore(iv.from) })
+    cursor = dayAfter(iv.to)
   }
-  if (compareText(gapFrom, end) > 0) return null
-  let gapTo = end
-  for (const iv of covered.slice().sort((a, b) => compareText(b.to, a.to))) {
-    if (compareText(iv.to, gapTo) < 0) break
-    if (compareText(iv.from, gapTo) <= 0) gapTo = dayBefore(iv.from)
-  }
-  const tailOnly = compareText(gapFrom, start) > 0 && covered.every((iv) => compareText(iv.to, gapFrom) < 0)
-  if (tailOnly && rangeOverlapDays(gapFrom, end, gapFrom, end) <= edgeDays) return null
-  return { from: gapFrom, to: gapTo }
+  if (compareText(cursor, end) <= 0) holes.push({ from: cursor, to: end })
+  const first = holes[0]
+  const last = holes[holes.length - 1]
+  if (!first || !last) return { gap: null, slack: [] }
+  const atEdge = holes.every((h) => h.from === start || h.to === end)
+  const days = holes.reduce((a, h) => a + rangeOverlapDays(h.from, h.to, h.from, h.to), 0)
+  if (atEdge && days <= slackDays) return { gap: null, slack: holes }
+  return { gap: { from: first.from, to: last.to }, slack: [] }
 }
 
 // Wie viele Tage die Zähler einer Einheit zusammen abdecken. Zähler laufen **nebeneinander**
@@ -946,10 +944,14 @@ export type ConsumptionOverviewRow = {
   consumption: number
   readingCount: number
   // Decken Ablesungen den Zeitraum (`uncoveredSpan`)? `readingCount` zählt alle Ablesungen aller Jahre und sagt das
-  // ab dem zweiten Jahr nicht mehr. `periodGap`: die Tage, die fehlen; `lastReadingOn` für den Satz dazu.
+  // ab dem zweiten Jahr nicht mehr. `periodGap`: die Tage, die fehlen; `periodSlack`: Tage am Rand, die fehlen, aber im
+  // Spielraum liegen (`readingSlackDays`); `lastReadingOn` und `longUnread` (die letzte Ablesung liegt weiter als der
+  // Spielraum vor dem Beginn des Zeitraums) für den Satz im Cockpit.
   periodCovered: boolean
   periodGap: { from: string, to: string } | null
+  periodSlack: { from: string, to: string }[]
   lastReadingOn: string | null
+  longUnread: boolean
   notices: Notice[]
   warnings: string[]
 }
@@ -967,22 +969,55 @@ export function consumptionOverview(snapshot: Snapshot, options: { asOf?: string
   // Derselbe Platz: an derselben Wohnung, ohne Wohnung derselbe Umfang (Hauptzähler durch Hauptzähler) und dieselbe Anlage.
   const samePlace = (a: SnapshotMeter, b: SnapshotMeter): boolean => a.type === b.type && (a.unitId ?? null) === (b.unitId ?? null) &&
     (a.unitId ? true : (a.scope ?? 'property') === (b.scope ?? 'property') && (a.heatingPlantId ?? null) === (b.heatingPlantId ?? null) && (a.heatingRole ?? null) === (b.heatingRole ?? null))
+  const slackDays = readingSlackDays(rangeOverlapDays(from, to, from, to))
+  // Nachfolger (ein Tausch, als neuer Zähler angelegt): die Regel von `inUseAt` (monthlyInfo.ts), ein Zähler am selben
+  // Platz, dessen Ablesungen alle nicht vor der letzten des alten liegen und eine danach. Dazu muss er anschließen
+  // (erste Ablesung höchstens `READING_EDGE_DAYS` nach der letzten des alten): Mehrere Heizkostenverteiler je Wohnung
+  // sind der Normalfall, und ein Monate später eingebauter zweiter verdeckte sonst den fehlenden Endstand des ersten.
+  const follows = (next: SnapshotMeter, old: SnapshotMeter): boolean => {
+    if (next.id === old.id || !samePlace(next, old)) return false
+    const oldDates = datesOf.get(old.id) ?? []
+    const nextDates = datesOf.get(next.id) ?? []
+    const oldLast = oldDates.reduce<string | null>((a, d) => (a === null || compareText(d, a) > 0 ? d : a), null)
+    const nextFirst = nextDates.reduce<string | null>((a, d) => (a === null || compareText(d, a) < 0 ? d : a), null)
+    return oldLast !== null && nextFirst !== null && compareText(nextFirst, oldLast) >= 0 && nextDates.some((d) => compareText(d, oldLast) > 0) &&
+      compareText(nextFirst, new Date(toUTC(oldLast) + READING_EDGE_DAYS * MS_DAY).toISOString().slice(0, 10)) <= 0
+  }
+  // Ab wann im Zeitraum jemand in der Einheit wohnt (bei einer Wohnung mit Zimmern in einem ihrer Zimmer), wenn das
+  // nach seinem Beginn liegt; sonst `null`. Wie `neededDays` in der Abrechnung: Vor dem ersten Mietverhältnis fehlt dort
+  // kein Zähler (neu angelegter Bestand, Anfangsstand beim Einzug). Mit Eigennutzung oder Nutzungswechsel gilt der
+  // ganze Zeitraum, ebenso ohne Mietverhältnis im Zeitraum (der Verbrauch eines Leerstands gehört in die Basis).
+  const firstOccupied = (unitId: string): string | null => {
+    const units = snapshot.units.filter((u) => u.id === unitId || u.parentUnitId === unitId)
+    if (units.some((u) => u.selfUsed || (u.usageChanges ?? []).length > 0)) return null
+    const starts = snapshot.tenancies
+      .filter((t) => units.some((u) => u.id === t.unitId) && compareText(t.start, to) <= 0 && (t.end === null || compareText(t.end, from) >= 0))
+      .map((t) => t.start)
+      .sort(compareText)
+    const earliest = starts[0]
+    return earliest !== undefined && compareText(earliest, from) > 0 ? earliest : null
+  }
   return snapshot.meters.map((m) => {
     const readings = snapshot.readings.filter((r) => r.meterId === m.id)
     const { notices, warnings } = meterSegments(readings)
-    // Nachfolger (ein Tausch, als neuer Zähler angelegt): die Regel von `inUseAt` (monthlyInfo.ts), ein Zähler am selben
-    // Platz, dessen Ablesungen alle nicht vor der letzten dieses Zählers liegen und eine danach. Dazu muss er anschließen
-    // (erste Ablesung höchstens `READING_EDGE_DAYS` nach der letzten des alten): Mehrere Heizkostenverteiler je Wohnung
-    // sind der Normalfall, und ein Monate später eingebauter zweiter verdeckte sonst den fehlenden Endstand des ersten.
-    const last = readings.reduce<string | null>((a, r) => (a === null || compareText(r.date, a) > 0 ? r.date : a), null)
-    const succeeded = last !== null && snapshot.meters.some((o) => {
-      if (o.id === m.id || !samePlace(o, m)) return false
-      const dates = datesOf.get(o.id) ?? []
-      const first = dates.reduce<string | null>((a, d) => (a === null || compareText(d, a) < 0 ? d : a), null)
-      return first !== null && compareText(first, last) >= 0 && dates.some((d) => compareText(d, last) > 0) &&
-        compareText(first, new Date(toUTC(last) + READING_EDGE_DAYS * MS_DAY).toISOString().slice(0, 10)) <= 0
-    })
-    const periodGap = uncoveredSpan(readings, succeeded, m.unitId ? READING_EDGE_DAYS : 0, from, to)
+    const dates = (datesOf.get(m.id) ?? []).slice().sort(compareText)
+    const first = dates[0] ?? null
+    const last = dates[dates.length - 1] ?? null
+    // Ende der Spanne: der Zeitraum, oder die letzte Ablesung, wenn ein Nachfolger anschließt.
+    const end = last !== null && compareText(last, to) < 0 && snapshot.meters.some((o) => follows(o, m)) ? last : to
+    // Anfang der Spanne: der Zeitraum. Später nur, wenn der Zähler nachweislich erst im Zeitraum eingebaut ist
+    // (`installedOn`; der Stand vom Einbautag gilt zum Tagesende; oder er ist selbst Nachfolger), oder wenn in der
+    // Wohnung vorher niemand wohnte (`firstOccupied`). Eine späte erste Ablesung allein verschiebt ihn nicht: Die
+    // Wohnung zahlte sonst ohne Hinweis nur einen Teil des Zeitraums.
+    let start = from
+    if (m.installedOn && compareText(m.installedOn, from) >= 0) start = dayAfter(m.installedOn)
+    if (first !== null && compareText(first, dayBefore(from)) > 0 && snapshot.meters.some((o) => follows(m, o)) && compareText(dayAfter(first), start) > 0) start = dayAfter(first)
+    const occupiedFrom = m.unitId ? firstOccupied(m.unitId) : null
+    if (occupiedFrom !== null && compareText(occupiedFrom, start) > 0) start = occupiedFrom
+    // Der Hauptzähler hat an keinem Ende Spielraum: Die Abrechnung nimmt ihn nur über den ganzen Zeitraum als Basis
+    // (`meter.main-partial`), und das Cockpit ist nie grün, wo sie das meldet.
+    const { gap: periodGap, slack: periodSlack } = uncoveredSpan(readings, start, end, m.unitId ? slackDays : 0)
+    const longUnread = periodGap !== null && last !== null && compareText(last, new Date(toUTC(dayBefore(from)) - slackDays * MS_DAY).toISOString().slice(0, 10)) < 0
     for (const r of futureReadingsUsed(readings, { from, to }, options.asOf)) {
       const n = makeNotice('meter.reading-future',
         `Zähler „${m.name ?? m.id}“: Die Ablesung vom ${fmtDay(r.date)} liegt in der Zukunft. Mietfuchs verteilt den Unterschied zum Stand davor gleichmäßig auf alle Tage bis zu diesem Datum und rechnet dem Zeitraum nur seinen Teil davon zu. ` +
@@ -1024,7 +1059,9 @@ export function consumptionOverview(snapshot: Snapshot, options: { asOf?: string
       readingCount: readings.length,
       periodCovered: periodGap === null,
       periodGap,
+      periodSlack,
       lastReadingOn: last,
+      longUnread,
       notices,
       warnings,
     }
@@ -4253,35 +4290,56 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // einer Rechnung über 900 €). Das heilt keine Kürzung; der Vermieter trägt deshalb sichtbar, bis die Ablesung stimmt.
   // **Gefragt wird je Empfänger, nicht je Segment** (Durchsicht): Ein Rücksprung, der sich beim selben Empfänger
   // ausgleicht (ein Schätzwert mitten im Jahr bei ganzjährigem Mieter), verschiebt kein Geld und bleibt die Warnung
-  // `meter.negative` der Verbrauchsübersicht; ein Bestand, der vorher richtig rechnete, rechnet weiter so. Ein
-  // Wohnungszähler wird deshalb an den Grenzen geteilt, an denen der Empfänger wechselt (Mieterwechsel,
-  // Nutzungswechsel), und jeder Teil für sich geprüft; ein Zwischenzähler (`whole`) geht nur als Summe des Zeitraums
-  // ein. Haupt- und Bezugszähler prüft der Aufrufer nicht: Sie gehen nur als Summe ein, und eine Summe, die nicht
-  // trägt, behandelt der Plan des Rests (`meter.sub-exceeds-main`, `meter.rest-unavailable`).
+  // `meter.negative` der Verbrauchsübersicht; ein Bestand, der vorher richtig rechnete, rechnet weiter so. Empfänger
+  // eines Wohnungszählers sind jedes Mietverhältnis der Einheit über seine Zeit im Zeitraum (so rechnet die Position
+  // seinen Verbrauch) und jede Spanne dazwischen (Leerstand, Eigennutzung, außerhalb; geteilt, wo die Nutzung
+  // wechselt). Überschneiden sich zwei Mietverhältnisse, zählt jedes für sich und nicht der gemeinsame Abschnitt; den
+  // Fehler dort nennt `tenancy.overlap`. Ein Zwischenzähler (`whole`) geht nur als Summe des Zeitraums ein. Haupt- und
+  // Bezugszähler prüft der Aufrufer nicht: Sie gehen nur als Summe ein, und eine Summe, die nicht trägt, behandelt der
+  // Plan des Rests (`meter.sub-exceeds-main`, `meter.rest-unavailable`).
+  // **Verglichen wird ungerundet** (zweite Durchsicht): Ein Zähler in MWh mit 12,345 auf 12,344 ergibt je Empfänger
+  // weniger als ein Tausendstel und trotzdem negative Cent. `NEGATIVE_NOISE` schließt nur den Rest der Gleitkommarechnung
+  // aus (Stände bis in die Millionen mal 2^-52 liegen bei 1e-10, die tagesanteilige Teilung summiert wenige davon).
+  const NEGATIVE_NOISE = 1e-7
   const recipientSpans = (unitId: string | null, among: readonly { unitId: string, start: string, end: string | null }[]): { from: string, to: string }[] => {
-    const cuts = new Set<string>()
-    if (unitId) {
-      for (const t of among) {
-        if (t.unitId !== unitId) continue
-        if (compareText(t.start, yFrom) > 0 && compareText(t.start, yTo) <= 0) cuts.add(t.start)
-        if (t.end && compareText(t.end, yFrom) >= 0 && compareText(t.end, yTo) < 0) cuts.add(dayAfter(t.end))
+    if (!unitId) return [{ from: yFrom, to: yTo }]
+    const own = among
+      .filter((t) => t.unitId === unitId && compareText(t.start, yTo) <= 0 && (t.end === null || compareText(t.end, yFrom) >= 0))
+      .map((t) => ({ from: compareText(t.start, yFrom) > 0 ? t.start : yFrom, to: t.end !== null && compareText(t.end, yTo) < 0 ? t.end : yTo }))
+      .sort((a, b) => compareText(a.from, b.from))
+    // Die Spannen ohne Mietverhältnis, geteilt an den Tagen, an denen die Nutzung wechselt.
+    const u = unitById.get(unitId)
+    const usageStarts = u ? usageIn(u).spans.map((x) => x.from).filter((d) => compareText(d, yFrom) > 0 && compareText(d, yTo) <= 0).sort(compareText) : []
+    const free: { from: string, to: string }[] = []
+    const addFree = (from: string, to: string): void => {
+      let cursor = from
+      for (const d of usageStarts) {
+        if (compareText(d, cursor) <= 0 || compareText(d, to) > 0) continue
+        free.push({ from: cursor, to: dayBefore(d) })
+        cursor = d
       }
-      const u = unitById.get(unitId)
-      if (u) for (const x of usageIn(u).spans) if (compareText(x.from, yFrom) > 0 && compareText(x.from, yTo) <= 0) cuts.add(x.from)
+      free.push({ from: cursor, to })
     }
-    const starts = [yFrom, ...[...cuts].sort(compareText)]
-    return starts.map((from, i) => ({ from, to: dayBefore(starts[i + 1] ?? dayAfter(yTo)) }))
+    let cursor = yFrom
+    for (const t of own) {
+      if (compareText(t.from, cursor) > 0) addFree(cursor, dayBefore(t.from))
+      if (compareText(dayAfter(t.to), cursor) > 0) cursor = dayAfter(t.to)
+    }
+    if (compareText(cursor, yTo) <= 0) addFree(cursor, yTo)
+    return [...own, ...free]
   }
   const negativeInKey = (where: string, parts: readonly { m: SnapshotMeter, whole?: boolean }[], among: readonly { unitId: string, start: string, end: string | null }[]): boolean => {
     const found = parts.flatMap(({ m, whole }) => (whole ? [{ from: yFrom, to: yTo }] : recipientSpans(m.unitId ?? null, among)).flatMap((sp) => {
-      const value = Math.round(consumptionInPeriod(readingsOf(m.id), sp.from, sp.to) * 1000) / 1000
-      return value < 0 ? [{ m, ...sp, value }] : []
+      const value = consumptionInPeriod(readingsOf(m.id), sp.from, sp.to)
+      return value < -NEGATIVE_NOISE ? [{ m, ...sp, value }] : []
     }))
     const first = found[0]
     if (!first) return false
+    // Auf drei Stellen wie jede Menge; was darunter liegt, mit zwei geltenden Ziffern, damit nie „-0“ dasteht.
+    const shown = (v: number): string => fmtMeter(Math.round(v * 1000) / 1000 || Number(v.toPrecision(2)))
     warn('meter.negative-in-key',
-      `${where}: Negativer Verbrauch am Zähler ${andList(found.map((f) => `„${f.m.name ?? f.m.id}“ vom ${fmtDay(f.from)} bis zum ${fmtDay(f.to)} (${fmtMeter(f.value)})`))}. ` +
-        'Er ginge so in den Verteilschlüssel ein: Der Anteil dessen, dem er zugerechnet wird, wäre negativ, und die übrigen Anteile wären entsprechend zu hoch. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. ' +
+      `${where}: Negativer Verbrauch am Zähler ${andList(found.map((f) => `„${f.m.name ?? f.m.id}“ vom ${fmtDay(f.from)} bis zum ${fmtDay(f.to)} (${shown(f.value)})`))}. ` +
+        'So ginge er in den Verteilschlüssel ein: Er senkte den Anteil dessen, dem er zugerechnet wird, und höbe die Anteile der übrigen. Die Position wird nicht verteilt, der Betrag steht beim Vermieter. ' +
         'Prüfen Sie die Ablesungen, oder kennzeichnen Sie einen Zählerwechsel.',
       { kind: 'meter', id: first.m.id })
     return true

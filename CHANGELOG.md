@@ -90,11 +90,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     nach. **Für offene Abrechnungen heißt das:** Nur eine Position, in der ein solcher negativer Verbrauch steckt,
     ändert ihre Zahlen (die Anteile der Mieter fallen auf 0). Ein Rücksprung mitten im Zeitraum, der sich beim selben
     Mieter wieder ausgleicht, und Rücksprünge am Hauptzähler ändern nichts; sie stehen wie bisher als Warnung auf der
-    Seite Zähler. Abgeschlossene Abrechnungen bleiben, wie sie sind.
+    Seite Zähler. Abgeschlossene Abrechnungen bleiben, wie sie sind. Am häufigsten trifft es einen Leerstand oder
+    Mieterwechsel, bei dem zwei Ableser verschieden runden (Auszug mit 45, Einzug mit 44,8): Der Leerstand dazwischen
+    hat dann negativen Verbrauch, und die Position wird nicht verteilt, bis einer der beiden Stände berichtigt ist.
   - Cockpit: Die Zeile „Zählerstände“ meldete ab dem zweiten Jahr jeden Zähler als vollständig, weil sie die
-    Ablesungen aller Jahre zählte. Sie prüft jetzt, ob Ablesungen den gewählten Zeitraum decken, und nennt die Tage,
-    die fehlen. Ein im Lauf des Zeitraums eingebauter Zähler gilt ab seiner ersten Ablesung, ein getauschter bis zu
-    seiner letzten, und eine Ablesung bis zu zwei Wochen vor dem Ende des Zeitraums genügt bei einem Wohnungszähler.
+    Ablesungen aller Jahre zählte. Sie prüft jetzt, ob Ablesungen den gewählten Zeitraum von Anfang bis Ende decken,
+    und nennt die Tage, die fehlen. Ein getauschter Zähler gilt bis zu seiner letzten Ablesung, ein Zähler in einer
+    erst im Zeitraum bezogenen Wohnung ab dem Einzug. Bei einem Wohnungszähler dürfen am Anfang und Ende zusammen bis
+    zu zwei Wochen fehlen (im kurzen Zeitraum entsprechend weniger); die Zeile bleibt dann grün und nennt diese Tage.
   - Eine Ablesung mit Datum in der Zukunft (etwa 2052 statt 2025) nennen Zähler-Seite, Cockpit und Abrechnung als
     Warnung, statt den Verbrauch still nach Tagen herunterzurechnen; gerechnet wird weiter wie erfasst.
   - Hat eine Wohnung einen Zähler, dem nur die Stände des Zeitraums fehlen, heißt der Hinweis nicht mehr „Wohnung ohne

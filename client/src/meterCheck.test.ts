@@ -2,7 +2,7 @@
 // kann er die Verteilbasis des Verbrauchsschlüssels sein.
 import { expect, test } from 'vitest'
 import type { Meter, Notice } from './types'
-import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters } from './meterCheck'
+import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail } from './meterCheck'
 
 const meter = (id: string, unitId: string | null, type: Meter['type'] = 'kaltwasser'): Meter =>
   ({ id, propertyId: 'p', name: id, type, unitId, unit: 'm³' })
@@ -40,15 +40,25 @@ test('Text der Zeile: ohne Angabe des Servers wie bisher, mit Lücke die fehlend
   ])).toBe('Anfang/Ende fehlt oder unplausibel bei: haupt (ohne Ablesung vom 17.12.2025 bis 31.12.2025) und zwischen')
 })
 
-test('Text der Zeile: ein seit Jahren nicht abgelesener Zähler bekommt den Ausweg genannt', () => {
-  const text = incompleteDetail([meter('alt', 'u1')], [{ meterId: 'alt', readingCount: 3, periodCovered: false, periodGap: { from: '2025-01-01', to: '2025-12-31' }, lastReadingOn: '2023-06-30', warnings: [] }])
-  expect(text).toContain('alt (ohne Ablesung vom 01.01.2025 bis 31.12.2025)')
-  expect(text).toContain('alt (zuletzt abgelesen am 30.06.2023)')
-  expect(text).toContain('Zählerwechsel')
-  expect(text).toContain('löschen')
-  // Fehlt nur der Endstand nach dem Stichtag davor, ist das kein ausgebauter Zähler.
-  expect(incompleteDetail([meter('neu', 'u1')], [{ meterId: 'neu', readingCount: 2, periodCovered: false, periodGap: { from: '2026-01-01', to: '2026-12-31' }, lastReadingOn: '2025-12-31', warnings: [] }]))
-    .toBe('Anfang/Ende fehlt oder unplausibel bei: neu (ohne Ablesung vom 01.01.2026 bis 31.12.2026)')
+test('Text der Zeile: ein vor dem Zeitraum länger nicht abgelesener Zähler bekommt den Tag und den Weg beim Tausch genannt', () => {
+  const text = incompleteDetail([meter('alt', 'u1')], [{ meterId: 'alt', readingCount: 3, periodCovered: false, periodGap: { from: '2025-01-01', to: '2025-12-31' }, lastReadingOn: '2023-06-30', longUnread: true, warnings: [] }])
+  expect(text).toBe('Anfang/Ende fehlt oder unplausibel bei: alt (ohne Ablesung vom 01.01.2025 bis 31.12.2025). Schon länger nicht abgelesen: alt (zuletzt abgelesen am 30.06.2023). Wurde ein solcher Zähler getauscht, erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel.')
+})
+
+// Zweite Durchsicht (Muss 1): Zuletzt am 28.12.2025 abgelesen, Blick auf 2026. Es fehlt schlicht der Endstand; ein Rat
+// zum Löschen nähme der offenen Abrechnung 2025 den Zähler.
+test('Text der Zeile: fehlt nur der Endstand, steht nichts von „länger nicht abgelesen“, und zum Löschen rät sie nie', () => {
+  const normal = incompleteDetail([meter('wasser', 'u1')], [{ meterId: 'wasser', readingCount: 2, periodCovered: false, periodGap: { from: '2026-01-01', to: '2026-12-31' }, lastReadingOn: '2025-12-28', longUnread: false, warnings: [] }])
+  expect(normal).toBe('Anfang/Ende fehlt oder unplausibel bei: wasser (ohne Ablesung vom 01.01.2026 bis 31.12.2026)')
+  const lange = incompleteDetail([meter('alt', 'u1')], [{ meterId: 'alt', readingCount: 3, periodCovered: false, periodGap: { from: '2025-01-01', to: '2025-12-31' }, lastReadingOn: '2023-06-30', longUnread: true, warnings: [] }])
+  for (const text of [normal, lange]) expect(text).not.toMatch(/lösch/i)
+})
+
+test('Grüne Zeile: Tage am Rand, die fehlen und hingenommen sind, stehen als Zusatz da', () => {
+  const ms = [meter('a', 'u1'), meter('b', 'u2')]
+  expect(slackDetail(ms, [ok('a'), ok('b')])).toBe('')
+  expect(slackDetail(ms, [{ ...ok('a'), periodCovered: true, periodSlack: [{ from: '2025-12-18', to: '2025-12-31' }] }, { ...ok('b'), periodCovered: true, periodSlack: [{ from: '2025-01-01', to: '2025-01-01' }] }]))
+    .toBe(' Nicht erfasst und in der Abrechnung nicht mitgerechnet: a vom 18.12.2025 bis 31.12.2025 (14 Tage) und b vom 01.01.2025 bis 01.01.2025 (1 Tag).')
 })
 
 test('Zähler eines anderen Typs zählen nicht', () => {
