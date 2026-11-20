@@ -71,7 +71,7 @@ import {
   aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, depositEntries, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_CHANGE_REASONS, RENT_DUE_RULES, RENT_KINDS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
-  readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
+  readings, rentIncreases, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { linkedTargetRefusal } from './bankGuard.ts'
 import { RENT_DATA_TEXTS, RENT_DUE_TEXTS } from './errors.ts'
@@ -2197,6 +2197,19 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
     if ((heiz[0]?.n ?? 0) > 0) haengt.push('Korrekturen der Heizvorauszahlung ihrer Mietverhältnisse')
     const erstattung = await db.select({ n: count() }).from(co2Refunds).where(and(inArray(co2Refunds.tenancyId, tenancyIds), isNotNull(co2Refunds.settlePeriod)))
     if ((erstattung[0]?.n ?? 0) > 0) haengt.push('in einer Abrechnung verrechnete CO₂-Erstattungen ihrer Mietverhältnisse')
+  }
+  // Integrationsdurchsicht zu #191, K-Daten-1: Ein offenes Mieterhöhungsverlangen (Entwurf oder versandt ohne Antwort) hat
+  // Absender, Anschrift und Kappungsgrenze des bisherigen Objekts eingefroren; Antwort und Staffel gehören zu ihm.
+  if (tenancyIds.length > 0) {
+    const offen = await db.select({ tenantName: tenancies.tenantName }).from(rentIncreases)
+      .innerJoin(tenancies, eq(rentIncreases.tenancyId, tenancies.id))
+      .where(and(inArray(rentIncreases.tenancyId, tenancyIds), or(eq(rentIncreases.status, 'draft'), and(eq(rentIncreases.kind, 'comparison'), eq(rentIncreases.status, 'sent')))))
+    if (offen.length > 0) {
+      throw new CrossPropertyError(
+        `Für ${andList([...new Set(offen.map((x) => `„${x.tenantName}“`))])} gibt es ein offenes Verlangen einer Mieterhöhung (Entwurf oder versandt ohne Antwort), das Anschrift und Kappungsgrenze des bisherigen Objekts nennt. ` +
+          `Die Wohnung „${after.name}“ kann deshalb noch nicht in ein anderes Objekt wechseln. Tragen Sie zuerst die Antwort des Mieters ein oder nehmen Sie das Verlangen zurück; einen Entwurf löschen Sie. Gespeichert wurde nichts.`,
+      )
+    }
   }
   if (haengt.length === 0) {
     await guardMoveSettlements(db, before, after, ihreMietverhaeltnisse)

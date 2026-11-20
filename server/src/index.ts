@@ -2048,7 +2048,7 @@ app.post('/api/rent-increases/:id/status', async (req: Request, res: Response) =
     const { increase, ctx, stale } = await rentIncreaseOf(db, String(req.params.id), body.token)
     if (stale) return { stale }
     readableBasis(increase)
-    const problem = decisionProblem(increase, decision, agreedCents, decidedOn, today())
+    const problem = decisionProblem(increase, decision, agreedCents, decidedOn, today(), ctx.tenancy.end)
     if (problem) throw new RentIncreaseError(400, problem)
     const next = decidedRentIncrease(increase, decision, agreedCents, decidedOn)
     let rents: readonly RentEntry[] = ctx.tenancy.baseRents

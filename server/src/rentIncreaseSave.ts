@@ -190,9 +190,13 @@ export function withStep(rents: readonly RentEntry[], step: RentEntry): RentEntr
 }
 
 // Die Staffel ohne die geschriebene Stufe, wenn sie unverändert dasteht. Fehlt sie, bleibt die Staffel, wie sie ist.
+// Steht danach noch eine Stufe, baut die auf der Erhöhung auf (etwa eine spätere Erhöhung mit ihr als bisheriger Miete
+// und Kappungsgrenze); dann wird nichts herausgenommen (Integrationsdurchsicht S-Geld).
 export function withoutStep(rents: readonly RentEntry[], step: RentEntry): RentEntry[] | null {
   const at = rents.find((r) => r.from === step.from)
   if (!at) return null
+  const next = [...rents].sort((a, b) => compareText(a.from, b.from)).find((r) => compareText(r.from, step.from) > 0)
+  if (next) throw new RentIncreaseError(409, `In der Kaltmiete-Staffel steht nach der Stufe ab ${monthName(step.from)} noch eine Stufe ab ${monthName(next.from)}, die auf dieser Erhöhung aufbaut. Mietfuchs nimmt die Erhöhung deshalb nicht zurück. Nehmen Sie zuerst die spätere Änderung zurück oder ändern Sie die Staffel selbst.`)
   if (!sameStep(at, step)) {
     const what = at.monthlyCents !== step.monthlyCents ? `${euro(at.monthlyCents)} statt ${euro(step.monthlyCents)}` : 'Art oder Indexwert'
     throw new RentIncreaseError(409, `Die Stufe ab ${monthName(step.from)} wurde nach der Übernahme geändert (${what}). Mietfuchs nimmt sie deshalb nicht heraus. Prüfen Sie die Kaltmiete-Staffel und ändern Sie sie bei Bedarf selbst; danach lässt sich das Verlangen zurücknehmen.`)
@@ -224,11 +228,16 @@ export const DECISION_TITLES: Readonly<Record<RentIncreaseDecision, string>> = {
 export const isDecision = (x: unknown): x is RentIncreaseDecision => x === 'agreed' || x === 'partial' || x === 'refused' || x === 'withdrawn'
 
 // Der Satz, warum diese Antwort nicht gespeichert wird, oder `null`.
-export function decisionProblem(x: RentIncrease, decision: RentIncreaseDecision, agreedCents: number | null, decidedOn: string, today: string): string | null {
+export function decisionProblem(x: RentIncrease, decision: RentIncreaseDecision, agreedCents: number | null, decidedOn: string, today: string, tenancyEnd: string | null): string | null {
   if (x.kind === 'index' && decision !== 'withdrawn') return 'Eine Anpassung der Indexmiete braucht keine Zustimmung des Mieters; sie wirkt mit dem Zugang (§ 557b Abs. 3 BGB). Sie lässt sich nur zurücknehmen.'
   if (!ALLOWED[decision].includes(x.status)) return `Das Verlangen ist ${STATUS_WORDS[x.status]}; „${DECISION_TITLES[decision]}“ passt dazu nicht. Bitte laden Sie die Seite neu.`
   if (x.receivedOn !== null && compareText(decidedOn, x.receivedOn) < 0) return `Der Tag der Antwort liegt vor dem Zugang am ${germanDate(x.receivedOn)}.`
   if (compareText(decidedOn, today) > 0) return 'Der Tag der Antwort liegt in der Zukunft.'
+  // Integrationsdurchsicht K-Geld-1: Endet das Mietverhältnis vor dem Wirksamwerden, gäbe es keine Miete, die steigt.
+  const effectiveDay = `${x.effectiveFrom}-01`
+  if ((decision === 'agreed' || decision === 'partial') && tenancyEnd !== null && compareText(tenancyEnd, effectiveDay) < 0) {
+    return `Das Mietverhältnis endet am ${germanDate(tenancyEnd)}, vor dem Wirksamwerden am ${germanDate(effectiveDay)}. Eine Zustimmung trägt Mietfuchs deshalb nicht ein; prüfen Sie das Ende des Mietverhältnisses, oder tragen Sie die Ablehnung ein bzw. nehmen Sie das Verlangen zurück.`
+  }
   if (decision === 'partial') {
     if (agreedCents === null) return 'Bitte geben Sie die Miete an, der der Mieter zugestimmt hat.'
     if (agreedCents <= x.fromCents) return `Bei einer teilweisen Zustimmung liegt die Miete über der bisherigen von ${euro(x.fromCents)}; sonst hat der Mieter abgelehnt.`

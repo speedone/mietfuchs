@@ -937,9 +937,11 @@ Stand nach PR 3: Angaben (PR 1), Rechnung (PR 2), Schreiben und Übernahme in di
   **Versand** rechnet mit dem tatsächlichen Zugang neu (Monat und verlangte Miete bleiben die des Schreibens): nur bei
   `possible`, nicht in der Zukunft, und nur wenn Miete und Ende der Zustimmungsfrist gleich bleiben, sonst 400 mit Satz
   (neu anlegen, neu drucken); der neue Plan ersetzt den eingefrorenen. **Stufe**: Zustimmung (auch teilweise, Betrag über
-  der bisherigen und höchstens der verlangten Miete; nach einer Ablehnung noch möglich) schreibt `comparison`, der Versand
+  der bisherigen und höchstens der verlangten Miete; nach einer Ablehnung noch möglich; nicht, wenn das Mietverhältnis
+  vor dem Wirksamwerden endet) schreibt `comparison`, der Versand
   einer Indexanpassung `index` mit dem neuen Indexwert; eine Stufe ab dem Monat oder später ist 409. **Zurücknehmen**
-  nimmt die Stufe nur heraus, wenn sie unverändert dasteht (fehlt sie, bleibt die Staffel), sonst 409. **Schweigen ist
+  nimmt die Stufe nur heraus, wenn sie unverändert dasteht und keine spätere Stufe auf ihr aufbaut (fehlt sie, bleibt
+  die Staffel), sonst 409. Ein offenes Verlangen sperrt das Verschieben der Wohnung in ein anderes Objekt (`guardUnit`). **Schweigen ist
   keine Zustimmung** (S8): Nichts geschieht nach Fristablauf von selbst. Eingaben des Schreibens prüft
   shared/rentIncreaseLetter.ts für Server und Oberfläche (qualifizierter Mietspiegel Pflichtfrage, „weiß nicht“ sperrt;
   drei Vergleichswohnungen mit Anschrift und Lage; alle Vermieter und Mieter bestätigt). Register:

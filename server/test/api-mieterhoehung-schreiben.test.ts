@@ -387,3 +387,79 @@ test('Mieterhöhung, Verlauf und Backup: Rücksprung nimmt Zustimmung und Stufe 
     c.s.stop()
   }
 })
+
+test('Mieterhöhung, Rücknahme: eine spätere Stufe baut auf der Erhöhung auf, 409 und Staffel unverändert (Integrationsdurchsicht S-Geld)', async () => {
+  const c = await setup()
+  let s2: Server | null = null
+  try {
+    await c.sent(await jsonOf<RentIncreaseView>(await c.create()))
+    assert.equal((await c.status(await c.one(), { status: 'partial', agreedCents: 55000 })).status, 200)
+    // Anderthalb Jahre später: zweite Erhöhung auf der ersten.
+    const later = '2028-06-20'
+    const s = await restartOn(c.s, later)
+    s2 = s
+    const plan = await post<RentIncreasePlanView>(s, `/api/tenancies/${c.t.id}/rent-increase/plan`, COMPARISON)
+    assert.equal(plan.state, 'possible', plan.reasons.join(' '))
+    const created = await send(s, 'POST', `/api/tenancies/${c.t.id}/rent-increases`, { request: COMPARISON, letter: LETTER, token: plan.token })
+    assert.equal(created.status, 201, await created.clone().text())
+    const second = await jsonOf<RentIncreaseView>(created)
+    assert.equal(second.fromCents, 55000)
+    const sentRes = await send(s, 'POST', `/api/rent-increases/${second.id}/send`, { receivedOn: later, token: second.token })
+    assert.equal(sentRes.status, 200, await sentRes.clone().text())
+    const agreed = await send(s, 'POST', `/api/rent-increases/${second.id}/status`, { status: 'agreed', decidedOn: later, token: (await jsonOf<RentIncreaseView>(sentRes)).token })
+    assert.equal(agreed.status, 200, await agreed.clone().text())
+    const rentsOf = async () => (await s.api<Tenancy[]>(`/api/tenancies?property=${c.p.id}`)).find((x) => x.id === c.t.id)?.baseRents ?? assert.fail('Mietverhältnis fehlt')
+    const before = await rentsOf()
+    assert.deepEqual(before, [{ from: '2020-01', monthlyCents: 50000 }, { from: '2027-02', monthlyCents: 55000, reason: 'comparison' }, { from: '2028-09', monthlyCents: 60000, reason: 'comparison' }])
+    const all = await s.api<RentIncreaseView[]>(`/api/tenancies/${c.t.id}/rent-increases`)
+    const first = all.find((x) => x.id !== second.id) ?? assert.fail('erstes Verlangen fehlt')
+    const back = await send(s, 'POST', `/api/rent-increases/${first.id}/status`, { status: 'withdrawn', decidedOn: later, token: first.token })
+    assert.equal(back.status, 409)
+    assert.match(await errorFrom(back), /Stufe ab September 2028, die auf dieser Erhöhung aufbaut.*\.$/)
+    assert.deepEqual(await rentsOf(), before, 'Staffel unverändert')
+    assert.equal((await s.api<RentIncreaseView[]>(`/api/tenancies/${c.t.id}/rent-increases`)).find((x) => x.id === first.id)?.status, 'partial')
+  } finally {
+    s2?.stop()
+    c.s.stop()
+  }
+})
+
+test('Mieterhöhung, Antwort: Zustimmung, wenn das Mietverhältnis vor dem Wirksamwerden endet, 400 mit Satz (Integrationsdurchsicht K-Geld-1)', async () => {
+  const c = await setup()
+  try {
+    await c.sent(await jsonOf<RentIncreaseView>(await c.create()))
+    const ended = await send(c.s, 'PUT', `/api/tenancies/${c.t.id}?property=${c.p.id}`, { end: '2027-01-31' })
+    assert.equal(ended.status, 200, await ended.clone().text())
+    for (const body of [{ status: 'agreed' }, { status: 'partial', agreedCents: 55000 }]) {
+      const res = await c.status(await c.one(), body)
+      assert.equal(res.status, 400, JSON.stringify(body))
+      assert.match(await errorFrom(res), /endet am 31\.01\.2027, vor dem Wirksamwerden am 01\.02\.2027.*\.$/)
+    }
+    assert.deepEqual(await c.rents(), [{ from: '2020-01', monthlyCents: 50000 }])
+    assert.equal((await c.status(await c.one(), { status: 'refused' })).status, 200, 'Ablehnung bleibt möglich')
+  } finally {
+    c.s.stop()
+  }
+})
+
+test('Mieterhöhung: eine Wohnung mit offenem Verlangen wechselt nicht das Objekt, 400 mit Satz (Integrationsdurchsicht K-Daten-1)', async () => {
+  const c = await setup()
+  try {
+    const other = await post<Property>(c.s, '/api/properties', { name: 'Gartenweg', kind: 'mfh', address: 'Gartenweg 3, 12345 Musterstadt', rentCapReduced: false, state: 'BY' })
+    const move = () => send(c.s, 'PUT', `/api/units/${c.u.id}?property=${c.p.id}`, { propertyId: other.id })
+    const refused = async () => {
+      const res = await move()
+      assert.equal(res.status, 400, await res.clone().text())
+      assert.match(await errorFrom(res), /offenes Verlangen einer Mieterhöhung.*Tragen Sie zuerst die Antwort des Mieters ein oder nehmen Sie das Verlangen zurück.*\.$/)
+    }
+    await c.create()
+    await refused()
+    await c.sent(await c.one())
+    await refused()
+    assert.equal((await c.status(await c.one(), { status: 'refused' })).status, 200)
+    const res = await move()
+    assert.equal(res.status, 200, await res.clone().text())
+  } finally {
+    c.s.stop()
+  }
+})
