@@ -328,8 +328,8 @@ index.ts, shared/rentIncreaseLetter.ts (Prüfung der Eingaben für Server und Ob
 
 - **`RentIncreaseBasis`** (shared/types.ts): `version`, `letterDate`, `request`, `plan` (samt `legalValues`), `letter`
   (Eingaben des Schreibens), `rentCap` mit `answeredOn` (S2), `sender`, `recipient`, `salutation`, `premises`,
-  `inclusive`, `prepayments` (im Monat des Wirksamwerdens). Die Miete am Stichtag friert mit `request` ein, samt Tag, sobald
-  PR 2 ihn trägt.
+  `inclusive`, `prepayments` (im Monat des Wirksamwerdens). Die Miete am Stichtag friert mit `request` samt ihrem Tag
+  (`rentAtCapDateOn`) ein; ohne den Tag lehnt das Anlegen mit 400 ab.
 - **Routen**: `POST /api/tenancies/:id/rent-increases` (Entwurf), `POST /api/rent-increases/:id/send`, `POST
   /api/rent-increases/:id/status`, `DELETE /api/rent-increases/:id`, `GET /api/tenancies/:id/rent-increases`. Die
   Plan-Route liefert die Marke mit (`RentIncreasePlanView`); sie umfasst auch Kennung und Stand der Verlangen, so legt

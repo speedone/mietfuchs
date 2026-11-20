@@ -104,7 +104,10 @@ test('Lexikon Mieterhöhung, Schreiben (PR 3): Begründungsmittel und qualifizie
     const t = GLOSSARY[id]
     assert.equal(t.topic, 'tenants', id)
     assert.match(t.norm, /§ 558a/, id)
-    for (const text of [t.short, t.example, t.needed]) assert.doesNotMatch(text, /\b(du|dein|deine|dir|dich)\b|—/i, id)
+    for (const text of [t.short, t.example, t.needed]) {
+      assert.doesNotMatch(text, /\b(du|dein|deine|dir|dich)\b/i, `${id}: geduzt`)
+      assert.doesNotMatch(text, /\u2014/, `${id}: Geviertstrich`)
+    }
   }
   assert.equal(valueAt(bgbRentSurveyUpdateYears, LAW_AS_OF), 2)
   assert.match(GLOSSARY.qualifiedRentSurvey.short, /im Abstand von zwei Jahren/)

@@ -50,6 +50,25 @@ const send = async (s: Server, method: string, url: string, body?: unknown): Pro
 const json = async <T>(res: Response): Promise<T | null> => (res.ok ? ((await res.json()) as T) : null)
 const get = async <T>(s: Server, url: string, fallback: T): Promise<T> => (await json<T>(await send(s, 'GET', url))) ?? fallback
 
+const RENT_ANSWERS = ['agreed', 'partial', 'withdrawn', 'refused'] as const
+let rentAnswerTurn = 0
+// Ein Entwurf einer Mieterhöhung am ersten laufenden Mietverhältnis (Schritte oben), oder `null`. Ohne `ctx.rng` (siehe oben).
+async function rentIncreaseDraft(ctx: Ctx): Promise<(Row & { token: string; createdOn: string }) | null> {
+  const t = ctx.tenancies.find((x) => x.end == null && typeof x.start === 'string')
+  if (!t || typeof t.start !== 'string') return null
+  const listed = await get<(Row & { token: string; status: string; kind: string })[]>(ctx.s, `/api/tenancies/${t.id}/rent-increases`, [])
+  for (const x of listed) {
+    if (x.status === 'draft') await send(ctx.s, 'DELETE', `/api/rent-increases/${x.id}`, { token: x.token })
+    else if (x.status === 'sent' && x.kind === 'comparison') await send(ctx.s, 'POST', `/api/rent-increases/${x.id}/status`, { status: 'refused', decidedOn: String(x.receivedOn), token: x.token })
+  }
+  await send(ctx.s, 'PUT', `/api/tenancies/${t.id}`, { rentKind: 'free', rentIncreaseExcluded: false, baseRents: [{ from: t.start.slice(0, 7), monthlyCents: 50000 }] })
+  const request = { kind: 'comparison', allStepsEntered: true, residential: true, noThirdPartyFunds: true, comparisonCentsPerM2: 2000, rentCap: 'yes' }
+  const plan = await json<{ token: string }>(await send(ctx.s, 'POST', `/api/tenancies/${t.id}/rent-increase/plan`, request))
+  if (!plan) return null
+  const letter = { justification: 'database', database: { name: 'Mietdatenbank Musterstadt', date: '2026-01-15' }, qualifiedSurvey: 'no', recipientName: String(t.tenantName), allLandlordsNamed: true, allTenantsNamed: true, extraParagraph: '' }
+  return json(await send(ctx.s, 'POST', `/api/tenancies/${t.id}/rent-increases`, { request, letter, token: plan.token }))
+}
+
 export async function refresh(ctx: Ctx): Promise<void> {
   const { s } = ctx
   ctx.units = await get<Row[]>(s, `/api/units${Q}`, [])
@@ -343,6 +362,29 @@ export const STEPS: readonly Step[] = [
       if (!t) return
       const created = await json<Row>(await send(ctx.s, 'POST', '/api/payments', { tenancyId: t.id, date: day(ctx.rng), amountCents: int(ctx.rng, 500, 2400) * 100 }))
       if (created) await send(ctx.s, 'POST', `/api/deposit-entries/from-payment/${created.id}`)
+    },
+  },
+  // ---------- Mieterhöhung (#191, PR 3) ----------
+  // Ein laufendes Mietverhältnis bekommt Miete nach Vertrag und eine Staffel ab Mietbeginn; dann Entwurf mit der Marke des
+  // Plans. Offene Verlangen von vorher räumt der Schritt zuerst weg (Entwurf löschen, versandtes zurücknehmen), sonst
+  // lehnte das Anlegen ab.
+  {
+    name: 'Mieterhöhung: Entwurf anlegen und löschen', routes: ['POST /api/tenancies/:id/rent-increases', 'DELETE /api/rent-increases/:id'],
+    run: async (ctx) => {
+      const draft = await rentIncreaseDraft(ctx)
+      if (draft) await send(ctx.s, 'DELETE', `/api/rent-increases/${draft.id}`, { token: draft.token })
+    },
+  },
+  {
+    name: 'Mieterhöhung: Entwurf, Versand und Antwort', routes: ['POST /api/tenancies/:id/rent-increases', 'POST /api/rent-increases/:id/send', 'POST /api/rent-increases/:id/status'],
+    run: async (ctx) => {
+      const draft = await rentIncreaseDraft(ctx)
+      if (!draft) return
+      const sent = await json<Row & { token: string }>(await send(ctx.s, 'POST', `/api/rent-increases/${draft.id}/send`, { receivedOn: draft.createdOn, token: draft.token }))
+      if (!sent) return
+      // Ohne `ctx.rng`, damit die Zufallsfolge der übrigen Schritte bleibt, wie sie war: die Antworten der Reihe nach.
+      const status = RENT_ANSWERS[rentAnswerTurn++ % RENT_ANSWERS.length] ?? 'agreed'
+      await send(ctx.s, 'POST', `/api/rent-increases/${sent.id}/status`, { status, decidedOn: draft.createdOn, token: sent.token, agreedCents: status === 'partial' ? 52000 : null })
     },
   },
   // ---------- Kontoauszug (#188) ----------

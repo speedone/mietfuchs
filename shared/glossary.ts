@@ -412,7 +412,7 @@ export const GLOSSARY = {
     topic: 'tenants',
     title: 'Qualifizierter Mietspiegel',
     short: `Ein Mietspiegel, der nach anerkannten wissenschaftlichen Grundsätzen erstellt und von der Gemeinde oder den Interessenvertretern von Vermietern und Mietern anerkannt ist. Er wird im Abstand von ${numberWord(valueAt(bgbRentSurveyUpdateYears, LAW_AS_OF))} Jahren der Marktentwicklung angepasst. Enthält er Angaben zu Ihrer Wohnung, müssen Sie diese in jedem Mieterhöhungsverlangen mitteilen, auch wenn Sie es mit Vergleichswohnungen oder einem Gutachten begründen. Gemeinden mit mehr als 50 000 Einwohnern müssen einen Mietspiegel haben; ob er qualifiziert ist, sagt die Gemeinde.`,
-    example: 'Sie begründen mit einem Gutachten, und die Stadt hat einen qualifizierten Mietspiegel 2025, der Ihre Wohnung im Feld „Baujahr 1950 bis 1964, 60 bis 80 m², mittlere Lage“ mit 8,50 bis 11,00 € je m² führt. Das Schreiben nennt dann Gutachten und Mietspiegel samt Feld und Spanne.',
+    example: 'Sie begründen mit einem Gutachten, und die Stadt hat einen qualifizierten Mietspiegel 2025, der Ihre Wohnung im Feld für Baujahre 1950 bis 1964, 60 bis 80 m² und mittlere Lage mit 8,50 bis 11,00 € je m² führt. Das Schreiben nennt dann Gutachten und Mietspiegel samt Feld und Spanne.',
     norm: '§ 558a Abs. 3, § 558c Abs. 4, § 558d Abs. 1 und 2 BGB',
     needed: 'Im Seitenfenster „Mieterhöhung“ beim Schreiben: Mietfuchs fragt immer danach. Bei „Weiß nicht“ legt es kein Schreiben an, bis Sie es geklärt haben.',
   },
