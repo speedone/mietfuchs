@@ -16,6 +16,7 @@ import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.
 import { lineRoot, sameLine, unitBasisOf } from '../../shared/heatingPeriod.ts'
 import { parseMeterValue } from './tenantChange'
 import { ambiguousText, ambiguousThousands, parseNumberDe } from './numbers'
+import { asksCo2Facts } from './fuelForm'
 
 // Rechtszahlen aus dem Register, in der Fassung von heute (wie Lexikon und Anleitungen).
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -751,3 +752,18 @@ export const unconfirmedConsequence = (): string =>
 // Die Beschriftung des Volumens: bei einem Kesseltausch das der Laufzeit der Anlage (Durchsicht von #240, Geld-I1).
 export const volumeLabel = (running: { from: string; to: string } | null, fmt: (iso: string) => string): string =>
   running ? `Warmwasser in der Laufzeit dieser Anlage (${fmt(running.from)}–${fmt(running.to)}, m³, gemessen)` : 'Warmwasser in der Heizperiode (m³, gemessen)'
+
+// Die Mitteilung nach dem Einrichten der ersten Heizanlage (Systemprüfung): Erst mit ihr steht die Seite „Heizkosten“
+// in der Navigation, und niemand sucht eine Seite, die es eben noch nicht gab. Die Mitteilung nennt sie deshalb, und
+// was dort zu tun ist, wenn dort etwas zu tun ist: beim Messdienst die Angaben aus dessen Abrechnung, sonst die
+// Rechnungen als Lieferungen, sobald CO₂-Kosten aufzuteilen sind. Mitteilungen haben keine Aktion, also als Text.
+export function heatingSetUpMessage(plant: Pick<HeatingPlant, 'method' | 'energy' | 'contracting' | 'heatGeneration'> | null): string {
+  const todo = !plant
+    ? ''
+    : plant.method === 'service'
+      ? ' Tragen Sie dort je Heizperiode die Angaben aus der Heizkostenabrechnung ein.'
+      : asksCo2Facts(plant)
+        ? ' Tragen Sie dort Ihre Brennstoff- oder Wärmerechnungen als Lieferungen ein, dann teilt Mietfuchs die CO₂-Kosten auf.'
+        : ''
+  return `Heizung eingerichtet. An Ihren Beträgen ändert sich nichts. In der Navigation steht jetzt die Seite „Heizkosten“.${todo}`
+}

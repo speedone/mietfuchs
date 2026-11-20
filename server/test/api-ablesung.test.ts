@@ -63,3 +63,29 @@ test('Geschätzte Ablesung: ohne Begründung oder mit unklarer Angabe abgelehnt,
     await rejected(await send(s, `/api/readings/${est.id}`, 'PUT', { estimateReason: '' }), 'Begründung geleert')
   } finally { s.stop() }
 })
+
+// „Ablesung bearbeiten“ auf der Seite Zähler schickt den ganzen Rumpf, Abgewähltes ausdrücklich (`false`, `null`):
+// Der Server nimmt ihn an und räumt Wechsel, Endstand, Hinweis und Schätzung wirklich ab. Das Eichjahr des neuen
+// Zählers bietet das Fenster beim Bearbeiten nicht an, denn im PUT ist es eine 400.
+test('Ablesung bearbeiten: der Rumpf der Oberfläche wird angenommen, Abgewähltes ist danach weg', async () => {
+  const s = await startServer()
+  try {
+    const m = await meterOf(s)
+    const full = { date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980, note: 'Tausch', estimated: true, estimateReason: 'defekt' }
+    const r = await created<Reading>(await send(s, '/api/readings', 'POST', { meterId: m.id, ...full }))
+    const same = await send(s, `/api/readings/${r.id}`, 'PUT', full)
+    assert.equal(same.status, 200, await same.clone().text())
+    assert.deepEqual(await jsonOf<Reading>(same), r)
+    // Abgewählt geht als `null` hinaus (ein weggelassenes Feld bliebe stehen): Die Ablesung ist danach, was eine
+    // frisch angelegte ohne diese Angaben ist, ohne ein gespeichertes `replacement: false`.
+    const res = await send(s, `/api/readings/${r.id}`, 'PUT', { date: '2025-07-01', value: 985.5, replacement: null, oldEndValue: null, note: null, estimated: false })
+    assert.equal(res.status, 200, await res.clone().text())
+    const fresh = await created<Reading>(await send(s, '/api/readings', 'POST', { meterId: m.id, date: '2025-07-01', value: 985.5 }))
+    const list = await s.api<Reading[]>('/api/readings?property=objekt-1')
+    const stored = list.find((x) => x.id === r.id)
+    const plain = list.find((x) => x.id === fresh.id)
+    if (!stored || !plain) assert.fail('eine Ablesung fehlt nach dem Ändern')
+    assert.deepEqual(stored, { ...plain, id: r.id })
+    await rejected(await send(s, `/api/readings/${r.id}`, 'PUT', { value: 1, newCalibratedUntil: 2031 }), 'Eichjahr im PUT')
+  } finally { s.stop() }
+})

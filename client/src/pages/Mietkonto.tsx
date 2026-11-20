@@ -20,7 +20,10 @@ import { useFormError } from '../components/ErrorSummary'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
-import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
+import { useFocusTarget, useScrollToFocus, type FocusProps, type JumpTarget } from '../focus'
+import EmptyState from '../components/EmptyState'
+import { ledgerStep } from '../emptyStock'
+import type { NoticeTab } from '../notices'
 import { MONTH_SHORT, parseMonthText } from '../monthText'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
@@ -28,7 +31,8 @@ import { affectedText, createdText, emptyPlanText, MARK_PAID_EXPLAIN, markPaidBl
 
 const MONTHS = MONTH_SHORT
 
-export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
+// `onNavigate`: der Weg in die Stammdaten aus dem Leerzustand (emptyStock.ts)
+export default function Mietkonto({ focus, onFocusDone, onNavigate }: FocusProps & { onNavigate?: (tab: NoticeTab, focus?: JumpTarget) => void } = {}) {
   // Das Mietkonto rechnet im Kalenderjahr (#208, Entwurf 3.11).
   const { calendarYear: year, calendar, label, period } = usePeriod()
   const { property } = useProperty()
@@ -40,6 +44,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const [ledger, setLedger] = useState<RentLedger | null>(null)
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [units, setUnits] = useState<Unit[]>([])
+  // Der Leerzustand eines Jahres ohne Mietverhältnis: der fehlende Schritt mit Knopf (emptyStock.ts)
+  const emptyStep = ledgerStep(units, tenancies, year)
   const [payments, setPayments] = useState<PaymentListItem[]>([])
   const [form, setForm] = useState<PaymentForm | null>(null)
   const [error, setError] = useState('')
@@ -385,7 +391,9 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       )}
 
       {ledger?.rows.length === 0 && (
-        <div className="card"><div className="empty">Für {year} gibt es keine Mietverhältnisse. Legen Sie sie unter Stammdaten an und hinterlegen Sie die Kaltmiete.</div></div>
+        <div className="card">
+          <EmptyState action={onNavigate ? { label: emptyStep.label, onClick: () => onNavigate(emptyStep.tab, emptyStep.focus ?? undefined) } : null}>{emptyStep.text}</EmptyState>
+        </div>
       )}
 
       {/* Sichtprüfung E34: einmal über den Karten statt in jeder */}

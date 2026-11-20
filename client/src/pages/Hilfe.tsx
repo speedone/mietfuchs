@@ -654,14 +654,16 @@ function GuideView({ guide: g, onFollow, onOpenTerm, onOpenGuide }: { guide: Gui
 
           <section aria-labelledby={sectionId('luecken')}>
             <SectionHeading id="luecken">Was Mietfuchs (noch) nicht kann</SectionHeading>
-            <ul className="m-0 pl-6 flex flex-col gap-2">
-              {g.gaps.map((x, i) => (
-                <li key={i}>
-                  {x.text}
-                  {x.issue && <> <span className="muted">(geplant in <a href={`${ISSUE_URL}${x.issue}`} target="_blank" rel="noreferrer">#{x.issue}</a>)</span></>}
-                </li>
-              ))}
-            </ul>
+            {g.gaps.length === 0 ? <p className="m-0">Für diesen Fall ist keine Lücke bekannt.</p> : (
+              <ul className="m-0 pl-6 flex flex-col gap-2">
+                {g.gaps.map((x, i) => (
+                  <li key={i}>
+                    {x.text}
+                    {x.issue && <> <span className="muted">(geplant in <a href={`${ISSUE_URL}${x.issue}`} target="_blank" rel="noreferrer">#{x.issue}</a>)</span></>}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section aria-labelledby={sectionId('begriffe')}>
