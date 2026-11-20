@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { boundaryLight, boundaryText, missingDevicesLines, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
-import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
+import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView } from './types'
 
 const b = (over: Partial<SelfBoundaryView> = {}): SelfBoundaryView => ({ date: '2025-09-30', kind: 'change', status: 'read', offDays: 0, far: false, gap: null, ...over })
 const dist = (over: Partial<HeatingDistribution> = {}): HeatingDistribution => ({
@@ -468,6 +468,25 @@ describe('Ausweis zum Nachrechnen: Durchsicht', () => {
     expect(userLine(waterOnly, stand(waterOnly))).toContain(`Warmwasser 20 m³, ${fmtEuro(17279)} (Grundkosten ${fmtEuro(5612)}, Verbrauchskosten ${fmtEuro(11667)})`)
     const waterRow = user({ waterCents: 17279, heatingRows: 0, waterRows: 1 })
     expect(userLine(waterRow, stand(waterRow))).toContain(`Warmwasser 20 m³, ${fmtEuro(17279)} (Grundkosten ${fmtEuro(5612)} für 72,5 m², davon 273 von 365 Tagen, Verbrauchskosten ${fmtEuro(11667)})`)
+  })
+  // Durchsicht des Abschlusses: Die Zeilenzahl allein ist eine absolute Toleranz. Bei Grundkosten von wenigen Cent ging
+  // damit auch eine falsche Teilung durch („273 von 365 Tagen“, wo nach Gradtagen geteilt war). Deshalb zusätzlich
+  // höchstens 2 % der Grundkosten, mindestens der eine Cent der Rundung.
+  it('kleine Grundkosten: die Toleranz der Zeilenzahl gilt nur bis 2 % der Grundkosten, ein Cent bleibt immer', () => {
+    const stand = (a: ReturnType<typeof user>, pot: SelfPotView, changeSplit: 'time' | 'degreeDays') => ({ pots: [pot], units: [unitOf(a)], changeSplit })
+    // 72,5 m² · 0,4 ct: nach Gradtagen (640 ‰) 19 ct, nach Tagen (273/365) 22 ct. Der Stand trägt 19 ct, die Angabe sagt „nach Tagen“.
+    const tiny = { ...heat, baseCentsPerM2: 0.4 }
+    const wrong = user({ heatingCents: 23719 + 19, heatingRows: 3, waterRows: 3 })
+    expect(userLine(wrong, stand(wrong, tiny, 'time'))).toContain(`(Grundkosten ${fmtEuro(19)}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Ein Cent Rundung bleibt auch hier erlaubt.
+    const rounded = user({ heatingCents: 23719 + 21, heatingRows: 3, waterRows: 3 })
+    expect(userLine(rounded, stand(rounded, tiny, 'time'))).toContain(`(Grundkosten ${fmtEuro(21)} für 72,5 m², davon 273 von 365 Tagen, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Ab 2 € Grundkosten trägt die Zeilenzahl wie bisher: drei Zeilen, vier Cent daneben (72,5 m² · 4,3103 ct · 640 ‰ = 2,00 €).
+    const small = { ...heat, baseCentsPerM2: 4.3103 }
+    const four = user({ heatingCents: 23719 + 204, heatingRows: 3, waterRows: 3 })
+    expect(userLine(four, stand(four, small, 'degreeDays'))).toContain(`(Grundkosten ${fmtEuro(204)} für 72,5 m², davon 640 von 1.000 ‰ der Gradtage, Verbrauchskosten ${fmtEuro(23719)})`)
+    const five = user({ heatingCents: 23719 + 205, heatingRows: 3, waterRows: 3 })
+    expect(userLine(five, stand(five, small, 'degreeDays'))).toContain(`(Grundkosten ${fmtEuro(205)}, Verbrauchskosten ${fmtEuro(23719)})`)
   })
   it('Menge mal Preis ergibt den gedruckten Betrag bis auf Rundung von höchstens einem Cent, mehr nicht', () => {
     // Verbundenes Warmwasser: Der Topfbetrag ist ungerundet 118,635 €, gedruckt wird der gerundete; der Preis kommt vom ungerundeten.

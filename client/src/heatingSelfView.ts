@@ -126,8 +126,8 @@ const percent = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits
 
 // **Der Mieter rechnet aus dem Gedruckten nach**: Menge mal Preis je Einheit ergibt den gedruckten Betrag bis auf Rundung
 // von höchstens einem Cent (genauer geht es nicht: Bei verbundenem Warmwasser ist der Topfbetrag ungerundet, gedruckt
-// wird der gerundete, und Menge wie Preis sind selbst gerundet); je Nutzer bei den Grundkosten je verteilter Rechnung
-// ein Cent (`basisOf`). Der Server liefert die
+// wird der gerundete, und Menge wie Preis sind selbst gerundet); je Nutzer bei den Grundkosten bis zur Zahl der
+// verteilten Kostenpositionen des Topfs plus einen Cent (`basisOf`). Der Server liefert die
 // Mengen ungerundet (Differenzen der Stände, bei Heizkostenverteilern mal Faktor, nach § 9b Abs. 3 und § 9a geteilte
 // Anteile, Flächen wie eingetragen), auch mit Gleitkommarest; gerundet wird dort erst der Betrag. Deshalb:
 // - Eine Menge, die mit höchstens drei Nachkommastellen aufgeht (so genau stehen Stände und Flächen da), steht genau
@@ -210,6 +210,7 @@ function costSplit(cents: number, consumption: number | null, pot: SelfPotView |
 // und, bei mehreren Nutzern, ohne Angabe zur Teilung beim Wechsel. **Die Rundung**: Der Betrag des Nutzers ist die Summe
 // seiner je Position gerundeten Zeilen (`heatingRows`, `waterRows` des Stands), also je verteilter Zeile ein Cent und
 // einer dazu; ein Stand ohne die Angabe (vorher eingefroren: Topf mal Gewicht, einmal gerundet) bleibt bei einem Cent.
+const BASIS_RELATIVE_SLACK = 0.02
 function basisOf(
   u: SelfUserView, unit: SelfUnitView | undefined, pot: SelfPotView | undefined, changeSplit: SelfHeatingStatement['changeSplit'] | undefined, baseCents: number,
 ): string | null {
@@ -225,7 +226,10 @@ function basisOf(
   const whole = others.reduce((a, x) => a + measure(x), own)
   if (!Number.isFinite(own) || !Number.isFinite(whole) || own <= 0 || whole <= 0) return null
   const rows = pot.pot === 'heating' ? u.heatingRows : u.waterRows
-  const slack = typeof rows === 'number' && Number.isFinite(rows) && rows > 0 ? rows + 1 : 1
+  // Die Zeilenzahl ist eine absolute Toleranz; bei Grundkosten von wenigen Cent erklärte sie auch eine falsche Teilung.
+  // Deshalb gilt sie nur bis 2 % der Grundkosten (ab 2 € bei drei Zeilen wie zuvor), der eine Cent der Rundung immer.
+  const byRows = typeof rows === 'number' && Number.isFinite(rows) && rows > 0 ? rows + 1 : 1
+  const slack = Math.max(1, Math.min(byRows, Math.floor(Math.abs(baseCents) * BASIS_RELATIVE_SLACK)))
   if (Math.abs(Math.round(area * pot.baseCentsPerM2 * (own / whole)) - baseCents) > slack) return null
   const share = own >= whole ? '' : byDays ? `, davon ${own} von ${whole} Tagen` : `, davon ${permille(own)} von ${permille(whole)} ‰ der Gradtage`
   return `${quantity(area, pot.baseCentsPerM2)} ${pot.pot === 'heating' ? (pot.basisUnit ?? 'm²') : 'm²'}${share}`
