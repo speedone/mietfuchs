@@ -97,7 +97,9 @@ const POT_LABEL = { heating: 'Heizung', water: 'Warmwasser' } as const
 const permille = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 1 })
 const percent = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 
-// **Der Mieter rechnet aus dem Gedruckten nach**: Menge mal Preis je Einheit ergibt den Betrag. Der Server liefert die
+// **Der Mieter rechnet aus dem Gedruckten nach**: Menge mal Preis je Einheit ergibt den gedruckten Betrag bis auf Rundung
+// von höchstens einem Cent (genauer geht es nicht: Bei verbundenem Warmwasser ist der Topfbetrag ungerundet, gedruckt
+// wird der gerundete, und Menge wie Preis sind selbst gerundet). Der Server liefert die
 // Mengen ungerundet (Differenzen der Stände, bei Heizkostenverteilern mal Faktor, nach § 9b Abs. 3 und § 9a geteilte
 // Anteile, Flächen wie eingetragen), auch mit Gleitkommarest; gerundet wird dort erst der Betrag. Deshalb:
 // - Eine Menge, die mit höchstens drei Nachkommastellen aufgeht (so genau stehen Stände und Flächen da), steht genau
@@ -106,7 +108,7 @@ const percent = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits
 //   Rundung den Betrag um nicht mehr als einen Viertelcent verschiebt; ohne Preis daneben drei.
 // - Der Preis bekommt so viele Stellen (höchstens acht), dass seine Rundung mal Menge unter einem Viertelcent bleibt,
 //   mindestens die bisherigen (vier je m² bzw. m³, sechs je Verbrauchseinheit); mehr nur, wo sie nicht null sind.
-// Nur Darstellung: Keine Zahl eines eingefrorenen Stands ändert sich.
+// Nur Darstellung: Keine Zahl eines eingefrorenen Stands ändert sich. Eine negative Null (−0, −5,5e-17) steht als 0 da.
 const QUARTER_CENT = 0.25
 const exactAt = (n: number, digits: number): boolean => {
   const f = 10 ** digits
@@ -118,21 +120,23 @@ function quantity(n: number, centsPerUnit: number | null = null): string {
     const price = Math.abs(centsPerUnit ?? 0)
     digits = price > 0 ? ([0, 1, 2, 3, 4, 5].find((d) => price * 0.5 * 10 ** -d <= QUARTER_CENT) ?? 6) : 3
   }
-  return n.toLocaleString('de-DE', { maximumFractionDigits: digits })
+  return (Number(n.toFixed(digits)) || 0).toLocaleString('de-DE', { maximumFractionDigits: digits })
 }
+// Ein Betrag in Cent ohne negative Null.
+const eur = (cents: number): string => fmtEuro(cents || 0)
 function perUnit(cents: number, forQuantity: number, minDigits: number): string {
   // Der Preis steht in Euro: halbe letzte Stelle mal Menge höchstens ein Viertelcent.
   const needed = forQuantity > 0 ? Math.ceil(Math.log10((forQuantity * 0.5) / (QUARTER_CENT / 100))) : 0
   const digits = Math.min(8, Math.max(minDigits, needed))
-  return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: minDigits, maximumFractionDigits: digits })}\u00a0€`
+  return `${(Number((cents / 100).toFixed(digits)) || 0).toLocaleString('de-DE', { minimumFractionDigits: minDigits, maximumFractionDigits: digits })}\u00a0€`
 }
 
 export function potLines(p: SelfPotView): string[] {
   const base = p.costCents * (1 - p.consumptionPct / 100)
-  const lines = [`${POT_LABEL[p.pot]}: ${fmtEuro(p.costCents)}`]
+  const lines = [`${POT_LABEL[p.pot]}: ${eur(p.costCents)}`]
   // #322: Steht der Topf nach umbautem Raum, sind es Kubikmeter.
   const unit = p.basisUnit ?? 'm²'
-  lines.push(`Grundkosten ${percent(100 - p.consumptionPct)} %: ${fmtEuro(Math.round(base))} für ${quantity(p.areaM2, p.baseCentsPerM2)} ${unit}, ${perUnit(p.baseCentsPerM2, p.areaM2, 4)} je ${unit}`)
+  lines.push(`Grundkosten ${percent(100 - p.consumptionPct)} %: ${eur(Math.round(base))} für ${quantity(p.areaM2, p.baseCentsPerM2)} ${unit}, ${perUnit(p.baseCentsPerM2, p.areaM2, 4)} je ${unit}`)
   // § 9a Abs. 2 (Heizung PR 13): über der Grenze nur nach Fläche.
   if (p.overThreshold) lines.push(`Geschätzt ist der Verbrauch für ${quantity(p.estimatedAreaM2 ?? 0)} von ${quantity(p.areaM2)} ${unit}; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
   else if (p.byAreaOnly) lines.push(`Kein Verbrauch erfasst: nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
@@ -140,7 +144,7 @@ export function potLines(p: SelfPotView): string[] {
     // „je Einheit“, nicht „je Einheiten“ (Durchsicht von #241, Minor 2).
     // Durchsicht von #242, R-M9: der geschätzte Teil, ohne eine Wohnung zu nennen.
     const estimated = (p.estimatedConsumption ?? 0) > 0 ? ` (davon geschätzt nach § 9a HeizkostenV: ${quantity(p.estimatedConsumption ?? 0, p.consumptionCentsPerUnit)} ${p.consumptionUnit})` : ''
-    lines.push(`Verbrauchskosten ${percent(p.consumptionPct)} %: ${fmtEuro(Math.round(p.costCents - base))} für ${quantity(p.consumption, p.consumptionCentsPerUnit)} ${p.consumptionUnit}${estimated}, ${perUnit(p.consumptionCentsPerUnit, p.consumption, 6)} je ${p.consumptionUnit === 'Einheiten' ? 'Einheit' : p.consumptionUnit}`)
+    lines.push(`Verbrauchskosten ${percent(p.consumptionPct)} %: ${eur(Math.round(p.costCents - base))} für ${quantity(p.consumption, p.consumptionCentsPerUnit)} ${p.consumptionUnit}${estimated}, ${perUnit(p.consumptionCentsPerUnit, p.consumption, 6)} je ${p.consumptionUnit === 'Einheiten' ? 'Einheit' : p.consumptionUnit}`)
   }
   return lines
 }
@@ -159,22 +163,50 @@ const waterUnitOf = (self: Pick<SelfHeatingStatement, 'pots'>): string =>
 // der Rest zum Betrag der Zeile. Das gilt auch für eingefrorene Stände, ohne neue Felder. Keine Aufteilung, wo es
 // keinen Anteil nach Verbrauch gibt (nur nach Fläche, über der Grenze des § 9a Abs. 2, 0 oder 100 %), ohne Betrag
 // (nicht verteilbar) und wenn der Rest negativ würde.
-function costSplit(cents: number, consumption: number | null, pot: SelfPotView | undefined, basis: string | null): string {
+function costSplit(cents: number, consumption: number | null, pot: SelfPotView | undefined, basis: (baseCents: number) => string | null): string {
   if (!pot || pot.consumptionCentsPerUnit === null || consumption === null || cents <= 0) return ''
   if (pot.byAreaOnly || pot.overThreshold || pot.consumptionPct <= 0 || pot.consumptionPct >= 100) return ''
   const use = Math.round(consumption * pot.consumptionCentsPerUnit)
   if (use < 0 || use > cents) return ''
-  return ` (Grundkosten ${fmtEuro(cents - use)}${basis ? ` für ${basis}` : ''}, Verbrauchskosten ${fmtEuro(use)})`
+  const text = basis(cents - use)
+  return ` (Grundkosten ${eur(cents - use)}${text ? ` für ${text}` : ''}, Verbrauchskosten ${eur(use)})`
 }
 
-export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots'> & Partial<Pick<SelfHeatingStatement, 'units'>>): string {
+// Wonach die Grundkosten eines Nutzers gerechnet sind (Durchsicht): Fläche bzw. Raum der Wohnung mal Preis mal Anteil
+// an der Heizperiode. Der Server rechnet den Anteil als Gradtage bzw. Tage des Nutzers durch die der Heizperiode
+// (`splitOf`/`splitTotal` in server/src/heating.ts: die Heizung nach Gradtagen oder, bei zeitanteiliger Teilung, nach
+// Tagen; das Warmwasser immer nach Tagen). Der Stand trägt je Nutzer nur Tage und Gradtage, nicht die der Heizperiode;
+// deren Summe über die Nutzer der Wohnung ist der Nenner, wenn die Nutzer die Heizperiode ganz abdecken. **Geraten wird
+// nicht**: Genannt wird die Rechnung nur, wenn sie mit den gedruckten Zahlen die gedruckten Grundkosten bis auf einen
+// Cent ergibt (sie sind der Rest zum Betrag der Zeile); sonst steht nur der Betrag da. Ebenso ohne Fläche im Stand und,
+// bei mehreren Nutzern, ohne Angabe zur Teilung beim Wechsel.
+function basisOf(
+  u: SelfUserView, unit: SelfUnitView | undefined, pot: SelfPotView | undefined, changeSplit: SelfHeatingStatement['changeSplit'] | undefined, baseCents: number,
+): string | null {
+  if (!unit || !pot) return null
+  const area: unknown = pot.pot === 'heating' ? unit.heatAreaM2 : unit.areaM2
+  if (typeof area !== 'number' || !Number.isFinite(area) || area <= 0) return null
+  const others = unit.users.filter((x) => x.key !== u.key)
+  const byDays = pot.pot === 'water' || changeSplit === 'time'
+  if (!byDays && changeSplit !== 'degreeDays' && others.length > 0) return null
+  // Gerechnet wird mit den Zahlen, wie sie gedruckt werden (Gradtage auf eine Nachkommastelle).
+  const measure = (x: SelfUserView): number => (byDays ? x.days : Math.round(x.degreeDayPermille * 10) / 10)
+  const own = measure(u)
+  const whole = others.reduce((a, x) => a + measure(x), own)
+  if (!Number.isFinite(own) || !Number.isFinite(whole) || own <= 0 || whole <= 0) return null
+  if (Math.abs(Math.round(area * pot.baseCentsPerM2 * (own / whole)) - baseCents) > 1) return null
+  const share = own >= whole ? '' : byDays ? `, davon ${own} von ${whole} Tagen` : `, davon ${permille(own)} von ${permille(whole)} ‰ der Gradtage`
+  return `${quantity(area, pot.baseCentsPerM2)} ${pot.pot === 'heating' ? (pot.basisUnit ?? 'm²') : 'm²'}${share}`
+}
+
+export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots'> & Partial<Pick<SelfHeatingStatement, 'units' | 'changeSplit'>>): string {
   const heatUnit = heatUnitOf(self)
   const time = `${fmtDate(u.from)} bis ${fmtDate(u.to)} (${u.days} Tage, ${permille(u.degreeDayPermille)} ‰ der Gradtage)`
   const potOf = (pot: 'heating' | 'water') => self.pots.find((p) => p.pot === pot)
   // Die Wohnung des Nutzers nennt die Fläche bzw. den Raum, nach dem seine Grundkosten gerechnet sind.
   const unit = self.units?.find((x) => x.users.some((y) => y.key === u.key))
   // Der Topfbetrag je Mieter, mit Abzug auch nach CO₂-Abzug: die Grundlage einer Kürzung (Abweichung 15).
-  const net = (cents: number, co2: number, split: string) => `${fmtEuro(cents)}${split}${co2 > 0 ? `, nach CO₂-Abzug ${fmtEuro(cents - co2)}` : ''}`
+  const net = (cents: number, co2: number, split: string) => `${eur(cents)}${split}${co2 > 0 ? `, nach CO₂-Abzug ${eur(cents - co2)}` : ''}`
   // Heizung PR 13: eine Schätzung nach § 9a und die Gruppe nach § 9b Abs. 3 in einer Klammer.
   // Durchsicht von #242, R-M8: Über der Grenze des § 9a Abs. 2 zählt der Verbrauch für die Kosten nicht.
   const over = (pot: 'heating' | 'water') => potOf(pot)?.overThreshold === true
@@ -183,13 +215,12 @@ export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots
     return parts.length > 0 ? ` (${parts.join('; ')})` : ''
   }
   const heat = potOf('heating')
-  const heatBasis = unit ? `${quantity(unit.heatAreaM2, heat?.baseCentsPerM2)} ${heat?.basisUnit ?? 'm²'}` : null
-  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${quantity(u.heatingConsumption, heat?.consumptionCentsPerUnit)} ${heatUnit}${note(u.heatingEstimated, u.heatingGroup, over('heating'))}`}, ${net(u.heatingCents, u.heatingCo2Cents, costSplit(u.heatingCents, u.heatingConsumption, heat, heatBasis))}`]
+  const basis = (pot: SelfPotView | undefined) => (baseCents: number) => basisOf(u, unit, pot, self.changeSplit, baseCents)
+  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${quantity(u.heatingConsumption, heat?.consumptionCentsPerUnit)} ${heatUnit}${note(u.heatingEstimated, u.heatingGroup, over('heating'))}`}, ${net(u.heatingCents, u.heatingCo2Cents, costSplit(u.heatingCents, u.heatingConsumption, heat, basis(heat)))}`]
   const water = potOf('water')
   if (water) {
-    // Das Warmwasser bleibt bei der Wohnfläche (§ 8 Abs. 1 HeizkostenV).
-    const waterBasis = unit ? `${quantity(unit.areaM2, water.baseCentsPerM2)} m²` : null
-    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${quantity(u.waterConsumption, water.consumptionCentsPerUnit)} ${waterUnitOf(self)}${note(u.waterEstimated, u.waterGroup, over('water'))}`}, ${net(u.waterCents, u.waterCo2Cents, costSplit(u.waterCents, u.waterConsumption, water, waterBasis))}`)
+    // Das Warmwasser bleibt bei der Wohnfläche (§ 8 Abs. 1 HeizkostenV) und teilt immer nach Tagen.
+    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${quantity(u.waterConsumption, water.consumptionCentsPerUnit)} ${waterUnitOf(self)}${note(u.waterEstimated, u.waterGroup, over('water'))}`}, ${net(u.waterCents, u.waterCo2Cents, costSplit(u.waterCents, u.waterConsumption, water, basis(water)))}`)
   }
   return `${u.label}, ${time}: ${parts.join('; ')}`
 }

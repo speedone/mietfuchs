@@ -83,9 +83,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - Eigene Heizkostenabrechnung: Der Ausweis lässt sich nachrechnen. Verbrauch, Fläche und umbauter Raum stehen so genau
   da, wie gerechnet wird (35,4 MWh statt „35 MWh“, 72,5 m²), ganze Zahlen weiter ohne Nachkommastellen; der Preis je
-  Einheit bekommt so viele Stellen, dass Menge mal Preis den gedruckten Betrag ergibt. Je Mieter stehen Grund- und
-  Verbrauchskosten jetzt getrennt, die Grundkosten mit der Fläche der Wohnung. Die Beträge ändern sich nicht, auch
-  nicht in abgeschlossenen Abrechnungen.
+  Einheit bekommt so viele Stellen, dass Menge mal Preis den gedruckten Betrag bis auf Rundung von höchstens einem Cent
+  ergibt. Je Mieter stehen Grund- und Verbrauchskosten jetzt getrennt, die Grundkosten mit der Fläche der Wohnung und,
+  wer nur einen Teil der Heizperiode dort wohnte, mit seinem Anteil an Gradtagen oder Tagen. Die Beträge ändern sich
+  nicht, auch nicht in abgeschlossenen Abrechnungen.
 
 ## [0.18.1] – 2026-11-19
 

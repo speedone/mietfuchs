@@ -319,7 +319,8 @@ describe('Ausweis zum Nachrechnen: Mengen so genau wie gerechnet', () => {
     expect(lines[2]).toContain(`Heizung 0,1 MWh, ${fmtEuro(21985)} (Grundkosten ${fmtEuro(21420)} für 72,5 m², Verbrauchskosten ${fmtEuro(565)})`)
   })
 
-  it('je Zeile: gedruckte Menge mal gedruckter Preis ergibt den gedruckten Betrag auf den Cent', () => {
+  // Im Beispiel geht es genau auf; allgemein gilt nur „bis auf Rundung von höchstens einem Cent“ (Durchsicht, nächster Block).
+  it('je Zeile des Beispiels: gedruckte Menge mal gedruckter Preis ergibt den gedruckten Betrag', () => {
     const row = /kosten [\d,]+ %: ([\d.,]+) € für ([\d.,]+) \S+, ([\d.,]+) € je /
     const prices: number[] = []
     for (const line of potLines(pot).slice(1)) {
@@ -380,5 +381,71 @@ describe('Ausweis zum Nachrechnen: Mengen so genau wie gerechnet', () => {
     expect(userLine(first, { pots: [pot] })).toContain(`(Grundkosten ${fmtEuro(21420)}, Verbrauchskosten ${fmtEuro(23719)})`)
     // Mit CO₂-Abzug steht die Aufteilung beim Betrag vor dem Abzug.
     expect(userLine({ ...first, heatingCo2Cents: 1000 }, statement)).toContain(`${fmtEuro(45139)} (Grundkosten ${fmtEuro(21420)} für 72,5 m², Verbrauchskosten ${fmtEuro(23719)}), nach CO₂-Abzug ${fmtEuro(44139)}`)
+  })
+})
+
+// Durchsicht des Zweigs: Teilzeitraum, ehrliche Grenze von einem Cent, Stände ohne Fläche, negative Null.
+describe('Ausweis zum Nachrechnen: Durchsicht', () => {
+  const total = 35.400000000000006
+  const heat = {
+    pot: 'heating' as const, costCents: 285600, consumptionPct: 70, byAreaOnly: false, areaM2: 290, consumption: total, consumptionUnit: 'MWh',
+    baseCentsPerM2: 85680 / 290, consumptionCentsPerUnit: 199920 / total,
+  }
+  const water = {
+    pot: 'water' as const, costCents: 100000, consumptionPct: 70, byAreaOnly: false, areaM2: 290, consumption: 120, consumptionUnit: 'm³',
+    baseCentsPerM2: 30000 / 290, consumptionCentsPerUnit: 70000 / 120,
+  }
+  const user = (over: Record<string, unknown> = {}) => ({
+    key: 'A', role: 'tenancy' as const, tenancyId: 'A', label: 'Mieter A', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640,
+    heatingConsumption: 4.2, waterConsumption: 20, heatingGroup: false, waterGroup: false, heatingCents: 37428, waterCents: 17276, heatingCo2Cents: 0, waterCo2Cents: 0, ...over,
+  })
+  const next = { ...user(), key: 'B', tenancyId: 'B', label: 'Mieter B', from: '2025-10-01', to: '2025-12-31', days: 92, degreeDayPermille: 360 }
+  const unitOf = (a: ReturnType<typeof user>, others: ReturnType<typeof user>[] = [next]): SelfUnitView => ({ unitId: 'u', unitName: 'W', areaM2: 72.5, heatAreaM2: 72.5, readings: [], boundaries: [], users: [a, ...others] })
+
+  it('Teilzeitraum: die Klammer nennt den Anteil, mit dem die Fläche in diesem Topf gewichtet ist', () => {
+    const a = user()
+    // Heizung nach Gradtagen: 72,5 m² · 2,95448 € · 640/1.000 = 137,09 €; Warmwasser immer nach Tagen:
+    // 72,5 · 1,03448 · 273/365 = 56,10 € (gedruckt der Rest zum Betrag der Zeile, 56,09 €).
+    expect(userLine(a, { pots: [heat, water], units: [unitOf(a)], changeSplit: 'degreeDays' }))
+      .toBe(`Mieter A, 01.01.2025 bis 30.09.2025 (273 Tage, 640 ‰ der Gradtage): Heizung 4,2 MWh, ${fmtEuro(37428)} (Grundkosten ${fmtEuro(13709)} für 72,5 m², davon 640 von 1.000 ‰ der Gradtage, Verbrauchskosten ${fmtEuro(23719)}); ` +
+        `Warmwasser 20 m³, ${fmtEuro(17276)} (Grundkosten ${fmtEuro(5609)} für 72,5 m², davon 273 von 365 Tagen, Verbrauchskosten ${fmtEuro(11667)})`)
+    // Zeitanteilige Teilung: auch die Heizung nach Tagen.
+    const t = user({ heatingCents: 39740 })
+    expect(userLine(t, { pots: [heat], units: [unitOf(t)], changeSplit: 'time' })).toContain(`(Grundkosten ${fmtEuro(16021)} für 72,5 m², davon 273 von 365 Tagen, Verbrauchskosten ${fmtEuro(23719)})`)
+  })
+  it('Teilzeitraum: geht die Rechnung aus den Feldern des Stands nicht auf, steht keine Fläche da', () => {
+    const a = user()
+    // Die Wohnung nennt nur diesen Nutzer (der übrige Teil der Heizperiode fehlt): 72,5 m² mal Preis wären 214,20 €, nicht 137,09 €.
+    expect(userLine(a, { pots: [heat], units: [unitOf(a, [])], changeSplit: 'degreeDays' })).toContain(`(Grundkosten ${fmtEuro(13709)}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Ohne Angabe, wie beim Wechsel geteilt wird, ist der Anteil der Heizung nicht bekannt.
+    expect(userLine(a, { pots: [heat], units: [unitOf(a)] })).toContain(`(Grundkosten ${fmtEuro(13709)}, Verbrauchskosten ${fmtEuro(23719)})`)
+  })
+  it('Menge mal Preis ergibt den gedruckten Betrag bis auf Rundung von höchstens einem Cent, mehr nicht', () => {
+    // Verbundenes Warmwasser: Der Topfbetrag ist ungerundet 118,635 €, gedruckt wird der gerundete; der Preis kommt vom ungerundeten.
+    const exact = 11863.5
+    const pot = { ...heat, costCents: Math.round(exact), consumption: 17.35, consumptionUnit: 'kWh', baseCentsPerM2: (exact * 0.3) / 290, consumptionCentsPerUnit: (exact * 0.7) / 17.35 }
+    const de = (text: string): number => Number(text.replace(/\./g, '').replace(',', '.'))
+    const diffs = potLines(pot).slice(1).map((line) => {
+      const m = /kosten [\d,]+ %: ([\d.,]+) € für ([\d.,]+) \S+, ([\d.,]+) € je /.exec(line)
+      if (!m) throw new Error(`Zeile nicht lesbar: ${line}`)
+      return Math.abs(Math.round(de(m[2] ?? '') * de(m[3] ?? '') * 100) - Math.round(de(m[1] ?? '') * 100))
+    })
+    for (const d of diffs) expect(d).toBeLessThanOrEqual(1)
+    // Genau dieser Fall liegt einen Cent daneben: Die Grenze ist ein Cent, nicht null.
+    expect(Math.max(...diffs)).toBe(1)
+  })
+  it('ein Stand ohne Fläche der Wohnung stürzt nicht ab, der Teil der Zeile entfällt', () => {
+    const a = user()
+    const bare = { unitId: 'u', unitName: 'W', readings: [], boundaries: [], users: [a, next] } as unknown as SelfUnitView
+    expect(userLine(a, { pots: [heat, water], units: [bare], changeSplit: 'degreeDays' }))
+      .toContain(`(Grundkosten ${fmtEuro(13709)}, Verbrauchskosten ${fmtEuro(23719)}); Warmwasser 20 m³, ${fmtEuro(17276)} (Grundkosten ${fmtEuro(5609)}, Verbrauchskosten ${fmtEuro(11667)})`)
+  })
+  it('keine negative Null bei Mengen, Preisen und Beträgen', () => {
+    const a = user({ heatingConsumption: -5.5e-17, waterConsumption: -0, heatingCents: 0, waterCents: 0 })
+    const line = userLine(a, { pots: [heat, water] })
+    expect(line).toContain('Heizung 0 MWh,')
+    expect(line).toContain('Warmwasser 0 m³,')
+    const lines = potLines({ ...heat, costCents: -0, consumption: -0, baseCentsPerM2: -0, consumptionCentsPerUnit: -5.5e-17, estimatedConsumption: 0 }).join(' ')
+    expect(lines).not.toMatch(/-0/)
   })
 })
