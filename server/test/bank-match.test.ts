@@ -80,6 +80,23 @@ test('Vorschlag: Kaution in Höhe der vereinbarten, nahe dem Mietbeginn und ungl
   assert.deepEqual(suggest(tx('2025-01-11', 240000), ctx({ monthlySollCents: () => 240000 }))?.target, { type: 'newPayment', kind: 'rent' }, 'gleich dem Soll')
 })
 
+// Systemprüfung: Kaution laut Stammdaten „erhalten“, aber ohne Buchung; Ausgang mit „Kaution zurueck“ im Zweck. Vorbelegt
+// war „Nachzahlung oder Guthaben“ (der allgemeine Rest der Regel 3), obwohl der Zweck die Kaution nennt.
+test('Vorschlag: Ausgang mit „Kaution“ im Zweck ist eine Rückzahlung der Kaution, kein Guthaben der Abrechnung; gelb', () => {
+  const inStock = tenancy({ depositCents: 186000, depositStatus: 'erhalten' })
+  const s = suggest(tx('2026-02-10', -186000, { purpose: 'Kaution zurueck' }), ctx({ tenancies: [inStock] }))
+  assert.deepEqual(s?.target, { type: 'deposit', kind: 'refunded' })
+  assert.equal(s?.light, 'yellow')
+  assert.equal(s?.reason, '„Kaution“ im Verwendungszweck')
+  // Ohne das Wort bleibt der allgemeine Vorschlag, ebenso ohne vereinbarte Geldkaution (Bürgschaft, keine Kaution).
+  assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Rueckzahlung' }), ctx({ tenancies: [inStock] }))?.target, { type: 'newPayment', kind: 'settlement' })
+  assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Kaution zurueck' }), ctx({ tenancies: [tenancy({ depositForm: 'guarantee' })] }))?.target, { type: 'newPayment', kind: 'settlement' })
+  assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Kaution zurueck' }), ctx({ tenancies: [tenancy({ depositCents: undefined })] }))?.target, { type: 'newPayment', kind: 'settlement' })
+  // Eine erfasste Rückzahlung gleichen Betrags geht weiter vor (Regel 2).
+  const booked: DepositEntry[] = [{ id: 'r', tenancyId: 't1', date: '2026-02-09', kind: 'refunded', amountCents: 186000 }]
+  assert.deepEqual(suggest(tx('2026-02-10', -186000, { purpose: 'Kaution zurueck' }), ctx({ tenancies: [inStock], depositEntries: booked }))?.target, { type: 'existingDeposit', depositEntryId: 'r' })
+})
+
 test('Vorschlag: Ausgang an den Mieter ist nach dem Auszug mit Kaution eine Rückzahlung, sonst ein Guthaben; beides gelb', () => {
   const ended = tenancy({ end: '2025-06-30' })
   const received: DepositEntry = { id: 'd', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 240000 }

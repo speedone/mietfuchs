@@ -4,7 +4,7 @@
 // Browserspeicher; Schließen verwirft alles.
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, errorText, fmtEuro } from '../api'
-import { importDecisionsOf, questionKey, questionProblems, type QuestionAnswer } from '../bankView'
+import { importDecisionsOf, importDoneText, questionKey, questionProblems, type QuestionAnswer } from '../bankView'
 import type { BankImportPreview, BankImportQuestion } from '../types'
 import Drawer from './Drawer'
 import Field from './Field'
@@ -26,7 +26,8 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
   file: File
   tenancies: readonly TenancyOption[]
   onClose: () => void
-  onDone: (sentence: string) => void
+  // Die Mitteilung nach dem Einlesen (`importDoneText`): eingelesen, noch nichts gebucht, nächster Schritt.
+  onDone: (message: string) => void
 }) {
   const [answers, setAnswers] = useState<Record<string, QuestionAnswer>>({})
   const [preview, setPreview] = useState<BankImportPreview | null>(null)
@@ -97,7 +98,7 @@ export default function BankImportDrawer({ file, tenancies, onClose, onDone }: {
     try {
       const decisions = importDecisionsOf(questions, answers)
       const res = await api<{ ok: true; sentence: string }>('/api/bank/import', { method: 'POST', body: form(file, { decisions: JSON.stringify(decisions), token: preview.token }) })
-      onDone(res.sentence)
+      onDone(importDoneText(res.sentence, preview.summary))
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.data.preview) {
         const fresh = e.data.preview as BankImportPreview

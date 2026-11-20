@@ -111,6 +111,8 @@ test('Einlesen: Vorschau mit Rückfrage zum Konto, Antwort plant neu, „Einlese
   await waitFor(() => expect(posts('/api/bank/import').length).toBe(1))
   expect(posts('/api/bank/import')[0]?.body).toEqual({ statement: 'Datei juni.xml', decisions: JSON.stringify([{ type: 'account', iban: OWN, accept: true }]), token: 'marke-2' })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // Die Mitteilung sagt „eingelesen“, nicht „übernommen“: Gebucht ist noch nichts.
+  expect(await screen.findByText('2 Umsätze eingelesen, gebucht ist noch nichts. Ordnen Sie sie unter „Offene Umsätze“ zu und klicken Sie dort auf „Buchen“.')).toBeTruthy()
   expect(setItem.mock.calls.filter(([, v]) => String(v).includes('Erika') || String(v).includes(OWN))).toEqual([])
 })
 

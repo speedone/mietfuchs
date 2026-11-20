@@ -661,6 +661,12 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   seitlichen Ränder zurück, ohne Mindesthöhe und ohne eigenen Seitenumbruch. Ohne `canPagePaper` druckt es wie ohne
   Briefpapier, das Fenster sagt es (`PAPER_BROWSER_NOTE`), und für die Prüfung des Absenders zählt das Briefpapier dann
   nicht. Geprüft im Fall `mieterhoehung-briefpapier` von scripts/print-width-check.mjs.
+- **Aufstellung der Kaution als Brief** (#228, [DepositLetter.tsx](src/components/DepositLetter.tsx), Text in
+  [depositLetter.ts](src/depositLetter.ts)): „Aufstellung drucken“ im Fenster „Kaution“ druckt nach demselben Muster
+  (`LetterHead`, `useLetterDesign` aus RentIncreaseLetter.tsx, Blatt am Ende von body, `print-deposit` in letter.css).
+  Der Text steht fest und kommt aus dem heutigen Bestand; ohne Namen des Vermieters warnt das Fenster nur. Druckbreite:
+  Fall `kaution`. Die Mitteilung nach dem Einlesen eines Kontoauszugs baut `importDoneText` (bankView.ts): eingelesen,
+  nichts gebucht, weiter unter „Offene Umsätze“.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus

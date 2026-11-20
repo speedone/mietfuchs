@@ -105,6 +105,25 @@ test('Zuordnung: die Marke hängt an Entscheidungen und Plan', () => {
   assert.notEqual(linkToken(a, [rent('x', 80000)]), linkToken(other, [rent('x', 80000)]))
 })
 
+// Systemprüfung: Die Stammdaten führen die Kaution als „erhalten“, gebucht ist nichts. Die Ablehnung nennt dann den Weg.
+test('Zuordnung: Rückzahlung der Kaution ohne gebuchten Eingang nennt den Weg über „Kaution führen“', () => {
+  const refund: LinkDecision = { transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: -186000, target: { type: 'deposit', kind: 'refunded' } }] }
+  const y = tx('y', -186000, { bookingDate: '2026-02-10' })
+  const inStock = planBankLinks([refund], open(y), ctx({ tenancies: [{ id: 't1', start: '2025-01-01', end: null, depositCents: 186000, depositStatus: 'erhalten' }] }))
+  assert.equal(inStock.problems[0]?.message,
+    'Mehr als die Kaution hergibt: Am 10.02.2026 fehlten 1.860,00 €. Für dieses Mietverhältnis ist noch kein Eingang der Kaution gebucht; „erhalten“ in den Stammdaten ist nur eine Angabe ohne Buchung. Buchen Sie zuerst den Eingang: in den Stammdaten beim Mietverhältnis unter „Kaution führen“. Danach lässt sich die Rückzahlung hier zuordnen.')
+  const plain = planBankLinks([refund], open(y), ctx())
+  assert.equal(plain.problems[0]?.message,
+    'Mehr als die Kaution hergibt: Am 10.02.2026 fehlten 1.860,00 €. Für dieses Mietverhältnis ist noch kein Eingang der Kaution gebucht. Buchen Sie zuerst den Eingang: in den Stammdaten beim Mietverhältnis unter „Kaution führen“. Danach lässt sich die Rückzahlung hier zuordnen.')
+  // Mit gebuchtem Eingang, der nur nicht reicht, bleibt es beim bisherigen Satz.
+  const short = planBankLinks([refund], open(y), ctx({ depositEntries: [{ id: 'd', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 100000 }] }))
+  assert.equal(short.problems[0]?.message, 'Mehr als die Kaution hergibt: Am 10.02.2026 fehlten 860,00 €.')
+  // Eingang und Rückzahlung im selben Lauf: Der Eingang ist dann gebucht, kein Hinweis.
+  const receipt: LinkDecision = { transactionId: 'x', parts: [{ tenancyId: 't1', amountCents: 100000, target: { type: 'deposit', kind: 'received' } }] }
+  const both = planBankLinks([receipt, refund], open(tx('x', 100000, { bookingDate: '2025-01-05' }), y), ctx())
+  assert.equal(both.problems[0]?.message, 'Mehr als die Kaution hergibt: Am 10.02.2026 fehlten 860,00 €.')
+})
+
 test('parseLinkDecisions: lehnt alles ab, was nicht der Form entspricht, mit einem Satz', () => {
   assert.deepEqual(parseLinkDecisions([rent('x', 80000), { transactionId: 'y', setAside: 'other' }]), { decisions: [rent('x', 80000), { transactionId: 'y', setAside: 'other' }] })
   for (const bad of [null, 'x', [{}], [{ transactionId: 'x' }], [{ transactionId: 'x', parts: [] }], [{ transactionId: 'x', setAside: 'privat' }],

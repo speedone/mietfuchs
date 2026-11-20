@@ -881,6 +881,13 @@ Cockpit und Hinweis der Steuer.
   abgerechnete Heizperioden einer Anlage, die die Wohnung versorgt (Weg d), als `lastHeating` und „Heizkosten …“.
   Dazu `openRentCents` aus dem Mietkonto des laufenden Jahres (Endsaldo zum 31.12. als Schuld, auch noch nicht Fälliges): Das
   Seitenfenster fragt nach, bevor eine Verrechnung mit Miete darüber hinausgeht.
+- **Gedruckt ist die Aufstellung ein Brief** (client/src/depositLetter.ts, components/DepositLetter.tsx): `LetterHead`
+  mit Absender (`effectiveLandlord`), Anschrift (`recipientLines`), Ort und Datum, Betreff mit Wohnung und Objekt, die
+  Aufstellung, ein Satz zum Ergebnis, Gruß, Unterschrift; Logo und Briefpapier wie beim Schreiben der Mieterhöhung.
+  **Fester Text, nichts eingefroren, keine Bausteine in der Datenbank**; er nennt keine Norm, keine Frist und kein
+  „ich/wir“. Bleibt etwas auszuzahlen, fragt er nach dem Konto oder nennt `Tenancy.iban`; eine Nachforderung kennt die
+  Aufstellung nicht (nie unter 0), deshalb steht das Konto des Vermieters nicht darauf. Ohne Namen des Vermieters warnt
+  das Fenster (`depositSenderMissing`), gedruckt wird trotzdem.
 - **Cockpit und Steuer**: „Kaution abrechnen“ in „Demnächst fällig“ (#190) je Mietverhältnis mit erreichtem Ende,
   Buchungen und Stand über 0 (`depositsAfterMoveOut` in shared/deposit.ts), ohne Frist; der Sprung öffnet das
   Seitenfenster (`{ kind: 'deposit' }` in client/src/focus.ts). Die Steuer nennt,
@@ -1002,8 +1009,11 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   Kautionsbuchung gleichen Betrags in 7 Tagen wird verknüpft (eine Verrechnung aus der Kaution nie), eine erfasste
   Zahlung gleichen Betrags bis 15 Tage entfernt macht gelb und geht vor; eine Rate der Kaution (ein Drittel oder
   „Kaution“ im Zweck, in den ersten 100 Tagen, solange Kaution laut Buchungen offen und nicht laut Stammdaten erhalten,
-  Betrag ungleich dem Soll dieses und des Folgemonats, nicht bei Bürgschaft oder Verpfändung) wird gelb als Kaution vorgeschlagen. Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
-  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft.
+  Betrag ungleich dem Soll dieses und des Folgemonats, nicht bei Bürgschaft oder Verpfändung) wird gelb als Kaution vorgeschlagen. Ein
+  **Ausgang mit „Kaution“ im Zweck** ist bei vereinbarter Geldkaution gelb „Kaution zurückgezahlt“, auch ohne Buchung
+  (sonst griffe der allgemeine Rest „Auszahlung an den Mieter, etwa ein Guthaben“). Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
+  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft; fehlt jeder Eingang (auch im selben
+  Lauf), nennt die Ablehnung den Weg über „Kaution führen“, und dass „erhalten“ in den Stammdaten keine Buchung ist.
   **Nachzahlung und Guthaben am Betrag** (#308, `bank/settlementMatch.ts`, rein): offen ist je Mietverhältnis und
   **aktuellem** Abschluss (Objekt und getrennte Heizkostenabrechnung, nie `closed_settlement_history`, nie die
   Live-Berechnung) der Saldo abzüglich der Zahlungen der Art „Abrechnung“, abgeleitet, nie gespeichert. Eine Zahlung trägt

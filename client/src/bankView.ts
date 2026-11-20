@@ -118,6 +118,19 @@ export function targetOptionsFor(tx: BankTransactionView, chosen: RowTarget | nu
 
 const germanDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
 
+// Die Mitteilung nach dem Einlesen (Systemprüfung): Der Satz des Servers sagt „übernommen“, gebucht wird aber erst unter
+// „Offene Umsätze“. Mit neuen Umsätzen sagt sie deshalb, was geschah und was als Nächstes zu tun ist; ohne bleibt der Satz
+// des Servers (etwa „schon eingelesen“). Auf dem Mischkonto sind die gespeicherten Umsätze die der Vermietung.
+export function importDoneText(sentence: string, summary: { stored: number; knownDays: number; pending: number }): string {
+  const { stored, knownDays, pending } = summary
+  if (stored <= 0) return sentence
+  const more = [
+    ...(knownDays > 0 ? [knownDays === 1 ? '1 Tag war schon eingelesen' : `${knownDays} Tage waren schon eingelesen`] : []),
+    ...(pending > 0 ? [pending === 1 ? '1 Umsatz kommt mit dem Tagesauszug' : `${pending} Umsätze kommen mit dem Tagesauszug`] : []),
+  ]
+  return `${stored === 1 ? '1 Umsatz' : `${stored} Umsätze`} eingelesen, gebucht ist noch nichts${more.length > 0 ? ` (${more.join(', ')})` : ''}. Ordnen Sie ${stored === 1 ? 'ihn' : 'sie'} unter „Offene Umsätze“ zu und klicken Sie dort auf „Buchen“.`
+}
+
 // Wortlaut der Spec: nie „Einnahmen vollständig“, nur ob das Konto lückenlos eingelesen ist.
 export function coverageText(a: Pick<BankAccountInfo, 'coverage'>): string {
   const c = a.coverage
