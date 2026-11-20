@@ -1,0 +1,5603 @@
+{
+ "version": "0.18.1",
+ "year": 2025,
+ "today": "2026-10-27",
+ "settings": {
+  "landlordName": "Klaus Wegener",
+  "iban": "DE02120300000000202051",
+  "paymentDeadlineDays": 30,
+  "ollamaUrl": "http://127.0.0.1:36681",
+  "ollamaModel": "qwen3.5:4b",
+  "updateCheck": "off",
+  "ai": {
+   "text": {
+    "provider": "ollama",
+    "preset": "ollama-local",
+    "url": "http://127.0.0.1:36681",
+    "model": "qwen3.5:4b",
+    "vision": null
+   },
+   "images": null,
+   "timeoutSeconds": null,
+   "numCtx": null,
+   "maxOutputTokens": null,
+   "pageImageEdge": null,
+   "jsonMode": "auto",
+   "reasoningEffort": null,
+   "extraInstructions": "",
+   "consent": {}
+  },
+  "fixedByEnv": [
+   "ollamaUrl",
+   "ollamaModel",
+   "ai.text.url",
+   "ai.text.model"
+  ],
+  "aiKeys": {
+   "text": {
+    "set": false,
+    "hint": "",
+    "fromEnv": null
+   },
+   "images": {
+    "set": false,
+    "hint": "",
+    "fromEnv": null
+   }
+  },
+  "aiExternal": {
+   "text": false,
+   "images": false
+  }
+ },
+ "properties": [
+  {
+   "id": "objekt-1",
+   "name": "Lindenweg 12",
+   "property": {
+    "id": "objekt-1",
+    "name": "Lindenweg 12",
+    "kind": "mfh",
+    "address": "Lindenweg 12, 12345 Musterstadt",
+    "landlordName": null,
+    "iban": null,
+    "paymentDeadlineDays": null,
+    "landlordAddress": null,
+    "landlordContact": null,
+    "printLetter": null,
+    "cableBuiltBeforeDec2021": true,
+    "tightMarket": null,
+    "tightMarketFrom": null,
+    "tightMarketTo": null,
+    "state": null,
+    "spreadRestYear": null,
+    "periodRules": {
+     "startMonth": 1,
+     "changes": []
+    }
+   },
+   "units": [
+    {
+     "id": "0000000000000004",
+     "propertyId": "objekt-1",
+     "name": "EG links",
+     "areaM2": 72,
+     "participates": true,
+     "rooms": 3,
+     "floor": "EG"
+    },
+    {
+     "id": "0000000000000006",
+     "propertyId": "objekt-1",
+     "name": "EG rechts",
+     "areaM2": 58,
+     "participates": true,
+     "rooms": 2,
+     "floor": "EG"
+    },
+    {
+     "id": "0000000000000008",
+     "propertyId": "objekt-1",
+     "name": "OG",
+     "areaM2": 95,
+     "participates": true,
+     "rooms": 4,
+     "floor": "1. OG"
+    },
+    {
+     "id": "000000000000000a",
+     "propertyId": "objekt-1",
+     "name": "DG (Eigennutzung)",
+     "areaM2": 45,
+     "participates": false,
+     "selfUsed": true,
+     "selfPersons": 2,
+     "rooms": 2,
+     "floor": "DG"
+    },
+    {
+     "id": "000000000000000c",
+     "propertyId": "objekt-1",
+     "name": "Garage 1",
+     "areaM2": 0,
+     "participates": true,
+     "noConnection": [
+      "kaltwasser",
+      "waerme"
+     ]
+    }
+   ],
+   "tenancies": [
+    {
+     "id": "000000000000000e",
+     "unitId": "0000000000000004",
+     "tenantName": "Anna Becker",
+     "persons": 1,
+     "personHistory": [
+      {
+       "from": "2019-04-01",
+       "persons": 2
+      }
+     ],
+     "start": "2019-04-01",
+     "end": null,
+     "prepayments": [
+      {
+       "from": "2019-04",
+       "monthlyCents": 24000
+      },
+      {
+       "from": "2025-01",
+       "monthlyCents": 28000
+      }
+     ],
+     "prepaymentOverrides": {},
+     "baseRents": [
+      {
+       "from": "2019-04",
+       "monthlyCents": 62000
+      },
+      {
+       "from": "2024-07",
+       "monthlyCents": 65000
+      }
+     ],
+     "email": "anna.becker@example.org",
+     "depositCents": 186000,
+     "depositStatus": "erhalten"
+    },
+    {
+     "id": "0000000000000010",
+     "unitId": "0000000000000006",
+     "tenantName": "Jonas Hartmann",
+     "persons": 1,
+     "personHistory": [
+      {
+       "from": "2021-09-01",
+       "persons": 1
+      }
+     ],
+     "start": "2021-09-01",
+     "end": "2025-06-30",
+     "prepayments": [
+      {
+       "from": "2021-09",
+       "monthlyCents": 22000
+      }
+     ],
+     "prepaymentOverrides": {},
+     "baseRents": [
+      {
+       "from": "2021-09",
+       "monthlyCents": 52000
+      }
+     ]
+    },
+    {
+     "id": "0000000000000012",
+     "unitId": "0000000000000006",
+     "tenantName": "Lea Schneider",
+     "persons": 1,
+     "personHistory": [
+      {
+       "from": "2025-08-01",
+       "persons": 2
+      }
+     ],
+     "start": "2025-08-01",
+     "end": null,
+     "prepayments": [
+      {
+       "from": "2025-08",
+       "monthlyCents": 23000
+      }
+     ],
+     "prepaymentOverrides": {},
+     "baseRents": [
+      {
+       "from": "2025-08",
+       "monthlyCents": 56000
+      }
+     ]
+    },
+    {
+     "id": "0000000000000014",
+     "unitId": "0000000000000008",
+     "tenantName": "Familie Yilmaz",
+     "persons": 1,
+     "personHistory": [
+      {
+       "from": "2016-02-01",
+       "persons": 3
+      },
+      {
+       "from": "2025-03-15",
+       "persons": 4
+      }
+     ],
+     "start": "2016-02-01",
+     "end": null,
+     "prepayments": [
+      {
+       "from": "2016-02",
+       "monthlyCents": 39000
+      }
+     ],
+     "prepaymentOverrides": {},
+     "baseRents": [
+      {
+       "from": "2016-02",
+       "monthlyCents": 89000
+      }
+     ]
+    },
+    {
+     "id": "0000000000000016",
+     "unitId": "000000000000000c",
+     "tenantName": "Markus Klein",
+     "persons": 1,
+     "personHistory": [
+      {
+       "from": "2022-01-01",
+       "persons": 0
+      }
+     ],
+     "start": "2022-01-01",
+     "end": null,
+     "prepayments": [],
+     "prepaymentOverrides": {},
+     "baseRents": [
+      {
+       "from": "2022-01",
+       "monthlyCents": 6000
+      }
+     ],
+     "costModel": "inclusive",
+     "heatingModel": "inclusive"
+    }
+   ],
+   "settlement": {
+    "selfUsedShareCents": 214680,
+    "year": 2025,
+    "daysInYear": 365,
+    "period": {
+     "key": "2025-01",
+     "from": "2025-01-01",
+     "to": "2025-12-31",
+     "short": false,
+     "label": "2025"
+    },
+    "deadline": "2026-12-31",
+    "statements": [
+     {
+      "tenancyId": "000000000000000e",
+      "tenantName": "Anna Becker",
+      "unitId": "0000000000000004",
+      "unitName": "EG links",
+      "persons": 2,
+      "personDays": 730,
+      "days": 365,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-12-31",
+      "rows": [
+       {
+        "costItemId": "00000000000000c3",
+        "category": "Grundsteuer",
+        "description": "Grundsteuer B 2025",
+        "totalCents": 61240,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "72 von 270 m²",
+        "shareCents": 16331,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "612,40 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "72 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "612,40 € × 26,666667 % = 163,3067 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "163,31 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c6",
+        "category": "Wasser/Abwasser",
+        "description": "Frischwasser",
+        "totalCents": 70000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "38,2 von 150 m³ (gemessen)",
+        "shareCents": 17827,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "700,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "38,2 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "700,00 € × 25,466667 % = 178,2667 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "178,27 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c8",
+        "category": "Wasser/Abwasser",
+        "description": "Abwasser",
+        "totalCents": 80000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "38,2 von 150 m³ (gemessen)",
+        "shareCents": 20373,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "38,2 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "800,00 € × 25,466667 % = 203,7333 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "203,73 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000cb",
+        "category": "Müllabfuhr",
+        "description": "Restmüll und Biotonne",
+        "totalCents": 65000,
+        "key": "persons",
+        "keyLabel": "Personenzahl",
+        "basisText": "730 von 3.365 Personentagen (davon 31 Leerstand)",
+        "shareCents": 14101,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "650,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Personenzahl",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "730 von 3.365 Personentagen (davon 31 Leerstand)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "davon Leerstand",
+          "value": "EG rechts: 31 Tage × 1 Person = 31 Personentage",
+          "term": "vacancy"
+         },
+         {
+          "label": "Rechnung",
+          "value": "650,00 € × 21,693908 % = 141,0104 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "141,01 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000ce",
+        "category": "Sach- und Haftpflichtversicherung",
+        "description": "Wohngebäude- und Haftpflichtversicherung",
+        "totalCents": 128400,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "72 von 270 m²",
+        "shareCents": 34240,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.284,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "72 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.284,00 € × 26,666667 % = 342,40 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "342,40 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d1",
+        "category": "Hauswart",
+        "description": "Hausmeisterdienst",
+        "totalCents": 180000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "72 von 270 m²",
+        "shareCents": 48000,
+        "labor35aCents": 40000,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "72 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.800,00 € × 26,666667 % = 480,00 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "480,00 €"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "400,00 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d4",
+        "category": "Schornsteinfeger",
+        "description": "Feuerstättenschau und Abgasmessung",
+        "totalCents": 9530,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "72 von 270 m²",
+        "shareCents": 2541,
+        "labor35aCents": 1685,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "95,30 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "72 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "95,30 € × 26,666667 % = 25,4133 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "25,41 €"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "16,85 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d7",
+        "category": "Heizung und Warmwasser",
+        "description": "Erdgas und Wartung Heizung",
+        "totalCents": 480000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "9,6 von 35,4 MWh (gemessen)",
+        "shareCents": 130170,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "4.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "9,6 von 35,4 MWh (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "4.800,00 € × 27,118644 % = 1.301,6949 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "1.301,70 € (Restcent-Verfahren: rechnerisch 1.301,6949 €; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)",
+          "term": "largestRemainder"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d9",
+        "category": "Gartenpflege",
+        "description": "Gartenpflege Saison",
+        "totalCents": 138000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "72 von 270 m²",
+        "shareCents": 36800,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.380,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "72 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.380,00 € × 26,666667 % = 368,00 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "368,00 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000db",
+        "category": "Beleuchtung/Allgemeinstrom",
+        "description": "Allgemeinstrom Treppenhaus und Keller",
+        "totalCents": 41890,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "72 von 270 m²",
+        "shareCents": 11171,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "418,90 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "72 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "418,90 € × 26,666667 % = 111,7067 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "111,71 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000dd",
+        "category": "Sonstige Betriebskosten",
+        "description": "Rohrreinigung Küchenstrang EG links",
+        "totalCents": 18500,
+        "key": "direct",
+        "keyLabel": "Direktzuordnung",
+        "basisText": "Direktzuordnung EG links",
+        "shareCents": 18500,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "185,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Direktzuordnung",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "Direktzuordnung EG links",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "185,00 € × 100 % = 185,00 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "185,00 €"
+         }
+        ]
+       }
+      ],
+      "totalShareCents": 350054,
+      "total35aCents": 41685,
+      "prepaymentCents": 336000,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 29200,
+      "balanceCents": -14054
+     },
+     {
+      "tenancyId": "0000000000000010",
+      "tenantName": "Jonas Hartmann",
+      "unitId": "0000000000000006",
+      "unitName": "EG rechts",
+      "persons": 1,
+      "personDays": 181,
+      "days": 181,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-06-30",
+      "rows": [
+       {
+        "costItemId": "00000000000000c3",
+        "category": "Grundsteuer",
+        "description": "Grundsteuer B 2025",
+        "totalCents": 61240,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 181/365 Tage",
+        "shareCents": 6524,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "612,40 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 181/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "612,40 € × 10,652461 % = 65,2357 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "65,24 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c6",
+        "category": "Wasser/Abwasser",
+        "description": "Frischwasser",
+        "totalCents": 70000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "14,8 von 150 m³ (gemessen)",
+        "shareCents": 6907,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "700,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "14,8 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "700,00 € × 9,866667 % = 69,0667 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "69,07 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c8",
+        "category": "Wasser/Abwasser",
+        "description": "Abwasser",
+        "totalCents": 80000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "14,8 von 150 m³ (gemessen)",
+        "shareCents": 7893,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "14,8 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "800,00 € × 9,866667 % = 78,9333 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "78,93 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000cb",
+        "category": "Müllabfuhr",
+        "description": "Restmüll und Biotonne",
+        "totalCents": 65000,
+        "key": "persons",
+        "keyLabel": "Personenzahl",
+        "basisText": "181 von 3.365 Personentagen (davon 31 Leerstand)",
+        "shareCents": 3496,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "650,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Personenzahl",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "181 von 3.365 Personentagen (davon 31 Leerstand)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "davon Leerstand",
+          "value": "EG rechts: 31 Tage × 1 Person = 31 Personentage",
+          "term": "vacancy"
+         },
+         {
+          "label": "Rechnung",
+          "value": "650,00 € × 5,3789 % = 34,9629 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "34,96 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000ce",
+        "category": "Sach- und Haftpflichtversicherung",
+        "description": "Wohngebäude- und Haftpflichtversicherung",
+        "totalCents": 128400,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 181/365 Tage",
+        "shareCents": 13678,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.284,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 181/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.284,00 € × 10,652461 % = 136,7776 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "136,78 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d1",
+        "category": "Hauswart",
+        "description": "Hausmeisterdienst",
+        "totalCents": 180000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 181/365 Tage",
+        "shareCents": 19175,
+        "labor35aCents": 15979,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 181/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.800,00 € × 10,652461 % = 191,7443 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "191,75 € (Restcent-Verfahren: rechnerisch 191,7443 €; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)",
+          "term": "largestRemainder"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "159,79 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d4",
+        "category": "Schornsteinfeger",
+        "description": "Feuerstättenschau und Abgasmessung",
+        "totalCents": 9530,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 181/365 Tage",
+        "shareCents": 1015,
+        "labor35aCents": 673,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "95,30 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 181/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "95,30 € × 10,652461 % = 10,1518 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "10,15 €"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "6,73 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d7",
+        "category": "Heizung und Warmwasser",
+        "description": "Erdgas und Wartung Heizung",
+        "totalCents": 480000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "4,2 von 35,4 MWh (gemessen)",
+        "shareCents": 56949,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "4.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "4,2 von 35,4 MWh (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "4.800,00 € × 11,864407 % = 569,4915 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "569,49 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d9",
+        "category": "Gartenpflege",
+        "description": "Gartenpflege Saison",
+        "totalCents": 138000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 181/365 Tage",
+        "shareCents": 14700,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.380,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 181/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.380,00 € × 10,652461 % = 147,004 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "147,00 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000db",
+        "category": "Beleuchtung/Allgemeinstrom",
+        "description": "Allgemeinstrom Treppenhaus und Keller",
+        "totalCents": 41890,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 181/365 Tage",
+        "shareCents": 4462,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "418,90 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 181/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "418,90 € × 10,652461 % = 44,6232 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "44,62 €"
+         }
+        ]
+       }
+      ],
+      "totalShareCents": 134799,
+      "total35aCents": 16652,
+      "prepaymentCents": 132000,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 0,
+      "balanceCents": -2799
+     },
+     {
+      "tenancyId": "0000000000000012",
+      "tenantName": "Lea Schneider",
+      "unitId": "0000000000000006",
+      "unitName": "EG rechts",
+      "persons": 2,
+      "personDays": 306,
+      "days": 153,
+      "periodStart": "2025-08-01",
+      "periodEnd": "2025-12-31",
+      "rows": [
+       {
+        "costItemId": "00000000000000c3",
+        "category": "Grundsteuer",
+        "description": "Grundsteuer B 2025",
+        "totalCents": 61240,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 153/365 Tage",
+        "shareCents": 5514,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "612,40 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 153/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "612,40 € × 9,004566 % = 55,144 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "55,14 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c6",
+        "category": "Wasser/Abwasser",
+        "description": "Frischwasser",
+        "totalCents": 70000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "13,89 von 150 m³ (gemessen)",
+        "shareCents": 6480,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "700,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "13,89 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "700,00 € × 9,257609 % = 64,8033 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "64,80 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c8",
+        "category": "Wasser/Abwasser",
+        "description": "Abwasser",
+        "totalCents": 80000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "13,89 von 150 m³ (gemessen)",
+        "shareCents": 7406,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "13,89 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "800,00 € × 9,257609 % = 74,0609 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "74,06 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000cb",
+        "category": "Müllabfuhr",
+        "description": "Restmüll und Biotonne",
+        "totalCents": 65000,
+        "key": "persons",
+        "keyLabel": "Personenzahl",
+        "basisText": "306 von 3.365 Personentagen (davon 31 Leerstand)",
+        "shareCents": 5911,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "650,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Personenzahl",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "306 von 3.365 Personentagen (davon 31 Leerstand)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "davon Leerstand",
+          "value": "EG rechts: 31 Tage × 1 Person = 31 Personentage",
+          "term": "vacancy"
+         },
+         {
+          "label": "Rechnung",
+          "value": "650,00 € × 9,093611 % = 59,1085 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "59,11 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000ce",
+        "category": "Sach- und Haftpflichtversicherung",
+        "description": "Wohngebäude- und Haftpflichtversicherung",
+        "totalCents": 128400,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 153/365 Tage",
+        "shareCents": 11562,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.284,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 153/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.284,00 € × 9,004566 % = 115,6186 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "115,62 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d1",
+        "category": "Hauswart",
+        "description": "Hausmeisterdienst",
+        "totalCents": 180000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 153/365 Tage",
+        "shareCents": 16208,
+        "labor35aCents": 13507,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 153/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.800,00 € × 9,004566 % = 162,0822 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "162,08 €"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "135,07 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d4",
+        "category": "Schornsteinfeger",
+        "description": "Feuerstättenschau und Abgasmessung",
+        "totalCents": 9530,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 153/365 Tage",
+        "shareCents": 858,
+        "labor35aCents": 569,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "95,30 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 153/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "95,30 € × 9,004566 % = 8,5814 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "8,58 €"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "5,69 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d7",
+        "category": "Heizung und Warmwasser",
+        "description": "Erdgas und Wartung Heizung",
+        "totalCents": 480000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "2,41 von 35,4 MWh (gemessen)",
+        "shareCents": 32697,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "4.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "2,41 von 35,4 MWh (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "4.800,00 € × 6,811901 % = 326,9713 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "326,97 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d9",
+        "category": "Gartenpflege",
+        "description": "Gartenpflege Saison",
+        "totalCents": 138000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 153/365 Tage",
+        "shareCents": 12426,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.380,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 153/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.380,00 € × 9,004566 % = 124,263 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "124,26 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000db",
+        "category": "Beleuchtung/Allgemeinstrom",
+        "description": "Allgemeinstrom Treppenhaus und Keller",
+        "totalCents": 41890,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "58 von 270 m² · 153/365 Tage",
+        "shareCents": 3772,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "418,90 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "58 von 270 m² · 153/365 Tage",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "418,90 € × 9,004566 % = 37,7201 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "37,72 €"
+         }
+        ]
+       }
+      ],
+      "totalShareCents": 102834,
+      "total35aCents": 14076,
+      "prepaymentCents": 115000,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 20400,
+      "balanceCents": 12166
+     },
+     {
+      "tenancyId": "0000000000000014",
+      "tenantName": "Familie Yilmaz",
+      "unitId": "0000000000000008",
+      "unitName": "OG",
+      "persons": 4,
+      "personDays": 1387,
+      "days": 365,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-12-31",
+      "rows": [
+       {
+        "costItemId": "00000000000000c3",
+        "category": "Grundsteuer",
+        "description": "Grundsteuer B 2025",
+        "totalCents": 61240,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "95 von 270 m²",
+        "shareCents": 21547,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "612,40 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "95 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "612,40 € × 35,185185 % = 215,4741 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "215,47 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c6",
+        "category": "Wasser/Abwasser",
+        "description": "Frischwasser",
+        "totalCents": 70000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "52,9 von 150 m³ (gemessen)",
+        "shareCents": 24686,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "700,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "52,9 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "700,00 € × 35,266667 % = 246,8667 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "246,86 € (Restcent-Verfahren: rechnerisch 246,8667 €; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)",
+          "term": "largestRemainder"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000c8",
+        "category": "Wasser/Abwasser",
+        "description": "Abwasser",
+        "totalCents": 80000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "52,9 von 150 m³ (gemessen)",
+        "shareCents": 28213,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "52,9 von 150 m³ (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "800,00 € × 35,266667 % = 282,1333 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "282,13 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000cb",
+        "category": "Müllabfuhr",
+        "description": "Restmüll und Biotonne",
+        "totalCents": 65000,
+        "key": "persons",
+        "keyLabel": "Personenzahl",
+        "basisText": "1.387 von 3.365 Personentagen (davon 31 Leerstand)",
+        "shareCents": 26792,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "650,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Personenzahl",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "1.387 von 3.365 Personentagen (davon 31 Leerstand)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "davon Leerstand",
+          "value": "EG rechts: 31 Tage × 1 Person = 31 Personentage",
+          "term": "vacancy"
+         },
+         {
+          "label": "Rechnung",
+          "value": "650,00 € × 41,218425 % = 267,9198 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "267,92 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000ce",
+        "category": "Sach- und Haftpflichtversicherung",
+        "description": "Wohngebäude- und Haftpflichtversicherung",
+        "totalCents": 128400,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "95 von 270 m²",
+        "shareCents": 45178,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.284,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "95 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.284,00 € × 35,185185 % = 451,7778 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "451,78 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d1",
+        "category": "Hauswart",
+        "description": "Hausmeisterdienst",
+        "totalCents": 180000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "95 von 270 m²",
+        "shareCents": 63333,
+        "labor35aCents": 52778,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "95 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.800,00 € × 35,185185 % = 633,3333 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "633,33 €"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "527,78 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d4",
+        "category": "Schornsteinfeger",
+        "description": "Feuerstättenschau und Abgasmessung",
+        "totalCents": 9530,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "95 von 270 m²",
+        "shareCents": 3353,
+        "labor35aCents": 2224,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "95,30 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "95 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "95,30 € × 35,185185 % = 33,5315 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "33,53 €"
+         },
+         {
+          "label": "davon Lohnanteil nach § 35a EStG",
+          "value": "22,24 €",
+          "term": "labor35a"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d7",
+        "category": "Heizung und Warmwasser",
+        "description": "Erdgas und Wartung Heizung",
+        "totalCents": 480000,
+        "key": "meter",
+        "keyLabel": "Verbrauch (Zähler)",
+        "basisText": "12,8 von 35,4 MWh (gemessen)",
+        "shareCents": 173559,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "4.800,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Verbrauch (Zähler)",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "12,8 von 35,4 MWh (gemessen)",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "4.800,00 € × 36,158192 % = 1.735,5932 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "1.735,59 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000d9",
+        "category": "Gartenpflege",
+        "description": "Gartenpflege Saison",
+        "totalCents": 138000,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "95 von 270 m²",
+        "shareCents": 48556,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "1.380,00 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "95 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "1.380,00 € × 35,185185 % = 485,5556 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "485,56 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "00000000000000db",
+        "category": "Beleuchtung/Allgemeinstrom",
+        "description": "Allgemeinstrom Treppenhaus und Keller",
+        "totalCents": 41890,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "95 von 270 m²",
+        "shareCents": 14739,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "418,90 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "95 von 270 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "418,90 € × 35,185185 % = 147,3907 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "147,39 €"
+         }
+        ]
+       }
+      ],
+      "totalShareCents": 449956,
+      "total35aCents": 55002,
+      "prepaymentCents": 468000,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 37500,
+      "balanceCents": 18044
+     }
+    ],
+    "notSettled": [
+     {
+      "tenancyId": "0000000000000016",
+      "tenantName": "Markus Klein",
+      "unitName": "Garage 1",
+      "costModel": "inclusive",
+      "heatingModel": "inclusive"
+     }
+    ],
+    "garageLikeUnitIds": [
+     "000000000000000c"
+    ],
+    "landlord": {
+     "rows": [
+      {
+       "costItemId": "00000000000000c3",
+       "category": "Grundsteuer",
+       "description": "Grundsteuer B 2025",
+       "totalCents": 61240,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 11324,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 10207
+        },
+        {
+         "reason": "vacancy",
+         "cents": 1117
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000c6",
+       "category": "Wasser/Abwasser",
+       "description": "Frischwasser",
+       "totalCents": 70000,
+       "keyLabel": "Verbrauch (Zähler)",
+       "shareCents": 14100,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 12787
+        },
+        {
+         "reason": "vacancy",
+         "cents": 1313
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000c8",
+       "category": "Wasser/Abwasser",
+       "description": "Abwasser",
+       "totalCents": 80000,
+       "keyLabel": "Verbrauch (Zähler)",
+       "shareCents": 16115,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 14614
+        },
+        {
+         "reason": "vacancy",
+         "cents": 1501
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000cb",
+       "category": "Müllabfuhr",
+       "description": "Restmüll und Biotonne",
+       "totalCents": 65000,
+       "keyLabel": "Personenzahl",
+       "shareCents": 14700,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 14101
+        },
+        {
+         "reason": "vacancy",
+         "cents": 599
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000ce",
+       "category": "Sach- und Haftpflichtversicherung",
+       "description": "Wohngebäude- und Haftpflichtversicherung",
+       "totalCents": 128400,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 23742,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 21400
+        },
+        {
+         "reason": "vacancy",
+         "cents": 2342
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000d1",
+       "category": "Hauswart",
+       "description": "Hausmeisterdienst",
+       "totalCents": 180000,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 33284,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 30000
+        },
+        {
+         "reason": "vacancy",
+         "cents": 3284
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000d4",
+       "category": "Schornsteinfeger",
+       "description": "Feuerstättenschau und Abgasmessung",
+       "totalCents": 9530,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 1763,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 1589
+        },
+        {
+         "reason": "vacancy",
+         "cents": 174
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000d7",
+       "category": "Heizung und Warmwasser",
+       "description": "Erdgas und Wartung Heizung",
+       "totalCents": 480000,
+       "keyLabel": "Verbrauch (Zähler)",
+       "shareCents": 86625,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 80000
+        },
+        {
+         "reason": "vacancy",
+         "cents": 6625
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000d9",
+       "category": "Gartenpflege",
+       "description": "Gartenpflege Saison",
+       "totalCents": 138000,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 25518,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 23000
+        },
+        {
+         "reason": "vacancy",
+         "cents": 2518
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000db",
+       "category": "Beleuchtung/Allgemeinstrom",
+       "description": "Allgemeinstrom Treppenhaus und Keller",
+       "totalCents": 41890,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 7746,
+       "landlordParts": [
+        {
+         "reason": "selfUse",
+         "cents": 6982
+        },
+        {
+         "reason": "vacancy",
+         "cents": 764
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000e0",
+       "category": "Nicht umlagefähig",
+       "description": "Reparatur Dachrinne",
+       "totalCents": 64000,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 64000,
+       "landlordParts": [
+        {
+         "reason": "notAllocable",
+         "cents": 64000
+        }
+       ]
+      },
+      {
+       "costItemId": "00000000000000e2",
+       "category": "Nicht umlagefähig",
+       "description": "Dachsanierung",
+       "totalCents": 1200000,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 1200000,
+       "landlordParts": [
+        {
+         "reason": "notAllocable",
+         "cents": 1200000
+        }
+       ]
+      }
+     ],
+     "totalCents": 1498917
+    },
+    "totalCostsCents": 2536560,
+    "notices": [
+     {
+      "code": "basis.unit-zero",
+      "level": "hint",
+      "title": "Einheit ohne Fläche",
+      "text": "Für Garage 1 sind 0 m² und 0 Personen eingetragen; bei „Grundsteuer B 2025“, „Wohngebäude- und Haftpflichtversicherung“, „Hausmeisterdienst“, „Feuerstättenschau und Abgasmessung“, „Gartenpflege Saison“ und „Allgemeinstrom Treppenhaus und Keller“ trägt sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.",
+      "subject": {
+       "kind": "unit",
+       "id": "000000000000000c"
+      },
+      "terms": [
+       "distributionBasis"
+      ]
+     },
+     {
+      "code": "basis.tenancy-zero",
+      "level": "hint",
+      "title": "Mietverhältnis ohne Personen",
+      "text": "Für Markus Klein (Garage 1) sind 0 Personen und 0 m² eingetragen; bei „Restmüll und Biotonne“ trägt das Mietverhältnis nichts, sein Anteil verteilt sich auf die übrigen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein.",
+      "subject": {
+       "kind": "tenancy",
+       "id": "0000000000000016"
+      },
+      "terms": [
+       "personDays"
+      ]
+     },
+     {
+      "code": "basis.vacancy-persons",
+      "level": "hint",
+      "title": "Leerstand beim Personenschlüssel",
+      "text": "Bei „Restmüll und Biotonne“ (nach Personen) stand EG rechts (31 Tage) leer. An den Kosten leerstehender Wohnungen ist der Vermieter zu beteiligen; sie gehen nicht still an die übrigen Mieter (Grundsatz nach BGH, Urteil vom 31.05.2006, VIII ZR 159/05, dort zum Flächenschlüssel). Wie das beim Personenschlüssel geschieht, regelt kein Gesetz, und es ist nicht abschließend geklärt: Nach BGH, Beschluss vom 08.01.2013, VIII ZR 180/12, kommt es auf den Einzelfall an, und es kann in Betracht kommen, für die Zeit des Leerstands eine fiktive Person anzusetzen. Mietfuchs setzt jeden Tag ohne Mietverhältnis mit 1 Person an; das ist eine Auslegung von Mietfuchs. Der Anteil steht in Ihrem Vermieteranteil als Leerstand. Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten.",
+      "terms": [
+       "vacancy",
+       "personDays"
+      ]
+     },
+     {
+      "code": "cost.possible-duplicate",
+      "level": "hint",
+      "title": "Dieselbe Rechnung zweimal erfasst?",
+      "text": "„Reparatur Dachrinne“ (640,00 €) und „Dachsanierung“ (12.000,00 €, ohne Beleg) stehen beide 2025 unter „Nicht umlagefähig“. Ist das dieselbe Rechnung, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. Nur den Beleg zuzuordnen genügt nicht: Die Rechnung stünde weiter zweimal in der Summe. Sind es verschiedene Rechnungen, ist nichts zu tun.",
+      "subject": {
+       "kind": "costItem",
+       "id": "00000000000000e2"
+      },
+      "terms": [
+       "allocable"
+      ]
+     },
+     {
+      "code": "allocation.other-unanswered",
+      "level": "hint",
+      "title": "Sonstige Betriebskosten im Mietvertrag benannt?",
+      "text": "„Rohrreinigung Küchenstrang EG links“: Ob der Mietvertrag diese sonstigen Betriebskosten ausdrücklich nennt, ist für Anna Becker (EG links) mit 185,00 € nicht angegeben. Sonstige Betriebskosten trägt ein Mieter nur, wenn sein Vertrag sie beim Namen nennt; ein Verweis auf die Betriebskostenverordnung genügt dafür nicht (BGH VIII ZR 167/03). Bis zu Ihrer Angabe verteilt Mietfuchs die Position wie erfasst. Geben Sie bei der Position je Mieter an, ob sein Vertrag sie nennt; nennt er sie nicht, trägt der Vermieter seinen Anteil.",
+      "subject": {
+       "kind": "costItem",
+       "id": "00000000000000dd"
+      },
+      "terms": [
+       "namedOtherCosts",
+       "notAgreedCosts"
+      ]
+     },
+     {
+      "code": "co2.fuel-unknown",
+      "level": "hint",
+      "title": "Energieträger der Heizung unbekannt",
+      "text": "Mietfuchs weiß nicht, womit das Haus geheizt wird. Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Anna Becker (EG links) 39,05 €, Jonas Hartmann (EG rechts) 17,08 €, Lea Schneider (EG rechts) 9,81 € und Familie Yilmaz (OG) 52,07 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung.",
+      "subject": {
+       "kind": "heatingPlant",
+       "id": ""
+      },
+      "rule": "co2-split",
+      "terms": [
+       "co2Split",
+       "heatingSystem"
+      ]
+     }
+    ],
+    "warnings": [
+     "Für Garage 1 sind 0 m² und 0 Personen eingetragen; bei „Grundsteuer B 2025“, „Wohngebäude- und Haftpflichtversicherung“, „Hausmeisterdienst“, „Feuerstättenschau und Abgasmessung“, „Gartenpflege Saison“ und „Allgemeinstrom Treppenhaus und Keller“ trägt sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.",
+     "Für Markus Klein (Garage 1) sind 0 Personen und 0 m² eingetragen; bei „Restmüll und Biotonne“ trägt das Mietverhältnis nichts, sein Anteil verteilt sich auf die übrigen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein.",
+     "Bei „Restmüll und Biotonne“ (nach Personen) stand EG rechts (31 Tage) leer. An den Kosten leerstehender Wohnungen ist der Vermieter zu beteiligen; sie gehen nicht still an die übrigen Mieter (Grundsatz nach BGH, Urteil vom 31.05.2006, VIII ZR 159/05, dort zum Flächenschlüssel). Wie das beim Personenschlüssel geschieht, regelt kein Gesetz, und es ist nicht abschließend geklärt: Nach BGH, Beschluss vom 08.01.2013, VIII ZR 180/12, kommt es auf den Einzelfall an, und es kann in Betracht kommen, für die Zeit des Leerstands eine fiktive Person anzusetzen. Mietfuchs setzt jeden Tag ohne Mietverhältnis mit 1 Person an; das ist eine Auslegung von Mietfuchs. Der Anteil steht in Ihrem Vermieteranteil als Leerstand. Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten.",
+     "„Reparatur Dachrinne“ (640,00 €) und „Dachsanierung“ (12.000,00 €, ohne Beleg) stehen beide 2025 unter „Nicht umlagefähig“. Ist das dieselbe Rechnung, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. Nur den Beleg zuzuordnen genügt nicht: Die Rechnung stünde weiter zweimal in der Summe. Sind es verschiedene Rechnungen, ist nichts zu tun.",
+     "„Rohrreinigung Küchenstrang EG links“: Ob der Mietvertrag diese sonstigen Betriebskosten ausdrücklich nennt, ist für Anna Becker (EG links) mit 185,00 € nicht angegeben. Sonstige Betriebskosten trägt ein Mieter nur, wenn sein Vertrag sie beim Namen nennt; ein Verweis auf die Betriebskostenverordnung genügt dafür nicht (BGH VIII ZR 167/03). Bis zu Ihrer Angabe verteilt Mietfuchs die Position wie erfasst. Geben Sie bei der Position je Mieter an, ob sein Vertrag sie nennt; nennt er sie nicht, trägt der Vermieter seinen Anteil.",
+     "Mietfuchs weiß nicht, womit das Haus geheizt wird. Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Anna Becker (EG links) 39,05 €, Jonas Hartmann (EG rechts) 17,08 €, Lea Schneider (EG rechts) 9,81 € und Familie Yilmaz (OG) 52,07 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung."
+    ],
+    "legalBasis": {
+     "asOf": "2026-11-12",
+     "rules": [
+      {
+       "code": "heating-flat-rate",
+       "title": "Pauschale oder Warmmiete bei Heizung und Warmwasser",
+       "norm": "§§ 2, 12 Abs. 1 HeizkostenV; BGH, Urteil vom 19.07.2006, VIII ZR 212/05"
+      },
+      {
+       "code": "heating-consumption",
+       "title": "Heizung und Warmwasser nach Verbrauch",
+       "norm": "§§ 2, 7 Abs. 1, 8 Abs. 1, 12 Abs. 1 HeizkostenV"
+      },
+      {
+       "code": "co2-split",
+       "title": "Aufteilung der CO₂-Kosten",
+       "norm": "§§ 5, 7, 11 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "heating-dhw-split",
+       "title": "Warmwasser mit Wärmezähler",
+       "norm": "§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20"
+      },
+      {
+       "code": "co2-non-residential",
+       "title": "CO₂-Kosten im Nichtwohngebäude",
+       "norm": "§ 8 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "co2-restriction",
+       "title": "CO₂-Kosten bei Beschränkungen",
+       "norm": "§ 9 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "co2-self-supply",
+       "title": "CO₂-Erstattung an Mieter, die selbst heizen",
+       "norm": "§ 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "heating-consumed-fuel",
+       "title": "Kosten des verbrauchten Brennstoffs",
+       "norm": "§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11"
+      },
+      {
+       "code": "heating-own-settlement",
+       "title": "Eigene Heizkostenabrechnung nach der Heizkostenverordnung",
+       "norm": "§§ 6 bis 9 HeizkostenV"
+      },
+      {
+       "code": "heating-tenant-change",
+       "title": "Mieterwechsel bei Heizung und Warmwasser",
+       "norm": "§ 9b HeizkostenV; BGH, Urteil vom 14.11.2007, VIII ZR 19/07"
+      },
+      {
+       "code": "heating-reading-date",
+       "title": "Ablesung neben dem Stichtag",
+       "norm": "OLG Schleswig, Rechtsentscheid vom 04.10.1990, 4 RE-Miet 1/88; § 9a Abs. 1 HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04"
+      },
+      {
+       "code": "heating-key-change",
+       "title": "Wechsel des Anteils nach Verbrauch",
+       "norm": "§ 6 Abs. 4 HeizkostenV"
+      },
+      {
+       "code": "heating-estimate",
+       "title": "Schätzung bei Geräteausfall",
+       "norm": "§ 9a HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04"
+      },
+      {
+       "code": "heating-info",
+       "title": "Informationen zur Heizkostenabrechnung",
+       "norm": "§ 6a Abs. 1, 3, 5 HeizkostenV; § 12 Abs. 1 Satz 3 HeizkostenV"
+      },
+      {
+       "code": "heating-exemption",
+       "title": "Ausnahmen von der Heizkostenverordnung",
+       "norm": "§ 11 HeizkostenV; § 2 Abs. 7 CO2KostAufG; BT-Drs. 20/3172, S. 28; § 556a Abs. 1 BGB"
+      }
+     ],
+     "values": [
+      {
+       "id": "practice.vacancy-persons",
+       "title": "Personen je Leerstandstag beim Personenschlüssel",
+       "norm": "Auslegung nach BGH, Beschluss vom 08.01.2013, VIII ZR 180/12",
+       "cite": "BGH, Beschluss vom 08.01.2013, VIII ZR 180/12",
+       "value": 1,
+       "text": "1 Person je Leerstandstag"
+      },
+      {
+       "id": "co2.applicable-from",
+       "title": "Aufteilung der CO₂-Kosten anwendbar",
+       "norm": "§ 11 Abs. 2 Satz 1 CO2KostAufG",
+       "cite": "§ 11 Abs. 2 Satz 1 CO2KostAufG",
+       "value": true,
+       "text": "anwendbar (Zeitraum beginnt am oder nach dem 01.01.2023)",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "id": "co2.cut.missing",
+       "title": "Kürzung bei fehlender CO₂-Aufteilung",
+       "norm": "§ 7 Abs. 4 CO2KostAufG",
+       "cite": "§ 7 Abs. 4 CO2KostAufG",
+       "value": 3,
+       "text": "3 %"
+      },
+      {
+       "id": "bgb.max-period-months",
+       "title": "Höchstdauer des Abrechnungszeitraums",
+       "norm": "§ 556 Abs. 3 Satz 1 BGB",
+       "cite": "§ 556 Abs. 3 Satz 1 BGB (herrschende Meinung)",
+       "value": 12,
+       "text": "höchstens 12 Monate"
+      },
+      {
+       "id": "bgb.deadline-months",
+       "title": "Abrechnungsfrist",
+       "norm": "§ 556 Abs. 3 Satz 2 BGB",
+       "cite": "§ 556 Abs. 3 Satz 2 BGB",
+       "value": 12,
+       "text": "Zugang bis zum Ablauf des 12. Monats nach Ende des Zeitraums"
+      }
+     ]
+    },
+    "suggestionWithoutHeating": false,
+    "letters": {
+     "000000000000000e": {
+      "texts": {
+       "subject": "Nebenkostenabrechnung 2025, Wohnung EG links",
+       "salutation": "Guten Tag Anna Becker,",
+       "intro": "mit diesem Schreiben erhalten Sie die Abrechnung für den Zeitraum 01.01.2025 – 31.12.2025. Die Aufstellung auf den folgenden Seiten zeigt die Kosten, wie sie verteilt sind, und Ihren Anteil.",
+       "credit": "Es ergibt sich ein Guthaben von 140,54 €. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.",
+       "backPayment": "Es ergibt sich eine Nachzahlung von 140,54 €. Bitte überweisen Sie den Betrag innerhalb von 30 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener).",
+       "balanced": "Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.",
+       "adjustSuggestion": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 292,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).",
+       "adjustCustom": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 292,00 € angepasst.",
+       "receipts": "Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.",
+       "attachments": "Kopien der zugrunde liegenden Belege sind als Anlage beigefügt ({AnzahlBelege}).",
+       "closing": "Für Rückfragen stehe ich Ihnen gern zur Verfügung.",
+       "greeting": "Mit freundlichen Grüßen",
+       "signature": "Klaus Wegener",
+       "paymentPurpose": "Anna Becker, EG links, Nebenkostenabrechnung 2025"
+      },
+      "adjustment": {
+       "mode": "suggestion",
+       "newCents": 29200,
+       "from": "2026-12"
+      },
+      "values": {
+       "Name": "Anna Becker",
+       "Wohnung": "EG links",
+       "Objekt": "Lindenweg 12",
+       "Abrechnung": "Nebenkostenabrechnung 2025",
+       "Zeitraum": "01.01.2025 – 31.12.2025",
+       "Kosten": "3.500,54 €",
+       "Vorauszahlungen": "3.360,00 €",
+       "Betrag": "140,54 €",
+       "Zahlungsfrist": "30",
+       "IBAN": "DE02 1203 0000 0000 2020 51",
+       "Konto": "auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener)",
+       "Vermieter": "Klaus Wegener",
+       "Anrede": "Guten Tag Anna Becker,",
+       "Vorauszahlungsart": "monatliche Nebenkostenvorauszahlung",
+       "VorauszahlungBisher": "280,00 €",
+       "VorauszahlungNeu": "292,00 €",
+       "Grundlage": "ein Zwölftel Ihrer Jahreskosten, gerundet",
+       "AnpassungAb": "Dezember 2026",
+       "Datum": "",
+       "AnzahlBelege": ""
+      },
+      "sender": {
+       "name": "Klaus Wegener",
+       "returnLine": "Klaus Wegener · Lindenweg 12, 12345 Musterstadt",
+       "address": "",
+       "contact": "",
+       "footer": "Klaus Wegener · IBAN DE02 1203 0000 0000 2020 51"
+      },
+      "recipient": [
+       "Anna Becker",
+       "Lindenweg 12",
+       "12345 Musterstadt"
+      ],
+      "premises": {
+       "address": "Lindenweg 12, 12345 Musterstadt",
+       "areaM2": 72
+      },
+      "labor35a": {
+       "00000000000000d1": {
+        "amountCents": 180000,
+        "laborCents": 150000
+       },
+       "00000000000000d4": {
+        "amountCents": 9530,
+        "laborCents": 6320
+       }
+      }
+     },
+     "0000000000000010": {
+      "texts": {
+       "subject": "Nebenkostenabrechnung 2025, Wohnung EG rechts",
+       "salutation": "Guten Tag Jonas Hartmann,",
+       "intro": "mit diesem Schreiben erhalten Sie die Abrechnung für den Zeitraum 01.01.2025 – 30.06.2025. Die Aufstellung auf den folgenden Seiten zeigt die Kosten, wie sie verteilt sind, und Ihren Anteil.",
+       "credit": "Es ergibt sich ein Guthaben von 27,99 €. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.",
+       "backPayment": "Es ergibt sich eine Nachzahlung von 27,99 €. Bitte überweisen Sie den Betrag innerhalb von 30 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener).",
+       "balanced": "Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.",
+       "adjustSuggestion": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab auf angepasst (Ihr Anteil für 181 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet).",
+       "adjustCustom": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab auf angepasst.",
+       "receipts": "Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.",
+       "attachments": "Kopien der zugrunde liegenden Belege sind als Anlage beigefügt ({AnzahlBelege}).",
+       "closing": "Für Rückfragen stehe ich Ihnen gern zur Verfügung.",
+       "greeting": "Mit freundlichen Grüßen",
+       "signature": "Klaus Wegener",
+       "paymentPurpose": "Jonas Hartmann, EG rechts, Nebenkostenabrechnung 2025"
+      },
+      "adjustment": {
+       "mode": "suggestion",
+       "newCents": null,
+       "from": null
+      },
+      "values": {
+       "Name": "Jonas Hartmann",
+       "Wohnung": "EG rechts",
+       "Objekt": "Lindenweg 12",
+       "Abrechnung": "Nebenkostenabrechnung 2025",
+       "Zeitraum": "01.01.2025 – 30.06.2025",
+       "Kosten": "1.347,99 €",
+       "Vorauszahlungen": "1.320,00 €",
+       "Betrag": "27,99 €",
+       "Zahlungsfrist": "30",
+       "IBAN": "DE02 1203 0000 0000 2020 51",
+       "Konto": "auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener)",
+       "Vermieter": "Klaus Wegener",
+       "Anrede": "Guten Tag Jonas Hartmann,",
+       "Vorauszahlungsart": "monatliche Nebenkostenvorauszahlung",
+       "VorauszahlungBisher": "220,00 €",
+       "VorauszahlungNeu": "",
+       "Grundlage": "Ihr Anteil für 181 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet",
+       "AnpassungAb": "",
+       "Datum": "",
+       "AnzahlBelege": ""
+      },
+      "sender": {
+       "name": "Klaus Wegener",
+       "returnLine": "Klaus Wegener · Lindenweg 12, 12345 Musterstadt",
+       "address": "",
+       "contact": "",
+       "footer": "Klaus Wegener · IBAN DE02 1203 0000 0000 2020 51"
+      },
+      "recipient": [
+       "Jonas Hartmann",
+       "Lindenweg 12",
+       "12345 Musterstadt"
+      ],
+      "premises": {
+       "address": "Lindenweg 12, 12345 Musterstadt",
+       "areaM2": 58
+      },
+      "labor35a": {
+       "00000000000000d1": {
+        "amountCents": 180000,
+        "laborCents": 150000
+       },
+       "00000000000000d4": {
+        "amountCents": 9530,
+        "laborCents": 6320
+       }
+      }
+     },
+     "0000000000000012": {
+      "texts": {
+       "subject": "Nebenkostenabrechnung 2025, Wohnung EG rechts",
+       "salutation": "Guten Tag Lea Schneider,",
+       "intro": "mit diesem Schreiben erhalten Sie die Abrechnung für den Zeitraum 01.08.2025 – 31.12.2025. Die Aufstellung auf den folgenden Seiten zeigt die Kosten, wie sie verteilt sind, und Ihren Anteil.",
+       "credit": "Es ergibt sich ein Guthaben von 121,66 €. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.",
+       "backPayment": "Es ergibt sich eine Nachzahlung von 121,66 €. Bitte überweisen Sie den Betrag innerhalb von 30 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener).",
+       "balanced": "Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.",
+       "adjustSuggestion": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 204,00 € angepasst (Ihr Anteil für 153 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet).",
+       "adjustCustom": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 204,00 € angepasst.",
+       "receipts": "Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.",
+       "attachments": "Kopien der zugrunde liegenden Belege sind als Anlage beigefügt ({AnzahlBelege}).",
+       "closing": "Für Rückfragen stehe ich Ihnen gern zur Verfügung.",
+       "greeting": "Mit freundlichen Grüßen",
+       "signature": "Klaus Wegener",
+       "paymentPurpose": "Lea Schneider, EG rechts, Nebenkostenabrechnung 2025"
+      },
+      "adjustment": {
+       "mode": "suggestion",
+       "newCents": 20400,
+       "from": "2026-12"
+      },
+      "values": {
+       "Name": "Lea Schneider",
+       "Wohnung": "EG rechts",
+       "Objekt": "Lindenweg 12",
+       "Abrechnung": "Nebenkostenabrechnung 2025",
+       "Zeitraum": "01.08.2025 – 31.12.2025",
+       "Kosten": "1.028,34 €",
+       "Vorauszahlungen": "1.150,00 €",
+       "Betrag": "121,66 €",
+       "Zahlungsfrist": "30",
+       "IBAN": "DE02 1203 0000 0000 2020 51",
+       "Konto": "auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener)",
+       "Vermieter": "Klaus Wegener",
+       "Anrede": "Guten Tag Lea Schneider,",
+       "Vorauszahlungsart": "monatliche Nebenkostenvorauszahlung",
+       "VorauszahlungBisher": "230,00 €",
+       "VorauszahlungNeu": "204,00 €",
+       "Grundlage": "Ihr Anteil für 153 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet",
+       "AnpassungAb": "Dezember 2026",
+       "Datum": "",
+       "AnzahlBelege": ""
+      },
+      "sender": {
+       "name": "Klaus Wegener",
+       "returnLine": "Klaus Wegener · Lindenweg 12, 12345 Musterstadt",
+       "address": "",
+       "contact": "",
+       "footer": "Klaus Wegener · IBAN DE02 1203 0000 0000 2020 51"
+      },
+      "recipient": [
+       "Lea Schneider",
+       "Lindenweg 12",
+       "12345 Musterstadt"
+      ],
+      "premises": {
+       "address": "Lindenweg 12, 12345 Musterstadt",
+       "areaM2": 58
+      },
+      "labor35a": {
+       "00000000000000d1": {
+        "amountCents": 180000,
+        "laborCents": 150000
+       },
+       "00000000000000d4": {
+        "amountCents": 9530,
+        "laborCents": 6320
+       }
+      }
+     },
+     "0000000000000014": {
+      "texts": {
+       "subject": "Nebenkostenabrechnung 2025, Wohnung OG",
+       "salutation": "Guten Tag Familie Yilmaz,",
+       "intro": "mit diesem Schreiben erhalten Sie die Abrechnung für den Zeitraum 01.01.2025 – 31.12.2025. Die Aufstellung auf den folgenden Seiten zeigt die Kosten, wie sie verteilt sind, und Ihren Anteil.",
+       "credit": "Es ergibt sich ein Guthaben von 180,44 €. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.",
+       "backPayment": "Es ergibt sich eine Nachzahlung von 180,44 €. Bitte überweisen Sie den Betrag innerhalb von 30 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener).",
+       "balanced": "Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.",
+       "adjustSuggestion": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 375,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).",
+       "adjustCustom": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 375,00 € angepasst.",
+       "receipts": "Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.",
+       "attachments": "Kopien der zugrunde liegenden Belege sind als Anlage beigefügt ({AnzahlBelege}).",
+       "closing": "Für Rückfragen stehe ich Ihnen gern zur Verfügung.",
+       "greeting": "Mit freundlichen Grüßen",
+       "signature": "Klaus Wegener",
+       "paymentPurpose": "Familie Yilmaz, OG, Nebenkostenabrechnung 2025"
+      },
+      "adjustment": {
+       "mode": "suggestion",
+       "newCents": 37500,
+       "from": "2026-12"
+      },
+      "values": {
+       "Name": "Familie Yilmaz",
+       "Wohnung": "OG",
+       "Objekt": "Lindenweg 12",
+       "Abrechnung": "Nebenkostenabrechnung 2025",
+       "Zeitraum": "01.01.2025 – 31.12.2025",
+       "Kosten": "4.499,56 €",
+       "Vorauszahlungen": "4.680,00 €",
+       "Betrag": "180,44 €",
+       "Zahlungsfrist": "30",
+       "IBAN": "DE02 1203 0000 0000 2020 51",
+       "Konto": "auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener)",
+       "Vermieter": "Klaus Wegener",
+       "Anrede": "Guten Tag Familie Yilmaz,",
+       "Vorauszahlungsart": "monatliche Nebenkostenvorauszahlung",
+       "VorauszahlungBisher": "390,00 €",
+       "VorauszahlungNeu": "375,00 €",
+       "Grundlage": "ein Zwölftel Ihrer Jahreskosten, gerundet",
+       "AnpassungAb": "Dezember 2026",
+       "Datum": "",
+       "AnzahlBelege": ""
+      },
+      "sender": {
+       "name": "Klaus Wegener",
+       "returnLine": "Klaus Wegener · Lindenweg 12, 12345 Musterstadt",
+       "address": "",
+       "contact": "",
+       "footer": "Klaus Wegener · IBAN DE02 1203 0000 0000 2020 51"
+      },
+      "recipient": [
+       "Familie Yilmaz",
+       "Lindenweg 12",
+       "12345 Musterstadt"
+      ],
+      "premises": {
+       "address": "Lindenweg 12, 12345 Musterstadt",
+       "areaM2": 95
+      },
+      "labor35a": {
+       "00000000000000d1": {
+        "amountCents": 180000,
+        "laborCents": 150000
+       },
+       "00000000000000d4": {
+        "amountCents": 9530,
+        "laborCents": 6320
+       }
+      }
+     }
+    },
+    "closed": {
+     "closedAt": "2026-11-20T18:40:50.875Z",
+     "sentAt": "2026-03-16"
+    },
+    "deviation": {
+     "comparable": true,
+     "deviations": [],
+     "valueChanges": [],
+     "deadline": "2026-12-31",
+     "deadlinePassed": false
+    }
+   },
+   "consumption": [
+    {
+     "meterId": "0000000000000076",
+     "consumption": 153.6,
+     "readingCount": 2,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "000000000000007c",
+     "consumption": 38.2,
+     "readingCount": 2,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "0000000000000082",
+     "consumption": 31.5,
+     "readingCount": 3,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "000000000000008a",
+     "consumption": 52.9,
+     "readingCount": 2,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "0000000000000090",
+     "consumption": 27.4,
+     "readingCount": 2,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "0000000000000096",
+     "consumption": 9.6,
+     "readingCount": 2,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "000000000000009c",
+     "consumption": 7.1,
+     "readingCount": 3,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "00000000000000a4",
+     "consumption": 12.8,
+     "readingCount": 2,
+     "notices": [],
+     "warnings": []
+    },
+    {
+     "meterId": "00000000000000aa",
+     "consumption": 5.9,
+     "readingCount": 2,
+     "notices": [],
+     "warnings": []
+    }
+   ],
+   "rentLedger": {
+    "year": 2025,
+    "asOf": "2026-10-27",
+    "rows": [
+     {
+      "dueRule": {
+       "rule": "startWorkday",
+       "agreed": false
+      },
+      "tenancyId": "000000000000000e",
+      "tenantName": "Anna Becker",
+      "unitName": "EG links",
+      "months": [
+       {
+        "month": 1,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-01-07",
+        "creditExpectedBy": "2025-01-13",
+        "arrearsFrom": "2025-01-14"
+       },
+       {
+        "month": 2,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-02-05",
+        "creditExpectedBy": "2025-02-11",
+        "arrearsFrom": "2025-02-12"
+       },
+       {
+        "month": 3,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-03-05",
+        "creditExpectedBy": "2025-03-11",
+        "arrearsFrom": "2025-03-12"
+       },
+       {
+        "month": 4,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-04-03",
+        "creditExpectedBy": "2025-04-09",
+        "arrearsFrom": "2025-04-10"
+       },
+       {
+        "month": 5,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-05-06",
+        "creditExpectedBy": "2025-05-13",
+        "arrearsFrom": "2025-05-14"
+       },
+       {
+        "month": 6,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-06-04",
+        "creditExpectedBy": "2025-06-11",
+        "arrearsFrom": "2025-06-12"
+       },
+       {
+        "month": 7,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-07-03",
+        "creditExpectedBy": "2025-07-09",
+        "arrearsFrom": "2025-07-10"
+       },
+       {
+        "month": 8,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-08-05",
+        "creditExpectedBy": "2025-08-12",
+        "arrearsFrom": "2025-08-13"
+       },
+       {
+        "month": 9,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-09-03",
+        "creditExpectedBy": "2025-09-09",
+        "arrearsFrom": "2025-09-10"
+       },
+       {
+        "month": 10,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-10-06",
+        "creditExpectedBy": "2025-10-10",
+        "arrearsFrom": "2025-10-11"
+       },
+       {
+        "month": 11,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-11-05",
+        "creditExpectedBy": "2025-11-11",
+        "arrearsFrom": "2025-11-12"
+       },
+       {
+        "month": 12,
+        "baseRentCents": 65000,
+        "prepaymentCents": 28000,
+        "flatRateCents": 0,
+        "sollCents": 93000,
+        "paidCents": 93000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-12-03",
+        "creditExpectedBy": "2025-12-09",
+        "arrearsFrom": "2025-12-10"
+       }
+      ],
+      "sollYearCents": 1116000,
+      "baseRentYearCents": 780000,
+      "prepaymentYearCents": 336000,
+      "flatRateYearCents": 0,
+      "paidYearCents": 1116000,
+      "settlementYearCents": 0,
+      "balanceCents": 0,
+      "dueSollCents": 1116000,
+      "arrearsCents": 0,
+      "notDemandableCents": 0,
+      "notDemandable": [],
+      "openMonths": 0,
+      "openingBalanceCents": 0,
+      "closingBalanceCents": 0,
+      "ledgerStart": "2025-01-01"
+     },
+     {
+      "dueRule": {
+       "rule": "startWorkday",
+       "agreed": false
+      },
+      "tenancyId": "0000000000000010",
+      "tenantName": "Jonas Hartmann",
+      "unitName": "EG rechts",
+      "months": [
+       {
+        "month": 1,
+        "baseRentCents": 52000,
+        "prepaymentCents": 22000,
+        "flatRateCents": 0,
+        "sollCents": 74000,
+        "paidCents": 74000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-01-07",
+        "creditExpectedBy": "2025-01-13",
+        "arrearsFrom": "2025-01-14"
+       },
+       {
+        "month": 2,
+        "baseRentCents": 52000,
+        "prepaymentCents": 22000,
+        "flatRateCents": 0,
+        "sollCents": 74000,
+        "paidCents": 74000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-02-05",
+        "creditExpectedBy": "2025-02-11",
+        "arrearsFrom": "2025-02-12"
+       },
+       {
+        "month": 3,
+        "baseRentCents": 52000,
+        "prepaymentCents": 22000,
+        "flatRateCents": 0,
+        "sollCents": 74000,
+        "paidCents": 74000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-03-05",
+        "creditExpectedBy": "2025-03-11",
+        "arrearsFrom": "2025-03-12"
+       },
+       {
+        "month": 4,
+        "baseRentCents": 52000,
+        "prepaymentCents": 22000,
+        "flatRateCents": 0,
+        "sollCents": 74000,
+        "paidCents": 74000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-04-03",
+        "creditExpectedBy": "2025-04-09",
+        "arrearsFrom": "2025-04-10"
+       },
+       {
+        "month": 5,
+        "baseRentCents": 52000,
+        "prepaymentCents": 22000,
+        "flatRateCents": 0,
+        "sollCents": 74000,
+        "paidCents": 74000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-05-06",
+        "creditExpectedBy": "2025-05-13",
+        "arrearsFrom": "2025-05-14"
+       },
+       {
+        "month": 6,
+        "baseRentCents": 52000,
+        "prepaymentCents": 22000,
+        "flatRateCents": 0,
+        "sollCents": 74000,
+        "paidCents": 74000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-06-04",
+        "creditExpectedBy": "2025-06-11",
+        "arrearsFrom": "2025-06-12"
+       },
+       {
+        "month": 7,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 8,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 9,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 10,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 11,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 12,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       }
+      ],
+      "sollYearCents": 444000,
+      "baseRentYearCents": 312000,
+      "prepaymentYearCents": 132000,
+      "flatRateYearCents": 0,
+      "paidYearCents": 444000,
+      "settlementYearCents": 0,
+      "balanceCents": 0,
+      "dueSollCents": 444000,
+      "arrearsCents": 0,
+      "notDemandableCents": 0,
+      "notDemandable": [],
+      "openMonths": 0,
+      "openingBalanceCents": 0,
+      "closingBalanceCents": 0,
+      "ledgerStart": "2025-01-01"
+     },
+     {
+      "dueRule": {
+       "rule": "startWorkday",
+       "agreed": false
+      },
+      "tenancyId": "0000000000000012",
+      "tenantName": "Lea Schneider",
+      "unitName": "EG rechts",
+      "months": [
+       {
+        "month": 1,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 2,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 3,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 4,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 5,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 6,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 7,
+        "baseRentCents": 0,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 0,
+        "paidCents": 0,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0
+       },
+       {
+        "month": 8,
+        "baseRentCents": 56000,
+        "prepaymentCents": 23000,
+        "flatRateCents": 0,
+        "sollCents": 79000,
+        "paidCents": 79000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-08-05",
+        "creditExpectedBy": "2025-08-12",
+        "arrearsFrom": "2025-08-13"
+       },
+       {
+        "month": 9,
+        "baseRentCents": 56000,
+        "prepaymentCents": 23000,
+        "flatRateCents": 0,
+        "sollCents": 79000,
+        "paidCents": 79000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-09-03",
+        "creditExpectedBy": "2025-09-09",
+        "arrearsFrom": "2025-09-10"
+       },
+       {
+        "month": 10,
+        "baseRentCents": 56000,
+        "prepaymentCents": 23000,
+        "flatRateCents": 0,
+        "sollCents": 79000,
+        "paidCents": 79000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-10-06",
+        "creditExpectedBy": "2025-10-10",
+        "arrearsFrom": "2025-10-11"
+       },
+       {
+        "month": 11,
+        "baseRentCents": 56000,
+        "prepaymentCents": 23000,
+        "flatRateCents": 0,
+        "sollCents": 79000,
+        "paidCents": 79000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-11-05",
+        "creditExpectedBy": "2025-11-11",
+        "arrearsFrom": "2025-11-12"
+       },
+       {
+        "month": 12,
+        "baseRentCents": 56000,
+        "prepaymentCents": 23000,
+        "flatRateCents": 0,
+        "sollCents": 79000,
+        "paidCents": 79000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-12-03",
+        "creditExpectedBy": "2025-12-09",
+        "arrearsFrom": "2025-12-10"
+       }
+      ],
+      "sollYearCents": 395000,
+      "baseRentYearCents": 280000,
+      "prepaymentYearCents": 115000,
+      "flatRateYearCents": 0,
+      "paidYearCents": 395000,
+      "settlementYearCents": 0,
+      "balanceCents": 0,
+      "dueSollCents": 395000,
+      "arrearsCents": 0,
+      "notDemandableCents": 0,
+      "notDemandable": [],
+      "openMonths": 0,
+      "openingBalanceCents": 0,
+      "closingBalanceCents": 0
+     },
+     {
+      "dueRule": {
+       "rule": "startWorkday",
+       "agreed": false
+      },
+      "tenancyId": "0000000000000016",
+      "tenantName": "Markus Klein",
+      "unitName": "Garage 1",
+      "months": [
+       {
+        "month": 1,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-01-07",
+        "creditExpectedBy": "2025-01-13",
+        "arrearsFrom": "2025-01-14"
+       },
+       {
+        "month": 2,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-02-05",
+        "creditExpectedBy": "2025-02-11",
+        "arrearsFrom": "2025-02-12"
+       },
+       {
+        "month": 3,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-03-05",
+        "creditExpectedBy": "2025-03-11",
+        "arrearsFrom": "2025-03-12"
+       },
+       {
+        "month": 4,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-04-03",
+        "creditExpectedBy": "2025-04-09",
+        "arrearsFrom": "2025-04-10"
+       },
+       {
+        "month": 5,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-05-06",
+        "creditExpectedBy": "2025-05-13",
+        "arrearsFrom": "2025-05-14"
+       },
+       {
+        "month": 6,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-06-04",
+        "creditExpectedBy": "2025-06-11",
+        "arrearsFrom": "2025-06-12"
+       },
+       {
+        "month": 7,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-07-03",
+        "creditExpectedBy": "2025-07-09",
+        "arrearsFrom": "2025-07-10"
+       },
+       {
+        "month": 8,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-08-05",
+        "creditExpectedBy": "2025-08-12",
+        "arrearsFrom": "2025-08-13"
+       },
+       {
+        "month": 9,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-09-03",
+        "creditExpectedBy": "2025-09-09",
+        "arrearsFrom": "2025-09-10"
+       },
+       {
+        "month": 10,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-10-06",
+        "creditExpectedBy": "2025-10-10",
+        "arrearsFrom": "2025-10-11"
+       },
+       {
+        "month": 11,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-11-05",
+        "creditExpectedBy": "2025-11-11",
+        "arrearsFrom": "2025-11-12"
+       },
+       {
+        "month": 12,
+        "baseRentCents": 6000,
+        "prepaymentCents": 0,
+        "flatRateCents": 0,
+        "sollCents": 6000,
+        "paidCents": 6000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-12-03",
+        "creditExpectedBy": "2025-12-09",
+        "arrearsFrom": "2025-12-10"
+       }
+      ],
+      "sollYearCents": 72000,
+      "baseRentYearCents": 72000,
+      "prepaymentYearCents": 0,
+      "flatRateYearCents": 0,
+      "paidYearCents": 72000,
+      "settlementYearCents": 0,
+      "balanceCents": 0,
+      "dueSollCents": 72000,
+      "arrearsCents": 0,
+      "notDemandableCents": 0,
+      "notDemandable": [],
+      "openMonths": 0,
+      "openingBalanceCents": 0,
+      "closingBalanceCents": 0,
+      "ledgerStart": "2025-01-01"
+     },
+     {
+      "dueRule": {
+       "rule": "startWorkday",
+       "agreed": false
+      },
+      "tenancyId": "0000000000000014",
+      "tenantName": "Familie Yilmaz",
+      "unitName": "OG",
+      "months": [
+       {
+        "month": 1,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-01-07",
+        "creditExpectedBy": "2025-01-13",
+        "arrearsFrom": "2025-01-14"
+       },
+       {
+        "month": 2,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-02-05",
+        "creditExpectedBy": "2025-02-11",
+        "arrearsFrom": "2025-02-12"
+       },
+       {
+        "month": 3,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-03-05",
+        "creditExpectedBy": "2025-03-11",
+        "arrearsFrom": "2025-03-12"
+       },
+       {
+        "month": 4,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-04-03",
+        "creditExpectedBy": "2025-04-09",
+        "arrearsFrom": "2025-04-10"
+       },
+       {
+        "month": 5,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-05-06",
+        "creditExpectedBy": "2025-05-13",
+        "arrearsFrom": "2025-05-14"
+       },
+       {
+        "month": 6,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-06-04",
+        "creditExpectedBy": "2025-06-11",
+        "arrearsFrom": "2025-06-12"
+       },
+       {
+        "month": 7,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-07-03",
+        "creditExpectedBy": "2025-07-09",
+        "arrearsFrom": "2025-07-10"
+       },
+       {
+        "month": 8,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-08-05",
+        "creditExpectedBy": "2025-08-12",
+        "arrearsFrom": "2025-08-13"
+       },
+       {
+        "month": 9,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-09-03",
+        "creditExpectedBy": "2025-09-09",
+        "arrearsFrom": "2025-09-10"
+       },
+       {
+        "month": 10,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-10-06",
+        "creditExpectedBy": "2025-10-10",
+        "arrearsFrom": "2025-10-11"
+       },
+       {
+        "month": 11,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 128000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-11-05",
+        "creditExpectedBy": "2025-11-11",
+        "arrearsFrom": "2025-11-12",
+        "paidAfterExpected": "2025-12-03"
+       },
+       {
+        "month": 12,
+        "baseRentCents": 89000,
+        "prepaymentCents": 39000,
+        "flatRateCents": 0,
+        "sollCents": 128000,
+        "paidCents": 103000,
+        "status": "partial",
+        "openPrepaymentCents": 0,
+        "openRentCents": 25000,
+        "dueOn": "2025-12-03",
+        "creditExpectedBy": "2025-12-09",
+        "arrearsFrom": "2025-12-10"
+       }
+      ],
+      "sollYearCents": 1536000,
+      "baseRentYearCents": 1068000,
+      "prepaymentYearCents": 468000,
+      "flatRateYearCents": 0,
+      "paidYearCents": 1511000,
+      "settlementYearCents": 0,
+      "balanceCents": -25000,
+      "dueSollCents": 1536000,
+      "arrearsCents": 25000,
+      "notDemandableCents": 0,
+      "notDemandable": [],
+      "openMonths": 1,
+      "openingBalanceCents": 0,
+      "closingBalanceCents": -25000,
+      "ledgerStart": "2025-01-01"
+     }
+    ],
+    "settlementOnly": [],
+    "carriedOnly": [],
+    "totals": {
+     "sollYearCents": 3563000,
+     "paidYearCents": 3538000,
+     "settlementYearCents": 0,
+     "openCents": 25000,
+     "notDemandableCents": 0
+    }
+   },
+   "taxReport": {
+    "year": 2025,
+    "income": {
+     "baseRentSollCents": 2512000,
+     "inclusiveRentSollCents": 72000,
+     "prepaymentSollCents": 1051000,
+     "flatRateSollCents": 0,
+     "prepaymentSettlementCents": 1051000,
+     "prepaymentOverridden": false,
+     "prepaymentSettlementClosed": true,
+     "sollCents": 3563000,
+     "paidCents": 3538000,
+     "settlementBackPaymentsCents": 0,
+     "settlementRefundsCents": 0,
+     "tenanciesWithSoll": 5,
+     "tenanciesWithoutPayment": 0,
+     "received": {
+      "rentCents": 2487000,
+      "inclusiveRentCents": 72000,
+      "unallocatedCents": 0,
+      "allocationsCents": 1051000,
+      "flatRateCents": 0,
+      "formerYearsCents": 0,
+      "formerYearsAllocationsCents": 0,
+      "turnOfYear": {
+       "forwardCents": 0,
+       "forwardAllocationsCents": 0,
+       "fromPreviousCents": 0,
+       "fromPreviousAllocationsCents": 0,
+       "forwardOldLeaseCents": 0,
+       "lateDecemberCents": 0
+      },
+      "byUnit": [
+       {
+        "unitId": "0000000000000004",
+        "unitName": "EG links",
+        "areaM2": 72,
+        "rentCents": 780000,
+        "allocationsCents": 336000,
+        "settlementCents": 0,
+        "formerYearsCents": 0
+       },
+       {
+        "unitId": "0000000000000006",
+        "unitName": "EG rechts",
+        "areaM2": 58,
+        "rentCents": 592000,
+        "allocationsCents": 247000,
+        "settlementCents": 0,
+        "formerYearsCents": 0
+       },
+       {
+        "unitId": "000000000000000c",
+        "unitName": "Garage 1",
+        "areaM2": 0,
+        "rentCents": 72000,
+        "allocationsCents": 0,
+        "settlementCents": 0,
+        "formerYearsCents": 0
+       },
+       {
+        "unitId": "0000000000000008",
+        "unitName": "OG",
+        "areaM2": 95,
+        "rentCents": 1043000,
+        "allocationsCents": 468000,
+        "settlementCents": 0,
+        "formerYearsCents": 0
+       }
+      ],
+      "byTenancy": [
+       {
+        "tenancyId": "000000000000000e",
+        "unitId": "0000000000000004",
+        "tenantName": "Anna Becker",
+        "unitName": "EG links",
+        "start": "2019-04-01",
+        "end": null,
+        "relative": false,
+        "rentCents": 780000,
+        "inclusiveRentCents": 0,
+        "allocationsCents": 336000,
+        "settlementCents": 0,
+        "formerYearsCents": 0,
+        "unallocatedCents": 0,
+        "forwardCents": 0,
+        "flatRateCents": 0,
+        "fromPreviousCents": 0
+       },
+       {
+        "tenancyId": "0000000000000010",
+        "unitId": "0000000000000006",
+        "tenantName": "Jonas Hartmann",
+        "unitName": "EG rechts",
+        "start": "2021-09-01",
+        "end": "2025-06-30",
+        "relative": false,
+        "rentCents": 312000,
+        "inclusiveRentCents": 0,
+        "allocationsCents": 132000,
+        "settlementCents": 0,
+        "formerYearsCents": 0,
+        "unallocatedCents": 0,
+        "forwardCents": 0,
+        "flatRateCents": 0,
+        "fromPreviousCents": 0
+       },
+       {
+        "tenancyId": "0000000000000012",
+        "unitId": "0000000000000006",
+        "tenantName": "Lea Schneider",
+        "unitName": "EG rechts",
+        "start": "2025-08-01",
+        "end": null,
+        "relative": false,
+        "rentCents": 280000,
+        "inclusiveRentCents": 0,
+        "allocationsCents": 115000,
+        "settlementCents": 0,
+        "formerYearsCents": 0,
+        "unallocatedCents": 0,
+        "forwardCents": 0,
+        "flatRateCents": 0,
+        "fromPreviousCents": 0
+       },
+       {
+        "tenancyId": "0000000000000016",
+        "unitId": "000000000000000c",
+        "tenantName": "Markus Klein",
+        "unitName": "Garage 1",
+        "start": "2022-01-01",
+        "end": null,
+        "relative": false,
+        "rentCents": 72000,
+        "inclusiveRentCents": 72000,
+        "allocationsCents": 0,
+        "settlementCents": 0,
+        "formerYearsCents": 0,
+        "unallocatedCents": 0,
+        "forwardCents": 0,
+        "flatRateCents": 0,
+        "fromPreviousCents": 0
+       },
+       {
+        "tenancyId": "0000000000000014",
+        "unitId": "0000000000000008",
+        "tenantName": "Familie Yilmaz",
+        "unitName": "OG",
+        "start": "2016-02-01",
+        "end": null,
+        "relative": false,
+        "rentCents": 1043000,
+        "inclusiveRentCents": 0,
+        "allocationsCents": 468000,
+        "settlementCents": 0,
+        "formerYearsCents": 0,
+        "unallocatedCents": 0,
+        "forwardCents": 0,
+        "flatRateCents": 0,
+        "fromPreviousCents": 0
+       }
+      ],
+      "relatives": {
+       "rentCents": 0,
+       "allocationsCents": 0,
+       "settlementCents": 0,
+       "inclusiveRentCents": 0,
+       "unallocatedCents": 0,
+       "flatRateCents": 0,
+       "sollRentCents": 0,
+       "sollInclusiveRentCents": 0,
+       "sollAllocationsCents": 0,
+       "sollFlatRateCents": 0
+      },
+      "possibleDeposits": [],
+      "totalCents": 3538000,
+      "unassignedCents": 0
+     }
+    },
+    "expenses": {
+     "groups": [
+      {
+       "group": "Grundsteuer & öffentliche Abgaben",
+       "amountCents": 61240,
+       "labor35aCents": 0,
+       "privateCents": 10207,
+       "deductibleCents": 51033,
+       "categories": [
+        {
+         "category": "Grundsteuer",
+         "amountCents": 61240,
+         "labor35aCents": 0,
+         "privateCents": 10207,
+         "deductibleCents": 51033
+        }
+       ]
+      },
+      {
+       "group": "Laufende Betriebskosten",
+       "amountCents": 1064420,
+       "labor35aCents": 156320,
+       "privateCents": 183073,
+       "deductibleCents": 881347,
+       "categories": [
+        {
+         "category": "Heizung und Warmwasser",
+         "amountCents": 480000,
+         "labor35aCents": 0,
+         "privateCents": 80000,
+         "deductibleCents": 400000
+        },
+        {
+         "category": "Hauswart",
+         "amountCents": 180000,
+         "labor35aCents": 150000,
+         "privateCents": 30000,
+         "deductibleCents": 150000
+        },
+        {
+         "category": "Wasser/Abwasser",
+         "amountCents": 150000,
+         "labor35aCents": 0,
+         "privateCents": 27401,
+         "deductibleCents": 122599
+        },
+        {
+         "category": "Gartenpflege",
+         "amountCents": 138000,
+         "labor35aCents": 0,
+         "privateCents": 23000,
+         "deductibleCents": 115000
+        },
+        {
+         "category": "Müllabfuhr",
+         "amountCents": 65000,
+         "labor35aCents": 0,
+         "privateCents": 14101,
+         "deductibleCents": 50899
+        },
+        {
+         "category": "Beleuchtung/Allgemeinstrom",
+         "amountCents": 41890,
+         "labor35aCents": 0,
+         "privateCents": 6982,
+         "deductibleCents": 34908
+        },
+        {
+         "category": "Schornsteinfeger",
+         "amountCents": 9530,
+         "labor35aCents": 6320,
+         "privateCents": 1589,
+         "deductibleCents": 7941
+        }
+       ]
+      },
+      {
+       "group": "Versicherungen",
+       "amountCents": 128400,
+       "labor35aCents": 0,
+       "privateCents": 21400,
+       "deductibleCents": 107000,
+       "categories": [
+        {
+         "category": "Sach- und Haftpflichtversicherung",
+         "amountCents": 128400,
+         "labor35aCents": 0,
+         "privateCents": 21400,
+         "deductibleCents": 107000
+        }
+       ]
+      },
+      {
+       "group": "Verwaltung & Instandhaltung",
+       "amountCents": 1264000,
+       "labor35aCents": 0,
+       "privateCents": 210667,
+       "deductibleCents": 386667,
+       "deferredCents": 666666,
+       "categories": [
+        {
+         "category": "Nicht umlagefähig",
+         "amountCents": 1264000,
+         "labor35aCents": 0,
+         "privateCents": 210667,
+         "deductibleCents": 386667,
+         "deferredCents": 666666
+        }
+       ]
+      },
+      {
+       "group": "Sonstige Werbungskosten",
+       "amountCents": 18500,
+       "labor35aCents": 0,
+       "privateCents": 0,
+       "deductibleCents": 18500,
+       "categories": [
+        {
+         "category": "Sonstige Betriebskosten",
+         "amountCents": 18500,
+         "labor35aCents": 0,
+         "privateCents": 0,
+         "deductibleCents": 18500
+        }
+       ]
+      }
+     ],
+     "totalCents": 2536560,
+     "privateCents": 425347,
+     "deductibleCents": 1444547,
+     "labor35aCents": 156320,
+     "deferredCents": 666666,
+     "spread": {
+      "started": [
+       {
+        "costItemId": "00000000000000e2",
+        "description": "Dachsanierung",
+        "amountCents": 1200000,
+        "privateCents": 200000,
+        "baseCents": 1000000,
+        "deductiblePercent": 83.33,
+        "years": 3,
+        "grossRateCents": 400000,
+        "rateCents": 333334,
+        "remainingCents": 666666,
+        "direct": false
+       }
+      ],
+      "carried": [],
+      "thisYearCents": 333334
+     },
+     "items": [
+      {
+       "costItemId": "00000000000000c3",
+       "category": "Grundsteuer",
+       "group": "Grundsteuer & öffentliche Abgaben",
+       "description": "Grundsteuer B 2025",
+       "amountCents": 61240,
+       "privateCents": 10207,
+       "deductibleCents": 51033,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "612,40 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Wohnfläche (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "102,07 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "510,33 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000c6",
+       "category": "Wasser/Abwasser",
+       "group": "Laufende Betriebskosten",
+       "description": "Frischwasser",
+       "amountCents": 70000,
+       "privateCents": 12787,
+       "deductibleCents": 57213,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 81.73,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "700,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Verbrauch (Zähler) (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "127,87 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "572,13 € (81,73 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000c8",
+       "category": "Wasser/Abwasser",
+       "group": "Laufende Betriebskosten",
+       "description": "Abwasser",
+       "amountCents": 80000,
+       "privateCents": 14614,
+       "deductibleCents": 65386,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 81.73,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "800,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Verbrauch (Zähler) (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "146,14 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "653,86 € (81,73 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000cb",
+       "category": "Müllabfuhr",
+       "group": "Laufende Betriebskosten",
+       "description": "Restmüll und Biotonne",
+       "amountCents": 65000,
+       "privateCents": 14101,
+       "deductibleCents": 50899,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 78.31,
+       "areaPrivateCents": 10833,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "650,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Personenzahl (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "141,01 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "Zum Vergleich nach Wohn- und Nutzfläche",
+         "value": "108,33 € privat (45 von 270 m²)",
+         "term": "mixedUse"
+        },
+        {
+         "label": "abziehbar",
+         "value": "508,99 € (78,31 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000ce",
+       "category": "Sach- und Haftpflichtversicherung",
+       "group": "Versicherungen",
+       "description": "Wohngebäude- und Haftpflichtversicherung",
+       "amountCents": 128400,
+       "privateCents": 21400,
+       "deductibleCents": 107000,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "1.284,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Wohnfläche (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "214,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "1.070,00 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000d1",
+       "category": "Hauswart",
+       "group": "Laufende Betriebskosten",
+       "description": "Hausmeisterdienst",
+       "amountCents": 180000,
+       "privateCents": 30000,
+       "deductibleCents": 150000,
+       "labor35aCents": 150000,
+       "allocation": "settlement",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "1.800,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Wohnfläche (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "300,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "1.500,00 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000d4",
+       "category": "Schornsteinfeger",
+       "group": "Laufende Betriebskosten",
+       "description": "Feuerstättenschau und Abgasmessung",
+       "amountCents": 9530,
+       "privateCents": 1589,
+       "deductibleCents": 7941,
+       "labor35aCents": 6320,
+       "allocation": "settlement",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "95,30 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Wohnfläche (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "15,89 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "79,41 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000d7",
+       "category": "Heizung und Warmwasser",
+       "group": "Laufende Betriebskosten",
+       "description": "Erdgas und Wartung Heizung",
+       "amountCents": 480000,
+       "privateCents": 80000,
+       "deductibleCents": 400000,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "4.800,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Verbrauch (Zähler) (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "800,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "4.000,00 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000d9",
+       "category": "Gartenpflege",
+       "group": "Laufende Betriebskosten",
+       "description": "Gartenpflege Saison",
+       "amountCents": 138000,
+       "privateCents": 23000,
+       "deductibleCents": 115000,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "1.380,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Wohnfläche (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "230,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "1.150,00 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000db",
+       "category": "Beleuchtung/Allgemeinstrom",
+       "group": "Laufende Betriebskosten",
+       "description": "Allgemeinstrom Treppenhaus und Keller",
+       "amountCents": 41890,
+       "privateCents": 6982,
+       "deductibleCents": 34908,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "418,90 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Wohnfläche (abgeschlossene Abrechnung)",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "69,82 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "349,08 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000dd",
+       "category": "Sonstige Betriebskosten",
+       "group": "Sonstige Werbungskosten",
+       "description": "Rohrreinigung Küchenstrang EG links",
+       "amountCents": 18500,
+       "privateCents": 0,
+       "deductibleCents": 18500,
+       "labor35aCents": 0,
+       "allocation": "direct-rented",
+       "deductiblePercent": null,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "185,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "direkt: EG links (vermietete Einheit)"
+        },
+        {
+         "label": "abziehbar",
+         "value": "185,00 €"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000e0",
+       "category": "Nicht umlagefähig",
+       "group": "Verwaltung & Instandhaltung",
+       "description": "Reparatur Dachrinne",
+       "amountCents": 64000,
+       "privateCents": 10667,
+       "deductibleCents": 53333,
+       "labor35aCents": 0,
+       "allocation": "area",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "640,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig nach Wohn- und Nutzfläche",
+         "term": "mixedUse"
+        },
+        {
+         "label": "Betroffene Fläche",
+         "value": "270 m² (ganzes Gebäude)"
+        },
+        {
+         "label": "davon selbstgenutzt",
+         "value": "45 m²"
+        },
+        {
+         "label": "Rechnung",
+         "value": "640,00 € × 45/270 = 106,6667 €"
+        },
+        {
+         "label": "privat, auf Cent gerundet",
+         "value": "106,67 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "533,33 € (83,33 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "00000000000000e2",
+       "category": "Nicht umlagefähig",
+       "group": "Verwaltung & Instandhaltung",
+       "description": "Dachsanierung",
+       "amountCents": 1200000,
+       "privateCents": 200000,
+       "deductibleCents": 333334,
+       "labor35aCents": 0,
+       "allocation": "area",
+       "deductiblePercent": 83.33,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "12.000,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig nach Wohn- und Nutzfläche",
+         "term": "mixedUse"
+        },
+        {
+         "label": "Betroffene Fläche",
+         "value": "270 m² (ganzes Gebäude)"
+        },
+        {
+         "label": "davon selbstgenutzt",
+         "value": "45 m²"
+        },
+        {
+         "label": "Rechnung",
+         "value": "12.000,00 € × 45/270 = 2.000,00 €"
+        },
+        {
+         "label": "privat, auf Cent gerundet",
+         "value": "2.000,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "10.000,00 € (83,33 %)"
+        },
+        {
+         "label": "Verteilung nach § 82b EStDV",
+         "value": "abziehbar 10.000,00 € auf 3 Jahre (2025 bis 2027): je 3.333,33 € (Restcent in den ersten Jahren); in diesem Jahr 3.333,34 €, in die Folgejahre verschoben 6.666,66 €",
+         "term": "spread82b"
+        }
+       ],
+       "taxUnits": null,
+       "deferredCents": 666666,
+       "spread": {
+        "years": 3,
+        "baseCents": 1000000,
+        "rates": [
+         {
+          "year": 2025,
+          "cents": 333334,
+          "grossCents": 400000
+         },
+         {
+          "year": 2026,
+          "cents": 333333,
+          "grossCents": 400000
+         },
+         {
+          "year": 2027,
+          "cents": 333333,
+          "grossCents": 400000
+         }
+        ]
+       },
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      }
+     ],
+     "unstatedCount": 13
+    },
+    "movedOut": [],
+    "settlementPeriods": [
+     {
+      "key": "2025-01",
+      "label": "2025"
+     }
+    ],
+    "selfUseChangedInYear": false,
+    "closedSelfUseDiffers": false,
+    "closedItemsChanged": 0,
+    "reserveContributionCents": 0,
+    "reserveSuspects": [],
+    "totalAreaM2": 270,
+    "selfUsedAreaM2": 45,
+    "selfOccupiedExists": true,
+    "excludedExists": false,
+    "costModels": {
+     "tenancies": 5,
+     "inclusive": 1,
+     "partlyInclusive": 0,
+     "flatRate": 0
+    },
+    "selfUsedShareCents": 214680,
+    "surplusSollCents": 2118453,
+    "surplusPaidCents": 2093453,
+    "surplusReceivedCents": 2093453
+   }
+  },
+  {
+   "id": "00000000000000e7",
+   "name": "Kastanienallee 5, WE 7",
+   "property": {
+    "id": "00000000000000e7",
+    "name": "Kastanienallee 5, WE 7",
+    "kind": "etw",
+    "address": "Kastanienallee 5, 12345 Musterstadt",
+    "landlordName": null,
+    "iban": null,
+    "paymentDeadlineDays": null,
+    "landlordAddress": null,
+    "landlordContact": null,
+    "printLetter": null,
+    "cableBuiltBeforeDec2021": null,
+    "tightMarket": null,
+    "tightMarketFrom": null,
+    "tightMarketTo": null,
+    "state": null,
+    "spreadRestYear": null,
+    "periodRules": {
+     "startMonth": 1,
+     "changes": []
+    }
+   },
+   "units": [
+    {
+     "id": "00000000000000e9",
+     "propertyId": "00000000000000e7",
+     "name": "WE 7, 2. OG rechts",
+     "areaM2": 68,
+     "participates": true,
+     "mea": 85,
+     "rooms": 3,
+     "floor": "2. OG"
+    }
+   ],
+   "tenancies": [
+    {
+     "id": "00000000000000eb",
+     "unitId": "00000000000000e9",
+     "tenantName": "Sophie Wagner",
+     "persons": 1,
+     "personHistory": [
+      {
+       "from": "2023-05-01",
+       "persons": 1
+      }
+     ],
+     "start": "2023-05-01",
+     "end": null,
+     "prepayments": [
+      {
+       "from": "2023-05",
+       "monthlyCents": 21000
+      }
+     ],
+     "prepaymentOverrides": {},
+     "baseRents": [
+      {
+       "from": "2023-05",
+       "monthlyCents": 74000
+      }
+     ]
+    }
+   ],
+   "settlement": {
+    "year": 2025,
+    "daysInYear": 365,
+    "period": {
+     "key": "2025-01",
+     "from": "2025-01-01",
+     "to": "2025-12-31",
+     "short": false,
+     "label": "2025"
+    },
+    "deadline": "2026-12-31",
+    "statements": [
+     {
+      "tenancyId": "00000000000000eb",
+      "tenantName": "Sophie Wagner",
+      "unitId": "00000000000000e9",
+      "unitName": "WE 7, 2. OG rechts",
+      "persons": 1,
+      "personDays": 365,
+      "days": 365,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-12-31",
+      "rows": [
+       {
+        "costItemId": "0000000000000106",
+        "category": "Hauswart",
+        "description": "Hauswart laut Hausgeldabrechnung",
+        "totalCents": 61200,
+        "key": "external",
+        "keyLabel": "Laut Gemeinschaftsabrechnung",
+        "basisText": "85 von 1.000 MEA · Kosten der Gemeinschaft 7.200,00 €",
+        "shareCents": 61200,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Kosten der Gemeinschaft",
+          "value": "7.200,00 €",
+          "term": "homeownersStatement"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Laut Gemeinschaftsabrechnung",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Gemeinschaft",
+          "value": "85 von 1.000 MEA × 7.200,00 € = 612,00 €",
+          "term": "mea"
+         },
+         {
+          "label": "Rechnung",
+          "value": "612,00 € × 100 % = 612,00 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "612,00 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "0000000000000108",
+        "category": "Sach- und Haftpflichtversicherung",
+        "description": "Gebäudeversicherung laut Hausgeldabrechnung",
+        "totalCents": 29750,
+        "key": "external",
+        "keyLabel": "Laut Gemeinschaftsabrechnung",
+        "basisText": "85 von 1.000 MEA · Kosten der Gemeinschaft 3.500,00 €",
+        "shareCents": 29750,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Kosten der Gemeinschaft",
+          "value": "3.500,00 €",
+          "term": "homeownersStatement"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Laut Gemeinschaftsabrechnung",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Gemeinschaft",
+          "value": "85 von 1.000 MEA × 3.500,00 € = 297,50 €",
+          "term": "mea"
+         },
+         {
+          "label": "Rechnung",
+          "value": "297,50 € × 100 % = 297,50 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "297,50 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "000000000000010a",
+        "category": "Wasser/Abwasser",
+        "description": "Wasser und Abwasser laut Hausgeldabrechnung",
+        "totalCents": 38080,
+        "key": "external",
+        "keyLabel": "Laut Gemeinschaftsabrechnung",
+        "basisText": "85 von 1.000 MEA · Kosten der Gemeinschaft 4.480,00 €",
+        "shareCents": 38080,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Kosten der Gemeinschaft",
+          "value": "4.480,00 €",
+          "term": "homeownersStatement"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Laut Gemeinschaftsabrechnung",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Gemeinschaft",
+          "value": "85 von 1.000 MEA × 4.480,00 € = 380,80 €",
+          "term": "mea"
+         },
+         {
+          "label": "Rechnung",
+          "value": "380,80 € × 100 % = 380,80 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "380,80 €"
+         }
+        ]
+       },
+       {
+        "costItemId": "0000000000000110",
+        "category": "Grundsteuer",
+        "description": "Grundsteuer 2025",
+        "totalCents": 21480,
+        "key": "area",
+        "keyLabel": "Wohnfläche",
+        "basisText": "68 von 68 m²",
+        "shareCents": 21480,
+        "labor35aCents": 0,
+        "steps": [
+         {
+          "label": "Rechnungsbetrag",
+          "value": "214,80 €"
+         },
+         {
+          "label": "Umlageschlüssel",
+          "value": "Wohnfläche",
+          "term": "allocationKey"
+         },
+         {
+          "label": "Anteil an der Verteilbasis",
+          "value": "68 von 68 m²",
+          "term": "distributionBasis"
+         },
+         {
+          "label": "Rechnung",
+          "value": "214,80 € × 100 % = 214,80 €"
+         },
+         {
+          "label": "Ergebnis, auf Cent gerundet",
+          "value": "214,80 €"
+         }
+        ]
+       }
+      ],
+      "totalShareCents": 150510,
+      "total35aCents": 0,
+      "prepaymentCents": 252000,
+      "prepaymentOverridden": false,
+      "suggestedMonthlyCents": 12500,
+      "balanceCents": 101490
+     }
+    ],
+    "notSettled": [],
+    "garageLikeUnitIds": [],
+    "landlord": {
+     "rows": [
+      {
+       "costItemId": "000000000000010c",
+       "category": "Nicht umlagefähig",
+       "description": "Verwaltervergütung",
+       "totalCents": 35700,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 35700,
+       "landlordParts": [
+        {
+         "reason": "notAllocable",
+         "cents": 35700
+        }
+       ]
+      },
+      {
+       "costItemId": "000000000000010e",
+       "category": "Zuführung Erhaltungsrücklage",
+       "description": "Zuführung Erhaltungsrücklage",
+       "totalCents": 76500,
+       "keyLabel": "Wohnfläche",
+       "shareCents": 76500,
+       "landlordParts": [
+        {
+         "reason": "notAllocable",
+         "cents": 76500
+        }
+       ]
+      }
+     ],
+     "totalCents": 112200
+    },
+    "selfUsedShareCents": 0,
+    "totalCostsCents": 262710,
+    "notices": [],
+    "warnings": [],
+    "legalBasis": {
+     "asOf": "2026-11-12",
+     "rules": [
+      {
+       "code": "heating-flat-rate",
+       "title": "Pauschale oder Warmmiete bei Heizung und Warmwasser",
+       "norm": "§§ 2, 12 Abs. 1 HeizkostenV; BGH, Urteil vom 19.07.2006, VIII ZR 212/05"
+      },
+      {
+       "code": "heating-consumption",
+       "title": "Heizung und Warmwasser nach Verbrauch",
+       "norm": "§§ 2, 7 Abs. 1, 8 Abs. 1, 12 Abs. 1 HeizkostenV"
+      },
+      {
+       "code": "co2-split",
+       "title": "Aufteilung der CO₂-Kosten",
+       "norm": "§§ 5, 7, 11 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "heating-dhw-split",
+       "title": "Warmwasser mit Wärmezähler",
+       "norm": "§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20"
+      },
+      {
+       "code": "co2-non-residential",
+       "title": "CO₂-Kosten im Nichtwohngebäude",
+       "norm": "§ 8 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "co2-restriction",
+       "title": "CO₂-Kosten bei Beschränkungen",
+       "norm": "§ 9 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "co2-self-supply",
+       "title": "CO₂-Erstattung an Mieter, die selbst heizen",
+       "norm": "§ 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2 CO2KostAufG",
+       "validFrom": "2023-01-01"
+      },
+      {
+       "code": "heating-consumed-fuel",
+       "title": "Kosten des verbrauchten Brennstoffs",
+       "norm": "§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11"
+      },
+      {
+       "code": "heating-own-settlement",
+       "title": "Eigene Heizkostenabrechnung nach der Heizkostenverordnung",
+       "norm": "§§ 6 bis 9 HeizkostenV"
+      },
+      {
+       "code": "heating-tenant-change",
+       "title": "Mieterwechsel bei Heizung und Warmwasser",
+       "norm": "§ 9b HeizkostenV; BGH, Urteil vom 14.11.2007, VIII ZR 19/07"
+      },
+      {
+       "code": "heating-reading-date",
+       "title": "Ablesung neben dem Stichtag",
+       "norm": "OLG Schleswig, Rechtsentscheid vom 04.10.1990, 4 RE-Miet 1/88; § 9a Abs. 1 HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04"
+      },
+      {
+       "code": "heating-key-change",
+       "title": "Wechsel des Anteils nach Verbrauch",
+       "norm": "§ 6 Abs. 4 HeizkostenV"
+      },
+      {
+       "code": "heating-estimate",
+       "title": "Schätzung bei Geräteausfall",
+       "norm": "§ 9a HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04"
+      },
+      {
+       "code": "heating-info",
+       "title": "Informationen zur Heizkostenabrechnung",
+       "norm": "§ 6a Abs. 1, 3, 5 HeizkostenV; § 12 Abs. 1 Satz 3 HeizkostenV"
+      },
+      {
+       "code": "heating-exemption",
+       "title": "Ausnahmen von der Heizkostenverordnung",
+       "norm": "§ 11 HeizkostenV; § 2 Abs. 7 CO2KostAufG; BT-Drs. 20/3172, S. 28; § 556a Abs. 1 BGB"
+      }
+     ],
+     "values": [
+      {
+       "id": "bgb.max-period-months",
+       "title": "Höchstdauer des Abrechnungszeitraums",
+       "norm": "§ 556 Abs. 3 Satz 1 BGB",
+       "cite": "§ 556 Abs. 3 Satz 1 BGB (herrschende Meinung)",
+       "value": 12,
+       "text": "höchstens 12 Monate"
+      },
+      {
+       "id": "bgb.deadline-months",
+       "title": "Abrechnungsfrist",
+       "norm": "§ 556 Abs. 3 Satz 2 BGB",
+       "cite": "§ 556 Abs. 3 Satz 2 BGB",
+       "value": 12,
+       "text": "Zugang bis zum Ablauf des 12. Monats nach Ende des Zeitraums"
+      }
+     ]
+    },
+    "suggestionWithoutHeating": false,
+    "closed": null,
+    "letters": {
+     "00000000000000eb": {
+      "texts": {
+       "subject": "Nebenkostenabrechnung 2025, Wohnung WE 7, 2. OG rechts",
+       "salutation": "Guten Tag Sophie Wagner,",
+       "intro": "mit diesem Schreiben erhalten Sie die Abrechnung für den Zeitraum 01.01.2025 – 31.12.2025. Die Aufstellung auf den folgenden Seiten zeigt die Kosten, wie sie verteilt sind, und Ihren Anteil.",
+       "credit": "Es ergibt sich ein Guthaben von 1.014,90 €. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.",
+       "backPayment": "Es ergibt sich eine Nachzahlung von 1.014,90 €. Bitte überweisen Sie den Betrag innerhalb von 30 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener).",
+       "balanced": "Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.",
+       "adjustSuggestion": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 125,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).",
+       "adjustCustom": "Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 125,00 € angepasst.",
+       "receipts": "Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.",
+       "attachments": "Kopien der zugrunde liegenden Belege sind als Anlage beigefügt ({AnzahlBelege}).",
+       "closing": "Für Rückfragen stehe ich Ihnen gern zur Verfügung.",
+       "greeting": "Mit freundlichen Grüßen",
+       "signature": "Klaus Wegener",
+       "paymentPurpose": "Sophie Wagner, WE 7, 2. OG rechts, Nebenkostenabrechnung 2025"
+      },
+      "adjustment": {
+       "mode": "suggestion",
+       "newCents": 12500,
+       "from": "2026-12"
+      },
+      "values": {
+       "Name": "Sophie Wagner",
+       "Wohnung": "WE 7, 2. OG rechts",
+       "Objekt": "Kastanienallee 5, WE 7",
+       "Abrechnung": "Nebenkostenabrechnung 2025",
+       "Zeitraum": "01.01.2025 – 31.12.2025",
+       "Kosten": "1.505,10 €",
+       "Vorauszahlungen": "2.520,00 €",
+       "Betrag": "1.014,90 €",
+       "Zahlungsfrist": "30",
+       "IBAN": "DE02 1203 0000 0000 2020 51",
+       "Konto": "auf das Konto DE02 1203 0000 0000 2020 51 (Klaus Wegener)",
+       "Vermieter": "Klaus Wegener",
+       "Anrede": "Guten Tag Sophie Wagner,",
+       "Vorauszahlungsart": "monatliche Nebenkostenvorauszahlung",
+       "VorauszahlungBisher": "210,00 €",
+       "VorauszahlungNeu": "125,00 €",
+       "Grundlage": "ein Zwölftel Ihrer Jahreskosten, gerundet",
+       "AnpassungAb": "Dezember 2026",
+       "Datum": "",
+       "AnzahlBelege": ""
+      },
+      "sender": {
+       "name": "Klaus Wegener",
+       "returnLine": "Klaus Wegener · Kastanienallee 5, WE 7 · Kastanienallee 5, 12345 Musterstadt",
+       "address": "",
+       "contact": "",
+       "footer": "Klaus Wegener · IBAN DE02 1203 0000 0000 2020 51"
+      },
+      "recipient": [
+       "Sophie Wagner",
+       "Kastanienallee 5",
+       "12345 Musterstadt"
+      ],
+      "premises": {
+       "address": "Kastanienallee 5, 12345 Musterstadt",
+       "areaM2": 68
+      }
+     }
+    }
+   },
+   "consumption": [],
+   "rentLedger": {
+    "year": 2025,
+    "asOf": "2026-10-27",
+    "rows": [
+     {
+      "dueRule": {
+       "rule": "startWorkday",
+       "agreed": false
+      },
+      "tenancyId": "00000000000000eb",
+      "tenantName": "Sophie Wagner",
+      "unitName": "WE 7, 2. OG rechts",
+      "months": [
+       {
+        "month": 1,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-01-07",
+        "creditExpectedBy": "2025-01-13",
+        "arrearsFrom": "2025-01-14"
+       },
+       {
+        "month": 2,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-02-05",
+        "creditExpectedBy": "2025-02-11",
+        "arrearsFrom": "2025-02-12"
+       },
+       {
+        "month": 3,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-03-05",
+        "creditExpectedBy": "2025-03-11",
+        "arrearsFrom": "2025-03-12"
+       },
+       {
+        "month": 4,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-04-03",
+        "creditExpectedBy": "2025-04-09",
+        "arrearsFrom": "2025-04-10"
+       },
+       {
+        "month": 5,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-05-06",
+        "creditExpectedBy": "2025-05-13",
+        "arrearsFrom": "2025-05-14"
+       },
+       {
+        "month": 6,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-06-04",
+        "creditExpectedBy": "2025-06-11",
+        "arrearsFrom": "2025-06-12"
+       },
+       {
+        "month": 7,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-07-03",
+        "creditExpectedBy": "2025-07-09",
+        "arrearsFrom": "2025-07-10"
+       },
+       {
+        "month": 8,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-08-05",
+        "creditExpectedBy": "2025-08-12",
+        "arrearsFrom": "2025-08-13"
+       },
+       {
+        "month": 9,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-09-03",
+        "creditExpectedBy": "2025-09-09",
+        "arrearsFrom": "2025-09-10"
+       },
+       {
+        "month": 10,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-10-06",
+        "creditExpectedBy": "2025-10-10",
+        "arrearsFrom": "2025-10-11"
+       },
+       {
+        "month": 11,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-11-05",
+        "creditExpectedBy": "2025-11-11",
+        "arrearsFrom": "2025-11-12"
+       },
+       {
+        "month": 12,
+        "baseRentCents": 74000,
+        "prepaymentCents": 21000,
+        "flatRateCents": 0,
+        "sollCents": 95000,
+        "paidCents": 95000,
+        "status": "paid",
+        "openPrepaymentCents": 0,
+        "openRentCents": 0,
+        "dueOn": "2025-12-03",
+        "creditExpectedBy": "2025-12-09",
+        "arrearsFrom": "2025-12-10"
+       }
+      ],
+      "sollYearCents": 1140000,
+      "baseRentYearCents": 888000,
+      "prepaymentYearCents": 252000,
+      "flatRateYearCents": 0,
+      "paidYearCents": 1140000,
+      "settlementYearCents": 0,
+      "balanceCents": 0,
+      "dueSollCents": 1140000,
+      "arrearsCents": 0,
+      "notDemandableCents": 0,
+      "notDemandable": [],
+      "openMonths": 0,
+      "openingBalanceCents": 0,
+      "closingBalanceCents": 0,
+      "ledgerStart": "2025-01-01"
+     }
+    ],
+    "settlementOnly": [],
+    "carriedOnly": [],
+    "totals": {
+     "sollYearCents": 1140000,
+     "paidYearCents": 1140000,
+     "settlementYearCents": 0,
+     "openCents": 0,
+     "notDemandableCents": 0
+    }
+   },
+   "taxReport": {
+    "year": 2025,
+    "income": {
+     "baseRentSollCents": 888000,
+     "inclusiveRentSollCents": 0,
+     "prepaymentSollCents": 252000,
+     "flatRateSollCents": 0,
+     "prepaymentSettlementCents": 252000,
+     "prepaymentOverridden": false,
+     "sollCents": 1140000,
+     "paidCents": 1140000,
+     "settlementBackPaymentsCents": 0,
+     "settlementRefundsCents": 0,
+     "tenanciesWithSoll": 1,
+     "tenanciesWithoutPayment": 0,
+     "received": {
+      "rentCents": 888000,
+      "inclusiveRentCents": 0,
+      "unallocatedCents": 0,
+      "allocationsCents": 252000,
+      "flatRateCents": 0,
+      "formerYearsCents": 0,
+      "formerYearsAllocationsCents": 0,
+      "turnOfYear": {
+       "forwardCents": 0,
+       "forwardAllocationsCents": 0,
+       "fromPreviousCents": 0,
+       "fromPreviousAllocationsCents": 0,
+       "forwardOldLeaseCents": 0,
+       "lateDecemberCents": 0
+      },
+      "byUnit": [
+       {
+        "unitId": "00000000000000e9",
+        "unitName": "WE 7, 2. OG rechts",
+        "areaM2": 68,
+        "rentCents": 888000,
+        "allocationsCents": 252000,
+        "settlementCents": 0,
+        "formerYearsCents": 0
+       }
+      ],
+      "byTenancy": [
+       {
+        "tenancyId": "00000000000000eb",
+        "unitId": "00000000000000e9",
+        "tenantName": "Sophie Wagner",
+        "unitName": "WE 7, 2. OG rechts",
+        "start": "2023-05-01",
+        "end": null,
+        "relative": false,
+        "rentCents": 888000,
+        "inclusiveRentCents": 0,
+        "allocationsCents": 252000,
+        "settlementCents": 0,
+        "formerYearsCents": 0,
+        "unallocatedCents": 0,
+        "forwardCents": 0,
+        "flatRateCents": 0,
+        "fromPreviousCents": 0
+       }
+      ],
+      "relatives": {
+       "rentCents": 0,
+       "allocationsCents": 0,
+       "settlementCents": 0,
+       "inclusiveRentCents": 0,
+       "unallocatedCents": 0,
+       "flatRateCents": 0,
+       "sollRentCents": 0,
+       "sollInclusiveRentCents": 0,
+       "sollAllocationsCents": 0,
+       "sollFlatRateCents": 0
+      },
+      "possibleDeposits": [],
+      "totalCents": 1140000,
+      "unassignedCents": 0
+     }
+    },
+    "expenses": {
+     "groups": [
+      {
+       "group": "Grundsteuer & öffentliche Abgaben",
+       "amountCents": 21480,
+       "labor35aCents": 0,
+       "privateCents": 0,
+       "deductibleCents": 21480,
+       "categories": [
+        {
+         "category": "Grundsteuer",
+         "amountCents": 21480,
+         "labor35aCents": 0,
+         "privateCents": 0,
+         "deductibleCents": 21480
+        }
+       ]
+      },
+      {
+       "group": "Laufende Betriebskosten",
+       "amountCents": 99280,
+       "labor35aCents": 0,
+       "privateCents": 0,
+       "deductibleCents": 99280,
+       "categories": [
+        {
+         "category": "Hauswart",
+         "amountCents": 61200,
+         "labor35aCents": 0,
+         "privateCents": 0,
+         "deductibleCents": 61200
+        },
+        {
+         "category": "Wasser/Abwasser",
+         "amountCents": 38080,
+         "labor35aCents": 0,
+         "privateCents": 0,
+         "deductibleCents": 38080
+        }
+       ]
+      },
+      {
+       "group": "Versicherungen",
+       "amountCents": 29750,
+       "labor35aCents": 0,
+       "privateCents": 0,
+       "deductibleCents": 29750,
+       "categories": [
+        {
+         "category": "Sach- und Haftpflichtversicherung",
+         "amountCents": 29750,
+         "labor35aCents": 0,
+         "privateCents": 0,
+         "deductibleCents": 29750
+        }
+       ]
+      },
+      {
+       "group": "Verwaltung & Instandhaltung",
+       "amountCents": 35700,
+       "labor35aCents": 0,
+       "privateCents": 0,
+       "deductibleCents": 35700,
+       "categories": [
+        {
+         "category": "Nicht umlagefähig",
+         "amountCents": 35700,
+         "labor35aCents": 0,
+         "privateCents": 0,
+         "deductibleCents": 35700
+        }
+       ]
+      }
+     ],
+     "totalCents": 186210,
+     "privateCents": 0,
+     "deductibleCents": 186210,
+     "labor35aCents": 0,
+     "items": [
+      {
+       "costItemId": "0000000000000106",
+       "category": "Hauswart",
+       "group": "Laufende Betriebskosten",
+       "description": "Hauswart laut Hausgeldabrechnung",
+       "amountCents": 61200,
+       "privateCents": 0,
+       "deductibleCents": 61200,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 100,
+       "areaPrivateCents": 0,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "612,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Laut Gemeinschaftsabrechnung",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "0,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "Zum Vergleich nach Wohn- und Nutzfläche",
+         "value": "0,00 € privat (0 von 68 m²)",
+         "term": "mixedUse"
+        },
+        {
+         "label": "abziehbar",
+         "value": "612,00 € (100 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "0000000000000108",
+       "category": "Sach- und Haftpflichtversicherung",
+       "group": "Versicherungen",
+       "description": "Gebäudeversicherung laut Hausgeldabrechnung",
+       "amountCents": 29750,
+       "privateCents": 0,
+       "deductibleCents": 29750,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 100,
+       "areaPrivateCents": 0,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "297,50 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Laut Gemeinschaftsabrechnung",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "0,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "Zum Vergleich nach Wohn- und Nutzfläche",
+         "value": "0,00 € privat (0 von 68 m²)",
+         "term": "mixedUse"
+        },
+        {
+         "label": "abziehbar",
+         "value": "297,50 € (100 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "000000000000010a",
+       "category": "Wasser/Abwasser",
+       "group": "Laufende Betriebskosten",
+       "description": "Wasser und Abwasser laut Hausgeldabrechnung",
+       "amountCents": 38080,
+       "privateCents": 0,
+       "deductibleCents": 38080,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 100,
+       "areaPrivateCents": 0,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "380,80 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Laut Gemeinschaftsabrechnung",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "0,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "Zum Vergleich nach Wohn- und Nutzfläche",
+         "value": "0,00 € privat (0 von 68 m²)",
+         "term": "mixedUse"
+        },
+        {
+         "label": "abziehbar",
+         "value": "380,80 € (100 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "000000000000010c",
+       "category": "Nicht umlagefähig",
+       "group": "Verwaltung & Instandhaltung",
+       "description": "Verwaltervergütung",
+       "amountCents": 35700,
+       "privateCents": 0,
+       "deductibleCents": 35700,
+       "labor35aCents": 0,
+       "allocation": "area",
+       "deductiblePercent": 100,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "357,00 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig nach Wohn- und Nutzfläche",
+         "term": "mixedUse"
+        },
+        {
+         "label": "Betroffene Fläche",
+         "value": "68 m² (ganzes Gebäude)"
+        },
+        {
+         "label": "davon selbstgenutzt",
+         "value": "0 m²"
+        },
+        {
+         "label": "privat, auf Cent gerundet",
+         "value": "0,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "357,00 € (100 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      },
+      {
+       "costItemId": "0000000000000110",
+       "category": "Grundsteuer",
+       "group": "Grundsteuer & öffentliche Abgaben",
+       "description": "Grundsteuer 2025",
+       "amountCents": 21480,
+       "privateCents": 0,
+       "deductibleCents": 21480,
+       "labor35aCents": 0,
+       "allocation": "settlement",
+       "deductiblePercent": 100,
+       "areaPrivateCents": null,
+       "settlementPrivateCents": null,
+       "steps": [
+        {
+         "label": "Rechnungsbetrag",
+         "value": "214,80 €"
+        },
+        {
+         "label": "Zuordnung",
+         "value": "verhältnismäßig laut Nebenkostenabrechnung 2025, verteilt nach Wohnfläche",
+         "term": "allocationKey"
+        },
+        {
+         "label": "Eigenanteil laut Abrechnung (privat)",
+         "value": "0,00 €",
+         "term": "ownShare"
+        },
+        {
+         "label": "abziehbar",
+         "value": "214,80 € (100 %)"
+        }
+       ],
+       "taxUnits": null,
+       "outflow": {
+        "year": 2025,
+        "source": "period"
+       }
+      }
+     ],
+     "unstatedCount": 2
+    },
+    "movedOut": [],
+    "settlementPeriods": [
+     {
+      "key": "2025-01",
+      "label": "2025"
+     }
+    ],
+    "selfUseChangedInYear": false,
+    "closedSelfUseDiffers": false,
+    "closedItemsChanged": 0,
+    "reserveContributionCents": 76500,
+    "reserveSuspects": [],
+    "totalAreaM2": 68,
+    "selfUsedAreaM2": 0,
+    "selfOccupiedExists": false,
+    "excludedExists": false,
+    "costModels": {
+     "tenancies": 1,
+     "inclusive": 0,
+     "partlyInclusive": 0,
+     "flatRate": 0
+    },
+    "selfUsedShareCents": 0,
+    "surplusSollCents": 953790,
+    "surplusPaidCents": 953790,
+    "surplusReceivedCents": 953790
+   }
+  }
+ ]
+}

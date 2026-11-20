@@ -11,6 +11,7 @@ Wie du Mietfuchs auf deinen Rechner bekommst, im Detail. Die Kurzfassung steht i
 - [Programmdatei ohne Installation](#bisherige-programmdatei-ohne-installation) (Windows, macOS, Linux)
 - [Linux: Installationspaket mit Startmenü-Eintrag](#linux-installationspaket-mit-startmenü-eintrag)
 - [Docker](docker.md)
+- [Umgebungsvariablen](#umgebungsvariablen) (Liste mit Voreinstellungen)
 
 ## Installation unter Windows und macOS
 
@@ -488,3 +489,42 @@ Terminal nennt den Ordner.
 Ein Update holt sich das Paket nicht von selbst: Neue Fassung von der Releases-Seite laden und
 denselben Befehl noch einmal ausführen, er ersetzt die installierte Fassung. Der Update-Hinweis
 in Mietfuchs sagt Bescheid, wenn es eine neue Fassung gibt, sofern du die Prüfung erlaubst.
+
+## Umgebungsvariablen
+
+Mietfuchs lässt sich ohne eine einzige Umgebungsvariable betreiben. Wer es auf einem Server, im
+Container oder hinter einem Proxy einrichtet, stellt es über die folgenden ein. **Diese Liste ist die
+der Kompatibilitätszusage** ([MIGRATION.md](../MIGRATION.md#kompatibilität-bis-und-ab-10)): Ab 1.0
+ändern sich Name und Bedeutung dieser Variablen in 1.x nicht ohne Vorwarnung im
+[Changelog](../CHANGELOG.md). Im Programm für Windows und macOS brauchst du keine davon; Port,
+Adresse und Anmeldung setzt das Fenster dort selbst.
+
+| Variable | Bedeutung | Voreinstellung |
+| --- | --- | --- |
+| `NKA_DATA_DIR` | Der Datenordner (siehe [Daten & Backup](daten-backup.md)). | je nach Art der Installation, im Docker-Image `/app/server/data` |
+| `NKA_PORT` | Port, auf dem Mietfuchs lauscht (0 bis 65535; mit 0 vergibt das System einen freien). Mietfuchs liest bewusst nicht `PORT`. | `3001` |
+| `NKA_HOST` | IP-Adresse, auf der Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner. Entscheidet mit über die Anmeldung. | alle Adressen |
+| `NKA_AUTH` | Anmeldung: `auto`, `on` oder `off` (siehe [Docker](docker.md#anmeldung-ein--und-ausschalten-nka_auth)). | `auto` |
+| `NKA_PASSWORD_FILE` | Pfad zu einer Datei mit dem Passwort für den ersten Start, etwa ein Docker-Secret. Gilt nur, solange keins festgelegt ist. | keine |
+| `NKA_PASSWORD` | Das Passwort für den ersten Start im Klartext; `NKA_PASSWORD_FILE` geht vor. | keine |
+| `NKA_ALLOWED_HOSTS` | Weitere Namen, unter denen Mietfuchs antwortet (mehrere mit Komma, `.example.org` für alle Namen darunter, `*` schaltet die Prüfung ab). | IP-Adresse, `localhost` und Namen im Heimnetz; im Docker-Image und beim Start aus dem Quellcode ist die Prüfung aus, solange nichts eingetragen ist |
+| `NKA_TRUST_PROXY` | Adresse, Netz oder Name des Reverse-Proxys, dessen Angaben Mietfuchs glaubt (siehe [Docker](docker.md#der-proxy-muss-eingetragen-sein-nka_trust_proxy)). | keinem Proxy wird vertraut |
+| `NKA_AI_PROVIDER` | KI-Belegauswertung: Art der Schnittstelle, `ollama` oder `openai`. Für alle Variablen der KI gilt: Ein gesetzter Wert geht vor den Einstellungen (siehe [KI-Belegauswertung](ki-belegauswertung.md#für-fortgeschrittene)). | wie in den Einstellungen |
+| `NKA_AI_URL` | Adresse des KI-Dienstes. | wie in den Einstellungen |
+| `NKA_AI_MODEL` | Modell des KI-Dienstes. | wie in den Einstellungen |
+| `NKA_AI_API_KEY` | Schlüssel des KI-Dienstes. | keiner |
+| `NKA_AI_API_KEY_FILE` | Pfad einer Datei mit dem Schlüssel; nicht zusammen mit `NKA_AI_API_KEY`. | keine |
+| `NKA_AI_TIMEOUT` | Zeitlimit in Sekunden, dann für jeden Schritt der Auswertung dasselbe. | je Schritt: `180` für das Einordnen, `600` für Belegart und Zählerfoto, `1200` für das Auslesen |
+| `NKA_AI_MAX_TOKENS` | Höchstlänge der Antwort in Token (nur OpenAI-kompatible Dienste). | `16384` |
+| `NKA_AI_IMAGE_EDGE` | Lange Kante der Seitenbilder eines Scans in Bildpunkten. | `1200` |
+| `NKA_OLLAMA_URL` | Adresse von Ollama; gilt, solange Ollama der Anbieter ist und `NKA_AI_URL` fehlt. | `http://localhost:11434` |
+| `NKA_OLLAMA_MODEL` | Modell für Ollama; gilt, solange `NKA_AI_MODEL` fehlt. | wie in den Einstellungen |
+| `NKA_OLLAMA_NUM_CTX` | Kontextgröße für Ollama in Token. | `16384` |
+
+**Nicht Teil der Zusage** sind Variablen, die Mietfuchs für sich selbst setzt oder die nur Prüfläufe
+brauchen. Sie können sich jederzeit ändern oder wegfallen; setz sie nicht selbst:
+
+- `NKA_RUNTIME` (die Betriebsart; das Docker-Image und die Prüfläufe setzen sie), `NKA_DESKTOP`,
+  `NKA_STORE`, `NKA_WINDOW_KEY` und `NKA_SEARCH_DIRS` (setzt das Programmfenster für seinen Server).
+- Alles, was mit `NKA_TEST_` beginnt, dazu `NKA_UPDATE_URL`, `NKA_MODELS_URL`, `NKA_OLLAMA_CANDIDATES`
+  und `NKA_RESTORE_MAX_BYTES`: Griffe für die Tests des Projekts.

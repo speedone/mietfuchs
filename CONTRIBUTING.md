@@ -76,6 +76,30 @@ Berechnung ([server/src/calc.ts](server/src/calc.ts)):
 - Die Invarianten-Tests in [server/test/calc.test.ts](server/test/calc.test.ts) bleiben grün:
   Mieteranteile und Vermieteranteil ergeben immer die Gesamtkosten, kein Anteil ist negativ.
 
+## Änderungen am Datenbestand (Migrationen)
+
+Ab 1.0 gilt die [Kompatibilitätszusage](MIGRATION.md#kompatibilität-bis-und-ab-10): Jeder Bestand und
+jedes Backup aus 1.x lässt sich in jeder späteren 1.x ohne Handarbeit öffnen. Für eine Migration in 1.x
+heißt das:
+
+- Sie läuft beim Start von selbst, ohne Rückfrage und ohne dass der Nutzer etwas umwandeln muss, auf
+  jedem Bestand, den eine veröffentlichte Version geschrieben hat, auch auf einem alten Backup.
+- Sie verliert nichts Erfasstes und ändert keine Zahl einer abgeschlossenen Abrechnung: Deren
+  eingefrorener Stand ist ein Archivstück und bleibt wortgleich.
+- Ein veröffentlichter Schritt wird nie geändert und nie gelöscht (ein Test hält die Marke jedes
+  veröffentlichten Schrittes fest). Ein Fehler darin wird mit einem neuen Schritt geradegerückt.
+- Bevor Mietfuchs ausstehende Schritte anwendet, legt es selbst eine Sicherung an
+  (`mietfuchs.sqlite.vor-…`); darauf verlässt sich der Weg zurück zur vorigen Version, also bleibt das so.
+- Jeder Datenschritt bekommt einen Test, der einen Bestand auf dem Stand davor durch den Schritt
+  schickt und Abrechnung, Mietkonto und Steuer centgenau vergleicht.
+
+Dasselbe gilt für das, was nach außen sichtbar ist: Die Form der Exporte
+([Daten & Backup](docs/daten-backup.md#exporte-und-ihre-form)) und die Umgebungsvariablen
+([Installation](docs/installation.md#umgebungsvariablen)) sind per Test gebunden; wer sie ändert, kündigt
+es im Changelog an. Was eine dieser Regeln brechen müsste, wartet auf 2.0. Die Technik (erzeugen mit
+`db:generate`, Datenschritte, Sicherung, Wächter) steht in
+[server/src/db/CLAUDE.md](server/src/db/CLAUDE.md).
+
 ## Fehler melden
 
 Bitte mit Version, Schritten zum Nachstellen sowie erwartetem und tatsächlichem Ergebnis.

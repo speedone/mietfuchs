@@ -502,6 +502,15 @@ docker logs mietfuchs    # Einrichtungscode für das Passwort beim ersten Start
 Aktualisieren: `docker pull ghcr.io/speedone/mietfuchs:latest`, dann `docker rm -f mietfuchs` und den
 `docker run`-Befehl von oben erneut ausführen. Die Daten im Volume bleiben dabei erhalten.
 
+## Umgebungsvariablen
+
+Port, Adresse, Anmeldung, Proxy, erlaubte Namen und die KI-Belegauswertung stellst du im Container
+über Umgebungsvariablen ein (`environment:` in der Compose-Datei oder `-e` bei `docker run`). Die
+vollständige Liste mit Bedeutung und Voreinstellung steht unter
+[Installation](installation.md#umgebungsvariablen); sie ist auch die Liste, für die ab 1.0 die
+Kompatibilitätszusage gilt. Das Image setzt `NKA_PORT=3001` und legt die Daten in das Volume unter
+`/app/server/data`.
+
 ## Selbst bauen (aus dem Clone)
 
 Mit **Docker Compose** (Konfiguration in [`docker-compose.yml`](../docker-compose.yml)):
