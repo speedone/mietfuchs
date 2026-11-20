@@ -78,10 +78,14 @@ Berechnung ([server/src/calc.ts](server/src/calc.ts)):
 
 ## Fehler melden
 
-Bitte mit Version, Schritten zum Nachstellen sowie erwartetem und tatsächlichem Ergebnis.
+Fehler meldest du mit dem [Formular](https://github.com/speedone/mietfuchs/issues/new/choose): Version,
+Betriebsart (Microsoft Store, Installer, macOS, Linux-Paket, Programmdatei, Docker, Quellcode), Schritte
+zum Nachstellen sowie erwartetes und tatsächliches Ergebnis. Fragen zur Bedienung gehören in die
+[Diskussionen](https://github.com/speedone/mietfuchs/discussions/categories/q-a), Sicherheitslücken
+meldest du vertraulich wie in [SECURITY.md](SECURITY.md) beschrieben.
 
-**Keine echten Mieterdaten in Issues posten.** Namen, Adressen und Beträge vorher durch
-Beispielwerte ersetzen - ein Issue ist öffentlich und dauerhaft sichtbar.
+**Keine echten Mieterdaten, Namen oder Belege in Issues und Diskussionen posten.** Namen, Adressen und
+Beträge vorher durch Beispielwerte ersetzen - beides ist öffentlich und dauerhaft sichtbar.
 
 ## Lizenz
 

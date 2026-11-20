@@ -16,6 +16,7 @@ import {
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
+  waterMeterHint,
   amountsSumText,
   externalHint,
   externalMismatch,
@@ -1360,6 +1361,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                   <option key={k} value={k}>{KEY_LABELS[k]}</option>
                 ))}
               </select>
+              {/* #447: Ohne Wohnungszähler fehlt „nach Verbrauch“ in der Auswahl; der Satz sagt, warum (costForm.ts). */}
+              {meterData === 'ok' && waterMeterHint(form, meters) && <small className="muted">{waterMeterHint(form, meters)}</small>}
             </label>
             {/* Heizung PR 10: Ziel der Heizposition. Bei eigener Abrechnung Pflicht (Teil steht unter „Weitere
                 Angaben“); bei freien Schlüsseln teilt „nur Heizung“ beim Mieterwechsel nach Gradtagen. */}

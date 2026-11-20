@@ -50,7 +50,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'deposit', 'bankStatement', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
+  assert.deepEqual(ids, ['firstSettlement', 'granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'deposit', 'bankStatement', 'supplierInvoice', 'stockFuel', 'heatingRenewed', 'network', 'pairing'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -192,6 +192,25 @@ const co2Statement = (over: Partial<Co2Statement>): Co2Statement => ({
 })
 
 const checks: Record<GuideId, () => void | Promise<void>> = {
+  firstSettlement: () => {
+    const pre = [{ from: '2025-01', monthlyCents: 6000 }]
+    const r = settle(source({
+      units: [rented('a', 60), rented('b', 80), rented('c', 100)],
+      tenancies: [tenancy('ta', 'a', '2020-01-01', null, 1, { prepayments: pre }), tenancy('tb', 'b', '2020-01-01', null, 1, { prepayments: pre }), tenancy('tc', 'c', '2020-01-01', null, 1, { prepayments: pre })],
+      costItems: [item('gs', { amountCents: 120000 }), item('vers', { category: 'Sach- und Haftpflichtversicherung', amountCents: 96000 })],
+    }))
+    const st = (id: string) => r.statements.find((s) => s.tenancyId === id) ?? assert.fail(`keine Abrechnung für ${id}`)
+    assert.equal(st('ta').prepaymentCents, 72000)
+    assert.equal(st('tb').balanceCents, 0)
+    // Guthaben ist positiv, Nachzahlung negativ
+    assert.ok(st('ta').balanceCents > 0 && st('tc').balanceCents < 0)
+    inOrder(GUIDES.firstSettlement.example, [
+      '60', '80', '100 m²', '240 m²', eur(120000), eur(share(r, 'ta', 'gs')), eur(share(r, 'tb', 'gs')), eur(share(r, 'tc', 'gs')),
+      eur(96000), eur(share(r, 'ta', 'vers')), eur(share(r, 'tb', 'vers')), eur(share(r, 'tc', 'vers')),
+      eur(6000), eur(st('ta').prepaymentCents), eur(st('ta').totalShareCents), eur(st('ta').balanceCents),
+      eur(st('tb').totalShareCents), eur(st('tc').totalShareCents), eur(-st('tc').balanceCents),
+    ], 'firstSettlement')
+  },
   granny: () => {
     const src = source({
       units: [own('eigen', 120), rented('elw', 60)],
@@ -827,6 +846,34 @@ test('Integrationsdurchsicht S3: „Heizkosten selbst abrechnen“ nennt die mon
   const g = GUIDES.heatingSelf
   assert.ok(g.gaps.every((x) => !/Verbrauchsinformation/.test(x.text) || /Heizkostenverteiler/.test(x.text)), 'überholte Lücke zur Verbrauchsinformation')
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Monatliche Verbrauchsinformation“')))
+})
+
+// Erste Schritte (#447): Ein Prüfer ohne Vorwissen fand die Angaben des Vermieters in keinem Schritt und keine Anleitung,
+// die von der leeren Installation bis zum Versand führt.
+test('#447: „Die erste Abrechnung von Anfang bis Ende“ führt in der Reihenfolge der Arbeit von den Einstellungen bis zum Backup', () => {
+  const g = GUIDES.firstSettlement
+  assert.equal(g.group, 'start')
+  assert.equal(g.title, 'Die erste Abrechnung von Anfang bis Ende')
+  const pages = g.steps.flatMap((s) => (s.page ? [s.page] : []))
+  // Erst der Vermieter, dann Objekt, Wohnungen, Mietverhältnisse; Zähler vor den Kosten; am Ende das Backup.
+  assert.deepEqual([...new Set(pages)], ['einstellungen', 'stammdaten', 'zaehler', 'kosten', 'abrechnung'])
+  assert.equal(pages.at(-1), 'einstellungen')
+  const all = g.steps.map((s) => s.text).join('\n')
+  for (const label of ['„Vermieter & Zahlung“', '„Name des Vermieters“', '„IBAN für Nachzahlungen“', '„+ Wohnung anlegen“', '„+ Mietverhältnis anlegen“', '„+ Zähler anlegen“', '„+ Ablesung anlegen“',
+    '„+ Kostenposition anlegen“', '„Zu prüfen“', '„🖨 Drucken / PDF“', '„Als versendet markieren“', '„Daten & Sicherung“']) assert.ok(all.includes(label), `${label} fehlt`)
+  assert.match(all, /Vorauszahlung/)
+  // Wer nur Papier hat: Kosten lassen sich ohne Beleg von Hand erfassen.
+  assert.match(all, /ohne (eine )?Datei|von Hand/)
+  // Die Frist steht mit Norm da.
+  assert.ok(g.caveats.some((c) => /zwölf Monate|zwölften Monats/.test(c.text) && /§ 556 Abs\. 3/.test(c.norm ?? '')))
+})
+
+test('#447: Die Anleitung, die bis zum Versand führt, nennt die Angaben des Vermieters vor der Abrechnung', () => {
+  const steps = GUIDES.multiFamily.steps
+  const landlord = steps.findIndex((s) => s.page === 'einstellungen' && s.text.includes('„Vermieter & Zahlung“') && s.text.includes('„Name des Vermieters“'))
+  const sent = steps.findIndex((s) => s.text.includes('„Als versendet markieren“'))
+  assert.ok(landlord >= 0, 'kein Schritt zu den Einstellungen')
+  assert.ok(sent > landlord, 'der Vermieter steht nicht vor dem Versand')
 })
 
 test('#323: Anleitung Garage nennt die Umsatzsteuer mit Norm, die Nebenleistung als Auffassung der Verwaltung und den Begriff', () => {

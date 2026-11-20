@@ -78,6 +78,41 @@ export function itemsDetail(items: number, sumCents: number, files: number): str
   return `${countOf(items, 'Position', 'Positionen')} · Summe ${fmtEuro(sumCents)}${files ? ` · ${countOf(files, 'Belegdatei', 'Belegdateien')}` : ''}`
 }
 
+// „Belege erfasst“ ohne Kosten (#447): Der Knopf führt in den Eingang der Belege. Wer nur Papier hat, fand dort keinen
+// Weg zu den Kosten; die Zeile nennt deshalb beide.
+export function noCostsDetail(label: string): string {
+  return `Für ${label} sind noch keine Kosten erfasst. Laden Sie Belege im Eingang hoch, oder erfassen Sie die Kosten von Hand auf der Seite Kosten mit „+ Kostenposition anlegen“.`
+}
+
+// „Vermieter und Bankverbindung“ (#447): Name, Anschrift und IBAN des Vermieters gehörten zu keinem Schritt; dass der
+// Absender fehlt, sagte erst die Seite Abrechnung. Höchstens gelb, denn keine der Angaben ändert eine Zahl.
+// - Ohne Namen ein offener Punkt: Das Anschreiben druckt dann weder Absender noch Unterschrift (`senderMissing`).
+// - Nur ohne Anschrift eine Hilfe (`hint`), kein offener Punkt: Die Rücksendeangabe nennt dann die Adresse des Objekts,
+//   und wer im Haus wohnt, braucht keine andere.
+// - Die fehlende IBAN wird nur genannt; ob sie bei einer Nachzahlung fehlt, prüft die Seite Abrechnung.
+// `own`: Das Objekt führt einen eigenen Vermieter; dann stehen die Angaben beim Objekt (`senderFix`).
+// Ob Briefpapier oder eine eigene Unterschrift den Absender trägt, weiß das Cockpit nicht; das prüft die Abrechnung.
+export const LANDLORD_CHECK = 'Vermieter und Bankverbindung'
+export function landlordCheck(
+  landlord: { landlordName: string; landlordAddress: string; iban: string },
+  own: boolean,
+): { level: 'gruen' | 'gelb'; detail: string; cta?: string; hint?: true } {
+  const name = landlord.landlordName.trim()
+  const address = landlord.landlordAddress.trim()
+  const hasIban = landlord.iban.trim() !== ''
+  const where = own ? 'in den Stammdaten beim Objekt' : 'in den Einstellungen'
+  const noIban = 'Keine IBAN eingetragen: Für eine Nachzahlung brauchen Ihre Mieter die Bankverbindung.'
+  if (name === '') {
+    return { level: 'gelb', cta: 'Vermieter eintragen',
+      detail: `Der Name des Vermieters fehlt: Das Anschreiben druckt dann weder Absender noch Unterschrift. Tragen Sie Name, Anschrift und Bankverbindung ${where} ein.${hasIban ? '' : ` ${noIban}`}` }
+  }
+  if (address === '') {
+    return { level: 'gelb', hint: true, cta: 'Anschrift eintragen',
+      detail: `${name} · Ohne Anschrift des Vermieters nennt die Rücksendeangabe die Adresse des Objekts; Briefkopf und Fußzeile bleiben ohne Anschrift.${hasIban ? '' : ` ${noIban}`}` }
+  }
+  return { level: 'gruen', detail: `${name} · ${address} · ${hasIban ? 'IBAN eingetragen' : noIban}` }
+}
+
 // Unterzeile unter der Überschrift des Cockpits. Beim Erststart (#180) steht dort keine
 // Checkliste, sondern zwei Knöpfe zum Anfangen; eine Zahl offener Punkte, die nirgends
 // aufgezählt sind, sagte einem Vermieter ohne Vorkenntnisse nichts. Die Zeile nennt deshalb den

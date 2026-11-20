@@ -13,6 +13,10 @@ test('erst die Wohnung, dann das Mietverhältnis, dann die Belege', () => {
   const late = startStep([unit], [tenancy], '05/2025–04/2026', false)
   expect(late).toMatchObject({ label: 'Belege erfassen', tab: 'belege:eingang', focus: null })
   expect(late.text).toMatch(/den Zeitraum 05\/2025–04\/2026/)
+  // Erste Schritte (#447): Wer nur Papier hat, fand im Eingang keinen Weg zu den Kosten. Beide Wege stehen da.
+  expect(late.text).toMatch(/Laden Sie die Belege .* hoch, oder erfassen Sie die Kosten von Hand/)
+  expect(late.secondary).toEqual({ label: 'Kosten von Hand erfassen', tab: 'kosten', focus: { kind: 'new', what: 'costItem' } })
+  expect(startStep([], [], '2025', true).secondary).toBeUndefined()
 })
 
 test('leer ist nur ein Zeitraum ohne Abrechnung, Pauschale und Kosten', () => {

@@ -136,3 +136,34 @@ test('Kontoauszug (#188): Zeile zu nicht zugeordneten Umsätzen, Einzahl richtig
   expect(bankOpenText(1)).toBe('1 Umsatz aus dem Kontoauszug ist noch nicht zugeordnet.')
   expect(bankOpenText(0)).toBeNull()
 })
+
+// Erste Schritte (#447): Die Angaben des Vermieters gehörten zu keinem Schritt; „Absender fehlt“ stand erst auf der
+// Seite Abrechnung. Die Zeile ist höchstens gelb, grün mit Name und Anschrift, und nennt die fehlende IBAN nur.
+test('Zeile „Vermieter und Bankverbindung“: ohne Namen offen, ohne Anschrift nur eine Hilfe, sonst grün; die IBAN wird nur genannt', async () => {
+  const { landlordCheck, LANDLORD_CHECK } = await import('./cockpitChecks')
+  const none = landlordCheck({ landlordName: ' ', landlordAddress: '', iban: '' }, false)
+  expect(none).toMatchObject({ level: 'gelb', cta: 'Vermieter eintragen' })
+  expect(none.hint).toBeUndefined()
+  expect(none.detail).toMatch(/Name des Vermieters fehlt/)
+  expect(none.detail).toMatch(/in den Einstellungen/)
+  expect(none.detail).toMatch(/Keine IBAN eingetragen/)
+  expect(landlordCheck({ landlordName: '', landlordAddress: '', iban: '' }, true).detail).toMatch(/beim Objekt/)
+  const noAddress = landlordCheck({ landlordName: 'Erika Muster', landlordAddress: '', iban: 'DE89370400440532013000' }, false)
+  expect(noAddress).toMatchObject({ level: 'gelb', hint: true, cta: 'Anschrift eintragen' })
+  expect(noAddress.detail).toMatch(/Erika Muster/)
+  expect(noAddress.detail).not.toMatch(/Keine IBAN/)
+  const noIban = landlordCheck({ landlordName: 'Erika Muster', landlordAddress: 'Weg 1, 12345 Ort', iban: ' ' }, false)
+  expect(noIban.level).toBe('gruen')
+  expect(noIban.detail).toMatch(/Keine IBAN eingetragen/)
+  expect(landlordCheck({ landlordName: 'Erika Muster', landlordAddress: 'Weg 1, 12345 Ort', iban: 'DE89370400440532013000' }, false))
+    .toEqual({ level: 'gruen', detail: 'Erika Muster · Weg 1, 12345 Ort · IBAN eingetragen' })
+  expect(LANDLORD_CHECK).toBe('Vermieter und Bankverbindung')
+})
+
+test('Zeile „Belege erfasst“ ohne Kosten nennt beide Wege: Beleg hochladen oder von Hand erfassen', async () => {
+  const { noCostsDetail } = await import('./cockpitChecks')
+  const text = noCostsDetail('2025')
+  expect(text).toMatch(/^Für 2025 sind noch keine Kosten erfasst\./)
+  expect(text).toMatch(/Belege/)
+  expect(text).toContain('auf der Seite Kosten mit „+ Kostenposition anlegen“')
+})

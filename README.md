@@ -212,6 +212,16 @@ Ab Version 0.15.0 hat jedes Release eine Datei `SHA256SUMS.txt` und einen signie
 Herkunftsnachweis (Artifact Attestation). Wie du beides prüfst:
 [Download prüfen](docs/installation.md#download-prüfen-für-fortgeschrittene).
 
+## Erste Schritte
+
+Nach dem ersten Start führt das Cockpit zum jeweils nächsten Schritt. Den ganzen Weg von der leeren
+Installation bis zur versendeten Abrechnung beschreibt in der App die Anleitung
+**„Die erste Abrechnung von Anfang bis Ende“** (Seite *Hilfe & Begriffe*, das leere Cockpit verlinkt
+sie): Vermieter und Bankverbindung in den Einstellungen, Objekt, Wohnungen und Mietverhältnisse mit
+Vorauszahlung, Zähler und Stände (vor den Kosten, wenn nach Verbrauch verteilt werden soll), Kosten,
+Abrechnung prüfen, abschließen, drucken, Versanddatum, Backup. Was die einzelnen Seiten tun, steht
+unter [Funktionsweise](docs/funktionsweise.md).
+
 ## KI-Belegauswertung
 
 Optional. Mietfuchs kann hochgeladene Belege von einem KI-Modell lesen lassen, auf dem eigenen
@@ -240,12 +250,22 @@ Vorwarnung. Was diese Zusagen bricht, kommt nur mit einer neuen Hauptversion (2.
 jede Version die Bestände älterer Versionen ebenfalls; verbindlich ist die Zusage ab 1.0. Der Wortlaut
 und was bis 1.0 gilt: [MIGRATION.md](MIGRATION.md#kompatibilität-bis-und-ab-10).
 
+## Fragen und Fehler
+
+- **Fragen zur Bedienung** stellst du in den
+  [Diskussionen](https://github.com/speedone/mietfuchs/discussions/categories/q-a).
+- **Fehler** meldest du mit dem [Formular](https://github.com/speedone/mietfuchs/issues/new/choose):
+  Version, Betriebsart, was du getan hast, was du erwartet hast und was geschah.
+- **Sicherheitslücken** bitte nicht öffentlich, sondern wie in [SECURITY.md](SECURITY.md) beschrieben.
+
+Beides ist öffentlich: **keine echten Mieterdaten, Namen oder Belege** posten, sondern Beispielwerte.
+
 ## Mitmachen
 
 Fehlerkorrekturen, Tests, fachliche Verbesserungen und neue Funktionen sind willkommen, gern direkt
 als Pull Request. Ablauf und Maßstab stehen in [CONTRIBUTING.md](CONTRIBUTING.md), wie du Mietfuchs
-aus dem Quellcode startest in [Entwickeln](docs/entwickeln.md), Sicherheitslücken meldest du wie in
-[SECURITY.md](SECURITY.md) beschrieben. **Keine echten Mieterdaten in Issues posten.**
+aus dem Quellcode startest in [Entwickeln](docs/entwickeln.md). Fragen, Fehler und Sicherheitslücken:
+siehe [Fragen und Fehler](#fragen-und-fehler).
 
 ## Lizenz & Haftung
 

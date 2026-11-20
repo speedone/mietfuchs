@@ -21,6 +21,7 @@ import {
   itemToForm,
   meterTypeOptions,
   suggestedKey,
+  waterMeterHint,
   amountsSumText,
   externalHint,
   externalMismatch,
@@ -546,6 +547,19 @@ describe('Vorschlag des Schlüssels je Kostenart (#142)', () => {
     expect(suggestedKey('Wasser/Abwasser', zwei, [])).toEqual({ key: 'persons', meterType: '' })
     expect(suggestedKey('Wasser/Abwasser', zwei, [meter('a', 'strom'), meter('b', 'strom')])).toEqual({ key: 'persons', meterType: '' })
     expect(suggestedKey('Wasser/Abwasser', [], [])).toEqual({ key: 'persons', meterType: '' })
+  })
+
+  // Erste Schritte (#447): Ohne Wohnungszähler fehlt „nach Verbrauch“ in der Auswahl, und niemand sagte, warum.
+  test('Wasser ohne Kaltwasserzähler an einer Wohnung: ein Satz am Schlüssel nennt die Seite Zähler & Stände', () => {
+    const water = { category: 'Wasser/Abwasser', key: 'persons' as CostKey }
+    expect(waterMeterHint(water, [])).toBe('Haben die Wohnungen Wasserzähler? Legen Sie sie zuerst unter „Zähler & Stände“ an; dann steht hier „nach Verbrauch (Zähler)“ zur Wahl.')
+    // Hauptzähler und andere Zählertypen ändern daran nichts
+    expect(waterMeterHint(water, [meter(null), meter('a', 'strom')])).not.toBeNull()
+    // Mit einem Kaltwasserzähler an einer Wohnung steht der Schlüssel zur Wahl; andere Kostenarten und der
+    // gespeicherte Verbrauchsschlüssel brauchen den Satz nicht.
+    expect(waterMeterHint(water, [meter('a')])).toBeNull()
+    expect(waterMeterHint({ category: 'Müllabfuhr', key: 'persons' }, [])).toBeNull()
+    expect(waterMeterHint({ category: 'Wasser/Abwasser', key: 'meter' }, [])).toBeNull()
   })
 
   test('andere Kostenarten unverändert', () => {

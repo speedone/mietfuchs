@@ -68,6 +68,27 @@ test('Startansicht: Anleitungen als Kacheln in drei Gruppen, mit erstem Satz und
   expect(screen.getByRole('button', { name: `Alle von A bis Z ${Object.keys(GLOSSARY).length} Begriffe` })).toBeTruthy()
 })
 
+// Erste Schritte (#447): Die Diskussionen und der Weg, einen Fehler zu melden, standen nirgends in der App.
+test('Startansicht: „Fragen und Fehler“ nennt Diskussionen, Fehlermeldung und den vertraulichen Weg, mit der Bitte um Beispielwerte', () => {
+  render(<Hilfe onFollow={() => {}} />)
+  const heading = screen.getByRole('heading', { name: 'Fragen und Fehler', level: 2 })
+  const section = within(heading.closest('section') as HTMLElement)
+  const link = (name: string) => section.getByRole('link', { name }) as HTMLAnchorElement
+  expect(link('Frage stellen').getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/discussions/categories/q-a')
+  expect(link('Fehler melden').getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/new/choose')
+  expect(link('Sicherheitslücke vertraulich melden').getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/security/advisories/new')
+  // Im Programmfenster gehen nur Links in ein neues Fenster an den Browser (desktop/src/main.js).
+  for (const a of section.getAllByRole('link')) {
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toBe('noreferrer')
+  }
+  expect(heading.closest('section')?.textContent).toMatch(/öffentlich/)
+  expect(heading.closest('section')?.textContent).toMatch(/keine echten Mieterdaten, Namen oder Belege/)
+  // Die erste Gruppe der Anleitungen ist der Einstieg
+  expect(screen.getAllByRole('heading', { level: 3 })[0]?.textContent).toBe('Erste Schritte')
+  expect(tile(GUIDES.firstSettlement.title)).toBeTruthy()
+})
+
 test('eine Kachel öffnet die Anleitung als eigene Ansicht mit Pfad und allen Abschnitten', async () => {
   render(<Hilfe onFollow={() => {}} />)
   fireEvent.click(tile(GUIDES.granny.title))

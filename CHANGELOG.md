@@ -8,6 +8,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Erste Schritte: Die neue Anleitung „Die erste Abrechnung von Anfang bis Ende“ führt von den Einstellungen über
+  Objekt, Wohnungen, Mietverhältnisse, Zähler und Kosten bis zu Abschluss, Druck, Versanddatum und Backup; das leere
+  Cockpit verlinkt sie, und „Hilfe & Begriffe“ schlägt sie im leeren Bestand vor. Die Checkliste des Cockpits beginnt
+  mit „Vermieter und Bankverbindung“ (höchstens gelb, mit Sprung in die Einstellungen), ohne Kosten nennt sie neben
+  dem Hochladen der Belege das Erfassen von Hand, und im Kostenformular sagt bei Wasser/Abwasser ein Satz am
+  Umlageschlüssel, dass erst Wohnungszähler die Verteilung nach Verbrauch möglich machen.
+- Fragen und Fehler: „Hilfe & Begriffe“, README und Doku nennen die Diskussionen für Fragen und ein Formular für
+  Fehlermeldungen (Version, Betriebsart, Schritte, erwartet, geschehen), mit dem Hinweis, keine echten Mieterdaten,
+  Namen oder Belege zu posten.
 - Mieterhöhung: Am Mietverhältnis in den Stammdaten rechnet Mietfuchs eine Erhöhung bis zur ortsüblichen
   Vergleichsmiete (§ 558 BGB) oder die Anpassung einer Indexmiete (§ 557b BGB), macht daraus ein Schreiben und trägt
   die neue Miete in die Kaltmiete-Staffel ein. Ohne Mieterhöhung rechnen Mietkonto, Abrechnung und Steuer unverändert

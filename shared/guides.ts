@@ -54,9 +54,9 @@ export type GuideGap = {
   // Das Issue, in dem es geplant ist, wo es eines gibt.
   issue?: number
 }
-// Die Gruppen der Anleitungen auf der Startseite der Hilfe: das Objekt, Ereignisse im Abrechnungsjahr, die Heizung und
+// Die Gruppen der Anleitungen auf der Startseite der Hilfe: der Einstieg (#447), das Objekt, Ereignisse im Abrechnungsjahr, die Heizung und
 // der Betrieb (Zugriff im Netz, #528). Die Beschriftungen stehen im Client (client/src/helpView.ts).
-export const GUIDE_GROUPS = ['property', 'year', 'heating', 'operation'] as const
+export const GUIDE_GROUPS = ['start', 'property', 'year', 'heating', 'operation'] as const
 export type GuideGroup = (typeof GUIDE_GROUPS)[number]
 
 export type Guide = {
@@ -80,6 +80,44 @@ export type Guide = {
 }
 
 const GUIDE_DATA = {
+  // #447: der Einstieg. Von der leeren Installation bis zur versendeten Abrechnung, in der Reihenfolge der Arbeit.
+  firstSettlement: {
+    group: 'start',
+    title: 'Die erste Abrechnung von Anfang bis Ende',
+    applies: 'Sie haben Mietfuchs gerade eingerichtet und möchten zum ersten Mal eine Nebenkostenabrechnung erstellen. Diese Anleitung führt in der Reihenfolge der Arbeit durch alle Seiten, am Beispiel eines Hauses mit Mietwohnungen; Besonderheiten wie eine Eigentumswohnung oder die Heizung haben eigene Anleitungen.',
+    steps: [
+      { page: 'einstellungen', text: 'Beginnen Sie mit sich selbst: Tragen Sie in der Karte „Vermieter & Zahlung“ unter „Name des Vermieters“ Ihren Namen ein, dazu die „IBAN für Nachzahlungen“ und die „Anschrift des Vermieters“, und klicken Sie auf „Speichern“. Der Name steht als Absender und Unterschrift im Anschreiben, das Konto nennt es bei einer Nachzahlung.' },
+      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“, tragen Sie Bezeichnung und Adresse des Hauses ein und klicken Sie auf „Speichern“.' },
+      { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ jede Wohnung des Hauses mit ihrer Wohnfläche an, auch eine, in der Sie selbst wohnen („Eigennutzung - Anteil trägt der Vermieter“).' },
+      { page: 'stammdaten', text: 'Legen Sie je Mieter mit „+ Mietverhältnis anlegen“ ein Mietverhältnis an: Wohnung, Name, „Einzug“, Personenzahl und die monatliche Vorauszahlung auf die Nebenkosten, wie sie im Mietvertrag steht.' },
+      { page: 'zaehler', text: 'Haben die Wohnungen Wasserzähler, legen Sie sie jetzt an, noch vor den Kosten: mit „+ Zähler anlegen“ je Wohnung einen Zähler, dann mit „+ Ablesung anlegen“ den Stand zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.). Erst mit Wohnungszählern steht bei den Kosten der Schlüssel „nach Verbrauch (Zähler)“ zur Wahl. Ohne Zähler überspringen Sie diesen Schritt.' },
+      { page: 'kosten', text: 'Erfassen Sie jede Rechnung des Jahres mit „+ Kostenposition anlegen“: Kostenart, Betrag und Umlageschlüssel. Das geht von Hand und ohne Datei; den Schlüssel schlägt Mietfuchs je Kostenart vor. Haben Sie Rechnungen als PDF oder Foto, können Sie sie stattdessen auf der Seite Belege im Eingang ablegen.' },
+      { page: 'abrechnung', text: 'Auf der Seite Abrechnung stehen unter „Zu prüfen“ die Hinweise; „Hier beheben →“ führt zum betroffenen Eintrag. Mit „Ansehen“ öffnen Sie die Abrechnung eines Mieters, „Rechenweg zeigen“ erklärt jede Zeile.' },
+      { page: 'abrechnung', text: 'Stimmt alles und liegen alle Rechnungen des Jahres vor, schließen Sie die Abrechnung mit dem Knopf mit dem Schloss ab; dann ändert sich der Stand nicht mehr.' },
+      { page: 'abrechnung', text: 'Drucken Sie mit „🖨 Drucken / PDF“ alle Abrechnungen oder die eines Mieters, auf Wunsch mit Anschreiben. Im Druckdialog lässt sich statt eines Druckers ein PDF wählen.' },
+      { page: 'abrechnung', text: 'Ist die Abrechnung an die Mieter gegangen, klicken Sie „Als versendet markieren“ und speichern das Datum des Versands; nach ihm richtet sich die Frist.' },
+      { page: 'einstellungen', text: 'Sichern Sie zum Schluss Ihre Daten: In der Karte „Daten & Sicherung“ lädt „Backup herunterladen (ZIP)“ die Datenbank samt Belegen als eine Datei herunter. Legen Sie sie auf einen anderen Datenträger.' },
+    ],
+    result: [
+      'Das Cockpit zeigt unter „Fertigstellung“, was noch fehlt, und der Knopf darunter führt zum nächsten Schritt.',
+      'Jede Rechnung wird centgenau auf die Wohnungen verteilt. Was auf eine selbstgenutzte oder leerstehende Wohnung entfällt, bleibt bei Ihnen und steht auf der Seite Abrechnung in der Karte „Kontrolle“ unter „Vermieteranteil (nicht umgelegt)“.',
+      'Je Mieter stellt die Abrechnung den Kosten die Vorauszahlungen gegenüber und nennt Guthaben oder Nachzahlung.',
+      'Eine abgeschlossene Abrechnung bleibt, wie sie ist, auch wenn Sie später Stammdaten oder Kosten ändern.',
+    ],
+    example: 'Drei Wohnungen mit 60, 80 und 100 m², zusammen 240 m². Grundsteuer 1.200 € nach Wohnfläche: 300 €, 400 € und 500 €. Gebäudeversicherung 960 € nach Wohnfläche: 240 €, 320 € und 400 €. Jeder Mieter zahlt 60 € Vorauszahlung im Monat, im Jahr 720 €. Die erste Wohnung trägt 540 € und bekommt 180 € zurück, die zweite trägt 720 € und ist ausgeglichen, die dritte trägt 900 € und zahlt 180 € nach.',
+    caveats: [
+      { text: 'Die Abrechnung muss dem Mieter spätestens bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; danach können Sie eine Nachzahlung in der Regel nicht mehr verlangen.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
+      { text: 'Ist im Mietvertrag kein Umlageschlüssel vereinbart, wird nach Wohnfläche umgelegt.', norm: '§ 556a Abs. 1 BGB' },
+      { text: 'Verwaltungskosten, Reparaturen und Instandhaltung sind keine Betriebskosten. Erfassen Sie solche Rechnungen, wenn überhaupt, mit der Kostenart „Nicht umlagefähig“.', norm: '§ 1 Abs. 2 BetrKV' },
+      { text: 'Mietfuchs sieht nicht, ob alle Rechnungen des Jahres erfasst sind; das wissen nur Sie. Vergleichen Sie vor dem Abschließen mit Ihrem Ordner oder dem Kontoauszug.' },
+      { text: 'Ein Backup liegt nur dort, wo Sie es ablegen. Sichern Sie nach jeder Abrechnung, und nicht nur auf demselben Rechner.' },
+    ],
+    gaps: [
+      { text: 'Mietfuchs verschickt nichts: Sie drucken die Abrechnung oder speichern sie als PDF und senden sie selbst.' },
+      { text: 'Diese Anleitung lässt die Heizkosten aus. Bei einer Zentralheizung kommen die Abrechnung eines Messdienstes oder die eigene Heizkostenabrechnung dazu; beides beschreiben die Anleitungen zur Heizung.' },
+    ],
+    terms: ['allocationKey', 'prepayment', 'distributionBasis', 'notAllocable', 'ownShare'],
+  },
   granny: {
     group: 'property',
     title: 'Haus mit Einliegerwohnung oder Zweifamilienhaus mit Eigennutzung',
@@ -129,6 +167,7 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Ab dem zweiten Jahr übernehmen Sie die Positionen des Vorjahres mit dem Knopf über der Liste (für 2026 heißt er Aus 2025 übernehmen …). Kostenart, Beschreibung und Umlageschlüssel kommen mit, Sie tragen je Zeile nur den neuen Betrag ein.' },
       { page: 'stammdaten', text: 'Weicht die Fälligkeit der Miete in Ihren Mietverträgen vom Gesetz ab, etwa ein fester Tag im Monat, wählen Sie sie am Mietverhältnis unter „Fälligkeit der Miete“; das Mietkonto zählt einen Rückstand danach.' },
       { page: 'mietkonto', text: 'Erfassen Sie im Mietkonto die eingegangenen Mieten. Zahlen die Mieter pünktlich und in voller Höhe, erfassen Sie mit „Monate als bezahlt erfassen …“ alle offenen Monate bis zu einem Monat in einem Schritt, auch rückwirkend; eine Teilzahlung erfassen Sie mit „+ Zahlung anlegen“.' },
+      { page: 'einstellungen', text: 'Vor der ersten Abrechnung tragen Sie in den Einstellungen in der Karte „Vermieter & Zahlung“ unter „Name des Vermieters“ Ihren Namen ein, dazu IBAN und Anschrift: Der Name steht als Absender und Unterschrift im Anschreiben, das Konto nennt es bei einer Nachzahlung.' },
       { page: 'abrechnung', text: 'Prüfen Sie die Hinweise der Abrechnung; „Hier beheben →“ führt zum betroffenen Eintrag. Vor dem Versand schließen Sie die Abrechnung mit dem Knopf mit dem Schloss ab; dann ändert sich der Stand nicht mehr. Ist sie an die Mieter gegangen, klicken Sie „Als versendet markieren“ und speichern das Datum des Versands; nach ihm richtet sich die Frist.' },
     ],
     result: [

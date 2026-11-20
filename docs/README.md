@@ -13,5 +13,19 @@ Die Kurzfassung mit Funktionen und Downloads steht im [README](../README.md). Hi
 | [Entwickeln](entwickeln.md) | Aus dem Quellcode starten, Programmfenster, Binaries bauen, Produktivbetrieb |
 | [Heizung (Entwicklerdoku)](heizung.md) | Heizanlage, Heizperiode, CO₂, Lieferungen, eigene Heizkostenabrechnung im Code |
 
+## Erste Schritte
+
+Den Weg von der leeren Installation bis zur versendeten Abrechnung beschreibt in der App die Anleitung
+„Die erste Abrechnung von Anfang bis Ende“ auf der Seite *Hilfe & Begriffe*; das leere Cockpit verlinkt
+sie. Was die einzelnen Seiten tun, steht unter [Funktionsweise](funktionsweise.md).
+
+## Fragen und Fehler
+
+Fragen zur Bedienung gehören in die
+[Diskussionen](https://github.com/speedone/mietfuchs/discussions/categories/q-a), Fehler meldest du mit
+dem [Formular](https://github.com/speedone/mietfuchs/issues/new/choose), Sicherheitslücken vertraulich
+wie in [SECURITY.md](../SECURITY.md) beschrieben. Diskussionen und Issues sind öffentlich: keine echten
+Mieterdaten, Namen oder Belege posten, sondern Beispielwerte.
+
 Den Umstieg aus älteren Versionen beschreibt [MIGRATION.md](../MIGRATION.md), Mitmachen
 [CONTRIBUTING.md](../CONTRIBUTING.md).

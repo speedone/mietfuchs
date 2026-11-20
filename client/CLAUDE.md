@@ -266,6 +266,14 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene
   Punkte (`cockpitSubtitle`).
+- **Erste Schritte** (#447): Der dritte Schritt des Leerzustands nennt beide Wege, Belege hochladen oder
+  „Kosten von Hand erfassen“ (`StartStep.secondary`, im Cockpit der zweite Knopf); dasselbe sagt die rote Zeile
+  „Belege erfasst“ (`noCostsDetail`). Unter dem Leerzustand des Cockpits steht „Anleitung: Die erste Abrechnung von
+  Anfang bis Ende“ (`onOpenGuide`, in App.tsx `openGuide` ohne Schritt: Die Hilfe öffnet die Anleitung oben). Die
+  Checkliste beginnt bis zum Abschluss mit „Vermieter und Bankverbindung“ (`landlordCheck` in cockpitChecks.ts, mit
+  `effectiveLandlord`): ohne Namen gelb und offen, nur ohne Anschrift gelb als Hilfe (`hint`), sonst grün; die fehlende
+  IBAN wird nur genannt, Ziel wie `senderFix`. Im Kostenformular steht bei Wasser/Abwasser ohne Kaltwasserzähler an
+  einer Wohnung ein Satz am Umlageschlüssel (`waterMeterHint` in costForm.ts); die Auswahl selbst bleibt.
 - **„Demnächst fällig“** (#190, [UpcomingCard.tsx](src/components/UpcomingCard.tsx), Texte und Ziele in
   [upcomingView.ts](src/upcomingView.ts)): im Cockpit über der Checkliste, für das gewählte Objekt, auch im leeren
   Zeitraum; ohne Einträge fehlt die Karte. Welche Fristen darin stehen, entscheidet der Server (server/src/CLAUDE.md,
@@ -499,7 +507,12 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Heizperioden der Anlage, die in ihm enden (`heatingPeriodsEndingIn`), nie an den Regeln allein; ein Rumpf hat einen
   eigenen Grund. Garagen nur am ersten Wort des Namens. `helpStock` entsteht nur auf der Hilfe, und die Liste der
   Heizanlagen bleibt bei gleichem Inhalt dieselbe (`keepIfEqual`). Eine neue Anleitung bekommt hier eine Regel, wenn sich ihre Lage aus dem
-  Bestand ablesen lässt.
+  Bestand ablesen lässt. Vor allen Rängen steht der leere Bestand (#447, keine Wohnung, oder vermietete Wohnungen ohne
+  jedes Mietverhältnis): die Anleitung „Die erste Abrechnung von Anfang bis Ende“ aus der Gruppe „Erste Schritte“
+  (`start`, die erste Gruppe).
+  „Fragen und Fehler“ (#447) am Ende der Startansicht: Diskussionen, Fehlerformular und vertrauliche Meldung, Adressen
+  aus [shared/support.ts](../shared/support.ts) (dieselben in `.github/ISSUE_TEMPLATE`, README und docs, Wächter
+  server/test/issue-templates.test.ts), als Links mit `target="_blank"`, die das Programmfenster an den Browser gibt.
   Das Lexikon (Teil 3): Pfad „Hilfe & Begriffe › Lexikon“ (führt auf die Kachel oder die Suche, mit der der Weg begann),
   `h1` „Lexikon“, Themenfilter als Umschaltknöpfe (`aria-pressed`, „Alle“ vorne, je mit Zahl), darunter ab 44rem
   Inhaltsbreite zwei Spalten (`lexicon-layout`/`lexicon-list` in tw.css): links die Liste (Knöpfe, gewählter mit

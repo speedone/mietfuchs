@@ -535,6 +535,17 @@ export function suggestedKey(category: string, units: Unit[], meters: Meter[], p
   return { key: defaultKeyFor(category), meterType: '' }
 }
 
+// Wasser ohne Wohnungszähler (#447): Ohne Kaltwasserzähler an einer Wohnung fehlt „nach Verbrauch (Zähler)“ in der
+// Auswahl (`costKeyOptions`), und vorbelegt ist die Personenzahl. Ein Prüfer ohne Vorwissen erfuhr nicht, warum, und
+// legte die Zähler erst nach den Kosten an. Ein ruhiger Satz am Feld nennt die Reihenfolge; die Auswahl bleibt, wie sie
+// ist. Kein Satz, sobald eine Wohnung einen Kaltwasserzähler hat (dann steht der Schlüssel zur Wahl) oder die Position
+// schon nach Verbrauch verteilt.
+export const WATER_METER_HINT = 'Haben die Wohnungen Wasserzähler? Legen Sie sie zuerst unter „Zähler & Stände“ an; dann steht hier „nach Verbrauch (Zähler)“ zur Wahl.'
+export function waterMeterHint(form: Pick<ItemForm, 'category' | 'key'>, meters: readonly Pick<Meter, 'type' | 'unitId'>[]): string | null {
+  if (form.category !== 'Wasser/Abwasser' || form.key === 'meter') return null
+  return meters.some((m) => m.type === 'kaltwasser' && m.unitId) ? null : WATER_METER_HINT
+}
+
 // Kostenart wechseln. Eine neue Position bekommt den Vorschlag der Kostenart; eine bestehende
 // behält ihren Schlüssel, denn er ist eine Wahl des Nutzers. Ausnahme (Durchsicht zu #142): Wird
 // eine nicht umlagefähige Position umlagefähig, ist ihr gespeicherter Schlüssel nur die neutrale

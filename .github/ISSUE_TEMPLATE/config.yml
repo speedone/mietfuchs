@@ -1,0 +1,9 @@
+# Leere Issues bleiben möglich, etwa für Vorschläge; Fragen und Sicherheitslücken haben eigene Wege.
+blank_issues_enabled: true
+contact_links:
+  - name: Frage zur Bedienung
+    url: https://github.com/speedone/mietfuchs/discussions/categories/q-a
+    about: Wie lege ich etwas an, warum rechnet Mietfuchs so? Fragen bitte in den Diskussionen stellen, nicht als Issue. Auch dort keine echten Mieterdaten.
+  - name: Sicherheitslücke melden
+    url: https://github.com/speedone/mietfuchs/security/advisories/new
+    about: Bitte nicht öffentlich, sondern vertraulich über GitHub, wie in SECURITY.md beschrieben.
