@@ -155,13 +155,16 @@ type Draft = {
   blocked: boolean
   notYet: boolean
 }
+// Sätze, die `blocked` oder `notYet` begründen, stehen zusätzlich in `refusals` (PR 3: die Ablehnung beim Versand nennt sie).
 const need = (d: Draft, what: RentIncreaseNeed, sentence: string): void => {
   d.needs.add(what)
   d.plan.reasons.push(sentence)
+  d.plan.refusals.push(sentence)
 }
 const block = (d: Draft, sentence: string): void => {
   d.blocked = true
   d.plan.reasons.push(sentence)
+  d.plan.refusals.push(sentence)
 }
 // Integrationsdurchsicht K-Geld-2: Ein errechneter Betrag über der Obergrenze (oder außerhalb der sicheren Ganzzahlen)
 // sperrt, statt ungenau weiterzurechnen.
@@ -173,6 +176,7 @@ const tooLarge = (d: Draft, ...cents: number[]): boolean => {
 const wait = (d: Draft, sentence: string): void => {
   d.notYet = true
   d.plan.reasons.push(sentence)
+  d.plan.refusals.push(sentence)
 }
 
 // Was für beide Arten gilt: Angaben zum Vertrag (R14, M2), Bestätigungen (R13, R14), Wohnraum (S6), Staffel vorhanden.
@@ -189,7 +193,7 @@ function commonChecks(d: Draft, input: RentIncreaseInput): void {
 
 function emptyPlan(input: RentIncreaseInput, receivedOn: string): RentIncreasePlan {
   return {
-    kind: input.request.kind, state: 'blocked', reasons: [], warnings: [], needs: [], currentCents: null, currentSince: null, receivedOn, today: input.today, capBaseDay: null,
+    kind: input.request.kind, state: 'blocked', reasons: [], refusals: [], warnings: [], needs: [], currentCents: null, currentSince: null, receivedOn, today: input.today, capBaseDay: null,
     earliestReceivedOn: null, effectiveFrom: null, earliestEffectiveFrom: null, consent: null, cap: null, comparison: null, index: null,
     maxCents: null, newCents: null, steps: [], staggered: null, legalValues: [],
   }
@@ -469,7 +473,7 @@ function planIndex(d: Draft, input: RentIncreaseInput, log: LawLog): void {
 // Die nächsten Ereignisse eines Mietverhältnisses: nächste Stufe der Staffel, frühester Zugang einer Erhöhung (nur mit
 // beantworteter Art der Miete und ohne Ausschluss) und die Fristen versandter Verlangen nach § 558 BGB. Werte aus dem
 // Register zum Tag (Texte außerhalb einer Abrechnung, `valueAt`).
-export function nextRentEvents(input: { today: string; tenancy: RentIncreaseTenancy; state: FederalState | null; increases: readonly RentIncrease[] }): RentEvents {
+export function nextRentEvents(input: { today: string; tenancy: RentIncreaseTenancy; state: FederalState | null; increases: readonly Pick<RentIncrease, 'id' | 'kind' | 'status' | 'receivedOn'>[] }): RentEvents {
   const { today, tenancy: t } = input
   const sorted = sortedRents(t)
   const next = sorted.find((r) => compareText(r.from, monthOf(today)) > 0)

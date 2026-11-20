@@ -63,6 +63,11 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'POST /api/deposit-entries/from-payment/:paymentId': s('Mietzahlung als Kaution umgebucht', 'deposit_entries'),
   'PUT /api/deposit-entries/:id': s('Kautionsbuchung geändert', 'deposit_entries'),
   'DELETE /api/deposit-entries/:id': s('Kautionsbuchung gelöscht', 'deposit_entries'),
+  // Mieterhöhung (#191, PR 3); die Antwort setzt ihren Satz selbst (Zustimmung, Ablehnung, Rücknahme).
+  'POST /api/tenancies/:id/rent-increases': s('Mieterhöhung als Entwurf angelegt', 'rent_increases'),
+  'POST /api/rent-increases/:id/send': s('Mieterhöhung als versendet gespeichert', 'rent_increases'),
+  'POST /api/rent-increases/:id/status': s('Antwort auf eine Mieterhöhung eingetragen', 'rent_increases'),
+  'DELETE /api/rent-increases/:id': s('Entwurf einer Mieterhöhung gelöscht', 'rent_increases'),
   // Kontoauszug (#188); die Vorschau (…/import/plan) liest nur.
   'POST /api/bank/import': s('Kontoauszug eingelesen', 'bank_imports'),
   'PUT /api/bank/accounts/:id': s('Konto geändert', 'bank_accounts'),

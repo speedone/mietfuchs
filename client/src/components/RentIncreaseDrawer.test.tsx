@@ -16,7 +16,7 @@ const PROPERTY = { id: 'p1', name: 'Haus', kind: 'mfh', address: '', landlordNam
 const PLAN: RentIncreasePlan = {
   kind: 'comparison', state: 'notYet', reasons: ['Am 20.11.2026 ist es noch zu früh.'], warnings: [], needs: [], currentCents: 50000, currentSince: '2020-01-01',
   receivedOn: '2026-11-20', today: '2026-11-20', capBaseDay: null, earliestReceivedOn: '2026-12-02', effectiveFrom: '2027-03', earliestEffectiveFrom: '2027-03', consent: null, cap: null,
-  comparison: null, index: null, maxCents: null, newCents: null, steps: [], staggered: null, legalValues: [],
+  comparison: null, index: null, maxCents: null, newCents: null, steps: [], staggered: null, legalValues: [], refusals: [],
 }
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]

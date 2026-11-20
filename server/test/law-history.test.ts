@@ -175,6 +175,7 @@ const SHIPPED: readonly string[] = [
   'bgb.staggered-rent|||{"minMonths":12}',
   'practice.rent-increase-rounding|||"floor-cent"',
   'practice.vpi-series|||{"table":"61111-0002","base":2020}',
+  'bgb.rent-survey-update-years|||2',
 ]
 
 const current = (): string[] =>
