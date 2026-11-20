@@ -1,7 +1,7 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
 import { parseMonthText } from './monthText'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, partialMonthNote, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule, EMPTY_RENT_DUE, legalRentDue, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, partialMonthNote, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule, EMPTY_RENT_DUE, legalRentDue, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyDeleteMessage, tenancyRequired } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -357,4 +357,54 @@ test('Hinweis über drei Monatsmieten: kein Hinweis bei teilweise inklusiver Mie
   expect(depositLimitHint({ ...form, costModel: 'settlement', baseRents: [{ from: '', amount: 'x' }] })).toBeNull()
   // Inklusivmiete: die ganze Miete zählt.
   expect(depositLimitHint({ ...form, deposit: '2.500,00', heatingModel: 'inclusive' })).not.toBeNull()
+})
+
+// Auszug vor Einzug: Der Mieter stünde in keiner Abrechnung, sein Anteil liefe als Leerstand zum Vermieter.
+test('Pflichtangaben: ein Auszug vor dem Einzug wird am Feld „Auszug“ gemeldet', () => {
+  const form = { tenantName: 'A', unitId: 'u1', start: '2025-06-01', end: '2025-03-31' }
+  expect(tenancyRequired(form)).toEqual([
+    { field: 'end', short: 'Auszug vor Einzug', text: 'Auszug: Der Auszug (31.03.2025) liegt vor dem Einzug (01.06.2025). Bitte prüfen Sie beide Daten.' },
+  ])
+  expect(tenancyRequired({ ...form, end: '2025-06-01' })).toEqual([])
+  expect(tenancyRequired({ ...form, end: '' })).toEqual([])
+  // Krumm, nicht kaputt: Steht es so im Bestand und bleibt unverändert, lässt sich das Übrige speichern.
+  expect(tenancyRequired(form, { start: '2025-06-01', end: '2025-03-31' })).toEqual([])
+  expect(tenancyRequired({ ...form, end: '2025-04-30' }, { start: '2025-06-01', end: '2025-03-31' }).map((p) => p.field)).toEqual(['end'])
+})
+
+const UNDO = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen, am einfachsten gleich danach.'
+const INSTEAD = 'Ist der Mieter nur ausgezogen, löschen Sie nicht: Tragen Sie beim Mietverhältnis den Auszug ein, dann bleibt alles erhalten.'
+
+test('Löschfrage eines Mietverhältnisses: Zahlungen mit Zeitraum, Kautionsbuchungen, Abschluss, Folgen, Ausweg, Verlauf', () => {
+  const dates = Array.from({ length: 12 }, (_, i) => `2025-${String(i + 1).padStart(2, '0')}-03`)
+  expect(tenancyDeleteMessage({ paymentDates: dates, depositEntries: 1, closed: ['2025'] })).toBe(
+    'Mit dem Mietverhältnis werden gelöscht: 12 Zahlungen (03.01.2025 bis 03.12.2025) und 1 Kautionsbuchung. ' +
+      'Mietkonto und Steuerübersicht für 2025 zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
+      'Das Mietverhältnis steht in einer abgeschlossenen Abrechnung (zuletzt 2025); sie bleibt, wie sie ist, führt den Mieter aber nicht mehr, sobald Sie sie wieder öffnen. ' +
+      `${INSTEAD} ${UNDO}`,
+  )
+})
+
+test('Löschfrage eines Mietverhältnisses: Einzahl, mehrere Jahre, nichts dran, ohne Antwort des Servers', () => {
+  expect(tenancyDeleteMessage({ paymentDates: ['2024-12-30'], depositEntries: 2, closed: [] })).toBe(
+    'Mit dem Mietverhältnis werden gelöscht: 1 Zahlung (vom 30.12.2024) und 2 Kautionsbuchungen. ' +
+      'Mietkonto und Steuerübersicht für 2024 zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
+      `${INSTEAD} ${UNDO}`,
+  )
+  expect(tenancyDeleteMessage({ paymentDates: ['2025-01-03', '2022-05-01', '2023-01-01'], depositEntries: 0, closed: ['2024', 'Heizkosten 07/2023 bis 06/2024'] })).toBe(
+    'Mit dem Mietverhältnis werden gelöscht: 3 Zahlungen (01.05.2022 bis 03.01.2025). ' +
+      'Mietkonto und Steuerübersicht für 2022 bis 2025 zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
+      'Das Mietverhältnis steht in einer abgeschlossenen Abrechnung (zuletzt 2024 und Heizkosten 07/2023 bis 06/2024); sie bleibt, wie sie ist, führt den Mieter aber nicht mehr, sobald Sie sie wieder öffnen. ' +
+      `${INSTEAD} ${UNDO}`,
+  )
+  expect(tenancyDeleteMessage({ paymentDates: [], depositEntries: 0, closed: [] })).toBe(
+    `An dem Mietverhältnis hängen weder Zahlungen noch Kautionsbuchungen. ${INSTEAD} ${UNDO}`,
+  )
+  // Ließen sich Zahlungen oder Abschlüsse nicht laden, steht die vollständige Liste ohne Zahlen da.
+  expect(tenancyDeleteMessage({ paymentDates: null, depositEntries: 0, closed: null })).toBe(
+    'Mit dem Mietverhältnis werden auch seine Zahlungen und Kautionsbuchungen gelöscht. ' +
+      'Mietkonto und Steuerübersicht der betroffenen Jahre zeigen diese Zahlungen danach nicht mehr, die eingenommene Miete sinkt dort entsprechend. ' +
+      'Steht das Mietverhältnis in einer abgeschlossenen Abrechnung, bleibt sie, wie sie ist, führt den Mieter aber nicht mehr, sobald Sie sie wieder öffnen. ' +
+      `${INSTEAD} ${UNDO}`,
+  )
 })

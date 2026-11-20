@@ -6,6 +6,7 @@ import type { BillingPeriod, CostItem, Meter, MeterType, Property, Tenancy, Unit
 import { isNotAllocable, usageOf } from './types'
 import { calendarYearPeriod } from '../../shared/period.ts'
 import type { Problem } from './formProblems'
+import { andList } from '../../shared/wording.ts'
 
 export type UnitForm = {
   id?: string
@@ -224,11 +225,14 @@ export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], period: 
 // Fremdschlüssel nehmen aber auch Zähler, Ablesungen, Zahlungen und die Angaben der Wohnung an
 // Kostenpositionen mit. Die Zahlen kommen vom Server (`/api/units/:id/dependents`); ist er nicht
 // erreichbar (`null`), steht die vollständige Liste ohne Zahlen da.
-const IRREVERSIBLE = 'Das lässt sich nicht rückgängig machen.'
-export function unitDeleteMessage(deps: UnitDependents | null): string {
+// Der Verlauf nimmt ein Löschen vollständig zurück (#318); vorher stand hier „Das lässt sich nicht rückgängig machen“.
+export const DELETE_UNDO = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen, am einfachsten gleich danach.'
+// Kautionsbuchungen und abgeschlossene Abrechnungen ihrer Mietverhältnisse kennt die Seite schon (Buchungen geladen,
+// Abschlüsse aus `/api/deposit-entries/statements`); fehlt die Angabe, steht nichts davon da.
+export function unitDeleteMessage(deps: UnitDependents | null, more?: { depositEntries: number; closed: readonly string[] }): string {
   if (deps === null) {
     return 'Mit der Wohnung werden auch ihre Mietverhältnisse, Zähler, Ablesungen und Zahlungen gelöscht, dazu ihre Anteile an ' +
-      `Kostenpositionen. ${IRREVERSIBLE}`
+      `Kostenpositionen. ${DELETE_UNDO}`
   }
   const count = (n: number, one: string, many: string) => (n > 0 ? [`${n} ${n === 1 ? one : many}`] : [])
   const parts = [
@@ -236,6 +240,7 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
     ...count(deps.meters, 'Zähler', 'Zähler'),
     ...count(deps.readings, 'Ablesung', 'Ablesungen'),
     ...count(deps.payments, 'Zahlung', 'Zahlungen'),
+    ...count(more?.depositEntries ?? 0, 'Kautionsbuchung', 'Kautionsbuchungen'),
     ...count(deps.costItemLinks, 'Angabe an einer Kostenposition', 'Angaben an Kostenpositionen').map((t) => `${t} (vereinbarte Anteile, Teilnahmen, Einzelbeträge)`),
   ]
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} und ${parts[parts.length - 1]}` : parts[0]
@@ -243,7 +248,11 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
   const direct = deps.directCostItems > 0
     ? ` ${deps.directCostItems === 1 ? '1 direkt zugeordnete Kostenposition bleibt' : `${deps.directCostItems} direkt zugeordnete Kostenpositionen bleiben`} erhalten; ihren Betrag trägt danach der Vermieter.`
     : ''
-  return `${head}${direct} ${IRREVERSIBLE}`
+  const ledger = more !== undefined && deps.payments > 0 ? ' Mietkonto und Steuerübersicht zeigen diese Zahlungen danach nicht mehr, auch für frühere Jahre.' : ''
+  const closed = more !== undefined && more.closed.length > 0
+    ? ` Ein Mietverhältnis der Wohnung steht in einer abgeschlossenen Abrechnung (zuletzt ${andList([...more.closed])}); sie bleibt, wie sie ist, führt Wohnung und Mieter aber nicht mehr, sobald Sie sie wieder öffnen.`
+    : ''
+  return `${head}${direct}${ledger}${closed} ${DELETE_UNDO}`
 }
 
 // Rechnungen einer Etagenheizung sperren das Löschen der Wohnung (Integrationsdurchsicht S1, Regel in

@@ -5,7 +5,7 @@ import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, ESTIMATE_HELP, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate, loadErrorText } from '../api'
 import { usePeriod } from '../period'
@@ -113,7 +113,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   async function deleteMeter(m: Meter) {
     const ok = await confirm({
       title: `Zähler „${m.name}“ löschen?`,
-      message: 'Der Zähler und alle zugehörigen Ablesungen werden gelöscht.',
+      message: meterDeleteMessage(readings.filter((r) => r.meterId === m.id).map((r) => r.date)),
       confirmLabel: 'Löschen',
       danger: true,
     })
