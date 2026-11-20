@@ -4,6 +4,7 @@ import { CABLE_LABELS, GROUND_TAX_FILE_NUMBER_MAX, showsSpreadRest, TAX_HEADER_F
 import SpreadRestField from './SpreadRestField'
 import Term from './Term'
 import TightMarketField from './TightMarketField'
+import RentCapField from './RentCapField'
 import FederalStateField from './FederalStateField'
 import IbanInput from './IbanInput'
 import Field from './Field'
@@ -52,6 +53,8 @@ export default function PropertyFields({ form, setForm, errors, storedIban, spre
         </Field>
         {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
         <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
+        {/* #191: Kappungsgrenze nach § 558 Abs. 3 BGB für die Mieterhöhung. */}
+        <RentCapField value={form.rentCap} onChange={(rentCap) => setForm({ ...form, rentCap })} />
       </div>
       {/* #96 PR 2 (Entwurf B3): Kopf der Anlage V, zugeklappt, solange nichts eingetragen ist. */}
       <details className="extra-details" open={part === 'tax' || TAX_HEADER_FIELDS.some((f) => form.taxSaved[f] !== '') || form.spreadRestSaved !== ''} data-autofocus={part === 'tax' || undefined}>

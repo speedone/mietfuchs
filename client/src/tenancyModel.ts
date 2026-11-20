@@ -5,6 +5,7 @@ import { usageAt } from '../../shared/unitUsage.ts'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
+import type { RentRowField } from './rentKindForm'
 import { monthLabel, parseMonthText } from './monthText'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -278,7 +279,7 @@ export function prepaymentColumn(t: Pick<Tenancy, 'prepayments' | 'heatingPrepay
 
 // Die Pflichtangaben eines Mietverhältnisses (#346, Schritt 3), je mit Feld. Vorher stand für alle drei ein
 // Satz „Bitte Mieter, Wohnung und Einzugsdatum prüfen.“, der nicht sagte, welches Feld fehlt (UI-Durchsicht M5).
-export type TenancyField = 'tenantName' | 'unitId' | 'start' | 'deposit' | 'contractDate' | 'iban' | 'rentDueDay' | ScheduleField
+export type TenancyField = 'tenantName' | 'unitId' | 'start' | 'deposit' | 'contractDate' | 'iban' | 'rentDueDay' | ScheduleField | RentRowField
 export function tenancyRequired(form: { tenantName: string; unitId: string; start: string }): Problem<TenancyField>[] {
   const problems: Problem<TenancyField>[] = []
   if (!form.tenantName.trim()) problems.push({ field: 'tenantName', short: 'Mieter fehlt', text: 'Mieter: Geben Sie den Namen des Mieters ein, etwa „Familie Müller“.' })

@@ -7,6 +7,7 @@ import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, KEY_LABELS, METER_TYPE_LABE
 import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, RENT_DUE_LABELS } from './tenancyModel'
 import { PAYMENT_KIND_LABELS } from './paymentForm'
 import { DEPOSIT_KIND_LABELS, DEPOSIT_PURPOSE_LABELS } from './depositForm'
+import { indexValueText, RENT_KIND_LABELS, RENT_REASON_LABELS } from './rentKindForm'
 import { STATES } from '../../shared/states.ts'
 
 export type JournalGroup = {
@@ -56,6 +57,7 @@ const TABLE_LABELS: Record<string, string> = {
   readings: 'Ablesung',
   payments: 'Zahlung',
   deposit_entries: 'Kautionsbuchung',
+  rent_increases: 'Mieterhöhung',
   bank_accounts: 'Bankkonto',
   bank_imports: 'Kontoauszug',
   bank_days: 'Buchungstag',
@@ -140,6 +142,21 @@ const FIELD_LABELS: Record<string, string> = {
   deposit_cents: 'Kaution',
   deposit_status: 'Stand der Kaution',
   deposit_form: 'Form der Sicherheit',
+  // Mieterhöhung (#191)
+  rent_kind: 'Art der Miete',
+  rent_increase_excluded: 'Vertrag schließt Mieterhöhungen aus',
+  rent_cap_reduced: 'Kappungsgrenzen-Verordnung',
+  index_month: 'Indexmonat',
+  index_tenths: 'Indexwert',
+  index_base: 'Basisjahr des Index',
+  created_on: 'Erstellt am',
+  received_on: 'Zugang beim Mieter',
+  effective_from: 'Neue Miete ab',
+  from_cents: 'Bisherige Miete',
+  to_cents: 'Neue Miete',
+  basis: 'Grundlage (eingefroren)',
+  agreed_cents: 'Zugestimmte Miete',
+  decided_on: 'Antwort des Mieters am',
   deposit_hold_cents: 'Einbehalt',
   deposit_hold_note: 'Grund für den Einbehalt',
   purpose: 'Verrechnet mit',
@@ -279,6 +296,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   rent_due: asLabels(RENT_DUE_LABELS),
   deposit_status: asLabels(DEPOSIT_STATUS_LABELS),
   deposit_form: asLabels(DEPOSIT_FORM_LABELS),
+  rent_kind: asLabels(RENT_KIND_LABELS),
   purpose: asLabels(DEPOSIT_PURPOSE_LABELS),
   state: STATE_LABELS,
   scope: { common: 'einen Teil des Hauses', property: 'das ganze Haus' },
@@ -287,6 +305,11 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
 const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> = {
   payments: { kind: asLabels(PAYMENT_KIND_LABELS) },
   deposit_entries: { kind: asLabels(DEPOSIT_KIND_LABELS) },
+  base_rents: { reason: asLabels(RENT_REASON_LABELS) },
+  rent_increases: {
+    kind: { comparison: 'Vergleichsmiete', index: 'Indexmiete' },
+    status: { draft: 'Entwurf', sent: 'versandt', agreed: 'zugestimmt', partial: 'teilweise zugestimmt', refused: 'abgelehnt', withdrawn: 'zurückgenommen' },
+  },
   bank_accounts: { kind: { mixed: 'Mischkonto', rental: 'nur für die Vermietung' } },
   bank_transactions: { purpose: {}, set_aside: { transfer: 'Umbuchung zwischen eigenen Konten', notRental: 'gehört nicht zur Vermietung', other: 'anderer Grund' } },
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
@@ -301,7 +324,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   },
 }
 
-const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start', 'reversal', 'created'])
+const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start', 'reversal', 'created', 'rent_increase_excluded', 'rent_cap_reduced'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
 // Spalten, die je Tabelle etwas anderes bedeuten: `source` ist an der Auswertung die Herkunft (KI oder E-Rechnung, #189),
@@ -309,6 +332,8 @@ export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? tabl
 const TABLE_FIELD_LABELS: Record<string, Record<string, string>> = {
   assessments: { source: 'Herkunft' },
   bank_transactions: { purpose: 'Verwendungszweck' },
+  base_rents: { reason: 'Art der Stufe' },
+  rent_increases: { status: 'Stand', kind: 'Art' },
 }
 export const fieldLabel = (column: string, table?: string): string => (table ? TABLE_FIELD_LABELS[table]?.[column] : undefined) ?? FIELD_LABELS[column] ?? column
 
@@ -343,6 +368,8 @@ export function formatValue(column: string, value: unknown, table?: string, refs
   if (ref) return ref
   if (typeof value === 'number' && column.endsWith('_cents')) return fmtEuro(value)
   if (typeof value === 'number' && BOOLEAN_COLUMNS.has(column)) return value ? 'ja' : 'nein'
+  // Der Indexwert einer Stufe (#191) steht in Zehnteln.
+  if (typeof value === 'number' && column === 'index_tenths') return indexValueText(value / 10)
   if (column === 'e_invoice_notes' && typeof value === 'string') return notesText(value)
   if (typeof value === 'string') {
     const labels = (table ? TABLE_ENUM_LABELS[table]?.[column] : undefined) ?? ENUM_LABELS[column]

@@ -5,7 +5,7 @@ import { periodKey } from '../../shared/period.ts'
 import { EMPTY_PROPERTY_FORM, fileNumberDigits, SPREAD_REST_LABEL, showsSpreadRest, spreadRestChange, spreadRestOptions, hasTaxHeader, headerDateText, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
-  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
+  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', rentCap: 'unbekannt',
   groundTaxFileNumber: '', purchaseContractOn: '', ownershipTransferOn: '', buildingApplicationOn: '', completedOn: '', taxSaved: EMPTY_PROPERTY_FORM.taxSaved, spreadRestYear: '', spreadRestSaved: '', ...over,
 })
 
@@ -18,7 +18,7 @@ test('mit Haken gilt nur, was eingetragen ist; ein leeres Feld heißt Vorgabe', 
   // Wer den Haken setzt, um nur eine andere IBAN einzutragen, soll den Vermieternamen auf der
   // Abrechnung nicht verlieren.
   expect(propertyBody(form({ own: true, iban: ' DE89 3704 0044 0532 0130 00 ' })))
-    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, landlordAddress: null, landlordContact: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null })
+    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, landlordAddress: null, landlordContact: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null, rentCapReduced: null })
 })
 
 test('eine Frist, die keine ganze Zahl ab 0 ist, wird abgelehnt', () => {
@@ -119,6 +119,7 @@ test('Karte „Objekt“ zum Lesen: Fehlendes heißt „nicht angegeben“, ohne
     { label: 'Bundesland', value: 'unbekannt' },
     { label: 'Kabel- oder Antennenanlage', value: 'unbekannt oder keine Anlage' },
     { label: 'Angespannter Wohnungsmarkt', value: 'unbekannt' },
+    { label: 'Kappungsgrenzen-Verordnung', value: 'weiß nicht (Mietfuchs rechnet mit 15 %)' },
     { label: 'Vermieter und Bankverbindung', value: 'wie in den Einstellungen' },
   ])
 })
@@ -148,7 +149,7 @@ test('neues Objekt: ohne Bezeichnung nichts, sonst jede weitere Angabe auf ihrer
   expect(propertyBody({ ...EMPTY_PROPERTY_FORM, name: ' Gartenweg 3 ', kind: 'etw', address: ' Gartenweg 3, 12345 Musterstadt ' })).toEqual({
     name: 'Gartenweg 3', address: 'Gartenweg 3, 12345 Musterstadt', kind: 'etw',
     landlordName: null, iban: null, paymentDeadlineDays: null, landlordAddress: null, landlordContact: null,
-    cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null,
+    cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null, rentCapReduced: null,
   })
 })
 
@@ -232,4 +233,17 @@ test('Ende der Verteilung: die Rückfrage ist die des Servers (spreadRestQuestio
   expect(spreadRestChange('', { spreadRestYear: 2027 }, [DACH]).join(' ')).toMatch(/„Dach“: Abzug 2026 bis 2027 \(Rest 2027\) statt 2026 bis 2030\./)
   expect(spreadRestChange('2027', {}, [DACH])).toEqual([])
   expect(spreadRestChange('', { spreadRestYear: 2031 }, [DACH])).toEqual([])
+})
+
+test('Kappungsgrenzen-Verordnung (#191): ja, nein und weiß nicht gehen als true, false und null in den Rumpf und zurück', () => {
+  expect(propertyBody(form({ rentCap: 'ja' }))).toMatchObject({ rentCapReduced: true })
+  expect(propertyBody(form({ rentCap: 'nein' }))).toMatchObject({ rentCapReduced: false })
+  expect(propertyBody(form({ rentCap: 'unbekannt' }))).toMatchObject({ rentCapReduced: null })
+  const p = { id: 'o', name: 'Haus', kind: 'mfh' as const, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }
+  expect(propertyToForm({ ...p, rentCapReduced: true }).rentCap).toBe('ja')
+  expect(propertyToForm({ ...p, rentCapReduced: false }).rentCap).toBe('nein')
+  expect(propertyToForm(p).rentCap).toBe('unbekannt')
+  expect(EMPTY_PROPERTY_FORM.rentCap).toBe('unbekannt')
+  expect(propertySummary({ ...p, rentCapReduced: true })).toContainEqual({ label: 'Kappungsgrenzen-Verordnung', value: 'ja (15 %)' })
+  expect(propertySummary(p)).toContainEqual({ label: 'Kappungsgrenzen-Verordnung', value: 'weiß nicht (Mietfuchs rechnet mit 15 %)' })
 })

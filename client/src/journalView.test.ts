@@ -141,3 +141,17 @@ test('Verlauf: die Angaben der E-Rechnung stehen lesbar da (#189)', () => {
   expect(formatValue('e_invoice_notes', '["Bereits gezahlt: 10,00 €.","Korrigiert Rechnung R-1."]', 'assessments')).toBe('Bereits gezahlt: 10,00 €. Korrigiert Rechnung R-1.')
   expect(formatValue('e_invoice_notes', '[]', 'assessments')).toBe('keine')
 })
+
+test('Verlauf: die Angaben zur Mieterhöhung stehen lesbar da (#191)', () => {
+  expect(fieldLabel('reason', 'base_rents')).toBe('Art der Stufe')
+  expect(formatValue('reason', 'modernization', 'base_rents')).toBe('Modernisierung (§§ 559 ff. BGB)')
+  expect(fieldLabel('index_tenths')).toBe('Indexwert')
+  expect(formatValue('index_tenths', 1061, 'base_rents')).toBe('106,1')
+  expect(fieldLabel('rent_kind')).toBe('Art der Miete')
+  expect(formatValue('rent_kind', 'staggered', 'tenancies')).toBe('Staffelmiete')
+  expect(formatValue('rent_increase_excluded', 0, 'tenancies')).toBe('nein')
+  expect(formatValue('rent_cap_reduced', 1, 'properties')).toBe('ja')
+  expect(fieldLabel('status', 'rent_increases')).toBe('Stand')
+  expect(formatValue('status', 'partial', 'rent_increases')).toBe('teilweise zugestimmt')
+  expect(formatValue('kind', 'index', 'rent_increases')).toBe('Indexmiete')
+})

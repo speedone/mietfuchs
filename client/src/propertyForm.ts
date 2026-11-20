@@ -6,6 +6,8 @@ import { IBAN_LABELS } from '../../shared/iban.ts'
 import type { Problem } from './formProblems'
 import { isFederalState, localHolidaysOf, STATES, stateName } from '../../shared/holidays.ts'
 import { allowsSpread, spreadRestQuestions, spreadSpan } from '../../shared/spread.ts'
+import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { bgbRentCap } from '../../shared/law/bgb-betrkv.ts'
 
 // Die Entscheidungslogik der Karte „Objekt“ (#92), ohne DOM prüfbar wie costForm.ts und
 // unitForm.ts; die Komponente rendert nur.
@@ -30,6 +32,8 @@ export type PropertyForm = {
   tightMarketTo: string
   // Bundesland für Fristen und Feiertage; '' heißt unbekannt.
   state: FederalState | ''
+  // Kappungsgrenzen-Verordnung nach § 558 Abs. 3 BGB (#191)
+  rentCap: RentCapAnswer
 } & TaxHeaderForm & {
   // Der gespeicherte Stand des Abschnitts „Für die Steuer (Anlage V)“ (#96 PR 2): Gesendet wird nur, was davon abweicht,
   // damit ein Speichern ohne Eingabe nichts Neues schickt (client/CLAUDE.md, „nur gesendet, was sich geändert hat“).
@@ -106,6 +110,20 @@ export const TIGHT_MARKET_LABELS: Record<TightMarketAnswer, string> = {
   nein: 'nein',
 }
 
+// Gilt in der Gemeinde eine Verordnung nach § 558 Abs. 3 Satz 2, 3 BGB (#191)? „weiß nicht“ rechnet wie „ja“ mit dem
+// niedrigeren Satz (Entwurf R12): Ein kleineres Verlangen ist nie unwirksam. Die Prozente kommen aus dem Register.
+const RENT_CAP = valueAt(bgbRentCap, LAW_AS_OF)
+export type RentCapAnswer = 'unbekannt' | 'ja' | 'nein'
+export const RENT_CAP_QUESTION = `Gilt in der Gemeinde eine Kappungsgrenzen-Verordnung (${RENT_CAP.reducedPercent} %)?`
+export const RENT_CAP_LABELS: Record<RentCapAnswer, string> = {
+  unbekannt: 'weiß ich nicht',
+  ja: 'ja',
+  nein: 'nein',
+}
+export const RENT_CAP_HINT = `Mit Verordnung darf die Miete bei einer Erhöhung bis zur Vergleichsmiete in ${RENT_CAP.years} Jahren um höchstens ${RENT_CAP.reducedPercent} % steigen, sonst um ${RENT_CAP.percent} %. Manche Verordnungen nennen nur Teile einer Gemeinde. Bei „weiß ich nicht“ rechnet Mietfuchs mit ${RENT_CAP.reducedPercent} %. Abrechnung, Mietkonto und Steuer berührt die Angabe nicht.`
+const rentCapSummary = (v: boolean | null | undefined): string =>
+  v === true ? `ja (${RENT_CAP.reducedPercent} %)` : v === false ? `nein (${RENT_CAP.percent} %)` : `weiß nicht (Mietfuchs rechnet mit ${RENT_CAP.reducedPercent} %)`
+
 // Das Bundesland (shared/holidays.ts). Leer steht vorn und sagt, was dann gilt; die Länder folgen in der
 // Reihenfolge der Liste, die Kürzel sind die Werte, damit Auswahl und gespeicherter Wert dieselben sind.
 // Kurz, damit der Eintrag am Handy ganz zu sehen ist (#346 Schritt 7b); was dann gilt, sagt der Hinweis am Feld.
@@ -129,7 +147,7 @@ export function stateNote(state: FederalState | '', year: number): string | null
   return `In ${stateName(state)} gelten einige Feiertage nur in einzelnen Gemeinden: ${names}. Mietfuchs zählt sie bei Fristen nicht mit, im Mietkonto schon.`
 }
 
-export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>
+export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state' | 'rentCapReduced'>
   & Partial<Pick<Property, TaxHeaderField | 'spreadRestYear'>>
 
 // ---------- Vorzeitiges Ende der Verteilung (§ 82b Abs. 2 EStDV, #262 PR 4, Entwurf E-7) ----------
@@ -193,6 +211,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   tightMarketFrom: p.tightMarketFrom ?? '',
   tightMarketTo: p.tightMarketTo ?? '',
   state: p.state ?? '',
+  rentCap: p.rentCapReduced === true ? 'ja' : p.rentCapReduced === false ? 'nein' : 'unbekannt',
   ...taxHeaderOf(p),
   taxSaved: taxHeaderOf(p),
   spreadRestYear: p.spreadRestYear == null ? '' : String(p.spreadRestYear),
@@ -203,7 +222,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 // Voreinstellung (unbekannt, keine Abweichung), damit das neue Objekt rechnet wie eines, das man nie bearbeitet hat.
 export const EMPTY_PROPERTY_FORM: PropertyForm = {
   name: '', address: '', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '',
-  cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
+  cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', rentCap: 'unbekannt',
   ...EMPTY_TAX_HEADER, taxSaved: EMPTY_TAX_HEADER, spreadRestYear: '', spreadRestSaved: '',
 }
 
@@ -273,6 +292,7 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
     tightMarketFrom: tightFrom,
     tightMarketTo: tightTo,
     state: form.state === '' ? null : form.state,
+    rentCapReduced: form.rentCap === 'ja' ? true : form.rentCap === 'nein' ? false : null,
     ...header,
     ...(form.spreadRestYear !== form.spreadRestSaved ? { spreadRestYear: form.spreadRestYear === '' ? null : Number(form.spreadRestYear) } : {}),
   }
@@ -293,6 +313,7 @@ export function propertySummary(p: Property): { label: string; value: string }[]
     { label: 'Bundesland', value: p.state ? stateName(p.state) : STATE_UNKNOWN_LABEL },
     { label: 'Kabel- oder Antennenanlage', value: CABLE_LABELS[p.cableBuiltBeforeDec2021 === true ? 'vor' : p.cableBuiltBeforeDec2021 === false ? 'nach' : 'unbekannt'] },
     { label: 'Angespannter Wohnungsmarkt', value: tight === 'ja' && span ? `ja, Verordnung ${span}` : tight },
+    { label: 'Kappungsgrenzen-Verordnung', value: rentCapSummary(p.rentCapReduced) },
   ]
   // Kopf der Anlage V (#96 PR 2), nur wenn etwas eingetragen ist.
   if (hasTaxHeader(p)) {
