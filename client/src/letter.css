@@ -280,17 +280,18 @@
   body.print-rent-increase > #root { display: none !important; }
   body.print-rent-increase .rent-increase-print { display: block; }
   .rent-increase-consent { break-before: page; page-break-before: always; }
-  /* Mit Briefpapier (Seite ohne Rand): Schreiben und Zustimmungserklärung stehen je in der Hülle `.print-pages` im Rahmen
+  /* Mit Briefpapier (Seite ohne Rand), für das Schreiben der Mieterhöhung und den Brief zur Kaution (`letter-paged`):
+     Schreiben und Zustimmungserklärung stehen je in der Hülle `.print-pages` im Rahmen
      `.print-pages-frame`, der die Ränder oben und unten auf jeder Druckseite wiederholt; vorher lief der Text über den
      Fuß des Briefpapiers bis an die Blattkante, und Seite 2 begann ohne Rand (nachgemessen: 294,5 mm und 4 mm). Der Brief
      misst ab der Blattkante (Anschriftfeld nach DIN 5008), der Rahmen beginnt aber erst nach dem oberen Rand und die Zelle
      nach dem linken: Der Brief rückt deshalb um genau diese Ränder zurück. Seine Höhe richtet sich nach dem Text
      (die Seite füllt der Rahmen), und umgebrochen wird an der Hülle (`print-pages-new`), nicht am Brief. Die
      Zustimmungserklärung beginnt eine Seite und steht wie ohne Briefpapier auf der Höhe des Betreffs. */
-  .paper-print .rent-increase-paged { min-height: 0; margin: 0 calc(-1 * var(--paper-right)) 0 calc(-1 * var(--paper-left)); break-before: auto; page-break-before: auto; break-after: auto; page-break-after: auto; }
-  .paper-print .rent-increase-paged:not(.rent-increase-consent) { margin-top: calc(-1 * var(--paper-top)); }
-  .paper-print .rent-increase-paged .letter-body { padding-bottom: 0; }
-  .paper-print .rent-increase-paged.rent-increase-consent .letter-body { padding-top: calc(98.46mm - var(--paper-top)); }
+  .paper-print .letter-paged { min-height: 0; margin: 0 calc(-1 * var(--paper-right)) 0 calc(-1 * var(--paper-left)); break-before: auto; page-break-before: auto; break-after: auto; page-break-after: auto; }
+  .paper-print .letter-paged:not(.rent-increase-consent) { margin-top: calc(-1 * var(--paper-top)); }
+  .paper-print .letter-paged .letter-body { padding-bottom: 0; }
+  .paper-print .letter-paged.rent-increase-consent .letter-body { padding-top: calc(98.46mm - var(--paper-top)); }
 }
 
 /* Aufstellung zum Auszug der Kaution (#228, DepositLetter.tsx): ein Brief wie das Schreiben der Mieterhöhung. Das Blatt

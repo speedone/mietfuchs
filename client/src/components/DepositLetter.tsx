@@ -10,7 +10,7 @@ import type { DepositSettlement } from '../depositSettlement'
 import { PAPER_PAGE_CSS, paperVars, type PrintedDesign } from '../letterDesignView'
 import { startPrint } from '../printJob'
 import { softBreak } from '../softBreak'
-import { LetterHead } from './Letter'
+import { LetterHead, PrintPages } from './Letter'
 import { useLetterDesign } from './RentIncreaseLetter'
 import Table from './Table'
 
@@ -38,8 +38,13 @@ export function SettlementView({ settlement: s, printed = false }: { settlement:
 }
 
 export function DepositLetterSheet({ view: v, settlement, design = null }: { view: DepositLetterView; settlement: DepositSettlement; design?: PrintedDesign | null }) {
-  return (
-    <section className="letter" aria-label={`Schreiben an ${v.head.recipient[0] ?? ''}`}>
+  // Mit Briefpapier druckt die Seite ohne Seitenrand, und mit vielen Buchungen läuft der Brief über mehr als eine Seite:
+  // Die Ränder der Gestaltung hält dann auf jeder Druckseite der Rahmen der Hülle `PrintPages`, in ihrem Kopf liegt das
+  // Briefpapier der Folgeseiten; `letter-paged` stellt den Brief im Rahmen an die Blattkante (letter.css, derselbe Weg
+  // wie beim Schreiben der Mieterhöhung). Ohne Briefpapier bleibt der Aufbau ohne Hülle.
+  const paged = !!design?.paper
+  const letter = (
+    <section className={paged ? 'letter letter-paged' : 'letter'} aria-label={`Schreiben an ${v.head.recipient[0] ?? ''}`}>
       <LetterHead {...v.head} foldMarks={false} logo={design?.logo ?? null} paper={design?.paper ?? null} />
       <div className="letter-body">
         <p className="letter-subject">{v.subject}</p>
@@ -52,6 +57,7 @@ export function DepositLetterSheet({ view: v, settlement, design = null }: { vie
       </div>
     </section>
   )
+  return paged ? <PrintPages footnote={null} paper follow={design?.follow ?? null}>{letter}</PrintPages> : letter
 }
 
 // Druckt den Brief, sobald Logo und Briefpapier geladen sind, wie `RentIncreasePrint`: über `startPrint` (Dateiname aus

@@ -1,7 +1,7 @@
 // Das Seitenfenster „Kaution“ eines Mietverhältnisses (#228): Stand in einem Satz, die Kautionsbuchungen und das
 // Formular für eine neue oder, nach „Ändern“ an einer Zeile, für diese. Logik in depositForm.ts und shared/deposit.ts;
 // gespeichert wird je Buchung über /api/deposit-entries, der Aufrufer lädt danach neu (`onChanged`).
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { depositState } from '../../../shared/deposit.ts'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
 import {
@@ -10,6 +10,10 @@ import {
 import { DEPOSIT_SENDER_MISSING_TEXT, depositLetterView, depositSenderMissing } from '../depositLetter'
 import { depositSettlement } from '../depositSettlement'
 import { effectiveLandlord } from '../landlord'
+import { asLetterDesigns, canPagePaper, printDesign } from '../letterDesignView'
+import { withProperty } from '../property'
+import { PAPER_BROWSER_NOTE } from '../rentIncreaseLetterForm'
+import { NoticeBox } from './Notice'
 import { localToday } from '../periodForm'
 import type { DepositEntry, DepositStatementInfo, Property, Settings, Tenancy, Unit } from '../types'
 import type { DepositFormState } from '../depositForm'
@@ -62,7 +66,25 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
   const holdShown = settlement !== null && (settlement.balanceCents > 0 || tenancy.depositHoldCents !== undefined || tenancy.depositHoldNote !== undefined)
   const [printing, setPrinting] = useState(false)
   // Gedruckt wird ein Brief (DepositLetter.tsx, Text in depositLetter.ts). Ohne Namen des Vermieters warnt die Aufstellung
-  // nur; ob ein Briefpapier den Absender trägt, weiß das Fenster nicht (geladen wird es erst zum Druck).
+  // nur, und nicht, wenn ein Briefpapier den Absender trägt. Das fragt das Fenster beim Öffnen (wie das der Mieterhöhung);
+  // bis zur Antwort gilt das Briefpapier als vorhanden, damit die Warnung nicht kurz aufblinkt. Es zählt, was dieser
+  // Browser druckt: Ohne Ränder je Druckseite (`canPagePaper`, etwa Safari) druckt der Brief wie ohne Briefpapier, und
+  // das Fenster sagt es (`paperSkipped`).
+  const [paper, setPaper] = useState<boolean | null>(null)
+  const [paperSkipped, setPaperSkipped] = useState(false)
+  const propertyId = property?.id
+  useEffect(() => {
+    let alive = true
+    api<unknown>(withProperty('/api/letter-design', propertyId))
+      .then((d) => {
+        if (!alive) return
+        const planned = printDesign(asLetterDesigns(d), { legacy: false, pagedPaper: canPagePaper() })
+        setPaper(planned.paper !== null)
+        setPaperSkipped(planned.paperSkipped)
+      })
+      .catch(() => { if (alive) setPaper(false) })
+    return () => { alive = false }
+  }, [propertyId])
   const letter = settlement && tenancy.end !== null && depositLetterView({
     tenancy, end: tenancy.end, unitName: unit?.name ?? '', property, settlement, today: localToday(),
     landlord: effectiveLandlord(property, settings ?? { landlordName: '', iban: '', paymentDeadlineDays: 30, landlordAddress: '', landlordContact: '' }),
@@ -205,7 +227,8 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
             <button className="btn secondary" onClick={() => setPrinting(true)}>Aufstellung drucken</button>
           </div>
           <p className="muted m-0">Der Brief zeigt den Stand von heute und wird nicht gespeichert; ein späterer Druck kann anders ausfallen.</p>
-          {letter && depositSenderMissing(letter, false) && <p className="muted">{DEPOSIT_SENDER_MISSING_TEXT}</p>}
+          {letter && paperSkipped && <NoticeBox level="info" title="Briefpapier druckt dieser Browser nicht">{PAPER_BROWSER_NOTE}</NoticeBox>}
+          {letter && depositSenderMissing(letter, paper ?? true) && <p className="muted">{DEPOSIT_SENDER_MISSING_TEXT}</p>}
         </section>
       )}
       {printing && settlement && letter && <DepositLetterPrint title={`Kaution ${tenancy.tenantName}`} view={letter} settlement={settlement} propertyId={property?.id} onDone={() => setPrinting(false)} />}

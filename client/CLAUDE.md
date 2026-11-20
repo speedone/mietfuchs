@@ -657,15 +657,19 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Indexerklärung druckte sonst „Seite 1 von 1“); den Fußvermerk der Abrechnung hat das Schreiben nicht. **Mit Briefpapier**
   stehen Schreiben und Zustimmungserklärung je in der Hülle `PrintPages` (`paper`, `follow`, die Erklärung mit `newPage`):
   Der Rahmen wiederholt die Ränder je Druckseite, der Kopf trägt das Papier der Folgeseiten (`useLetterDesign` lädt es
-  mit). Weil der Brief ab der Blattkante misst, rückt `rent-increase-paged` (letter.css) ihn um den oberen und die
+  mit). Weil der Brief ab der Blattkante misst, rückt `letter-paged` (letter.css) ihn um den oberen und die
   seitlichen Ränder zurück, ohne Mindesthöhe und ohne eigenen Seitenumbruch. Ohne `canPagePaper` druckt es wie ohne
   Briefpapier, das Fenster sagt es (`PAPER_BROWSER_NOTE`), und für die Prüfung des Absenders zählt das Briefpapier dann
   nicht. Geprüft im Fall `mieterhoehung-briefpapier` von scripts/print-width-check.mjs.
 - **Aufstellung der Kaution als Brief** (#228, [DepositLetter.tsx](src/components/DepositLetter.tsx), Text in
   [depositLetter.ts](src/depositLetter.ts)): „Aufstellung drucken“ im Fenster „Kaution“ druckt nach demselben Muster
   (`LetterHead`, `useLetterDesign` aus RentIncreaseLetter.tsx, Blatt am Ende von body, `print-deposit` in letter.css).
-  Der Text steht fest und kommt aus dem heutigen Bestand; ohne Namen des Vermieters warnt das Fenster nur. Druckbreite:
-  Fall `kaution`. Gedruckt über `startPrint` (Dateiname „Kaution {Mieter}“). Vorschau und Mitteilung beim Einlesen
+  Der Text steht fest und kommt aus dem heutigen Bestand (ein Satz am Druckknopf sagt es); ohne Namen des Vermieters
+  warnt das Fenster nur, mit Briefpapier nicht (es fragt `GET /api/letter-design` beim Öffnen). **Mit Briefpapier** steht
+  der Brief wie das Schreiben der Mieterhöhung in `PrintPages` (`paper`, `follow`) mit der gemeinsamen Klasse
+  `letter-paged`; ohne `canPagePaper` druckt er wie ohne, und das Fenster sagt es (`PAPER_BROWSER_NOTE`). Druckbreite:
+  Fall `kaution`, Ränder je Seite: Fall `kaution-briefpapier` (29 Buchungen, drei Seiten) in scripts/print-width-check.mjs.
+  Gedruckt über `startPrint` (Dateiname „Kaution {Mieter}“). Vorschau und Mitteilung beim Einlesen
   eines Kontoauszugs bauen `importPreviewText`/`importDoneText` (bankView.ts) aus `summary`, nie aus dem Satz des
   Servers: eingelesen, nichts gebucht, weiter unter „Offene Umsätze“.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen

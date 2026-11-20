@@ -18,10 +18,15 @@ const ENTRIES: DepositEntry[] = [
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let reply: { status: number; body: unknown }
+// Was GET /api/letter-design antwortet (das Fenster fragt beim Öffnen, ob ein Briefpapier den Absender trägt).
+let designReply: unknown
 beforeEach(() => {
   sent = []
   reply = { status: 200, body: { ok: true } }
+  designReply = {}
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    // Nur lesend und kein Teil dessen, was die Tests als gesendet prüfen.
+    if (String(url).startsWith('/api/letter-design')) return new Response(JSON.stringify(designReply), { status: 200, headers: { 'content-type': 'application/json' } })
     sent.push({ url, method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) })
     return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'content-type': 'application/json' } })
   })
@@ -260,12 +265,32 @@ test('ohne Namen des Vermieters warnt die Aufstellung und druckt trotzdem', asyn
   const print = vi.fn()
   vi.stubGlobal('print', print)
   const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
-  expect(within(drawer).getByText(/Im Brief steht kein Name des Vermieters/)).toBeTruthy()
+  expect(await within(drawer).findByText(/Im Brief steht kein Name des Vermieters/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Aufstellung drucken' }))
   await waitFor(() => expect(print).toHaveBeenCalledTimes(1))
   window.dispatchEvent(new Event('afterprint'))
   window.dispatchEvent(new Event('pointerdown'))
   await waitFor(() => expect(document.body.classList.contains('print-deposit')).toBe(false))
+})
+
+// Durchsicht: Mit Briefpapier trägt das Papier den Absender; kann der Browser es nicht je Seite drucken, sagt es das Fenster.
+const PAPER = { name: 'papier.png', file: 'papier.png', size: 1, mime: 'image/png' }
+const withPaper = { installation: { logo: null, paper: PAPER, paperNext: 'same', paperNextFile: null, margins: { top: 45, right: 20, bottom: 30, left: 25 } }, property: null }
+
+test('mit Briefpapier warnt die Aufstellung nicht vor dem fehlenden Namen', async () => {
+  designReply = withPaper
+  vi.stubGlobal('CSS', { supports: () => true })
+  const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
+  await waitFor(() => expect(within(drawer).queryByText(/kein Name des Vermieters/)).toBeNull())
+  expect(within(drawer).queryByText(/Briefpapier druckt dieser Browser nicht/)).toBeNull()
+})
+
+test('kann der Browser kein Briefpapier je Seite drucken, sagt es das Fenster, und der fehlende Name zählt wieder', async () => {
+  designReply = withPaper
+  vi.stubGlobal('CSS', { supports: () => false })
+  const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
+  expect(await within(drawer).findByText('Briefpapier druckt dieser Browser nicht')).toBeTruthy()
+  expect(within(drawer).getByText(/Im Brief steht kein Name des Vermieters/)).toBeTruthy()
 })
 
 test('mit Namen des Vermieters warnt die Aufstellung nicht', () => {

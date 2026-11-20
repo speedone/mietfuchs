@@ -25,14 +25,14 @@ export function RentIncreaseLetterSheet({ increase, design = null }: { increase:
   // Mit Briefpapier druckt die Seite ohne Seitenrand. Das Schreiben läuft über mehr als eine Seite; die Ränder der
   // Gestaltung hält deshalb auf jeder Druckseite der Rahmen der Hülle `PrintPages` (wie bei der Aufstellung der
   // Abrechnung, letter.css), und in ihrem Kopf liegt das Briefpapier der Folgeseiten. Die Zustimmungserklärung bekommt
-  // eine eigene Hülle auf neuer Seite. `rent-increase-paged` stellt den Brief im Rahmen an die Blattkante (letter.css).
+  // eine eigene Hülle auf neuer Seite. `letter-paged` stellt den Brief im Rahmen an die Blattkante (letter.css).
   const paged = !!design?.paper
   const pages = (content: ReactNode, newPage = false) =>
     (paged ? <PrintPages footnote={null} paper follow={design?.follow ?? null} newPage={newPage}>{content}</PrintPages> : content)
   return (
     <>
       {pages(
-      <section className={paged ? 'letter rent-increase-paged' : 'letter'} aria-label={`Schreiben an ${v.head.recipient[0] ?? ''}`}>
+      <section className={paged ? 'letter letter-paged' : 'letter'} aria-label={`Schreiben an ${v.head.recipient[0] ?? ''}`}>
         <LetterHead {...v.head} foldMarks={false} logo={design?.logo ?? null} paper={design?.paper ?? null} />
         <div className="letter-body">
           <p className="letter-subject">{v.subject}</p>
@@ -56,7 +56,7 @@ export function RentIncreaseLetterSheet({ increase, design = null }: { increase:
       </section>,
       )}
       {v.consentForm && pages(
-        <section className={paged ? 'letter rent-increase-consent rent-increase-paged' : 'letter rent-increase-consent'} aria-label={v.consentForm.title}>
+        <section className={paged ? 'letter rent-increase-consent letter-paged' : 'letter rent-increase-consent'} aria-label={v.consentForm.title}>
           <div className="letter-body">
             <p className="letter-subject">{v.consentForm.title}</p>
             {v.consentForm.lines.map((l, i) => <p key={i}>{l}</p>)}

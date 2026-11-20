@@ -223,6 +223,45 @@ function rentIncreasePaperCases(views, images, base) {
   }]
 }
 
+// Der Brief zur Aufstellung der Kaution mit Logo und Briefpapier (#228): derselbe Weg wie die Ansicht `kaution`, mit 29
+// Buchungen (die vier der Ansicht und 25 Erträge), damit er über mehr als eine Seite läuft, und den Rändern des
+// Gegenbeispiels der Durchsicht (oben 45, unten 30 mm; vorher Text bis 288,7 mm und Folgeseite ab 4 mm). Die Erträge
+// gehören nur diesem Fall und werden danach wieder gelöscht.
+/** @param {any[]} views @returns {PrintCase[]} */
+function depositPaperCases(views, images, base) {
+  const view = views.find((v) => v.name === 'kaution')
+  if (!view) throw new Error('Ansicht „kaution“ fehlt in print-width-views.mjs')
+  const margins = { top: 45, right: 20, bottom: 30, left: 25 }
+  /** @type {string[]} */
+  const added = []
+  return [{
+    name: 'kaution-briefpapier', label: 'Kaution, Brief mit Logo und Briefpapier über mehrere Seiten (Ränder je Seite)', property: 'haus', paper: true, band: { top: margins.top, bottom: margins.bottom },
+    before: async (api, ids) => {
+      /** @type {any[]} */
+      const tenancies = await api.get(`/api/tenancies?property=${ids.haus}`)
+      const hartmann = tenancies.find((t) => t.tenantName === 'Jonas Hartmann')
+      if (!hartmann) throw new Error('Mietverhältnis „Jonas Hartmann“ fehlt im Beispielbestand')
+      for (let i = 0; i < 25; i += 1) {
+        const month = String((i % 12) + 1).padStart(2, '0')
+        const created = await api.post('/api/deposit-entries', { tenancyId: hartmann.id, date: `${2022 + Math.floor(i / 12)}-${month}-28`, kind: 'interest', amountCents: 10 + i })
+        added.push(created.id)
+      }
+      await putDesign(base, { logo: 'new', paper: 'new', paperNextFile: 'keep', paperNext: 'same', margins }, images)
+    },
+    after: async () => {
+      await putDesign(base, { logo: 'remove', paper: 'remove', paperNextFile: 'keep', paperNext: 'none', margins })
+      for (const id of added.splice(0)) {
+        const res = await fetch(`${base}/api/deposit-entries/${id}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error(`Kautionsbuchung löschen: HTTP ${res.status} ${await res.text()}`)
+      }
+    },
+    open: async (page, ids) => {
+      await view.open(page, ids)
+      await page.waitForFunction(() => [.../** @type {any} */ (globalThis).document.images].every((img) => img.complete))
+    },
+  }]
+}
+
 /** @param {PrintCase} c @param {string} engine */
 const tagOf = (c, engine) => (engines.length > 1 ? `${c.label} [${engine}]` : c.label)
 
@@ -254,6 +293,7 @@ async function main() {
       ...settlementCases(images, demo.base),
       ...views.map((v) => ({ name: v.name, label: v.label, property: v.property ?? 'haus', open: v.open })),
       ...rentIncreasePaperCases(views, images, demo.base),
+      ...depositPaperCases(views, images, demo.base),
     ].filter((c) => !only || only.includes(c.name))
     if (cases.length === 0) throw new Error('Kein Fall gewählt')
 
