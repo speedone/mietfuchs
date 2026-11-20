@@ -93,8 +93,10 @@ test('eine Kachel öffnet die Anleitung als eigene Ansicht mit Pfad und allen Ab
   // Beispiel, Hinweise mit Rechtsgrundlage als Marke, Lücke mit Issue
   expect(within(guide).getByRole('heading', { name: 'Beispiel' }).parentElement?.textContent).toContain(GUIDES.granny.example)
   expect(within(guide).getByText('§ 2 HeizkostenV')).toBeTruthy()
-  // Heizung PR 12: Die offene Lücke dort ist die Vorerfassung bei gemischten Geräten (#218).
-  expect(within(guide).getByRole('link', { name: '#218' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/218')
+  // Heizung PR 12: Die offene Lücke dort ist die Vorerfassung bei gemischten Geräten. Ihr Issue (#218) ist geschlossen,
+  // deshalb steht sie ohne „geplant in“ da (Systemprüfung).
+  expect(within(guide).getByText(/Vorerfassung nach Gruppen/)).toBeTruthy()
+  expect(within(guide).queryByRole('link', { name: '#218' })).toBeNull()
   // Ähnliche Anleitungen aus derselben Gruppe, ohne die offene
   const related = within(guide).getByRole('region', { name: 'Ähnliche Anleitungen' })
   const relatedTitles = within(related).getAllByRole('button').map((b) => b.querySelector('.font-strong')?.textContent)
@@ -625,4 +627,23 @@ test('ein Vorschlag öffnet die Anleitung; der Pfad führt zurück auf die Kache
   await screen.findByRole('heading', { name: GUIDES.multiFamily.title, level: 1 })
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Pfad' })).getByRole('button', { name: 'Hilfe & Begriffe' }))
   await waitFor(() => expect(document.activeElement).toBe(tile(GUIDES.multiFamily.title)))
+})
+
+// Systemprüfung: Die einzige Lücke von „CO₂-Kosten der Heizung aufteilen“ gibt es inzwischen. Der Abschnitt bleibt
+// (die Sprungmarken der Anleitung führen zu ihm) und sagt, dass keine Lücke bekannt ist; „geplant in“ steht nur an
+// einer Lücke mit offenem Issue.
+test('Anleitung ohne Lücke: der Abschnitt sagt es, statt leer zu stehen', async () => {
+  expect(GUIDES.co2Costs.gaps).toHaveLength(0)
+  render(<Hilfe onFollow={() => {}} openGuide={{ id: 'co2Costs', step: 0, seq: 1 }} onOpenGuideDone={() => {}} />)
+  await screen.findByRole('heading', { name: GUIDES.co2Costs.title, level: 1 })
+  const section = screen.getByRole('heading', { name: 'Was Mietfuchs (noch) nicht kann' }).closest('section')
+  expect(section?.textContent).toMatch(/Für diesen Fall ist keine Lücke bekannt\./)
+  expect(section?.textContent).not.toMatch(/geplant in/)
+  expect(section?.querySelector('ul')).toBeNull()
+})
+
+test('Lücke mit offenem Issue: „geplant in“ mit dem Link aufs Issue', async () => {
+  render(<Hilfe onFollow={() => {}} openGuide={{ id: 'condo', step: 0, seq: 1 }} onOpenGuideDone={() => {}} />)
+  await screen.findByRole('heading', { name: GUIDES.condo.title, level: 1 })
+  expect(screen.getByRole('link', { name: '#102' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/102')
 })
