@@ -1,7 +1,7 @@
 // Die eigene Heizkostenabrechnung auf der Seite Heizkosten und im Druck (Heizung PR 10, Entwurf 3.5,
 // 8.8), ohne DOM prüfbar (heatingSelfView.test.ts). Die Zahlen rechnet der Server; hier stehen nur
 // Sätze und die Ampel.
-import type { HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfEstimateView, SelfHeatingStatement, SelfPotView, SelfReadingView, SelfUnitView, SelfUserView } from './types'
+import type { CaptureMethod, HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfEstimateView, SelfHeatingStatement, SelfPotView, SelfReadingView, SelfUnitView, SelfUserView } from './types'
 import { fmtDate, fmtEuro } from './api'
 import { CAUSE_TEXT } from './estimateForm'
 import { shareBounds } from './heatingSelfForm'
@@ -50,6 +50,8 @@ export type Light = 'green' | 'yellow' | 'red'
 // Rot ist, was die Abrechnung nach § 9b Abs. 3 rechnen lässt und eine Kürzung erlaubt; gelb, was
 // zulässig ist, aber hingesehen werden sollte (daneben abgelesen, Zwischenablesung nicht möglich).
 export function boundaryLight(b: SelfBoundaryView): Light {
+  // Systemprüfung: Ohne angelegtes Gerät gibt es nichts abzulesen; das ist nicht „abgelesen“.
+  if ((b.noDevicePots ?? []).length > 0) return 'red'
   if (b.status === 'read') return 'green'
   // Ab der Warngrenze neben dem Wechsel wählt der Vermieter; bis dahin wird nicht verteilt (Abweichung 22).
   if (b.status === 'off') return b.far && b.kind === 'change' && b.gap !== 'useReading' && b.gap !== 'imprecise' ? 'red' : 'yellow'
@@ -57,18 +59,43 @@ export function boundaryLight(b: SelfBoundaryView): Light {
 }
 
 const KIND_TEXT: Record<SelfBoundaryView['kind'], string> = { start: 'Beginn der Heizperiode am', end: 'Ende der Heizperiode am', change: 'Mieterwechsel zum' }
-export function boundaryText(b: SelfBoundaryView, unitName: string): string {
+export function boundaryText(b: SelfBoundaryView, unitName: string, capture?: CaptureMethod): string {
   const head = `${unitName}, ${KIND_TEXT[b.kind]} ${fmtDate(b.date)}`
-  if (b.status === 'read') return `${head}: abgelesen`
+  const lacking = b.noDevicePots ?? []
+  if (lacking.length === 0) return `${head}: ${statusText(b)}`
+  // Systemprüfung: je Topf ohne Gerät der fehlende Schritt; fehlt daneben ein Stand des anderen Topfs, steht beides da.
+  const pots = lacking.map((p) => (p === 'heating' ? 'die Heizung' : 'das Warmwasser')).join(' und ')
+  const none = `für ${pots} ${capture === 'serviceValues' ? 'kein Wert des Ablesedienstes eingetragen' : 'kein Gerät angelegt'}`
+  return `${head}: ${none}${b.status === 'read' ? '' : `; ${statusText(b)}`}`
+}
+function statusText(b: SelfBoundaryView): string {
+  if (b.status === 'read') return 'abgelesen'
   if (b.status === 'off') {
     const choice = b.far && b.kind === 'change'
       ? (b.gap === 'imprecise' ? ' (geteilt nach § 9b Abs. 3)' : b.gap === 'useReading' ? ' (Ablesung verwendet)' : '; bitte wählen')
       : ''
-    return `${head}: abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
+    return `abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
   }
   const answer = b.gap === 'impossible' ? ` (nicht möglich${b.gapReason ? `: ${b.gapReason}` : ''})` : b.gap === 'missed' ? ' (nicht durchgeführt)' : ''
-  return `${head}: keine Ablesung${missingMetersText(b.missingMeters ?? [])}${answer}`
+  return `keine Ablesung${missingMetersText(b.missingMeters ?? [])}${answer}`
 }
+
+// Systemprüfung: Je Topf, für den an keiner Wohnung ein Gerät angelegt ist, der fehlende Schritt. Die Seite meldete
+// sonst jede Wohnung als abgelesen, während ganz nach Fläche verteilt wird. Der Seitenname steht wie in der Navigation.
+export function missingDevicesLines(self: Pick<SelfHeatingStatement, 'capture' | 'pots'>): string[] {
+  return self.pots.filter((p) => p.noDevices).map((p) => {
+    const name = p.pot === 'heating' ? 'Heizung' : 'Warmwasser'
+    const only = `verteilt wird deshalb nur nach ${p.basisUnit === 'm³' ? 'umbautem Raum' : 'Fläche'}.`
+    if (self.capture === 'serviceValues') return `${name}: Es sind keine Werte des Ablesedienstes eingetragen; ${only} Tragen Sie die Werte auf dieser Seite unter „Werte des Ablesedienstes“ ein.`
+    const device = p.pot === 'water' ? 'Warmwasserzähler' : self.capture === 'hca' ? 'Heizkostenverteiler' : 'Wärmezähler'
+    return `${name}: An keiner Wohnung ist ein ${device} angelegt; ${only} Legen Sie die Geräte auf der Seite „Zähler & Stände“ an und tragen Sie dort die Ablesungen zu Beginn und Ende der Heizperiode ein.`
+  })
+}
+// Die Karte „Schätzung (§ 9a)“ sagte daneben „Für keine Wohnung fehlt ein Wert“. Ohne Gerät nimmt Mietfuchs keine
+// Schätzung an (beim Ablesedienst schon), deshalb dort dieser Satz.
+export const ESTIMATE_NEEDS_DEVICES = 'Solange kein Gerät angelegt ist, nimmt Mietfuchs keine Schätzung an.'
+export const estimateIdleText = (self: Pick<SelfHeatingStatement, 'capture' | 'pots'>): string =>
+  (self.capture !== 'serviceValues' && self.pots.some((p) => p.noDevices) ? ESTIMATE_NEEDS_DEVICES : 'Für keine Wohnung fehlt ein Wert.')
 
 // Befund M7 aus #341: welchem Zähler der Stand fehlt, mit Zählernummer. Ältere Abrechnungen führen die
 // Angabe nicht; dann bleibt der Satz, wie er war.

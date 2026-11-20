@@ -3354,6 +3354,9 @@ export type SelfPotView = {
   // #322: Steht der Topf Heizung nach umbautem Raum, sind `areaM2`, `estimatedAreaM2` und `baseCentsPerM2`
   // Kubikmeter; dann steht hier 'm³'. Fehlt: Quadratmeter.
   basisUnit?: 'm³'
+  // Systemprüfung: Für diesen Topf ist an keiner Wohnung ein Gerät angelegt (bei einem Ablesedienst: kein Wert
+  // eingetragen); er geht deshalb nur nach Fläche. Fehlt sonst und in älteren Abrechnungen.
+  noDevices?: true
 }
 // Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
 // `oldEndValue` (Durchsicht von #241, Recht-I2): bei einem Wechsel oder Stichtag an der Grenze der Stand davor; beim
@@ -3375,6 +3378,10 @@ export type SelfBoundaryView = {
   // Die Zähler ohne Stand an dieser Grenze, mit Zählernummer, wenn eingetragen (Befund M7 aus #341);
   // fehlt in älteren Abrechnungen.
   missingMeters?: { name: string; number?: string }[]
+  // Systemprüfung: Die Töpfe, für die an dieser Wohnung kein Gerät angelegt ist, obwohl die Verordnung eine Erfassung
+  // verlangt. `status` beschreibt nur die Zähler, die es gibt (ohne einen ist es 'read'); die Oberfläche zeigt für diese
+  // Töpfe den fehlenden Schritt. Fehlt, wenn nichts fehlt, und in älteren Abrechnungen.
+  noDevicePots?: SelfPot[]
 }
 // Ein Nutzer einer Wohnung (Mieter, Leerstand, Eigennutzung, außerhalb) mit seinen Werten.
 export type SelfUserView = {

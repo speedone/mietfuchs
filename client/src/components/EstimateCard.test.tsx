@@ -37,6 +37,18 @@ const mockFetch = () => {
 // Nach einem abgelehnten Speichern gibt useSaving den Knopf erst nach dem laufenden Aufruf wieder frei.
 const saveReady = (name: string) => waitFor(() => expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false))
 
+// Systemprüfung: Heizkostenverteiler gewählt, kein Gerät angelegt. „Für keine Wohnung fehlt ein Wert“ stimmte dann nicht.
+test('ohne angelegtes Gerät sagt die Karte, dass erst Geräte anzulegen sind', () => {
+  const option = { unitId: 'a', unitName: 'A', part: 'heat', areaM2: 60, why: null, boundary: null, estimated: false, proposals: proposals(0), comparable: [] } as SelfEstimateOption
+  const ohne = { ...self, capture: 'hca', estimates: [], estimateOptions: [option], pots: self.pots.map((p) => ({ ...p, byAreaOnly: true, noDevices: true as const })) } as SelfHeatingStatement
+  render(<EstimateCard plant={plant} view={view} self={ohne} onChanged={() => {}} />)
+  expect(screen.queryByText('Für keine Wohnung fehlt ein Wert.')).toBeNull()
+  expect(screen.getByText('Solange kein Gerät angelegt ist, nimmt Mietfuchs keine Schätzung an.')).toBeTruthy()
+  cleanup()
+  render(<EstimateCard plant={plant} view={view} self={{ ...ohne, pots: self.pots }} onChanged={() => {}} />)
+  expect(screen.getByText('Für keine Wohnung fehlt ein Wert.')).toBeTruthy()
+})
+
 test('die Auswahlfelder zeigen den gespeicherten Weg und die gewählte Wohnung', () => {
   render(<EstimateCard plant={plant} view={view} self={self} onChanged={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: 'Schätzung von A ändern' }))

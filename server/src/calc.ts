@@ -362,6 +362,9 @@ const noticeKinds = {
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
   'heating.not-by-consumption': { level: 'warning', title: 'Heizkosten nicht nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.consumption-share': { level: 'hint', title: `Verbrauchsanteil der Heizkosten außerhalb ${hkvConsumptionShare.describe(valueAt(hkvConsumptionShare, LAW_AS_OF))}`, rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
+  // Durchsicht des Zweigs: ganz nach Zählern, ohne Grundkosten. Ein eigener Code, weil er anders als der Mischfall das
+  // Cockpit nicht färbt (`INFORMATIONAL`): Mit einer Bestimmung nach § 10 ist nichts zu tun, abstellen ließe er sich nicht.
+  'heating.all-by-consumption': { level: 'hint', title: 'Heizkosten ganz nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.may-agree-otherwise': { level: 'hint', title: 'Heizkosten nicht nach Verbrauch verteilt (Zweifamilienhaus)', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   // #180, Entwurf 8.9: Die Objektart ist eine Beschreibung; die Ausnahme des § 2 hängt an den Wohnungen.
   'property.kind-mismatch': { level: 'hint', title: 'Art des Objekts passt nicht zu den Wohnungen', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'heatingSystem'] },
@@ -5607,7 +5610,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }]
   }))
   // Der Ausweis je Anlage und Heizperiode (Entwurf 8.8 ohne § 6a, der mit PR 14 kommt).
-  const selfStatementOf =(sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null): SelfHeatingStatement => {
+  // `devicesDue` (Systemprüfung): Verlangt die Verordnung für den Topf eine Erfassung? Nicht unter einer Ausnahme nach
+  // § 11, einer Vereinbarung nach § 2 oder solange sie für die Wärmepumpe noch nicht gilt; dann fehlt auch kein Gerät.
+  const selfStatementOf =(sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null, devicesDue: (p: SelfPot) => boolean): SelfHeatingStatement => {
     const cost = { heating: potCostOf(sp, potItems, 'heating'), water: potCostOf(sp, potItems, 'water') }
     const offDays = (d: string, b: string): number => Math.abs(Math.round((toUTC(d) - toUTC(b)) / MS_DAY))
     return {
@@ -5636,6 +5641,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           // Durchsicht von #242, R-M9: der geschätzte Teil des Verbrauchs im Topf.
           estimatedConsumption: sp.plan.units.flatMap((u) => u.users).reduce((a, x) => a + (x.pots[p].estimated === true ? (x.pots[p].value ?? 0) : 0), 0),
           ...(basisUnitOf(sp, p) === 'm³' ? { basisUnit: 'm³' as const } : {}),
+          ...(!t.devices && devicesDue(p) ? { noDevices: true as const } : {}),
         }
       }),
       units: sp.plan.units.map((u): SelfUnitView => ({
@@ -5645,12 +5651,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         heatAreaM2: u.heatArea,
         readings: u.readings,
         boundaries: u.boundaries.map((b) => {
+          // Nichts abzulesen heißt nicht „abgelesen“ (Systemprüfung, Durchsicht des Zweigs): die Töpfe, für die die Wohnung
+          // kein Gerät hat. Eine Wohnung mit Schätzung zählt nicht, eine Einheit ohne Fläche (Garage) braucht keins.
+          const lacking = (u.unit.areaM2 || 0) > 0 ? sp.plan.pots.filter((p) => devicesDue(p) && !u.estimated[p] && !u.readings.some((r) => r.pot === p)) : []
           const dated = b.readingDates.filter((d): d is string => d !== null)
           // Der Grund einer nicht möglichen Zwischenablesung (Durchsicht von #239, I3), nur wenn es ihn gibt.
           const reason = b.gap === 'impossible' ? ((snapshot.interimGaps ?? []).find((g) => g.unitId === u.unit.id && g.date === b.date)?.reason ?? '') : ''
           return {
             ...(reason !== '' ? { gapReason: reason } : {}),
             date: b.date, kind: b.kind, gap: b.gap, far: b.far, missingMeters: b.missingMeters,
+            ...(lacking.length > 0 ? { noDevicePots: lacking } : {}),
             status: dated.length < b.readingDates.length ? 'missing' : dated.some((d) => d !== b.date) ? 'off' : 'read',
             offDays: dated.reduce((m, d) => Math.max(m, offDays(d, b.date)), 0),
           }
@@ -8942,7 +8952,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const report of heatingStatements) {
     const sp = selfPlans.get(report.plantId)
     const pot = co2Pots.find((x) => x.plantId === report.plantId)
-    if (sp && pot) report.self = selfStatementOf(sp, pot.items, pot.reliefKey)
+    if (sp && pot) {
+      const hKey = String(pot.period.key)
+      const noDuty = sp.verdict?.kind === 'notYet' || sp.oldHeatPumpExemption || sp.agreedArea || agreedFor(pot.plantId, hKey) !== null
+      report.self = selfStatementOf(sp, pot.items, pot.reliefKey, (p) => !noDuty && !exemptPot(pot.plantId, p, hKey))
+    }
   }
   // ---------- Hinweise der eigenen Heizkostenabrechnung (Heizung PR 10, Entwurf 3.5, 8.5, 10.1) ----------
   // Nach dem CO₂-Block, denn die Kürzungsbeträge rechnen auf den gedruckten Zeilen nach der
@@ -9240,9 +9254,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const missingCapture = sp.verdict?.kind === 'missing'
         ? ` Die Wärmepumpe hat keine Verbrauchserfassung, obwohl sie bis zum ${fmtDay(law(hkvHeatPumpCapture, { date: period.from }, lawLog).installBy)} einzubauen war (§ 12 Abs. 3 HeizkostenV). Dass die Mieter dann nach § 12 Abs. 1 Satz 1 kürzen dürfen, ist eine Auslegung; entschieden ist es nicht.`
         : ''
+      // Systemprüfung: Ist für den Topf gar kein Gerät angelegt, nennt der Hinweis den fehlenden Schritt.
+      const noDevicePots = unmeasured.filter((p) => !sp.plan.totals[p].devices)
+      const deviceOf = (p: SelfPot) => (p === 'water' ? 'Warmwasserzähler' : sp.capture === 'hca' ? 'Heizkostenverteiler' : 'Wärmezähler')
+      const missingDevices = noDevicePots.length === 0
+        ? ''
+        : sp.capture === 'serviceValues'
+          ? ` Für ${noDevicePots.map((p) => POT_NAME[p]).join(' und ')} sind keine Werte des Ablesedienstes eingetragen. Tragen Sie sie auf der Seite „Heizkosten“ ein.`
+          : ` Für ${noDevicePots.map((p) => POT_NAME[p]).join(' und ')} ist an keiner Wohnung ein ${[...new Set(noDevicePots.map(deviceOf))].join(' bzw. ')} angelegt. Legen Sie die Geräte auf der Seite „Zähler & Stände“ an und tragen Sie dort die Ablesungen zu Beginn und Ende der Heizperiode ein.`
       warn('heating.no-consumption',
         `${where}: Für ${unmeasured.map((p) => POT_NAME[p]).join(' und ')} ist kein Verbrauch erfasst; Mietfuchs verteilt ${unmeasured.length === 1 ? 'diesen Teil' : 'die Kosten'} nur nach ${unmeasured.every((p) => basisUnitOf(sp, p) === 'm³') ? 'umbautem Raum' : unmeasured.some((p) => basisUnitOf(sp, p) === 'm³') ? 'umbautem Raum bzw. Fläche' : 'Fläche'}. ` +
-          `Die Heizkostenverordnung verlangt, ${hkvConsumptionShare.describe(share)} nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV)${amounts}.${missingCapture}`,
+          `Die Heizkostenverordnung verlangt, ${hkvConsumptionShare.describe(share)} nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV)${amounts}.${missingCapture}${missingDevices}`,
         subject)
     }
     // Anteil anders als in der Vorperiode (§ 6 Abs. 4, R-A7).
@@ -9982,6 +10004,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
 
   // Verbrauchsanteil außerhalb von 50 bis 70 % (#140, Durchsicht): ein Hinweis ohne Betrag, denn
   // nach Verbrauch abgerechnet wird ja; ob die Aufteilung der Positionen stimmt, prüft der Vermieter.
+  // § 10 HeizkostenV: „Rechtsgeschäftliche Bestimmungen, die höhere als die … Höchstsätze … vorsehen, bleiben unberührt.“
+  const ABOVE_MAX_SHARE = 'Ein höherer Anteil nach Verbrauch bleibt nur bestehen, wenn er rechtsgeschäftlich bestimmt ist, etwa im Mietvertrag vereinbart (§ 10 HeizkostenV).'
   for (const g of heating.shareOutside) {
     // Heizung PR 14: unter einer Ausnahme oder Vereinbarung gilt der Rahmen von 50 bis 70 % nicht.
     if (g.itemIds.every((id) => {
@@ -9991,8 +10015,30 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const names = andList(g.itemIds.map((id) => `„${items.find((c) => c.id === id)?.description ?? id}“`))
     const pct = Math.round((g.consumptionCents * 1000) / g.totalCents) / 10
     const share = consumptionShare()
+    if (g.onlyMetered) {
+      // Systemprüfung: ganz nach Zählern, ohne Grundkosten. Über dem Höchstsatz des § 7 Abs. 1 Satz 1 nur mit einer
+      // rechtsgeschäftlichen Bestimmung (§ 10), die das Modell nicht kennt; deshalb sagt der Hinweis, dass sie vorgeht.
+      // Kein Kürzungsbetrag: § 12 Abs. 1 Satz 1 setzt voraus, dass „nicht verbrauchsabhängig“ abgerechnet wird.
+      // Ob die Position auch das Warmwasser enthält, weiß Mietfuchs bei freien Schlüsseln nicht (§ 8 Abs. 1, § 9 Abs. 1).
+      // Durchsicht des Zweigs: Nur, wenn jemand die Positionen trägt, der über die Heizung abgerechnet wird. Tragen sie
+      // nur Mieter, die selbst heizen (daneben steht `co2.self-supply-items`), oder niemand (Warmmiete, Pauschale), schweigt er.
+      const groupItems = g.itemIds.flatMap((id) => items.find((c) => c.id === id) ?? [])
+      if (!groupItems.some((c) => bearersOf(c.id).some((st) => !selfSupplied.has(st.tenancyId)))) continue
+      warn('heating.all-by-consumption',
+        `Heizung und Warmwasser (${names}): Die Kosten werden ganz nach Zählern verteilt, ohne Grundkosten nach Fläche. Die Heizkostenverordnung verlangt mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch, den Rest nach Wohn- oder Nutzfläche, bei der Wärme auch nach dem umbauten Raum (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
+          `${ABOVE_MAX_SHARE} Eine solche Bestimmung kennt Mietfuchs nicht; mit ihr ist nichts zu tun. ` +
+          'Sonst teilen Sie die Kosten in eine Position nach Verbrauch und eine für die Grundkosten nach Fläche.' +
+          // Nur, wo keine Position nach Warmwasserzählern danebensteht: Dann ist das Warmwasser schon abgetrennt.
+          (groupItems.every((c) => c.meterType !== 'warmwasser')
+            ? ' Enthält die Position auch die Kosten des Warmwassers, sind diese vorher abzutrennen und nach dem Warmwasserverbrauch zu verteilen, nicht nach dem Verbrauch an Wärme (§ 8 Abs. 1, § 9 Abs. 1 HeizkostenV).'
+            : ''),
+        itemSubject({ id: g.itemIds[0] ?? '' }))
+      continue
+    }
+    // Über dem Höchstsatz nennt auch der Mischfall § 10 (Durchsicht des Zweigs); unter dem Mindestsatz bleibt der Text.
+    const above = g.consumptionCents * 100 > g.totalCents * share.max
     warn('heating.consumption-share',
-      `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(pct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
+      `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(pct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ${above ? `${ABOVE_MAX_SHARE} ` : ''}Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
       itemSubject({ id: g.itemIds[0] ?? '' }))
   }
 
