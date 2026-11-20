@@ -90,9 +90,9 @@ export default function ControlView({ data, embedded = false }: { data: Pick<Set
                   <td colSpan={columns.length + 2} />
                 </tr>
                 <tr>
-                  <th scope="row">Saldo (Nachzahlung, bei Guthaben negativ)</th>
+                  <th scope="row">Ergebnis</th>
                   <td />
-                  {view.tenants.map((t) => <td key={t.tenancyId} className="num"><strong>{fmtEuro(t.balanceCents)}</strong></td>)}
+                  {view.tenants.map((t) => <td key={t.tenancyId} className="num"><strong>{t.result}</strong></td>)}
                   <td colSpan={columns.length + 2} />
                 </tr>
                 {view.tenants.some((t) => t.rowsDifferenceCents !== 0) && (
