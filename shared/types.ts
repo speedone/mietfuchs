@@ -424,7 +424,10 @@ export type RentIncreasePlan = {
 export type RentIncreasePlanView = RentIncreasePlan & { token: string }
 // Für das Cockpit (PR 4): nächste Stufe, frühester Zugang einer Erhöhung, Fristen offener Verlangen.
 export type RentEvents = {
-  nextStep: { from: string; cents: number } | null
+  // `previousCents`: die Miete davor; `last`: danach folgt keine Stufe mehr außer wegen Modernisierung.
+  nextStep: { from: string; cents: number; previousCents: number | null; reason: RentChangeReason; last: boolean } | null
+  // `receivedOn` der früheste Zugang (auch schon vergangen), `effectiveFrom` der früheste Monat der neuen Miete bei Zugang
+  // frühestens heute (nie am Monatsersten, wie die Vorgabe der Rechnung).
   earliest: { kind: RentIncreaseKind; receivedOn: string; effectiveFrom: string } | null
   open: ({ id: string } & RentIncreaseConsent)[]
 }
@@ -481,6 +484,18 @@ export type UpcomingDeadline =
   | { kind: 'deposit'; id: string; date: string; tenancyId: string; tenantName: string; balanceCents: number }
   // Ende der Eichfrist eines Zählers (§ 34 Abs. 2 MessEV), der 31.12. des eingetragenen Jahres.
   | { kind: 'calibration'; id: string; date: string; meterId: string; meterName: string }
+  // Mieterhöhung (#191, PR 4). Je Mietverhältnis mit der Wohnung (`unitName`, für den Titel) und dem Mieter (nur im Text).
+  // Stufe einer Staffelmiete (§ 557a BGB), die in den nächsten 90 Tagen beginnt; `date` ist der Erste ihres Monats,
+  // `fromCents` die Miete davor. `last`: die letzte vereinbarte Stufe; `comparisonFrom`: frühester Zugang eines
+  // Verlangens nach § 558 BGB danach, nur wenn eines möglich ist (Vertrag schließt Erhöhungen ausdrücklich nicht aus).
+  | { kind: 'rentStep'; id: string; date: string; tenancyId: string; unitName: string; tenantName: string; fromCents: number | null; cents: number; last: boolean; comparisonFrom: string | null }
+  // Frühester Zugang eines Verlangens (§ 558 BGB) bzw. einer Indexerklärung (§ 557b BGB), in den nächsten 90 Tagen oder
+  // schon erreicht (`date`); `effectiveFrom` der früheste Monat der neuen Miete bei Zugang frühestens heute.
+  // `exclusionOpen`: Ob der Vertrag Erhöhungen ausschließt, ist noch nicht beantwortet.
+  | { kind: 'rentIncrease'; id: string; date: string; tenancyId: string; unitName: string; tenantName: string; increaseKind: RentIncreaseKind; effectiveFrom: string; exclusionOpen: boolean }
+  // Versandtes Verlangen nach § 558 BGB ohne eingetragene Antwort: Zustimmungsfrist läuft (`running`, `date` ihr Ende),
+  // ist abgelaufen und die Klagefrist läuft (`suit`, `date` deren Ende), oder beide sind verstrichen (`lapsed`).
+  | { kind: 'rentConsent'; id: string; date: string; tenancyId: string; unitName: string; tenantName: string; increaseId: string; stage: 'running' | 'suit' | 'lapsed'; receivedOn: string; consentEnd: string; suitEnd: string }
 export type UpcomingDeadlineKind = UpcomingDeadline['kind']
 // `today` ist der Tag des Servers (NKA_TEST_TODAY in Tests), `until` das Ende des Fensters für Abrechnungs- und
 // Einwendungsfrist; die Oberfläche rechnet „in N Tagen“ gegen `today`, damit Server und Anzeige denselben Tag meinen.

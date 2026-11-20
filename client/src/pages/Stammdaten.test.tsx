@@ -1002,6 +1002,22 @@ test('Kaution: der Sprung aus dem Cockpit öffnet das Seitenfenster des Mietverh
   expect(done).toHaveBeenCalled()
 })
 
+test('Mieterhöhung: der Sprung aus dem Cockpit öffnet das Seitenfenster des Mietverhältnisses (#191, PR 4)', async () => {
+  const done = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Stammdaten units={UNITS} tenancies={[tenancy('t1', 'Erika', { rentKind: 'free', rentIncreaseExcluded: false })]} settings={null} reload={async () => {}}
+            focus={{ kind: 'rentIncrease', tenancyId: 't1' }} onFocusDone={done} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  expect(await screen.findByRole('dialog', { name: 'Mieterhöhung: Erika' }, SLOW)).toBeTruthy()
+  expect(done).toHaveBeenCalled()
+})
+
 // ---------- Art der Miete und Art je Stufe (#191) ----------
 
 test('Mieterhöhung: der Knopf steht auch bei künftigem Mietende, nur bei vergangenem nicht (Durchsicht K5)', async () => {

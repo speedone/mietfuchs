@@ -218,6 +218,18 @@ test('Demnächst fällig: Stufe als Wort, Sprung zur Abrechnung des Zeitraums, a
   await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('abrechnung', { kind: 'section', section: 'sentAt' }))
 })
 
+test('Demnächst fällig: Mieterhöhung möglich ohne Namen im Titel, der Sprung öffnet das Fenster „Mieterhöhung“ (#191)', async () => {
+  const navigate = page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1')], upcoming: [
+    { kind: 'rentIncrease', id: 'rentIncrease:t1', date: '2021-01-02', tenancyId: 't1', unitName: 'U1', tenantName: 'Mieter t1', increaseKind: 'comparison', effectiveFrom: `${YEAR + 2}-02`, exclusionOpen: false },
+  ] })
+  const title = await screen.findByText('Mieterhöhung möglich, U1', undefined, SLOW)
+  const row = title.closest('li') ?? assert.fail('keine Zeile')
+  expect(row.querySelector('.badge')?.textContent).toBe('zur Information')
+  expect(title.textContent).not.toContain('Mieter t1')
+  fireEvent.click(row.querySelector('button') ?? assert.fail('kein Knopf'))
+  expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'rentIncrease', tenancyId: 't1' })
+})
+
 test('Demnächst fällig: ohne Einträge keine Karte', async () => {
   page({ units: [unit('u1')], tenancies: [tenancy('t1', 'u1', { end: '2020-06-30', depositCents: 160000 })] })
   await screen.findAllByText('Mietverhältnisse & Flächen', { selector: '.check-title' }, SLOW)

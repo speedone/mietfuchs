@@ -12,13 +12,13 @@ import { upcomingDeadlines, UPCOMING_HORIZON_DAYS, type UpcomingInput, type Upco
 import type { DepositEntry, PeriodKey, PeriodRules, UpcomingDeadline } from '../../shared/types.ts'
 
 const tenancy = (over: Partial<UpcomingTenancy> = {}): UpcomingTenancy => ({
-  id: 't1', tenantName: 'Erika Mustermann', start: '2020-01-01', end: null, ...over,
+  id: 't1', unitId: 'u1', tenantName: 'Erika Mustermann', start: '2020-01-01', end: null, baseRents: [], ...over,
 })
 const meter = (over: Partial<UpcomingMeter> = {}): UpcomingMeter => ({
   id: 'm1', name: 'Kaltwasser EG', type: 'kaltwasser', calibratedUntil: null, ...over,
 })
 const input = (over: Partial<UpcomingInput> = {}): UpcomingInput => ({
-  rules: CALENDAR_RULES, tenancies: [tenancy()], costPeriods: new Set<PeriodKey>(), closed: [], meters: [], readings: [], deposits: [], ...over,
+  rules: CALENDAR_RULES, tenancies: [tenancy()], costPeriods: new Set<PeriodKey>(), closed: [], meters: [], readings: [], deposits: [], units: [], state: null, rentIncreases: [], ...over,
 })
 const kinds = (items: readonly UpcomingDeadline[], kind: UpcomingDeadline['kind']) => items.filter((i) => i.kind === kind)
 const key = (text: string): PeriodKey => parsePeriodKey(text) ?? assert.fail(`kein Zeitraum: ${text}`)

@@ -470,23 +470,35 @@ function planIndex(d: Draft, input: RentIncreaseInput, log: LawLog): void {
 
 // ---------- Cockpit (PR 4) ----------
 
-// Die nächsten Ereignisse eines Mietverhältnisses: nächste Stufe der Staffel, frühester Zugang einer Erhöhung (nur mit
-// beantworteter Art der Miete und ohne Ausschluss) und die Fristen versandter Verlangen nach § 558 BGB. Werte aus dem
-// Register zum Tag (Texte außerhalb einer Abrechnung, `valueAt`).
+// Die nächsten Ereignisse eines Mietverhältnisses: nächste Stufe der Staffel (mit der Miete davor und ob danach noch eine
+// zählende Stufe folgt), frühester Zugang einer Erhöhung (nur mit beantworteter Art der Miete und ohne Ausschluss; ist
+// die Frage zum Ausschluss offen, wird gerechnet, die Antwort lässt sich nachtragen) und die Fristen versandter Verlangen
+// nach § 558 BGB. `earliest.effectiveFrom` ist der früheste Monat bei Zugang frühestens heute (am Monatsersten wie die
+// Vorgabe der Rechnung am Zweiten): Ist der früheste Zugang schon vorbei, zählt, was ein Verlangen heute bewirkt. Werte
+// aus dem Register zum Tag (Texte außerhalb einer Abrechnung, `valueAt`).
 export function nextRentEvents(input: { today: string; tenancy: RentIncreaseTenancy; state: FederalState | null; increases: readonly Pick<RentIncrease, 'id' | 'kind' | 'status' | 'receivedOn'>[] }): RentEvents {
   const { today, tenancy: t } = input
   const sorted = sortedRents(t)
-  const next = sorted.find((r) => compareText(r.from, monthOf(today)) > 0)
+  const at = sorted.findIndex((r) => compareText(r.from, monthOf(today)) > 0)
+  const next = at < 0 ? undefined : sorted[at]
+  const nextStep: RentEvents['nextStep'] = next
+    ? {
+        from: next.from, cents: next.monthlyCents, previousCents: sorted[at - 1]?.monthlyCents ?? null, reason: reasonOf(next),
+        last: !sorted.slice(at + 1).some((r) => reasonOf(r) !== 'modernization'),
+      }
+    : null
   let earliest: RentEvents['earliest'] = null
-  if (t.rentKind != null && t.rentIncreaseExcluded === false && sorted.length > 0) {
+  if (t.rentKind != null && t.rentIncreaseExcluded !== true && sorted.length > 0) {
     const ref = referenceDay(t, sorted)
+    const fromToday = notOnFirst(today)
     if (t.rentKind === 'index') {
-      const timing = indexTiming(ref, valueAt(bgbIndexRent, today))
-      earliest = { kind: 'index', receivedOn: timing.earliestReceipt, effectiveFrom: timing.earliestEffective }
+      const v = valueAt(bgbIndexRent, today)
+      const timing = indexTiming(ref, v)
+      earliest = { kind: 'index', receivedOn: timing.earliestReceipt, effectiveFrom: addMonths(monthOf(later(timing.earliestReceipt, fromToday)), v.effectiveMonthOffset) }
     } else {
       const consent = valueAt(bgbRentIncreaseConsent, today)
       const timing = comparisonTiming(ref, valueAt(bgbRentIncreaseWaitMonths, today), valueAt(bgbRentIncreaseLockMonths, today), consent.effectiveMonth)
-      const natural = addMonths(monthOf(timing.earliestReceipt), consent.effectiveMonth)
+      const natural = addMonths(monthOf(later(timing.earliestReceipt, fromToday)), consent.effectiveMonth)
       earliest = { kind: 'comparison', receivedOn: timing.earliestReceipt, effectiveFrom: compareText(natural, timing.earliestEffective) >= 0 ? natural : timing.earliestEffective }
     }
   }
@@ -496,7 +508,7 @@ export function nextRentEvents(input: { today: string; tenancy: RentIncreaseTena
       const received = r.receivedOn ?? ''
       return { id: r.id, ...consentDates(received, valueAt(bgbRentIncreaseConsent, received), input.state) }
     })
-  return { nextStep: next ? { from: next.from, cents: next.monthlyCents } : null, earliest, open }
+  return { nextStep, earliest, open }
 }
 
 // ---------- Eingaben der Route ----------

@@ -23,6 +23,9 @@ export type JumpTarget =
   | { kind: 'property'; part: PropertyPart }
   // Das Seitenfenster der Kaution eines Mietverhältnisses (#228), aus „Kaution abrechnen“ in „Demnächst fällig“ (#190).
   | { kind: 'deposit'; tenancyId: string }
+  // Das Seitenfenster „Mieterhöhung“ eines Mietverhältnisses (#191, PR 4), aus den Einträgen der Mieterhöhung in
+  // „Demnächst fällig“.
+  | { kind: 'rentIncrease'; tenancyId: string }
 
 // Ein Eintrag des Servers, kein Ziel der Oberfläche
 export const isSubject = (t: JumpTarget): t is NoticeSubject => 'id' in t
