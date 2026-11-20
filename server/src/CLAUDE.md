@@ -1470,10 +1470,12 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   hängt kein Betrag und kein Hinweis der Abrechnung. Die rote Zeile nennt die fehlenden Tage (`incompleteDetail` in
   client/src/meterCheck.ts) und bei `longUnread` (letzte Ablesung weiter als der Spielraum vor dem Zeitraum) den Tag
   und den Weg für einen getauschten Zähler. **Zum Löschen rät sie nie**: Mit dem Zähler gingen seine Ablesungen, und
-  eine offene Abrechnung früherer Jahre rechnete die Wohnung ohne Zähler. Bekannte Grenzen: Ein ausgebauter
-  Wohnungszähler ohne Nachfolger bleibt in jedem Folgejahr rot (ein Feld „ausgebaut am“ kennt das Modell nicht), und
-  `installedOn` fragt das Formular nur bei fernablesbaren Geräten; ein im Lauf des Jahres in einer bewohnten Wohnung
-  eingebauter Wasserzähler ist in diesem Jahr rot.
+  eine offene Abrechnung früherer Jahre rechnete die Wohnung ohne Zähler. **Einbaudatum bei jedem Zähler**: Das
+  Feld „Eingebaut am“ (`installedOn`) steht im Zählerformular für jede Sparte (`meterBody` schickt es immer, der Server
+  nahm es schon für jeden Zähler an), und fehlt einem Zähler der Anfang, nennt die Zeile es als Ausweg. Die Regeln der
+  Fernablesbarkeit lesen es weiter nur bei Geräten der Heizanlage mit Antwort „nicht fernablesbar“ (remoteReading.ts,
+  monthlyInfo.ts); für andere Zähler ändert es dort nichts. Bekannte Grenze: Ein ausgebauter Wohnungszähler ohne
+  Nachfolger bleibt in jedem Folgejahr rot (ein Feld „ausgebaut am“ kennt das Modell nicht).
 - **Zähler vorhanden, aber nicht abgelesen** (`meter.unit-not-read`, `warning`, Ziel der Zähler): Hat eine Einheit einen
   Zähler der Sparte, dessen Ablesungen den Zeitraum gar nicht decken, rechnet der Schlüssel `meter` (ohne
   Bezugszähler) wie ohne Zähler, sagt es aber mit eigenem Text; `meter.unit-without-meter` nennt nur noch Einheiten

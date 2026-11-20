@@ -61,9 +61,18 @@ export function incompleteDetail(incomplete: Meter[], consumption: MeterConsumpt
     const c = of(m)
     return c?.longUnread && c.lastReadingOn ? [`${m.name} (zuletzt abgelesen am ${day(c.lastReadingOn)})`] : []
   })
+  // Liegt nach der Lücke noch eine Ablesung, fehlt nicht der Endstand, sondern der Anfang (oder ein Stück mittendrin):
+  // Dann nennt ein Satz das Einbaudatum, das jeder Zähler tragen kann und ab dem der Server Ablesungen verlangt.
+  const late = incomplete.some((m) => {
+    const c = of(m)
+    return !!c?.periodGap && !!c.lastReadingOn && c.lastReadingOn > c.periodGap.to
+  })
   const list = `Anfang/Ende fehlt oder unplausibel bei: ${andList(names)}`
-  return idle.length === 0 ? list
-    : `${list}. Schon länger nicht abgelesen: ${andList(idle)}. Wurde ein solcher Zähler getauscht, erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel.`
+  const more = [
+    ...(idle.length > 0 ? [`Schon länger nicht abgelesen: ${andList(idle)}. Wurde ein solcher Zähler getauscht, erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel.`] : []),
+    ...(late ? ['Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.'] : []),
+  ]
+  return more.length === 0 ? list : `${list}. ${more.join(' ')}`
 }
 
 // Ruhiger Zusatz der grünen Zeile: Tage am Rand des Zeitraums, die keine Ablesung deckt und die der Server hinnimmt.

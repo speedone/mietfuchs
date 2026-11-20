@@ -54,6 +54,15 @@ test('Text der Zeile: fehlt nur der Endstand, steht nichts von „länger nicht 
   for (const text of [normal, lange]) expect(text).not.toMatch(/lösch/i)
 })
 
+// Ein im Lauf des Jahres eingebauter Zähler (erste Ablesung am 30.06.) ist ohne Einbaudatum rot; die Zeile nennt den
+// Ausweg. Fehlt dagegen der Endstand, steht der Satz nicht da.
+test('Text der Zeile: fehlt der Anfang, nennt sie das Einbaudatum am Zähler als Ausweg', () => {
+  const spaet = incompleteDetail([meter('neu', 'u1')], [{ meterId: 'neu', readingCount: 2, periodCovered: false, periodGap: { from: '2025-01-01', to: '2025-06-30' }, lastReadingOn: '2025-12-31', longUnread: false, warnings: [] }])
+  expect(spaet).toBe('Anfang/Ende fehlt oder unplausibel bei: neu (ohne Ablesung vom 01.01.2025 bis 30.06.2025). Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.')
+  const ende = incompleteDetail([meter('neu', 'u1')], [{ meterId: 'neu', readingCount: 2, periodCovered: false, periodGap: { from: '2025-12-17', to: '2025-12-31' }, lastReadingOn: '2025-12-16', longUnread: false, warnings: [] }])
+  expect(ende).not.toContain('Einbaudatum')
+})
+
 test('Grüne Zeile: Tage am Rand, die fehlen und hingenommen sind, stehen als Zusatz da', () => {
   const ms = [meter('a', 'u1'), meter('b', 'u2')]
   expect(slackDetail(ms, [ok('a'), ok('b')])).toBe('')

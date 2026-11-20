@@ -98,6 +98,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     und nennt die Tage, die fehlen. Ein getauschter Zähler gilt bis zu seiner letzten Ablesung, ein Zähler in einer
     erst im Zeitraum bezogenen Wohnung ab dem Einzug. Bei einem Wohnungszähler dürfen am Anfang und Ende zusammen bis
     zu zwei Wochen fehlen (im kurzen Zeitraum entsprechend weniger); die Zeile bleibt dann grün und nennt diese Tage.
+    Wurde ein Zähler erst im Lauf des Zeitraums eingebaut, tragen Sie am Zähler das Datum unter „Eingebaut am“ ein;
+    das Feld gibt es jetzt bei jedem Zähler, und Mietfuchs erwartet Ablesungen dann erst ab diesem Tag.
   - Eine Ablesung mit Datum in der Zukunft (etwa 2052 statt 2025) nennen Zähler-Seite, Cockpit und Abrechnung als
     Warnung, statt den Verbrauch still nach Tagen herunterzurechnen; gerechnet wird weiter wie erfasst.
   - Hat eine Wohnung einen Zähler, dem nur die Stände des Zeitraums fehlen, heißt der Hinweis nicht mehr „Wohnung ohne

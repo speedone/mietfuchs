@@ -63,3 +63,23 @@ test('Geschätzte Ablesung: ohne Begründung oder mit unklarer Angabe abgelehnt,
     await rejected(await send(s, `/api/readings/${est.id}`, 'PUT', { estimateReason: '' }), 'Begründung geleert')
   } finally { s.stop() }
 })
+
+// Systemprüfung: Das Einbaudatum nimmt der Server bei jedem Zähler an (nicht nur bei fernablesbaren Geräten), und die
+// Verbrauchsübersicht verlangt Ablesungen dann erst ab dem Einbau.
+test('Einbaudatum an einem Wasserzähler: gespeichert, und der Zeitraum gilt ab dem Einbau als gedeckt', async () => {
+  const s = await startServer()
+  try {
+    const m = await meterOf(s)
+    for (const [date, value] of [['2025-06-30', 0], ['2025-12-31', 40]] as const) await created<Reading>(await send(s, '/api/readings', 'POST', { meterId: m.id, date, value }))
+    type Row = { meterId: string, periodCovered: boolean, periodGap: { from: string, to: string } | null }
+    const rowOf = async (): Promise<Row> => (await jsonOf<Row[]>(await send(s, '/api/consumption/2025?property=objekt-1', 'GET'))).find((r) => r.meterId === m.id) ?? assert.fail('Zähler fehlt in der Übersicht')
+    assert.deepEqual((await rowOf()).periodGap, { from: '2025-01-01', to: '2025-06-30' })
+    const put = await send(s, `/api/meters/${m.id}`, 'PUT', { name: 'Hauptzähler', unitId: null, type: 'kaltwasser', unit: 'm³', installedOn: '2025-06-30' })
+    assert.equal(put.status, 200, await put.clone().text())
+    assert.equal((await jsonOf<Meter>(put)).installedOn, '2025-06-30')
+    assert.equal((await rowOf()).periodCovered, true)
+    await rejected(await send(s, `/api/meters/${m.id}`, 'PUT', { name: 'Hauptzähler', unitId: null, type: 'kaltwasser', unit: 'm³', installedOn: 'gestern' }), 'kein Datum')
+  } finally {
+    s.stop()
+  }
+})
