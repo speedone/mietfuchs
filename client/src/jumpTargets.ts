@@ -25,6 +25,9 @@ export const UPDATE_GUIDE_TARGET: JumpTarget = { kind: 'section', section: 'abou
 export const ACCESS_TARGET: JumpTarget = { kind: 'section', section: 'access' }
 // Die Erinnerung ans Backup im Cockpit: die Karte „Daten & Sicherung“ der Einstellungen
 export const BACKUP_TARGET: JumpTarget = { kind: 'section', section: 'backup' }
+// Noch keine Heizanlage: die Karte „Heizung“ der Stammdaten mit „Heizung einrichten“ (wie der Hinweis der Berechnung
+// mit leerer Kennung, notices.ts)
+export const SET_UP_HEATING_TARGET: JumpTarget = { kind: 'heatingPlant', id: '' }
 
 // Eine betroffene Wohnung öffnet sich selbst, mehrere führen zur Karte „Wohnungen“.
 export function unitsTarget(ids: readonly string[]): JumpTarget {

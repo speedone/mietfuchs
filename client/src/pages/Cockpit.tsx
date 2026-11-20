@@ -204,10 +204,10 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
 
     // 2. Belege & Kosten erfasst
     if (yearItems.length === 0) {
-      list.push({ title: 'Belege erfasst', level: 'rot', tab: 'belege:eingang', cta: 'Belege erfassen',
+      list.push({ title: 'Kosten erfasst', level: 'rot', tab: 'belege:eingang', cta: 'Belege erfassen',
         detail: `Für ${label} sind noch keine Kosten erfasst.` })
     } else {
-      list.push({ title: 'Belege erfasst', level: 'gruen',
+      list.push({ title: 'Kosten erfasst', level: 'gruen',
         detail: itemsDetail(yearItems.length, itemsSum, invoiceFileCount) })
     }
 

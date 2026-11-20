@@ -359,3 +359,21 @@ test('#322, Durchsicht M1: „Ändern“ bei eigener Abrechnung nach umbautem Ra
   await waitFor(() => expect(sent.some((x) => x.method === 'PUT')).toBe(true))
   expect(sent.find((x) => x.method === 'PUT')?.body).toMatchObject({ units: null, unitValues: [{ unitId: 'eg', volumeM3: 200 }, { unitId: 'og', volumeM3: 175 }] })
 })
+
+// Systemprüfung: „Heizung einrichten →“ an einem Hinweis ohne Heizanlage (leere Kennung) und der Leerzustand der Seite
+// Heizkosten führten nur an den Anfang der Stammdaten. Die Karte wird hervorgehoben, der Fokus steht auf dem Knopf.
+test('Sprung ohne Heizanlage: die Karte „Heizung“ ist hervorgehoben, der Fokus steht auf „Heizung einrichten“', async () => {
+  const done = vi.fn()
+  render(<PropertyProvider><HeatingCard units={UNITS} focus={{ kind: 'heatingPlant', id: '' }} onFocusDone={done} /></PropertyProvider>)
+  const button = await screen.findByRole('button', { name: 'Heizung einrichten' })
+  await waitFor(() => expect(document.activeElement).toBe(button))
+  expect(button.closest('.card')?.classList.contains('focus-target')).toBe(true)
+  expect(done).toHaveBeenCalled()
+})
+
+test('ohne Sprung: die Karte „Heizung“ ist nicht hervorgehoben und nimmt keinen Fokus', async () => {
+  renderCard()
+  const button = await screen.findByRole('button', { name: 'Heizung einrichten' })
+  expect(button.closest('.card')?.classList.contains('focus-target')).toBe(false)
+  expect(document.activeElement).toBe(document.body)
+})
