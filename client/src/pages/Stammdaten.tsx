@@ -302,6 +302,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     setDepositFor(focus.tenancyId)
     onFocusDone?.()
   }, [focus, tenancies, onFocusDone])
+  // Ebenso das Fenster „Mieterhöhung“ (#191, PR 4).
+  useEffect(() => {
+    if (focus?.kind !== 'rentIncrease' || !tenancies.some((t) => t.id === focus.tenancyId)) return
+    setRentIncreaseFor(focus.tenancyId)
+    onFocusDone?.()
+  }, [focus, tenancies, onFocusDone])
   useNewTarget(focus, 'unit', true, () => { focusOpener(newUnitButton.current); newUnit() }, onFocusDone)
   useNewTarget(focus, 'tenancy', true, () => { if (units.length > 0) { focusOpener(newTenancyButton.current); newTenancy() } }, onFocusDone)
   // „Nutzung prüfen“, „Anteile eintragen“ (mehrere Wohnungen) und „Stammdaten prüfen“, „Anschrift eintragen“ (mehrere

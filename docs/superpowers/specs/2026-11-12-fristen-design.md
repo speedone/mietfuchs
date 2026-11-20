@@ -27,7 +27,8 @@ Checkliste bleiben, wie sie sind.
 
 ## Nicht-Ziele
 
-- Keine Fristen der Mieterhöhung (Index, Staffel, Kappungsgrenze): gehört zu #191.
+- Keine Fristen der Mieterhöhung (Index, Staffel, Kappungsgrenze): gehört zu #191 und kam dort mit PR 4 in die Liste
+  (Entwurf 2026-11-20-mieterhoehung-design.md, „Umsetzung PR 4“).
 - Keine Erinnerung „Vorauszahlung anpassen“: Den Vorschlag gibt es schon an der Abrechnung.
 - Keine Liste der Rauchwarnmelder-Pflichten je Land. Der Termin ist ein eigener Termin mit Vorlage.
 - Keine Benachrichtigung (Mail, Push) und **kein abonnierbarer Kalender**: Ein Kalenderprogramm kann sich nicht

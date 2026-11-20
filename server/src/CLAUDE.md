@@ -606,6 +606,19 @@ von der Route (NKA_TEST_TODAY wirkt).
 - **Eichfrist**: 31.12. von `calibratedUntil`, zwölf Monate vorher (`CALIBRATION_LEAD_MONTHS`, ein Tausch braucht
   Vorlauf); abgelaufen im ersten Jahr danach oder, solange eine Ablesung nach dem Ende liegt. Die gelbe Zeile
   „Eichfrist“ der Checkliste bleibt daneben.
+- **Mieterhöhung** (#191, PR 4) je Mietverhältnis über `nextRentEvents` (rentIncrease.ts), nichts nach dem Auszug, Titel
+  mit der Wohnung (`unitName`): `rentStep` Stufe einer Staffelmiete (Art der Miete `staggered`) im
+  Fenster, keine Modernisierung und nicht die erste Stufe (`previousCents` null), bei der letzten zählenden Stufe `comparisonFrom` nur bei `rentIncreaseExcluded === false`, Wohnfläche und
+  Mietverhältnis bis zum Wirksamwerden. `rentIncrease` frühester Zugang (§ 558 bzw. § 557b) im Fenster oder vorbei,
+  `effectiveFrom` bei Zugang ab heute und nach jeder eingetragenen Stufe ab diesem Monat (`monthAfterSteps`, dieselbe
+  Regel wie `laterStep`; Vergleichstest gegen `planRentIncrease`), `staggered` für den Hinweis auf § 557a Abs. 2;
+  **ohne `rentKind` kein Eintrag** (freiwillige Angabe, wer sie nicht macht, wird
+  nicht erinnert), offener Ausschluss nur als `exclusionOpen`; weg bei Ausschluss, ohne Fläche, Auszug vor dem
+  Wirksamwerden, Indexmiete nach Modernisierungsstufe, offenem Verlangen (`isOpen`) oder Wirkung nach heute.
+  `rentConsent` je versandtem Verlangen nach § 558 ohne Antwort, ohne Fenster, `stage` `running` (bis
+  `consentEndOnWorkday`, auch `date` und im Eintrag für die Anzeige), `suit` (bis `suitEnd`), `lapsed`; gerechnet aus `receivedOn`, nicht aus `basis`. Die Route
+  liest dazu Wohnungen, `state` des Objekts und `readRentIncreasesOf` (eine Abfrage); nicht gemerkt (`onStock`), denn
+  Kautionen und Verlangen liegen außerhalb des Bestands. Tests: fristen-mieterhoehung.test.ts.
 - Sortiert nach `date`, Art, Kennung (`compareText`); Kennungen `art:bezug`, stabil. Tests: fristen-cockpit.test.ts
   (Regeln), api-fristen.test.ts (Route), client upcomingView.test.ts und cockpitSprungziele.test.tsx.
 
@@ -887,7 +900,8 @@ Cockpit und Hinweis der Steuer.
 
 Entwurf [docs/superpowers/specs/2026-11-20-mieterhoehung-design.md](../../docs/superpowers/specs/2026-11-20-mieterhoehung-design.md),
 Plan in vier gestapelten PRs ([docs/superpowers/plans/2026-11-20-mieterhoehung.md](../../docs/superpowers/plans/2026-11-20-mieterhoehung.md)).
-Stand nach PR 3: Angaben (PR 1), Rechnung (PR 2), Schreiben und Übernahme in die Staffel (PR 3); das Cockpit folgt mit PR 4.
+Stand nach PR 4: Angaben (PR 1), Rechnung (PR 2), Schreiben und Übernahme in die Staffel (PR 3), Einträge in „Demnächst
+fällig“ (PR 4, Abschnitt „Demnächst fällig“).
 
 - **Die Kaltmiete-Staffel bleibt die einzige Quelle des Solls.** Jede Stufe trägt optional ihre Art
   (`RentEntry.reason`, `RentChangeReason`) und bei einer Indexmiete ihren Indexwert (`RentEntry.index`: Monat, Wert
@@ -908,7 +922,8 @@ Stand nach PR 3: Angaben (PR 1), Rechnung (PR 2), Schreiben und Übernahme in di
 - **Lexikon**: `comparisonRent`, `rentCap` (wo die Länder ihre Verordnungen veröffentlichen, ohne Gemeindeliste),
   `indexRent`, `staggeredRent`, `rentIncreaseRequest`, `consentPeriod`; Beispiele in glossary-mieterhoehung.test.ts.
 - **Rechnung** ([rentIncrease.ts](rentIncrease.ts), rein wie prepaymentSteps.ts): `planRentIncrease` für `comparison`
-  (§ 558) und `index` (§ 557b), `staggeredOverview` (§ 557a), `nextRentEvents` für das Cockpit (PR 4). Zustand `possible`,
+  (§ 558) und `index` (§ 557b), `staggeredOverview` (§ 557a), `nextRentEvents` für das Cockpit (PR 4: nächste Stufe mit Miete davor,
+  Art und `last`, frühester Zugang auch bei offener Frage zum Ausschluss, Wirksamwerden bei Zugang ab heute). Zustand `possible`,
   `notYet` (Zugang oder Monat zu früh) oder `blocked` (Angabe fehlt, `needs`, oder Gesetz schließt aus), Gründe als ganze
   Sätze mit Norm. **Bezugstag** tagesgenau: letzte zählende Stufe (Erster ihres Monats), frühestens `Tenancy.start`;
   `modernization` zählt nicht, die erste Stufe immer. Warte- und Sperrfrist getrennt (`dayAfterMonths`, §§ 187 Abs. 2, 188

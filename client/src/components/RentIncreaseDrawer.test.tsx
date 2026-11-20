@@ -208,3 +208,14 @@ test('Mieterhöhung, Liste: weicht der heutige Absender vom eingefrorenen ab, st
   open(TENANCY, PROPERTY, { landlordName: 'Erika Vermieterin', iban: '', paymentDeadlineDays: 14, landlordAddress: 'Ahornstraße 3, 12345 Musterstadt', landlordContact: '' })
   expect(await screen.findByText(/„Max Vermieter“.*„Erika Vermieterin“/)).toBeTruthy()
 })
+
+test('Mieterhöhung: ein offener Entwurf steht als Hinweis oben, denn solange erinnert das Cockpit nicht (Durchsicht K7)', async () => {
+  increases = [{ ...SENT, id: 'r2', status: 'draft', receivedOn: null, createdOn: '2026-11-18' }]
+  open()
+  expect(await screen.findByText(/Ein Entwurf vom 18\.11\.2026 ist noch offen; solange erinnert das Cockpit nicht an eine mögliche Mieterhöhung\./)).toBeTruthy()
+  cleanup()
+  increases = [SENT]
+  open()
+  await screen.findByText('Versandt')
+  expect(screen.queryByText(/ist noch offen; solange erinnert/)).toBeNull()
+})

@@ -155,6 +155,12 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
         {current && <> · bisher {fmtEuro(current.monthlyCents)} ab {monthLabel(current.from)}</>}.
         {' '}Gespeichert wird erst ein Schreiben, als Entwurf.
       </p>
+      {/* Durchsicht K7: Ein offener Entwurf unterdrückt die Erinnerung in „Demnächst fällig“ (upcomingDeadlines.ts). */}
+      {increases?.filter((x) => x.status === 'draft').map((x) => (
+        <NoticeBox key={x.id} level="info">
+          Ein Entwurf vom {fmtDate(x.createdOn)} ist noch offen; solange erinnert das Cockpit nicht an eine mögliche Mieterhöhung. Speichern Sie ihn als versendet, sobald er zugegangen ist, oder löschen Sie ihn.
+        </NoticeBox>
+      ))}
 
       <div className="field-grid">
         <Field label="Art der Erhöhung">

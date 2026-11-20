@@ -409,7 +409,7 @@ test('Mieterhöhung: die Rechnung protokolliert die Rechtswerte, mit denen sie r
 test('Mieterhöhung: nächste Ereignisse für das Cockpit (nächste Stufe, frühester Zugang, Fristen offener Verlangen)', () => {
   const t = tenancyOf({ rentKind: 'staggered', start: '2024-01-01', baseRents: [{ from: '2024-01', monthlyCents: 50000 }, { from: '2027-01', monthlyCents: 52000, reason: 'staggered' }] })
   const e = nextRentEvents({ today: '2026-11-20', tenancy: t, state: 'BY', increases: [] })
-  assert.deepEqual(e.nextStep, { from: '2027-01', cents: 52000 })
+  assert.deepEqual(e.nextStep, { from: '2027-01', cents: 52000, previousCents: 50000, reason: 'staggered', last: true })
   assert.equal(e.earliest?.kind, 'comparison')
   assert.equal(e.earliest?.effectiveFrom, '2028-04')
   const open = nextRentEvents({
@@ -418,6 +418,19 @@ test('Mieterhöhung: nächste Ereignisse für das Cockpit (nächste Stufe, früh
   })
   assert.deepEqual(open.open, [{ id: 'r1', consentEnd: '2027-01-31', consentEndOnWorkday: '2027-02-01', suitFrom: '2027-02-02', suitEnd: '2027-04-30' }])
   assert.equal(nextRentEvents({ today: '2026-11-20', tenancy: tenancyOf({ rentKind: null }), state: null, increases: [] }).earliest, null)
+})
+
+test('Mieterhöhung: Cockpit, frühester Zugang schon erreicht, Wirksamwerden bei Zugang heute; Ausschluss offen rechnet, „ja“ nicht (PR 4)', () => {
+  const e = nextRentEvents({ today: '2026-11-20', tenancy: tenancyOf(), state: null, increases: [] })
+  assert.deepEqual(e.earliest, { kind: 'comparison', receivedOn: '2021-01-02', effectiveFrom: '2027-02' })
+  // Zugang heute am Monatsersten: wie die Vorgabe der Rechnung am Zweiten, die Miete ab dem dritten Monat danach.
+  assert.equal(nextRentEvents({ today: '2026-12-01', tenancy: tenancyOf(), state: null, increases: [] }).earliest?.effectiveFrom, '2027-03')
+  const index = tenancyOf({ rentKind: 'index', baseRents: [{ from: '2020-01', monthlyCents: 50000, index: { month: '2019-10', value: 100, base: 2020 } }] })
+  assert.deepEqual(nextRentEvents({ today: '2026-11-20', tenancy: index, state: null, increases: [] }).earliest, { kind: 'index', receivedOn: '2021-01-02', effectiveFrom: '2027-01' })
+  assert.equal(nextRentEvents({ today: '2026-11-20', tenancy: tenancyOf({ rentIncreaseExcluded: null }), state: null, increases: [] }).earliest?.kind, 'comparison')
+  assert.equal(nextRentEvents({ today: '2026-11-20', tenancy: tenancyOf({ rentIncreaseExcluded: true }), state: null, increases: [] }).earliest, null)
+  const more = tenancyOf({ rentKind: 'staggered', baseRents: [{ from: '2020-01', monthlyCents: 50000 }, { from: '2027-01', monthlyCents: 52000, reason: 'staggered' }, { from: '2028-01', monthlyCents: 54000, reason: 'staggered' }] })
+  assert.equal(nextRentEvents({ today: '2026-11-20', tenancy: more, state: null, increases: [] }).nextStep?.last, false)
 })
 
 // ---------- Invarianten ----------

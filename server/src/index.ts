@@ -34,7 +34,7 @@ import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, Lette
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
 import { buildBasis, decided as decidedRentIncrease, decisionProblem, sentOf as sentRentIncrease, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
-import { deleteRentIncrease, insertRentIncrease, readRentIncrease, readRentIncreases, replaceRentIncrease } from './db/rentIncreases.ts'
+import { deleteRentIncrease, insertRentIncrease, readRentIncrease, readRentIncreases, readRentIncreasesOf, replaceRentIncrease } from './db/rentIncreases.ts'
 import { rentIncreaseBasisProblem, rentIncreaseLetterOf } from '../../shared/rentIncreaseLetter.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
@@ -1425,15 +1425,21 @@ function computeHeating(stock: Stock, plant: HeatingPlant, period: BillingPeriod
 }
 
 // „Demnächst fällig“ im Cockpit (#190): Fristen und Erinnerungen des Objekts aus den Daten (upcomingDeadlines.ts).
+// Mieterhöhung (#191, PR 4): dazu Wohnungen, Land des Objekts und die Verlangen seiner Mietverhältnisse.
 app.get('/api/upcoming', async (req, res) => {
   res.json(await readData(async (db) => {
     const propertyId = await propertyOf(db, req)
-    const unitIds = new Set((await readUnits(db)).filter((u) => u.propertyId === propertyId).map((u) => u.id))
+    const units = (await readUnits(db)).filter((u) => u.propertyId === propertyId)
+    const unitIds = new Set(units.map((u) => u.id))
+    const tenancies = (await readTenancies(db)).filter((t) => unitIds.has(t.unitId))
     const meters = (await readMeters(db)).filter((m) => m.propertyId === propertyId)
     const meterIds = new Set(meters.map((m) => m.id))
     return upcomingDeadlines({
       rules: await rulesForProperty(db, propertyId),
-      tenancies: (await readTenancies(db)).filter((t) => unitIds.has(t.unitId)),
+      tenancies,
+      units,
+      state: (await readProperties(db)).find((p) => p.id === propertyId)?.state ?? null,
+      rentIncreases: await readRentIncreasesOf(db, tenancies.map((t) => t.id)),
       costPeriods: new Set((await readCostItems(db)).filter((c) => c.propertyId === propertyId).map((c) => c.period)),
       closed: (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId).map((c) => ({ period: c.period, sentAt: c.sentAt })),
       meters,

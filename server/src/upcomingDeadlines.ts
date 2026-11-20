@@ -17,14 +17,34 @@
 //   und mit 90 Tagen erschiene jede Frist erst im Oktober. Abgelaufen im ersten Jahr danach oder solange der Zähler
 //   nach dem Ende weiter abgelesen wird; einen ausgebauten Zähler erkennt Mietfuchs sonst nicht.
 //
+// - **Mieterhöhung** (#191, PR 4; Entwurf docs/superpowers/specs/2026-11-20-mieterhoehung-design.md, „Umsetzung PR 4“),
+//   je Mietverhältnis über `nextRentEvents` (rentIncrease.ts), nichts nach dem Auszug:
+//   - `rentStep`: Stufe einer Staffelmiete (Art der Miete `staggered`), die im Fenster beginnt; keine Modernisierung und
+//     nicht die erste Stufe (die Anfangsmiete). Ohne Art der Miete nichts, wie bei `rentIncrease`. Bei der
+//     letzten Stufe der früheste Zugang eines Verlangens nach § 558 BGB, nur wenn eines möglich ist (Vertrag schließt
+//     Erhöhungen ausdrücklich nicht aus, Wohnfläche vorhanden, Mietverhältnis läuft bis zum Wirksamwerden).
+//   - `rentIncrease`: frühester Zugang eines Verlangens bzw. einer Indexerklärung im Fenster oder schon erreicht. Nicht bei
+//     Sperren, die keine Eingabe löst (Ausschluss, keine Wohnfläche, Auszug vor dem Wirksamwerden, Indexmiete nach einer
+//     Modernisierungsstufe), und **nicht ohne Art der Miete**: Die Angabe ist freiwillig und neu; wer sie nicht macht,
+//     erhöht nicht über Mietfuchs und soll im Cockpit keine Erinnerung an jedes Mietverhältnis bekommen. Eine offene
+//     Frage zum Ausschluss sperrt nicht, sie lässt sich nachtragen. Das Wirksamwerden liegt wie in der Rechnung nach jeder
+//     schon eingetragenen Stufe, auch einer Modernisierung (`laterStep`). Unterdrückt, solange ein Verlangen offen ist
+//     (Entwurf, versandtes nach § 558) oder eine Erhöhung erst nach heute wirkt.
+//   - `rentConsent`: versandtes Verlangen nach § 558 ohne Antwort, ohne Fenster: Zustimmungsfrist läuft (bis zum nach
+//     § 193 BGB verschobenen Werktag, der auch `date` ist), Klagefrist läuft, oder beide sind verstrichen. Gerechnet aus dem tatsächlichen
+//     Zugang (`receivedOn`), nicht aus dem Plan des Schreibens. Schweigen ist keine Zustimmung (S8); nichts erledigt sich
+//     von selbst, der Eintrag geht erst mit der eingetragenen Antwort oder der Rücknahme.
+//
 // Das Fenster von 90 Tagen: ein Quartal, lang genug, um eine Abrechnung fertigzustellen und zuzustellen, kurz genug,
 // dass die Liste nicht jede laufende Frist eines Jahres zeigt. Die Checkliste nennt die Frist des gewählten Zeitraums
 // ohnehin mit ihren Tagen.
 import { depositsAfterMoveOut } from '../../shared/deposit.ts'
 import { dayAfter, shiftMonths } from '../../shared/law/register.ts'
 import { objectionDeadline, periodLabel, periodOfKey, periodsBetween, settlementDeadline } from '../../shared/period.ts'
-import type { DepositEntry, Meter, PeriodKey, PeriodRules, Reading, Tenancy, UpcomingDeadline, UpcomingDeadlines } from '../../shared/types.ts'
+import type { DepositEntry, FederalState, Meter, PeriodKey, PeriodRules, Reading, RentIncrease, Tenancy, Unit, UpcomingDeadline, UpcomingDeadlines } from '../../shared/types.ts'
 import { compareText } from './apportion.ts'
+import { nextRentEvents } from './rentIncrease.ts'
+import { isOpen } from './rentIncreaseSave.ts'
 
 export const UPCOMING_HORIZON_DAYS = 90
 export const CALIBRATION_LEAD_MONTHS = 12
@@ -33,7 +53,9 @@ export const CALIBRATION_LEAD_MONTHS = 12
 const SETTLEMENT_LOOKBACK_MONTHS = 36
 const CALIBRATION_GRACE_MONTHS = 12
 
-export type UpcomingTenancy = Pick<Tenancy, 'id' | 'tenantName' | 'start' | 'end' | 'costModel' | 'heatingModel' | 'depositCents' | 'depositStatus'>
+export type UpcomingTenancy = Pick<Tenancy, 'id' | 'unitId' | 'tenantName' | 'start' | 'end' | 'costModel' | 'heatingModel' | 'depositCents' | 'depositStatus' | 'baseRents' | 'rentKind' | 'rentIncreaseExcluded'>
+export type UpcomingUnit = Pick<Unit, 'id' | 'name' | 'areaM2'>
+export type UpcomingRentIncrease = Pick<RentIncrease, 'id' | 'tenancyId' | 'kind' | 'status' | 'receivedOn' | 'effectiveFrom'>
 export type UpcomingMeter = Pick<Meter, 'id' | 'name' | 'type' | 'calibratedUntil'>
 
 export type UpcomingInput = {
@@ -46,6 +68,10 @@ export type UpcomingInput = {
   meters: readonly UpcomingMeter[]
   readings: readonly Pick<Reading, 'meterId' | 'date'>[]
   deposits: readonly DepositEntry[]
+  // Wohnungen des Objekts (Name für den Titel, Fläche), Land für die Feiertage, Verlangen der Mietverhältnisse
+  units: readonly UpcomingUnit[]
+  state: FederalState | null
+  rentIncreases: readonly UpcomingRentIncrease[]
 }
 
 // Bekommt das Mietverhältnis eine Abrechnung? Wie in der Aufstellung zum Auszug (db/deposits.ts): ohne Angabe gilt
@@ -111,6 +137,53 @@ export function upcomingDeadlines(input: UpcomingInput, today: string): Upcoming
     items.push({ kind: 'calibration', id: `calibration:${m.id}`, date: end, meterId: m.id, meterName: m.name })
   }
 
+  rentItems(input, today, until, items)
+
   items.sort((a, b) => compareText(a.date, b.date) || compareText(a.kind, b.kind) || compareText(a.id, b.id))
   return { today, until, items }
+}
+
+const monthOf = (day: string): string => day.slice(0, 7)
+
+// Mieterhöhung (siehe Kopf).
+function rentItems(input: UpcomingInput, today: string, until: string, items: UpcomingDeadline[]): void {
+  for (const t of input.tenancies) {
+    if (t.end !== null && compareText(t.end, today) < 0) continue
+    const unit = input.units.find((u) => u.id === t.unitId)
+    if (!unit) continue
+    const increases = input.rentIncreases.filter((x) => x.tenancyId === t.id)
+    const events = nextRentEvents({ today, tenancy: t, state: input.state, increases })
+    const who = { tenancyId: t.id, unitName: unit.name, tenantName: t.tenantName }
+    // Möglich ist eine Erhöhung nur mit Wohnfläche und solange das Mietverhältnis bis zum Wirksamwerden läuft.
+    const runsUntil = (month: string): boolean => unit.areaM2 > 0 && (t.end === null || compareText(t.end, `${month}-01`) >= 0)
+
+    const step = events.nextStep
+    // Nur eine Stufe der Staffel (keine Modernisierung, die liefert `nextRentEvents` nicht), und nicht ihr Beginn:
+    // Die erste Stufe ist die Anfangsmiete, keine Erhöhung (Durchsicht S2).
+    if (step && step.previousCents !== null && t.rentKind === 'staggered') {
+      const date = `${step.from}-01`
+      const after = events.earliest
+      const comparisonFrom = step.last && t.rentIncreaseExcluded === false && after?.kind === 'comparison' && runsUntil(after.effectiveFrom) ? after.receivedOn : null
+      if (compareText(date, until) <= 0 && (t.end === null || compareText(t.end, date) >= 0)) {
+        items.push({ kind: 'rentStep', id: `rentStep:${t.id}:${step.from}`, date, ...who, fromCents: step.previousCents, cents: step.cents, last: step.last, comparisonFrom })
+      }
+    }
+
+    const e = events.earliest
+    const pending = increases.some((x) => isOpen(x) || (x.status !== 'draft' && x.status !== 'refused' && x.status !== 'withdrawn' && compareText(x.effectiveFrom, monthOf(today)) > 0))
+    const afterModernization = e?.kind === 'index' && [...t.baseRents].sort((a, b) => compareText(a.from, b.from)).at(-1)?.reason === 'modernization'
+    if (e && !pending && !afterModernization && compareText(e.receivedOn, until) <= 0 && runsUntil(e.effectiveFrom)) {
+      items.push({ kind: 'rentIncrease', id: `rentIncrease:${t.id}`, date: e.receivedOn, ...who, increaseKind: e.kind, effectiveFrom: e.effectiveFrom, exclusionOpen: t.rentIncreaseExcluded == null, staggered: t.rentKind === 'staggered' })
+    }
+
+    for (const o of events.open) {
+      const x = increases.find((i) => i.id === o.id)
+      if (!x?.receivedOn) continue
+      const stage = compareText(today, o.consentEndOnWorkday) <= 0 ? 'running' : compareText(today, o.suitEnd) <= 0 ? 'suit' : 'lapsed'
+      items.push({
+        kind: 'rentConsent', id: `rentConsent:${o.id}`, date: stage === 'running' ? o.consentEndOnWorkday : o.suitEnd, ...who, increaseId: o.id, stage,
+        receivedOn: x.receivedOn, consentEnd: o.consentEnd, consentEndOnWorkday: o.consentEndOnWorkday, suitEnd: o.suitEnd,
+      })
+    }
+  }
 }

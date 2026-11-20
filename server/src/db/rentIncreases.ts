@@ -2,7 +2,7 @@
 // Staffel stehen in ../rentIncreaseSave.ts, die Routen in index.ts. `basis` ist eingefrorenes JSON wie ein Abschluss
 // (db/CLAUDE.md, „JSON bleibt nur der eingefrorene Abschluss“, hier ebenso begründet): Nachdruck und Prüfung lesen es so,
 // wie es beim Speichern galt, auch wenn eine spätere Version anders rechnet.
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import type { Executor } from './client.ts'
 import { rentIncreases } from './schema.ts'
 import type { RentIncrease, RentIncreaseBasis } from '../../../shared/types.ts'
@@ -36,6 +36,13 @@ const toRow = (x: RentIncrease): Row => ({ ...x, basis: JSON.stringify(x.basis) 
 // Die Verlangen eines Mietverhältnisses in der Reihenfolge des Anlegens.
 export async function readRentIncreases(db: Executor, tenancyId: string): Promise<RentIncrease[]> {
   const rows = await db.select().from(rentIncreases).where(eq(rentIncreases.tenancyId, tenancyId)).orderBy(sql`rowid`)
+  return rows.map(fromRow)
+}
+
+// Die Verlangen mehrerer Mietverhältnisse (eines Objekts) in einer Abfrage, für „Demnächst fällig“ (PR 4).
+export async function readRentIncreasesOf(db: Executor, tenancyIds: readonly string[]): Promise<RentIncrease[]> {
+  if (tenancyIds.length === 0) return []
+  const rows = await db.select().from(rentIncreases).where(inArray(rentIncreases.tenancyId, [...tenancyIds])).orderBy(sql`rowid`)
   return rows.map(fromRow)
 }
 

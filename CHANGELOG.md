@@ -8,35 +8,42 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
-- Mieterhöhung, erster Teil: Am Mietverhältnis lassen sich die Art der Miete (nach Vertrag, Staffelmiete, Indexmiete)
-  und die Frage, ob der Vertrag Mieterhöhungen ausschließt, angeben; in der Kaltmiete-Staffel je Stufe ihre Art
-  (Vertragsbeginn oder Vereinbarung, Stufe der Staffelmiete, Anpassung der Indexmiete, Zustimmung zur Vergleichsmiete,
-  Modernisierung) und bei einer Indexmiete Indexmonat, Indexwert und Basisjahr. Liegen Stufen einer Staffelmiete
-  weniger als ein Jahr auseinander, weist das Formular darauf hin. Am Objekt steht die Frage, ob in der Gemeinde eine
-  Kappungsgrenzen-Verordnung gilt. Neu im Lexikon: „Ortsübliche Vergleichsmiete“, „Kappungsgrenze“, „Indexmiete“,
-  „Staffelmiete“, „Mieterhöhungsverlangen“ und „Zustimmungsfrist“. Alle Angaben sind freiwillig; Mietkonto, Abrechnung
-  und Steuer rechnen unverändert ([#191](https://github.com/speedone/mietfuchs/issues/191)).
-- Mieterhöhung, zweiter Teil: „Mieterhöhung“ am Mietverhältnis in den Stammdaten rechnet für eine Erhöhung bis zur
-  ortsüblichen Vergleichsmiete (§ 558 BGB) oder die Anpassung einer Indexmiete (§ 557b BGB), ob, ab wann und um wie
-  viel die Miete steigen darf: frühester Zugang und frühestes Wirksamwerden (Wartefrist tagesgenau ab Mietbeginn,
-  Sperrfrist, nie ein Zugang am Monatsersten), Zustimmungs- und Klagefrist mit den Feiertagen des Landes,
-  Kappungsgrenze mit Herleitung aus der Miete am Stichtag, Höchstbetrag aus Vergleichsmiete und tatsächlicher Fläche
-  (bei Inklusivmiete mit dem enthaltenen Betriebskostenanteil), bei der Indexmiete die neue Miete im Verhältnis der
-  Indexwerte, auf den Cent abgerundet. Fehlt eine Angabe oder schließt der Vertrag eine Erhöhung aus, sagt Mietfuchs
-  in ganzen Sätzen, warum. Gespeichert wird noch nichts ([#191](https://github.com/speedone/mietfuchs/issues/191)).
-- Mieterhöhung, dritter Teil: Im Fenster „Mieterhöhung“ entsteht aus der Rechnung ein Schreiben zum Drucken, im
-  Briefformat mit Briefkopf, Logo und Briefpapier. Beim Verlangen nach § 558 BGB wählen Sie das Begründungsmittel
-  (Mietspiegel mit Name, Stand, Feld und Spanne, Gutachten, drei Vergleichswohnungen mit Anschrift und Lage,
-  Mietdatenbank) und beantworten, ob es einen qualifizierten Mietspiegel gibt; seine Angaben stehen dann immer im
-  Schreiben. Dazu Empfänger, die Angabe, ob mehrere Vermieter schreiben, Bestätigungen zu allen Vermietern und Mietern
-  und ein freier Zusatzabsatz; alle
-  Pflichtangaben stehen fest, beim Verlangen mit einer Zustimmungserklärung zum Zurücksenden. Das Schreiben wird als
-  Entwurf gespeichert und bleibt für den Nachdruck unverändert, auch nach dem Versand. „Als versendet speichern“
-  rechnet mit dem tatsächlichen Zugang neu und lehnt ab, wenn das gedruckte Schreiben dann andere Zahlen oder Fristen
-  nennt; danach tragen Sie die Antwort des Mieters ein (zugestimmt, teilweise, abgelehnt) oder
-  nehmen das Verlangen zurück. Mit der Zustimmung bzw. beim Versand einer Indexanpassung trägt Mietfuchs die neue
-  Miete in die Kaltmiete-Staffel ein; Schweigen des Mieters gilt nie als Zustimmung. Neu im Lexikon:
-  „Begründungsmittel“ und „Qualifizierter Mietspiegel“ ([#191](https://github.com/speedone/mietfuchs/issues/191)).
+- Mieterhöhung: Am Mietverhältnis in den Stammdaten rechnet Mietfuchs eine Erhöhung bis zur ortsüblichen
+  Vergleichsmiete (§ 558 BGB) oder die Anpassung einer Indexmiete (§ 557b BGB), macht daraus ein Schreiben und trägt
+  die neue Miete in die Kaltmiete-Staffel ein. Ohne Mieterhöhung rechnen Mietkonto, Abrechnung und Steuer unverändert
+  ([#190](https://github.com/speedone/mietfuchs/issues/190), [#191](https://github.com/speedone/mietfuchs/issues/191)).
+  - Angaben: Am Mietverhältnis die Art der Miete (nach Vertrag, Staffelmiete, Indexmiete) und ob der Vertrag
+    Mieterhöhungen ausschließt; in der Kaltmiete-Staffel je Stufe ihre Art (Vertragsbeginn oder Vereinbarung, Stufe der
+    Staffelmiete, Anpassung der Indexmiete, Zustimmung zur Vergleichsmiete, Modernisierung), bei einer Indexmiete
+    Indexmonat, Indexwert und Basisjahr. Am Objekt die Frage, ob in der Gemeinde eine Kappungsgrenzen-Verordnung gilt.
+    Liegen Stufen einer Staffelmiete weniger als ein Jahr auseinander, weist das Formular darauf hin. Alle Angaben sind
+    freiwillig.
+  - Rechnung: frühester Zugang und frühestes Wirksamwerden (Wartefrist tagesgenau ab Mietbeginn, Sperrfrist, nie ein
+    Zugang am Monatsersten), Zustimmungs- und Klagefrist mit den Feiertagen des Landes, Kappungsgrenze mit Herleitung
+    aus der Miete am Stichtag, Höchstbetrag aus Vergleichsmiete und tatsächlicher Fläche (bei Inklusivmiete mit dem
+    enthaltenen Betriebskostenanteil), bei der Indexmiete die neue Miete im Verhältnis der Indexwerte, auf den Cent
+    abgerundet. Fehlt eine Angabe oder ist eine Erhöhung nicht möglich, sagt Mietfuchs in ganzen Sätzen, warum.
+  - Schreiben: zum Drucken im Briefformat mit Briefkopf, Logo und Briefpapier. Beim Verlangen nach § 558 BGB wählen Sie
+    das Begründungsmittel (Mietspiegel mit Name, Stand, Feld und Spanne, Gutachten, drei Vergleichswohnungen mit
+    Anschrift und Lage, Mietdatenbank) und beantworten, ob es einen qualifizierten Mietspiegel gibt; seine Angaben
+    stehen dann immer im Schreiben. Dazu Empfänger, Bestätigungen zu allen Vermietern und Mietern und ein freier
+    Zusatzabsatz; beim Verlangen liegt eine Zustimmungserklärung zum Zurücksenden bei. Das Schreiben wird als Entwurf
+    gespeichert und bleibt für den Nachdruck unverändert, auch nach dem Versand.
+  - Versand und Antwort: „Als versendet speichern“ rechnet mit dem tatsächlichen Zugang neu und lehnt ab, wenn das
+    gedruckte Schreiben dann andere Zahlen oder Fristen nennt. Danach tragen Sie die Antwort des Mieters ein
+    (zugestimmt, teilweise, abgelehnt) oder nehmen das Verlangen zurück. Mit der Zustimmung bzw. beim Versand einer
+    Indexanpassung steht die neue Miete in der Kaltmiete-Staffel und damit im Mietkonto, in der Abrechnung und in der
+    Steuer; Schweigen des Mieters gilt nie als Zustimmung. Abgelehnt wird mit Begründung eine Zustimmung, wenn das
+    Mietverhältnis vor dem Wirksamwerden endet, die Rücknahme einer Erhöhung, auf der schon eine spätere Stufe aufbaut,
+    und das Verschieben einer Wohnung mit offenem Verlangen in ein anderes Objekt.
+  - Cockpit: „Demnächst fällig“ nennt je Mietverhältnis die nächste Stufe einer Staffelmiete in den nächsten 90 Tagen
+    (bei der letzten Stufe, ab wann danach ein Verlangen nach § 558 BGB zugehen kann), den frühesten Zugang eines
+    Verlangens bzw. einer Indexerklärung, sobald er in 90 Tagen erreicht ist oder schon vorbei, und bei einem
+    versandten Verlangen ohne Antwort die Zustimmungsfrist, danach die Klagefrist und zuletzt, dass sie verstrichen
+    ist. Der Knopf öffnet das Fenster „Mieterhöhung“. Ohne Angabe der Art der Miete erscheint nichts davon; solange ein
+    Entwurf offen ist, sagt das Fenster, dass das Cockpit nicht erinnert.
+  - Neu im Lexikon: „Ortsübliche Vergleichsmiete“, „Kappungsgrenze“, „Indexmiete“, „Staffelmiete“,
+    „Mieterhöhungsverlangen“, „Zustimmungsfrist“, „Begründungsmittel“ und „Qualifizierter Mietspiegel“.
 - Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
   sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
   abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und
