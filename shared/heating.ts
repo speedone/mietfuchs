@@ -10,7 +10,11 @@ import { dwellingsOf } from './rooms.ts'
 export const HEATING_CATEGORY = 'Heizung und Warmwasser'
 
 type HeatingUnit = { id: string; participates: boolean; selfUsed?: boolean; parentUnitId?: string | null }
-type HeatingItem = { id: string; category: string; key: CostKey; amountCents: number; participantUnitIds?: string[] | null }
+type HeatingItem = { id: string; category: string; key: CostKey; amountCents: number; participantUnitIds?: string[] | null; meterType?: string | null | undefined }
+
+// Zähler, die Wärme oder Warmwasser je Nutzer erfassen. Nach Strom-, Gas- („Sonstiges“) oder Kaltwasserzählern verteilt
+// ist keine zentrale Anlage nach § 1 Abs. 1 HeizkostenV erkennbar (Nachtspeicher, Gaszähler je Wohnung).
+const HEAT_CAPTURE: ReadonlySet<string> = new Set(['waerme', 'warmwasser', 'hkv'])
 
 // § 2 HeizkostenV: Außer bei Gebäuden mit nicht mehr als zwei Wohnungen, von denen eine der
 // Vermieter selbst bewohnt, geht die Verordnung einer Vereinbarung vor. Dort darf also anderes
@@ -56,7 +60,9 @@ export function heatingByConsumption(key: CostKey): boolean {
 //   Zählern laufen, liegt über dem Höchstsatz des § 7 Abs. 1 Satz 1; zulässig ist das nur mit einer
 //   rechtsgeschäftlichen Bestimmung nach § 10, die das Modell nicht kennt. Gemeldet wird sie nur, wenn
 //   sie wirklich nach Verbrauch gedeckt ist (`covered`): Ohne Ablesungen ist nichts nach Verbrauch
-//   verteilt, und das sagt schon `meter.no-consumption`.
+//   verteilt, und das sagt schon `meter.no-consumption`. Nicht gemeldet wird (Durchsicht des Zweigs): eine Gruppe mit
+//   nur einer Wohnung (es gibt nichts zu verteilen) und eine Verteilung nach Zählern, die weder Wärme noch Warmwasser
+//   erfassen (`HEAT_CAPTURE`). Wer abgerechnet wird, weiß erst calc.ts und prüft es dort.
 export type HeatingFindings = {
   withoutConsumption: Map<string, Set<string>>
   shareOutside: { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number; onlyMetered: boolean }[]
@@ -86,7 +92,7 @@ export function heatingFindings(
     const other = own.filter((c) => !heatingByConsumption(c.key))
     if (metered.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external' || c.key === 'heatingSystem')) continue
     const onlyMetered = other.length === 0
-    if (onlyMetered && !covered.has(u.id)) continue
+    if (onlyMetered && (!covered.has(u.id) || !metered.every((c) => HEAT_CAPTURE.has(c.meterType ?? '')))) continue
     const key = own.map((c) => c.id).join('\u0000')
     const g = groups.get(key) ?? {
       unitIds: [],
@@ -98,7 +104,7 @@ export function heatingFindings(
     g.unitIds.push(u.id)
     groups.set(key, g)
   }
-  const candidates = [...groups.values()].filter((g) => g.totalCents > 0 && g.consumptionCents > 0)
+  const candidates = [...groups.values()].filter((g) => g.totalCents > 0 && g.consumptionCents > 0 && (!g.onlyMetered || g.unitIds.length > 1))
   if (candidates.length === 0) return { withoutConsumption, shareOutside: [] }
   const { min, max } = consumptionShare()
   const shareOutside = candidates.filter((g) => g.consumptionCents * 100 < g.totalCents * min || g.consumptionCents * 100 > g.totalCents * max)

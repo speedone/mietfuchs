@@ -10,7 +10,7 @@ import type { Snapshot, SnapshotReading } from '../src/snapshot.ts'
 import type { CaptureMethod, CostItem, HeatingPlant, HeatingServiceValue, Meter, Reading } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { dayAfter } from '../../shared/law/register.ts'
-import { selfDelivery, selfMeter, selfReading, selfRow, selfSnapshot } from '../testing/selfHeating.ts'
+import { selfDelivery, selfMeter, selfMeters, selfReading, selfReadings, selfRow, selfSnapshot } from '../testing/selfHeating.ts'
 import { periodKey } from '../../shared/period.ts'
 
 const codes = (s: ComputedSettlement) => s.notices.map((n) => n.code)
@@ -328,4 +328,18 @@ test('#218 Vorerfassung: In einem Gebäude, das überwiegend nicht dem Wohnen di
   assert.ok(!codes(computeSettlement(base)).includes('heating.pre-capture'))
   const ohneCo2 = (s: ComputedSettlement) => s.statements.map((st) => [st.tenancyId, st.rows.filter((x) => !x.costItemId.startsWith('co2')).map((x) => [x.costItemId, x.shareCents])])
   assert.deepEqual(ohneCo2(r), ohneCo2(computeSettlement(base)))
+})
+
+// Durchsicht des Zweigs fix/heizung-hinweise: Die Ablesungen einer Wohnung passen je Topf zum Fehler. Hat B einen
+// Warmwasserzähler, aber keinen Wärmezähler, stand an ihren Grenzen grün „abgelesen“ neben „B hat keinen Wärmezähler“.
+test('Wohnung ohne Gerät für einen Topf: ihre Grenzen nennen den Topf, die übrigen Wohnungen nichts', () => {
+  const ohneWaerme = computeSettlement(selfSnapshot({ meters: selfMeters().filter((m) => m.id !== 'wz-b'), readings: selfReadings().filter((r) => r.meterId !== 'wz-b') }))
+  assert.match(ohneWaerme.notices.find((n) => n.code === 'heating.self-incomplete')?.text ?? '', /B hat keinen Wärmezähler/)
+  assert.deepEqual(selfOf(ohneWaerme).units.map((u) => [u.unitName, ...new Set(u.boundaries.map((b) => (b.noDevicePots ?? []).join('+')))]), [['A', ''], ['B', 'heating'], ['C', '']])
+  // Kein Topf ist ganz ohne Gerät: Die Töpfe selbst melden nichts.
+  assert.deepEqual(selfOf(ohneWaerme).pots.map((p) => p.noDevices), [undefined, undefined])
+  const ohneAlles = computeSettlement(selfSnapshot({ meters: selfMeters().filter((m) => m.unitId === null) }))
+  assert.deepEqual(selfOf(ohneAlles).units.map((u) => [u.unitName, ...new Set(u.boundaries.map((b) => (b.noDevicePots ?? []).join('+')))]), [['A', 'heating+water'], ['B', 'heating+water'], ['C', 'heating+water']])
+  // Mit allen Geräten bleibt der Ausweis, wie er war.
+  assert.ok(selfOf(computeSettlement(selfSnapshot())).units.every((u) => u.boundaries.every((b) => b.noDevicePots === undefined)))
 })

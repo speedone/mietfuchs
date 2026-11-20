@@ -755,7 +755,7 @@ test('Heizkostenverteiler ohne angelegtes Gerät: Ausweis und Hinweis nennen den
     assert.equal(topf.byAreaOnly, true)
     assert.deepEqual(ohne.statements.map((st) => [st.tenantName, st.totalShareCents]), [['A', 60000], ['B', 40000]])
     assert.equal(topf.noDevices, true, 'der Topf sagt, dass kein Gerät angelegt ist')
-    for (const u of self.units) for (const b of u.boundaries) assert.equal(b.noDevices, true, `${u.unitName} ${b.date}: nichts abzulesen ist nicht „abgelesen“`)
+    for (const u of self.units) for (const b of u.boundaries) assert.deepEqual(b.noDevicePots, ['heating'], `${u.unitName} ${b.date}: nichts abzulesen ist nicht „abgelesen“`)
     const text = ohne.notices?.find((n) => n.code === 'heating.no-consumption')?.text ?? assert.fail('heating.no-consumption fehlt')
     assert.match(text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\)/)
     assert.match(text, /an keiner Wohnung ein Heizkostenverteiler angelegt/)
@@ -770,7 +770,7 @@ test('Heizkostenverteiler ohne angelegtes Gerät: Ausweis und Hinweis nennen den
     const mit = await s.api<Settlement>('/api/settlement/2025')
     const danach = mit.heating?.find((h) => h.plantId === plant.id)?.self ?? assert.fail('Ausweis fehlt')
     assert.equal(danach.pots.find((p) => p.pot === 'heating')?.noDevices, undefined)
-    for (const u of danach.units) for (const b of u.boundaries) assert.deepEqual([b.status, b.noDevices], ['read', undefined])
+    for (const u of danach.units) for (const b of u.boundaries) assert.deepEqual([b.status, b.noDevicePots], ['read', undefined])
     assert.ok(!mit.notices?.some((n) => n.code === 'heating.no-consumption'))
   } finally {
     s.stop()

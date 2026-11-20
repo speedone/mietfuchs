@@ -51,7 +51,7 @@ export type Light = 'green' | 'yellow' | 'red'
 // zulässig ist, aber hingesehen werden sollte (daneben abgelesen, Zwischenablesung nicht möglich).
 export function boundaryLight(b: SelfBoundaryView): Light {
   // Systemprüfung: Ohne angelegtes Gerät gibt es nichts abzulesen; das ist nicht „abgelesen“.
-  if (b.noDevices) return 'red'
+  if ((b.noDevicePots ?? []).length > 0) return 'red'
   if (b.status === 'read') return 'green'
   // Ab der Warngrenze neben dem Wechsel wählt der Vermieter; bis dahin wird nicht verteilt (Abweichung 22).
   if (b.status === 'off') return b.far && b.kind === 'change' && b.gap !== 'useReading' && b.gap !== 'imprecise' ? 'red' : 'yellow'
@@ -61,16 +61,23 @@ export function boundaryLight(b: SelfBoundaryView): Light {
 const KIND_TEXT: Record<SelfBoundaryView['kind'], string> = { start: 'Beginn der Heizperiode am', end: 'Ende der Heizperiode am', change: 'Mieterwechsel zum' }
 export function boundaryText(b: SelfBoundaryView, unitName: string, capture?: CaptureMethod): string {
   const head = `${unitName}, ${KIND_TEXT[b.kind]} ${fmtDate(b.date)}`
-  if (b.noDevices) return `${head}: ${capture === 'serviceValues' ? 'kein Wert des Ablesedienstes eingetragen' : 'kein Gerät angelegt'}`
-  if (b.status === 'read') return `${head}: abgelesen`
+  const lacking = b.noDevicePots ?? []
+  if (lacking.length === 0) return `${head}: ${statusText(b)}`
+  // Systemprüfung: je Topf ohne Gerät der fehlende Schritt; fehlt daneben ein Stand des anderen Topfs, steht beides da.
+  const pots = lacking.map((p) => (p === 'heating' ? 'die Heizung' : 'das Warmwasser')).join(' und ')
+  const none = `für ${pots} ${capture === 'serviceValues' ? 'kein Wert des Ablesedienstes eingetragen' : 'kein Gerät angelegt'}`
+  return `${head}: ${none}${b.status === 'read' ? '' : `; ${statusText(b)}`}`
+}
+function statusText(b: SelfBoundaryView): string {
+  if (b.status === 'read') return 'abgelesen'
   if (b.status === 'off') {
     const choice = b.far && b.kind === 'change'
       ? (b.gap === 'imprecise' ? ' (geteilt nach § 9b Abs. 3)' : b.gap === 'useReading' ? ' (Ablesung verwendet)' : '; bitte wählen')
       : ''
-    return `${head}: abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
+    return `abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
   }
   const answer = b.gap === 'impossible' ? ` (nicht möglich${b.gapReason ? `: ${b.gapReason}` : ''})` : b.gap === 'missed' ? ' (nicht durchgeführt)' : ''
-  return `${head}: keine Ablesung${missingMetersText(b.missingMeters ?? [])}${answer}`
+  return `keine Ablesung${missingMetersText(b.missingMeters ?? [])}${answer}`
 }
 
 // Systemprüfung: Je Topf, für den an keiner Wohnung ein Gerät angelegt ist, der fehlende Schritt. Die Seite meldete

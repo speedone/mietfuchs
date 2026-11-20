@@ -332,6 +332,10 @@
   "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Positionen der Rechnung „Gas 2025/2026“ ergeben zusammen 0 €. Mietfuchs behandelt sie als storniert und rechnet ihren Zeitraum als nicht abgedeckt. Ist es eine echte Rechnung über 0 € (etwa Kosten und eine gleich hohe Gutschrift), ist für diesen Zeitraum nichts zu verteilen: Schätzen Sie ihn dann nicht, sondern wählen Sie beim Abschließen „Ohne Schätzung abschließen“. Ist sie storniert, tragen Sie die neue Rechnung als Lieferung ein, sobald sie da ist."
  },
  {
+  "code": "heating.all-by-consumption",
+  "text": "Heizung und Warmwasser („Erdgas und Wartung Heizung“): Die Kosten werden ganz nach Zählern verteilt, ohne Grundkosten nach Fläche. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch, den Rest nach Wohn- oder Nutzfläche, bei der Wärme auch nach dem umbauten Raum (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Ein höherer Anteil nach Verbrauch bleibt nur bestehen, wenn er rechtsgeschäftlich bestimmt ist, etwa im Mietvertrag vereinbart (§ 10 HeizkostenV). Eine solche Bestimmung kennt Mietfuchs nicht; mit ihr ist nichts zu tun. Sonst teilen Sie die Kosten in eine Position nach Verbrauch und eine für die Grundkosten nach Fläche. Enthält die Position auch die Kosten des Warmwassers, sind diese vorher abzutrennen und nach dem Warmwasserverbrauch zu verteilen, nicht nach dem Verbrauch an Wärme (§ 8 Abs. 1, § 9 Abs. 1 HeizkostenV)."
+ },
+ {
   "code": "heating.change-fee",
   "text": "„Zwischenablesung Mieterwechsel“: Kosten der Verbrauchserfassung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, sind keine umlagefähigen Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). Ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden; ein Amtsgericht hält sie für unwirksam (AG Berlin-Hohenschönhausen; das Aktenzeichen steht im Lexikon unter „Zwischenablesung“). Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“."
  },
@@ -345,7 +349,7 @@
  },
  {
   "code": "heating.consumption-share",
-  "text": "Heizung und Warmwasser („Grundkosten“ und „Verbrauchskosten“): nach Zählern verteilt werden 30 % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen."
+  "text": "Heizung und Warmwasser („Verbrauchskosten“ und „Grundkosten“): nach Zählern verteilt werden 99,7 % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Ein höherer Anteil nach Verbrauch bleibt nur bestehen, wenn er rechtsgeschäftlich bestimmt ist, etwa im Mietvertrag vereinbart (§ 10 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen."
  },
  {
   "code": "heating.contracting",
@@ -453,7 +457,7 @@
  },
  {
   "code": "heating.no-consumption",
-  "text": "Heizanlage, Heizperiode 2025: Für Heizung ist kein Verbrauch erfasst; Mietfuchs verteilt diesen Teil nur nach Fläche. Die Heizkostenverordnung verlangt, 50 bis 70 % nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter A (A) 231,51 €, Mieter B (B) 308,68 €, Mieter C1 (C) 148,17 € und Mieter C2 (C) 83,34 €."
+  "text": "Heizanlage, Heizperiode 2025: Für Heizung und Warmwasser ist kein Verbrauch erfasst; Mietfuchs verteilt die Kosten nur nach Fläche. Die Heizkostenverordnung verlangt, 50 bis 70 % nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV), hier: Mieter A (A) 274,11 €, Mieter B (B) 365,48 €, Mieter C1 (C) 180,03 € und Mieter C2 (C) 94,08 €. Für Heizung und Warmwasser ist an keiner Wohnung ein Wärmezähler bzw. Warmwasserzähler angelegt. Legen Sie die Geräte auf der Seite „Zähler & Stände“ an und tragen Sie dort die Ablesungen zu Beginn und Ende der Heizperiode ein."
  },
  {
   "code": "heating.no-interim-reading",

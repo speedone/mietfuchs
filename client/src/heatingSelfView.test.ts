@@ -29,9 +29,13 @@ describe('Ampel der Ablesungen (Heizung PR 10, Entwurf 3.5)', () => {
   })
   // Systemprüfung: Heizkostenverteiler gewählt, kein Gerät angelegt. Nichts abzulesen ist nicht „abgelesen“.
   it('ohne angelegtes Gerät: rot und der fehlende Schritt statt „abgelesen“', () => {
-    expect(boundaryLight(b({ noDevices: true }))).toBe('red')
-    expect(boundaryText(b({ noDevices: true, kind: 'end', date: '2025-12-31' }), 'EG')).toBe('EG, Ende der Heizperiode am 31.12.2025: kein Gerät angelegt')
-    expect(boundaryText(b({ noDevices: true, kind: 'end', date: '2025-12-31' }), 'EG', 'serviceValues')).toBe('EG, Ende der Heizperiode am 31.12.2025: kein Wert des Ablesedienstes eingetragen')
+    expect(boundaryLight(b({ noDevicePots: ['heating'] }))).toBe('red')
+    expect(boundaryText(b({ noDevicePots: ['heating'], kind: 'end', date: '2025-12-31' }), 'EG')).toBe('EG, Ende der Heizperiode am 31.12.2025: für die Heizung kein Gerät angelegt')
+    expect(boundaryText(b({ noDevicePots: ['heating', 'water'], kind: 'end', date: '2025-12-31' }), 'EG')).toBe('EG, Ende der Heizperiode am 31.12.2025: für die Heizung und das Warmwasser kein Gerät angelegt')
+    expect(boundaryText(b({ noDevicePots: ['heating'], kind: 'end', date: '2025-12-31' }), 'EG', 'serviceValues')).toBe('EG, Ende der Heizperiode am 31.12.2025: für die Heizung kein Wert des Ablesedienstes eingetragen')
+    // Durchsicht des Zweigs: Fehlt daneben ein Stand des anderen Topfs, steht beides da.
+    expect(boundaryText(b({ noDevicePots: ['heating'], status: 'missing', kind: 'end', date: '2025-12-31', missingMeters: [{ name: 'Warmwasser' }] }), 'EG'))
+      .toBe('EG, Ende der Heizperiode am 31.12.2025: für die Heizung kein Gerät angelegt; keine Ablesung am Zähler „Warmwasser“')
   })
   it('je Topf ohne Gerät ein Satz mit dem Weg zur Seite Zähler; sonst keiner', () => {
     const pot = (over: Partial<SelfHeatingStatement['pots'][number]>) => ({ pot: 'heating', byAreaOnly: true, ...over }) as SelfHeatingStatement['pots'][number]

@@ -6,12 +6,17 @@ Heizkostenabrechnung, § 6a, § 9a, Betriebsstrom), liest diese Datei zuerst. Ge
 „G-A2“ meinen Abschnitte dort). Rechtswerte stehen im Rechtsregister (server/src/CLAUDE.md).
 
 **Freie Schlüssel, ganz nach Zählern** (Systemprüfung): Laufen alle Heizpositionen einer Wohnung nach Zählern, ohne
-Grundkosten nach Fläche, meldet `heating.consumption-share` (hint, ohne Betrag) den Höchstsatz des § 7 Abs. 1 Satz 1
+Grundkosten nach Fläche, meldet `heating.all-by-consumption` (hint, ohne Betrag) den Höchstsatz des § 7 Abs. 1 Satz 1
 und dass ein höherer Anteil nur mit einer rechtsgeschäftlichen Bestimmung bleibt (§ 10 HeizkostenV; das Modell kennt
-bei freien Schlüsseln keine, der Hinweis sagt deshalb, dass sie vorgeht). Kein Kürzungsbetrag: § 12 Abs. 1 Satz 1
-verlangt, dass „nicht verbrauchsabhängig“ abgerechnet wird. Nur für Wohnungen, die wirklich nach Verbrauch gedeckt
-sind (`onlyMetered` in shared/heating.ts). Derselbe Hinweis sagt bedingt, dass enthaltenes Warmwasser abzutrennen ist
-(§ 8 Abs. 1, § 9 Abs. 1); ob eine Position Warmwasser enthält, weiß Mietfuchs bei freien Schlüsseln nicht.
+bei freien Schlüsseln keine, der Hinweis sagt deshalb, dass sie vorgeht). **Eigener Code, der das Cockpit nicht färbt**
+(`INFORMATIONAL`): Im rechtmäßigen Fall ließe er sich nie abstellen; der Mischfall `heating.consumption-share` färbt
+weiter und nennt über dem Höchstsatz ebenfalls § 10. Kein Kürzungsbetrag: § 12 Abs. 1 Satz 1 verlangt, dass „nicht
+verbrauchsabhängig“ abgerechnet wird. **Er schweigt**, wo die Verordnung nicht erkennbar gilt oder niemand abgerechnet
+wird: Wohnung nicht nach Verbrauch gedeckt, nur eine Wohnung in der Gruppe, Zähler, die weder Wärme noch Warmwasser
+erfassen (`HEAT_CAPTURE` in shared/heating.ts: Strom, Sonstiges, Kaltwasser), und Positionen, die nur Mieter tragen,
+die selbst heizen, oder niemand (Warmmiete, Pauschale; `bearersOf` in calc.ts). Er sagt bedingt, dass enthaltenes
+Warmwasser abzutrennen ist (§ 8 Abs. 1, § 9 Abs. 1), außer eine Position nach Warmwasserzählern steht daneben; ob eine
+Position Warmwasser enthält, weiß Mietfuchs bei freien Schlüsseln nicht.
 
 **Grundsätze**: Eine Anlage ändert für sich keine Zahl; was Mietfuchs nicht rechnen kann, lehnt der
 Server mit Satz ab (`HeatingError`, 400). Heizregeln gelten nur für die Kostenart **„Heizung und
@@ -333,8 +338,10 @@ ohne Stand am Beginn einer Zeile nach einer Lücke, damit die Lücke nicht still
 bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
 
 - **Erfassung gewählt, kein Gerät angelegt** (Systemprüfung): Ein Topf ohne ein einziges Gerät geht nur nach Fläche
-  (`totals[p].devices` im Plan). Der Ausweis sagt es (`SelfPotView.noDevices`, je Grenze einer Wohnung ohne Gerät
-  `SelfBoundaryView.noDevices`; `status` bleibt `read`, damit ältere Stände lesbar bleiben), die Seite Heizkosten zeigt
+  (`totals[p].devices` im Plan). Der Ausweis sagt es (`SelfPotView.noDevices`; je Grenze einer Wohnung die Töpfe, für die sie kein Gerät hat,
+  `SelfBoundaryView.noDevicePots`, auch wenn nur dieser Wohnung eins fehlt und daneben `heating.self-incomplete` steht;
+  `status` beschreibt weiter nur die vorhandenen Zähler; nichts davon unter einer Ausnahme nach § 11, einer
+  Vereinbarung nach § 2 oder solange die Verordnung für die Wärmepumpe noch nicht gilt), die Seite Heizkosten zeigt
   statt „abgelesen“ den fehlenden Schritt (`missingDevicesLines`, `estimateIdleText` in client/src/heatingSelfView.ts),
   und `heating.no-consumption` nennt neben der Kürzung, dass die Geräte auf der Seite „Zähler & Stände“ anzulegen sind.
   Keine Zahl ändert sich.

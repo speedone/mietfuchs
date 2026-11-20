@@ -297,8 +297,8 @@ test('Kein Verbrauch erfasst: nur nach Fläche, 15 % auf den Anteil am unerfasst
     assert.match(text, /Für Heizung ist an keiner Wohnung ein Wärmezähler angelegt\. Legen Sie die Geräte auf der Seite „Zähler & Stände“ an/)
     const self = s.heating?.find((h) => h.self)?.self ?? assert.fail('Ausweis fehlt')
     assert.deepEqual(self.pots.map((p) => [p.pot, p.noDevices]), [['heating', true], ['water', undefined]])
-    // Die Warmwasserzähler der Wohnungen sind abgelesen: An den Grenzen fehlt nichts.
-    assert.ok(self.units.every((u) => u.boundaries.every((b) => b.noDevices === undefined)))
+    // Die Warmwasserzähler der Wohnungen sind abgelesen: An den Grenzen fehlt nur das Gerät für die Heizung.
+    assert.ok(self.units.every((u) => u.boundaries.every((b) => (b.noDevicePots ?? []).join() === 'heating')))
   })
 })
 
@@ -328,7 +328,7 @@ test('Wärmepumpe, deren Erfassung erst im Zeitraum eingebaut wurde: Hinweis, ke
     assert.ok(!codes(s).includes('heating.no-consumption'), 'keine Kürzung, solange die Verordnung nicht gilt')
     // Systemprüfung: Solange keine Erfassung verlangt ist, fehlt auch kein Gerät.
     const self = s.heating?.find((h) => h.self)?.self ?? assert.fail('Ausweis fehlt')
-    assert.ok(self.pots.every((p) => p.noDevices === undefined) && self.units.every((u) => u.boundaries.every((b) => b.noDevices === undefined)))
+    assert.ok(self.pots.every((p) => p.noDevices === undefined) && self.units.every((u) => u.boundaries.every((b) => b.noDevicePots === undefined)))
   })
 })
 

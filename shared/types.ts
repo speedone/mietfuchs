@@ -3374,9 +3374,10 @@ export type SelfBoundaryView = {
   // Die Zähler ohne Stand an dieser Grenze, mit Zählernummer, wenn eingetragen (Befund M7 aus #341);
   // fehlt in älteren Abrechnungen.
   missingMeters?: { name: string; number?: string }[]
-  // Systemprüfung: An dieser Wohnung gibt es nichts abzulesen, weil für keinen Topf ein Gerät angelegt ist. `status`
-  // bleibt dann 'read' (kein Stand fehlt); die Oberfläche zeigt stattdessen den fehlenden Schritt. Fehlt sonst.
-  noDevices?: true
+  // Systemprüfung: Die Töpfe, für die an dieser Wohnung kein Gerät angelegt ist, obwohl die Verordnung eine Erfassung
+  // verlangt. `status` beschreibt nur die Zähler, die es gibt (ohne einen ist es 'read'); die Oberfläche zeigt für diese
+  // Töpfe den fehlenden Schritt. Fehlt, wenn nichts fehlt, und in älteren Abrechnungen.
+  noDevicePots?: SelfPot[]
 }
 // Ein Nutzer einer Wohnung (Mieter, Leerstand, Eigennutzung, außerhalb) mit seinen Werten.
 export type SelfUserView = {

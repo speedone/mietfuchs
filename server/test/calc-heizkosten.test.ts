@@ -7,6 +7,7 @@ import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
+import { compareWithFrozen } from '../src/settlementDiff.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -296,17 +297,29 @@ test('Einzelbetrag 0 aus der Messdienstabrechnung ist gedeckt, kein Kürzungsrec
 
 // ---------- Systemprüfung: ganz nach Wärmezähler ----------
 
-test('Eine Position ganz nach Wärmezähler: Hinweis auf den Höchstsatz und die Vereinbarung nach § 10, ohne Betrag', () => {
-  const kosten = [heizung({ id: 'v', description: 'Erdgas und Wartung', key: 'meter', meterType: 'waerme', amountCents: 300000 })]
-  const s = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: kosten })
-  const n = notesOf(s, 'heating.consumption-share')
+const ALL = 'heating.all-by-consumption'
+const ganz = (over: Partial<SnapshotCostItem> = {}) => heizung({ id: 'v', description: 'Erdgas und Wartung', key: 'meter', meterType: 'waerme', amountCents: 300000, ...over })
+const zaehlerDer = (type: 'waerme' | 'warmwasser' | 'hkv' | 'strom' | 'sonstig' | 'kaltwasser') => {
+  const meters = ['a', 'b', 'c'].map((u) => ({ id: `${type}-${u}`, unitId: u, type }))
+  return { meters, readings: meters.flatMap((m, i) => [{ meterId: m.id, date: '2024-12-31', value: 0 }, { meterId: m.id, date: '2025-12-31', value: 10 + i }]) }
+}
+
+test('Eine Position ganz nach Wärmezähler: eigener Hinweis auf den Höchstsatz und § 10, ohne Betrag', () => {
+  const s = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [ganz()] })
+  const n = notesOf(s, ALL)
   assert.equal(n.length, 1)
   assert.equal(n[0]?.level, 'hint')
+  assert.equal(n[0]?.title, 'Heizkosten ganz nach Verbrauch verteilt')
+  assert.equal(n[0]?.rule, 'heating-consumption')
   assert.deepEqual(n[0]?.subject, { kind: 'costItem', id: 'v' })
+  // Der Fall hat einen eigenen Code, der das Cockpit nicht färbt (Durchsicht, Punkt 2); der Code des Mischfalls schweigt.
+  assert.deepEqual(notesOf(s, 'heating.consumption-share'), [])
   const text = n[0]?.text ?? ''
   assert.match(text, /„Erdgas und Wartung“/)
   assert.match(text, /ganz nach Zählern verteilt/)
   assert.match(text, /mindestens 50 und höchstens 70 %/)
+  // § 7 Abs. 1 Satz 5: bei der Wärme auch der umbaute Raum (Durchsicht, Punkt 5).
+  assert.match(text, /den Rest nach Wohn- oder Nutzfläche, bei der Wärme auch nach dem umbauten Raum \(§ 7 Abs\. 1, § 8 Abs\. 1 HeizkostenV\)/)
   assert.match(text, /§ 10 HeizkostenV/)
   assert.match(text, /ist nichts zu tun/)
   // Das Warmwasser in derselben Position (§ 8 Abs. 1, § 9 Abs. 1 HeizkostenV): bedingt, denn ob es enthalten ist, weiß Mietfuchs nicht.
@@ -320,13 +333,85 @@ test('Eine Position ganz nach Wärmezähler: Hinweis auf den Höchstsatz und die
 })
 
 test('Ganz nach Wärmezähler, aber ohne Ablesungen: nichts ist nach Verbrauch verteilt, kein Hinweis auf den Höchstsatz', () => {
-  const s = settle({ ...drei, costItems: [heizung({ id: 'v', key: 'meter', meterType: 'waerme', amountCents: 300000 })] })
-  assert.deepEqual(notesOf(s, 'heating.consumption-share'), [])
+  const s = settle({ ...drei, costItems: [ganz()] })
+  assert.deepEqual(notesOf(s, ALL), [])
 })
 
 test('Einzelbeträge des Messdienstes und eine Gutschrift nach Wärmezähler allein: kein Hinweis auf den Höchstsatz', () => {
   const messdienst = settle({ ...drei, costItems: [heizung({ id: 'md', key: 'amounts', tenancyAmounts: { A: 100000, B: 100000, C: 100000 }, amountCents: 300000 })] })
-  assert.deepEqual(notesOf(messdienst, 'heating.consumption-share'), [])
-  const gutschrift = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [heizung({ id: 'g', key: 'meter', meterType: 'waerme', amountCents: -5000 })] })
-  assert.deepEqual(notesOf(gutschrift, 'heating.consumption-share'), [])
+  assert.deepEqual(notesOf(messdienst, ALL), [])
+  const gutschrift = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [ganz({ amountCents: -5000 })] })
+  assert.deepEqual(notesOf(gutschrift, ALL), [])
+})
+
+// ---------- Durchsicht des Zweigs: wo die Verordnung nicht gilt oder niemand abgerechnet wird ----------
+
+for (const [name, tenancies] of [
+  ['alle Mieter heizen selbst', drei.tenancies.map((t) => ({ ...t, heatingModel: 'selfSupply' as const, selfSupplyKind: 'perUnit' as const }))],
+  ['alle Mieter mit Warmmiete', drei.tenancies.map((t) => ({ ...t, heatingModel: 'inclusive' as const }))],
+  ['alle Mieter mit Pauschale', drei.tenancies.map((t) => ({ ...t, heatingModel: 'flatRate' as const }))],
+] as const) {
+  test(`Ganz nach Zählern, ${name}: kein Hinweis auf den Höchstsatz`, () => {
+    const s = settle({ units: drei.units, tenancies: [...tenancies], meters: waermezaehler, readings: ablesungen, costItems: [ganz()] })
+    assert.deepEqual([...notesOf(s, ALL), ...notesOf(s, 'heating.consumption-share')], [])
+  })
+}
+
+test('Ganz nach Zählern, ein Mieter wird abgerechnet, die anderen heizen selbst oder zahlen warm: der Hinweis bleibt', () => {
+  const tenancies = [tenancy('A', 'a'), tenancy('B', 'b', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }), tenancy('C', 'c', { heatingModel: 'inclusive' })]
+  const s = settle({ units: drei.units, tenancies, meters: waermezaehler, readings: ablesungen, costItems: [ganz()] })
+  assert.equal(notesOf(s, ALL).length, 1)
+})
+
+test('Ganz nach Zählern, aber nur eine Wohnung beteiligt: es gibt nichts zu verteilen, kein Hinweis', () => {
+  const s = settle({ ...drei, meters: waermezaehler.slice(0, 1), readings: ablesungen.filter((r) => r.meterId === 'wa'), costItems: [ganz({ participantUnitIds: ['a'] })] })
+  assert.deepEqual(notesOf(s, ALL), [])
+})
+
+for (const type of ['strom', 'sonstig', 'kaltwasser'] as const) {
+  test(`Ganz nach Zählern der Art „${type}“ (Nachtspeicher, Gaszähler je Wohnung): keine zentrale Anlage erkennbar, kein Hinweis`, () => {
+    const s = settle({ ...drei, ...zaehlerDer(type), costItems: [ganz({ meterType: type })] })
+    assert.deepEqual([...notesOf(s, ALL), ...notesOf(s, 'heating.consumption-share')], [])
+    assert.deepEqual(s.statements.map((st) => st.totalShareCents), [90909, 100000, 109091])
+  })
+}
+
+test('Wärme und Warmwasser als zwei Positionen, je ganz nach Zähler: der Hinweis ohne den Satz zum enthaltenen Warmwasser', () => {
+  const w = zaehlerDer('waerme')
+  const ww = zaehlerDer('warmwasser')
+  const s = settle({ ...drei, meters: [...w.meters, ...ww.meters], readings: [...w.readings, ...ww.readings], costItems: [
+    ganz({ id: 'h1', description: 'Wärme' }), ganz({ id: 'h2', description: 'Warmwasser', meterType: 'warmwasser', amountCents: 50000 }),
+  ] })
+  const n = notesOf(s, ALL)
+  assert.equal(n.length, 1)
+  assert.doesNotMatch(n[0]?.text ?? '', /Enthält die Position auch die Kosten des Warmwassers/)
+})
+
+test('Mischfall über 70 %: der Hinweis nennt die rechtsgeschäftliche Bestimmung nach § 10; unter 50 % bleibt der Text', () => {
+  const ueber = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [
+    heizung({ id: 'v', description: 'Verbrauchskosten', key: 'meter', meterType: 'waerme', amountCents: 299000 }),
+    heizung({ id: 'gk', description: 'Grundkosten', amountCents: 1000 }),
+  ] })
+  const n = notesOf(ueber, 'heating.consumption-share')
+  assert.equal(n.length, 1)
+  assert.equal(n[0]?.text, 'Heizung und Warmwasser („Verbrauchskosten“ und „Grundkosten“): nach Zählern verteilt werden 99,7 % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Ein höherer Anteil nach Verbrauch bleibt nur bestehen, wenn er rechtsgeschäftlich bestimmt ist, etwa im Mietvertrag vereinbart (§ 10 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.')
+  assert.deepEqual(notesOf(ueber, ALL), [])
+  const unter = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [
+    heizung({ id: 'v', description: 'Verbrauchskosten', key: 'meter', meterType: 'waerme', amountCents: 90000 }),
+    heizung({ id: 'gk', description: 'Grundkosten', amountCents: 210000 }),
+  ] })
+  assert.equal(notesOf(unter, 'heating.consumption-share')[0]?.text, 'Heizung und Warmwasser („Verbrauchskosten“ und „Grundkosten“): nach Zählern verteilt werden 30 % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.')
+})
+
+// Das Regelverzeichnis nennt jetzt § 10. Eine früher abgeschlossene Abrechnung trägt die alte Fassung der Regel und
+// keinen der neuen Hinweise; das ist keine Abweichung (settlementDiff vergleicht Zahlen und Rechtswerte).
+test('Abgeschlossen vor der Änderung: weder der neue Hinweis noch die ergänzte Regel erscheinen als Abweichung', () => {
+  const s = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [ganz()] })
+  const regel = s.legalBasis?.rules.find((r) => r.code === 'heating-consumption') ?? assert.fail('Regel fehlt im Rechtsstand')
+  assert.match(regel.norm, /§§ 2, 7 Abs\. 1, 8 Abs\. 1, 10, 12 Abs\. 1 HeizkostenV/)
+  const frozen: typeof s = structuredClone(s)
+  frozen.notices = []
+  if (frozen.legalBasis) frozen.legalBasis.rules = frozen.legalBasis.rules.map((r) => (r.code === 'heating-consumption' ? { ...r, norm: '§§ 2, 7 Abs. 1, 8 Abs. 1, 12 Abs. 1 HeizkostenV' } : r))
+  const d = compareWithFrozen(frozen, s, '2026-12-31', '2026-11-20')
+  assert.deepEqual([d.comparable, d.deviations, d.valueChanges], [true, [], []])
 })
