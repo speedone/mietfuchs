@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { CostItem, MeterType, Tenancy, Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, flatIdsWithRooms, parentUnitOptions, roomCountOf, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, flatIdsWithRooms, parentUnitOptions, roomCountOf, setConnected, unitDeleteBlocked, unitDeleteMessage, unitMoveLock, unitMoveQuestion, unitPropertyOptions, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -370,3 +370,55 @@ describe('Zimmer einer Wohnung', () => {
   })
 })
 const EMPTY_UNIT_FORM_WITH_NAME = (): UnitForm => form()
+
+// ---------- Wohnung in ein anderes Objekt verschieben (#180) ----------
+
+describe('Objekt einer Wohnung (#180)', () => {
+  const A = { id: 'objekt-1', name: 'Rosenstraße 1' }
+  const B = { id: 'objekt-2', name: 'Gartenweg 3' }
+
+  test('mit nur einem Objekt gibt es keine Auswahl: wer ein Haus vermietet, sieht nichts davon', () => {
+    expect(unitPropertyOptions([A], 'objekt-1')).toEqual([])
+    expect(unitPropertyOptions([], '')).toEqual([])
+  })
+
+  test('ab zwei Objekten alle, und das gespeicherte steht immer darin', () => {
+    expect(unitPropertyOptions([A, B], 'objekt-1')).toEqual([A, B])
+    // Ein Objekt ohne Namen bekommt eine Bezeichnung statt einer leeren Zeile.
+    expect(unitPropertyOptions([A, { id: 'objekt-3', name: '  ' }], 'objekt-1').map((o) => o.name)).toEqual(['Rosenstraße 1', 'Objekt ohne Namen'])
+    // Sonst zeigte die Auswahl den ersten Eintrag und speicherte ein anderes Objekt als das sichtbare.
+    expect(unitPropertyOptions([A, B], 'weg')).toEqual([A, B, { id: 'weg', name: 'unbekanntes Objekt' }])
+  })
+
+  test('das Objekt kommt aus der Wohnung und geht nur beim Bearbeiten mit', () => {
+    const f = unitToForm({ id: 'u1', propertyId: 'objekt-2', name: 'W', areaM2: 80, participates: true })
+    expect(f.propertyId).toBe('objekt-2')
+    // Nur ein gewähltes anderes Objekt geht mit (Durchsicht #180): Ein Formular mit veraltetem Stand schickte sonst das
+    // alte Objekt und verschöbe eine inzwischen anderswo verschobene Wohnung still zurück.
+    const built = (x: UnitForm, saved?: string) => (buildUnitBody(x, saved) as { body: Record<string, unknown> }).body
+    expect(built(f, 'objekt-2')).not.toHaveProperty('propertyId')
+    expect(built(f)).not.toHaveProperty('propertyId')
+    expect(built(f, 'objekt-1').propertyId).toBe('objekt-2')
+    // Eine neue Wohnung legt die Route im gewählten Objekt an; der Rumpf nennt keines.
+    expect(body(form())).not.toHaveProperty('propertyId')
+  })
+
+  test('Zimmer und Wohnungen mit Zimmern wechseln nicht, der Satz sagt warum', () => {
+    expect(unitMoveLock({ parentUnitId: '' }, false)).toBeNull()
+    expect(unitMoveLock({ parentUnitId: 'wg' }, false)).toMatch(/Zimmer bleibt im Objekt seiner Wohnung/)
+    expect(unitMoveLock({ parentUnitId: '' }, true)).toMatch(/Wohnung mit Zimmern/)
+  })
+
+  test('die Rückfrage nennt beide Objekte und was mitwandert; ohne Wechsel keine', () => {
+    const props = [A, B]
+    expect(unitMoveQuestion({ name: 'EG', from: 'objekt-1', to: 'objekt-1', tenancies: 2 }, props)).toBeNull()
+    const q = unitMoveQuestion({ name: 'EG', from: 'objekt-1', to: 'objekt-2', tenancies: 2 }, props)
+    expect(q?.title).toBe('Wohnung „EG“ nach „Gartenweg 3“ verschieben?')
+    expect(q?.confirmLabel).toBe('Verschieben')
+    expect(q?.message).toMatch(/von „Rosenstraße 1“ nach „Gartenweg 3“/)
+    expect(q?.message).toMatch(/ihre 2 Mietverhältnisse samt Zahlungen/)
+    expect(q?.message).toMatch(/abgeschlossene Abrechnung/)
+    expect(unitMoveQuestion({ name: 'EG', from: 'objekt-1', to: 'objekt-2', tenancies: 1 }, props)?.message).toMatch(/ihr Mietverhältnis samt/)
+    expect(unitMoveQuestion({ name: 'EG', from: 'objekt-1', to: 'objekt-2', tenancies: 0 }, props)?.message).not.toMatch(/Mietverhältnis/)
+  })
+})

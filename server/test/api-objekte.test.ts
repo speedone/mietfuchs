@@ -10,6 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
+import type { JournalGroupView } from '../src/db/journal.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import type {
   CostItem, Meter, Payment, Property, Reading, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
@@ -148,6 +149,53 @@ test('Objekt: ändern, und ein Verweis über die Objektgrenze wird mit 400 abgel
     })
     assert.equal(res.status, 400)
     assert.match((await jsonOf<{ error: string }>(res)).error, /Gartenweg 3/)
+  })
+})
+
+test('Objekt: eine Wohnung wechselt über die Route das Objekt, mit Mietverhältnis und Zahlungen, und der Verlauf nennt beide (#180)', async () => {
+  await withProperties(async (s, b) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const w = await post<Unit>('/api/units?property=objekt-1', { name: 'Falsch angelegt', areaM2: 55, participates: true })
+    const t = await post<Tenancy>('/api/tenancies?property=objekt-1', {
+      unitId: w.id, tenantName: 'Schulz', persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [{ from: '2025-01', monthlyCents: 15000 }], prepaymentOverrides: {}, baseRents: [],
+    })
+    await post('/api/payments?property=objekt-1', { tenancyId: t.id, date: '2025-01-03', amountCents: 65000 })
+
+    const umzug = await s.api<Unit>(`/api/units/${w.id}?property=objekt-1`, { method: 'PUT', body: JSON.stringify({ propertyId: b.id }) })
+    assert.equal(umzug.propertyId, b.id)
+    assert.deepEqual((await s.api<Unit[]>('/api/units?property=objekt-1')).map((u) => u.id), [], 'im bisherigen Objekt steht sie nicht mehr')
+    assert.deepEqual((await s.api<Unit[]>(`/api/units?property=${b.id}`)).map((u) => u.id), [w.id])
+    assert.deepEqual((await s.api<Tenancy[]>(`/api/tenancies?property=${b.id}`)).map((x) => x.id), [t.id], 'das Mietverhältnis wandert mit')
+    assert.deepEqual((await s.api<Payment[]>(`/api/payments?property=${b.id}`)).map((p) => p.amountCents), [65000], 'die Zahlung ebenso')
+    const abrechnung = await s.api<Settlement>(`/api/settlement/2025?property=${b.id}`)
+    assert.deepEqual(abrechnung.statements.map((x) => x.tenantName), ['Schulz'])
+
+    // Der Verlauf: ein Eintrag mit eigenem Satz, sichtbar in beiden Objekten.
+    for (const property of ['objekt-1', b.id]) {
+      const [eintrag] = await s.api<JournalGroupView[]>(`/api/journal?property=${property}`)
+      assert.equal(eintrag?.title, 'Wohnung in ein anderes Objekt verschoben: Falsch angelegt', property)
+      assert.deepEqual([...(eintrag?.propertyIds ?? [])].sort(), [b.id, 'objekt-1'].sort())
+    }
+    // Ein gewöhnliches Ändern behält den bisherigen Satz.
+    await s.api(`/api/units/${w.id}?property=${b.id}`, { method: 'PUT', body: JSON.stringify({ areaM2: 56 }) })
+    assert.equal((await s.api<JournalGroupView[]>(`/api/journal?property=${b.id}`))[0]?.title, 'Wohnung geändert: Falsch angelegt')
+  })
+})
+
+test('Objekt: abgelehnter Wechsel nennt den Grund und speichert nichts (#180)', async () => {
+  await withProperties(async (s, b) => {
+    const w = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 55, participates: true }) })
+    await s.api('/api/tenancies?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      unitId: w.id, tenantName: 'Schulz', persons: 1, personHistory: [], start: '2024-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }) })
+    await s.api('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({ year: 2024, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area' }) })
+    await s.api('/api/settlement/2024/close?property=objekt-1', { method: 'POST', body: JSON.stringify({}) })
+    const res = await fetch(`${s.base}/api/units/${w.id}?property=objekt-1`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ propertyId: b.id }),
+    })
+    assert.equal(res.status, 400)
+    assert.match(await errorFrom(res), /abgeschlossenen Abrechnung 2024 des bisherigen Objekts/)
+    assert.deepEqual((await s.api<Unit[]>('/api/units?property=objekt-1')).map((u) => u.id), [w.id])
   })
 })
 

@@ -2,7 +2,7 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { BillingPeriod, CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
+import type { BillingPeriod, CostItem, Meter, MeterType, Property, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
 import { isNotAllocable, usageOf } from './types'
 import { calendarYearPeriod } from '../../shared/period.ts'
 import type { Problem } from './formProblems'
@@ -24,10 +24,12 @@ export type UnitForm = {
   parentUnitId: string
   floor: string
   notes: string
+  // Das Objekt der Wohnung (#180); leer bei einer neuen, die die Route im gewählten Objekt anlegt.
+  propertyId: string
 }
 
 export const EMPTY_UNIT_FORM: UnitForm = {
-  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', noConnection: [], usageChanges: [], rooms: '', parentUnitId: '', floor: '', notes: '',
+  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', noConnection: [], usageChanges: [], rooms: '', parentUnitId: '', floor: '', notes: '', propertyId: '',
 }
 
 const numStr = (n: number | undefined | null) => (n != null ? String(n).replace('.', ',') : '')
@@ -46,6 +48,7 @@ export function unitToForm(u: Unit): UnitForm {
     parentUnitId: u.parentUnitId ?? '',
     floor: u.floor ?? '',
     notes: u.notes ?? '',
+    propertyId: u.propertyId,
   }
 }
 
@@ -63,7 +66,9 @@ export type UnitBuildResult = { problems: Problem<UnitField>[] } | { body: Recor
 
 // null statt undefined, damit geleerte Felder über die generische PUT-Route auch
 // zurückgesetzt werden.
-export function buildUnitBody(form: UnitForm): UnitBuildResult {
+// `savedPropertyId`: das Objekt der gespeicherten Wohnung. Nur ein anderes geht mit (#180, Durchsicht): Ein Formular mit
+// veraltetem Stand schickte sonst das alte Objekt und verschöbe eine inzwischen verschobene Wohnung still zurück.
+export function buildUnitBody(form: UnitForm, savedPropertyId?: string): UnitBuildResult {
   // 0 m² ist erlaubt (#135): Eine Garage, ein Stellplatz oder ein Lager zählt beim
   // Flächenschlüssel dann nicht mit. Ein leeres Feld ist keine Angabe und bleibt ein Fehler.
   // Alle Angaben auf einmal, je mit Feld (#346, Schritt 3); vorher ein Sammelsatz für Name und Fläche.
@@ -121,7 +126,50 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
       parentUnitId: form.parentUnitId || null,
       floor: form.floor.trim() || null,
       notes: form.notes.trim() || null,
+      // Nur beim Bearbeiten und nur ein anderes Objekt (#180): Es verschiebt die Wohnung, der Server prüft, ob das geht.
+      ...(form.id && form.propertyId && savedPropertyId !== undefined && form.propertyId !== savedPropertyId ? { propertyId: form.propertyId } : {}),
     },
+  }
+}
+
+// ---------- Wohnung in ein anderes Objekt verschieben (#180) ----------
+
+// Die Auswahl „Objekt“ beim Bearbeiten einer Wohnung: erst ab zwei Objekten (wer ein Haus vermietet, sieht nichts davon),
+// dann alle. Das gespeicherte Objekt steht immer darin, sonst zeigte die Auswahl den ersten Eintrag und speicherte ein
+// anderes Objekt als das sichtbare.
+export function unitPropertyOptions(properties: readonly Pick<Property, 'id' | 'name'>[], stored: string): { id: string, name: string }[] {
+  if (properties.length < 2) return []
+  const options = properties.map((p) => ({ id: p.id, name: p.name.trim() || 'Objekt ohne Namen' }))
+  if (stored && !options.some((o) => o.id === stored)) options.push({ id: stored, name: 'unbekanntes Objekt' })
+  return options
+}
+
+// Was nie wechselt, mit dem Grund (Regeln in server/src/db/rooms.ts): Ein Zimmer liegt in einer Wohnung desselben Objekts,
+// und eine Wohnung mit Zimmern nimmt sie nicht mit. Gefragt wird nach dem gespeicherten Stand der Einheit.
+export function unitMoveLock(saved: Pick<UnitForm, 'parentUnitId'>, hasRooms: boolean): string | null {
+  if (saved.parentUnitId) return 'Ein Zimmer bleibt im Objekt seiner Wohnung. Gehört es in ein anderes Objekt, lösen Sie es zuerst aus der Wohnung.'
+  if (hasRooms) return 'Eine Wohnung mit Zimmern wechselt das Objekt nicht. Lösen Sie zuerst die Zimmer aus der Wohnung.'
+  return null
+}
+
+// Die Rückfrage vor dem Speichern, wenn die Wohnung das Objekt wechselt: was mitwandert und was den Wechsel ablehnt.
+export function unitMoveQuestion(
+  move: { name: string, from: string, to: string, tenancies: number },
+  properties: readonly Pick<Property, 'id' | 'name'>[],
+): { title: string, message: string, confirmLabel: string } | null {
+  if (!move.from || !move.to || move.from === move.to) return null
+  const nameOf = (id: string) => properties.find((p) => p.id === id)?.name.trim() || 'Objekt ohne Namen'
+  const from = nameOf(move.from)
+  const to = nameOf(move.to)
+  const tenancies = move.tenancies === 0 ? ''
+    : move.tenancies === 1 ? ' und ihr Mietverhältnis samt Zahlungen, Staffeln und Kaution'
+      : ` und ihre ${move.tenancies} Mietverhältnisse samt Zahlungen, Staffeln und Kaution`
+  return {
+    title: `Wohnung „${move.name}“ nach „${to}“ verschieben?`,
+    message: `Die Wohnung wechselt von „${from}“ nach „${to}“. Mit ihr wandern ihre Angaben (Fläche, Nutzung, Anschlüsse)${tenancies}. ` +
+      'Zähler, Kostenpositionen und Heizanlage gehören zum bisherigen Objekt. Hängt daran noch etwas, oder nennt eine abgeschlossene Abrechnung die Wohnung, ' +
+      'lehnt Mietfuchs den Wechsel mit Begründung ab, und es wird nichts gespeichert.',
+    confirmLabel: 'Verschieben',
   }
 }
 

@@ -3,7 +3,7 @@ import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, D
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
-import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, type UnitField, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, unitMoveLock, unitMoveQuestion, unitPropertyOptions, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
@@ -168,7 +168,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
   const saving = useSaving()
   const confirm = useConfirm()
-  const { property } = useProperty()
+  const { property, properties } = useProperty()
   const propertyId = property?.id
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
@@ -297,7 +297,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
   async function saveUnit() {
     if (!unitForm) return
-    const built = buildUnitBody(unitForm)
+    const built = buildUnitBody(unitForm, units.find((u) => u.id === unitForm.id)?.propertyId)
     if ('problems' in built) {
       unitErrors.report(built.problems)
       return
@@ -305,6 +305,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     unitErrors.clear()
     const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
+    // Wechselt die Wohnung das Objekt (#180), fragt die Seite vorher, was mitwandert.
+    const saved = units.find((u) => u.id === unitForm.id)
+    const move = saved ? unitMoveQuestion({
+      name: unitForm.name.trim(), from: saved.propertyId, to: unitForm.propertyId, tenancies: tenancies.filter((t) => t.unitId === saved.id).length,
+    }, properties) : null
+    if (move && !(await confirm(move))) return
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
       if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
@@ -315,6 +321,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     }
     setUnitForm(null)
     await reload()
+    if (move) {
+      const target = unitPropertyOptions(properties, unitForm.propertyId).find((o) => o.id === unitForm.propertyId)?.name ?? ''
+      toast(`Wohnung „${unitForm.name.trim()}“ steht jetzt im Objekt „${target}“. Dort finden Sie sie, wenn Sie das Objekt in der Seitenleiste wählen.`)
+      return
+    }
     toast(editing ? `Wohnung „${unitForm.name.trim()}“ gespeichert.` : `Wohnung „${unitForm.name.trim()}“ angelegt.`)
   }
 
@@ -478,6 +489,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   }, [units, flats])
   const unitHasRooms = unitForm?.id !== undefined && flats.has(unitForm.id)
   const parentChoices = unitForm ? parentUnitOptions(units, tenancies, objectMeters, unitForm.id ?? '', unitForm.parentUnitId, objectCosts) : []
+  // Objekt einer Wohnung (#180): nur beim Bearbeiten und ab zwei Objekten. Zimmer und Wohnungen mit Zimmern wechseln nicht.
+  const savedUnit = unitForm?.id !== undefined ? units.find((u) => u.id === unitForm.id) : undefined
+  const propertyChoices = unitForm && savedUnit ? unitPropertyOptions(properties, unitForm.propertyId) : []
+  const moveLock = savedUnit ? unitMoveLock({ parentUnitId: savedUnit.parentUnitId ?? '' }, unitHasRooms) : null
+  const moving = savedUnit !== undefined && unitForm !== null && unitForm.propertyId !== savedUnit.propertyId
   const tenancyUnits = units.filter((u) => u.id === tenForm?.unitId || !flats.has(u.id))
   // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
   const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)
@@ -1005,8 +1021,16 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <Field label="Etage" width="m">
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
             </Field>
+            {/* Objekt einer Wohnung (#180): ab zwei Objekten; der Wechsel fragt beim Speichern nach. */}
+            {propertyChoices.length > 0 && (
+              <Field label="Objekt" hint={moveLock ?? (moving ? 'Beim Speichern fragt Mietfuchs nach, bevor die Wohnung in das andere Objekt wechselt.' : 'Falsch angelegt oder das Haus aufgeteilt? Hier wechselt die Wohnung samt Mietverhältnissen in ein anderes Objekt.')}>
+                <select value={unitForm.propertyId} disabled={moveLock !== null} onChange={(e) => setUnitForm({ ...unitForm, propertyId: e.target.value, parentUnitId: savedUnit !== undefined && e.target.value !== savedUnit.propertyId ? '' : unitForm.parentUnitId })}>
+                  {propertyChoices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              </Field>
+            )}
             {/* Zimmer einer Wohnung (#573): Die Auswahl bietet nur, was der Server annimmt (parentUnitOptions). */}
-            {(unitForm.parentUnitId !== '' || parentChoices.length > 0) && (
+            {!moving && (unitForm.parentUnitId !== '' || parentChoices.length > 0) && (
               <Field label={<Term id="roomOfFlat">Liegt als Zimmer in der Wohnung</Term>} hint="Leer lassen, wenn diese Einheit eine Wohnung oder ein Stellplatz ist. Ein Zimmer einer Wohngemeinschaft vermieten Sie einzeln; seine Fläche zählt anteilig an der Wohnung.">
                 <select value={unitForm.parentUnitId} onChange={(e) => setUnitForm({ ...unitForm, parentUnitId: e.target.value })}>
                   <option value="">keine, eine eigene Wohnung</option>

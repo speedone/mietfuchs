@@ -411,6 +411,18 @@ vorverteilt (#95), die Flexibilität steckt in der Kostenposition (#94).
   `sameProperty`, `CrossPropertyError` → 400; beim Wiederherstellen `crossPropertyViolations`).
   Keine zusammengesetzten Fremdschlüssel, weil `SET NULL` auf `direct_unit_id` sonst auch das
   Pflichtfeld leerte.
+- **Wohnung verschieben** (#180, `PUT /api/units/:id` mit `propertyId`, Oberfläche in client/CLAUDE.md): Mit ihr wandern
+  Mietverhältnisse, Zahlungen, Staffeln, Kaution. `guardUnit` lehnt mit Satz ab, was zum bisherigen Objekt gehört (Zähler,
+  Kostenpositionen in jeder Form, Heizanlage mit Liste, Rechnungen einer Etagenheizung, CO₂-Beträge, Heizkorrekturen,
+  verrechnete CO₂-Erstattungen, Antworten zu fehlenden Zwischenablesungen, Rest und Zwischenzähler, Zimmer), dazu `guardMoveSettlements`: eine abgeschlossene
+  Abrechnung oder Heizkostenabrechnung des bisherigen Objekts, deren eingefrorener Stand die Wohnung oder eines ihrer
+  Mietverhältnisse nennt (Suche nach der Kennung als JSON-Zeichenkette), und eine abgeschlossene des neuen Objekts,
+  deren Zeitraum ein Mietverhältnis der Wohnung berührt; `guardMovePeriods` eine Jahreskorrektur unter einem Zeitraum,
+  den das neue Objekt nicht hat; `guardServedChange` für Anlagen ohne Liste beider Objekte. Danach als Netz
+  `crossPropertyViolations` und `orphanPeriodKeys` im selben Vorgang (`afterReplace`), und der Verlauf heißt „Wohnung in
+  ein anderes Objekt verschoben“. Geprüft in db-wohnung-verschieben.test.ts und api-objekte.test.ts. Bekannte Grenze: eine
+  leere oder selbstgenutzte Wohnung zählt auch in abgeschlossenen Zeiträumen der Objekte zur Fläche; deren
+  eingefrorener Stand bleibt, die Abweichung zeigt `deviation` (wie beim Anlegen einer Wohnung).
 - **Abschlüsse sind eindeutig je (Objekt, Zeitraum).**
 - **Routen nehmen `?property=`**, beim Anlegen einer Wurzel `propertyId` im Rumpf (`propertyOf`).
   **Fehlt die Angabe und gibt es genau ein Objekt, gilt dieses**; bei mehreren 400 statt still

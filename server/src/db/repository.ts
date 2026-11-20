@@ -1959,6 +1959,92 @@ export async function guardServedChange(db: Executor, plantId: string, unitIds: 
       'Das lässt Mietfuchs deshalb nicht zu, solange es diese Heizvorauszahlung gibt. Stimmt die Zuordnung nicht, tragen Sie bei diesen Mietverhältnissen die Heizvorauszahlung als übrige Vorauszahlung ein (Stammdaten → Mietverhältnis) und prüfen dabei die abgeschlossenen Abrechnungen. Gespeichert wurde nichts.')
 }
 
+type MovedTenancy = { id: string; tenantName: string; start: string; end: string | null }
+const propertyNameOf = async (db: Executor, propertyId: string): Promise<string> =>
+  (await db.select({ name: properties.name }).from(properties).where(eq(properties.id, propertyId)))[0]?.name ?? ''
+
+// Abgeschlossene Abrechnungen beim Objektwechsel einer Wohnung (#180). Der eingefrorene Stand ändert sich nie; aber
+// nennt eine abgeschlossene Abrechnung des bisherigen Objekts die Wohnung oder eines ihrer Mietverhältnisse, gehörte
+// dieses zugestellte Schriftstück danach zu einer Wohnung eines anderen Hauses, und ein Wiederöffnen rechnete ohne
+// sie. Im neuen Objekt stünde ein Mietverhältnis in einem Zeitraum, den das Haus ohne es abgeschlossen hat; seine
+// Kosten dieser Zeit rechnete dann keine Abrechnung ab. Beides wird mit Satz abgelehnt. Gesucht wird die Kennung als
+// JSON-Zeichenkette (mit Anführungszeichen) im eingefrorenen Stand: `statements` tragen `unitId` und `tenancyId`.
+async function guardMoveSettlements(db: Executor, before: Unit, after: Unit, moved: readonly MovedTenancy[]): Promise<void> {
+  const ids = [after.id, ...moved.map((t) => t.id)]
+  const names = (column: typeof closedSettlements.settlement | typeof closedHeatingSettlements.settlement) =>
+    or(...ids.map((id) => sql`instr(${column}, ${JSON.stringify(id)}) > 0`))
+  const labelOf = (rules: PeriodRules, key: PeriodKey): string => {
+    const p = periodOfKey(rules, key)
+    return p === null ? key : periodLabel(p)
+  }
+  const genannt: string[] = []
+  const altRules = await rulesForProperty(db, before.propertyId)
+  for (const c of await db.select({ period: closedSettlements.period }).from(closedSettlements)
+    .where(and(eq(closedSettlements.propertyId, before.propertyId), names(closedSettlements.settlement)))) {
+    genannt.push(`Abrechnung ${labelOf(altRules, c.period)}`)
+  }
+  for (const plant of await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.propertyId, before.propertyId))) {
+    const rules = (await heatingRulesOf(db, plant.id))?.rules ?? altRules
+    for (const c of await db.select({ period: closedHeatingSettlements.period }).from(closedHeatingSettlements)
+      .where(and(eq(closedHeatingSettlements.plantId, plant.id), names(closedHeatingSettlements.settlement)))) {
+      genannt.push(`Heizkostenabrechnung ${labelOf(rules, c.period)}`)
+    }
+  }
+  if (genannt.length > 0) {
+    throw new CrossPropertyError(
+      `Die Wohnung „${after.name}“ steht in der abgeschlossenen ${andList(genannt)} des bisherigen Objekts und kann deshalb nicht in ein anderes Objekt wechseln: ` +
+        'Die zugestellte Abrechnung nennte sonst eine Wohnung, die nicht mehr zum Haus gehört. ' +
+        'Gehört die Wohnung ab jetzt zum anderen Objekt, legen Sie sie dort neu an und beenden Sie hier die Mietverhältnisse. Gespeichert wurde nichts.',
+    )
+  }
+  if (moved.length === 0) return
+  const zielRules = await rulesForProperty(db, after.propertyId)
+  const betroffen = (from: string, to: string): MovedTenancy[] => moved.filter((t) => t.start <= to && (t.end === null || t.end >= from))
+  const zu: string[] = []
+  const wer = new Set<string>()
+  const pruefe = (rules: PeriodRules, key: PeriodKey, was: string): void => {
+    const p = periodOfKey(rules, key)
+    if (p === null) return
+    const t = betroffen(p.from, p.to)
+    if (t.length === 0) return
+    zu.push(`${was} ${periodLabel(p)}`)
+    for (const x of t) wer.add(`„${x.tenantName}“`)
+  }
+  for (const c of await db.select({ period: closedSettlements.period }).from(closedSettlements).where(eq(closedSettlements.propertyId, after.propertyId))) {
+    pruefe(zielRules, c.period, 'Abrechnung')
+  }
+  for (const plant of await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.propertyId, after.propertyId))) {
+    const rules = (await heatingRulesOf(db, plant.id))?.rules ?? zielRules
+    for (const c of await db.select({ period: closedHeatingSettlements.period }).from(closedHeatingSettlements).where(eq(closedHeatingSettlements.plantId, plant.id))) {
+      pruefe(rules, c.period, 'Heizkostenabrechnung')
+    }
+  }
+  if (zu.length > 0) {
+    throw new CrossPropertyError(
+      `Das Objekt „${await propertyNameOf(db, after.propertyId)}“ hat die ${andList(zu)} schon abgeschlossen, und ${andList([...wer])} wohnte in dieser Zeit in der Wohnung „${after.name}“. ` +
+        'Nach dem Wechsel stünde das Mietverhältnis in einem Zeitraum, der ohne es abgerechnet ist. Öffnen Sie dort die Abrechnung zuerst wieder, wenn die Wohnung wirklich schon damals dazugehörte. Gespeichert wurde nichts.',
+    )
+  }
+}
+
+// Die Jahreskorrektur (#208) steht unter Zeiträumen des bisherigen Objekts. Rechnet das neue in anderem Rhythmus ab,
+// gäbe es diese Zeiträume dort nicht; die Korrektur fiele aus jeder Abrechnung, und das nächste Backup ließe sich nicht
+// einspielen (`orphanPeriodKeys`).
+async function guardMovePeriods(db: Executor, after: Unit, tenancyIds: readonly string[]): Promise<void> {
+  if (tenancyIds.length === 0) return
+  const zielRules = await rulesForProperty(db, after.propertyId)
+  const rows = await db.select({ period: prepaymentOverrides.period, tenantName: tenancies.tenantName })
+    .from(prepaymentOverrides).innerJoin(tenancies, eq(prepaymentOverrides.tenancyId, tenancies.id))
+    .where(inArray(prepaymentOverrides.tenancyId, [...tenancyIds]))
+  const fremd = rows.filter((r) => periodOfKey(zielRules, r.period) === null)
+  if (fremd.length === 0) return
+  const namen = [...new Set(fremd.map((r) => `„${r.tenantName}“`))]
+  throw new CrossPropertyError(
+    `Die Jahreskorrektur von ${andList(namen)} steht unter einem Abrechnungszeitraum, den es im Objekt „${await propertyNameOf(db, after.propertyId)}“ nicht gibt, weil es in einem anderen Rhythmus abrechnet. ` +
+      'Entfernen Sie zuerst diese Jahreskorrektur (Stammdaten → Mietverhältnis) und tragen Sie sie nach dem Wechsel neu ein. Gespeichert wurde nichts.',
+  )
+}
+
 async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
   await guardRooms(db, before, after)
   // „Kein Anschluss: Wärme“ ändert, welche Anlage ohne Liste die Wohnung versorgt (#117, Heizung PR 5).
@@ -2024,7 +2110,38 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   const rest = await meterRestUnitRefs(db, after.id)
   if (rest.recipients > 0) haengt.push('Empfänger des Allgemeinverbrauchs von Kostenpositionen')
   if (rest.groups > 0) haengt.push('Zielgruppen von Zwischenzählern')
+  // #180, mit der Oberfläche zum Verschieben: Was der Wächter bis dahin nicht kannte. Die Rechnung einer Etagenheizung
+  // gehört zur Anlage des bisherigen Objekts, ebenso CO₂-Beträge, Korrekturen der Heizvorauszahlung und eine in einer
+  // Abrechnung des bisherigen Objekts verrechnete CO₂-Erstattung (ihr Zeitraum gehört zu dessen Rhythmus).
+  const lieferungen = await db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, after.id))
+  if ((lieferungen[0]?.n ?? 0) > 0) haengt.push('Rechnungen einer Heizung der Wohnung')
+  // Durchsicht zu #180: Antworten zu fehlenden Zwischenablesungen beschreiben Grenzen bei der Heizanlage des bisherigen
+  // Objekts; im neuen gälten sie still für dessen Anlage.
+  const luecken = await db.select({ n: count() }).from(interimReadingGaps).where(eq(interimReadingGaps.unitId, after.id))
+  if ((luecken[0]?.n ?? 0) > 0) haengt.push('Antworten zu fehlenden Zwischenablesungen')
+  const ihreMietverhaeltnisse = await db.select({ id: tenancies.id, tenantName: tenancies.tenantName, start: tenancies.start, end: tenancies.end })
+    .from(tenancies).where(eq(tenancies.unitId, after.id))
+  const tenancyIds = ihreMietverhaeltnisse.map((t) => t.id)
+  if (tenancyIds.length > 0) {
+    const co2 = await db.select({ n: count() }).from(co2TenantReliefs).where(inArray(co2TenantReliefs.tenancyId, tenancyIds))
+    if ((co2[0]?.n ?? 0) > 0) haengt.push('CO₂-Beträge „vom Vermieter übernommen“ ihrer Mietverhältnisse')
+    const heiz = await db.select({ n: count() }).from(heatingPrepaymentOverrides).where(inArray(heatingPrepaymentOverrides.tenancyId, tenancyIds))
+    if ((heiz[0]?.n ?? 0) > 0) haengt.push('Korrekturen der Heizvorauszahlung ihrer Mietverhältnisse')
+    const erstattung = await db.select({ n: count() }).from(co2Refunds).where(and(inArray(co2Refunds.tenancyId, tenancyIds), isNotNull(co2Refunds.settlePeriod)))
+    if ((erstattung[0]?.n ?? 0) > 0) haengt.push('in einer Abrechnung verrechnete CO₂-Erstattungen ihrer Mietverhältnisse')
+  }
   if (haengt.length === 0) {
+    await guardMoveSettlements(db, before, after, ihreMietverhaeltnisse)
+    await guardMovePeriods(db, after, tenancyIds)
+    // Eine Anlage ohne Liste versorgt jede Wohnung ihres Objekts (#117): Mit dem Wechsel verlässt die Wohnung die
+    // Anlagen des bisherigen und kommt zu denen des neuen Objekts. Mit getrennter Heizkostenabrechnung stünde eine
+    // Heizvorauszahlung danach in einer anderen Abrechnung als bisher; dieselbe Ablehnung wie bei „Kein Anschluss“.
+    const ohneListeAlt = await db.select({ id: heatingPlants.id }).from(heatingPlants)
+      .where(and(eq(heatingPlants.propertyId, before.propertyId), eq(heatingPlants.unitsLimited, false)))
+    for (const plant of ohneListeAlt) if (servesUnit({ units: null }, before)) await guardServedChange(db, plant.id, [after.id])
+    const ohneListeNeu = await db.select({ id: heatingPlants.id }).from(heatingPlants)
+      .where(and(eq(heatingPlants.propertyId, after.propertyId), eq(heatingPlants.unitsLimited, false)))
+    for (const plant of ohneListeNeu) if (servesUnit({ units: null }, after)) await guardServedChange(db, plant.id, [after.id])
     // Durchsicht zu PR #427, K4: Die offenen Anschreiben ihrer Mieter gehören zum bisherigen Haus und entfallen im selben
     // Vorgang; die abgeschlossener Abrechnungen bleiben.
     const ihre = await db.select({ id: tenancies.id }).from(tenancies).where(eq(tenancies.unitId, after.id))
@@ -2723,6 +2840,17 @@ const unitCollection: Collection<Unit> = {
   replace: async (db, u) => {
     await db.update(units).set(unitRow(u)).where(eq(units.id, u.id))
     await writeUnitChildren(db, u)
+  },
+  // #180: Netz unter dem Wächter beim Objektwechsel. Dieselben Prüfungen wie beim Wiederherstellen und beim Rücksprung;
+  // findet eine etwas, das `guardUnit` nicht kennt, rollt die Transaktion zurück, statt einen Bestand zu hinterlassen,
+  // den das eigene Backup nicht mehr einspielt.
+  afterReplace: async (db, before, after) => {
+    if (before.propertyId === after.propertyId) return
+    const [befund] = [...(await crossPropertyViolations(db)), ...(await orphanPeriodKeys(db))]
+    if (befund !== undefined) {
+      throw new CrossPropertyError(`Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln: ${befund} Gespeichert wurde nichts.`)
+    }
+    await retitleCurrentGroup(db, 'Wohnung in ein anderes Objekt verschoben')
   },
   // Die Rechnungen einer Etagenheizung hängen an der Wohnung (`fuel_deliveries.unit_id`, CASCADE). Mit ihr
   // verschwänden Betrag, kg CO₂ und CO₂-Kosten einer bezahlten Rechnung still, und hängt eine Position daran,

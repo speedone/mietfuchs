@@ -32,6 +32,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Schneller mit großem Bestand: Mietfuchs liest die Daten nur noch neu, wenn sich etwas geändert hat. Listen
   antworten bei fünf Häusern und zehn Jahren in unter 20 statt rund 200 ms, Mietkonto, Abrechnung und Steuer
   deutlich schneller ([#651](https://github.com/speedone/mietfuchs/issues/651)).
+- Stammdaten: Eine Wohnung lässt sich in ein anderes Objekt verschieben, etwa wenn sie im falschen Objekt angelegt
+  wurde oder ein Haus nachträglich aufgeteilt ist. Das Feld „Objekt“ erscheint beim Bearbeiten erst ab dem zweiten
+  Objekt; vor dem Speichern fragt Mietfuchs nach und nennt, was mitwandert (Mietverhältnisse samt Zahlungen, Staffeln
+  und Kaution). Abgelehnt wird mit Begründung, was zum bisherigen Objekt gehört, und jeder Wechsel, der eine
+  abgeschlossene Abrechnung beträfe: Nennt eine abgeschlossene Abrechnung des bisherigen Objekts die Wohnung, oder hat
+  das neue Objekt einen Zeitraum abgeschlossen, in dem ein Mietverhältnis der Wohnung lief. Neu geprüft werden dabei
+  auch Rechnungen einer Etagenheizung, CO₂-Beträge, Korrekturen der Heizvorauszahlung, verrechnete CO₂-Erstattungen,
+  Antworten zu fehlenden Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
+  Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
+  danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
 ## [0.18.1] – 2026-11-19
 
