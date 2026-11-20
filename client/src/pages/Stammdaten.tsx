@@ -610,7 +610,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         )}
         {/* Immer, auch ohne vereinbarte Höhe (Durchsicht G4): Sonst ließe sich die erste Buchung nicht anlegen. */}
         <button className="btn small secondary" onClick={() => setDepositFor(t.id)}>Kaution führen</button>
-        {!t.end && <button className="btn small secondary" onClick={() => setRentIncreaseFor(t.id)}>Mieterhöhung</button>}
+        {/* Durchsicht K5: auch bei gekündigtem Mietverhältnis; nur nach dem Auszug nicht mehr. */}
+        {(t.end === null || t.end >= todayIso()) && <button className="btn small secondary" onClick={() => setRentIncreaseFor(t.id)}>Mieterhöhung</button>}
         </div>
       </td>
     </tr>

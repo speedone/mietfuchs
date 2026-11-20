@@ -1004,6 +1004,18 @@ test('Kaution: der Sprung aus dem Cockpit öffnet das Seitenfenster des Mietverh
 
 // ---------- Art der Miete und Art je Stufe (#191) ----------
 
+test('Mieterhöhung: der Knopf steht auch bei künftigem Mietende, nur bei vergangenem nicht (Durchsicht K5)', async () => {
+  page([
+    tenancy('t1', 'Laufend'),
+    tenancy('t2', 'Gekündigt', { end: '2099-12-31' }),
+    tenancy('t3', 'Ausgezogen', { start: '2015-01-01', end: '2020-12-31' }),
+  ])
+  await screen.findByText('Laufend', undefined, SLOW)
+  expect(rowOf('Laufend').queryByRole('button', { name: 'Mieterhöhung' })).toBeTruthy()
+  expect(rowOf('Gekündigt').queryByRole('button', { name: 'Mieterhöhung' })).toBeTruthy()
+  expect(rowOf('Ausgezogen').queryByRole('button', { name: 'Mieterhöhung' })).toBeNull()
+})
+
 test('Mieterhöhung: Art der Miete, Ausschluss und Art je Stufe zeigen den gespeicherten Wert', async () => {
   page([tenancy('t1', 'Index', {
     rentKind: 'index', rentIncreaseExcluded: false,

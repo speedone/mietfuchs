@@ -294,6 +294,9 @@ Festlegungen:
 - **Frühester Zugang beim Verlangen** ist der spätere aus Sperrfrist und „erhöhte Miete nach § 558b Abs. 1 nicht vor dem
   Ende der Wartefrist“ (M1: Mietbeginn 15.11.2025 → Zugang ab 02.12.2026, wirksam 01.03.2027). Ein früherer Zugang nach
   Ablauf der Sperrfrist mit späterem Wirksamkeitsmonat (O3) wird nicht vorgeschlagen und gilt als `notYet`.
+- **Ende der Sperrfrist** (Durchsicht S1): Zugang frühestens einen Tag nach dem Tag gleicher Zahl, bei jedem Bezugstag wie
+  beim Ersten (Indexmiete, Mietbeginn 15.11.2025 → Zugang ab 16.11.2026); die Lesart nach § 187 Abs. 1 oder 2 BGB bleibt
+  offen, nie am Monatsersten. Bei der Vergleichsmiete gilt dasselbe, dort liegt die Wartefrist ohnehin dahinter.
 - **Zeitpunkt der Registerwerte**: Zustimmung, Sperrfrist und Indexfrist am Tag des Zugangs, Wartefrist am Ersten des
   Monats, in dem die Miete nach § 558b geschuldet wäre, Kappungsgrenze und Rundung am Tag des Wirksamwerdens. Das Cockpit
   (`nextRentEvents`) fragt `valueAt` zum Tag.

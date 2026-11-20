@@ -51,3 +51,23 @@ describe('Mieterhöhung: Rumpf der Rechnung', () => {
     expect('problems' in half && half.problems.map((p) => p.field)).toEqual(['fromValue'])
   })
 })
+
+describe('Mieterhöhung: Durchsicht K1, K2', () => {
+  const start = (over: Partial<RentIncreaseValue> = {}): RentIncreaseValue => ({ ...rentIncreaseStart(tenancy(), unit, property), ...over })
+  it('die Miete am Stichtag geht mit ihrem Tag an den Server', () => {
+    const r = rentIncreaseRequest(start({ rentAtCapDate: '480,00', rentAtCapDateOn: '2024-02-01' }))
+    expect('body' in r && r.body).toMatchObject({ rentAtCapDateCents: 48000, rentAtCapDateOn: '2024-02-01' })
+    const none = rentIncreaseRequest(start())
+    expect('body' in none && 'rentAtCapDateOn' in none.body).toBe(false)
+  })
+  it('ein leeres Basisjahr des Ausgangsindex gilt nicht still als 2020, wenn die Stufe eine andere Basis trägt', () => {
+    const v = start({ kind: 'index', fromMonth: '12.2014', fromValue: '106,6', fromBase: '' })
+    const r = rentIncreaseRequest(v, { stepBase: 2015 })
+    expect('problems' in r && r.problems.map((p) => p.field)).toEqual(['fromBase'])
+    expect('problems' in r && r.problems[0]?.text).toMatch(/2015/)
+    const same = rentIncreaseRequest(v, { stepBase: 2020 })
+    expect('body' in same && same.body.fromIndex).toEqual({ month: '2014-12', value: 106.6, base: 2020 })
+    const given = rentIncreaseRequest({ ...v, fromBase: '2015' }, { stepBase: 2015 })
+    expect('body' in given && given.body.fromIndex?.base).toBe(2015)
+  })
+})

@@ -21,6 +21,7 @@ export type RentIncreaseValue = {
   noThirdPartyFunds: boolean
   rentCap: RentCapAnswer
   rentAtCapDate: string
+  rentAtCapDateOn: string // der Tag, den das Feld beim Eingeben nannte (Durchsicht K1); leer, solange keiner bekannt ist
   comparison: string
   rangeLow: string
   rangeHigh: string
@@ -34,7 +35,7 @@ export type RentIncreaseValue = {
   toValue: string
   toBase: string
 }
-export type RentIncreaseField = Exclude<keyof RentIncreaseValue, 'kind' | 'allStepsEntered' | 'residential' | 'noThirdPartyFunds' | 'rentCap'>
+export type RentIncreaseField = Exclude<keyof RentIncreaseValue, 'kind' | 'allStepsEntered' | 'residential' | 'noThirdPartyFunds' | 'rentCap' | 'rentAtCapDateOn'>
 
 export const RENT_INCREASE_STATE_LABELS: Record<RentIncreaseState, string> = {
   possible: 'Möglich',
@@ -68,7 +69,7 @@ export function rentIncreaseStart(t: Pick<Tenancy, 'rentKind'>, unit: Pick<Unit,
     receivedOn: '', effectiveFrom: '',
     allStepsEntered: false, residential: false, noThirdPartyFunds: false,
     rentCap: capOf === true ? 'yes' : capOf === false ? 'no' : 'unknown',
-    rentAtCapDate: '', comparison: '', rangeLow: '', rangeHigh: '',
+    rentAtCapDate: '', rentAtCapDateOn: '', comparison: '', rangeLow: '', rangeHigh: '',
     area: unit && unit.areaM2 > 0 ? areaText(unit.areaM2) : '',
     operatingCosts: '', requested: '',
     fromMonth: '', fromValue: '', fromBase: '', toMonth: '', toValue: '', toBase: '',
@@ -83,8 +84,10 @@ const FIELD_NAMES: Record<RentIncreaseField, string> = {
 }
 const problem = (field: RentIncreaseField, short: string, text: string): Problem<RentIncreaseField> => ({ field, short, text: `${FIELD_NAMES[field]}: ${text}` })
 
-// Der Rumpf der Rechnung, oder die Meldungen am Feld. Der Server prüft dasselbe noch einmal.
-export function rentIncreaseRequest(v: RentIncreaseValue): Checked<RentIncreaseRequest, RentIncreaseField> {
+// Der Rumpf der Rechnung, oder die Meldungen am Feld. Der Server prüft dasselbe noch einmal. `stepBase` ist das Basisjahr
+// des Indexwerts der bisherigen Stufe (Durchsicht K2): Trägt sie eine andere Basis als die aktuelle Reihe, gilt ein leeres
+// Basisjahr des Ausgangsindex nicht still als die aktuelle.
+export function rentIncreaseRequest(v: RentIncreaseValue, ctx: { stepBase?: number | null } = {}): Checked<RentIncreaseRequest, RentIncreaseField> {
   const problems: Problem<RentIncreaseField>[] = []
   const body: RentIncreaseRequest = { kind: v.kind }
   if (v.receivedOn.trim() !== '') {
@@ -120,6 +123,7 @@ export function rentIncreaseRequest(v: RentIncreaseValue): Checked<RentIncreaseR
       const c = cents(field, v[field])
       if (c !== undefined) body[key] = c
     }
+    if (body.rentAtCapDateCents !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(v.rentAtCapDateOn)) body.rentAtCapDateOn = v.rentAtCapDateOn
     if (v.area.trim() !== '') {
       const a = parseNumberDe(v.area)
       if (a === null || !(a > 0)) problems.push(problem('area', 'Keine Fläche', 'Geben Sie die tatsächliche Wohnfläche in m² ein, etwa „61,5“.'))
@@ -140,6 +144,11 @@ export function rentIncreaseRequest(v: RentIncreaseValue): Checked<RentIncreaseR
       const value = parseNumberDe(v[valueField])
       const tenths = value === null ? 0 : Math.round(value * 10)
       if (value === null || tenths <= 0 || Math.abs(value * 10 - tenths) > 1e-6) problems.push(problem(valueField, 'Kein Indexwert', 'Geben Sie den Wert mit höchstens einer Nachkommastelle ein, etwa „106,1“.'))
+      const stepBase = prefix === 'from' && ctx.stepBase != null && String(ctx.stepBase) !== CURRENT_INDEX_BASE ? ctx.stepBase : null
+      if (v[baseField].trim() === '' && stepBase !== null) {
+        problems.push(problem(baseField, 'Basisjahr fehlt', `Die bisherige Stufe nennt die Basis ${stepBase}, leer hieße die aktuelle Reihe (Basis ${CURRENT_INDEX_BASE}). Geben Sie das Basisjahr des Werts ein.`))
+        return undefined
+      }
       const baseText = v[baseField].trim() === '' ? CURRENT_INDEX_BASE : v[baseField].trim()
       const base = /^\d{4}$/.test(baseText) ? Number(baseText) : null
       if (base === null) problems.push(problem(baseField, 'Kein Jahr', 'Geben Sie das Basisjahr der Reihe ein, etwa „2020“; leer heißt die aktuelle Reihe.'))

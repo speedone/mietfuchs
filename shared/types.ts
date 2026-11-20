@@ -291,6 +291,9 @@ export type RentIncreaseRequest = {
   noThirdPartyFunds?: boolean
   rentCap?: RentCapAnswer | null
   rentAtCapDateCents?: number | null
+  // Der Tag, zu dem die eingegebene Miete am Stichtag gehört ('JJJJ-MM-TT', aus `capBaseDay` des Plans). Weicht er vom
+  // Stichtag der Rechnung ab, sperrt sie (Durchsicht K1): Die Eingabe gehört dann zu einem anderen Tag.
+  rentAtCapDateOn?: string | null
   comparisonCentsPerM2?: number | null
   rangeLowCentsPerM2?: number | null
   rangeHighCentsPerM2?: number | null
@@ -335,6 +338,8 @@ export type RentIncreasePlan = {
   currentCents: number | null // die bisherige Miete laut Staffel
   currentSince: string | null // Bezugstag der letzten Änderung, die für die Fristen zählt
   receivedOn: string // der gerechnete Zugang
+  today: string // der Tag des Servers, an dem gerechnet wurde ('JJJJ-MM-TT')
+  capBaseDay: string | null // der Tag, dessen Miete die Kappungsgrenze trägt (Stichtag oder Mietbeginn), sobald er feststeht
   earliestReceivedOn: string | null
   effectiveFrom: string | null // 'JJJJ-MM'
   earliestEffectiveFrom: string | null

@@ -171,6 +171,21 @@ test('Mieterhöhung: Staffel beginnt nach dem Stichtag, Mietverhältnis früher 
   assert.equal(entered.cap?.limitCents, 57600)
 })
 
+test('Mieterhöhung: die Miete am Stichtag trägt ihren Tag; ändert sich der Stichtag, sperrt die Rechnung mit Satz (Durchsicht K1)', () => {
+  const t = tenancyOf({ start: '2015-01-01', baseRents: [{ from: '2025-01', monthlyCents: 50000 }] })
+  const asked = plan(comparison({ receivedOn: '2026-11-20' }), t)
+  assert.equal(asked.capBaseDay, '2024-02-01', 'der Tag, zu dem die Miete gefragt ist')
+  const fits = plan(comparison({ receivedOn: '2026-11-20', rentAtCapDateCents: 48000, rentAtCapDateOn: '2024-02-01', rentCap: 'no' }), t)
+  assert.equal(fits.state, 'possible', fits.reasons.join(' '))
+  assert.equal(fits.cap?.limitCents, 57600)
+  const moved = plan(comparison({ receivedOn: '2026-11-20', effectiveFrom: '2027-05', rentAtCapDateCents: 48000, rentAtCapDateOn: '2024-02-01', rentCap: 'no' }), t)
+  assert.equal(moved.state, 'blocked')
+  assert.equal(moved.capBaseDay, '2024-05-01')
+  assert.ok(moved.needs.includes('rentAtCapDate'))
+  assert.equal(moved.cap, null, 'nicht mit der Miete eines anderen Tages gerechnet')
+  assert.ok(said(moved, /01\.02\.2024.*01\.05\.2024/), moved.reasons.join(' '))
+})
+
 test('Mieterhöhung: jüngeres Mietverhältnis, Staffel im Monat des Mietbeginns → Anfangsmiete (G1); sonst gesperrt', () => {
   const young = tenancyOf({ start: '2024-06-10', baseRents: [{ from: '2024-06', monthlyCents: 50000 }] })
   const p = plan(comparison({ receivedOn: '2026-11-20', rentCap: 'no' }), young)
@@ -265,6 +280,17 @@ test('Mieterhöhung: Staffelmiete bis zur letzten Stufe ausgeschlossen, danach W
   assert.ok(plan(comparison(), short).staggered?.notes.some((n) => /ein Jahr|12 Monate/.test(n)))
 })
 
+test('Mieterhöhung: eine schon eingetragene Stufe ab dem Monat des Wirksamwerdens oder danach sperrt (Durchsicht S2)', () => {
+  const t = tenancyOf({ baseRents: [{ from: '2020-01', monthlyCents: 50000 }, { from: '2027-03', monthlyCents: 55000, reason: 'modernization' }] })
+  const p = plan(comparison({ receivedOn: '2026-11-20', effectiveFrom: '2027-02', rentCap: 'no' }), t)
+  assert.equal(p.state, 'blocked', p.reasons.join(' '))
+  assert.ok(said(p, /In der Kaltmiete-Staffel steht schon eine Stufe ab März 2027\. Eine Erhöhung ab Februar 2027 ist so nicht möglich/), p.reasons.join(' '))
+  const index = indexTenancy([{ from: '2015-01', monthlyCents: 68500, index: { month: '2014-12', value: 94.2, base: 2020 } }, { from: '2027-01', monthlyCents: 69000, reason: 'modernization' }])
+  const q = plan({ kind: 'index', ...confirmed, receivedOn: '2026-11-20', toIndex: { month: '2026-10', value: 106.1, base: 2020 } }, index)
+  assert.equal(q.state, 'blocked')
+  assert.ok(said(q, /schon eine Stufe ab Januar 2027/), q.reasons.join(' '))
+})
+
 test('Mieterhöhung: Ende des Mietverhältnisses vor dem Wirksamwerden sperrt', () => {
   const p = plan(comparison({ receivedOn: '2026-11-20' }), tenancyOf({ end: '2027-01-31' }))
   assert.equal(p.state, 'blocked')
@@ -297,9 +323,55 @@ test('Mieterhöhung: Indexwerte einer anderen Basis sperren, beide Werte aus der
 test('Mieterhöhung: Indexmiete, Zugang erst ein Jahr nach der letzten Anpassung, Mietbeginn tagesgenau (M1, M4)', () => {
   const t = indexTenancy([{ from: '2026-03', monthlyCents: 60000, index: { month: '2026-01', value: 120, base: 2020 } }], '2026-03-15')
   const p = plan({ kind: 'index', ...confirmed, toIndex: { month: '2027-01', value: 123, base: 2020 } }, t, '2027-02-10')
-  assert.equal(p.earliestReceivedOn, '2027-03-15')
+  assert.equal(p.earliestReceivedOn, '2027-03-16', 'ein Tag Aufschlag wie beim Monatsersten (§ 187 Abs. 1 oder 2 BGB)')
   assert.equal(p.earliestEffectiveFrom, '2027-05')
   assert.equal(p.state, 'notYet')
+})
+
+test('Mieterhöhung: Indexmiete, Mietbeginn mitten im Monat → Zugang frühestens am Tag nach dem Jahrestag (Durchsicht S1)', () => {
+  // Wie beim Ersten (Zugang am Zweiten) ein Tag Aufschlag: Ob die Frist nach § 187 Abs. 1 oder Abs. 2 BGB läuft, bleibt
+  // offen, der spätere Tag ist in beiden Lesarten sicher.
+  const t = indexTenancy([{ from: '2025-11', monthlyCents: 50000, index: { month: '2025-08', value: 120, base: 2020 } }], '2025-11-15')
+  const p = plan({ kind: 'index', ...confirmed, toIndex: { month: '2026-10', value: 123, base: 2020 } }, t)
+  assert.equal(p.earliestReceivedOn, '2026-11-16')
+  assert.equal(p.earliestEffectiveFrom, '2027-01')
+  const onDay = plan({ kind: 'index', ...confirmed, receivedOn: '2026-11-15', toIndex: { month: '2026-10', value: 123, base: 2020 } }, t)
+  assert.equal(onDay.state, 'notYet', 'am Jahrestag selbst noch zu früh')
+  const next = plan({ kind: 'index', ...confirmed, receivedOn: '2026-11-16', toIndex: { month: '2026-10', value: 123, base: 2020 } }, t)
+  assert.equal(next.state, 'possible', next.reasons.join(' '))
+  // Am Ersten wie bisher der Zweite, also einheitlich ein Tag nach dem Ende der Frist.
+  const first = indexTenancy([{ from: '2025-11', monthlyCents: 50000, index: { month: '2025-08', value: 120, base: 2020 } }], '2025-11-01')
+  assert.equal(plan({ kind: 'index', ...confirmed }, first).earliestReceivedOn, '2026-11-02')
+  // Endet die Frist am Monatsletzten, wäre der Tag danach ein Erster; vorgeschlagen wird der Zweite (G3).
+  const last = indexTenancy([{ from: '2025-04', monthlyCents: 50000, index: { month: '2025-01', value: 120, base: 2020 } }], '2025-04-30')
+  assert.equal(plan({ kind: 'index', ...confirmed }, last, '2026-01-10').earliestReceivedOn, '2026-05-02')
+})
+
+test('Mieterhöhung: Vergleichsmiete, die Jahressperrfrist rechnet einheitlich mit, die Wartefrist liegt bei Mietbeginn im Monat dahinter (Durchsicht S1)', () => {
+  // Sperrfrist ab 15.11.2025 endet am 15.11.2026, Zugang danach ab 16.11.; die Wartefrist (wirksam 01.03.2027) verlangt
+  // ohnehin einen Zugang im Dezember. Am Ersten wie bisher der Zweite.
+  const mid = plan(comparison(), tenancyOf({ start: '2025-11-15', baseRents: [{ from: '2025-11', monthlyCents: 50000 }] }))
+  assert.equal(mid.earliestReceivedOn, '2026-12-02')
+  const first = plan(comparison(), tenancyOf({ start: '2025-11-01', baseRents: [{ from: '2025-11', monthlyCents: 50000 }] }))
+  assert.equal(first.earliestReceivedOn, '2026-11-02')
+  assert.equal(first.earliestEffectiveFrom, '2027-02')
+})
+
+test('Mieterhöhung: ein eingegebener Ausgangsindex, der vom Wert oder der Basis der Stufe abweicht, wird gewarnt (Durchsicht K2)', () => {
+  const t = indexTenancy([{ from: '2015-01', monthlyCents: 68500, index: { month: '2014-12', value: 94.2, base: 2020 } }])
+  const ask = (fromIndex: RentIncreaseRequest['fromIndex']) => plan({ kind: 'index', ...confirmed, receivedOn: '2026-11-20', fromIndex, toIndex: { month: '2026-10', value: 106.1, base: 2020 } }, t)
+  const differs = (p: RentIncreasePlan) => p.warnings.some((w) => /Ausgangsindex/.test(w))
+  assert.ok(!differs(ask({ month: '2014-12', value: 94.2, base: 2020 })), 'gleich: keine Warnung')
+  const value = ask({ month: '2014-12', value: 94.5, base: 2020 })
+  assert.ok(differs(value), value.warnings.join(' '))
+  assert.ok(value.warnings.some((w) => /94,5/.test(w) && /94,2/.test(w)), 'nennt beide Werte')
+  const base = indexTenancy([{ from: '2015-01', monthlyCents: 68500, index: { month: '2014-12', value: 106.6, base: 2015 } }])
+  const rebased = plan({ kind: 'index', ...confirmed, receivedOn: '2026-11-20', fromIndex: { month: '2014-12', value: 94.2, base: 2020 }, toIndex: { month: '2026-10', value: 106.1, base: 2020 } }, base)
+  assert.ok(rebased.warnings.some((w) => /Basis 2015/.test(w) && /Basis 2020/.test(w)), rebased.warnings.join(' '))
+})
+
+test('Mieterhöhung: der Plan nennt den Tag des Servers, an dem er gerechnet ist (Durchsicht S4)', () => {
+  assert.equal(plan(comparison(), tenancyOf(), '2026-11-20').today, '2026-11-20')
 })
 
 test('Mieterhöhung: Indexwert des Zugangsmonats kann noch nicht veröffentlicht sein; Senkung wird gerechnet und gewarnt', () => {
@@ -366,6 +438,12 @@ const monthAdd = (m: string, n: number): string => {
   const i = Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1 + n
   return `${Math.floor(i / 12)}-${pad((i % 12) + 1)}`
 }
+// Ein Tag `n` Monate nach `day` mit gleicher Zahl; fehlt er im Zielmonat, der Monatsletzte (§ 188 Abs. 2, 3 BGB).
+const periodEnd = (day: string, n: number): string => {
+  const month = monthAdd(day.slice(0, 7), n)
+  const last = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()
+  return `${month}-${pad(Math.min(Number(day.slice(8, 10)), last))}`
+}
 const REASONS = ['agreement', 'comparison', 'modernization', undefined] as const
 
 function randomTenancy(random: () => number): TenancyPart {
@@ -410,14 +488,23 @@ test('Invariante: Höchstbetrag ≤ Kappungsgrenze und ≤ Vergleichsmiete × Fl
       assert.ok(p.maxCents <= (request.comparisonCentsPerM2 ?? 0) * area + (request.operatingCostsCents ?? 0) + 1e-6, where)
       if (p.newCents !== null) assert.ok(p.newCents <= p.maxCents, where)
     }
-    if (p.earliestReceivedOn !== null && p.currentSince !== null) {
-      const lock = `${monthAdd(p.currentSince.slice(0, 7), 12)}${p.currentSince.slice(7)}`
-      assert.ok(p.earliestReceivedOn >= lock || (p.currentSince.endsWith('-29') || p.currentSince.endsWith('-30') || p.currentSince.endsWith('-31')), where)
+    if (p.earliestReceivedOn !== null && p.currentSince !== null && p.earliestEffectiveFrom !== null) {
+      // Unabhängig nachgerechnet (Durchsicht S3): Sperrfrist zwölf Monate, Zugang erst nach ihrem Ende; Wartefrist 15 Monate
+      // bis zum Ersten des Wirksamwerdens; die erhöhte Miete ist ab dem dritten Monat nach Zugang geschuldet (§ 558b Abs. 1
+      // BGB) und nie vor dem Ende der Wartefrist (Gegenprüfung M1).
+      assert.ok(p.earliestReceivedOn > periodEnd(p.currentSince, 12), where)
+      assert.ok(`${p.earliestEffectiveFrom}-01` >= periodEnd(p.currentSince, 15), where)
+      assert.ok(monthAdd(p.earliestReceivedOn.slice(0, 7), 3) >= p.earliestEffectiveFrom, where)
       assert.ok(!p.earliestReceivedOn.endsWith('-01'), where)
       // Die letzte zählende Änderung liegt nie nach dem Bezugstag.
       for (const r of t.baseRents) if (r.reason !== 'modernization') assert.ok(`${r.from}-01` <= p.currentSince || r.from === p.currentSince.slice(0, 7), where)
     }
-    if (p.state === 'possible') assert.ok(p.receivedOn >= (p.earliestReceivedOn ?? ''), where)
+    if (p.state === 'possible') {
+      assert.ok(p.receivedOn >= (p.earliestReceivedOn ?? ''), where)
+      const natural = monthAdd(p.receivedOn.slice(0, 7), 3)
+      assert.ok(p.effectiveFrom !== null && p.effectiveFrom >= natural, where)
+      assert.ok(p.earliestEffectiveFrom !== null && natural >= p.earliestEffectiveFrom, where)
+    }
   }
   assert.ok(computed > 300, `nur ${computed} Fälle mit Betrag`)
 })
@@ -446,6 +533,27 @@ test('Invariante: eine Stufe der Art Modernisierung verschiebt keine Frist und e
     }
   }
   assert.ok(checked > 200, `nur ${checked} Fälle mit Kappungsgrenze`)
+  // Im Stichtagsmonat (Durchsicht S3): Die Stufe gilt am Stichtag und steckt in der Ausgangsmiete, ihr Betrag kommt nicht
+  // noch einmal hinzu (Gegenprüfung S3). Wirksam 06.2028 → Stichtag 01.06.2025.
+  let inMonth = 0
+  for (let n = 0; n < 1500; n++) {
+    const t = randomTenancy(random)
+    const last = t.baseRents[t.baseRents.length - 1]
+    if (!last || last.from >= '2025-06' || t.start > '2025-06-01') continue
+    const amount = 1 + Math.floor(random() * 5000)
+    const withMod = { ...t, baseRents: [...t.baseRents, { from: '2025-06', monthlyCents: last.monthlyCents + amount, reason: 'modernization' as const }] }
+    const request = { ...randomRequest(random, t), effectiveFrom: '2028-06', receivedOn: '2027-11-10' }
+    const a = plan(request, t, '2026-01-15')
+    const b = plan(request, withMod, '2026-01-15')
+    const where = JSON.stringify({ t, amount, request })
+    if (!a.cap || !b.cap || a.cap.baseSource !== 'schedule') continue
+    inMonth++
+    assert.equal(b.cap.capDate, '2025-06-01', where)
+    assert.equal(b.cap.baseCents, a.cap.baseCents + amount, where)
+    assert.equal(b.cap.modernizationCents, a.cap.modernizationCents, where)
+    assert.equal(b.cap.limitCents, Math.floor(((a.cap.baseCents + amount) * (100 + b.cap.percent)) / 100) + b.cap.modernizationCents, where)
+  }
+  assert.ok(inMonth > 100, `nur ${inMonth} Fälle im Stichtagsmonat`)
 })
 
 test('Invariante: „Vereinbarung“ statt einer anderen Art macht nie etwas früher oder höher (Anti-Ziel 4)', () => {

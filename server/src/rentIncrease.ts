@@ -26,6 +26,7 @@ import { createLawLog, dayAfter, eventPeriodEnd, germanDate, law, shiftMonths, v
 import { bgbIndexRent, bgbRentCap, bgbRentIncreaseConsent, bgbRentIncreaseLockMonths, bgbRentIncreaseWaitMonths, bgbStaggeredRent } from '../../shared/law/bgb-betrkv.ts'
 import { practiceRentIncreaseRounding, practiceVpiSeries } from '../../shared/law/practice.ts'
 import { deadlineOnWorkday } from '../../shared/deadlines.ts'
+import { FIRST_YEAR } from '../../shared/holidays.ts'
 import { addMonths, monthBounds, monthName } from '../../shared/monthlyInfo.ts'
 import { compareText } from './calc.ts'
 
@@ -56,6 +57,10 @@ const monthStartingOnOrAfter = (day: string): string => (day.endsWith('-01') ? m
 // Nie ein Zugang am Monatsersten (Entwurf G3, Gegenprüfung K1): Ob die Sperrfrist nach § 187 Abs. 1 oder Abs. 2 BGB
 // beginnt, ist nicht belegt; der Zweite ändert weder Zustimmungsfrist noch Wirksamwerden.
 const notOnFirst = (day: string): string => (day.endsWith('-01') ? `${monthOf(day)}-02` : day)
+// Frühester Zugang nach einer Sperrfrist von `months` Monaten ab dem Bezugstag (Durchsicht S1): einheitlich einen Tag nach
+// dem Tag, den § 187 Abs. 2 BGB ergäbe, also das Ende nach § 187 Abs. 1 BGB, und das bei jedem Bezugstag, nicht nur am
+// Ersten. So gilt der Zugang in beiden Lesarten als nach Ablauf der Frist; nie am Monatsersten.
+const receiptAfterLock = (ref: string, months: number): string => notOnFirst(dayAfter(dayAfterMonths(ref, months)))
 
 // ---------- Geld ----------
 
@@ -98,13 +103,13 @@ export function referenceDay(t: Pick<Tenancy, 'start'>, sorted: readonly RentEnt
 // und so, dass die erhöhte Miete nach § 558b Abs. 1 BGB nicht vor diesem Monat geschuldet ist (Gegenprüfung M1).
 function comparisonTiming(ref: string, wait: number, lock: number, effectiveMonth: number): { earliestEffective: string; earliestReceipt: string } {
   const earliestEffective = monthStartingOnOrAfter(dayAfterMonths(ref, wait))
-  const receipt = later(dayAfterMonths(ref, lock), firstOf(addMonths(earliestEffective, -effectiveMonth)))
+  const receipt = later(receiptAfterLock(ref, lock), firstOf(addMonths(earliestEffective, -effectiveMonth)))
   return { earliestEffective, earliestReceipt: notOnFirst(receipt) }
 }
 // Indexmiete (R9, Gegenprüfung M4): Zugang frühestens ein Jahr nach dem Bezugstag, die geänderte Miete ab dem übernächsten
 // Monat nach Zugang.
 function indexTiming(ref: string, v: { minMonths: number; effectiveMonthOffset: number }): { earliestEffective: string; earliestReceipt: string } {
-  const earliestReceipt = notOnFirst(dayAfterMonths(ref, v.minMonths))
+  const earliestReceipt = receiptAfterLock(ref, v.minMonths)
   return { earliestReceipt, earliestEffective: addMonths(monthOf(earliestReceipt), v.effectiveMonthOffset) }
 }
 
@@ -176,7 +181,7 @@ function commonChecks(d: Draft, input: RentIncreaseInput): void {
 
 function emptyPlan(input: RentIncreaseInput, receivedOn: string): RentIncreasePlan {
   return {
-    kind: input.request.kind, state: 'blocked', reasons: [], warnings: [], needs: [], currentCents: null, currentSince: null, receivedOn,
+    kind: input.request.kind, state: 'blocked', reasons: [], warnings: [], needs: [], currentCents: null, currentSince: null, receivedOn, today: input.today, capBaseDay: null,
     earliestReceivedOn: null, effectiveFrom: null, earliestEffectiveFrom: null, consent: null, cap: null, comparison: null, index: null,
     maxCents: null, newCents: null, steps: [], staggered: null, legalValues: [],
   }
@@ -294,11 +299,17 @@ function capOf(d: Draft, input: RentIncreaseInput, sorted: readonly RentEntry[],
   // Begann das Mietverhältnis nach dem Stichtag, ist die Anfangsmiete die Ausgangsmiete (G1).
   const baseDay = later(t.start, capDate)
   const baseMonth = monthOf(baseDay)
+  d.plan.capBaseDay = baseDay
   const first = sorted[0]
   let baseCents: number
   let baseSource: RentCapDerivation['baseSource'] = 'schedule'
   if (first && compareText(first.from, baseMonth) <= 0) baseCents = (rentAt(sorted, baseMonth) ?? first).monthlyCents
-  else if (q.rentAtCapDateCents != null) {
+  else if (q.rentAtCapDateCents != null && q.rentAtCapDateOn != null && q.rentAtCapDateOn !== baseDay) {
+    // Durchsicht K1: Die Eingabe gehört zu einem anderen Tag, etwa weil sich das Wirksamwerden und damit der Stichtag
+    // geändert hat. Gerechnet wird nicht mit ihr.
+    need(d, 'rentAtCapDate', `Die eingegebene Miete am Stichtag gehört zum ${germanDate(q.rentAtCapDateOn)}, der Stichtag der Kappungsgrenze ist jetzt der ${germanDate(baseDay)}. Bitte geben Sie die Miete ein, die an diesem Tag vereinbart war.`)
+    return null
+  } else if (q.rentAtCapDateCents != null) {
     baseCents = q.rentAtCapDateCents
     baseSource = 'entered'
   } else {
@@ -395,8 +406,9 @@ function planIndex(d: Draft, input: RentIncreaseInput, log: LawLog): void {
   }
   const from = q.fromIndex ?? current.index ?? null
   const to = q.toIndex ?? null
-  if (q.fromIndex && current.index && q.fromIndex.month !== current.index.month) {
-    p.warnings.push(`Der eingegebene Ausgangsindex gilt für ${monthName(q.fromIndex.month)}, die Stufe ab ${monthName(current.from)} nennt ${monthName(current.index.month)}. Prüfen Sie, welcher Monat laut Vertrag bzw. letzter Anpassung maßgeblich ist.`)
+  // Durchsicht K2: Monat, Wert und Basis; eine andere Basis ist richtig, wenn der Wert in der aktuellen Reihe nachgelesen ist.
+  if (q.fromIndex && current.index && (q.fromIndex.month !== current.index.month || q.fromIndex.value !== current.index.value || q.fromIndex.base !== current.index.base)) {
+    p.warnings.push(`Der eingegebene Ausgangsindex ${indexText(q.fromIndex)} weicht von dem der Stufe ab ${monthName(current.from)} ab, ${indexText(current.index)}. Prüfen Sie, welcher Wert laut Vertrag bzw. letzter Anpassung maßgeblich ist; nach einer Umstellung der Reihe ist der Wert des Monats in der aktuellen Reihe richtig.`)
   }
   if (!from) need(d, 'fromIndex', `Die Stufe ab ${monthName(current.from)} trägt keinen Indexwert. Bitte geben Sie den Ausgangsindex ein: den Wert des Monats, mit dem die bisherige Miete berechnet ist (bei Vertragsbeginn der Monat laut Vertrag).`)
   if (!to) need(d, 'toIndex', 'Bitte geben Sie den neuen Indexwert ein: Monat und Wert des Verbraucherpreisindex aus der beim Zugang aktuellen Reihe.')
@@ -493,10 +505,15 @@ export function rentIncreaseRequestOf(body: Record<string, unknown>): RentIncrea
   const optional = (key: string): unknown => (body[key] === undefined ? null : body[key])
   const receivedOn = optional('receivedOn')
   if (receivedOn !== null && !isDay(receivedOn)) return { error: 'Der Zugang ist kein gültiges Datum.' }
+  // Durchsicht K3: Fristen nach § 193 BGB brauchen die Feiertage (ab FIRST_YEAR); nach oben wie die Basisjahre.
+  if (receivedOn !== null && (Number(receivedOn.slice(0, 4)) < FIRST_YEAR || Number(receivedOn.slice(0, 4)) > BASE_YEARS.max)) return { error: `Der Zugang liegt außerhalb der Jahre ${FIRST_YEAR} bis ${BASE_YEARS.max}, für die Mietfuchs Fristen und Feiertage rechnet.` }
   if (receivedOn !== null) out.receivedOn = receivedOn
   const effectiveFrom = optional('effectiveFrom')
   if (effectiveFrom !== null && !isMonth(effectiveFrom)) return { error: 'Der Monat des Wirksamwerdens ist ungültig (erwartet JJJJ-MM).' }
   if (effectiveFrom !== null) out.effectiveFrom = effectiveFrom
+  const capOn = optional('rentAtCapDateOn')
+  if (capOn !== null && !isDay(capOn)) return { error: 'Der Tag der Miete am Stichtag ist kein gültiges Datum.' }
+  if (capOn !== null) out.rentAtCapDateOn = capOn
   for (const key of ['allStepsEntered', 'residential', 'noThirdPartyFunds'] as const) {
     const v = optional(key)
     if (v !== null && typeof v !== 'boolean') return { error: 'Eine Bestätigung ist ja oder nein.' }

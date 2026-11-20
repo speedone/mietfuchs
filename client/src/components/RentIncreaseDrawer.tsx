@@ -14,6 +14,7 @@ import MonthField from './MonthField'
 import Term from './Term'
 import { NoticeBox } from './Notice'
 import { useFormError } from './ErrorSummary'
+import { todayIso } from '../readingSheet'
 
 // Wartezeit nach der letzten Eingabe, bevor neu gerechnet wird.
 const PLAN_DELAY_MS = 250
@@ -28,16 +29,25 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }:
   const [value, setValue] = useState<RentIncreaseValue>(() => rentIncreaseStart(tenancy, unit, property))
   const [plan, setPlan] = useState<RentIncreasePlan | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  // Was der letzte Plan sagte und über das Neurechnen hinweg gilt: der Tag des Servers (Durchsicht S4) und der Tag der
+  // Miete am Stichtag (Durchsicht K1).
+  const [serverToday, setServerToday] = useState<string | null>(null)
+  const [capDay, setCapDay] = useState<string | null>(null)
   const errors = useFormError<RentIncreaseField>()
   const seq = useRef(0)
   const set = <K extends keyof RentIncreaseValue>(key: K, v: RentIncreaseValue[K]) => setValue((old) => ({ ...old, [key]: v }))
+
+  // Die heute geltende Stufe, nach dem Tag des Servers, solange keiner bekannt ist nach dem des Rechners (Durchsicht S4).
+  const todayMonth = (serverToday ?? todayIso()).slice(0, 7)
+  const current = [...tenancy.baseRents].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0)).filter((r) => r.from <= todayMonth).at(-1)
+  const stepBase = current?.index?.base ?? null
 
   // Die Rechnung folgt dem Zustand des Fensters; jede Änderung verwirft die alte (Folgenummer gegen späte Antworten).
   useEffect(() => {
     const n = ++seq.current
     setPlan(null)
     errors.clear()
-    const built = rentIncreaseRequest(value)
+    const built = rentIncreaseRequest(value, { stepBase })
     if ('problems' in built) {
       setNote(built.problems.map((p) => p.text).join(' '))
       return
@@ -45,14 +55,18 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }:
     setNote(null)
     const timer = setTimeout(() => {
       api<RentIncreasePlan>(`/api/tenancies/${tenancy.id}/rent-increase/plan`, { method: 'POST', body: JSON.stringify(built.body) })
-        .then((p) => { if (n === seq.current) setPlan(p) })
+        .then((p) => {
+          if (n !== seq.current) return
+          setPlan(p)
+          setServerToday(p.today)
+          if (p.capBaseDay) setCapDay(p.capBaseDay)
+        })
         .catch((e: unknown) => { if (n === seq.current) errors.set(errorText(e), { focus: false }) })
     }, PLAN_DELAY_MS)
     return () => clearTimeout(timer)
     // `errors` ändert sich mit jeder Meldung; neu gerechnet wird nur bei geänderten Eingaben.
-  }, [value, tenancy.id])
+  }, [value, tenancy.id, stepBase])
 
-  const current = [...tenancy.baseRents].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0)).at(-1)
   const comparison = value.kind === 'comparison'
   return (
     <Drawer open title={`Mieterhöhung: ${tenancy.tenantName}`} width={640} cancelLabel="Schließen" hint="Esc schließt"
@@ -121,8 +135,11 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, onClose }:
             </Field>
           )}
           {plan?.needs.includes('rentAtCapDate') || value.rentAtCapDate !== '' ? (
-            <Field label="Miete am Stichtag €" hint="Die Miete, die am Stichtag der Kappungsgrenze vereinbart war (bei jüngerem Mietverhältnis die Miete bei Mietbeginn)." {...errors.field('rentAtCapDate')}>
-              <input value={value.rentAtCapDate} inputMode="decimal" onChange={(e) => set('rentAtCapDate', e.target.value)} />
+            <Field label={capDay ? `Miete am ${fmtDate(capDay)} €` : 'Miete am Stichtag €'} hint="Die Miete, die am Stichtag der Kappungsgrenze vereinbart war (bei jüngerem Mietverhältnis die Miete bei Mietbeginn). Ändert sich der Stichtag, fragt Mietfuchs neu." {...errors.field('rentAtCapDate')}>
+              <input value={value.rentAtCapDate} inputMode="decimal" onChange={(e) => {
+                const text = e.target.value
+                setValue((old) => ({ ...old, rentAtCapDate: text, rentAtCapDateOn: capDay ?? '' }))
+              }} />
             </Field>
           ) : null}
           <Field label="Verlangte Miete €" hint="Leer heißt der Höchstbetrag." {...errors.field('requested')}>
@@ -172,7 +189,12 @@ export function RentIncreasePlanView({ plan }: { plan: RentIncreasePlan }) {
         {plan.consent && (
           <div>
             <dt className="muted"><Term id="consentPeriod">Zustimmungsfrist</Term></dt>
-            <dd>bis {fmtDate(plan.consent.consentEnd)}; Klage ab {fmtDate(plan.consent.suitFrom)} bis {fmtDate(plan.consent.suitEnd)}</dd>
+            <dd>
+              bis {fmtDate(plan.consent.consentEnd)}
+              {/* Durchsicht K4: das verlängerte Ende, wenn es abweicht; ob § 193 BGB hier greift, ist offen (Gründe). */}
+              {plan.consent.consentEndOnWorkday !== plan.consent.consentEnd && <>, nach § 193 BGB bis {fmtDate(plan.consent.consentEndOnWorkday)} (Ende an Wochenende oder Feiertag)</>}
+              ; Klage ab {fmtDate(plan.consent.suitFrom)} bis {fmtDate(plan.consent.suitEnd)}
+            </dd>
           </div>
         )}
         {plan.maxCents !== null && plan.kind === 'comparison' && <div><dt className="muted">Höchstbetrag</dt><dd>{fmtEuro(plan.maxCents)}</dd></div>}
