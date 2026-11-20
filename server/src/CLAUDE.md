@@ -1126,6 +1126,23 @@ Backup, Wiederherstellen, Umstieg und Validator prüfen bewusst nicht (krumm, ni
 ist erlaubt. Das Cockpit nennt ungültige IBANs des gewählten Objekts als ruhigen Hinweis
 ([client/src/ibanCheck.ts](../../client/src/ibanCheck.ts)).
 
+## Kalendertage und Verweise beim Speichern
+
+Nach dem Muster der IBAN: `requireDay` in [db/repository.ts](db/repository.ts) lehnt in den Wächtern der Sammelrouten
+einen **neu gesetzten oder geänderten** Tag ab, den es nicht gibt (400 mit Satz): Einzug (Pflicht), Auszug und
+Vertragsdatum am Mietverhältnis, Datum einer Zahlung und einer Ablesung (Pflicht, nur die Form), Einbautag eines Zählers.
+Ebenso ein Auszug vor dem Einzug, wenn eines der beiden Daten neu oder geändert ist (derselbe Tag ist erlaubt); das
+Formular meldet es vorher am Feld (`tenancyRequired`). Was unverändert mitkommt, bleibt (krumm, nicht kaputt); Backup,
+Wiederherstellen, Umstieg und Validator prüfen nicht. Ein leerer Auszug wird als `null` gespeichert. Ein neuer oder
+geänderter Verweis auf eine Wohnung, ein Mietverhältnis oder einen Zähler, den es nicht gibt, und eine negative
+Wohnfläche bekommen dort einen Satz statt des Befunds der Datenbank (`goneText`). Ein Tag liegt in den Jahren 1900 bis
+2100 (wie `YEAR_MIN`/`YEAR_MAX` der Oberfläche); eine Angabe, die kein Text ist, ist eine 400 und wird nicht still zu
+„fehlt“ (`dayInput`). **Ein schon gespeicherter Einzug, aus dem sich kein Tag bilden lässt, wird beim Rechnen nicht
+aufgefangen und nicht geraten**: `snapshotFor` und `/api/upcoming` antworten vorher mit 409 und einem Satz, der
+Mietverhältnis und Wohnung nennt (`requireTenancyStarts` in [snapshot.ts](snapshot.ts)); die Listen der Stammdaten
+bleiben erreichbar, dort wird er nachgetragen. Das Datum eines Zählerfotos aus der KI-Auswertung kommt als Kalendertag
+oder gar nicht an (`dayFromModel` in extract.ts; deutsch geschrieben wird umgewandelt).
+
 ## Rechenweg (#114)
 
 Jede Mieterzeile trägt `steps` (`CalcStep`), erzeugt dort, wo die Zeile entsteht, aus denselben

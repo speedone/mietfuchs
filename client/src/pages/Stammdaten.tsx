@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, DepositForm, DepositStatementInfo, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, DepositForm, DepositStatementInfo, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, PaymentListItem, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
@@ -17,7 +17,7 @@ import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, EMPTY_RENT_DUE, overlapQuestion, partialMonthNote, prepaymentColumn, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyRequired, type RentDueChoice, type RentDueForm, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, depositLimitHint, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, EMPTY_RENT_DUE, overlapQuestion, partialMonthNote, prepaymentColumn, rentDueBody, rentDueFormOf, rentDueHint, rentDueOptions, rentDueProblems, tenancyCostLinks, tenancyDeleteMessage, tenancyRequired, type RentDueChoice, type RentDueForm, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, contactForm, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type ContactForm, type NewTenantForm, type TenantChangeField } from '../tenantChange'
 import { DEADLINE_SENTENCE, ownAddressWarning } from '../landlord'
@@ -367,6 +367,15 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     toast(editing ? `Wohnung „${unitForm.name.trim()}“ gespeichert.` : `Wohnung „${unitForm.name.trim()}“ angelegt.`)
   }
 
+  // Die zuletzt abgeschlossenen Abrechnungen (Betriebskosten, getrennte Heizkosten), die eines der Mietverhältnisse
+  // nennen, für die Löschfragen; `null`, wenn die Antwort ausbleibt.
+  async function closedLabelsOf(tenancyIds: ReadonlySet<string>): Promise<string[] | null> {
+    const info = await api<DepositStatementInfo[]>(withProperty('/api/deposit-entries/statements', propertyId)).catch(() => null)
+    if (!Array.isArray(info)) return null
+    const labels = info.filter((i) => tenancyIds.has(i.tenancyId)).flatMap((i) => [...(i.last ? [i.last.label] : []), ...(i.lastHeating ? [`Heizkosten ${i.lastHeating.label}`] : [])])
+    return [...new Set(labels)]
+  }
+
   async function deleteUnit(u: Unit) {
     // Was mitgelöscht wird, mit Anzahl (#142); ohne Antwort die vollständige Liste ohne Zahlen.
     const deps = await api<UnitDependents>(`/api/units/${u.id}/dependents`).catch(() => null)
@@ -376,9 +385,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       toast(blocked, 'error')
       return
     }
+    // Kautionsbuchungen und abgeschlossene Abrechnungen ihrer Mietverhältnisse, aus dem, was die Seite kennt.
+    const mine = new Set(tenancies.filter((t) => t.unitId === u.id).map((t) => t.id))
+    const closed = mine.size === 0 ? [] : await closedLabelsOf(mine)
     const ok = await confirm({
       title: `Wohnung „${u.name}“ löschen?`,
-      message: unitDeleteMessage(deps),
+      message: unitDeleteMessage(deps, { depositEntries: depositEntries.filter((e) => mine.has(e.tenancyId)).length, closed: closed ?? [] }),
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -397,7 +409,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     if (!tenForm) return
     // Jede fehlende Pflichtangabe mit ihrem Feld (#346, Schritt 3); vorher „Bitte Mieter, Wohnung und
     // Einzugsdatum prüfen.“ für alle drei zusammen (UI-Durchsicht M5).
-    const missing = [...tenancyRequired(tenForm), ...rentDueProblems(tenForm.rentDue)]
+    const missing = [...tenancyRequired(tenForm, tenancies.find((t) => t.id === tenForm.id)), ...rentDueProblems(tenForm.rentDue)]
     if (missing.length > 0) {
       tenErrors.report(missing)
       return
@@ -507,9 +519,20 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   }
 
   async function deleteTenancy(t: Tenancy) {
+    // Was mitgelöscht wird und wo es danach fehlt, aus vorhandenen Routen; ohne Antwort der Satz ohne Zahlen.
+    const payments = await api<PaymentListItem[]>(withProperty('/api/payments', propertyId)).catch(() => null)
+    const mine = Array.isArray(payments) ? payments.filter((p) => p.tenancyId === t.id) : null
+    const increases = await api<unknown[]>(`/api/tenancies/${t.id}/rent-increases`).catch(() => null)
     const ok = await confirm({
       title: `Mietverhältnis „${t.tenantName}“ löschen?`,
-      message: 'Das Mietverhältnis, zugehörige Zahlungen und Kautionsbuchungen werden gelöscht.',
+      message: tenancyDeleteMessage({
+        paymentDates: mine === null ? null : mine.map((p) => p.date),
+        bankLinks: mine === null ? 0 : mine.filter((p) => p.fromBank === true).length,
+        costItemLinks: tenancyCostLinks(t.id, objectCosts),
+        rentIncreases: Array.isArray(increases) ? increases.length : null,
+        depositEntries: depositEntries.filter((e) => e.tenancyId === t.id).length,
+        closed: await closedLabelsOf(new Set([t.id])),
+      }),
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -820,7 +843,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <Field label="Einzug" required {...tenErrors.field('start')}>
               <input type="date" value={tenForm.start} onChange={(e) => setTenForm({ ...tenForm, start: e.target.value })} />
             </Field>
-            <Field label="Auszug" hint="Leer lassen, solange das Mietverhältnis läuft.">
+            <Field label="Auszug" hint="Leer lassen, solange das Mietverhältnis läuft." {...tenErrors.field('end')}>
               <input type="date" value={tenForm.end} onChange={(e) => setTenForm({ ...tenForm, end: e.target.value })} />
             </Field>
 

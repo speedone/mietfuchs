@@ -27,7 +27,7 @@ import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxRep
 import { markPaidRequestOf, markPaidTitle, markPaidToken, markPaidWrites, planMarkPaid, type LedgerView, type MarkPaidRequest } from './markPaid.ts'
 import { taxOverview } from './taxOverview.ts'
 import { ledgerStatementsFor } from './ledgerStatements.ts'
-import { heatingSnapshotFor, narrowToProperty, snapshotFor, type Snapshot } from './snapshot.ts'
+import { heatingSnapshotFor, narrowToProperty, requireTenancyStarts, snapshotFor, TenancyStartMissing, type Snapshot } from './snapshot.ts'
 import { onStock } from './stockMemo.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
 import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Tenancy, Unit, RentEntry, RentIncrease, RentIncreasePlanView, Property } from '../../shared/types.ts'
@@ -1444,6 +1444,8 @@ app.get('/api/upcoming', async (req, res) => {
     const units = (await readUnits(db)).filter((u) => u.propertyId === propertyId)
     const unitIds = new Set(units.map((u) => u.id))
     const tenancies = (await readTenancies(db)).filter((t) => unitIds.has(t.unitId))
+    // Ohne lesbaren Einzug ein Satz mit dem Mietverhältnis statt eines Fehlers mitten im Rechnen (snapshot.ts).
+    requireTenancyStarts(tenancies, units)
     const meters = (await readMeters(db)).filter((m) => m.propertyId === propertyId)
     const meterIds = new Set(meters.map((m) => m.id))
     return upcomingDeadlines({
@@ -5157,7 +5159,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Oberfläche sagen kann, was sich geändert hat.
   if (err instanceof StaleRecordError) return res.status(409).json({ error: err.message, stale: true, current: err.current })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError || err instanceof RentIncreaseError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError || err instanceof RentIncreaseError || err instanceof TenancyStartMissing) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

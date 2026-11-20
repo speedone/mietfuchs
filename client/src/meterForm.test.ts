@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
+import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -344,4 +344,17 @@ test('houseLabel: Hauptzähler oder Teil des Hauses, wie gesendet würde', () =>
   expect(houseLabel(atUnit)).toBe('Haus (Teil des Hauses)')
   // An der Heizanlage wird `common` nicht gesendet.
   expect(houseLabel({ ...house, scope: 'common', heatingRole: 'supply' })).toBe('Haus (Hauptzähler)')
+})
+
+test('Löschfrage eines Zählers: wie viele Ablesungen aus welchen Jahren, und dass der Verlauf es zurücknimmt', () => {
+  const undo = 'Auf der Seite „Verlauf“ lässt sich das Löschen zurücknehmen: gleich danach für sich allein, später nur zusammen mit allem, was Sie seither geändert haben, längstens zwölf Monate lang und nicht über den Abschluss einer Abrechnung, ein eingespieltes Backup oder ein Update von Mietfuchs hinweg.'
+  expect(meterDeleteMessage(['2023-12-31', '2025-12-31', '2024-12-31'])).toBe(
+    `Mit dem Zähler werden 3 Ablesungen aus den Jahren 2023 bis 2025 gelöscht. Der Verbrauch dieser Zeit lässt sich danach nicht mehr berechnen; abgeschlossene Abrechnungen bleiben, wie sie sind. ${undo}`,
+  )
+  expect(meterDeleteMessage(['2025-01-01', '2025-12-31'])).toMatch(/^Mit dem Zähler werden 2 Ablesungen aus dem Jahr 2025 gelöscht\. /)
+  expect(meterDeleteMessage(['2025-01-01'])).toMatch(/^Mit dem Zähler wird 1 Ablesung aus dem Jahr 2025 gelöscht\. /)
+  expect(meterDeleteMessage([])).toBe(`Der Zähler hat keine Ablesungen. ${undo}`)
+  // Ein krummes Datum im Bestand ergibt kein Jahr „1.1.“: Gezählt wird die Ablesung, genannt werden nur lesbare Jahre.
+  expect(meterDeleteMessage(['1.1.2024', '2025-12-31'])).toMatch(/^Mit dem Zähler werden 2 Ablesungen aus dem Jahr 2025 gelöscht\. /)
+  expect(meterDeleteMessage(['1.1.2024'])).toMatch(/^Mit dem Zähler wird 1 Ablesung gelöscht\. /)
 })
