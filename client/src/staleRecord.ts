@@ -9,19 +9,60 @@ import { ApiError } from './api'
 // **Mitgeschickt wird der Stand vom Öffnen des Formulars**, nicht der aus der Liste beim Speichern: Lädt die Seite die
 // Liste neu, während das Formular offen ist, kennt das Formular den neuen Stand trotzdem nicht.
 
+// Was die Listen dazusetzen, ohne dass es gespeichert ist (wie `VIEW_ONLY` im Server).
+const VIEW_ONLY = new Set(['year', 'fromDeposit', 'fromBank'])
+// Der Inhalt als Text, wie `recordMark` im Server: Schlüssel sortiert, Fehlendes und `null` gleich.
+function mark(value: unknown, top = true): string {
+  if (Array.isArray(value)) return `[${value.map((x) => mark(x, false)).join(',')}]`
+  if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null)
+  const entries = Object.entries(value)
+    .filter(([key, x]) => x !== undefined && x !== null && !(top && VIEW_ONLY.has(key)))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([key, x]) => `${JSON.stringify(key)}:${mark(x, false)}`).join(',')}}`
+}
+/** Derselbe Inhalt, wie der Server ihn vergleicht. */
+export const sameRecord = (a: unknown, b: unknown): boolean => mark(a) === mark(b)
+
 /**
- * Der Datensatz, wie er beim Öffnen des Formulars in der Liste stand: gemerkt, sobald das Formular einen anderen Datensatz
- * zeigt (`id`), nicht bei jeder neu geladenen Liste. Ohne `id` (neu anlegen) keiner.
+ * Der Stand von jetzt, geholt beim Öffnen eines Formulars. Die Liste, aus der das Formular gefüllt wurde, kann älter sein
+ * als der Bestand: Ein anderer Weg im selben Tab hat gespeichert, ohne sie nachzuladen (die Wohnungen hält die App und
+ * lädt sie nur beim Objektwechsel), oder ein anderes Fenster. Weicht der Datensatz ab, bekommt ihn `adopt`; nimmt das
+ * Formular ihn an (es ist noch unberührt und zeigt ihn jetzt), gilt er als gesehen. Sonst bleibt der alte gesehen, und
+ * das Speichern wird ehrlich abgelehnt. So gehört der gesehene Stand immer zu dem, was das Formular zeigt.
  */
-export function useSeenRecord<T extends { id: string }>(id: string | undefined, list: readonly T[]): { readonly current: T | undefined } {
+export type Fresh<T> = { load: () => Promise<readonly T[]>; adopt: (now: T, old: T) => boolean }
+export function refreshSeen<T extends { id: string }>(seen: { current: T | undefined }, old: T, fresh: Fresh<T>, alive: () => boolean = () => true): void {
+  fresh.load().then((rows) => {
+    const now = rows.find((x) => x.id === old.id)
+    if (!alive() || seen.current !== old || !now || sameRecord(now, old)) return
+    if (fresh.adopt(now, old)) seen.current = now
+  }, () => { /* ohne Antwort bleibt der Stand der Liste gesehen */ })
+}
+
+/**
+ * Der Datensatz, den das Formular zeigt: beim Öffnen der aus der Liste (gemerkt, sobald das Formular einen anderen Datensatz
+ * zeigt, `id`, nicht bei jeder neu geladenen Liste), mit `fresh` gleich danach gegen den Bestand abgeglichen. Ohne `id`
+ * (neu anlegen) keiner.
+ */
+export function useSeenRecord<T extends { id: string }>(id: string | undefined, list: readonly T[], fresh?: Fresh<T>): { readonly current: T | undefined } {
   const seen = useRef<T | undefined>(undefined)
   const listRef = useRef(list)
   listRef.current = list
+  const freshRef = useRef(fresh)
+  freshRef.current = fresh
   useEffect(() => {
-    seen.current = id ? listRef.current.find((x) => x.id === id) : undefined
+    const old = id ? listRef.current.find((x) => x.id === id) : undefined
+    seen.current = old
+    if (!old || !freshRef.current) return
+    let alive = true
+    refreshSeen(seen, old, { load: () => freshRef.current?.load() ?? Promise.resolve([]), adopt: (now, was) => freshRef.current?.adopt(now, was) ?? false }, () => alive)
+    return () => { alive = false }
   }, [id])
   return seen
 }
+
+/** Ob ein Formular noch zeigt, womit es gefüllt wurde (dann darf ein frischer Stand es ersetzen). */
+export const untouched = (form: unknown, filled: unknown): boolean => JSON.stringify(form) === JSON.stringify(filled)
 
 /** Der Zusatz für den Rumpf; ohne gemerkten Stand (neu angelegt, Liste noch nicht da) nichts, dann gilt das Bisherige. */
 export const ifUnchanged = (seen: object | null | undefined): { ifUnchanged?: object } => (seen ? { ifUnchanged: seen } : {})
@@ -31,8 +72,6 @@ export const isStale = (e: unknown): e is ApiError => e instanceof ApiError && e
 /** Beschriftung je Feld, wahlweise mit dem Wert von jetzt in Klammern (`now`). */
 export type StaleFields = Record<string, string | { label: string; now: (value: unknown) => string | null }>
 
-// Was die Listen dazusetzen, ohne dass es gespeichert ist (wie `VIEW_ONLY` im Server).
-const VIEW_ONLY = new Set(['year', 'fromDeposit', 'fromBank'])
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const record = (value: unknown): Record<string, unknown> | null => (value !== null && typeof value === 'object' && !Array.isArray(value) ? { ...value } : null)
 

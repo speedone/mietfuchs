@@ -100,3 +100,18 @@ test('Inzwischen gelöscht: der Satz des Servers steht im Fuß des Fensters', as
   expect(alert.textContent).toContain(gone)
   expect(alert.closest('dialog')).not.toBeNull()
 })
+
+// Die Liste der Seite ist älter als der Bestand (ein anderer Weg hat gespeichert, ohne sie nachzuladen): Das Formular
+// holt die Position beim Öffnen frisch, zeigt den Stand von jetzt und schickt ihn als gesehen mit.
+test('Alte Liste: das Formular zeigt beim Öffnen den Stand von jetzt und wird nicht abgelehnt', async () => {
+  page()
+  const edit = await screen.findByRole('button', { name: 'Kostenposition bearbeiten' })
+  costItems = [{ ...item(), amountCents: 150000, vendor: 'Versicherung AG' }]
+  fireEvent.click(edit)
+  await waitFor(() => expect((screen.getByLabelText(/Betrag/i) as HTMLInputElement).value).toBe('1.500,00'))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Wohngebäudeversicherung' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ description: 'Wohngebäudeversicherung', amountCents: 150000 })
+  expect(sent[0]?.body.ifUnchanged).toEqual({ ...item(), amountCents: 150000, vendor: 'Versicherung AG' })
+})

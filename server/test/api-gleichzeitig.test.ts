@@ -159,3 +159,47 @@ test('Objekt: Das zweite Fenster überschreibt die Angaben des ersten nicht mehr
     s.stop()
   }
 })
+
+// Wächter gegen falsche Ablehnungen: Was die Liste liefert, muss als gesehener Stand durchgehen, auch mit dem, was sie
+// dazusetzt (`year` im Kalenderobjekt, `fromDeposit` an einer Zahlung aus der Kaution). Setzt künftig jemand der Liste
+// ein Feld dazu, das nicht gespeichert ist, ohne es in `VIEW_ONLY` (repository.ts) einzutragen, wird dieser Test rot;
+// sonst lehnte jedes Speichern aus dem Formular ab.
+test('Mit dem Stand aus der Liste gespeichert: keine Sammlung und kein Objekt lehnt ab', async () => {
+  const s = await startServer()
+  try {
+    const { unit, tenancy } = await stock(s)
+    const second = await post<Unit>(s, '/api/units', { name: 'OG', areaM2: 60, participates: false, selfUsed: true, selfPersons: 2, floor: '1. OG', mea: 400 })
+    const meter = await post<Meter>(s, '/api/meters', { name: 'KW EG', unitId: unit.id, type: 'kaltwasser', unit: 'm³', meterNumber: 'A-1', calibratedUntil: 2030 })
+    await post<Meter>(s, '/api/meters', { name: 'Haupt', unitId: null, type: 'kaltwasser', unit: 'm³' })
+    await post<Reading>(s, '/api/readings', { meterId: meter.id, date: '2025-12-31', value: 50.5, note: 'abgelesen' })
+    await post<Payment>(s, '/api/payments', { tenancyId: tenancy.id, date: '2026-01-03', amountCents: 50000, note: 'Januar' })
+    // Eine Zahlung aus der Kaution: Die Liste setzt `fromDeposit` dazu.
+    await post(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2025-01-05', kind: 'received', amountCents: 150000 })
+    await post(s, '/api/deposit-entries', { tenancyId: tenancy.id, date: '2026-02-10', kind: 'applied', purpose: 'rent', amountCents: 50000 })
+    await post<CostItem>(s, '/api/costItems', { year: 2025, category: 'Gebäudeversicherung', description: 'Versicherung', vendor: 'Versicherung AG', amountCents: 138000, key: 'area' })
+    await post<CostItem>(s, '/api/costItems', { year: 2025, category: 'Grundsteuer', description: 'Anteile', amountCents: 10000, key: 'custom', customShares: { [unit.id]: 50, [second.id]: 50 } })
+    await post<CostItem>(s, '/api/costItems', { year: 2025, category: 'Aufzug', description: 'Aufzug', amountCents: 10000, labor35aCents: 2000, key: 'area', participantUnitIds: [unit.id] })
+    await post<CostItem>(s, '/api/costItems', { year: 2025, category: 'Wasserversorgung', description: 'Wasser', amountCents: 20000, key: 'meter', meterType: 'kaltwasser' })
+
+    let checked = 0
+    const CHANGE: Record<string, Record<string, unknown>> = {
+      units: { notes: 'geändert' }, costItems: { vendor: 'geändert' }, meters: { meterNumber: 'geändert' },
+      readings: { note: 'geändert' }, payments: { note: 'geändert' }, properties: { address: 'geändert' },
+    }
+    for (const list of Object.keys(CHANGE)) {
+      const rows = await s.api<Record<string, unknown>[]>(`/api/${list}`)
+      assert.ok(rows.length > 0, `${list}: Der Bestand des Tests hat keinen Eintrag.`)
+      if (list === 'costItems') assert.ok(rows.every((r) => 'year' in r), 'Im Kalenderobjekt trägt jede Position der Liste `year`.')
+      if (list === 'payments') assert.ok(rows.some((r) => r.fromDeposit === true), 'Die Zahlung aus der Kaution trägt `fromDeposit`.')
+      for (const seen of rows) {
+        // Mit einer Änderung, sonst griffe die Ausnahme „der Stand gilt schon“ und der Vergleich bliebe ungeprüft.
+        const res = await put(s, `/api/${list}/${String(seen.id)}`, { ...CHANGE[list], ifUnchanged: seen })
+        assert.equal(res.status, 200, `${list}: ${JSON.stringify(seen)} wurde abgelehnt: ${String(res.body.error)}`)
+        checked++
+      }
+    }
+    assert.ok(checked >= 12)
+  } finally {
+    s.stop()
+  }
+})

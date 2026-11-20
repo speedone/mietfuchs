@@ -218,7 +218,8 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   (`tenancyStamp`, `StaleTenancyError`): Die Liste schreibt dort die Schlüssel der Jahreskorrektur um. Wer der Liste
   einer Sammlung ein Feld dazusetzt, das nicht gespeichert ist, trägt es in `VIEW_ONLY` ein (und im Client in
   staleRecord.ts), sonst lehnte jedes Speichern ab. Ein `PUT` auf einen gelöschten Datensatz ist eine 404 mit Satz je
-  Sammlung (`GONE` in index.ts). Geprüft in api-gleichzeitig.test.ts. Noch ohne Erkennung: `PUT /api/settings`.
+  Sammlung (`GONE` in index.ts, auch für Teilrümpfe ohne Formular). Geprüft in api-gleichzeitig.test.ts; ein Wächter dort
+  speichert jeden Datensatz jeder Liste mit seinem Stand aus der Liste und verlangt 200. Noch ohne Erkennung: `PUT /api/settings`.
 - **Was krumm hereinkommt, wird geradegerückt, nicht abgelehnt**: Bei zwei Staffeleinträgen zum
   selben Stichtag gilt der letzte (Regel einmal in [../schedule.ts](../schedule.ts)); die
   Jahreskorrektur eines Kalenderobjekts braucht eine vierstellige Jahreszahl. **Ausnahme

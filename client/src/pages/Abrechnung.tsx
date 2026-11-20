@@ -221,8 +221,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         body: JSON.stringify({ texts: save.texts, ...(save.adjust !== undefined ? { adjustment: save.adjust } : {}) }),
       })
     }
+    // „mitdrucken“ steht am Objekt: Die Objekte der App laden mit, sonst kennte „Objekt bearbeiten“ einen älteren Stand.
+    const atProperty = letterEdit.kind === 'property'
     setLetterEdit(null)
-    await load()
+    await Promise.all([load(), ...(atProperty ? [reload()] : [])])
     toast('Anschreiben gespeichert.')
   }
 

@@ -10,7 +10,7 @@ import PropertyFields from './PropertyFields'
 import { useFormError } from './ErrorSummary'
 import { useSaving } from '../useSaving'
 import { focusOpener, type FocusProps, type PropertyPart } from '../focus'
-import { ifUnchanged, staleText, type StaleFields } from '../staleRecord'
+import { ifUnchanged, isStale, refreshSeen, staleText, untouched, type StaleFields } from '../staleRecord'
 
 const PROPERTY_STALE_FIELDS: StaleFields = { name: 'Bezeichnung', address: 'Adresse', kind: 'Art', landlordName: 'Vermieter', iban: 'IBAN', paymentDeadlineDays: 'Zahlungsfrist' }
 
@@ -27,6 +27,8 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
   const confirm = useConfirm()
   // Das Seitenfenster „Objekt bearbeiten“: `null` heißt zu.
   const [form, setForm] = useState<PropertyForm | null>(null)
+  const formRef = useRef(form)
+  formRef.current = form
   const errors = useFormError<PropertyField>()
   const saving = useSaving()
   // Die Kosten des Objekts, geladen beim Öffnen: Das Feld zum Ende der Verteilung (§ 82b Abs. 2 EStDV, #262 PR 4) steht nur
@@ -56,6 +58,17 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
     // Der Stand des Objekts beim Öffnen, als `ifUnchanged` beim Speichern (staleRecord.ts).
     seen.current = property
     setForm(propertyToForm(property))
+    // Und gleich gegen den Bestand abgeglichen: Andere Wege schreiben am Objekt (Anschreiben „mitdrucken“, Zeitraum),
+    // ohne dass die Liste der Objekte neu lädt.
+    refreshSeen(seen, property, {
+      load: () => api<Property[]>('/api/properties'),
+      adopt: (now, old) => {
+        if (!untouched(formRef.current, propertyToForm(old))) return false
+        setForm(propertyToForm(now))
+        reload().catch(() => { /* das Formular zeigt den Stand schon */ })
+        return true
+      },
+    })
     setItems([])
     // Scheitert das Laden, sagt das Fenster es (K5); der Server fragt beim Speichern trotzdem nach.
     api<CostItem[]>(withProperty('/api/costItems', property.id)).then(setItems, () => {
@@ -90,6 +103,8 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
       toast('Objekt gespeichert.')
     } catch (e) {
       errors.show(staleText(e, seen.current, PROPERTY_STALE_FIELDS) ?? errorText(e))
+      // Abgelehnt, weil der Stand älter ist: Die Objekte laden neu, damit das erneut geöffnete Formular den von jetzt zeigt.
+      if (isStale(e)) reload().catch(() => { /* die Meldung im Fenster steht schon */ })
     }
   })
 

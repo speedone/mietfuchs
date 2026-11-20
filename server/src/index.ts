@@ -727,9 +727,9 @@ app.put('/api/costItems/:id/split', async (req, res) => {
   res.json(await writeData((db) => saveCostItemSplit(db, null, bodyObject(req), req.params.id, newId)))
 })
 
-// Ein Formular speichert einen Datensatz, den ein anderes Fenster oder Gerät inzwischen gelöscht hat: ein Satz statt
-// „Nicht gefunden“.
-const GONE_REST = 'wurde inzwischen gelöscht, etwa in einem zweiten Fenster oder auf einem anderen Gerät. Gespeichert wurde nichts. Bitte schließen Sie das Formular und laden Sie die Seite neu.'
+// Jemand speichert an einem Datensatz, den ein anderes Fenster oder Gerät inzwischen gelöscht hat: ein Satz statt
+// „Nicht gefunden“. Er stimmt mit und ohne Formular (auch „Beleg zuordnen“ oder „Betrag prüfen“ kommen hier an).
+const GONE_REST = 'wurde inzwischen gelöscht, etwa in einem zweiten Fenster oder auf einem anderen Gerät. Gespeichert wurde nichts. Bitte laden Sie die Seite neu.'
 const GONE: Record<CollectionName, string> = {
   units: `Diese Wohnung ${GONE_REST}`,
   tenancies: `Dieses Mietverhältnis ${GONE_REST}`,

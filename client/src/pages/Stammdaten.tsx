@@ -39,9 +39,7 @@ import HeatingCard from '../components/HeatingCard'
 import { focusOpener, useFocusTarget, useNewTarget, useScrollToFocus, useSectionJump, type FocusProps } from '../focus'
 import { splitTenancies } from '../tenancyList'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
-import { ifUnchanged, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
-
-const UNIT_STALE_FIELDS: StaleFields = { name: 'Name', areaM2: 'Wohnfläche', rooms: 'Zimmer', floor: 'Etage', propertyId: 'Objekt' }
+import { ifUnchanged, isStale, staleText, untouched, useSeenRecord, type StaleFields } from '../staleRecord'
 import { salutationOf } from '../../../shared/letter.ts'
 import { NoticeBox } from '../components/Notice'
 
@@ -95,6 +93,8 @@ type TenancyForm = {
 }
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
+// Was die Meldung „inzwischen an anderer Stelle geändert“ an der Wohnung beim Namen nennt (staleRecord.ts).
+const UNIT_STALE_FIELDS: StaleFields = { name: 'Name', areaM2: 'Wohnfläche', rooms: 'Zimmer', floor: 'Etage', propertyId: 'Objekt' }
 
 // Form der Sicherheit (#228) als Auswahl: jeder Wert, den das Formular halten kann, steht in der Liste.
 const DEPOSIT_FORM_OPTIONS: readonly { value: DepositForm | ''; label: string }[] = [
@@ -186,7 +186,18 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const propertyId = property?.id
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   // Der Stand der Wohnung beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
-  const seenUnit = useSeenRecord(unitForm?.id, units)
+  // Die Liste hält die App und lädt sie nur auf Zuruf; beim Öffnen holt das Formular deshalb den Stand von jetzt.
+  const unitFormRef = useRef(unitForm)
+  unitFormRef.current = unitForm
+  const seenUnit = useSeenRecord(unitForm?.id, units, {
+    load: () => api<Unit[]>(withProperty('/api/units', propertyId)),
+    adopt: (now, old) => {
+      if (!untouched(unitFormRef.current, unitToForm(old))) return false
+      setUnitForm(unitToForm(now))
+      reload().catch(() => { /* das Formular zeigt den Stand schon */ })
+      return true
+    },
+  })
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   // Der Mieterwechsel ist gespeichert, aber die Ansicht ließ sich nicht neu laden (#150).
@@ -341,6 +352,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
     } catch (e) {
       unitErrors.show(staleText(e, seenUnit.current, UNIT_STALE_FIELDS) ?? errorText(e))
+      // Abgelehnt, weil der Stand älter ist: Die Liste lädt neu, damit das erneut geöffnete Formular den von jetzt zeigt.
+      if (isStale(e)) reload().catch(() => { /* die Meldung im Fenster steht schon */ })
       return
     }
     setUnitForm(null)

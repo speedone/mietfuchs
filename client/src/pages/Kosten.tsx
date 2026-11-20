@@ -93,7 +93,7 @@ import { usePeriod } from '../period'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
-import { ifUnchanged, isStale, staleText } from '../staleRecord'
+import { ifUnchanged, isStale, refreshSeen, staleText, untouched } from '../staleRecord'
 import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import MeterRestFields from '../components/MeterRestFields'
@@ -168,6 +168,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // wird er festgehalten (Zuordnung).
   const [meterData, setMeterData] = useState<'loading' | 'ok' | 'failed'>('loading')
   const [form, setForm] = useState<ItemForm | null>(null)
+  const formRef = useRef(form)
+  formRef.current = form
   // Eine Wohnung mit Zimmern bekommt selbst keinen Anteil (#573): Die Empfängerlisten bieten sie nur an, wo sie schon genannt ist.
   const namedKey = form ? namedRecipients(form).join('|') : ''
   const units = useMemo(() => recipientUnits(allUnits, namedKey ? namedKey.split('|') : []), [allUnits, namedKey])
@@ -233,6 +235,23 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     seenItem.current = item
     setHeatingPeriod(item?.period ?? '')
     setHeatingPlantId(item?.heatingPlantId ?? '')
+    if (!item) return
+    // Und gleich gegen den Bestand abgeglichen (`refreshSeen`): Andere Wege ändern Positionen, ohne dass diese Liste neu
+    // lädt (Heizung einrichten, Betriebsstrom, Lieferung zuordnen, ein anderes Fenster). Ein noch unberührtes Formular
+    // zeigt dann den Stand von jetzt; ein schon geändertes behält seinen, und das Speichern wird abgelehnt.
+    let alive = true
+    refreshSeen(seenItem, item, {
+      load: () => api<CostItem[]>(withProperty('/api/costItems', propertyId)),
+      adopt: (now, old) => {
+        if (!untouched(formRef.current, itemToForm(old))) return false
+        setForm(itemToForm(now))
+        setHeatingPeriod(now.period)
+        setHeatingPlantId(now.heatingPlantId ?? '')
+        load().catch(() => { /* das Formular zeigt den Stand schon */ })
+        return true
+      },
+    }, () => alive)
+    return () => { alive = false }
   }, [formId])
   // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
   // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr

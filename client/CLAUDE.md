@@ -617,13 +617,20 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Zustimmungserklärung auf eigener Seite. Druckbreite: Fall `mieterhoehung` in scripts/print-width-views.mjs.
 - **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
   zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
-- **Ein Formular, das einen Datensatz ganz schickt, schickt den Stand vom Öffnen mit** ([staleRecord.ts](src/staleRecord.ts),
-  Server: db/CLAUDE.md „Zwei Fenster, ein Datensatz“): `useSeenRecord(form?.id, liste)` merkt ihn beim Öffnen (nicht
+- **Ein Formular, das einen Datensatz ganz schickt, schickt den Stand mit, den es zeigt** ([staleRecord.ts](src/staleRecord.ts),
+  Server: db/CLAUDE.md „Zwei Fenster, ein Datensatz“): `useSeenRecord(form?.id, liste, fresh)` merkt ihn beim Öffnen (nicht
   aus der Liste beim Speichern, die lädt neu), `ifUnchanged(seen.current)` hängt ihn an den Rumpf, und die Ablehnung
   steht über `staleText(e, seen, FELDER) ?? errorText(e)` im Fuß des Fensters: Satz des Servers, „Inzwischen geändert: …“
-  aus `current` und dass die Eingabe stehen bleibt. So Kostenposition (auch beim Aufteilen; `COST_STALE_FIELDS` in
-  costForm.ts), Wohnung, Zähler und Objekt; das Mietverhältnis hat `tenancyStamp`. Teilrümpfe (Beleg zuordnen, Betrag
-  prüfen, Art einer Zahlung) schicken nichts mit, sie ändern nur, was sie nennen.
+  aus `current` und dass die Eingabe stehen bleibt. **Die Liste, aus der ein Formular gefüllt wird, kann älter sein als
+  der Bestand** (die Wohnungen hält die App und lädt sie nur auf Zuruf; viele Wege schreiben an Wohnung, Objekt oder
+  Position, ohne jede Liste nachzuladen). Deshalb zwei Regeln, sonst lehnte der Server im selben Tab zu Unrecht ab:
+  **Beim Öffnen holt das Formular den Datensatz frisch** (`fresh.load`, ein GET der Liste; `refreshSeen` ohne Hook im
+  Objekt); weicht er ab und ist das Formular noch unberührt (`untouched`), zeigt es den Stand von jetzt (`adopt`), der
+  dann als gesehen gilt, sonst bleibt der alte gesehen und das Speichern wird abgelehnt. **Nach einer Ablehnung
+  (`isStale`) lädt die Seite ihre Liste neu**, damit „schließen und erneut öffnen“ zum Ziel führt. So Kostenposition
+  (auch beim Aufteilen; `COST_STALE_FIELDS` in costForm.ts), Wohnung, Zähler und Objekt; das Mietverhältnis hat
+  `tenancyStamp`. Teilrümpfe (Beleg zuordnen, Betrag prüfen, Art einer Zahlung) schicken nichts mit, sie ändern nur, was
+  sie nennen. Tests: gleichzeitigBearbeiten.test.tsx, kostenGleichzeitig.test.tsx.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus
   [src/testing/dialog.ts](src/testing/dialog.ts), Tastendrücke wie im Browser aus
   [src/testing/keys.ts](src/testing/keys.ts) (`press`). `<dialog>` hat die Rolle `dialog`, die
