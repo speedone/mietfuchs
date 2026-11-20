@@ -39,7 +39,7 @@ import HeatingCard from '../components/HeatingCard'
 import { focusOpener, useFocusTarget, useNewTarget, useScrollToFocus, useSectionJump, type FocusProps } from '../focus'
 import { splitTenancies } from '../tenancyList'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
-import { ifUnchanged, isStale, staleText, untouched, useSeenRecord, type StaleFields } from '../staleRecord'
+import { ifUnchanged, isStale, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
 import { salutationOf } from '../../../shared/letter.ts'
 import { NoticeBox } from '../components/Notice'
 
@@ -187,15 +187,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   // Der Stand der Wohnung beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
   // Die Liste hält die App und lädt sie nur auf Zuruf; beim Öffnen holt das Formular deshalb den Stand von jetzt.
-  const unitFormRef = useRef(unitForm)
-  unitFormRef.current = unitForm
   const seenUnit = useSeenRecord(unitForm?.id, units, {
     load: () => api<Unit[]>(withProperty('/api/units', propertyId)),
-    adopt: (now, old) => {
-      if (!untouched(unitFormRef.current, unitToForm(old))) return false
+    adopt: (now) => {
       setUnitForm(unitToForm(now))
       reload().catch(() => { /* das Formular zeigt den Stand schon */ })
-      return true
     },
   })
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)

@@ -10,7 +10,7 @@ import PropertyFields from './PropertyFields'
 import { useFormError } from './ErrorSummary'
 import { useSaving } from '../useSaving'
 import { focusOpener, type FocusProps, type PropertyPart } from '../focus'
-import { ifUnchanged, isStale, refreshSeen, staleText, untouched, type StaleFields } from '../staleRecord'
+import { ifUnchanged, isStale, refreshSeen, staleText, type StaleFields } from '../staleRecord'
 
 const PROPERTY_STALE_FIELDS: StaleFields = { name: 'Bezeichnung', address: 'Adresse', kind: 'Art', landlordName: 'Vermieter', iban: 'IBAN', paymentDeadlineDays: 'Zahlungsfrist' }
 
@@ -27,8 +27,6 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
   const confirm = useConfirm()
   // Das Seitenfenster „Objekt bearbeiten“: `null` heißt zu.
   const [form, setForm] = useState<PropertyForm | null>(null)
-  const formRef = useRef(form)
-  formRef.current = form
   const errors = useFormError<PropertyField>()
   const saving = useSaving()
   // Die Kosten des Objekts, geladen beim Öffnen: Das Feld zum Ende der Verteilung (§ 82b Abs. 2 EStDV, #262 PR 4) steht nur
@@ -62,11 +60,9 @@ export default function PropertyCard({ focus, onFocusDone }: FocusProps = {}) {
     // ohne dass die Liste der Objekte neu lädt.
     refreshSeen(seen, property, {
       load: () => api<Property[]>('/api/properties'),
-      adopt: (now, old) => {
-        if (!untouched(formRef.current, propertyToForm(old))) return false
+      adopt: (now) => {
         setForm(propertyToForm(now))
         reload().catch(() => { /* das Formular zeigt den Stand schon */ })
-        return true
       },
     })
     setItems([])

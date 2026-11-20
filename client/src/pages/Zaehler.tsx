@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { useFormError } from '../components/ErrorSummary'
 import Field from '../components/Field'
 import YearField from '../components/YearField'
@@ -26,7 +26,7 @@ import HcaFields from '../components/HcaFields'
 import CutoffReadingForm from '../components/CutoffReadingForm'
 import { hcaSummary, isCutoffReading, ratedText } from '../hcaForm'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
-import { ifUnchanged, isStale, staleText, untouched, useSeenRecord, type StaleFields } from '../staleRecord'
+import { ifUnchanged, isStale, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
 
 const METER_STALE_FIELDS: StaleFields = { name: 'Name', unitId: 'Wohnung', type: 'Zählertyp', meterNumber: 'Zählernummer', unit: 'Einheit' }
 
@@ -49,15 +49,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [meterForm, setMeterForm] = useState<MeterForm | null>(null)
   // Der Stand des Zählers beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
   // Beim Öffnen gegen den Bestand abgeglichen: Ein Zählerwechsel mit Eichjahr oder ein anderes Fenster ändert den Zähler.
-  const meterFormRef = useRef(meterForm)
-  meterFormRef.current = meterForm
   const seenMeter = useSeenRecord(meterForm?.id, meters, {
     load: () => api<Meter[]>(withProperty('/api/meters', propertyId)),
-    adopt: (now, old) => {
-      if (!untouched(meterFormRef.current, meterToForm(old))) return false
+    adopt: (now) => {
       setMeterForm(meterToForm(now))
       load().catch(() => { /* das Formular zeigt den Stand schon */ })
-      return true
     },
   })
   // Heizung PR 21: die Jahreszahl auf dem Zähler, nur für den Vorschlag; gespeichert wird „geeicht bis“.

@@ -625,8 +625,12 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   der Bestand** (die Wohnungen hält die App und lädt sie nur auf Zuruf; viele Wege schreiben an Wohnung, Objekt oder
   Position, ohne jede Liste nachzuladen). Deshalb zwei Regeln, sonst lehnte der Server im selben Tab zu Unrecht ab:
   **Beim Öffnen holt das Formular den Datensatz frisch** (`fresh.load`, ein GET der Liste; `refreshSeen` ohne Hook im
-  Objekt); weicht er ab und ist das Formular noch unberührt (`untouched`), zeigt es den Stand von jetzt (`adopt`), der
-  dann als gesehen gilt, sonst bleibt der alte gesehen und das Speichern wird abgelehnt. **Nach einer Ablehnung
+  Objekt); weicht er ab, zeigt es den Stand von jetzt (`adopt`), der dann als gesehen gilt. **Ersetzt wird nur, solange
+  der Nutzer seit dem Öffnen nichts getan hat** (Taste, Klick, Eingabe; `watchActions`): danach spränge die Einfügemarke,
+  und das Seitenfenster hielte ein nur angeklicktes Formular für geändert (es merkt seinen Vergleichsstand beim ersten
+  Klick). Was das Formular selbst ableitet (ein Schlüssel, den ein Effekt setzt), ist keine Handlung. Nach der ersten
+  Handlung bleibt der Stand der Liste gesehen und das Speichern wird abgelehnt. Verglichen wird mit `recordMark` aus
+  shared/recordMark.ts, wie im Server. **Nach einer Ablehnung
   (`isStale`) lädt die Seite ihre Liste neu**, damit „schließen und erneut öffnen“ zum Ziel führt. So Kostenposition
   (auch beim Aufteilen; `COST_STALE_FIELDS` in costForm.ts), Wohnung, Zähler und Objekt; das Mietverhältnis hat
   `tenancyStamp`. Teilrümpfe (Beleg zuordnen, Betrag prüfen, Art einer Zahlung) schicken nichts mit, sie ändern nur, was

@@ -729,7 +729,7 @@ app.put('/api/costItems/:id/split', async (req, res) => {
 
 // Jemand speichert an einem Datensatz, den ein anderes Fenster oder Gerät inzwischen gelöscht hat: ein Satz statt
 // „Nicht gefunden“. Er stimmt mit und ohne Formular (auch „Beleg zuordnen“ oder „Betrag prüfen“ kommen hier an).
-const GONE_REST = 'wurde inzwischen gelöscht, etwa in einem zweiten Fenster oder auf einem anderen Gerät. Gespeichert wurde nichts. Bitte laden Sie die Seite neu.'
+const GONE_REST = 'wurde inzwischen gelöscht. Gespeichert wurde nichts. Bitte laden Sie die Seite neu.'
 const GONE: Record<CollectionName, string> = {
   units: `Diese Wohnung ${GONE_REST}`,
   tenancies: `Dieses Mietverhältnis ${GONE_REST}`,

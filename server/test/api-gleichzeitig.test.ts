@@ -49,6 +49,8 @@ test('Kostenposition: Das zweite Fenster überschreibt den Betrag des ersten nic
     assert.equal(b.status, 409)
     assert.match(String(b.body.error), /inzwischen/)
     assert.match(String(b.body.error), /Gespeichert wurde nichts/)
+    // Wo geändert wurde, weiß der Server nicht (es kann derselbe Tab gewesen sein): Die Meldung behauptet kein zweites Fenster.
+    assert.doesNotMatch(String(b.body.error), /Fenster|Gerät/)
     assert.equal(b.body.stale, true)
     const current = b.body.current
     assert.ok(current !== null && typeof current === 'object' && 'amountCents' in current && current.amountCents === 150000, 'Die Antwort nennt den Stand von jetzt.')

@@ -22,6 +22,9 @@ test('changedFields: nennt die geänderten Angaben mit dem Wert von jetzt, den R
   const { year: _year, ...stored } = seen
   expect(changedFields(seen, { ...stored, vendor: null }, FIELDS)).toEqual([])
   expect(changedFields(undefined, seen, FIELDS)).toEqual([])
+  // Was das Modell gleich liest, ist keine Änderung: Das Formular einer Wohnung schreibt `selfUsed: false` und leere
+  // Listen dazu, wo vorher nichts stand.
+  expect(changedFields(seen, { ...seen, amountCents: 150000, selfUsed: false, usageChanges: [], notes: '' }, FIELDS)).toEqual([`Betrag (jetzt ${fmtEuro(150000)})`])
 })
 
 test('staleText: Satz des Servers, was sich geändert hat, und dass die Eingabe bleibt; sonst null', () => {

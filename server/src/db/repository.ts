@@ -58,6 +58,7 @@ import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
+import { recordMark } from '../../../shared/recordMark.ts'
 import { allowsSpread, isSpreadYears, spreadPartsRefusal, spreadQuestions, spreadRestQuestions } from '../../../shared/spread.ts'
 import { allowsPaidOn, isPaidOnDate, joinQuestions, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
@@ -1370,18 +1371,6 @@ export class StaleRecordError extends Error {
     this.current = current
   }
 }
-// Was die Listen dazusetzen, ohne dass es gespeichert ist (index.ts: `year` der Kostenposition im Kalenderobjekt,
-// `fromDeposit` und `fromBank` der Zahlung), dazu die Angabe selbst.
-const VIEW_ONLY = new Set(['year', 'fromDeposit', 'fromBank', 'ifUnchanged'])
-// Der Inhalt eines Datensatzes als Text: Schlüssel sortiert, Fehlendes und `null` gleich, Listen in ihrer Reihenfolge.
-function recordMark(value: unknown, top = true): string {
-  if (Array.isArray(value)) return `[${value.map((x) => recordMark(x, false)).join(',')}]`
-  if (!isObject(value)) return JSON.stringify(value ?? null)
-  const entries = Object.entries(Object(value) as Record<string, unknown>)
-    .filter(([key, x]) => x !== undefined && x !== null && !(top && VIEW_ONLY.has(key)))
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  return `{${entries.map(([key, x]) => `${JSON.stringify(key)}:${recordMark(x, false)}`).join(',')}}`
-}
 const dayDe = (iso: string): string => iso.split('-').reverse().join('.')
 export function requireUnchanged(what: string, current: object, next: object | null, body: unknown): void {
   const seen = raw(body, 'ifUnchanged')
@@ -1389,7 +1378,8 @@ export function requireUnchanged(what: string, current: object, next: object | n
   const now = recordMark(current)
   if (recordMark(seen) === now || (next !== null && recordMark(next) === now)) return
   throw new StaleRecordError(
-    `${what} wurde inzwischen an anderer Stelle geändert, etwa in einem zweiten Fenster oder auf einem anderen Gerät. ` +
+    // Wo geändert wurde, weiß der Server nicht (auch ein anderer Weg im selben Tab schreibt): kein „zweites Fenster“.
+    `${what} wurde inzwischen geändert. ` +
       'Gespeichert wurde nichts, damit diese Änderung nicht verloren geht. Bitte schließen Sie das Formular, öffnen Sie es erneut und tragen Sie Ihre Änderung noch einmal ein.',
     current,
   )
