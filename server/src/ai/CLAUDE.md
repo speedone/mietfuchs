@@ -71,10 +71,12 @@ Vorschläge**, übernommen wird erst nach Prüfung durch den Menschen. Gilt auch
   es zwei Einträge je Beleg** („Beleg hochgeladen“, „Beleg mit KI ausgewertet“); die Auswertung rückgängig zu machen
   lässt den Beleg liegen. Was der Browser nicht lesen kann (beschädigtes oder geschütztes PDF), liegt jetzt ebenfalls
   im Posteingang; eine leere Datei lädt die Oberfläche nicht hoch. Den Typ eines so genannten Belegs nimmt die Route aus der Endung, bei unbekannter Endung aus `uploads`
-  (`documentOf`). **Nur wer die Datei mit der Auswertung selbst schickt** (Feld `file`: die Heizrouten, `/api/extract`,
+  (`documentOf`). **Nur wer die Datei mit der Auswertung selbst schickt** (Feld `file`: `/api/extract`,
   Tabs aus älteren Fassungen), verliert sie beim Abbruch wieder: Der Server legt sie dann in den Papierkorb und nimmt
   ihre Zeile weg. Die Regel stammt aus der Zeit vor dem Posteingang (ein Beleg, auf den nichts verweist, galt als
-  Rest); für die Heizrouten gilt sie weiter.
+  Rest). Die Karten „Lieferungen“ und „Messdienstabrechnung auslesen“ der Seite Heizkosten speichern seit #690 ebenfalls
+  zuerst (`storeReceipt` in client/src/aiUpload.ts) und nennen den Heizrouten nur den Namen; die Routen nehmen die Datei
+  weiter an (ältere Tabs).
 - **Fehler mit Ausweg** (#487): Scheitert die KI, bleibt der Beleg gespeichert; die Fehlerantwort aller vier Routen
   (`failureOf` in index.ts) trägt `reason` (`AiFailureReason` in shared/types.ts), `kept: true`, `file` und bei
   fehlender Bestätigung `service`, bei „nicht erreichbar“ `provider` (der Satz nennt Ollama nur bei Ollama), im

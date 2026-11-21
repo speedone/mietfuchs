@@ -11,7 +11,7 @@ import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import { asksCo2Facts, fuelRequiredProblems, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelField, type FuelForm, type FuelPartForm } from '../fuelForm'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
-import { asStored, heatingUpload } from '../aiUpload'
+import { asStored, heatingUpload, STORED_NOT_EVALUATED, storeReceipt } from '../aiUpload'
 import { failureOf } from '../aiFailure'
 import { KeptReceipt } from './KeptReceipt'
 import { fuelChecks, fuelFormFromExtraction } from '../fuelImport'
@@ -73,6 +73,9 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   // „Von Hand erfassen“ lässt ihn stehen: Wer das Fenster ohne Speichern schließt, hat den Ausweg wieder vor sich; erst
   // eine angelegte Lieferung erledigt ihn (Durchsicht #487).
   const [kept, setKept] = useState<{ failure: AiFailure; file: File } | null>(null)
+  // #690: gespeichert, aber nicht ausgewertet, ohne Grund vom Server (Verbindung weg); die Datei bleibt für einen
+  // neuen Versuch, der den gespeicherten Beleg nennt.
+  const [storedOnly, setStoredOnly] = useState<{ file: File; name: string } | null>(null)
   // Der Bereich des Auslesens behält den Fokus nach „Erneut versuchen“, sonst fiele er auf body (Durchsicht #487)
   const aiArea = useRef<HTMLDivElement>(null)
   // #251: die offene Frage zu einer Gutschrift ohne Rechnung.
@@ -121,9 +124,13 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     setReading('start')
     setError('')
     setKept(null)
+    setStoredOnly(null)
+    // #690: erst speichern, dann auswerten. Was danach scheitert, kostet nur die Auswertung.
+    let name = stored ?? null
     try {
-      const upload = plant.propertyId ? await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(view.period) }) : await heatingUpload(file, null)
-      const fd = stored ? asStored(upload, stored) : upload
+      const placement = plant.propertyId ? { propertyId: plant.propertyId, year: startYearOf(view.period) } : null
+      name ??= await storeReceipt(file, placement)
+      const fd = asStored(await heatingUpload(file, placement), name)
       const r = await aiRequest<FuelExtractResult>(withProperty(`/api/heating-plants/${plant.id}/fuel-invoice`, propertyId), fd, { onProgress: setReading })
       // Durchsicht S1: nur vorbelegen, was die Karte unten zeigt (CO₂-Felder, Bezug der kWh bei Gas).
       const co2 = plant.energy === undefined || asksCo2Facts({ energy: plant.energy, contracting: plant.contracting, heatGeneration: plant.heatGeneration ?? null })
@@ -136,7 +143,10 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     } catch (e) {
       const failure = failureOf(e)
       if (failure) setKept({ failure, file })
-      else setError(errorText(e))
+      else {
+        setError(errorText(e))
+        if (name !== null) setStoredOnly({ file, name })
+      }
     } finally {
       setReading(null)
     }
@@ -491,6 +501,12 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       {!view.closed && editing === null && reading === null && kept && (
         <KeptReceipt failure={kept.failure} onManual={() => open(null)} onOpenSettings={onOpenAiSettings}
           onRetry={() => { aiArea.current?.focus(); void readInvoice(kept.file, kept.failure.file) }} />
+      )}
+      {!view.closed && editing === null && reading === null && !kept && storedOnly && (
+        <div className="row" role="status">
+          <span className="muted">{STORED_NOT_EVALUATED}</span>
+          <button type="button" className="btn secondary" onClick={() => { aiArea.current?.focus(); void readInvoice(storedOnly.file, storedOnly.name) }}>Erneut versuchen</button>
+        </div>
       )}
       </div>
     </Card>

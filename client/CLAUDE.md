@@ -76,6 +76,9 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   gescheiterter Upload (auch ein Kontoauszug, 422) ist der Fehler dieses einen Eintrags, die übrigen laufen weiter.
   „Entfernen“ an einem wartenden, gespeicherten Beleg lässt ihn als „abgebrochen“ stehen (der Beleg bleibt), vor dem
   Upload verschwindet der Eintrag. Seitentests beantworten `/api/upload` mit `uploadAnswer` (testing/storedUpload.ts).
+  Dasselbe gilt ohne Warteschlange für die Karten „Lieferungen“ und „Messdienstabrechnung auslesen“ der Seite Heizkosten
+  (#690, `storeReceipt` in aiUpload.ts): erst `/api/upload`, dann die Auswertung mit `existingFile`; endet sie ohne Grund
+  vom Server (abgebrochen, Verbindung weg), steht `STORED_NOT_EVALUATED` mit „Erneut versuchen“ da.
   Beide werten über `/api/intake` aus, Kosten mit `docType=rechnung` (keine Frage nach der Belegart;
   Zählerfotos erkennt der Eingang, dort „Als Rechnung auswerten“). `addFiles` ergibt die Zahl übergangener Dateien;
   jede Ablage nennt sie mit `SKIPPED_FILES` (belegeView.ts). Weder eine laufende Auswertung noch ein erkannter Zählerstand

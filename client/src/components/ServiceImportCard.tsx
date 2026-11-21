@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useOpenForm, useOptionalProperty, withProperty } from '../property'
 import { errorText } from '../api'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
-import { asStored, heatingUpload } from '../aiUpload'
+import { asStored, heatingUpload, STORED_NOT_EVALUATED, storeReceipt } from '../aiUpload'
 import { failureOf } from '../aiFailure'
 import { KeptReceipt } from './KeptReceipt'
 import ServiceImportReview from './ServiceImportReview'
@@ -46,6 +46,9 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
   const abort = useRef<AbortController | null>(null)
   // Die KI ist gescheitert, der Beleg liegt im Belegordner (#487); die Datei bleibt für einen neuen Versuch.
   const [kept, setKept] = useState<{ failure: AiFailure; file: File } | null>(null)
+  // #690: gespeichert, aber nicht ausgewertet, ohne Grund vom Server (abgebrochen, Verbindung weg); die Datei bleibt
+  // für einen neuen Versuch, der den gespeicherten Beleg nennt.
+  const [storedOnly, setStoredOnly] = useState<{ file: File; name: string } | null>(null)
 
   // Nach „Erneut versuchen“ geht der Fokus an „Abbrechen“ und danach an den Bereich des Auslesens, nicht auf body
   // (Durchsicht #487).
@@ -71,10 +74,14 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
     setError('')
     setResult(null)
     setKept(null)
+    setStoredOnly(null)
     abort.current = new AbortController()
+    // #690: erst speichern, dann auswerten. Was danach scheitert, kostet nur die Auswertung.
+    let name = stored ?? null
     try {
-      const upload = await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(object.key) })
-      const fd = stored ? asStored(upload, stored) : upload
+      const placement = { propertyId: plant.propertyId, year: startYearOf(object.key) }
+      name ??= await storeReceipt(file, placement, abort.current.signal)
+      const fd = asStored(await heatingUpload(file, placement), name)
       setResult(await aiRequest<ServiceExtractResult>(withProperty(`/api/heating-plants/${plant.id}/service-statement`, propertyId), fd, { onProgress: setProgress, signal: abort.current.signal }))
     } catch (e) {
       const failure = failureOf(e)
@@ -82,7 +89,10 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
       const aborted = abort.current?.signal.aborted === true || (e instanceof Error && e.name === 'AbortError')
       if (failure) setKept({ failure, file })
       else if (aborted && before) setKept(before)
-      else if (!aborted) setError(errorText(e))
+      else {
+        if (!aborted) setError(errorText(e))
+        if (name !== null) setStoredOnly({ file, name })
+      }
     } finally {
       setBusy(false)
       setProgress(null)
@@ -102,7 +112,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
       <ErrorSummary errors={errors} />
       <p className="muted">
         Laden Sie die Heiz- und Warmwasserkostenabrechnung Ihres Messdienstes hoch. Mietfuchs liest Nutzerbeträge, Summen, CO₂-Angaben und
-        die Ermittlung des Warmwassers und schlägt sie vor; gespeichert wird erst, wenn Sie übernehmen. Bei gescannten Abrechnungen liest
+        die Ermittlung des Warmwassers und schlägt sie vor; die Werte werden erst gespeichert, wenn Sie übernehmen. Bei gescannten Abrechnungen liest
         Mietfuchs höchstens die ersten vier Seiten. Der Beleg liegt auf der Seite Belege, bis Sie die Positionen anlegen.
       </p>
       {!busy && (
@@ -120,6 +130,12 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
         {!busy && kept && (
           <KeptReceipt failure={kept.failure} onManual={onOpenReceipt} onOpenSettings={onOpenAiSettings}
             onRetry={() => { retrying.current = 'pending'; aiArea.current?.focus(); void read(kept.file, kept.failure.file, kept) }} />
+        )}
+        {!busy && !kept && storedOnly && (
+          <div className="row" role="status">
+            <span className="muted">{STORED_NOT_EVALUATED}</span>
+            <button type="button" className="btn secondary" onClick={() => { retrying.current = 'pending'; aiArea.current?.focus(); void read(storedOnly.file, storedOnly.name) }}>Erneut versuchen</button>
+          </div>
         )}
       </div>
       {result && <ServiceImportReview key={result.file} x={result.extraction} file={result.file} ctx={ctx} view={view} co2={co2} onDone={onSaved} />}

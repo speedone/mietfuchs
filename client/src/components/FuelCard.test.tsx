@@ -11,6 +11,7 @@ import { UIProvider } from './feedback'
 import { periodKey } from '../../../shared/period.ts'
 import type { FuelDelivery, FuelExtractResult, HeatingPeriodView } from '../types'
 import { noInfoView } from '../testing/heatingView'
+import { uploadAnswer } from '../testing/storedUpload'
 
 const assert = { fail: (): never => { throw new Error('nicht gefunden') } }
 
@@ -28,9 +29,19 @@ const gas: FuelDelivery = {
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
 }
 
+// #690 Punkt 5: Der Beleg wird über /api/upload gespeichert, bevor die KI ihn auswertet. Jeder nachgestellte Server
+// legt ihn unter dem Namen der Datei ab und merkt sich, womit er kam.
+let uploads: { hasFile: boolean; propertyId: FormDataEntryValue | null; year: FormDataEntryValue | null }[] = []
+const storeAnswer = (init?: RequestInit): Response => {
+  const body = init?.body instanceof FormData ? init.body : new FormData()
+  uploads.push({ hasFile: body.get('file') instanceof File, propertyId: body.get('propertyId'), year: body.get('year') })
+  return uploadAnswer(init)
+}
+
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 beforeEach(() => {
   sent = []
+  uploads = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     sent.push({ url, method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) })
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -226,6 +237,7 @@ const extraction: FuelExtractResult = {
 const withExtraction = (result: FuelExtractResult) => {
   const fields: Record<string, string>[] = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return storeAnswer(init)
     if (init?.body instanceof FormData) {
       const f: Record<string, string> = { url }
       init.body.forEach((v, k) => { if (typeof v === 'string' && k !== 'requestId') f[k] = v })
@@ -259,7 +271,9 @@ test('Rechnung mit KI auslesen: das Formular ist vorbelegt, Teilmengen inklusive
   render(<FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} />)
   choose()
   expect(await screen.findByDisplayValue('4.067,80')).toBeTruthy()
-  expect(fields).toEqual([{ url: '/api/heating-plants/hp/fuel-invoice', propertyId: 'objekt-1', year: '2025' }])
+  // #690: erst gespeichert (mit Objekt und Jahr), dann ausgewertet, und an die Auswertung geht nur der Name.
+  expect(uploads).toEqual([{ hasFile: true, propertyId: 'objekt-1', year: '2025' }])
+  expect(fields).toEqual([{ url: '/api/heating-plants/hp/fuel-invoice', propertyId: 'objekt-1', year: '2025', existingFile: 'gas.jpg' }])
   expect(sent.filter((x) => x.method !== 'GET')).toEqual([])
   expect(auswahl('Einheit der Menge laut Rechnung').value).toBe('m3')
   expect(auswahl('Kilowattstunden der Rechnung berechnet nach').value).toBe('hs')
@@ -519,6 +533,7 @@ test('S2: Esc in einer mit der KI vorbelegten Lieferung fragt „Änderungen ver
 const failingThenKept = (reason: string) => {
   const fields: Record<string, string>[] = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return storeAnswer(init)
     if (init?.body instanceof FormData) {
       const f: Record<string, string> = { url, file: init.body.get('file') instanceof File ? 'Datei' : '' }
       init.body.forEach((v, k) => { if (typeof v === 'string' && k !== 'requestId') f[k] = v })
@@ -539,7 +554,8 @@ test('Fehler mit Ausweg: die Rechnung bleibt gespeichert, „Erneut versuchen“
   expect(screen.queryByText('Fehler')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
   await waitFor(() => expect(fields).toHaveLength(2))
-  expect([fields[0]?.file, fields[0]?.existingFile]).toEqual(['Datei', undefined])
+  expect([fields[0]?.file, fields[0]?.existingFile]).toEqual(['', 'gas.jpg'])
+  expect(uploads).toHaveLength(1)
   expect([fields[1]?.file, fields[1]?.existingFile, fields[1]?.propertyId]).toEqual(['', 'srv-gas.jpg', 'objekt-1'])
   fireEvent.click(await screen.findByRole('button', { name: 'Von Hand erfassen' }))
   const dialog = await screen.findByRole('dialog', { name: 'Neue Lieferung' })
@@ -576,4 +592,28 @@ test('Fehler mit Ausweg: nach „Erneut versuchen“ fällt der Fokus nicht auf 
   await waitFor(() => expect(fields).toHaveLength(2))
   await screen.findByRole('button', { name: 'Erneut versuchen' })
   expect(document.activeElement).not.toBe(document.body)
+})
+
+// #690 Punkt 5: Scheitert die Auswertung, ohne dass der Server den Beleg als gespeichert meldet (Verbindung weg, Tab
+// neu geladen), war die Rechnung vorher verloren. Jetzt liegt sie schon im Ordner, und die Karte sagt es.
+test('#690: die Rechnung ist gespeichert, bevor die KI sie liest; bricht die Verbindung ab, sagt die Karte, wo sie liegt', async () => {
+  const sentForms: FormData[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return storeAnswer(init)
+    if (init?.body instanceof FormData) {
+      sentForms.push(init.body)
+      if (sentForms.length === 1) throw new TypeError('Failed to fetch')
+      return new Response(JSON.stringify(extraction), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ ai: {} }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  expect(await screen.findByText(/Ihr Beleg ist gespeichert und steht auf der Seite Belege unter „Ohne Position“/)).toBeTruthy()
+  expect(uploads).toEqual([{ hasFile: true, propertyId: 'objekt-1', year: '2025' }])
+  expect([sentForms[0]?.get('file'), sentForms[0]?.get('existingFile')]).toEqual([null, 'gas.jpg'])
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+  expect(await screen.findByDisplayValue('4.067,80')).toBeTruthy()
+  expect(uploads).toHaveLength(1)
+  expect([sentForms[1]?.get('file'), sentForms[1]?.get('existingFile')]).toEqual([null, 'gas.jpg'])
 })
