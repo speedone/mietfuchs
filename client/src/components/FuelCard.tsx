@@ -175,7 +175,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       if (editing === 'neu') await api(withProperty(`/api/heating-plants/${plant.id}/deliveries`, propertyId), { method: 'POST', body: JSON.stringify(body) })
       else await api(withProperty(`/api/fuel-deliveries/${editing}`, propertyId), { method: 'PUT', body: JSON.stringify(body) })
       const created = editing === 'neu'
-      if (created) setKept(null)
+      if (created) { setKept(null); setStoredOnly(null) }
       close()
       setError('')
       toast(created ? 'Lieferung angelegt.' : 'Lieferung gespeichert.')

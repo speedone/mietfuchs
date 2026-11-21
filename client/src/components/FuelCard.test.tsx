@@ -617,3 +617,40 @@ test('#690: die Rechnung ist gespeichert, bevor die KI sie liest; bricht die Ver
   expect(uploads).toHaveLength(1)
   expect([sentForms[1]?.get('file'), sentForms[1]?.get('existingFile')]).toEqual([null, 'gas.jpg'])
 })
+
+// #690 (Durchsicht): Legt der Vermieter die Lieferung danach von Hand an, verschwindet auch die Zeile zum gespeicherten,
+// nicht ausgewerteten Beleg; vorher blieb sie bis zum Neuladen.
+test('#690: eine von Hand angelegte Lieferung räumt die Zeile „Ausgewertet ist er nicht“ ab', async () => {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return storeAnswer(init)
+    if (init?.body instanceof FormData) throw new TypeError('Failed to fetch')
+    sent.push({ url, method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) })
+    return new Response(JSON.stringify({ ai: {} }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  expect(await screen.findByText(/Ausgewertet ist er nicht/)).toBeTruthy()
+  const dialog = await openDelivery()
+  fireEvent.change(within(dialog).getByLabelText('Rechnungszeitraum von'), { target: { value: '2025-01-01' } })
+  fireEvent.change(within(dialog).getByLabelText('bis'), { target: { value: '2025-12-31' } })
+  saveDelivery(dialog, 'Anlegen')
+  await waitFor(() => expect(sent.some((x) => x.method === 'POST' && x.url === '/api/heating-plants/hp/deliveries')).toBe(true))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.queryByText(/Ausgewertet ist er nicht/)).toBeNull()
+})
+
+// #690 (Durchsicht): Scheitert schon das Speichern, stand nur „Failed to fetch“ da.
+test('#690: scheitert das Speichern des Belegs, sagt ein Satz, dass nichts gespeichert wurde und was zu tun ist', async () => {
+  let aiCalls = 0
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') throw new TypeError('Failed to fetch')
+    if (init?.body instanceof FormData) { aiCalls += 1; return new Response(JSON.stringify(extraction), { status: 200, headers: { 'content-type': 'application/json' } }) }
+    return new Response(JSON.stringify({ ai: {} }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  expect(await screen.findByText(/Der Beleg konnte nicht gespeichert werden.*Mietfuchs ist gerade nicht erreichbar.*Bitte wählen Sie die Datei noch einmal\./)).toBeTruthy()
+  expect(screen.queryByText(/Failed to fetch/)).toBeNull()
+  expect(screen.queryByText(/Ausgewertet ist er nicht/)).toBeNull()
+  expect(aiCalls).toBe(0)
+})
