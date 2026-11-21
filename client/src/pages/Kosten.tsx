@@ -76,7 +76,7 @@ import {
   formPartOf,
   type CostField,
   COST_STALE_FIELDS,
-} from '../costForm'
+ settleSelfKey, type SelfKeyMemo } from '../costForm'
 import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import CostPeriodFields from '../components/CostPeriodFields'
@@ -240,15 +240,16 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Ein Ziel, das zur Warmwasserbereitung nicht passt, wird nie still ersetzt, sondern als Fehler am Feld
   // genannt; gespeichert wird erst nach einer Wahl.
   const targetInvalid = !!form && selfPlant && form.heatingTarget !== '' && !targetChoices.some((o) => o.value === form.heatingTarget)
+  // Was dieser Effekt selbst gesetzt hat, je geöffnetem Formular (#690): Wechselt die Heizperiode zurück in eine mit
+  // freien Schlüsseln, nimmt `settleSelfKey` es wieder zurück.
+  const selfKeyMemo = useRef<SelfKeyMemo | null>(null)
   useEffect(() => {
-    if (!form) return
+    if (!form) { selfKeyMemo.current = null; return }
     // Gespeichert wird, was zu sehen ist: Bei eigener Abrechnung steht der Schlüssel fest, und eine einzige
     // passende Wahl füllt ein leeres Ziel.
-    const only = selfPlant && targetChoices.length === 1 ? (targetChoices[0]?.value ?? '') : null
-    const target = selfPlant && form.heatingTarget === '' && only !== null ? only : form.heatingTarget
-    if ((selfPlant && form.key !== 'heatingSystem') || target !== form.heatingTarget) {
-      setForm({ ...form, ...(selfPlant ? { key: 'heatingSystem' as const, participants: null } : {}), heatingTarget: target })
-    }
+    const settled = settleSelfKey(form, selfPlant, targetChoices.map((o) => o.value), selfKeyMemo.current)
+    selfKeyMemo.current = settled.memo
+    if (settled.form !== form) setForm(settled.form)
   }, [form, selfPlant, targetChoices])
   // Beim Öffnen einer bestehenden Position ihre Heizperiode und Anlage, sonst die Vorgabe der Auswahl. Nur beim
   // Öffnen (neue `formId`), nicht bei jeder neu geladenen Liste: Kam die Liste erst nach der Wahl an (etwa das
