@@ -9,6 +9,7 @@ import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView, ServiceExtractResult, Tenancy, Unit } from '../types'
 import { noInfoView } from '../testing/heatingView'
 import { UIProvider } from './feedback'
+import { uploadAnswer } from '../testing/storedUpload'
 
 const view = (closed = false): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed,
@@ -25,10 +26,21 @@ const result: ServiceExtractResult = {
   },
 }
 
+// #690 Punkt 5: Der Beleg wird über /api/upload gespeichert, bevor die KI ihn auswertet. Jeder nachgestellte Server
+// legt ihn unter dem Namen der Datei ab und merkt sich, womit er kam.
+let uploads: { hasFile: boolean; propertyId: FormDataEntryValue | null; year: FormDataEntryValue | null }[] = []
+const storeAnswer = (init?: RequestInit): Response => {
+  const body = init?.body instanceof FormData ? init.body : new FormData()
+  uploads.push({ hasFile: body.get('file') instanceof File, propertyId: body.get('propertyId'), year: body.get('year') })
+  return uploadAnswer(init)
+}
+
 let posted: { url: string; fields: Record<string, string> }[]
 beforeEach(() => {
   posted = []
+  uploads = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return storeAnswer(init)
     if (init?.body instanceof FormData) {
       const fields: Record<string, string> = {}
       init.body.forEach((v, k) => { if (typeof v === 'string' && k !== 'requestId') fields[k] = v })
@@ -50,7 +62,9 @@ test('Der Beleg geht mit Objekt und Jahr an die Anlage; die Prüfansicht zeigt d
   const zuordnung = await screen.findByLabelText('Zuordnung „Mustermann, Erika“')
   if (!(zuordnung instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
   expect(zuordnung.value).toBe('tenancy:t1')
-  expect(posted).toEqual([{ url: '/api/heating-plants/hp/service-statement', fields: { propertyId: 'objekt-1', year: '2025' } }])
+  // #690: erst gespeichert (mit Objekt und Jahr), dann ausgewertet, und an die Auswertung geht nur der Name.
+  expect(uploads).toEqual([{ hasFile: true, propertyId: 'objekt-1', year: '2025' }])
+  expect(posted).toEqual([{ url: '/api/heating-plants/hp/service-statement', fields: { propertyId: 'objekt-1', year: '2025', existingFile: 'abrechnung.jpg' } }])
 })
 
 test('Durchsicht S4: steht Kaltwasser mit Einzelbeträgen schon im Abrechnungszeitraum, ist der Block nicht vorgehakt', async () => {
@@ -90,6 +104,7 @@ test('7a: der Vorschlag meldet die Karte an, „Schließen“ nimmt die Marke we
 test('ohne Nutzeinheiten in der Abrechnung gehen nur die Wohnungen an der Heizung in die CO₂-Angaben', async () => {
   const sent: { url: string; body: unknown }[] = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return storeAnswer(init)
     if (init?.body instanceof FormData) {
       const extraction = { ...result.extraction, unitsCount: null, deductionEur: 50 }
       return new Response(JSON.stringify({ ...result, extraction }), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -112,7 +127,8 @@ test('ohne Nutzeinheiten in der Abrechnung gehen nur die Wohnungen an der Heizun
 // Ordner der Seite Belege zum Beleg, und „Erneut versuchen“ nennt nur seinen Namen.
 test('Fehler mit Ausweg: Beleg gespeichert, „Erneut versuchen“ ohne neue Datei, „Von Hand erfassen“ auf die Seite Belege', async () => {
   const sent: FormData[] = []
-  vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return storeAnswer(init)
     if (init?.body instanceof FormData) {
       sent.push(init.body)
       return new Response(JSON.stringify({ error: 'Die Belege gingen an api.example.com …', file: 'srv-abrechnung.jpg', reason: 'consent', kept: true, service: 'api.example.com' }), { status: 502, headers: { 'content-type': 'application/json' } })
@@ -138,7 +154,8 @@ test('Fehler mit Ausweg: Beleg gespeichert, „Erneut versuchen“ ohne neue Dat
 // Durchsicht #487: Ein abgebrochener neuer Versuch stellt den Ausweg mit dem alten Grund wieder her.
 test('Fehler mit Ausweg: „Abbrechen“ beim neuen Versuch kehrt zu „Gespeichert, nicht ausgewertet“ zurück', async () => {
   let call = 0
-  vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+  vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return Promise.resolve(storeAnswer(init))
     if (init?.body instanceof FormData) {
       call += 1
       if (call === 1) return Promise.resolve(new Response(JSON.stringify({ error: 'nicht erreichbar', file: 'srv-abrechnung.jpg', reason: 'unreachable', kept: true, provider: 'ollama' }), { status: 502, headers: { 'content-type': 'application/json' } }))
@@ -155,4 +172,30 @@ test('Fehler mit Ausweg: „Abbrechen“ beim neuen Versuch kehrt zu „Gespeich
   fireEvent.click(cancel)
   expect(await screen.findByText('Gespeichert, nicht ausgewertet')).toBeTruthy()
   expect(screen.getByText(/Die KI ist gerade nicht erreichbar\. Ist der Rechner mit der KI eingeschaltet, oder läuft Ollama\?/)).toBeTruthy()
+})
+
+// #690 Punkt 5: Vorher ging die Datei mit der Auswertung hinaus; brach man ab oder schloss den Tab, war der Beleg weg.
+test('#690: erst speichern, dann auswerten; nach „Abbrechen“ sagt die Karte, wo der Beleg liegt, und der neue Versuch lädt ihn nicht noch einmal hoch', async () => {
+  const sent: FormData[] = []
+  vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+    if (url === '/api/upload') return Promise.resolve(storeAnswer(init))
+    if (init?.body instanceof FormData) {
+      sent.push(init.body)
+      if (sent.length === 1) return new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('abgebrochen', 'AbortError'))))
+      return Promise.resolve(new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json' } }))
+    }
+    return Promise.resolve(new Response(JSON.stringify({ ai: { pageImageEdge: null } }), { status: 200, headers: { 'content-type': 'application/json' } }))
+  })
+  render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
+  fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(uploads).toEqual([{ hasFile: true, propertyId: 'objekt-1', year: '2025' }])
+  expect([sent[0]?.get('file'), sent[0]?.get('existingFile')]).toEqual([null, 'abrechnung.jpg'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }))
+  expect(await screen.findByText(/Ihr Beleg ist gespeichert und steht auf der Seite Belege unter „Ohne Position“/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+  expect(await screen.findByLabelText('Zuordnung „Mustermann, Erika“')).toBeTruthy()
+  expect(uploads).toHaveLength(1)
+  expect([sent[1]?.get('file'), sent[1]?.get('existingFile')]).toEqual([null, 'abrechnung.jpg'])
+  expect(screen.queryByText(/Ihr Beleg ist gespeichert und steht auf der Seite Belege unter „Ohne Position“/)).toBeNull()
 })
