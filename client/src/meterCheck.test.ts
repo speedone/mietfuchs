@@ -2,7 +2,7 @@
 // kann er die Verteilbasis des Verbrauchsschlüssels sein.
 import { expect, test } from 'vitest'
 import type { Meter, Notice } from './types'
-import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail, selfHeatingReadings } from './meterCheck'
+import { calibrationDetail, gapNotice, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail, selfHeatingReadings } from './meterCheck'
 
 const meter = (id: string, unitId: string | null, type: Meter['type'] = 'kaltwasser'): Meter =>
   ({ id, propertyId: 'p', name: id, type, unitId, unit: 'm³' })
@@ -61,6 +61,20 @@ test('Text der Zeile: fehlt der Anfang, nennt sie das Einbaudatum am Zähler als
   expect(spaet).toBe('Anfang/Ende fehlt oder unplausibel bei: neu (ohne Ablesung vom 01.01.2025 bis 30.06.2025). Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.')
   const ende = incompleteDetail([meter('neu', 'u1')], [{ meterId: 'neu', readingCount: 2, periodCovered: false, periodGap: { from: '2025-12-17', to: '2025-12-31' }, lastReadingOn: '2025-12-16', longUnread: false, warnings: [] }])
   expect(ende).not.toContain('Einbaudatum')
+})
+
+// #693: Die Seite Zähler sagt am Zähler dasselbe wie die Cockpit-Zeile, aus denselben Angaben des Servers.
+test('Satz am Zähler: dieselben Tage und Auswege wie die Cockpit-Zeile; gedeckt oder ohne Angabe des Servers kein Satz', () => {
+  const gap = { meterId: 'm', readingCount: 2, periodCovered: false, periodGap: { from: '2025-12-17', to: '2025-12-31' }, lastReadingOn: '2025-12-16', longUnread: false, warnings: [] }
+  expect(gapNotice(gap)).toBe('Ohne Ablesung vom 17.12.2025 bis 31.12.2025.')
+  expect(incompleteDetail([meter('m', 'u1')], [gap])).toContain('ohne Ablesung vom 17.12.2025 bis 31.12.2025')
+  expect(gapNotice({ ...gap, periodGap: { from: '2025-01-01', to: '2025-12-31' }, lastReadingOn: '2023-06-30', longUnread: true }))
+    .toBe('Ohne Ablesung vom 01.01.2025 bis 31.12.2025. Zuletzt abgelesen am 30.06.2023. Wurde der Zähler getauscht, erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel.')
+  expect(gapNotice({ ...gap, periodGap: { from: '2025-01-01', to: '2025-06-30' }, lastReadingOn: '2025-12-31' }))
+    .toBe('Ohne Ablesung vom 01.01.2025 bis 30.06.2025. Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.')
+  expect(gapNotice({ ...gap, periodCovered: true, periodGap: null })).toBeNull()
+  expect(gapNotice({ meterId: 'm', readingCount: 1, warnings: [] })).toBeNull()
+  expect(gapNotice(undefined)).toBeNull()
 })
 
 test('Grüne Zeile: Tage am Rand, die fehlen und hingenommen sind, stehen als Zusatz da', () => {

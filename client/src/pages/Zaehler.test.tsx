@@ -272,6 +272,35 @@ test('Geschätzte Ablesung: Stufe aus der Meldung, ein Hinweis und kein Fehler',
   expect(box?.className).not.toMatch(/error/)
 })
 
+// #693: Das Cockpit meldet rot, dass der Zeitraum nicht durch Ablesungen gedeckt ist; die Seite Zähler zeigte für
+// denselben Zähler nur die Verbrauchszahl. Jetzt steht am Zähler derselbe Satz, mit dem Knopf zur neuen Ablesung.
+test('#693: ist der Zeitraum nicht durch Ablesungen gedeckt, steht es am Zähler, mit Knopf zur neuen Ablesung', async () => {
+  let rows: unknown[] = [{ meterId: 'm1', consumption: 80, readingCount: 2, periodCovered: false, periodGap: { from: '2025-12-17', to: '2025-12-31' }, periodSlack: [], lastReadingOn: '2025-12-16', longUnread: false, warnings: [], notices: [] }]
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? ''
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/meters') return json(METERS)
+    if (path.startsWith('/api/consumption')) return json(rows)
+    return json([])
+  })
+  const view = renderPage()
+  const box = (await screen.findByText('Ohne Ablesung vom 17.12.2025 bis 31.12.2025.', undefined, { timeout: 5000 })).closest('.notice-item') as HTMLElement
+  expect(box.textContent).toContain('Warnung')
+  expect(box.textContent).toContain('Zeitraum nicht durch Ablesungen gedeckt')
+  // Die Verbrauchszahl bleibt stehen: Sie ist, was die Ablesungen hergeben.
+  expect(screen.getByText(/^80\sm³$/)).toBeTruthy()
+  fireEvent.click(within(box).getByRole('button', { name: '+ Ablesung anlegen' }))
+  expect(screen.getByRole('dialog', { name: /Neue Ablesung/ }).textContent).toContain('Wasser EG')
+  // Gedeckt: kein Satz.
+  view.unmount()
+  rows = [{ meterId: 'm1', consumption: 80, readingCount: 2, periodCovered: true, periodGap: null, periodSlack: [], lastReadingOn: '2025-12-31', longUnread: false, warnings: [], notices: [] }]
+  renderPage()
+  expect(await screen.findByText(/^80\sm³$/, undefined, { timeout: 5000 })).toBeTruthy()
+  expect(screen.queryByText(/Ohne Ablesung vom/)).toBeNull()
+  expect(screen.queryByText('Zeitraum nicht durch Ablesungen gedeckt')).toBeNull()
+})
+
 // ---------- #346 Schritt 7: die Ablesung im Seitenfenster, mit derselben Anfrage ----------
 // Die Rümpfe sind die, die die Ablesezeile vor dem Seitenfenster schickte.
 let calls: { url: string; method: string; body: unknown }[] = []

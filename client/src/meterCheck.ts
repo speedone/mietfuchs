@@ -56,24 +56,44 @@ export function incompleteDetail(incomplete: Meter[], consumption: MeterConsumpt
   const of = (m: Meter) => consumption.find((x) => x.meterId === m.id)
   const names = incomplete.map((m) => {
     const gap = of(m)?.periodGap
-    return gap ? `${m.name} (ohne Ablesung vom ${day(gap.from)} bis ${day(gap.to)})` : m.name
+    return gap ? `${m.name} (${gapPhrase(gap)})` : m.name
   })
   const idle = incomplete.flatMap((m) => {
-    const c = of(m)
-    return c?.longUnread && c.lastReadingOn ? [`${m.name} (zuletzt abgelesen am ${day(c.lastReadingOn)})`] : []
+    const on = idleSince(of(m))
+    return on ? [`${m.name} (zuletzt abgelesen am ${day(on)})`] : []
   })
-  // Liegt nach der Lücke noch eine Ablesung, fehlt nicht der Endstand, sondern der Anfang (oder ein Stück mittendrin):
-  // Dann nennt ein Satz das Einbaudatum, das jeder Zähler tragen kann und ab dem der Server Ablesungen verlangt.
-  const late = incomplete.some((m) => {
-    const c = of(m)
-    return !!c?.periodGap && !!c.lastReadingOn && c.lastReadingOn > c.periodGap.to
-  })
+  const late = incomplete.some((m) => startsLate(of(m)))
   const list = `Anfang/Ende fehlt oder unplausibel bei: ${andList(names)}`
   const more = [
-    ...(idle.length > 0 ? [`Schon länger nicht abgelesen: ${andList(idle)}. Wurde ein solcher Zähler getauscht, erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel.`] : []),
-    ...(late ? ['Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.'] : []),
+    ...(idle.length > 0 ? [`Schon länger nicht abgelesen: ${andList(idle)}. Wurde ein solcher Zähler getauscht, ${REPLACED_WAY}`] : []),
+    ...(late ? [LATE_WAY] : []),
   ]
   return more.length === 0 ? list : `${list}. ${more.join(' ')}`
+}
+
+// Die Teile der Zeile, die auch am Zähler stehen (#693): eine Regel für Cockpit und Seite Zähler.
+const gapPhrase = (gap: Span): string => `ohne Ablesung vom ${day(gap.from)} bis ${day(gap.to)}`
+const idleSince = (c: MeterConsumption | undefined): string | null => (c?.longUnread && c.lastReadingOn ? c.lastReadingOn : null)
+// Liegt nach der Lücke noch eine Ablesung, fehlt nicht der Endstand, sondern der Anfang (oder ein Stück mittendrin):
+// Dann nennt ein Satz das Einbaudatum, das jeder Zähler tragen kann und ab dem der Server Ablesungen verlangt.
+const startsLate = (c: MeterConsumption | undefined): boolean => !!c?.periodGap && !!c.lastReadingOn && c.lastReadingOn > c.periodGap.to
+const REPLACED_WAY = 'erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel.'
+const LATE_WAY = 'Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.'
+
+// Der Satz am Zähler auf der Seite Zähler (#693): dieselben Tage und Auswege wie die Cockpit-Zeile, für einen Zähler.
+// Gefragt wird nur die Angabe des Servers (`periodGap`); ohne sie (gedeckt, älterer Server) steht nichts da, und die
+// Zelle sagt wie bisher „zu wenig Ablesungen“. Wer vom Cockpit über „Hier beheben“ kommt, sieht so, welcher Zähler
+// gemeint ist. Anders als die Cockpit-Zeile fragt der Satz nicht, ob eine Kostenposition den Zähler braucht.
+export function gapNotice(c: MeterConsumption | undefined): string | null {
+  const gap = c?.periodGap
+  if (!gap) return null
+  const phrase = gapPhrase(gap)
+  const idle = idleSince(c)
+  return [
+    `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}.`,
+    ...(idle ? [`Zuletzt abgelesen am ${day(idle)}. Wurde der Zähler getauscht, ${REPLACED_WAY}`] : []),
+    ...(startsLate(c) ? [LATE_WAY] : []),
+  ].join(' ')
 }
 
 // Ruhiger Zusatz der grünen Zeile: Tage am Rand des Zeitraums, die keine Ablesung deckt und die der Server hinnimmt.
