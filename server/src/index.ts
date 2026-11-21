@@ -2489,7 +2489,7 @@ app.post('/api/upload', upload.single('file'), refuseBankFile, checkXmlReceipt, 
 // weiterrechnen: Das Signal bricht dann die Anfrage an den Anbieter ab, und ein Beleg, der mit dieser
 // Anfrage hochgeladen wurde (Feld `file`), verschwindet wieder aus dem Archiv. Eingang und Kosten schicken die
 // Datei nicht mehr mit: Sie speichern jeden Beleg vorher über /api/upload und nennen ihn hier nur (`existingFile`),
-// er bleibt also liegen. Mit der Datei kommen noch die Heizrouten und Tabs aus älteren Fassungen. Den
+// er bleibt also liegen; seit #690 ebenso die Karten der Seite Heizkosten. Mit der Datei kommen noch Tabs aus älteren Fassungen. Den
 // Abbruch erfährt der Server auf zwei Wegen: Express meldet das Schließen der Verbindung, und
 // der Browser schickt jeder Auswertung eine Kennung (`requestId`) mit, mit der er beim Abbrechen
 // POST /api/ai/cancel/<id> aufruft. Die Kennung wirkt unabhängig von der Laufzeit (unter Bun 1.3

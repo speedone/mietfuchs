@@ -99,6 +99,31 @@ test('Karte „Betriebsstrom der Heizung“: bei der Gasheizung ohne Messdienst,
   expect(screen.queryByLabelText('Wie ist der Betriebsstrom dieser Heizung erfasst?')).toBeNull()
 })
 
+// #690 Punkt 1: Die laufende Heizperiode, die erst nach dem gewählten Zeitraum endet, steht mit ihren Karten da und sagt,
+// dass sie noch läuft und wo sie abgerechnet wird.
+test('#690: die laufende Heizperiode steht mit einem Satz dazu auf der Seite, die endende ohne', async () => {
+  const periodView = (key: string, label: string, current: boolean): HeatingPeriodView => ({
+    plantId: 'hp1', period: periodKey(key), label, from: `${key}-01`, to: `${Number(key.slice(0, 4)) + 1}-06-30`, short: false, closed: false,
+    ...(current ? { current: true } : {}),
+    ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null },
+    hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, stock: null, items: [],
+  })
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = url.split('?')[0]
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'zfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json([{ ...PLANT, periodStartMonth: 7 }])
+    if (path === '/api/heating-plants/hp1/periods') return json([periodView('2025-07', '2025/2026', false), periodView('2026-07', '2026/2027', true)])
+    return json([])
+  })
+  render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} /></PropertyProvider></PeriodProvider>)
+  const laufend = await screen.findByRole('heading', { name: 'Heizanlage, Heizperiode 2026/2027' }, { timeout: 5000 })
+  const satz = screen.getAllByText(/Diese Heizperiode läuft noch/)
+  expect(satz).toHaveLength(1)
+  expect(satz[0]?.textContent).toMatch(/endet am 30\.06\.2027 und wird in dem Abrechnungszeitraum abgerechnet, in dem sie endet/)
+  expect(laufend.compareDocumentPosition(satz[0] as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
 // Durchsicht zu #309, SOLLTE 5: Die Karte „Ausnahmen und Vereinbarungen“ hing mit dem Stand ihrer Regeln im
 // Schlüssel. Speicherte eine andere Karte und änderten sich dabei die Regeln, war ein Entwurf still weg.
 test('ein Entwurf der Ausnahmen übersteht das Speichern einer anderen Karte', async () => {

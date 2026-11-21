@@ -104,6 +104,22 @@ describe('Kostenformular und Mietverhältnis', () => {
   })
 })
 
+describe('#690: die laufende Heizperiode im Kostenformular', () => {
+  test('Kalenderjahr 2026, Heizung Juli bis Juni, heute im November: 2026/2027 steht zur Wahl, die Vorgabe bleibt die endende', () => {
+    const juli = plant({ periodStartMonth: 7 })
+    expect(heatingItemPeriods([juli], CALENDAR_RULES, p2026, '2026-11-21')).toEqual([{
+      plantId: 'hp1',
+      options: [
+        { value: '2025-07', label: 'Heizperiode 2025/2026 (01.07.2025–30.06.2026)', startYear: 2025, endYear: 2026 },
+        { value: '2026-07', label: 'Heizperiode 2026/2027 (01.07.2026–30.06.2027), läuft noch', startYear: 2026, endYear: 2027, current: true },
+      ],
+    }])
+    // Rückblickend (heute nach dem Zeitraum) und ohne Tag bleibt es bei den endenden.
+    expect(heatingItemPeriods([juli], CALENDAR_RULES, p2026, '2027-02-01')[0]?.options.map((o) => o.value)).toEqual(['2025-07'])
+    expect(heatingItemPeriods([juli], CALENDAR_RULES, p2026)[0]?.options.map((o) => o.value)).toEqual(['2025-07'])
+  })
+})
+
 describe('Heizvorauszahlung im Mietverhältnis (Durchsicht von #231, Important 2)', () => {
   test('Gefragt wird, wenn die Anlage der Wohnung getrennt abrechnet', () => {
     const unit = { id: 'u1', noConnection: undefined }

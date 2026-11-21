@@ -49,6 +49,17 @@ export function heatingPeriodsEndingIn(rules: PeriodRules, p: Pick<BillingPeriod
   return periodsBetween(rules, p.from, p.to).filter((h) => h.to >= p.from && h.to <= p.to)
 }
 
+// Die laufende Heizperiode, wenn sie erst nach dem Abrechnungszeitraum P endet, in dem heute liegt (#690): Objekt im
+// Kalenderjahr, Heizung Juli bis Juni, heute im November. Sie endet in keinem Zeitraum, den die Auswahl schon anbietet
+// (die endet beim laufenden); ihre Kosten und die monatliche Verbrauchsinformation (§ 6a Abs. 1 HeizkostenV) müssen
+// trotzdem erfasst werden können. Abgerechnet wird sie unverändert dort, wo sie endet (`heatingPeriodsEndingIn`);
+// das hier ist nur der Zugang für die Erfassung. `null`, wenn heute nicht in P liegt oder sie in P endet.
+export function runningHeatingPeriod(rules: PeriodRules, p: Pick<BillingPeriod, 'from' | 'to'>, today: string): BillingPeriod | null {
+  if (today < p.from || today > p.to) return null
+  const h = periodContaining(rules, today)
+  return h.to > p.to ? h : null
+}
+
 // Die Spanne, in die eine Heizperiode reicht: Sie endet am oder nach dem Monat X und beginnt vor W.
 // Monate als 'JJJJ-MM' werden Zeichen für Zeichen verglichen, wie `compareText` in calc.ts.
 export const spanOf = (spans: readonly SeparateSpan[], h: BillingPeriod): SeparateSpan | undefined =>
@@ -234,6 +245,16 @@ export function monthSpanText(months: readonly string[]): string {
 export function captureOf(p: { capture?: CaptureMethod | null; selfSpans?: readonly SelfSpanRange[] }, key: string): CaptureMethod {
   const span = (p.selfSpans ?? []).find((s) => key >= s.from && (s.until === null || key < s.until))
   return span?.capture ?? p.capture ?? 'heatMeter'
+}
+
+// Gilt die eigene Heizkostenabrechnung in der Heizperiode `key`? In jedem ihrer Zeiträume, der laufende nur,
+// solange die Anlage selbst abrechnet; ohne Zeiträume gilt die Art der Anlage. Hier, weil Server (Wächter der
+// Positionen, Rechnung) und Kostenformular dasselbe fragen (#690).
+export type SelfSpanned = { method: string; selfSpans?: readonly SelfSpanRange[] }
+export function selfActive(p: SelfSpanned, key: string): boolean {
+  const spans = p.selfSpans ?? []
+  if (spans.length === 0) return p.method === 'self'
+  return spans.some((s) => key >= s.from && (s.until === null ? p.method === 'self' : key < s.until))
 }
 
 // Wie das Warmwasser in einer Heizperiode bereitet wird (Durchsicht von #241, I2), nach demselben Muster.
