@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  heatingPeriodsEndingIn, isObjectPeriod, monthSpanText, plantRules, recommendedDeadline, requestMonth, sameSpan,
+  heatingPeriodsEndingIn, isObjectPeriod, monthSpanText, plantRules, recommendedDeadline, requestMonth, runningHeatingPeriod, sameSpan,
   separateOwner, servesUnit, settledSeparately, spanOf, type PlantWay,
 } from '../../shared/heatingPeriod.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -30,6 +30,22 @@ test('Zuordnung (VIII ZR 240/07): eine Heizperiode gehört in die Abrechnung, in
   assert.deepEqual(keys(heatingPeriodsEndingIn(wechsel, of(CALENDAR_RULES, '2026-01'))), ['2026-01'])
   // Rumpf des Objekts 01.01.–31.03.2025: Die Heizperiode Mai–April endet erst im April.
   assert.deepEqual(keys(heatingPeriodsEndingIn(MAI, of({ startMonth: 1, changes: ['2025-04'] }, '2025-01'))), [])
+})
+
+test('#690: die laufende Heizperiode ist erreichbar, solange heute im Zeitraum liegt und sie erst danach endet', () => {
+  const JULI: PeriodRules = { startMonth: 7, changes: [] }
+  const p2026 = of(CALENDAR_RULES, '2026-01')
+  // Kalenderjahr 2026, Heizung Juli bis Juni, heute im November: 2026/2027 endet erst im Zeitraum 2027.
+  assert.equal(runningHeatingPeriod(JULI, p2026, '2026-11-21')?.key, '2026-07')
+  // Vor Juli läuft noch die Heizperiode, die im Zeitraum endet: nichts zusätzlich.
+  assert.equal(runningHeatingPeriod(JULI, p2026, '2026-03-01'), null)
+  // Ein anderer als der laufende Zeitraum bekommt nichts dazu, auch nicht rückblickend.
+  assert.equal(runningHeatingPeriod(JULI, of(CALENDAR_RULES, '2025-01'), '2026-11-21'), null)
+  assert.equal(runningHeatingPeriod(JULI, p2026, '2027-02-01'), null)
+  // Gleicher Rhythmus wie das Objekt: Die laufende Heizperiode ist der Zeitraum selbst.
+  assert.equal(runningHeatingPeriod(CALENDAR_RULES, p2026, '2026-11-21'), null)
+  // Abgerechnet wird sie weiter nur dort, wo sie endet.
+  assert.deepEqual(keys(heatingPeriodsEndingIn(JULI, p2026)), ['2025-07'])
 })
 
 test('H = P: dieselben Grenzen, nicht derselbe Schlüssel', () => {

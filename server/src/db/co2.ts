@@ -28,7 +28,7 @@ import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, P
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { co2ApplicableFrom, co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
-import { heatingPeriodsEndingIn } from '../../../shared/heatingPeriod.ts'
+import { heatingPeriodsEndingIn, runningHeatingPeriod } from '../../../shared/heatingPeriod.ts'
 import { periodLabel, periodOfKey, resolvePeriodParam } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
 import { readCo2Statements, readCostItems, readProperties, readHeatingServiceValues, readMeters, readReadings, readStock, readUnits } from './read.ts'
@@ -72,7 +72,10 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const resolved = resolvePeriodParam(ctx.objectRules, periodParam)
   if ('error' in resolved) throw new HeatingError(400, resolved.error)
   const p = resolved.period
-  const hs = heatingPeriodsEndingIn(ctx.plantRules, p)
+  // #690: dazu die laufende Heizperiode, wenn sie erst nach P endet und heute in P liegt; sonst wäre sie bis zum
+  // nächsten Zeitraum des Objekts nicht erreichbar (Kosten, monatliche Verbrauchsinformation).
+  const current = today === '' ? null : runningHeatingPeriod(ctx.plantRules, p, today)
+  const hs = [...heatingPeriodsEndingIn(ctx.plantRules, p), ...(current ? [current] : [])]
   const statements = (await readCo2Statements(db)).filter((s) => s.plantId === plantId)
   const rows = await db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))
   const items = (await readCostItems(db)).filter((c) => c.heatingPlantId === plantId && c.category === HEATING_CATEGORY)
@@ -131,6 +134,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       to: h.to,
       short: h.short,
       closed,
+      ...(current !== null && h.key === current.key ? { current: true } : {}),
       hotWater: {
         dhwMethod: row?.dhwMethod ?? lineRow?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? lineRow?.dhwUnmeasurable ?? null,
         dhwHeatKwh: row?.dhwHeatKwh ?? null, totalHeatKwh: row?.totalHeatKwh ?? null,
