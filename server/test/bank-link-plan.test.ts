@@ -160,3 +160,36 @@ test('Durchsicht I4: eine Rückzahlung über den Kautionsstand ist schon in der 
   const enough = planBankLinks([refund], open(tx('y', -85000)), ctx({ depositEntries: [{ id: 'd', tenancyId: 't1', date: '2025-01-05', kind: 'received', amountCents: 240000 }] }))
   assert.deepEqual(enough.problems, [])
 })
+
+// #693: Der Monat laut Verwendungszweck kommt nur als Entscheidung, nie aus dem Zweck von selbst.
+const rentFor = (transactionId: string, designatedMonth: string, over: { kind?: 'rent' | 'settlement' } = {}): LinkDecision =>
+  ({ transactionId, parts: [{ tenancyId: 't1', amountCents: 80000, target: { type: 'newPayment', kind: over.kind ?? 'rent', designatedMonth } }] })
+
+test('Zuordnung #693: ein Monat in der Entscheidung steht an der Zahlung, ohne ihn keiner, auch wenn der Zweck einen nennt', () => {
+  const withMonth = planBankLinks([rentFor('x', '2025-01')], open(tx('x', 80000)), ctx())
+  assert.deepEqual(withMonth.problems, [])
+  assert.deepEqual(withMonth.writes.payments, [{ transactionId: 'x', tenancyId: 't1', date: '2025-03-03', amountCents: 80000, kind: 'rent', designatedMonth: '2025-01', note: 'Miete März' }])
+  const without = planBankLinks([rent('x', 80000)], open(tx('x', 80000)), ctx())
+  assert.ok(!('designatedMonth' in (without.writes.payments[0] ?? {})))
+  assert.notEqual(linkToken(withMonth, [rentFor('x', '2025-01')]), linkToken(without, [rent('x', 80000)]))
+})
+
+test('Zuordnung #693: ein Monat außerhalb des Mietverhältnisses oder an einer Abrechnungszahlung ist ein Problem', () => {
+  const ended = ctx({ tenancies: [{ id: 't1', start: '2025-02-10', end: '2025-06-30' }] })
+  assert.deepEqual(planBankLinks([rentFor('x', '2025-02')], open(tx('x', 80000)), ended).problems, [])
+  assert.deepEqual(planBankLinks([rentFor('x', '2025-06')], open(tx('x', 80000)), ended).problems, [])
+  for (const month of ['2025-01', '2025-07']) {
+    const p = planBankLinks([rentFor('x', month)], open(tx('x', 80000)), ended)
+    assert.deepEqual(p.problems, [{ transactionId: 'x', message: 'Der Monat laut Verwendungszweck liegt außerhalb des Mietverhältnisses. Das Mietverhältnis besteht von 10.02.2025 bis 30.06.2025.' }])
+    assert.deepEqual(p.writes.payments, [])
+  }
+  const settlement = planBankLinks([rentFor('x', '2025-03', { kind: 'settlement' })], open(tx('x', 80000)), ctx())
+  assert.deepEqual(settlement.problems, [{ transactionId: 'x', message: 'Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat oder stellen Sie die Art auf Miete.' }])
+})
+
+test('Zuordnung #693: der Monat wird als JJJJ-MM gelesen, alles andere ist nicht lesbar', () => {
+  const body = (designatedMonth: unknown) => [{ transactionId: 'x', parts: [{ tenancyId: 't1', amountCents: 80000, target: { type: 'newPayment', kind: 'rent', designatedMonth } }] }]
+  assert.deepEqual(parseLinkDecisions(body('2025-03')), { decisions: [rentFor('x', '2025-03')] })
+  assert.deepEqual(parseLinkDecisions(body(undefined)), { decisions: [rent('x', 80000)] })
+  for (const bad of ['2025-13', '03/2025', 'März', '', 202503, null]) assert.ok('error' in parseLinkDecisions(body(bad)), String(bad))
+})

@@ -334,3 +334,48 @@ test('#308: nicht vor dem Ende des Zeitraums und nicht vor dem Versand; Monatsmi
   assert.equal(suggest(tx('2026-03-02', 80000), settled([{ dueCents: 80000 }]))?.light, 'green', 'gleich dem Soll: Miete')
   assert.deepEqual(suggest(tx('2026-03-10', 30000, { purpose: 'Kaution Rest' }), settled())?.target, RENT)
 })
+
+// #693: Nennt der Zweck eindeutig einen Monat, bestimmt der Mieter damit die Schuld (§ 366 Abs. 1 BGB). Vorgeschlagen,
+// nie still gesetzt: immer gelb, auch wenn der Betrag der Monatsmiete gleicht.
+test('Vorschlag #693: „Miete November“ bei Betrag wie Monatsmiete schlägt den Monat vor, gelb', () => {
+  assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose: 'Miete November' }), ctx()), {
+    tenancyId: 't1', target: { type: 'newPayment', kind: 'rent', designatedMonth: '2026-11' }, light: 'yellow',
+    reason: 'Der Verwendungszweck nennt November 2026. Bitte prüfen Sie den Monat.',
+  })
+})
+
+test('Vorschlag #693: ohne erkennbaren Monat bleibt alles wie bisher', () => {
+  for (const purpose of ['Miete', 'Dauerauftrag seit Mai', 'Rechnung vom 03.11.', 'Miete Oktober und November', '']) {
+    assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose }), ctx()), {
+      tenancyId: 't1', target: { type: 'newPayment', kind: 'rent' }, light: 'green', reason: 'IBAN bekannt, Betrag wie Monatsmiete',
+    }, purpose)
+  }
+})
+
+test('Vorschlag #693: kein Monat, wenn der Betrag nicht die Miete des genannten Monats ist oder der Monat nicht im Mietverhältnis liegt', () => {
+  // Teilzahlung: Betrag weicht vom Soll ab, wie bisher gelb ohne Monat.
+  assert.deepEqual(suggest(tx('2026-11-03', 50000, { purpose: 'Miete November' }), ctx())?.target, RENT)
+  // Das Soll des genannten Monats ist ein anderes (Erhöhung zum November), gezahlt wird das alte.
+  const raised = ctx({ monthlySollCents: (_t, month) => (month >= '2026-11' ? 85000 : 80000) })
+  assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose: 'Miete November' }), raised)?.target, RENT)
+  // Umgekehrt: Nachzahlung des Januars zur damaligen Miete, im November gebucht.
+  const january = suggest(tx('2026-11-03', 80000, { purpose: 'Miete Januar 2026' }), raised)
+  assert.deepEqual(january?.target, { type: 'newPayment', kind: 'rent', designatedMonth: '2026-01' })
+  assert.equal(january?.light, 'yellow')
+  // Vor dem Mietbeginn bzw. ohne Soll im Mietkonto: kein Monat.
+  const late = ctx({ tenancies: [tenancy({ start: '2026-06-01' })], monthlySollCents: (_t, month) => (month >= '2026-06' ? 80000 : null) })
+  assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose: 'Miete Mai 2026' }), late)?.target, RENT)
+  const ended = ctx({ tenancies: [tenancy({ end: '2026-10-31' })] })
+  assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose: 'Miete November' }), ended)?.target, RENT)
+})
+
+test('Vorschlag #693: Kaution, Rücklastschrift, erfasste Zahlung und Ausgang bekommen nie einen Monat', () => {
+  const deposit = suggest(tx('2025-01-20', 80000, { purpose: 'Kaution 1. Rate Januar' }), ctx({ monthlySollCents: () => 70000 }))
+  assert.deepEqual(deposit?.target, { type: 'deposit', kind: 'received' })
+  const reversal = suggest(tx('2026-11-05', -80000, { purpose: 'Miete November', reversal: true }), ctx())
+  assert.deepEqual(reversal?.target, RENT)
+  const known = suggest(tx('2026-11-03', 80000, { purpose: 'Miete November' }), ctx({ payments: [payment('p1', '2026-11-02', 80000)] }))
+  assert.deepEqual(known?.target, { type: 'existingPayment', paymentId: 'p1' })
+  const nearby = suggest(tx('2026-11-14', 80000, { purpose: 'Miete November' }), ctx({ payments: [payment('p1', '2026-11-02', 80000)] }))
+  assert.deepEqual(nearby?.target, RENT)
+})

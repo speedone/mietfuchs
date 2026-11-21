@@ -2,8 +2,11 @@
 // Verknüpfungen. Rein. Der Server bucht nur, was als Entscheidung im Rumpf steht; die Route plant beim Ausführen in der
 // Schreibschlange neu und vergleicht die Marke, wie beim Einlesen.
 //
-// Feste Regeln: Datum ist der Buchungstag, Notiz der Verwendungszweck (200 Zeichen), **nie ein Monat** (designatedMonth
-// setzt nur der Vermieter im Mietkonto). Eine Kaution wird nie Zahlung, sondern Kautionsbuchung mit positivem Betrag.
+// Feste Regeln: Datum ist der Buchungstag, Notiz der Verwendungszweck (200 Zeichen), **nie ein Monat von selbst**: Der
+// Planer liest den Zweck nicht. `designatedMonth` steht nur an der Zahlung, wenn die Entscheidung des Vermieters ihn
+// nennt (#693: der bestätigte Vorschlag aus match.ts oder von Hand eingetragen), nur an einer Mietzahlung und nur für
+// einen Monat des Mietverhältnisses (dieselbe Regel wie `guardPayment`, hier schon in der Vorschau als Problem des
+// Umsatzes). Eine Kaution wird nie Zahlung, sondern Kautionsbuchung mit positivem Betrag.
 // Ein Umsatz lässt sich auf mehrere Mietverhältnisse aufteilen; die Teile ergeben höchstens seinen offenen Betrag, der
 // Rest bleibt offen.
 
@@ -24,7 +27,7 @@ export type LinkDecision =
   | { transactionId: string; setAside: SetAsideReason }
 
 export type LinkWrite = {
-  payments: (Pick<Payment, 'tenancyId' | 'date' | 'amountCents' | 'kind' | 'note'> & { transactionId: string })[]
+  payments: (Pick<Payment, 'tenancyId' | 'date' | 'amountCents' | 'kind' | 'note' | 'designatedMonth'> & { transactionId: string })[]
   depositEntries: (Pick<DepositEntry, 'tenancyId' | 'date' | 'kind' | 'amountCents' | 'note'> & { transactionId: string })[]
   existing: { transactionId: string; paymentId: string }[]
   existingDeposits: { transactionId: string; depositEntryId: string }[]
@@ -57,7 +60,7 @@ export function planBankLinks(
   const usedDeposits = new Set<string>()
   const problems: LinkProblem[] = []
   const openById = new Map(open.filter((o) => o.openCents !== 0).map((o) => [o.tx.id, o]))
-  const tenancyIds = new Set(ctx.tenancies.map((t) => t.id))
+  const tenancyById = new Map(ctx.tenancies.map((t) => [t.id, t]))
   const decided = new Set<string>()
   const usedPayments = new Set<string>()
 
@@ -91,10 +94,18 @@ export function planBankLinks(
         if (!failed) problem(message)
         failed = true
       }
-      if (!tenancyIds.has(part.tenancyId)) fail('Dieses Mietverhältnis gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+      const tenancy = tenancyById.get(part.tenancyId)
+      if (!tenancy) fail('Dieses Mietverhältnis gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
       else if (part.amountCents === 0 || Math.sign(part.amountCents) !== sign) fail('Ein Teil hat ein anderes Vorzeichen als der Umsatz oder ist 0 €.')
       else if (part.target.type === 'newPayment') {
-        local.payments.push({ transactionId: tx.id, tenancyId: part.tenancyId, date: tx.bookingDate, amountCents: part.amountCents, kind: part.target.kind, ...noteOf(tx) })
+        const month = part.target.designatedMonth
+        if (month !== undefined && part.target.kind !== 'rent') fail('Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat oder stellen Sie die Art auf Miete.')
+        else if (month !== undefined && (month < tenancy.start.slice(0, 7) || (tenancy.end !== null && month > tenancy.end.slice(0, 7)))) {
+          const span = tenancy.end === null ? `seit ${germanDate(tenancy.start)}` : `von ${germanDate(tenancy.start)} bis ${germanDate(tenancy.end)}`
+          fail(`Der Monat laut Verwendungszweck liegt außerhalb des Mietverhältnisses. Das Mietverhältnis besteht ${span}.`)
+        } else {
+          local.payments.push({ transactionId: tx.id, tenancyId: part.tenancyId, date: tx.bookingDate, amountCents: part.amountCents, kind: part.target.kind, ...(month !== undefined ? { designatedMonth: month } : {}), ...noteOf(tx) })
+        }
       } else if (part.target.type === 'deposit') {
         const fits = part.target.kind === 'received' ? part.amountCents > 0 : part.amountCents < 0
         if (!fits) fail(part.target.kind === 'received' ? 'Eine eingegangene Kaution ist ein Eingang.' : 'Eine zurückgezahlte Kaution ist ein Ausgang.')
@@ -172,11 +183,16 @@ export function linkToken(plan: LinkPlan, decisions: readonly LinkDecision[]): s
 
 const UNREADABLE = 'Die Zuordnungen sind nicht lesbar. Bitte laden Sie die Seite neu.'
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const DESIGNATED_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const PAYMENT_KIND_SET: ReadonlySet<string> = new Set<PaymentKind>(['rent', 'settlement'])
 
 function targetOf(raw: unknown): LinkTarget | null {
   if (!isObject(raw)) return null
-  if (raw.type === 'newPayment' && typeof raw.kind === 'string' && PAYMENT_KIND_SET.has(raw.kind)) return { type: 'newPayment', kind: raw.kind as PaymentKind }
+  if (raw.type === 'newPayment' && typeof raw.kind === 'string' && PAYMENT_KIND_SET.has(raw.kind)) {
+    if (raw.designatedMonth === undefined) return { type: 'newPayment', kind: raw.kind as PaymentKind }
+    if (typeof raw.designatedMonth !== 'string' || !DESIGNATED_MONTH.test(raw.designatedMonth)) return null
+    return { type: 'newPayment', kind: raw.kind as PaymentKind, designatedMonth: raw.designatedMonth }
+  }
   if (raw.type === 'existingPayment' && typeof raw.paymentId === 'string' && raw.paymentId !== '') return { type: 'existingPayment', paymentId: raw.paymentId }
   if (raw.type === 'deposit' && (raw.kind === 'received' || raw.kind === 'refunded')) return { type: 'deposit', kind: raw.kind }
   if (raw.type === 'existingDeposit' && typeof raw.depositEntryId === 'string' && raw.depositEntryId !== '') return { type: 'existingDeposit', depositEntryId: raw.depositEntryId }

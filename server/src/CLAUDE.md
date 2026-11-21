@@ -1061,7 +1061,18 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   **Ausgang mit „Kaution“ im Zweck** ist bei vereinbarter Geldkaution gelb „Kaution zurückgezahlt“, auch ohne Buchung,
   aber nicht, wenn laut Buchungen nichts mehr beim Vermieter liegt
   (sonst griffe der allgemeine Rest „Auszahlung an den Mieter, etwa ein Guthaben“). Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
-  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft; fehlt jeder Eingang (auch im selben
+  Zweck, **nie ein Monat von selbst**. **Monat laut Verwendungszweck** (#693, `bank/purposeMonth.ts`, rein): Nennt der
+  Zweck eines Mieteingangs eindeutig einen Monat (`monthInPurpose`: Wort „Miete“, Monatsname oder MM/JJJJ bzw. JJJJ-MM mit
+  plausiblem Jahr, genau einer, kein Datum, nicht hinter „seit“/„ab“/„bis“, nicht bei „Kaution“, „Rechnung“,
+  „Nachzahlung“, „Guthaben“; lieber keiner als ein falscher), liegt er im Mietverhältnis und ist der Betrag genau das Soll
+  dieses Monats, trägt der Vorschlag „Miete“ ihn in `target.designatedMonth` und ist **immer gelb**, auch wenn er sonst
+  grün wäre (nur am letzten Schritt von `suggestInner`, also nie bei erfasster Zahlung, Kaution, Rücklastschrift,
+  Nachzahlung). Der Planer liest den Zweck nie: `designatedMonth` steht nur an der Zahlung, wenn die Entscheidung ihn nennt
+  (bestätigter Vorschlag oder von Hand im Monatsfeld der Zeile), nur bei Art Miete und nur für einen Monat des
+  Mietverhältnisses, sonst ein Problem des Umsatzes schon in der Vorschau (Wortlaut wie `guardPayment`). Grund: § 366
+  Abs. 1 BGB (die bestimmte Schuld wird getilgt); ob ein Zweck eine Bestimmung ist, ist Auslegung und bleibt beim
+  Vermieter. Das Soll eines Monats kennt `bankLedgerOf` nur für die Jahre mit Umsätzen und das laufende; ein Monat in
+  einem anderen Jahr bekommt keinen Vorschlag. Der Stand der Kaution wird schon im Plan geprüft; fehlt jeder Eingang (auch im selben
   Lauf), nennt die Ablehnung den Weg über „Kaution führen“, und dass „erhalten“ in den Stammdaten keine Buchung ist.
   **Nachzahlung und Guthaben am Betrag** (#308, `bank/settlementMatch.ts`, rein): offen ist je Mietverhältnis und
   **aktuellem** Abschluss (Objekt und getrennte Heizkostenabrechnung, nie `closed_settlement_history`, nie die
@@ -1709,7 +1720,8 @@ importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die 
   Mietverhältnisse. Invariante in invariant-mietkonto.test.ts.
 - **Monat laut Verwendungszweck**: nur an `rent` und nur für einen Monat des Mietverhältnisses (400 in `guardPayment`,
   repository.ts); fällt er später heraus (Beginn oder Ende geändert), bleibt er stehen, wirkt wie keine Bestimmung und
-  steht in `designatedOutside`. Kontoauszug-Import und KI setzen ihn nie.
+  steht in `designatedOutside`. Die KI setzt ihn nie, der Kontoauszug nur als bestätigte Entscheidung des Vermieters (#693,
+  Abschnitt „Kontoauszug“, Zuordnen).
 - **Hinweis `prepayment.arrears`** (E6): Betrag = offene Vorauszahlungen der fälligen Monate des Zeitraums, die diese
   Abrechnung anrechnet, getilgt durch alle Mietzahlungen bis zum Stichtag; ist nur Kaltmiete offen, kein Hinweis.
 - **Nur die Miete** (#280): `payments.kind` ist `rent` oder `settlement` (fehlend: Miete,

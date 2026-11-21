@@ -63,6 +63,24 @@ describe('Vorauswahl', () => {
       { tenancyId: 't1', amountCents: 30000, target: { type: 'newPayment', kind: 'settlement' } },
     ] }])
   })
+  test('#693: der Monat aus dem Vorschlag steht am Teil und geht mit der Entscheidung; ohne ihn bleibt die Entscheidung wie bisher', () => {
+    const named: BankSuggestion = { tenancyId: 't1', target: { type: 'newPayment', kind: 'rent', designatedMonth: '2025-06' }, light: 'yellow', reason: 'Der Verwendungszweck nennt Juni 2025. Bitte prüfen Sie den Monat.' }
+    const row = initialRow(tx('x', 85000, named))
+    expect(row.parts).toEqual([{ key: 'x:0', tenancyId: 't1', target: 'rent', amountCents: 85000, month: '2025-06' }])
+    expect(isUntouched(row)).toBe(true)
+    expect(untouchedGreen([row])).toEqual([])
+    expect(decisionsOf([{ ...row, selected: true }])).toEqual([{ transactionId: 'x', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent', designatedMonth: '2025-06' } }] }])
+    // Von Hand: gesetzt, geleert, an einer anderen Art wirkungslos.
+    const part = initialRow(tx('y', 85000, green)).parts[0]!
+    const by = (over: Partial<typeof part>): BankRow => ({ tx: tx('y', 85000, green), selected: true, setAside: null, parts: [{ ...part, ...over }] })
+    expect(decisionsOf([by({ month: '2025-01' })])[0]).toEqual({ transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent', designatedMonth: '2025-01' } }] })
+    expect(decisionsOf([by({})])[0]).toEqual({ transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent' } }] })
+    expect(decisionsOf([by({ month: '2025-01', target: 'settlement' })])[0]).toEqual({ transactionId: 'y', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'settlement' } }] })
+    // Ein Text, der kein Monat ist, macht die Zeile unbuchbar, statt still ohne Monat zu buchen.
+    expect(rowProblem(by({ month: 'Juni' }))).toBe('Bitte prüfen Sie den Monat laut Verwendungszweck.')
+    expect(decisionsOf([by({ month: 'Juni' })])).toEqual([])
+    expect(rowProblem(by({ month: 'Juni', target: 'settlement' }))).toBeNull()
+  })
   test('ohne Vorschlag ist nichts gewählt und die Zeile nicht buchbar', () => {
     const row = initialRow(tx('x', 85000))
     expect(row.parts).toEqual([{ key: 'x:0', tenancyId: null, target: null, amountCents: 85000 }])

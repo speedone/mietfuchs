@@ -138,7 +138,9 @@ Kurzfassung steht im [README](../README.md#funktionen).
    Summe des Tages. Zweimal eingelesene Tage ändern nichts. Zu jedem offenen Umsatz
    schlägt die Seite Mietverhältnis und Art vor (über die IBAN des Mieters oder eines gemerkten Zahlers), mit Ampel und
    Grund; „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, eine Kaution als Kautionsbuchung, und
-   eine schon von Hand erfasste Zahlung wird nur verknüpft. Ein Umsatz lässt sich auf mehrere Mietverhältnisse
+   eine schon von Hand erfasste Zahlung wird nur verknüpft. Nennt der Verwendungszweck eindeutig einen Monat
+   („Miete November“) und passt der Betrag, steht er als Vorschlag im Feld „Für Monat (laut Verwendungszweck)“ und die
+   Zeile ist gelb; von selbst setzt Mietfuchs keinen Monat, von Hand lässt er sich dort eintragen. Ein Umsatz lässt sich auf mehrere Mietverhältnisse
    aufteilen, beiseitelegen oder wieder lösen. Je Konto steht, ob es lückenlos eingelesen ist; über die
    Einnahmen sagt das nichts. Das Cockpit nennt Umsätze, die noch nicht zugeordnet sind. Kontoauszüge
    gehen nie an eine KI: Der Eingang der Belege weist sie ab.

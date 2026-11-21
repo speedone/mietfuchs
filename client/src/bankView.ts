@@ -3,6 +3,7 @@
 // vom Server. Nichts davon wird im Browser abgelegt: Private Umsätze stehen nur in den Rückfragen der Vorschau.
 
 import type { Problem } from './formProblems'
+import { parseMonthText } from './monthText'
 import type { BankAccountInfo, BankImportDecision, BankImportQuestion, BankLinkDecision, BankLinkTarget, BankSetAside, BankTransactionView } from './types'
 
 export type RowTarget = 'rent' | 'settlement' | 'depositReceived' | 'depositRefunded' | 'existingPayment' | 'existingDeposit'
@@ -10,7 +11,9 @@ export type RowTarget = 'rent' | 'settlement' | 'depositReceived' | 'depositRefu
 // Ein Teil einer Zeile: ein Umsatz lässt sich auf mehrere Mietverhältnisse aufteilen.
 // `key` ist fest je Teil (Durchsicht Teil 3, W2: ein Feld darf beim Entfernen nicht den Text eines anderen Teils
 // behalten); `amountText` ist die Eingabe im Betragsfeld, solange sie nicht als Betrag lesbar ist.
-export type RowPart = { key: string; tenancyId: string | null; target: RowTarget | null; refId?: string; amountCents: number; amountText?: string }
+// `month` (#693): der Monat laut Verwendungszweck einer Mietzahlung, wie das Monatsfeld ihn meldet ('JJJJ-MM' oder der
+// Text, solange er kein Monat ist); fehlt ohne Monat. Vorbelegt nur aus dem Vorschlag des Servers.
+export type RowPart = { key: string; tenancyId: string | null; target: RowTarget | null; refId?: string; amountCents: number; amountText?: string; month?: string }
 export type BankRow = { tx: BankTransactionView; parts: RowPart[]; selected: boolean; setAside: BankSetAside | null }
 
 export const BANK_TARGET_OPTIONS: readonly { value: RowTarget; label: string }[] = [
@@ -28,9 +31,9 @@ export const SET_ASIDE_OPTIONS: readonly { value: BankSetAside; label: string }[
   { value: 'other', label: 'Sonstiges' },
 ]
 
-function rowTargetOf(target: BankLinkTarget): { target: RowTarget; refId?: string } {
+function rowTargetOf(target: BankLinkTarget): { target: RowTarget; refId?: string; month?: string } {
   switch (target.type) {
-    case 'newPayment': return { target: target.kind === 'settlement' ? 'settlement' : 'rent' }
+    case 'newPayment': return target.kind === 'settlement' ? { target: 'settlement' } : { target: 'rent', ...(target.designatedMonth ? { month: target.designatedMonth } : {}) }
     case 'deposit': return { target: target.kind === 'received' ? 'depositReceived' : 'depositRefunded' }
     case 'existingPayment': return { target: 'existingPayment', refId: target.paymentId }
     case 'existingDeposit': return { target: 'existingDeposit', refId: target.depositEntryId }
@@ -39,7 +42,10 @@ function rowTargetOf(target: BankLinkTarget): { target: RowTarget; refId?: strin
 
 function linkTargetOf(part: RowPart): BankLinkTarget | null {
   switch (part.target) {
-    case 'rent': return { type: 'newPayment', kind: 'rent' }
+    case 'rent': {
+      const month = parseMonthText(part.month ?? '')
+      return { type: 'newPayment', kind: 'rent', ...(month.kind === 'month' ? { designatedMonth: month.key } : {}) }
+    }
     case 'settlement': return { type: 'newPayment', kind: 'settlement' }
     case 'depositReceived': return { type: 'deposit', kind: 'received' }
     case 'depositRefunded': return { type: 'deposit', kind: 'refunded' }
@@ -47,6 +53,12 @@ function linkTargetOf(part: RowPart): BankLinkTarget | null {
     case 'existingDeposit': return part.refId ? { type: 'existingDeposit', depositEntryId: part.refId } : null
     case null: return null
   }
+}
+
+// Der Monat, den der Server für diesen Teil aus dem Zweck vorschlägt (#693), oder null. Steht er noch so im Feld, trägt
+// es das Kennzeichen „Vorschlag aus dem Zweck“.
+export function suggestedMonth(tx: BankTransactionView, part: Pick<RowPart, 'key'>): string | null {
+  return initialRow(tx).parts.find((p) => p.key === part.key)?.month ?? null
 }
 
 export function initialRow(tx: BankTransactionView): BankRow {
@@ -68,6 +80,8 @@ export function rowProblem(row: BankRow): string | null {
   if (row.parts.some((p) => p.amountText !== undefined)) return 'Bitte prüfen Sie den Betrag eines Teils.'
   if (row.parts.some((p) => p.tenancyId === null || linkTargetOf(p) === null)) return 'Bitte wählen Sie Mietverhältnis und Art.'
   if (row.parts.some((p) => p.amountCents === 0)) return 'Ein Teil über 0 € lässt sich nicht buchen.'
+  // Ein Text im Monatsfeld, der kein Monat ist, bucht nie still ohne Monat (#693).
+  if (row.parts.some((p) => p.target === 'rent' && parseMonthText(p.month ?? '').kind === 'invalid')) return 'Bitte prüfen Sie den Monat laut Verwendungszweck.'
   return null
 }
 

@@ -6,17 +6,23 @@
 // 2. Eine schon erfasste, nicht verknüpfte Zahlung gleichen Betrags innerhalb von 7 Tagen wird verknüpft statt neu
 //    angelegt.
 // 3. Art: Rücklastschrift, Kaution (volle Höhe nahe dem Beginn), Ausgang an den Mieter, sonst Miete. Der Monat wird nie
-//    gesetzt.
+//    still gesetzt (siehe 6).
 // 4. Ampel: grün nur, wenn alles eindeutig ist; eine erfasste Zahlung gleichen Betrags bis 15 Tage entfernt macht gelb und
 //    geht einer Kautionsrate vor (ein Drittel oder „Kaution“ im Zweck, in den ersten 100 Tagen, solange Kaution offen).
 // 5. Nachzahlung und Guthaben aus der abgeschlossenen Abrechnung am Betrag (#308, bank/settlementMatch.ts): gelb, nach
 //    allem, was der Zweck („Kaution“) oder eine erfasste Buchung sagt, und nie anstelle der grünen Monatsmiete.
+// 6. Monat laut Verwendungszweck (#693, bank/purposeMonth.ts): Nennt der Zweck eines Mieteingangs eindeutig einen Monat
+//    des Mietverhältnisses und ist der Betrag genau das Soll dieses Monats, trägt der Vorschlag „Miete“ den Monat
+//    (`designatedMonth`) und ist gelb, auch wenn er sonst grün wäre: Der Monat ändert, welche Forderung die Zahlung
+//    tilgt (§ 366 Abs. 1 BGB), und ob der Zweck eine Bestimmung ist, entscheidet der Vermieter. Nur am letzten Schritt
+//    (sonst Miete); alles davor (erfasste Zahlung, Kaution, Rücklastschrift, Nachzahlung) bleibt ohne Monat.
 
 import { depositState } from '../../../shared/deposit.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 import type { BankLinkTarget, BankSuggestion, DepositEntry, Payment, Tenancy } from '../../../shared/types.ts'
 import { addIsoDays } from './coverage.ts'
 import { normalizeIban } from './statement.ts'
+import { monthInPurpose, purposeMonthLabel } from './purposeMonth.ts'
 import { matchSettlement, type OpenSettlement, type RentAccount } from './settlementMatch.ts'
 import type { BankTransaction, TenancyPayer } from './model.ts'
 
@@ -194,6 +200,11 @@ function suggestInner(tx: BankTransaction, ctx: MatchContext, takes: (settlement
       ...yellow(settlementTarget, `Betrag wie Monatsmiete (${euro(owed.rentCents)}) und offene Nachzahlung aus der ${owed.settlement.label} (${euro(owed.settlement.openCents)}); das Mietkonto ist sonst ausgeglichen`),
       parts: [{ amountCents: owed.rentCents, target: { type: 'newPayment', kind: 'rent' } }, { amountCents: owed.settlement.openCents, target: settlementTarget }],
     }
+  }
+  // Regel 6: der Monat laut Verwendungszweck, nur bei genau der Miete dieses Monats und nur im Mietverhältnis.
+  const named = monthInPurpose(tx.purpose ?? '', tx.bookingDate)
+  if (named !== null && named >= t.start.slice(0, 7) && (t.end === null || named <= t.end.slice(0, 7)) && ctx.monthlySollCents(t.id, named) === tx.amountCents) {
+    return yellow({ type: 'newPayment', kind: 'rent', designatedMonth: named }, `Der Verwendungszweck nennt ${purposeMonthLabel(named)}. Bitte prüfen Sie den Monat.`)
   }
   if (soll === null) return yellow({ type: 'newPayment', kind: 'rent' }, 'Für diesen Monat kennt das Mietkonto kein Soll')
   if (soll !== tx.amountCents) return yellow({ type: 'newPayment', kind: 'rent' }, `Betrag weicht vom Soll ab (${euro(soll)})`)

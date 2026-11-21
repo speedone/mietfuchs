@@ -168,6 +168,47 @@ test('Offene Umsätze: Zeile mit Ampel und Grund als Text, „Alle grünen über
   expect(posts('/api/bank/links')[0]?.body).toEqual({ decisions: [{ transactionId: 'x1', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent' } }] }], token: 'link-1' })
 })
 
+test('#693: der Monat aus dem Zweck steht gelb als Vorschlag im Monatsfeld, zählt nicht zu den grünen und wird mit „Buchen“ gesendet; von Hand lässt er sich setzen und leeren', async () => {
+  accounts = [account()]
+  const named = { tenancyId: 't1', target: { type: 'newPayment' as const, kind: 'rent' as const, designatedMonth: '2025-06' }, light: 'yellow' as const, reason: 'Der Verwendungszweck nennt Juni 2025. Bitte prüfen Sie den Monat.' }
+  open = [tx('x1', 85000, { suggestion: named }), tx('x2', 85000, { bookingDate: '2025-06-03', purpose: 'Miete' })]
+  renderPage()
+  const table = await screen.findByRole('table', { name: 'Offene Umsätze' })
+  const [first, second] = within(table).getAllByRole('row').slice(1) as [HTMLElement, HTMLElement]
+  expect(within(first).getByText('gelb')).toBeTruthy()
+  expect(within(first).getByText('Der Verwendungszweck nennt Juni 2025. Bitte prüfen Sie den Monat.')).toBeTruthy()
+  const month = within(first).getByRole('textbox', { name: /Für Monat \(laut Verwendungszweck\)/ }) as HTMLInputElement
+  expect(month.value).toBe('Juni 2025')
+  expect(within(first).getByText('Vorschlag aus dem Zweck')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Alle grünen übernehmen (1)' })).toBeTruthy()
+  fireEvent.click(within(first).getByRole('button', { name: /^Buchen/ }))
+  await waitFor(() => expect(posts('/api/bank/links').length).toBe(1))
+  expect(posts('/api/bank/links')[0]?.body).toEqual({ decisions: [{ transactionId: 'x1', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent', designatedMonth: '2025-06' } }] }], token: 'link-1' })
+  // Ohne Vorschlag ist das Feld leer; von Hand gesetzt geht der Monat mit, und die Zeile ist nicht mehr „wie vorgeschlagen“.
+  const own = within(second).getByRole('textbox', { name: /Für Monat \(laut Verwendungszweck\)/ }) as HTMLInputElement
+  expect(own.value).toBe('')
+  expect(within(second).queryByText('Vorschlag aus dem Zweck')).toBeNull()
+  fireEvent.change(own, { target: { value: '5.2025' } })
+  expect(screen.queryByRole('button', { name: /Alle grünen übernehmen/ })).toBeNull()
+  fireEvent.click(within(second).getByRole('button', { name: /^Buchen/ }))
+  await waitFor(() => expect(posts('/api/bank/links').length).toBe(2))
+  expect((posts('/api/bank/links')[1]?.body as { decisions: unknown }).decisions).toEqual([{ transactionId: 'x2', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent', designatedMonth: '2025-05' } }] }])
+})
+
+test('#693: ein geleerter Vorschlag bucht ohne Monat; bei einer anderen Art gibt es kein Monatsfeld', async () => {
+  accounts = [account()]
+  open = [tx('x1', 85000, { suggestion: { tenancyId: 't1', target: { type: 'newPayment', kind: 'rent', designatedMonth: '2025-06' }, light: 'yellow', reason: 'Der Verwendungszweck nennt Juni 2025. Bitte prüfen Sie den Monat.' } })]
+  renderPage()
+  const table = await screen.findByRole('table', { name: 'Offene Umsätze' })
+  fireEvent.change(within(table).getByRole('textbox', { name: /Für Monat/ }), { target: { value: '' } })
+  expect(within(table).queryByText('Vorschlag aus dem Zweck')).toBeNull()
+  fireEvent.click(within(table).getByRole('button', { name: /^Buchen/ }))
+  await waitFor(() => expect(posts('/api/bank/links').length).toBe(1))
+  expect((posts('/api/bank/links')[0]?.body as { decisions: unknown }).decisions).toEqual([{ transactionId: 'x1', parts: [{ tenancyId: 't1', amountCents: 85000, target: { type: 'newPayment', kind: 'rent' } }] }])
+  fireEvent.change(within(table).getByLabelText('Art'), { target: { value: 'settlement' } })
+  expect(within(table).queryByRole('textbox', { name: /Für Monat/ })).toBeNull()
+})
+
 test('Offene Umsätze: 409 nennt den Grund, nichts ist gebucht, die Auswahl bleibt; ein Problem steht an der Zeile', async () => {
   accounts = [account()]
   open = [tx('x1', 85000)]
