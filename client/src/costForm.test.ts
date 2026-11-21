@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { settleSelfKey } from './costForm'
 import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
 import { deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
 import type { CostItem as CostItemOf } from './types'
@@ -1478,4 +1479,44 @@ describe('Wohnung mit Zimmern als Empfänger', () => {
 })
 const itemOf = (key: CostKey): CostItemOf => ({
   id: 'c1', propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser', amountCents: 10000, key, meterType: 'kaltwasser',
+})
+
+// #690 (Durchsicht): Was das Formular beim Wechsel in eine Heizperiode der eigenen Abrechnung selbst setzt (Schlüssel,
+// Teilnehmer, das einzige passende Ziel), nimmt es beim Zurückwechseln selbst zurück. Was von Hand gewählt ist, bleibt.
+describe('#690: Schlüssel und Ziel beim Wechsel der Heizperiode', () => {
+  const frei = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', key: 'area' as const, participants: ['a', 'b'], heatingTarget: '' as const }
+  test('hin erzwungen, zurück wiederhergestellt: Schlüssel, Teilnehmer und Ziel', () => {
+    const hin = settleSelfKey(frei, true, ['heating'], null)
+    expect(hin.form).toMatchObject({ key: 'heatingSystem', participants: null, heatingTarget: 'heating' })
+    expect(hin.memo).not.toBeNull()
+    // Derselbe Zustand noch einmal: nichts ändert sich, das Gemerkte bleibt.
+    const nochmal = settleSelfKey(hin.form, true, ['heating'], hin.memo)
+    expect(nochmal.form).toBe(hin.form)
+    expect(nochmal.memo).toEqual(hin.memo)
+    const zurueck = settleSelfKey(hin.form, false, ['', 'heating'], hin.memo)
+    expect(zurueck.form).toMatchObject({ key: 'area', participants: ['a', 'b'], heatingTarget: '' })
+    expect(zurueck.memo).toBeNull()
+  })
+  test('ein von Hand gewähltes Ziel bleibt, der erzwungene Schlüssel geht zurück', () => {
+    const hin = settleSelfKey(frei, true, ['both', 'heating', 'water'], null)
+    expect(hin.form).toMatchObject({ key: 'heatingSystem', heatingTarget: '' })
+    const gewaehlt = { ...hin.form, heatingTarget: 'heating' as const }
+    const zurueck = settleSelfKey(gewaehlt, false, ['', 'heating'], settleSelfKey(gewaehlt, true, ['both', 'heating', 'water'], hin.memo).memo)
+    expect(zurueck.form).toMatchObject({ key: 'area', participants: ['a', 'b'], heatingTarget: 'heating' })
+  })
+  test('ein nach dem Erzwingen von Hand geändertes Ziel bleibt', () => {
+    const hin = settleSelfKey({ ...frei, heatingPart: 'operating' }, true, ['heating'], null)
+    const andere = { ...hin.form, heatingTarget: 'water' as const }
+    expect(settleSelfKey(andere, false, ['', 'heating'], hin.memo).form).toMatchObject({ key: 'area', heatingTarget: 'water' })
+  })
+  test('ohne Gemerktes ändert das Zurückwechseln nichts (gespeicherte Position nach Heizkostenverordnung)', () => {
+    const gespeichert = { ...frei, key: 'heatingSystem' as const, participants: null, heatingTarget: 'heating' as const }
+    const r = settleSelfKey(gespeichert, false, ['', 'heating'], null)
+    expect(r.form).toBe(gespeichert)
+    expect(r.memo).toBeNull()
+  })
+  test('bei eigener Abrechnung von Anfang an: wie bisher, ein einziges Ziel füllt das leere Feld', () => {
+    const r = settleSelfKey({ ...frei, key: 'heatingSystem' as const, participants: null }, true, ['both'], null)
+    expect(r.form.heatingTarget).toBe('both')
+  })
 })

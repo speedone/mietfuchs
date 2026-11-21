@@ -523,6 +523,39 @@ export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey, sel
 // (`targetOptions`, dieselbe Regel wie `targetProblem` im Server); bei freien Schlüsseln „Heizung und
 // Warmwasser“ (leer, wie bisher) oder „nur Heizung“, dann gelten beim Mieterwechsel die Gradtage
 // (Abweichung 16).
+// #690 (Durchsicht): Schlüssel und Ziel einer Heizposition, wenn ihre Heizperiode (oder Anlage) wechselt. In einer
+// Heizperiode der eigenen Heizkostenabrechnung steht der Schlüssel fest, und eine einzige passende Wahl füllt ein leeres
+// Ziel (gespeichert wird, was zu sehen ist). **Was das Formular dabei selbst gesetzt hat, nimmt es zurück, sobald die
+// Heizperiode wieder eine mit freien Schlüsseln ist**; sonst blieben „nach Heizkostenverordnung“ und etwa „nur Heizung“
+// still stehen (Gradtage statt Tage beim Mieterwechsel). Was der Nutzer von Hand gewählt hat, bleibt: Ein Ziel geht nur
+// zurück, wenn es noch das selbst gesetzte ist. `memo` hält der Aufrufer je geöffnetem Formular; `form` bleibt dasselbe
+// Objekt, wenn sich nichts ändert.
+export type SelfKeyMemo = {
+  key?: { key: CostKey; participants: string[] | null }
+  target?: { before: HeatingTarget | ''; set: HeatingTarget | '' }
+}
+export function settleSelfKey(form: ItemForm, selfPlant: boolean, targets: readonly (HeatingTarget | '')[], memo: SelfKeyMemo | null): { form: ItemForm; memo: SelfKeyMemo | null } {
+  if (!selfPlant) {
+    if (memo === null) return { form, memo: null }
+    const key = memo.key && form.key === 'heatingSystem' ? memo.key : null
+    const target = memo.target && form.heatingTarget === memo.target.set ? memo.target.before : form.heatingTarget
+    const changed = key !== null || target !== form.heatingTarget
+    return { form: changed ? { ...form, ...(key ? { key: key.key, participants: key.participants } : {}), heatingTarget: target } : form, memo: null }
+  }
+  const only = targets.length === 1 ? (targets[0] ?? '') : null
+  const fill = form.heatingTarget === '' && only !== null && only !== ''
+  const force = form.key !== 'heatingSystem'
+  if (!force && !fill) return { form, memo }
+  return {
+    form: { ...form, ...(force ? { key: 'heatingSystem' as const, participants: null } : {}), heatingTarget: fill ? only : form.heatingTarget },
+    memo: {
+      ...memo,
+      ...(force && !memo?.key ? { key: { key: form.key, participants: form.participants } } : {}),
+      ...(fill ? { target: { before: form.heatingTarget, set: only } } : {}),
+    },
+  }
+}
+
 export function heatingTargetOptions(selfPlant: boolean, hotWater: HotWater, part: HeatingPart | ''): { value: HeatingTarget | ''; label: string }[] {
   if (selfPlant) return targetOptions(hotWater, part)
   return [{ value: '', label: 'Heizung und Warmwasser' }, { value: 'heating', label: 'nur Heizung' }]

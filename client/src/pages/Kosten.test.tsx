@@ -12,6 +12,7 @@ import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import { press, tabbables } from '../testing/keys'
 import Kosten from './Kosten'
+import { PeriodSelect } from '../components/PeriodSelect'
 import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { estgShortPeriodDays } from '../../../shared/law/estg.ts'
 
@@ -397,6 +398,57 @@ test('#690: vor Beginn der eigenen Heizkostenabrechnung bleibt der freie Schlüs
   fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
   await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
   expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).toEqual(['heatingSystem'])
+})
+
+// #690 (Durchsicht): Heizperiode hin und zurück. Die Anlage rechnet erst ab der laufenden Heizperiode selbst ab; wer sie
+// im Formular wählt und zurückwechselt, hat wieder Schlüssel und Ziel von vorher, nicht still „nur Heizung“.
+test('#690: Heizperiode auf „läuft noch“ und zurück stellt Schlüssel und Ziel wieder her', async () => {
+  // Heute im gewählten Zeitraum: Der Test wählt den laufenden Zeitraum des Objekts und eine Heizperiode, die morgen vor
+  // einem Jahr begann und also erst im nächsten Zeitraum endet, außer am 31.12. (dann endet sie im gewählten).
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  if (month === 1) return // im Januar beginnt die Heizperiode mit dem Zeitraum, es gibt keine laufende daneben
+  const start = month // Heizperiode beginnt im laufenden Monat dieses Jahres und endet im nächsten Jahr
+  const running = `${year}-${String(start).padStart(2, '0')}`
+  const ending = `${year - 1}-${String(start).padStart(2, '0')}`
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: start, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+    selfSpans: [{ from: running, until: null, capture: 'heatMeter', hotWater: 'none' }],
+  }]
+  render(<PeriodProvider><PropertyProvider><PeriodSelect /><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition anlegen/i })).toBeTruthy())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Abrechnungsjahr' }), { target: { value: String(year) } })
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Gas' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '100,00' } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  const periode = await waitFor(() => select(/^Heizperiode$/))
+  expect([...periode.options].map((o) => o.value)).toEqual([ending, running])
+  expect(periode.value).toBe(ending)
+  const ziel = () => select(/^Ziel(?: \(beim Mieterwechsel\))?$/)
+  const vorher = { key: select(/Umlageschlüssel/i).value, target: ziel().value }
+  expect(vorher.key).not.toBe('heatingSystem')
+  expect(vorher.target).toBe('')
+  fireEvent.change(periode, { target: { value: running } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  await waitFor(() => expect(ziel().value).toBe('heating'))
+  fireEvent.change(select(/^Heizperiode$/), { target: { value: ending } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe(vorher.key))
+  expect(ziel().value).toBe('')
+  // Angezeigt ist, was gespeichert würde: Der Schlüssel nach Heizkostenverordnung steht nicht mehr zur Wahl.
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).not.toContain('heatingSystem')
+  // Ein von Hand gewähltes Ziel bleibt dagegen über den Wechsel hinweg stehen.
+  fireEvent.change(ziel(), { target: { value: 'heating' } })
+  fireEvent.change(select(/^Heizperiode$/), { target: { value: running } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  fireEvent.change(select(/^Heizperiode$/), { target: { value: ending } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe(vorher.key))
+  expect(ziel().value).toBe('heating')
 })
 
 test('Durchsicht #241 Runde 2, H1: Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet; ein unpassendes Ziel wird nie still ersetzt', async () => {
