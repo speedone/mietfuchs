@@ -186,6 +186,37 @@ test('#704: Vorauszahlung aufteilen bei gleichem Zeitraum über HTTP: eine Abrec
   }
 })
 
+// #690 Punkt 1: Objekt im Kalenderjahr, Heizung Juli bis Juni. Im November 2026 endet die Auswahl beim Zeitraum 2026,
+// und die Heizperiode 2026/2027 endet erst 2027: Bis Januar ließen sich für sie weder Kosten noch die monatliche
+// Verbrauchsinformation erfassen.
+test('#690: Die laufende Heizperiode steht im laufenden Zeitraum des Objekts, nimmt Kosten an und führt die monatliche Information', async () => {
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), { NKA_TEST_TODAY: '2026-11-21' })
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'manual' }))
+    const regeln = { startMonth: 7, changes: [] }
+    const vorschau = await jsonOf<{ token: string }>(await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: regeln }))
+    assert.equal((await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: regeln, answers: { understood: true, token: vorschau.token } })).status, 200)
+    const views = (period: string) => s.api<HeatingPeriodView[]>(`/api/heating-plants/${plant.id}/periods?period=${period}`)
+    assert.deepEqual((await views('2026')).map((v) => [v.period, v.current ?? false]), [['2025-07', false], ['2026-07', true]])
+    // Ein früherer Zeitraum bleibt, wie er war.
+    assert.deepEqual((await views('2025')).map((v) => v.period), ['2024-07'])
+    const position = await send('/api/costItems', 'POST', { period: '2026-07', category: 'Heizung und Warmwasser', description: 'Gas Abschlag', amountCents: 12000, key: 'area', heatingPlantId: plant.id, taxYear: 2026 })
+    assert.equal(position.status, 201)
+    assert.deepEqual((await views('2026')).map((v) => v.items.map((c) => c.description)), [[], ['Gas Abschlag']])
+    // Abgerechnet wird sie unverändert dort, wo sie endet: nicht im Zeitraum 2026.
+    const abrechnung = await s.api<Settlement>('/api/settlement/2026')
+    assert.equal(abrechnung.landlord.totalCents, 0)
+    const info = await s.api<MonthlyInfoView>(`/api/heating-plants/${plant.id}/periods/2026-07/monthly-info`)
+    assert.equal(info.period, '2026-07')
+    const row = await send(`/api/heating-plants/${plant.id}/monthly-info/2026-10`, 'PUT', { referenceKwhPerM2: 10, referenceSource: 'Ablesedienst', sentOn: '2026-11-05' })
+    assert.equal(row.status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Getrennte Heizkostenabrechnung (Heizung PR 5): Vorschau und Einschalten über HTTP, 409 ohne Antworten', async () => {
   const s = await startServer()
   try {

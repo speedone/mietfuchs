@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, HeatingPlant, Meter, MeterType, Reading, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
-import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
+import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod, RUNNING_PERIOD_NOTE } from '../heatingSettlementView'
+import { localToday } from '../periodForm'
 import { plantOptions } from '../heatingForm'
 import { filedUnderSettlement } from '../costPeriods'
 import { calendarPeriod, periodContext, periodLabel, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
@@ -83,7 +84,7 @@ import SpreadField from '../components/SpreadField'
 import OperatingPowerFields from '../components/OperatingPowerFields'
 import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
+import { hotWaterOf, selfActive } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
 import { joinQuestions, paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
 import { spreadPartsRefusal } from '../../../shared/spread.ts'
@@ -192,10 +193,14 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   useEffect(() => {
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
   }, [propertyId])
-  const heatingOptions = heatingItemPeriods(plants, view.rules, period)
+  // #690: mit der laufenden Heizperiode, wenn sie erst nach dem gewählten Zeitraum endet.
+  const heatingOptions = heatingItemPeriods(plants, view.rules, period, localToday())
   // Die Positionen mit dem Zeitraum ihrer Abrechnung, für Vorjahr und „schon erfasst“ (costPeriods.ts).
   const filedItems = useMemo(() => filedUnderSettlement(items, () => view.rules, () => plants), [items, view.rules, plants])
   const heatingKeys = heatingOptions.flatMap((h) => h.options.map((o) => ({ plantId: h.plantId, key: o.value })))
+  // Ihre Positionen stehen in der Liste, zählen aber nicht zur Summe des gewählten Zeitraums.
+  const runningText = JSON.stringify(heatingOptions.flatMap((h) => h.options.filter((o) => o.current).map((o) => `${h.plantId}|${o.value}`)))
+  const inRunningPeriod = (c: Pick<CostItem, 'period' | 'heatingPlantId'>): boolean => !!c.heatingPlantId && (JSON.parse(runningText) as string[]).includes(`${c.heatingPlantId}|${c.period}`)
   // Heizung PR 9: Ab zwei Anlagen wählt der Vermieter die Anlage einer Heizposition. Leer heißt: Der
   // Server ordnet nach den Wohnungen der Position zu (`plantForNewItem`).
   const [heatingPlantId, setHeatingPlantId] = useState('')
@@ -206,7 +211,6 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   const plantOfForm = form?.category === HEATING_CATEGORY
     ? (plants.find((p) => p.id === (heatingPlantId || ownPlant?.plantId)) ?? (plants.length === 1 ? plants[0] : undefined))
     : undefined
-  const selfPlant = plantOfForm?.method === 'self'
   // #724: die Frage bei „Schornsteinfeger“ und ihr Knopf. Kommt genau eine Anlage in Frage, ist sie die Anlage der
   // Position (ab zwei Anlagen im Objekt die Auswahl „Heizanlage“); sonst bleibt die Wahl beim Vermieter.
   // Durchsicht M2: gefragt mit dem Schlüssel, den die umgestellte Position bekäme (eigene Heizperiode: deren Vorgabe).
@@ -226,6 +230,9 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   }
   const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
     ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
+  // #690: Ob sie selbst abrechnet, entscheidet der Zeitraum der Position, wie beim Server (`guardHeatingSystem`), nicht
+  // die Art der Anlage von heute: Vor dem Beginn der eigenen Abrechnung bleibt es bei den freien Schlüsseln.
+  const selfPlant = !!plantOfForm && selfActive(plantOfForm, heatingOption?.value ?? key)
   // Die Warmwasserbereitung der Heizperiode des Formulars, nicht die heutige der Anlage (Durchsicht von #241,
   // Runde 2, H1): Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet.
   const formHotWater = plantOfForm ? hotWaterOf(plantOfForm, heatingOption?.value ?? key) : 'combined'
@@ -509,7 +516,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))
     return target ? { items: filedItems, year: v.year, at: periodContext(view.rules, target), propertyKind: property?.kind ?? null } : { items: filedItems, year: v.year, propertyKind: property?.kind ?? null }
   }
-  const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
+  const totalCents = yearItems.reduce((a, i) => a + (inRunningPeriod(i) ? 0 : i.amountCents), 0)
 
   // Nach Beleg (Rechnung) gruppiert - alle Positionen eines Belegs stehen zusammen, mit
   // Zwischensumme = Belegsumme. So lassen sich die einzelnen Beträge und die Summe direkt
@@ -1203,6 +1210,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                     {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
                     {/* #455: ein Teil einer aufgeteilten Rechnung, die Summe über alle Zeiträume */}
                     {partLabels.get(i.id) && <div className="muted">{partLabels.get(i.id)}</div>}
+                    {inRunningPeriod(i) && <div className="muted">{RUNNING_PERIOD_NOTE}</div>}
                   </td>
                   <td data-label="Umlageschlüssel">
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}
@@ -1258,7 +1266,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3}>Summe</td>
+                <td colSpan={3}>{yearItems.some(inRunningPeriod) ? 'Summe (ohne laufende Heizperiode)' : 'Summe'}</td>
                 <td className="num">{fmtEuro(totalCents)}</td>
                 <td className="no-print"></td>
               </tr>

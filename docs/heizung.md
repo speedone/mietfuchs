@@ -64,6 +64,14 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
   die Heizperiode, die in ihrem Objektzeitraum endet. **Den Rhythmus ändert nur der Wechsel mit
   Vorschau** ([db/heatingPeriodChange.ts](../server/src/db/heatingPeriodChange.ts)), nie `PUT`; er
   schlüsselt Positionen um, erfasst Korrekturen neu und lässt Abgeschlossenes unangetastet.
+- **Die laufende Heizperiode ist erreichbar** (#690, `runningHeatingPeriod`): Liegt heute im gewählten Zeitraum P und
+  endet die Heizperiode von heute erst nach P (Kalenderjahr, Heizung Juli bis Juni, heute im November), liefert
+  `heatingPeriodViews` sie zusätzlich (`current`), das Kostenformular bietet sie zusätzlich an (`heatingItemPeriods` mit
+  `today`, Vorgabe bleibt die endende), und die Seite Kosten zeigt ihre Positionen mit Vermerk, ohne sie in die Summe
+  des Zeitraums zu zählen. Das ist nur der Zugang zum Erfassen (Kosten, Lieferungen, monatliche Verbrauchsinformation
+  nach § 6a Abs. 1 HeizkostenV); abgerechnet wird unverändert dort, wo sie endet. Der Ausweis der eigenen
+  Heizkostenabrechnung (Ablesungen, Verteilung) kommt aus der Abrechnung des gewählten Zeitraums und fehlt für sie,
+  bis der Zeitraum wählbar ist, in dem sie endet.
 - **Weg b** (VIII ZR 240/07): Eine Heizperiode gehört in die Abrechnung P, in der sie endet. Der
   Schnappschuss trägt sie als `heatingParts`, `computeSettlement` rechnet jede über ihre eigenen Tage
   (`scope: 'heatingPart'`, ohne Vorauszahlungen) und führt sie in P zusammen. Wer nur in der
@@ -329,6 +337,9 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   teilt α die Ziele „beides“. Der Anteil nach Verbrauch gilt aus der Heizperiode oder der vorigen
   (`consumptionSharesOf`); § 7 Abs. 1 Satz 2 ist `hkv.consumption-share-forced`; mehr als 70 % nur
   mit `above_70_agreed`, nie über 100 %.
+- **Ob eine Position den Schlüssel nach HeizkostenV trägt, entscheidet ihre Heizperiode** (`selfActive` in
+  shared/heatingPeriod.ts, gefragt vom Server in `guardHeatingSystem` und seit #690 ebenso vom Kostenformular): vor dem
+  Beginn der eigenen Abrechnung die freien Schlüssel, ab ihrem Beginn nur „nach Heizkostenverordnung“.
 - **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
   [db/heatingSelf.ts](../server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und Positionen offener
   Zeiträume in einer Transaktion; fehlen Teil und Ziel, 409 mit Liste. Zurück auf „Niemand“ verlangt

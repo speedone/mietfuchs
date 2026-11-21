@@ -466,6 +466,38 @@ test('Heizung PR 10: bei freien Schlüsseln „nur Heizung“ wählbar, ohne Wah
   expect(sent[0].body).toMatchObject({ key: 'area', heatingTarget: 'heating' })
 })
 
+// #690 Punkt 4: Rechnet die Anlage erst ab dem folgenden Zeitraum selbst ab, erzwang das Formular trotzdem den Schlüssel
+// nach Heizkostenverordnung, und der Server lehnte ihn für den früheren Zeitraum ab: Die Position war nicht speicherbar.
+test('#690: vor Beginn der eigenen Heizkostenabrechnung bleibt der freie Schlüssel; ab ihrem Beginn gilt der nach Heizkostenverordnung', async () => {
+  const year = new Date().getFullYear() - 1
+  const anlage = (from: number) => ({
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+    selfSpans: [{ from: calendarPeriod(from), until: null, capture: 'heatMeter', hotWater: 'combined' }],
+  })
+  // Eigene Abrechnung erst ab dem Zeitraum nach dem gewählten.
+  plants = [anlage(year + 1)]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect([...select(/^Ziel(?: \(beim Mieterwechsel\))?$/).options].map((o) => o.value)).toEqual(['', 'heating']))
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).not.toContain('heatingSystem')
+  expect(select(/Umlageschlüssel/i).value).not.toBe('heatingSystem')
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body.key).not.toBe('heatingSystem')
+  cleanup()
+  // Gilt sie schon im gewählten Zeitraum, bleibt es beim Schlüssel nach Heizkostenverordnung.
+  sent = []
+  plants = [anlage(year)]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).toEqual(['heatingSystem'])
+})
+
 test('Durchsicht #241 Runde 2, H1: Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet; ein unpassendes Ziel wird nie still ersetzt', async () => {
   const anlage = (selfSpans: unknown[]) => ({
     id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
