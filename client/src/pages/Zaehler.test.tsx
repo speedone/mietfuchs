@@ -455,7 +455,9 @@ test('Ablesung bearbeiten: das Fenster zeigt die gespeicherten Werte und speiche
     fireEvent.change(stand, { target: { value: '1.240' } })
     fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
     await waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ url: '/api/readings/r2', method: 'PUT', body: { date: '2025-06-30', value: 1240, replacement: null, oldEndValue: null, note: 'Zwischenablesung', estimated: false } })
+    expect(calls[0]).toEqual({ url: '/api/readings/r2', method: 'PUT', body: { date: '2025-06-30', value: 1240, replacement: null, oldEndValue: null, note: 'Zwischenablesung', estimated: false,
+      // Der Stand beim Öffnen geht mit (staleRecord.ts): Ein zweites Fenster überschreibt keine berichtigte Ablesung.
+      ifUnchanged: { id: 'r2', meterId: 'm1', date: '2025-06-30', value: 1234.5, note: 'Zwischenablesung' } } })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })

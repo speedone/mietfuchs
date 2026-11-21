@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { boundaryLight, boundaryText, missingDevicesLines, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
-import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
+import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView } from './types'
 
 const b = (over: Partial<SelfBoundaryView> = {}): SelfBoundaryView => ({ date: '2025-09-30', kind: 'change', status: 'read', offDays: 0, far: false, gap: null, ...over })
 const dist = (over: Partial<HeatingDistribution> = {}): HeatingDistribution => ({
@@ -105,11 +105,12 @@ describe('Ausweis und Ableseergebnis (Entwurf 8.8, § 6 Abs. 1 Satz 2)', () => {
     ])
   })
   // Systemprüfung: Grund- und Verbrauchskosten stehen je Nutzer getrennt (7.200 kWh mal 0,098490 € = 709,13 €).
+  // Der Stand des Servers seit #679 (calc-heizkostenabrechnung.test.ts): C1 Heizung 103.329 ct als Summe seiner Zeilen.
   it('Nutzerzeile mit Verbrauch, Gradtagen und Betrag', () => {
-    const c1 = { key: 'C1', role: 'tenancy' as const, tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7200, waterConsumption: 38, heatingGroup: false, waterGroup: false, heatingCents: 103330, waterCents: 29823, heatingCo2Cents: 0, waterCo2Cents: 0 }
-    expect(userLine({ ...c1, heatingCo2Cents: 9281 }, self)).toContain(`Heizung 7.200 kWh, ${fmtEuro(103330)} (Grundkosten ${fmtEuro(32417)}, Verbrauchskosten ${fmtEuro(70913)}), nach CO₂-Abzug ${fmtEuro(94049)}`)
+    const c1 = { key: 'C1', role: 'tenancy' as const, tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7200, waterConsumption: 38, heatingGroup: false, waterGroup: false, heatingCents: 103329, waterCents: 29823, heatingCo2Cents: 0, waterCo2Cents: 0 }
+    expect(userLine({ ...c1, heatingCo2Cents: 9281 }, self)).toContain(`Heizung 7.200 kWh, ${fmtEuro(103329)} (Grundkosten ${fmtEuro(32416)}, Verbrauchskosten ${fmtEuro(70913)}), nach CO₂-Abzug ${fmtEuro(94048)}`)
     expect(userLine(c1, self))
-      .toBe(`Mieter C1, 01.01.2025 bis 30.09.2025 (273 Tage, 640 ‰ der Gradtage): Heizung 7.200 kWh, ${fmtEuro(103330)} (Grundkosten ${fmtEuro(32417)}, Verbrauchskosten ${fmtEuro(70913)}); Warmwasser 38 m³, ${fmtEuro(29823)} (Grundkosten ${fmtEuro(6947)}, Verbrauchskosten ${fmtEuro(22876)})`)
+      .toBe(`Mieter C1, 01.01.2025 bis 30.09.2025 (273 Tage, 640 ‰ der Gradtage): Heizung 7.200 kWh, ${fmtEuro(103329)} (Grundkosten ${fmtEuro(32416)}, Verbrauchskosten ${fmtEuro(70913)}); Warmwasser 38 m³, ${fmtEuro(29823)} (Grundkosten ${fmtEuro(6947)}, Verbrauchskosten ${fmtEuro(22876)})`)
   })
   it('Ableseergebnis je Wohnung: Zähler, Datum, Stand; fehlend als solcher benannt', () => {
     expect(readingResult(unitC, '2025-09-30')).toEqual(['Wärme C: 7.700 kWh am 30.09.2025', 'Warmwasser C: nicht abgelesen'])
@@ -445,6 +446,47 @@ describe('Ausweis zum Nachrechnen: Durchsicht', () => {
     expect(userLine(a, { pots: [heat], units: [unitOf(a, [])], changeSplit: 'degreeDays' })).toContain(`(Grundkosten ${fmtEuro(13709)}, Verbrauchskosten ${fmtEuro(23719)})`)
     // Ohne Angabe, wie beim Wechsel geteilt wird, ist der Anteil der Heizung nicht bekannt.
     expect(userLine(a, { pots: [heat], units: [unitOf(a)] })).toContain(`(Grundkosten ${fmtEuro(13709)}, Verbrauchskosten ${fmtEuro(23719)})`)
+  })
+  // Integration von #664 und #679: Der Betrag des Nutzers ist die Summe seiner je Position gerundeten Zeilen
+  // (`heatingRows`, `waterRows`); gegen Fläche mal Preis mal Anteil darf er um je Zeile einen Cent abweichen, dazu einen.
+  it('mehrere Heizpositionen: die Fläche steht, solange die Grundkosten um höchstens Zeilenzahl plus einen Cent abweichen', () => {
+    const stand = (a: ReturnType<typeof user>) => ({ pots: [heat, water], units: [unitOf(a)], changeSplit: 'degreeDays' as const })
+    const area = ' für 72,5 m², davon 640 von 1.000 ‰ der Gradtage'
+    // Drei Positionen, je für sich gerundet: 137,12 € statt 72,5 m² · 2,95448 € · 640/1.000 = 137,09 €.
+    const three = user({ heatingCents: 37431, heatingRows: 3, waterRows: 3 })
+    expect(userLine(three, stand(three))).toContain(`(Grundkosten ${fmtEuro(13712)}${area}, Verbrauchskosten ${fmtEuro(23719)})`)
+    const four = user({ heatingCents: 37432, heatingRows: 3, waterRows: 3 })
+    expect(userLine(four, stand(four))).toContain(`(Grundkosten ${fmtEuro(13713)}${area}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Fünf Cent daneben erklären drei Zeilen nicht mehr: nur der Betrag.
+    const five = user({ heatingCents: 37433, heatingRows: 3, waterRows: 3 })
+    expect(userLine(five, stand(five))).toContain(`(Grundkosten ${fmtEuro(13714)}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Ein Stand ohne die Angabe (vorher eingefroren) bleibt bei einem Cent.
+    const old = user({ heatingCents: 37431 })
+    expect(userLine(old, stand(old))).toContain(`(Grundkosten ${fmtEuro(13712)}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Je Topf seine Zeilen: Die der Heizung weiten das Warmwasser nicht (56,12 € statt 56,10 €).
+    const waterOnly = user({ waterCents: 17279, heatingRows: 8, waterRows: 0 })
+    expect(userLine(waterOnly, stand(waterOnly))).toContain(`Warmwasser 20 m³, ${fmtEuro(17279)} (Grundkosten ${fmtEuro(5612)}, Verbrauchskosten ${fmtEuro(11667)})`)
+    const waterRow = user({ waterCents: 17279, heatingRows: 0, waterRows: 1 })
+    expect(userLine(waterRow, stand(waterRow))).toContain(`Warmwasser 20 m³, ${fmtEuro(17279)} (Grundkosten ${fmtEuro(5612)} für 72,5 m², davon 273 von 365 Tagen, Verbrauchskosten ${fmtEuro(11667)})`)
+  })
+  // Durchsicht des Abschlusses: Die Zeilenzahl allein ist eine absolute Toleranz. Bei Grundkosten von wenigen Cent ging
+  // damit auch eine falsche Teilung durch („273 von 365 Tagen“, wo nach Gradtagen geteilt war). Deshalb zusätzlich
+  // höchstens 2 % der Grundkosten, mindestens der eine Cent der Rundung.
+  it('kleine Grundkosten: die Toleranz der Zeilenzahl gilt nur bis 2 % der Grundkosten, ein Cent bleibt immer', () => {
+    const stand = (a: ReturnType<typeof user>, pot: SelfPotView, changeSplit: 'time' | 'degreeDays') => ({ pots: [pot], units: [unitOf(a)], changeSplit })
+    // 72,5 m² · 0,4 ct: nach Gradtagen (640 ‰) 19 ct, nach Tagen (273/365) 22 ct. Der Stand trägt 19 ct, die Angabe sagt „nach Tagen“.
+    const tiny = { ...heat, baseCentsPerM2: 0.4 }
+    const wrong = user({ heatingCents: 23719 + 19, heatingRows: 3, waterRows: 3 })
+    expect(userLine(wrong, stand(wrong, tiny, 'time'))).toContain(`(Grundkosten ${fmtEuro(19)}, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Ein Cent Rundung bleibt auch hier erlaubt.
+    const rounded = user({ heatingCents: 23719 + 21, heatingRows: 3, waterRows: 3 })
+    expect(userLine(rounded, stand(rounded, tiny, 'time'))).toContain(`(Grundkosten ${fmtEuro(21)} für 72,5 m², davon 273 von 365 Tagen, Verbrauchskosten ${fmtEuro(23719)})`)
+    // Ab 2 € Grundkosten trägt die Zeilenzahl wie bisher: drei Zeilen, vier Cent daneben (72,5 m² · 4,3103 ct · 640 ‰ = 2,00 €).
+    const small = { ...heat, baseCentsPerM2: 4.3103 }
+    const four = user({ heatingCents: 23719 + 204, heatingRows: 3, waterRows: 3 })
+    expect(userLine(four, stand(four, small, 'degreeDays'))).toContain(`(Grundkosten ${fmtEuro(204)} für 72,5 m², davon 640 von 1.000 ‰ der Gradtage, Verbrauchskosten ${fmtEuro(23719)})`)
+    const five = user({ heatingCents: 23719 + 205, heatingRows: 3, waterRows: 3 })
+    expect(userLine(five, stand(five, small, 'degreeDays'))).toContain(`(Grundkosten ${fmtEuro(205)}, Verbrauchskosten ${fmtEuro(23719)})`)
   })
   it('Menge mal Preis ergibt den gedruckten Betrag bis auf Rundung von höchstens einem Cent, mehr nicht', () => {
     // Verbundenes Warmwasser: Der Topfbetrag ist ungerundet 118,635 €, gedruckt wird der gerundete; der Preis kommt vom ungerundeten.

@@ -7,6 +7,7 @@ import type { Meter, MeterType, Reading } from './types'
 import { isCutoffReading } from './hcaForm'
 import { fmtDate } from './api'
 import { asksCalibration } from './meterForm'
+import type { StaleFields } from './staleRecord'
 
 // `newCalibratedUntil`: das Eichjahr des neuen Zählers beim Wechsel (Praxistest), als Text wie das Jahresfeld.
 // `estimated` und `estimateReason` (#98): Der Stand ist geschätzt; die Begründung ist dann Pflicht und steht beim
@@ -111,6 +112,18 @@ export function readingToForm(r: Reading): ReadingForm {
     estimated: r.estimated === true,
     estimateReason: r.estimateReason ?? '',
   }
+}
+
+// Was die Meldung „inzwischen an anderer Stelle geändert“ beim Namen nennt (staleRecord.ts), in der Reihenfolge des
+// Formulars; der Stand mit dem Wert von jetzt, weil an ihm der Verbrauch und damit die Abrechnung hängt.
+export const READING_STALE_FIELDS: StaleFields = {
+  date: 'Datum',
+  value: { label: 'Zählerstand', now: (v) => (typeof v === 'number' ? quantityText(v) : null) },
+  replacement: 'Zählerwechsel',
+  oldEndValue: 'Endstand alter Zähler',
+  estimated: 'Schätzung',
+  estimateReason: 'Begründung der Schätzung',
+  note: 'Hinweis',
 }
 
 // Der Rumpf für PUT /api/readings/:id. Der Server lässt stehen, was im Rumpf fehlt; was abgewählt oder geleert ist,

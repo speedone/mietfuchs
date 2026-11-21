@@ -425,3 +425,94 @@ test('Kein Zähler im Zeitraum abgelesen: „Kein Verbrauch erfasst“ bleibt, d
   assert.equal(notice(ohne, 'meter.no-consumption').length, 1)
   assert.deepEqual(notice(ohne, 'meter.unit-not-read'), [])
 })
+
+// Integrationsdurchsicht: Neben `meter.negative-in-key` an der Heizposition nach Wärmezählern stand „nach Zählern
+// verteilt werden 94,5 % der Heizkosten“. Die Position wird aber nicht verteilt, der Satz widersprach dem Fehler.
+test('Negativer Verbrauch an der Heizposition nach Wärmezählern: kein Hinweis auf den Verbrauchsanteil daneben', () => {
+  const heatMeter = (id: string, unitId: string): SnapshotMeter => ({ id, unitId, type: 'waerme', name: `Wärme ${id}` })
+  const byMeter: SnapshotCostItem = { id: 'hv', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Gas nach Verbrauch', amountCents: 189000, key: 'meter', meterType: 'waerme' }
+  const byArea: SnapshotCostItem = { id: 'hg', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Gas Grundkosten', amountCents: 11000, key: 'area' }
+  const stock = { costItems: [byMeter, byArea], meters: [heatMeter('za', 'a'), heatMeter('zb', 'b'), heatMeter('zc', 'c')] }
+  // Zur Kontrolle der Bestand mit sauberen Ständen: Dort steht der Hinweis, mit 94,5 %.
+  const clean = settle({ ...stock, readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('zc', 300, 350)] })
+  assert.deepEqual(notice(clean, 'meter.negative-in-key'), [])
+  assert.match(notice(clean, 'heating.consumption-share')[0]?.text ?? '', /nach Zählern verteilt werden 94,5 % der Heizkosten/)
+  const s = settle({ ...stock, readings: [...year('za', 100, 150), ...year('zb', 200, 250), ...year('zc', 300, 250)] })
+  assert.equal(notice(s, 'meter.negative-in-key').length, 1)
+  // Die Position nach Zählern trägt niemand, die Grundkosten sind verteilt.
+  assert.ok(s.statements.every((st) => st.rows.every((r) => r.costItemId !== 'hv' || r.shareCents === 0)))
+  assert.ok(s.statements.some((st) => st.rows.some((r) => r.costItemId === 'hg' && r.shareCents > 0)))
+  assert.deepEqual(notice(s, 'heating.consumption-share'), [])
+  assert.deepEqual(notice(s, 'heating.all-by-consumption'), [])
+})
+
+// Integrationsdurchsicht (Daten): Ein krummer Einbautag, der im Bestand stehen bleibt (krumm, nicht kaputt), machte
+// Cockpit und Zähler-Seite zu einem 500 („Invalid time value“). Die Deckungsprüfung liest ihn dann, als fehle er.
+test('Krummer Einbautag im Bestand: die Verbrauchsübersicht rechnet, als fehle er', () => {
+  const readings = year('za', 100, 150)
+  const without = row(overview({ meters: [meter('za', 'a')], readings }), 'za')
+  for (const installedOn of ['neulich', '2025-02-30', '30.06.2025', '2025-13-01', '']) {
+    const r = row(overview({ meters: [{ ...meter('za', 'a'), installedOn }], readings }), 'za')
+    assert.deepEqual(r, without, installedOn)
+  }
+  // Auch die Abrechnung stolpert nicht.
+  assert.doesNotThrow(() => settle({ meters: [{ ...meter('za', 'a'), installedOn: 'neulich' }, meter('zb', 'b'), meter('zc', 'c')], readings: [...readings, ...year('zb', 1, 2), ...year('zc', 1, 2)] }))
+})
+
+// Durchsicht des Abschlusses: Der Anteil wurde ohne die nicht verteilte Position gerechnet und nannte dann die falsche
+// Richtung („28,6 %“, unter dem Mindestsatz, wo es nach der Berichtigung 75 % sind). Regel: Wird eine Position der
+// Gruppe wegen eines Fehlers nicht verteilt, schweigt `heating.consumption-share`; sonst gilt die Rechnung über alle
+// Positionen der Gruppe, auch ohne Ablesungen und im leeren Haus.
+const typedMeter = (id: string, unitId: string, type: 'waerme' | 'warmwasser'): SnapshotMeter => ({ id, unitId, type, name: `${type} ${id}` })
+const heatingItem = (over: Partial<SnapshotCostItem> & { id: string, amountCents: number }): SnapshotCostItem => ({
+  period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: over.id, key: 'area', ...over,
+})
+const heatMeters = [typedMeter('ha', 'a', 'waerme'), typedMeter('hb', 'b', 'waerme'), typedMeter('hc', 'c', 'waerme')]
+const heatReadings = [...year('ha', 100, 150), ...year('hb', 200, 250), ...year('hc', 300, 350)]
+const shareText = (names: string, pct: string, above: boolean): string =>
+  `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${pct} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
+  `${above ? 'Ein höherer Anteil nach Verbrauch bleibt nur bestehen, wenn er rechtsgeschäftlich bestimmt ist, etwa im Mietvertrag vereinbart (§ 10 HeizkostenV). ' : ''}Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`
+
+test('Verbrauchsanteil: eine wegen negativen Verbrauchs nicht verteilte Position lässt den Hinweis für die Gruppe ganz schweigen', () => {
+  const costItems = [
+    heatingItem({ id: 'H', amountCents: 65000, key: 'meter', meterType: 'waerme' }),
+    heatingItem({ id: 'W', amountCents: 10000, key: 'meter', meterType: 'warmwasser' }),
+    heatingItem({ id: 'G', amountCents: 25000 }),
+  ]
+  const meters = [...heatMeters, typedMeter('wa', 'a', 'warmwasser'), typedMeter('wb', 'b', 'warmwasser'), typedMeter('wc', 'c', 'warmwasser')]
+  const water = [...year('wa', 10, 20), ...year('wb', 10, 20), ...year('wc', 10, 20)]
+  const broken = settle({ costItems, meters, readings: [...year('ha', 100, 150), ...year('hb', 200, 250), ...year('hc', 300, 250), ...water] })
+  assert.equal(notice(broken, 'meter.negative-in-key').length, 1)
+  assert.deepEqual(notice(broken, 'heating.consumption-share'), [])
+  assert.deepEqual(notice(broken, 'heating.all-by-consumption'), [])
+  // Nach der berichtigten Ablesung: 750 von 1.000 € nach Zählern, über dem Höchstsatz.
+  const fixed = settle({ costItems, meters, readings: [...heatReadings, ...water] })
+  assert.deepEqual(notice(fixed, 'heating.consumption-share').map((n) => n.text), [shareText('„H“, „W“ und „G“', '75', true)])
+})
+
+test('Verbrauchsanteil im gewöhnlichen Mischfall: 30 % und 80 % im Wortlaut wie bisher', () => {
+  const mixed = (meterCents: number, areaCents: number) => settle({ meters: heatMeters, readings: heatReadings, costItems: [
+    heatingItem({ id: 'V', amountCents: meterCents, key: 'meter', meterType: 'waerme' }), heatingItem({ id: 'G', amountCents: areaCents }),
+  ] })
+  assert.deepEqual(notice(mixed(30000, 70000), 'heating.consumption-share').map((n) => n.text), [shareText('„V“ und „G“', '30', false)])
+  assert.deepEqual(notice(mixed(80000, 20000), 'heating.consumption-share').map((n) => n.text), [shareText('„V“ und „G“', '80', true)])
+  assert.deepEqual(notice(mixed(60000, 40000), 'heating.consumption-share'), [])
+})
+
+test('Verbrauchsanteil ohne Ablesungen und im leeren Haus: der Hinweis steht wie bisher', () => {
+  const costItems = [heatingItem({ id: 'V', amountCents: 80000, key: 'meter', meterType: 'waerme' }), heatingItem({ id: 'G', amountCents: 20000 })]
+  const unread = settle({ costItems, meters: heatMeters, readings: [] })
+  assert.equal(notice(unread, 'meter.no-consumption').length, 1)
+  assert.deepEqual(notice(unread, 'heating.consumption-share').map((n) => n.text), [shareText('„V“ und „G“', '80', true)])
+  const empty = settle({ costItems, meters: heatMeters, readings: heatReadings, tenancies: [] })
+  assert.deepEqual(notice(empty, 'heating.consumption-share').map((n) => n.text), [shareText('„V“ und „G“', '80', true)])
+})
+
+test('Verbrauchsanteil: trägt nur ein Teil der Mieter die Position nach Zählern, zählt sie ganz', () => {
+  // Wohnung C hat nichts verbraucht; ihre Mieterin trägt von „V“ nichts.
+  const s = settle({ meters: heatMeters, readings: [...year('ha', 100, 150), ...year('hb', 200, 250), ...year('hc', 300, 300)], costItems: [
+    heatingItem({ id: 'V', amountCents: 80000, key: 'meter', meterType: 'waerme' }), heatingItem({ id: 'G', amountCents: 20000 }),
+  ] })
+  assert.ok(s.statements.some((st) => st.rows.every((r) => r.costItemId !== 'V' || r.shareCents === 0)))
+  assert.deepEqual(notice(s, 'heating.consumption-share').map((n) => n.text), [shareText('„V“ und „G“', '80', true)])
+})

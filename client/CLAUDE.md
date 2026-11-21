@@ -321,7 +321,7 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   Punkte (`cockpitSubtitle`).
 - **Erste Schritte** (#447): Der dritte Schritt des Leerzustands nennt beide Wege, Belege hochladen oder
   „Kosten von Hand erfassen“ (`StartStep.secondary`, im Cockpit der zweite Knopf); dasselbe sagt die rote Zeile
-  „Belege erfasst“ (`noCostsDetail`). Unter dem Leerzustand des Cockpits steht „Anleitung: Die erste Abrechnung von
+  „Kosten erfasst“ (`noCostsDetail`). Unter dem Leerzustand des Cockpits steht „Anleitung: Die erste Abrechnung von
   Anfang bis Ende“ (`onOpenGuide`, in App.tsx `openGuide` ohne Schritt: Die Hilfe öffnet die Anleitung oben). Die
   Checkliste beginnt bis zum Abschluss mit „Vermieter und Bankverbindung“ (`landlordCheck` in cockpitChecks.ts, mit
   `effectiveLandlord`): **in jedem Zustand eine Hilfe (`hint`), sie zählt nie zum Fortschritt**, denn ob Briefpapier den
@@ -743,7 +743,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Handlung bleibt der Stand der Liste gesehen und das Speichern wird abgelehnt. Verglichen wird mit `recordMark` aus
   shared/recordMark.ts, wie im Server. **Nach einer Ablehnung
   (`isStale`) lädt die Seite ihre Liste neu**, damit „schließen und erneut öffnen“ zum Ziel führt. So Kostenposition
-  (auch beim Aufteilen; `COST_STALE_FIELDS` in costForm.ts), Wohnung, Zähler und Objekt; das Mietverhältnis hat
+  (auch beim Aufteilen; `COST_STALE_FIELDS` in costForm.ts), Wohnung, Zähler, Ablesung (`READING_STALE_FIELDS` in
+  readingForm.ts, der Zählerstand mit dem Wert von jetzt) und Objekt; das Mietverhältnis hat
   `tenancyStamp`. Teilrümpfe (Beleg zuordnen, Betrag prüfen, Art einer Zahlung) schicken nichts mit, sie ändern nur, was
   sie nennen. Tests: gleichzeitigBearbeiten.test.tsx, kostenGleichzeitig.test.tsx.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus

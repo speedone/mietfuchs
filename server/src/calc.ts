@@ -1013,7 +1013,11 @@ export function consumptionOverview(snapshot: Snapshot, options: { asOf?: string
     // Wohnung vorher niemand wohnte (`firstOccupied`). Eine späte erste Ablesung allein verschiebt ihn nicht: Die
     // Wohnung zahlte sonst ohne Hinweis nur einen Teil des Zeitraums.
     let start = from
-    if (m.installedOn && compareText(m.installedOn, from) >= 0) start = dayAfter(m.installedOn)
+    // Nur ein lesbarer Kalendertag (Integrationsdurchsicht): Ein krummer Wert, der im Bestand stehen blieb, gilt wie
+    // keiner; `dayAfter` würfe sonst „Invalid time value“, und Cockpit und Zähler-Seite antworteten mit 500.
+    const installed = m.installedOn
+    const installedDay = typeof installed === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(installed) && !Number.isNaN(Date.parse(`${installed}T00:00:00Z`)) && new Date(`${installed}T00:00:00Z`).toISOString().slice(0, 10) === installed ? installed : null
+    if (installedDay !== null && compareText(installedDay, from) >= 0) start = dayAfter(installedDay)
     if (first !== null && compareText(first, dayBefore(from)) > 0 && snapshot.meters.some((o) => follows(m, o)) && compareText(dayAfter(first), start) > 0) start = dayAfter(first)
     const occupiedFrom = m.unitId ? firstOccupied(m.unitId) : null
     if (occupiedFrom !== null && compareText(occupiedFrom, start) > 0) start = occupiedFrom
@@ -4331,6 +4335,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (compareText(cursor, yTo) <= 0) addFree(cursor, yTo)
     return [...own, ...free]
   }
+  // Positionen, die ein Fehler an den Zählern ganz beim Vermieter lässt; `heating.consumption-share` schweigt dann.
+  const notDistributedByError = new Set<string>()
   const negativeInKey = (where: string, parts: readonly { m: SnapshotMeter, whole?: boolean }[], among: readonly { unitId: string, start: string, end: string | null }[]): boolean => {
     const found = parts.flatMap(({ m, whole }) => (whole ? [{ from: yFrom, to: yTo }] : recipientSpans(m.unitId ?? null, among)).flatMap((sp) => {
       const value = consumptionInPeriod(readingsOf(m.id), sp.from, sp.to)
@@ -6800,12 +6806,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       futureInKey(where, keyMeters)
       if (scale.problem?.kind === 'mixed') {
         forced = 'noBasis'
+        notDistributedByError.add(item.id)
         warn('meter.units-mixed', unitsMixedText(where, scale.problem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(scale.problem.meters))
       } else if (mixedRooms.length > 0) {
         forced = 'noBasis'
+        notDistributedByError.add(item.id)
         warn('meter.rest-mixed', mixedRoomsText(where, type, mixedRooms), unitSubject(mixedRooms))
       } else if (negativeInKey(where, [...behindMeters.map((m) => ({ m })), ...subList.flatMap((x) => (x.m && covered(x.m) >= diy ? [{ m: x.m, whole: true }] : []))], b.partTenancies)) {
         forced = 'noBasis'
+        notDistributedByError.add(item.id)
       } else if (standardMisplaced(mr, item.participantUnitIds)) {
         // Nachprüfung der Abschlussdurchsicht: Ein „wie bisher“ mit Teilnehmern, anderem Bezug oder Empfängern (Backup, ältere Schnittstelle) gibt es
         // nicht; die Speicherprüfung lehnt es ab. Hier wird nicht still anders verteilt als ohne Angabe: Fehler, und der
@@ -7103,12 +7112,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (data?.unitProblem?.kind === 'mixed') {
         // Verschiedene Größen (Gas in m³ neben kWh) rechnete schon vor #342 falsch; verteilt wird nicht.
         forced = 'noBasis'
+        notDistributedByError.add(item.id)
         warn('meter.units-mixed', unitsMixedText(`„${item.description}“`, data.unitProblem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(data.unitProblem.meters))
       } else if (mixedRooms.length > 0) {
         forced = 'noBasis'
+        notDistributedByError.add(item.id)
         warn('meter.rest-mixed', mixedRoomsText(`„${item.description}“`, item.meterType ?? '', mixedRooms), unitSubject(mixedRooms))
       } else if (negativeInKey(`„${item.description}“`, (data?.meters ?? []).map((m) => ({ m })), b.partTenancies)) {
         forced = 'noBasis'
+        notDistributedByError.add(item.id)
       } else if (!data || data.basis <= 0) {
         forced = 'noBasis'
         warn('meter.no-consumption', `„${item.description}“: kein Verbrauch für Zählertyp „${meterTypeLabel(item.meterType)}“ erfasst - Betrag geht an den Vermieter.`, itemSubject(item))
@@ -10141,6 +10153,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         itemSubject({ id: g.itemIds[0] ?? '' }))
       continue
     }
+    // Durchsicht des Abschlusses: Wird eine Position der Gruppe wegen eines Fehlers nicht verteilt (`meter.negative-in-key`,
+    // `meter.units-mixed`, `meter.rest-mixed`: ganz beim Vermieter), schweigt der Hinweis. Der Satz „nach Zählern verteilt
+    // werden … %“ widerspräche dem Fehler daneben, und ohne die Position gerechnet nennt er leicht die falsche Richtung;
+    // beurteilen lässt sich der Anteil erst nach der Berichtigung. Sonst zählt jede Position der Gruppe ganz, auch ohne
+    // Ablesungen (`meter.no-consumption`), im leeren Haus und wenn nur ein Teil der Mieter sie trägt.
+    if (g.itemIds.some((id) => notDistributedByError.has(id))) continue
     // Über dem Höchstsatz nennt auch der Mischfall § 10 (Durchsicht des Zweigs); unter dem Mindestsatz bleibt der Text.
     const above = g.consumptionCents * 100 > g.totalCents * share.max
     warn('heating.consumption-share',

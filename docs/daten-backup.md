@@ -86,9 +86,9 @@ deine Daten beim ersten Start von selbst in
 `mietfuchs.sqlite` um. Die bisherige Datei heißt danach `db.json.abgeloest` und bleibt als
 Rückweg liegen, daneben ein Protokoll. **Sie ist der Stand zum Zeitpunkt des Umzugs und kein
 mitlaufendes Abbild**: Was du danach erfasst, steht nur noch in der Datenbank. Der Weg zurück ist
-also deine Sicherung, nicht diese Datei. Am Backup ändert sich nichts, es ist weiterhin dieser
-Ordner; das Backup über die Oberfläche nimmt die Datenbank mit, und beim Wiederherstellen kommt
-sie mit zurück.
+also deine Sicherung, nicht diese Datei. An den beiden Wegen zum Backup (oben) ändert der Umzug
+nichts: Das Backup über die Oberfläche nimmt die Datenbank mit, und beim Wiederherstellen kommt sie
+mit zurück; wer den ganzen Datenordner kopiert, kopiert sie ebenfalls mit.
 
 **Vor jedem Update der Datenbank legt Mietfuchs selbst eine Sicherung an**
 (`mietfuchs.sqlite.vor-…` im Datenordner) und sagt es nach dem Start in der Oberfläche. Wie du

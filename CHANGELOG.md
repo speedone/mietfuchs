@@ -8,6 +8,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Erste Schritte: Die neue Anleitung „Die erste Abrechnung von Anfang bis Ende“ führt von den Einstellungen über
+  Objekt, Wohnungen, Mietverhältnisse, Zähler und Kosten bis zu Abschluss, Druck, Versanddatum und Backup; das leere
+  Cockpit verlinkt sie, und „Hilfe & Begriffe“ schlägt sie im leeren Bestand vor. Die Checkliste des Cockpits beginnt
+  mit „Vermieter und Bankverbindung“ (höchstens gelb, mit Sprung in die Einstellungen), ohne Kosten nennt sie neben
+  dem Hochladen der Belege das Erfassen von Hand, und im Kostenformular sagt bei Wasser/Abwasser ein Satz am
+  Umlageschlüssel, dass erst Wohnungszähler die Verteilung nach Verbrauch möglich machen
+  ([#447](https://github.com/speedone/mietfuchs/issues/447)).
+- Fragen und Fehler: „Hilfe & Begriffe“, README und Doku nennen die Diskussionen für Fragen und ein Formular für
+  Fehlermeldungen (Version, Betriebsart, Schritte, erwartet, geschehen), mit dem Hinweis, keine echten Mieterdaten,
+  Namen oder Belege zu posten ([#447](https://github.com/speedone/mietfuchs/issues/447)).
+- Datensicherung: Die Karte „Daten & Sicherung“ der Einstellungen nennt, wann zuletzt ein Backup heruntergeladen
+  wurde, und das Cockpit erinnert mit einem ruhigen Hinweis, wenn es Daten gibt und noch kein Backup heruntergeladen
+  wurde, das letzte älter als 30 Tage ist oder seither eine Abrechnung abgeschlossen wurde. Den Zeitpunkt merkt sich
+  Mietfuchs in `letztes-backup.json` im Datenordner; die Datei geht nicht ins Backup und nicht in den Umzug. In
+  „Hilfe & Begriffe“ gibt es dazu die Anleitung „Backup herunterladen, aufbewahren und wiederherstellen“ und den
+  Begriff „Backup“ (was nicht enthalten ist, und der Unterschied zu den automatischen Sicherungen im Verlauf).
 - Mieterhöhung: Am Mietverhältnis in den Stammdaten rechnet Mietfuchs eine Erhöhung bis zur ortsüblichen
   Vergleichsmiete (§ 558 BGB) oder die Anpassung einer Indexmiete (§ 557b BGB), macht daraus ein Schreiben und trägt
   die neue Miete in die Kaltmiete-Staffel ein. Ohne Mieterhöhung rechnen Mietkonto, Abrechnung und Steuer unverändert
@@ -44,11 +60,33 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Entwurf offen ist, sagt das Fenster, dass das Cockpit nicht erinnert.
   - Neu im Lexikon: „Ortsübliche Vergleichsmiete“, „Kappungsgrenze“, „Indexmiete“, „Staffelmiete“,
     „Mieterhöhungsverlangen“, „Zustimmungsfrist“, „Begründungsmittel“ und „Qualifizierter Mietspiegel“.
-- Dokumentation: Die Kompatibilitätszusage für 1.0 steht in README, MIGRATION.md und „Daten & Backup“. Ab 1.0 lässt
-  sich jeder Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine
-  abgeschlossene Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und
-  Exportformate ändern sich in 1.x nicht ohne Vorwarnung; ein Bruch kommt nur mit 2.0. MIGRATION.md sagt auch, was
-  bis 1.0 gilt ([#447](https://github.com/speedone/mietfuchs/issues/447)).
+  - Fenster „Mieterhöhung“ und Druck: Nach Zustimmung, Versand einer Indexanpassung und Rücknahme zeigen die
+    Stammdaten sofort die neue Kaltmiete-Staffel. Ohne Namen des Vermieters warnt Mietfuchs im Fenster, am Entwurf und
+    vor „Als versendet speichern“, denn die Erhöhung braucht Textform, und dafür muss der Erklärende genannt sein
+    (§ 558a Abs. 1, § 557b Abs. 3, § 126b BGB); die Warnung nennt beide Wege (Namen eintragen und neu anlegen, oder
+    Namen und Unterschrift von Hand auf den Ausdruck). Gesperrt wird nichts, nur die Bestätigung zum Briefkopf bleibt
+    ohne Namen leer. Ein angelegter Entwurf gilt als gespeichert: „Schließen“ fragt erst wieder „Änderungen
+    verwerfen?“, wenn Sie danach etwas ändern oder den Entwurf löschen. Fehlt die Art der Miete, führt „Hier beheben“
+    an das Feld im Mietverhältnis. Das Schreiben druckt ohne Briefpapier „Seite x von y“ (Chromium); mit Briefpapier
+    hält es auf jeder Seite die eingestellten Ränder ein und druckt das Papier der Folgeseiten.
+  - Neu ist die Anleitung „Miete erhöhen: Vergleichsmiete oder Indexmiete, Schreiben und Zustimmung“.
+- Kompatibilitätszusage für 1.0 ([#447](https://github.com/speedone/mietfuchs/issues/447)): Ab 1.0 lässt sich jeder
+  Bestand und jedes Backup aus 1.x in jeder späteren 1.x ohne Handarbeit öffnen und einspielen, eine abgeschlossene
+  Abrechnung bleibt, wie sie zugestellt wurde, und Datenordner, Umgebungsvariablen, Docker-Image und Exportformate
+  ändern sich in 1.x nicht ohne Vorwarnung; ein Bruch kommt nur mit 2.0. Die Zusage steht in README, MIGRATION.md und
+  „Daten & Backup“; MIGRATION.md sagt auch, was bis 1.0 gilt. „Daten & Backup“ nennt, welche Exporte gemeint sind und
+  wie sie aussehen (Abrechnung als JSON, Abrechnung als CSV, die beiden CSV-Dateien im ZIP „Belege für die Steuer“),
+  „Installation“ führt alle Umgebungsvariablen mit Bedeutung und Voreinstellung auf und sagt, welche nicht zur Zusage
+  gehören.
+  - Für alle, die den JSON-Export weiterverarbeiten: Die Datei nennt ihre Form mit `format` und `version`. Vorhandene
+    Felder behalten Namen, Art und Bedeutung, neue Felder können dazukommen, erst ein entferntes, umbenanntes oder
+    umgedeutetes Feld hebt `version`; Texte in Feldern sind Anzeige.
+  - Geprüft wird die Zusage bei jeder Änderung: Der JSON-Export eines festen Bestands wird Feld für Feld und jede
+    Kopfzeile der CSV-Dateien wortgleich verglichen, und jede Umgebungsvariable (`NKA_…`) im Quelltext muss in der Liste
+    stehen oder als intern begründet sein. Dazu liegen Bestände aus 0.13.1 und 0.18.1 im Repo, wie diese Versionen sie
+    selbst geschrieben haben: Ihr Backup wird in die aktuelle Version eingespielt und Abrechnung, Verbrauch, Mietkonto
+    und Steuer centgenau mit den damaligen Ergebnissen verglichen, und der Nachdruck ihrer abgeschlossenen Abrechnung
+    wird wortgleich festgehalten.
 - Kontoauszug: Eine Nachzahlung aus der abgeschlossenen Abrechnung wird am Betrag erkannt, auch ohne Verwendungszweck.
   Passt ein Eingang genau zur offenen Nachzahlung (abzüglich schon gebuchter Zahlungen der Art „Abrechnung“) oder zu
   Monatsmiete plus Nachzahlung, und ist das Mietkonto sonst ausgeglichen, schlägt Mietfuchs gelb „Abrechnung“ bzw. die
@@ -68,22 +106,42 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   trotzdem. Bei einem Zählerwechsel zählt dabei der Endstand des alten Zählers, beim Heizkostenverteiler verweist die
   Rückfrage auf den Stichtagswert. Das Datum einer neuen Ablesung ist mit dem heutigen Tag vorbelegt, wenn heute im
   gewählten Abrechnungszeitraum liegt; ein Hinweis am Feld sagt es, solange Sie es nicht geändert haben.
+- Belege: Eine Rechnung mit vielen Zeilen, etwa die Jahresrechnung eines Versorgers als E-Rechnung, lässt sich als eine
+  Kostenposition buchen. Unter der Tabelle steht dafür „Alle Zeilen als eine Position anlegen“: Kostenart und
+  Beschreibung wählen, das Fenster nennt vorher Position und Summe. Gutschriften bleiben offen und werden mit Betrag
+  genannt, ein §35a-Lohnanteil kommt nur mit Häkchen mit, und im Verlauf stehen die beiden Schritte der Buchung
+  unterscheidbar („1 Zeile angelegt“, „13 Zeilen verknüpft“). Wer Zeile für Zeile
+  bucht, findet nach dem Anlegen der ersten Zeile deren Position bei den übrigen unter „Was geschieht?“. Bereits
+  bezahlte Abschläge stehen als Hinweis an der Auswertung und färben nicht mehr jede Zeile rot; die Zeilen sind dann
+  gelb und nicht vorab angehakt, weil einzeln gebuchte Abschläge sonst doppelt zählten. Gleichlautende Begründungen
+  mehrerer Zeilen stehen einmal.
 
 ### Geändert
 
 - Schneller mit großem Bestand: Mietfuchs liest die Daten nur noch neu, wenn sich etwas geändert hat. Listen
   antworten bei fünf Häusern und zehn Jahren in unter 20 statt rund 200 ms, Mietkonto, Abrechnung und Steuer
   deutlich schneller ([#651](https://github.com/speedone/mietfuchs/issues/651)).
-- Stammdaten: Eine Wohnung lässt sich in ein anderes Objekt verschieben, etwa wenn sie im falschen Objekt angelegt
-  wurde oder ein Haus nachträglich aufgeteilt ist. Das Feld „Objekt“ erscheint beim Bearbeiten erst ab dem zweiten
-  Objekt; vor dem Speichern fragt Mietfuchs nach und nennt, was mitwandert (Mietverhältnisse samt Zahlungen, Staffeln
-  und Kaution). Abgelehnt wird mit Begründung, was zum bisherigen Objekt gehört, und jeder Wechsel, der eine
-  abgeschlossene Abrechnung beträfe: Nennt eine abgeschlossene Abrechnung des bisherigen Objekts die Wohnung, oder hat
-  das neue Objekt einen Zeitraum abgeschlossen, in dem ein Mietverhältnis der Wohnung lief. Neu geprüft werden dabei
-  auch Rechnungen einer Etagenheizung, CO₂-Beträge, Korrekturen der Heizvorauszahlung, verrechnete CO₂-Erstattungen,
-  Antworten zu fehlenden Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
+- Stammdaten: Eine Wohnung lässt sich in ein anderes Objekt verschieben, etwa wenn sie im falschen Objekt angelegt wurde
+  oder ein Haus nachträglich aufgeteilt ist. Das Feld „Objekt“ erscheint beim Bearbeiten erst ab dem zweiten Objekt; vor
+  dem Speichern fragt Mietfuchs nach und nennt, was mitwandert (Mietverhältnisse samt Zahlungen, Staffeln und Kaution).
+  Abgelehnt wird mit Begründung, was zum bisherigen Objekt gehört, und jeder Wechsel, der eine abgeschlossene Abrechnung
+  beträfe: Nennt eine abgeschlossene Abrechnung des bisherigen Objekts die Wohnung, oder hat das neue Objekt einen
+  Zeitraum abgeschlossen, in dem ein Mietverhältnis der Wohnung lief. Neu geprüft werden dabei auch Rechnungen einer
+  Etagenheizung, CO₂-Beträge, Korrekturen der Heizvorauszahlung, verrechnete CO₂-Erstattungen, Antworten zu fehlenden
+  Zwischenablesungen, Jahreskorrekturen in einem anderen Abrechnungsrhythmus und Heizvorauszahlungen bei getrennter
   Heizkostenabrechnung; vorher hätte die Schnittstelle solche Wechsel angenommen, und das eigene Backup hätte sich
   danach nicht mehr einspielen lassen ([#180](https://github.com/speedone/mietfuchs/issues/180)).
+- Kaution: „Aufstellung drucken“ druckt die Aufstellung zum Auszug jetzt als Brief wie Abrechnung und Mieterhöhung, mit
+  Absender, Anschrift des Mieters für den Schriftverkehr, Ort und Datum, Wohnung und Objekt im Betreff, Gruß und
+  Unterschriftszeile, auf Wunsch mit Logo und Briefpapier. Bleibt etwas auszuzahlen, fragt der Brief nach dem Konto oder
+  nennt die letzten vier Stellen der beim Mietverhältnis hinterlegten IBAN. Der Text steht fest; er nennt, was gebucht
+  und was mit Grund einbehalten ist, und keine Frist. Fehlt der Name des Vermieters, weist das Fenster darauf hin.
+- Kontoauszug: Nennt der Verwendungszweck einer Auszahlung an den Mieter die Kaution, ist „Kaution zurückgezahlt“
+  vorbelegt statt „Nachzahlung oder Guthaben“, solange laut Buchungen noch Kaution bei Ihnen liegt oder keine gebucht
+  ist. Ist für das Mietverhältnis noch kein Eingang der Kaution gebucht, sagt die Ablehnung beim Buchen, dass zuerst der
+  Eingang unter „Kaution führen“ in den Stammdaten zu buchen ist.
+- Kontoauszug: Vorschau und Mitteilung beim Einlesen sagen „eingelesen“ statt „übernommen“: vorher, wie viele Umsätze
+  eingelesen werden und dass dabei nichts gebucht wird, danach, dass sie unter „Offene Umsätze“ zuzuordnen sind.
 
 ### Behoben
 
@@ -96,6 +154,130 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Hilfe: „Was Mietfuchs (noch) nicht kann“ nennt nicht mehr, was es inzwischen gibt (das Blatt „CO₂-Angaben für den
   Messdienst“, die Abgrenzung einer Gasrechnung nach Gradtagen), und verweist bei einer Lücke nur noch auf ein
   Issue, in dem sie tatsächlich geplant ist.
+- Abrechnung vor dem Versand: Die Kontrollansicht zeigte den Saldo je Mieter mit umgekehrtem Vorzeichen zur
+  Beschriftung; dort steht jetzt das Ergebnis in Worten („Nachzahlung 300,00 €“, „Guthaben 1.500,00 €“) wie in der
+  Übersicht. Hat ein Mieter eine Nachzahlung und fordert das Anschreiben zur Überweisung auf, ohne ein Konto zu nennen,
+  weil keine IBAN eingetragen ist, weisen „Zu prüfen“ und das Fenster „Drucken“ bis zum Versand darauf hin (ein Hinweis,
+  gedruckt wird trotzdem; nicht mit Briefpapier). Das Anschreiben kündigt keine Anpassung der Vorauszahlung mehr an,
+  wenn der neue Betrag schon im abgerechneten Zeitraum galt und weiter gilt; das Seitenfenster „Anschreiben bearbeiten“
+  und die Übersicht sagen es. Die Übersicht je Mieter nennt vor dem Abschluss, welche neue Vorauszahlung der Brief ab
+  wann ankündigt, und wo sich das ändern lässt, und sie sagt, dass als Vorauszahlungen angesetzt ist, was laut Vertrag
+  zu zahlen war. Abgeschlossene Abrechnungen bleiben, wie sie sind.
+- Stammdaten: Ein Auszug vor dem Einzug wird nicht mehr gespeichert; das Formular meldet es am Feld „Auszug“. Vorher
+  stand der Mieter danach in keiner Abrechnung, und sein Anteil lief ohne Hinweis als Leerstand zum Vermieter. Ebenso
+  lehnt Mietfuchs ein Datum ab, das es nicht gibt (Einzug, Auszug, Vertragsdatum, Zahlung, Ablesung, Einbau eines
+  Zählers); ein leerer Einzug ließ vorher Abrechnung, Mietkonto und Steuer des ganzen Objekts scheitern. Geprüft wird
+  nur, was neu eingetragen oder geändert wird: Ein Bestand, der so etwas schon enthält, bleibt bearbeitbar. Steht in
+  einem Bestand schon ein Mietverhältnis ohne lesbaren Einzug, nennen Abrechnung, Mietkonto, Steuer und Cockpit es jetzt
+  mit Namen und Wohnung, statt mit einer technischen Meldung zu scheitern. Ein Zählerfoto, auf dem die KI-Auswertung
+  das Datum deutsch geschrieben liest, wird weiter übernommen.
+- Löschen: Die Rückfrage zu einem Mietverhältnis nennt jetzt Zahl und Zeitraum der Zahlungen, die Kautionsbuchungen, ob
+  eine abgeschlossene Abrechnung das Mietverhältnis nennt, und dass Mietkonto und Steuerübersicht der betroffenen Jahre
+  die Zahlungen verlieren, dazu den Weg „Auszug eintragen statt löschen“. Die Rückfrage zu einer Wohnung nennt auch
+  Kautionsbuchungen und abgeschlossene Abrechnungen, die zu einem Zähler Zahl und Jahre der Ablesungen. Beim
+  Mietverhältnis stehen auch Zuordnungen zum Kontoauszug, Mieterhöhungen und Angaben an Kostenpositionen dabei. Alle
+  drei sagen, wie weit sich das Löschen auf der Seite „Verlauf“ zurücknehmen lässt (gleich danach für sich allein,
+  später nur mit allem Späteren und nicht über einen Abschluss, ein eingespieltes Backup oder ein Update hinweg); bei
+  der Wohnung stand vorher, es lasse sich gar nicht rückgängig machen.
+- Meldungen: Eine negative Wohnfläche und ein Verweis auf eine inzwischen gelöschte Wohnung, ein gelöschtes
+  Mietverhältnis oder einen gelöschten Zähler bekommen einen Satz ohne technischen Befund.
+- Belege, Rückwege: Am Beleg im Ordner stehen „Position öffnen“, „Zuordnung lösen …“ (mit Rückfrage, für von Hand
+  angehängte Belege) und „Auswertung zeigen“. Eine fertig gebuchte Auswertung war nach dem Seitenwechsel nirgends mehr
+  zu finden; jetzt holt „Auswertung zeigen“ sie in den Eingang zurück, und eine verknüpfte Zeile lässt sich dort lösen.
+  An einer angelegten Zeile steht, wie sie sich rückgängig machen lässt. „Betrag prüfen“ kommt nach dem Zuordnen in den
+  Blick und bekommt den Fokus; steht der Kasten in der anderen Ansicht, nennt die Seite ihn und führt hin. Die Karte
+  einer Auswertung nennt neben dem Rechnungssteller den Dateinamen. Ohne KI beschreibt der Eingang das Erfassen von Hand
+  als normalen Weg und verweist auf die Seite Kosten. „Position öffnen“ wechselt bei einer Position eines anderen
+  Zeitraums erst dorthin.
+- Belege: Ein abgelegter Beleg ist jetzt gespeichert, bevor die KI ihn auswertet, auch jeder weitere eines Stapels.
+  Vorher lag nur der Beleg auf dem Rechner, der gerade ausgewertet wurde: Wer das Fenster schloss oder die Seite neu
+  lud, während die KI arbeitete oder hing, verlor die wartenden Belege, und „Abbrechen“ an der laufenden Auswertung
+  löschte auch diesen. Jetzt geht dabei nur die Auswertung verloren; der Beleg steht im Eingang unter „Ohne Position“
+  und lässt sich von Hand erfassen oder erneut auswerten. Das gilt auch für die Ablage auf der Seite Kosten.
+  Gespeichert wird der Reihe nach: Jeder Beleg zeigt, ob er noch auf das Speichern wartet, gerade gespeichert wird oder
+  gespeichert ist. Der Verlauf führt je Beleg jetzt zwei Einträge („Beleg hochgeladen“ und „Beleg mit KI ausgewertet“);
+  wer die Auswertung rückgängig macht, behält den Beleg. Ein PDF, das sich nicht lesen lässt (beschädigt oder mit
+  Passwort), wird ebenfalls gespeichert und steht unter „Ohne Position“; eine leere Datei wird mit einer Meldung
+  abgelehnt.
+- E-Rechnung: Ein Abzug früherer Zahlungen wird auch unter den Namen Teilrechnung, Teilzahlung, Akonto, Vorauskasse
+  und Vorschuss erkannt und als Warnung genannt.
+- Belege: „Jahr der Buchung“ bietet immer auch das Jahr an, für das der Beleg abgelegt wurde, auch wenn die Auswertung
+  ein weit früheres Jahr aus dem Beleg liest.
+- Backup und Wiederherstellen: Lässt sich im Datenordner gerade nicht schreiben, entsteht das Backup trotzdem (vorher
+  kam ein Serverfehler mit einer Meldung der Datenbank); scheitert ein Backup, zeigt der Browser eine lesbare Seite mit
+  dem Weg zurück statt einer rohen Fehlermeldung. Eine Datei, die kein ZIP-Archiv ist, wird mit dem Hinweis auf einen
+  unvollständigen Download abgelehnt und dem Satz, dass Ihre Daten unverändert sind. Nach dem Wiederherstellen aus den
+  Einstellungen bestätigt Mietfuchs einmal „Ihr Backup ist eingespielt“. Startet Mietfuchs in einem schreibgeschützten
+  Ordner ohne `db.json`, verweist die Konsole nicht mehr auf diese Datei.
+- Gleichzeitig bearbeiten: War dieselbe Kostenposition in zwei Fenstern geöffnet (zwei Tabs, oder Handy und Rechner im
+  Heimnetz), überschrieb das zuletzt gespeicherte Fenster still, was das andere geändert hatte, etwa einen neuen
+  Betrag. Jetzt lehnt Mietfuchs das zweite Speichern ab, nennt im Formular, was sich inzwischen geändert hat, und
+  lässt die Eingabe stehen. Dasselbe gilt für Wohnungen, Zähler, Ablesungen („Ablesung bearbeiten“: Ein zweites Fenster
+  schrieb sonst einen inzwischen berichtigten Zählerstand zurück) und das Objekt und nach einer Belegbuchung oder dem
+  Aufteilen einer Rechnung. Wurde der Datensatz inzwischen gelöscht, sagt die Meldung das statt „Nicht gefunden“.
+- Zählerstände in Abrechnung und Cockpit:
+  - Negativer Verbrauch: Ergab ein Wohnungszähler für einen Mieter, eine Eigennutzung oder einen Leerstand einen
+    negativen Verbrauch (Endstand unter dem Anfangsstand), verteilte Mietfuchs die Position trotzdem nach Verbrauch;
+    ein Mieter bekam einen negativen Anteil, die übrigen zusammen mehr als die Rechnung, und die Abrechnung ließ sich
+    ohne Rückfrage abschließen. Jetzt steht an der Abrechnung der Fehler „Negativer Verbrauch im Verteilschlüssel“, die
+    Position wird nicht verteilt und steht beim Vermieter, bis die Ablesung stimmt, und Abschließen und Drucken fragen
+    nach. **Für offene Abrechnungen heißt das:** Nur eine Position, in der ein solcher negativer Verbrauch steckt,
+    ändert ihre Zahlen (die Anteile der Mieter fallen auf 0). Ein Rücksprung mitten im Zeitraum, der sich beim selben
+    Mieter wieder ausgleicht, und Rücksprünge am Hauptzähler ändern nichts; sie stehen wie bisher als Warnung auf der
+    Seite Zähler. Abgeschlossene Abrechnungen bleiben, wie sie sind. Am häufigsten trifft es einen Leerstand oder
+    Mieterwechsel, bei dem zwei Ableser verschieden runden (Auszug mit 45, Einzug mit 44,8): Der Leerstand dazwischen
+    hat dann negativen Verbrauch, und die Position wird nicht verteilt, bis einer der beiden Stände berichtigt ist.
+    Trifft der Fehler eine Heizposition, steht daneben nicht mehr der Hinweis, welcher Anteil der Heizkosten nach
+    Zählern verteilt wird: Ob der Anteil stimmt, lässt sich erst beurteilen, wenn die Ablesung berichtigt ist; dann
+    steht der Hinweis wieder da. Ohne einen solchen Fehler bleibt er, wie er war.
+  - Cockpit: Die Zeile „Zählerstände“ meldete ab dem zweiten Jahr jeden Zähler als vollständig, weil sie die
+    Ablesungen aller Jahre zählte. Sie prüft jetzt, ob Ablesungen den gewählten Zeitraum von Anfang bis Ende decken,
+    und nennt die Tage, die fehlen. Ein getauschter Zähler gilt bis zu seiner letzten Ablesung, ein Zähler in einer
+    erst im Zeitraum bezogenen Wohnung ab dem Einzug. Bei einem Wohnungszähler dürfen am Anfang und Ende zusammen bis
+    zu zwei Wochen fehlen (im kurzen Zeitraum entsprechend weniger); die Zeile bleibt dann grün und nennt diese Tage.
+    Wurde ein Zähler erst im Lauf des Zeitraums eingebaut, tragen Sie am Zähler das Datum unter „Eingebaut am“ ein;
+    das Feld gibt es jetzt bei jedem Zähler, und Mietfuchs erwartet Ablesungen dann erst ab diesem Tag.
+  - Eine Ablesung mit Datum in der Zukunft (etwa 2052 statt 2025) nennen Zähler-Seite, Cockpit und Abrechnung als
+    Warnung, statt den Verbrauch still nach Tagen herunterzurechnen; gerechnet wird weiter wie erfasst.
+  - Hat eine Wohnung einen Zähler, dem nur die Stände des Zeitraums fehlen, heißt der Hinweis nicht mehr „Wohnung ohne
+    Zähler“, sondern „Zähler im Zeitraum nicht abgelesen“ und führt zum Zähler. Die Zahlen bleiben dieselben.
+- Heizung, Hinweise der Abrechnung: Werden die Heizkosten ganz nach Wärmezählern verteilt, ohne Grundkosten nach Fläche,
+  weist die Abrechnung jetzt darauf hin, dass die Heizkostenverordnung höchstens 70 % nach Verbrauch vorsieht und ein
+  höherer Anteil nur mit einer Vereinbarung bleibt (§ 7 Abs. 1, § 10 HeizkostenV); enthält die Position auch das
+  Warmwasser, nennt der Hinweis, dass es abzutrennen ist. Er ist eine Auskunft und färbt das Cockpit nicht. Liegt der
+  Anteil nach Verbrauch neben Grundkosten über 70 %, nennt der bestehende Hinweis jetzt ebenfalls § 10. Die
+  Rechtsgrundlage einer offenen Abrechnung nennt § 10 damit auch bei der Regel zum Verbrauchsanteil; keine Zahl ändert
+  sich. Ist bei der eigenen Heizkostenabrechnung eine Erfassung gewählt, aber noch kein Gerät angelegt (etwa
+  Heizkostenverteiler), zeigt die Seite Heizkosten die Wohnungen nicht mehr als „abgelesen“, sondern nennt den fehlenden
+  Schritt, und der Hinweis „Kein Verbrauch erfasst“ sagt, dass die Geräte auf der Seite „Zähler & Stände“ anzulegen
+  sind. Kein Betrag ändert sich; abgeschlossene Abrechnungen bleiben, wie sie sind.
+- Eigene Heizkostenabrechnung: Der Ausweis lässt sich nachrechnen. Verbrauch, Fläche und umbauter Raum stehen so genau
+  da, wie gerechnet wird (35,4 MWh statt „35 MWh“, 72,5 m²), ganze Zahlen weiter ohne Nachkommastellen; der Preis je
+  Einheit bekommt so viele Stellen, dass Menge mal Preis den gedruckten Betrag bis auf Rundung von höchstens einem Cent
+  ergibt. Je Mieter stehen Grund- und Verbrauchskosten jetzt getrennt, die Grundkosten mit der Fläche der Wohnung und,
+  wer nur einen Teil der Heizperiode dort wohnte, mit seinem Anteil an Gradtagen oder Tagen; weil jede Kostenposition
+  für sich auf Cent verteilt wird, können sie von Fläche mal Preis um wenige Cent abweichen, höchstens um die Zahl der
+  verteilten Kostenpositionen plus einen Cent. Das betrifft nur die Darstellung des Rechenwegs: Kein Betrag der
+  Abrechnung ändert sich dadurch, auch nicht in abgeschlossenen Abrechnungen.
+- Eigene Heizkostenabrechnung: Der Block „Heizkostenabrechnung“ nennt je Mieter für Heizung und Warmwasser zusammen
+  jetzt den Betrag seiner Kostenzeilen. Bei mehreren Heizpositionen konnte er um einen Cent von der Kostentabelle
+  desselben Blatts abweichen. **Was sich nie ändert:** die Kostenzeilen, die Vorauszahlungen und die Salden; sie waren
+  und bleiben richtig. **Was sich in einer offenen Abrechnung um einen Cent ändern kann:** der Betrag je Mieter im
+  Block „Heizkostenabrechnung“ und der Betrag im Hinweis zur Kürzung nur auf den Anteil Warmwasser, der mit demselben
+  Betrag rechnet wie der Block. Abgeschlossene Abrechnungen bleiben, wie sie sind. Für eine Heizposition, die wegen
+  eines Fehlers nicht verteilt wird, gilt die Übereinstimmung von Block und Kostenzeilen nicht; den Fehler nennt die
+  Abrechnung wie bisher. Im JSON-Export der Abrechnung stehen dieselben
+  Beträge (`heatingCents`, `waterCents` je Nutzer unter `heating`); neu sind dort `heatingRows` und `waterRows` (aus wie
+  vielen verteilten Zeilen der Betrag summiert ist) und je Wohnung `noDevicePots` (wofür ein Gerät fehlt). Die Fassung
+  des Exports bleibt 1.
+- Getrennte Heizkostenabrechnung einschalten: Verlangt Mietfuchs nach „Speichern“ die Bestätigung zu einer abgelaufenen
+  Frist, bleiben die eingetragenen Heizanteile stehen. Vorher standen sie danach wieder auf der Vorbelegung, ohne
+  bekannten Anteil auf 0,00 €.
+- Eigene Heizkostenabrechnung und eigener Zeitraum der Heizung: Das Fenster „Heizkosten selbst abrechnen“ sagt vor dem
+  Speichern, dass ein abweichender Zeitraum der Heizung zuerst einzustellen ist. Wer die Reihenfolge schon anders
+  gewählt hat, stellt die Heizung auf „Niemand“ zurück, ändert den Zeitraum und richtet die eigene Abrechnung neu ein;
+  die Ablehnung nennt diesen Weg, und er war vorher versperrt, weil nach dem Zurückstellen eine Angabe der Einrichtung
+  stehen blieb.
 
 ## [0.18.1] – 2026-11-19
 

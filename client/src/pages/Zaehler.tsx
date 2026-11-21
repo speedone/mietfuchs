@@ -4,7 +4,7 @@ import Field from '../components/Field'
 import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
+import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, READING_STALE_FIELDS, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate, loadErrorText } from '../api'
@@ -28,7 +28,7 @@ import { hcaSummary, isCutoffReading, ratedText } from '../hcaForm'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 import { ifUnchanged, isStale, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
 
-const METER_STALE_FIELDS: StaleFields = { name: 'Name', unitId: 'Wohnung', type: 'Zählertyp', meterNumber: 'Zählernummer', unit: 'Einheit' }
+const METER_STALE_FIELDS: StaleFields = { name: 'Name', unitId: 'Wohnung', type: 'Zählertyp', meterNumber: 'Zählernummer', unit: 'Einheit', installedOn: 'Eingebaut am' }
 
 type Props = { units: Unit[] } & FocusProps
 
@@ -64,6 +64,17 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   // Die Ablesung, die das Fenster bearbeitet; `null` heißt: eine neue.
   const [editedReading, setEditedReading] = useState<Reading | null>(null)
+  // Ihr Stand beim Öffnen, als `ifUnchanged` beim Speichern (staleRecord.ts): Das Fenster schickt alle Angaben, ein
+  // zweites Fenster mit altem Stand schriebe sonst einen inzwischen berichtigten Zählerstand still zurück. Beim Öffnen
+  // gegen den Bestand abgeglichen wie der Zähler.
+  const seenReading = useSeenRecord(editedReading?.id, readings, {
+    load: () => api<Reading[]>(withProperty('/api/readings', propertyId)),
+    adopt: (now) => {
+      setEditedReading(now)
+      setReadingForm(readingToForm(now))
+      load().catch(() => { /* das Formular zeigt den Stand schon */ })
+    },
+  })
   // Das vorbelegte Datum einer neuen Ablesung, solange es unberührt ist; dann steht der Hinweis am Feld. Bloße Hilfe,
   // kein Teil von `value` des Fensters.
   const [prefilledDate, setPrefilledDate] = useState('')
@@ -193,10 +204,12 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     )
     if (question && !(await confirm(question))) return
     try {
-      if (editedReading) await api(`/api/readings/${editedReading.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+      if (editedReading) await api(`/api/readings/${editedReading.id}`, { method: 'PUT', body: JSON.stringify({ ...built.body, ...ifUnchanged(seenReading.current) }) })
       else await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
     } catch (e) {
-      readingError.show(errorText(e))
+      readingError.show(staleText(e, seenReading.current, READING_STALE_FIELDS) ?? errorText(e))
+      // Abgelehnt, weil der Stand älter ist: Die Liste lädt neu, damit das erneut geöffnete Fenster den von jetzt zeigt.
+      if (isStale(e)) load().catch(() => { /* die Meldung im Fenster steht schon */ })
       return
     }
     const editing = editedReading !== null
