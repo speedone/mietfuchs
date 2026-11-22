@@ -1,0 +1,1 @@
+ALTER TABLE `properties` ADD `total_area_m2` real;

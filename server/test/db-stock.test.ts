@@ -387,7 +387,9 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'depositForm', 'depositHoldCents', 'depositHoldNote',
   // Die Angaben zur Mieterhöhung (#191) kennt die db.json nicht; die Rundreise prüfen db-mieterhoehung.test.ts und
   // db-repository.test.ts.
-  'reason', 'indexMonth', 'indexTenths', 'indexBase', 'rentKind', 'rentIncreaseExcluded', 'rentCapReduced'])
+  'reason', 'indexMonth', 'indexTenths', 'indexBase', 'rentKind', 'rentIncreaseExcluded', 'rentCapReduced',
+  // Die Gesamtfläche des Objekts (gewerbliche Abrechnung) kennt die db.json nicht; die Rundreise prüft api-objekte.test.ts.
+  'totalAreaM2'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;

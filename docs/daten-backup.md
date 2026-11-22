@@ -136,14 +136,14 @@ bleibt immer gleich. Beträge sind Cent als ganze Zahlen, Datumsangaben `JJJJ-MM
 | Feld | Inhalt |
 | --- | --- |
 | `format`, `version` | Kennung und Fassung der Form. |
-| `property` | Objekt: `id`, `name`. |
+| `property` | Objekt: `id`, `name`, `totalAreaM2` (neu; die Gesamtfläche des Objekts in m², wie sie zur Zeit der Berechnung eingetragen war, bei einer abgeschlossenen Abrechnung eingefroren; `null` ohne Angabe). |
 | `period` | Abrechnungszeitraum: `key`, `from`, `to`, `short`, `label`. |
 | `deadline` | Ende der Abrechnungsfrist. |
 | `closed` | `null` bei einer offenen Abrechnung, sonst `closedAt` und `sentAt`. |
 | `draft`, `errors` | Eine offene Abrechnung mit Fehlern ist ein Entwurf; `errors` nennt sie mit `code` und `title`. |
 | `totalCostsCents` | Gesamtkosten des Zeitraums. |
 | `statements` | Je Mietverhältnis: `tenancyId`, `unitId`, `unitName`, `tenantName`, `persons`, `days`, `periodStart`, `periodEnd`, `rows`, `totalShareCents`, `total35aCents`, `prepaymentCents`, `balanceCents` (positiv ist ein Guthaben, negativ eine Nachzahlung), `prepaymentOverridden`, `suggestedMonthlyCents`, `heatingPrepaymentCents`, `prepaymentNote`, `scope`, `heatingOnly`, `recommendedDeadline`, `adjustment`. |
-| `rows` (je Zeile) | `costItemId`, `category`, `description`, `totalCents`, `kind`, `key`, `keyLabel`, `basisText`, `shareCents`, `labor35aCents`. |
+| `rows` (je Zeile) | `costItemId`, `category`, `description`, `totalCents`, `kind`, `key`, `keyLabel`, `basisText`, `shareCents`, `labor35aCents`, `centsPerM2` (neu; Betrag pro m² der Gesamtfläche des Objekts in Cent, auf zwei Nachkommastellen, also ein Verhältnis und kein Betrag; nur bei Schlüssel Fläche und eingetragener Gesamtfläche, sonst `null`, auch in den Zeilen des Vermieters). |
 | `landlord` | Anteil des Vermieters: `totalCents`, `rows`. |
 | `heating` | Die Angaben der Heizkostenabrechnung je Heizanlage (§ 6a HeizkostenV, CO₂, Vorrat, Lieferungen); leer ohne Heizanlage. Bei der eigenen Heizkostenabrechnung je Nutzer `heatingCents` und `waterCents` als Summe seiner verteilten Zeilen, dazu `heatingRows` und `waterRows` (Zahl dieser Zeilen; neu, ohne Verteilung fehlen sie) und je Wohnung `noDevicePots` (neu; nur, wenn für Heizung oder Warmwasser ein Gerät fehlt). |
 
@@ -163,6 +163,10 @@ der Gemeinschaft`. Die Spalte `Zeile` sagt, was die Zeile ist: `Position`, die A
 (etwa `CO₂-Anteil des Vermieters`), `Summe Ihrer Kosten`, `Geleistete Vorauszahlungen` und zuletzt
 `Nachzahlung`, `Guthaben` oder `Ausgeglichen`. Hinweise (Entwurf, Verweis auf das JSON bei
 Heizungsangaben) stehen am Ende nach einer Leerzeile.
+
+Ist am Objekt eine Gesamtfläche eingetragen, kommt hinten die Spalte `Betrag pro m² der Gesamtfläche`
+dazu: Euro je m² mit vier Nachkommastellen (etwa `0,8131`), nur in Zeilen mit Schlüssel Fläche, sonst
+leer. Ohne Gesamtfläche bleibt die Kopfzeile wie oben.
 
 ### Belege für die Steuer (Seite Belege, ZIP)
 

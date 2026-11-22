@@ -1,7 +1,8 @@
 import type { CostItem, FederalState, Property, PropertyKind } from './types'
 import { PROPERTY_KIND_LABELS } from './types'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from './ibanField'
-import { fmtDate } from './api'
+import { fmtArea, fmtDate } from './api'
+import { parseNumberDe } from './numbers'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import type { Problem } from './formProblems'
 import { isFederalState, localHolidaysOf, STATES, stateName } from '../../shared/holidays.ts'
@@ -34,6 +35,8 @@ export type PropertyForm = {
   state: FederalState | ''
   // Kappungsgrenzen-Verordnung nach § 558 Abs. 3 BGB (#191)
   rentCap: RentCapAnswer
+  // Gesamtfläche des Objekts in m² als Text der Eingabe, '' heißt nicht eingetragen.
+  totalArea: string
 } & TaxHeaderForm & {
   // Der gespeicherte Stand des Abschnitts „Für die Steuer (Anlage V)“ (#96 PR 2): Gesendet wird nur, was davon abweicht,
   // damit ein Speichern ohne Eingabe nichts Neues schickt (client/CLAUDE.md, „nur gesendet, was sich geändert hat“).
@@ -147,8 +150,18 @@ export function stateNote(state: FederalState | '', year: number): string | null
   return `In ${stateName(state)} gelten einige Feiertage nur in einzelnen Gemeinden: ${names}. Mietfuchs zählt sie bei Fristen nicht mit, im Mietkonto schon.`
 }
 
-export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state' | 'rentCapReduced'>
+export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state' | 'rentCapReduced' | 'totalAreaM2'>
   & Partial<Pick<Property, TaxHeaderField | 'spreadRestYear'>>
+
+// ---------- Gesamtfläche des Objekts (gewerbliche Abrechnung) ----------
+//
+// Die Fläche, die eine gewerbliche Abrechnung als „Gesamteinheiten“ nennt. Verteilt wird weiter über die Flächen der
+// Einheiten; weicht deren Summe ab, sagt es die Abrechnung (Hinweis `property.area-mismatch`). Dieselbe Obergrenze wie
+// `TOTAL_AREA_MAX_M2` im Server.
+export const TOTAL_AREA_LABEL = 'Gesamtfläche des Objekts (m²)'
+export const TOTAL_AREA_HINT = 'Freiwillig. Die Abrechnung nennt sie im Export als Gesamtfläche und rechnet daraus den Betrag pro m². Verteilt wird weiter über die Flächen der Einheiten.'
+const TOTAL_AREA_MAX_M2 = 10_000_000
+const areaText = (n: number | null | undefined): string => (n == null ? '' : String(n).replace('.', ','))
 
 // ---------- Vorzeitiges Ende der Verteilung (§ 82b Abs. 2 EStDV, #262 PR 4, Entwurf E-7) ----------
 //
@@ -212,6 +225,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   tightMarketTo: p.tightMarketTo ?? '',
   state: p.state ?? '',
   rentCap: p.rentCapReduced === true ? 'ja' : p.rentCapReduced === false ? 'nein' : 'unbekannt',
+  totalArea: areaText(p.totalAreaM2),
   ...taxHeaderOf(p),
   taxSaved: taxHeaderOf(p),
   spreadRestYear: p.spreadRestYear == null ? '' : String(p.spreadRestYear),
@@ -222,7 +236,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 // Voreinstellung (unbekannt, keine Abweichung), damit das neue Objekt rechnet wie eines, das man nie bearbeitet hat.
 export const EMPTY_PROPERTY_FORM: PropertyForm = {
   name: '', address: '', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '',
-  cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', rentCap: 'unbekannt',
+  cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', rentCap: 'unbekannt', totalArea: '',
   ...EMPTY_TAX_HEADER, taxSaved: EMPTY_TAX_HEADER, spreadRestYear: '', spreadRestSaved: '',
 }
 
@@ -235,7 +249,7 @@ export const EMPTY_PROPERTY_FORM: PropertyForm = {
 // Die IBAN wird geprüft (#279), aber nur eine neue oder geänderte: Eine gespeicherte ungültige
 // (`storedIban`) geht unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
 // Die Felder der Karte mit Meldung (#346, Schritt 3).
-export type PropertyField = 'name' | 'iban' | 'paymentDeadlineDays' | TaxHeaderField
+export type PropertyField = 'name' | 'iban' | 'paymentDeadlineDays' | 'totalArea' | TaxHeaderField
 // `problems` nennt alle Angaben auf einmal (#346, Schritt 3); `error`, `field` und `short` sind die erste davon.
 export type PropertyBodyError = { error: string; field?: PropertyField; short?: string; problems: Problem<PropertyField>[] }
 export function propertyBody(form: PropertyForm, storedIban: string | null = null): PropertyBody | PropertyBodyError {
@@ -249,6 +263,12 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
   const deadline = deadlineText === null ? null : Number(deadlineText)
   if (deadline !== null && (!Number.isInteger(deadline) || deadline < 0)) {
     problems.push({ text: 'Die Zahlungsfrist ist eine ganze Zahl von Tagen, 0 oder mehr.', field: 'paymentDeadlineDays', short: 'Ganze Zahl von Tagen' })
+  }
+  // Gesamtfläche: leer heißt nicht eingetragen, sonst eine Zahl über 0 (deutsche oder technische Schreibweise).
+  const areaInput = form.totalArea.trim()
+  const totalArea = areaInput === '' ? null : parseNumberDe(areaInput)
+  if (areaInput !== '' && (totalArea === null || !(totalArea > 0) || totalArea > TOTAL_AREA_MAX_M2)) {
+    problems.push({ text: `${TOTAL_AREA_LABEL}: Geben Sie die Fläche als Zahl über 0 ein, etwa 3334,81, oder lassen Sie das Feld leer.`, field: 'totalArea', short: 'Keine Fläche' })
   }
   // Die Geltung der Verordnung nur bei „ja“ (Abweichung 4 des Plans zu Heizung PR 18).
   const yes = form.tightMarket === 'ja'
@@ -293,6 +313,7 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
     tightMarketTo: tightTo,
     state: form.state === '' ? null : form.state,
     rentCapReduced: form.rentCap === 'ja' ? true : form.rentCap === 'nein' ? false : null,
+    totalAreaM2: totalArea,
     ...header,
     ...(form.spreadRestYear !== form.spreadRestSaved ? { spreadRestYear: form.spreadRestYear === '' ? null : Number(form.spreadRestYear) } : {}),
   }
@@ -315,6 +336,7 @@ export function propertySummary(p: Property): { label: string; value: string }[]
     { label: 'Angespannter Wohnungsmarkt', value: tight === 'ja' && span ? `ja, Verordnung ${span}` : tight },
     { label: 'Kappungsgrenzen-Verordnung', value: rentCapSummary(p.rentCapReduced) },
   ]
+  if (p.totalAreaM2 != null) rows.push({ label: 'Gesamtfläche des Objekts', value: fmtArea(p.totalAreaM2) })
   // Kopf der Anlage V (#96 PR 2), nur wenn etwas eingetragen ist.
   if (hasTaxHeader(p)) {
     const parts = [

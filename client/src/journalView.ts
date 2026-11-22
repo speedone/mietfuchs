@@ -146,6 +146,7 @@ const FIELD_LABELS: Record<string, string> = {
   rent_kind: 'Art der Miete',
   rent_increase_excluded: 'Vertrag schließt Mieterhöhungen aus',
   rent_cap_reduced: 'Kappungsgrenzen-Verordnung',
+  total_area_m2: 'Gesamtfläche des Objekts',
   index_month: 'Indexmonat',
   index_tenths: 'Indexwert',
   index_base: 'Basisjahr des Index',

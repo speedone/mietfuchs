@@ -82,6 +82,10 @@ export type Property = {
   // nein (20 %), `null` oder fehlend unbekannt; die Rechnung nimmt dann sicher 15 % (Entwurf R12). Getrennt von
   // `tightMarket`, denn das ist eine andere Verordnung. Mietkonto, Abrechnung und Steuer lesen es nie.
   rentCapReduced?: boolean | null
+  // Die Gesamtfläche des Objekts in m², wie sie eine gewerbliche Abrechnung als „Gesamteinheiten“ nennt. Fehlend oder `null`
+  // heißt nicht eingetragen; dann bleibt alles wie bisher. Verteilt wird weiter über die Flächen der Einheiten; weicht deren
+  // Summe ab, sagt es ein Hinweis (`property.area-mismatch`). Die Abrechnung friert sie als `Settlement.objectAreaM2` ein.
+  totalAreaM2?: number | null
 }
 
 export type Unit = {
@@ -1496,6 +1500,9 @@ export type Settlement = {
   // Entwurf 5.7, 9.5). Optional, weil eine vorher abgeschlossene Abrechnung es nicht kennt und eine
   // Abrechnung ohne Heizanlage es nicht hat.
   heating?: HeatingStatement[]
+  // Die Gesamtfläche des Objekts (`Property.totalAreaM2`) zur Zeit der Berechnung, für „Betrag pro m²“ im Export. Fehlt
+  // ohne Angabe am Objekt und bei einer vorher abgeschlossenen Abrechnung; mit dem Abschluss friert sie ein.
+  objectAreaM2?: number
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
   // Nur bei einer abgeschlossenen Abrechnung (#56): Was die heutige Berechnung je Mieter anders

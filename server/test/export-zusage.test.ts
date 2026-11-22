@@ -147,6 +147,9 @@ test('CSV-Export der Abrechnung: Kopfzeile wortgleich, mit und ohne Kosten der G
   const external = { ...statement, rows: statement.rows.map((r) => ({ ...r, key: 'external' as const })) }
   assert.equal(firstLine(settlementExportCsv({ ...settlement, statements: [external] })),
     'Mieter;Wohnung;Zeitraum von;Zeitraum bis;Zeile;Kostenart;Beschreibung;Gesamtkosten bzw. Anteil an der Gemeinschaft;Schlüssel;Basis;Anteil;davon Lohnanteil § 35a', CHANGED)
+  // Mit Gesamtfläche am Objekt die Spalte „Betrag pro m² der Gesamtfläche“ hinten.
+  assert.equal(firstLine(settlementExportCsv({ ...settlement, objectAreaM2: 1000 })),
+    'Mieter;Wohnung;Zeitraum von;Zeitraum bis;Zeile;Kostenart;Beschreibung;Gesamtkosten;Schlüssel;Basis;Anteil;davon Lohnanteil § 35a;Betrag pro m² der Gesamtfläche', CHANGED)
 })
 
 test('CSV-Export der Abrechnung: die Werte der Spalte „Zeile“ für Positionen, Summen und Ergebnis', () => {
@@ -198,7 +201,7 @@ test('docs/daten-backup.md nennt die Fassung des JSON-Exports, sein Beispiel, se
   need(`\`${firstLine(settlementExportCsv(settlement))}\``)
   need(`\`${firstLine(planTaxArchive([], new Map()).overviewCsv)}\``)
   need(`\`${firstLine(incomeCsv(noIncome))}\``)
-  for (const column of ['Gesamtkosten bzw. Anteil an\nder Gemeinschaft', 'unentgeltlich § 21 Abs. 2 EStG (EUR)', 'verteilt § 82b EStDV (EUR)']) need(`\`${column}\``)
+  for (const column of ['Gesamtkosten bzw. Anteil an\nder Gemeinschaft', 'Betrag pro m² der Gesamtfläche', 'unentgeltlich § 21 Abs. 2 EStG (EUR)', 'verteilt § 82b EStDV (EUR)']) need(`\`${column}\``)
   // Die Felder der obersten Ebene, je Mieter und je Zeile, wie die Tabelle sie nennt.
   const json = settlementExportJson(settlement, { id: 'p', name: 'H' })
   const first = json.statements[0] ?? assert.fail('keine Abrechnung')

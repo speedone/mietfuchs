@@ -659,7 +659,8 @@ function fuelSnapshotOf(
 // ist er unbekannt.
 // `state` (#334): das Land des Objekts, für den Fälligkeitstag der Miete und den Rückstand im Mietkonto; fehlt es, rechnet
 // das Mietkonto mit dem spätesten Tag aller Länder.
-export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'> & Partial<Pick<Property, 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>>
+// `totalAreaM2`: die Gesamtfläche des Objekts, nur für den Hinweis `property.area-mismatch` und `objectAreaM2`; verteilt wird nie danach.
+export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'> & Partial<Pick<Property, 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state' | 'totalAreaM2'>>
 
 // Die Sammlungen, aus denen ein Schnappschuss entsteht, ohne die Frage, woher sie kommen. Die
 // JSON-Datei füllt sie über `snapshotFromDb` unten, die Datenbank über `snapshotFromStock` in
@@ -1110,7 +1111,7 @@ export function snapshotFor(
   return {
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
-    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null, state: found.state ?? null } : null,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null, state: found.state ?? null, ...(found.totalAreaM2 != null ? { totalAreaM2: found.totalAreaM2 } : {}) } : null,
     // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier.
     heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => plants.some((p) => p.id === c.plantId)),
@@ -1156,7 +1157,7 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
   return {
     ...snapshotOfPeriod({ ...narrowed, costItems: mine, closedSettlements: [] }, h, previousPeriod(rules, h)),
     propertyId,
-    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null, state: found.state ?? null } : null,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null, state: found.state ?? null, ...(found.totalAreaM2 != null ? { totalAreaM2: found.totalAreaM2 } : {}) } : null,
     heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => c.plantId === plantId),
     heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => r.plantId === plantId || line.has(r.plantId)),

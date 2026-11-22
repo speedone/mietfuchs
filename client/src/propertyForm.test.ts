@@ -5,7 +5,7 @@ import { periodKey } from '../../shared/period.ts'
 import { EMPTY_PROPERTY_FORM, fileNumberDigits, SPREAD_REST_LABEL, showsSpreadRest, spreadRestChange, spreadRestOptions, hasTaxHeader, headerDateText, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
-  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', rentCap: 'unbekannt',
+  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', rentCap: 'unbekannt', totalArea: '',
   groundTaxFileNumber: '', purchaseContractOn: '', ownershipTransferOn: '', buildingApplicationOn: '', completedOn: '', taxSaved: EMPTY_PROPERTY_FORM.taxSaved, spreadRestYear: '', spreadRestSaved: '', ...over,
 })
 
@@ -18,7 +18,7 @@ test('mit Haken gilt nur, was eingetragen ist; ein leeres Feld heißt Vorgabe', 
   // Wer den Haken setzt, um nur eine andere IBAN einzutragen, soll den Vermieternamen auf der
   // Abrechnung nicht verlieren.
   expect(propertyBody(form({ own: true, iban: ' DE89 3704 0044 0532 0130 00 ' })))
-    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, landlordAddress: null, landlordContact: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null, rentCapReduced: null })
+    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, landlordAddress: null, landlordContact: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null, rentCapReduced: null, totalAreaM2: null })
 })
 
 test('eine Frist, die keine ganze Zahl ab 0 ist, wird abgelehnt', () => {
@@ -149,7 +149,7 @@ test('neues Objekt: ohne Bezeichnung nichts, sonst jede weitere Angabe auf ihrer
   expect(propertyBody({ ...EMPTY_PROPERTY_FORM, name: ' Gartenweg 3 ', kind: 'etw', address: ' Gartenweg 3, 12345 Musterstadt ' })).toEqual({
     name: 'Gartenweg 3', address: 'Gartenweg 3, 12345 Musterstadt', kind: 'etw',
     landlordName: null, iban: null, paymentDeadlineDays: null, landlordAddress: null, landlordContact: null,
-    cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null, rentCapReduced: null,
+    cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null, rentCapReduced: null, totalAreaM2: null,
   })
 })
 
@@ -246,4 +246,22 @@ test('Kappungsgrenzen-Verordnung (#191): ja, nein und weiß nicht gehen als true
   expect(EMPTY_PROPERTY_FORM.rentCap).toBe('unbekannt')
   expect(propertySummary({ ...p, rentCapReduced: true })).toContainEqual({ label: 'Kappungsgrenzen-Verordnung', value: 'ja (15 %)' })
   expect(propertySummary(p)).toContainEqual({ label: 'Kappungsgrenzen-Verordnung', value: 'weiß nicht (Mietfuchs rechnet mit 15 %)' })
+})
+
+test('Gesamtfläche des Objekts: leer heißt null, deutsche und technische Schreibweise, Ungültiges am Feld gemeldet', () => {
+  expect(propertyBody(form({ totalArea: '' }))).toMatchObject({ totalAreaM2: null })
+  expect(propertyBody(form({ totalArea: ' 3334,81 ' }))).toMatchObject({ totalAreaM2: 3334.81 })
+  expect(propertyBody(form({ totalArea: '3.334,81' }))).toMatchObject({ totalAreaM2: 3334.81 })
+  expect(propertyBody(form({ totalArea: '3334.81' }))).toMatchObject({ totalAreaM2: 3334.81 })
+  for (const falsch of ['0', '-5', 'viel', '20000000']) {
+    const r = propertyBody(form({ totalArea: falsch }))
+    if (!('error' in r)) return expect.fail(`${falsch} darf nicht durchgehen`)
+    expect(r.problems.map((p) => p.field)).toEqual(['totalArea'])
+  }
+  const p = { id: 'o', name: 'Haus', kind: 'mfh' as const, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }
+  expect(propertyToForm({ ...p, totalAreaM2: 3334.81 }).totalArea).toBe('3334,81')
+  expect(propertyToForm(p).totalArea).toBe('')
+  expect(EMPTY_PROPERTY_FORM.totalArea).toBe('')
+  expect(propertySummary({ ...p, totalAreaM2: 3334.81 })).toContainEqual({ label: 'Gesamtfläche des Objekts', value: '3.334,81 m²' })
+  expect(propertySummary(p).some((r) => r.label === 'Gesamtfläche des Objekts')).toBe(false)
 })

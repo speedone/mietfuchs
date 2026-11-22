@@ -736,6 +736,20 @@
       "when": 1795162744026,
       "tag": "0104_mieterhoehung_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "6",
+      "when": 1795348337580,
+      "tag": "0105_objektflaeche",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "6",
+      "when": 1795348343833,
+      "tag": "0106_objektflaeche_bedingung",
+      "breakpoints": true
     }
   ]
 }

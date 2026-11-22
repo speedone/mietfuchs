@@ -1,6 +1,6 @@
 import type { PropertyKind } from '../types'
 import { PROPERTY_KIND_LABELS } from '../types'
-import { CABLE_LABELS, GROUND_TAX_FILE_NUMBER_MAX, showsSpreadRest, TAX_HEADER_FIELDS, TAX_HEADER_LABELS, type CableAnswer, type PropertyField, type PropertyForm, type SpreadRestItem } from '../propertyForm'
+import { CABLE_LABELS, GROUND_TAX_FILE_NUMBER_MAX, showsSpreadRest, TAX_HEADER_FIELDS, TAX_HEADER_LABELS, TOTAL_AREA_HINT, TOTAL_AREA_LABEL, type CableAnswer, type PropertyField, type PropertyForm, type SpreadRestItem } from '../propertyForm'
 import SpreadRestField from './SpreadRestField'
 import Term from './Term'
 import TightMarketField from './TightMarketField'
@@ -55,6 +55,10 @@ export default function PropertyFields({ form, setForm, errors, storedIban, spre
         <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
         {/* #191: Kappungsgrenze nach § 558 Abs. 3 BGB für die Mieterhöhung. */}
         <RentCapField value={form.rentCap} onChange={(rentCap) => setForm({ ...form, rentCap })} />
+        {/* Gewerbliche Abrechnung: die Fläche, die sie als „Gesamteinheiten“ nennt; verteilt wird weiter über die Einheiten. */}
+        <Field label={TOTAL_AREA_LABEL} hint={TOTAL_AREA_HINT} {...errors.field('totalArea')}>
+          <input inputMode="decimal" value={form.totalArea} onChange={(e) => setForm({ ...form, totalArea: e.target.value })} placeholder="z. B. 3334,81" />
+        </Field>
       </div>
       {/* #96 PR 2 (Entwurf B3): Kopf der Anlage V, zugeklappt, solange nichts eingetragen ist. */}
       <details className="extra-details" open={part === 'tax' || TAX_HEADER_FIELDS.some((f) => form.taxSaved[f] !== '') || form.spreadRestSaved !== ''} data-autofocus={part === 'tax' || undefined}>

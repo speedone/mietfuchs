@@ -8,6 +8,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Gesamtfläche des Objekts: Am Objekt lässt sich die Gesamtfläche in m² eintragen, wie sie eine gewerbliche
+  Abrechnung als „Gesamteinheiten“ nennt (freiwillig, Schritte 0105/0106). Der Export der Abrechnung nennt sie
+  (JSON `property.totalAreaM2`, eingefroren mit dem Abschluss) und je Zeile mit Schlüssel Fläche den Betrag pro m²
+  (JSON `centsPerM2`, CSV hinten die Spalte „Betrag pro m² der Gesamtfläche“, nur mit eingetragener Fläche).
+  Verteilt wird weiter über die Flächen der Einheiten; weicht deren Summe ab, nennt die Abrechnung beide Zahlen
+  (Hinweis „Gesamtfläche des Objekts weicht ab“). Ohne Angabe ändert sich nichts.
 - Erste Schritte: Die neue Anleitung „Die erste Abrechnung von Anfang bis Ende“ führt von den Einstellungen über
   Objekt, Wohnungen, Mietverhältnisse, Zähler und Kosten bis zu Abschluss, Druck, Versanddatum und Backup; das leere
   Cockpit verlinkt sie, und „Hilfe & Begriffe“ schlägt sie im leeren Bestand vor. Die Checkliste des Cockpits beginnt

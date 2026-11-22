@@ -233,6 +233,9 @@ export const properties = sqliteTable(
     // Kappungsgrenzen-Verordnung nach § 558 Abs. 3 Satz 2, 3 BGB (#191): ja (15 %), nein (20 %), NULL unbekannt (rechnet mit
     // 15 %). Getrennt von `tight_market`. Bedingung im zweiten Schritt.
     rentCapReduced: integer('rent_cap_reduced', { mode: 'boolean' }),
+    // Gesamtfläche des Objekts in m² (gewerbliche Abrechnung, „Gesamteinheiten“); NULL heißt nicht eingetragen. Verteilt
+    // wird weiter über die Einheiten. Bedingung im zweiten Schritt.
+    totalAreaM2: real('total_area_m2'),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
@@ -258,6 +261,8 @@ export const properties = sqliteTable(
     isoDate('properties_completed_on_valid', 'completed_on'),
     // § 82b Abs. 2 EStDV (#262): ein Jahr, das es geben kann, wie `cost_items_tax_year_valid`.
     check('properties_spread_rest_year_valid', sql.raw('"spread_rest_year" IS NULL OR "spread_rest_year" BETWEEN 1900 AND 2200')),
+    // Gesamtfläche des Objekts: leer oder über 0 (Schritt 0106, getrennt von der Spalte wie 0103/0104).
+    check('properties_total_area_positive', sql.raw('"total_area_m2" IS NULL OR "total_area_m2" > 0')),
   ],
 )
 

@@ -155,6 +155,8 @@ export async function readProperties(db: Executor): Promise<Property[]> {
     spreadRestYear: p.spreadRestYear,
     // Kappungsgrenzen-Verordnung (#191): nur mit Angabe, damit ein Objekt ohne sich liest wie vorher.
     ...(p.rentCapReduced !== null ? { rentCapReduced: p.rentCapReduced } : {}),
+    // Gesamtfläche des Objekts: nur mit Angabe, damit ein Objekt ohne sich liest wie vorher.
+    ...(p.totalAreaM2 !== null ? { totalAreaM2: p.totalAreaM2 } : {}),
     // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
     periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))

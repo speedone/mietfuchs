@@ -3,7 +3,8 @@
   "version": 1,
   "property": {
     "id": "objekt-1",
-    "name": "Beispiel A"
+    "name": "Beispiel A",
+    "totalAreaM2": null
   },
   "period": {
     "key": "2025-01",
@@ -38,7 +39,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
           "shareCents": 176850,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "strom",
@@ -50,7 +52,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
           "shareCents": 5306,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wartung",
@@ -62,7 +65,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
           "shareCents": 7074,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "imm",
@@ -74,7 +78,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 29,475 %",
           "shareCents": 1769,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wz",
@@ -86,7 +91,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung 30 %",
           "shareCents": 3600,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wwz",
@@ -98,7 +104,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Warmwasser 26,5 %",
           "shareCents": 1590,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "co2:hp:2025-01",
@@ -110,7 +117,8 @@
           "keyLabel": "CO₂-Kostenaufteilung",
           "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
           "shareCents": -16761,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         }
       ],
       "totalShareCents": 179428,
@@ -146,7 +154,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
           "shareCents": 235800,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "strom",
@@ -158,7 +167,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
           "shareCents": 7074,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wartung",
@@ -170,7 +180,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
           "shareCents": 9432,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "imm",
@@ -182,7 +193,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 39,3 %",
           "shareCents": 2358,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wz",
@@ -194,7 +206,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung 40 %",
           "shareCents": 4800,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wwz",
@@ -206,7 +219,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Warmwasser 35,333333 %",
           "shareCents": 2120,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "co2:hp:2025-01",
@@ -218,7 +232,8 @@
           "keyLabel": "CO₂-Kostenaufteilung",
           "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
           "shareCents": -22348,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         }
       ],
       "totalShareCents": 239236,
@@ -254,7 +269,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
           "shareCents": 119644,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "strom",
@@ -266,7 +282,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
           "shareCents": 3589,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wartung",
@@ -278,7 +295,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
           "shareCents": 4786,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "imm",
@@ -290,7 +308,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 19,940726 %",
           "shareCents": 1196,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wz",
@@ -302,7 +321,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung 18,36 %",
           "shareCents": 2203,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wwz",
@@ -314,7 +334,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Warmwasser 28,898174 %",
           "shareCents": 1734,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "co2:hp:2025-01",
@@ -326,7 +347,8 @@
           "keyLabel": "CO₂-Kostenaufteilung",
           "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
           "shareCents": -11340,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         }
       ],
       "totalShareCents": 121812,
@@ -362,7 +384,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
           "shareCents": 67706,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "strom",
@@ -374,7 +397,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
           "shareCents": 2031,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wartung",
@@ -386,7 +410,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
           "shareCents": 2708,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "imm",
@@ -398,7 +423,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung und Warmwasser 11,284274 %",
           "shareCents": 677,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wz",
@@ -410,7 +436,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Heizung 11,64 %",
           "shareCents": 1397,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "wwz",
@@ -422,7 +449,8 @@
           "keyLabel": "Nach Heizkostenverordnung",
           "basisText": "nach Heizkostenverordnung, Warmwasser 9,268493 %",
           "shareCents": 556,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         },
         {
           "costItemId": "co2:hp:2025-01",
@@ -434,7 +462,8 @@
           "keyLabel": "CO₂-Kostenaufteilung",
           "basisText": "nach Ihrem Anteil an den Brennstoffkosten",
           "shareCents": -6417,
-          "labor35aCents": 0
+          "labor35aCents": 0,
+          "centsPerM2": null
         }
       ],
       "totalShareCents": 68658,
@@ -464,7 +493,8 @@
         "keyLabel": "CO₂-Kostenaufteilung",
         "basisText": null,
         "shareCents": 56866,
-        "labor35aCents": null
+        "labor35aCents": null,
+        "centsPerM2": null
       }
     ]
   },

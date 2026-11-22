@@ -312,6 +312,7 @@ const noticeKinds = {
   'basis.vacancy-no-area': { level: 'hint', title: 'Leere Einheit ohne Fläche', terms: ['vacancy', 'personDays'] },
   // Zimmer einer Wohnung (#573): Ohne Fläche der Wohnung gelten die Zimmerflächen, wie sie stehen. Fehlen darin Küche,
   // Bad und Flur, tragen die übrigen Mieter im Haus zu viel; das Geld landet vermutlich anders als gewollt.
+  'property.area-mismatch': { level: 'hint', title: 'Gesamtfläche des Objekts weicht ab', terms: ['distributionBasis'] },
   'unit.rooms-area': { level: 'warning', title: 'Wohnfläche der Wohnung mit Zimmern fehlt', terms: ['roomOfFlat', 'distributionBasis'] },
   // Ein Zimmer außerhalb der Verteilbasis einer Position: Sein Teil bleibt beim Vermieter, obwohl vielleicht ein Mieter
   // ihn tragen sollte; das Geld landet vermutlich anders als gewollt.
@@ -3498,6 +3499,10 @@ export type AllocationTrace = {
   lines: { recipient: string, landlord: boolean, exact: number, cents: number, laborExact: number, laborCents: number }[]
 }
 
+// Ab wie viel Unterschied die Gesamtfläche des Objekts als abweichend gilt (`property.area-mismatch`): ein Hundertstel m²,
+// darunter ist es Rundung der Eingabe.
+const AREA_MISMATCH_M2 = 0.01
+
 function fmtNum(n: number): string {
   return NF_MAX2.format(n)
 }
@@ -5963,6 +5968,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         : `${names} haben 0 m² und keine Bewohner und werden beim Personenschlüssel nicht als Leerstand angesetzt. Ist eine davon eine Wohnung, tragen Sie dort die Wohnfläche ein.`,
       unitSubject(noArea))
     }
+  }
+
+  // Gesamtfläche des Objekts (gewerbliche Abrechnung): Verteilt wird immer über die Flächen der Einheiten. Weicht ihre
+  // Summe in der Abrechnungseinheit von der eingetragenen Gesamtfläche ab, teilen „Betrag pro m²“ laut Objekt und Anteil
+  // laut Abrechnung nicht dasselbe; das sagt der Hinweis mit beiden Zahlen. Ohne Angabe am Objekt nichts.
+  const objectArea = snapshot.property?.totalAreaM2 ?? null
+  if (objectArea !== null && Math.abs(objectArea - basisArea) >= AREA_MISMATCH_M2) {
+    warn('property.area-mismatch',
+      `Am Objekt ist eine Gesamtfläche von ${fmtNum(objectArea)} m² eingetragen, die Einheiten der Abrechnung haben zusammen ${fmtNum(basisArea)} m². ` +
+        `Verteilt wird nach Fläche über die ${fmtNum(basisArea)} m² der Einheiten. Soll die Abrechnung über ${fmtNum(objectArea)} m² teilen, legen Sie die fehlende Fläche als Einheit an (ohne Mietverhältnis trägt sie der Vermieter als Leerstand) oder berichtigen Sie die Gesamtfläche.`)
   }
 
   // Die Verteilbasis einer Position (#94). **Ohne Teilnehmer ist sie genau die bisherige**, und
@@ -10855,6 +10870,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // (der Rest sind Leerstand, nicht umlagefähige Positionen und Rundungsdifferenzen).
     selfUsedShareCents,
     totalCostsCents,
+    // Die Gesamtfläche des Objekts für „Betrag pro m²“ im Export; ohne Angabe fehlt das Feld, und die Abrechnung bleibt wortgleich.
+    ...(objectArea !== null ? { objectAreaM2: objectArea } : {}),
     notices,
     warnings: notices.map((n) => n.text),
     // Der Rechtsstand (#112): Datum des Rechtsregisters, die Regeln des Jahres und die Rechtswerte,

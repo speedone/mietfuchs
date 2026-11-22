@@ -318,6 +318,36 @@ test('Bundesland am Objekt: gespeichert, als Teilrumpf ergänzt, leer heißt unb
   }
 })
 
+test('Gesamtfläche des Objekts: gespeichert, als Teilrumpf ergänzt, mit null geleert, Ungültiges 400, im Backup erhalten', async () => {
+  const s = await startServer()
+  try {
+    const [objekt] = await s.api<Property[]>('/api/properties')
+    assert.ok(objekt && !('totalAreaM2' in objekt), 'ein frisches Objekt hat keine Gesamtfläche')
+    const route = `${s.base}/api/properties/${objekt.id}`
+    const put = (body: unknown) => fetch(route, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    assert.equal((await jsonOf<Property>(await put({ totalAreaM2: 3334.81 }))).totalAreaM2, 3334.81)
+    assert.equal((await jsonOf<Property>(await put({ name: 'Gaglower Str.' }))).totalAreaM2, 3334.81, 'ein Teilrumpf lässt sie stehen')
+    for (const falsch of [0, -1, '3334,81', true, 20_000_000]) {
+      const r = await put({ totalAreaM2: falsch })
+      assert.equal(r.status, 400, String(falsch))
+      assert.match(await errorFrom(r), /Gesamtfläche des Objekts ist eine Zahl in m² über 0/)
+    }
+    assert.equal((await s.api<Property[]>('/api/properties'))[0]?.totalAreaM2, 3334.81, 'nach einer Ablehnung bleibt die alte')
+    // Backup und Wiederherstellen nehmen sie mit.
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    assert.ok(!('totalAreaM2' in (await jsonOf<Property>(await put({ totalAreaM2: null })))), 'mit null geleert')
+    const back = await restore(s, backup)
+    assert.equal(back.status, 200, JSON.stringify(back.body))
+    assert.equal((await s.api<Property[]>('/api/properties'))[0]?.totalAreaM2, 3334.81)
+    // Die Abrechnung nennt sie und meldet, dass die Einheiten (keine) davon abweichen.
+    const settlement = await s.api<Settlement>('/api/settlement/2025')
+    assert.equal(settlement.objectAreaM2, 3334.81)
+    assert.ok(settlement.notices?.some((n) => n.code === 'property.area-mismatch'))
+  } finally {
+    s.stop()
+  }
+})
+
 // #96 PR 2 (Entwurf 2026-10-30-steuer-objekt-ruecklage-design.md, B2): Kopf der Anlage V am Objekt und „an Angehörige
 // vermietet“ am Mietverhältnis, über die Routen, im Backup erhalten, aus einem älteren Backup leer.
 test('Kopf der Anlage V (#96): Aktenzeichen und Daten am Objekt hin und zurück, als Teilrumpf ergänzt, mit null geleert, Ungültiges 400', async () => {

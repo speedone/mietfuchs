@@ -27,7 +27,8 @@ test('JSON: Version, Cent als ganze Zahlen, alle gedruckten Zahlen', () => {
   const json = settlementExportJson(settlement, { id: 'p1', name: 'Lindenweg 12' })
   assert.equal(json.format, 'mietfuchs-abrechnung')
   assert.equal(json.version, 1)
-  assert.deepEqual(json.property, { id: 'p1', name: 'Lindenweg 12' })
+  // Ohne Gesamtfläche am Objekt steht sie als null da (neues Feld, die Fassung bleibt).
+  assert.deepEqual(json.property, { id: 'p1', name: 'Lindenweg 12', totalAreaM2: null })
   assert.equal(json.period.label, '2025')
   assert.equal(json.totalCostsCents, 59000)
   const st = json.statements[0] ?? assert.fail('keine Abrechnung')

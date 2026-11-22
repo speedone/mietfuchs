@@ -2708,6 +2708,8 @@ function mergeProperty(current: Property, body: unknown): Property {
     spreadRestYear: merged(body, 'spreadRestYear', current.spreadRestYear ?? null, readSpreadRestYear),
     // Kappungsgrenzen-Verordnung (#191): ja, nein oder `null` (weiß nicht); ein anderer Wert ist ein Satz.
     rentCapReduced: merged(body, 'rentCapReduced', current.rentCapReduced ?? null, rentCapReducedOf),
+    // Gesamtfläche des Objekts (gewerbliche Abrechnung); leer heißt nicht eingetragen, sonst eine Zahl über 0.
+    totalAreaM2: merged(body, 'totalAreaM2', current.totalAreaM2 ?? null, totalAreaOf),
   }
   // Die Geltung gehört nur zu „ja“; „nein“ und „unbekannt“ nehmen sie mit (Bedingung
   // properties_tight_market_dates_valid).
@@ -2719,6 +2721,15 @@ function mergeProperty(current: Property, body: unknown): Property {
     throw new HeatingError(400, 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.')
   }
   return next
+}
+
+// Dieselbe Obergrenze wie im Formular (client/src/propertyForm.ts): Schutz gegen versehentlich Eingefügtes, kein Recht.
+export const TOTAL_AREA_MAX_M2 = 10_000_000
+export const TOTAL_AREA_TEXT = 'Die Gesamtfläche des Objekts ist eine Zahl in m² über 0, etwa 3334,81. Leer heißt nicht eingetragen.'
+function totalAreaOf(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > TOTAL_AREA_MAX_M2) throw new HeatingError(400, TOTAL_AREA_TEXT)
+  return v
 }
 
 function rentCapReducedOf(v: unknown): boolean | null {
