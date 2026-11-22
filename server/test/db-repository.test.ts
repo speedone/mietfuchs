@@ -514,6 +514,9 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         // Die Quelle (#455) kommt bewusst nie aus dem Rumpf, nur von den Schreibwegen der Teile; das und ihre Rundreise
         // prüft db-quelle.test.ts („Ein Rumpf setzt keine Quelle“).
         if (coll === 'costItems' && spalte === 'sourceId') continue
+        // Die eigene Kostenart verlangt eine Kostenart desselben Objekts und Zeitraums (`guardCostType`); ihre Rundreise
+        // prüft api-kostenarten.test.ts.
+        if (coll === 'costItems' && spalte === 'costTypeId') continue
         assert.ok(
           proben.some((p) => p.coll === coll && Object.hasOwn(p.body, spalte)),
           `${coll}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,

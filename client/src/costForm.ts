@@ -1,7 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird - sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, PropertyKind, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, CostType, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, PropertyKind, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
@@ -35,6 +35,8 @@ export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPosi
 export type ItemForm = {
   id?: string
   category: string
+  // Die eigene Kostenart (gewerbliche Abrechnung), '' heißt keine; dann ist `category` ihre Grundart.
+  costTypeId: string
   description: string
   vendor: string
   amount: string
@@ -97,6 +99,7 @@ export type ItemForm = {
 
 export const EMPTY_ITEM_FORM: ItemForm = {
   category: CATEGORIES[0],
+  costTypeId: '',
   description: '',
   vendor: '',
   amount: '',
@@ -136,6 +139,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
 // Formulars; der Betrag mit dem Wert von jetzt, weil an ihm die Abrechnung hängt. Alles Übrige heißt „weitere Angaben“.
 export const COST_STALE_FIELDS: StaleFields = {
   category: 'Kostenart',
+  costTypeId: 'Eigene Kostenart',
   description: 'Beschreibung',
   vendor: 'Rechnungssteller',
   amountCents: { label: 'Betrag', now: (v) => (typeof v === 'number' ? fmtEuro(v) : null) },
@@ -148,6 +152,7 @@ export function itemToForm(i: CostItem): ItemForm {
   return {
     id: i.id,
     category: i.category,
+    costTypeId: i.costTypeId ?? '',
     description: i.description,
     vendor: i.vendor ?? '',
     amount: (i.amountCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
@@ -621,6 +626,7 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
   }
   return {
     category: form.category,
+    costTypeId: form.costTypeId || null,
     description: form.description,
     vendor: form.vendor,
     invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
@@ -1301,4 +1307,29 @@ export function namedRecipients(form: Pick<ItemForm, 'directUnitId' | 'participa
     ...(form.meterRest?.unitIds ?? []),
     ...groups,
   ])]
+}
+
+// ---------- Eigene Kostenarten (gewerbliche Abrechnung) ----------
+//
+// Die Auswahl „Kostenart“ bietet die eigenen Kostenarten des Zeitraums und die Kostenarten von Mietfuchs an. Ein Wert
+// der Auswahl ist eine Kostenart von Mietfuchs oder `typ:<Kennung>`. **Der angezeigte Wert entspricht dem gespeicherten**:
+// Eine gespeicherte eigene Kostenart, die nicht in der Liste steht (gelöscht, anderer Zeitraum), steht trotzdem darin.
+export const TYPE_PREFIX = 'typ:'
+export type CategoryChoices = { own: { value: string; label: string }[]; base: readonly string[] }
+export const categoryValue = (form: Pick<ItemForm, 'category' | 'costTypeId'>): string => (form.costTypeId ? `${TYPE_PREFIX}${form.costTypeId}` : form.category)
+export function categoryChoices(types: readonly Pick<CostType, 'id' | 'name' | 'baseCategory'>[], form: Pick<ItemForm, 'costTypeId'>): CategoryChoices {
+  const own = types.map((t) => ({ value: `${TYPE_PREFIX}${t.id}`, label: `${t.name} (${t.baseCategory})` }))
+  if (form.costTypeId && !types.some((t) => t.id === form.costTypeId)) own.push({ value: `${TYPE_PREFIX}${form.costTypeId}`, label: 'Kostenart eines anderen Zeitraums (bitte neu wählen)' })
+  return { own, base: CATEGORIES }
+}
+// Die Wahl in der Auswahl: eine eigene Kostenart setzt ihre Grundart als Kostenart (mit allem, was `withCategory` daran
+// knüpft), eine Kostenart von Mietfuchs löst die eigene.
+export function chooseCategory(form: ItemForm, value: string, types: readonly Pick<CostType, 'id' | 'baseCategory'>[], units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
+  if (value.startsWith(TYPE_PREFIX)) {
+    const id = value.slice(TYPE_PREFIX.length)
+    const type = types.find((t) => t.id === id)
+    if (!type) return form
+    return { ...withCategory(form, type.baseCategory, units, meters, ctx), costTypeId: id }
+  }
+  return { ...withCategory(form, value, units, meters, ctx), costTypeId: '' }
 }

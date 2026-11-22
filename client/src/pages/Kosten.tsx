@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentView, CostItem, CostKey, ExternalMeasure, HeatingPlant, Meter, MeterType, Reading, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
+import type { AssessmentView, CostItem, CostKey, CostType, ExternalMeasure, HeatingPlant, Meter, MeterType, Reading, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
 import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
 import { plantOptions } from '../heatingForm'
@@ -44,7 +44,6 @@ import {
   ROOM_SPLIT_OPTIONS,
   meterRestDroppedText,
   keepMeterRest,
-  withCategory,
   keepPaidOnYear,
   droppedPaidOnText,
   sameCostOf,
@@ -68,7 +67,12 @@ import {
   formPartOf,
   type CostField,
   COST_STALE_FIELDS,
+  categoryChoices,
+  categoryValue,
+  chooseCategory,
 } from '../costForm'
+import { carriedTypeId } from '../costTypeForm'
+import CostTypesCard from '../components/CostTypesCard'
 import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import CostPeriodFields from '../components/CostPeriodFields'
@@ -351,6 +355,32 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
+  // Eigene Kostenarten des Objekts, aller Zeiträume (gewerbliche Abrechnung); die Seite zeigt die des gewählten.
+  const [costTypes, setCostTypes] = useState<CostType[]>([])
+  const [showCostTypes, setShowCostTypes] = useState(false)
+  const loadCostTypes = () => api<CostType[]>(withProperty('/api/cost-types', propertyId)).then(setCostTypes, () => setCostTypes([]))
+  useEffect(() => { void loadCostTypes() }, [propertyId])
+  // Die Zahl der Positionen aus der Liste der Seite, damit sie nach jedem Speichern einer Position stimmt (der Server zählt
+  // nur beim Abruf der Kostenarten).
+  const periodTypes = useMemo(() => costTypes.filter((t) => t.period === key)
+    .map((t) => ({ ...t, itemCount: items.filter((i) => i.costTypeId === t.id).length })), [costTypes, key, items])
+  const previousTypeCount = useMemo(() => costTypes.filter((t) => t.period === at.previous).length, [costTypes, at.previous])
+  // Vorlagen aus dem Vorzeitraum mit der gleichnamigen eigenen Kostenart dieses Zeitraums.
+  const withCostTypes = (rows: CarryRow[]): CarryRow[] => rows.map((r) => ({ ...r, costTypeId: carriedTypeId(r.source.costTypeId, costTypes, key) }))
+  async function saveCostType(id: string | null, body: { name: string; baseCategory: string }) {
+    if (id) await api(`/api/cost-types/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+    else await api(withProperty('/api/cost-types', propertyId), { method: 'POST', body: JSON.stringify({ ...body, period: key }) })
+    await Promise.all([loadCostTypes(), load()])
+  }
+  async function removeCostType(id: string) {
+    await api(`/api/cost-types/${id}`, { method: 'DELETE' })
+    await loadCostTypes()
+  }
+  async function carryCostTypes() {
+    const r = await api<{ created: number }>(withProperty('/api/cost-types/carry-over', propertyId), { method: 'POST', body: JSON.stringify({ period: key }) })
+    await loadCostTypes()
+    toast(r.created === 0 ? `Alle Kostenarten aus ${at.previousLabel} gibt es für ${label} schon.` : `${r.created} ${r.created === 1 ? 'Kostenart' : 'Kostenarten'} aus ${at.previousLabel} übernommen.`)
+  }
   // Ob die Positionen dieses Objekts da sind: Erst dann schlägt das Formular aus dem Beleg den gemerkten Schlüssel vor.
   const [itemsLoaded, setItemsLoaded] = useState(false)
   useEffect(() => {
@@ -593,8 +623,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Rechnungssteller des Vorjahres (#487, 2A): Vorschläge zum Tippen und, bei einem Treffer, die Vorlage zum Übernehmen.
   // Nur beim Anlegen; wer eine Position bearbeitet, meint ihre Angaben.
   const newForm = !!form && !form.id
-  const previousRows = useMemo(() => (newForm ? carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies }) : []),
-    [newForm, items, at, period, view.rules, plants, units, tenancies])
+  const previousRows = useMemo(() => (newForm ? withCostTypes(carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies })) : []),
+    [newForm, items, at, period, view.rules, plants, units, tenancies, costTypes, key])
   const previousVendors = useMemo(() => [...new Set(previousRows.map((r) => r.source.vendor?.trim() ?? '').filter(Boolean))].sort(compareName), [previousRows])
   const vendorRows = form && newForm ? vendorPrevious(previousRows, form.vendor, form) : []
   const categorySuggested = !!form && !!fromReceipt && categoryHint !== null && form.category === categoryHint
@@ -927,9 +957,12 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
       <div className="card no-print">
         <div className="row">
           {previousCount > 0 && !carry && (
-            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies })) }}>
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(withCostTypes(carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies }))) }}>
               Aus {at.previousLabel} übernehmen …
             </button>
+          )}
+          {periodTypes.length === 0 && previousTypeCount === 0 && !showCostTypes && (
+            <button className="btn ghost" onClick={() => setShowCostTypes(true)}>Eigene Kostenarten …</button>
           )}
           <div className="grow" />
           <div>
@@ -939,6 +972,13 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
         </div>
       </div>
 
+
+      {(showCostTypes || periodTypes.length > 0 || previousTypeCount > 0) && (
+        <div className="no-print">
+          <CostTypesCard label={label} previousLabel={at.previousLabel} types={periodTypes} previousCount={previousTypeCount} closed={false}
+            onSave={saveCostType} onRemove={removeCostType} onCarry={carryCostTypes} />
+        </div>
+      )}
 
       {carry && (
         <Card title={<>Positionen aus {at.previousLabel} für {label} übernehmen</>} className="no-print">
@@ -1166,7 +1206,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
               {g.items.map((i) => (
                 <tr key={i.id} data-item={i.id} tabIndex={-1}>
                   <td data-label="Kostenart">
-                    {i.category}
+                    {costTypes.find((t) => t.id === i.costTypeId)?.name ?? i.category}
                     {isNotAllocable(i.category) && <span className="badge gray badge-next">Vermieter</span>}
                   </td>
                   <td data-label="Beschreibung">
@@ -1271,9 +1311,18 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 erste Kostenart (angezeigt = gespeichert) */}
             <Field label={<>Kostenart{categorySuggested && <> <span className="badge amber">Vorschlag aus dem Dateinamen</span></>}</>}
               required={form.category === ''} {...formErrors.field('category')}>
-              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period))))}>
+              <select value={categoryValue(form)} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, chooseCategory(form, e.target.value, periodTypes, units, meters, keyCtx), period))))}>
                 {form.category === '' && <option value="">Bitte wählen</option>}
-                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                {categoryChoices(periodTypes, form).own.length > 0 ? (
+                  <>
+                    <optgroup label={`Eigene Kostenarten ${label}`}>
+                      {categoryChoices(periodTypes, form).own.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </optgroup>
+                    <optgroup label="Kostenarten von Mietfuchs">
+                      {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </optgroup>
+                  </>
+                ) : CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </Field>
             {form.category === HEATING_CATEGORY && plantChoices.length > 0 && (

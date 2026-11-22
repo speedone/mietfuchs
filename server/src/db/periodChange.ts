@@ -39,7 +39,7 @@ import { readClosedSettlements, readCostItems, readFuelDeliveries, readHeatingPl
 import { tenancyMonths } from '../calc.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
 import { dropEmptySource, HeatingError, insertCostSource, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
-import { assessmentLines, assessments, closedSettlementHistory, costItems, periodChanges, prepaymentOverrides, properties } from './schema.ts'
+import { assessmentLines, assessments, closedSettlementHistory, costItems, costTypes, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
 import { droppedLettersText, dropLetterDocs, letterDocPrefix, letterDocsWithPrefix } from './letters.ts'
 import { euro } from '../../../shared/costItem.ts'
@@ -443,6 +443,12 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   const before = rulesOf(property)
   if (before.startMonth === next.startMonth && before.changes.join() === next.changes.join()) {
     throw new PeriodError('Es ändert sich nichts: Der Abrechnungszeitraum ist schon so eingestellt.')
+  }
+  // Eigene Kostenarten gelten je Zeitraum (gewerbliche Abrechnung, db/costTypes.ts). Wie sie bei einem neuen Schnitt der
+  // Zeiträume mitwandern, regelt dieser Wechsel noch nicht; deshalb erst ohne sie.
+  const [ownType] = await db.select({ name: costTypes.name }).from(costTypes).where(eq(costTypes.propertyId, propertyId)).limit(1)
+  if (ownType) {
+    throw new PeriodError('Dieses Objekt hat eigene Kostenarten, und die gelten je Abrechnungszeitraum. Den Rhythmus kann Mietfuchs mit ihnen noch nicht wechseln. Entfernen Sie die eigenen Kostenarten (Kosten, „Kostenarten“) oder behalten Sie den Rhythmus.')
   }
   const unitIds = new Set((await readUnits(db)).filter((u) => u.propertyId === propertyId).map((u) => u.id))
   const tenancies = (await readTenancies(db)).filter((t) => unitIds.has(t.unitId))

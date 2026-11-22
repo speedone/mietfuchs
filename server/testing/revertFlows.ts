@@ -472,6 +472,20 @@ export const STEPS: readonly Step[] = [
   },
   { name: 'Beleg im Posteingang ändern', routes: ['PUT /api/uploads/:file'], run: async (ctx) => { const f = pick(ctx.rng, ctx.uploads); if (f) await send(ctx.s, 'PUT', `/api/uploads/${f}`, { year: ctx.rng() < 0.5 ? 2024 : 2025 }) } },
   { name: 'Beleg löschen', routes: ['DELETE /api/uploads/:file'], run: async (ctx) => { const f = pick(ctx.rng, ctx.uploads); if (f) await send(ctx.s, 'DELETE', `/api/uploads/${f}`) } },
+  // Eigene Kostenarten (gewerbliche Abrechnung): anlegen, aus dem Vorjahr übernehmen, umbenennen, entfernen. Ohne Zug aus `rng`
+  // (verschöbe die übrigen Abläufe), und am Ende ist keine mehr da: Sonst sperrte sie den Wechsel des Rhythmus.
+  {
+    name: 'Eigene Kostenarten', routes: ['POST /api/cost-types', 'POST /api/cost-types/carry-over', 'PUT /api/cost-types/:id', 'DELETE /api/cost-types/:id'],
+    run: async ({ s }) => {
+      const before = await json<Row>(await send(s, 'POST', `/api/cost-types${Q}`, { period: '2024-01', name: 'Sicherheitsdienst', baseCategory: 'Sonstige Betriebskosten' }))
+      const carried = await json<{ types: Row[] }>(await send(s, 'POST', `/api/cost-types/carry-over${Q}`, { period: '2025-01' }))
+      for (const t of carried?.types ?? []) {
+        await send(s, 'PUT', `/api/cost-types/${t.id}`, { name: 'Wachdienst' })
+        await send(s, 'DELETE', `/api/cost-types/${t.id}`)
+      }
+      if (before) await send(s, 'DELETE', `/api/cost-types/${before.id}`)
+    },
+  },
 ]
 
 // Die Abrechnungen sprechen den Zeitraum mit seinem Schlüssel an (`2025-01`), nicht mit der Jahreszahl: Hat der Schritt

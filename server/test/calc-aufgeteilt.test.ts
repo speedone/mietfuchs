@@ -77,7 +77,8 @@ test('Invariante (#454): ein Teil meldet nichts, was die ungeteilte Rechnung nic
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)] ?? assert.fail('leere Auswahl')
   const calendar: PeriodRules = { startMonth: 1, changes: [] }
   const noSplit = Object.entries(SPLIT_FIELDS).filter(([, r]) => r === 'noSplit').map(([f]) => f)
-  assert.deepEqual(noSplit, ['tenancyAmounts', 'selfAmounts'], 'ein neues Feld `noSplit` gehört in den Generator oder in diese Liste')
+  // `costTypeId`: Eine Position mit eigener Kostenart wird nie geteilt (splitBlocker), der Generator legt keine an.
+  assert.deepEqual(noSplit, ['tenancyAmounts', 'selfAmounts', 'costTypeId'], 'ein neues Feld `noSplit` gehört in den Generator oder in diese Liste')
   for (let i = 0; i < 300; i++) {
     const units: SnapshotUnit[] = Array.from({ length: 1 + Math.floor(rnd() * 4) }, (_, k) => ({
       id: `u${k}`, name: `W${k}`, areaM2: 20 + Math.floor(rnd() * 80), participates: true, mea: 10 + Math.floor(rnd() * 200),

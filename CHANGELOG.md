@@ -14,6 +14,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (JSON `centsPerM2`, CSV hinten die Spalte „Betrag pro m² der Gesamtfläche“, nur mit eingetragener Fläche).
   Verteilt wird weiter über die Flächen der Einheiten; weicht deren Summe ab, nennt die Abrechnung beide Zahlen
   (Hinweis „Gesamtfläche des Objekts weicht ab“). Ohne Angabe ändert sich nichts.
+- Eigene Kostenarten: Auf der Seite Kosten lassen sich je Objekt und Abrechnungszeitraum eigene Kostenarten anlegen,
+  etwa „Sicherheitsdienst“ oder „Wartung Brandschutz“ (Karte „Kostenarten“, Schritt 0107), mit „Aus dem Vorjahr
+  übernehmen“. Jede hat eine Grundart aus der Liste von Mietfuchs, nach der gerechnet wird (Schlüsselvorschlag,
+  Heizung, Strom, Wasser, Anlage V); auf Abrechnung, Anschreiben und Export steht ihr Name (JSON `costType`, CSV in
+  der Spalte „Kostenart“). Eine Kostenart mit Positionen lässt sich nicht entfernen und ihre Grundart nicht ändern;
+  eine Position mit eigener Kostenart wird nicht nach Tagen auf zwei Zeiträume aufgeteilt, und den Rhythmus des
+  Abrechnungszeitraums wechselt ein Objekt mit eigenen Kostenarten noch nicht. Ohne eigene Kostenarten ändert sich
+  nichts.
 - Erste Schritte: Die neue Anleitung „Die erste Abrechnung von Anfang bis Ende“ führt von den Einstellungen über
   Objekt, Wohnungen, Mietverhältnisse, Zähler und Kosten bis zu Abschluss, Druck, Versanddatum und Backup; das leere
   Cockpit verlinkt sie, und „Hilfe & Begriffe“ schlägt sie im leeren Bestand vor. Die Checkliste des Cockpits beginnt

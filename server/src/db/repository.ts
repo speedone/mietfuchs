@@ -69,7 +69,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, depositEntries, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_CHANGE_REASONS, RENT_DUE_RULES, RENT_KINDS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, depositEntries, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, RENT_CHANGE_REASONS, RENT_DUE_RULES, RENT_KINDS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, costTypes, DEPOSIT_FORMS, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, rentIncreases, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
@@ -671,6 +671,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     propertyId: mergedProperty(body, current.propertyId),
     period,
     category,
+    // Die eigene Kostenart; `null` oder leer löst sie. Ob sie zu Objekt, Zeitraum und Grundart passt, prüft `guardCostType`.
+    ...costTypeField(merged(body, 'costTypeId', current.costTypeId ?? null, asNullableFilled)),
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
     vendor: merged(body, 'vendor', current.vendor, asOptionalText),
     amountCents: merged(body, 'amountCents', current.amountCents, (v) => asNumber(v, 0)),
@@ -732,6 +734,22 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
 }
 
 const roomSplitField = (v: CostItem['roomSplit']): Pick<CostItem, 'roomSplit'> => (v === undefined ? {} : { roomSplit: v })
+const costTypeField = (v: string | null | undefined): Pick<CostItem, 'costTypeId'> => (v ? { costTypeId: v } : {})
+
+// Eine eigene Kostenart gehört zum Objekt und Zeitraum der Position, und die Kostenart der Position ist ihre Grundart:
+// Nach der Grundart rechnet Mietfuchs (Heizung, Strom, Wasser, Anlage V), der Name steht nur auf der Abrechnung.
+async function guardCostType(db: Executor, after: CostItem): Promise<void> {
+  if (!after.costTypeId) return
+  const [type] = await db.select().from(costTypes).where(eq(costTypes.id, after.costTypeId))
+  if (!type) throw new CostTypeError('Diese Kostenart gibt es nicht mehr. Bitte wählen Sie die Kostenart neu.')
+  if (type.propertyId !== after.propertyId) throw new CrossPropertyError(`Die Kostenart „${type.name}“ gehört zu einem anderen Objekt.`)
+  if (type.period !== after.period) {
+    throw new CostTypeError(`Die Kostenart „${type.name}“ gehört zu einem anderen Abrechnungszeitraum. Legen Sie sie für den Zeitraum der Position an (Kosten, „Kostenarten“) und wählen Sie sie dort.`)
+  }
+  if (type.baseCategory !== after.category) {
+    throw new CostTypeError(`Die Kostenart „${type.name}“ rechnet als „${type.baseCategory}“; die Position nennt „${after.category}“. Bitte wählen Sie die Kostenart neu.`)
+  }
+}
 
 // Das Feld nur, wenn es eine Wahl gibt: Eine Position ohne Verteilung liest sich Schlüssel für Schlüssel wie vorher.
 const spreadField = (v: SpreadYears | undefined): Pick<CostItem, 'spreadYears'> => (v === undefined ? {} : { spreadYears: v })
@@ -962,6 +980,16 @@ const emptyPayment = (id: string): Payment => ({ id, tenancyId: '', date: '', am
 
 export class CrossPropertyError extends Error {
   status = 400
+}
+
+// Eine Ablehnung zu eigenen Kostenarten (db/costTypes.ts, `guardCostType`), mit Satz für den Nutzer; 400, bei einer
+// Kostenart mit Positionen 409.
+export class CostTypeError extends Error {
+  status: number
+  constructor(message: string, status = 400) {
+    super(message)
+    this.status = status
+  }
 }
 
 // Ein Zeitraum, den es für das Objekt nicht gibt, oder die Jahreszahl eines alten Tabs bei einem
@@ -1495,7 +1523,7 @@ function requireHeatingPeriod(rules: PeriodRules, after: CostItem): void {
 // kam mit einer nackten Jahreszahl, also von einem Tab von vor dem Update. Sie gilt nur bei einem
 // reinen Kalenderobjekt; sonst fiele die Eingabe still in einen Zeitraum, der zufällig im Januar
 // beginnt (bei einem Wechsel ab Mai der Rumpf).
-async function requirePeriods(db: Executor, propertyId: string, keys: readonly string[], legacyYear: boolean, what: string): Promise<void> {
+export async function requirePeriods(db: Executor, propertyId: string, keys: readonly string[], legacyYear: boolean, what: string): Promise<void> {
   if (keys.length === 0 && !legacyYear) return
   const rules = await rulesForProperty(db, propertyId)
   if (legacyYear && !isCalendarRules(rules)) throw new PeriodError(OLD_TAB)
@@ -1874,7 +1902,7 @@ function requireSourcePartStays(before: CostItem | null, after: CostItem, option
   // Satz nennt deshalb den Ausweg, der wirklich geht: alle Teile löschen und die Rechnung neu erfassen.
   if (after.key === 'amounts' && before.key !== 'amounts') {
     // `splitBlocker` antwortet bei Einzelbeträgen immer; er nennt auch den Weg, die Rechnung je Zeitraum neu zu erfassen.
-    throw new PeriodError(`${what}Um nach Einzelbeträgen zu verteilen, löschen Sie zuerst alle Teile. ${splitBlocker(after)}`)
+    throw new PeriodError(`${what}Um nach Einzelbeträgen zu verteilen, löschen Sie zuerst alle Teile. ${splitBlocker({ key: after.key, description: after.description })}`)
   }
   if (after.operatingPower !== before.operatingPower) {
     throw new PeriodError(`${what}Als Betriebsstrom (Abzug oder Stromrechnung) lässt sich ein einzelner Teil nicht verbuchen. Löschen Sie dafür alle Teile und erfassen Sie die Rechnung neu, je Abrechnungszeitraum eine Position mit dem Leistungszeitraum in diesem Zeitraum.`)
@@ -1916,6 +1944,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   await guardRoomRecipients(db, after)
   await guardFuelLink(db, before, after)
   await guardOperatingPower(db, before, after, options)
+  await guardCostType(db, after)
 }
 
 // Die Umlagevereinbarung je Mietverhältnis (#258, Entwurf Entscheidung 1). Leere Listen sind keine Angabe. Liefert
@@ -2477,6 +2506,16 @@ async function guardHeatingMove(db: Executor, before: Tenancy, after: Tenancy): 
 // Verweise über Objektgrenzen im ganzen Bestand, als lesbare Sätze. Leer heißt in Ordnung.
 export async function crossPropertyViolations(db: Executor): Promise<string[]> {
   const befunde: string[] = []
+  // Eigene Kostenarten (gewerbliche Abrechnung): dasselbe Objekt, derselbe Zeitraum und die Grundart als Kostenart.
+  const arten = await db
+    .select({ description: costItems.description, itemProperty: costItems.propertyId, itemPeriod: costItems.period, category: costItems.category, name: costTypes.name, typeProperty: costTypes.propertyId, typePeriod: costTypes.period, base: costTypes.baseCategory })
+    .from(costItems)
+    .innerJoin(costTypes, eq(costItems.costTypeId, costTypes.id))
+  for (const a of arten) {
+    if (a.itemProperty !== a.typeProperty || a.itemPeriod !== a.typePeriod || a.category !== a.base) {
+      befunde.push(`Die Kostenposition „${a.description}“ verweist auf die Kostenart „${a.name}“ eines anderen Objekts, Zeitraums oder einer anderen Grundart.`)
+    }
+  }
   const zaehler = await db
     .select({ id: meters.id, name: meters.name })
     .from(meters)
@@ -2636,6 +2675,9 @@ export async function orphanPeriodKeys(db: Executor): Promise<string[]> {
   }
   for (const c of await db.select({ propertyId: closedSettlements.propertyId, period: closedSettlements.period }).from(closedSettlements)) {
     pruefe(c.propertyId, c.period, 'Eine abgeschlossene Abrechnung')
+  }
+  for (const t of await db.select({ propertyId: costTypes.propertyId, period: costTypes.period, name: costTypes.name }).from(costTypes)) {
+    pruefe(t.propertyId, t.period, `Die Kostenart „${t.name}“`)
   }
   for (const c of await db.select({ propertyId: closedSettlementHistory.propertyId, period: closedSettlementHistory.period }).from(closedSettlementHistory)) {
     pruefe(c.propertyId, c.period, 'Ein früherer Abschluss')
@@ -2886,7 +2928,7 @@ const tenancyRow = (t: Tenancy) => ({
 })
 const costItemRow = (c: CostItem) => ({
   id: c.id, propertyId: c.propertyId, period: c.period, category: c.category, description: c.description, vendor: orNull(c.vendor),
-  amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null,
+  amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null, costTypeId: c.costTypeId ?? null,
   meterType: c.meterType ?? null, labor35aCents: orNull(c.labor35aCents), invoiceFile: orNull(c.invoiceFile),
   externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,
   externalTotalCents: c.externalBasis?.totalCents ?? null,

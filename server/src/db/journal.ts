@@ -585,7 +585,7 @@ export const TABLE_KINDS: Readonly<Record<string, JournalKind>> = {
   tenancy_direct_charges: 'units', base_rents: 'units', rent_increases: 'units', prepayment_overrides: 'units', unit_no_connection: 'units',
   unit_local_rents: 'units', unit_usage_changes: 'units',
   cost_items: 'costs', cost_item_shares: 'costs', cost_item_participants: 'costs', cost_item_amounts: 'costs',
-  cost_item_contract: 'costs', cost_item_self_amounts: 'costs', cost_sources: 'costs',
+  cost_item_contract: 'costs', cost_item_self_amounts: 'costs', cost_sources: 'costs', cost_types: 'costs',
   cost_item_meter_rest: 'costs', cost_item_meter_rest_units: 'costs', cost_item_meter_rest_behind: 'costs', cost_item_meter_rest_subs: 'costs',
   meters: 'meters', readings: 'meters', interim_reading_gaps: 'meters',
   payments: 'payments', deposit_entries: 'payments',

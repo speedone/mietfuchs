@@ -32,6 +32,7 @@
         {
           "costItemId": "gas",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Erdgas",
           "totalCents": 600000,
           "kind": null,
@@ -45,6 +46,7 @@
         {
           "costItemId": "strom",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Betriebsstrom",
           "totalCents": 18000,
           "kind": null,
@@ -58,6 +60,7 @@
         {
           "costItemId": "wartung",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Wartung",
           "totalCents": 24000,
           "kind": null,
@@ -71,6 +74,7 @@
         {
           "costItemId": "imm",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Immissionsmessung",
           "totalCents": 6000,
           "kind": null,
@@ -84,6 +88,7 @@
         {
           "costItemId": "wz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Wärmezähler",
           "totalCents": 12000,
           "kind": null,
@@ -97,6 +102,7 @@
         {
           "costItemId": "wwz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Warmwasserzähler",
           "totalCents": 6000,
           "kind": null,
@@ -110,6 +116,7 @@
         {
           "costItemId": "co2:hp:2025-01",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "CO₂-Kosten: Anteil des Vermieters",
           "totalCents": -56866,
           "kind": "co2Relief",
@@ -147,6 +154,7 @@
         {
           "costItemId": "gas",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Erdgas",
           "totalCents": 600000,
           "kind": null,
@@ -160,6 +168,7 @@
         {
           "costItemId": "strom",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Betriebsstrom",
           "totalCents": 18000,
           "kind": null,
@@ -173,6 +182,7 @@
         {
           "costItemId": "wartung",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Wartung",
           "totalCents": 24000,
           "kind": null,
@@ -186,6 +196,7 @@
         {
           "costItemId": "imm",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Immissionsmessung",
           "totalCents": 6000,
           "kind": null,
@@ -199,6 +210,7 @@
         {
           "costItemId": "wz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Wärmezähler",
           "totalCents": 12000,
           "kind": null,
@@ -212,6 +224,7 @@
         {
           "costItemId": "wwz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Warmwasserzähler",
           "totalCents": 6000,
           "kind": null,
@@ -225,6 +238,7 @@
         {
           "costItemId": "co2:hp:2025-01",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "CO₂-Kosten: Anteil des Vermieters",
           "totalCents": -56866,
           "kind": "co2Relief",
@@ -262,6 +276,7 @@
         {
           "costItemId": "gas",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Erdgas",
           "totalCents": 600000,
           "kind": null,
@@ -275,6 +290,7 @@
         {
           "costItemId": "strom",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Betriebsstrom",
           "totalCents": 18000,
           "kind": null,
@@ -288,6 +304,7 @@
         {
           "costItemId": "wartung",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Wartung",
           "totalCents": 24000,
           "kind": null,
@@ -301,6 +318,7 @@
         {
           "costItemId": "imm",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Immissionsmessung",
           "totalCents": 6000,
           "kind": null,
@@ -314,6 +332,7 @@
         {
           "costItemId": "wz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Wärmezähler",
           "totalCents": 12000,
           "kind": null,
@@ -327,6 +346,7 @@
         {
           "costItemId": "wwz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Warmwasserzähler",
           "totalCents": 6000,
           "kind": null,
@@ -340,6 +360,7 @@
         {
           "costItemId": "co2:hp:2025-01",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "CO₂-Kosten: Anteil des Vermieters",
           "totalCents": -56866,
           "kind": "co2Relief",
@@ -377,6 +398,7 @@
         {
           "costItemId": "gas",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Erdgas",
           "totalCents": 600000,
           "kind": null,
@@ -390,6 +412,7 @@
         {
           "costItemId": "strom",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Betriebsstrom",
           "totalCents": 18000,
           "kind": null,
@@ -403,6 +426,7 @@
         {
           "costItemId": "wartung",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Wartung",
           "totalCents": 24000,
           "kind": null,
@@ -416,6 +440,7 @@
         {
           "costItemId": "imm",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Immissionsmessung",
           "totalCents": 6000,
           "kind": null,
@@ -429,6 +454,7 @@
         {
           "costItemId": "wz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Wärmezähler",
           "totalCents": 12000,
           "kind": null,
@@ -442,6 +468,7 @@
         {
           "costItemId": "wwz",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "Miete Warmwasserzähler",
           "totalCents": 6000,
           "kind": null,
@@ -455,6 +482,7 @@
         {
           "costItemId": "co2:hp:2025-01",
           "category": "Heizung und Warmwasser",
+          "costType": null,
           "description": "CO₂-Kosten: Anteil des Vermieters",
           "totalCents": -56866,
           "kind": "co2Relief",
@@ -486,6 +514,7 @@
       {
         "costItemId": "co2:hp:2025-01",
         "category": "Heizung und Warmwasser",
+        "costType": null,
         "description": "CO₂-Kosten: Anteil des Vermieters",
         "totalCents": 56866,
         "kind": null,

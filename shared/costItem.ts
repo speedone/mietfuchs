@@ -53,6 +53,8 @@ export function amountProblem(amount: number | null, labor35a: number | null, ca
 // Oberfläche reicht, was sie nicht lesen konnte, so herein, und die Prüfung sagt es in Worten.
 export type CostItemDraft = {
   category: string
+  // Die eigene Kostenart (gewerbliche Abrechnung); fehlt in Wegen, die keine kennen (KI-Buchung), dann geht nichts mit.
+  costTypeId?: string | null
   description: string
   vendor: string
   invoiceFile: string | null
@@ -89,6 +91,7 @@ export type CostItemDraft = {
 export type CostItemBody = {
   period: PeriodKey
   category: string
+  costTypeId?: string | null
   description: string
   vendor: string | undefined
   amountCents: number
@@ -174,6 +177,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
   const common = {
     period,
     category: d.category,
+    ...(d.costTypeId !== undefined ? { costTypeId: d.costTypeId } : {}),
     description: d.description.trim(),
     vendor: d.vendor.trim() || undefined,
     amountCents: amount,

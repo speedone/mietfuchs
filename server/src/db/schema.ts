@@ -1217,6 +1217,27 @@ export const costSources = sqliteTable(
   () => [oneOf('cost_sources_rule_known', 'rule', SOURCE_RULES)],
 )
 
+// Eigene Kostenarten je Objekt und Abrechnungszeitraum (gewerbliche Abrechnung): ein Name für Abrechnung und Export
+// (etwa „Sicherheitsdienst“) und die Grundart aus der Liste von Mietfuchs (`base_category`, meist „Sonstige
+// Betriebskosten“), an der alle Regeln hängen (Heizung, Strom, Wasser, Anlage V). Die Positionen verweisen über
+// `cost_items.cost_type_id`; ihre Kostenart ist die Grundart. Fällt mit dem Objekt (es wird nur leer gelöscht).
+export const costTypes = sqliteTable(
+  'cost_types',
+  {
+    id: text('id').primaryKey().notNull(),
+    propertyId: text('property_id').notNull().references(() => properties.id, { onDelete: 'cascade' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    name: text('name').notNull(),
+    baseCategory: text('base_category').notNull(),
+    // Reihenfolge in der Liste des Zeitraums, aufsteigend.
+    position: integer('position').notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex('cost_types_property_period_name_idx').on(t.propertyId, t.period, t.name),
+    check('cost_types_name_valid', sql.raw('length(trim("name")) BETWEEN 1 AND 80 AND "name" = trim("name")')),
+  ],
+)
+
 export const costItems = sqliteTable(
   'cost_items',
   {
@@ -1239,6 +1260,9 @@ export const costItems = sqliteTable(
     // `SET NULL` erhält genau dieses Verhalten, denn `null` trifft in der Nachschlagetabelle
     // ebenso ins Leere wie eine unbekannte Kennung.
     directUnitId: text('direct_unit_id').references(() => units.id, { onDelete: 'set null' }),
+    // Die eigene Kostenart (`cost_types`), NULL heißt keine. `RESTRICT`: Eine Kostenart mit Positionen lässt sich nicht
+    // löschen (der Server sagt es vorher mit Satz). Objekt und Zeitraum gleich denen der Position prüft der Server.
+    costTypeId: text('cost_type_id').references((): AnySQLiteColumn => costTypes.id, { onDelete: 'restrict' }),
     meterType: text('meter_type', { enum: METER_TYPES }),
     labor35aCents: integer('labor_35a_cents'),
     invoiceFile: text('invoice_file'),

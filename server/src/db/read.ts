@@ -19,8 +19,9 @@
 
 import { isSpreadYears } from '../../../shared/spread.ts'
 import { asc, eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, DepositEntry, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, RentEntry, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, CostType, DegreeDayValue, DepositEntry, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, RentEntry, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
+import { readCostTypes } from './costTypesRead.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
@@ -76,6 +77,8 @@ export type Stock = SnapshotSource & {
   heatingEstimates: HeatingEstimate[]
   // Rechtswerte, die der Vermieter eingetragen hat (Heizung PR 17); installationsweit.
   lawOverrides: LawOverride[]
+  // Eigene Kostenarten aller Objekte und Zeiträume (gewerbliche Abrechnung); die Berechnung liest nur ihre Namen.
+  costTypes: CostType[]
   // Monatliche Verbrauchsinformation je Anlage und Monat (Heizung PR 22)
   monthlyInfoRows: MonthlyInfoRow[]
   // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
@@ -333,6 +336,8 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       propertyId: c.propertyId,
       period: c.period,
       category: c.category,
+      // Die eigene Kostenart, nur wenn es sie gibt (ein Bestand ohne liest sich wie vorher).
+      ...(c.costTypeId !== null ? { costTypeId: c.costTypeId } : {}),
       description: c.description,
       vendor: orUndefined(c.vendor),
       amountCents: c.amountCents,
@@ -697,6 +702,7 @@ async function readWholeStock(db: Executor): Promise<Stock> {
     heatingServiceValues: await readHeatingServiceValues(db),
     heatingEstimates: await readHeatingEstimates(db),
     lawOverrides: await readLawOverrides(db),
+    costTypes: await readCostTypes(db),
     monthlyInfoRows: await readMonthlyInfoRows(db),
     fuelDeliveries: await readFuelDeliveries(db),
     fuelCarryFrozen: await readFuelCarryFrozen(db),

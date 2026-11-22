@@ -5973,6 +5973,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Gesamtfläche des Objekts (gewerbliche Abrechnung): Verteilt wird immer über die Flächen der Einheiten. Weicht ihre
   // Summe in der Abrechnungseinheit von der eingetragenen Gesamtfläche ab, teilen „Betrag pro m²“ laut Objekt und Anteil
   // laut Abrechnung nicht dasselbe; das sagt der Hinweis mit beiden Zahlen. Ohne Angabe am Objekt nichts.
+  // Der Name der eigenen Kostenart einer Position für ihre Zeilen (gewerbliche Abrechnung); gerechnet wird nach der Grundart.
+  const costTypeOf = (item: SnapshotCostItem): Pick<SettlementRow, 'costType'> => {
+    const name = item.costTypeId ? snapshot.costTypeNames?.[item.costTypeId] : undefined
+    return name ? { costType: name } : {}
+  }
   const objectArea = snapshot.property?.totalAreaM2 ?? null
   if (objectArea !== null && Math.abs(objectArea - basisArea) >= AREA_MISMATCH_M2) {
     warn('property.area-mismatch',
@@ -7521,6 +7526,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         costItemId: item.id,
         ...(carry ? { kind: 'fuelCarry' as const } : {}),
         category: item.category,
+        ...costTypeOf(item),
         description: item.description,
         totalCents: item.amountCents,
         key: item.key,
@@ -7632,6 +7638,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       landlordRows.push({
         costItemId: item.id,
         category: item.category,
+        ...costTypeOf(item),
         description: item.description,
         totalCents: item.amountCents,
         keyLabel: KEY_LABELS[item.key] || item.key,

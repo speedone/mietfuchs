@@ -1,5 +1,6 @@
 // Anschreiben und Ergebniskasten der gedruckten Abrechnung (#415), ohne DOM prüfbar. Gerechnet wird
 // hier nichts: Die Texte setzt der Server ein (shared/letter.ts), die Zahlen stammen aus der Abrechnung.
+import { rowCategory } from './costTypeForm'
 import type { LetterBlock, LetterTemplates, Property, Settings, Settlement, Statement, StatementLetter, Tenancy } from './types'
 import { chooseLetterBlocks, lettersOf, renderLetterText } from '../../shared/letter.ts'
 import { fmtDate, fmtEuro } from './api'
@@ -165,7 +166,7 @@ export function labor35aTable(st: Statement, letter: Pick<StatementLetter, 'labo
     rows: st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r) => {
       const own = frozen?.[r.costItemId]
       return {
-        service: r.description && r.description !== r.category ? `${r.category}: ${r.description}` : r.category,
+        service: r.description && r.description !== rowCategory(r) ? `${rowCategory(r)}: ${r.description}` : rowCategory(r),
         total: own ? fmtEuro(own.amountCents) : '',
         labor: own ? fmtEuro(own.laborCents) : '',
         share: fmtEuro(r.labor35aCents ?? 0),

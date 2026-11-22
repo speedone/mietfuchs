@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEnergy, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Refund, Co2Statement, CostItem, CostType, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEnergy, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline, startYearOf } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
@@ -90,6 +90,9 @@ export type SnapshotCostItem = Pick<
   CostItem,
   | 'id'
   | 'period'
+  // Die eigene Kostenart (gewerbliche Abrechnung): nur ihr Name kommt auf die Zeile (`costTypeNames`), gerechnet wird
+  // nach `category`.
+  | 'costTypeId'
   // Leistungszeitraum, Jahr der Zahlung und Brennstoffmerkmal (#208): für die Hinweise zum
   // Zeitraum, den Vorschlag nach § 560 im Rumpf und die Steuer.
   | 'serviceFrom'
@@ -513,6 +516,8 @@ export type Snapshot = {
   // Was die Berechnung vom Objekt wissen muss (#121). Fehlt es, etwa beim Umstieg aus einer
   // db.json, rechnet sie wie ohne die Angabe.
   property?: SnapshotProperty | null
+  // Die Namen der eigenen Kostenarten des Objekts nach Kennung (gewerbliche Abrechnung); fehlt ohne eigene Kostenart.
+  costTypeNames?: Record<string, string>
   // Die Kostenpositionen des Vorjahres (#141), nur für den Hinweis, dass eine Position einen
   // anderen Schlüssel hat als dieselbe Kostenart im Vorjahr. Verteilt wird nichts davon. Fehlt
   // die Angabe, etwa in einem von Hand gebauten Schnappschuss, entfällt nur der Hinweis.
@@ -1032,6 +1037,12 @@ export function requireTenancyStarts(tenancies: readonly Pick<Tenancy, 'tenantNa
   }
 }
 
+// Die Namen der eigenen Kostenarten eines Objekts; ohne welche kein Feld, damit der Schnappschuss bleibt, wie er war.
+const costTypeNamesOf = (types: readonly Pick<CostType, 'id' | 'propertyId' | 'name'>[] | undefined, propertyId: string): Pick<Snapshot, 'costTypeNames'> => {
+  const mine = (types ?? []).filter((t) => t.propertyId === propertyId)
+  return mine.length > 0 ? { costTypeNames: Object.fromEntries(mine.map((t) => [t.id, t.name])) } : {}
+}
+
 export function snapshotFor(
   source: PropertyScopedSource & {
     // `spreadRestYear` (§ 82b Abs. 2 EStDV, #262) liest nur `taxReportFor`; in den Schnappschuss kommt es nicht.
@@ -1050,6 +1061,8 @@ export function snapshotFor(
     heatingEstimates?: HeatingEstimate[]
     // Rechtswerte des Vermieters (Heizung PR 17).
     lawOverrides?: LawOverride[]
+    // Eigene Kostenarten (gewerbliche Abrechnung); in den Schnappschuss kommen nur die Namen derer des Objekts.
+    costTypes?: Pick<CostType, 'id' | 'propertyId' | 'name'>[]
     // Monatliche Verbrauchsinformation (Heizung PR 22).
     monthlyInfoRows?: MonthlyInfoRow[]
     // CO₂-Erstattungen an Mieter, die selbst heizen (Heizung PR 19); sie erben das Objekt über das Mietverhältnis.
@@ -1112,6 +1125,7 @@ export function snapshotFor(
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
     property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null, state: found.state ?? null, ...(found.totalAreaM2 != null ? { totalAreaM2: found.totalAreaM2 } : {}) } : null,
+    ...costTypeNamesOf(source.costTypes, propertyId),
     // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier.
     heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => plants.some((p) => p.id === c.plantId)),

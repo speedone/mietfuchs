@@ -76,6 +76,7 @@ const TABLE_LABELS: Record<string, string> = {
   cost_item_self_amounts: 'Eigenbetrag',
   cost_item_contract: 'Umlagevereinbarung',
   cost_sources: 'Aufgeteilte Rechnung',
+  cost_types: 'Kostenart',
   cost_item_meter_rest: 'Bezugszähler und Rest',
   cost_item_meter_rest_units: 'Empfänger des Rests',
   cost_item_meter_rest_behind: 'Zähler hinter dem Bezugszähler',
@@ -112,6 +113,9 @@ const TABLE_LABELS: Record<string, string> = {
 
 // Die Beschriftungen der Felder, wie sie in den Formularen stehen.
 const FIELD_LABELS: Record<string, string> = {
+  position: 'Reihenfolge',
+  base_category: 'Grundart',
+  cost_type_id: 'Kostenart',
   // E-Rechnung (#189)
   invoice_number: 'Rechnungsnummer',
   e_invoice_notes: 'Hinweise zur E-Rechnung',

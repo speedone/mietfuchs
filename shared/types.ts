@@ -811,6 +811,9 @@ export type CostItem = {
   // (PR 3): fehlt, wenn nicht gesetzt.
   heatingTarget?: HeatingTarget
   category: string
+  // Die eigene Kostenart (`CostType`), zu der die Position gehört; fehlend oder `null` heißt keine. Dann ist `category`
+  // die Grundart der Kostenart.
+  costTypeId?: string | null
   description: string
   vendor?: string
   amountCents: number
@@ -874,6 +877,12 @@ export type CostItem = {
   // dieselbe Wahl (`syncSourceSpread` in server/src/db/repository.ts). Die Abrechnung liest es nie.
   spreadYears?: SpreadYears
 }
+
+// Eine eigene Kostenart je Objekt und Abrechnungszeitraum (gewerbliche Abrechnung): `name` steht auf Abrechnung und im
+// Export, `baseCategory` ist eine Kostenart aus der Liste von Mietfuchs (shared/categories.ts), nach der gerechnet wird.
+// `itemCount`: Zahl der Positionen, die auf sie verweisen (nur gelesen; mit Positionen lässt sie sich nicht löschen und
+// ihre Grundart nicht ändern).
+export type CostType = { id: string; propertyId: string; period: PeriodKey; name: string; baseCategory: string; position: number; itemCount: number }
 
 // Die Jahre einer Verteilung nach § 82b EStDV (#262). „1 Jahr“ ist keine Verteilung und hat keinen eigenen Wert.
 export type SpreadYears = 2 | 3 | 4 | 5
@@ -1283,6 +1292,9 @@ export type SettlementRow = {
   // deshalb optional.
   key?: CostKey
   keyLabel: string
+  // Der Name der eigenen Kostenart der Position, wie er zur Zeit der Berechnung hieß (eingefroren mit dem Abschluss);
+  // fehlt ohne eigene Kostenart. `category` bleibt die Grundart.
+  costType?: string
   basisText?: string
   shareCents: number
   // §35a-Lohnanteil dieser Zeile. Auch ihn gibt es nur in den Zeilen der Mieter.

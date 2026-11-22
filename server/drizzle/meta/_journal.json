@@ -750,6 +750,13 @@
       "when": 1795348343833,
       "tag": "0106_objektflaeche_bedingung",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "6",
+      "when": 1795349877594,
+      "tag": "0107_eigene_kostenarten",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,8 @@ export const EXPORT_VERSION = 1
 export type ExportRow = {
   costItemId: string
   category: string
+  // Der Name der eigenen Kostenart (gewerbliche Abrechnung), null ohne; `category` ist dann ihre Grundart.
+  costType: string | null
   description: string
   totalCents: number
   // Art einer Zeile ohne Kostenposition (CO₂-Anteil, Übertrag, Netzentgelte, Erstattung), sonst null.
@@ -97,7 +99,7 @@ export function centsPerM2(r: Pick<SettlementRow, 'key' | 'kind' | 'totalCents'>
 }
 
 const exportRow = (area: number | null) => (r: SettlementRow): ExportRow => ({
-  costItemId: r.costItemId, category: r.category, description: r.description, totalCents: r.totalCents,
+  costItemId: r.costItemId, category: r.category, costType: r.costType ?? null, description: r.description, totalCents: r.totalCents,
   kind: r.kind ?? null, key: r.key ?? null, keyLabel: r.keyLabel, basisText: r.basisText ?? null, shareCents: r.shareCents, labor35aCents: r.labor35aCents ?? null,
   centsPerM2: centsPerM2(r, area),
 })
@@ -159,7 +161,8 @@ export function settlementExportCsv(s: ExportableSettlement): string {
     const line = (kind: string, rest: string[], perM2: number | null = null) => rows.push([...head, kind, ...rest, ...(area !== null ? [perM2Field(perM2)] : [])].join(';'))
     for (const r of st.rows) {
       line(r.kind ? KIND_LABELS[r.kind] : 'Position', [
-        textField(r.category), textField(r.description), csvField(euro(r.totalCents)), textField(r.keyLabel), textField(r.basisText ?? ''),
+        // Die Spalte „Kostenart“ nennt die eigene Kostenart, wo es eine gibt, sonst wie bisher die Kostenart von Mietfuchs.
+        textField(r.costType ?? r.category), textField(r.description), csvField(euro(r.totalCents)), textField(r.keyLabel), textField(r.basisText ?? ''),
         csvField(euro(r.shareCents)), r.labor35aCents ? csvField(euro(r.labor35aCents)) : '',
       ], centsPerM2(r, area))
     }

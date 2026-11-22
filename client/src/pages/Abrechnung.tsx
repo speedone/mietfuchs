@@ -68,6 +68,7 @@ import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
 import { sentMonthLines } from '../prepaymentSteps'
 import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, IBAN_MISSING_CLOSED_TEXT, IBAN_MISSING_TEXT, IBAN_MISSING_TITLE, ibanMissing, SENDER_MISSING_CLOSED_TEXT, SENDER_MISSING_TEXT, senderMissing, statementHeadRows } from '../letterView'
+import { rowCategory } from '../costTypeForm'
 
 type Props = {
   settings: Settings | null
@@ -645,10 +646,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               // Positionen nach Kostenart gruppieren - mit Zwischensumme, sobald eine
               // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).
               const groups: { category: string; rows: SettlementRow[] }[] = []
+              // Gruppiert und genannt wird nach der eigenen Kostenart, wo es eine gibt (gewerbliche Abrechnung).
               for (const r of st.rows) {
-                const g = groups.find((x) => x.category === r.category)
+                const g = groups.find((x) => x.category === rowCategory(r))
                 if (g) g.rows.push(r)
-                else groups.push({ category: r.category, rows: [r] })
+                else groups.push({ category: rowCategory(r), rows: [r] })
               }
               const letter = legacy ? null : letterOf(data, st, { settings, property, tenancies })
               const attachmentCount = printAttachments ? stFiles.length : 0
@@ -1233,8 +1235,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                             {(toggle) => (
                               <tr>
                                 <td>
-                                  {softBreak(r.category)}
-                                  {r.description !== r.category && <div className="muted">{softBreak(r.description)}</div>}
+                                  {softBreak(rowCategory(r))}
+                                  {r.description !== rowCategory(r) && <div className="muted">{softBreak(r.description)}</div>}
                                 </td>
                                 <td className="num">
                                   {fmtEuro(r.totalCents)}
@@ -1366,7 +1368,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                         <tbody>
                           {st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r, i) => (
                             <tr key={i}>
-                              <td>{softBreak(`${r.category} - ${r.description}`)}</td>
+                              <td>{softBreak(`${rowCategory(r)} - ${r.description}`)}</td>
                               <td className="num">{fmtEuro(r.labor35aCents!)}</td>
                             </tr>
                           ))}
@@ -1472,7 +1474,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                     <tbody>
                       {data.landlord.rows.map((r, i) => (
                         <tr key={i}>
-                          <td>{r.category}<div className="muted">{r.description}</div></td>
+                          <td>{rowCategory(r)}<div className="muted">{r.description}</div></td>
                           <td className="num">{fmtEuro(r.totalCents)}</td>
                           <td className="muted">{landlordReasonText(r)}</td>
                           <td className="num">{fmtEuro(r.shareCents)}</td>

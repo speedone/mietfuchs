@@ -29,6 +29,9 @@ export type NewTenant = { unitId: string, unitName: string, tenancyId: string, t
 export type CarryPeople = { units: Unit[], tenancies: Tenancy[] }
 
 export type CarryRow = {
+  // Die eigene Kostenart im neuen Zeitraum (gewerbliche Abrechnung, `carriedTypeId` in costTypeForm.ts); fehlt sie, behält
+  // die Position nur ihre Grundart. Die Kennung des Vorzeitraums gilt hier nie.
+  costTypeId?: string
   source: CostItem
   description: string
   vendor: string
@@ -234,6 +237,7 @@ export function carryOverForm(row: CarryRow): ItemForm {
     ...itemToForm(row.source),
     ...withNewTenants(row),
     id: undefined,
+    costTypeId: row.costTypeId ?? '',
     description: row.description,
     vendor: row.vendor,
     amount: row.amount,

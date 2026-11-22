@@ -73,7 +73,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleRecordError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CostTypeError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleRecordError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -99,6 +99,7 @@ import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
 import { co2SheetFor } from './co2Sheet.ts'
 import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
 import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
+import { carryOverCostTypes, createCostType, readCostTypes, removeCostType, updateCostType } from './db/costTypes.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, reassignCredit, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
@@ -844,6 +845,27 @@ app.put('/api/law-overrides/:paramId/:year', async (req, res) => {
 app.delete('/api/law-overrides/:paramId/:year', async (req, res) => {
   const removed = await writeData((db) => removeLawOverride(db, req.params.paramId, Number(req.params.year)))
   res.json({ ok: true, removed })
+})
+
+// Eigene Kostenarten je Objekt und Abrechnungszeitraum (gewerbliche Abrechnung, db/costTypes.ts). Die Liste nimmt
+// `?property=` und `?period=` (JJJJ-MM); ohne Zeitraum alle des Objekts.
+app.get('/api/cost-types', async (req, res) => {
+  const period = req.query.period === undefined ? undefined : parsePeriodKey(req.query.period)
+  if (period === null) return res.status(400).json({ error: 'Der Zeitraum ist ein Monat in der Form JJJJ-MM.' })
+  res.json(await readData(async (db) => readCostTypes(db, await propertyOf(db, req), period)))
+})
+app.post('/api/cost-types', async (req, res) => {
+  res.status(201).json(await writeData(async (db) => createCostType(db, newId(), await propertyOf(db, req, true), bodyObject(req))))
+})
+app.post('/api/cost-types/carry-over', async (req, res) => {
+  res.json(await writeData(async (db) => carryOverCostTypes(db, await propertyOf(db, req, true), bodyObject(req).period, newId)))
+})
+app.put('/api/cost-types/:id', async (req, res) => {
+  res.json(await writeData((db) => updateCostType(db, req.params.id, bodyObject(req))))
+})
+app.delete('/api/cost-types/:id', async (req, res) => {
+  await writeData((db) => removeCostType(db, req.params.id))
+  res.json({ ok: true })
 })
 
 app.delete('/api/properties/:id', async (req, res) => {
@@ -5241,7 +5263,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Oberfläche sagen kann, was sich geändert hat.
   if (err instanceof StaleRecordError) return res.status(409).json({ error: err.message, stale: true, current: err.current })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError || err instanceof RentIncreaseError || err instanceof TenancyStartMissing) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof DepositError || err instanceof BankError || err instanceof DepositHoldError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof CostTypeError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof MeterRestError || err instanceof LocalRentError || err instanceof RentDataError || err instanceof RentIncreaseError || err instanceof TenancyStartMissing) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

@@ -143,7 +143,7 @@ bleibt immer gleich. Beträge sind Cent als ganze Zahlen, Datumsangaben `JJJJ-MM
 | `draft`, `errors` | Eine offene Abrechnung mit Fehlern ist ein Entwurf; `errors` nennt sie mit `code` und `title`. |
 | `totalCostsCents` | Gesamtkosten des Zeitraums. |
 | `statements` | Je Mietverhältnis: `tenancyId`, `unitId`, `unitName`, `tenantName`, `persons`, `days`, `periodStart`, `periodEnd`, `rows`, `totalShareCents`, `total35aCents`, `prepaymentCents`, `balanceCents` (positiv ist ein Guthaben, negativ eine Nachzahlung), `prepaymentOverridden`, `suggestedMonthlyCents`, `heatingPrepaymentCents`, `prepaymentNote`, `scope`, `heatingOnly`, `recommendedDeadline`, `adjustment`. |
-| `rows` (je Zeile) | `costItemId`, `category`, `description`, `totalCents`, `kind`, `key`, `keyLabel`, `basisText`, `shareCents`, `labor35aCents`, `centsPerM2` (neu; Betrag pro m² der Gesamtfläche des Objekts in Cent, auf zwei Nachkommastellen, also ein Verhältnis und kein Betrag; nur bei Schlüssel Fläche und eingetragener Gesamtfläche, sonst `null`, auch in den Zeilen des Vermieters). |
+| `rows` (je Zeile) | `costItemId`, `category` (bei eigener Kostenart deren Grundart), `costType` (neu; der Name der eigenen Kostenart, sonst `null`), `description`, `totalCents`, `kind`, `key`, `keyLabel`, `basisText`, `shareCents`, `labor35aCents`, `centsPerM2` (neu; Betrag pro m² der Gesamtfläche des Objekts in Cent, auf zwei Nachkommastellen, also ein Verhältnis und kein Betrag; nur bei Schlüssel Fläche und eingetragener Gesamtfläche, sonst `null`, auch in den Zeilen des Vermieters). |
 | `landlord` | Anteil des Vermieters: `totalCents`, `rows`. |
 | `heating` | Die Angaben der Heizkostenabrechnung je Heizanlage (§ 6a HeizkostenV, CO₂, Vorrat, Lieferungen); leer ohne Heizanlage. Bei der eigenen Heizkostenabrechnung je Nutzer `heatingCents` und `waterCents` als Summe seiner verteilten Zeilen, dazu `heatingRows` und `waterRows` (Zahl dieser Zeilen; neu, ohne Verteilung fehlen sie) und je Wohnung `noDevicePots` (neu; nur, wenn für Heizung oder Warmwasser ein Gerät fehlt). |
 
@@ -166,7 +166,8 @@ Heizungsangaben) stehen am Ende nach einer Leerzeile.
 
 Ist am Objekt eine Gesamtfläche eingetragen, kommt hinten die Spalte `Betrag pro m² der Gesamtfläche`
 dazu: Euro je m² mit vier Nachkommastellen (etwa `0,8131`), nur in Zeilen mit Schlüssel Fläche, sonst
-leer. Ohne Gesamtfläche bleibt die Kopfzeile wie oben.
+leer. Ohne Gesamtfläche bleibt die Kopfzeile wie oben. Hat eine Position eine eigene Kostenart, nennt die Spalte
+`Kostenart` deren Namen.
 
 ### Belege für die Steuer (Seite Belege, ZIP)
 

@@ -375,10 +375,14 @@ test('Vermerk: ein umgezogener Ordner öffnet nur lesend, Schreibrouten sagen wa
 // dort zu Recht nicht läuft. Gezeigt wird jetzt eine Kopie außerhalb des Ordners; der Ordner selbst bleibt, wie er ist,
 // auch eine Datenbank wird darin nicht migriert.
 // Der letzte Schritt der Kette (Index im Journal) und wie seine Wirkung zurückgenommen wird; siehe den Test darunter.
-const LAST_STEP_INDEX = 106
-// Der letzte Schritt (0106, Bedingung der Gesamtfläche des Objekts) baut `properties` mit der Bedingung neu, ohne neue
-// Spalte; das lässt sich wiederholen, zurückzunehmen ist nichts.
-const undoLastStep = (_db: { exec: (sql: string) => void }): void => {}
+const LAST_STEP_INDEX = 107
+// Der letzte Schritt (0107, eigene Kostenarten) legt `cost_types` samt Index an und fügt `cost_items.cost_type_id` an;
+// zurückgenommen wird beides, sonst scheiterte die Wiederholung an der vorhandenen Tabelle.
+const undoLastStep = (db: { exec: (sql: string) => void }): void => {
+  db.exec('ALTER TABLE cost_items DROP COLUMN cost_type_id')
+  db.exec('DROP INDEX cost_types_property_period_name_idx')
+  db.exec('DROP TABLE cost_types')
+}
 
 test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner etwas ändert', async () => {
   for (const kind of ['json', 'database'] as const) {
@@ -387,7 +391,7 @@ test('Vermerk: auch eine alte db.json wird angezeigt, ohne dass sich im Ordner e
     if (kind === 'database') {
       // Eine Datenbank aus einer früheren Fassung: Der letzte Schritt der Kette fehlt noch, Marke und Wirkung. Fügt ein
       // neuer letzter Schritt eine Spalte an, scheiterte er sonst an der schon vorhandenen; seine Wirkung nimmt
-      // `undoLastStep` zurück (heute 0106_objektflaeche_bedingung, ein Neubau ohne neue Spalte: nichts zurückzunehmen).
+      // `undoLastStep` zurück (heute 0107_eigene_kostenarten: Tabelle, Index und Spalte).
       const { DatabaseSync } = await import('node:sqlite')
       const db = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
       const last = db.prepare('SELECT max(id) AS id FROM __drizzle_migrations').get()
