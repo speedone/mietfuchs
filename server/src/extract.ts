@@ -258,7 +258,7 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Kabel/Antenne": Kabelanschluss, Breitband
 - "Heizung und Warmwasser": Brennstoff (Heizöl, Gas, Pellets), Fernwärme, Wärmecontracting, Wartung der Heizung, Betriebsstrom der Heizung, Messdienst (Techem, ista, Brunata, Minol), Warmwasser. Reparaturen an der Heizung sind "Nicht umlagefähig"
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
-- "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen
+- "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen, Miete oder Leasing von Rauchwarnmeldern (nur ihre Wartung ist "Sonstige Betriebskosten"; eine Position, die Miete und Wartung in EINEM Betrag nennt, bleibt "Sonstige Betriebskosten" mit der Beschreibung wie gedruckt)
 - "Zuführung Erhaltungsrücklage": Zuführung zur Erhaltungs- oder Instandhaltungsrücklage in der Hausgeldabrechnung einer Eigentumswohnung. Eine Entnahme aus der Rücklage, also eine daraus bezahlte Erhaltungsmaßnahme, ist "Entnahme Erhaltungsrücklage"
 - "Entnahme Erhaltungsrücklage": Entnahme aus der Erhaltungs- oder Instandhaltungsrücklage in der Hausgeldabrechnung einer Eigentumswohnung, also eine Erhaltungsmaßnahme, die die Gemeinschaft aus der Rücklage bezahlt hat`
 

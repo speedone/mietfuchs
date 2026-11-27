@@ -27,6 +27,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Warmwasser dazu an. „In die Staffel übernehmen“ trägt dann beide Stufen ein, statt wie bisher bei zwei Staffeln zu
   sperren. Eigene Texte zur Anpassung nennen die Teile mit dem neuen Platzhalter {Aufteilung}; ohne getrennte
   Vorauszahlung bleibt jeder Satz, wie er war ([#704](https://github.com/speedone/mietfuchs/issues/704)).
+- Rauchwarnmelder: Nennt die Beschreibung einer umgelegten Kostenposition die Miete von Rauchwarnmeldern, weist die
+  Abrechnung darauf hin, dass sie nicht umlagefähig ist (BGH VIII ZR 379/20), und nennt den Betrag, den die Position auf
+  Mieter umlegt; umlegbar ist nur die Wartung (BGH VIII ZR 117/21). Nennt sie Rauchwarnmelder ohne Miete oder Wartung,
+  fragt ein ruhiger Hinweis nach. Kostenformular und Belegbuchung sagen es schon bei der Eingabe, die Belegauswertung
+  ordnet die Miete als nicht umlagefähig ein, und das Lexikon erklärt die Trennung.
+  Verteilt wird weiter, wie erfasst ([#714](https://github.com/speedone/mietfuchs/issues/714)).
 - Erste Schritte: Die neue Anleitung „Die erste Abrechnung von Anfang bis Ende“ führt von den Einstellungen über
   Objekt, Wohnungen, Mietverhältnisse, Zähler und Kosten bis zu Abschluss, Druck, Versanddatum und Backup; das leere
   Cockpit verlinkt sie, und „Hilfe & Begriffe“ schlägt sie im leeren Bestand vor. Die Checkliste des Cockpits beginnt

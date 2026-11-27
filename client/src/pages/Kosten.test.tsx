@@ -241,7 +241,11 @@ test('Einzelbeträge (#94): je Mieter ein Feld, gespeichert wird genau das Einge
   )
   await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition anlegen/i })).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
+  // #714: Nennt die Beschreibung die Miete von Rauchwarnmeldern, steht der Satz am Feld; er geht wieder, wenn sie es nicht mehr tut.
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Rauchwarnmelder Miete' } })
+  expect(screen.getByText(/Die Miete von Rauchwarnmeldern ist nicht umlagefähig/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Heizung laut Techem' } })
+  expect(screen.queryByText(/Die Miete von Rauchwarnmeldern ist nicht umlagefähig/)).toBeNull()
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '800,00' } })
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
   expect(select(/Umlageschlüssel/i).value).toBe('amounts')

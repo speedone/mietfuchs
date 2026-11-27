@@ -17,7 +17,7 @@ import {
   itemToForm,
   meterTypeOptions,
   waterMeterHint,
-  amountsSumText, AMOUNTS_HELP,
+  amountsSumText, AMOUNTS_HELP, smokeDetectorHint,
   chimneySweepPlants,
   chimneySweepQuestion,
   notAgreedDroppedText,
@@ -1325,7 +1325,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
               <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
             )}
-            <Field label="Beschreibung" required {...formErrors.field('description')}>
+            <Field label="Beschreibung" required hint={smokeDetectorHint(form) ?? undefined} {...formErrors.field('description')}>
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
             </Field>
             <Field label="Rechnungssteller">
