@@ -51,7 +51,7 @@ const plantOf = (year: number): HeatingPlant => ({
   id: 'hp', propertyId: P, name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
   warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null,
-  nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+  nonResidential: false, restriction: 'none', districtEtsNew: false, secondPrepaymentCoversWater: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
   hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null,
   contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
   gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null,

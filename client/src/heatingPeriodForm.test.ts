@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers, initialSeparateAnswers,
   heatingWays, separateActions, separateAnswersOf, separateOffBody, separatePanelIntro, separateSavedText, splitHint, suggestedWay,
+  coversWaterNote, SECOND_PREPAYMENT_HELP, SECOND_PREPAYMENT_OPTIONS, SECOND_PREPAYMENT_OWN_PERIOD_NOTE, secondPrepaymentBody, secondPrepaymentState, secondPrepaymentValue,
 } from './heatingPeriodForm'
 import { CALENDAR_RULES, periodKey as k } from '../../shared/period.ts'
 import type { HeatingPeriodChangePreview, HeatingPlant, SeparatePreview } from './types'
@@ -9,7 +10,7 @@ import type { HeatingPeriodChangePreview, HeatingPlant, SeparatePreview } from '
 const plant = (over: Partial<HeatingPlant> = {}): HeatingPlant => ({
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null, nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null, gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null, ...over,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null, nonResidential: false, restriction: 'none', districtEtsNew: false, secondPrepaymentCoversWater: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null, gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null, ...over,
 })
 
 describe('Zeitraum der Heizung (Entwurf 11.2 Schritt 3)', () => {
@@ -168,4 +169,54 @@ describe('#704: Wege zur getrennten Vorauszahlung je Anlage', () => {
     expect(separateSavedText({ separate: true, way: 'separate' })).toBe('Getrennte Heizkostenabrechnung eingeschaltet.')
     expect(separateSavedText({ separate: false, way: 'separate' })).toBe('Getrennte Heizkostenabrechnung ausgeschaltet.')
   })
+})
+
+// #712: Die Wahl, was die zweite Vorauszahlung deckt, gibt es nur bei aufgeteilter Vorauszahlung in einer gemeinsamen
+// Abrechnung; bei einer eigenen Heizperiode steht der Satz, warum nicht.
+describe('#712: Was deckt die zweite Vorauszahlung?', () => {
+  test('Auswahl nur bei aufgeteilter Vorauszahlung im Zeitraum des Objekts; Wert und Rumpf entsprechen sich', () => {
+    expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSettlement: true }))).toEqual({ kind: 'choice' })
+    expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSettlement: false }))).toBeNull()
+    expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSettlement: null }))).toBeNull()
+    expect(SECOND_PREPAYMENT_OPTIONS).toEqual([{ value: 'heating', label: 'Heizung und Warmwasser' }, { value: 'water', label: 'Heizung, Warmwasser und Wasser/Abwasser' }])
+    for (const flag of [false, true]) {
+      const value = secondPrepaymentValue(plant({ secondPrepaymentCoversWater: flag }))
+      expect(SECOND_PREPAYMENT_OPTIONS.some((o) => o.value === value)).toBe(true)
+      expect(secondPrepaymentBody(value)).toEqual({ secondPrepaymentCoversWater: flag })
+    }
+  })
+  test('eigene Heizperiode oder Weg d: keine Auswahl, sondern der Satz, warum; ohne zwei Vorauszahlungen nichts', () => {
+    const note = { kind: 'note', text: SECOND_PREPAYMENT_OWN_PERIOD_NOTE }
+    // Durchsicht S1: Wer nie etwas gewählt hat, sieht bei Weg d nichts Neues; nur eine stehengebliebene Angabe wird genannt.
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }] }))).toBeNull()
+    expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSpans: [{ from: '2025-05', until: null }] }))).toBeNull()
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSettlement: true }))).toBeNull()
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, secondPrepaymentCoversWater: true }))).toEqual(note)
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }], secondPrepaymentCoversWater: true }))).toEqual(note)
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSettlement: false }))).toBeNull()
+    expect(SECOND_PREPAYMENT_OWN_PERIOD_NOTE).toMatch(/wirkt Ihre Angabe nicht.*rechnet nur Heizung und Warmwasser ab/)
+    // Eine stillgelegte Anlage (Kesseltausch) fragt nicht: Es gilt die Angabe der Nachfolgerin.
+    expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSettlement: true, endsOn: '2025-06-30' }))).toBeNull()
+  })
+  test('der Satz in der Karte nennt die Aufteilung, wie die Auswahl sie führt', () => {
+    expect(splitHint(plant({ periodStartMonth: null, separateSettlement: true, secondPrepaymentCoversWater: true })))
+      .toBe('Die Vorauszahlung ist aufgeteilt in Heizung, Warmwasser und Wasser/Abwasser und übrige Nebenkosten. Mit „Vorauszahlung aufteilen“ ändern Sie die Aufteilung, etwa für ein Mietverhältnis, dem die zweite Vorauszahlung fehlt.')
+    expect(splitHint(plant({ periodStartMonth: null, separateSettlement: true })))
+      .toBe('Die Vorauszahlung ist aufgeteilt in Heizung und übrige Nebenkosten. Mit „Vorauszahlung aufteilen“ ändern Sie die Aufteilung, etwa für ein Mietverhältnis, dem die Heizvorauszahlung fehlt.')
+  })
+  test('der Satz zur Auswahl sagt, was sich ändert und was an den Staffeln zu beachten ist', () => {
+    expect(SECOND_PREPAYMENT_HELP).toMatch(/ändert keine Summe der Abrechnung/)
+    expect(SECOND_PREPAYMENT_HELP).toMatch(/Mietfuchs verschiebt keine Beträge zwischen den Staffeln/)
+  })
+})
+
+// Durchsicht M3 und S3 von #712
+test('#712: an den Eingabefeldern der zweiten Vorauszahlung steht, dass sie auch Wasser deckt; nur wo die Angabe wirkt', () => {
+  const base = { periodStartMonth: null, periodChanges: [], separateSpans: [], separateSettlement: true, endsOn: null }
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true })).toBe('Die Heizvorauszahlung deckt hier auch Wasser und Abwasser (Stammdaten → Heizung, „Was deckt die zweite Vorauszahlung?“).')
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: false })).toBeNull()
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true, periodStartMonth: 5 })).toBeNull()
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true, separateSpans: [{ from: '2025-05', until: null }] })).toBeNull()
+  expect(coversWaterNote(null)).toBeNull()
+  expect(SECOND_PREPAYMENT_HELP).toMatch(/tragen Sie ihn unter Stammdaten am Mietverhältnis ab demselben Monat in die Heizvorauszahlung um; die Summe beider bleibt, was der Mieter zahlt\./)
 })

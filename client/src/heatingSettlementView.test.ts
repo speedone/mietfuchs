@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   adjustedPrepaymentLabel, cockpitHeatingRows, suggestionWithoutHeating, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, totalLabel,
-  heatingTaxYear, prepaymentSplitHint, recommendedDeadlineText, separateHeatingFor, settlementPaths, settlementTitle,
+  heatingTaxYear, prepaymentSplitHint, recommendedDeadlineText, separateHeatingFor, separateHeatingPlant, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, Statement, Tenancy } from './types'
@@ -15,7 +15,7 @@ const statement = (over: Partial<Statement> = {}): Statement => ({
 const plant = (over: Partial<HeatingPlant> = {}): HeatingPlant => ({
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null, nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null, gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null, ...over,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null, nonResidential: false, restriction: 'none', districtEtsNew: false, secondPrepaymentCoversWater: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null, gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null, ...over,
 })
 
 describe('Überschrift und Druckkopf (Entwurf 3.1)', () => {
@@ -36,6 +36,11 @@ describe('Überschrift und Druckkopf (Entwurf 3.1)', () => {
       { label: 'davon übrige Vorauszahlungen', cents: 212400 },
     ])
     expect(prepaymentSplit(statement({ prepaymentCents: 147600, heatingPrepaymentCents: 147600, scope: 'heating' }))).toEqual([])
+    // #712: Deckt die zweite Vorauszahlung auch Wasser/Abwasser, heißt sie so; die Angabe steht an der Aufstellung.
+    expect(prepaymentSplit(statement({ prepaymentCents: 360000, heatingPrepaymentCents: 207600, secondPrepaymentCoversWater: true }))).toEqual([
+      { label: 'davon Vorauszahlung für Heizung, Warmwasser und Wasser/Abwasser', cents: 207600 },
+      { label: 'davon übrige Vorauszahlungen', cents: 152400 },
+    ])
     expect(prepaymentLabel(statement({ scope: 'heating' }))).toBe('abzüglich geleisteter Heizvorauszahlungen')
     expect(prepaymentLabel(statement())).toBe('abzüglich geleisteter Vorauszahlungen')
   })
@@ -176,4 +181,16 @@ describe('#704: Hinweis auf die eigene Heizvorauszahlung am Mietverhältnis', ()
     expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null, replacesPlantId: 'alt' })], false)).toBeNull()
     expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: 5, replacesPlantId: 'alt' })], false)).toBeNull()
   })
+})
+
+// Nachprüfung von #712: Nach einem Kesseltausch steht die Wahl „Was deckt die zweite Vorauszahlung?“ an der laufenden Anlage,
+// und die Abrechnung liest sie dort. Der Satz am Mietverhältnis nahm die erste Anlage der Liste, also die stillgelegte.
+test('#712: nach einem Kesseltausch gilt am Mietverhältnis die laufende Anlage, in jeder Reihenfolge', () => {
+  const unit = { id: 'u1', noConnection: undefined }
+  const alt = plant({ id: 'alt', periodStartMonth: null, separateSettlement: true, endsOn: '2026-01-31' })
+  const neu = plant({ id: 'neu', periodStartMonth: null, separateSettlement: true, replacesPlantId: 'alt' })
+  expect(separateHeatingPlant(unit, [alt, neu])?.id).toBe('neu')
+  expect(separateHeatingPlant(unit, [neu, alt])?.id).toBe('neu')
+  // Nur eine stillgelegte Anlage: Sie bleibt die Auskunft.
+  expect(separateHeatingPlant(unit, [alt])?.id).toBe('alt')
 })

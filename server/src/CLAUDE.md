@@ -818,7 +818,11 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   und Monat. Gesperrt: Mietverhältnis
   endet vorher, oder eine Gesamtabrechnung neben einer eigenen Heizstaffel, deren Schreiben die Teile nicht nennt (der Betrag
   gilt beiden; nicht geraten). Nennt es sie (#704, `adjustment.heatingCents`, docs/heizung.md „Anpassung je Teil“), schreibt
-  die Übernahme beide Staffeln in einem Vorgang je Mietverhältnis (`PrepaymentStepItem.heating`).
+  die Übernahme beide Staffeln in einem Vorgang je Mietverhältnis (`PrepaymentStepItem.heating`). Deckt die zweite
+  Vorauszahlung laut dem eingefrorenen Stand auch Wasser/Abwasser (#712, `adjustment.coversWater` oder
+  `secondPrepaymentCoversWater` der Aufstellung, gelesen in `frozenStepLetters`), trägt der Plan es am zweiten Teil
+  (`heating.coversWater`), und Sperre und Oberfläche nennen ihn über `secondPrepaymentLabel` (shared/heatingModel.ts;
+  Regeln in docs/heizung.md „Was die zweite Vorauszahlung deckt“).
   Rückfragen formuliert die Oberfläche (client/src/prepaymentSteps.ts) mit gelesenen Fundstellen: BGH VIII ZR 246/11
   (Leitsatz), VIII ZR 271/10 (Leitsatz 2), AG Köln 203 C 73/23 (Rn. 27).
 - **Export als Daten** (#415 Teil 3, [settlementExport.ts](settlementExport.ts)): `GET /api/settlement/:period/export?format=json|csv`

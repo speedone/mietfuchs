@@ -3,6 +3,7 @@
 // Heizkostenabrechnungen, ihre Fristen im Cockpit, die Heizkorrektur, die Heizperioden im
 // Kostenformular und die Heizstaffel im Mietverhältnis. Ohne DOM prüfbar.
 import { fmtDate } from './api'
+import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
 import { formatDayRange, paymentYear, periodLabel } from '../../shared/period.ts'
 import { taxYearOptions } from './costForm'
@@ -36,10 +37,12 @@ export const prepaymentLabel = (st: Pick<Statement, 'scope'>): string =>
 // Heizkostenabrechnung hat nur die eine. Ohne Heizvorauszahlung in diesem Zeitraum keine Zeilen
 // (Laienprobe B18, Sichtprüfung E42): „davon Heizvorauszahlung 0,00 €“ ließ den Mieter fragen, wo
 // sie geblieben ist. Gehört sie einer eigenen Heizkostenabrechnung, sagt `prepaymentNote` es.
-export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents'>): { label: string; cents: number }[] {
+// #712: Deckt die zweite Vorauszahlung laut Heizanlage auch Wasser/Abwasser, heißt sie so; die Angabe steht an der
+// Aufstellung (`secondPrepaymentCoversWater`), eine abgeschlossene Abrechnung behält also ihren Wortlaut.
+export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents' | 'secondPrepaymentCoversWater'>): { label: string; cents: number }[] {
   if (st.scope === 'heating' || st.heatingPrepaymentCents === undefined || st.heatingPrepaymentCents === 0) return []
   return [
-    { label: 'davon Heizvorauszahlung', cents: st.heatingPrepaymentCents },
+    { label: `davon ${secondPrepaymentLabel(st.secondPrepaymentCoversWater, 'prepayment')}`, cents: st.heatingPrepaymentCents },
     { label: 'davon übrige Vorauszahlungen', cents: st.prepaymentCents - st.heatingPrepaymentCents },
   ]
 }
@@ -129,7 +132,10 @@ export function separateHeatingFor(unit: Pick<Unit, 'id' | 'noConnection'>, plan
 
 // Die Anlage, die die Heizkosten der Wohnung getrennt abrechnet, für den Satz am Mietverhältnis.
 export function separateHeatingPlant(unit: Pick<Unit, 'id' | 'noConnection'>, plants: readonly HeatingPlant[]): HeatingPlant | null {
-  const plant = plants.find((p) => servesUnit(p, unit))
+  // Nach einem Kesseltausch die laufende Anlage: An ihr steht, was die zweite Vorauszahlung deckt, und die Abrechnung
+  // liest es dort (`coversWater` in calc.ts). Die erste der Liste wäre die stillgelegte (Nachprüfung von #712).
+  const serving = plants.filter((p) => servesUnit(p, unit))
+  const plant = serving.find((p) => (p.endsOn ?? null) === null) ?? serving[0]
   if (!plant) return null
   return plant.separateSpans.some((s) => s.until === null) || (!hasOwnRhythm(plant) && plant.separateSettlement === true) ? plant : null
 }

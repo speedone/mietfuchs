@@ -264,6 +264,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #704: Heizanteil der eigenen Anpassung (`tenancy_letter_adjustments.heating_cents`). Eingetragen vor dem Merge; wird
   // vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0105_anpassung_heizanteil': '57b780586b821a38b93ef4cab27cd04f73304bea3f87424aa1afb35c95d532af',
+  // #712: was die zweite Vorauszahlung deckt (`heating_plants.second_prepayment_covers_water`). Eingetragen vor dem Merge;
+  // wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0106_zweite_vorauszahlung_wasser': '4b8cb23563f48b9e7172c7c9f8b5aecf02e9764d5ad8317c16543bcac9af43f9',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

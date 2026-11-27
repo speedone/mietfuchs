@@ -1817,6 +1817,18 @@ async function letterTarget(db: Database, req: Request): Promise<{ doc: string, 
   return { doc: letterDoc(period.key, { propertyId }), closed, tenancyIds: tenanciesOf(propertyId), periodTo: period.to }
 }
 
+// #712: Deckt die zweite Vorauszahlung dieses Mietverhältnisses laut der Heizanlage seiner Wohnung auch Wasser/Abwasser?
+// Nur für den Wortlaut einer Meldung beim Speichern; die Abrechnung entscheidet selbst (`coversWater` in calc.ts).
+async function secondPrepaymentCoversWaterOf(db: Database, tenancyId: string): Promise<boolean> {
+  const tenancy = (await readTenancies(db)).find((t) => t.id === tenancyId)
+  const unit = tenancy === undefined ? undefined : (await readUnits(db)).find((u) => u.id === tenancy.unitId)
+  if (unit === undefined) return false
+  const serving = (await readHeatingPlants(db)).filter((p) => p.propertyId === unit.propertyId && servesUnit(p, unit))
+  const plant = serving.find((p) => p.endsOn === null) ?? serving[0]
+  // Mit eigener Heizperiode wirkt eine stehengebliebene Angabe nicht.
+  return plant !== undefined && plant.secondPrepaymentCoversWater === true && plant.periodStartMonth === null
+}
+
 const tenancyLettersRoute = async (req: Request, res: Response) => {
   res.json(await readData(async (db) => {
     const t = await letterTarget(db, req)
@@ -1826,7 +1838,12 @@ const tenancyLettersRoute = async (req: Request, res: Response) => {
 const saveTenancyLetterRoute = async (req: Request, res: Response) => {
   const { body, texts } = lettersBody(req)
   const adjustment = parseLetterAdjustment(body.adjustment)
-  if (adjustment !== null && 'error' in adjustment) return res.status(400).json({ error: adjustment.error })
+  if (adjustment !== null && 'error' in adjustment) {
+    // #712: Die Meldung nennt den zweiten Teil so, wie die Heizanlage der Wohnung ihn führt.
+    const coversWater = await readData((db) => secondPrepaymentCoversWaterOf(db, String(req.params.tenancyId ?? '')))
+    const named = coversWater ? parseLetterAdjustment(body.adjustment, true) : adjustment
+    return res.status(400).json({ error: named !== null && 'error' in named ? named.error : adjustment.error })
+  }
   await writeData(async (db) => {
     const t = await letterTarget(db, req)
     const tenancyId = String(req.params.tenancyId ?? '')
@@ -1864,7 +1881,9 @@ function frozenStepLetters(stand: object): StepLetter[] {
     const text = (key: string): string => { const v: unknown = Reflect.get(st, key); return typeof v === 'string' ? v : '' }
     // #704: der Teil für Heizung und Warmwasser, wenn das Schreiben ihn nennt
     const heating: unknown = Reflect.get(adjustment, 'heatingCents')
-    return [{ tenancyId, tenantName: text('tenantName'), unitName: text('unitName'), cents, from: isMonthKey(from) ? from : null, heatingCents: typeof heating === 'number' && Number.isInteger(heating) ? heating : null }]
+    // #712: wofür die zweite Vorauszahlung laut dem eingefrorenen Stand gilt (am Schreiben neben dem Teil, sonst an der Aufstellung)
+    const coversWater = Reflect.get(adjustment, 'coversWater') === true || Reflect.get(st, 'secondPrepaymentCoversWater') === true
+    return [{ tenancyId, tenantName: text('tenantName'), unitName: text('unitName'), cents, from: isMonthKey(from) ? from : null, heatingCents: typeof heating === 'number' && Number.isInteger(heating) ? heating : null, ...(coversWater ? { coversWater: true } : {}) }]
   })
 }
 

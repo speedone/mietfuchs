@@ -115,3 +115,13 @@ test('#704: ein eigener Text der Anpassung ohne {Aufteilung} nennt die Teile nic
   expect(splitlessAdjustTexts(draft({ adjust: 'suggestion' }), base, 'tenancy')).toEqual([])
   expect(splitlessAdjustTexts(draft({ adjust: 'none' }), base, 'tenancy')).toEqual([])
 })
+
+// #712: Das Feld für den zweiten Teil heißt, wie die Heizanlage die zweite Vorauszahlung führt; die Meldungen nennen es so.
+test('#712: Meldungen zum zweiten Teil nennen Wasser/Abwasser, wenn die zweite Vorauszahlung es deckt', () => {
+  const texts = (d: LetterDraft, coversWater: boolean) => letterProblems(d, base, 'tenancy', { split: true, coversWater }).map((p) => p.text)
+  expect(texts(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '' }), true)).toEqual(['Davon für Heizung, Warmwasser und Wasser/Abwasser: Geben Sie einen Betrag in Euro ein, etwa 45,00; ohne diese Vorauszahlung 0.'])
+  expect(texts(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '320,00' }), true)).toEqual(['Davon für Heizung, Warmwasser und Wasser/Abwasser: Der Teil liegt über der neuen Vorauszahlung.'])
+  // ohne die Angabe wortgleich wie vor #712
+  expect(texts(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '' }), false)).toEqual(['Davon für Heizung und Warmwasser: Geben Sie einen Betrag in Euro ein, etwa 45,00; ohne Heizvorauszahlung 0.'])
+  expect(texts(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '320,00' }), false)).toEqual(['Davon für Heizung und Warmwasser: Der Teil liegt über der neuen Vorauszahlung.'])
+})

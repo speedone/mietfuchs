@@ -160,6 +160,8 @@ const FIELD_LABELS: Record<string, string> = {
   deposit_hold_cents: 'Einbehalt',
   // #704: der Teil der eigenen Anpassung für Heizung und Warmwasser
   heating_cents: 'davon für Heizung und Warmwasser',
+  // #712: an der Heizanlage, was die zweite Vorauszahlung deckt
+  second_prepayment_covers_water: 'Zweite Vorauszahlung deckt auch Wasser/Abwasser',
   deposit_hold_note: 'Grund für den Einbehalt',
   purpose: 'Verrechnet mit',
   payment_id: 'Zahlung im Mietkonto',
@@ -326,7 +328,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   },
 }
 
-const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start', 'reversal', 'created', 'rent_increase_excluded', 'rent_cap_reduced'])
+const BOOLEAN_COLUMNS = new Set(['labor_guessed', 'participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated', 'unit_ids_all', 'behind_all', 'relative', 'first_rent_at_start', 'reversal', 'created', 'rent_increase_excluded', 'rent_cap_reduced', 'second_prepayment_covers_water'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
 // Spalten, die je Tabelle etwas anderes bedeuten: `source` ist an der Auswertung die Herkunft (KI oder E-Rechnung, #189),

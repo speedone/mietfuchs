@@ -5,6 +5,7 @@ import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USA
 import { everRented } from '../../../shared/unitUsage.ts'
 import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, unitMoveLock, unitMoveQuestion, unitPropertyOptions, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
+import { coversWaterNote } from '../heatingPeriodForm'
 import { prepaymentSplitHint, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import { settlesHeating } from '../../../shared/heatingModel.ts'
 import Drawer from '../components/Drawer'
@@ -974,6 +975,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                         </>
                       )
                       : <>Erscheint, weil für dieses Mietverhältnis eine Heizvorauszahlung eingetragen ist.</>}
+                    {/* #712, Durchsicht M3: Deckt die zweite Vorauszahlung auch Wasser, steht es am Eingabefeld. */}
+                    {coversWaterNote(plant) !== null && <>{' '}{coversWaterNote(plant)}</>}
                     {' '}Die Staffel „NK-Vorauszahlung“ oben ist dann die übrige Vorauszahlung; ändert sich eine der beiden, tragen Sie die neue ab demselben Monat hier oder oben ein.
                   </p>
                   {rows.map((p, i) => (
@@ -1497,7 +1500,7 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
               <input value={newTenant.prepayment} inputMode="decimal" placeholder="z. B. 150,00" onChange={(e) => setNewTenant({ ...newTenant, prepayment: e.target.value })} />
             </Field>
             {askHeating && (
-              <Field label="Heizvorauszahlung €/Monat" required width="s" {...errors.field('heatingPrepayment')}>
+              <Field label="Heizvorauszahlung €/Monat" required width="s" hint={coversWaterNote(unit ? separateHeatingPlant(unit, plants) : null) ?? undefined} {...errors.field('heatingPrepayment')}>
                 <input value={newTenant.heatingPrepayment ?? ''} inputMode="decimal" placeholder="z. B. 120,00" onChange={(e) => setNewTenant({ ...newTenant, heatingPrepayment: e.target.value })} />
               </Field>
             )}

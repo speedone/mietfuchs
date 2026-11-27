@@ -172,3 +172,16 @@ test('#704: Vorschlag „ohne Heizung“ wegen einer anderen Anlage, die eigene 
   // Rechnet die Anlage der Wohnung selbst getrennt ab, bleibt es wie bisher: der Betrag gilt den übrigen Nebenkosten.
   assert.equal(planPrepaymentSteps(input({ tenancies: [two], letters, separate: true, heatingSeparateAt: () => true })).items[0]?.state, 'pending')
 })
+
+// #712: Führt der abgeschlossene Stand die zweite Vorauszahlung auch für Wasser/Abwasser, trägt der Plan es am zweiten Teil,
+// und die Sperre ohne genannte Teile nennt die Staffel so. Ohne die Angabe bleibt alles, wie es war.
+test('#712: zweite Vorauszahlung auch für Wasser/Abwasser: der Plan trägt es, die Sperre nennt es', () => {
+  const two = { ...tenancy, prepayments: [{ from: '2024-01', monthlyCents: 18000 }], heatingPrepayments: [{ from: '2024-01', monthlyCents: 17000 }] }
+  const letter = { tenancyId: 't1', tenantName: 'Erika', unitName: 'EG', cents: 34200, from: '2026-05' }
+  const mit = one({ tenancies: [two], letters: [{ ...letter, heatingCents: 17500, coversWater: true }] })
+  assert.deepEqual([mit.state, mit.cents, mit.heating?.cents, mit.heating?.coversWater], ['pending', 16700, 17500, true])
+  const ohne = one({ tenancies: [two], letters: [{ ...letter, heatingCents: 17500 }] })
+  assert.deepEqual([ohne.state, ohne.heating?.cents, Object.hasOwn(ohne.heating ?? {}, 'coversWater')], ['pending', 17500, false])
+  assert.match(one({ tenancies: [two], letters: [{ ...letter, coversWater: true }] }).blocked ?? '', /^Die Vorauszahlung steht in zwei Staffeln \(übrige Nebenkosten und Heizung, Warmwasser und Wasser\/Abwasser, zusammen /)
+  assert.match(one({ tenancies: [two], letters: [letter] }).blocked ?? '', /^Die Vorauszahlung steht in zwei Staffeln \(übrige Nebenkosten und Heizung, zusammen /)
+})

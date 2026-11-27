@@ -63,7 +63,8 @@ export type ExportStatement = {
   // Die Anpassung der Vorauszahlung laut Anschreiben (keine, Vorschlag, eigener Betrag); null ohne Anschreiben.
   // Wie im Anschreiben: `from` der Monat (#317), `heatingCents` der Teil für Heizung und Warmwasser, nur wenn das Schreiben
   // die Anpassung je Teil nennt (#704). Beide kommen nur hinzu, wo es sie gibt; die Form bleibt Version 1.
-  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null; heatingCents?: number | null } | null
+  // `coversWater` (#712): nur `true` und nur neben `heatingCents`: Der Teil gilt Heizung, Warmwasser und Wasser/Abwasser.
+  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null; heatingCents?: number | null; coversWater?: boolean } | null
 }
 
 export type SettlementExport = {

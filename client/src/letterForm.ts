@@ -6,6 +6,7 @@ import { blockLabel, LETTER_BLOCK_IDS, resolveTemplate, templateProblems, unmask
 import { fmtEuro, parseEuro } from './api'
 import type { Problem } from './formProblems'
 import { andList } from '../../shared/wording.ts'
+import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 
 export type LetterLevel = 'installation' | 'property' | 'tenancy'
 export type LetterFieldKey = LetterBlock | 'customCents' | 'customHeatingCents' | 'adjustFrom'
@@ -47,7 +48,7 @@ export function setText(draft: LetterDraft, base: Record<LetterBlock, string>, b
 
 // `split` (#704): Das Mietverhältnis führt zwei Staffeln, und der neue Betrag gilt beiden; dann gehört zum eigenen Betrag sein
 // Teil für Heizung und Warmwasser, sonst ließe sich die Anpassung später nicht in die Staffeln übernehmen.
-export function letterProblems(draft: LetterDraft, base: Record<LetterBlock, string>, level: LetterLevel, options: { split?: boolean } = {}): Problem<LetterFieldKey>[] {
+export function letterProblems(draft: LetterDraft, base: Record<LetterBlock, string>, level: LetterLevel, options: { split?: boolean; coversWater?: boolean } = {}): Problem<LetterFieldKey>[] {
   const out: Problem<LetterFieldKey>[] = []
   for (const b of LETTER_BLOCK_IDS) {
     const problems = templateProblems(b, shownText(draft, base, b))
@@ -62,8 +63,10 @@ export function letterProblems(draft: LetterDraft, base: Record<LetterBlock, str
   if (level === 'tenancy' && draft.adjust === 'custom' && options.split === true) {
     const total = customCentsOf(draft)
     const heating = customHeatingCentsOf(draft)
-    if (heating === null) out.push({ field: 'customHeatingCents', short: 'Betrag fehlt oder ist ungültig', text: 'Davon für Heizung und Warmwasser: Geben Sie einen Betrag in Euro ein, etwa 45,00; ohne Heizvorauszahlung 0.' })
-    else if (total !== null && heating > total) out.push({ field: 'customHeatingCents', short: 'Liegt über der neuen Vorauszahlung', text: 'Davon für Heizung und Warmwasser: Der Teil liegt über der neuen Vorauszahlung.' })
+    // #712: Das Feld heißt, wie die zweite Vorauszahlung an der Heizanlage geführt wird.
+    const field = `Davon für ${secondPrepaymentLabel(options.coversWater)}`
+    if (heating === null) out.push({ field: 'customHeatingCents', short: 'Betrag fehlt oder ist ungültig', text: `${field}: Geben Sie einen Betrag in Euro ein, etwa 45,00; ohne ${options.coversWater === true ? 'diese Vorauszahlung' : 'Heizvorauszahlung'} 0.` })
+    else if (total !== null && heating > total) out.push({ field: 'customHeatingCents', short: 'Liegt über der neuen Vorauszahlung', text: `${field}: Der Teil liegt über der neuen Vorauszahlung.` })
   }
   return out
 }

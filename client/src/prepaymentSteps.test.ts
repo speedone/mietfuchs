@@ -79,3 +79,14 @@ test('#704: Rückfrage bei zwei Staffeln: jede Staffel beim Namen, und nichts zu
   expect(halfLines).toHaveLength(1)
   expect(halfLines[0]).toMatch(/in der Staffel der Heizvorauszahlung schon 130,00 € ab September 2026/)
 })
+
+// #712: Deckt die zweite Vorauszahlung laut dem abgeschlossenen Schreiben auch Wasser/Abwasser, nennen Karte, Stand und
+// Rückfrage sie so; ohne die Angabe bleibt jeder Wortlaut wie zuvor (die Tests darüber).
+test('#712: zwei Staffeln, die zweite auch für Wasser/Abwasser: Zeilen, Stand und Rückfrage nennen sie so', () => {
+  const two = item({ cents: 12000, currentCents: 13000, heating: { cents: 19000, currentCents: 17000, existing: [{ from: '2026-09', monthlyCents: 18000 }], earlier: [{ from: '2026-02', monthlyCents: 17500 }], coversWater: true } })
+  expect(stepRows(two).map((r) => r.label)).toEqual(['Übrige Vorauszahlung', 'Vorauszahlung für Heizung, Warmwasser und Wasser/Abwasser'])
+  expect(plain(stepStatus(two))).toBe('Vorauszahlung 310,00 € ab Mai 2026 (übrige Nebenkosten 120,00 €, Heizung, Warmwasser und Wasser/Abwasser 190,00 €): noch nicht in der Staffel (dort 130,00 € und 170,00 €).')
+  const lines = (stepQuestion(plan([two]), ['t1']) ?? []).map(plain)
+  expect(lines.some((l) => l.startsWith('Erika: Ab Mai 2026 steht in der Staffel der Vorauszahlung für Heizung, Warmwasser und Wasser/Abwasser schon 180,00 € ab September 2026.'))).toBe(true)
+  expect(lines.some((l) => l.startsWith('Erika: Nach dem abgerechneten Zeitraum steht schon 175,00 € ab Februar 2026 (Vorauszahlung für Heizung, Warmwasser und Wasser/Abwasser).'))).toBe(true)
+})

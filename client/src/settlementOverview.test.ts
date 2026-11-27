@@ -138,3 +138,10 @@ test('#704: Übersicht nennt bei zwei Staffeln den Teil für die Heizung', () =>
   const split = buildLetter({ texts: DEFAULT_LETTER_TEXTS, facts: { ...letterFacts, heatingBeforeCents: 5000 }, adjustment: { mode: 'suggestion', cents: null }, suggestedCents: 10900, from: '2027-01', split: { suggestedHeatingCents: 4500, currentHeatingCents: 5000 } })
   expect(plainText(announcedAdjustment(split, 13200))).toBe('Brief kündigt an: Vorauszahlung 109,00 € ab Januar 2027, davon Heizung 45,00 €')
 })
+
+// #712: Der Teil heißt in der Übersicht, wie das Schreiben ihn nennt; die Angabe steht am Schreiben und bleibt nach dem Abschluss.
+test('#712: Übersicht nennt den zweiten Teil mit Wasser/Abwasser, wenn das Schreiben ihn so führt', () => {
+  const split = buildLetter({ texts: DEFAULT_LETTER_TEXTS, facts: { ...letterFacts, heatingBeforeCents: 5000, secondPrepaymentCoversWater: true }, adjustment: { mode: 'suggestion', cents: null }, suggestedCents: 10900, from: '2027-01', split: { suggestedHeatingCents: 6500, currentHeatingCents: 5000 } })
+  expect(split.adjustment.coversWater).toBe(true)
+  expect(plainText(announcedAdjustment(split, 13200))).toBe('Brief kündigt an: Vorauszahlung 109,00 € ab Januar 2027, davon Heizung, Warmwasser und Wasser/Abwasser 65,00 €')
+})

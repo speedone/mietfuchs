@@ -14,7 +14,8 @@ import { closeSettlement, createEntity, createProperty, CrossPropertyError, find
 import { assignableHeatingItems, createHeatingPlant, heatingPlantViolations, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { createDelivery } from '../src/db/fuel.ts'
 import { previewSeparate } from '../src/db/separateSettlement.ts'
-import { meters, OPERATING_POWER_HANDLINGS } from '../src/db/schema.ts'
+import { eq } from 'drizzle-orm'
+import { heatingPlants, meters, OPERATING_POWER_HANDLINGS } from '../src/db/schema.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodKey } from '../../shared/period.ts'
@@ -53,7 +54,7 @@ test('Anlegen: Vorgaben, und so steht sie in der Liste', async () => {
       devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
       capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
       newDevicesInstall: null,
-      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, selfSpans: [],
+      nonResidential: false, restriction: 'none', districtEtsNew: false, secondPrepaymentCoversWater: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, selfSpans: [],
       contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null, gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null,
       periodChanges: [], separateSpans: [],
     })
@@ -516,5 +517,72 @@ test('Angabe zum Betriebsstrom: der Kesseltausch übernimmt sie (E3)', async () 
     assert.equal(previous.operatingPowerHandling, 'deducted')
     const gelesen = await opened.read((db) => listHeatingPlants(db, 'objekt-1'))
     assert.deepEqual(gelesen.map((p) => [p.id, p.operatingPowerHandling]), [['hp1', 'deducted'], ['hp2', 'deducted']])
+  })
+})
+
+// #712: An der Heizanlage steht, ob die zweite Vorauszahlung neben Heizung und Warmwasser auch Wasser/Abwasser deckt.
+// Die Voreinstellung ist das bisherige Verhalten; ein Bestand von vorher bekommt sie durch den Schritt.
+test('#712: der Schritt gibt einer bestehenden Anlage die Voreinstellung „nur Heizung und Warmwasser“', async () => {
+  const dir = tempDir()
+  try {
+    const connection = await connect(path.join(dir, 'db.sqlite'))
+    const migrations = await loadMigrations()
+    const bis = migrations.findIndex((m) => m.tag.endsWith('_zweite_vorauszahlung_wasser'))
+    if (bis < 0) assert.fail('Schritt …_zweite_vorauszahlung_wasser fehlt')
+    applyMigrations(connection, migrations.slice(0, bis))
+    connection.exec(`INSERT INTO properties (id, name, kind, address) VALUES ('o2', 'Haus', 'mfh', '')`)
+    connection.exec(`INSERT INTO heating_plants (id, property_id, energy, separate_settlement) VALUES ('alt', 'o2', 'gas', 1)`)
+    applyMigrations(connection, migrations)
+    assert.deepEqual(connection.rows("SELECT second_prepayment_covers_water, separate_settlement FROM heating_plants WHERE id = 'alt'"), [[0, 1]])
+    connection.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#712: zweite Vorauszahlung auch für Wasser/Abwasser: neue Anlage ohne, gespeichert, gelesen, ein anderes Feld lässt sie stehen', async () => {
+  await withDatabase(async (opened) => {
+    const { plant } = await opened.write((db) => createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' }))
+    assert.equal(plant.secondPrepaymentCoversWater, false)
+    const gelesen = async () => (await opened.read((db) => listHeatingPlants(db, 'objekt-1'))).find((p) => p.id === 'hp1')?.secondPrepaymentCoversWater
+    assert.equal(await gelesen(), false)
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { secondPrepaymentCoversWater: true })))?.secondPrepaymentCoversWater, true)
+    assert.equal(await gelesen(), true)
+    await opened.write((db) => updateHeatingPlant(db, 'hp1', { name: 'Kessel' }))
+    assert.equal(await gelesen(), true, 'Verschmelzen nach Anwesenheit des Schlüssels')
+    // Nur `true` schaltet ein; alles andere ist die Voreinstellung.
+    for (const aus of [false, null, 'ja', 1]) {
+      await opened.write((db) => updateHeatingPlant(db, 'hp1', { secondPrepaymentCoversWater: true }))
+      assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { secondPrepaymentCoversWater: aus })))?.secondPrepaymentCoversWater, false, String(aus))
+      assert.equal(await gelesen(), false)
+    }
+  })
+})
+
+test('#712: mit eigener Heizperiode oder laufender getrennter Abrechnung lässt sich die Angabe nicht setzen, mit Satz; eine gesetzte sperrt nichts', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' }))
+    await opened.write((db) => updateHeatingPlant(db, 'hp1', { secondPrepaymentCoversWater: true }))
+    // Der Zeitraum der Heizung wird später eine eigene Heizperiode: Die Angabe bleibt stehen (sie wirkt dann nicht), und
+    // an der Anlage lässt sich weiter speichern.
+    await opened.write((db) => db.update(heatingPlants).set({ periodStartMonth: 5 }).where(eq(heatingPlants.id, 'hp1')))
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { name: 'Kessel' })))?.secondPrepaymentCoversWater, true)
+    // Ausschalten geht, erneut einschalten nicht.
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { secondPrepaymentCoversWater: false })))?.secondPrepaymentCoversWater, false)
+    await assert.rejects(() => opened.write((db) => updateHeatingPlant(db, 'hp1', { secondPrepaymentCoversWater: true })),
+      refused(400, /^Die zweite Vorauszahlung kann nur in einer gemeinsamen Abrechnung auch Wasser und Abwasser decken\. Diese Heizanlage rechnet in eigenen Heizperioden ab, und die Heizkostenabrechnung rechnet nur Heizung und Warmwasser ab\.$/))
+    assert.equal((await opened.read((db) => listHeatingPlants(db, 'objekt-1')))[0]?.secondPrepaymentCoversWater, false, 'nach der Ablehnung unverändert')
+  })
+})
+
+test('#712: der Kesseltausch übernimmt die Angabe zur zweiten Vorauszahlung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await wohnung(db, 'eg')
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'oil', method: 'manual', secondPrepaymentCoversWater: true })
+    })
+    const { plant, previous } = (await opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' }))) ?? assert.fail('keine Anlage')
+    assert.deepEqual([plant.secondPrepaymentCoversWater, previous.secondPrepaymentCoversWater], [true, true])
+    assert.deepEqual((await opened.read((db) => listHeatingPlants(db, 'objekt-1'))).map((p) => [p.id, p.secondPrepaymentCoversWater]), [['hp1', true], ['hp2', true]])
   })
 })

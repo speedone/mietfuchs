@@ -11,6 +11,7 @@ import { euro } from './costItem.ts'
 import { formatIban } from './iban.ts'
 import { effectiveLandlord, footerLine, recipientLines, returnLine } from './landlord.ts'
 import { rateAtMonth } from './monthRate.ts'
+import { secondPrepaymentLabel } from './heatingModel.ts'
 import { addMonths, monthName } from './monthlyInfo.ts'
 
 export type LetterBlockInfo = { id: LetterBlock; label: string; when: string; multiline: boolean }
@@ -208,6 +209,9 @@ export type LetterFacts = {
   // #704: die bisherige Heizvorauszahlung im selben Monat wie `prepaymentBeforeCents`, wenn das Mietverhältnis zwei Staffeln
   // führt und der neue Betrag beiden gilt; sonst `null` (dann nennt der Brief keine Teile).
   heatingBeforeCents?: number | null
+  // #712: Die zweite Vorauszahlung deckt laut Heizanlage auch Wasser/Abwasser (`Statement.secondPrepaymentCoversWater`);
+  // der Satz zu den Teilen nennt sie dann so.
+  secondPrepaymentCoversWater?: boolean
   // Die Anrede beim Mietverhältnis (Teil 2); leer heißt „Guten Tag {Name},“.
   salutation?: string
 }
@@ -221,10 +225,11 @@ export function salutationOf(tenantName: string, own: string | null | undefined)
 }
 
 // #704: der Satz zu den beiden Teilen. „bisher“ steht nur, wenn die bisherigen Beträge bekannt sind.
-export function splitSentence(newCents: number, heatingCents: number, beforeCents: number | null, heatingBeforeCents: number | null): string {
+// `coversWater` (#712): Der zweite Teil gilt auch Wasser/Abwasser und heißt dann so (`secondPrepaymentLabel`).
+export function splitSentence(newCents: number, heatingCents: number, beforeCents: number | null, heatingBeforeCents: number | null, coversWater = false): string {
   const was = (cents: number | null): string => (cents === null ? '' : ` (bisher ${euro(cents)})`)
   const restBefore = beforeCents === null || heatingBeforeCents === null ? null : beforeCents - heatingBeforeCents
-  return `Davon entfallen ${euro(heatingCents)} auf Heizung und Warmwasser${was(heatingBeforeCents)} und ${euro(newCents - heatingCents)} auf die übrigen Nebenkosten${was(restBefore)}.`
+  return `Davon entfallen ${euro(heatingCents)} auf ${secondPrepaymentLabel(coversWater)}${was(heatingBeforeCents)} und ${euro(newCents - heatingCents)} auf die übrigen Nebenkosten${was(restBefore)}.`
 }
 
 export function letterValues(f: LetterFacts, newCents: number | null, from: string | null = null, heatingCents: number | null = null): Omit<Record<LetterField, string>, 'Datum' | 'AnzahlBelege'> {
@@ -250,7 +255,7 @@ export function letterValues(f: LetterFacts, newCents: number | null, from: stri
     VorauszahlungNeu: newCents === null ? '' : euro(newCents),
     Grundlage: f.basis,
     AnpassungAb: from === null ? '' : monthName(from),
-    Aufteilung: newCents === null || heatingCents === null ? '' : splitSentence(newCents, heatingCents, f.prepaymentBeforeCents, f.heatingBeforeCents ?? null),
+    Aufteilung: newCents === null || heatingCents === null ? '' : splitSentence(newCents, heatingCents, f.prepaymentBeforeCents, f.heatingBeforeCents ?? null, f.secondPrepaymentCoversWater === true),
   }
 }
 
@@ -308,7 +313,8 @@ export function buildLetter(i: {
   const texts = Object.fromEntries(LETTER_BLOCK_IDS.map((b) => [b, resolveTemplate(i.texts[b], values)])) as Record<LetterBlock, string>
   return {
     texts,
-    adjustment: { mode: i.adjustment.mode, newCents, from, ...(heatingCents === null ? {} : { heatingCents }) },
+    // `coversWater` (#712) steht neben dem Teil, damit Übersicht und Übernahme ihn wie das Schreiben nennen, auch nach dem Abschluss.
+    adjustment: { mode: i.adjustment.mode, newCents, from, ...(heatingCents === null ? {} : { heatingCents, ...(i.facts.secondPrepaymentCoversWater === true ? { coversWater: true } : {}) }) },
     values: { ...values, Datum: '', AnzahlBelege: '' },
   }
 }
@@ -396,7 +402,7 @@ export function parseLetterTexts(input: unknown): { texts: Partial<Record<Letter
   return { texts }
 }
 
-export function parseLetterAdjustment(input: unknown): LetterAdjustment | null | { error: string } {
+export function parseLetterAdjustment(input: unknown, coversWater = false): LetterAdjustment | null | { error: string } {
   if (input === undefined || input === null) return null
   if (typeof input !== 'object') return { error: 'Die Anpassung der Vorauszahlung ist keine gültige Angabe.' }
   const mode: unknown = Reflect.get(input, 'mode')
@@ -411,8 +417,8 @@ export function parseLetterAdjustment(input: unknown): LetterAdjustment | null |
   // #704: der Teil für Heizung und Warmwasser, nur beim eigenen Betrag; ohne Angabe nennt das Schreiben keine Teile.
   const heating: unknown = Reflect.get(input, 'heatingCents')
   if (heating === undefined || heating === null) return { mode, cents, from }
-  if (typeof heating !== 'number' || !Number.isInteger(heating) || heating < 0) return { error: 'Bitte nennen Sie den Teil für Heizung und Warmwasser als Betrag in Euro, nicht negativ.' }
-  if (heating > cents) return { error: 'Der Teil für Heizung und Warmwasser liegt über der neuen Vorauszahlung.' }
+  if (typeof heating !== 'number' || !Number.isInteger(heating) || heating < 0) return { error: `Bitte nennen Sie den Teil für ${secondPrepaymentLabel(coversWater)} als Betrag in Euro, nicht negativ.` }
+  if (heating > cents) return { error: `Der Teil für ${secondPrepaymentLabel(coversWater)} liegt über der neuen Vorauszahlung.` }
   return { mode, cents, from, heatingCents: heating }
 }
 
@@ -523,6 +529,7 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
         prepaymentKind: adjustedPrepaymentLabel(st, separate),
         prepaymentBeforeCents: prepaymentBefore(st, tenancy, separate),
         heatingBeforeCents: split === null ? null : split.beforeCents,
+        ...(st.secondPrepaymentCoversWater === true ? { secondPrepaymentCoversWater: true } : {}),
         basis: suggestionBasis(st, s.daysInYear),
         salutation: tenancy?.letterSalutation ?? '',
       },

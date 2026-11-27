@@ -145,3 +145,29 @@ test('#704: gleiche Summe mit anderen Teilen: kein Hinweis „kündigt keine Anp
   show(12000)
   expect(text()).toMatch(/kündigt deshalb keine Anpassung an/)
 })
+
+// #712: Deckt die zweite Vorauszahlung laut Aufstellung auch Wasser/Abwasser, heißen Feld, Satz und Vorschau so.
+test('#712: zweite Vorauszahlung auch für Wasser/Abwasser: Feld, Satz zum Vorschlag und Vorschau nennen sie so', () => {
+  const show = (mode: 'suggestion' | 'custom') => render(
+    <UIProvider>
+      <LetterDrawer
+        open level="tenancy" title="Anschreiben an Erika" intro="" base={DEFAULT_LETTER_TEXTS} own={{}} values={SAMPLE_LETTER_VALUES}
+        shown={[...TENANCY_SHOWN, mode === 'custom' ? 'adjustCustom' : 'adjustSuggestion']}
+        adjust={{
+          mode, cents: mode === 'custom' ? 31000 : null, suggestedCents: 29200, own: true, defaultMode: 'suggestion', from: null, defaultFrom: '2027-01',
+          split: { suggestedHeatingCents: 17500, heatingCents: mode === 'custom' ? 19000 : null, coversWater: true, at: () => ({ beforeCents: 17000, unchangedCents: 17000, totalBeforeCents: 30000 }) },
+        }}
+        onClose={() => {}} onSave={async () => {}}
+      />
+    </UIProvider>,
+  )
+  show('suggestion')
+  expect(text()).toContain('Vom Vorschlag entfallen 175,00 € auf Heizung, Warmwasser und Wasser/Abwasser und 117,00 € auf die übrigen Nebenkosten')
+  expect(text()).toContain('Davon entfallen 175,00 € auf Heizung, Warmwasser und Wasser/Abwasser (bisher 170,00 €) und 117,00 € auf die übrigen Nebenkosten (bisher 130,00 €).')
+  cleanup()
+  show('custom')
+  const field = screen.getByLabelText(/Davon für Heizung, Warmwasser und Wasser\/Abwasser/)
+  expect((field as HTMLInputElement).value).toBe('190,00')
+  expect(text()).toContain('Bisher 170,00 € für Heizung, Warmwasser und Wasser/Abwasser.')
+  expect(text()).toContain('Davon entfallen 190,00 € auf Heizung, Warmwasser und Wasser/Abwasser (bisher 170,00 €) und 120,00 € auf die übrigen Nebenkosten (bisher 130,00 €).')
+})

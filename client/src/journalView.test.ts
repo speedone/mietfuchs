@@ -155,3 +155,9 @@ test('Verlauf: die Angaben zur Mieterhöhung stehen lesbar da (#191)', () => {
   expect(formatValue('status', 'partial', 'rent_increases')).toBe('teilweise zugestimmt')
   expect(formatValue('kind', 'index', 'rent_increases')).toBe('Indexmiete')
 })
+
+// #712, Durchsicht S2: die Angabe zur zweiten Vorauszahlung als ja/nein, nicht als 0/1
+test('#712: der Verlauf zeigt die Angabe zur zweiten Vorauszahlung als ja oder nein', () => {
+  expect(formatValue('second_prepayment_covers_water', 1, 'heating_plants')).toBe('ja')
+  expect(formatValue('second_prepayment_covers_water', 0, 'heating_plants')).toBe('nein')
+})

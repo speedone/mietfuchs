@@ -20,6 +20,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Anteil mit den Heizkosten verteilt wird. Eine umgestellte Rechnung des Schornsteinfegers gilt nicht als erfasster
   Betriebsstrom der Heizung. Umgebucht wird nichts von selbst: Für Kaminöfen und Gasthermen einzelner Wohnungen
   bleibt es bei „Schornsteinfeger“ ([#724](https://github.com/speedone/mietfuchs/issues/724)).
+- Zweite Vorauszahlung auch für Wasser und Abwasser: Führen Ihre Mieter zwei Vorauszahlungen in einer gemeinsamen
+  Abrechnung, galt die zweite bisher fest der Kostenart „Heizung und Warmwasser“. Unter Stammdaten in der Karte
+  „Heizung“ wählen Sie jetzt bei aufgeteilter Vorauszahlung, dass sie auch „Wasser/Abwasser“ deckt, etwa weil Ihr
+  Messdienst beides abrechnet. Keine Summe der Abrechnung ändert sich: Die Abrechnung, das Anschreiben und „In die Staffel
+  übernehmen“ nennen die zweite Vorauszahlung dann „Heizung, Warmwasser und Wasser/Abwasser“, und beim Vorschlag zur
+  Anpassung nach § 560 Abs. 4 BGB zählen die Kosten für Wasser und Abwasser zu ihrem Teil. Die Beträge der beiden
+  Staffeln tragen Sie selbst passend ein, Mietfuchs verschiebt nichts. Ohne die Angabe bleibt alles, wie es war; eine
+  eigene Heizkostenabrechnung je Heizperiode rechnet weiter nur Heizung und Warmwasser ab, und eine abgeschlossene
+  Abrechnung behält ihren Wortlaut. Der Export der Abrechnung nennt die Angabe neben `heatingCents` als `coversWater`,
+  nur wo sie gilt ([#712](https://github.com/speedone/mietfuchs/issues/712)).
 - Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
   für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach
   § 560 Abs. 4 BGB auch die beiden Teile mit ihrem bisherigen Betrag. Der Vorschlag teilt sich nach den Kosten dieser
