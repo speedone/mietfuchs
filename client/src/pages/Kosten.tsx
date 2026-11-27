@@ -50,6 +50,8 @@ import {
   keepMeterRest,
   withCategory,
   withLateContext,
+  withoutProposed,
+  markProposal,
   keepPaidOnYear,
   droppedPaidOnText,
   sameCostOf,
@@ -1284,7 +1286,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           busy={saving.busy}
           // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3), das Rechnungsdatum des
           // Belegs ebenso (#490 PR 3)
-          value={{ form, heatingPlantId, heatingPeriod, invoiceDate: dateDraft?.value ?? '' }}
+          // Ohne den gemerkten Vorschlag (`proposed`): Er ist keine Eingabe und darf nicht nach „Änderungen verwerfen?“ fragen.
+          value={{ form: withoutProposed(form), heatingPlantId, heatingPeriod, invoiceDate: dateDraft?.value ?? '' }}
           errors={formErrors}
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveItem)}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
         >
@@ -1304,7 +1307,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 erste Kostenart (angezeigt = gespeichert) */}
             <Field label={<>Kostenart{categorySuggested && <> <span className="badge amber">Vorschlag aus dem Dateinamen</span></>}</>}
               required={form.category === ''} {...formErrors.field('category')}>
-              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period))))}>
+              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(markProposal(keepMeterRest(form, keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))))}>
                 {form.category === '' && <option value="">Bitte wählen</option>}
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>

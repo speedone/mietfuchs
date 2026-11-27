@@ -4,7 +4,7 @@
 // aus der Textschicht als gelbem Vorschlag und den Angaben des Vorjahres über den Rechnungssteller, nie dem Betrag.
 // Angezeigt muss sein, was gespeichert wird.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Unit, UploadInfo } from '../types'
 import { calendarPeriod } from '../../../shared/period.ts'
 import { PeriodProvider } from '../period'
@@ -32,6 +32,8 @@ let plants: unknown[]
 let postError: string | null
 let putUploadError: string | null
 let itemsFail: boolean
+// Hält die Heizanlagen zurück, bis der Test sie freigibt.
+let plantsGate: Promise<void> | null
 
 beforeEach(() => {
   sent = []
@@ -41,6 +43,7 @@ beforeEach(() => {
   postError = null
   putUploadError = null
   itemsFail = false
+  plantsGate = null
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -61,7 +64,10 @@ beforeEach(() => {
     const path = url.split('?')[0] ?? url
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     if (path === '/api/costItems') return itemsFail ? json({ error: 'Datenbank nicht lesbar' }, 500) : json(items)
-    if (path === '/api/heating-plants') return json(plants)
+    if (path === '/api/heating-plants') {
+      if (plantsGate) await plantsGate
+      return json(plants)
+    }
     if (path === '/api/uploads') return json(uploads.map((u) => ({ ...u, bookedItemIds: [], bookedCents: {}, assessment: null })))
     return json([])
   })
@@ -379,4 +385,25 @@ test('K6: kein doppelter Erfolg nach dem Anlegen aus dem Beleg', async () => {
   await screen.findByRole('button', { name: 'Zum Eingang' })
   await new Promise((r) => setTimeout(r, 50))
   expect(screen.queryByText('„Müll“ angelegt.')).toBeNull()
+})
+
+// Durchsicht S2 (#704): Der Weg aus dem Beleg wartet auf Positionen, Zähler und Ablage, nicht auf die Heizanlagen. Kommt die
+// Messdienst-Anlage danach, greift die Vorbelegung „Einzelbeträge“ trotzdem.
+test('aus dem Beleg: Messdienst-Anlage kommt nach dem Öffnen an, der Schlüssel wird „Einzelbeträge“', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+  }]
+  let release: () => void = () => {}
+  plantsGate = new Promise<void>((resolve) => { release = resolve })
+  const u = upload('9_Heizkosten_2025.pdf')
+  uploads = [u]
+  renderPage(u)
+  await drawer()
+  expect(select(/Kostenart/i).value).toBe('Heizung und Warmwasser')
+  expect(select(/Umlageschlüssel/i).value).toBe('area')
+  release()
+  await act(async () => { await plantsGate })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('amounts'))
 })

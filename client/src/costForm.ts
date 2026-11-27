@@ -96,18 +96,33 @@ export type ItemForm = {
   meterRestKept: Partial<Record<MeterType, MeterRest | null>>
   // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573); nur beim Schlüssel `meter` gesendet, `area` ist die Voreinstellung.
   roomSplit: RoomSplit
-  // Der Schlüssel, den das Formular einer neuen Position vorgeschlagen hat (`proposal`), solange niemand ihn angefasst hat;
-  // `null` bei einer bestehenden Position, nach einer Wahl des Nutzers und bei übernommenen Angaben. Wird nicht gesendet.
-  proposed: ProposedAllocation | null
+  // Der ganze Stand des Formulars einer neuen Position direkt nach dem Vorschlag (`proposal`), für die späte Vorbelegung
+  // (`withLateContext`); `null` bei einer bestehenden Position, nach einer Wahl des Schlüssels und bei übernommenen
+  // Angaben. Wird nicht gesendet und zählt nicht als Änderung im Seitenfenster (`withoutProposed`).
+  proposed: ProposedForm | null
 }
 
-// Die Angaben zum Schlüssel, die `proposal` setzt. Stimmen sie im Formular noch mit dem Vorschlag überein, hat der Nutzer
-// den Schlüssel nicht angefasst (`withLateContext`).
-type ProposedAllocation = Pick<ItemForm, 'key' | 'meterType' | 'directUnitId' | 'customShares' | 'participants' | 'externalMeasure' | 'externalTotal' | 'meterRest'>
-const proposedOf = (f: ProposedAllocation): ProposedAllocation => ({
-  key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants,
-  externalMeasure: f.externalMeasure, externalTotal: f.externalTotal, meterRest: f.meterRest,
-})
+type ProposedForm = Omit<ItemForm, 'proposed'>
+// Was nach dem Vorschlag eingegeben werden darf, ohne die späte Vorbelegung zu beenden: Betrag, Rechnungssteller, Beleg
+// und Daten (Leistungszeitraum, bezahlt am, Jahr der Zahlung; das Jahr belegt die Seite bei einer Heizperiode über zwei
+// Jahre selbst vor). Jede andere Eingabe, auch die Beschreibung, beendet sie (Durchsicht M1): Sonst setzte ein später
+// geladenes Vorjahr „nach Wohnfläche“, und schon getippte Einzelbeträge wären unsichtbar.
+const FREE_AFTER_PROPOSAL: ReadonlySet<string> = new Set<keyof ItemForm>(['amount', 'vendor', 'invoiceFile', 'serviceFrom', 'serviceTo', 'paidOn', 'taxYear', 'proposed'])
+export const withoutProposed = (form: ItemForm): ProposedForm => {
+  const { proposed: _proposed, ...rest } = form
+  return rest
+}
+// Gleich bis auf die freien Felder; verglichen wird jedes Feld beider Stände, nicht eine Liste.
+function sameApartFromFree(a: ProposedForm, b: ProposedForm): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  return [...keys].every((k) => FREE_AFTER_PROPOSAL.has(k)
+    || JSON.stringify((a as Record<string, unknown>)[k]) === JSON.stringify((b as Record<string, unknown>)[k]))
+}
+// Nach dem Vorschlag noch etwas Eigenes der Seite am Formular (etwa `keepMeterRest`, `keepSpread` beim Wechsel der
+// Kostenart)? Dann gilt der Stand danach als Vorschlag.
+export function markProposal(form: ItemForm): ItemForm {
+  return form.proposed ? { ...form, proposed: withoutProposed(form) } : form
+}
 
 export const EMPTY_ITEM_FORM: ItemForm = {
   category: CATEGORIES[0],
@@ -445,7 +460,7 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
 // einen Kostenart an der nächsten hängen, ohne dass jemand sie gewählt hätte.
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   const next = proposalOf(previous, category, units, meters, ctx)
-  return { ...next, proposed: proposedOf(next) }
+  return { ...next, proposed: withoutProposed(next) }
 }
 function proposalOf(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   // Bezugszähler und Rest (#98) merkt sich der Vorschlag nicht: Sie gehören zu den Zählern, nicht zur Kostenart.
@@ -466,12 +481,13 @@ function proposalOf(previous: ItemForm, category: string, units: Unit[], meters:
 // Der Vorschlag, wenn seine Grundlage erst nach der Wahl der Kostenart ankommt (Heizanlagen, Positionen, Zähler laden
 // nach dem Öffnen des Formulars). Vorher hing er allein am Wechsel der Kostenart: Kam die Messdienst-Anlage danach, blieb
 // „Heizung und Warmwasser“ für immer auf „nach Wohnfläche“, und die Heizkosten gingen nach Fläche (B19, #704). Neu
-// vorgeschlagen wird nur bei einer neuen Position, deren Schlüssel noch genau der Vorschlag ist; eine Wahl des Nutzers und
-// eine bestehende Position bleiben, wie sie sind. Ohne Änderung kommt dasselbe Formular zurück.
+// vorgeschlagen wird nur bei einer neuen Position, deren Formular seit dem Vorschlag unverändert ist, ausgenommen Betrag,
+// Rechnungssteller, Beleg und Daten (`FREE_AFTER_PROPOSAL`); jede andere Eingabe und eine bestehende Position bleiben, wie
+// sie sind. Ohne Änderung kommt dasselbe Formular zurück.
 export function withLateContext(form: ItemForm, units: Unit[], meters: Meter[], ctx: KeyContext): ItemForm {
-  if (form.id || !form.proposed || JSON.stringify(proposedOf(form)) !== JSON.stringify(form.proposed)) return form
+  if (form.id || !form.proposed || !sameApartFromFree(withoutProposed(form), form.proposed)) return form
   const next = withCategory(form, form.category, units, meters, ctx)
-  return JSON.stringify(next.proposed) === JSON.stringify(form.proposed) ? form : next
+  return sameApartFromFree(withoutProposed(next), withoutProposed(form)) ? form : next
 }
 
 // Das Formular einer neuen Position, mit dem Vorschlag schon für die erste Kostenart.

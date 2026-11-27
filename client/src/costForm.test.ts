@@ -1692,6 +1692,42 @@ describe('Vorschlag, dessen Grundlage nach der Wahl der Kostenart ankommt', () =
     const stored = { ...form({ id: 'c1', category: 'Heizung und Warmwasser', key: 'area' }), proposed: null }
     expect(withLateContext(stored, units, [], after)).toBe(stored)
   })
+  // Durchsicht M1: Nicht nur die Angaben zum Schlüssel, jede Eingabe außer Betrag, Rechnungssteller, Beleg und Daten beendet
+  // die späte Vorbelegung. Sonst setzte das Vorjahr „nach Wohnfläche“, und getippte Einzelbeträge wären unsichtbar.
+  const prior: CostItemOf = { id: 'v', propertyId: 'p', period: periodKey('2024-01'), category: 'Heizung und Warmwasser', description: 'Heizung 2024', amountCents: 100000, key: 'area' }
+  const service = { ...before, serviceHeating: true }
+  const withPrior = { ...service, items: [prior] }
+  test('späte Positionen: unberührt gilt der Schlüssel des Vorjahres', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], service)
+    expect(opened.key).toBe('amounts')
+    expect(withLateContext(opened, units, [], withPrior)).toMatchObject({ key: 'area' })
+  })
+  test('späte Positionen: getippte Einzelbeträge beenden die Vorbelegung', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], service)
+    const typed = { ...opened, tenancyAmounts: { t1: '300,00' } }
+    expect(withLateContext(typed, units, [], withPrior)).toBe(typed)
+  })
+  test('späte Positionen: auch die Beschreibung beendet die Vorbelegung (Tippen ändert nie den Schlüssel)', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], service)
+    const typed = { ...opened, description: 'Heizung 2025' }
+    expect(withLateContext(typed, units, [], withPrior)).toBe(typed)
+  })
+  test('Betrag, Rechnungssteller, Beleg und Daten beenden sie nicht', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], service)
+    const typed = { ...opened, amount: '1.200,00', vendor: 'Stadtwerke', invoiceFile: 'r.pdf', paidOn: '2025-03-01', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: '2025' }
+    expect(withLateContext(typed, units, [], withPrior)).toMatchObject({ key: 'area', amount: '1.200,00', vendor: 'Stadtwerke', invoiceFile: 'r.pdf' })
+  })
+  const water: Meter = { id: 'k', propertyId: 'p', name: 'KW a', unitId: 'a', type: 'kaltwasser', unit: 'm³' }
+  test('späte Zähler: Kaltwasser an allen Wohnungen, unberührt wird „nach Verbrauch“', () => {
+    const opened = withCategory(form(), 'Wasser/Abwasser', units, [], before)
+    expect(opened.key).not.toBe('meter')
+    expect(withLateContext(opened, units, [water], before)).toMatchObject({ key: 'meter', meterType: 'kaltwasser' })
+  })
+  test('späte Zähler: eine andere Eingabe (Aufteilung auf Zimmer) beendet die Vorbelegung', () => {
+    const opened = withCategory(form(), 'Wasser/Abwasser', units, [], before)
+    const typed = { ...opened, roomSplit: 'persons' as const }
+    expect(withLateContext(typed, units, [water], before)).toBe(typed)
+  })
   test('auf zentrale Heizung umgestellt ist kein Vorschlag mehr', () => {
     const opened = withCategory(form(), 'Grundsteuer', units, [], before)
     const central = toCentralHeating(opened)
