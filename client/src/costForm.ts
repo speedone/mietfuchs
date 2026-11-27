@@ -96,7 +96,18 @@ export type ItemForm = {
   meterRestKept: Partial<Record<MeterType, MeterRest | null>>
   // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573); nur beim Schlüssel `meter` gesendet, `area` ist die Voreinstellung.
   roomSplit: RoomSplit
+  // Der Schlüssel, den das Formular einer neuen Position vorgeschlagen hat (`proposal`), solange niemand ihn angefasst hat;
+  // `null` bei einer bestehenden Position, nach einer Wahl des Nutzers und bei übernommenen Angaben. Wird nicht gesendet.
+  proposed: ProposedAllocation | null
 }
+
+// Die Angaben zum Schlüssel, die `proposal` setzt. Stimmen sie im Formular noch mit dem Vorschlag überein, hat der Nutzer
+// den Schlüssel nicht angefasst (`withLateContext`).
+type ProposedAllocation = Pick<ItemForm, 'key' | 'meterType' | 'directUnitId' | 'customShares' | 'participants' | 'externalMeasure' | 'externalTotal' | 'meterRest'>
+const proposedOf = (f: ProposedAllocation): ProposedAllocation => ({
+  key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants,
+  externalMeasure: f.externalMeasure, externalTotal: f.externalTotal, meterRest: f.meterRest,
+})
 
 export const EMPTY_ITEM_FORM: ItemForm = {
   category: CATEGORIES[0],
@@ -132,6 +143,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   meterRest: null,
   meterRestKept: {},
   roomSplit: 'area',
+  proposed: null,
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -186,6 +198,7 @@ export function itemToForm(i: CostItem): ItemForm {
     meterRest: i.meterRest ?? null,
     meterRestKept: {},
     roomSplit: i.roomSplit === 'persons' ? 'persons' : 'area',
+    proposed: null,
   }
 }
 
@@ -401,7 +414,8 @@ export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[
   const [only, ...more] = unitMeterTypes
   const meterType = key === 'meter' && !form.meterType && only && more.length === 0 ? only : form.meterType
   const last = key === 'external' && ctx && !form.externalTotal.trim() ? lastExternalBasis(ctx.items) : null
-  return keepMeterRest(form, { ...form, key, meterType, ...(last ? externalFields(last) : {}) })
+  // Gewählt ist gewählt: Ein später geladener Vorschlag (`withLateContext`) ändert den Schlüssel danach nicht mehr.
+  return keepMeterRest(form, { ...form, key, meterType, ...(last ? externalFields(last) : {}), proposed: null })
 }
 
 // ---------- Schlüssel merken (#141) ----------
@@ -430,6 +444,10 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
 // Die Angaben zum Schlüssel werden dabei zurückgesetzt: Sonst blieben die gemerkten Teilnehmer der
 // einen Kostenart an der nächsten hängen, ohne dass jemand sie gewählt hätte.
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
+  const next = proposalOf(previous, category, units, meters, ctx)
+  return { ...next, proposed: proposedOf(next) }
+}
+function proposalOf(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   // Bezugszähler und Rest (#98) merkt sich der Vorschlag nicht: Sie gehören zu den Zählern, nicht zur Kostenart.
   const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null, meterRest: null, meterRestKept: {} }
   // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
@@ -443,6 +461,17 @@ function proposal(previous: ItemForm, category: string, units: Unit[], meters: M
   // Vorschlag ist „Einzelbeträge“, sonst verteilte eine unveränderte Position sie nach Wohnfläche (Bedienprüfung 27.11.2026).
   if (category === HEATING_CATEGORY && ctx?.serviceHeating === true) return { ...form, key: 'amounts', meterType: '' }
   return { ...form, ...suggestedKey(category, units, meters, ctx ? calendarYearPeriod(ctx.year) : undefined) }
+}
+
+// Der Vorschlag, wenn seine Grundlage erst nach der Wahl der Kostenart ankommt (Heizanlagen, Positionen, Zähler laden
+// nach dem Öffnen des Formulars). Vorher hing er allein am Wechsel der Kostenart: Kam die Messdienst-Anlage danach, blieb
+// „Heizung und Warmwasser“ für immer auf „nach Wohnfläche“, und die Heizkosten gingen nach Fläche (B19, #704). Neu
+// vorgeschlagen wird nur bei einer neuen Position, deren Schlüssel noch genau der Vorschlag ist; eine Wahl des Nutzers und
+// eine bestehende Position bleiben, wie sie sind. Ohne Änderung kommt dasselbe Formular zurück.
+export function withLateContext(form: ItemForm, units: Unit[], meters: Meter[], ctx: KeyContext): ItemForm {
+  if (form.id || !form.proposed || JSON.stringify(proposedOf(form)) !== JSON.stringify(form.proposed)) return form
+  const next = withCategory(form, form.category, units, meters, ctx)
+  return JSON.stringify(next.proposed) === JSON.stringify(form.proposed) ? form : next
 }
 
 // Das Formular einer neuen Position, mit dem Vorschlag schon für die erste Kostenart.
@@ -640,7 +669,7 @@ export function notAgreedDroppedText(ids: readonly string[], tenancies: readonly
     `Nach dem Umstellen wird der Anteil ${one ? 'dieses Mietverhältnisses' : 'dieser Mietverhältnisse'} mit den Heizkosten nach der Heizkostenverordnung verteilt; bei „${HEATING_CATEGORY}“ gibt es die Angabe „nicht vereinbart“ nicht.`
 }
 export function toCentralHeating(form: ItemForm): ItemForm {
-  return { ...form, category: HEATING_CATEGORY, key: 'heatingSystem', heatingPart: 'operating', heatingTarget: '', directUnitId: '', meterType: '', participants: null, notAgreed: [], named: [], pendingWhy: [] }
+  return { ...form, category: HEATING_CATEGORY, key: 'heatingSystem', heatingPart: 'operating', heatingTarget: '', directUnitId: '', meterType: '', participants: null, notAgreed: [], named: [], pendingWhy: [], proposed: null }
 }
 
 // Kostenart wechseln. Eine neue Position bekommt den Vorschlag der Kostenart; eine bestehende
@@ -654,7 +683,7 @@ export function withCategory(form: ItemForm, category: string, units: Unit[], me
   // hieße sie „betrifft (für die Steuer)“, und ein alter Teilnehmer oder eine alte Direktzuordnung
   // würde still zu einer Steuerangabe (#163, Durchsicht).
   if (showsTaxUnitField(category) && !showsTaxUnitField(form.category)) {
-    return { ...form, category, key: 'area', directUnitId: '', participants: null }
+    return { ...form, category, key: 'area', directUnitId: '', participants: null, proposed: null }
   }
   return suggest ? proposal({ ...form, category }, category, units, meters, ctx) : { ...form, category }
 }

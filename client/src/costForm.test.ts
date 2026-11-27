@@ -41,6 +41,7 @@ import {
   withTaxUnit,
   withKey,
   withCategory,
+  withLateContext,
   keepPaidOnYear,
   droppedPaidOnText,
   showsPaidOn,
@@ -1657,4 +1658,43 @@ test('#713: Satz zur Nutzerwechselgebühr bei Einzelbeträgen nur für Heizung u
   expect(showsAmountsFeeHelp('Wasser/Abwasser')).toBe(true)
   expect(showsAmountsFeeHelp('Gartenpflege')).toBe(false)
   expect(AMOUNTS_FEE_HELP).toMatch(/ziehen Sie sie von seinem Betrag ab, wenn der Mietvertrag sie ihm nicht auferlegt \(BGH VIII ZR 19\/07\)\. Der Betrag der Position bleibt.*eine eigene Position legen Sie dafür nicht an\./)
+})
+
+// B19 unter Last (#704): Die Vorbelegung „Einzelbeträge“ hing am Wechsel der Kostenart. Kamen die Heizanlagen erst danach an,
+// blieb der Schlüssel auf „nach Wohnfläche“. Der Vorschlag folgt jetzt dem später geladenen Stand, nie gegen eine Wahl.
+describe('Vorschlag, dessen Grundlage nach der Wahl der Kostenart ankommt', () => {
+  const unit = (id: string): Unit => ({ id, propertyId: 'p', name: id, areaM2: 50, participates: true })
+  const units = [unit('a')]
+  const before = { items: [], year: 2025, propertyKind: null }
+  const after = { ...before, serviceHeating: true }
+  test('unberührt: Die Messdienst-Anlage kommt an, der Schlüssel wird „Einzelbeträge“', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], before)
+    expect(opened.key).toBe('area')
+    expect(withLateContext(opened, units, [], after)).toMatchObject({ key: 'amounts' })
+  })
+  test('ohne neue Grundlage kommt dasselbe Formular zurück', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], before)
+    expect(withLateContext(opened, units, [], before)).toBe(opened)
+  })
+  test('eine Wahl des Nutzers bleibt, auch dieselbe wie der Vorschlag', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], before)
+    const chosen = withKey(opened, 'custom', [], before)
+    expect(withLateContext(chosen, units, [], after)).toBe(chosen)
+    const back = withKey(chosen, 'area', [], before)
+    expect(withLateContext(back, units, [], after)).toBe(back)
+  })
+  test('angefasste Angaben zum Schlüssel (Teilnehmer) zählen als Wahl', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], before)
+    const touched = { ...opened, participants: ['a'] }
+    expect(withLateContext(touched, units, [], after)).toBe(touched)
+  })
+  test('eine bestehende Position behält ihren Schlüssel', () => {
+    const stored = { ...form({ id: 'c1', category: 'Heizung und Warmwasser', key: 'area' }), proposed: null }
+    expect(withLateContext(stored, units, [], after)).toBe(stored)
+  })
+  test('auf zentrale Heizung umgestellt ist kein Vorschlag mehr', () => {
+    const opened = withCategory(form(), 'Grundsteuer', units, [], before)
+    const central = toCentralHeating(opened)
+    expect(withLateContext(central, units, [], after)).toBe(central)
+  })
 })

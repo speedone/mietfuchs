@@ -29,6 +29,8 @@ let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let gets: string[]
 let plants: unknown[] = []
 let costItems: unknown[] = []
+// Hält die Antwort auf /api/heating-plants zurück, bis der Test sie freigibt (Anlagen, die nach dem Öffnen ankommen).
+let plantsGate: Promise<void> | null = null
 
 beforeEach(() => {
   sent = []
@@ -36,6 +38,7 @@ beforeEach(() => {
   meterList = METERS
   plants = []
   costItems = []
+  plantsGate = null
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
@@ -43,6 +46,7 @@ beforeEach(() => {
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     gets.push(url)
+    if (url.startsWith('/api/heating-plants') && plantsGate) await plantsGate
     const responses: Record<string, unknown> = {
       '/api/properties': [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
       '/api/costItems': costItems,
@@ -313,6 +317,45 @@ test('Laienprobe B19: Heizung mit Einzelbeträgen bei Messdienst-Anlage nennt de
   // Wer anders verteilt, stellt um; der Satz geht dann weg.
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'area' } })
   expect(screen.queryByText(/Kosten vor „Abzüglich CO₂-Kosten Vermieter“/)).toBeNull()
+})
+
+// Die Vorbelegung „Einzelbeträge“ hing am Wechsel der Kostenart: Kamen die Heizanlagen erst danach an (langsamer Rechner,
+// unter Last auch B19), blieb der Schlüssel für immer auf „nach Wohnfläche“, und die Heizkosten gingen nach Fläche.
+const servicePlant = {
+  id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+  devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+}
+const holdPlants = (): (() => Promise<void>) => {
+  let release: () => void = () => {}
+  plantsGate = new Promise<void>((resolve) => { release = resolve })
+  return async () => {
+    release()
+    await waitFor(() => expect(gets.some((g) => g.startsWith('/api/heating-plants'))).toBe(true))
+    await act(async () => { await plantsGate })
+  }
+}
+
+test('Messdienst-Anlage kommt nach der Wahl der Kostenart an: Der Schlüssel wird noch „Einzelbeträge“', async () => {
+  plants = [servicePlant]
+  const release = holdPlants()
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  expect(select(/Umlageschlüssel/i).value).toBe('area')
+  await release()
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('amounts'))
+  expect(await screen.findByText(/Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein/)).toBeTruthy()
+})
+
+test('Messdienst-Anlage kommt an, nachdem der Nutzer den Schlüssel gewählt hat: Seine Wahl bleibt', async () => {
+  plants = [servicePlant]
+  const release = holdPlants()
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'custom' } })
+  await release()
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+  expect(select(/Umlageschlüssel/i).value).toBe('custom')
 })
 
 test('Zwei Heizanlagen (Heizung PR 9): die Heizposition wählt ihre Anlage; ohne Wahl ordnet der Server nach den Wohnungen', async () => {

@@ -49,6 +49,7 @@ import {
   meterRestDroppedText,
   keepMeterRest,
   withCategory,
+  withLateContext,
   keepPaidOnYear,
   droppedPaidOnText,
   sameCostOf,
@@ -496,6 +497,11 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Mit dem Zeitraum der Abrechnung je Position: Eine Heizposition mit eigener Heizperiode zählt dort,
   // wo ihre Heizperiode endet, wie in der Übernahme aus dem Vorjahr.
   const keyCtx: KeyContext = useMemo(() => ({ items: filedItems, year, at, propertyKind: property?.kind ?? null, serviceHeating: plants.some((p) => p.method === 'service' && (p.endsOn ?? null) === null) }), [filedItems, year, at, property?.kind, plants])
+  // Kommen Heizanlagen, Positionen oder Zähler erst nach dem Öffnen an, folgt der Vorschlag einer neuen Position ihnen,
+  // solange der Nutzer den Schlüssel nicht angefasst hat (`withLateContext`, B19, #704).
+  useEffect(() => {
+    setForm((prev) => (prev ? withLateContext(prev, units, meters, keyCtx) : prev))
+  }, [keyCtx, units, meters])
   // Der Vorschlag zu einer Belegauswertung sieht in den Zeitraum, in den sie bucht (#208).
   const keyCtxOf = (v: AssessmentView): KeyContext => {
     const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))

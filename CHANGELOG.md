@@ -226,6 +226,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Ablesedienstes oder Schätzungen nach § 9a nicht mehr, nennt Mietfuchs sie vorher und fragt nach; gelöscht wird nichts,
   und zurückgestellt zählen sie wieder. In der Heizperiode eines Kesseltauschs, in der noch die alte Anlage heizte, geht
   der Wechsel erst ab der nächsten Heizperiode ([#690](https://github.com/speedone/mietfuchs/issues/690)).
+- Neue Position „Heizung und Warmwasser“ bei einer Heizung mit Messdienst: Wählte man die Kostenart, bevor die
+  Heizanlagen geladen waren, blieb der Schlüssel auf „nach Wohnfläche“ statt „Einzelbeträge“, und wer nicht umstellte,
+  verteilte die Heizkosten nach Fläche. Der Vorschlag folgt jetzt den später geladenen Angaben (Heizanlagen, Positionen,
+  Zähler), solange der Schlüssel unberührt ist; eine eigene Wahl und bestehende Positionen bleiben, wie sie sind
+  ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Zweimal derselbe Datenordner: Startete Mietfuchs (Fenster, Programmdatei, Paket oder Store), während ein anderes
   Mietfuchs auf demselben Datenordner gerade seine Datenbank öffnete, etwa beim ersten Start oder nach einem Update auf
   einem langsamen Rechner, hielt der neue Start den anderen für abwesend, weil der länger als anderthalb Sekunden nicht
