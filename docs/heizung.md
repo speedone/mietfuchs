@@ -354,7 +354,17 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   keine). Eine Berichtigung zurück auf die Einstellung der Spanne davor führt beide wieder zusammen. **Rückfrage** (409,
   `question: 'capture'`, `CaptureQuestion`, bestätigt mit `confirmCapture`): Zählt danach ab dem Beginn der Heizperiode
   etwas nicht mehr (Ablesungen der Heizkostenverteiler bzw. Wärmezähler der Wohnungen, Werte des Ablesedienstes,
-  Schätzungen nach § 9a, die nicht mehr passen; `unusedAfterCapture`), nennt der Satz es und dass nichts gelöscht wird.
+  Schätzungen nach § 9a, die erst durch den Wechsel nicht mehr passen, mit dem Weg zum neuen Eintrag; beim Wechsel zum
+  Ablesedienst auch die Warmwasserzähler, die seine Werte mit Warmwasser ersetzen; gezählt an jeder versorgten Einheit mit
+  Fläche oder Gerät wie `served` in calc.ts; `unusedAfterCapture`), nennt der Satz es und dass nichts gelöscht wird.
+  Die Antwort wiederholt die Schätzungen danach nicht (`estimatesNotice` bei `captureOnly` immer `null`); `devicesMissing`
+  sagt der Mitteilung, ob noch Heizkostenverteiler anzulegen sind. Der Verlauf nennt den Schritt „Erfassung der
+  Heizkostenabrechnung geändert“ (`retitleCurrentGroup`). **Kesseltausch**: Heizte in der Heizperiode noch die Anlage
+  davor (`replacesPlantId`, `endsOn` ab ihrem Beginn) mit anderer Erfassung, lehnt der Server ab (400) und nennt die
+  nächste Heizperiode, denn zwei Erfassungen in einer Heizperiode rechnet Mietfuchs nicht. Beginnt die eigene Abrechnung
+  erst später, nennt die Ablehnung den Beginn (`beforeBeginText`), und die Karte zeigt den Knopf nur, wo sie in der
+  Heizperiode gilt (`selfActive`). Geld: db-heizkosten.test.ts (vor, nach und zurück, auch Juli bis Juni mit Abschluss),
+  Zufallsabläufe in invariant-heizperiode.test.ts.
   Gelöscht wird bewusst nichts: Der Wechsel ist umkehrbar, und zurückgestellt zählen die Daten wieder. Abgeschlossene
   Heizperioden schützen `heatingPeriodClosed` (409) und `lastClosed` (400): Die neue Spanne beginnt immer nach der
   letzten abgeschlossenen, deren Erfassung steht fest in ihrer Spanne (`pinSelfSpans`). Die Skala der

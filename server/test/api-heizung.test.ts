@@ -728,6 +728,8 @@ test('#690: nur die Erfassung ändern über die Route; eine frühere Heizperiode
     assert.equal(ab2026.status, 200)
     const changed = await jsonOf<{ plant: HeatingPlant; converted: number }>(ab2026)
     assert.deepEqual((changed.plant.selfSpans ?? []).map((x) => [x.from, x.until, x.capture]), [['2025-01', '2026-01', 'hca'], ['2026-01', null, 'serviceValues']])
+    // Durchsicht S1: Der Verlauf nennt den Wechsel, nicht eine Einrichtung.
+    assert.equal((await s.api<{ title: string }[]>('/api/journal?limit=1'))[0]?.title, 'Erfassung der Heizkostenabrechnung geändert')
     const frueher = await send('PUT', self, { period: '2025-01', capture: 'heatMeter', captureOnly: true })
     assert.equal(frueher.status, 400)
     const text = await errorFrom(frueher)

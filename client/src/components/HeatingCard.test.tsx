@@ -666,3 +666,13 @@ test('#690: „Erfassung ändern“ fragt vor einem Wechsel nach, nach dem Erfas
   expect(sent[2]?.body).toEqual({ period: sent[0]?.body.period, capture: 'hca', captureOnly: true, confirmCapture: true })
   await waitFor(() => expect(screen.getAllByText(/Erfassung geändert/).length).toBeGreaterThan(0))
 })
+
+// #690, Durchsicht S3: Beginnt die eigene Abrechnung erst nach der Heizperiode, an der gearbeitet wird, gibt es dort
+// nichts zu ändern; der Knopf fehlt.
+test('#690 S3: „Erfassung ändern“ fehlt, solange die eigene Abrechnung in der Heizperiode noch nicht gilt', async () => {
+  const later: HeatingPlant = { ...PLANT, energy: 'gas', method: 'self', capture: 'hca', selfSpans: [{ from: periodKey('2099-01'), until: null, capture: 'hca', hotWater: 'combined' }] }
+  plants = [later]
+  render(<UIProvider><PropertyProvider><HeatingCard units={UNITS} /></PropertyProvider></UIProvider>)
+  await screen.findByRole('button', { name: 'Ändern' })
+  expect(screen.queryByRole('button', { name: 'Erfassung ändern' })).toBeNull()
+})

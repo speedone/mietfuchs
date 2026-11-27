@@ -15,7 +15,7 @@
 // **Fehlende Zwischenablesung** (Abweichung 8): die Antwort je Wohnung und Grenze.
 import { and, eq, ne } from 'drizzle-orm'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../../shared/law/heizkostenv.ts'
-import { germanDate, valueAt } from '../../../shared/law/register.ts'
+import { dayAfter, germanDate, valueAt } from '../../../shared/law/register.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { captureOf, lineRoot, plantUnitValues, servesUnit } from '../../../shared/heatingPeriod.ts'
 import type {
@@ -33,7 +33,7 @@ import { has, HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCos
 import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, earlierSpanText, lineRowsOf } from './selfLine.ts'
 import { roomView } from '../../../shared/rooms.ts'
-import { periodLabel } from '../../../shared/period.ts'
+import { periodContaining, periodLabel } from '../../../shared/period.ts'
 
 export const SELF_VIA_SETUP =
   'Die eigene Heizkostenabrechnung richten Sie in den Stammdaten unter „Heizung“ mit den Fragen der Einrichtung ein; dort entstehen Anteil, Zähler und die Umstellung der Positionen gemeinsam.'
@@ -206,7 +206,7 @@ function readItemAnswers(value: unknown): ItemAnswer[] {
 }
 
 // `null`, wenn es die Anlage nicht gibt.
-export async function setUpSelf(db: Database, plantId: string, body: unknown, today: string, newId: () => string): Promise<{ plant: HeatingPlant; created: Meter[]; converted: number; estimatesNotice: string | null } | null> {
+export async function setUpSelf(db: Database, plantId: string, body: unknown, today: string, newId: () => string): Promise<{ plant: HeatingPlant; created: Meter[]; converted: number; estimatesNotice: string | null; devicesMissing: boolean } | null> {
   const ctx = await plantContext(db, plantId)
   if (!ctx) return null
   const current = ctx.plant
@@ -220,10 +220,23 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const captureOnly = raw(body, 'captureOnly') === true
   if (captureOnly) {
     if (current.method !== 'self' || !selfActive(current, String(h.key))) {
-      throw new HeatingError(400, 'Die Erfassung allein ändern Sie nur bei einer eigenen Heizkostenabrechnung, die in dieser Heizperiode gilt. Richten Sie die eigene Heizkostenabrechnung zuerst ein.')
+      // Durchsicht S3: Beginnt die eigene Abrechnung erst später, gibt es sie schon; der Satz nennt ihren Beginn.
+      const begin = current.method === 'self' ? selfFromOf(current) : null
+      throw new HeatingError(400, begin !== null && String(h.key) < begin
+        ? beforeBeginText(begin)
+        : 'Die Erfassung allein ändern Sie nur bei einer eigenen Heizkostenabrechnung, die in dieser Heizperiode gilt. Richten Sie die eigene Heizkostenabrechnung zuerst ein.')
     }
     if (capture !== 'heatMeter' && capture !== 'hca' && capture !== 'serviceValues') {
       throw new HeatingError(400, 'Bitte wählen Sie, womit der Verbrauch erfasst wird: Wärmezähler, Heizkostenverteiler oder die Werte eines Ablesedienstes. Diese Erfassung kennt Mietfuchs nicht.')
+    }
+    // Durchsicht S2: Heizte in dieser Heizperiode noch die Anlage vor dem Kesseltausch, gälten nach dem Wechsel zwei
+    // Erfassungen in einer Heizperiode. Das rechnet Mietfuchs nicht; der Wechsel geht ab der nächsten Heizperiode.
+    const previous = current.replacesPlantId === null ? undefined : (await readHeatingPlants(db)).find((p) => p.id === current.replacesPlantId)
+    if (previous?.endsOn && previous.endsOn >= h.from && captureOf(previous, String(h.key)) !== capture) {
+      const next = periodContaining(ctx.plantRules, dayAfter(h.to))
+      throw new HeatingError(400,
+        `In der Heizperiode ${periodLabel(h)} heizte noch die Anlage vor dem Kesseltausch, bis zum ${germanDate(previous.endsOn)}, und ihr Verbrauch ist ${CAPTURE_TEXT[captureOf(previous, String(h.key))]} erfasst. ` +
+        `Zwei Erfassungen in einer Heizperiode rechnet Mietfuchs nicht. Ändern Sie die Erfassung ab der Heizperiode ${periodLabel(next)}. Gespeichert wurde nichts.`)
     }
   }
   const base: HeatingPlant = captureOnly
@@ -316,7 +329,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const allMeters = await readMeters(db)
   const lineIds = lineIdsOf((await lineRowsOf(db, plantId)).plants, plantId)
   if (captureOnly && raw(body, 'confirmCapture') !== true) {
-    const unused = await unusedAfterCapture(db, current, after, h, allUnits.map((u) => u.id), allMeters, lineIds)
+    const unused = await unusedAfterCapture(db, current, after, h, allMeters, lineIds)
     if (unused !== null) throw new CaptureQuestion(unused)
   }
   const pots = after.hotWater === 'none' ? (['heating'] as const) : (['heating', 'water'] as const)
@@ -367,21 +380,25 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const plant = (await readHeatingPlants(db)).find((p) => p.id === plantId)
   if (!plant) throw new Error('Die Heizanlage ist nach der Einrichtung nicht auffindbar.')
   const created = (await readMeters(db)).filter((m) => createdIds.includes(m.id))
-  return { plant, created, converted: answers.length, estimatesNotice: await staleEstimatesNotice(db, plant, lineIds, String(h.key)) }
+  // Durchsicht S5: Bei „Erfassung ändern“ nannte die Rückfrage die Schätzungen schon; die Antwort wiederholt sie nicht.
+  // K3: Ob Heizkostenverteiler noch anzulegen sind, sagt die Mitteilung danach nur, wenn einer Wohnung eins fehlt.
+  const afterMeters = await readMeters(db)
+  const devicesMissing = newCapture === 'hca' && allUnits.some((u) => !afterMeters.some((m) => m.unitId === u.id && m.type === 'hkv'))
+  return { plant, created, converted: answers.length, estimatesNotice: captureOnly ? null : await staleEstimatesNotice(db, plant, lineIds, String(h.key)), devicesMissing }
 }
 
 // Durchsicht von #242, G-I1: Schätzungen nach § 9a ab dieser Heizperiode, die nach der Einrichtung nicht mehr zur
 // Erfassung passen. Sie bleiben gespeichert, rechnen aber nicht (calc.ts, `heating.estimate-stale`); die Antwort
 // nennt sie, damit der Vermieter sie neu einträgt, bevor er die Abrechnung verschickt.
 async function staleEstimatesNotice(db: Executor, plant: HeatingPlant, lineIds: ReadonlySet<string>, fromKey: string): Promise<string | null> {
-  const list = await staleEstimatesOf(db, plant, lineIds, fromKey)
+  const list = (await staleEstimatesOf(db, plant, lineIds, fromKey)).map((e) => e.label)
   if (list.length === 0) return null
   return `${list.length === 1 ? 'Eine Schätzung nach § 9a passt' : `${list.length} Schätzungen nach § 9a passen`} nicht mehr zur Erfassung der Heizperiode: ${andList(list)}. ` +
     'Mietfuchs rechnet sie nicht mehr, die Wohnung gilt als nicht erfasst. Tragen Sie die Schätzung auf der Seite Heizkosten unter „Schätzung (§ 9a)“ neu ein.'
 }
 
 // Die Schätzungen ab `fromKey`, die zur Erfassung von `plant` nicht passen, als Liste für einen Satz.
-async function staleEstimatesOf(db: Executor, plant: HeatingPlant, lineIds: ReadonlySet<string>, fromKey: string): Promise<string[]> {
+async function staleEstimatesOf(db: Executor, plant: HeatingPlant, lineIds: ReadonlySet<string>, fromKey: string): Promise<{ key: string; label: string }[]> {
   const all = (await readHeatingEstimates(db)).filter((e) => lineIds.has(e.plantId) && String(e.period) >= fromKey)
   if (all.length === 0) return []
   const service = await readHeatingServiceValues(db)
@@ -392,40 +409,54 @@ async function staleEstimatesOf(db: Executor, plant: HeatingPlant, lineIds: Read
     const capture = captureOf(plant, key)
     return !estimateFits(e, capture, capture === 'serviceValues' ? lineServiceRows(service, plants, plant.id, key) : [])
   })
-  return stale.map((e) => `„${names.get(e.unitId) ?? e.unitId}“ (${e.part === 'heat' ? 'Heizung' : 'Warmwasser'}, eingetragen ${CAPTURE_TEXT[e.capture]} in ${e.valueUnit})`)
+  return stale.map((e) => ({
+    key: `${e.plantId}:${e.period}:${e.unitId}:${e.part}`,
+    label: `„${names.get(e.unitId) ?? e.unitId}“ (${e.part === 'heat' ? 'Heizung' : 'Warmwasser'}, eingetragen ${CAPTURE_TEXT[e.capture]} in ${e.valueUnit})`,
+  }))
 }
 
 // #690, Durchsicht: Was nach dem Wechsel der Erfassung ab der Heizperiode `h` nicht mehr zählt. Die Erfassung gilt ab
 // dem Beginn der Heizperiode, und alle späteren Heizperioden sind offen (abgeschlossene liegen davor, `lastClosed`).
 // Nicht mehr gezählt werden die Ablesungen der Geräte der bisherigen Art ab diesem Beginn (Heizkostenverteiler bzw.
-// Wärmezähler der Wohnungen; die Zähler an der Anlage hängen nicht an der Erfassung), die Werte eines Ablesedienstes und
-// Schätzungen nach § 9a, die nicht mehr passen. `null`, wenn nichts davon besteht.
-async function unusedAfterCapture(db: Executor, current: HeatingPlant, after: HeatingPlant, h: BillingPeriod, unitIds: readonly string[], meters: readonly Meter[], lineIds: ReadonlySet<string>): Promise<string | null> {
+// Wärmezähler der Wohnungen; die Zähler an der Anlage hängen nicht an der Erfassung), die Werte eines Ablesedienstes,
+// beim Wechsel zum Ablesedienst die Warmwasserzähler, die seine Werte mit Warmwasser ersetzen (K2, wie calc.ts), und
+// Schätzungen nach § 9a, die erst durch den Wechsel nicht mehr passen (K1). Gezählt wird an jeder versorgten Einheit, die
+// Fläche oder ein solches Gerät hat (K4, wie `served` in calc.ts). `null`, wenn nichts davon besteht.
+async function unusedAfterCapture(db: Executor, current: HeatingPlant, after: HeatingPlant, h: BillingPeriod, meters: readonly Meter[], lineIds: ReadonlySet<string>): Promise<string | null> {
   const key = String(h.key)
   const before = captureOf(current, key)
   const next = captureOf(after, key)
   if (before === next) return null
+  const rows = (await readHeatingServiceValues(db)).filter((v) => lineIds.has(v.plantId) && String(v.period) >= key)
+  const unitMeters = meters.filter((m) => m.unitId !== null && m.unitId !== undefined && (m.heatingPlantId ?? null) === null)
+  const units = roomView((await readUnits(db)).filter((u) => u.propertyId === current.propertyId)).units
+    .filter((u) => servesUnit(after, u) && ((u.areaM2 || 0) > 0 || unitMeters.some((m) => m.unitId === u.id)))
+  const served = new Set(units.map((u) => u.id))
+  const readings = await readReadings(db)
+  const readDevices = (type: Meter['type']): number => {
+    const devices = new Set(unitMeters.filter((m) => m.type === type && served.has(m.unitId ?? '')).map((m) => m.id))
+    return new Set(readings.filter((r) => devices.has(r.meterId) && r.date >= h.from).map((r) => r.meterId)).size
+  }
   const parts: string[] = []
-  const deviceType = before === 'hca' ? 'hkv' : before === 'heatMeter' ? 'waerme' : null
-  if (deviceType !== null) {
-    const served = new Set(unitIds)
-    const devices = new Set(meters.filter((m) => m.type === deviceType && m.unitId !== null && m.unitId !== undefined && served.has(m.unitId)).map((m) => m.id))
-    const read = new Set((await readReadings(db)).filter((r) => devices.has(r.meterId) && r.date >= h.from).map((r) => r.meterId))
-    if (read.size > 0) {
-      const name = deviceType === 'hkv' ? (read.size === 1 ? 'Heizkostenverteiler' : 'Heizkostenverteilern') : (read.size === 1 ? 'Wärmezähler' : 'Wärmezählern')
-      parts.push(`die Ablesungen von ${read.size} ${name} ab dem ${germanDate(h.from)}`)
-    }
+  const deviceParts: [Meter['type'], string, string][] = []
+  if (before === 'hca') deviceParts.push(['hkv', 'Heizkostenverteiler', 'Heizkostenverteilern'])
+  if (before === 'heatMeter') deviceParts.push(['waerme', 'Wärmezähler', 'Wärmezählern'])
+  if (next === 'serviceValues' && hotWaterOf(after, key) !== 'none' && rows.some((v) => v.waterValue !== null)) deviceParts.push(['warmwasser', 'Warmwasserzähler', 'Warmwasserzählern'])
+  for (const [type, one, many] of deviceParts) {
+    const n = readDevices(type)
+    if (n > 0) parts.push(`die Ablesungen von ${n} ${n === 1 ? one : many} ab dem ${germanDate(h.from)}`)
   }
   if (before === 'serviceValues') {
-    const rows = (await readHeatingServiceValues(db)).filter((v) => lineIds.has(v.plantId) && String(v.period) >= key)
     const flats = new Set(rows.map((v) => v.unitId)).size
     if (flats > 0) parts.push(`die eingetragenen Werte des Ablesedienstes für ${flats} ${flats === 1 ? 'Wohnung' : 'Wohnungen'}`)
   }
-  const estimates = await staleEstimatesOf(db, after, lineIds, key)
+  const staleBefore = new Set((await staleEstimatesOf(db, current, lineIds, key)).map((e) => e.key))
+  const estimates = (await staleEstimatesOf(db, after, lineIds, key)).filter((e) => !staleBefore.has(e.key)).map((e) => e.label)
   if (estimates.length > 0) parts.push(`${estimates.length === 1 ? 'die Schätzung nach § 9a' : `${estimates.length} Schätzungen nach § 9a`} für ${andList(estimates)}`)
   if (parts.length === 0) return null
   return `Ab der Heizperiode ${periodLabel(h)} rechnet Mietfuchs dann ${CAPTURE_TEXT[next]}. Nicht mehr zählen ${andList(parts)}. ` +
-    'Gelöscht wird nichts: Stellen Sie die Erfassung zurück, zählt es wieder. Frühere Heizperioden rechnen weiter mit ihrer Erfassung.'
+    'Gelöscht wird nichts: Stellen Sie die Erfassung zurück, zählt es wieder. Frühere Heizperioden rechnen weiter mit ihrer Erfassung.' +
+    (estimates.length > 0 ? ' Tragen Sie die Schätzung auf der Seite Heizkosten unter „Schätzung (§ 9a)“ neu ein.' : '')
 }
 
 // `null`, wenn es die Wohnung nicht gibt.

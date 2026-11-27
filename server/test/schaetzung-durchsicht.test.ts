@@ -521,3 +521,21 @@ test('Runde 3, N2-M1: der Ausweis nennt die Erfassung, damit die Karte die Einhe
   assert.equal(selfOf(run()).capture, 'heatMeter')
 })
 
+
+// #690, Durchsicht S5 und K1: Die Rückfrage vor „Erfassung ändern“ nennt die Schätzung mit dem Weg, und nach der
+// Bestätigung meldet die Antwort sie nicht noch einmal. Eine Schätzung, die schon vorher nicht passte, ist keine Folge des
+// Wechsels und wird nicht genannt.
+test('#690 S5/K1: Schätzungen in der Rückfrage zu „Erfassung ändern“: mit Weg, nicht doppelt, nur was der Wechsel betrifft', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', GUT))
+    await opened.write((db) => createEntity(db, 'meters', 'hk-c', { propertyId: 'objekt-1', name: 'HKV c', unitId: 'c', type: 'hkv', unit: 'Einheiten', hcaScale: 'product' }))
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'hca', captureOnly: true }, '2026-02-01', newId)),
+      (e: unknown) => e instanceof Error && /Schätzung nach § 9a für „C“/.test(e.message) && /Tragen Sie die Schätzung auf der Seite Heizkosten unter „Schätzung \(§ 9a\)“ neu ein/.test(e.message))
+    const done = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'hca', captureOnly: true, confirmCapture: true }, '2026-02-01', newId))
+    assert.equal(done?.estimatesNotice, null)
+    // Mit Heizkostenverteilern passte die Schätzung in kWh schon nicht; der Wechsel zum Ablesedienst ändert daran nichts.
+    const weiter = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'serviceValues', captureOnly: true }, '2026-02-01', newId))
+    assert.equal(weiter?.plant.capture, 'serviceValues')
+  })
+})

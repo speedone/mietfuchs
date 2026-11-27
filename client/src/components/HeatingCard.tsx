@@ -16,7 +16,7 @@ import HeatingCaptureChange from './HeatingCaptureChange'
 import HeatDeliveryFields from './HeatDeliveryFields'
 import { useOptionalPeriod } from '../period'
 import { localToday } from '../periodForm'
-import { plantRules, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { plantRules, selfActive, servesUnit } from '../../../shared/heatingPeriod.ts'
 import { ApiError } from '../api'
 import { revealJump, useFocusTarget, type FocusProps } from '../focus'
 import {
@@ -485,7 +485,8 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
               {canSwap(p) && <button className="btn secondary" onClick={() => openSwap(p)}>Heizung erneuert (Kessel getauscht)</button>}
               {p.method === 'manual' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setSelfFor(p) }}>Eigene Heizkostenabrechnung einrichten</button>}
               {/* #690: Die Erfassung der eigenen Abrechnung direkt ändern, ohne den Umweg über „Niemand“. */}
-              {p.method === 'self' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setCaptureFor(p) }}>Erfassung ändern</button>}
+              {/* Durchsicht S3: nur, wo die eigene Abrechnung in der Heizperiode gilt, an der gearbeitet wird. */}
+              {p.method === 'self' && p.supply === 'central' && p.endsOn === null && selfActive(p, heatingKeyOf(p)) && <button className="btn secondary" onClick={() => { setError(''); setCaptureFor(p) }}>Erfassung ändern</button>}
             </>}
             dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen …</button>}
           />
@@ -743,10 +744,10 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
           period={heatingKeyOf(captureFor)}
           periodLabel={periodLabel(periodContaining(plantRules(captureFor, rulesOf(property)), period?.period.to ?? localToday()))}
           onCancel={() => setCaptureFor(null)}
-          onDone={async (p) => {
+          onDone={async (p, devicesMissing) => {
             setCaptureFor(null)
             await loadAll()
-            toast(captureChangedText(p.capture))
+            toast(captureChangedText(p.capture, devicesMissing))
           }}
         />
       )}

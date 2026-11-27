@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { cutoffReadingBody, ratedText, exactText, hcaFieldsBody, hcaFieldsOf, hcaSummary, HCA_SCALE_OPTIONS, isCutoffReading, serviceRowsOf, serviceValuesBody, setupDoneText } from './hcaForm'
+import { cutoffReadingBody, ratedText, exactText, hcaFieldsBody, hcaFieldsOf, hcaSummary, HCA_SCALE_OPTIONS, isCutoffReading, serviceRowsOf, serviceValuesBody, setupDoneText, captureChangedText } from './hcaForm'
 import { periodKey } from '../../shared/period.ts'
 
 test('Skala und Faktor: nur am Heizkostenverteiler, Faktor deutsch oder technisch, über 0', () => {
@@ -76,4 +76,12 @@ test('Durchsicht #241 M3: ein Faktor über 10 braucht eine Bestätigung', () => 
   expect(hcaFieldsOf({ hcaScale: 'unit', ratingFactor: 12 })).toEqual({ scale: 'unit', factor: '12', confirmed: true })
   expect(ratedText({ type: 'hkv', hcaScale: 'unit', ratingFactor: 1.25 }, 500)).toBe('bewertet: 625 Einheiten')
   expect(ratedText({ type: 'hkv', hcaScale: 'product', ratingFactor: null }, 500)).toBeNull()
+})
+
+// #690, Durchsicht K3: Nach „Erfassung ändern“ zu Heizkostenverteilern nennt die Mitteilung das Anlegen nur, wenn
+// Geräte fehlen; sonst die Stände.
+test('#690 K3: captureChangedText nennt das Anlegen der Heizkostenverteiler nur, wenn welche fehlen', () => {
+  expect(captureChangedText('hca', true)).toMatch(/Legen Sie auf der Seite Zähler je Heizkörper einen Heizkostenverteiler/)
+  expect(captureChangedText('hca', false)).not.toMatch(/Legen Sie/)
+  expect(captureChangedText('hca', false)).toMatch(/Stände der Heizkostenverteiler auf der Seite Zähler/)
 })

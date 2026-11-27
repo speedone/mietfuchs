@@ -5,7 +5,7 @@ import { api, ApiError, errorText } from '../api'
 import Drawer from './Drawer'
 import Field from './Field'
 import { useFormError } from './ErrorSummary'
-import { useConfirm, useToast } from './feedback'
+import { useConfirm } from './feedback'
 import { useOptionalProperty, withProperty } from '../property'
 import { CAPTURE_SELF_OPTIONS, captureHint } from '../heatingSelfForm'
 
@@ -13,12 +13,11 @@ import { CAPTURE_SELF_OPTIONS, captureHint } from '../heatingSelfForm'
 // (`captureOnly` an der Route der Einrichtung); Warmwasser, Maßstab, Anteil nach Verbrauch und Teil und Ziel der
 // Heizpositionen bleiben am Server, wie sie gespeichert sind. Vorher ging das nur über „Niemand“, und das verwarf sie.
 export default function HeatingCaptureChange({ plant, period, periodLabel, onDone, onCancel }: {
-  plant: HeatingPlant; period: string; periodLabel: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
+  plant: HeatingPlant; period: string; periodLabel: string; onDone: (p: HeatingPlant, devicesMissing: boolean) => void; onCancel: () => void
 }) {
   const saved = captureOf(plant, period)
   const [capture, setCapture] = useState<CaptureMethod>(saved)
   const errors = useFormError<'capture'>()
-  const toast = useToast()
   const confirm = useConfirm()
   const propertyId = useOptionalProperty()?.property?.id
   const [busy, setBusy] = useState(false)
@@ -27,7 +26,7 @@ export default function HeatingCaptureChange({ plant, period, periodLabel, onDon
     if (busy) return
     setBusy(true)
     try {
-      type Done = { plant: HeatingPlant; estimatesNotice?: string | null }
+      type Done = { plant: HeatingPlant; devicesMissing?: boolean }
       const send = (confirmCapture: boolean) =>
         api<Done>(withProperty(`/api/heating-plants/${plant.id}/self`, propertyId), { method: 'PUT', body: JSON.stringify({ period, capture, captureOnly: true, ...(confirmCapture ? { confirmCapture: true } : {}) }) })
       let done: Done
@@ -41,8 +40,8 @@ export default function HeatingCaptureChange({ plant, period, periodLabel, onDon
         done = await send(true)
       }
       errors.clear()
-      if (done.estimatesNotice) toast(done.estimatesNotice, 'error')
-      onDone(done.plant)
+      // Schätzungen, die nicht mehr passen, nennt schon die Rückfrage samt Weg (#690, Durchsicht S5).
+      onDone(done.plant, done.devicesMissing !== false)
     } catch (e) {
       errors.show(errorText(e))
     } finally {

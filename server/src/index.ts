@@ -1109,7 +1109,13 @@ app.delete('/api/heating-plants/:id/periods/:period/stock', async (req, res) => 
 // samt Anteil, Zählern und Positionen (db/heatingSelf.ts). 409 mit der Liste offener Positionen, die
 // Teil und Ziel brauchen.
 app.put('/api/heating-plants/:id/self', async (req, res) => {
-  const result = await writeData((db) => setUpSelf(db, req.params.id, bodyObject(req), today(), newId))
+  const body = bodyObject(req)
+  const result = await writeData(async (db) => {
+    const done = await setUpSelf(db, req.params.id, body, today(), newId)
+    // #690, Durchsicht S1: „Erfassung ändern“ ist keine Einrichtung; der Verlauf nennt, was geschehen ist.
+    if (done && body.captureOnly === true) await retitleCurrentGroup(db, 'Erfassung der Heizkostenabrechnung geändert')
+    return done
+  })
   if (!result) return res.status(404).json({ error: NO_PLANT })
   res.json(result)
 })
