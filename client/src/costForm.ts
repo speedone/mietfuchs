@@ -832,12 +832,17 @@ export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[
 // entsteht (`POWER_GENERATED`), jede Position ohne Teil; dort ist der Strom die Energie selbst (R-W2), auch bei „Wärmepumpe
 // 2025“ oder ohne Beschreibung. Heizöl, Gasrechnung und Wartung ohne Teil fragen weiter nicht; eine Beschreibung, die
 // Wartung, Schornsteinfeger oder Messdienst nennt (`heatingKindOf`), ist kein Betriebsstrom, auch „Wartung Wärmepumpe“ nicht.
+// Nachprüfung von #721 (M-C): Das gilt auch an der Wärmepumpe (dort fragte jede Position, und ein „Ja“ an der Wartung
+// unterdrückt den Hinweis „Abzug des Betriebsstroms fehlt“), und eine Tätigkeit an Pumpe, Brenner oder Elektrik
+// („Reparatur Brenner“, „Heizungspumpe getauscht“, „Elektriker Heizung“) ist Wartung (`heatingKindOf`), keine Frage.
 const NOT_POWER: readonly (HeatingKind | null)[] = ['maintenance', 'chimney', 'metering']
+const mayBePower = (description: string | undefined): boolean => !NOT_POWER.includes(heatingKindOf(description))
 const namesOperatingPower = (description: string | undefined): boolean =>
-  /strom|elektr|pumpe|brenner/i.test((description ?? '').normalize('NFC')) && !NOT_POWER.includes(heatingKindOf(description))
+  /strom|elektr|pumpe|brenner/i.test((description ?? '').normalize('NFC')) && mayBePower(description)
 export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'> & Partial<Pick<ItemForm, 'description' | 'operatingPower'>>, plantEnergy?: HeatingEnergy): boolean =>
   form.category === HEATING_CATEGORY && (form.heatingPart === 'operating' ||
-    (form.heatingPart === '' && (form.operatingPower === 'included' || namesOperatingPower(form.description) || (plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy)))) ||
+    (form.heatingPart === '' && (form.operatingPower === 'included' || namesOperatingPower(form.description) ||
+      (plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy) && mayBePower(form.description)))) ||
     (form.heatingPart === 'fuel' && plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy)))
 
 // Ein Abzug am Allgemeinstrom (P-W2): negativer Betrag bei „Beleuchtung/Allgemeinstrom“. Dann fragt das

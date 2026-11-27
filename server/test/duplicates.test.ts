@@ -283,3 +283,14 @@ test('#721 Kandidaten: zwei Brennstoffrechnungen fragen immer, verschiedene Arte
   const wartungen = ['eg', 'og', 'dg'].map((u) => ({ ...item({ period: P, category: HEIZUNG, description: 'Wartung Therme', amountCents: 14500 }), key: 'direct' as const, directUnitId: u }))
   assert.deepEqual(sameCostCandidates(wartungen.slice(0, 2), { period: P, category: HEIZUNG, description: 'Wartung Therme', amountCents: 14500, key: 'direct', directUnitId: 'dg' }), [])
 })
+
+// Nachprüfung von #721 (M-A, M-B): „Kundendienst Gastherme“ galt als Brennstoff und „Wärmepumpenstrom“ als Betriebsstrom;
+// gegen „Wartung Therme“ bzw. „Heizstrom“ (dieselbe Rechnung brutto und netto) blieb die Rückfrage still.
+test('Nachprüfung #721 Kandidaten: Kundendienst gegen Wartung und Heizstrom gegen Wärmepumpenstrom fragen', () => {
+  const P = calendarPeriod(2026)
+  const ask = (vorhanden: Partial<DuplicateItem>, q: Partial<Parameters<typeof sameCostCandidates>[1]>) =>
+    sameCostCandidates([item({ period: P, category: HEIZUNG, ...vorhanden })], { period: P, category: HEIZUNG, ...q }).length > 0
+  assert.equal(ask({ description: 'Kundendienst Gastherme', amountCents: 17850 }, { description: 'Wartung Therme', amountCents: 15000 }), true)
+  assert.equal(ask({ description: 'Heizstrom', amountCents: 210000 }, { description: 'Wärmepumpenstrom', amountCents: 176470 }), true)
+  assert.equal(ask({ description: 'Wartung', amountCents: 26000 }, { description: 'Heizöl', amountCents: 218500 }), false)
+})

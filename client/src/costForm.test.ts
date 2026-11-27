@@ -1039,6 +1039,24 @@ test('Durchsicht #721 Betriebsstrom: ohne Teil auch bei Pumpe und Brenner und an
   expect(showsOperatingPower({ ...heiz, description: '', heatingPart: operating.value }, 'gas')).toBe(true)
 })
 
+// Nachprüfung von #721 (M-C): An einer Wärmepumpe fragte das Formular ohne Teil bei jeder Position, auch bei Wartung,
+// Schornsteinfeger und Messdienst; ein „Ja“ dort unterdrückt den Hinweis „Abzug des Betriebsstroms fehlt“. Und Pumpe oder
+// Brenner in einer Tätigkeit („Reparatur Brenner“) ist Wartung, kein Betriebsstrom.
+test('Nachprüfung #721 Betriebsstrom: keine Frage bei Wartung, Schornsteinfeger und Messdienst an der Wärmepumpe und bei Tätigkeiten an Pumpe oder Brenner', () => {
+  const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser' }
+  for (const description of ['Wartung Wärmepumpe', 'Schornsteinfeger', 'Messdienst']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'heatPump'), description).toBe(false)
+    expect(showsOperatingPower({ ...heiz, description }, 'electric'), description).toBe(false)
+  }
+  for (const description of ['Wärmepumpe 2025', '']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'heatPump'), description).toBe(true)
+  }
+  for (const description of ['Reparatur Brenner', 'Ölbrenner Service', 'Heizungspumpe getauscht', 'Pumpe Reparatur', 'Elektriker Heizung']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'gas'), description).toBe(false)
+  }
+  expect(showsOperatingPower({ ...heiz, description: 'Umwälzpumpe Strom' }, 'gas')).toBe(true)
+})
+
 // Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position
 // (Teil „Brennstoff“), ob sie über den Zähler des Hauses läuft; bei Gas nicht.
 test('Betriebsstrom: Strom zur Wärmeerzeugung bei Wärmepumpe und Stromheizung lässt sich kennzeichnen', () => {

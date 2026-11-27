@@ -242,3 +242,16 @@ test('#720: Brennstoffrechnung ohne Anlage bei Mietern, die selbst heizen: Warnu
   // Ohne Mieter, die selbst heizen, keine Warnung.
   assert.ok(!codes(settle({ units: ZWEI, tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')], costItems: [gas] })).includes('heating.fuel-for-self-supply'))
 })
+
+// Nachprüfung von #721 (M-A, M-B): „Kundendienst Gastherme“ galt wegen „Gas“ als Brennstoff, und die Warnung riet, umlegbare
+// Wartung zu löschen; „Wärmepumpenstrom“ galt wegen „Pumpenstrom“ als Betriebsstrom und blieb ohne Warnung.
+test('Nachprüfung #721: Wartung mit Brennstoffwort ohne Teil bleibt beim Hinweis, Wärmepumpenstrom ohne Teil warnt', () => {
+  const selbst = { heatingModel: 'selfSupply' as const, selfSupplyKind: 'perUnit' as const }
+  const tenancies = [tenancy('Mieter A', 'a', selbst), tenancy('Mieter B', 'b', selbst)]
+  for (const description of ['Kundendienst Gastherme', 'Öltankreinigung', 'Gasleitung Dichtheitsprüfung', 'Reparatur Gastherme']) {
+    const r = settle({ units: ZWEI, tenancies, costItems: [item(2025, { id: 'w', description, amountCents: 17850 })] })
+    assert.deepEqual(codes(r).filter((c) => c === 'heating.fuel-for-self-supply' || c === 'co2.self-supply-items'), ['co2.self-supply-items'], description)
+  }
+  const strom = settle({ units: ZWEI, tenancies, costItems: [item(2025, { id: 'wp', description: 'Wärmepumpenstrom', amountCents: 176470 })] })
+  assert.deepEqual(codes(strom).filter((c) => c === 'heating.fuel-for-self-supply' || c === 'co2.self-supply-items'), ['heating.fuel-for-self-supply'])
+})

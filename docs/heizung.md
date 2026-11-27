@@ -666,8 +666,9 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   nur mit positivem Betrag.
 - **Wo das Kostenformular fragt** (`showsOperatingPower` in client/src/costForm.ts, #721): mit dem Teil „Betrieb“ immer
   (dorthin führen die Hinweise), mit „Brennstoff/Energie“ nur bei Wärmepumpe und Stromheizung, **ohne Teil nur, wenn die
-  Beschreibung Strom, Pumpe oder Brenner nennt (nicht bei Wartung, Schornsteinfeger, Messdienst nach `heatingKindOf`),
-  die Anlage eine Wärmepumpe oder Stromheizung ist (`POWER_GENERATED`) oder die Antwort schon gespeichert ist** (sonst
+  Beschreibung Strom, Pumpe oder Brenner nennt, die Anlage eine Wärmepumpe oder Stromheizung ist (`POWER_GENERATED`)
+  oder die Antwort schon gespeichert ist; nie bei Wartung, Schornsteinfeger, Messdienst nach `heatingKindOf`, auch an
+  der Wärmepumpe nicht, und eine Tätigkeit an Pumpe oder Brenner („Reparatur Brenner“) ist Wartung** (sonst
   stand die Frage auch bei Heizöl, Gas und Wartung). Der Rumpf schickt `included` nur, wo die Frage steht; deshalb zählt
   die gespeicherte Antwort mit. Steht eine Position ohne Teil da, nennt `heating.operating-power-deduction-missing` zuerst
   den Teil `OPERATING_PART_LABEL` (shared/operatingPower.ts, dieselbe Konstante wie im Formular; `hasPartless`).
@@ -799,7 +800,8 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
 - **Brennstoff bei Selbstversorgern** (Durchsicht von #720, `heating.fuel-for-self-supply`, warning, färbt): eine
   Heizposition ohne Anlage mit Teil `fuel`, verknüpfter Lieferung oder ohne Teil mit einer Beschreibung der Art `fuel`
   (`heatingKindOf` in [shared/heatingKind.ts](../shared/heatingKind.ts), kleine Wortliste, eine Art außer Brennstoff
-  geht vor), die ein Mietverhältnis mit „Mieter heizt selbst“ trägt. Text: Position, Betrag, die Selbstversorger mit
+  geht vor, ein Bauteil wie Therme, Tank oder Zähler ohne Lieferung ist nie Brennstoff, Wärmepumpen- und Heizstrom ist
+  Energie, Tabelle in shared-heating-kind.test.ts), die ein Mietverhältnis mit „Mieter heizt selbst“ trägt. Text: Position, Betrag, die Selbstversorger mit
   Anteil, was zu prüfen ist (löschen, auf andere Wohnungen beschränken, Angabe am Mietverhältnis). Ohne Paragrafen. Für
   diese Positionen entfällt `co2.self-supply-items`.
 - Heizpositionen nur von Selbstversorgern: keine Kürzung nach § 7 Abs. 4 CO2KostAufG oder § 12
