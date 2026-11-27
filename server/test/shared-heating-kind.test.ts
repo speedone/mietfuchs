@@ -74,3 +74,12 @@ test('Nachprüfung #721: Bauteil und Brennstoff ist nie Brennstoff, Großschreib
   assert.equal(heatingKindOf(undefined), null)
   assert.equal(heatingKindOf(null), null)
 })
+
+// Integrationsdurchsicht mit #724: Dieselbe Liste erkennt in server/src/operatingPower.ts die Rechnung des Schornsteinfegers
+// (`chimneySweepLike`). Auch das Kehren selbst; die Abgasanlage allein ist keine Messung, „Rückkehr“ kein Kehren.
+test('Integrationsdurchsicht #724: Kehren am Wortanfang ist Schornsteinfeger, Reparatur der Abgasanlage ist Wartung', () => {
+  assert.equal(heatingKindOf('Kehren 2025'), 'chimney')
+  assert.equal(heatingKindOf('Kehrbezirk Gebühr'), 'chimney')
+  assert.equal(heatingKindOf('Reparatur Abgasanlage'), 'maintenance')
+  assert.equal(heatingKindOf('Rückkehr Monteur'), null)
+})

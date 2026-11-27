@@ -24,7 +24,9 @@ export type HeatingKind = 'fuel' | 'maintenance' | 'chimney' | 'metering' | 'pow
 const START = '(?:^|[^\\p{L}])'
 const END = '(?:$|[^\\p{L}])'
 
-const CHIMNEY = /schornstein|kaminkehr|kehrgebühr|abgasmess|emissionsmess|immissionsmess|immissionsschutz|feuerstättenschau/u
+// Auch das Kehren selbst („Kehren 2025“, „Kehrbezirk“), nur am Wortanfang („Rückkehr“ nicht). Dieselbe Liste erkennt
+// in server/src/operatingPower.ts (`chimneySweepLike`) eine Rechnung, die keinen Betriebsstrom enthält.
+const CHIMNEY = new RegExp(`schornstein|kaminkehr|${START}kehr|abgasmess|emissionsmess|immissionsmess|immissionsschutz|feuerstättenschau`, 'u')
 const METERING = /messdienst|ablesung|ablesedienst|heizkostenverteiler|zählermiete|gerätemiete|eichaustausch|eichung|wärmezähler|wärmemengenzähler|verbrauchserfassung|abrechnungsservice|abrechnungsdienst/u
 const EXPLICIT_POWER = /betriebsstrom|pumpenstrom/u
 // Tätigkeiten an der Anlage: Wartung, Kundendienst, Reparatur, Prüfung, Reinigung, Tausch, Aufbereitung des Heizungswassers.

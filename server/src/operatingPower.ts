@@ -6,6 +6,7 @@
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
 import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { heatingKindOf } from '../../shared/heatingKind.ts'
 import { andList } from '../../shared/wording.ts'
 import { asksOperatingPowerHandling, euro, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_PART_LABEL, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED, deductionReported, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
 
@@ -211,11 +212,11 @@ export type MissingPowerFinding = {
 
 // Durchsicht von #724, S1: Eine Rechnung des Schornsteinfegers (Kehren, Abgas- oder Immissionsmessung) enthält keinen
 // Strom. Steht sie nach dem Umstellen im Kostenformular mit dem Teil „Betrieb“ bei den Heizkosten, beantwortet sie die
-// Frage nach dem Betriebsstrom nicht; vorher schwieg `heating.operating-power-missing` dann. Erkannt wird sie am Namen
-// (wie die Kostenart „Schornsteinfeger“ in `matchCategory`, dazu Kehren, Abgas und Immission); nennt der Name auch
-// Strom, zählt die Position weiter. Eine Zahl ändert sich nicht, nur ob der Hinweis kommt.
-const SWEEP_WORDS = /schornstein|kamin|(?<![a-zäöüß])kehr|abgas|immission|feuerstätt/i
-export const chimneySweepLike = (description: string): boolean => SWEEP_WORDS.test(description) && !/strom/i.test(description)
+// Frage nach dem Betriebsstrom nicht; vorher schwieg `heating.operating-power-missing` dann. Erkannt wird sie an der
+// Beschreibung mit derselben Liste wie im Kostenformular (`heatingKindOf`, Integrationsdurchsicht mit #721): eine
+// Reparatur der Abgasanlage oder die Wartung eines Kaminofens ist keine. Nennt der Name auch Strom, zählt die Position
+// weiter. Eine Zahl ändert sich nicht, nur ob der Hinweis kommt.
+export const chimneySweepLike = (description: string): boolean => heatingKindOf(description) === 'chimney' && !/strom/i.test(description)
 
 export function missingPowerFindings(input: {
   period: { from: string; to: string }
