@@ -389,7 +389,8 @@ async function setHeating(tx: Executor, tenancyId: string, plantId: string, peri
   })
 }
 
-export async function applySeparate(db: Database, plantId: string, body: unknown, today: string): Promise<{ plant: HeatingPlant } | { error: string; preview: SeparatePreview } | null> {
+// `way` und `separate` für den Satz im Verlauf: Ohne Spanne (H = P) wird keine getrennte Abrechnung umgestellt.
+export async function applySeparate(db: Database, plantId: string, body: unknown, today: string): Promise<{ plant: HeatingPlant; way: SeparatePreview['way']; separate: boolean } | { error: string; preview: SeparatePreview } | null> {
   const p = await plan(db, plantId, body, today)
   if (p === null) return null
   // Jede Antwort mit Vorschau trägt Fristen und Ergebnisse (Review der Laienprobe, Runde 1).
@@ -446,7 +447,7 @@ export async function applySeparate(db: Database, plantId: string, body: unknown
 
   await db.transaction(async (tx) => writeSeparateIn(tx, plantId, p, given))
   const plant = (await readHeatingPlants(db)).find((x) => x.id === plantId)
-  return plant ? { plant } : null
+  return plant ? { plant, way: p.way, separate: p.separate } : null
 }
 
 type Given = {

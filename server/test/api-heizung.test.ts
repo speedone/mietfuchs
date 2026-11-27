@@ -159,6 +159,9 @@ test('#704: Vorauszahlung aufteilen bei gleichem Zeitraum über HTTP: eine Abrec
     assert.deepEqual([vorschau.way, vorschau.blocked, vorschau.steps.map((x) => x.rows.map((r) => [r.from, r.totalCents]))], ['samePeriod', [], [[['2025-01', 30000]]]])
     const ein = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-01', answers: { steps: { [mieter.id]: { '2025-01': 12000 } }, token: vorschau.token } })
     assert.equal(ein.status, 200)
+    // Integrationsdurchsicht Daten, K3: Im Verlauf steht, was geschehen ist; eine getrennte Abrechnung gibt es hier nicht.
+    const neuester = async () => (await s.api<{ title: string }[]>('/api/journal?limit=1'))[0]?.title
+    assert.equal(await neuester(), 'Vorauszahlung in Heizung und übrige Nebenkosten aufgeteilt')
     const danach = (await s.api<HeatingPlant[]>('/api/heating-plants')).find((p) => p.id === plant.id) ?? assert.fail('keine Anlage')
     assert.deepEqual([danach.separateSettlement, danach.separateSpans], [true, []])
     const t = (await s.api<Tenancy[]>('/api/tenancies')).find((x) => x.id === mieter.id) ?? assert.fail('kein Mietverhältnis')
@@ -175,6 +178,7 @@ test('#704: Vorauszahlung aufteilen bei gleichem Zeitraum über HTTP: eine Abrec
     const aus = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: false, month: '2025-01' }))
     assert.deepEqual([aus.way, aus.month, aus.merge.map((m) => m.rows)], ['samePeriod', '2025-01', [[{ from: '2025-01', prepaymentCents: 30000 }]]])
     assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: false, month: '2025-01', answers: { merge: true, token: aus.token } })).status, 200)
+    assert.equal(await neuester(), 'Vorauszahlung wieder zusammengeführt')
     const zurueck = (await s.api<Settlement>('/api/settlement/2025-01')).statements[0] ?? assert.fail('keine Abrechnung')
     assert.deepEqual([zurueck.prepaymentCents, zurueck.heatingPrepaymentCents ?? 0, zurueck.balanceCents], [360000, 0, vorher.balanceCents])
   } finally {

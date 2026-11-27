@@ -155,7 +155,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Objekt, ließ sich die Vorauszahlung nicht aufteilen, weil der Knopf dafür nie erschien. Die Karte „Heizung“ der
   Stammdaten bietet jetzt „Vorauszahlung aufteilen“ an und erklärt, wozu; danach führen die Mietverhältnisse mit
   Heizanteil eine eigene Staffel für die Heizvorauszahlung, und die Abrechnung weist beide Vorauszahlungen getrennt aus.
-  Es bleibt bei einer Abrechnung, Summe und Ergebnis ändern sich nicht. „Vorauszahlung wieder zusammenführen“ macht es
+  Es bleibt bei einer Abrechnung, Summe und Ergebnis ändern sich nicht; nur in einem angebrochenen Ein- oder Auszugsmonat
+  kann die Summe um einen Cent abweichen, weil jede der beiden Vorauszahlungen für sich nach Tagen gerundet wird. „Vorauszahlung wieder zusammenführen“ macht es
   rückgängig, nimmt jetzt den gewählten Monat und lässt keinen früheren Heizbetrag wieder aufleben, wenn in diesem Monat
   eine Heizvorauszahlung von 0 € beginnt (vorher konnte die Vorauszahlung dadurch steigen). Am Mietverhältnis nennt ein
   Satz unter der NK-Vorauszahlung den Weg
