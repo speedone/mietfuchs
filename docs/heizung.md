@@ -339,7 +339,11 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   mit `above_70_agreed`, nie über 100 %.
 - **Ob eine Position den Schlüssel nach HeizkostenV trägt, entscheidet ihre Heizperiode** (`selfActive` in
   shared/heatingPeriod.ts, gefragt vom Server in `guardHeatingSystem` und seit #690 ebenso vom Kostenformular): vor dem
-  Beginn der eigenen Abrechnung die freien Schlüssel, ab ihrem Beginn nur „nach Heizkostenverordnung“.
+  Beginn der eigenen Abrechnung die freien Schlüssel, ab ihrem Beginn nur „nach Heizkostenverordnung“. Die Heizperiode
+  dazu wählt im Formular eine Stelle (`chosenHeatingPeriod` in client/src/heatingSettlementView.ts), auch für die Frage
+  beim Schornsteinfeger (`chimneySweepPlants`, #724). Was das Formular selbst gesetzt hat (Schlüssel, einziges Ziel, auch
+  der Schlüssel aus „Auf „Heizung und Warmwasser“ umstellen“), nimmt `settleSelfKey` zurück, sobald die gewählte
+  Heizperiode wieder eine mit freien Schlüsseln ist.
 - **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
   [db/heatingSelf.ts](../server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und Positionen offener
   Zeiträume in einer Transaktion; fehlen Teil und Ziel, 409 mit Liste. Zurück auf „Niemand“ verlangt

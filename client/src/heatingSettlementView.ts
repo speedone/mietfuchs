@@ -127,6 +127,14 @@ export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules:
   })
 }
 
+// Die Heizperiode einer Heizposition aus der Auswahl des Formulars: die gewählte, ohne Wahl die Vorgabe (die erste, also
+// die endende). Eine Stelle für das Formular (Schlüssel, Ziel, Jahr der Zahlung, gespeicherter Zeitraum) und die Frage
+// beim Schornsteinfeger (#724), damit beide mit derselben Heizperiode `selfActive` fragen (#690). `undefined` ohne eigene
+// Heizperiode der Anlage; dann gilt der Zeitraum des Objekts.
+export function chosenHeatingPeriod(own: { options: readonly HeatingItemOption[] } | undefined, chosen: string): HeatingItemOption | undefined {
+  return own?.options.find((o) => o.value === (chosen || own.options[0]?.value))
+}
+
 // #690: Eine Position der laufenden Heizperiode steht auf der Seite Kosten, zählt aber nicht zum gewählten Zeitraum.
 export const RUNNING_PERIOD_NOTE = 'Laufende Heizperiode: zählt erst in der Abrechnung des Zeitraums, in dem sie endet.'
 

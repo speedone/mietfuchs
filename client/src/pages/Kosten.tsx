@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, HeatingPlant, Meter, MeterType, Reading, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
-import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod, RUNNING_PERIOD_NOTE } from '../heatingSettlementView'
+import { chosenHeatingPeriod, heatingItemPeriods, heatingTaxYear, itemsOfPeriod, RUNNING_PERIOD_NOTE } from '../heatingSettlementView'
 import { localToday } from '../periodForm'
 import { plantOptions } from '../heatingForm'
 import { filedUnderSettlement } from '../costPeriods'
@@ -214,22 +214,29 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // #724: die Frage bei „Schornsteinfeger“ und ihr Knopf. Kommt genau eine Anlage in Frage, ist sie die Anlage der
   // Position (ab zwei Anlagen im Objekt die Auswahl „Heizanlage“); sonst bleibt die Wahl beim Vermieter.
   // Durchsicht M2: gefragt mit dem Schlüssel, den die umgestellte Position bekäme (eigene Heizperiode: deren Vorgabe).
-  const chimneyKeyOf = (p: HeatingPlant): string => heatingOptions.find((h) => h.plantId === p.id)?.options[0]?.value ?? key
+  // #690: dieselbe Wahl wie für das Formular (`chosenHeatingPeriod`), mit der Vorgabe der Auswahl, denn der Knopf leert sie.
+  const chimneyKeyOf = (p: HeatingPlant): string => chosenHeatingPeriod(heatingOptions.find((h) => h.plantId === p.id), '')?.value ?? key
   const chimneyQuestion = form ? chimneySweepQuestion(form, plants, period, chimneyKeyOf) : null
   // Durchsicht S2: wer vor dem Umstellen als „nicht vereinbart“ erfasst war; die Zeile darunter nennt sie.
   const [droppedNotAgreed, setDroppedNotAgreed] = useState<string[]>([])
   useEffect(() => setDroppedNotAgreed([]), [form === null, form?.id])
+  // Was das Formular selbst an Schlüssel und Ziel gesetzt hat, je geöffnetem Formular (#690): Wechselt die Heizperiode
+  // zurück in eine mit freien Schlüsseln, nimmt `settleSelfKey` es wieder zurück.
+  const selfKeyMemo = useRef<SelfKeyMemo | null>(null)
   const convertToHeating = () => {
     if (!form) return
     setDroppedNotAgreed(form.notAgreed)
+    // #690 mit #724: Auch den Schlüssel nach Heizkostenverordnung setzt hier das Formular. Gilt die eigene Abrechnung in
+    // einer danach gewählten Heizperiode nicht (etwa „läuft noch“ nach dem Zurückschalten), geht der freie Schlüssel von
+    // vorher zurück, statt dass der Server die Position ablehnt.
+    selfKeyMemo.current = { ...selfKeyMemo.current, key: { key: form.key, participants: form.participants } }
     const candidates = chimneySweepPlants(plants, period, chimneyKeyOf)
     const [only, ...more] = candidates
     if (plantChoices.length > 0 && only && more.length === 0) setHeatingPlantId(only.id)
     setHeatingPeriod('')
     setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, toCentralHeating(form), period))))
   }
-  const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
-    ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
+  const heatingOption = form?.category === HEATING_CATEGORY ? chosenHeatingPeriod(ownPlant, heatingPeriod) : undefined
   // #690: Ob sie selbst abrechnet, entscheidet der Zeitraum der Position, wie beim Server (`guardHeatingSystem`), nicht
   // die Art der Anlage von heute: Vor dem Beginn der eigenen Abrechnung bleibt es bei den freien Schlüsseln.
   const selfPlant = !!plantOfForm && selfActive(plantOfForm, heatingOption?.value ?? key)
@@ -240,9 +247,6 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Ein Ziel, das zur Warmwasserbereitung nicht passt, wird nie still ersetzt, sondern als Fehler am Feld
   // genannt; gespeichert wird erst nach einer Wahl.
   const targetInvalid = !!form && selfPlant && form.heatingTarget !== '' && !targetChoices.some((o) => o.value === form.heatingTarget)
-  // Was dieser Effekt selbst gesetzt hat, je geöffnetem Formular (#690): Wechselt die Heizperiode zurück in eine mit
-  // freien Schlüsseln, nimmt `settleSelfKey` es wieder zurück.
-  const selfKeyMemo = useRef<SelfKeyMemo | null>(null)
   useEffect(() => {
     if (!form) { selfKeyMemo.current = null; return }
     // Gespeichert wird, was zu sehen ist: Bei eigener Abrechnung steht der Schlüssel fest, und eine einzige
