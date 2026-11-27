@@ -378,7 +378,21 @@ ohne breiten Inhalt alles rund 7 % größer (nachgemessen; das ist Safari selbst
 Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs ab. Die Maße der Norm stehen
   abzüglich dieser 12 mm (`--page`): Anschriftfeld 20/45 mm, 85 × 45 mm mit Rücksendeangabe in der Vermerkzone,
   Informationsblock 125/50 mm, Betreff ab 98,46 mm, Falz- und Lochmarken bei 105, 148,5 und 210 mm (12 bis 17 mm von
-  der Kante, im Seitenrand schneidet Chromium ab) nur mit der Druckeinstellung „Falz- und Lochmarken drucken“. Ein
+  der Kante, im Seitenrand schneidet Chromium ab) nur mit der Druckeinstellung „Falz- und Lochmarken drucken“.
+  **Kopf- und Fußzeilen des Browsers** (#735: Adresse, Datum, „Seite x von y“ im Seitenrand; Logik `pageEdges` in
+  [letterDesignView.ts](src/letterDesignView.ts), nachgemessen am Druck in eine PDF, Chromium mit seinen eigenen
+  Vorlagen, Firefox mit echtem `window.print()` über „Mozilla Save to PDF“): Chromium druckt sie nicht, wo im oberen bzw.
+  unteren Rand ein Randfeld steht; letter.css setzt oben und unten je ein leeres (`@top-center`, `@bottom-center`), der
+  Rand bleibt, nichts verschiebt sich. Firefox kennt keine Randfelder, druckt die Zeilen aber nicht bei Rand 0
+  (`nsPageFrame::DrawHeaderFooter` zeichnet nur, wenn die Zeile in den Rand passt; ein Rand 0 wird nicht auf den
+  unbedruckbaren Rand des Druckers angehoben). Dort (`print-page-edge` an `html`, `markPageEdges` beim Start: ohne
+  `CSSMarginRule`, mit `box-decoration-break: clone`) druckt die Seite ohne Rand (`PAGE_EDGE_CSS`), und body hält die
+  12 mm als Innenabstand frei, den `clone` auf jeder Druckseite wiederholt; alles steht, wo es mit Rand stand (nur der
+  wiederholte Fußvermerk der Aufstellung steht 2,2 mm tiefer, so tief wie in Chromium). Mit Briefpapier nimmt
+  `PAPER_PAGE_CSS` den Abstand weg. Die Notbremse misst gegen die Seite abzüglich dieses Abstands (`printLimitPx`).
+  WebKit kann keinen Rand je Seite und behält Rand und Zeilen; dort nennen die Fenster „Drucken“ der Abrechnung, der
+  Kaution und der Mieterhöhung den Weg in Safari (`browserLinesNote`, nach Apples Anleitung: Einblendmenü „Safari“,
+  sonst erst „Details einblenden“). Ein
   langer Brief druckt auf einer Folgeseite mit Rand weiter; Seite und Seitenfenster warnen vorher
   (`exceedsOnePage`, eine Schätzung nach Zeilen). Die Texte setzt der Server ein (`Settlement.letters`); die Seite
   wählt die Bausteine (`chooseLetterBlocks`) und setzt nur `{Datum}` und `{AnzahlBelege}` ein. Absender,
@@ -476,7 +490,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   am Bildschirm ist die Hülle `display: block` und der Fuß weg, und weil index.css jede Tabellenzeile zusammenhält, darf
   ihre eine Zeile umbrechen. Table.test.ts lässt genau diese Hülle zu. **„Seite x von y“** setzt `startPrint` mit
   `pageNumbers` nur beim Druck einer Abrechnung als Randfeld (`@bottom-right`, `PAGE_NUMBER_CSS`, Chromium ab 131;
-  Safari und Firefox kennen die Randfelder nicht und drucken keine, bewusst hingenommen). Ein Randfeld trägt nur, was
+  Safari und Firefox kennen die Randfelder nicht und drucken keine, bewusst hingenommen; eine Seitenzahl im Inhalt hieße,
+  die Umbrüche des Browsers vorherzusagen, und die kennt die Seite nicht). Ein Randfeld trägt nur, was
   fehlen darf, nie den Fußvermerk (Wächter in printJob.test.ts; Randfelder bekommen ihre Schrift ausdrücklich, sonst
   druckt Chromium eine Serifenschrift). Ein Zähler je Mieter lässt sich in
   Chromium nicht zurücksetzen, beim Druck aller zählte er also über alle. **Fußzeile mit Kontakt und Bank** ist eine

@@ -359,6 +359,8 @@ test('Mieterhöhung: kann der Browser kein Briefpapier je Druckseite, sagt das F
   increases = [DRAFT]
   open(TENANCY, PROPERTY, NAMELESS)
   expect(await screen.findByText('Briefpapier druckt dieser Browser nicht')).toBeTruthy()
+  // #735: und der Weg, die Kopf- und Fußzeilen von Safari abzuschalten
+  expect(screen.getByText(/setzt Safari selbst dazu/)).toBeTruthy()
   expect(await screen.findByText(/Es ist kein Name des Vermieters eingetragen: Im Briefkopf/)).toBeTruthy()
   cleanup()
   paper = false

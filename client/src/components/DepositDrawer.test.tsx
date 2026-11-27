@@ -283,6 +283,7 @@ test('mit Briefpapier warnt die Aufstellung nicht vor dem fehlenden Namen', asyn
   const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
   await waitFor(() => expect(within(drawer).queryByText(/kein Name des Vermieters/)).toBeNull())
   expect(within(drawer).queryByText(/Briefpapier druckt dieser Browser nicht/)).toBeNull()
+  expect(within(drawer).queryByText(/selbst dazu/)).toBeNull()
 })
 
 test('kann der Browser kein Briefpapier je Seite drucken, sagt es das Fenster, und der fehlende Name zählt wieder', async () => {
@@ -290,6 +291,8 @@ test('kann der Browser kein Briefpapier je Seite drucken, sagt es das Fenster, u
   vi.stubGlobal('CSS', { supports: () => false })
   const { drawer } = openMoved(MOVED, { ...LETTER, settings: { ...LETTER.settings, landlordName: '' } })
   expect(await within(drawer).findByText('Briefpapier druckt dieser Browser nicht')).toBeTruthy()
+  // #735: dort auch der Weg, die Kopf- und Fußzeilen von Safari abzuschalten
+  expect(within(drawer).getByText(/setzt Safari selbst dazu/)).toBeTruthy()
   expect(within(drawer).getByText(/Im Brief steht kein Name des Vermieters/)).toBeTruthy()
 })
 

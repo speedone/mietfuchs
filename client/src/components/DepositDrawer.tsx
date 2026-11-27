@@ -10,7 +10,7 @@ import {
 import { DEPOSIT_SENDER_MISSING_TEXT, depositLetterView, depositSenderMissing } from '../depositLetter'
 import { depositSettlement } from '../depositSettlement'
 import { effectiveLandlord } from '../landlord'
-import { asLetterDesigns, canPagePaper, printDesign } from '../letterDesignView'
+import { asLetterDesigns, browserLinesNote, canPagePaper, pageEdges, printDesign } from '../letterDesignView'
 import { withProperty } from '../property'
 import { PAPER_BROWSER_NOTE } from '../rentIncreaseLetterForm'
 import { NoticeBox } from './Notice'
@@ -72,6 +72,7 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
   // das Fenster sagt es (`paperSkipped`).
   const [paper, setPaper] = useState<boolean | null>(null)
   const [paperSkipped, setPaperSkipped] = useState(false)
+  const linesNote = browserLinesNote(pageEdges())
   const propertyId = property?.id
   useEffect(() => {
     let alive = true
@@ -227,6 +228,8 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
             <button className="btn secondary" onClick={() => setPrinting(true)}>Aufstellung drucken</button>
           </div>
           <p className="muted m-0">Der Brief zeigt den Stand von heute und wird nicht gespeichert; ein späterer Druck kann anders ausfallen.</p>
+          {/* #735: wo der Browser seine Kopf- und Fußzeilen trotzdem druckt (Safari), der Weg, sie abzuschalten */}
+          {letter && linesNote && <p className="muted m-0">{linesNote}</p>}
           {letter && paperSkipped && <NoticeBox level="info" title="Briefpapier druckt dieser Browser nicht">{PAPER_BROWSER_NOTE}</NoticeBox>}
           {letter && depositSenderMissing(letter, paper ?? true) && <p className="muted">{DEPOSIT_SENDER_MISSING_TEXT}</p>}
         </section>

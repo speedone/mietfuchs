@@ -108,7 +108,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Beispielbestands gleich bleibt; `open` bedient die Oberfläche bis `window.print()` (allein aufrufbar: `node scripts/print-width-views.mjs --only <name>`). Je
   Fall zwei Prüfungen: im Medium print bei einem Fenster so breit wie der Satzspiegel ragt kein sichtbares Element hinaus
   (gemessen mit `scrollWidth`, denn Text, der aus einem Absatz ragt, macht dessen Box nicht breiter; Befund mit Klasse und
-  Text), in jeder Engine aus `--engines` (Vorgabe Chromium; geprüft mit Firefox und WebKit); und in der PDF aus Chromium ist
+  Text), in jeder Engine aus `--engines` (Vorgabe Chromium; geprüft mit Firefox und WebKit; in Firefox druckt die Seite
+  ohne Rand mit 12 mm Innenabstand an body, #735, dort ist das Fenster so breit wie die Seite und erlaubt, was vor dem
+  Abstand rechts endet, `printArea`); und in der PDF aus Chromium ist
   jede Seite A4, auf jeder Seite mit Anschreiben steht der Betreff (fehlt er als eigenes Textstück, ist das ein Befund) bei 98,46 mm und, wo gedruckt, die Fußzeile ab 275 mm.
   **Erst messen, dann `page.pdf()`**: Das löst `afterprint` aus, und Ableseformular und Monatsinformation nehmen dann ihre
   Druckklasse wieder ab. Bericht `bericht.md` und PDFs in `--out`, Exit 1 bei Befunden, 2 bei gescheitertem Lauf.

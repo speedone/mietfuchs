@@ -24,6 +24,7 @@ const NOT_UI: Record<string, string> = {
   'mit „kein Anschluss: Warmwasser“': 'Angabe an der Wohnung, aus Häkchen und Zählerart zusammengesetzt (unitForm.ts)',
   'mit „auf Anfrage“': 'Text im Deckblatt der Belegmappe, keine Beschriftung',
   'mit „Updates abrufen“': 'Knopf im Microsoft Store unter „Bibliothek“ (update.ts, Store-Fassung), nicht in Mietfuchs',
+  'auf „Details einblenden“': 'Knopf im Druckfenster von Safari auf dem Mac (#735, letterDesignView.ts), nicht in Mietfuchs',
 }
 // Beschriftungen, die es seit #346 Schritt 7 nicht mehr gibt (oder nur noch anderswo, etwa „Übernehmen“ bei den
 // KI-Modellen): Sie darf kein Text mehr als Bedienung zitieren, auch nicht, wenn das Wort noch irgendwo steht.

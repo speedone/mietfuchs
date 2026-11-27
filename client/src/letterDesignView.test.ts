@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LetterDesign } from '../../shared/types.ts'
 import { DEFAULT_LETTER_DESIGN } from '../../shared/letterDesign.ts'
-import { PAPER_PAGE_CSS, canPagePaper, designKey, markPrintWidth, paperVars, printDesign, printedDesign } from './letterDesignView'
+import { PAGE_EDGE_CSS, PAPER_PAGE_CSS, browserLinesNote, canPagePaper, designKey, markPageEdges, markPrintWidth, pageEdges, paperVars, printDesign, printedDesign } from './letterDesignView'
 
 const logo = { file: 'logo-0123456789abcdef.png', type: 'png' as const }
 const paper = { file: 'paper-0123456789abcdef.pdf', type: 'pdf' as const }
@@ -37,6 +37,9 @@ describe('Logo und Briefpapier im Druck (#415, Teil 2b)', () => {
     // Briefpapier druckt nur ein Browser mit Rändern je Seite (nicht WebKit); dort braucht es keine feste Breite, die die
     // Skalierung des Druckdialogs abschalten würde (Durchsicht K1 zu PR #443).
     expect(PAPER_PAGE_CSS).not.toMatch(/width/)
+    // Mit Briefpapier setzt die Seite ihre Ränder selbst; der Innenabstand von body aus der Betriebsart ohne Seitenrand
+    // (Firefox, #735) entfällt dann.
+    expect(PAPER_PAGE_CSS).toMatch(/html\.print-page-edge body \{ padding: 0; \}/)
   })
 
   // Druck in Safari (#286): WebKit nimmt die Ränder der ersten Seite für alle Seiten (auch `@page :first`) und wiederholt
@@ -81,5 +84,56 @@ describe('Logo und Briefpapier im Druck (#415, Teil 2b)', () => {
     expect(printedDesign(planned, broken)).toEqual({ logo: 'L', paper: null, follow: null, margins: null, ready: true, failed: ['Briefpapier'] })
     // Ein Stand für andere Dateien zählt nicht.
     expect(printedDesign(planned, { ...loaded, key: 'anders' }).ready).toBe(false)
+  })
+})
+
+// #735: Kopf- und Fußzeilen des Browsers (Adresse, Datum, „Seite x von y“) stehen im Seitenrand. Nachgemessen (PDF aus
+// dem echten Druck): Chromium druckt sie nicht, wo im Rand ein Randfeld von `@page` steht, Firefox nicht bei Rand 0;
+// Firefox kennt keine Randfelder. WebKit kann keinen Rand je Seite (`canPagePaper`) und behält Rand und Zeilen.
+describe('Kopf- und Fußzeilen des Browsers (#735)', () => {
+  const css = (yes: boolean) => ({ supports: () => yes })
+  it('Randfelder (Chromium ab 131) vor Rand 0 (Firefox), sonst bleibt es beim Browser', () => {
+    expect(pageEdges(css(true), true)).toBe('margin-boxes')
+    expect(pageEdges(css(true), false)).toBe('page-edge')
+    expect(pageEdges(css(false), false)).toBe('browser')
+    expect(pageEdges(css(false), true)).toBe('margin-boxes')
+    expect(pageEdges(undefined, false)).toBe('browser')
+  })
+
+  it('nur ohne Randfelder druckt die Seite ohne Rand, mit den 12 mm als Innenabstand', () => {
+    const make = () => {
+      const added: { textContent: string, dataset: Record<string, string> }[] = []
+      const on = new Set<string>()
+      const doc = {
+        documentElement: { classList: { toggle: (n: string, v: boolean) => { if (v) on.add(n); else on.delete(n) } } },
+        createElement: () => ({ textContent: '', dataset: {} as Record<string, string> }),
+        head: { append: (el: { textContent: string, dataset: Record<string, string> }) => { added.push(el) } },
+      }
+      return { doc, added, on }
+    }
+    const ff = make()
+    markPageEdges(ff.doc, css(true), false)
+    expect([...ff.on]).toEqual(['print-page-edge'])
+    expect(ff.added.map((s) => s.textContent)).toEqual([PAGE_EDGE_CSS])
+    for (const [support, rules] of [[true, true], [false, false]] as const) {
+      const other = make()
+      markPageEdges(other.doc, css(support), rules)
+      expect([...other.on]).toEqual([])
+      expect(other.added).toEqual([])
+    }
+    // Vor dem Rand von letter.css, auch wenn dessen Stylesheet später geladen wird
+    expect(PAGE_EDGE_CSS).toMatch(/@page \{ margin: 0 !important; \}/)
+  })
+
+  it('der Satz zum Druckfenster nur, wo die Zeilen bleiben, mit dem Weg in Safari', () => {
+    expect(browserLinesNote('margin-boxes', 'Google Inc.')).toBeNull()
+    expect(browserLinesNote('page-edge', '')).toBeNull()
+    const safari = browserLinesNote('browser', 'Apple Computer, Inc.')
+    expect(safari).toMatch(/Safari/)
+    expect(safari).toMatch(/„Details einblenden“/)
+    expect(safari).toMatch(/Sie/)
+    const other = browserLinesNote('browser', 'Google Inc.')
+    expect(other).not.toMatch(/Safari/)
+    expect(other).toMatch(/Kopf- und Fußzeilen/)
   })
 })

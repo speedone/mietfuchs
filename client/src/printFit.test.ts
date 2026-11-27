@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lengthPx, pageContentWidthPx, printMediaMatches } from './printFit'
+import { lengthPx, pageContentWidthPx, printLimitPx, printMediaMatches } from './printFit'
 
 // Andere Merkmale (hover, pointer, prefers-…) fragt die Notbremse beim Browser; hier fest
 const device = (condition: string) => condition === '(hover:hover)'
@@ -53,5 +53,13 @@ describe('Breite des Satzspiegels', () => {
     expect(pageContentWidthPx('0', '0')).toBeCloseTo(793.7, 1)
     // Ohne lesbaren Rand die Vorgabe der Browser (rund 10 mm wären breiter; 12 mm ist die strengere Annahme)
     expect(pageContentWidthPx(null, null)).toBeCloseTo(702.99, 1)
+  })
+
+  // #735: In Firefox druckt die Seite ohne Rand, die 12 mm hält der Innenabstand von body frei. Gemessen wird dann gegen
+  // die Seite abzüglich dieses Abstands, sonst fiele erst über 210 mm auf, was über 198 mm hinausragt.
+  it('ohne Seitenrand zählt der Innenabstand von body', () => {
+    expect(printLimitPx(pageContentWidthPx('0', '0'), '45.3543px')).toBeCloseTo(748.35, 1)
+    expect(printLimitPx(pageContentWidthPx('12mm', '12mm'), '0px')).toBeCloseTo(702.99, 1)
+    expect(printLimitPx(702.99, '')).toBeCloseTo(702.99, 1)
   })
 })
