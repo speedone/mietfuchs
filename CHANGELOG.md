@@ -118,6 +118,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Zähler: Im Zählerformular heißt die Sparte „Sonstiges“ in der Auswahl „Sonstiges (z. B. Gaszähler)“. Ein Satz unter
+  der Sparte sagt bei „Wärme“, dass ein Gaszähler (m³) in die Sparte „Sonstiges“ gehört, und bei „Sonstiges“, dass dort
+  die Einheit des Zählers einzutragen ist und er für die Heizkosten erst als Versorgungszähler einer Heizanlage zählt;
+  das Feld der Einheit zeigt dort „z. B. m³“. Die Rolle „Versorgungszähler der Heizanlage“ nennt je Sparte ihr Beispiel
+  (Gaszähler, Fernwärmezähler, Stromzähler der Wärmepumpe). An der Rechnung ändert sich nichts
+  ([#705](https://github.com/speedone/mietfuchs/issues/705)).
 - Schneller mit großem Bestand: Mietfuchs liest die Daten nur noch neu, wenn sich etwas geändert hat. Listen
   antworten bei fünf Häusern und zehn Jahren in unter 20 statt rund 200 ms, Mietkonto, Abrechnung und Steuer
   deutlich schneller ([#651](https://github.com/speedone/mietfuchs/issues/651)).

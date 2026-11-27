@@ -149,10 +149,14 @@ export function heatingRoleOptions(form: Pick<MeterForm, 'unitId' | 'type'> & Pa
 }
 
 export function heatingRoleLabel(form: Pick<MeterForm, 'type'>, role: HeatingRole): string {
-  return rolesForType(form.type).includes(role) ? HEATING_ROLE_LABELS[role] : `bisher: ${HEATING_ROLE_LABELS[role]}`
+  if (!rolesForType(form.type).includes(role)) return `bisher: ${HEATING_ROLE_LABELS[role]}`
+  // #705: je Sparte ihr Beispiel. Unter „Wärme“ stand sonst „etwa der Gaszähler“ direkt unter dem Satz, dass er dort nicht hingehört.
+  if (role === 'supply' && form.type === 'waerme') return 'Versorgungszähler der Heizanlage (etwa der Fernwärmezähler)'
+  if (role === 'supply' && form.type === 'strom') return 'Versorgungszähler der Heizanlage (etwa der Stromzähler der Wärmepumpe)'
+  return HEATING_ROLE_LABELS[role]
 }
 
-export const HEATING_ROLE_HELP = 'Ein Zähler der Heizanlage zählt nicht als Hauptzähler des Hauses; Mietfuchs ordnet ihn den Heizkosten zu. Wählen Sie „Nein“, wenn er den Verbrauch des ganzen Hauses misst.'
+export const HEATING_ROLE_HELP = 'Ein Zähler der Heizanlage zählt nicht als Hauptzähler des Hauses; Mietfuchs ordnet ihn den Heizkosten zu. Wählen Sie „Nein“, wenn er nicht die Heizanlage versorgt.'
 
 // Fernablesbarkeit und Einbau fragt das Formular nur bei Geräten, die § 5 HeizkostenV erfasst:
 // Wärme- und Warmwasserzähler und Heizkostenverteiler der Wohnungen, dazu die Wärmezähler der
@@ -336,6 +340,23 @@ export const CALIBRATION_MARK_HELP =
 
 // Die Reihenfolge der Auswahl ist die der Beschriftungen (wie bisher im Formular).
 const ALL_METER_TYPES = Object.keys(METER_TYPE_LABELS) as MeterType[]
+
+// #705: Der Gaszähler der Heizung zeigt m³ und gehört in die Sparte „Sonstiges“ (shared/meterUnits.ts); unter „Wärme“
+// gibt es die Einheit nicht, und nichts im Formular führte dorthin. Nur die Auswahl im Zählerformular nennt den Gaszähler;
+// `METER_TYPE_LABELS` bleibt, weil Hinweise, Ableseformular und Verlauf die Sparte damit benennen. Öl steht nicht dabei:
+// Heizöl rechnet über Lieferungen und Vorrat, ein Ölzähler flösse nirgends ein (`isStockEnergy` in calc.ts).
+export const meterTypeOptionLabel = (type: MeterType): string =>
+  type === 'sonstig' ? `${METER_TYPE_LABELS.sonstig} (z. B. Gaszähler)` : METER_TYPE_LABELS[type]
+
+// Der Satz unter der Auswahl der Sparte, oder null.
+export function meterTypeHint(type: MeterType): string | null {
+  if (type === 'waerme') return `Für Wärmezähler, die kWh, MWh oder GJ zeigen. Ein Gaszähler zeigt m³ und gehört in die Sparte „${METER_TYPE_LABELS.sonstig}“.`
+  if (type === 'sonstig') return 'Auch für den Gaszähler der Heizung: Tragen Sie als Einheit ein, was der Zähler zeigt, etwa m³. Für die Heizkosten zählt er erst als Versorgungszähler einer Heizanlage, die Sie unter Stammdaten → Heizung anlegen.'
+  return null
+}
+
+// Das freie Feld der Einheit bei „Sonstiges“ ist nach dem Wechsel der Sparte leer; der Platzhalter sagt, was hineingehört.
+export const FREE_UNIT_PLACEHOLDER = 'z. B. m³'
 
 // Die Sparten, die das Formular zu einer Zuordnung anbietet: An einer Wohnung mit Zimmern nur Kaltwasser, Strom und
 // Sonstiges (Wärme, Warmwasser und Heizkostenverteiler messen am Zimmer, db/rooms.ts). Die gespeicherte Sparte steht immer
