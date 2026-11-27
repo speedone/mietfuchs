@@ -40,7 +40,7 @@ import { effectiveLandlord } from '../../shared/landlord.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
-import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { plantRules, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, toExtraction, type AskProgressEvent, type AskStats } from './extract.ts'
 import { isEInvoiceDocument, readEInvoice, viewEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
 import { normalizeAmounts } from './invoiceAmounts.ts'
@@ -1906,7 +1906,13 @@ async function stepInputOf(db: Database, req: Request): Promise<StepInput> {
     // Integrationsdurchsicht 0.13.0 (#435): ob die Heizung im Monat der neuen Stufe noch getrennt abgerechnet wird.
     const rules = rulesOf((await listProperties(db)).find((p) => p.id === property))
     const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === property)
-    heatingSeparateAt = (month) => plants.some((p) => separateOwner(p, rules, month) !== null)
+    // Je Mietverhältnis nur die Anlagen, die seine Wohnung versorgen (zwei Anlagen, von denen eine getrennt abrechnet).
+    const units = await readUnits(db)
+    const tenancies = await readTenancies(db)
+    heatingSeparateAt = (month, tenancyId) => {
+      const unit = tenancyId === undefined ? undefined : units.find((u) => u.id === tenancies.find((t) => t.id === tenancyId)?.unitId)
+      return plants.filter((p) => unit === undefined || servesUnit(p, unit)).some((p) => separateOwner(p, rules, month) !== null)
+    }
   }
   if (!closed) throw new RouteProblem(409, 'Die Abrechnung ist nicht abgeschlossen. Übernommen wird die Anpassung, die das abgeschlossene Anschreiben ankündigt.')
   const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}

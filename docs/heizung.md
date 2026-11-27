@@ -102,8 +102,15 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
   **Brief, Übersicht und Übernahme sagen dasselbe**: Teile gibt es nur, wenn im Monat der Anpassung eine Heizvorauszahlung
   über 0 gilt (`splitOf`, dieselbe Frage wie `planPrepaymentSteps`), wenn der Text der gewählten Anpassung `{Aufteilung}`
   enthält (`buildLetter`; ein eigener Text ohne den Platzhalter nennt und friert keine Teile ein, das Fenster weist darauf
-  hin) und wenn der Teil des Vorschlags über 0 liegt (ohne Heizkosten beim Mieter fehlt das Feld; „0 € für Heizung“ wäre
-  geraten und setzte die Heizstaffel bei der Übernahme auf 0).
+  hin) und wenn der Teil des Vorschlags über 0 und unter dem Vorschlag liegt (ohne Heizkosten beim Mieter oder ohne Rest für
+  die übrigen Nebenkosten fehlt das Feld; „0 €“ für einen Teil wäre geraten und setzte seine Staffel bei der Übernahme auf
+  0). **Zwei Anlagen im Objekt**: Ob der Vorschlag „ohne Heizung“ gilt, entscheidet die Abrechnung, nicht das
+  Mietverhältnis (`suggestionWithoutHeating`, sobald eine Anlage getrennt abrechnet). Hängt eine Wohnung an einer anderen,
+  aufgeteilten Anlage, enthält ihr Betrag die eigene Heizung, heißt im Brief aber „ohne Heizung“ (bekannte Grenze, schon
+  vor #704); die Übernahme sperrt dann, statt den Betrag neben die Heizstaffel zu schreiben (`planPrepaymentSteps`,
+  `heatingSeparateAt(month, tenancyId)`). Ein Speichern der eigenen Anpassung ohne `heatingCents`
+  (ein Tab von vor dem Update) entfernt den gespeicherten Teil: Der Brief nennt dann keine Teile, die Übernahme sperrt
+  wieder, nichts wird geraten.
   Gleiche Summe mit anderen Teilen ist eine Anpassung. „In die Staffel übernehmen“ (server/src/prepaymentSteps.ts)
   schreibt mit Teilen beide Staffeln in **einem** Vorgang je Mietverhältnis (`PrepaymentStepItem.heating`; `cents` ist dann
   der Teil der übrigen Nebenkosten); ohne Teile bleibt es bei zwei Staffeln gesperrt. Dass sich die Anpassung nach den

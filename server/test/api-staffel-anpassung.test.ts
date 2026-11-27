@@ -174,3 +174,53 @@ test('#704: aufgeteilte Vorauszahlung: Anschreiben je Teil, eigener Betrag mit e
     s.stop()
   }
 })
+
+// Integrationsdurchsicht Geld zu #704, M1, über den echten Server: zwei Heizanlagen im Objekt. Haus A rechnet in eigener
+// Heizperiode getrennt ab, Haus B im Zeitraum des Objekts mit aufgeteilter Vorauszahlung. Der Vorschlag der Abrechnung gilt
+// wegen Haus A als „ohne Heizung“, enthält für den Mieter in Haus B aber dessen Heizkosten. Die Übernahme darf den Betrag
+// nicht neben seine Heizstaffel schreiben (das wären 300 € statt 200 € im Monat); für den Mieter in Haus A bleibt sie möglich.
+test('#704: zwei Heizanlagen, eine getrennt abgerechnet, eine aufgeteilt: die Übernahme sperrt beim Mieter der aufgeteilten', async () => {
+  const s = await start()
+  try {
+    const post = async <T>(url: string, body: unknown) => s.api<T>(url, { method: 'POST', body: JSON.stringify(body) })
+    const a = await post<Unit>('/api/units', { name: 'Haus A', areaM2: 60, participates: true })
+    const b = await post<Unit>('/api/units', { name: 'Haus B', areaM2: 60, participates: true })
+    const ta = await post<Tenancy>('/api/tenancies', { unitId: a.id, tenantName: 'Anna', persons: 1, start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 20000 }] })
+    const tb = await post<Tenancy>('/api/tenancies', { unitId: b.id, tenantName: 'Bert', persons: 1, start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 20000 }] })
+    const plant = async (name: string, unitId: string) => (await jsonOf<{ plant: { id: string } }>(await send(s, '/api/heating-plants', 'POST', { name, buildingWith: 'own', energy: 'gas', method: 'service', units: [{ unitId, heatedAreaM2: null }] }))).plant
+    const hpA = await plant('Haus A', a.id)
+    const hpB = await plant('Haus B', b.id)
+    // Haus A: eigene Heizperiode Mai bis April, getrennt abgerechnet ab Mai 2024.
+    const rules = { startMonth: 5, changes: [] }
+    const zeitraum = await jsonOf<{ token: string }>(await send(s, `/api/heating-plants/${hpA.id}/period/preview`, 'POST', { rules }))
+    assert.equal((await send(s, `/api/heating-plants/${hpA.id}/period`, 'PUT', { rules, answers: { understood: true, token: zeitraum.token } })).status, 200)
+    const getrennt = await jsonOf<{ token: string, way: string }>(await send(s, `/api/heating-plants/${hpA.id}/separate/preview`, 'POST', { separate: true, month: '2024-05' }))
+    assert.equal(getrennt.way, 'separate')
+    assert.equal((await send(s, `/api/heating-plants/${hpA.id}/separate`, 'PUT', { separate: true, month: '2024-05', answers: { understood: true, steps: { [ta.id]: { '2024-05': 10000 } }, token: getrennt.token } })).status, 200)
+    // Haus B: wie das Objekt, Vorauszahlung aufgeteilt ab Januar 2025.
+    const geteilt = await jsonOf<{ token: string, way: string }>(await send(s, `/api/heating-plants/${hpB.id}/separate/preview`, 'POST', { separate: true, month: '2025-01' }))
+    assert.equal(geteilt.way, 'samePeriod')
+    assert.equal((await send(s, `/api/heating-plants/${hpB.id}/separate`, 'PUT', { separate: true, month: '2025-01', answers: { understood: true, steps: { [tb.id]: { '2025-01': 10000 } }, token: geteilt.token } })).status, 200)
+    await post('/api/costItems', { period: '2025-01', category: 'Heizung und Warmwasser', description: 'Heizung B', amountCents: 120000, key: 'area', heatingPlantId: hpB.id, participantUnitIds: [b.id] })
+    await post('/api/costItems', { period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 264000, key: 'area' })
+
+    const live = await s.api<Settlement>('/api/settlement/2025')
+    const bert = live.statements.find((x) => x.tenancyId === tb.id) ?? assert.fail('Bert fehlt')
+    // 1.320 € Grundsteuer + 1.200 € Heizung B: 210 € im Monat, und die enthalten seine Heizung.
+    assert.deepEqual([bert.suggestedMonthlyCents, live.suggestionWithoutHeating], [21000, true])
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', { sentAt: '2026-03-11' })).status, 201)
+    const p = await plan(s)
+    const itB = p.items.find((x) => x.tenancyId === tb.id) ?? assert.fail('kein Eintrag für Bert')
+    assert.equal(itB.state, 'blocked')
+    assert.match(itB.blocked ?? '', /andere Heizanlage des Objekts getrennt abrechnet.*Heizvorauszahlung von 100,00 €.*doppelt/)
+    const itA = p.items.find((x) => x.tenancyId === ta.id) ?? assert.fail('kein Eintrag für Anna')
+    // Anna in Haus A: 110 € für die übrigen Nebenkosten statt 100 €, in die Staffel der übrigen; ihre Heizung ist getrennt.
+    assert.deepEqual([itA.state, itA.schedule, itA.cents, itA.currentCents], ['pending', 'prepayments', 11000, 10000])
+    // Auch gewählt wird für Bert nichts geschrieben.
+    assert.equal((await send(s, '/api/settlement/2025/prepayment-steps', 'POST', { tenancyIds: [tb.id], token: p.token })).status, 200)
+    const after = (await s.api<Tenancy[]>('/api/tenancies')).find((x) => x.id === tb.id) ?? assert.fail('kein Mietverhältnis')
+    assert.deepEqual([after.prepayments.at(-1), after.heatingPrepayments], [{ from: '2025-01', monthlyCents: 10000 }, [{ from: '2025-01', monthlyCents: 10000 }]])
+  } finally {
+    s.stop()
+  }
+})

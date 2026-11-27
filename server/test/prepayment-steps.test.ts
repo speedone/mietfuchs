@@ -156,3 +156,19 @@ test('#704: Teile im Schreiben, aber nur eine Staffel (inzwischen zusammengefüh
   assert.equal(planPrepaymentSteps(input({ tenancies: [two], letters, separate: true })).items[0]?.heating, undefined)
   assert.equal(planPrepaymentSteps(input({ tenancies: [two], letters, scope: 'heating' })).items[0]?.heating, undefined)
 })
+
+// Integrationsdurchsicht Geld, M1: Zwei Heizanlagen im Objekt. Eine rechnet getrennt ab, deshalb gilt der Vorschlag der
+// Abrechnung als „ohne Heizung“; die Wohnung hängt aber an der anderen Anlage, ihre Heizkosten stehen in dieser Abrechnung,
+// und das Mietverhältnis führt eine Heizvorauszahlung. Der ganze Betrag in der Staffel der übrigen Nebenkosten neben der
+// stehen gebliebenen Heizstaffel setzte die Heizung doppelt an (im Beleg 300 € statt 200 € im Monat).
+test('#704: Vorschlag „ohne Heizung“ wegen einer anderen Anlage, die eigene Heizung steht aber in dieser Abrechnung: gesperrt statt doppelt', () => {
+  const two = { ...tenancy, prepayments: [{ from: '2024-01', monthlyCents: 10000 }], heatingPrepayments: [{ from: '2025-01', monthlyCents: 10000 }] }
+  const letters = [{ tenancyId: 't1', tenantName: 'Erika', unitName: 'OG', cents: 20000, from: '2026-05' }]
+  // Die Anlage dieser Wohnung rechnet nicht getrennt ab (die andere schon).
+  const it = planPrepaymentSteps(input({ tenancies: [two], letters, separate: true, heatingSeparateAt: (_month, tenancyId) => tenancyId !== 't1' })).items[0] ?? assert.fail('kein Eintrag')
+  assert.equal(it.state, 'blocked')
+  assert.match(it.blocked ?? '', /andere Heizanlage des Objekts getrennt abrechnet.*nicht getrennt abgerechnet.*Heizvorauszahlung von 100,00 €.*doppelt.*Stammdaten/)
+  assert.deepEqual(stepWrites(planPrepaymentSteps(input({ tenancies: [two], letters, separate: true, heatingSeparateAt: (_m, id) => id !== 't1' })), [two], ['t1']), [])
+  // Rechnet die Anlage der Wohnung selbst getrennt ab, bleibt es wie bisher: der Betrag gilt den übrigen Nebenkosten.
+  assert.equal(planPrepaymentSteps(input({ tenancies: [two], letters, separate: true, heatingSeparateAt: () => true })).items[0]?.state, 'pending')
+})

@@ -1361,7 +1361,7 @@ export type Statement = {
   // #704: der Teil von `suggestedMonthlyCents` für Heizung und Warmwasser, nur in einer Gesamtabrechnung, deren Vorschlag
   // die Heizung enthält, und nur bei einem Mietverhältnis mit eigener Heizstaffel (aufgeteilte Vorauszahlung). Aus denselben
   // Zeilen und derselben Hochrechnung wie der Vorschlag, auf volle Euro, nie über ihm; der Rest gilt den übrigen Nebenkosten.
-  // Über 0 oder gar nicht: Ohne Heizkosten beim Mieter fehlt das Feld.
+  // Über 0 und unter dem Vorschlag oder gar nicht: Ohne Heizkosten beim Mieter und ohne Rest für die übrigen fehlt das Feld.
   suggestedHeatingMonthlyCents?: number
   balanceCents: number
   // Heizung PR 5 (Entwurf 5.7). `scope`: 'heating' in der Heizkostenabrechnung einer Heizperiode

@@ -10944,8 +10944,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Ohne Heizkosten beim Mieter (noch nicht erfasst, Position nicht verteilt, Pauschale oder Inklusivmiete neben einer
     // Heizstaffel) gibt es keinen Teil: „0 € für Heizung“ wäre geraten und setzte bei der Übernahme die Heizstaffel auf 0
     // (Durchsicht von Teil 2, K3). Der Brief nennt dann nur den Betrag, und die Übernahme bleibt bei zwei Staffeln gesperrt.
-    const part = Math.min(st.suggestedMonthlyCents, Math.round(yearlyHeating / 12 / 100) * 100)
-    if (part > 0) st.suggestedHeatingMonthlyCents = part
+    // Ebenso ohne Rest für die übrigen Nebenkosten (kalte Kosten noch nicht erfasst, Gutschrift, Rundung): „0 € für die
+    // übrigen Nebenkosten“ setzte bei der Übernahme deren Staffel auf 0 (Integrationsdurchsicht Geld, K3).
+    const part = Math.round(yearlyHeating / 12 / 100) * 100
+    if (part > 0 && part < st.suggestedMonthlyCents) st.suggestedHeatingMonthlyCents = part
   }
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung

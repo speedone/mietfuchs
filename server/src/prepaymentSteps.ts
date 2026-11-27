@@ -28,8 +28,10 @@ export type StepInput = {
   tenancies: readonly Pick<Tenancy, 'id' | 'end' | 'prepayments' | 'heatingPrepayments'>[]
   // Ein bei der Übernahme geänderter Monat je Mietverhältnis.
   months: Readonly<Record<string, string>>
-  // Wird die Heizung im Monat noch getrennt abgerechnet (Weg d)? Ohne Angabe gilt `separate`.
-  heatingSeparateAt?: (month: string) => boolean
+  // Wird die Heizung im Monat noch getrennt abgerechnet (Weg d)? Ohne Angabe gilt `separate`. Mit `tenancyId` für die
+  // Anlage, die die Wohnung dieses Mietverhältnisses versorgt: Ein Objekt kann zwei Anlagen haben, von denen nur eine
+  // getrennt abrechnet (Integrationsdurchsicht Geld zu #704, M1).
+  heatingSeparateAt?: (month: string, tenancyId?: string) => boolean
 }
 
 const de = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
@@ -69,7 +71,7 @@ function monthNotes(from: string, announced: string | null, sentAt: string | nul
 
 export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'token'> {
   const schedule: PrepaymentStepSchedule = i.scope === 'heating' ? 'heatingPrepayments' : 'prepayments'
-  const separateAt = i.heatingSeparateAt ?? (() => i.separate)
+  const separateAt: NonNullable<StepInput['heatingSeparateAt']> = i.heatingSeparateAt ?? (() => i.separate)
   const items = i.letters.map((l): PrepaymentStepItem => {
     // Vor #317 nannte das Schreiben keinen Monat; vorgeschlagen ist dann der übernächste nach Versand bzw. Abschluss.
     const proposed = l.from ?? adjustFromFor(i.sentAt ?? i.closedAt, i.periodTo)
@@ -117,6 +119,19 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
     // entfällt, sagt die Heizkostenabrechnung, nicht dieses Schreiben; geraten wird nicht.
     if (schedule === 'prepayments' && i.separate && !separateAt(from) && rateAtMonth(t.heatingPrepayments ?? [], from) === 0) {
       return blocked(`Der angekündigte Betrag gilt nur den übrigen Nebenkosten (ohne Heizung). Ab ${monthName(from)} werden die Heizkosten nicht mehr getrennt abgerechnet, und eine eigene Heizvorauszahlung steht dann nicht in der Staffel; die Vorauszahlung dort deckt also auch die Heizung. Übernommen, entfiele die Vorauszahlung für die Heizung. Tragen Sie die neue Vorauszahlung bitte in den Stammdaten ein: diesen Betrag zuzüglich der Vorauszahlung für die Heizung, etwa nach der Heizkostenabrechnung.`)
+    }
+    // Integrationsdurchsicht Geld zu #704, M1: Der Vorschlag gilt als „ohne Heizung“, weil eine andere Anlage des Objekts
+    // getrennt abrechnet. Die Heizkosten dieser Wohnung stehen aber in dieser Abrechnung (ihre Anlage rechnet im Monat nicht
+    // getrennt ab), der Betrag enthält sie also, und das Mietverhältnis führt daneben eine Heizvorauszahlung. Der ganze
+    // Betrag in der Staffel der übrigen Nebenkosten setzte die Heizung doppelt an; wie er sich teilt, sagt das Schreiben nicht.
+    // Erkannt daran, dass am Ende des Zeitraums (und im Monat danach) zwar eine Anlage des Objekts getrennt abrechnet, die
+    // dieser Wohnung aber nicht. Endete Weg d der eigenen Anlage erst danach, galt der Vorschlag wirklich ohne ihre Heizung;
+    // das bleibt wie bisher (#435).
+    const ownHeating = rateAtMonth(t.heatingPrepayments ?? [], from)
+    const around = [i.periodTo.slice(0, 7), addMonths(i.periodTo.slice(0, 7), 1)]
+    const otherPlantOnly = around.some((m) => separateAt(m)) && !around.some((m) => separateAt(m, t.id)) && !separateAt(from, t.id)
+    if (schedule === 'prepayments' && i.separate && ownHeating > 0 && otherPlantOnly) {
+      return blocked(`Das Schreiben nennt einen Betrag für die übrigen Nebenkosten, weil eine andere Heizanlage des Objekts getrennt abrechnet. Die Heizkosten dieser Wohnung werden aber nicht getrennt abgerechnet und stecken in dem Betrag, und das Mietverhältnis führt daneben eine Heizvorauszahlung von ${euro(ownHeating)}. Übernommen, zahlte der Mieter die Heizung doppelt. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
     }
     const taken = currentCents === l.cents
     return { ...base, state: taken ? 'taken' : 'pending', overdue: !taken && i.today.slice(0, 7) >= from }

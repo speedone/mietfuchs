@@ -409,6 +409,16 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   (`currentPrepaymentAt`), sagt das Fenster, dass der Brief nichts ankündigt (`sameAmountHint`, `adjust.currentAt`). Die Vorschau setzt den neuen Betrag aus dem Entwurf ein (`draftNewCents`); „Anpassung auf
   Vorgabe zurücksetzen“ nimmt die eigene Wahl des Mieters weg (`adjustment: null`). Ein gesperrter Knopf nennt den
   Grund daneben.
+- **Anpassung je Teil** (#704, Regeln in docs/heizung.md): Führt das Mietverhältnis zwei Staffeln (Heizung und übrige
+  Nebenkosten) und gilt der neue Betrag beiden, bekommt das Seitenfenster des Mieters `adjust.split` (`SplitInfo`: Teil des
+  Vorschlags, gespeicherter eigener Teil, `at(month)` aus `currentSplitAt`). Beim Vorschlag nennt es beide Teile als Satz,
+  beim eigenen Betrag ist „Davon für Heizung und Warmwasser (€)“ Pflicht (`customHeatingCents`, geprüft in `letterProblems`
+  mit `{ split }`); die Vorschau setzt `{Aufteilung}` mit `splitSentence` ein. Nennt der Text der gewählten Anpassung den
+  Platzhalter nicht, sagt es ein Hinweis (`splitlessAdjustTexts`, nur beim Mieter: auf den anderen Ebenen ist unbekannt, ob
+  jemand aufteilt). `sameAmountHint` schweigt bei gleicher Summe mit anderen Teilen. Werte ohne `Aufteilung` (vor #704
+  abgeschlossen) gelten als leer, sonst stünde der Platzhalter nackt in der Vorschau. Die Übersicht nennt „davon Heizung“,
+  die Karte der Übernahme je Staffel eine Zeile (`stepRows`, `stepTotal` in prepaymentSteps.ts), und die Rückfrage fragt
+  nur zu der Staffel, die geschrieben wird. Die Knöpfe der Karte „Heizung“ zum Aufteilen stehen in docs/heizung.md.
 - **Ab Monat und „In die Staffel übernehmen“** (#317): Das Seitenfenster des Mieters hat bei einer Anpassung ein
   Monatsfeld „Ab Monat“ (`adjustFrom` im Entwurf, `null` = Vorgabe `adjustFromFor`), mit Hinweis bei einem Monat
   nicht in der Zukunft (`adjustFromHint`) und bei einem eigenen Text ohne `{AnpassungAb}` (auf jeder Ebene,

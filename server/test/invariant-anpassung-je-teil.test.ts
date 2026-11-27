@@ -1,7 +1,7 @@
 // #704 Teil 2: Der Teil des Vorschlags nach § 560 Abs. 4 BGB für Heizung und Warmwasser, über zufällige Bestände mit festem
 // Startwert (Kalenderjahr, Mai bis April, Wechsel mit Rumpf; mit und ohne Pauschale und Inklusivmiete). Eine Heizstaffel
-// ändert keine Zeile und nicht die Summe des Vorschlags; der Teil ist ein voller Eurobetrag über 0 und nie über der
-// Summe; ohne Heizstaffel gibt es das Feld nicht. Aus dem Probelauf der Durchsicht von Teil 2 übernommen.
+// ändert keine Zeile und nicht die Summe des Vorschlags; der Teil ist ein voller Eurobetrag über 0 und unter der
+// Summe (beide Teile sind also über 0); ohne Heizstaffel gibt es das Feld nicht. Aus dem Probelauf der Durchsicht von Teil 2 übernommen.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
@@ -35,7 +35,7 @@ test('#704: Heizteil des Vorschlags über Zufallsbestände: Summe und Zeilen unv
             const part = sb.suggestedHeatingMonthlyCents
             if (part === undefined) continue
             parts++
-            assert.ok(Number.isInteger(part) && part % 100 === 0 && part > 0 && part <= sb.suggestedMonthlyCents, `${where}, ${sa.tenancyId}: Teil ${part} bei Summe ${sb.suggestedMonthlyCents}`)
+            assert.ok(Number.isInteger(part) && part % 100 === 0 && part > 0 && part < sb.suggestedMonthlyCents, `${where}, ${sa.tenancyId}: Teil ${part} bei Summe ${sb.suggestedMonthlyCents}`)
           }
         }
       }
