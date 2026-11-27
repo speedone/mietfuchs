@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
+import { FREE_UNIT_PLACEHOLDER, HEATING_ROLE_HELP, asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterTypeHint, meterTypeOptionLabel, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -357,4 +357,25 @@ test('Löschfrage eines Zählers: wie viele Ablesungen aus welchen Jahren, und d
   // Ein krummes Datum im Bestand ergibt kein Jahr „1.1.“: Gezählt wird die Ablesung, genannt werden nur lesbare Jahre.
   expect(meterDeleteMessage(['1.1.2024', '2025-12-31'])).toMatch(/^Mit dem Zähler werden 2 Ablesungen aus dem Jahr 2025 gelöscht\. /)
   expect(meterDeleteMessage(['1.1.2024'])).toMatch(/^Mit dem Zähler wird 1 Ablesung gelöscht\. /)
+})
+
+// #705: Ein Gaszähler zeigt m³ und gehört in die Sparte „Sonstiges“; unter „Wärme“ gibt es die Einheit nicht.
+test('#705: die Auswahl der Sparte nennt bei „Sonstiges“ den Gaszähler, und Wärme und Sonstiges sagen, wohin der Gaszähler gehört', () => {
+  expect(meterTypeOptionLabel('sonstig')).toBe('Sonstiges (z. B. Gaszähler)')
+  expect(meterTypeOptionLabel('waerme')).toBe('Wärme')
+  expect(meterTypeOptionLabel('kaltwasser')).toBe('Kaltwasser')
+  expect(meterTypeHint('waerme')).toBe('Für Wärmezähler, die kWh, MWh oder GJ zeigen. Ein Gaszähler zeigt m³ und gehört in die Sparte „Sonstiges“.')
+  expect(meterTypeHint('sonstig')).toBe('Auch für den Gaszähler der Heizung: Tragen Sie als Einheit ein, was der Zähler zeigt, etwa m³. Für die Heizkosten zählt er erst als Versorgungszähler einer Heizanlage, die Sie unter Stammdaten → Heizung anlegen.')
+  for (const t of ['kaltwasser', 'warmwasser', 'strom', 'hkv'] as const) expect(meterTypeHint(t)).toBeNull()
+})
+
+// Unabhängige Prüfung von #705: Unter „Wärme“ nannte die Rolle den Gaszähler als Beispiel, direkt unter dem Satz, dass
+// er dort nicht hingehört; und „Nein, wenn er den Verbrauch des ganzen Hauses misst“ las ein Laie als seinen Gaszähler.
+test('#705: die Rolle „Versorgungszähler“ nennt je Sparte ihr Beispiel, und die Hilfe schickt den Gaszähler nicht zu „Nein“', () => {
+  const form = { ...emptyMeterForm(), unitId: '' }
+  expect(heatingRoleLabel({ ...form, type: 'sonstig' }, 'supply')).toBe('Versorgungszähler der Heizanlage (etwa der Gaszähler)')
+  expect(heatingRoleLabel({ ...form, type: 'waerme' }, 'supply')).toBe('Versorgungszähler der Heizanlage (etwa der Fernwärmezähler)')
+  expect(heatingRoleLabel({ ...form, type: 'strom' }, 'supply')).toBe('Versorgungszähler der Heizanlage (etwa der Stromzähler der Wärmepumpe)')
+  expect(HEATING_ROLE_HELP).toBe('Ein Zähler der Heizanlage zählt nicht als Hauptzähler des Hauses; Mietfuchs ordnet ihn den Heizkosten zu. Wählen Sie „Nein“, wenn er nicht die Heizanlage versorgt.')
+  expect(FREE_UNIT_PLACEHOLDER).toBe('z. B. m³')
 })

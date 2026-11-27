@@ -145,6 +145,26 @@ test('Neuer Wärmezähler: die Einheit folgt der Sparte und wird so gespeichert 
   expect(sent[0]).toMatchObject({ type: 'waerme', unit: 'kWh' })
 })
 
+// #705: Wer den Gaszähler unter „Wärme“ sucht, findet dort kein m³; das Formular sagt, wohin er gehört.
+test('#705: die Sparte „Sonstiges“ nennt den Gaszähler, und unter „Wärme“ steht, wohin der Gaszähler gehört', async () => {
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))
+  const type = screen.getByLabelText(/^Sparte/) as HTMLSelectElement
+  expect([...type.options].find((o) => o.value === 'sonstig')?.text).toBe('Sonstiges (z. B. Gaszähler)')
+  expect(screen.queryByText(/Ein Gaszähler zeigt m³/)).toBeNull()
+  fireEvent.change(type, { target: { value: 'waerme' } })
+  expect(screen.getByText(/Ein Gaszähler zeigt m³ und gehört in die Sparte „Sonstiges“/)).toBeTruthy()
+  fireEvent.change(type, { target: { value: 'sonstig' } })
+  expect(type.value).toBe('sonstig')
+  fireEvent.change(type, { target: { value: 'hkv' } })
+  expect((screen.getByLabelText(/^Einheit/) as HTMLInputElement).placeholder).toBe('')
+  fireEvent.change(type, { target: { value: 'sonstig' } })
+  expect(screen.getByText(/Auch für den Gaszähler der Heizung/)).toBeTruthy()
+  expect((screen.getByLabelText(/^Einheit/) as HTMLInputElement).placeholder).toBe('z. B. m³')
+  fireEvent.change(screen.getByLabelText(/^Einheit/), { target: { value: 'm³' } })
+  expect((screen.getByLabelText(/^Einheit/) as HTMLInputElement).value).toBe('m³')
+})
+
 test('Zählerformular: der Hinweis zum Hauptzähler verweist auf die Einliegerwohnung (#142)', async () => {
   renderPage()
   fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))

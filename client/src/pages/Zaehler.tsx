@@ -5,7 +5,7 @@ import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, READING_STALE_FIELDS, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, FREE_UNIT_PLACEHOLDER, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterTypeHint, meterTypeOptionLabel, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate, loadErrorText } from '../api'
 import { usePeriod } from '../period'
@@ -428,9 +428,10 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               Sparte
               <select value={meterForm.type} onChange={(e) => setMeterForm(withMeterType(meterForm, e.target.value as MeterType))}>
                 {meterTypeChoices(meterForm.unitId, units, meterForm.type).map((t) => (
-                  <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>
+                  <option key={t} value={t}>{meterTypeOptionLabel(t)}</option>
                 ))}
               </select>
+              {meterTypeHint(meterForm.type) && <small className="muted">{meterTypeHint(meterForm.type)}</small>}
               {meterForm.unitId && meterTypeChoices(meterForm.unitId, units, meterForm.type).length < 6 && (
                 <small className="muted">An einer Wohnung mit Zimmern hängen nur Zähler für Kaltwasser, Strom und Sonstiges; Wärme, Warmwasser und Heizkostenverteiler gehören an das Zimmer.</small>
               )}
@@ -448,7 +449,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     {meterUnitOptions(meterForm.type, meterForm.unit).map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
                 )
-                : <input value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />}
+                : <input value={meterForm.unit} placeholder={meterForm.type === 'sonstig' ? FREE_UNIT_PLACEHOLDER : undefined} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />}
             </Field>
             {/* Heizung PR 12: Skala und Bewertungsfaktor des Heizkostenverteilers. */}
             {meterForm.type === 'hkv' && <HcaFields form={meterForm.hca} onChange={(hca) => setMeterForm({ ...meterForm, hca })} />}
