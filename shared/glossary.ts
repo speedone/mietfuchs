@@ -943,7 +943,7 @@ export const GLOSSARY = {
   individualAmounts: {
     topic: 'costs',
     title: 'Einzelbeträge',
-    short: 'Die Beträge je Mieter stehen schon fest, etwa in der Abrechnung eines Messdienstes, und werden unverändert übernommen.',
+    short: 'Die Beträge je Mieter stehen schon fest, etwa in der Abrechnung eines Messdienstes, und werden unverändert übernommen. Gemeint sind die Kosten des Mieters: Nennt die Abrechnung auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, zählt die Zeile mit den Kosten, denn die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an.',
     example: 'Die Heizkostenabrechnung des Messdienstes über 3.000 € nennt 1.240 € für Wohnung A und 1.160 € für B; 600 € entfallen auf Ihre eigene Wohnung.',
     needed: 'Wenn ein Dienstleister wie ein Messdienst bereits je Wohnung abgerechnet hat.',
   },

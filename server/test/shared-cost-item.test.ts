@@ -56,6 +56,9 @@ test('Verteilung: Anteile, Teilnehmer, Gemeinschaft und Einzelbeträge in Cent g
   assert.match(errorOf(costItemBody(draft({ key: 'external' }), UNITS, calendarPeriod(2025))), /Gemeinschaftsabrechnung/)
   assert.match(errorOf(costItemBody(draft({ key: 'amounts', tenancyAmounts: { t1: 70000 } }), UNITS, calendarPeriod(2025))), /mehr als der Rechnungsbetrag/)
   assert.match(errorOf(costItemBody(draft({ key: 'amounts', amountCents: -100 }), UNITS, calendarPeriod(2025))), /Gutschrift/)
+  // Ein negativer Einzelbetrag ist der Saldo eines Messdienstes mit Vorauszahlungen, kein Kostenbetrag; die Meldung sagt es.
+  assert.match(errorOf(costItemBody(draft({ key: 'amounts', tenancyAmounts: { t1: -4520 } }), UNITS, calendarPeriod(2025))), /Einzelbetrag ist negativ.*Einzutragen sind die Kosten, nie ein Guthaben oder eine Nachzahlung/)
+  assert.match(errorOf(costItemBody(draft({ key: 'amounts', selfAmounts: { u1: -1 } }), UNITS, calendarPeriod(2025))), /Einzelbetrag ist negativ/)
   assert.match(errorOf(costItemBody(draft({ key: 'direct' }), UNITS, calendarPeriod(2025))), /Wohnung wählen/)
   assert.match(errorOf(costItemBody(draft({ key: 'meter' }), UNITS, calendarPeriod(2025))), /Zählertyp/)
   assert.match(errorOf(costItemBody(draft({ description: '  ' }), UNITS, calendarPeriod(2025))), /Beschreibung/)

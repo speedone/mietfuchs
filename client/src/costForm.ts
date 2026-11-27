@@ -13,7 +13,7 @@ import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
 import { usageOf } from './types'
 import { rentedWithin, tenancyRentedWithin } from '../../shared/unitUsage.ts'
-import { CREDIT_WITH_AMOUNTS, costItemBody, euro, type CostItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
+import { CREDIT_WITH_AMOUNTS, NEGATIVE_AMOUNT, costItemBody, euro, type CostItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -323,10 +323,17 @@ const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy
   return Object.fromEntries(Object.entries(form.tenancyAmounts).filter(([id]) => ids.has(id)))
 }
 
+// Der Satz über den Feldern der Einzelbeträge. Viele Messdienste nehmen die Vorauszahlungen in ihre Abrechnung auf und
+// drucken je Nutzer Kosten, Vorauszahlung und Saldo; ins Feld gehören die Kosten.
+export const AMOUNTS_HELP = 'Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart (bei Heizung und Warmwasser die Zwischensumme der Heiz- und Warmwasserkosten, nicht die Gesamtkosten des Nutzers). Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.'
+
 export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], period?: number | BillingPeriod): string {
   const amount = parseEuro(form.amount) ?? 0
   // Eine Gutschrift (#105): Einzelbeträge sind nie negativ, die Summenprüfung ergäbe Unsinn.
   if (amount < 0) return CREDIT_WITH_AMOUNTS
+  // Ein negativer Betrag ist ein Saldo des Messdienstes, kein Kostenbetrag; er zählte bisher still als 0.
+  const visible = [visibleTenancyAmounts(form, units, tenancies, period), visibleSelfAmounts(form, units)]
+  if (visible.some((m) => Object.values(m).some((raw) => (parseEuro(raw.trim() || '0') ?? 0) < 0))) return NEGATIVE_AMOUNT
   const sumOf = (m: Record<string, string>) => Object.values(m).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
   const tenants = sumOf(visibleTenancyAmounts(form, units, tenancies, period))
   const own = sumOf(visibleSelfAmounts(form, units))

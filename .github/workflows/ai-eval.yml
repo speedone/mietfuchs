@@ -104,6 +104,9 @@ jobs:
           NKA_OLLAMA_MODEL: ${{ matrix.model }}
           NKA_PORT: '3001'
           NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
+          # Seit der Anmeldung (#528) verlangt ein Server, der im Netz lauscht, auf einem frischen Datenordner erst ein
+          # Passwort; der Prüflauf scheiterte daran beim ersten Schreibzugriff. Nur auf diesem Rechner lauschen.
+          NKA_HOST: 127.0.0.1
         run: |
           export NKA_DATA_DIR="$RUNNER_TEMP/daten"
           node server/src/index.ts > server.log 2>&1 &

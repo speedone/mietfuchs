@@ -26,6 +26,10 @@ export const pct = (n: number): string => n.toLocaleString('de-DE', { maximumFra
 // `basisUnitsOf` in client/src/costForm.ts (`usageOf(u) !== 'ausgenommen'`).
 export const inBasis = (u: Pick<Unit, 'participates' | 'selfUsed'>): boolean => u.participates || u.selfUsed === true
 
+// Ein negativer Einzelbetrag ist ein Saldo (Guthaben), keine Kostenangabe: Druckt der Messdienst Kosten, Vorauszahlung und
+// Saldo, gehören die Kosten ins Feld. Die Vorauszahlung steht in der Staffel des Mietverhältnisses; mit dem Saldo würde
+// sie doppelt angerechnet.
+export const NEGATIVE_AMOUNT = 'Ein Einzelbetrag ist negativ. Einzutragen sind die Kosten, nie ein Guthaben oder eine Nachzahlung; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an.'
 export const CREDIT_WITH_AMOUNTS = 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.'
 
 // Betrag und §35a-Lohnanteil einer Kostenposition (#139). `null` bei einem Betrag heißt unlesbar.
@@ -242,6 +246,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
   let tenancyAmounts: Record<string, number> | null = null
   let selfAmounts: Record<string, number> | null = null
   if (d.key === 'amounts') {
+    if ([...Object.values(d.tenancyAmounts), ...Object.values(d.selfAmounts)].some((cents) => cents !== null && cents < 0)) return { error: NEGATIVE_AMOUNT }
     tenancyAmounts = amountsOf(d.tenancyAmounts)
     selfAmounts = amountsOf(d.selfAmounts)
     if (!tenancyAmounts || !selfAmounts) return { error: 'Einzelbeträge bitte als Euro-Beträge angeben (z. B. 312,40).' }

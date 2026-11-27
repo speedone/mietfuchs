@@ -2,7 +2,7 @@
 // Prüfungen und die Rümpfe für die bestehenden Routen, ohne DOM.
 import { expect, test } from 'vitest'
 import {
-  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, dhwNote, draftsOf, duplicateBlocks, itemBodies, matchLine, serviceChecks, targetOptions,
+  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, dhwNote, draftsOf, duplicateBlocks, itemBodies, matchLine, SERVICE_COSTS_NOTE, serviceChecks, targetOptions,
   type ImportContext,
 } from './serviceImport'
 import { co2ToForm } from './co2Form'
@@ -224,4 +224,21 @@ test('Durchsicht S4: erneut ausgelesen, sind auch kalte Blöcke mit vorhandenen 
   expect(duplicateBlocks(x, draftsOf(x, ctx), ctx)).toEqual([])
   // Eine andere Kostenart ist kein Grund.
   expect(draftsOf(x, { ...ctx, existingAmountCategories: ['Müllabfuhr'] })[1]?.include).toBe(true)
+})
+
+// Durchsicht zu „Kosten statt Saldo“: Der Import ging an der Prüfung des Kostenformulars vorbei. Ein negativer Nutzerbetrag
+// (ein Guthaben, also ein Saldo) wurde mit einer zweiten Zeile desselben Mieters still verrechnet oder scheiterte erst an
+// der Datenbank mit einem allgemeinen Satz.
+test('ein negativer Nutzerbetrag ist ein Saldo: Warnung in der Prüfung, und übernommen wird der Block nicht', () => {
+  const first = x.blocks[0] ?? (() => { throw new Error('Block fehlt') })()
+  const saldo: ServiceStatementExtraction = { ...x, blocks: [{ ...first, lines: first.lines.map((l, k) => (k === 0 ? { ...l, amountEur: -45.2 } : l)) }, ...x.blocks.slice(1)] }
+  const label = first.lines[0]?.label ?? ''
+  expect(serviceChecks(saldo, ctx)).toContain(`Block „Heizung und Warmwasser“: Für „${label}“ steht ein negativer Betrag (-45,20 €). Das ist ein Guthaben, also der Saldo nach Abzug der Vorauszahlungen, nicht die Kosten. Übernehmen Sie diesen Block nicht und erfassen Sie ihn auf der Seite Kosten mit den Kosten je Nutzer.`.replace('-45,20 €', fmtEuro(-4520)))
+  expect(itemBodies(saldo, draftsOf(saldo, ctx), ctx, 'beleg.pdf')).toEqual({ error: `„${label}“ (Heizung und Warmwasser) hat einen negativen Betrag. Das ist ein Guthaben, also der Saldo nach Abzug der Vorauszahlungen, nicht die Kosten. Erfassen Sie diesen Block auf der Seite Kosten mit den Kosten je Nutzer.` })
+  // Ohne negativen Betrag keine Warnung dazu.
+  expect(serviceChecks(x, ctx).some((t) => t.includes('negativer Betrag'))).toBe(false)
+})
+
+test('der Satz der Prüfansicht nennt den Ausweg, denn die Nutzerbeträge lassen sich dort nicht ändern', () => {
+  expect(SERVICE_COSTS_NOTE).toBe('Je Nutzer zählen die Kosten. Nennt die Abrechnung auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, prüfen Sie, dass hier die Kosten stehen und nicht dieser Saldo; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Steht hier ein Saldo, übernehmen Sie den Block nicht und erfassen Sie ihn auf der Seite Kosten.')
 })

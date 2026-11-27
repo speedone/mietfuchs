@@ -95,6 +95,13 @@ export function targetOptions(ctx: ImportContext): { value: string; label: strin
   ]
 }
 
+// Der Satz der Prüfansicht zu den Nutzerbeträgen: Kosten, nicht Saldo (die Vorauszahlung steht in der Staffel des
+// Mietverhältnisses; mit dem Saldo würde sie doppelt angerechnet).
+export const SERVICE_COSTS_NOTE = 'Je Nutzer zählen die Kosten. Nennt die Abrechnung auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, prüfen Sie, dass hier die Kosten stehen und nicht dieser Saldo; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Steht hier ein Saldo, übernehmen Sie den Block nicht und erfassen Sie ihn auf der Seite Kosten.'
+// Ein negativer Nutzerbetrag ist ein Guthaben und damit ein Saldo; als Kosten übernommen, verrechnete er sich still mit einer
+// zweiten Zeile desselben Mieters oder scheiterte erst an der Datenbank.
+const SALDO = 'Das ist ein Guthaben, also der Saldo nach Abzug der Vorauszahlungen, nicht die Kosten.'
+
 const isHeating = (category: string): boolean => category === HEATING_CATEGORY
 const cents = (eur: number): number => Math.round(eur * 100)
 const linesCents = (b: ServiceBlock): number => b.lines.reduce((a, l) => a + cents(l.amountEur ?? 0), 0)
@@ -147,6 +154,11 @@ export function serviceChecks(x: ServiceStatementExtraction, ctx: ImportContext)
   const out: string[] = []
   if (x.periodStart && x.periodEnd && (x.periodStart !== ctx.heating.from || x.periodEnd !== ctx.heating.to)) {
     out.push(`Die Abrechnung gilt für ${formatDayRange(x.periodStart, x.periodEnd)}, die Heizperiode in Mietfuchs für ${formatDayRange(ctx.heating.from, ctx.heating.to)}. Prüfen Sie den Zeitraum der Heizanlage unter Stammdaten.`)
+  }
+  for (const b of x.blocks) {
+    for (const line of b.lines) {
+      if (line.amountEur !== undefined && line.amountEur < 0) out.push(`Block „${blockName(b)}“: Für „${line.label}“ steht ein negativer Betrag (${fmtEuro(cents(line.amountEur))}). ${SALDO} Übernehmen Sie diesen Block nicht und erfassen Sie ihn auf der Seite Kosten mit den Kosten je Nutzer.`)
+    }
   }
   for (const b of x.blocks) {
     if (b.totalEur === undefined) continue
@@ -210,6 +222,7 @@ export function itemBodies(x: ServiceStatementExtraction, drafts: readonly Block
       if (target === '') return { error: `Bitte ordnen Sie „${line.label}“ (${name}) einem Mieter, Ihrer eigenen Wohnung oder dem Leerstand zu.` }
       if (target === 'vacancy') continue
       if (line.amountEur === undefined) return { error: `„${line.label}“ (${name}) hat keinen Betrag. Bitte tragen Sie ihn nach der Übernahme auf der Seite Kosten ein oder ordnen Sie die Zeile dem Leerstand zu.` }
+      if (line.amountEur < 0) return { error: `„${line.label}“ (${name}) hat einen negativen Betrag. ${SALDO} Erfassen Sie diesen Block auf der Seite Kosten mit den Kosten je Nutzer.` }
       const [kind, id = ''] = target.split(':')
       const into = kind === 'self' ? selfAmounts : tenancyAmounts
       into[id] = (into[id] ?? 0) + cents(line.amountEur)

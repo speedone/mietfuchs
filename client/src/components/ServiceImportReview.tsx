@@ -9,7 +9,7 @@ import Term from './Term'
 import YearField from './YearField'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, probeQuestion, type Co2Answer } from '../co2Form'
 import {
-  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, duplicateBlocks, itemBodies, serviceChecks, targetOptions,
+  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, duplicateBlocks, itemBodies, SERVICE_COSTS_NOTE, serviceChecks, targetOptions,
   type BlockDraft, type ImportContext,
 } from '../serviceImport'
 import { spansTwoYears } from '../../../shared/period.ts'
@@ -132,6 +132,8 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
   return (
     <div className="field-group">
       <p className="muted">Die KI hat die Abrechnung gelesen. Bitte prüfen Sie jede Zahl am Beleg, bevor Sie etwas übernehmen.</p>
+      {/* Messdienste mit Vorauszahlungen drucken je Nutzer Kosten, Vorauszahlung und Saldo; übernommen werden die Kosten. */}
+      <p className="muted">{SERVICE_COSTS_NOTE}</p>
       {checks.length > 0 && <NoticeBox level="warning"><ul>{checks.map((c) => <li key={c}>{c}</li>)}</ul></NoticeBox>}
       {x.blocks.map((b, i) => {
         const d = drafts[i]

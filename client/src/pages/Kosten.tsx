@@ -17,7 +17,7 @@ import {
   itemToForm,
   meterTypeOptions,
   waterMeterHint,
-  amountsSumText,
+  amountsSumText, AMOUNTS_HELP,
   externalHint,
   externalMismatch,
   tenanciesForAmounts,
@@ -1511,10 +1511,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             {form.key === 'amounts' && (
               <div className="field-group">
                 <div className="field-group-label"><Term id="individualAmounts">Einzelbeträge</Term> je Mieter</div>
-                <div className="muted">
-                  Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
-                  der Messdienst selbst auf; den Rest trägt der Vermieter.
-                </div>
+                <div className="muted">{AMOUNTS_HELP}</div>
                 {tenanciesForAmounts(tenancies, units, period, form.participants).length === 0 ? (
                   <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>
                 ) : (

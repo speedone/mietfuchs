@@ -131,6 +131,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Musterabrechnung 2025. Die Anleitung zur Messdienstabrechnung sagt außerdem, dass ein „Kaltwasseranteil für
   Warmwasser“ zu „Heizung und Warmwasser“ gehört und nicht noch einmal unter „Wasser/Abwasser“ erfasst wird
   ([#704](https://github.com/speedone/mietfuchs/issues/704)).
+- Einzelbeträge vom Messdienst: Nimmt der Messdienst die Vorauszahlungen in seine Abrechnung auf, nennt er je Mieter
+  Kosten, Vorauszahlung und eine Nachzahlung oder ein Guthaben. Kostenformular, Prüfansicht des Auslesens, Lexikon und
+  Anleitung sagen jetzt ausdrücklich, dass die Kosten einzutragen sind und nicht dieser Saldo (sonst wäre die
+  Vorauszahlung doppelt angerechnet). Ein negativer Einzelbetrag wird im Formular benannt und nicht mehr still als 0
+  gezählt, und die KI bekommt dieselbe Vorgabe für das Auslesen.
 - Zähler: Im Zählerformular heißt die Sparte „Sonstiges“ in der Auswahl „Sonstiges (z. B. Gaszähler)“. Ein Satz unter
   der Sparte sagt bei „Wärme“, dass ein Gaszähler (m³) in die Sparte „Sonstiges“ gehört, und bei „Sonstiges“, dass dort
   die Einheit des Zählers einzutragen ist und er für die Heizkosten erst als Versorgungszähler einer Heizanlage zählt;
