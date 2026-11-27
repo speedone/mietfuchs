@@ -1198,6 +1198,50 @@ test('Vorauszahlung aufteilen ohne Monat: Vorschlag ist der Beginn des noch offe
     assert.deepEqual(vorjahr.steps.map((x) => x.tenancyId).sort(), [alt.id, neu.id].sort())
     // Ein ausdrücklich gewählter Monat gilt weiter.
     assert.equal((await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-01' }))).month, '2025-01')
+// #720: „Ändern“ auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter. Die Karte fragt vor der Rückfrage,
+// ob sich die Anlage entfernen lässt, entfernt sie dann und stellt erst danach die Mietverhältnisse um.
+test('#720: Anlage auf eigene Heizung je Wohnung umgestellt: Auskunft zum Entfernen, danach kein Fehler in der Abrechnung', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const mieter = (unitId: string, tenantName: string) => s.api<Tenancy>('/api/tenancies', jsonPost({
+      unitId, tenantName, personHistory: [{ from: '2025-01-01', persons: 2 }], start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [],
+    }))
+    const eg = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const og = await s.api<Unit>('/api/units', jsonPost({ name: 'OG', areaM2: 60, participates: true }))
+    const ta = await mieter(eg.id, 'Mieter A')
+    const tb = await mieter(og.id, 'Mieter B')
+    const gas = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 120000, key: 'area' }))
+    const { plant } = await s.api<{ plant: HeatingPlant }>('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual', assignItemIds: [gas.id] }))
+    const selbst = (id: string) => s.api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }) })
+    const fehler = async () => ((await s.api<Settlement>('/api/settlement/2025-01')).notices ?? []).filter((n) => n.level === 'error')
+
+    // Der Stand, den die Karte bisher hinterließ: Anlage bleibt, Mietverhältnisse auf „Mieter heizt selbst“.
+    await selbst(ta.id)
+    await selbst(tb.id)
+    const gemischt = await fehler()
+    assert.deepEqual(gemischt.map((n) => n.code), ['co2.self-supply-mixed', 'co2.self-supply-mixed'])
+    // Der Rat nennt jetzt auch die eigene Therme je Wohnung, mit den Beschriftungen der Karte.
+    assert.match(gemischt[0]?.text ?? '', /Hat jede Wohnung ihre eigene Therme oder Heizung mit einem Vertrag des Mieters, .* „Ändern“, .* „Jede Wohnung hat eine eigene Heizung“ .* „Der Mieter hat den Vertrag, etwa für die Gastherme“/)
+
+    // Auskunft vor der Rückfrage: mit einem Zähler an der Anlage gesperrt, im Wortlaut der Ablehnung beim Entfernen.
+    const zaehler = await s.api<Meter>('/api/meters', jsonPost({ name: 'Gaszähler', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: plant.id, heatingRole: 'supply' }))
+    const gesperrt = await s.api<{ blocked: string | null }>(`/api/heating-plants/${plant.id}/removal`)
+    assert.match(gesperrt.blocked ?? '', /hängen noch Zähler \(„Gaszähler“\)/)
+    const abgelehnt = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
+    assert.equal(abgelehnt.status, 409)
+    assert.equal(await errorFrom(abgelehnt), gesperrt.blocked)
+    assert.equal((await s.api<HeatingPlant[]>('/api/heating-plants')).length, 1, 'die Auskunft entfernt nichts')
+    await send(`/api/meters/${zaehler.id}`, { method: 'DELETE' })
+    assert.deepEqual(await s.api<{ blocked: string | null }>(`/api/heating-plants/${plant.id}/removal`), { blocked: null })
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/removal', { method: 'GET' })).status, 404)
+
+    // Der neue Weg: Anlage entfernen, die Mietverhältnisse stehen auf „Mieter heizt selbst“. Kein Fehler mehr.
+    assert.equal((await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })).status, 200)
+    assert.deepEqual(await s.api<HeatingPlant[]>('/api/heating-plants'), [])
+    assert.deepEqual((await fehler()).map((n) => n.code), [])
+    assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((t) => t.heatingModel), ['selfSupply', 'selfSupply'])
   } finally {
     s.stop()
   }
@@ -1266,6 +1310,36 @@ test('Vorschlag beim Aufteilen: ist schon aufgeteilt, greift erneutes Aufteilen 
     const again = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true }))
     assert.equal(again.month, '2026-01')
     assert.deepEqual(again.steps.map((x) => [x.tenancyId, x.rows.map((r) => r.from)]).sort(), [[a.id, ['2026-01']], [b.id, ['2026-03']]].sort())
+// #720: Nur ein Teil der Wohnungen hat eigene Heizungen. Die Anlage bleibt für die übrigen; die betroffene Wohnung
+// hängt nicht mehr an ihr. Die Positionen der Anlage fasst die Karte nicht an (Geld): Bis der Vermieter die Wohnung dort
+// aus den Teilnehmern nimmt, bleibt der Fehler, mit dem passenden Rat.
+test('#720: nur eine Wohnung mit eigener Heizung: die Anlage bleibt für die übrigen, der Fehler nennt die Teilnehmer der Position', async () => {
+  const s = await startServer()
+  try {
+    const mieter = (unitId: string, tenantName: string) => s.api<Tenancy>('/api/tenancies', jsonPost({
+      unitId, tenantName, personHistory: [{ from: '2025-01-01', persons: 2 }], start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [],
+    }))
+    const eg = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const og = await s.api<Unit>('/api/units', jsonPost({ name: 'OG', areaM2: 60, participates: true }))
+    await mieter(eg.id, 'Mieter A')
+    const tb = await mieter(og.id, 'Mieter B')
+    const gas = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 120000, key: 'area' }))
+    const { plant } = await s.api<{ plant: HeatingPlant }>('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual', assignItemIds: [gas.id] }))
+    // Die Karte nimmt die Wohnung aus der Anlage und stellt dann ihr Mietverhältnis um.
+    const geaendert = await s.api<HeatingPlant>(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ units: [{ unitId: eg.id, heatedAreaM2: null }] }) })
+    assert.deepEqual(geaendert.units?.map((u) => u.unitId), [eg.id])
+    await s.api(`/api/tenancies/${tb.id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }) })
+    // Die Position der Anlage geht noch über alle Wohnungen; der Fehler sagt, wo das zu ändern ist, und rät nicht mehr
+    // dazu, die Anlage zu entfernen.
+    const fehler = async () => ((await s.api<Settlement>('/api/settlement/2025-01')).notices ?? []).filter((n) => n.level === 'error')
+    const [offen, ...mehr] = await fehler()
+    assert.deepEqual(mehr, [])
+    assert.equal(offen?.code, 'co2.self-supply-mixed')
+    assert.match(offen?.text ?? '', /Seine Wohnung hängt nicht an dieser Heizanlage: Wählen Sie an der Position auf der Seite Kosten unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ nur die Wohnungen der Heizanlage \(EG\)\.$/)
+    assert.doesNotMatch(offen?.text ?? '', /Entfernen Sie die Heizanlage/)
+    await s.api(`/api/costItems/${gas.id}`, { method: 'PUT', body: JSON.stringify({ participantUnitIds: [eg.id] }) })
+    assert.deepEqual((await fehler()).map((n) => `${n.code}: ${n.text}`), [])
   } finally {
     s.stop()
   }

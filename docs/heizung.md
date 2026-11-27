@@ -767,6 +767,14 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   entsteht keine Heizanlage. `selfSupplyKind` (`perUnit`/`central`); bei `central`
   `heating.self-supply-operating-power`, wenn andere Mieter den Allgemeinstrom tragen und kein Abzug
   erfasst ist.
+- **Ändern einer Anlage auf „Jede Wohnung hat eine eigene Heizung“, Vertrag beim Mieter** (#720, `changeToSelfSupply` in
+  HeatingCard.tsx, `selfSupplyChange` in heatingForm.ts): Sind alle Wohnungen der Anlage angehakt, entfernt die Karte sie
+  nach einer Rückfrage (Weg und Sperren von „Entfernen …“; die Sperre fragt sie vorher über
+  `GET /api/heating-plants/:id/removal`, gesperrt heißt Meldung im Fenster und keine Änderung), dann erst stellt sie die
+  Mietverhältnisse um. Ist nur ein Teil angehakt, behält die Anlage die übrigen Wohnungen (`PUT` mit `units`). **Die
+  Heizpositionen fasst die Karte nie an**: Tragen Selbstversorger weiter eine Position der Anlage, bleibt
+  `co2.self-supply-mixed`, und sein Text nennt „nur bestimmte Wohnungen beteiligen“, wenn die Wohnung nicht an der Anlage
+  hängt.
 - Heizpositionen nur von Selbstversorgern: keine Kürzung nach § 7 Abs. 4 CO2KostAufG oder § 12
   HeizkostenV, sondern `co2.self-supply-items`; gemischt mit Positionen einer Heizanlage
   `co2.self-supply-mixed` (error).

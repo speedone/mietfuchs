@@ -377,3 +377,92 @@ test('ohne Sprung: die Karte „Heizung“ ist nicht hervorgehoben und nimmt kei
   expect(button.closest('.card')?.classList.contains('focus-target')).toBe(false)
   expect(document.activeElement).toBe(document.body)
 })
+
+// #720: „Ändern“ auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter ließ die Anlage stehen und stellte nur
+// die Mietverhältnisse um; die Abrechnung meldete danach je Mietverhältnis einen Fehler.
+const GAS: HeatingPlant = { ...PLANT, energy: 'gas' }
+const tenant = (id: string, unitId: string, tenantName: string) => ({ id, unitId, tenantName, persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+function stubChange(blocked: string | null) {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    const path = url.split('?')[0]
+    if (method !== 'GET') {
+      sent.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+      if (method === 'DELETE') plants = []
+      return json({ ok: true })
+    }
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json(plants)
+    if (path === '/api/heating-plants/hp1/removal') return json({ blocked })
+    if (path === '/api/tenancies') return json([tenant('ta', 'eg', 'Mieter A'), tenant('tb', 'og', 'Mieter B')])
+    return json([])
+  })
+}
+async function changeToOwnHeating() {
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} /></UIProvider></PropertyProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Ändern' }))
+  fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'perUnit' } })
+  fireEvent.change(screen.getByLabelText(/Wer hat den Vertrag für die Heizung in der Wohnung/), { target: { value: 'tenant' } })
+}
+
+test('#720: Ändern auf eigene Heizung je Wohnung: eine Rückfrage, dann wird die Anlage entfernt und erst danach umgestellt', async () => {
+  plants = [GAS]
+  stubChange(null)
+  await changeToOwnHeating()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Heizanlage entfernen?')).toBeTruthy()
+  expect(within(dialog).getByText(/Mietfuchs entfernt die Heizanlage\. Die Heizpositionen bleiben, wie sie sind, nur ohne Heizanlage\. Die laufenden Mietverhältnisse von Mieter A, Mieter B werden unter Heizung auf „Mieter heizt selbst“ gestellt/)).toBeTruthy()
+  // Vor der Antwort ist nichts geschrieben.
+  expect(sent).toEqual([])
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
+  await waitFor(() => expect(sent).toHaveLength(3))
+  expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
+    ['DELETE', '/api/heating-plants/hp1', {}],
+    ['PUT', '/api/tenancies/ta', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
+    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
+  ])
+  // Die Karte zeigt die Anlage nicht mehr.
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Ändern' })).toBeNull())
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('#720: Abbrechen der Rückfrage ändert nichts, das Fenster bleibt offen', async () => {
+  plants = [GAS]
+  stubChange(null)
+  await changeToOwnHeating()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  const dialog = await screen.findByRole('alertdialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(sent).toEqual([])
+  expect(valueOf(/Womit wird geheizt/)).toBe('perUnit')
+})
+
+test('#720: Entfernen gesperrt: der Grund steht im Fenster, keine Rückfrage, nichts wird halb umgestellt', async () => {
+  plants = [GAS]
+  stubChange('An der Heizanlage hängen noch Zähler („Gaszähler“). Ordnen Sie sie auf der Seite Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.')
+  await changeToOwnHeating()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  expect(await screen.findByText(/Mit eigener Heizung je Wohnung und Vertrag beim Mieter entfällt diese Heizanlage, sie lässt sich aber noch nicht entfernen: An der Heizanlage hängen noch Zähler \(„Gaszähler“\)\..* Es wurde nichts geändert\./)).toBeTruthy()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(sent).toEqual([])
+  expect(valueOf(/Womit wird geheizt/)).toBe('perUnit')
+})
+
+test('#720: nur eine Wohnung mit eigener Heizung: die Anlage behält die übrigen, nur das eine Mietverhältnis wird umgestellt', async () => {
+  plants = [GAS]
+  stubChange(null)
+  await changeToOwnHeating()
+  fireEvent.click(screen.getByLabelText('EG'))
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Wohnung aus der Heizanlage nehmen?')).toBeTruthy()
+  expect(within(dialog).getByText(/OG hängt danach nicht mehr an der Heizanlage; für die übrigen Wohnungen bleibt sie bestehen\. Die laufenden Mietverhältnisse von Mieter B werden .* „Weitere Optionen: nur bestimmte Wohnungen beteiligen“/)).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
+    ['PUT', '/api/heating-plants/hp1', { units: [{ unitId: 'eg', heatedAreaM2: null }] }],
+    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
+  ])
+})

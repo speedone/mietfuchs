@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, unitValueFields, whoHint, whoOptions, heatingSetUpMessage, type HeatingForm } from './heatingForm'
+import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, unitValueFields, whoHint, whoOptions, heatingSetUpMessage, selfSupplyChange, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -569,4 +569,22 @@ test('Mitteilung nach dem Einrichten: nennt die Seite „Heizkosten“ und was d
   // Ohne CO₂-Kosten (Pellets) und ohne Messdienst ist dort nichts Pflicht: nur die Seite
   expect(heatingSetUpMessage({ method: 'manual', energy: 'pellets', contracting: false, heatGeneration: null })).toBe(base)
   expect(heatingSetUpMessage(null)).toBe(base)
+})
+
+// #720: Beim Ändern einer Anlage auf „eigene Heizung je Wohnung, Vertrag beim Mieter“ entscheidet die Liste der angehakten
+// Wohnungen, was aus der Anlage wird.
+describe('selfSupplyChange (#720)', () => {
+  const units = [{ id: 'eg', noConnection: [] }, { id: 'og', noConnection: [] }, { id: 'dg', noConnection: [] }]
+  test('alle Wohnungen der Anlage angehakt: die Anlage entfällt', () => {
+    expect(selfSupplyChange({ units: null }, units, ['eg', 'og', 'dg'])).toEqual({ kind: 'remove', unitIds: ['eg', 'og', 'dg'] })
+    expect(selfSupplyChange({ units: [{ unitId: 'eg', heatedAreaM2: null }] }, units, ['eg', 'og'])).toEqual({ kind: 'remove', unitIds: ['eg'] })
+  })
+  test('ein Teil angehakt: die Anlage behält die übrigen, mit ihren Werten', () => {
+    expect(selfSupplyChange({ units: null }, units, ['og'])).toEqual({ kind: 'reduce', unitIds: ['og'], units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'dg', heatedAreaM2: null }] })
+    expect(selfSupplyChange({ units: [{ unitId: 'eg', heatedAreaM2: 71 }, { unitId: 'og', heatedAreaM2: 60 }] }, units, ['og', 'dg']))
+      .toEqual({ kind: 'reduce', unitIds: ['og'], units: [{ unitId: 'eg', heatedAreaM2: 71 }] })
+  })
+  test('keine Wohnung der Anlage angehakt: die Anlage bleibt, wie sie ist', () => {
+    expect(selfSupplyChange({ units: [{ unitId: 'eg', heatedAreaM2: null }] }, units, ['og'])).toEqual({ kind: 'keep' })
+  })
 })

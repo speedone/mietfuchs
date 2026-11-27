@@ -10023,21 +10023,34 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Abdeckung V27: Hängt der Mieter an einer zentralen Anlage, bezieht er bei eigenem Vertrag den Brennstoff des ganzen
   // Hauses; dafür legt die Einrichtung keine Anlage an (client/src/heatingForm.ts, CENTRAL_SELF_SUPPLY).
   const viaCentral = new Set<string>()
+  // #720: Die Wohnung des Mieters hängt gar nicht (mehr) an der Anlage, etwa weil sie eine eigene Therme hat und die
+  // Karte „Heizung“ sie herausgenommen hat; er trägt die Position nur, weil sie auf alle Wohnungen verteilt wird.
+  const outside = new Map<string, string>()
+  const unitOfTenancy = new Map(snapshot.tenancies.map((t) => [t.id, t.unitId]))
   for (const c of items) {
     if (c.category !== HEATING_CATEGORY || !c.heatingPlantId) continue
-    const central = plants.find((p) => p.id === c.heatingPlantId)?.supply !== 'perUnit'
+    const plant = plants.find((p) => p.id === c.heatingPlantId)
+    const central = plant?.supply !== 'perUnit'
     for (const st of bearersOf(c.id)) {
       if (!selfSupplied.has(st.tenancyId)) continue
       conflicts.set(st.tenancyId, [...(conflicts.get(st.tenancyId) ?? []), c.description])
       if (central) viaCentral.add(st.tenancyId)
+      const unit = unitById.get(unitOfTenancy.get(st.tenancyId) ?? '')
+      if (plant && unit && !servesUnit(plant, unit)) outside.set(st.tenancyId, plantsHere(plant.id))
     }
   }
   for (const [tenancyId, descriptions] of conflicts) {
     const st = statements.get(tenancyId)
     if (!st) continue
-    const selfWay = viaCentral.has(tenancyId)
+    const served = outside.get(tenancyId)
+    const selfWay = served !== undefined
+      ? `Seine Wohnung hängt nicht an dieser Heizanlage: Wählen Sie an ${new Set(descriptions).size === 1 ? 'der Position' : 'jeder dieser Positionen'} auf der Seite Kosten unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ nur die Wohnungen der Heizanlage${served ? ` (${served})` : ''}.`
+      : viaCentral.has(tenancyId)
       ? 'Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen …“ (die Heizpositionen bleiben, nur ohne Anlage), ' +
-        'klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.'
+        'klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“. ' +
+        // #720: Die Etagenheizung mit Vertrag des Mieters ist eine andere Antwort; die Karte entfernt die Anlage dann selbst.
+        'Hat jede Wohnung ihre eigene Therme oder Heizung mit einem Vertrag des Mieters, klicken Sie stattdessen in der Karte „Heizung“ auf „Ändern“, wählen Sie bei „Womit wird geheizt?“ „Jede Wohnung hat eine eigene Heizung“ ' +
+        'und bei „Wer hat den Vertrag für die Heizung in der Wohnung?“ „Der Mieter hat den Vertrag, etwa für die Gastherme“; Mietfuchs entfernt die Heizanlage dann nach einer Rückfrage.'
       : 'Bezieht er den Brennstoff selbst, nehmen Sie seine Wohnung aus der Heizanlage.'
     warn('co2.self-supply-mixed',
       `${st.tenantName} (${st.unitName}) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an ${andList([...new Set(descriptions)].map((d) => `„${d}“`))} einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. ` +

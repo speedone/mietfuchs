@@ -281,6 +281,31 @@ export function selfSupplyOffer(
   return { tenancyIds: open.map((t) => t.id), names: [...new Set(open.map((t) => t.tenantName.trim()))], kindTenancyIds: kindless.map((t) => t.id) }
 }
 
+// #720: Eine bestehende Anlage wird auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter gestellt. Für eine
+// solche Heizung gibt es keine Anlage (docs/heizung.md). Sind alle Wohnungen der Anlage angehakt, entfällt sie auf dem Weg
+// von „Entfernen …“; ist es nur ein Teil, behält sie die übrigen (`units` für den Rumpf, Werte wie gespeichert); hängt
+// keine angehakte Wohnung an ihr, bleibt sie, wie sie ist. `unitIds`: die betroffenen Wohnungen der Anlage.
+export type SelfSupplyChange = { kind: 'remove'; unitIds: string[] } | { kind: 'reduce'; unitIds: string[]; units: HeatingPlantUnit[] } | { kind: 'keep' }
+export function selfSupplyChange(plant: Pick<HeatingPlant, 'units'> & Partial<Pick<HeatingPlant, 'basisValues'>>, units: readonly UnitInfo[], checked: readonly string[]): SelfSupplyChange {
+  const served = servedIds(plant, units)
+  const unitIds = served.filter((id) => checked.includes(id))
+  if (unitIds.length === 0) return { kind: 'keep' }
+  const rest = served.filter((id) => !checked.includes(id))
+  if (rest.length === 0) return { kind: 'remove', unitIds }
+  return { kind: 'reduce', unitIds, units: rest.map((unitId) => ({ unitId, heatedAreaM2: unitBasisOf({ units: plant.units, basisValues: plant.basisValues }, unitId)?.heatedAreaM2 ?? null })) }
+}
+// Der Satz der Rückfragen dazu, welche Mietverhältnisse umgestellt werden; derselbe wie beim Einrichten.
+export const selfSupplyTenanciesNote = (names: readonly string[]): string =>
+  `Die laufenden Mietverhältnisse von ${names.join(', ')} werden unter Heizung auf „Mieter heizt selbst“ gestellt. Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab; Hinweise auf eine CO₂-Kürzung entfallen dafür.`
+export const SELF_SUPPLY_NO_UNIT = 'Bitte haken Sie mindestens eine Wohnung an, deren Mieter den Vertrag selbst hat.'
+// Ist das Entfernen gesperrt, stellt die Karte nichts um und sagt den Grund des Servers.
+export const selfSupplyBlocked = (reason: string): string =>
+  `Mit eigener Heizung je Wohnung und Vertrag beim Mieter entfällt diese Heizanlage, sie lässt sich aber noch nicht entfernen: ${reason} Es wurde nichts geändert.`
+export const selfSupplyReduceNote = (unitNames: readonly string[]): string =>
+  `${unitNames.join(', ')} ${unitNames.length === 1 ? 'hängt' : 'hängen'} danach nicht mehr an der Heizanlage; für die übrigen Wohnungen bleibt sie bestehen.`
+export const SELF_SUPPLY_REDUCE_ITEMS =
+  'Die Heizpositionen der Anlage ändert Mietfuchs dabei nicht: Wählen Sie danach auf der Seite Kosten an jeder unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ nur die Wohnungen, die an der Anlage bleiben.'
+
 // Der Satz unter der zweiten Frage.
 // „Woran erkenne ich das?“ je Frage der Einrichtung (Entwurf 11.2, Laienprobe B9).
 export const HOW_TO_TELL = {

@@ -227,6 +227,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
   selbst herüber. Kein Betrag der Abrechnung ändert sich
   ([#722](https://github.com/speedone/mietfuchs/issues/722)).
+- Heizung ändern auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter: Die Karte „Heizung“ ließ die
+  bestehende Heizanlage stehen und stellte nur die Mietverhältnisse auf „Mieter heizt selbst“; die Abrechnung meldete
+  danach je Mietverhältnis den Fehler „Mieter heizt selbst und hängt an Ihrer Heizanlage“. Jetzt entfernt die Karte die
+  Anlage nach einer Rückfrage auf demselben Weg wie „Entfernen …“ und stellt erst danach die Mietverhältnisse um. Ist das
+  Entfernen gesperrt (Zähler, Lieferungen, CO₂-Angaben, getrennte oder abgeschlossene Heizkostenabrechnung), sagt sie den
+  Grund und ändert nichts. Haben nur einige Wohnungen eine eigene Heizung, bleibt die Anlage für die übrigen, und die
+  Rückfrage nennt, dass Sie die Heizpositionen der Anlage auf der Seite Kosten auf diese Wohnungen beschränken. Der
+  Fehlertext der Abrechnung nennt jetzt auch diese beiden Fälle
+  ([#720](https://github.com/speedone/mietfuchs/issues/720)).
 - Vorauszahlung getrennt nach Heizung und übrigen Nebenkosten: Rechnet die Heizung im selben Zeitraum ab wie das
   Objekt, ließ sich die Vorauszahlung nicht aufteilen, weil der Knopf dafür nie erschien. Die Karte „Heizung“ der
   Stammdaten bietet jetzt „Vorauszahlung aufteilen“ an und erklärt, wozu; danach führen die Mietverhältnisse mit

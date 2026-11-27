@@ -101,7 +101,7 @@ import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
 import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, reassignCredit, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
-import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
+import { assignableHeatingItems, createHeatingPlant, heatingPlantRemovalBlock, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant, type PlantRemoval } from './db/heating.ts'
 import { bookOperatingPower, OperatingPowerQuestion } from './db/operatingPower.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { testTodayOf } from './testToday.ts'
@@ -906,32 +906,34 @@ app.put('/api/heating-plants/:id', async (req, res) => {
   if (!plant) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
   res.json(plant)
 })
+// Der Satz zu einer Sperre des Entfernens; derselbe in der Ablehnung und in der Auskunft davor (#720).
+function plantRemovalRefusal(result: Exclude<PlantRemoval, { removed: true } | { reason: 'missing' }>): string {
+  if (result.reason === 'co2') {
+    return `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${result.periods.join(', ')}). Entfernen Sie sie auf der Seite Heizkosten, ` +
+      'wenn die Anlage wirklich entfallen soll; sonst gingen sie mit ihr verloren.'
+  }
+  if (result.reason === 'deliveries') {
+    return `An dieser Heizanlage stehen ${result.count === 1 ? 'eine Lieferung' : `${result.count} Lieferungen`}. Entfernen Sie sie auf der Seite Heizkosten, wenn die Anlage wirklich entfallen soll.`
+  }
+  if (result.reason === 'separate') {
+    return 'Die Heizkosten dieser Anlage werden getrennt abgerechnet, oder es gibt abgeschlossene Heizkostenabrechnungen oder Korrekturen der ' +
+      'Heizvorauszahlung. Schalten Sie zuerst die getrennte Heizkostenabrechnung aus. Abgeschlossene Heizkostenabrechnungen bleiben als Archiv; ' +
+      'solange es sie gibt, bleibt die Anlage bestehen.'
+  }
+  return `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
+    'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.'
+}
+// Auskunft vor dem Entfernen (#720): `blocked` ist der Satz der Sperre oder `null`. Nichts wird geändert.
+app.get('/api/heating-plants/:id/removal', async (req, res) => {
+  const block = await readData((db) => heatingPlantRemovalBlock(db, req.params.id))
+  if (block?.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json({ blocked: block ? plantRemovalRefusal(block) : null })
+})
 app.delete('/api/heating-plants/:id', async (req, res) => {
   const result = await writeData((db) => removeHeatingPlant(db, req.params.id))
   if (result.removed) return res.json({ ok: true, released: result.released, notice: result.notice })
   if (result.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
-  if (result.reason === 'co2') {
-    return res.status(409).json({
-      error: `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${result.periods.join(', ')}). Entfernen Sie sie auf der Seite Heizkosten, ` +
-        'wenn die Anlage wirklich entfallen soll; sonst gingen sie mit ihr verloren.',
-    })
-  }
-  if (result.reason === 'deliveries') {
-    return res.status(409).json({
-      error: `An dieser Heizanlage stehen ${result.count === 1 ? 'eine Lieferung' : `${result.count} Lieferungen`}. Entfernen Sie sie auf der Seite Heizkosten, wenn die Anlage wirklich entfallen soll.`,
-    })
-  }
-  if (result.reason === 'separate') {
-    return res.status(409).json({
-      error: 'Die Heizkosten dieser Anlage werden getrennt abgerechnet, oder es gibt abgeschlossene Heizkostenabrechnungen oder Korrekturen der ' +
-        'Heizvorauszahlung. Schalten Sie zuerst die getrennte Heizkostenabrechnung aus. Abgeschlossene Heizkostenabrechnungen bleiben als Archiv; ' +
-        'solange es sie gibt, bleibt die Anlage bestehen.',
-    })
-  }
-  res.status(409).json({
-    error: `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
-      'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.',
-  })
+  res.status(409).json({ error: plantRemovalRefusal(result) })
 })
 
 // ---------- Heizperioden: CO₂ und Warmwasser (Heizung PR 6) ----------
