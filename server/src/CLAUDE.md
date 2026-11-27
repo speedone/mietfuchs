@@ -30,10 +30,23 @@ bis 0.14 (3001) können denselben Ordner nehmen (Mac: Programmdatei unter /Appli
   umgezogener Ordner (`moved`) zählt nie, er liest nur. Vor 0.8 bleibt eine Fassung unerkannt (hingenommen).
 - **Gleichzeitige Starts**: Während des Startens antwortet `/healthz` mit `dataDir`, `pid` und `boundAt` (Zeitpunkt des
   Bindens). Wer später gebunden hat, weicht (`yieldsTo`); er sieht den anderen sicher, denn der war schon gebunden.
-  Zwei gleichzeitige Starts auf selbst gesetzten Ports ohne Lauf-Datei bleiben unerkannt (hingenommen), ebenso ein
-  Mietfuchs, dessen Ereignisschleife gerade länger als 1,5 Sekunden in einer Migration steckt (hingenommen: länger zu
-  warten verzögerte jeden Start, wenn auf dem Port etwas schweigt). Die Lauf-Datei entsteht erst nach der Frage, sonst
-  überschriebe ein weichender Start die des laufenden.
+  Zwei gleichzeitige Starts auf selbst gesetzten Ports ohne Lauf-Datei bleiben unerkannt (hingenommen). Die Lauf-Datei
+  entsteht erst nach der Frage, sonst überschriebe ein weichender Start die des laufenden.
+- **Schweigt der Port aus der Lauf-Datei, wird nachgefragt** (#694, `SILENT_WAIT_MS`, 30 Sekunden): Wer zuerst gebunden
+  hat, schreibt die Lauf-Datei und öffnet die Datenbank; die Migrationen halten seine Ereignisschleife an, bei einem
+  frischen Ordner oder nach einem Update auf einem langsamen Rechner länger als 1,5 Sekunden. Der Port nimmt dann die
+  Verbindung an und antwortet nicht; das als frei zu werten ließ beide laufen (unter Last nachgestellt: der zweite
+  mit „database is locked“ und ohne geöffnete Datenbank, gelegentlich beide mit). Nur eine **abgelaufene** Frage an
+  den Port aus der Lauf-Datei führt zur nächsten (die Datei wird erst beim Schweigen gelesen, denn sie kann während der
+  Frage entstehen), mit einer Zeile auf der Konsole (außerhalb des Fensters unter Linux auch als Mitteilung,
+  `notifyDesktop`) und nach dem Ablauf einer zweiten. Ergibt ein anderer Port den Zwilling, wird auf einen schweigenden
+  nicht gewartet (`findTwin` entscheidet mit der ersten passenden Antwort). Eine abgelehnte Verbindung (Datei nach einem Absturz) entscheidet sofort, und ein Standardport
+  ohne Lauf-Datei wird weiter einmal gefragt (sonst wartete jeder Start, wenn dort etwas schweigt). Hingenommen bleibt:
+  ein Mietfuchs ohne Lauf-Datei (vor 0.15, npm, Docker, Ordner ohne Schreibrecht), dessen Ereignisschleife gerade
+  länger als 1,5 Sekunden steht, und eines, das länger als 30 Sekunden schweigt. **Laufen doch zwei** (im Versuch mit
+  zwei npm-Servern auf einem Ordner): Beide lesen denselben Stand, gleichzeitiges Schreiben scheitert bei einem mit 500
+  „database is locked“ (keine Wartezeit auf die Sperre, db/CLAUDE.md), nach einem Wiederherstellen im einen schreibt der
+  andere nicht mehr („schreibgeschützt“); still verloren ging dabei nichts, beschädigt wurde nichts.
 - **Nie den Start eines einzelnen verhindern**: keine Antwort, fremdes Programm, anderer Ordner, Lesefehler, nicht
   beschreibbarer Ordner (dann keine Lauf-Datei) zählen als frei.
 - **Läuft schon eines**: im Fenster eine Zeile auf der Fehlerausgabe und Exit 1, das Fenster zeigt sie als Meldung

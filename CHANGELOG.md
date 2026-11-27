@@ -200,6 +200,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Zweimal derselbe Datenordner: Startete Mietfuchs (Fenster, Programmdatei, Paket oder Store), während ein anderes
+  Mietfuchs auf demselben Datenordner gerade seine Datenbank öffnete, etwa beim ersten Start oder nach einem Update auf
+  einem langsamen Rechner, hielt der neue Start den anderen für abwesend, weil der länger als anderthalb Sekunden nicht
+  antwortete, und lief ebenfalls; meist ohne geöffnete Datenbank („gesperrt“), selten mit. Daten gingen dabei nicht
+  verloren. Antwortet der Port, den die Lauf-Datei im Datenordner nennt, nicht, wartet Mietfuchs jetzt bis zu
+  30 Sekunden auf eine Antwort und sagt das auf der Konsole bzw. im Protokoll (unter Linux außerhalb des Fensters auch
+  als Mitteilung). Antwortet das andere Mietfuchs, öffnet es wie bisher dessen Oberfläche oder meldet es; schweigt der
+  Port weiter, startet Mietfuchs selbst ([#694](https://github.com/speedone/mietfuchs/issues/694)).
 - Heizkostenverteiler ohne Skala: Unter „Zähler & Stände“ ließ sich ein Heizkostenverteiler anlegen, ohne die Skala zu
   wählen; in der Liste stand danach nur „Skala fehlt“. Ohne Skala verteilt die eigene Heizkostenabrechnung die
   Heizkosten nicht (sie bleiben mit einem Fehler unter „Zu prüfen“ beim Vermieter). Die Skala ist jetzt eine
