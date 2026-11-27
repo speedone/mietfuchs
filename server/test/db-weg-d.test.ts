@@ -272,6 +272,112 @@ test('H = P: Einschalten teilt nur die Vorauszahlung, ohne Spanne und ohne neue 
   })
 })
 
+// #704: Bei gleichem Zeitraum lässt sich erneut aufteilen (etwa für ein neues Mietverhältnis ohne Heizstaffel). Die Vorschau
+// schlägt dann für eine schon geteilte Stufe ihren Heizanteil vor, nicht wieder den Anteil der letzten Abrechnung; sonst
+// überschriebe ein unbesehenes „Speichern“ die vereinbarte Heizvorauszahlung.
+test('H = P, erneut aufteilen: eine schon geteilte Stufe behält ihren Heizanteil als Vorschlag, eine ungeteilte bekommt den Anteil', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, {})
+      await db.update(heatingPlants).set({ periodStartMonth: null }).where(eq(heatingPlants.id, 'hp1'))
+      await createEntity(db, 'costItems', 'h2024', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Messdienst 2024', amountCents: 410000, key: 'area', heatingPlantId: 'hp1' })
+    })
+    const r = await ein(opened, '2025-01', { '2025-01': 10000 })
+    assert.ok(r && 'plant' in r)
+    await opened.write((db) => createEntity(db, 'tenancies', 't2', { unitId: 'u1', tenantName: 'Neu', persons: 1, start: '2026-06-01', prepayments: [{ from: '2026-06', monthlyCents: 20000 }] }))
+    const v = await preview(opened, { separate: true, month: '2025-01' })
+    assert.equal(v.way, 'samePeriod')
+    assert.ok(v.share, 'der Anteil der letzten Abrechnung ist bekannt')
+    assert.deepEqual(v.steps.map((s) => [s.tenantName, s.rows]), [
+      ['Müller', [{ from: '2025-01', totalCents: 30000, heatingCents: 10000 }]],
+      ['Neu', [{ from: '2026-06', totalCents: 20000, heatingCents: Math.round((20000 * v.share.permille) / 1000 / 100) * 100 }]],
+    ])
+    const again = await opened.write((db) => applySeparate(db, 'hp1', { separate: true, month: '2025-01', answers: { steps: { t1: { '2025-01': 10000 }, t2: { '2026-06': 8000 } }, token: v.token } }, TODAY))
+    assert.ok(again && 'plant' in again)
+    const t2 = await opened.read((db) => findEntity(db, 'tenancies', 't2'))
+    assert.deepEqual([fieldOf(t2, 'prepayments'), fieldOf(t2, 'heatingPrepayments')], [[{ from: '2026-06', monthlyCents: 12000 }], [{ from: '2026-06', monthlyCents: 8000 }]])
+    const t1 = await opened.read((db) => findEntity(db, 'tenancies', 't1'))
+    assert.deepEqual(fieldOf(t1, 'heatingPrepayments'), [{ from: '2025-01', monthlyCents: 10000 }])
+  })
+})
+
+// Durchsicht von #704, K1: Erneut aufteilen ab einem späteren Monat schrieb in beide Staffeln eine zweite Stufe mit
+// demselben Betrag; im Mietverhältnis sah das nach einer Änderung aus und wuchs mit jedem Durchgang.
+test('H = P, erneut aufteilen ab einem späteren Monat: keine Stufe, die nur den Betrag der vorigen wiederholt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, {})
+      await db.update(heatingPlants).set({ periodStartMonth: null }).where(eq(heatingPlants.id, 'hp1'))
+    })
+    assert.ok('plant' in ((await ein(opened, '2025-01', { '2025-01': 12000 })) ?? {}))
+    assert.ok('plant' in ((await ein(opened, '2026-01', { '2026-01': 12000 })) ?? {}))
+    assert.deepEqual([await tenancyField(opened, 'prepayments'), await tenancyField(opened, 'heatingPrepayments')],
+      [[{ from: '2024-01', monthlyCents: 30000 }, { from: '2025-01', monthlyCents: 18000 }], [{ from: '2025-01', monthlyCents: 12000 }]])
+    // Eine wirkliche Änderung bleibt eine Stufe.
+    assert.ok('plant' in ((await ein(opened, '2026-01', { '2026-01': 15000 })) ?? {}))
+    assert.deepEqual([await tenancyField(opened, 'prepayments'), await tenancyField(opened, 'heatingPrepayments')],
+      [[{ from: '2024-01', monthlyCents: 30000 }, { from: '2025-01', monthlyCents: 18000 }, { from: '2026-01', monthlyCents: 15000 }], [{ from: '2025-01', monthlyCents: 12000 }, { from: '2026-01', monthlyCents: 15000 }]])
+  })
+})
+
+// Durchsicht von #704, K2: Wer die Heizung als Pauschale oder in der Miete zahlt, hat keine Heizvorauszahlung; der Anteil
+// der letzten Abrechnung ist für ihn kein Vorschlag.
+test('H = P: ein Mietverhältnis mit Heizpauschale, Inklusivmiete oder eigenem Brennstoff ist mit 0 vorbelegt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, { heatingModel: 'flatRate' })
+      await createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'OG', areaM2: 40, participates: true })
+      await createEntity(db, 'tenancies', 't2', { unitId: 'u2', tenantName: 'Selbst', persons: 1, start: '2024-01-01', heatingModel: 'selfSupply', prepayments: [{ from: '2024-01', monthlyCents: 10000 }] })
+      await db.update(heatingPlants).set({ periodStartMonth: null }).where(eq(heatingPlants.id, 'hp1'))
+      await createEntity(db, 'costItems', 'h2024', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Messdienst 2024', amountCents: 410000, key: 'area', heatingPlantId: 'hp1' })
+    })
+    const v = await preview(opened, { separate: true, month: '2025-01' })
+    assert.ok(v.share)
+    assert.deepEqual(v.steps.map((s) => [s.tenantName, s.rows]), [['Müller', [{ from: '2025-01', totalCents: 30000, heatingCents: 0 }]], ['Selbst', [{ from: '2025-01', totalCents: 10000, heatingCents: 0 }]]])
+  })
+})
+
+// Durchsicht von #704, M4: Ohne Spanne heißt Ausschalten Zusammenführen. Mit `merge: false` blieben die Staffeln geteilt
+// und die Abrechnung wies weiter getrennt aus, nur gab es danach keinen Weg mehr zurück.
+test('H = P, zusammenführen: auch mit merge: false stehen danach wieder eine Staffel und kein getrennter Ausweis', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, {})
+      await db.update(heatingPlants).set({ periodStartMonth: null }).where(eq(heatingPlants.id, 'hp1'))
+    })
+    assert.ok('plant' in ((await ein(opened, '2025-01', { '2025-01': 12000 })) ?? {}))
+    const r = await apply(opened, { separate: false, month: '2025-01', answers: { merge: false } })
+    assert.ok(r && 'plant' in r)
+    assert.equal(r.plant.separateSettlement, false)
+    assert.deepEqual([await tenancyField(opened, 'prepayments'), await tenancyField(opened, 'heatingPrepayments')],
+      [[{ from: '2024-01', monthlyCents: 30000 }], undefined])
+  })
+})
+
+// Nachprüfung von #704, B: Beginnt im Monat des Zusammenführens eine Heizstufe von 0 € und galt davor ein Betrag, wurde
+// keine 0-Stufe geschrieben; der frühere Heizbetrag lebte wieder auf, zusätzlich zur zusammengeführten Staffel.
+test('H = P, zusammenführen im Monat einer Heizstufe von 0 €: die Summe je Monat bleibt, der frühere Heizbetrag lebt nicht auf', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, {})
+      await db.update(heatingPlants).set({ periodStartMonth: null }).where(eq(heatingPlants.id, 'hp1'))
+    })
+    assert.ok('plant' in ((await ein(opened, '2025-01', { '2025-01': 12000 })) ?? {}))
+    assert.ok('plant' in ((await ein(opened, '2026-01', { '2026-01': 0 })) ?? {}))
+    assert.deepEqual(await tenancyField(opened, 'heatingPrepayments'), [{ from: '2025-01', monthlyCents: 12000 }, { from: '2026-01', monthlyCents: 0 }])
+    const summe = async (month: string) => {
+      const p = await tenancyField(opened, 'prepayments'), h = await tenancyField(opened, 'heatingPrepayments')
+      const rate = (list: unknown): number => (Array.isArray(list) ? list : []).reduce<number>((a, e) => (fieldOf(e, 'from') as string <= month ? Number(fieldOf(e, 'monthlyCents')) : a), 0)
+      return rate(p) + rate(h)
+    }
+    const vorher = [await summe('2025-06'), await summe('2026-01'), await summe('2027-03')]
+    assert.deepEqual(vorher, [30000, 30000, 30000])
+    const r = await apply(opened, { separate: false, month: '2026-01', answers: {} })
+    assert.ok(r && 'plant' in r)
+    assert.deepEqual([await summe('2025-06'), await summe('2026-01'), await summe('2027-03')], vorher)
+  })
+})
+
 test('Eine veraltete Vorschau schreibt nichts', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => haus(db, {}))

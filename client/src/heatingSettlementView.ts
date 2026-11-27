@@ -152,3 +152,20 @@ export function heatingTaxYear(h: { startYear: number; endYear: number }, taxYea
   const fallback = invoiceDate ? String(paymentYear({ from: `${h.startYear}-01-01`, to: `${h.endYear}-12-31` }, invoiceDate).year) : ''
   return { show: true, years, fallback, valid: years.includes(Number(taxYear)) && taxYear !== '' }
 }
+
+// #704: Am Mietverhältnis steht ein Feld „NK-Vorauszahlung“; dass sich eine eigene Vorauszahlung für Heizung und Warmwasser
+// führen lässt und wo, sagte nichts. Der Satz steht unter der Staffel und nennt den Knopf, den es für die Anlage der
+// Wohnung gibt (`separateActions` in heatingPeriodForm.ts). **Er schweigt, wo er in die Irre führte**: Trägt das
+// Mietverhältnis schon eine Heizstaffel (`hasHeatingSchedule`), ist die NK-Staffel nicht die Summe, und wer „Tragen Sie
+// hier die Summe ein“ folgte, zählte die Heizvorauszahlung doppelt (Durchsicht M3). Ebenso, wenn es Anlagen gibt, aber
+// keine die Wohnung versorgt, und nach einem Kesseltausch, wo das Aufteilen nicht geht (K5, M5).
+export function prepaymentSplitHint(unit: Pick<Unit, 'id' | 'noConnection'>, plants: readonly HeatingPlant[], hasHeatingSchedule: boolean): string | null {
+  if (hasHeatingSchedule || separateHeatingPlant(unit, plants) !== null) return null
+  const ask = 'Zahlt der Mieter eine eigene Vorauszahlung für Heizung und Warmwasser?'
+  if (plants.length === 0) return `${ask} Tragen Sie hier die Summe ein und richten Sie in der Karte „Heizung“ die Heizung ein; dort teilen Sie die Vorauszahlung danach auf.`
+  const plant = plants.find((p) => servesUnit(p, unit))
+  if (!plant) return null
+  if ((plant.endsOn ?? null) !== null || (plant.replacesPlantId ?? null) !== null) return null
+  if (hasOwnRhythm(plant)) return `${ask} Tragen Sie hier die Summe ein. Aufgeteilt wird sie in der Karte „Heizung“ mit „Getrennte Heizkostenabrechnung einschalten“; die Heizkosten bekommen dann je Heizperiode eine eigene Abrechnung.`
+  return `${ask} Tragen Sie hier die Summe ein und teilen Sie sie in der Karte „Heizung“ mit „Vorauszahlung aufteilen“ auf.`
+}

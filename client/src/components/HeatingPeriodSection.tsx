@@ -11,8 +11,8 @@ import { parseMonthText } from '../monthText'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
 import {
   PERIOD_CHOICE_OPTIONS, SEPARATE_OPTIONS, heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers,
-  heatingWays, initialSeparateAnswers, isCalendarObject, separateAnswersOf, separatePanelIntro, suggestedWay, type HeatingPeriodAnswerForm, type HeatingPeriodForm, type PeriodChoice, type SeparateAnswerForm,
-  type SeparateChoice,
+  heatingWays, initialSeparateAnswers, isCalendarObject, separateActions, separateAnswersOf, separateOffBody, separatePanelIntro, separateSavedText, splitHint, suggestedWay, type HeatingPeriodAnswerForm, type HeatingPeriodForm, type PeriodChoice, type SeparateAnswerForm,
+  type SeparateChoice, type SeparateMode,
 } from '../heatingPeriodForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
@@ -64,7 +64,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   const setError = errors.set
   const own = hasOwnRhythm(plant)
   const openSpan = plant.separateSpans.some((s) => s.until === null)
-  const separateOn = openSpan || (!own && plant.separateSettlement === true)
+  // #704: Welchen Weg das Fenster „getrennt“ geht, sagt der Knopf, der es geöffnet hat; bei gleichem Zeitraum gibt es beide.
+  const [mode, setMode] = useState<SeparateMode>('on')
 
   // Eine Änderung nach der Vorschau verwirft sie samt Antworten und Bestätigung; „Speichern“ wartet auf die nächste
   // (wie Durchsicht M2 beim Abrechnungszeitraum: sonst gälte die Vorschau für einen anderen Stand als im Formular).
@@ -100,6 +101,12 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     setSeparateAnswers(null)
     setUnderstood(false)
     setMonth('')
+  }
+
+  function openSeparate(next: SeparateMode) {
+    setMode(next)
+    setMonth('')
+    setOpen('separate')
   }
 
   async function loadPeriodPreview() {
@@ -147,6 +154,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     // eingeschaltet. Die Vorschau dazu öffnet sich gleich, und die Meldung sagt, dass noch etwas fehlt.
     if (form.choice === 'own' && form.separate === 'yes' && !openSpan) {
       notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie im Fenster die Aufteilung der Vorauszahlung und klicken Sie „Speichern“.')
+      setMode('on')
       setOpen('separate')
       setSecondStep(true)
       return true
@@ -168,7 +176,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       errors.report([{ field: 'month', short: parsed.short, text: `Monat: ${parsed.text}` }])
       return
     }
-    const body = separateOn && !switchOn ? { separate: false, ...(forMonth ? { until: forMonth } : {}) } : { separate: true, ...(forMonth ? { month: forMonth } : {}) }
+    const body = mode === 'off' && !switchOn ? separateOffBody(plant, forMonth) : { separate: true, ...(forMonth ? { month: forMonth } : {}) }
     const seq = ++previewSeq.current
     try {
       const p = await api<SeparatePreview>(`/api/heating-plants/${plant.id}/separate/preview`, { method: 'POST', body: JSON.stringify(body) })
@@ -188,7 +196,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     if (!separatePreview || !separateAnswers) return
     const answers = separateAnswersOf(separatePreview, separateAnswers)
     if ('error' in answers) return setError(answers.error)
-    const confirmed = { ...answers, understood }
+    // Durchsicht M4: Ohne Spanne heißt Ausschalten Zusammenführen; ohne es bliebe alles aufgeteilt, nur ohne Rückweg.
+    const confirmed = { ...answers, understood, ...(separatePreview.way === 'samePeriod' && !separatePreview.separate ? { merge: true } : {}) }
     const body = separatePreview.separate
       ? { separate: true, month: separatePreview.month, answers: confirmed }
       : { separate: false, ...(separatePreview.until ? { until: separatePreview.until } : { month: separatePreview.month }), answers: confirmed }
@@ -216,12 +225,13 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     }
     close()
     await onChanged()
-    notify(separatePreview.separate ? 'Getrennte Heizkostenabrechnung eingeschaltet.' : 'Getrennte Heizkostenabrechnung ausgeschaltet.')
+    notify(separateSavedText(separatePreview))
   }
 
   const way = suggestedWay({ differs: form.choice === 'own', separate: form.separate, hasCalendarData })
   const ways = heatingWays({ objectCalendar: isCalendarObject(objectRules), separate: form.separate })
   const amount = (key: string) => separateAnswers?.amounts[key] ?? ''
+  const hint = splitHint(plant)
 
   return (
     <div className="stack heating-period">
@@ -229,14 +239,13 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       <div className="row">
         {actions}
         <button className="btn secondary" onClick={() => { setForm(heatingPeriodForm(plant)); setOpen('period') }}>Zeitraum der Heizung ändern</button>
-        {(own || plant.separateSettlement === true) && (
-          <button className="btn secondary" onClick={() => { setMonth(''); setOpen('separate') }}>
-            {separateOn ? 'Getrennte Heizkostenabrechnung ausschalten' : own ? 'Getrennte Heizkostenabrechnung einschalten' : 'Vorauszahlung aufteilen'}
-          </button>
-        )}
+        {separateActions(plant).map((a) => (
+          <button key={a.mode} className="btn secondary" onClick={() => openSeparate(a.mode)}>{a.label}</button>
+        ))}
         {/* Gefahr mit Abstand zu den übrigen Knöpfen (#346 Schritt 7, M19) */}
         {dangerAction && <span className="ml-auto">{dangerAction}</span>}
       </div>
+      {hint && <p className="muted">{hint}</p>}
       {open === 'none' && <ErrorSummary errors={errors} />}
 
       {open === 'period' && (
@@ -376,7 +385,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       )}
 
       {open === 'separate' && (() => {
-        const intro = separatePanelIntro({ separateOn, own, afterPeriodChange: secondStep })
+        const intro = separatePanelIntro({ separateOn: mode === 'off', own, span: openSpan, afterPeriodChange: secondStep })
         return (
         <Drawer
           key="getrennt"
@@ -450,7 +459,13 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                 </label>
               )}
               {separatePreview.keep.length > 0 && <p className="muted">{`Getrennt bleiben: ${separatePreview.keep.map((k) => `${k.label} (Frist ${fmtDate(k.deadline)})`).join(', ')}.`}</p>}
-              {separatePreview.merge.length > 0 && (
+              {separatePreview.way === 'samePeriod' && separatePreview.merge.flatMap((m) => m.rows.map((r) => (
+                <p key={`${m.tenancyId}|${r.from}`}>{`${m.tenantName} ab ${r.from.slice(5, 7)}/${r.from.slice(0, 4)}: wieder eine Vorauszahlung von ${fmtEuro(r.prepaymentCents)}`}</p>
+              )))}
+              {separatePreview.way === 'samePeriod' && !separatePreview.separate && separatePreview.merge.length === 0 && separatePreview.blocked.length === 0 && (
+                <p className="muted">Kein Mietverhältnis führt ab diesem Monat eine Heizvorauszahlung; es ändert sich kein Betrag.</p>
+              )}
+              {separatePreview.way !== 'samePeriod' && separatePreview.merge.length > 0 && (
                 <label className="checkline">
                   <input type="checkbox" checked={separateAnswers.merge} onChange={(e) => setSeparateAnswers({ ...separateAnswers, merge: e.target.checked })} /> Heizvorauszahlung und übrige Vorauszahlung wieder zu einer zusammenführen
                 </label>

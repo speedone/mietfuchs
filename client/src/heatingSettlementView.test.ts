@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   adjustedPrepaymentLabel, cockpitHeatingRows, suggestionWithoutHeating, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, totalLabel,
-  heatingTaxYear, recommendedDeadlineText, separateHeatingFor, settlementPaths, settlementTitle,
+  heatingTaxYear, prepaymentSplitHint, recommendedDeadlineText, separateHeatingFor, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, Statement, Tenancy } from './types'
@@ -146,4 +146,34 @@ test('Durchsicht #297 S-C: „ohne Heizung“ hängt an der Abrechnung, nicht an
   // Eine vorher abgeschlossene Abrechnung kennt das Feld nicht: dann wie bisher, wenn in diesem Zeitraum eine getrennte endet.
   expect(suggestionWithoutHeating({}, null, 1)).toBe(true)
   expect(suggestionWithoutHeating({}, null, 0)).toBe(false)
+})
+
+// #704: Der Satz unter der NK-Vorauszahlung nennt den Weg zur eigenen Heizvorauszahlung, den es für die Wohnung gibt.
+describe('#704: Hinweis auf die eigene Heizvorauszahlung am Mietverhältnis', () => {
+  const unit = { id: 'u1' }
+  const ask = 'Zahlt der Mieter eine eigene Vorauszahlung für Heizung und Warmwasser?'
+  test('ohne Anlage: Heizung einrichten; wie das Objekt: aufteilen; eigene Heizperiode: getrennte Abrechnung, mit ihrer Folge', () => {
+    expect(prepaymentSplitHint(unit, [], false)).toBe(`${ask} Tragen Sie hier die Summe ein und richten Sie in der Karte „Heizung“ die Heizung ein; dort teilen Sie die Vorauszahlung danach auf.`)
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null })], false)).toBe(`${ask} Tragen Sie hier die Summe ein und teilen Sie sie in der Karte „Heizung“ mit „Vorauszahlung aufteilen“ auf.`)
+    // Durchsicht K4: Bei eigener Heizperiode heißt das eine eigene Heizkostenabrechnung je Heizperiode; der Satz sagt es.
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: 5 })], false)).toBe(`${ask} Tragen Sie hier die Summe ein. Aufgeteilt wird sie in der Karte „Heizung“ mit „Getrennte Heizkostenabrechnung einschalten“; die Heizkosten bekommen dann je Heizperiode eine eigene Abrechnung.`)
+  })
+  test('aufgeteilt: kein Satz, dort steht die Heizstaffel', () => {
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null, separateSettlement: true })], false)).toBeNull()
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }] })], false)).toBeNull()
+  })
+  // Durchsicht M3: Trägt das Mietverhältnis schon eine Heizstaffel, ist die NK-Staffel nicht die Summe; wer dem Satz
+  // folgte, zählte die Heizvorauszahlung doppelt.
+  test('eine vorhandene Heizstaffel schweigt den Satz, gleich was die Anlage sagt', () => {
+    expect(prepaymentSplitHint(unit, [], true)).toBeNull()
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null })], true)).toBeNull()
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: 5 })], true)).toBeNull()
+  })
+  // Durchsicht K5, M5: Es gibt Anlagen, aber keine versorgt die Wohnung, oder ihre Anlage lässt das Aufteilen nicht zu.
+  test('kein Satz, der an eine Stelle schickt, an der es nicht geht', () => {
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null, units: [{ unitId: 'u2', heatedAreaM2: null }] })], false)).toBeNull()
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null, endsOn: '2025-06-30' })], false)).toBeNull()
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null, replacesPlantId: 'alt' })], false)).toBeNull()
+    expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: 5, replacesPlantId: 'alt' })], false)).toBeNull()
+  })
 })

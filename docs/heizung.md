@@ -74,6 +74,23 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
   P lässt die Heizperiode weg; sie hat eigene Abrechnung (`scope: 'heating'`, `heatingSnapshotFor`),
   Frist und Abschluss (`closed_heating_settlements` samt Verlauf). Bei H = P eine Gesamtabrechnung mit
   getrennt ausgewiesenen Vorauszahlungen.
+- **H = P: nur die Vorauszahlung aufteilen** (#704): Rechnet die Anlage im Zeitraum des Objekts ab, gibt es keine
+  getrennte Abrechnung, nur zwei Staffeln in einer Abrechnung (`way: 'samePeriod'`, ohne Spanne). **Die Knöpfe der Karte
+  „Heizung“ folgen dem, was der Server annimmt** (`separateActions` in client/src/heatingPeriodForm.ts), nicht dem
+  Rhythmus allein: mit offener Spanne nur „Getrennte Heizkostenabrechnung ausschalten“ (mit `until`), sonst „Vorauszahlung
+  aufteilen“ (wie das Objekt, nicht nach einem Kesseltausch, den `planOn` ablehnt) bzw. „… einschalten“ (eigene
+  Heizperiode), und sobald ohne Spanne aufgeteilt ist (`separateSettlement`), „Vorauszahlung wieder zusammenführen“ (mit
+  `month`, `separateOffBody`), auch nach einem späteren Wechsel auf eine eigene Heizperiode. Vorher hing der Knopf an
+  der gespeicherten Antwort, die bei gleichem Zeitraum niemand erfragte. Erneut aufteilen geht (Mietverhältnis ohne
+  Heizstaffel); eine schon geteilte Stufe behält ihren Heizanteil als Vorschlag; wessen Heizkosten nicht über
+  Vorauszahlungen laufen (Pauschale, Inklusivmiete, Mieter heizt selbst: `settlesHeating` in shared/heatingModel.ts, eine
+  Stelle für Vorschlag, Hinweis und den Satz am Mietverhältnis), ist mit 0 vorbelegt, und eine Stufe, die nur den Betrag davor wiederholt, wird bei H = P nicht geschrieben (`compact`).
+  Zusammenführen führt bei H = P immer zusammen (`merge` gilt dort nicht als Wahl). **Eine Jahreskorrektur kennt keine
+  Aufteilung** (`computePrepaymentCents`): Mit ihr weist die Abrechnung die Heizvorauszahlung nicht getrennt aus, und
+  `prepayment.heating-share-missing` schweigt dann, ebenso ohne `settlesHeating`. Beim Zusammenführen (auch Weg d)
+  entscheidet über die abschließende 0-Stufe der Heizstaffel nur, was **vor** dem Monat galt (`rate(before, …)`): Die
+  Stufe im Monat selbst fällt weg, und eine 0 dort ließ sonst den früheren Heizbetrag wieder aufleben. Am Mietverhältnis nennt ein
+  Satz unter der NK-Vorauszahlung den Weg (`prepaymentSplitHint`), nur ohne Heizstaffel und nur, wo es ihn gibt.
 - **Jeder Monat der Heizstaffel wird genau einmal angerechnet**: Er gehört der getrennt abgerechneten
   Heizperiode, wenn er ab ihrem Beginn liegt, sonst P (`separateOwner`, die einzige Stelle). Die
   Jahreskorrektur von P gilt für alles, was P anrechnet; eine Heizkorrektur

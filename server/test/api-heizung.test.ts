@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import type {
-  AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, LawOverrideSlot, MonthlyInfoRow, MonthlyInfoView, Co2Sheet, CostItem, Meter, Property, Settlement, StockView, Tenancy, Unit,
+  AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, LawOverrideSlot, MonthlyInfoRow, MonthlyInfoView, Co2Sheet, CostItem, Meter, Property, SeparatePreview, Settlement, StockView, Tenancy, Unit,
 } from '../../shared/types.ts'
 import { withoutCo2 } from '../testing/co2.ts'
 import { setHeatingSentAt } from '../src/db/heatingSettlements.ts'
@@ -133,6 +133,50 @@ test('Zeitraum der Heizung (Heizung PR 5): Vorschau und Wechsel über HTTP, PUT 
     assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === position.id)?.period, '2025-05')
     assert.equal((await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 13, changes: [] } })).status, 400)
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/period/preview', 'POST', { rules: null })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+// #704: Der Weg, den die Oberfläche jetzt anbietet („Vorauszahlung aufteilen“ bei einer Anlage, die wie das Objekt
+// abrechnet): ohne gespeicherte Antwort „getrennt“, nur mit Vorschau und Speichern. Es bleibt bei einer Abrechnung, die
+// Summe der Vorauszahlung und das Ergebnis ändern sich nicht, die Heizvorauszahlung ist getrennt ausgewiesen.
+test('#704: Vorauszahlung aufteilen bei gleichem Zeitraum über HTTP: eine Abrechnung, getrennt ausgewiesen, Ergebnis unverändert', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const unit = await s.api<{ id: string }>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const mieter = await s.api<{ id: string }>('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    assert.deepEqual([plant.periodStartMonth, plant.separateSettlement], [null, null])
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 150000, key: 'area', heatingPlantId: plant.id }))
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 200000, key: 'area' }))
+    const vorher = (await s.api<Settlement>('/api/settlement/2025-01')).statements[0] ?? assert.fail('keine Abrechnung')
+    assert.deepEqual([vorher.prepaymentCents, vorher.heatingPrepaymentCents], [360000, undefined])
+
+    const vorschau = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-01' }))
+    assert.deepEqual([vorschau.way, vorschau.blocked, vorschau.steps.map((x) => x.rows.map((r) => [r.from, r.totalCents]))], ['samePeriod', [], [[['2025-01', 30000]]]])
+    const ein = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-01', answers: { steps: { [mieter.id]: { '2025-01': 12000 } }, token: vorschau.token } })
+    assert.equal(ein.status, 200)
+    const danach = (await s.api<HeatingPlant[]>('/api/heating-plants')).find((p) => p.id === plant.id) ?? assert.fail('keine Anlage')
+    assert.deepEqual([danach.separateSettlement, danach.separateSpans], [true, []])
+    const t = (await s.api<Tenancy[]>('/api/tenancies')).find((x) => x.id === mieter.id) ?? assert.fail('kein Mietverhältnis')
+    assert.deepEqual([t.prepayments, t.heatingPrepayments], [[{ from: '2025-01', monthlyCents: 18000 }], [{ from: '2025-01', monthlyCents: 12000 }]])
+
+    const nachher = await s.api<Settlement>('/api/settlement/2025-01')
+    const st = nachher.statements[0] ?? assert.fail('keine Abrechnung')
+    assert.deepEqual([st.prepaymentCents, st.heatingPrepaymentCents, st.totalShareCents, st.balanceCents], [360000, 144000, vorher.totalShareCents, vorher.balanceCents])
+    // Keine eigene Heizkostenabrechnung: Die gibt es nur bei eigener Heizperiode.
+    assert.deepEqual(nachher.separateHeating ?? [], [])
+    assert.equal((await fetch(`${s.base}/api/heating-settlement/${plant.id}/2025-01`)).status, 404)
+
+    // Zurück: mit dem gewählten Monat als `month`, wie die Oberfläche es bei gleichem Zeitraum schickt.
+    const aus = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: false, month: '2025-01' }))
+    assert.deepEqual([aus.way, aus.month, aus.merge.map((m) => m.rows)], ['samePeriod', '2025-01', [[{ from: '2025-01', prepaymentCents: 30000 }]]])
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: false, month: '2025-01', answers: { merge: true, token: aus.token } })).status, 200)
+    const zurueck = (await s.api<Settlement>('/api/settlement/2025-01')).statements[0] ?? assert.fail('keine Abrechnung')
+    assert.deepEqual([zurueck.prepaymentCents, zurueck.heatingPrepaymentCents ?? 0, zurueck.balanceCents], [360000, 0, vorher.balanceCents])
   } finally {
     s.stop()
   }

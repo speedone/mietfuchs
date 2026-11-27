@@ -215,20 +215,24 @@ export function separateAnswersOf(p: SeparatePreview, form: SeparateAnswerForm):
 // Überschrift, Satz und Frage des Bereichs „getrennte Heizkostenabrechnung“ (Sichtprüfung E7). Nach
 // „Speichern“ im Zeitraum der Heizung mit „getrennt: Ja“ öffnet er sich als zweiter Schritt; vorher
 // stand dort nur „Ab welchem Monat?“, und niemand erfuhr, wozu.
-export function separatePanelIntro(input: { separateOn: boolean; own: boolean; afterPeriodChange: boolean }): { title: string; text: string; monthLabel: string } {
+// `span`: Läuft eine getrennte Heizkostenabrechnung (offene Spanne)? Ohne Angabe wie `own`. Ohne Spanne gibt es nur zwei
+// Vorauszahlungen, die wieder eine werden; das Fenster heißt dann wie sein Knopf (#704).
+export function separatePanelIntro(input: { separateOn: boolean; own: boolean; span?: boolean; afterPeriodChange: boolean }): { title: string; text: string; monthLabel: string } {
+  const span = input.span ?? input.own
   if (input.separateOn) {
     return {
-      title: 'Getrennte Heizkostenabrechnung ausschalten',
-      text: input.own
+      // #704: Ohne eigene Heizperiode gibt es keine getrennte Abrechnung, nur zwei Vorauszahlungen; das Fenster heißt wie sein Knopf.
+      title: span ? 'Getrennte Heizkostenabrechnung ausschalten' : 'Vorauszahlung wieder zusammenführen',
+      text: span
         ? 'Ab der gewählten Heizperiode stehen die Heizkosten wieder in der Betriebskostenabrechnung, und diese rechnet auch die Heizvorauszahlung an. Frühere Heizperioden bleiben getrennt abgerechnet. Die Vorschau zeigt, was sich ändert.'
-        : 'Ab dem gewählten Monat gibt es wieder eine gemeinsame Vorauszahlung. Die Vorschau zeigt, was sich ändert.',
-      monthLabel: input.own ? 'Ab welcher Heizperiode wieder gemeinsam? (Monat ihres Beginns)' : 'Ab welchem Monat?',
+        : 'Ab dem gewählten Monat gibt es wieder eine gemeinsame Vorauszahlung: Mietfuchs zählt Heizvorauszahlung und übrige Vorauszahlung je Mietverhältnis zusammen. Die Vorschau zeigt die Beträge.',
+      monthLabel: span ? 'Ab welcher Heizperiode wieder gemeinsam? (Monat ihres Beginns)' : 'Ab welchem Monat?',
     }
   }
   if (!input.own) {
     return {
       title: 'Vorauszahlung aufteilen',
-      text: 'Ab dem gewählten Monat führt Mietfuchs die Heizvorauszahlung als eigene Staffel, und die Abrechnung weist beide Vorauszahlungen getrennt aus. Die Vorschau zeigt, wie die bisherige Vorauszahlung aufgeteilt wird; lassen Sie das Feld leer, schlägt sie einen Monat vor.',
+      text: 'Ab dem gewählten Monat führt Mietfuchs die Heizvorauszahlung als eigene Staffel, und die Abrechnung weist beide Vorauszahlungen getrennt aus. Es bleibt bei einer Abrechnung, und an der Summe je Monat ändert sich nichts. Die Vorschau zeigt, wie die bisherige Vorauszahlung aufgeteilt wird; lassen Sie das Feld leer, schlägt sie einen Monat vor.',
       monthLabel: 'Ab welchem Monat?',
     }
   }
@@ -237,4 +241,59 @@ export function separatePanelIntro(input: { separateOn: boolean; own: boolean; a
     text: 'Ab dem gewählten Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung, und jede Heizperiode bekommt eine eigene Heizkostenabrechnung mit eigener Frist. Die Vorschau zeigt, wie die bisherige Vorauszahlung aufgeteilt wird; lassen Sie das Feld leer, schlägt sie einen Monat vor.',
     monthLabel: 'Ab welchem Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung?',
   }
+}
+
+// ---------- Wege zur getrennten Vorauszahlung (#704) ----------
+
+// Die Knöpfe einer Anlage, **abgeleitet aus dem, was der Server annimmt** (separateSettlement.ts), nicht aus dem Rhythmus
+// allein (Durchsicht M1, M2):
+// - Offene Spanne (Weg d läuft, auch wenn der Zeitraum inzwischen „wie das Objekt“ heißt): nur ausschalten, mit der
+//   Heizperiode (`until`); einschalten lehnte der Server ab.
+// - Sonst einschalten (eigene Heizperiode) bzw. aufteilen (wie das Objekt: keine getrennte Abrechnung, nur zwei
+//   Vorauszahlungen in einer Abrechnung), auch erneut, etwa für ein Mietverhältnis ohne Heizstaffel. Nach einem
+//   Kesseltausch lehnt der Server das Aufteilen ab (M5); dann gibt es den Knopf nicht.
+// - Ist ohne Spanne aufgeteilt (`separateSettlement`), gibt es zusammenführen, mit dem Monat (`month`), gleich welcher
+//   Rhythmus heute gilt: sonst bliebe nach einem Wechsel des Zeitraums eine Aufteilung ohne Rückweg.
+// Vorher hing der Knopf an der gespeicherten Antwort „getrennt“, die bei gleichem Zeitraum niemand erfragte.
+export type SeparateMode = 'on' | 'off'
+export type SeparateAction = { mode: SeparateMode; label: string }
+
+const hasOpenSpan = (plant: HeatingPlant): boolean => plant.separateSpans.some((s) => s.until === null)
+// Fehlt die Angabe (ältere Antwort, Testattrappe), gab es keinen Tausch.
+export const wasSwapped = (plant: Pick<HeatingPlant, 'endsOn' | 'replacesPlantId'>): boolean => (plant.endsOn ?? null) !== null || (plant.replacesPlantId ?? null) !== null
+
+export function separateActions(plant: HeatingPlant): SeparateAction[] {
+  if (hasOpenSpan(plant)) return [{ mode: 'off', label: 'Getrennte Heizkostenabrechnung ausschalten' }]
+  const own = hasOwnRhythm(plant)
+  const actions: SeparateAction[] = []
+  // Nach einem Kesseltausch lehnt der Server Einschalten wie Aufteilen ab (planOn), gleich welcher Rhythmus.
+  if (!wasSwapped(plant)) actions.push({ mode: 'on', label: own ? 'Getrennte Heizkostenabrechnung einschalten' : 'Vorauszahlung aufteilen' })
+  if (plant.separateSettlement === true) actions.push({ mode: 'off', label: 'Vorauszahlung wieder zusammenführen' })
+  return actions
+}
+
+// Der Rumpf zum Ausschalten bzw. Zusammenführen: Mit offener Spanne liest der Server die Heizperiode (`until`), ohne den
+// Monat (`month`, planOff); im jeweils anderen Feld ginge ein gewählter Monat still verloren.
+export function separateOffBody(plant: HeatingPlant, month: string): { separate: false; until?: string; month?: string } {
+  if (!month) return { separate: false }
+  return hasOpenSpan(plant) ? { separate: false, until: month } : { separate: false, month }
+}
+
+// Der Satz in der Karte bei einer Anlage, die wie das Objekt abrechnet: wozu der Knopf da ist, und nach dem Aufteilen,
+// wozu man ihn noch einmal braucht (Durchsicht K6).
+export function splitHint(plant: HeatingPlant): string | null {
+  if (hasOwnRhythm(plant) || hasOpenSpan(plant) || wasSwapped(plant)) return null
+  return plant.separateSettlement === true
+    ? 'Die Vorauszahlung ist aufgeteilt in Heizung und übrige Nebenkosten. Mit „Vorauszahlung aufteilen“ ändern Sie die Aufteilung, etwa für ein Mietverhältnis, dem die Heizvorauszahlung fehlt.'
+    : 'Zahlen Ihre Mieter laut Mietvertrag eine eigene Vorauszahlung für Heizung und Warmwasser neben der für die übrigen Nebenkosten? Mit „Vorauszahlung aufteilen“ führt Mietfuchs beide getrennt, und die Abrechnung weist sie getrennt aus.'
+}
+
+// Die Meldung nach dem Speichern: Bei gleichem Zeitraum gibt es keine getrennte Abrechnung, die ein- oder ausgeschaltet würde.
+export function separateSavedText(preview: Pick<SeparatePreview, 'separate' | 'way'>): string {
+  if (preview.way === 'samePeriod') {
+    return preview.separate
+      ? 'Vorauszahlung aufgeteilt. Neue Mietverhältnisse bekommen ihre Heizvorauszahlung im Formular des Mietverhältnisses.'
+      : 'Vorauszahlung wieder zusammengeführt.'
+  }
+  return preview.separate ? 'Getrennte Heizkostenabrechnung eingeschaltet.' : 'Getrennte Heizkostenabrechnung ausgeschaltet.'
 }
