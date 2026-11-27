@@ -1,8 +1,9 @@
 // Die Ampel „Zählerstände“ im Cockpit (#136): Sie muss den Hauptzähler mitzählen, denn seit #116
 // kann er die Verteilbasis des Verbrauchsschlüssels sein.
 import { expect, test } from 'vitest'
-import type { Meter, Notice } from './types'
-import { calibrationDetail, gapNotice, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail, selfHeatingReadings } from './meterCheck'
+import type { CostItem, Meter, Notice } from './types'
+import { calibrationDetail, gapNotice, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, reportedMeters, slackDetail, selfHeatingReadings } from './meterCheck'
+import { meterTypesInUse } from './cockpitChecks'
 
 const meter = (id: string, unitId: string | null, type: Meter['type'] = 'kaltwasser'): Meter =>
   ({ id, propertyId: 'p', name: id, type, unitId, unit: 'm³' })
@@ -184,4 +185,19 @@ test('#721: fehlen Werte des Ablesedienstes oder der Anteil nach Verbrauch, füh
 test('#721: unvollständig ohne Hinweis (ältere Abrechnung): die Zeile verweist auf die Seite Heizkosten', () => {
   expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: false } })] }))
     .toEqual({ state: 'incomplete', plantId: 'hp1', target: 'heizkosten', detail: 'Die Heizkosten werden nach der Heizkostenverordnung mit Ablesungen verteilt. Die eigene Heizkostenabrechnung ist noch unvollständig; was fehlt, steht auf der Seite Heizkosten.', lines: [] })
+})
+
+// Durchsicht #693: Cockpit und Seite Zähler wählen die Zähler über dieselbe Funktion aus den Kostenpositionen des
+// Zeitraums; die grüne Zeile zählt `relevant`, die rote und die Sätze am Zähler nennen `incomplete`.
+test('Auswahl der Zähler: reportedMeters ist dieselbe Auswahl wie meterReadiness mit den Sparten der Positionen', () => {
+  const ms = [meter('kw1', 'u1'), meter('kw2', 'u2'), meter('strom', null, 'strom')]
+  const consumption = [ok('kw1'), { meterId: 'kw2', readingCount: 1, periodCovered: false, periodGap: { from: '2025-06-01', to: '2025-12-31' }, lastReadingOn: '2025-05-31', longUnread: false, warnings: [] }]
+  const water = { id: 'k', propertyId: 'p', period: '2025-01', category: 'Wasserversorgung', description: 'Wasser', amountCents: 1, key: 'meter', meterType: 'kaltwasser' } as CostItem
+  for (const items of [[water], [], [{ ...water, key: 'area', meterType: undefined } as CostItem], [{ ...water, category: 'Nicht umlagefähig' } as CostItem]]) {
+    const selected = reportedMeters(ms, consumption, items)
+    const direct = meterReadiness(ms, consumption, meterTypesInUse(items))
+    expect(selected).toEqual(direct)
+  }
+  expect(reportedMeters(ms, consumption, [water]).incomplete.map((m) => m.id)).toEqual(['kw2'])
+  expect(reportedMeters(ms, consumption, [water]).relevant.map((m) => m.id)).toEqual(['kw1', 'kw2'])
 })

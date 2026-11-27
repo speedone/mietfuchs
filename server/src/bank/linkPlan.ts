@@ -99,7 +99,7 @@ export function planBankLinks(
       else if (part.amountCents === 0 || Math.sign(part.amountCents) !== sign) fail('Ein Teil hat ein anderes Vorzeichen als der Umsatz oder ist 0 €.')
       else if (part.target.type === 'newPayment') {
         const month = part.target.designatedMonth
-        if (month !== undefined && part.target.kind !== 'rent') fail('Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat oder stellen Sie die Art auf Miete.')
+        if (month !== undefined && part.target.kind !== 'rent') fail('Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat laut Verwendungszweck oder stellen Sie die Art auf Miete.')
         else if (month !== undefined && (month < tenancy.start.slice(0, 7) || (tenancy.end !== null && month > tenancy.end.slice(0, 7)))) {
           const span = tenancy.end === null ? `seit ${germanDate(tenancy.start)}` : `von ${germanDate(tenancy.start)} bis ${germanDate(tenancy.end)}`
           fail(`Der Monat laut Verwendungszweck liegt außerhalb des Mietverhältnisses. Das Mietverhältnis besteht ${span}.`)

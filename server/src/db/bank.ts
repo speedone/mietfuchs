@@ -10,7 +10,7 @@ import { coverageOf, type Coverage } from '../bank/coverage.ts'
 import type { BankAccount, BankImport, BankStock } from '../bank/model.ts'
 import type { ImportWrite } from '../bank/importPlan.ts'
 import type { LinkWrite, SetAsideReason } from '../bank/linkPlan.ts'
-import { linkedCents, openCents, suggestWithSettlement, type MatchContext, type Suggestion } from '../bank/match.ts'
+import { linkedCents, openCents, suggestWithSettlement, tenancyFor, type MatchContext, type Suggestion } from '../bank/match.ts'
 import type { BankTransaction } from '../bank/model.ts'
 import type { BankLinkView, BankPayerView, BankTransactionView as SharedTransactionView } from '../../../shared/types.ts'
 import { compareText } from '../apportion.ts'
@@ -189,13 +189,32 @@ export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'mo
   const takenSettlements = new Set<string>()
   const allOpen = ctx.openSettlements
   const openSettlements = allOpen ? (tenancyId: string) => allOpen(tenancyId).filter((o) => !takenSettlements.has(o.key)) : undefined
+  // #693 (Durchsicht): `monthChangesNothing` rechnet gegen die gebuchten Zahlungen. Andere offene Umsätze desselben
+  // Mietverhältnisses am selben oder einem früheren Tag können im selben Lauf gebucht werden; sie gehen deshalb als
+  // Mietzahlungen ohne Monat mit in die Rechnung (ein Kontoauszug über ein ganzes Jahr bleibt so grün). Ein offener Ausgang
+  // (etwa eine Rücklastschrift) öffnet einen Monat auf eine Weise, die sich nicht vorwegnehmen lässt: Dann gilt der
+  // Monat als wirksam (gelb mit Vorschlag). Spätere Umsätze ändern an einem früheren nichts.
+  const openOf = new Map<string, { id: string; bookingDate: string; amountCents: number }[]>()
+  for (const tx of stock.transactions) {
+    const open = openCents(tx, (linksOf.get(tx.id) ?? []).map((l) => l.cents))
+    if (tx.setAside !== null || open === 0) continue
+    const t = tenancyFor(tx, ctx)
+    if (t) openOf.set(t.id, [...(openOf.get(t.id) ?? []), { id: tx.id, bookingDate: tx.bookingDate, amountCents: open }])
+  }
+  const changes = ctx.monthChangesNothing
+  const monthChangesNothingFor = (self: string): MatchContext['monthChangesNothing'] => changes === undefined ? undefined
+    : (tenancyId, t, month) => {
+      const before = (openOf.get(tenancyId) ?? []).filter((o) => o.id !== self && o.bookingDate <= t.bookingDate)
+      return !before.some((o) => o.amountCents < 0) && changes(tenancyId, t, month, before.map((o) => ({ date: o.bookingDate, amountCents: o.amountCents })))
+    }
   const views = [...stock.transactions]
     .sort((a, b) => compareText(a.bookingDate, b.bookingDate))
     .map((tx) => {
       const links = linksOf.get(tx.id) ?? []
       const open = openCents(tx, links.map((l) => l.cents))
+      const monthChangesNothing = monthChangesNothingFor(tx.id)
       const { suggestion, settlementKey } = open !== 0
-        ? suggestWithSettlement({ ...tx, amountCents: open }, { ...ctx, linkedPaymentIds: reserved, ...(openSettlements ? { openSettlements } : {}) })
+        ? suggestWithSettlement({ ...tx, amountCents: open }, { ...ctx, linkedPaymentIds: reserved, ...(openSettlements ? { openSettlements } : {}), ...(monthChangesNothing ? { monthChangesNothing } : {}) })
         : { suggestion: null, settlementKey: null }
       if (suggestion?.target.type === 'existingPayment') reserved.add(suggestion.target.paymentId)
       if (settlementKey !== null) takenSettlements.add(settlementKey)

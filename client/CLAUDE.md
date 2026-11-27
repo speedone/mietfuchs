@@ -318,10 +318,11 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   `NoticeBox` Stufe `hint`, Sprung `BACKUP_TARGET`); wann, entscheidet der Server. Nach dem Wiederherstellen lädt die
   Seite mit `reloadWithArrival('backup')` neu; mit Hinweisen des Servers bleibt die Meldung stehen wie bisher.
 - **Lücke im Zeitraum am Zähler** (#693): Nennt der Server für einen Zähler `periodGap`, zeigt die Seite Zähler an ihm
-  eine Warnung „Zeitraum nicht durch Ablesungen gedeckt“ mit dem Satz aus `gapNotice` ([meterCheck.ts](src/meterCheck.ts):
+  einen Fehler „Zeitraum nicht durch Ablesungen gedeckt“ (Stufe wie die rote Cockpit-Zeile, `cockpitLevel` in notices.ts) mit dem Satz aus `gapNotice` ([meterCheck.ts](src/meterCheck.ts):
   dieselben Tage und Auswege wie die Cockpit-Zeile „Zählerstände“, `incompleteDetail`, gebaut aus denselben Teilen) und
   dem Knopf „+ Ablesung anlegen“, **aber nur an den Zählern, die das Cockpit meldet** (`reportedMeters`: dieselbe Auswahl
-  aus den Kostenpositionen des Zeitraums, `meterTypesInUse` und `meterReadiness`; die Seite lädt dafür die Positionen).
+  aus den Kostenpositionen des Zeitraums, die auch das Cockpit aufruft, `relevant` für die grüne Zeile, `incomplete` für
+  die rote; die Seite lädt dafür die Positionen).
   Ohne Umlage nach Verbrauch im Zeitraum, also meist im laufenden Jahr, in einem Jahr vor der ersten Ablesung und an
   einem ausgebauten Zähler einer nicht genutzten Sparte, steht nichts da.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste

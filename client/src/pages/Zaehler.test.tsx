@@ -293,7 +293,9 @@ test('#693: ist der Zeitraum nicht durch Ablesungen gedeckt und meldet das Cockp
   stubGap([gapRow], [waterCost])
   renderPage()
   const box = (await screen.findByText('Ohne Ablesung vom 17.12.2025 bis 31.12.2025.', undefined, { timeout: 5000 })).closest('.notice-item') as HTMLElement
-  expect(box.textContent).toContain('Warnung')
+  // Dieselbe Stufe wie die Cockpit-Zeile: rot, also Fehler (notices.ts, `cockpitLevel`).
+  expect(box.textContent).toContain('Fehler')
+  expect(box.textContent).not.toContain('Warnung')
   expect(box.textContent).toContain('Zeitraum nicht durch Ablesungen gedeckt')
   // Die Verbrauchszahl bleibt stehen: Sie ist, was die Ablesungen hergeben.
   expect(screen.getByText(/^80\sm³$/)).toBeTruthy()

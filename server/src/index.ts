@@ -1337,9 +1337,12 @@ async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>, { sol
       const known = arrears.get(tenancyId)
       return known ? { ...known, month: months.get(`${tenancyId}|${month}`) ?? null } : null
     },
-    monthChangesNothing: (tenancyId, tx, month) => {
+    monthChangesNothing: (tenancyId, tx, month, pending = []) => {
       const known = allocationOf.get(tenancyId)
-      return known !== undefined && designationChangesNothing(known.tenancy, known.payments, { date: tx.bookingDate, amountCents: tx.amountCents }, month)
+      // Offene Eingänge desselben Lauf als Mietzahlungen ohne Monat; ihre Kennungen liegen zwischen der ersten und der
+      // letzten, die monthEffect.ts für den Eingang selbst probiert.
+      const planned = pending.map((p, i) => ({ id: `offen-${i}`, tenancyId, date: p.date, amountCents: p.amountCents, kind: 'rent' as const }))
+      return known !== undefined && designationChangesNothing(known.tenancy, [...known.payments, ...planned], { date: tx.bookingDate, amountCents: tx.amountCents }, month)
     },
   }
 }

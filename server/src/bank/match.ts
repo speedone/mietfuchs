@@ -46,8 +46,9 @@ export type MatchContext = {
   openSettlements?: (tenancyId: string) => readonly OpenSettlement[]
   rentAccount?: (tenancyId: string, month: string) => RentAccount | null
   // #693: Tilgt ein Mieteingang dieses Tages und Betrags mit dem genannten Monat genau dieselben Forderungen wie ohne
-  // (bank/monthEffect.ts)? Fehlt die Auskunft, gilt der Monat als wirksam (Vorschlag gelb).
-  monthChangesNothing?: (tenancyId: string, tx: { bookingDate: string; amountCents: number }, month: string) => boolean
+  // (bank/monthEffect.ts)? Fehlt die Auskunft, gilt der Monat als wirksam (Vorschlag gelb). `pending`: andere offene
+  // Eingänge desselben Mietverhältnisses bis zu diesem Tag, als würden sie im selben Lauf ohne Monat gebucht (db/bank.ts).
+  monthChangesNothing?: (tenancyId: string, tx: { bookingDate: string; amountCents: number }, month: string, pending?: readonly { date: string; amountCents: number }[]) => boolean
 }
 
 export type LinkTarget = BankLinkTarget

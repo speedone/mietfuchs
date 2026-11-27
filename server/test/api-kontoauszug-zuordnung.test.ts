@@ -605,3 +605,26 @@ test('#693: Zurücknehmen und Backup einer Buchung mit Monat: der Monat geht mit
   assert.equal((await restore(s, backupBefore)).status, 200)
   assert.deepEqual(await state(), unbooked)
 }))
+
+// Durchsicht: `monthChangesNothing` rechnete nur gegen gebuchte Zahlungen. Offene Umsätze desselben Mietverhältnisses
+// bis zum selben Tag werden im selben Lauf gebucht: Ein ganzes Jahr „Miete MM/2026“ auf einmal bleibt grün, denn jeder
+// Eingang tilgt ohne Monat ohnehin seinen Monat. Öffnet eine offene Rücklastschrift davor den Oktober wieder, tilgte
+// „Miete November“ ohne Monat den Oktober: gelb mit Monat.
+test('#693: offene Umsätze im selben Auszug: ein ganzes Jahr bleibt grün, eine Rücklastschrift davor macht den Monat gelb', () => withEnv({ NKA_TEST_TODAY: '2026-12-20' }, async (s) => {
+  await tenancy(s, 'EG', TENANT, { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 15000 }], baseRents: [{ from: '2026-01', monthlyCents: 70000 }] })
+  const t = await tenancy(s, 'OG', SECOND, { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 15000 }], baseRents: [{ from: '2026-01', monthlyCents: 70000 }] })
+  for (let m = 1; m <= 10; m++) {
+    const month = `2026-${String(m).padStart(2, '0')}`
+    await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: `${month}-01`, amountCents: 85000, designatedMonth: month }) })
+  }
+  const year = Array.from({ length: 12 }, (_, i) => ({ date: `2026-${String(i + 1).padStart(2, '0')}-03`, cents: 85000, purpose: `Miete ${String(i + 1).padStart(2, '0')}/2026` }))
+  await importEntries(s, [
+    ...year,
+    { date: '2026-10-20', cents: -85000, purpose: 'Ruecklastschrift', iban: SECOND },
+    { date: '2026-11-03', cents: 85000, purpose: 'Miete November', iban: SECOND },
+  ])
+  const open = await transactions(s)
+  assert.deepEqual(open.filter((o) => o.suggestion?.tenancyId !== t.id).map((o) => [o.purpose, o.suggestion?.light, o.suggestion?.target]), year.map((e) => [e.purpose, 'green', RENT_TARGET]))
+  assert.deepEqual(open.find((o) => o.purpose === 'Miete November')?.suggestion?.target, { type: 'newPayment', kind: 'rent', designatedMonth: '2026-11' })
+  assert.equal(open.find((o) => o.purpose === 'Miete November')?.suggestion?.light, 'yellow')
+}))

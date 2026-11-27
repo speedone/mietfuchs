@@ -58,7 +58,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     return () => { current = false }
   }, [propertyId, param])
   const reported = useMemo(
-    () => new Set(reportedMeters(meters, consumption, itemsOfSettlement(costItems, key, rules, plants)).map((m) => m.id)),
+    () => new Set(reportedMeters(meters, consumption, itemsOfSettlement(costItems, key, rules, plants)).incomplete.map((m) => m.id)),
     [meters, consumption, costItems, key, rules, plants],
   )
   const [meterForm, setMeterForm] = useState<MeterForm | null>(null)
@@ -592,9 +592,9 @@ function FragmentRow(props: {
             const n = cons.notices?.[i]
             return <CalcNotice key={i} notice={{ code: n?.code ?? 'legacy', level: n?.level ?? 'error', title: n?.title ?? '', text: w }} />
           })}
-          {/* #693: derselbe Satz wie die Cockpit-Zeile „Zählerstände“ und nur an den Zählern, die sie meldet (meterCheck.ts),
-              mit dem Weg zur neuen Ablesung. */}
-          {gap && <NoticeBox level="warning" title="Zeitraum nicht durch Ablesungen gedeckt" action={gap} fix={{ label: '+ Ablesung anlegen', onClick: onNewReading }} />}
+          {/* #693: derselbe Satz und dieselbe Stufe wie die Cockpit-Zeile „Zählerstände“ (rot, also Fehler, notices.ts) und
+              nur an den Zählern, die sie meldet (meterCheck.ts), mit dem Weg zur neuen Ablesung. */}
+          {gap && <NoticeBox level="error" title="Zeitraum nicht durch Ablesungen gedeckt" action={gap} fix={{ label: '+ Ablesung anlegen', onClick: onNewReading }} />}
         </td>
         <td data-label="Zuordnung">{unitName}</td>
         <td data-label="Sparte">{METER_TYPE_LABELS[m.type] ?? m.type}</td>

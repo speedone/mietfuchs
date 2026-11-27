@@ -184,7 +184,7 @@ test('Zuordnung #693: ein Monat außerhalb des Mietverhältnisses oder an einer 
     assert.deepEqual(p.writes.payments, [])
   }
   const settlement = planBankLinks([rentFor('x', '2025-03', { kind: 'settlement' })], open(tx('x', 80000)), ctx())
-  assert.deepEqual(settlement.problems, [{ transactionId: 'x', message: 'Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat oder stellen Sie die Art auf Miete.' }])
+  assert.deepEqual(settlement.problems, [{ transactionId: 'x', message: 'Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat laut Verwendungszweck oder stellen Sie die Art auf Miete.' }])
 })
 
 test('Zuordnung #693: der Monat wird als JJJJ-MM gelesen, alles andere ist nicht lesbar', () => {

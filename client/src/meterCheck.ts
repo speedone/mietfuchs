@@ -44,11 +44,12 @@ export function meterReadiness(
   return { relevant, incomplete }
 }
 
-// Die Zähler, die die Cockpit-Zeile „Zählerstände“ rot meldet, aus den Kostenpositionen des Zeitraums (#693): eine
-// Auswahl für Cockpit und Seite Zähler. Ohne Umlage nach Verbrauch im Zeitraum (auch im laufenden Jahr, solange keine
-// solche Position erfasst ist) meldet sie keinen, ebenso wenig einen Zähler einer Sparte, nach der nichts umgelegt wird.
-export function reportedMeters(meters: Meter[], consumption: MeterConsumption[], periodItems: CostItem[]): Meter[] {
-  return meterReadiness(meters, consumption, meterTypesInUse(periodItems)).incomplete
+// Die Auswahl der Zähler aus den Kostenpositionen des Zeitraums (#693), eine für Cockpit und Seite Zähler: `relevant`
+// zählt die grüne Cockpit-Zeile „Zählerstände“, `incomplete` meldet die rote und trägt auf der Seite Zähler den Satz zur
+// Lücke. Ohne Umlage nach Verbrauch im Zeitraum (auch im laufenden Jahr, solange keine solche Position erfasst ist)
+// meldet sie keinen, ebenso wenig einen Zähler einer Sparte, nach der nichts umgelegt wird.
+export function reportedMeters(meters: Meter[], consumption: MeterConsumption[], periodItems: CostItem[]): { relevant: Meter[], incomplete: Meter[] } {
+  return meterReadiness(meters, consumption, meterTypesInUse(periodItems))
 }
 
 // Ein Datum deutsch, aus der Zeichenkette gebaut, damit keine Zeitzone einen Tag verschiebt.

@@ -1077,7 +1077,9 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   `bank/monthEffect.ts` mit der Tilgung selbst, keine zweite Regel. Der Eingang wird ohne und mit Monat zu den Zahlungen
   des Objekts gelegt (je mit einer Kennung vor und nach allen anderen, weil sie am selben Tag die Reihenfolge
   entscheidet); nur bei gleichem Beginn des Kontos (`ledgerStartOf`) und gleichen Teilen aus `allocateRentPayments`
-  ändert er nichts. Invariante in invariant-kontoauszug-monat.test.ts: Dann sind `rentLedger` und `taxReport` jedes
+  ändert er nichts. Offene Umsätze desselben Mietverhältnisses bis zum selben Tag gehen dabei als Mietzahlungen ohne
+  Monat mit hinein (`readBankState`, denn sie können im selben Lauf gebucht werden; ein Auszug über ein Jahr bleibt so
+  grün); ein offener Ausgang davor (Rücklastschrift) macht den Monat immer wirksam. Invariante in invariant-kontoauszug-monat.test.ts: Dann sind `rentLedger` und `taxReport` jedes
   Jahres mit und ohne Monat gleich (einzige Ausnahme der Vermerk `designatedOutside`). Der Planer liest den Zweck nie:
   `designatedMonth` steht nur an der Zahlung, wenn die Entscheidung ihn nennt (bestätigter Vorschlag oder von Hand im
   Monatsfeld der Zeile), nur bei Art Miete und nur für einen Monat des Mietverhältnisses, sonst ein Problem des Umsatzes
