@@ -227,6 +227,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
   selbst herüber. Kein Betrag der Abrechnung ändert sich
   ([#722](https://github.com/speedone/mietfuchs/issues/722)).
+- „Dieselbe Rechnung?“ fragt gezielter: Die Rückfrage beim Anlegen einer Kostenposition und der Hinweis „Mögliche
+  doppelte Position“ kamen auch bei zwei Heizpositionen, die nichts verbindet („Wartung Ölheizung“ gegen „Heizöl“), und
+  bei Wartungsrechnungen, die verschiedenen Wohnungen direkt zugeordnet sind. Bei „Heizung und Warmwasser“ bleibt es
+  jetzt still, wenn Betrag und Beschreibung abweichen, kein gemeinsamer Rechnungssteller dasteht und nicht beide denselben
+  Teil der Heizkosten tragen; Positionen mit Direktzuordnung an verschiedene Wohnungen gelten bei jeder Kostenart als
+  verschiedene Rechnungen. Derselbe Betrag, eine ähnliche Beschreibung oder derselbe Rechnungssteller fallen weiter auf,
+  alle übrigen Kostenarten fragen wie bisher ([#721](https://github.com/speedone/mietfuchs/issues/721)).
 - Heizung ändern auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter: Die Karte „Heizung“ ließ die
   bestehende Heizanlage stehen und stellte nur die Mietverhältnisse auf „Mieter heizt selbst“; die Abrechnung meldete
   danach je Mietverhältnis den Fehler „Mieter heizt selbst und hängt an Ihrer Heizanlage“. Jetzt entfernt die Karte die

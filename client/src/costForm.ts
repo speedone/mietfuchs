@@ -9,7 +9,7 @@ import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePr
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
 import { deductionReported, GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED } from '../../shared/operatingPower.ts'
-import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
+import { sameCostCandidates, type CostQuery, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
 import { usageOf } from './types'
@@ -940,10 +940,15 @@ export function categoryNotice(category: string, year: number, cableBuiltBeforeD
 // Kostenart (Befund gegen 0.10.0-rc.1); sonst riet die Rückfrage, statt der Gutschrift die
 // vorhandene Rechnung zu bearbeiten.
 export function sameCostOf<T extends DuplicateItem>(
-  items: readonly T[], body: { category: string, description: string, vendor?: string, amountCents: number | null },
+  items: readonly T[], body: { category: string, description: string, vendor?: string, amountCents: number | null } & Pick<CostQuery, 'key' | 'directUnitId' | 'heatingPart'>,
   propertyId: string | null | undefined, period: number | PeriodKey,
 ): T[] {
-  return sameCostCandidates(items, { propertyId, period: typeof period === 'number' ? calendarPeriod(period) : period, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
+  // #721: Schlüssel, Wohnung der Direktzuordnung und Teil der Heizkosten gehen mit; die Regel nimmt damit Wartungen an
+  // verschiedenen Wohnungen und Heizpositionen aus, die nichts verbindet.
+  return sameCostCandidates(items, {
+    propertyId, period: typeof period === 'number' ? calendarPeriod(period) : period, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents,
+    key: body.key, directUnitId: body.directUnitId, heatingPart: body.heatingPart,
+  })
 }
 
 // ---------- Leistungszeitraum und Aufteilen (#208, Entwurf 3.4, 3.10) ----------

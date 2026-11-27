@@ -720,6 +720,19 @@ describe('Rückfrage nach derselben Rechnung', () => {
     expect(sameCostOf([rechnung], body(-5745), 'p', 2026)).toEqual([])
     expect(sameCostOf([rechnung, gutschrift], body(84000), 'p', 2026).map((i) => i.id)).toEqual(['r'])
   })
+  // #721: Die Rückfrage kam bei „Wartung Ölheizung“ gegen „Heizöl“ und bei Wartungen an verschiedenen Wohnungen.
+  test('#721: Heizung mit anderem Betrag und anderer Beschreibung fragt nicht, mit gleichem Betrag schon', () => {
+    const oel = { id: 'o', propertyId: 'p', period: calendarPeriod(2026), category: 'Heizung und Warmwasser', description: 'Heizöl 2.300 Liter', amountCents: 218500 }
+    const wartung = (amountCents: number) => ({ category: 'Heizung und Warmwasser', description: 'Wartung Ölheizung', vendor: '', amountCents })
+    expect(sameCostOf([oel], wartung(26000), 'p', 2026)).toEqual([])
+    expect(sameCostOf([oel], wartung(218500), 'p', 2026).map((i) => i.id)).toEqual(['o'])
+  })
+  test('#721: Direktzuordnung an eine andere Wohnung fragt nicht, an dieselbe schon', () => {
+    const eg = { id: 'w', propertyId: 'p', period: calendarPeriod(2026), category: 'Heizung und Warmwasser', description: 'Wartung Therme', amountCents: 14500, key: 'direct' as const, directUnitId: 'eg' }
+    const neu = (directUnitId: string) => ({ category: 'Heizung und Warmwasser', description: 'Wartung Therme', vendor: '', amountCents: 14500, key: 'direct' as const, directUnitId })
+    expect(sameCostOf([eg], neu('og'), 'p', 2026)).toEqual([])
+    expect(sameCostOf([eg], neu('eg'), 'p', 2026).map((i) => i.id)).toEqual(['w'])
+  })
 })
 
 describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {

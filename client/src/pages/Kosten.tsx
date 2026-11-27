@@ -774,7 +774,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     // Eine neue Position, für die dieselbe Rechnung schon erfasst sein könnte (shared/duplicates.ts):
     // nachfragen, wie im Eingang der Seite Belege. Nur beim Neuanlegen; wer bearbeitet, meint diese.
     if (!editing) {
-      const same = sameCostOf(items, { category: form.category, description: form.description, vendor: form.vendor, amountCents: built.body.amountCents }, propertyId, key)
+      const same = sameCostOf(items, { category: form.category, description: form.description, vendor: form.vendor, amountCents: built.body.amountCents, key: built.body.key, directUnitId: built.body.directUnitId, heatingPart: built.body.heatingPart }, propertyId, key)
       const first = same[0]
       if (first) {
         let instead = false

@@ -11,9 +11,10 @@
 import type { CostItem, PeriodKey } from './types.ts'
 import type { PeriodContext } from './period.ts'
 import { BROAD_CATEGORIES } from './allocation.ts'
+import { HEATING_CATEGORY } from './heating.ts'
 
 export type DuplicateItem = Pick<CostItem, 'id' | 'period' | 'category' | 'description'> &
-  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents' | 'sourceId' | 'serviceFrom' | 'serviceTo'>>
+  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents' | 'sourceId' | 'serviceFrom' | 'serviceTo' | 'key' | 'directUnitId' | 'heatingPart'>>
 
 export type CostQuery = {
   propertyId?: string | null
@@ -26,6 +27,11 @@ export type CostQuery = {
   // dieselbe Rechnung wie eine Rechnung (positiv), siehe `oppositeSign`. Fehlt er oder ist er 0,
   // zählt jede Position.
   amountCents?: number | null
+  // Schlüssel und Wohnung der Direktzuordnung, wenn bekannt (#721, `separateUnits`).
+  key?: CostItem['key'] | null
+  directUnitId?: string | null
+  // Teil der Heizkosten, wenn bekannt (#721, `distinctHeating`).
+  heatingPart?: CostItem['heatingPart'] | null
   // Die Position selbst, wenn nach einer schon gespeicherten gefragt wird
   excludeId?: string
 }
@@ -67,10 +73,34 @@ function oppositeSign(a: number | null | undefined, b: number | null | undefined
   return a != null && b != null && ((a < 0 && b > 0) || (a > 0 && b < 0))
 }
 
+// Zwei Positionen, die verschiedenen Wohnungen direkt zugeordnet sind, sind zwei Rechnungen (#721): die Wartung der
+// Therme je Wohnung, der Bescheid je Eigentumswohnung. Die Rückfrage kam sonst bei jeder weiteren Wohnung. Nur wenn beide
+// Seiten die Direktzuordnung und ihre Wohnung kennen; die Schätzung aus dem Vorjahr behält Schlüssel und Wohnung und
+// trifft die Rechnung derselben Wohnung weiter, und wer ohne Schlüssel fragt (Belegbuchung, Posteingang), fragt wie bisher.
+function separateUnits(i: DuplicateItem, q: CostQuery): boolean {
+  return i.key === 'direct' && q.key === 'direct' && !!i.directUnitId && !!q.directUnitId && i.directUnitId !== q.directUnitId
+}
+
+// Unter „Heizung und Warmwasser“ stehen regelmäßig mehrere Rechnungen im Jahr: Brennstoff, Wartung, Schornsteinfeger,
+// Betriebsstrom, Messdienst (#721; die Rückfrage kam bei „Wartung Ölheizung“ 260,00 € gegen „Heizöl 2.300 Liter“
+// 2.185,00 €). Anders als bei den breiten Kostenarten bleibt die Regel hier so weit wie möglich: Still ist sie nur, wenn
+// nichts die beiden verbindet, also beide Beträge bekannt und verschieden sind, die Beschreibung nicht ähnlich ist, kein
+// gemeinsamer Rechnungssteller dasteht und nicht beide denselben Teil der Heizkosten tragen. Derselbe Betrag fällt immer
+// auf, und wer ohne Betrag fragt (Belegbuchung, Posteingang), fragt wie bisher.
+// Preis: Die Schätzung „Gas 2026“ aus dem Vorjahr gegen eine Rechnung, die ganz anders heißt und deren Steller an der
+// Schätzung fehlt, fällt nicht mehr auf, außer beide tragen denselben Teil der Heizkosten.
+function distinctHeating(i: DuplicateItem, q: CostQuery): boolean {
+  if (q.category !== HEATING_CATEGORY) return false
+  if (i.amountCents == null || q.amountCents == null || i.amountCents === 0 || q.amountCents === 0 || i.amountCents === q.amountCents) return false
+  if (similar(i.description, q.description) || similar(i.vendor, q.vendor)) return false
+  return !(i.heatingPart && q.heatingPart && i.heatingPart === q.heatingPart)
+}
+
 // Die schon erfassten Positionen, die dieselbe Rechnung sein könnten: dasselbe Objekt, derselbe
 // Zeitraum, dieselbe Kostenart, bei einer breiten Kostenart zusätzlich ähnliche Beschreibung oder
-// gleicher Rechnungssteller, und nie eine Gutschrift zu einer Rechnung oder umgekehrt. In der
-// Reihenfolge der Liste.
+// gleicher Rechnungssteller, und nie eine Gutschrift zu einer Rechnung oder umgekehrt. Nicht dazu
+// zählen Direktzuordnungen an verschiedene Wohnungen (`separateUnits`) und, bei der Heizung, was
+// nichts verbindet (`distinctHeating`). In der Reihenfolge der Liste.
 export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[], q: CostQuery): T[] {
   const loose = LOOSE_CATEGORIES.includes(q.category)
   return items.filter((i) =>
@@ -78,6 +108,8 @@ export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[],
     i.period === q.period &&
     i.category === q.category &&
     !oppositeSign(i.amountCents, q.amountCents) &&
+    !separateUnits(i, q) &&
+    !distinctHeating(i, q) &&
     (q.propertyId == null || i.propertyId == null || i.propertyId === q.propertyId) &&
     (!loose || similar(i.description, q.description) || similar(i.vendor, q.vendor)))
 }
@@ -125,6 +157,7 @@ export function invoicesOf<T extends DuplicateItem>(group: readonly T[], receipt
 
 const queryOf = (i: DuplicateItem, period: PeriodKey = i.period): CostQuery => ({
   propertyId: i.propertyId, period, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
+  key: i.key, directUnitId: i.directUnitId, heatingPart: i.heatingPart,
 })
 
 // Die Gruppen möglicher Doppelungen eines Zeitraums, für den Hinweis der Abrechnung: zwei oder mehr
