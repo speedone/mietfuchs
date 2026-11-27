@@ -63,7 +63,17 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
+
+// Ein fester Tag für Tests, die an `localToday` hängen (#690: die laufende Heizperiode). Nur Date ist gefälscht, damit
+// findBy…/waitFor weiter laufen; je Test zwei Tage, damit er im Frühjahr wie im Herbst etwas prüft.
+const RUNNING_DAYS = ['2026-03-15', '2026-10-15'] as const
+const onDay = (day: string) => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(`${day}T12:00:00`))
+  return { year: Number(day.slice(0, 4)), month: Number(day.slice(5, 7)) }
+}
 
 const openForm = async () => {
   render(
@@ -501,13 +511,10 @@ test('#690: vor Beginn der eigenen Heizkostenabrechnung bleibt der freie Schlüs
 
 // #690 (Durchsicht): Heizperiode hin und zurück. Die Anlage rechnet erst ab der laufenden Heizperiode selbst ab; wer sie
 // im Formular wählt und zurückwechselt, hat wieder Schlüssel und Ziel von vorher, nicht still „nur Heizung“.
-test('#690: Heizperiode auf „läuft noch“ und zurück stellt Schlüssel und Ziel wieder her', async () => {
-  // Heute im gewählten Zeitraum: Der Test wählt den laufenden Zeitraum des Objekts und eine Heizperiode, die morgen vor
-  // einem Jahr begann und also erst im nächsten Zeitraum endet, außer am 31.12. (dann endet sie im gewählten).
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = now.getMonth() + 1
-  if (month === 1) return // im Januar beginnt die Heizperiode mit dem Zeitraum, es gibt keine laufende daneben
+test.each(RUNNING_DAYS)('#690: Heizperiode auf „läuft noch“ und zurück stellt Schlüssel und Ziel wieder her (heute %s)', async (day) => {
+  // Heute im gewählten Zeitraum: Der Test wählt den laufenden Zeitraum des Objekts und eine Heizperiode, die im Monat von
+  // heute beginnt und also erst im nächsten Zeitraum endet.
+  const { year, month } = onDay(day)
   const start = month // Heizperiode beginnt im laufenden Monat dieses Jahres und endet im nächsten Jahr
   const running = `${year}-${String(start).padStart(2, '0')}`
   const ending = `${year - 1}-${String(start).padStart(2, '0')}`
@@ -555,11 +562,8 @@ test('#690: Heizperiode auf „läuft noch“ und zurück stellt Schlüssel und 
 // Heizkostenverordnung, den der Knopf gesetzt hat. Wechselt die Heizperiode danach auf „läuft noch“, galt er dort nicht
 // mehr, blieb aber stehen, und der Server lehnte die Position ab. Wie bei `settleSelfKey` nimmt das Formular zurück, was
 // es selbst gesetzt hat.
-test('#690 mit #724: nach „Auf Heizung und Warmwasser umstellen“ nimmt der Wechsel in eine Heizperiode ohne eigene Abrechnung den Schlüssel zurück', async () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = now.getMonth() + 1
-  if (month === 1) return // siehe oben: im Januar gibt es keine laufende Heizperiode daneben
+test.each(RUNNING_DAYS)('#690 mit #724: nach „Auf Heizung und Warmwasser umstellen“ nimmt der Wechsel in eine Heizperiode ohne eigene Abrechnung den Schlüssel zurück (heute %s)', async (day) => {
+  const { year, month } = onDay(day)
   const running = `${year}-${String(month).padStart(2, '0')}`
   const ending = `${year - 1}-${String(month).padStart(2, '0')}`
   plants = [{
