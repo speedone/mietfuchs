@@ -190,10 +190,12 @@ export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'mo
   const allOpen = ctx.openSettlements
   const openSettlements = allOpen ? (tenancyId: string) => allOpen(tenancyId).filter((o) => !takenSettlements.has(o.key)) : undefined
   // #693 (Durchsicht): `monthChangesNothing` rechnet gegen die gebuchten Zahlungen. Andere offene Umsätze desselben
-  // Mietverhältnisses am selben oder einem früheren Tag können im selben Lauf gebucht werden; sie gehen deshalb als
-  // Mietzahlungen ohne Monat mit in die Rechnung (ein Kontoauszug über ein ganzes Jahr bleibt so grün). Ein offener Ausgang
-  // (etwa eine Rücklastschrift) öffnet einen Monat auf eine Weise, die sich nicht vorwegnehmen lässt: Dann gilt der
-  // Monat als wirksam (gelb mit Vorschlag). Spätere Umsätze ändern an einem früheren nichts.
+  // Mietverhältnisses am selben oder einem früheren Tag können im selben Lauf gebucht werden. Ist ihr eigener Vorschlag
+  // eine Mietzahlung ohne Monat und ohne Aufteilung, gehen sie als solche mit in die Rechnung (ein Kontoauszug über ein
+  // ganzes Jahr bleibt so grün). Jeder andere offene Umsatz davor macht den Monat wirksam (gelb mit Vorschlag): eine
+  // verknüpfte erfasste Zahlung (stünde doppelt da), Kaution, Nachzahlung, Aufteilung, ein eigener Monat, ein Ausgang
+  // (Rücklastschrift), einer ohne Vorschlag und einer desselben Tages, der in der Folge erst danach kommt. Spätere Umsätze
+  // ändern an einem früheren nichts.
   const openOf = new Map<string, { id: string; bookingDate: string; amountCents: number }[]>()
   for (const tx of stock.transactions) {
     const open = openCents(tx, (linksOf.get(tx.id) ?? []).map((l) => l.cents))
@@ -201,11 +203,16 @@ export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'mo
     const t = tenancyFor(tx, ctx)
     if (t) openOf.set(t.id, [...(openOf.get(t.id) ?? []), { id: tx.id, bookingDate: tx.bookingDate, amountCents: open }])
   }
+  // Die Vorschläge der Umsätze, die in der zeitlichen Folge schon dran waren.
+  const decided = new Map<string, Suggestion | null>()
+  const plainRent = (sg: Suggestion | null | undefined): boolean =>
+    sg != null && sg.parts === undefined && sg.target.type === 'newPayment' && sg.target.kind === 'rent' && sg.target.designatedMonth === undefined
   const changes = ctx.monthChangesNothing
   const monthChangesNothingFor = (self: string): MatchContext['monthChangesNothing'] => changes === undefined ? undefined
     : (tenancyId, t, month) => {
       const before = (openOf.get(tenancyId) ?? []).filter((o) => o.id !== self && o.bookingDate <= t.bookingDate)
-      return !before.some((o) => o.amountCents < 0) && changes(tenancyId, t, month, before.map((o) => ({ date: o.bookingDate, amountCents: o.amountCents })))
+      return before.every((o) => o.amountCents > 0 && plainRent(decided.get(o.id)))
+        && changes(tenancyId, t, month, before.map((o) => ({ date: o.bookingDate, amountCents: o.amountCents })))
     }
   const views = [...stock.transactions]
     .sort((a, b) => compareText(a.bookingDate, b.bookingDate))
@@ -217,6 +224,7 @@ export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'mo
         ? suggestWithSettlement({ ...tx, amountCents: open }, { ...ctx, linkedPaymentIds: reserved, ...(openSettlements ? { openSettlements } : {}), ...(monthChangesNothing ? { monthChangesNothing } : {}) })
         : { suggestion: null, settlementKey: null }
       if (suggestion?.target.type === 'existingPayment') reserved.add(suggestion.target.paymentId)
+      decided.set(tx.id, suggestion)
       if (settlementKey !== null) takenSettlements.add(settlementKey)
       return { ...tx, openCents: open, links, suggestion }
     })

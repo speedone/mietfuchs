@@ -628,3 +628,32 @@ test('#693: offene Umsätze im selben Auszug: ein ganzes Jahr bleibt grün, eine
   assert.deepEqual(open.find((o) => o.purpose === 'Miete November')?.suggestion?.target, { type: 'newPayment', kind: 'rent', designatedMonth: '2026-11' })
   assert.equal(open.find((o) => o.purpose === 'Miete November')?.suggestion?.light, 'yellow')
 }))
+
+// Nachprüfung: In die Rechnung gehen nur offene Umsätze, deren eigener Vorschlag eine Mietzahlung ohne Monat ist. Ein
+// grüner Umsatz, der eine erfasste Zahlung verknüpft, steht schon in den Zahlungen; doppelt gezählt wurde „Miete 04/2026“
+// grün ohne Monat und tilgte nach „Alle grünen übernehmen“ März und April je teilweise.
+test('#693: ein offener Umsatz mit erfasster Zahlung davor zählt nicht doppelt: „Miete 04/2026“ gelb mit Monat', () => withEnv({ NKA_TEST_TODAY: '2026-04-20' }, async (s) => {
+  const t = await tenancy(s, 'EG', TENANT, { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 15000 }], baseRents: [{ from: '2026-01', monthlyCents: 70000 }] })
+  await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: '2026-01-05', amountCents: 85000, designatedMonth: '2026-02' }) })
+  await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: '2026-03-03', amountCents: 85000 }) })
+  await importEntries(s, [
+    { date: '2026-03-03', cents: 85000, purpose: 'Miete Januar' },
+    { date: '2026-04-03', cents: 85000, purpose: 'Miete 04/2026' },
+  ])
+  const open = await transactions(s)
+  assert.deepEqual(open.map((o) => [o.purpose, o.suggestion?.light, o.suggestion?.target.type]), [['Miete Januar', 'green', 'existingPayment'], ['Miete 04/2026', 'yellow', 'newPayment']])
+  assert.deepEqual(open[1]?.suggestion?.target, { type: 'newPayment', kind: 'rent', designatedMonth: '2026-04' })
+}))
+
+// Ebenso eine offene Kaution davor: Sie ist keine Mietzahlung, der Monat gilt als wirksam.
+test('#693: eine offene Kaution desselben Mietverhältnisses davor macht den Monat wirksam', () => withEnv({ NKA_TEST_TODAY: '2026-04-20' }, async (s) => {
+  const t = await tenancy(s, 'EG', TENANT, { start: '2026-02-01', depositCents: 240000, prepayments: [{ from: '2026-02', monthlyCents: 15000 }], baseRents: [{ from: '2026-02', monthlyCents: 70000 }] })
+  for (const m of ['02', '03']) await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: `2026-${m}-01`, amountCents: 85000, designatedMonth: `2026-${m}` }) })
+  await importEntries(s, [
+    { date: '2026-04-01', cents: 80000, purpose: 'Kaution' },
+    { date: '2026-04-03', cents: 85000, purpose: 'Miete 04/2026' },
+  ])
+  const open = await transactions(s)
+  assert.deepEqual(open.map((o) => [o.purpose, o.suggestion?.target.type]), [['Kaution', 'deposit'], ['Miete 04/2026', 'newPayment']])
+  assert.deepEqual([open[1]?.suggestion?.light, open[1]?.suggestion?.target], ['yellow', { type: 'newPayment', kind: 'rent', designatedMonth: '2026-04' }])
+}))

@@ -1079,7 +1079,13 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   entscheidet); nur bei gleichem Beginn des Kontos (`ledgerStartOf`) und gleichen Teilen aus `allocateRentPayments`
   ändert er nichts. Offene Umsätze desselben Mietverhältnisses bis zum selben Tag gehen dabei als Mietzahlungen ohne
   Monat mit hinein (`readBankState`, denn sie können im selben Lauf gebucht werden; ein Auszug über ein Jahr bleibt so
-  grün); ein offener Ausgang davor (Rücklastschrift) macht den Monat immer wirksam. Invariante in invariant-kontoauszug-monat.test.ts: Dann sind `rentLedger` und `taxReport` jedes
+  grün), aber nur, wenn ihr eigener Vorschlag genau das ist (`newPayment` Miete ohne Monat, ohne `parts`). Jeder andere
+  offene Umsatz davor macht den Monat wirksam: verknüpfte erfasste Zahlung (stünde sonst doppelt in der Rechnung),
+  Kaution, Nachzahlung, Aufteilung, eigener Monat, Ausgang (Rücklastschrift), ohne Vorschlag, oder derselbe Tag, der
+  in der Folge erst danach kommt. **Grenze**: Gerechnet wird mit dem Vorschlag des Vorläufers. Bucht der Vermieter
+  einen grünen Vorläufer anders (andere Art, mit Monat, geteilt) oder legt ihn beiseite und bucht im selben Lauf den
+  späteren grün ohne Monat, kann dieser eine andere Forderung tilgen, als sein Zweck nennt. Bucht er den Vorläufer
+  zuerst, rechnet die Seite danach neu, denn dann ist er eine gebuchte Zahlung (oder kein offener Umsatz mehr). Invariante in invariant-kontoauszug-monat.test.ts: Dann sind `rentLedger` und `taxReport` jedes
   Jahres mit und ohne Monat gleich (einzige Ausnahme der Vermerk `designatedOutside`). Der Planer liest den Zweck nie:
   `designatedMonth` steht nur an der Zahlung, wenn die Entscheidung ihn nennt (bestätigter Vorschlag oder von Hand im
   Monatsfeld der Zeile), nur bei Art Miete und nur für einen Monat des Mietverhältnisses, sonst ein Problem des Umsatzes
