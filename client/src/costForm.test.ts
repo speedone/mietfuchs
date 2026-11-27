@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
-import { deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
+import { OPERATING_PART_LABEL, OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
+import { HEATING_PART_OPTIONS, deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
 import type { CostItem as CostItemOf } from './types'
 import { calendarPeriod, calendarYearPeriod, periodKey } from '../../shared/period.ts'
 import { euro } from '../../shared/costItem.ts'
@@ -1017,6 +1017,26 @@ test('#721 Betriebsstrom: ohne Teil fragt das Formular nur, wo die Position Betr
   expect(withOperatingPower({}, gespeichert)).toMatchObject({ operatingPower: 'included', operatingPowerBasis: 'Pumpe 45 W' })
   // Ohne Antwort und ohne Frage bleibt der Rumpf ohne Kennzeichnung, wie bisher bei „Nein“.
   expect(withOperatingPower({}, { ...heiz, description: 'Heizöl' })).toMatchObject({ operatingPower: null, operatingPowerBasis: null })
+})
+
+// Durchsicht von #721 (M3): „Brenner und Pumpe“, eine leere Beschreibung an einer Wärmepumpe oder „Wärmepumpe 2025“ dort
+// sahen die Frage nie; der Hinweis „Abzug des Betriebsstroms fehlt“ verweist aber auf sie. Heizöl, Gasrechnung und
+// Wartung ohne Teil bleiben ohne Frage.
+test('Durchsicht #721 Betriebsstrom: ohne Teil auch bei Pumpe und Brenner und an einer Anlage, die Strom zur Wärmeerzeugung nimmt', () => {
+  const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser' }
+  expect(showsOperatingPower({ ...heiz, description: 'Brenner und Pumpe' }, 'gas')).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: 'Pumpenstrom' })).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: '' }, 'heatPump')).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: 'Wärmepumpe 2025' }, 'heatPump')).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: 'Heizstab' }, 'electric')).toBe(true)
+  for (const description of ['Heizöl 2.300 Liter', 'Gasrechnung Stadtwerke', 'Wartung Ölheizung', '']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'oil'), description).toBe(false)
+    expect(showsOperatingPower({ ...heiz, description }, 'gas'), description).toBe(false)
+  }
+  // Der Weg des Hinweises: Mit dem dort genannten Teil erscheint die Frage immer.
+  const operating = HEATING_PART_OPTIONS.find((o) => o.label === OPERATING_PART_LABEL) ?? expect.unreachable()
+  expect(operating.value).toBe('operating')
+  expect(showsOperatingPower({ ...heiz, description: '', heatingPart: operating.value }, 'gas')).toBe(true)
 })
 
 // Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position

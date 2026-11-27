@@ -243,7 +243,8 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const heatingIds = new Set(heatingWithoutConsumption(settlement))
     const heatingWithout = yearItems.filter((c) => heatingIds.has(c.id))
     const selfReadings = selfHeatingReadings(settlement)
-    if (meterTypes.size === 0 && heatingWithout.length > 0) {
+    // Durchsicht von #721 (S7): Eine unvollständige eigene Heizkostenabrechnung (rot) geht vor der gelben Zeile #140.
+    if (meterTypes.size === 0 && heatingWithout.length > 0 && selfReadings?.state !== 'incomplete') {
       // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
       list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', focus: soleSubject('costItem', heatingWithout.map((c) => c.id)), cta: 'Heizkosten prüfen',
         detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })

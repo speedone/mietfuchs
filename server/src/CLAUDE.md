@@ -1182,9 +1182,10 @@ Ob eine Position dieselbe Rechnung sein könnte, steht **einmal** in
 bei breiten Kostenarten (`LOOSE_CATEGORIES`) zusätzlich ähnliche Beschreibung oder gleicher
 Rechnungssteller. Zwei Ausnahmen (#721): Direktzuordnungen an verschiedene Wohnungen sind nie dieselbe Rechnung
 (`separateUnits`, nur wenn beide Seiten Schlüssel und Wohnung kennen), und bei „Heizung und Warmwasser“ keine zwei
-Positionen, die nichts verbindet (`distinctHeating`: beide Beträge bekannt und verschieden, Beschreibung nicht ähnlich,
-kein gemeinsamer Rechnungssteller, nicht derselbe Teil der Heizkosten; gleicher Betrag fällt immer auf, ohne Betrag
-gefragt bleibt alles wie vorher). Die Regel findet nur Kandidaten, entscheiden tut der Vermieter. Sie fragen
+Positionen erkennbar verschiedener Art (`distinctHeating`: beide Beträge bekannt und verschieden, Beschreibung nicht
+ähnlich, kein gemeinsamer Rechnungssteller, und dann entweder zwei bekannte, verschiedene Teile der Heizkosten oder zwei
+Beschreibungen verschiedener Art nach `heatingKindOf` in shared/heatingKind.ts; zwei Brennstoff- oder Energiepositionen
+fragen immer, Durchsicht von #721; gleicher Betrag fällt immer auf, ohne Betrag gefragt bleibt alles wie vorher). Die Regel findet nur Kandidaten, entscheiden tut der Vermieter. Sie fragen
 `alreadyCarried`, der Vorschlag jeder Zeile einer Auswertung (`describeAssessment`, nicht vorab
 angehakt), das Kostenformular beim Anlegen („Stattdessen … bearbeiten“) und der Hinweis
 `cost.possible-duplicate`. Dieser kommt nur, wenn eine Position der Gruppe keinen Beleg hat und

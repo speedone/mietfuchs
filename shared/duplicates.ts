@@ -12,6 +12,7 @@ import type { CostItem, PeriodKey } from './types.ts'
 import type { PeriodContext } from './period.ts'
 import { BROAD_CATEGORIES } from './allocation.ts'
 import { HEATING_CATEGORY } from './heating.ts'
+import { heatingKindOf } from './heatingKind.ts'
 
 export type DuplicateItem = Pick<CostItem, 'id' | 'period' | 'category' | 'description'> &
   Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents' | 'sourceId' | 'serviceFrom' | 'serviceTo' | 'key' | 'directUnitId' | 'heatingPart'>>
@@ -84,16 +85,21 @@ function separateUnits(i: DuplicateItem, q: CostQuery): boolean {
 // Unter „Heizung und Warmwasser“ stehen regelmäßig mehrere Rechnungen im Jahr: Brennstoff, Wartung, Schornsteinfeger,
 // Betriebsstrom, Messdienst (#721; die Rückfrage kam bei „Wartung Ölheizung“ 260,00 € gegen „Heizöl 2.300 Liter“
 // 2.185,00 €). Anders als bei den breiten Kostenarten bleibt die Regel hier so weit wie möglich: Still ist sie nur, wenn
-// nichts die beiden verbindet, also beide Beträge bekannt und verschieden sind, die Beschreibung nicht ähnlich ist, kein
-// gemeinsamer Rechnungssteller dasteht und nicht beide denselben Teil der Heizkosten tragen. Derselbe Betrag fällt immer
-// auf, und wer ohne Betrag fragt (Belegbuchung, Posteingang), fragt wie bisher.
-// Preis: Die Schätzung „Gas 2026“ aus dem Vorjahr gegen eine Rechnung, die ganz anders heißt und deren Steller an der
-// Schätzung fehlt, fällt nicht mehr auf, außer beide tragen denselben Teil der Heizkosten.
+// erkennbar zwei verschiedene Arten von Heizkosten dastehen, also beide Teile der Heizkosten bekannt und verschieden sind
+// oder die Beschreibungen verschiedene Arten nennen (`heatingKindOf`: Wartung, Schornsteinfeger, Messdienst, Betriebsstrom
+// gegen Brennstoff oder untereinander). Zwei Brennstoff- oder Energiepositionen fragen immer, denn Abschläge gegen
+// Jahresrechnung, die Schätzung aus dem Vorjahr gegen die Rechnung und dieselbe Rechnung brutto und netto heißen oft
+// verschieden (Durchsicht von #721, M2). Daneben bleibt, was schon vorher verband: derselbe Betrag, ähnliche Beschreibung,
+// gemeinsamer Rechnungssteller; und wer ohne Betrag fragt (Belegbuchung, Posteingang), fragt wie bisher.
 function distinctHeating(i: DuplicateItem, q: CostQuery): boolean {
   if (q.category !== HEATING_CATEGORY) return false
   if (i.amountCents == null || q.amountCents == null || i.amountCents === 0 || q.amountCents === 0 || i.amountCents === q.amountCents) return false
   if (similar(i.description, q.description) || similar(i.vendor, q.vendor)) return false
-  return !(i.heatingPart && q.heatingPart && i.heatingPart === q.heatingPart)
+  if (i.heatingPart && q.heatingPart && i.heatingPart !== q.heatingPart) return true
+  if (i.heatingPart === 'fuel' && q.heatingPart === 'fuel') return false
+  const a = heatingKindOf(i.description)
+  const b = heatingKindOf(q.description)
+  return a !== null && b !== null && a !== b
 }
 
 // Die schon erfassten Positionen, die dieselbe Rechnung sein könnten: dasselbe Objekt, derselbe

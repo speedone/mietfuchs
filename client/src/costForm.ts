@@ -8,7 +8,8 @@ import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
-import { deductionReported, GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED } from '../../shared/operatingPower.ts'
+import { deductionReported, GENERAL_POWER_CATEGORY, OPERATING_PART_LABEL, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED } from '../../shared/operatingPower.ts'
+import { heatingKindOf, type HeatingKind } from '../../shared/heatingKind.ts'
 import { sameCostCandidates, type CostQuery, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
@@ -374,7 +375,7 @@ export const basisUnitsOf = (units: Unit[]) => units.filter(inBasis)
 export const HEATING_PART_OPTIONS: readonly { value: HeatingPart | ''; label: string }[] = [
   { value: '', label: 'ohne Angabe' },
   { value: 'fuel', label: 'Brennstoff/Energie (Gas, Öl, Fernwärme, Strom der Wärmepumpe)' },
-  { value: 'operating', label: 'Betrieb, Wartung, Strom der Heizung' },
+  { value: 'operating', label: OPERATING_PART_LABEL },
   { value: 'metering', label: 'Messdienst, Ablesung, Geräte' },
 ]
 
@@ -827,10 +828,16 @@ export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[
 // (`namesOperatingPower`), oder die Antwort ist schon gespeichert; sonst ginge sie beim nächsten Speichern verloren
 // (`withOperatingPower` schickt die Kennzeichnung nur, wo die Frage steht). Mit dem Teil „Betrieb“ bleibt sie immer:
 // Dorthin führen die Hinweise der Abrechnung („mit dem Teil „Betrieb“ … wählen Sie dort bei …“, server/src/operatingPower.ts).
-const namesOperatingPower = (description: string | undefined): boolean => /strom|elektr|umwälzpumpe/i.test((description ?? '').normalize('NFC'))
+// Durchsicht von #721 (M3): auch „Pumpe“ und „Brenner“ („Brenner und Pumpe“), und an einer Anlage, deren Wärme aus Strom
+// entsteht (`POWER_GENERATED`), jede Position ohne Teil; dort ist der Strom die Energie selbst (R-W2), auch bei „Wärmepumpe
+// 2025“ oder ohne Beschreibung. Heizöl, Gasrechnung und Wartung ohne Teil fragen weiter nicht; eine Beschreibung, die
+// Wartung, Schornsteinfeger oder Messdienst nennt (`heatingKindOf`), ist kein Betriebsstrom, auch „Wartung Wärmepumpe“ nicht.
+const NOT_POWER: readonly (HeatingKind | null)[] = ['maintenance', 'chimney', 'metering']
+const namesOperatingPower = (description: string | undefined): boolean =>
+  /strom|elektr|pumpe|brenner/i.test((description ?? '').normalize('NFC')) && !NOT_POWER.includes(heatingKindOf(description))
 export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'> & Partial<Pick<ItemForm, 'description' | 'operatingPower'>>, plantEnergy?: HeatingEnergy): boolean =>
   form.category === HEATING_CATEGORY && (form.heatingPart === 'operating' ||
-    (form.heatingPart === '' && (form.operatingPower === 'included' || namesOperatingPower(form.description))) ||
+    (form.heatingPart === '' && (form.operatingPower === 'included' || namesOperatingPower(form.description) || (plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy)))) ||
     (form.heatingPart === 'fuel' && plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy)))
 
 // Ein Abzug am Allgemeinstrom (P-W2): negativer Betrag bei „Beleuchtung/Allgemeinstrom“. Dann fragt das
