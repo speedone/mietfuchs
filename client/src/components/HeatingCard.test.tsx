@@ -418,9 +418,9 @@ test('#720: Ändern auf eigene Heizung je Wohnung: eine Rückfrage, dann wird di
   fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
   await waitFor(() => expect(sent).toHaveLength(3))
   expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
-    ['DELETE', '/api/heating-plants/hp1', {}],
-    ['PUT', '/api/tenancies/ta', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
-    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
+    ['DELETE', '/api/heating-plants/hp1?property=objekt-1', {}],
+    ['PUT', '/api/tenancies/ta?property=objekt-1', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
+    ['PUT', '/api/tenancies/tb?property=objekt-1', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
   ])
   // Die Karte zeigt die Anlage nicht mehr.
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Ändern' })).toBeNull())
@@ -462,8 +462,8 @@ test('#720: nur eine Wohnung mit eigener Heizung: die Anlage behält die übrige
   fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
   await waitFor(() => expect(sent).toHaveLength(2))
   expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
-    ['PUT', '/api/heating-plants/hp1', { units: [{ unitId: 'eg', heatedAreaM2: null }] }],
-    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
+    ['PUT', '/api/heating-plants/hp1?property=objekt-1', { units: [{ unitId: 'eg', heatedAreaM2: null }] }],
+    ['PUT', '/api/tenancies/tb?property=objekt-1', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
   ])
 })
 
@@ -562,7 +562,7 @@ test('Durchsicht #720 S1: die aktuelle Anlage einer Linie: Rückfrage und Mittei
   expect(dialog.textContent?.split('heizt danach wieder')).toHaveLength(2)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
   await waitFor(() => expect(sent.map((s) => s.method)).toEqual(['DELETE', 'PUT', 'PUT']))
-  expect(sent[0]?.url).toBe('/api/heating-plants/hp1')
+  expect(sent[0]?.url).toBe('/api/heating-plants/hp1?property=objekt-1')
   await waitFor(() => expect(screen.getAllByText(/^Heizanlage entfernt\./).some((n) => satz.test(n.textContent ?? ''))).toBe(true))
 })
 
@@ -573,7 +573,7 @@ test('Durchsicht #720 S2: scheitert danach ein Mietverhältnis, sagt die Karte, 
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
   fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Entfernen' }))
   expect(await screen.findByText('Die Heizanlage ist entfernt; das Mietverhältnis von Mieter B ließ sich nicht umstellen: Das Mietverhältnis wurde inzwischen geändert. Stellen Sie es unter Stammdaten am Mietverhältnis bei „Heizung und Warmwasser“ auf „Mieter heizt selbst (eigener Vertrag für Brennstoff oder Wärme)“.')).toBeTruthy()
-  expect(sent.map((s) => [s.method, s.url])).toEqual([['DELETE', '/api/heating-plants/hp1'], ['PUT', '/api/tenancies/ta'], ['PUT', '/api/tenancies/tb']])
+  expect(sent.map((s) => [s.method, s.url])).toEqual([['DELETE', '/api/heating-plants/hp1?property=objekt-1'], ['PUT', '/api/tenancies/ta?property=objekt-1'], ['PUT', '/api/tenancies/tb?property=objekt-1']])
 })
 
 test('Durchsicht #720 S3: künftige Mietverhältnisse der Wohnungen werden mit umgestellt, beendete nicht', async () => {
@@ -585,7 +585,7 @@ test('Durchsicht #720 S3: künftige Mietverhältnisse der Wohnungen werden mit u
   expect(dialog.textContent).toMatch(/Die laufenden und künftigen Mietverhältnisse von Mieter A, Mieter Neu werden unter Heizung auf „Mieter heizt selbst“ gestellt/)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
   await waitFor(() => expect(sent).toHaveLength(3))
-  expect(sent.slice(1).map((s) => s.url)).toEqual(['/api/tenancies/ta', '/api/tenancies/neu'])
+  expect(sent.slice(1).map((s) => s.url)).toEqual(['/api/tenancies/ta?property=objekt-1', '/api/tenancies/neu?property=objekt-1'])
 })
 
 test('Durchsicht #721 S8: Zustand mit leerer Wohnung nennt nur die vermieteten; „Ändern“ zur Anlage des Vermieters bietet die Abrechnung wieder an', async () => {
@@ -603,5 +603,5 @@ test('Durchsicht #721 S8: Zustand mit leerer Wohnung nennt nur die vermieteten; 
   expect(dialog.textContent).toMatch(/Die Mietverhältnisse von Mieter ta stehen unter „Heizung und Warmwasser“ noch auf „Mieter heizt selbst \(eigener Vertrag für Brennstoff oder Wärme\)“\. Bezieht die neue Heizanlage Brennstoff oder Wärme über Ihren Vertrag/)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
   await waitFor(() => expect(sent.map((s) => s.method)).toEqual(['POST', 'PUT']))
-  expect(sent[1]).toEqual({ method: 'PUT', url: '/api/tenancies/ta', body: { heatingModel: null, selfSupplyKind: null } })
+  expect(sent[1]).toEqual({ method: 'PUT', url: '/api/tenancies/ta?property=objekt-1', body: { heatingModel: null, selfSupplyKind: null } })
 })
