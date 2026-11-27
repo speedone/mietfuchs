@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, unitValueFields, whoHint, whoOptions, heatingSetUpMessage, type HeatingForm } from './heatingForm'
+import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, unitValueFields, whoHint, whoOptions, heatingSetUpMessage, selfSupplyChange, ownHeatingState, OWN_HEATING_NOTE, SELF_SUPPLY_REFUND, selfSupplyItemsNote, settlementBackOffer, ownHeatingNote, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -46,7 +46,9 @@ describe('Einrichtung Heizung', () => {
   test('Eigene Heizung je Wohnung: beim Mieter keine Anlage, beim Vermieter eine Etagenheizung', () => {
     expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit' }), UNITS)).toEqual({ error: 'Wer hat den Vertrag für die Heizung in der Wohnung?' })
     // Heizung PR 19: der Anspruch nach § 6 Abs. 2 CO2KostAufG wird erklärt, und die Wohnungen gehen an das Angebot „Mieter heizt selbst“.
-    expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'tenant' }), UNITS)).toEqual({ none: expect.stringMatching(/keine Heizanlage.*Seite Kosten unter „CO₂-Erstattung“/), selfSupplyUnitIds: ['eg', 'og'], central: false })
+    // #721: Die Mitteilung ist kurz; die Erklärung mit dem Anspruch nach § 6 Abs. 2 CO2KostAufG steht dauerhaft in der Karte.
+    expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'tenant' }), UNITS)).toEqual({ none: 'Gespeichert. Hat jeder Mieter einen eigenen Vertrag für seine Heizung, legt Mietfuchs keine Heizanlage an.', selfSupplyUnitIds: ['eg', 'og'], central: false })
+    expect(SELF_SUPPLY_REFUND).toMatch(/binnen \d+ Monaten nach der Abrechnung seines Lieferanten in Textform.*Seite Kosten unter „CO₂-Erstattung“/)
     expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'landlord' }), UNITS)).toEqual({ error: 'Womit heizen die Etagenheizungen?' })
   })
 
@@ -569,4 +571,69 @@ test('Mitteilung nach dem Einrichten: nennt die Seite „Heizkosten“ und was d
   // Ohne CO₂-Kosten (Pellets) und ohne Messdienst ist dort nichts Pflicht: nur die Seite
   expect(heatingSetUpMessage({ method: 'manual', energy: 'pellets', contracting: false, heatGeneration: null })).toBe(base)
   expect(heatingSetUpMessage(null)).toBe(base)
+})
+
+// #720: Beim Ändern einer Anlage auf „eigene Heizung je Wohnung, Vertrag beim Mieter“ entscheidet die Liste der angehakten
+// Wohnungen, was aus der Anlage wird.
+describe('selfSupplyChange (#720)', () => {
+  const units = [{ id: 'eg', noConnection: [] }, { id: 'og', noConnection: [] }, { id: 'dg', noConnection: [] }]
+  test('alle Wohnungen der Anlage angehakt: die Anlage entfällt', () => {
+    expect(selfSupplyChange({ units: null }, units, ['eg', 'og', 'dg'])).toEqual({ kind: 'remove', unitIds: ['eg', 'og', 'dg'] })
+    expect(selfSupplyChange({ units: [{ unitId: 'eg', heatedAreaM2: null }] }, units, ['eg', 'og'])).toEqual({ kind: 'remove', unitIds: ['eg'] })
+  })
+  test('ein Teil angehakt: die Anlage behält die übrigen, mit ihren Werten', () => {
+    expect(selfSupplyChange({ units: null }, units, ['og'])).toEqual({ kind: 'reduce', unitIds: ['og'], units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'dg', heatedAreaM2: null }] })
+    expect(selfSupplyChange({ units: [{ unitId: 'eg', heatedAreaM2: 71 }, { unitId: 'og', heatedAreaM2: 60 }] }, units, ['og', 'dg']))
+      .toEqual({ kind: 'reduce', unitIds: ['og'], units: [{ unitId: 'eg', heatedAreaM2: 71 }] })
+  })
+  test('keine Wohnung der Anlage angehakt: die Anlage bleibt, wie sie ist', () => {
+    expect(selfSupplyChange({ units: [{ unitId: 'eg', heatedAreaM2: null }] }, units, ['og'])).toEqual({ kind: 'keep' })
+  })
+})
+
+// #721: Nach dem Einrichten einer Etagenheizung mit Vertrag beim Mieter zeigte die Karte wieder den Leerzustand. Sie
+// zeigt den Zustand jetzt, solange keine Anlage besteht und alle laufenden Mietverhältnisse des Objekts selbst heizen.
+describe('ownHeatingState (#721)', () => {
+  const units = [{ id: 'eg' }, { id: 'og' }]
+  const t = (id: string, unitId: string, over: { end?: string | null; start?: string; heatingModel?: 'selfSupply'; selfSupplyKind?: 'central' | 'perUnit' | null } = {}) =>
+    ({ id, unitId, start: '2020-01-01', end: null, ...over })
+  const selbst = { heatingModel: 'selfSupply' as const, selfSupplyKind: 'perUnit' as const }
+  test('alle laufenden Mietverhältnisse heizen selbst: die Art der Heizung, sonst gemischt', () => {
+    expect(ownHeatingState(units, [t('a', 'eg', selbst), t('b', 'og', selbst)], '2026-11-27')).toBe('perUnit')
+    expect(ownHeatingState(units, [t('a', 'eg', { heatingModel: 'selfSupply', selfSupplyKind: 'central' })], '2026-11-27')).toBe('central')
+    expect(ownHeatingState(units, [t('a', 'eg', selbst), t('b', 'og', { heatingModel: 'selfSupply' })], '2026-11-27')).toBe('mixed')
+  })
+  test('ein laufendes Mietverhältnis mit Abrechnung, oder keines: kein Zustand', () => {
+    expect(ownHeatingState(units, [t('a', 'eg', selbst), t('b', 'og')], '2026-11-27')).toBeNull()
+    expect(ownHeatingState(units, [], '2026-11-27')).toBeNull()
+    expect(ownHeatingState(units, [t('a', 'eg', { ...selbst, end: '2025-12-31' })], '2026-11-27')).toBeNull()
+  })
+  test('beendete, künftige und Mietverhältnisse anderer Objekte zählen nicht', () => {
+    expect(ownHeatingState(units, [t('alt', 'eg', { end: '2024-12-31' }), t('a', 'eg', { ...selbst, start: '2025-01-01' }), t('fremd', 'haus-b'), t('neu', 'og', { start: '2027-01-01' })], '2026-11-27')).toBe('perUnit')
+  })
+  test('der Satz der Karte nennt, was das bedeutet', () => {
+    expect(OWN_HEATING_NOTE.perUnit).toBe('Die Mieter heizen selbst: Jede Wohnung hat eine eigene Heizung, und der Mieter hat den Vertrag. Eine Heizkostenabrechnung des Hauses gibt es deshalb nicht, und Mietfuchs führt keine Heizanlage. Ist die Wartung der Thermen im Mietvertrag als umlegbar vereinbart, erfassen Sie sie auf der Seite Kosten unter „Heizung und Warmwasser“ mit Direktzuordnung je Wohnung. Ihren Anteil an den CO₂-Kosten erstatten Sie nur, wenn der Mieter es verlangt.')
+  })
+})
+
+describe('Durchsicht von #720 und #721', () => {
+  test('selfSupplyItemsNote: höchstens fünf Positionen, der Rest als Zahl; ohne Positionen kein Absatz', () => {
+    expect(selfSupplyItemsNote([])).toBeNull()
+    const sieben = Array.from({ length: 7 }, (_, i) => ({ description: `Position ${i + 1}`, amountCents: 100 }))
+    const note = selfSupplyItemsNote(sieben) ?? expect.unreachable()
+    expect(note.lines).toHaveLength(6)
+    expect(note.lines[5]).toBe('und 2 weitere')
+    expect(selfSupplyItemsNote([{ description: 'Gas', amountCents: 100 }])?.intro).toMatch(/^Diese Heizposition der Anlage in einer noch offenen Abrechnung wird danach/)
+  })
+  test('settlementBackOffer: laufende und künftige Selbstversorger der versorgten Wohnungen, keine beendeten', () => {
+    const units = [{ id: 'eg', name: 'EG', areaM2: 80, participates: true }, { id: 'og', name: 'OG', areaM2: 60, participates: true }]
+    const t = (id: string, unitId: string, over: Record<string, unknown> = {}) => ({ id, unitId, tenantName: `Mieter ${id}`, end: null, heatingModel: 'selfSupply', ...over })
+    const list = [t('a', 'eg'), t('alt', 'eg', { end: '2020-12-31' }), t('b', 'og'), t('c', 'og', { heatingModel: undefined })]
+    expect(settlementBackOffer({ units: null }, units, list, '2026-11-27')).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter a', 'Mieter b'] })
+    expect(settlementBackOffer({ units: [{ unitId: 'og', heatedAreaM2: null }] }, units, list, '2026-11-27').tenancyIds).toEqual(['b'])
+  })
+  test('ownHeatingNote: mit einer Wohnung ohne Mieter nur die vermieteten', () => {
+    expect(ownHeatingNote('central', true)).toMatch(/^In den vermieteten Wohnungen heizen die Mieter selbst: Brennstoff oder Wärme der zentralen Heizung/)
+    expect(ownHeatingNote('central', false)).toBe(OWN_HEATING_NOTE.central)
+  })
 })

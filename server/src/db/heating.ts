@@ -957,32 +957,65 @@ export type PlantRemoval =
 // Kostenpositionen bleiben, nur ohne Anlage; an Beträgen und Verteilung ändert das in dieser Version
 // nichts. Hängen noch Zähler an ihr, wird nicht entfernt: Ohne Anlage wären sie Hauptzähler des
 // Hauses und verteilten Verbrauch um (#116). Was aus ihnen wird, entscheidet der Vermieter.
+type PlantRemovalBlock = Exclude<PlantRemoval, { removed: true }>
+
+// Was das Entfernen einer Anlage sperrt, oder `null`. Einmal für das Entfernen selbst und für die Auskunft davor
+// (#720): Die Karte „Heizung“ fragt, bevor sie eine Umstellung anbietet, die mit dem Entfernen beginnt.
+async function removalBlock(tx: Executor, id: string): Promise<PlantRemovalBlock | null> {
+  const [plant] = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.id, id))
+  if (!plant) return { removed: false, reason: 'missing' }
+  // CO₂-Angaben (Heizung PR 6) fielen mit den Heizperioden (CASCADE). Sie sind erfasste Arbeit des
+  // Vermieters; entfernen soll er sie selbst, wenn die Anlage wirklich entfällt.
+  const co2 = await tx
+    .select({ period: heatingPeriods.period })
+    .from(co2Statements)
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .where(eq(heatingPeriods.plantId, id))
+  if (co2.length > 0) return { removed: false, reason: 'co2', periods: co2.map((c) => String(c.period)) }
+  // Lieferungen (Heizung PR 7) hält die Datenbank (RESTRICT); der Satz sagt, was zu tun ist.
+  const [lieferungen] = await tx.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.plantId, id))
+  if ((lieferungen?.n ?? 0) > 0) return { removed: false, reason: 'deliveries', count: lieferungen?.n ?? 0 }
+  // Getrennte Heizkostenabrechnung (Heizung PR 5): Spannen, Heizkorrekturen und abgeschlossene
+  // Heizkostenabrechnungen hängen an der Anlage. Ohne sie fiele jede getrennte Heizperiode still in
+  // die Betriebskostenabrechnung zurück.
+  const anzahl = async (table: typeof heatingSeparateSpans | typeof heatingPrepaymentOverrides | typeof closedHeatingSettlements | typeof closedHeatingSettlementHistory) =>
+    (await tx.select({ n: count() }).from(table).where(eq(table.plantId, id)))[0]?.n ?? 0
+  const getrennt = (await anzahl(heatingSeparateSpans)) + (await anzahl(heatingPrepaymentOverrides)) + (await anzahl(closedHeatingSettlements)) + (await anzahl(closedHeatingSettlementHistory))
+  if (getrennt > 0) return { removed: false, reason: 'separate' }
+  const zaehler = await tx.select({ name: meters.name }).from(meters).where(eq(meters.heatingPlantId, id))
+  if (zaehler.length > 0) return { removed: false, reason: 'meters', meters: zaehler.map((z) => z.name) }
+  return null
+}
+
+// Die Auskunft vor dem Entfernen (#720), ohne etwas zu ändern.
+export const heatingPlantRemovalBlock = (db: Database, id: string): Promise<PlantRemovalBlock | null> => removalBlock(db, id)
+
+// Die Heizpositionen der Anlage in Zeiträumen, die nicht abgeschlossen sind (Durchsicht von #720, M1 b): Nach dem
+// Entfernen gehen sie ohne Anlage nach ihrem Schlüssel, und die Rückfrage der Karte nennt sie. Abgeschlossene bleiben,
+// wie sie zugestellt wurden. Sortiert nach Zeitraum und Beschreibung, wie die Vorschau der Zuordnung.
+export async function heatingPlantOpenItems(db: Database, id: string): Promise<AssignableHeatingItem[]> {
+  const [plant] = await db.select({ propertyId: heatingPlants.propertyId }).from(heatingPlants).where(eq(heatingPlants.id, id))
+  if (!plant) return []
+  const rows = await db
+    .select({ id: costItems.id, period: costItems.period, description: costItems.description, amountCents: costItems.amountCents })
+    .from(costItems)
+    .where(eq(costItems.heatingPlantId, id))
+    .orderBy(costItems.period, costItems.description)
+  const offen: AssignableHeatingItem[] = []
+  for (const c of rows) {
+    const period = periodKey(String(c.period))
+    // Dieselbe Regel wie beim Schreiben einer Position (eigene Heizperioden eingeschlossen).
+    if (!(await itemPeriodClosed(db, { heatingPlantId: id, propertyId: plant.propertyId, period }))) offen.push({ id: c.id, period, description: c.description, amountCents: c.amountCents })
+  }
+  return offen
+}
+
 export async function removeHeatingPlant(db: Database, id: string): Promise<PlantRemoval> {
   // Prüfen und Entfernen in einer Transaktion (Durchsicht von #230): Zwischen der Frage nach den
   // Zählern und dem Löschen darf kein Zähler dazukommen.
   return db.transaction(async (tx): Promise<PlantRemoval> => {
-    const [plant] = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.id, id))
-    if (!plant) return { removed: false, reason: 'missing' }
-    // CO₂-Angaben (Heizung PR 6) fielen mit den Heizperioden (CASCADE). Sie sind erfasste Arbeit des
-    // Vermieters; entfernen soll er sie selbst, wenn die Anlage wirklich entfällt.
-    const co2 = await tx
-      .select({ period: heatingPeriods.period })
-      .from(co2Statements)
-      .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
-      .where(eq(heatingPeriods.plantId, id))
-    if (co2.length > 0) return { removed: false, reason: 'co2', periods: co2.map((c) => String(c.period)) }
-    // Lieferungen (Heizung PR 7) hält die Datenbank (RESTRICT); der Satz sagt, was zu tun ist.
-    const [lieferungen] = await tx.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.plantId, id))
-    if ((lieferungen?.n ?? 0) > 0) return { removed: false, reason: 'deliveries', count: lieferungen?.n ?? 0 }
-    // Getrennte Heizkostenabrechnung (Heizung PR 5): Spannen, Heizkorrekturen und abgeschlossene
-    // Heizkostenabrechnungen hängen an der Anlage. Ohne sie fiele jede getrennte Heizperiode still in
-    // die Betriebskostenabrechnung zurück.
-    const anzahl = async (table: typeof heatingSeparateSpans | typeof heatingPrepaymentOverrides | typeof closedHeatingSettlements | typeof closedHeatingSettlementHistory) =>
-      (await tx.select({ n: count() }).from(table).where(eq(table.plantId, id)))[0]?.n ?? 0
-    const getrennt = (await anzahl(heatingSeparateSpans)) + (await anzahl(heatingPrepaymentOverrides)) + (await anzahl(closedHeatingSettlements)) + (await anzahl(closedHeatingSettlementHistory))
-    if (getrennt > 0) return { removed: false, reason: 'separate' }
-    const zaehler = await tx.select({ name: meters.name }).from(meters).where(eq(meters.heatingPlantId, id))
-    if (zaehler.length > 0) return { removed: false, reason: 'meters', meters: zaehler.map((z) => z.name) }
+    const block = await removalBlock(tx, id)
+    if (block) return block
     const [n] = await tx.select({ n: count() }).from(costItems).where(eq(costItems.heatingPlantId, id))
     await tx.update(costItems).set({ heatingPlantId: null }).where(eq(costItems.heatingPlantId, id))
     // Kesseltausch (Durchsicht von #238): Wird die neue Anlage entfernt, ist der Tausch rückgängig, und

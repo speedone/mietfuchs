@@ -763,7 +763,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       </Card>
 
       {/* Heizung PR 4: optional, nach den Wohnungen, weil Schritt 4 nach ihnen fragt. */}
-      <HeatingCard units={units} focus={focus} onFocusDone={onFocusDone} onChanged={afterHeatingOrPeriodChange} />
+      <HeatingCard units={units} tenancies={tenancies} focus={focus} onFocusDone={onFocusDone} onChanged={afterHeatingOrPeriodChange} />
 
       <Card
         title="Mietverhältnisse"

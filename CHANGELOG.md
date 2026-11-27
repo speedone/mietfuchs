@@ -235,6 +235,54 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
   selbst herüber. Kein Betrag der Abrechnung ändert sich
   ([#722](https://github.com/speedone/mietfuchs/issues/722)).
+- Karte „Heizung“, wenn die Mieter selbst heizen: Was es bedeutet, dass jeder Mieter einen eigenen Vertrag für seine
+  Heizung hat, stand nur in einer Meldung, die nach wenigen Sekunden verschwand; danach zeigte die Karte wieder
+  „Optional“ und „Heizung einrichten“. Solange es keine Heizanlage gibt und alle laufenden Mietverhältnisse des Objekts
+  auf „Mieter heizt selbst“ stehen, sagt die Karte das jetzt dauerhaft: keine Heizkostenabrechnung des Hauses, Wartung der
+  Thermen, wenn sie umlegbar vereinbart ist, als Kostenposition mit Direktzuordnung je Wohnung, CO₂-Erstattung nur auf
+  Verlangen des Mieters, mit den Fristen zum Aufklappen und einem Knopf „Ändern“. Steht eine Wohnung leer, spricht der
+  Satz nur von den vermieteten Wohnungen. Richten Sie über „Ändern“ eine Heizanlage ein, deren Brennstoff oder Wärme Sie
+  beziehen, bietet die Karte an, die Mietverhältnisse der versorgten Wohnungen wieder auf „Vorauszahlung mit Abrechnung“
+  zu stellen. Die Meldung nach dem Einrichten ist kurz ([#721](https://github.com/speedone/mietfuchs/issues/721)).
+- Cockpit, Zeile „Zählerstände“: Mit eigener Heizkostenabrechnung nach Heizkostenverordnung stand dort „Keine
+  verbrauchsabhängige Umlage - Ablesungen nicht erforderlich“, obwohl die Heizkosten nach Ablesungen verteilt werden. Die
+  Zeile nennt jetzt die Heizperiode, wenn die Stände vollständig sind, und sonst, was fehlt (etwa „Für „Wärme EG“ fehlt
+  ein Stand zum 31.12.2025“), mit Sprung zur Seite Zähler oder Heizkosten; das geht auch einer Heizposition vor, die nicht
+  nach Verbrauch verteilt wird ([#721](https://github.com/speedone/mietfuchs/issues/721)).
+- Kostenformular: Die Frage „Läuft dieser Betriebsstrom über den Stromzähler des Hauses?“ stand an jeder Position
+  „Heizung und Warmwasser“, auch bei Heizöl, Gasrechnung und Wartung. Sie erscheint jetzt nur noch, wo die Position
+  Betriebsstrom sein kann: wenn die Beschreibung Strom, eine Pumpe oder den Brenner nennt, wenn die Heizanlage eine
+  Wärmepumpe oder Stromheizung ist, wenn unter „Weitere Angaben“ der Teil „Betrieb“ gewählt ist oder wenn die Frage an
+  der Position schon beantwortet ist. Gespeicherte Antworten bleiben. Der Hinweis „Abzug des Betriebsstroms fehlt“ sagt bei
+  einer Heizposition ohne Teil zuerst, dass Sie dort den Teil „Betrieb, Wartung, Strom der Heizung“ wählen; dann erscheint
+  die Frage ([#721](https://github.com/speedone/mietfuchs/issues/721)).
+- „Dieselbe Rechnung?“ fragt gezielter: Die Rückfrage beim Anlegen einer Kostenposition und der Hinweis „Mögliche
+  doppelte Position“ kamen auch bei zwei Heizpositionen, die nichts verbindet („Wartung Ölheizung“ gegen „Heizöl“), und
+  bei Wartungsrechnungen, die verschiedenen Wohnungen direkt zugeordnet sind. Bei „Heizung und Warmwasser“ bleibt es
+  jetzt still, wenn erkennbar verschiedene Arten von Heizkosten dastehen: verschiedene Teile der Heizkosten unter „Weitere
+  Angaben“, oder Beschreibungen, die etwa Wartung, Schornsteinfeger, Messdienst oder Betriebsstrom gegen Brennstoff nennen.
+  Zwei Brennstoff- oder Energiepositionen fragen immer (Abschläge gegen Jahresrechnung, Schätzung aus dem Vorjahr gegen
+  die Rechnung, dieselbe Rechnung brutto und netto). Positionen mit Direktzuordnung an verschiedene Wohnungen gelten bei
+  jeder Kostenart als verschiedene Rechnungen. Derselbe Betrag, eine ähnliche Beschreibung oder derselbe Rechnungssteller
+  fallen weiter auf, alle übrigen Kostenarten fragen wie bisher ([#721](https://github.com/speedone/mietfuchs/issues/721)).
+- Heizung ändern auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter: Die Karte „Heizung“ ließ die
+  bestehende Heizanlage stehen und stellte nur die Mietverhältnisse auf „Mieter heizt selbst“; die Abrechnung meldete
+  danach je Mietverhältnis den Fehler „Mieter heizt selbst und hängt an Ihrer Heizanlage“. Jetzt entfernt die Karte die
+  Anlage nach einer Rückfrage auf demselben Weg wie „Entfernen …“ und stellt erst danach die Mietverhältnisse um. Ist das
+  Entfernen gesperrt (Zähler, Lieferungen, CO₂-Angaben, getrennte oder abgeschlossene Heizkostenabrechnung), sagt sie den
+  Grund und ändert nichts. Haben nur einige Wohnungen eine eigene Heizung, bleibt die Anlage für die übrigen, und die
+  Rückfrage nennt, dass Sie die Heizpositionen der Anlage auf der Seite Kosten auf diese Wohnungen beschränken. Der
+  Fehlertext der Abrechnung nennt jetzt auch diese beiden Fälle. Die Rückfrage vor dem Entfernen nennt die Heizpositionen
+  der Anlage in offenen Abrechnungen, die danach ohne Heizanlage nach ihrem Schlüssel verteilt werden, also auch auf
+  Mieter, die selbst heizen; nach einem Kesseltausch sagt sie, dass die bisherige Heizanlage danach wieder heizt. Künftige
+  Mietverhältnisse der Wohnungen werden mit umgestellt, und scheitert das Umstellen eines Mietverhältnisses, sagt die
+  Karte, dass die Heizanlage schon entfernt ist und was von Hand bleibt
+  ([#720](https://github.com/speedone/mietfuchs/issues/720)).
+- Abrechnung: Eine Brennstoff- oder Energierechnung (Teil „Brennstoff/Energie“, verknüpfte Lieferung oder eine
+  Beschreibung wie „Gas“ oder „Heizöl“), die auf Mieter verteilt wird, die laut Mietverhältnis selbst heizen, ergab nur den
+  Hinweis, darin steckten keine CO₂-Kosten. Jetzt warnt die Abrechnung mit „Brennstoffrechnung bei Mietern, die selbst
+  heizen“, nennt Betrag und Anteile und sagt, was zu prüfen ist; das färbt das Cockpit
+  ([#720](https://github.com/speedone/mietfuchs/issues/720)).
 - Vorauszahlung getrennt nach Heizung und übrigen Nebenkosten: Rechnet die Heizung im selben Zeitraum ab wie das
   Objekt, ließ sich die Vorauszahlung nicht aufteilen, weil der Knopf dafür nie erschien. Die Karte „Heizung“ der
   Stammdaten bietet jetzt „Vorauszahlung aufteilen“ an und erklärt, wozu; danach führen die Mietverhältnisse mit

@@ -43,6 +43,21 @@ test('Heizkosten mit Teil „Brennstoff“ und andere Kostenarten: keine Frage',
   expect(other.container.textContent).toBe('')
 })
 
+// #721: Heizöl, Gasrechnung und Wartung bekamen die Frage nach dem Betriebsstrom gestellt.
+test('#721: Heizposition ohne Teil: keine Frage bei Heizöl, die Frage bei Betriebsstrom und bei gespeicherter Antwort', () => {
+  const field = (form: ItemForm) => {
+    cleanup()
+    render(<OperatingPowerFields form={form} items={[]} periodKey={periodKey('2025-01')} service={false} onChange={vi.fn()} />)
+    return screen.queryByLabelText(/über den Stromzähler des Hauses\?/) as HTMLSelectElement | null
+  }
+  const heiz: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser' }
+  expect(field({ ...heiz, description: 'Heizöl 2.300 Liter' })).toBeNull()
+  expect(field({ ...heiz, description: 'Wartung Ölheizung' })).toBeNull()
+  expect(field({ ...heiz, description: 'Betriebsstrom Heizung' })?.value).toBe('')
+  // Angezeigt = gespeichert: Die gespeicherte Antwort steht da, auch wenn die Beschreibung keinen Strom nennt.
+  expect(field({ ...heiz, description: 'Heizung Nebenkosten', operatingPower: 'included' })?.value).toBe('included')
+})
+
 test('Allgemeinstrom mit negativem Betrag: die Auswahl zeigt den gespeicherten Verweis (angezeigter = gespeicherter Wert)', () => {
   const onChange = vi.fn()
   const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84', operatingPower: 'deduction', operatingPowerItemId: 'bs' }

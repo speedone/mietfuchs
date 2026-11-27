@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
-import { deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
+import { OPERATING_PART_LABEL, OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
+import { HEATING_PART_OPTIONS, deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
 import type { CostItem as CostItemOf } from './types'
 import { calendarPeriod, calendarYearPeriod, periodKey } from '../../shared/period.ts'
 import { euro } from '../../shared/costItem.ts'
@@ -720,6 +720,19 @@ describe('Rückfrage nach derselben Rechnung', () => {
     expect(sameCostOf([rechnung], body(-5745), 'p', 2026)).toEqual([])
     expect(sameCostOf([rechnung, gutschrift], body(84000), 'p', 2026).map((i) => i.id)).toEqual(['r'])
   })
+  // #721: Die Rückfrage kam bei „Wartung Ölheizung“ gegen „Heizöl“ und bei Wartungen an verschiedenen Wohnungen.
+  test('#721: Heizung mit anderem Betrag und anderer Beschreibung fragt nicht, mit gleichem Betrag schon', () => {
+    const oel = { id: 'o', propertyId: 'p', period: calendarPeriod(2026), category: 'Heizung und Warmwasser', description: 'Heizöl 2.300 Liter', amountCents: 218500 }
+    const wartung = (amountCents: number) => ({ category: 'Heizung und Warmwasser', description: 'Wartung Ölheizung', vendor: '', amountCents })
+    expect(sameCostOf([oel], wartung(26000), 'p', 2026)).toEqual([])
+    expect(sameCostOf([oel], wartung(218500), 'p', 2026).map((i) => i.id)).toEqual(['o'])
+  })
+  test('#721: Direktzuordnung an eine andere Wohnung fragt nicht, an dieselbe schon', () => {
+    const eg = { id: 'w', propertyId: 'p', period: calendarPeriod(2026), category: 'Heizung und Warmwasser', description: 'Wartung Therme', amountCents: 14500, key: 'direct' as const, directUnitId: 'eg' }
+    const neu = (directUnitId: string) => ({ category: 'Heizung und Warmwasser', description: 'Wartung Therme', vendor: '', amountCents: 14500, key: 'direct' as const, directUnitId })
+    expect(sameCostOf([eg], neu('og'), 'p', 2026)).toEqual([])
+    expect(sameCostOf([eg], neu('eg'), 'p', 2026).map((i) => i.id)).toEqual(['w'])
+  })
 })
 
 describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
@@ -983,6 +996,65 @@ test('Betriebsstrom: Abzug im Steuerjahr seiner Stromrechnung, kein eigenes Jahr
   const built = buildBody(form, [], 2025)
   if ('error' in built) throw new Error(built.error)
   expect(built.body.taxYear).toBeNull()
+})
+
+// #721: Die Frage stand an jeder Position „Heizung und Warmwasser“ ohne Teil, auch bei Heizöl, Gasrechnung und Wartung.
+// Ohne Teil erscheint sie nur noch, wo die Beschreibung Strom nennt oder die Antwort schon gespeichert ist; mit dem Teil
+// „Betrieb“ wie bisher immer, denn dorthin führen die Hinweise der Abrechnung.
+test('#721 Betriebsstrom: ohne Teil fragt das Formular nur, wo die Position Betriebsstrom sein kann; eine gespeicherte Antwort bleibt', () => {
+  const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser' }
+  for (const description of ['Heizöl 2.300 Liter', 'Gasrechnung Stadtwerke', 'Wartung Ölheizung', 'Schornsteinfeger', 'Wartung Wärmepumpe', '']) {
+    expect(showsOperatingPower({ ...heiz, description }), description).toBe(false)
+  }
+  for (const description of ['Betriebsstrom Heizung (geschätzt)', 'Strom Heizungsanlage', 'Umwälzpumpe und Regelung', 'Heizung elektrisch, Anteil Hausstrom']) {
+    expect(showsOperatingPower({ ...heiz, description }), description).toBe(true)
+  }
+  // Mit dem Teil „Betrieb“ immer, gleich wie die Position heißt.
+  expect(showsOperatingPower({ ...heiz, description: 'Wartung Ölheizung', heatingPart: 'operating' })).toBe(true)
+  // Eine gespeicherte Antwort geht nicht verloren: Die Frage bleibt sichtbar, und der Rumpf trägt sie weiter.
+  const gespeichert = { ...heiz, description: 'Heizung Nebenkosten', operatingPower: 'included' as const, operatingPowerBasis: 'Pumpe 45 W' }
+  expect(showsOperatingPower(gespeichert)).toBe(true)
+  expect(withOperatingPower({}, gespeichert)).toMatchObject({ operatingPower: 'included', operatingPowerBasis: 'Pumpe 45 W' })
+  // Ohne Antwort und ohne Frage bleibt der Rumpf ohne Kennzeichnung, wie bisher bei „Nein“.
+  expect(withOperatingPower({}, { ...heiz, description: 'Heizöl' })).toMatchObject({ operatingPower: null, operatingPowerBasis: null })
+})
+
+// Durchsicht von #721 (M3): „Brenner und Pumpe“, eine leere Beschreibung an einer Wärmepumpe oder „Wärmepumpe 2025“ dort
+// sahen die Frage nie; der Hinweis „Abzug des Betriebsstroms fehlt“ verweist aber auf sie. Heizöl, Gasrechnung und
+// Wartung ohne Teil bleiben ohne Frage.
+test('Durchsicht #721 Betriebsstrom: ohne Teil auch bei Pumpe und Brenner und an einer Anlage, die Strom zur Wärmeerzeugung nimmt', () => {
+  const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser' }
+  expect(showsOperatingPower({ ...heiz, description: 'Brenner und Pumpe' }, 'gas')).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: 'Pumpenstrom' })).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: '' }, 'heatPump')).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: 'Wärmepumpe 2025' }, 'heatPump')).toBe(true)
+  expect(showsOperatingPower({ ...heiz, description: 'Heizstab' }, 'electric')).toBe(true)
+  for (const description of ['Heizöl 2.300 Liter', 'Gasrechnung Stadtwerke', 'Wartung Ölheizung', '']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'oil'), description).toBe(false)
+    expect(showsOperatingPower({ ...heiz, description }, 'gas'), description).toBe(false)
+  }
+  // Der Weg des Hinweises: Mit dem dort genannten Teil erscheint die Frage immer.
+  const operating = HEATING_PART_OPTIONS.find((o) => o.label === OPERATING_PART_LABEL) ?? expect.unreachable()
+  expect(operating.value).toBe('operating')
+  expect(showsOperatingPower({ ...heiz, description: '', heatingPart: operating.value }, 'gas')).toBe(true)
+})
+
+// Nachprüfung von #721 (M-C): An einer Wärmepumpe fragte das Formular ohne Teil bei jeder Position, auch bei Wartung,
+// Schornsteinfeger und Messdienst; ein „Ja“ dort unterdrückt den Hinweis „Abzug des Betriebsstroms fehlt“. Und Pumpe oder
+// Brenner in einer Tätigkeit („Reparatur Brenner“) ist Wartung, kein Betriebsstrom.
+test('Nachprüfung #721 Betriebsstrom: keine Frage bei Wartung, Schornsteinfeger und Messdienst an der Wärmepumpe und bei Tätigkeiten an Pumpe oder Brenner', () => {
+  const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser' }
+  for (const description of ['Wartung Wärmepumpe', 'Schornsteinfeger', 'Messdienst']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'heatPump'), description).toBe(false)
+    expect(showsOperatingPower({ ...heiz, description }, 'electric'), description).toBe(false)
+  }
+  for (const description of ['Wärmepumpe 2025', '']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'heatPump'), description).toBe(true)
+  }
+  for (const description of ['Reparatur Brenner', 'Ölbrenner Service', 'Heizungspumpe getauscht', 'Pumpe Reparatur', 'Elektriker Heizung']) {
+    expect(showsOperatingPower({ ...heiz, description }, 'gas'), description).toBe(false)
+  }
+  expect(showsOperatingPower({ ...heiz, description: 'Umwälzpumpe Strom' }, 'gas')).toBe(true)
 })
 
 // Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position

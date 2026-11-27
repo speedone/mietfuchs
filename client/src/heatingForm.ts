@@ -9,7 +9,8 @@
 import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatGeneration, HeatPumpMajority, HeatingEnergy, HeatingPeriodView, HeatingPlant, HeatingPlantUnit, HeatingStatement, Meter, NewDevicesInstall, PreviousSupply, PropertyKind, Unit } from './types'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { billingEnergy, CONTRACTING_ENERGIES, isHeatDelivery } from '../../shared/heatDelivery.ts'
-import { parseEuro } from './api'
+import { fmtEuro, parseEuro } from './api'
+import { HEATING_MODEL_LABELS } from './tenancyModel'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
@@ -239,7 +240,67 @@ const REFUND_TEXT =
   'Erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. Ist eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Betriebskostenabrechnung nach der Anzeige verrechnen; ' +
   `sonst zahlen Sie ihn spätestens ${SELF.refundMonths} Monate nach der Anzeige aus. ` +
   `Bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG müssen Sie den Mieter in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6).`
-const SELF_SUPPLY = `Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. ${REFUND_TEXT}`
+// #721: Dieser Text (rund 900 Zeichen) stand nur in der Mitteilung nach dem Einrichten und war nach Sekunden weg. Die
+// Mitteilung ist jetzt kurz; was die Lage bedeutet, zeigt die Karte „Heizung“ dauerhaft (`ownHeatingState`,
+// `OWN_HEATING_NOTE`), die Fristen und die Hinweispflicht darunter zum Aufklappen (`SELF_SUPPLY_REFUND`).
+const SELF_SUPPLY = 'Gespeichert. Hat jeder Mieter einen eigenen Vertrag für seine Heizung, legt Mietfuchs keine Heizanlage an.'
+export const SELF_SUPPLY_REFUND = REFUND_TEXT
+export const SELF_SUPPLY_REFUND_TITLE = 'Fristen und Hinweispflicht bei der CO₂-Erstattung'
+
+// Der Zustand „Mieter heizen selbst“ der Karte (#721): Es gibt keine Anlage, und jedes am Tag `today` laufende
+// Mietverhältnis der Wohnungen des Objekts steht auf „Mieter heizt selbst“. Beendete und künftige zählen nicht, denn die
+// Karte stellt nur laufende um (`selfSupplyOffer`); ohne laufendes Mietverhältnis gibt es nichts zu sagen. Der Wert ist
+// die Art der Heizung, wenn alle dieselbe tragen, sonst `mixed` (auch ohne Angabe).
+export type OwnHeatingState = 'perUnit' | 'central' | 'mixed'
+export function ownHeatingState(
+  units: readonly { id: string }[],
+  tenancies: readonly { unitId: string; start: string; end?: string | null; heatingModel?: string; selfSupplyKind?: string | null }[],
+  today: string,
+): OwnHeatingState | null {
+  const ids = new Set(units.map((u) => u.id))
+  const running = tenancies.filter((t) => ids.has(t.unitId) && t.start <= today && (t.end == null || t.end >= today))
+  if (running.length === 0 || running.some((t) => t.heatingModel !== 'selfSupply')) return null
+  const kinds = new Set(running.map((t) => t.selfSupplyKind ?? null))
+  const only = kinds.size === 1 ? [...kinds][0] : null
+  return only === 'perUnit' || only === 'central' ? only : 'mixed'
+}
+const OWN_HEATING_TAIL = 'Ihren Anteil an den CO₂-Kosten erstatten Sie nur, wenn der Mieter es verlangt.'
+const NO_BUILDING_SETTLEMENT = 'Eine Heizkostenabrechnung des Hauses gibt es deshalb nicht, und Mietfuchs führt keine Heizanlage.'
+// Durchsicht von #721 (S8): Die Wartung erfasst der Vermieter nur, wenn sie umlegbar vereinbart ist; der Satz rät, statt
+// zu befehlen. Wohnungen ohne laufendes Mietverhältnis (leer, selbst bewohnt) heizt kein Mieter; dann nennt der Satz nur
+// die vermieteten (`rentedOnly`).
+export const OWN_HEATING_NOTE: Record<OwnHeatingState, string> = {
+  perUnit: `Die Mieter heizen selbst: Jede Wohnung hat eine eigene Heizung, und der Mieter hat den Vertrag. ${NO_BUILDING_SETTLEMENT} Ist die Wartung der Thermen im Mietvertrag als umlegbar vereinbart, erfassen Sie sie auf der Seite Kosten unter „Heizung und Warmwasser“ mit Direktzuordnung je Wohnung. ${OWN_HEATING_TAIL}`,
+  central: `Die Mieter heizen selbst: Brennstoff oder Wärme der zentralen Heizung beziehen sie über einen eigenen Vertrag. ${NO_BUILDING_SETTLEMENT} Was Ihnen für die Heizung selbst entsteht, etwa Wartung oder Betriebsstrom über Ihren Zähler, erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“ und legen es wie vereinbart um. ${OWN_HEATING_TAIL}`,
+  mixed: `Die Mieter heizen selbst: Brennstoff oder Wärme beziehen sie über einen eigenen Vertrag. ${NO_BUILDING_SETTLEMENT} Was Ihnen für die Heizungen selbst entsteht, etwa die Wartung, erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“, bei einer Heizung je Wohnung mit Direktzuordnung. ${OWN_HEATING_TAIL}`,
+}
+export const ownHeatingNote = (state: OwnHeatingState, rentedOnly: boolean): string =>
+  rentedOnly ? OWN_HEATING_NOTE[state].replace(/^Die Mieter heizen selbst:/, 'In den vermieteten Wohnungen heizen die Mieter selbst:') : OWN_HEATING_NOTE[state]
+// Ob eine Wohnung des Objekts am Tag `today` kein laufendes Mietverhältnis hat (für `ownHeatingNote`).
+export const someUnitUnlet = (
+  units: readonly { id: string }[],
+  tenancies: readonly { unitId: string; start: string; end?: string | null }[],
+  today: string,
+): boolean => units.some((u) => !tenancies.some((t) => t.unitId === u.id && t.start <= today && (t.end == null || t.end >= today)))
+
+// Durchsicht von #721 (S8): Aus dem Zustand „Mieter heizen selbst“ wird über „Ändern“ eine Heizanlage eingerichtet,
+// deren Brennstoff oder Wärme der Vermieter bezieht. Die Mietverhältnisse der versorgten Wohnungen, die noch auf „Mieter
+// heizt selbst“ stehen, bietet die Karte an, wieder abzurechnen; sonst meldete die Abrechnung `co2.self-supply-mixed`.
+// Laufende und künftige, wie beim Umstellen auf „Mieter heizt selbst“; beendete bleiben, wie sie abgerechnet wurden.
+export function settlementBackOffer(
+  plant: Pick<HeatingPlant, 'units'>,
+  units: readonly UnitInfo[],
+  tenancies: readonly { id: string; unitId: string; tenantName: string; end: string | null; heatingModel?: string }[],
+  today: string,
+): { tenancyIds: string[]; names: string[] } {
+  const served = new Set(servedIds(plant, units))
+  const back = tenancies.filter((t) => served.has(t.unitId) && t.heatingModel === 'selfSupply' && (t.end === null || t.end >= today))
+  return { tenancyIds: back.map((t) => t.id), names: [...new Set(back.map((t) => t.tenantName.trim()))] }
+}
+export const SETTLEMENT_BACK_TITLE = `Auf „${HEATING_MODEL_LABELS.settlement}“ stellen?`
+export const settlementBackNote = (names: readonly string[]): string =>
+  `Die Mietverhältnisse von ${names.join(', ')} stehen unter „Heizung und Warmwasser“ noch auf „${HEATING_MODEL_LABELS.selfSupply}“. ` +
+  `Bezieht die neue Heizanlage Brennstoff oder Wärme über Ihren Vertrag, stellen Sie sie auf „${HEATING_MODEL_LABELS.settlement}“; sonst meldet die Abrechnung für diese Mieter einen Fehler.`
 // Zentrale Heizung, Brennstoffvertrag beim Mieter (Prüfung M1, S7): keine Anlage, denn der Vermieter bezieht weder
 // Brennstoff noch Wärme. Was ihm für die Anlage selbst entsteht, legt er um wie vereinbart (§ 2 Nr. 4 a BetrKV).
 const CENTRAL_SELF_SUPPLY =
@@ -269,17 +330,76 @@ export function selfSupplyOffer(
   central: boolean,
   // #225: Bei unmittelbarer Abrechnung des Wärmelieferanten hat jeder Mieter seinen Vertrag; dann darf es mehrere geben.
   singleTenant: boolean = central,
-): { tenancyIds: string[]; names: string[]; kindTenancyIds: string[] } | { error: string } {
+  withFuture = false,
+): { tenancyIds: string[]; names: string[]; kindTenancyIds: string[]; future?: true } | { error: string } {
   const running = tenancies.filter((t) => unitIds.includes(t.unitId) && t.start <= today && (t.end === null || t.end >= today))
   const names = [...new Set(running.map((t) => t.tenantName.trim()))]
   if (singleTenant && names.length > 1) return { error: NOT_COVERED }
   // Durchsicht S-4: Bei der zentralen Heizung ist jede angehakte Einheit ohne laufendes Mietverhältnis Wärme an Dritte:
   // die selbstgenutzte des Vermieters ebenso wie eine leere, die über den Vertrag des Mieters mitbeheizt wird.
   if (singleTenant && unitIds.some((id) => !running.some((t) => t.unitId === id))) return { error: NOT_COVERED }
-  const open = running.filter((t) => t.heatingModel !== 'selfSupply')
-  const kindless = running.filter((t) => t.heatingModel === 'selfSupply' && !t.selfSupplyKind)
-  return { tenancyIds: open.map((t) => t.id), names: [...new Set(open.map((t) => t.tenantName.trim()))], kindTenancyIds: kindless.map((t) => t.id) }
+  // Durchsicht von #720 (S3): Beim Ändern einer Anlage auch die künftigen Mietverhältnisse (Beginn nach heute); sonst
+  // trüge der nächste Mieter ab seinem Einzug die Heizpositionen, als heizte der Vermieter.
+  const future = withFuture ? tenancies.filter((t) => unitIds.includes(t.unitId) && t.start > today) : []
+  const open = [...running, ...future].filter((t) => t.heatingModel !== 'selfSupply')
+  const kindless = [...running, ...future].filter((t) => t.heatingModel === 'selfSupply' && !t.selfSupplyKind)
+  const offer = { tenancyIds: open.map((t) => t.id), names: [...new Set(open.map((t) => t.tenantName.trim()))], kindTenancyIds: kindless.map((t) => t.id) }
+  return future.some((t) => t.heatingModel !== 'selfSupply') ? { ...offer, future: true } : offer
 }
+
+// #720: Eine bestehende Anlage wird auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter gestellt. Für eine
+// solche Heizung gibt es keine Anlage (docs/heizung.md). Sind alle Wohnungen der Anlage angehakt, entfällt sie auf dem Weg
+// von „Entfernen …“; ist es nur ein Teil, behält sie die übrigen (`units` für den Rumpf, Werte wie gespeichert); hängt
+// keine angehakte Wohnung an ihr, bleibt sie, wie sie ist. `unitIds`: die betroffenen Wohnungen der Anlage.
+export type SelfSupplyChange = { kind: 'remove'; unitIds: string[] } | { kind: 'reduce'; unitIds: string[]; units: HeatingPlantUnit[] } | { kind: 'keep' }
+export function selfSupplyChange(plant: Pick<HeatingPlant, 'units'> & Partial<Pick<HeatingPlant, 'basisValues'>>, units: readonly UnitInfo[], checked: readonly string[]): SelfSupplyChange {
+  const served = servedIds(plant, units)
+  const unitIds = served.filter((id) => checked.includes(id))
+  if (unitIds.length === 0) return { kind: 'keep' }
+  const rest = served.filter((id) => !checked.includes(id))
+  if (rest.length === 0) return { kind: 'remove', unitIds }
+  return { kind: 'reduce', unitIds, units: rest.map((unitId) => ({ unitId, heatedAreaM2: unitBasisOf({ units: plant.units, basisValues: plant.basisValues }, unitId)?.heatedAreaM2 ?? null })) }
+}
+// Der Satz der Rückfragen dazu, welche Mietverhältnisse umgestellt werden; derselbe wie beim Einrichten.
+export const selfSupplyTenanciesNote = (names: readonly string[], future = false): string =>
+  `Die ${future ? 'laufenden und künftigen' : 'laufenden'} Mietverhältnisse von ${names.join(', ')} werden unter Heizung auf „Mieter heizt selbst“ gestellt. Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab; Hinweise auf eine CO₂-Kürzung entfallen dafür.`
+export const SELF_SUPPLY_NO_UNIT = 'Bitte haken Sie mindestens eine Wohnung an, deren Mieter den Vertrag selbst hat.'
+// Ist das Entfernen gesperrt, stellt die Karte nichts um und sagt den Grund des Servers.
+export const selfSupplyBlocked = (reason: string): string =>
+  `Mit eigener Heizung je Wohnung und Vertrag beim Mieter entfällt diese Heizanlage, sie lässt sich aber noch nicht entfernen: ${reason} Es wurde nichts geändert.`
+export const selfSupplyReduceNote = (unitNames: readonly string[]): string =>
+  `${unitNames.join(', ')} ${unitNames.length === 1 ? 'hängt' : 'hängen'} danach nicht mehr an der Heizanlage; für die übrigen Wohnungen bleibt sie bestehen.`
+// Durchsicht von #720 (M1 b): Die Heizpositionen der Anlage in offenen Zeiträumen (Auskunft `GET
+// /api/heating-plants/:id/removal`). Nach dem Entfernen gehen sie ohne Anlage nach ihrem Schlüssel, also auch auf Mieter,
+// die selbst heizen; die Abrechnung warnt dann bei Brennstoff (`heating.fuel-for-self-supply`). Höchstens fünf Zeilen.
+export const SELF_SUPPLY_ITEMS_SHOWN = 5
+export function selfSupplyItemsNote(items: readonly { description: string; amountCents: number }[]): { intro: string; lines: string[]; outro: string } | null {
+  if (items.length === 0) return null
+  const one = items.length === 1
+  const lines = items.slice(0, SELF_SUPPLY_ITEMS_SHOWN).map((i) => `„${i.description.trim() || 'ohne Beschreibung'}“ ${fmtEuro(i.amountCents)}`)
+  const more = items.length - SELF_SUPPLY_ITEMS_SHOWN
+  if (more > 0) lines.push(more === 1 ? 'und eine weitere' : `und ${more} weitere`)
+  return {
+    intro: one
+      ? 'Diese Heizposition der Anlage in einer noch offenen Abrechnung wird danach ohne Heizanlage nach ihrem Schlüssel verteilt, also auch auf Mieter, die selbst heizen:'
+      : 'Diese Heizpositionen der Anlage in noch offenen Abrechnungen werden danach ohne Heizanlage nach ihrem Schlüssel verteilt, also auch auf Mieter, die selbst heizen:',
+    lines,
+    outro: 'Brennstoffrechnungen, die Sie für diese Wohnungen nicht haben, löschen Sie danach auf der Seite Kosten.',
+  }
+}
+// Durchsicht von #720 (S1): Wird die Anlage entfernt, die eine andere ersetzt hat (Kesseltausch), ist der Tausch
+// rückgängig, und die ersetzte heizt wieder (`removeHeatingPlant`). Die Karte sagt das vor und nach dem Entfernen; sie
+// entfernt die ersetzte nicht selbst, denn ob sie in ihrer Zeit über den Vertrag des Vermieters heizte, weiß nur er.
+export const replacedHeatsAgain = (before: { name: string; endsOn: string | null }): string =>
+  `„${before.name.trim() || 'Die bisherige Heizanlage'}“ heizt danach wieder${before.endsOn ? ` ab dem ${germanDate(dayAfter(before.endsOn))}` : ''}, denn das Entfernen macht den Kesseltausch rückgängig.`
+export const replacedAlsoRemove = (before: { name: string }): string =>
+  `Hat jeder Mieter auch dort seine eigene Heizung mit eigenem Vertrag, entfernen Sie danach auch „${before.name.trim() || 'die bisherige Heizanlage'}“ mit „Entfernen …“; sonst meldet die Abrechnung für die Mieter, die selbst heizen, einen Fehler.`
+// Durchsicht von #720 (S2): Die Anlage ist geändert, ein Mietverhältnis ließ sich danach nicht umstellen.
+export const selfSupplyPartial = (removed: boolean, tenantName: string, reason: string): string =>
+  `${removed ? 'Die Heizanlage ist entfernt' : 'Die Heizanlage ist geändert'}; das Mietverhältnis von ${tenantName} ließ sich nicht umstellen: ${reason.trim().replace(/\.$/, '')}. ` +
+  `Stellen Sie es unter Stammdaten am Mietverhältnis bei „Heizung und Warmwasser“ auf „${HEATING_MODEL_LABELS.selfSupply}“.`
+export const SELF_SUPPLY_REDUCE_ITEMS =
+  'Die Heizpositionen der Anlage ändert Mietfuchs dabei nicht: Wählen Sie danach auf der Seite Kosten an jeder unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ nur die Wohnungen, die an der Anlage bleiben.'
 
 // Der Satz unter der zweiten Frage.
 // „Woran erkenne ich das?“ je Frage der Einrichtung (Entwurf 11.2, Laienprobe B9).

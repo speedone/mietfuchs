@@ -173,7 +173,7 @@
  },
  {
   "code": "co2.self-supply-mixed",
-  "text": "Mieter A (A) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an „Gas“ einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“. Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“."
+  "text": "Mieter A (A) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an „Gas“ einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“. Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen …“ (die Heizpositionen bleiben, nur ohne Anlage), klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“. Hat jede Wohnung ihre eigene Therme oder Heizung mit einem Vertrag des Mieters, klicken Sie stattdessen in der Karte „Heizung“ auf „Ändern“, wählen Sie bei „Womit wird geheizt?“ „Jede Wohnung hat eine eigene Heizung“ und bei „Wer hat den Vertrag für die Heizung in der Wohnung?“ „Der Mieter hat den Vertrag, etwa für die Gastherme“; Mietfuchs entfernt die Heizanlage dann nach einer Rückfrage."
  },
  {
   "code": "co2.service-fuel-mismatch",
@@ -414,6 +414,10 @@
  {
   "code": "heating.flat-rate",
   "text": "Für t-u0 (u0) ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen. Sonst wird der Heizanteil als Vorauszahlung behandelt, über die Sie nach Verbrauch abrechnen müssen (BGH VIII ZR 212/05). Rechnen Sie trotzdem nicht nach Verbrauch ab, darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV). Wohnen Sie selbst im Haus und hat es nur diese beiden Wohnungen, legen Sie Ihre eigene Wohnung unter Stammdaten als selbstgenutzt an; dann gilt die Ausnahme, und die Warnung entfällt."
+ },
+ {
+  "code": "heating.fuel-for-self-supply",
+  "text": "„Gas 2025“ (1.200,00 €) ist eine Brennstoff- oder Energierechnung und wird auch auf Mieter verteilt, die laut Mietverhältnis selbst heizen: Mieter A (a) 500,00 € und Mieter B (b) 700,00 €. Bezieht der Mieter Brennstoff oder Wärme selbst, gehört eine Brennstoffrechnung von Ihnen für seine Wohnung nicht in seine Abrechnung. Bitte prüfen Sie die Position: Ist sie eine alte oder versehentlich erfasste Position, löschen Sie sie auf der Seite Kosten; betrifft sie andere Wohnungen, beschränken Sie die Position unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ auf diese. Heizt der Mieter nicht selbst, ändern Sie unter Stammdaten am Mietverhältnis die Angabe „Mieter heizt selbst“."
  },
  {
   "code": "heating.generation-power-missing",

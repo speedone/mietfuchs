@@ -117,8 +117,10 @@ test('#724 Durchsicht S1: die umgestellte Rechnung des Schornsteinfegers beantwo
   assert.ok(n, 'der Hinweis zum Betriebsstrom fehlt nach dem Umstellen')
   assert.match(n.text, /^Für die Heizanlage ist für 2025 kein Betriebsstrom erfasst \(keine Heizposition mit dem Teil „Betrieb“, die Strom enthalten kann; „Schornsteinfeger 2025“ ist dem Namen nach eine Rechnung des Schornsteinfegers\), und beim Allgemeinstrom „Allgemeinstrom“ steht kein Abzug dafür\. /)
   // Ebenso Abgas- und Immissionsmessung und Kehrgebühren; eine Position, die Strom nennt, und jede andere „Betrieb“ zählen weiter.
-  for (const d of ['Abgasmessung', 'Immissionsmessung 2025', 'Kehrgebühren', 'Kaminkehrer']) assert.equal(power(settle([gas, strom, heating('x', d, 5000, 'operating', 'both')])).length, 1, d)
-  for (const d of ['Betriebsstrom Heizung', 'Wartung', 'Strom für Brenner und Abgasgebläse']) assert.deepEqual(power(settle([gas, strom, heating('x', d, 5000, 'operating', 'both')])), [], d)
+  // Integrationsdurchsicht mit #721: dieselbe Wortliste wie `heatingKindOf` (shared/heatingKind.ts), auch „Kehren“; eine
+  // Reparatur der Abgasanlage oder die Wartung eines Kaminofens ist keine Rechnung des Schornsteinfegers.
+  for (const d of ['Abgasmessung', 'Immissionsmessung 2025', 'Kehrgebühren', 'Kaminkehrer', 'Kehren 2025']) assert.equal(power(settle([gas, strom, heating('x', d, 5000, 'operating', 'both')])).length, 1, d)
+  for (const d of ['Betriebsstrom Heizung', 'Wartung', 'Strom für Brenner und Abgasgebläse', 'Reparatur Abgasanlage', 'Kaminofen Wartung']) assert.deepEqual(power(settle([gas, strom, heating('x', d, 5000, 'operating', 'both')])), [], d)
   // Der Text ohne solche Position bleibt wortgleich.
   assert.match(power(settle([gas, strom, sweep()]))[0]?.text ?? '', /^Für die Heizanlage ist für 2025 kein Betriebsstrom erfasst \(keine Heizposition mit dem Teil „Betrieb“\), und /)
 })

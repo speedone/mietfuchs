@@ -6,8 +6,9 @@
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
 import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { heatingKindOf } from '../../shared/heatingKind.ts'
 import { andList } from '../../shared/wording.ts'
-import { asksOperatingPowerHandling, euro, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED, deductionReported, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
+import { asksOperatingPowerHandling, euro, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_PART_LABEL, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED, deductionReported, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
 // wie er heute dasteht (P-W3, R2-W2). `frozenCents` nur bei `changed`: der eingefrorene Betrag.
@@ -204,15 +205,18 @@ export type MissingPowerFinding = {
   // Durchsicht von #724, S1: Heizpositionen „Betrieb“, die dem Namen nach Rechnungen des Schornsteinfegers sind und
   // deshalb nicht als Betriebsstrom zählen (`chimneySweepLike`); der Text nennt sie.
   sweepItems: string[]
+  // Ob darunter eine Heizposition ohne Teil ist (Durchsicht von #721, M3): Dort zeigt das Kostenformular die Frage nach dem
+  // Betriebsstrom nicht immer, der Text nennt deshalb zuerst den Teil „Betrieb“.
+  hasPartless?: boolean
 }
 
 // Durchsicht von #724, S1: Eine Rechnung des Schornsteinfegers (Kehren, Abgas- oder Immissionsmessung) enthält keinen
 // Strom. Steht sie nach dem Umstellen im Kostenformular mit dem Teil „Betrieb“ bei den Heizkosten, beantwortet sie die
-// Frage nach dem Betriebsstrom nicht; vorher schwieg `heating.operating-power-missing` dann. Erkannt wird sie am Namen
-// (wie die Kostenart „Schornsteinfeger“ in `matchCategory`, dazu Kehren, Abgas und Immission); nennt der Name auch
-// Strom, zählt die Position weiter. Eine Zahl ändert sich nicht, nur ob der Hinweis kommt.
-const SWEEP_WORDS = /schornstein|kamin|(?<![a-zäöüß])kehr|abgas|immission|feuerstätt/i
-export const chimneySweepLike = (description: string): boolean => SWEEP_WORDS.test(description) && !/strom/i.test(description)
+// Frage nach dem Betriebsstrom nicht; vorher schwieg `heating.operating-power-missing` dann. Erkannt wird sie an der
+// Beschreibung mit derselben Liste wie im Kostenformular (`heatingKindOf`, Integrationsdurchsicht mit #721): eine
+// Reparatur der Abgasanlage oder die Wartung eines Kaminofens ist keine. Nennt der Name auch Strom, zählt die Position
+// weiter. Eine Zahl ändert sich nicht, nur ob der Hinweis kommt.
+export const chimneySweepLike = (description: string): boolean => heatingKindOf(description) === 'chimney' && !/strom/i.test(description)
 
 export function missingPowerFindings(input: {
   period: { from: string; to: string }
@@ -270,7 +274,7 @@ export function missingPowerFindings(input: {
       if (handling !== 'deducted' && operatingPart) continue
     }
     const kind = generation ? 'generation' : handling === 'deducted' ? 'deductionMissing' : handling === 'ownMeter' ? 'billMissing' : 'operating'
-    out.push({ kind, plantId: plant.id, plantName: plant.name ?? '', energy: plant.energy, generals: generals.map((g) => ({ id: g.id, description: g.description })), hasOperatingPart: operatingPart, sweepItems: sweepItems.map((c) => c.description) })
+    out.push({ kind, plantId: plant.id, plantName: plant.name ?? '', energy: plant.energy, generals: generals.map((g) => ({ id: g.id, description: g.description })), hasOperatingPart: operatingPart, sweepItems: sweepItems.map((c) => c.description), ...(heat.some(partless) ? { hasPartless: true } : {}) })
   }
   return out
 }
@@ -319,6 +323,9 @@ export function deductionMissingText(f: MissingPowerFinding, label: string): str
   const operating = f.hasOperatingPart
     ? 'Eine Heizposition mit dem Teil „Betrieb“ ersetzt diesen Abzug nicht: Die Kosten der Wartung sind andere als die des Betriebsstroms; § 7 Abs. 2 HeizkostenV nennt beide getrennt als Bestandteile derselben Kostenart. ' +
       'Steht dort schon der Betriebsstrom selbst, legen Sie ihn nicht ein zweites Mal an, auch nicht mit der Karte „Betriebsstrom“: ' +
+      (f.hasPartless
+        ? `Hat die Position noch keinen Teil der Heizkosten, wählen Sie dort unter „Weitere Angaben“ bei „Teil der Heizkosten“ den Teil „${OPERATING_PART_LABEL}“, dann erscheint die Frage „${OPERATING_POWER_INCLUDED_QUESTION}“. `
+        : '') +
       `Wählen Sie an dieser Position im Kostenformular bei „${OPERATING_POWER_INCLUDED_QUESTION}“ die Antwort „${OPERATING_POWER_INCLUDED_YES}“ und erfassen Sie dann beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. ` +
       'Ist sie die Wartung, nehmen Sie die Karte wie unten beschrieben. '
     : ''

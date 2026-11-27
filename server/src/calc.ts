@@ -131,6 +131,7 @@ import {
 import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
 import { CAPTURE_TEXT, captureOf, coversPeriod, estimateFits, hotWaterOf, lineServiceRows, potUnitFor, serviceUnitsMixed, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters, withoutEstimatedSwitches } from './hca.ts'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
+import { heatingKindOf } from '../../shared/heatingKind.ts'
 import { calibrationOverdue, readingsUsedFor } from './calibration.ts'
 import { estimatedReadingsUsed, estimatedSuffix } from './readingEstimate.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotPayment, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
@@ -593,6 +594,8 @@ const noticeKinds = {
   'co2.half-split-missing': { level: 'warning', title: 'Angaben für die Teilung nach § 5a fehlen', rule: 'co2-half-split', terms: ['co2HalfSplit'] },
   // Heizung PR 19 (#97): Mieter, die selbst heizen (Prüfung M3).
   'co2.self-supply-items': { level: 'hint', title: 'Heizkosten bei einem Mieter, der selbst heizt', rule: 'co2-self-supply', terms: ['co2Refund', 'co2Split'] },
+  // Durchsicht von #720 (M1): eine Brennstoff- oder Energierechnung bei Mietern, die selbst heizen. Färbt das Cockpit.
+  'heating.fuel-for-self-supply': { level: 'warning', title: 'Brennstoffrechnung bei Mietern, die selbst heizen', terms: ['co2Refund'] },
   'co2.self-supply-mixed': { level: 'error', title: 'Mieter heizt selbst und hängt an Ihrer Heizanlage', rule: 'co2-self-supply', terms: ['co2Refund', 'heatingSystem'] },
   'co2.refund-late': { level: 'hint', title: 'CO₂-Erstattung nach Ablauf der Frist verlangt', rule: 'co2-self-supply', terms: ['co2Refund'] },
   'co2.refund-not-next': { level: 'hint', title: 'CO₂-Erstattung nicht in der nächsten Abrechnung', rule: 'co2-self-supply', terms: ['co2Refund'] },
@@ -10008,7 +10011,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const bearers = bearersOf(c.id)
     return bearers.length > 0 && bearers.every((st) => selfSupplied.has(st.tenancyId))
   }
-  const selfSupplyItems = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !c.heatingPlantId && selfOnly(c))
+  // Durchsicht von #720 (M1): Brennstoff oder Energie ohne Heizanlage, die Mieter tragen, die selbst heizen. Bezieht der
+  // Mieter Brennstoff oder Wärme selbst, hat der Vermieter für seine Wohnung keine solche Rechnung; meist ist es eine
+  // Position aus der Zeit, als die Wohnung an einer Heizanlage hing (etwa nach dem Entfernen der Anlage über die Karte
+  // „Heizung“, deren Positionen bleiben), oder sie betrifft andere Wohnungen. Erkannt am Teil `fuel`, an der verknüpften
+  // Lieferung oder ohne Teil an der Beschreibung (`heatingKindOf`). Für sie gilt `co2.self-supply-items` nicht, denn dessen
+  // Satz „Darin stecken keine CO₂-Kosten“ stimmt für eine Brennstoffrechnung des Vermieters nicht. Die Zahl ändert sich nicht.
+  const isFuelItem = (c: SnapshotCostItem): boolean =>
+    c.heatingPart === 'fuel' || c.fuelDeliveryId != null || (!c.heatingPart && heatingKindOf(c.description) === 'fuel')
+  const fuelForSelf = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !c.heatingPlantId &&
+    isFuelItem(c) && bearersOf(c.id).some((st) => selfSupplied.has(st.tenancyId)))
+  for (const c of fuelForSelf) {
+    const shares = bearersOf(c.id).filter((st) => selfSupplied.has(st.tenancyId)).map((st) =>
+      `${st.tenantName} (${st.unitName}) ${fmtCents(st.rows.filter((r) => r.costItemId === c.id).reduce((a, r) => a + r.shareCents, 0))}`)
+    warn('heating.fuel-for-self-supply',
+      `„${c.description}“ (${fmtCents(c.amountCents)}) ist eine Brennstoff- oder Energierechnung und wird auch auf Mieter verteilt, die laut Mietverhältnis selbst heizen: ${andList(shares)}. ` +
+        'Bezieht der Mieter Brennstoff oder Wärme selbst, gehört eine Brennstoffrechnung von Ihnen für seine Wohnung nicht in seine Abrechnung. Bitte prüfen Sie die Position: ' +
+        'Ist sie eine alte oder versehentlich erfasste Position, löschen Sie sie auf der Seite Kosten; betrifft sie andere Wohnungen, beschränken Sie die Position unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ auf diese. ' +
+        'Heizt der Mieter nicht selbst, ändern Sie unter Stammdaten am Mietverhältnis die Angabe „Mieter heizt selbst“.',
+      itemSubject(c))
+  }
+  const fuelForSelfIds = new Set(fuelForSelf.map((c) => c.id))
+  const selfSupplyItems = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !c.heatingPlantId && !fuelForSelfIds.has(c.id) && selfOnly(c))
   if (selfSupplyItems.length > 0 && law(co2ApplicableFrom, { period: lawPeriod }, lawLog)) {
     const names = andList(selfSupplyItems.map((c) => `„${c.description}“`))
     const one = selfSupplyItems.length === 1
@@ -10023,21 +10047,34 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Abdeckung V27: Hängt der Mieter an einer zentralen Anlage, bezieht er bei eigenem Vertrag den Brennstoff des ganzen
   // Hauses; dafür legt die Einrichtung keine Anlage an (client/src/heatingForm.ts, CENTRAL_SELF_SUPPLY).
   const viaCentral = new Set<string>()
+  // #720: Die Wohnung des Mieters hängt gar nicht (mehr) an der Anlage, etwa weil sie eine eigene Therme hat und die
+  // Karte „Heizung“ sie herausgenommen hat; er trägt die Position nur, weil sie auf alle Wohnungen verteilt wird.
+  const outside = new Map<string, string>()
+  const unitOfTenancy = new Map(snapshot.tenancies.map((t) => [t.id, t.unitId]))
   for (const c of items) {
     if (c.category !== HEATING_CATEGORY || !c.heatingPlantId) continue
-    const central = plants.find((p) => p.id === c.heatingPlantId)?.supply !== 'perUnit'
+    const plant = plants.find((p) => p.id === c.heatingPlantId)
+    const central = plant?.supply !== 'perUnit'
     for (const st of bearersOf(c.id)) {
       if (!selfSupplied.has(st.tenancyId)) continue
       conflicts.set(st.tenancyId, [...(conflicts.get(st.tenancyId) ?? []), c.description])
       if (central) viaCentral.add(st.tenancyId)
+      const unit = unitById.get(unitOfTenancy.get(st.tenancyId) ?? '')
+      if (plant && unit && !servesUnit(plant, unit)) outside.set(st.tenancyId, plantsHere(plant.id))
     }
   }
   for (const [tenancyId, descriptions] of conflicts) {
     const st = statements.get(tenancyId)
     if (!st) continue
-    const selfWay = viaCentral.has(tenancyId)
+    const served = outside.get(tenancyId)
+    const selfWay = served !== undefined
+      ? `Seine Wohnung hängt nicht an dieser Heizanlage: Wählen Sie an ${new Set(descriptions).size === 1 ? 'der Position' : 'jeder dieser Positionen'} auf der Seite Kosten unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ nur die Wohnungen der Heizanlage${served ? ` (${served})` : ''}.`
+      : viaCentral.has(tenancyId)
       ? 'Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen …“ (die Heizpositionen bleiben, nur ohne Anlage), ' +
-        'klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.'
+        'klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“. ' +
+        // #720: Die Etagenheizung mit Vertrag des Mieters ist eine andere Antwort; die Karte entfernt die Anlage dann selbst.
+        'Hat jede Wohnung ihre eigene Therme oder Heizung mit einem Vertrag des Mieters, klicken Sie stattdessen in der Karte „Heizung“ auf „Ändern“, wählen Sie bei „Womit wird geheizt?“ „Jede Wohnung hat eine eigene Heizung“ ' +
+        'und bei „Wer hat den Vertrag für die Heizung in der Wohnung?“ „Der Mieter hat den Vertrag, etwa für die Gastherme“; Mietfuchs entfernt die Heizanlage dann nach einer Rückfrage.'
       : 'Bezieht er den Brennstoff selbst, nehmen Sie seine Wohnung aus der Heizanlage.'
     warn('co2.self-supply-mixed',
       `${st.tenantName} (${st.unitName}) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an ${andList([...new Set(descriptions)].map((d) => `„${d}“`))} einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. ` +

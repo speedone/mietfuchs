@@ -9,7 +9,7 @@ import { snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { BillingPeriod, HeatingEnergy, PeriodRules } from '../../shared/types.ts'
-import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
+import { OPERATING_PART_LABEL, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
 
 type Source = Parameters<typeof snapshotFor>[0]
 type Plant = NonNullable<Source['heatingPlants']>[number]
@@ -459,4 +459,17 @@ test('S-1: endet die alte Anlage im Zeitraum, wird sie weiter geprüft', () => {
     const items = handling === 'ownMeter' ? [ohneAnlage()] : [ohneAnlage(), hausstrom()]
     assert.deepEqual(planten(settle(haus(items, tausch(handling, '2025-06-30')))), [`${code}@alt`, `${code}@hp1`], String(handling))
   }
+})
+
+// Durchsicht von #721 (M3): Ohne Teil zeigt das Kostenformular die Frage nach dem Betriebsstrom nur bei Strom, Pumpe oder
+// Brenner in der Beschriftung. Der Hinweis nennt deshalb bei einer Position ohne Teil zuerst den Teil, mit dem die Frage
+// immer erscheint, in der Beschriftung des Formulars.
+test('Durchsicht #721: Text „Abzug fehlt“ bei einer Heizposition ohne Teil nennt zuerst den Teil „Betrieb“ wörtlich', () => {
+  const n = one(settle(haus([heizung('alt', '2025-01', 500000, { description: 'Heizkosten' }), hausstrom()], [mitAngabe('deducted')])), AD)
+  assert.ok(n.text.includes(
+    `Steht dort schon der Betriebsstrom selbst, legen Sie ihn nicht ein zweites Mal an, auch nicht mit der Karte „Betriebsstrom“: Hat die Position noch keinen Teil der Heizkosten, wählen Sie dort unter „Weitere Angaben“ bei „Teil der Heizkosten“ den Teil „${OPERATING_PART_LABEL}“, dann erscheint die Frage „${OPERATING_POWER_INCLUDED_QUESTION}“. Wählen Sie an dieser Position im Kostenformular bei „${OPERATING_POWER_INCLUDED_QUESTION}“ die Antwort „${OPERATING_POWER_INCLUDED_YES}“`,
+  ), n.text)
+  // Mit dem Teil „Betrieb“ bleibt der Satz, wie er war.
+  const betrieb = one(settle(haus([brennstoff(), heizung('bs', '2025-01', 9000, { heatingPart: 'operating', description: 'Heizstrom' }), hausstrom()], [mitAngabe('deducted')])), AD)
+  assert.doesNotMatch(betrieb.text, /noch keinen Teil der Heizkosten/)
 })

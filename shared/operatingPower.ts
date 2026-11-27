@@ -162,6 +162,10 @@ export const OPERATING_POWER_BURNERS: readonly HeatingEnergy[] = ['gas', 'oil', 
 export const asksOperatingPowerHandling = (plant: { energy: HeatingEnergy; method: HeatingMethod; source: HeatingSource; supply?: HeatingSupply | null; contracting?: boolean }): boolean =>
   (plant.supply ?? 'central') === 'central' && plant.source === 'building' && plant.method !== 'service' && OPERATING_POWER_BURNERS.includes(billingEnergy(plant))
 
+// Die Beschriftung des Teils „Betrieb“ im Kostenformular (client/src/costForm.ts, `HEATING_PART_OPTIONS`); wörtlich im
+// Hinweis „Abzug des Betriebsstroms fehlt“, wenn eine Heizposition ohne Teil dasteht (Durchsicht von #721, M3).
+export const OPERATING_PART_LABEL = 'Betrieb, Wartung, Strom der Heizung'
+
 // Frage und Beschriftungen, eine Quelle für Oberfläche und Hinweistexte, damit beide wortgleich sind. Entscheidend
 // ist der Stromvertrag mit eigener Rechnung, nicht der Zähler: Ein Zwischenzähler hinter dem Zähler des Hauses
 // gehört zu `deducted` (Rechtsprüfung des Plans, M-1).

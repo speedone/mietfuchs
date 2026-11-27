@@ -192,3 +192,105 @@ test('Teile derselben Quelle im selben Zeitraum melden einander nicht und zähle
   ]
   assert.equal(possibleDuplicates([teil1, schaetzung], calendarContext(2026), vorjahrTeile).length, 1)
 })
+
+// #721: Unter „Heizung und Warmwasser“ stehen regelmäßig mehrere Rechnungen im Jahr (Brennstoff, Wartung,
+// Schornsteinfeger, Betriebsstrom). Die Rückfrage kam bei „Wartung Ölheizung“ 260,00 € gegen „Heizöl 2.300 Liter“
+// 2.185,00 €. Still ist sie nur, wenn nichts die beiden verbindet: anderer Betrag, andere Beschreibung, kein gemeinsamer
+// Rechnungssteller, nicht derselbe Teil der Heizkosten. Jede andere Kostenart fragt wie bisher.
+const HEIZUNG = 'Heizung und Warmwasser'
+test('#721 Kandidaten: Heizung mit anderem Betrag, anderer Beschreibung und ohne gemeinsamen Rechnungssteller ist keine Doppelung', () => {
+  const P = calendarPeriod(2026)
+  const oel = item({ period: P, category: HEIZUNG, description: 'Heizöl 2.300 Liter', amountCents: 218500 })
+  const ask = (q: Partial<Parameters<typeof sameCostCandidates>[1]>) => sameCostCandidates([oel], { period: P, category: HEIZUNG, ...q }).map((i) => i.id)
+  assert.deepEqual(ask({ description: 'Wartung Ölheizung', amountCents: 26000 }), [])
+  // Derselbe Betrag fällt weiter auf, gleich wie die Position heißt: dieselbe Rechnung zweimal.
+  assert.deepEqual(ask({ description: 'Tankfüllung', amountCents: 218500 }), [oel.id])
+  // Ähnliche Beschreibung (die Schätzung aus dem Vorjahr gegen die Rechnung) fällt weiter auf, auch mit anderem Betrag.
+  assert.deepEqual(ask({ description: 'Heizöl', amountCents: 200000 }), [oel.id])
+  // Ohne Betrag gefragt (Belegbuchung, Posteingang) bleibt es bei der bisherigen Regel.
+  assert.deepEqual(ask({ description: 'Wartung Ölheizung' }), [oel.id])
+  assert.deepEqual(ask({ description: 'Wartung Ölheizung', amountCents: 0 }), [oel.id])
+  // Gemeinsamer Rechnungssteller oder derselbe Teil der Heizkosten verbindet.
+  const mitSteller = { ...oel, vendor: 'Brennstoffe Huber GmbH' }
+  assert.deepEqual(sameCostCandidates([mitSteller], { period: P, category: HEIZUNG, description: 'Lieferung HEL', vendor: 'Brennstoffe Huber', amountCents: 150000 }).map((i) => i.id), [oel.id])
+  const brennstoff = { ...oel, heatingPart: 'fuel' as const }
+  assert.deepEqual(sameCostCandidates([brennstoff], { period: P, category: HEIZUNG, description: 'Lieferung HEL', heatingPart: 'fuel', amountCents: 150000 }).map((i) => i.id), [oel.id])
+  assert.deepEqual(sameCostCandidates([brennstoff], { period: P, category: HEIZUNG, description: 'Wartung', heatingPart: 'operating', amountCents: 26000 }), [])
+})
+
+test('#721 Kandidaten: die Ausnahme gilt nur für die Heizung, die Grundsteuer fragt weiter bei anderem Betrag und anderer Beschreibung', () => {
+  const P = calendarPeriod(2026)
+  const schaetzung = item({ period: P, category: 'Grundsteuer', description: 'Grundsteuer 2026', amountCents: 61000 })
+  assert.deepEqual(sameCostCandidates([schaetzung], { period: P, category: 'Grundsteuer', description: 'Abgabenbescheid Stadt Musterstadt Q1–Q4', amountCents: 61240 }).map((i) => i.id), [schaetzung.id])
+})
+
+// #721: Drei Wartungsrechnungen über je 145,00 €, jede einer anderen Wohnung direkt zugeordnet (Thermen je Wohnung), sind
+// drei Rechnungen. Dieselbe Wohnung, oder eine Seite ohne Direktzuordnung, fragt weiter.
+test('#721 Kandidaten: Direktzuordnung an verschiedene Wohnungen ist keine Doppelung, an dieselbe schon', () => {
+  const P = calendarPeriod(2026)
+  const eg = { ...item({ period: P, category: HEIZUNG, description: 'Wartung Therme', amountCents: 14500 }), key: 'direct' as const, directUnitId: 'eg' }
+  const ask = (q: Partial<Parameters<typeof sameCostCandidates>[1]>) => sameCostCandidates([eg], { period: P, category: HEIZUNG, description: 'Wartung Therme', amountCents: 14500, ...q }).map((i) => i.id)
+  assert.deepEqual(ask({ key: 'direct', directUnitId: 'og' }), [])
+  assert.deepEqual(ask({ key: 'direct', directUnitId: 'eg' }), [eg.id])
+  assert.deepEqual(ask({ key: 'area' }), [eg.id])
+  assert.deepEqual(ask({}), [eg.id])
+  // Auch bei jeder anderen Kostenart: Der Bescheid je Wohnung ist je eine Rechnung.
+  const steuer = { ...item({ period: P, category: 'Grundsteuer', amountCents: 30000 }), key: 'direct' as const, directUnitId: 'eg' }
+  assert.deepEqual(sameCostCandidates([steuer], { period: P, category: 'Grundsteuer', amountCents: 30000, key: 'direct', directUnitId: 'og' }), [])
+})
+
+test('#721 Mögliche Doppelung: drei Wartungen an drei Wohnungen bleiben still, zwei an derselben Wohnung melden sich', () => {
+  const P = calendarPeriod(2026)
+  const wartung = (unit: string, over: Partial<DuplicateItem> = {}) => ({ ...item({ period: P, category: HEIZUNG, description: `Wartung Therme ${unit}`, amountCents: 14500, ...over }), key: 'direct' as const, directUnitId: unit })
+  const vorjahr = [item({ period: calendarPeriod(2025), category: HEIZUNG, description: 'Wartung Therme EG', amountCents: 14000 })]
+  const drei = [wartung('EG', { invoiceFile: 'a.pdf' }), wartung('OG'), wartung('DG')]
+  assert.deepEqual(possibleDuplicates(drei, calendarContext(2026), vorjahr), [])
+  const doppelt = [wartung('EG', { invoiceFile: 'a.pdf' }), wartung('EG'), wartung('OG')]
+  assert.deepEqual(possibleDuplicates(doppelt, calendarContext(2026), vorjahr).map((g) => g.map((i) => i.id)), [[doppelt[0]?.id, doppelt[1]?.id]])
+  // Heizöl mit Beleg und Wartung ohne: zwei Rechnungen, kein Hinweis.
+  const oel = item({ period: P, category: HEIZUNG, description: 'Heizöl 2.300 Liter', amountCents: 218500, invoiceFile: 'oel.pdf' })
+  const service = item({ period: P, category: HEIZUNG, description: 'Wartung Ölheizung', amountCents: 26000 })
+  assert.deepEqual(possibleDuplicates([oel, service], calendarContext(2026), []), [])
+})
+
+// Durchsicht von #721 (M2): Die erste Fassung von `distinctHeating` schwieg schon, wenn Betrag und Beschreibung abwichen.
+// Damit blieben Abschläge gegen Jahresrechnung, dieselbe Rechnung mit einem Cent Unterschied oder brutto gegen netto und
+// die Schätzung aus dem Vorjahr gegen die Rechnung still. Still ist es jetzt nur, wenn erkennbar verschiedene Arten von
+// Heizkosten dastehen: zwei bekannte, verschiedene Teile der Heizkosten oder Beschreibungen verschiedener Art.
+test('#721 Kandidaten: zwei Brennstoffrechnungen fragen immer, verschiedene Arten von Heizkosten bleiben still', () => {
+  const P = calendarPeriod(2026)
+  const ask = (vorhanden: Partial<DuplicateItem>, q: Partial<Parameters<typeof sameCostCandidates>[1]>) =>
+    sameCostCandidates([item({ period: P, category: HEIZUNG, ...vorhanden })], { period: P, category: HEIZUNG, ...q }).length > 0
+  // Abschläge gegen Jahresrechnung, kein Rechnungssteller.
+  assert.equal(ask({ description: 'Gas Abschläge', amountCents: 165000 }, { description: 'Jahresrechnung Gas', amountCents: 182000 }), true)
+  // Dieselbe Rechnung, ein Cent Unterschied im Betrag.
+  assert.equal(ask({ description: 'Gasrechnung', amountCents: 180000 }, { description: 'Erdgas Jahresabrechnung', amountCents: 180001 }), true)
+  // Dieselbe Rechnung brutto und netto, verschieden beschrieben.
+  assert.equal(ask({ description: 'Heizöl 2300 l', amountCents: 218500 }, { description: 'Öllieferung', amountCents: 183613 }), true)
+  // Die Schätzung aus dem Vorjahr gegen die Rechnung; der Steller steht nur an der Rechnung.
+  assert.equal(ask({ description: 'Gas', amountCents: 170000 }, { description: 'Erdgas Jahresrechnung', vendor: 'Stadtwerke', amountCents: 182000 }), true)
+  // Unbekannte Art auf einer Seite fragt.
+  assert.equal(ask({ description: 'Abschläge', amountCents: 165000 }, { description: 'Wartung Brenner', amountCents: 26000 }), true)
+  // Der ursprüngliche Anlass von #721 a bleibt still, ebenso zwei verschiedene Arten, die kein Brennstoff sind.
+  assert.equal(ask({ description: 'Heizöl 2.300 Liter', amountCents: 218500 }, { description: 'Wartung Ölheizung', amountCents: 26000 }), false)
+  assert.equal(ask({ description: 'Schornsteinfeger', amountCents: 9800 }, { description: 'Wartung Therme', amountCents: 26000 }), false)
+  assert.equal(ask({ description: 'Messdienst Ablesung', amountCents: 31000 }, { description: 'Erdgas', amountCents: 182000 }), false)
+  // Zwei Positionen derselben Art fragen, auch wenn sie keine Brennstoffe sind.
+  assert.equal(ask({ description: 'Wartung Brenner', amountCents: 26000 }, { description: 'Thermenwartung', amountCents: 19000 }), true)
+  // Bekannte, verschiedene Teile der Heizkosten trennen auch bei unbekannter Beschreibung.
+  assert.equal(ask({ description: 'Rechnung 1', amountCents: 165000, heatingPart: 'fuel' }, { description: 'Rechnung 2', amountCents: 26000, heatingPart: 'operating' }), false)
+  // Drei Thermenwartungen per Direktzuordnung an drei Wohnungen bleiben still.
+  const wartungen = ['eg', 'og', 'dg'].map((u) => ({ ...item({ period: P, category: HEIZUNG, description: 'Wartung Therme', amountCents: 14500 }), key: 'direct' as const, directUnitId: u }))
+  assert.deepEqual(sameCostCandidates(wartungen.slice(0, 2), { period: P, category: HEIZUNG, description: 'Wartung Therme', amountCents: 14500, key: 'direct', directUnitId: 'dg' }), [])
+})
+
+// Nachprüfung von #721 (M-A, M-B): „Kundendienst Gastherme“ galt als Brennstoff und „Wärmepumpenstrom“ als Betriebsstrom;
+// gegen „Wartung Therme“ bzw. „Heizstrom“ (dieselbe Rechnung brutto und netto) blieb die Rückfrage still.
+test('Nachprüfung #721 Kandidaten: Kundendienst gegen Wartung und Heizstrom gegen Wärmepumpenstrom fragen', () => {
+  const P = calendarPeriod(2026)
+  const ask = (vorhanden: Partial<DuplicateItem>, q: Partial<Parameters<typeof sameCostCandidates>[1]>) =>
+    sameCostCandidates([item({ period: P, category: HEIZUNG, ...vorhanden })], { period: P, category: HEIZUNG, ...q }).length > 0
+  assert.equal(ask({ description: 'Kundendienst Gastherme', amountCents: 17850 }, { description: 'Wartung Therme', amountCents: 15000 }), true)
+  assert.equal(ask({ description: 'Heizstrom', amountCents: 210000 }, { description: 'Wärmepumpenstrom', amountCents: 176470 }), true)
+  assert.equal(ask({ description: 'Wartung', amountCents: 26000 }, { description: 'Heizöl', amountCents: 218500 }), false)
+})
