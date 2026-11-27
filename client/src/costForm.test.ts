@@ -23,7 +23,7 @@ import {
   meterTypeOptions,
   suggestedKey,
   waterMeterHint,
-  amountsSumText, AMOUNTS_HELP, smokeDetectorHint,
+  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, smokeDetectorHint,
   externalHint,
   externalMismatch,
   othersOfSourceCents,
@@ -1577,4 +1577,12 @@ describe('#714: Rauchwarnmelder im Kostenformular', () => {
     expect(smokeDetectorHint(form({ category: 'Nicht umlagefähig', description: 'Rauchwarnmelder Miete' }))).toBeNull()
     expect(smokeDetectorHint(form({ category: 'Sonstige Betriebskosten', description: 'Dachrinne' }))).toBeNull()
   })
+})
+
+// #713: der Satz zur Nutzerwechselgebühr steht nur, wo ein Messdienst abrechnet, und warnt vor der zweiten Position.
+test('#713: Satz zur Nutzerwechselgebühr bei Einzelbeträgen nur für Heizung und Wasser', () => {
+  expect(showsAmountsFeeHelp('Heizung und Warmwasser')).toBe(true)
+  expect(showsAmountsFeeHelp('Wasser/Abwasser')).toBe(true)
+  expect(showsAmountsFeeHelp('Gartenpflege')).toBe(false)
+  expect(AMOUNTS_FEE_HELP).toMatch(/ziehen Sie sie von seinem Betrag ab, wenn der Mietvertrag sie ihm nicht auferlegt \(BGH VIII ZR 19\/07\)\. Der Betrag der Position bleibt.*eine eigene Position legen Sie dafür nicht an\./)
 })

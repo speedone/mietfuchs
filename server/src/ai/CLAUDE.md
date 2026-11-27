@@ -92,7 +92,7 @@ Vorschläge**, übernommen wird erst nach Prüfung durch den Menschen. Gilt auch
   Strom. Je Belegart **ein** Ausgang (`toServiceExtraction`, `toFuelExtraction`), Netto-Teilmengen mit
   `vatExplainsGap`. **Gespeichert wird nur der Beleg**, keine Auswertung der Belegbuchung; die Seite
   Heizkosten schreibt erst beim Übernehmen über die bestehenden Routen (`serviceImport.ts`,
-  `fuelImport.ts`). Eine Nutzerzeile wird nur bei genau einem Treffer zugeordnet. Die Abzugszeile
+  `fuelImport.ts`). Eine Nutzerzeile wird nur bei genau einem Treffer zugeordnet. Eine Nutzerwechselgebühr im Betrag eines Mieters (`changeFeeEur`, #713) zeigt die Prüfansicht gesondert und nimmt sie ohne Haken „laut Mietvertrag“ aus seinem Betrag (BGH VIII ZR 19/07); der Betrag der Position bleibt. Die Abzugszeile
   wird als Satz genannt, gewählt wird nichts vor. Vorbelegt wird nur, was die Karte zeigt; was
   gelesen, aber nicht übernommen wird, nennt `fuelChecks` als Satz (sonst ginge ein ungesehener
   CO₂-Betrag in den Rumpf). Kalte Blöcke nur, wenn die Heizperiode dem Objektzeitraum gleicht. Erneut

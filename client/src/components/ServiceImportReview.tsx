@@ -2,14 +2,14 @@
 // Vermieter einen der drei Knöpfe wählt; jeder Knopf schreibt über die bestehende Route. Die Logik steht in
 // serviceImport.ts.
 import { useState } from 'react'
-import { api, errorText } from '../api'
+import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Table from './Table'
 import Term from './Term'
 import YearField from './YearField'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, probeQuestion, type Co2Answer } from '../co2Form'
 import {
-  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, duplicateBlocks, itemBodies, SERVICE_COSTS_NOTE, serviceChecks, targetOptions,
+  answerConflict, blockBlocked, CHANGE_FEE_NOTE, changeFeeOf, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, duplicateBlocks, hasChangeFee, itemBodies, readChangeFee, retarget, SERVICE_COSTS_NOTE, serviceChecks, targetOptions, tenantLineCents,
   type BlockDraft, type ImportContext,
 } from '../serviceImport'
 import { spansTwoYears } from '../../../shared/period.ts'
@@ -134,6 +134,8 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
       <p className="muted">Die KI hat die Abrechnung gelesen. Bitte prüfen Sie jede Zahl am Beleg, bevor Sie etwas übernehmen.</p>
       {/* Messdienste mit Vorauszahlungen drucken je Nutzer Kosten, Vorauszahlung und Saldo; übernommen werden die Kosten. */}
       <p className="muted">{SERVICE_COSTS_NOTE}</p>
+      {/* #713: nur wenn die Abrechnung einem Nutzer eine Nutzerwechselgebühr berechnet */}
+      {hasChangeFee(x, drafts) && <p className="muted"><Term id="changeFee">Nutzerwechselgebühr</Term>: {CHANGE_FEE_NOTE}</p>}
       {checks.length > 0 && <NoticeBox level="warning"><ul>{checks.map((c) => <li key={c}>{c}</li>)}</ul></NoticeBox>}
       {x.blocks.map((b, i) => {
         const d = drafts[i]
@@ -177,17 +179,34 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
             <Table>
               <thead><tr><th>Nutzer laut Abrechnung</th><th className="num">Betrag</th><th>Gehört zu</th></tr></thead>
               <tbody>
-                {b.lines.map((l, k) => (
+                {b.lines.map((l, k) => {
+                  const target = d.targets[k] ?? ''
+                  const agreed = d.feeAgreed[k] === true
+                  const fee = changeFeeOf(l, target)
+                  const charged = tenantLineCents(l, target, agreed)
+                  return (
                   <tr key={`${l.label}-${k}`}>
                     <td>{l.label}{l.unitLabel ? ` · ${l.unitLabel}` : ''}</td>
-                    <td className="num">{l.amountEur === undefined ? 'nicht gelesen' : l.amountEur.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="num">
+                      {l.amountEur === undefined ? 'nicht gelesen' : l.amountEur.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {readChangeFee(l) > 0 && <><br /><small className="muted">darin Nutzerwechselgebühr oder Zwischenablesung {fmtEuro(readChangeFee(l))}</small></>}
+                    </td>
                     <td>
-                      <select aria-label={`Zuordnung „${l.label}“`} value={d.targets[k] ?? ''} onChange={(e) => setDraft(i, { targets: d.targets.map((t, j) => (j === k ? options.find((o) => o.value === e.target.value)?.value ?? '' : t)) })}>
+                      <select aria-label={`Zuordnung „${l.label}“`} value={d.targets[k] ?? ''} onChange={(e) => setDraft(i, retarget(d, k, options.find((o) => o.value === e.target.value)?.value ?? ''))}>
                         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
+                      {fee > 0 && charged !== null && (<>
+                        <label className="checkline">
+                          <input type="checkbox" checked={agreed} onChange={(e) => setDraft(i, { feeAgreed: d.feeAgreed.map((a, j) => (j === k ? e.target.checked : a)) })} />
+                          {/* Der Nutzer steht unsichtbar hinter der Beschriftung, nicht als `aria-label` davor (WCAG 2.5.3). */}
+                          Laut Mietvertrag trägt der Mieter die Gebühr<span className="sr-only"> „{l.label}“</span>
+                        </label>
+                        <br /><small className="muted">Für den Mieter angesetzt: {fmtEuro(charged)}</small>
+                      </>)}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </Table>
           </fieldset>
