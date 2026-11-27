@@ -149,3 +149,33 @@ test('#712: erneutes Aufteilen belegt mit dem Anteil von Heizung und Wasser vor,
     s.stop()
   }
 })
+
+// Nachprüfung: Die Vorbelegung überschreitet nie die Vorauszahlung (Rundung auf volle Euro), und für den Anteil braucht es
+// weiter Heizkosten im Zeitraum; Wasser allein ergäbe nur den Wasseranteil.
+test('#712: Vorbelegung beim Aufteilen: nie über der Vorauszahlung, und nur aus einem Zeitraum mit Heizkosten', async () => {
+  const s = await start()
+  try {
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const t = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2023-01-01', end: null, prepayments: [{ from: '2023-01', monthlyCents: 30050 }] }) })
+    const { plant } = await jsonOf<{ plant: { id: string } }>(await send(s, '/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    assert.equal((await send(s, `/api/heating-plants/${plant.id}`, 'PUT', { secondPrepaymentCoversWater: true })).status, 200)
+    const cost = (period: string, category: string, amountCents: number, extra: object = {}) =>
+      s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period, category, description: category, amountCents, key: 'area', ...extra }) })
+    // 2025: nur Heizung und Wasser, also 100 %; 300,50 € würden auf 301 € gerundet.
+    await cost('2025-01', 'Heizung und Warmwasser', 150000, { heatingPlantId: plant.id })
+    await cost('2025-01', 'Wasser/Abwasser', 60000)
+    const voll = await jsonOf<SeparatePreview>(await send(s, `/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2026-01' }))
+    assert.equal(voll.share?.permille, 1000)
+    assert.deepEqual(voll.steps.find((x) => x.tenancyId === t.id)?.rows, [{ from: '2026-01', totalCents: 30050, heatingCents: 30050 }])
+    // Beginn 2025: Das Vorjahr 2024 hat nur Wasser und Grundsteuer, 2023 Heizung und Grundsteuer. Der Anteil kommt aus 2023.
+    await cost('2024-01', 'Wasser/Abwasser', 60000)
+    await cost('2024-01', 'Grundsteuer', 200000)
+    await cost('2023-01', 'Heizung und Warmwasser', 150000, { heatingPlantId: plant.id })
+    await cost('2023-01', 'Grundsteuer', 200000)
+    const frueher = await jsonOf<SeparatePreview>(await send(s, `/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-01' }))
+    assert.equal(frueher.share?.permille, 429)
+    assert.match(frueher.share?.source ?? '', /Abrechnung 2023/)
+  } finally {
+    s.stop()
+  }
+})

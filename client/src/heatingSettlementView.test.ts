@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   adjustedPrepaymentLabel, cockpitHeatingRows, suggestionWithoutHeating, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, totalLabel,
-  heatingTaxYear, prepaymentSplitHint, recommendedDeadlineText, separateHeatingFor, settlementPaths, settlementTitle,
+  heatingTaxYear, prepaymentSplitHint, recommendedDeadlineText, separateHeatingFor, separateHeatingPlant, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, Statement, Tenancy } from './types'
@@ -181,4 +181,16 @@ describe('#704: Hinweis auf die eigene Heizvorauszahlung am Mietverhältnis', ()
     expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: null, replacesPlantId: 'alt' })], false)).toBeNull()
     expect(prepaymentSplitHint(unit, [plant({ periodStartMonth: 5, replacesPlantId: 'alt' })], false)).toBeNull()
   })
+})
+
+// Nachprüfung von #712: Nach einem Kesseltausch steht die Wahl „Was deckt die zweite Vorauszahlung?“ an der laufenden Anlage,
+// und die Abrechnung liest sie dort. Der Satz am Mietverhältnis nahm die erste Anlage der Liste, also die stillgelegte.
+test('#712: nach einem Kesseltausch gilt am Mietverhältnis die laufende Anlage, in jeder Reihenfolge', () => {
+  const unit = { id: 'u1', noConnection: undefined }
+  const alt = plant({ id: 'alt', periodStartMonth: null, separateSettlement: true, endsOn: '2026-01-31' })
+  const neu = plant({ id: 'neu', periodStartMonth: null, separateSettlement: true, replacesPlantId: 'alt' })
+  expect(separateHeatingPlant(unit, [alt, neu])?.id).toBe('neu')
+  expect(separateHeatingPlant(unit, [neu, alt])?.id).toBe('neu')
+  // Nur eine stillgelegte Anlage: Sie bleibt die Auskunft.
+  expect(separateHeatingPlant(unit, [alt])?.id).toBe('alt')
 })

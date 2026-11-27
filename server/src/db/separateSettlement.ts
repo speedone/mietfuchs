@@ -122,7 +122,8 @@ function lastShare(c: Ctx, x: string, withWater: boolean): { permille: number; s
     const heating = inP.filter((it) => it.category === HEATING_CATEGORY).reduce((a, it) => a + it.amountCents, 0)
     if (withWater) {
       const water = inP.filter((it) => it.category === WATER_CATEGORY).reduce((a, it) => a + it.amountCents, 0)
-      if (total > 0 && heating + water > 0) {
+      // Weiter nur aus einem Zeitraum mit Heizkosten: Wasser allein ergäbe bloß den Wasseranteil (Nachprüfung von #712).
+      if (total > 0 && heating > 0 && heating + water > 0) {
         return {
           permille: Math.round(((heating + water) * 1000) / total), coversWater: true, waterPermille: Math.max(0, Math.round((water * 1000) / total)),
           source: `Abrechnung ${periodLabel(p)}: ${secondPrepaymentLabel(true)} ${euro(heating + water)} von ${euro(total)}`,
@@ -215,7 +216,8 @@ function planOn(c: Ctx, rawMonth: unknown): Plan {
         const kept = rate(heat, from)
         // #712: Wer die Heizung nicht abrechnet, zahlt mit der zweiten Vorauszahlung nur das Wasser, wenn sie es deckt.
         const permille = share === null ? 0 : settlesHeating(t.heatingModel) ? share.permille : share.waterPermille ?? 0
-        return { from, totalCents: total, heatingCents: kept > 0 ? kept : Math.round((total * permille) / 1000 / 100) * 100 }
+        // Auf volle Euro gerundet, aber nie über der Vorauszahlung: Sonst lehnte das Speichern die unveränderte Vorschau ab.
+        return { from, totalCents: total, heatingCents: kept > 0 ? kept : Math.min(total, Math.round((total * permille) / 1000 / 100) * 100) }
       }),
     }
   })

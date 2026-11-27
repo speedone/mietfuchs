@@ -4471,8 +4471,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const coversWater = (t: TenancyWithUnit): boolean => {
     if (scope !== 'all' || !Array.isArray(t.heatingPrepayments) || t.heatingPrepayments.length === 0) return false
     const serving = plants.filter((p) => servesUnit(p, t.unit))
-    const plant = serving.find((p) => (p.endsOn ?? null) === null || (p.endsOn ?? '') >= period.to) ?? serving[0]
-    const chosenAt = serving.find((p) => (p.endsOn ?? null) === null) ?? plant
+    // Am Ende des Zeitraums heizt eine stillgelegte Anlage, die erst danach endet (die mit dem frühesten Ende), sonst die
+    // laufende; so hängt die Wahl nicht an der Reihenfolge der Anlagen (Nachprüfung von #712).
+    const running = serving.find((p) => (p.endsOn ?? null) === null)
+    const endingLater = serving.filter((p) => (p.endsOn ?? null) !== null && (p.endsOn ?? '') >= period.to).sort((a, b) => compareText(a.endsOn ?? '', b.endsOn ?? ''))[0]
+    const plant = endingLater ?? running ?? serving[0]
+    const chosenAt = running ?? plant
     if (!plant || chosenAt?.secondPrepaymentCoversWater !== true) return false
     const way = wayOf(plant)
     const same = periodOfKey(plantRules(way, objectRules), period.key)

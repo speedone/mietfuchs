@@ -132,7 +132,10 @@ export function separateHeatingFor(unit: Pick<Unit, 'id' | 'noConnection'>, plan
 
 // Die Anlage, die die Heizkosten der Wohnung getrennt abrechnet, für den Satz am Mietverhältnis.
 export function separateHeatingPlant(unit: Pick<Unit, 'id' | 'noConnection'>, plants: readonly HeatingPlant[]): HeatingPlant | null {
-  const plant = plants.find((p) => servesUnit(p, unit))
+  // Nach einem Kesseltausch die laufende Anlage: An ihr steht, was die zweite Vorauszahlung deckt, und die Abrechnung
+  // liest es dort (`coversWater` in calc.ts). Die erste der Liste wäre die stillgelegte (Nachprüfung von #712).
+  const serving = plants.filter((p) => servesUnit(p, unit))
+  const plant = serving.find((p) => (p.endsOn ?? null) === null) ?? serving[0]
   if (!plant) return null
   return plant.separateSpans.some((s) => s.until === null) || (!hasOwnRhythm(plant) && plant.separateSettlement === true) ? plant : null
 }

@@ -177,3 +177,16 @@ test('#712: nach einem Kesseltausch gilt die Angabe der laufenden Anlage, in jed
     }
   }
 })
+
+// Nachprüfung: Ob gemeinsam abgerechnet wird, entscheidet die Anlage, die am Ende des Zeitraums heizt, auch wenn die neue
+// Anlage in der Liste vorn steht und einen anderen Weg hat (eigene Heizperiode mit getrennter Abrechnung).
+test('#712: Kesseltausch mit verschiedenen Wegen: die am Zeitraumende heizende Anlage entscheidet, unabhängig von der Reihenfolge', () => {
+  const alt = anlage({ id: 'alt', name: 'Alt', endsOn: '2026-02-28', secondPrepaymentCoversWater: true })
+  const neu = anlage({ id: 'neu', name: 'Neu', replacesPlantId: 'alt', periodStartMonth: 5, separateSpans: [{ from: '2026-05', until: null }], secondPrepaymentCoversWater: true })
+  const part = (plants: ReturnType<typeof anlage>[]) => {
+    const a = st(settle(haus({ heatingPlants: plants, tenancies: [mieter('A', 'u1')], costItems: kosten('alt') }), '2025-01'), 'A')
+    return [a.suggestedMonthlyCents, a.suggestedHeatingMonthlyCents, a.secondPrepaymentCoversWater]
+  }
+  assert.deepEqual(part([alt, neu]), part([neu, alt]))
+  assert.deepEqual(part([neu, alt]), [34200, 17500, true])
+})

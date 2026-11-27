@@ -213,7 +213,7 @@ describe('#712: Was deckt die zweite Vorauszahlung?', () => {
 // Durchsicht M3 und S3 von #712
 test('#712: an den Eingabefeldern der zweiten Vorauszahlung steht, dass sie auch Wasser deckt; nur wo die Angabe wirkt', () => {
   const base = { periodStartMonth: null, periodChanges: [], separateSpans: [], separateSettlement: true, endsOn: null }
-  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true })).toBe('Sie deckt hier auch Wasser und Abwasser (Stammdaten → Heizung, „Was deckt die zweite Vorauszahlung?“).')
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true })).toBe('Die Heizvorauszahlung deckt hier auch Wasser und Abwasser (Stammdaten → Heizung, „Was deckt die zweite Vorauszahlung?“).')
   expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: false })).toBeNull()
   expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true, periodStartMonth: 5 })).toBeNull()
   expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true, separateSpans: [{ from: '2025-05', until: null }] })).toBeNull()

@@ -335,5 +335,5 @@ export function secondPrepaymentState(plant: HeatingPlant): { kind: 'choice' } |
 // sonst trüge ein Vermieter dort nur die Heizung ein, und Ausweis und „bisher“ im Anschreiben stimmten nicht.
 export function coversWaterNote(plant: Pick<HeatingPlant, 'secondPrepaymentCoversWater' | 'periodStartMonth' | 'periodChanges' | 'separateSpans'> | null | undefined): string | null {
   if (!plant || plant.secondPrepaymentCoversWater !== true || plant.periodStartMonth !== null || plant.separateSpans.some((s) => s.until === null)) return null
-  return 'Sie deckt hier auch Wasser und Abwasser (Stammdaten → Heizung, „Was deckt die zweite Vorauszahlung?“).'
+  return 'Die Heizvorauszahlung deckt hier auch Wasser und Abwasser (Stammdaten → Heizung, „Was deckt die zweite Vorauszahlung?“).'
 }
