@@ -10929,6 +10929,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const c = itemById.get(row.costItemId)
     return c !== undefined && c.key === 'heatingSystem' && selfPlans.get(c.heatingPlantId ?? '')?.weights != null
   }
+  // #704: Führt ein Mietverhältnis die Heizvorauszahlung in einer eigenen Staffel und enthält der Vorschlag die Heizung
+  // (Gesamtabrechnung, nichts getrennt abgerechnet), nennt er auch ihren Teil. Heizzeilen sind die Positionen der Kostenart
+  // „Heizung und Warmwasser“ samt der Abzugszeilen ihres Topfs; gerechnet wird mit denselben Faktoren und Tagen.
+  const splitTenancies = new Set(scope === 'all' && result.suggestionWithoutHeating !== true
+    ? partTenancies.filter((t) => Array.isArray(t.heatingPrepayments) && t.heatingPrepayments.length > 0).map((t) => t.id)
+    : [])
+  const heatingRow = (row: SettlementRow): boolean => {
+    if (row.kind === 'co2Relief' || row.kind === 'gmodgRelief') return true
+    return (itemById.get(row.costItemId) ?? syntheticById.get(row.costItemId))?.category === HEATING_CATEGORY
+  }
+  const heatingPart = (st: Statement, yearlyHeating: number): void => {
+    if (!splitTenancies.has(st.tenancyId) || st.suggestedMonthlyCents <= 0) return
+    // Ohne Heizkosten beim Mieter (noch nicht erfasst, Position nicht verteilt, Pauschale oder Inklusivmiete neben einer
+    // Heizstaffel) gibt es keinen Teil: „0 € für Heizung“ wäre geraten und setzte bei der Übernahme die Heizstaffel auf 0
+    // (Durchsicht von Teil 2, K3). Der Brief nennt dann nur den Betrag, und die Übernahme bleibt bei zwei Staffeln gesperrt.
+    // Ebenso ohne Rest für die übrigen Nebenkosten (kalte Kosten noch nicht erfasst, Gutschrift, Rundung): „0 € für die
+    // übrigen Nebenkosten“ setzte bei der Übernahme deren Staffel auf 0 (Integrationsdurchsicht Geld, K3).
+    const part = Math.round(yearlyHeating / 12 / 100) * 100
+    if (part > 0 && part < st.suggestedMonthlyCents) st.suggestedHeatingMonthlyCents = part
+  }
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
     const basisDays = costDays.get(st.tenancyId) ?? st.days
@@ -10966,6 +10986,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? (st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : row.shareCents * factorOf(row)), 0) * diy) / basisDays
         : st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
+      heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || !heatingRow(row) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0))
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
       // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
@@ -10975,6 +10996,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? ((recurringShareCents(st) - later) * diy) / basisDays
         : st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' ? 0 : (row.shareCents * diy) / daysOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
+      heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' || !heatingRow(row) ? 0 : (row.shareCents * diy) / daysOf(row)), 0))
     }
   }
   return result

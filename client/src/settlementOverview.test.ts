@@ -132,3 +132,9 @@ test('Übersicht: der gewählte Betrag gilt schon, der Brief kündigt nichts an'
   expect(alreadyAppliesNote({ adjustment: { mode: 'none', newCents: null, from: null } }, 12000, 12000)).toBeNull()
   expect(alreadyAppliesNote(null, 12000, 12000)).toBeNull()
 })
+
+// #704 Teil 2: Bei aufgeteilter Vorauszahlung nennt die Übersicht auch den Teil für die Heizung.
+test('#704: Übersicht nennt bei zwei Staffeln den Teil für die Heizung', () => {
+  const split = buildLetter({ texts: DEFAULT_LETTER_TEXTS, facts: { ...letterFacts, heatingBeforeCents: 5000 }, adjustment: { mode: 'suggestion', cents: null }, suggestedCents: 10900, from: '2027-01', split: { suggestedHeatingCents: 4500, currentHeatingCents: 5000 } })
+  expect(plainText(announcedAdjustment(split, 13200))).toBe('Brief kündigt an: Vorauszahlung 109,00 € ab Januar 2027, davon Heizung 45,00 €')
+})

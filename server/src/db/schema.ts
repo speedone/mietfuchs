@@ -2463,6 +2463,9 @@ export const tenancyLetterAdjustments = sqliteTable(
     cents: integer('cents'),
     // #317: der Monat (JJJJ-MM), ab dem die neue Vorauszahlung gilt; NULL heißt die Vorgabe (übernächster Monat).
     fromMonth: text('from_month'),
+    // #704: beim eigenen Betrag der Teil für Heizung und Warmwasser (Cent), wenn das Mietverhältnis zwei Staffeln führt;
+    // NULL heißt, das Schreiben nennt keine Teile. Geprüft wird beim Speichern (`parseLetterAdjustment`, shared/letter.ts).
+    heatingCents: integer('heating_cents'),
   },
   (t) => [
     primaryKey({ columns: [t.tenancyId, t.doc] }),

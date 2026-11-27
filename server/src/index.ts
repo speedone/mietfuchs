@@ -30,7 +30,7 @@ import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, requireTenancyStarts, snapshotFor, TenancyStartMissing, type Snapshot } from './snapshot.ts'
 import { onStock } from './stockMemo.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentStepPlan, StatementLetter, Tenancy, Unit, RentEntry, RentIncrease, RentIncreasePlanView, Property } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, MarkPaidPlan, Notice, NotDemandable, PrepaymentEntry, PrepaymentStepPlan, PrepaymentStepSchedule, StatementLetter, Tenancy, Unit, RentEntry, RentIncrease, RentIncreasePlanView, Property } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planRentIncrease, rentIncreaseRequestOf } from './rentIncrease.ts'
 import { buildBasis, decided as decidedRentIncrease, decisionProblem, sentOf as sentRentIncrease, DECISION_TITLES as RENT_INCREASE_DECISION_TITLES, draftOf as draftOfRentIncrease, draftProblem, increaseToken as rentIncreaseToken, isDecision as isRentIncreaseDecision, isOpen as isOpenRentIncrease, planToken, RentIncreaseError, sendProblem, sendRequest, stepOf as rentIncreaseStepOf, stepWritten as rentStepWritten, viewOf as rentIncreaseViewOf, withoutStep, withStep, writesStep } from './rentIncreaseSave.ts'
@@ -40,7 +40,7 @@ import { effectiveLandlord } from '../../shared/landlord.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
 import { sentAtProblem, sentAtProblemText } from '../../shared/sentAt.ts'
-import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { plantRules, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, toExtraction, type AskProgressEvent, type AskStats } from './extract.ts'
 import { isEInvoiceDocument, readEInvoice, viewEInvoice, type EInvoiceResult } from './eInvoice/index.ts'
 import { normalizeAmounts } from './invoiceAmounts.ts'
@@ -1862,7 +1862,9 @@ function frozenStepLetters(stand: object): StepLetter[] {
     if (typeof tenancyId !== 'string' || typeof cents !== 'number' || adjustment === null || typeof adjustment !== 'object') return []
     const from: unknown = Reflect.get(adjustment, 'from')
     const text = (key: string): string => { const v: unknown = Reflect.get(st, key); return typeof v === 'string' ? v : '' }
-    return [{ tenancyId, tenantName: text('tenantName'), unitName: text('unitName'), cents, from: isMonthKey(from) ? from : null }]
+    // #704: der Teil für Heizung und Warmwasser, wenn das Schreiben ihn nennt
+    const heating: unknown = Reflect.get(adjustment, 'heatingCents')
+    return [{ tenancyId, tenantName: text('tenantName'), unitName: text('unitName'), cents, from: isMonthKey(from) ? from : null, heatingCents: typeof heating === 'number' && Number.isInteger(heating) ? heating : null }]
   })
 }
 
@@ -1904,7 +1906,13 @@ async function stepInputOf(db: Database, req: Request): Promise<StepInput> {
     // Integrationsdurchsicht 0.13.0 (#435): ob die Heizung im Monat der neuen Stufe noch getrennt abgerechnet wird.
     const rules = rulesOf((await listProperties(db)).find((p) => p.id === property))
     const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === property)
-    heatingSeparateAt = (month) => plants.some((p) => separateOwner(p, rules, month) !== null)
+    // Je Mietverhältnis nur die Anlagen, die seine Wohnung versorgen (zwei Anlagen, von denen eine getrennt abrechnet).
+    const units = await readUnits(db)
+    const tenancies = await readTenancies(db)
+    heatingSeparateAt = (month, tenancyId) => {
+      const unit = tenancyId === undefined ? undefined : units.find((u) => u.id === tenancies.find((t) => t.id === tenancyId)?.unitId)
+      return plants.filter((p) => unit === undefined || servesUnit(p, unit)).some((p) => separateOwner(p, rules, month) !== null)
+    }
   }
   if (!closed) throw new RouteProblem(409, 'Die Abrechnung ist nicht abgeschlossen. Übernommen wird die Anpassung, die das abgeschlossene Anschreiben ankündigt.')
   const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
@@ -1946,13 +1954,17 @@ const stepSaveRoute = async (req: Request, res: Response) => {
     if (body.token !== token) return { stale: { ...plan, token } }
     const writes = stepWrites(plan, input.tenancies, chosen)
     const all = await readTenancies(db)
+    // Je Mietverhältnis ein Schreibvorgang (#704): Zwei Staffeln desselben Mietverhältnisses nacheinander schrieben die
+    // zweite gegen den Stand von vorher, und die erste ginge dabei verloren.
+    const patches = new Map<string, Partial<Record<PrepaymentStepSchedule, PrepaymentEntry[]>>>()
+    for (const w of writes) patches.set(w.tenancyId, { ...(patches.get(w.tenancyId) ?? {}), [w.schedule]: w.entries })
     await db.transaction(async (tx) => {
-      for (const w of writes) {
-        const current = all.find((t) => t.id === w.tenancyId)
-        if (current) await patchTenancyIn(tx, current, { [w.schedule]: w.entries })
+      for (const [tenancyId, patch] of patches) {
+        const current = all.find((t) => t.id === tenancyId)
+        if (current) await patchTenancyIn(tx, current, patch)
       }
     })
-    return { written: writes.map((w) => w.tenancyId) }
+    return { written: [...patches.keys()] }
   })
   if ('stale' in result) return res.status(409).json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Übernahme noch einmal.', plan: result.stale })
   res.json({ ok: true, written: result.written })

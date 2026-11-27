@@ -142,6 +142,36 @@ test('#704: nicht aufgeteilt bei gleichem Zeitraum: der Satz sagt, was gilt, und
   assert.deepEqual(hints({ heatingPrepayments: [{ from: '2024-01', monthlyCents: 12000 }], prepayments: [{ from: '2024-01', monthlyCents: 18000 }], prepaymentOverrides: { '2025-01': 350000 } }), [])
 })
 
+// #704 Teil 2: Bei aufgeteilter Vorauszahlung in einer Gesamtabrechnung nennt der Vorschlag nach § 560 Abs. 4 BGB auch
+// den Teil für Heizung und Warmwasser, aus denselben Zeilen und derselben Hochrechnung. Die Summe bleibt der bisherige
+// Vorschlag; ohne Heizstaffel und in jeder anderen Abgrenzung gibt es das Feld nicht.
+test('#704: Vorschlag je Teil bei aufgeteilter Vorauszahlung: Heizanteil aus den Heizzeilen, Summe unverändert', () => {
+  const src = (over: Record<string, unknown>, plant: Parameters<typeof anlage>[0] = { periodStartMonth: null, separateSettlement: true }) => haus({
+    heatingPlants: [anlage(plant)],
+    tenancies: [mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 18000 }], over)],
+    costItems: [heizung('gas', '2025-01', 150000), position('grundsteuer', '2025-01', 200000)],
+  })
+  const split = st(settle(src({ heatingPrepayments: [{ from: '2024-01', monthlyCents: 12000 }] }), '2025-01'), 'A')
+  // 3.500 € im Jahr: 291,67 € je Monat, auf volle Euro 292 €; davon Heizung 1.500 € / 12 = 125 €.
+  assert.deepEqual([split.suggestedMonthlyCents, split.suggestedHeatingMonthlyCents], [29200, 12500])
+  const plain = st(settle(src({ prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }), '2025-01'), 'A')
+  assert.deepEqual([plain.suggestedMonthlyCents, plain.suggestedHeatingMonthlyCents], [29200, undefined])
+  // Einzug zur Jahresmitte: beide Teile mit derselben Hochrechnung auf das Jahr.
+  const half = st(settle(haus({
+    heatingPlants: [anlage({ periodStartMonth: null, separateSettlement: true })],
+    tenancies: [mieter('A', '2025-07-01', null, [{ from: '2025-07', monthlyCents: 18000 }], { heatingPrepayments: [{ from: '2025-07', monthlyCents: 12000 }] })],
+    costItems: [heizung('gas', '2025-01', 150000), position('grundsteuer', '2025-01', 200000)],
+  }), '2025-01'), 'A')
+  assert.deepEqual([half.suggestedMonthlyCents, half.suggestedHeatingMonthlyCents], [29200, 12500])
+  // Auszug im Zeitraum: kein Vorschlag, also auch kein Teil.
+  const gone = st(settle(haus({
+    heatingPlants: [anlage({ periodStartMonth: null, separateSettlement: true })],
+    tenancies: [mieter('A', '2024-01-01', '2025-06-30', [{ from: '2024-01', monthlyCents: 18000 }], { heatingPrepayments: [{ from: '2024-01', monthlyCents: 12000 }] })],
+    costItems: [heizung('gas', '2025-01', 150000), position('grundsteuer', '2025-01', 200000)],
+  }), '2025-01'), 'A')
+  assert.deepEqual([gone.suggestedMonthlyCents, gone.suggestedHeatingMonthlyCents ?? 0], [0, 0])
+})
+
 test('R-h: Die Vorauszahlung steigt, die Heizvorauszahlung nicht (Review Focus 4)', () => {
   const s = settle(haus({
     heatingPlants: [anlage({ separateSettlement: true, separateSpans: [{ from: '2025-05', until: null }] })],

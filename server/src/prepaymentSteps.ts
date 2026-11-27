@@ -12,7 +12,8 @@ import { addMonths, monthName } from '../../shared/monthlyInfo.ts'
 import { adjustFromFor, isMonthKey } from '../../shared/letter.ts'
 import { compareText } from './calc.ts'
 
-export type StepLetter = { tenancyId: string, tenantName: string, unitName: string, cents: number, from: string | null }
+// `heatingCents` (#704): der Teil für Heizung und Warmwasser, wenn das Schreiben die Anpassung je Teil nennt.
+export type StepLetter = { tenancyId: string, tenantName: string, unitName: string, cents: number, from: string | null, heatingCents?: number | null }
 export type StepInput = {
   // `heating`: die Heizkostenabrechnung nach Weg d; ihre Anpassung gilt der Heizstaffel.
   scope: 'all' | 'heating'
@@ -27,8 +28,10 @@ export type StepInput = {
   tenancies: readonly Pick<Tenancy, 'id' | 'end' | 'prepayments' | 'heatingPrepayments'>[]
   // Ein bei der Übernahme geänderter Monat je Mietverhältnis.
   months: Readonly<Record<string, string>>
-  // Wird die Heizung im Monat noch getrennt abgerechnet (Weg d)? Ohne Angabe gilt `separate`.
-  heatingSeparateAt?: (month: string) => boolean
+  // Wird die Heizung im Monat noch getrennt abgerechnet (Weg d)? Ohne Angabe gilt `separate`. Mit `tenancyId` für die
+  // Anlage, die die Wohnung dieses Mietverhältnisses versorgt: Ein Objekt kann zwei Anlagen haben, von denen nur eine
+  // getrennt abrechnet (Integrationsdurchsicht Geld zu #704, M1).
+  heatingSeparateAt?: (month: string, tenancyId?: string) => boolean
 }
 
 const de = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
@@ -68,7 +71,7 @@ function monthNotes(from: string, announced: string | null, sentAt: string | nul
 
 export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'token'> {
   const schedule: PrepaymentStepSchedule = i.scope === 'heating' ? 'heatingPrepayments' : 'prepayments'
-  const separateAt = i.heatingSeparateAt ?? (() => i.separate)
+  const separateAt: NonNullable<StepInput['heatingSeparateAt']> = i.heatingSeparateAt ?? (() => i.separate)
   const items = i.letters.map((l): PrepaymentStepItem => {
     // Vor #317 nannte das Schreiben keinen Monat; vorgeschlagen ist dann der übernächste nach Versand bzw. Abschluss.
     const proposed = l.from ?? adjustFromFor(i.sentAt ?? i.closedAt, i.periodTo)
@@ -96,7 +99,19 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
     // Der Vorschlag einer Gesamtabrechnung gilt der ganzen Vorauszahlung. Führt das Mietverhältnis die Heizung in einer
     // eigenen Staffel, ließe sich der neue Betrag nur geraten auf beide verteilen.
     if (schedule === 'prepayments' && !i.separate && rateAtMonth(t.heatingPrepayments ?? [], from) > 0) {
-      return blocked(`Die Vorauszahlung steht in zwei Staffeln (übrige Nebenkosten und Heizung, zusammen ${euro(currentCents + rateAtMonth(t.heatingPrepayments ?? [], from))}); der angekündigte Betrag gilt beiden zusammen. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
+      // #704: Nennt das Schreiben die Teile, gehört jeder in seine Staffel; geraten wird weiter nichts.
+      const part = l.heatingCents ?? null
+      if (part !== null && part >= 0 && part <= l.cents) {
+        const heat = t.heatingPrepayments ?? []
+        const heating = {
+          cents: part, currentCents: rateAtMonth(heat, from), existing: heat.filter((e) => e.from >= from).map((e) => ({ ...e })),
+          earlier: heat.filter((e) => e.from > i.periodTo.slice(0, 7) && e.from < from).map((e) => ({ ...e })),
+        }
+        const rest = l.cents - part
+        const done = currentCents === rest && heating.currentCents === part
+        return { ...base, cents: rest, heating, state: done ? 'taken' : 'pending', overdue: !done && i.today.slice(0, 7) >= from }
+      }
+      return blocked(`Die Vorauszahlung steht in zwei Staffeln (übrige Nebenkosten und Heizung, zusammen ${euro(currentCents + rateAtMonth(t.heatingPrepayments ?? [], from))}); der angekündigte Betrag gilt beiden zusammen, und das Schreiben nennt die Teile nicht. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
     }
     // Integrationsdurchsicht 0.13.0 (#435): Der Vorschlag ist ohne Heizung, Weg d endet aber vor dem Monat, und eine eigene
     // Heizstaffel gibt es dann nicht. Die Staffel der übrigen Nebenkosten trägt ab dort auch die Heizung (P rechnet sie an);
@@ -104,6 +119,19 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
     // entfällt, sagt die Heizkostenabrechnung, nicht dieses Schreiben; geraten wird nicht.
     if (schedule === 'prepayments' && i.separate && !separateAt(from) && rateAtMonth(t.heatingPrepayments ?? [], from) === 0) {
       return blocked(`Der angekündigte Betrag gilt nur den übrigen Nebenkosten (ohne Heizung). Ab ${monthName(from)} werden die Heizkosten nicht mehr getrennt abgerechnet, und eine eigene Heizvorauszahlung steht dann nicht in der Staffel; die Vorauszahlung dort deckt also auch die Heizung. Übernommen, entfiele die Vorauszahlung für die Heizung. Tragen Sie die neue Vorauszahlung bitte in den Stammdaten ein: diesen Betrag zuzüglich der Vorauszahlung für die Heizung, etwa nach der Heizkostenabrechnung.`)
+    }
+    // Integrationsdurchsicht Geld zu #704, M1: Der Vorschlag gilt als „ohne Heizung“, weil eine andere Anlage des Objekts
+    // getrennt abrechnet. Die Heizkosten dieser Wohnung stehen aber in dieser Abrechnung (ihre Anlage rechnet im Monat nicht
+    // getrennt ab), der Betrag enthält sie also, und das Mietverhältnis führt daneben eine Heizvorauszahlung. Der ganze
+    // Betrag in der Staffel der übrigen Nebenkosten setzte die Heizung doppelt an; wie er sich teilt, sagt das Schreiben nicht.
+    // Erkannt daran, dass am Ende des Zeitraums (und im Monat danach) zwar eine Anlage des Objekts getrennt abrechnet, die
+    // dieser Wohnung aber nicht. Endete Weg d der eigenen Anlage erst danach, galt der Vorschlag wirklich ohne ihre Heizung;
+    // das bleibt wie bisher (#435).
+    const ownHeating = rateAtMonth(t.heatingPrepayments ?? [], from)
+    const around = [i.periodTo.slice(0, 7), addMonths(i.periodTo.slice(0, 7), 1)]
+    const otherPlantOnly = around.some((m) => separateAt(m)) && !around.some((m) => separateAt(m, t.id)) && !separateAt(from, t.id)
+    if (schedule === 'prepayments' && i.separate && ownHeating > 0 && otherPlantOnly) {
+      return blocked(`Das Schreiben nennt einen Betrag für die übrigen Nebenkosten, weil eine andere Heizanlage des Objekts getrennt abrechnet. Die Heizkosten dieser Wohnung werden aber nicht getrennt abgerechnet und stecken in dem Betrag, und das Mietverhältnis führt daneben eine Heizvorauszahlung von ${euro(ownHeating)}. Übernommen, zahlte der Mieter die Heizung doppelt. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
     }
     const taken = currentCents === l.cents
     return { ...base, state: taken ? 'taken' : 'pending', overdue: !taken && i.today.slice(0, 7) >= from }
@@ -127,8 +155,17 @@ export function stepWrites(
     .flatMap((it) => {
       const t = tenancies.find((x) => x.id === it.tenancyId)
       if (!t) return []
+      const step = (list: readonly PrepaymentEntry[], cents: number): PrepaymentEntry[] =>
+        [...list.filter((e) => e.from !== it.from), { from: it.from, monthlyCents: cents }].sort((a, b) => compareText(a.from, b.from))
       const list = (it.schedule === 'heatingPrepayments' ? t.heatingPrepayments : t.prepayments) ?? []
-      const entries = [...list.filter((e) => e.from !== it.from), { from: it.from, monthlyCents: it.cents }].sort((a, b) => compareText(a.from, b.from))
-      return [{ tenancyId: it.tenancyId, schedule: it.schedule, entries }]
+      // #704: mit Teilen je Staffel eine Stufe, und nur dort, wo der Betrag noch nicht steht.
+      if (it.heating) {
+        const heat = t.heatingPrepayments ?? []
+        return [
+          ...(rateAtMonth(list, it.from) === it.cents ? [] : [{ tenancyId: it.tenancyId, schedule: it.schedule, entries: step(list, it.cents) }]),
+          ...(rateAtMonth(heat, it.from) === it.heating.cents ? [] : [{ tenancyId: it.tenancyId, schedule: 'heatingPrepayments' as const, entries: step(heat, it.heating.cents) }]),
+        ]
+      }
+      return [{ tenancyId: it.tenancyId, schedule: it.schedule, entries: step(list, it.cents) }]
     })
 }

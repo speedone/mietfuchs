@@ -261,6 +261,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0102_kontoauszug': 'dfdbd48ad8f46c865a7d31a93ad9168d00f9545e70e21cb4a86d661634ef1aec',
   '0103_mieterhoehung_daten': 'b561395ae0ba3a071321a363b23ce9f9f4d032b795a61d084c523907e45dc119',
   '0104_mieterhoehung_bedingungen': '8d36b3e6fbf53e249a387fb0b90f2e6af2d638816d728bf6c839eb6f1a7e41a4',
+  // #704: Heizanteil der eigenen Anpassung (`tenancy_letter_adjustments.heating_cents`). Eingetragen vor dem Merge; wird
+  // vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0105_anpassung_heizanteil': '57b780586b821a38b93ef4cab27cd04f73304bea3f87424aa1afb35c95d532af',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

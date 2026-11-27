@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import type { PrepaymentStepItem, PrepaymentStepPlan } from './types'
-import { overdueText, sentMonthLines, stepQuestion, stepStatus } from './prepaymentSteps'
+import { overdueText, sentMonthLines, stepQuestion, stepRows, stepStatus } from './prepaymentSteps'
 import type { Statement, StatementLetter } from './types'
 
 const plain = (s: string | null): string => (s ?? '').replace(/ /g, ' ')
@@ -46,4 +46,36 @@ test('S1: Versanddatum gegen den Monat des Schreibens', () => {
   expect(plain(sentMonthLines({ t1: letter('2026-05') }, st, '2026-05-04')[0] ?? '')).toMatch(/schon begonnen.*VIII ZR 271\/10.*Wieder öffnen/)
   expect(sentMonthLines({ t1: letter(null) }, st, '2026-05-04')).toEqual([])
   expect(sentMonthLines({ t1: letter('2026-05', null) }, st, '2026-05-04')).toEqual([])
+})
+
+// #704 Teil 2: Nennt das Schreiben zwei Teile, zeigt die Karte beide mit ihrem Stand, und die Rückfrage nennt Stufen beider
+// Staffeln. `cents` ist der Teil der übrigen Nebenkosten, `heating` der für Heizung und Warmwasser.
+test('#704: zwei Staffeln: Stand, Erinnerung und Rückfrage nennen beide Teile', () => {
+  const two = item({ cents: 17000, currentCents: 18000, heating: { cents: 14000, currentCents: 12000, existing: [{ from: '2026-09', monthlyCents: 13000 }], earlier: [{ from: '2026-02', monthlyCents: 12500 }] } })
+  expect(stepRows(two)).toEqual([
+    { label: 'Übrige Vorauszahlung', cents: 17000, currentCents: 18000, existing: [], earlier: [] },
+    { label: 'Heizvorauszahlung', cents: 14000, currentCents: 12000, existing: [{ from: '2026-09', monthlyCents: 13000 }], earlier: [{ from: '2026-02', monthlyCents: 12500 }] },
+  ])
+  expect(stepRows(item())).toEqual([{ label: 'Vorauszahlung', cents: 5000, currentCents: 4000, existing: [], earlier: [] }])
+  expect(plain(stepStatus(two))).toBe('Vorauszahlung 310,00 € ab Mai 2026 (übrige Nebenkosten 170,00 €, Heizung 140,00 €): noch nicht in der Staffel (dort 180,00 € und 120,00 €).')
+  expect(plain(stepStatus({ ...two, state: 'taken' }))).toBe('Vorauszahlung 310,00 € ab Mai 2026 (übrige Nebenkosten 170,00 €, Heizung 140,00 €): steht in beiden Staffeln.')
+  expect(plain(overdueText([{ ...two, overdue: true }]))).toMatch(/Erika \(310,00 € ab Mai 2026\)/)
+  const lines = (stepQuestion(plan([two]), ['t1']) ?? []).map(plain)
+  expect(lines.some((l) => /Erika: Ab Mai 2026 steht in der Staffel der Heizvorauszahlung schon 130,00 € ab September 2026\./.test(l))).toBe(true)
+  expect(lines.some((l) => /Erika: Nach dem abgerechneten Zeitraum steht schon 125,00 € ab Februar 2026/.test(l))).toBe(true)
+})
+
+// Durchsicht von Teil 2, K6: Die Rückfrage nennt bei zwei Staffeln jede beim Namen und fragt nur zu der, die geschrieben wird.
+test('#704: Rückfrage bei zwei Staffeln: jede Staffel beim Namen, und nichts zu einer Staffel, die schon stimmt', () => {
+  const both = item({ cents: 17000, currentCents: 18000, existing: [{ from: '2026-05', monthlyCents: 18500 }], earlier: [{ from: '2026-03', monthlyCents: 18000 }],
+    heating: { cents: 14000, currentCents: 12000, existing: [], earlier: [{ from: '2026-02', monthlyCents: 12500 }] } })
+  const lines = (stepQuestion(plan([both]), ['t1']) ?? []).map(plain)
+  expect(lines.some((l) => l.startsWith('Erika: Ab Mai 2026 steht in der Staffel der übrigen Vorauszahlung schon 185,00 € ab Mai 2026.'))).toBe(true)
+  expect(lines.some((l) => l.startsWith('Erika: Nach dem abgerechneten Zeitraum steht schon 180,00 € ab März 2026 (übrige Vorauszahlung) und 125,00 € ab Februar 2026 (Heizvorauszahlung).'))).toBe(true)
+  // Halb übernommen: Die übrige Vorauszahlung steht schon, gefragt wird nur zur Heizstaffel.
+  const half = item({ cents: 17000, currentCents: 17000, existing: [{ from: '2026-05', monthlyCents: 17000 }],
+    heating: { cents: 14000, currentCents: 12000, existing: [{ from: '2026-09', monthlyCents: 13000 }], earlier: [] } })
+  const halfLines = (stepQuestion(plan([half]), ['t1']) ?? []).map(plain)
+  expect(halfLines).toHaveLength(1)
+  expect(halfLines[0]).toMatch(/in der Staffel der Heizvorauszahlung schon 130,00 € ab September 2026/)
 })

@@ -378,6 +378,55 @@ test('H = P, zusammenführen im Monat einer Heizstufe von 0 €: die Summe je Mo
   })
 })
 
+// Integrationsdurchsicht Geld zu #704, K1: Die Invariante „Abrechnung = Mietkonto“ lief bisher nur über Weg d. Hier über
+// die Schreibwege bei gleichem Zeitraum: aufteilen, erneut aufteilen mit anderem Heizanteil, zusammenführen, mit einem
+// Mieterwechsel mitten im Monat. Nach jedem Schritt und für jedes Jahr gilt je Mietverhältnis: Was die Abrechnung an
+// Vorauszahlung anrechnet, ist das Soll des Mietkontos (übrige und Heizung zusammen), und in jedem vollen Monat bleibt
+// die Summe beider Staffeln, was sie vor dem Schritt war.
+test('H = P, Aufteilen bis Zusammenführen: je Mietverhältnis und Jahr rechnet die Abrechnung an, was das Mietkonto als Soll führt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, { end: '2025-06-17' })
+      await db.update(heatingPlants).set({ periodStartMonth: null }).where(eq(heatingPlants.id, 'hp1'))
+      await createEntity(db, 'tenancies', 't2', { unitId: 'u1', tenantName: 'Nach', persons: 2, start: '2025-06-18', prepayments: [{ from: '2025-06', monthlyCents: 27711 }, { from: '2026-04', monthlyCents: 29900 }] })
+      for (const year of [2024, 2025, 2026]) {
+        await createEntity(db, 'costItems', `hz${year}`, { propertyId: 'objekt-1', period: `${year}-01`, category: HEATING_CATEGORY, description: `Messdienst ${year}`, amountCents: 150000, key: 'area', heatingPlantId: 'hp1' })
+      }
+    })
+    const summen = async (): Promise<Record<string, number[]>> => {
+      const stock = await opened.read(readStock)
+      const out: Record<string, number[]> = {}
+      for (const year of [2024, 2025, 2026]) {
+        const snapshot = snapshotFor(stock, 'objekt-1', calendarYearPeriod(year))
+        const ledger = rentLedger(snapshot)
+        for (const st of computeSettlement(snapshot).statements) {
+          const row = ledger.rows.find((r) => r.tenancyId === st.tenancyId) ?? assert.fail(`Mietkonto ${year}: ${st.tenancyId} fehlt`)
+          assert.equal(st.prepaymentCents, row.prepaymentYearCents + (row.heatingPrepaymentYearCents ?? 0), `${year}, ${st.tenantName}: Abrechnung gegen Mietkonto`)
+          assert.equal(st.heatingPrepaymentCents ?? 0, row.heatingPrepaymentYearCents ?? 0, `${year}, ${st.tenantName}: Heizvorauszahlung`)
+          // Nur volle Monate: Im angebrochenen Ein- oder Auszugsmonat rundet jede Staffel für sich (bis 1 ct, benannt).
+          out[`${year}|${st.tenancyId}`] = row.months.filter((m) => m.share === undefined).map((m) => m.prepaymentCents + (m.heatingPrepaymentCents ?? 0))
+        }
+      }
+      return out
+    }
+    const vorher = await summen()
+    // Der Test prüft etwas: beide Mietverhältnisse in ihren Jahren, mit vollen Monaten.
+    assert.deepEqual(Object.keys(vorher).sort(), ['2024|t1', '2025|t1', '2025|t2', '2026|t2'])
+    assert.ok(Object.values(vorher).every((m) => m.length >= 5))
+    const schritt = async (was: string, body: Record<string, unknown>) => {
+      const r = await apply(opened, body)
+      assert.ok(r && 'plant' in r, `${was}: ${r && 'error' in r ? r.error : 'keine Anlage'}`)
+      assert.deepEqual(await summen(), vorher, `${was}: Summe je vollem Monat`)
+    }
+    await schritt('aufteilen ab 01/2025', { separate: true, month: '2025-01', answers: { steps: { t1: { '2025-01': 12300 }, t2: { '2025-06': 11100, '2026-04': 12000 } } } })
+    await schritt('erneut aufteilen ab 01/2026', { separate: true, month: '2026-01', answers: { steps: { t2: { '2026-01': 9000, '2026-04': 14500 } } } })
+    await schritt('zusammenführen ab 07/2026', { separate: false, month: '2026-07', answers: {} })
+    await schritt('erneut aufteilen ab 03/2026', { separate: true, month: '2026-03', answers: { steps: { t2: { '2026-03': 10000, '2026-04': 10000, '2026-07': 13000 } } } })
+    await schritt('zusammenführen ab 01/2025', { separate: false, month: '2025-01', answers: {} })
+    assert.equal(await tenancyField(opened, 'heatingPrepayments'), undefined)
+  })
+})
+
 test('Eine veraltete Vorschau schreibt nichts', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => haus(db, {}))

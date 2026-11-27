@@ -60,7 +60,7 @@ import { PAPER_PAGE_CSS, asLetterDesigns, canPagePaper, designKey, paperVars, pr
 import { designImage } from '../letterPaper'
 import type { LetterDesigns } from '../../../shared/types.ts'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
-import { PAYMENT_QR_LINES, currentPrepaymentAt, exceedsOnePage } from '../../../shared/letter.ts'
+import { PAYMENT_QR_LINES, currentPrepaymentAt, currentSplitAt, exceedsOnePage } from '../../../shared/letter.ts'
 import PaymentQr from '../components/PaymentQr'
 import { paymentQrOf, paymentQrReason } from '../paymentQr'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
@@ -1596,7 +1596,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             base={mergeLetterTexts(templates.installation, templates.property)}
             own={own?.texts ?? {}}
             values={{ ...letter.values, Datum: fmtDate(data.closed?.sentAt ?? localToday()) }}
-            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: adjustFromFor(localToday(), data.period.to), currentAt: (month) => currentPrepaymentAt(data, st, tenancies.find((t) => t.id === st.tenancyId), month) }}
+            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: adjustFromFor(localToday(), data.period.to), currentAt: (month) => currentPrepaymentAt(data, st, tenancies.find((t) => t.id === st.tenancyId), month), split: { suggestedHeatingCents: st.suggestedHeatingMonthlyCents ?? null, heatingCents: own?.adjustment?.heatingCents ?? null, at: (month) => currentSplitAt(data, st, tenancies.find((t) => t.id === st.tenancyId), month) } }}
             shown={letterParagraphs(letter, st.balanceCents, { date: localToday(), attachments: 0 }).map((p) => p.block)}
             salutations={{
               names: ownSalutation(st.tenancyId) ? [] : [st.tenantName],

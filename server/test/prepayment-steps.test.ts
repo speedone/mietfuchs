@@ -121,3 +121,54 @@ test('Integrationsdurchsicht 0.13.0 (#435): Vorschlag ohne Heizung, Weg d endet 
   assert.equal(still.state, 'pending')
   assert.match(still.notes.join(' '), /keine Heizvorauszahlung/)
 })
+
+// #704 Teil 2: Nennt das Schreiben bei zwei Staffeln die Teile, gehört jeder in seine Staffel; die Übernahme ist dann nicht
+// mehr gesperrt. Ein Eintrag je Mieter: `cents` ist der Teil der übrigen Nebenkosten, `heating` der der Heizung.
+test('#704: zwei Staffeln mit genannten Teilen: beide Stufen werden übernommen, die Summe ist der angekündigte Betrag', () => {
+  const two = { ...tenancy, heatingPrepayments: [{ from: '2025-01', monthlyCents: 6000 }, { from: '2026-09', monthlyCents: 6500 }] }
+  const letters = [{ tenancyId: 't1', tenantName: 'Erika', unitName: 'EG', cents: 11500, from: '2026-05', heatingCents: 7000 }]
+  const plan = planPrepaymentSteps(input({ tenancies: [two], letters }))
+  const it = plan.items[0] ?? assert.fail('kein Eintrag')
+  assert.deepEqual([it.state, it.schedule, it.cents, it.currentCents], ['pending', 'prepayments', 4500, 4000])
+  assert.deepEqual(it.heating, { cents: 7000, currentCents: 6000, existing: [{ from: '2026-09', monthlyCents: 6500 }], earlier: [] })
+  assert.deepEqual(stepWrites(plan, [two], ['t1']), [
+    { tenancyId: 't1', schedule: 'prepayments', entries: [{ from: '2024-01', monthlyCents: 4000 }, { from: '2026-05', monthlyCents: 4500 }] },
+    { tenancyId: 't1', schedule: 'heatingPrepayments', entries: [{ from: '2025-01', monthlyCents: 6000 }, { from: '2026-05', monthlyCents: 7000 }, { from: '2026-09', monthlyCents: 6500 }] },
+  ])
+  // Übernommen ist erst, wenn beide Staffeln den Betrag tragen.
+  const half = { ...two, prepayments: [...tenancy.prepayments, { from: '2026-05', monthlyCents: 4500 }] }
+  assert.equal(planPrepaymentSteps(input({ tenancies: [half], letters })).items[0]?.state, 'pending')
+  const both = { ...half, heatingPrepayments: [{ from: '2025-01', monthlyCents: 6000 }, { from: '2026-05', monthlyCents: 7000 }] }
+  assert.equal(planPrepaymentSteps(input({ tenancies: [both], letters })).items[0]?.state, 'taken')
+  // Nur die Staffel, die sich ändert, wird geschrieben.
+  assert.deepEqual(stepWrites(planPrepaymentSteps(input({ tenancies: [half], letters })), [half], ['t1']).map((w) => w.schedule), ['heatingPrepayments'])
+})
+
+test('#704: Teile im Schreiben, aber nur eine Staffel (inzwischen zusammengeführt): der ganze Betrag in die eine; Teile fehlen bei zwei Staffeln: weiter gesperrt', () => {
+  const letters = [{ tenancyId: 't1', tenantName: 'Erika', unitName: 'EG', cents: 11500, from: '2026-05', heatingCents: 7000 }]
+  const merged = planPrepaymentSteps(input({ letters })).items[0] ?? assert.fail('kein Eintrag')
+  assert.deepEqual([merged.state, merged.cents, merged.heating], ['pending', 11500, undefined])
+  const two = { ...tenancy, heatingPrepayments: [{ from: '2025-01', monthlyCents: 6000 }] }
+  assert.match(one({ tenancies: [two] }).blocked ?? '', /zwei Staffeln/)
+  // Ein Heizanteil über dem Betrag ist kein Teil.
+  assert.match(planPrepaymentSteps(input({ tenancies: [two], letters: [{ ...letters[0] ?? assert.fail('fehlt'), heatingCents: 12000 }] })).items[0]?.blocked ?? '', /zwei Staffeln/)
+  // In der Heizkostenabrechnung und bei getrennt abgerechneter Heizung gibt es keine Teile.
+  assert.equal(planPrepaymentSteps(input({ tenancies: [two], letters, separate: true })).items[0]?.heating, undefined)
+  assert.equal(planPrepaymentSteps(input({ tenancies: [two], letters, scope: 'heating' })).items[0]?.heating, undefined)
+})
+
+// Integrationsdurchsicht Geld, M1: Zwei Heizanlagen im Objekt. Eine rechnet getrennt ab, deshalb gilt der Vorschlag der
+// Abrechnung als „ohne Heizung“; die Wohnung hängt aber an der anderen Anlage, ihre Heizkosten stehen in dieser Abrechnung,
+// und das Mietverhältnis führt eine Heizvorauszahlung. Der ganze Betrag in der Staffel der übrigen Nebenkosten neben der
+// stehen gebliebenen Heizstaffel setzte die Heizung doppelt an (im Beleg 300 € statt 200 € im Monat).
+test('#704: Vorschlag „ohne Heizung“ wegen einer anderen Anlage, die eigene Heizung steht aber in dieser Abrechnung: gesperrt statt doppelt', () => {
+  const two = { ...tenancy, prepayments: [{ from: '2024-01', monthlyCents: 10000 }], heatingPrepayments: [{ from: '2025-01', monthlyCents: 10000 }] }
+  const letters = [{ tenancyId: 't1', tenantName: 'Erika', unitName: 'OG', cents: 20000, from: '2026-05' }]
+  // Die Anlage dieser Wohnung rechnet nicht getrennt ab (die andere schon).
+  const it = planPrepaymentSteps(input({ tenancies: [two], letters, separate: true, heatingSeparateAt: (_month, tenancyId) => tenancyId !== 't1' })).items[0] ?? assert.fail('kein Eintrag')
+  assert.equal(it.state, 'blocked')
+  assert.match(it.blocked ?? '', /andere Heizanlage des Objekts getrennt abrechnet.*nicht getrennt abgerechnet.*Heizvorauszahlung von 100,00 €.*doppelt.*Stammdaten/)
+  assert.deepEqual(stepWrites(planPrepaymentSteps(input({ tenancies: [two], letters, separate: true, heatingSeparateAt: (_m, id) => id !== 't1' })), [two], ['t1']), [])
+  // Rechnet die Anlage der Wohnung selbst getrennt ab, bleibt es wie bisher: der Betrag gilt den übrigen Nebenkosten.
+  assert.equal(planPrepaymentSteps(input({ tenancies: [two], letters, separate: true, heatingSeparateAt: () => true })).items[0]?.state, 'pending')
+})

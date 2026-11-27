@@ -1,0 +1,1 @@
+ALTER TABLE `tenancy_letter_adjustments` ADD `heating_cents` integer;

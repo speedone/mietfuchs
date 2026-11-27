@@ -8,7 +8,7 @@ import type { Problem } from './formProblems'
 import { andList } from '../../shared/wording.ts'
 
 export type LetterLevel = 'installation' | 'property' | 'tenancy'
-export type LetterFieldKey = LetterBlock | 'customCents' | 'adjustFrom'
+export type LetterFieldKey = LetterBlock | 'customCents' | 'customHeatingCents' | 'adjustFrom'
 
 // Je Baustein der eigene Text dieser Ebene oder `null`, wenn die Ebene darüber gilt.
 export type OwnTexts = Record<LetterBlock, string | null>
@@ -19,6 +19,8 @@ export type LetterDraft = {
   // Mieter: Gilt eine eigene Wahl? `false` nach „Anpassung auf Vorgabe zurücksetzen“ (Durchsicht K6).
   adjustOwn: boolean
   customCents: string
+  // #704: beim eigenen Betrag der Teil für Heizung und Warmwasser, wenn das Mietverhältnis zwei Staffeln führt
+  customHeatingCents?: string
   // #317: der Monat, ab dem die Anpassung gilt; `null` heißt die Vorgabe (übernächster Monat nach dem Tag des Briefs).
   adjustFrom?: string | null
   // Teil 2: „Anschreiben mitdrucken“ der Ebene; `null` am Objekt heißt „wie die Vorgabe“.
@@ -43,7 +45,9 @@ export function setText(draft: LetterDraft, base: Record<LetterBlock, string>, b
   return { ...draft, own: { ...draft.own, [block]: text === base[block] ? null : text } }
 }
 
-export function letterProblems(draft: LetterDraft, base: Record<LetterBlock, string>, level: LetterLevel): Problem<LetterFieldKey>[] {
+// `split` (#704): Das Mietverhältnis führt zwei Staffeln, und der neue Betrag gilt beiden; dann gehört zum eigenen Betrag sein
+// Teil für Heizung und Warmwasser, sonst ließe sich die Anpassung später nicht in die Staffeln übernehmen.
+export function letterProblems(draft: LetterDraft, base: Record<LetterBlock, string>, level: LetterLevel, options: { split?: boolean } = {}): Problem<LetterFieldKey>[] {
   const out: Problem<LetterFieldKey>[] = []
   for (const b of LETTER_BLOCK_IDS) {
     const problems = templateProblems(b, shownText(draft, base, b))
@@ -55,7 +59,18 @@ export function letterProblems(draft: LetterDraft, base: Record<LetterBlock, str
   if (level === 'tenancy' && draft.adjust === 'custom' && customCentsOf(draft) === null) {
     out.push({ field: 'customCents', short: 'Betrag fehlt oder ist ungültig', text: 'Neue monatliche Vorauszahlung: Geben Sie einen Betrag in Euro ein, etwa 105,00.' })
   }
+  if (level === 'tenancy' && draft.adjust === 'custom' && options.split === true) {
+    const total = customCentsOf(draft)
+    const heating = customHeatingCentsOf(draft)
+    if (heating === null) out.push({ field: 'customHeatingCents', short: 'Betrag fehlt oder ist ungültig', text: 'Davon für Heizung und Warmwasser: Geben Sie einen Betrag in Euro ein, etwa 45,00; ohne Heizvorauszahlung 0.' })
+    else if (total !== null && heating > total) out.push({ field: 'customHeatingCents', short: 'Liegt über der neuen Vorauszahlung', text: 'Davon für Heizung und Warmwasser: Der Teil liegt über der neuen Vorauszahlung.' })
+  }
   return out
+}
+
+export function customHeatingCentsOf(draft: Pick<LetterDraft, 'customHeatingCents'>): number | null {
+  const cents = parseEuro(draft.customHeatingCents ?? '')
+  return cents === null || cents < 0 ? null : cents
 }
 
 export function customCentsOf(draft: Pick<LetterDraft, 'customCents'>): number | null {
@@ -82,6 +97,15 @@ export function draftNewCents(draft: Pick<LetterDraft, 'adjust' | 'customCents'>
     return cents === null ? '' : fmtEuro(cents)
   }
   return draft.adjust === 'suggestion' && suggestedCents > 0 ? fmtEuro(suggestedCents) : ''
+}
+
+// #704: Ein eigener Text der Anpassung ohne {Aufteilung} nennt die Teile für Heizung und übrige Nebenkosten nicht; welcher
+// Baustein das ist, wie bei `monthlessAdjustTexts`. Gefragt wird nur bei einem Mietverhältnis mit zwei Staffeln.
+export function splitlessAdjustTexts(draft: LetterDraft, base: Record<LetterBlock, string>, level: LetterLevel): LetterBlock[] {
+  const blocks: LetterBlock[] = level === 'tenancy'
+    ? (draft.adjust === 'none' ? [] : [draft.adjust === 'custom' ? 'adjustCustom' : 'adjustSuggestion'])
+    : (['adjustSuggestion', 'adjustCustom'] as const).filter((b) => draft.own[b] !== null)
+  return blocks.filter((b) => { const text = shownText(draft, base, b); return text.trim() !== '' && !text.includes('{Aufteilung}') })
 }
 
 // #317: Ein Monat, der nicht nach dem laufenden liegt, wirkte zurück; die Anpassung gilt nur für die Zukunft.

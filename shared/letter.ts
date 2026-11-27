@@ -62,6 +62,8 @@ export const LETTER_FIELDS: readonly LetterFieldInfo[] = [
   // #317: der Monat, ab dem die neue Vorauszahlung gilt („Januar 2027“).
   { id: 'AnpassungAb', label: 'Monat, ab dem die neue Vorauszahlung gilt', example: 'Januar 2027', only: ['adjustSuggestion', 'adjustCustom'] },
   { id: 'Grundlage', label: 'Wie der Vorschlag entsteht', example: 'ein Zwölftel Ihrer Jahreskosten, gerundet', only: ['adjustSuggestion'] },
+  // #704: nur bei zwei Staffeln (Heizung und übrige Nebenkosten) in einer Gesamtabrechnung, sonst leer.
+  { id: 'Aufteilung', label: 'Satz zu den Teilen für Heizung und übrige Nebenkosten, leer ohne getrennte Vorauszahlung', example: 'Davon entfallen 125,00 € auf Heizung und Warmwasser (bisher 120,00 €) und 167,00 € auf die übrigen Nebenkosten (bisher 180,00 €).', only: ['adjustSuggestion', 'adjustCustom'] },
   { id: 'AnzahlBelege', label: 'Zahl der beigefügten Belege', example: '3 Belege', only: ['attachments'] },
   { id: 'Datum', label: 'Datum des Briefs', example: '15.03.2026' },
 ]
@@ -71,7 +73,9 @@ const isField = (x: string): x is LetterField => (LETTER_FIELD_IDS as readonly s
 // und die Zahl der mitgedruckten Belege. Im eingefrorenen Text bleiben sie Platzhalter.
 export const RENDER_FIELDS: readonly LetterField[] = ['Datum', 'AnzahlBelege']
 export const fieldsFor = (b: LetterBlock): LetterFieldInfo[] => LETTER_FIELDS.filter((f) => !f.only || f.only.includes(b))
-export const SAMPLE_LETTER_VALUES = Object.fromEntries(LETTER_FIELDS.map((f) => [f.id, f.example])) as Record<LetterField, string>
+// `Aufteilung` (#704) ist im Beispiel leer: Der Satz steht nur bei getrennter Vorauszahlung im Brief, und die Vorschau der
+// Vorlage zeigte ihn sonst jedem (Durchsicht von Teil 2, K5).
+export const SAMPLE_LETTER_VALUES = { ...Object.fromEntries(LETTER_FIELDS.map((f) => [f.id, f.example])), Aufteilung: '' } as Record<LetterField, string>
 
 // Die Vorgaben von Mietfuchs, gesiezt. Wo es den Satz schon vor #415 unter der Aufstellung gab, ist
 // er wortgleich übernommen (Zahlung, Frist und Konto, Erstattung, § 560 Abs. 4 BGB, Belegeinsicht);
@@ -85,8 +89,9 @@ export const DEFAULT_LETTER_TEXTS: Record<LetterBlock, string> = {
   credit: 'Es ergibt sich ein Guthaben von {Betrag}. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.',
   backPayment: 'Es ergibt sich eine Nachzahlung von {Betrag}. Bitte überweisen Sie den Betrag innerhalb von {Zahlungsfrist} Tagen nach Zugang dieser Abrechnung {Konto}.',
   balanced: 'Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.',
-  adjustSuggestion: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab {AnpassungAb} auf {VorauszahlungNeu} angepasst ({Grundlage}).',
-  adjustCustom: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab {AnpassungAb} auf {VorauszahlungNeu} angepasst.',
+  // `{Aufteilung}` (#704) ist ohne getrennte Vorauszahlung leer und nimmt dann das Leerzeichen davor mit: Der Satz bleibt wortgleich.
+  adjustSuggestion: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab {AnpassungAb} auf {VorauszahlungNeu} angepasst ({Grundlage}). {Aufteilung}',
+  adjustCustom: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab {AnpassungAb} auf {VorauszahlungNeu} angepasst. {Aufteilung}',
   receipts: 'Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.',
   attachments: 'Kopien der zugrunde liegenden Belege sind als Anlage beigefügt ({AnzahlBelege}).',
   closing: 'Für Rückfragen stehe ich Ihnen gern zur Verfügung.',
@@ -200,6 +205,9 @@ export type LetterFacts = {
   prepaymentKind: string
   prepaymentBeforeCents: number | null
   basis: string
+  // #704: die bisherige Heizvorauszahlung im selben Monat wie `prepaymentBeforeCents`, wenn das Mietverhältnis zwei Staffeln
+  // führt und der neue Betrag beiden gilt; sonst `null` (dann nennt der Brief keine Teile).
+  heatingBeforeCents?: number | null
   // Die Anrede beim Mietverhältnis (Teil 2); leer heißt „Guten Tag {Name},“.
   salutation?: string
 }
@@ -212,7 +220,14 @@ export function salutationOf(tenantName: string, own: string | null | undefined)
   return /[,.!?:;]$/.test(text) ? text : `${text},`
 }
 
-export function letterValues(f: LetterFacts, newCents: number | null, from: string | null = null): Omit<Record<LetterField, string>, 'Datum' | 'AnzahlBelege'> {
+// #704: der Satz zu den beiden Teilen. „bisher“ steht nur, wenn die bisherigen Beträge bekannt sind.
+export function splitSentence(newCents: number, heatingCents: number, beforeCents: number | null, heatingBeforeCents: number | null): string {
+  const was = (cents: number | null): string => (cents === null ? '' : ` (bisher ${euro(cents)})`)
+  const restBefore = beforeCents === null || heatingBeforeCents === null ? null : beforeCents - heatingBeforeCents
+  return `Davon entfallen ${euro(heatingCents)} auf Heizung und Warmwasser${was(heatingBeforeCents)} und ${euro(newCents - heatingCents)} auf die übrigen Nebenkosten${was(restBefore)}.`
+}
+
+export function letterValues(f: LetterFacts, newCents: number | null, from: string | null = null, heatingCents: number | null = null): Omit<Record<LetterField, string>, 'Datum' | 'AnzahlBelege'> {
   const iban = f.iban.trim() === '' ? '' : formatIban(f.iban)
   const landlord = f.landlordName.trim()
   return {
@@ -235,6 +250,7 @@ export function letterValues(f: LetterFacts, newCents: number | null, from: stri
     VorauszahlungNeu: newCents === null ? '' : euro(newCents),
     Grundlage: f.basis,
     AnpassungAb: from === null ? '' : monthName(from),
+    Aufteilung: newCents === null || heatingCents === null ? '' : splitSentence(newCents, heatingCents, f.prepaymentBeforeCents, f.heatingBeforeCents ?? null),
   }
 }
 
@@ -270,15 +286,29 @@ export function buildLetter(i: {
   // stand sonst im Brief eines Mieters, der 160 € schon zahlt. Entschieden wird hier, beim Erzeugen; ein eingefrorenes
   // Anschreiben trägt seinen Betrag im Stand und druckt weiter wie zugestellt.
   currentCents?: number | null
+  // #704: Führt das Mietverhältnis zwei Staffeln und gilt der neue Betrag beiden, der Teil des Vorschlags für Heizung und
+  // Warmwasser (`suggestedHeatingMonthlyCents`) und die Heizvorauszahlung, die unverändert weiter gilt. Ohne `split` nennt
+  // der Brief keine Teile. Beim eigenen Betrag gilt der eigene Teil (`adjustment.heatingCents`), nie ein gerechneter.
+  split?: { suggestedHeatingCents: number | null; currentHeatingCents: number | null } | null
 }): StatementLetter {
   const chosen = adjustedCents(i.adjustment, i.suggestedCents)
-  const newCents = chosen !== null && chosen === (i.currentCents ?? null) ? null : chosen
+  // Teile gibt es nur, wenn der Text der gewählten Anpassung sie nennt ({Aufteilung}): Brief, Übersicht und Übernahme in
+  // die Staffel sagen so dasselbe (Durchsicht von Teil 2, K4).
+  const names = i.texts[i.adjustment.mode === 'custom' ? 'adjustCustom' : 'adjustSuggestion'].includes('{Aufteilung}')
+  const part = !i.split || chosen === null || !names ? null
+    : i.adjustment.mode === 'custom' ? i.adjustment.heatingCents ?? null : i.split.suggestedHeatingCents
+  const heating = part !== null && part >= 0 && chosen !== null && part <= chosen ? part : null
+  // Gleiche Summe und, wo Teile genannt würden, gleiche Teile: nichts anzukündigen. Gleiche Summe mit anderen Teilen ist
+  // eine Anpassung.
+  const same = chosen !== null && chosen === (i.currentCents ?? null) && (heating === null || heating === (i.split?.currentHeatingCents ?? null))
+  const newCents = same ? null : chosen
   const from = newCents === null ? null : i.from
-  const values = letterValues(i.facts, newCents, from)
+  const heatingCents = newCents === null ? null : heating
+  const values = letterValues(i.facts, newCents, from, heatingCents)
   const texts = Object.fromEntries(LETTER_BLOCK_IDS.map((b) => [b, resolveTemplate(i.texts[b], values)])) as Record<LetterBlock, string>
   return {
     texts,
-    adjustment: { mode: i.adjustment.mode, newCents, from },
+    adjustment: { mode: i.adjustment.mode, newCents, from, ...(heatingCents === null ? {} : { heatingCents }) },
     values: { ...values, Datum: '', AnzahlBelege: '' },
   }
 }
@@ -378,7 +408,12 @@ export function parseLetterAdjustment(input: unknown): LetterAdjustment | null |
   const from = isMonthKey(rawFrom) ? rawFrom : null
   if (mode !== 'custom') return { mode, cents: null, from }
   if (typeof cents !== 'number' || !Number.isInteger(cents) || cents < 0) return { error: 'Bitte nennen Sie die neue monatliche Vorauszahlung als Betrag in Euro, nicht negativ.' }
-  return { mode, cents, from }
+  // #704: der Teil für Heizung und Warmwasser, nur beim eigenen Betrag; ohne Angabe nennt das Schreiben keine Teile.
+  const heating: unknown = Reflect.get(input, 'heatingCents')
+  if (heating === undefined || heating === null) return { mode, cents, from }
+  if (typeof heating !== 'number' || !Number.isInteger(heating) || heating < 0) return { error: 'Bitte nennen Sie den Teil für Heizung und Warmwasser als Betrag in Euro, nicht negativ.' }
+  if (heating > cents) return { error: 'Der Teil für Heizung und Warmwasser liegt über der neuen Vorauszahlung.' }
+  return { mode, cents, from, heatingCents: heating }
 }
 
 export type LetterSource = {
@@ -428,6 +463,26 @@ function unchangedPrepayment(st: Pick<Settlement['statements'][number], 'scope' 
   const before = prepaymentBefore(st, t, separate)
   return before !== null && before === prepaymentAt(st, t, separate, month) ? before : null
 }
+// #704: Gilt der neue Betrag zwei Staffeln? Nur in einer Abrechnung, deren Vorschlag die Heizung enthält (keine
+// Heizkostenabrechnung, nichts getrennt abgerechnet), und nur, wenn das Mietverhältnis am Ende des Zeitraums oder im Monat
+// der Anpassung eine Heizvorauszahlung über 0 führt (dieselbe Frage wie `planPrepaymentSteps`: Ist die Staffel bis dahin
+// zusammengeführt, gibt es die Teile nicht mehr; Durchsicht von Teil 2, K2). `beforeCents`: die Heizvorauszahlung am Ende
+// des Zeitraums (das „bisher“), `unchangedCents`: sie, wenn sie im Monat der Anpassung weiter gilt.
+export function splitOf(st: Pick<Settlement['statements'][number], 'scope' | 'periodEnd'>, t: LetterTenancy | undefined, separate: boolean, month: string): { beforeCents: number; unchangedCents: number | null } | null {
+  if (!t || st.scope === 'heating' || separate) return null
+  const heating = t.heatingPrepayments ?? []
+  const beforeCents = rateAtMonth(heating, (t.end && t.end < st.periodEnd ? t.end : st.periodEnd).slice(0, 7))
+  const at = rateAtMonth(heating, month)
+  if (at <= 0) return null
+  return { beforeCents, unchangedCents: beforeCents === at ? beforeCents : null }
+}
+// Für das Seitenfenster (#704): ob der neue Betrag im Monat zwei Staffeln gilt, mit den bisherigen Beträgen für den Satz.
+export const currentSplitAt = (
+  s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>, st: Pick<Settlement['statements'][number], 'scope' | 'periodEnd'>, t: LetterTenancy | undefined, month: string,
+): { beforeCents: number; unchangedCents: number | null; totalBeforeCents: number | null } | null => {
+  const split = splitOf(st, t, separateOf(s), month)
+  return split === null ? null : { ...split, totalBeforeCents: prepaymentBefore(st, t, separateOf(s)) }
+}
 // Für Seitenfenster und Übersicht: die Vorauszahlung, mit der `lettersOf` den neuen Betrag vergleicht.
 export const currentPrepaymentAt = (
   s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>, st: Pick<Settlement['statements'][number], 'scope' | 'periodEnd'>, t: LetterTenancy | undefined, month: string,
@@ -444,12 +499,14 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
     const own = src.own[st.tenancyId]
     const tenancy = src.tenancies.find((t) => t.id === st.tenancyId)
     const from = own?.adjustment?.from ?? adjustFromFor(src.asOf, s.period.to)
+    const split = splitOf(st, tenancy, separate, from)
     const built = buildLetter({
       texts: mergeLetterTexts(src.installation, src.propertyTexts, own?.texts),
       adjustment: own?.adjustment ?? adjustmentDefault(src.settings),
       suggestedCents: st.suggestedMonthlyCents,
       from,
       currentCents: unchangedPrepayment(st, tenancy, separate, from),
+      split: split === null ? null : { suggestedHeatingCents: st.suggestedHeatingMonthlyCents ?? null, currentHeatingCents: split.unchangedCents },
       facts: {
         tenantName: st.tenantName,
         unitName: st.unitName,
@@ -465,6 +522,7 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
         landlordName: landlord.landlordName,
         prepaymentKind: adjustedPrepaymentLabel(st, separate),
         prepaymentBeforeCents: prepaymentBefore(st, tenancy, separate),
+        heatingBeforeCents: split === null ? null : split.beforeCents,
         basis: suggestionBasis(st, s.daysInYear),
         salutation: tenancy?.letterSalutation ?? '',
       },
