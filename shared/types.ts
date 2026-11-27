@@ -1358,6 +1358,11 @@ export type Statement = {
   prepaymentCents: number
   prepaymentOverridden: boolean
   suggestedMonthlyCents: number
+  // #704: der Teil von `suggestedMonthlyCents` für Heizung und Warmwasser, nur in einer Gesamtabrechnung, deren Vorschlag
+  // die Heizung enthält, und nur bei einem Mietverhältnis mit eigener Heizstaffel (aufgeteilte Vorauszahlung). Aus denselben
+  // Zeilen und derselben Hochrechnung wie der Vorschlag, auf volle Euro, nie über ihm; der Rest gilt den übrigen Nebenkosten.
+  // Über 0 oder gar nicht: Ohne Heizkosten beim Mieter fehlt das Feld.
+  suggestedHeatingMonthlyCents?: number
   balanceCents: number
   // Heizung PR 5 (Entwurf 5.7). `scope`: 'heating' in der Heizkostenabrechnung einer Heizperiode
   // (Weg d); fehlt es, ist es die Betriebskostenabrechnung. `heatingOnly`: Das Mietverhältnis hat im
@@ -1526,6 +1531,8 @@ export type LetterField =
   | 'IBAN' | 'Konto' | 'Vermieter' | 'Anrede'
   | 'Vorauszahlungsart' | 'VorauszahlungBisher' | 'VorauszahlungNeu' | 'Grundlage' | 'AnpassungAb'
   | 'AnzahlBelege' | 'Datum'
+  // #704: der Satz zu den beiden Teilen der neuen Vorauszahlung, leer ohne Aufteilung
+  | 'Aufteilung'
 // Eigene Texte einer Ebene: ein fehlender Baustein heißt „die Ebene darüber gilt“, ein leerer Text
 // „bewusst weggelassen“.
 export type LetterTexts = Partial<Record<LetterBlock, string>>
@@ -1534,7 +1541,9 @@ export type LetterTexts = Partial<Record<LetterBlock, string>>
 export type LetterAdjustmentMode = 'none' | 'suggestion' | 'custom'
 // `from` (#317): der Monat ('JJJJ-MM'), ab dem die neue Vorauszahlung gilt; `null` oder fehlend heißt die Vorgabe
 // von Mietfuchs, der übernächste Monat nach dem Tag des Briefs.
-export type LetterAdjustment = { mode: LetterAdjustmentMode; cents: number | null; from?: string | null }
+// `heatingCents` (#704): beim eigenen Betrag der Teil für Heizung und Warmwasser, wenn das Mietverhältnis zwei Staffeln
+// führt; fehlt er, nennt das Schreiben keine Teile.
+export type LetterAdjustment = { mode: LetterAdjustmentMode; cents: number | null; from?: string | null; heatingCents?: number | null }
 // Das Anschreiben eines Mietverhältnisses, wie es gedruckt wird. `texts`: jeder Baustein mit
 // eingesetzten Werten; nur `{Datum}` und `{AnzahlBelege}` stehen noch darin, denn sie gehören zum
 // Druck (Versanddatum, mitgedruckte Belege). `adjustment`: die gewählte Anpassung mit dem neuen Betrag
@@ -1544,7 +1553,9 @@ export type StatementLetter = {
   texts: Record<LetterBlock, string>
   // `from` (#317): der Monat, den das Schreiben nennt ('JJJJ-MM', `null` ohne Anpassung). Fehlt er, ist das Anschreiben
   // vor #317 eingefroren und nannte „ab dem übernächsten Monat“.
-  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null }
+  // `heatingCents` (#704): der Teil von `newCents` für Heizung und Warmwasser, wenn das Schreiben die Anpassung je Teil
+  // nennt (zwei Staffeln in einer Gesamtabrechnung); sonst `null` oder fehlend.
+  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null; heatingCents?: number | null }
   values: Record<LetterField, string>
   // Absender, Rücksendeangabe und Anschrift, wie gedruckt; mit dem Abschluss eingefroren (Durchsicht S2).
   // Optional, weil Abschlüsse aus der ersten Fassung von #415 sie nicht kennen.
@@ -1586,6 +1597,10 @@ export type PrepaymentStepItem = {
   earlier: PrepaymentEntry[]
   notes: string[]
   overdue: boolean
+  // #704: Nennt das Schreiben einer Gesamtabrechnung die Teile für zwei Staffeln, ist `cents` der Teil der übrigen
+  // Nebenkosten (Staffel `prepayments`) und `heating` der für Heizung und Warmwasser, mit Stand und Stufen der Heizstaffel.
+  // Übernommen (`taken`) ist erst, wenn beide Staffeln ihren Betrag tragen.
+  heating?: { cents: number; currentCents: number; existing: PrepaymentEntry[]; earlier: PrepaymentEntry[] }
 }
 // `errors`: Titel der Fehler der eingefrorenen Abrechnung (`blockingErrors`). `token`: Marke des Plans; übernommen
 // wird nur mit der Marke des Plans, den der Vermieter gesehen hat.

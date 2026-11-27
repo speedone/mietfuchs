@@ -82,7 +82,9 @@ export function announcedAdjustment(letter: Pick<StatementLetter, 'adjustment' |
   const cents = letter?.adjustment.newCents ?? null
   if (!letter || cents === null || !chooseLetterBlocks(letter, balanceCents, 0).some((b) => b === 'adjustSuggestion' || b === 'adjustCustom')) return null
   const from = letter.adjustment.from
-  return `Brief kündigt an: Vorauszahlung ${fmtEuro(cents)}${from ? ` ab ${monthName(from)}` : ''}`
+  // #704: bei zwei Staffeln mit dem Teil für Heizung und Warmwasser
+  const heating = letter.adjustment.heatingCents ?? null
+  return `Brief kündigt an: Vorauszahlung ${fmtEuro(cents)}${from ? ` ab ${monthName(from)}` : ''}${heating === null ? '' : `, davon Heizung ${fmtEuro(heating)}`}`
 }
 // Durchsicht (S1): Der gewählte Betrag (Vorschlag oder eigener, `chosenCents`) gilt schon (`currentPrepaymentAt`), der Brief
 // lässt den Satz deshalb weg. Die Übersicht sagt es, statt gar nichts zu zeigen.

@@ -61,7 +61,9 @@ export type ExportStatement = {
   heatingOnly: boolean
   recommendedDeadline: string | null
   // Die Anpassung der Vorauszahlung laut Anschreiben (keine, Vorschlag, eigener Betrag); null ohne Anschreiben.
-  adjustment: { mode: LetterAdjustmentMode; newCents: number | null } | null
+  // Wie im Anschreiben: `from` der Monat (#317), `heatingCents` der Teil für Heizung und Warmwasser, nur wenn das Schreiben
+  // die Anpassung je Teil nennt (#704). Beide kommen nur hinzu, wo es sie gibt; die Form bleibt Version 1.
+  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null; heatingCents?: number | null } | null
 }
 
 export type SettlementExport = {

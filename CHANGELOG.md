@@ -8,6 +8,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
+  für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach
+  § 560 Abs. 4 BGB auch die beiden Teile mit ihrem bisherigen Betrag. Der Vorschlag teilt sich nach den Kosten dieser
+  Abrechnung (die Summe ist der bisherige Vorschlag); bei einem eigenen Betrag geben Sie den Teil für Heizung und
+  Warmwasser dazu an. „In die Staffel übernehmen“ trägt dann beide Stufen ein, statt wie bisher bei zwei Staffeln zu
+  sperren. Eigene Texte zur Anpassung nennen die Teile mit dem neuen Platzhalter {Aufteilung}; ohne getrennte
+  Vorauszahlung bleibt jeder Satz, wie er war ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Erste Schritte: Die neue Anleitung „Die erste Abrechnung von Anfang bis Ende“ führt von den Einstellungen über
   Objekt, Wohnungen, Mietverhältnisse, Zähler und Kosten bis zu Abschluss, Druck, Versanddatum und Backup; das leere
   Cockpit verlinkt sie, und „Hilfe & Begriffe“ schlägt sie im leeren Bestand vor. Die Checkliste des Cockpits beginnt

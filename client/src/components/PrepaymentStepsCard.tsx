@@ -7,7 +7,7 @@ import { api, ApiError, errorText, fmtEuro } from '../api'
 import { withProperty } from '../property'
 import { monthLabel } from '../monthText'
 import { localToday } from '../periodForm'
-import { overdueItems, overdueText, pendingItems, scheduleLabel, stepQuestion, stepStatus } from '../prepaymentSteps'
+import { overdueItems, overdueText, pendingItems, stepQuestion, stepRows, stepStatus } from '../prepaymentSteps'
 import Card from './Card'
 import Drawer from './Drawer'
 import MonthField from './MonthField'
@@ -134,7 +134,8 @@ export default function PrepaymentStepsCard({ path, propertyId, onSaved }: Props
           {shown.map((it) => (
             <div key={it.tenancyId} className="letter-edit">
               <h3 className="m-0 text-l">{it.tenantName} ({it.unitName})</h3>
-              <p className="m-0">{`${scheduleLabel(it)}: ${fmtEuro(it.cents)} statt ${fmtEuro(it.currentCents)}`}</p>
+              {/* #704: je Staffel eine Zeile, bei zwei Staffeln beide Teile */}
+              {stepRows(it).map((r) => <p key={r.label} className="m-0">{`${r.label}: ${fmtEuro(r.cents)} statt ${fmtEuro(r.currentCents)}`}</p>)}
               {it.state === 'blocked' && <NoticeBox level="warning" action={it.blocked} />}
               {it.state === 'taken' && <p className="muted m-0">Steht schon in der Staffel.</p>}
               {(it.state === 'pending' || it.fixMonth) && (
@@ -148,9 +149,9 @@ export default function PrepaymentStepsCard({ path, propertyId, onSaved }: Props
                   {...errors.field(it.tenancyId)}
                 />
               )}
-              {it.state === 'pending' && it.existing.length > 0 && (
-                <p className="muted m-0">{`Schon in der Staffel ab ${monthLabel(it.from)}: ${it.existing.map((e) => `${fmtEuro(e.monthlyCents)} ab ${monthLabel(e.from)}`).join(', ')}.`}</p>
-              )}
+              {it.state === 'pending' && stepRows(it).filter((r) => r.existing.length > 0).map((r) => (
+                <p key={r.label} className="muted m-0">{`Schon in der Staffel${it.heating ? ` „${r.label}“` : ''} ab ${monthLabel(it.from)}: ${r.existing.map((e) => `${fmtEuro(e.monthlyCents)} ab ${monthLabel(e.from)}`).join(', ')}.`}</p>
+              ))}
               {it.state === 'pending' && it.notes.map((n, i) => <NoticeBox key={i} level="hint" action={n} />)}
             </div>
           ))}

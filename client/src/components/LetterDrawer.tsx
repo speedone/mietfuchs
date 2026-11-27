@@ -4,7 +4,7 @@
 // abweichend je Objekt und einmalig je Mieter (Abrechnung).
 import { useEffect, useRef, useState } from 'react'
 import type { LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts } from '../types'
-import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS, sameAmountHint } from '../../../shared/letter.ts'
+import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS, sameAmountHint, splitSentence } from '../../../shared/letter.ts'
 import { EPC_PURPOSE_MAX, epcText } from '../../../shared/epcQr.ts'
 import MonthField from './MonthField'
 import { monthLabel } from '../monthText'
@@ -16,14 +16,14 @@ import { useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import { useSaving } from '../useSaving'
 import {
-  adjustFromHint, customCentsOf, monthlessAdjustTexts, draftNewCents, insertField, letterProblems, ownOf, previewOf, salutationHint, setText, shownText, textChanges,
+  adjustFromHint, customCentsOf, customHeatingCentsOf, monthlessAdjustTexts, splitlessAdjustTexts, draftNewCents, insertField, letterProblems, ownOf, previewOf, salutationHint, setText, shownText, textChanges,
   type LetterDraft, type LetterFieldKey, type LetterLevel,
 } from '../letterForm'
 
 export type LetterSave = {
   texts: Partial<Record<LetterBlock, string | null>>
   // nur, wenn sie sich geändert hat; `null` nimmt die eigene Wahl des Mieters weg (Durchsicht K6)
-  adjust?: { mode: LetterAdjustmentMode, cents: number | null, from?: string | null } | null
+  adjust?: { mode: LetterAdjustmentMode, cents: number | null, from?: string | null, heatingCents?: number } | null
   // Teil 2: „Anschreiben mitdrucken“, nur wenn es sich geändert hat; am Objekt heißt `null` „wie die Vorgabe“.
   printLetter?: boolean | null
 }
@@ -40,7 +40,7 @@ type Props = {
   // `own`: Der Mieter hat eine eigene Wahl gespeichert; `defaultMode`: die Vorgabe, die sonst gilt.
   // `from`: der eigene Monat des Mieters (#317, `null` = Vorgabe), `defaultFrom`: der Monat der Vorgabe.
   // `currentAt`: die Vorauszahlung, die in einem Monat laut Staffel ohnehin gilt; bei gleichem Betrag kündigt der Brief nichts an.
-  adjust?: { mode: LetterAdjustmentMode, cents: number | null, suggestedCents?: number, own?: boolean, defaultMode?: LetterAdjustmentMode, from?: string | null, defaultFrom?: string, currentAt?: (month: string) => number | null }
+  adjust?: { mode: LetterAdjustmentMode, cents: number | null, suggestedCents?: number, own?: boolean, defaultMode?: LetterAdjustmentMode, from?: string | null, defaultFrom?: string, currentAt?: (month: string) => number | null, split?: SplitInfo }
   // Mieter: welche Bausteine sein Anschreiben zeigt; die übrigen tragen „erscheint hier nicht“
   shown?: readonly LetterBlock[]
   // Teil 2: „Anschreiben mitdrucken“. Installation: ja oder nein (`base` fehlt); Objekt: wie die Vorgabe (`null`,
@@ -53,12 +53,21 @@ type Props = {
   onSave: (save: LetterSave) => Promise<void>
 }
 
+// #704: Führt das Mietverhältnis zwei Staffeln (Heizung und übrige Nebenkosten) und gilt der neue Betrag beiden? `at` sagt es
+// je Monat der Anpassung, mit den bisherigen Beträgen für den Satz; `suggestedHeatingCents` ist der Teil des Vorschlags,
+// `heatingCents` der gespeicherte eigene Teil.
+export type SplitInfo = {
+  suggestedHeatingCents: number | null
+  heatingCents: number | null
+  at: (month: string) => { beforeCents: number; unchangedCents: number | null; totalBeforeCents: number | null } | null
+}
+
 const centsText = (cents: number | null): string => (cents === null ? '' : (cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }))
 
 const PRINT_CHOICES = [{ id: 'inherit', value: null }, { id: 'yes', value: true }, { id: 'no', value: false }] as const
 
 export default function LetterDrawer({ open, level, title, intro, base, own, values, adjust, shown, printLetter, salutations, onClose, onSave }: Props) {
-  const initial = (): LetterDraft => ({ own: ownOf(own), adjust: adjust?.mode ?? 'none', adjustOwn: adjust?.own ?? true, customCents: centsText(adjust?.cents ?? null), adjustFrom: adjust?.from ?? null, printLetter: printLetter?.value ?? null })
+  const initial = (): LetterDraft => ({ own: ownOf(own), adjust: adjust?.mode ?? 'none', adjustOwn: adjust?.own ?? true, customCents: centsText(adjust?.cents ?? null), customHeatingCents: centsText(adjust?.split?.heatingCents ?? null), adjustFrom: adjust?.from ?? null, printLetter: printLetter?.value ?? null })
   const [draft, setDraft] = useState<LetterDraft>(initial)
   // Beim Öffnen der gespeicherte Stand; ein offenes Fenster behält seine Eingaben.
   useEffect(() => { if (open) setDraft(initial()) }, [open])
@@ -74,9 +83,18 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
   const shownFrom = draft.adjustFrom ?? adjust?.defaultFrom ?? ''
   const fromHint = level === 'tenancy' && draft.adjust !== 'none' ? adjustFromHint(shownFrom, localToday()) : null
   const draftCents = draft.adjust === 'custom' ? customCents : draft.adjust === 'suggestion' && suggested > 0 ? suggested : null
-  const sameHint = level === 'tenancy' && adjust?.currentAt && /^\d{4}-\d{2}$/.test(shownFrom) ? sameAmountHint(draftCents, adjust.currentAt(shownFrom), shownFrom) : null
   const lacksMonth = monthlessAdjustTexts(draft, base, level).length > 0
-  const previewValues = level === 'tenancy' ? { ...values, VorauszahlungNeu: draftNewCents(draft, suggested), AnpassungAb: /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : '' } : values
+  // #704: zwei Staffeln im Monat der Anpassung; dann gehört zum eigenen Betrag sein Teil für Heizung und Warmwasser.
+  const splitNow = level === 'tenancy' && adjust?.split && draft.adjust !== 'none' ? adjust.split.at(/^\d{4}-\d{2}$/.test(shownFrom) ? shownFrom : adjust.defaultFrom ?? '') : null
+  const heatingPart = !splitNow ? null : draft.adjust === 'custom' ? customHeatingCentsOf(draft) : adjust?.split?.suggestedHeatingCents ?? null
+  const splitText = splitNow && draftCents !== null && heatingPart !== null && heatingPart <= draftCents ? splitSentence(draftCents, heatingPart, splitNow.totalBeforeCents, splitNow.beforeCents) : ''
+  const lacksSplit = !!splitNow && splitlessAdjustTexts(draft, base, level).length > 0
+  // Gleiche Summe mit anderen Teilen ist eine Anpassung (wie `buildLetter`); nennt der Text die Teile nicht, zählt nur die Summe.
+  const partsDiffer = !!splitNow && !lacksSplit && heatingPart !== null && heatingPart !== splitNow.unchangedCents
+  const sameHint = level === 'tenancy' && adjust?.currentAt && /^\d{4}-\d{2}$/.test(shownFrom) && !partsDiffer ? sameAmountHint(draftCents, adjust.currentAt(shownFrom), shownFrom) : null
+  const previewValues = level === 'tenancy' ? { ...values, VorauszahlungNeu: draftNewCents(draft, suggested), AnpassungAb: /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : '', Aufteilung: splitText }
+    // Werte einer vor #704 abgeschlossenen Abrechnung kennen „Aufteilung“ nicht; der Platzhalter stünde sonst nackt in der Vorschau.
+    : { ...values, Aufteilung: values.Aufteilung ?? '' }
   // #624: Der Verwendungszweck ist kein Absatz des Briefs, er steht nur im QR-Code.
   const longLetter = exceedsOnePage(LETTER_BLOCKS
     .filter((b) => b.id !== 'paymentPurpose')
@@ -85,18 +103,19 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
 
   function save() {
     void run(async () => {
-      const problems = letterProblems(draft, base, level)
+      const problems = letterProblems(draft, base, level, { split: !!splitNow })
       if (problems.length > 0) {
         errors.report(problems)
         return
       }
       const cents = draft.adjust === 'custom' ? customCents : null
+      const heatingCents = draft.adjust === 'custom' && splitNow ? customHeatingCentsOf(draft) : null
       const savedOwn = adjust?.own ?? true
       const from = draft.adjust === 'none' ? null : draft.adjustFrom ?? null
       const adjustChanged = adjust !== undefined && (draft.adjustOwn
-        ? !savedOwn || draft.adjust !== adjust.mode || (draft.adjust === 'custom' && cents !== adjust.cents) || from !== (adjust.from ?? null)
+        ? !savedOwn || draft.adjust !== adjust.mode || (draft.adjust === 'custom' && (cents !== adjust.cents || heatingCents !== (adjust.split?.heatingCents ?? null))) || from !== (adjust.from ?? null)
         : savedOwn)
-      const adjustSave = draft.adjustOwn ? { mode: draft.adjust, cents, from } : null
+      const adjustSave = draft.adjustOwn ? { mode: draft.adjust, cents, from, ...(heatingCents === null ? {} : { heatingCents }) } : null
       const printChanged = printLetter !== undefined && (draft.printLetter ?? null) !== printLetter.value
       try {
         await onSave({ texts: textChanges(ownOf(own), draft.own), ...(adjustChanged ? { adjust: adjustSave } : {}), ...(printChanged ? { printLetter: draft.printLetter ?? null } : {}) })
@@ -170,6 +189,14 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
             <input inputMode="decimal" value={draft.customCents} onChange={(e) => setDraft((d) => ({ ...d, customCents: e.target.value }))} />
           </Field>
         )}
+        {level === 'tenancy' && draft.adjust === 'custom' && splitNow && (
+          <Field label="Davon für Heizung und Warmwasser (€)" width="s" required hint={`Der Rest gilt den übrigen Nebenkosten. Bisher ${fmtEuro(splitNow.beforeCents)} für Heizung und Warmwasser.`} {...errors.field('customHeatingCents')}>
+            <input inputMode="decimal" value={draft.customHeatingCents ?? ''} onChange={(e) => setDraft((d) => ({ ...d, customHeatingCents: e.target.value }))} />
+          </Field>
+        )}
+        {level === 'tenancy' && draft.adjust === 'suggestion' && splitNow && heatingPart !== null && draftCents !== null && (
+          <p className="muted">{`Vom Vorschlag entfallen ${fmtEuro(heatingPart)} auf Heizung und Warmwasser und ${fmtEuro(draftCents - heatingPart)} auf die übrigen Nebenkosten, nach den Kosten dieser Abrechnung.`}</p>
+        )}
         {hint && <NoticeBox level="hint" action={hint} />}
         {level === 'tenancy' && draft.adjust !== 'none' && (
           <MonthField
@@ -191,6 +218,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
         )}
       </fieldset>}
       {/* K3 der Durchsicht zu PR #435: auf jeder Ebene, auch ohne Auswahl der Anpassung (Objekt) */}
+      {lacksSplit && <NoticeBox level="hint" action="Ihr Text zur Anpassung nennt die Teile für Heizung und übrige Nebenkosten nicht. Mit dem Platzhalter {Aufteilung} steht im Brief, um wie viel sich jede der beiden Vorauszahlungen ändert." />}
       {lacksMonth && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt den Monat nicht. Mit dem Platzhalter {AnpassungAb} steht ${level === 'tenancy' && /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : 'der Monat'} im Brief, und „In die Staffel übernehmen“ nimmt nach dem Abschluss denselben Monat.`} />}
       {LETTER_BLOCKS.map((b) => {
         const text = shownText(draft, base, b.id)

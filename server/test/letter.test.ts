@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   adjustedCents, adjustmentHint, buildLetter, chooseLetterBlocks, DEFAULT_LETTER_TEXTS, LETTER_BLOCK_IDS, LETTER_FIELDS, mergeLetterTexts, parseLetterAdjustment,
-  exceedsOnePage, lettersOf, parseLetterTexts, sameAmountHint, printsLetter, renderLetterText, resolveTemplate, statementBlocks, templateProblems, type LetterFacts,
+  exceedsOnePage, lettersOf, parseLetterTexts, sameAmountHint, printsLetter, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES, statementBlocks, templateProblems, type LetterFacts,
 } from '../../shared/letter.ts'
 import type { LetterAdjustment, Property, Settings, Tenancy } from '../../shared/types.ts'
 import { calendarYearPeriod, settlementPeriod } from '../../shared/period.ts'
@@ -379,4 +379,78 @@ test('#624: der QR-Kasten zählt zur Seitenlänge', async () => {
   const paragraphs = Array.from({ length: 16 }, () => 'Kurzer Absatz.')
   assert.equal(exceedsOnePage(paragraphs), false)
   assert.equal(exceedsOnePage(paragraphs, PAYMENT_QR_LINES), true)
+})
+
+// #704 Teil 2: Führt ein Mietverhältnis die Vorauszahlung in zwei Staffeln (Heizung und übrige Nebenkosten) und gilt der
+// neue Betrag beiden (Gesamtabrechnung), nennt das Anschreiben auch die beiden Teile. Ohne Aufteilung bleibt jeder Satz
+// wortgleich; die Summe ist der bisherige Vorschlag.
+test('#704: Anpassung je Teil: Satz mit Heizung und übrigen Nebenkosten, nur bei zwei Staffeln; sonst wortgleich wie vorher', () => {
+  const st = (heating: number | undefined) => ({ ...oneStatement, statements: oneStatement.statements.map((x) => ({ ...x, suggestedMonthlyCents: 29200, ...(heating === undefined ? {} : { suggestedHeatingMonthlyCents: heating }) })) })
+  const base = { settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 }, property: house, installation: {}, propertyTexts: {}, asOf: '2026-11-01' }
+  const split = { id: 't1', end: null, prepayments: [{ from: '2024-01', monthlyCents: 18000 }], heatingPrepayments: [{ from: '2024-01', monthlyCents: 12000 }], correspondenceAddress: '' }
+  const one = { id: 't1', end: null, prepayments: [{ from: '2024-01', monthlyCents: 30000 }], correspondenceAddress: '' }
+
+  const l = lettersOf(st(12500), { ...base, tenancies: [split], own: {} }).t1 ?? assert.fail('Anschreiben fehlt')
+  assert.deepEqual(l.adjustment, { mode: 'suggestion', newCents: 29200, from: '2027-01', heatingCents: 12500 })
+  assert.equal(plain(l.values.Aufteilung), 'Davon entfallen 125,00 € auf Heizung und Warmwasser (bisher 120,00 €) und 167,00 € auf die übrigen Nebenkosten (bisher 180,00 €).')
+  assert.match(plain(l.texts.adjustSuggestion), /auf 292,00 € angepasst \(.*\)\. Davon entfallen 125,00 € auf Heizung und Warmwasser \(bisher 120,00 €\) und 167,00 € auf die übrigen Nebenkosten \(bisher 180,00 €\)\.$/)
+
+  // Ohne zweite Staffel: kein Teil, der Satz wie vorher.
+  const single = lettersOf(st(undefined), { ...base, tenancies: [one], own: {} }).t1 ?? assert.fail('Anschreiben fehlt')
+  assert.deepEqual([single.adjustment.heatingCents ?? null, single.values.Aufteilung], [null, ''])
+  assert.equal(plain(single.texts.adjustSuggestion), plain(resolveTemplate('Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab {AnpassungAb} auf {VorauszahlungNeu} angepasst ({Grundlage}).', single.values)))
+  // Ein Vorschlag mit Heizanteil, aber die Staffel ist inzwischen zusammengeführt: kein Teil.
+  assert.equal(lettersOf(st(12500), { ...base, tenancies: [one], own: {} }).t1?.adjustment.heatingCents ?? null, null)
+  // Zwei Staffeln, aber ein Stand ohne Heizanteil (vor #704 gerechnet): kein Teil, nichts geraten.
+  assert.equal(lettersOf(st(undefined), { ...base, tenancies: [split], own: {} }).t1?.adjustment.heatingCents ?? null, null)
+
+  // Eigener Betrag mit eigenem Heizanteil; ohne Angabe kein Teil.
+  const custom = (adjustment: LetterAdjustment) => lettersOf(st(12500), { ...base, tenancies: [split], own: { t1: { texts: {}, adjustment } } }).t1 ?? assert.fail('Anschreiben fehlt')
+  const own = custom({ mode: 'custom', cents: 31000, heatingCents: 14000 })
+  assert.deepEqual(own.adjustment, { mode: 'custom', newCents: 31000, from: '2027-01', heatingCents: 14000 })
+  assert.match(plain(own.texts.adjustCustom), /auf 310,00 € angepasst\. Davon entfallen 140,00 € auf Heizung und Warmwasser \(bisher 120,00 €\) und 170,00 € auf die übrigen Nebenkosten \(bisher 180,00 €\)\.$/)
+  assert.deepEqual([custom({ mode: 'custom', cents: 31000 }).adjustment.heatingCents ?? null, custom({ mode: 'custom', cents: 31000 }).values.Aufteilung], [null, ''])
+
+  // Gleiche Summe, andere Teile: Das ist eine Anpassung. Gleiche Summe und gleiche Teile: keine.
+  const shifted = custom({ mode: 'custom', cents: 30000, heatingCents: 14000 })
+  assert.deepEqual([shifted.adjustment.newCents, shifted.adjustment.heatingCents], [30000, 14000])
+  const unchanged = custom({ mode: 'custom', cents: 30000, heatingCents: 12000 })
+  assert.deepEqual([unchanged.adjustment.newCents, unchanged.adjustment.heatingCents ?? null, unchanged.values.Aufteilung], [null, null, ''])
+})
+
+test('#704: der eigene Heizanteil wird geprüft: nur beim eigenen Betrag, ganze Cent, nicht über dem Betrag', () => {
+  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: 14000 }), { mode: 'custom', cents: 31000, from: null, heatingCents: 14000 })
+  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 31000 }), { mode: 'custom', cents: 31000, from: null })
+  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: null }), { mode: 'custom', cents: 31000, from: null })
+  assert.deepEqual(parseLetterAdjustment({ mode: 'suggestion', cents: null, heatingCents: 14000 }), { mode: 'suggestion', cents: null, from: null })
+  assert.match(String(Reflect.get(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: 32000 }) ?? {}, 'error')), /Der Teil für Heizung und Warmwasser liegt über der neuen Vorauszahlung/)
+  assert.match(String(Reflect.get(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: -1 }) ?? {}, 'error')), /Teil für Heizung und Warmwasser/)
+  assert.match(String(Reflect.get(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: 1.5 }) ?? {}, 'error')), /Teil für Heizung und Warmwasser/)
+})
+
+// Durchsicht von #704 Teil 2: Brief, Übersicht und Übernahme sagen dasselbe. Teile nennt der Brief nur, wenn es sie im Monat
+// der Anpassung gibt (K2) und sein Text sie nennen kann (K4); sonst friert auch kein Teil ein.
+test('#704: keine Teile, wo der Brief sie nicht nennt: Heizstaffel im Monat der Anpassung 0, oder eigener Text ohne {Aufteilung}', () => {
+  const st = { ...oneStatement, statements: oneStatement.statements.map((x) => ({ ...x, suggestedMonthlyCents: 29200, suggestedHeatingMonthlyCents: 12500 })) }
+  const base = { settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 }, property: house, installation: {}, propertyTexts: {}, asOf: '2026-11-01' }
+  const split = { id: 't1', end: null, prepayments: [{ from: '2024-01', monthlyCents: 18000 }], heatingPrepayments: [{ from: '2024-01', monthlyCents: 12000 }], correspondenceAddress: '' }
+  // Seit Januar 2026 wieder zusammengeführt: Im Monat der Anpassung gibt es keine Heizvorauszahlung mehr.
+  const merged = { ...split, prepayments: [...split.prepayments, { from: '2026-01', monthlyCents: 30000 }], heatingPrepayments: [...split.heatingPrepayments, { from: '2026-01', monthlyCents: 0 }] }
+  const gone = lettersOf(st, { ...base, tenancies: [merged], own: {} }).t1 ?? assert.fail('Anschreiben fehlt')
+  assert.deepEqual([gone.adjustment.newCents, gone.adjustment.heatingCents ?? null, gone.values.Aufteilung], [29200, null, ''])
+  // Eigener Text ohne den Platzhalter, auf jeder Ebene: der Brief nennt die Teile nicht, also gibt es keine.
+  const text = 'Neue Vorauszahlung ab {AnpassungAb}: {VorauszahlungNeu}.'
+  for (const level of [{ installation: { adjustSuggestion: text } }, { propertyTexts: { adjustSuggestion: text } }, { own: { t1: { texts: { adjustSuggestion: text }, adjustment: null } } }]) {
+    const l = lettersOf(st, { ...base, tenancies: [split], own: {}, ...level }).t1 ?? assert.fail('Anschreiben fehlt')
+    assert.deepEqual([l.adjustment.newCents, l.adjustment.heatingCents ?? null], [29200, null])
+    assert.equal(plain(l.texts.adjustSuggestion), 'Neue Vorauszahlung ab Januar 2027: 292,00 €.')
+  }
+  // Gleiche Summe, andere Teile, aber der Text nennt sie nicht: keine Anpassung auf den Betrag, der schon gilt.
+  const same = lettersOf(st, { ...base, tenancies: [split], own: { t1: { texts: { adjustCustom: text }, adjustment: { mode: 'custom', cents: 30000, heatingCents: 14000 } } } }).t1 ?? assert.fail('Anschreiben fehlt')
+  assert.deepEqual([same.adjustment.newCents, same.adjustment.heatingCents ?? null], [null, null])
+})
+
+test('#704: die Beispielwerte der Vorschau nennen keine Teile; wer nicht aufteilt, liest den Satz nie', () => {
+  assert.equal(SAMPLE_LETTER_VALUES.Aufteilung, '')
+  assert.doesNotMatch(resolveTemplate(DEFAULT_LETTER_TEXTS.adjustSuggestion, SAMPLE_LETTER_VALUES), /Davon entfallen|\{Aufteilung\}/)
 })

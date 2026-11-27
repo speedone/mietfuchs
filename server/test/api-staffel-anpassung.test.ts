@@ -127,3 +127,50 @@ test('eine vorab zum Monat der Anpassung eingetragene Stufe nimmt dem Brief den 
     s.stop()
   }
 })
+
+// #704 Teil 2: Vorauszahlung aufgeteilt (Heizung im Zeitraum des Objekts), eine Gesamtabrechnung. Das Anschreiben nennt die
+// Anpassung je Teil, die Summe ist der Vorschlag; „In die Staffel übernehmen“ schreibt beide Staffeln in einem Vorgang.
+test('#704: aufgeteilte Vorauszahlung: Anschreiben je Teil, eigener Betrag mit eigenem Heizanteil, Übernahme in beide Staffeln', async () => {
+  const s = await start()
+  try {
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const t = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'Erika Mustermann', persons: 1, start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }) })
+    const { plant } = await jsonOf<{ plant: { id: string } }>(await send(s, '/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 150000, key: 'area', heatingPlantId: plant.id }) })
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 200000, key: 'area' }) })
+    const vorschau = await jsonOf<{ token: string }>(await send(s, `/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-01' }))
+    assert.equal((await send(s, `/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-01', answers: { steps: { [t.id]: { '2025-01': 12000 } }, token: vorschau.token } })).status, 200)
+
+    // Vorschlag 292 € (3.500 € / 12), davon Heizung 125 €; bisher 120 € und 180 €.
+    let live = await s.api<Settlement>('/api/settlement/2025')
+    assert.deepEqual([live.statements[0]?.suggestedMonthlyCents, live.statements[0]?.suggestedHeatingMonthlyCents], [29200, 12500])
+    assert.deepEqual(live.letters?.[t.id]?.adjustment, { mode: 'suggestion', newCents: 29200, from: '2026-05', heatingCents: 12500 })
+    assert.match(plain(live.letters?.[t.id]?.texts.adjustSuggestion), /ab Mai 2026 auf 292,00 € angepasst \(.*\)\. Davon entfallen 125,00 € auf Heizung und Warmwasser \(bisher 120,00 €\) und 167,00 € auf die übrigen Nebenkosten \(bisher 180,00 €\)\.$/)
+
+    // Eigener Betrag: der Heizanteil wird geprüft und gespeichert.
+    const over = await send(s, `/api/settlement/2025/letters/${t.id}`, 'PUT', { adjustment: { mode: 'custom', cents: 31000, heatingCents: 32000 } })
+    assert.equal(over.status, 400)
+    assert.match((await jsonOf<{ error: string }>(over)).error, /Teil für Heizung und Warmwasser liegt über der neuen Vorauszahlung/)
+    assert.equal((await send(s, `/api/settlement/2025/letters/${t.id}`, 'PUT', { adjustment: { mode: 'custom', cents: 31000, heatingCents: 14000 } })).status, 200)
+    live = await s.api<Settlement>('/api/settlement/2025')
+    assert.deepEqual(live.letters?.[t.id]?.adjustment, { mode: 'custom', newCents: 31000, from: '2026-05', heatingCents: 14000 })
+    assert.match(plain(live.letters?.[t.id]?.texts.adjustCustom), /auf 310,00 € angepasst\. Davon entfallen 140,00 € auf Heizung und Warmwasser \(bisher 120,00 €\) und 170,00 € auf die übrigen Nebenkosten \(bisher 180,00 €\)\.$/)
+
+    // Abschließen friert den Satz samt Teilen ein; der Plan nennt beide, die Übernahme schreibt beide.
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', { sentAt: '2026-03-11' })).status, 201)
+    const p = await plan(s)
+    const it = p.items[0] ?? assert.fail('kein Eintrag')
+    assert.deepEqual([it.state, it.schedule, it.cents, it.currentCents, it.heating?.cents, it.heating?.currentCents, it.blocked], ['pending', 'prepayments', 17000, 18000, 14000, 12000, undefined])
+    const saved = await send(s, '/api/settlement/2025/prepayment-steps', 'POST', { tenancyIds: [t.id], token: p.token })
+    assert.equal(saved.status, 200)
+    const after = (await s.api<Tenancy[]>('/api/tenancies')).find((x) => x.id === t.id) ?? assert.fail('kein Mietverhältnis')
+    assert.deepEqual(after.prepayments, [{ from: '2024-01', monthlyCents: 30000 }, { from: '2025-01', monthlyCents: 18000 }, { from: '2026-05', monthlyCents: 17000 }])
+    assert.deepEqual(after.heatingPrepayments, [{ from: '2025-01', monthlyCents: 12000 }, { from: '2026-05', monthlyCents: 14000 }])
+    assert.equal((await plan(s)).items[0]?.state, 'taken')
+    // Der eingefrorene Satz bleibt, wie zugestellt.
+    const frozen = await s.api<Settlement>('/api/settlement/2025')
+    assert.match(plain(frozen.letters?.[t.id]?.texts.adjustCustom), /Davon entfallen 140,00 € auf Heizung und Warmwasser \(bisher 120,00 €\)/)
+  } finally {
+    s.stop()
+  }
+})

@@ -816,7 +816,9 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   Monats wird ersetzt, spätere bleiben. Ein geänderter Monat im abgerechneten Zeitraum ist eine 400; steht er so im
   Schreiben, ist die Zeile gesperrt (`fixMonth`) und wird nie geschrieben. `earlier` nennt Stufen zwischen Zeitraumende
   und Monat. Gesperrt: Mietverhältnis
-  endet vorher, oder eine Gesamtabrechnung neben einer eigenen Heizstaffel (der Betrag gilt beiden; nicht geraten).
+  endet vorher, oder eine Gesamtabrechnung neben einer eigenen Heizstaffel, deren Schreiben die Teile nicht nennt (der Betrag
+  gilt beiden; nicht geraten). Nennt es sie (#704, `adjustment.heatingCents`, docs/heizung.md „Anpassung je Teil“), schreibt
+  die Übernahme beide Staffeln in einem Vorgang je Mietverhältnis (`PrepaymentStepItem.heating`).
   Rückfragen formuliert die Oberfläche (client/src/prepaymentSteps.ts) mit gelesenen Fundstellen: BGH VIII ZR 246/11
   (Leitsatz), VIII ZR 271/10 (Leitsatz 2), AG Köln 203 C 73/23 (Rn. 27).
 - **Export als Daten** (#415 Teil 3, [settlementExport.ts](settlementExport.ts)): `GET /api/settlement/:period/export?format=json|csv`

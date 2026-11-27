@@ -1,7 +1,7 @@
 // Bearbeiten des Anschreibens und Ergebniskasten (#415), ohne DOM.
 import { expect, test } from 'vitest'
 import { DEFAULT_LETTER_TEXTS, mergeLetterTexts, SAMPLE_LETTER_VALUES } from '../../shared/letter.ts'
-import { insertField, letterProblems, monthlessAdjustTexts, ownOf, salutationHint, setText, shownText, textChanges, type LetterDraft } from './letterForm'
+import { customHeatingCentsOf, insertField, letterProblems, monthlessAdjustTexts, ownOf, salutationHint, setText, shownText, splitlessAdjustTexts, textChanges, type LetterDraft } from './letterForm'
 import { letterParagraphs, resultRows } from './letterView'
 import type { Statement, StatementLetter } from './types'
 
@@ -90,4 +90,28 @@ test('Anrede: Hinweis, solange beim Mietverhältnis keine eingetragen ist', () =
   expect(salutationHint(['Anna Becker', 'Jonas Hartmann'], 4, '{Anrede}')).toBe('Für 2 von 4 Mietern (Anna Becker und Jonas Hartmann) ist keine Anrede eingetragen; deren Brief beginnt mit „Guten Tag {Name},“. Eine persönliche Anrede wie „Sehr geehrte Frau Becker“ tragen Sie in den Stammdaten beim Mietverhältnis ein, im Feld „Anrede im Brief“.')
   expect(salutationHint([], 4, '{Anrede}')).toBeNull()
   expect(salutationHint(['Anna Becker'], 1, 'Liebe Mieter,')).toBeNull()
+})
+
+// #704 Teil 2: Führt das Mietverhältnis zwei Staffeln, gehört zum eigenen Betrag der Teil für Heizung und Warmwasser;
+// ohne ihn ließe sich die Anpassung später nicht in die Staffeln übernehmen.
+test('#704: eigener Betrag bei zwei Staffeln verlangt den Teil für die Heizung, nicht über dem Betrag; sonst wird er nicht gefragt', () => {
+  const two = { split: true }
+  const fields = (d: LetterDraft, o: { split: boolean } = two) => letterProblems(d, base, 'tenancy', o).map((p) => p.field)
+  expect(fields(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '' }))).toEqual(['customHeatingCents'])
+  expect(fields(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: 'abc' }))).toEqual(['customHeatingCents'])
+  expect(fields(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '320,00' }))).toEqual(['customHeatingCents'])
+  expect(fields(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '140,00' }))).toEqual([])
+  expect(fields(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '0' }))).toEqual([])
+  // Ohne zwei Staffeln, beim Vorschlag und ohne Anpassung wird nicht gefragt.
+  expect(fields(draft({ adjust: 'custom', customCents: '310,00' }), { split: false })).toEqual([])
+  expect(fields(draft({ adjust: 'suggestion', customHeatingCents: 'abc' }))).toEqual([])
+  expect(customHeatingCentsOf(draft({ customHeatingCents: '140,00' }))).toBe(14000)
+  expect(customHeatingCentsOf(draft({ customHeatingCents: '' }))).toBeNull()
+})
+
+test('#704: ein eigener Text der Anpassung ohne {Aufteilung} nennt die Teile nicht; das Fenster sagt es nur bei zwei Staffeln', () => {
+  const own = setText(draft({ adjust: 'suggestion' }), base, 'adjustSuggestion', 'Neu ab {AnpassungAb}: {VorauszahlungNeu}.')
+  expect(splitlessAdjustTexts(own, base, 'tenancy')).toEqual(['adjustSuggestion'])
+  expect(splitlessAdjustTexts(draft({ adjust: 'suggestion' }), base, 'tenancy')).toEqual([])
+  expect(splitlessAdjustTexts(draft({ adjust: 'none' }), base, 'tenancy')).toEqual([])
 })

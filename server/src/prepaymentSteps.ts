@@ -12,7 +12,8 @@ import { addMonths, monthName } from '../../shared/monthlyInfo.ts'
 import { adjustFromFor, isMonthKey } from '../../shared/letter.ts'
 import { compareText } from './calc.ts'
 
-export type StepLetter = { tenancyId: string, tenantName: string, unitName: string, cents: number, from: string | null }
+// `heatingCents` (#704): der Teil für Heizung und Warmwasser, wenn das Schreiben die Anpassung je Teil nennt.
+export type StepLetter = { tenancyId: string, tenantName: string, unitName: string, cents: number, from: string | null, heatingCents?: number | null }
 export type StepInput = {
   // `heating`: die Heizkostenabrechnung nach Weg d; ihre Anpassung gilt der Heizstaffel.
   scope: 'all' | 'heating'
@@ -96,7 +97,19 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
     // Der Vorschlag einer Gesamtabrechnung gilt der ganzen Vorauszahlung. Führt das Mietverhältnis die Heizung in einer
     // eigenen Staffel, ließe sich der neue Betrag nur geraten auf beide verteilen.
     if (schedule === 'prepayments' && !i.separate && rateAtMonth(t.heatingPrepayments ?? [], from) > 0) {
-      return blocked(`Die Vorauszahlung steht in zwei Staffeln (übrige Nebenkosten und Heizung, zusammen ${euro(currentCents + rateAtMonth(t.heatingPrepayments ?? [], from))}); der angekündigte Betrag gilt beiden zusammen. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
+      // #704: Nennt das Schreiben die Teile, gehört jeder in seine Staffel; geraten wird weiter nichts.
+      const part = l.heatingCents ?? null
+      if (part !== null && part >= 0 && part <= l.cents) {
+        const heat = t.heatingPrepayments ?? []
+        const heating = {
+          cents: part, currentCents: rateAtMonth(heat, from), existing: heat.filter((e) => e.from >= from).map((e) => ({ ...e })),
+          earlier: heat.filter((e) => e.from > i.periodTo.slice(0, 7) && e.from < from).map((e) => ({ ...e })),
+        }
+        const rest = l.cents - part
+        const done = currentCents === rest && heating.currentCents === part
+        return { ...base, cents: rest, heating, state: done ? 'taken' : 'pending', overdue: !done && i.today.slice(0, 7) >= from }
+      }
+      return blocked(`Die Vorauszahlung steht in zwei Staffeln (übrige Nebenkosten und Heizung, zusammen ${euro(currentCents + rateAtMonth(t.heatingPrepayments ?? [], from))}); der angekündigte Betrag gilt beiden zusammen, und das Schreiben nennt die Teile nicht. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
     }
     // Integrationsdurchsicht 0.13.0 (#435): Der Vorschlag ist ohne Heizung, Weg d endet aber vor dem Monat, und eine eigene
     // Heizstaffel gibt es dann nicht. Die Staffel der übrigen Nebenkosten trägt ab dort auch die Heizung (P rechnet sie an);
@@ -127,8 +140,17 @@ export function stepWrites(
     .flatMap((it) => {
       const t = tenancies.find((x) => x.id === it.tenancyId)
       if (!t) return []
+      const step = (list: readonly PrepaymentEntry[], cents: number): PrepaymentEntry[] =>
+        [...list.filter((e) => e.from !== it.from), { from: it.from, monthlyCents: cents }].sort((a, b) => compareText(a.from, b.from))
       const list = (it.schedule === 'heatingPrepayments' ? t.heatingPrepayments : t.prepayments) ?? []
-      const entries = [...list.filter((e) => e.from !== it.from), { from: it.from, monthlyCents: it.cents }].sort((a, b) => compareText(a.from, b.from))
-      return [{ tenancyId: it.tenancyId, schedule: it.schedule, entries }]
+      // #704: mit Teilen je Staffel eine Stufe, und nur dort, wo der Betrag noch nicht steht.
+      if (it.heating) {
+        const heat = t.heatingPrepayments ?? []
+        return [
+          ...(rateAtMonth(list, it.from) === it.cents ? [] : [{ tenancyId: it.tenancyId, schedule: it.schedule, entries: step(list, it.cents) }]),
+          ...(rateAtMonth(heat, it.from) === it.heating.cents ? [] : [{ tenancyId: it.tenancyId, schedule: 'heatingPrepayments' as const, entries: step(heat, it.heating.cents) }]),
+        ]
+      }
+      return [{ tenancyId: it.tenancyId, schedule: it.schedule, entries: step(list, it.cents) }]
     })
 }
