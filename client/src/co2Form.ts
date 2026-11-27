@@ -65,7 +65,7 @@ export function co2Labels(homeowners: boolean): { usersTotal: string; usersTotal
       }
     : {
         usersTotal: 'Summe der Kosten aller Nutzer (€)',
-        usersTotalHelp: 'Die gedruckte Summe für Heizung und Warmwasser aller Nutzer, bei einer Abzugszeile nach dem Abzug. Bei Techem heißt die Zeile „Summe der Nutzerkosten Heizungsanlage“; bei anderen Messdiensten steht sie in der Kostenaufstellung unter der Verteilung.',
+        usersTotalHelp: 'Die gedruckte Summe für Heizung und Warmwasser aller Nutzer, bei einer Abzugszeile nach dem Abzug. Bei Techem heißt die Zeile „Summe der Nutzerkosten Heizungsanlage“, bei ista im Abschnitt „Aufteilung der Gesamtkosten“ der Gesamtbetrag der Zeile „Heiz- und Warmwasserkosten“; bei anderen Messdiensten steht sie in der Kostenaufstellung unter der Verteilung.',
         landlordCo2: 'davon Vermieter (€)',
         unitsCount: 'Nutzeinheiten laut Abrechnung',
         unitsHelp: 'Vorbelegt mit der Zahl der Wohnungen an dieser Heizung; maßgeblich ist die Zahl auf der Abrechnung des Messdienstes. ',

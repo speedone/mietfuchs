@@ -853,7 +853,9 @@ test('CO₂-Kosten aufteilen (Heizung PR 6): Ort von S je Messdienst, Muster nur
   const g = GUIDES.co2Costs
   const hinweise = g.caveats.map((c) => c.text).join(' ')
   assert.match(hinweise, /Bei Techem heißt die Zeile „Summe der Nutzerkosten Heizungsanlage“/)
-  assert.match(hinweise, /Für ista, Brunata, Minol und KALO liegt Mietfuchs keine Musterabrechnung vor/)
+  // Seit dem 27.11.2026 ist die öffentliche Musterabrechnung 2025 von ista gelesen: Zeile der Summe und Abzugszeile.
+  assert.match(hinweise, /Bei ista steht sie im Abschnitt „Aufteilung der Gesamtkosten“ als Gesamtbetrag der Zeile „Heiz- und Warmwasserkosten“; die Abzugszeile heißt dort „Abzug CO2-Kosten Anteil Vermieter“/)
+  assert.match(hinweise, /Für Brunata, Minol und KALO liegt Mietfuchs keine Musterabrechnung vor/)
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ich finde diese Zeile nicht“')))
   assert.ok(g.caveats.some((c) => /3 Prozent/.test(c.text) && c.norm === '§ 7 Abs. 3 und 4 CO2KostAufG'))
   assert.match(g.applies, /01\.01\.2023/)
