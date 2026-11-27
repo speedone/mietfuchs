@@ -69,7 +69,7 @@ test('Speichern schickt die Methode und die Beträge an die Heizperiode', async 
 test('Felder mit Fundort statt Formelzeichen (Durchsicht M3, I3)', () => {
   render(<Co2Card view={view(shown)} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
   expect(screen.queryByText(/\(S\)/)).toBeNull()
-  expect(screen.getByText(/Summe der Nutzerkosten Heizungsanlage/)).toBeTruthy()
+  expect(screen.getByText(/Summe der Nutzerkosten Heizungsanlage.*bei ista im Abschnitt „Aufteilung der Gesamtkosten“ der Gesamtbetrag der Zeile „Heiz- und Warmwasserkosten“/)).toBeTruthy()
   expect(screen.getByLabelText(/CO₂-Ausstoß insgesamt laut Abrechnung \(kg\)/)).toBeTruthy()
   expect(screen.getByLabelText(/Wohnfläche laut Abrechnung \(m²\)/)).toBeTruthy()
 })
