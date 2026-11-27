@@ -97,8 +97,10 @@
    oberen bzw. unteren Rand ein Randfeld steht; ein leeres genügt, und „Seite x von y“ (printJob.ts) bleibt (nachgemessen
    mit dem Druck in eine PDF). Firefox und WebKit kennen keine Randfelder und übergehen die Regel. Firefox druckt die Zeilen
    nicht bei Rand 0 (nachgemessen): Dort druckt die Seite ohne Rand (`PAGE_EDGE_CSS`, letterDesignView.ts), und body hält
-   dieselben 12 mm frei, auf jeder Druckseite (`box-decoration-break: clone`, wie der Rahmen mit Briefpapier). So steht
-   alles, wo es mit Rand stand. Mit Briefpapier setzt die Seite ihre Ränder selbst (`PAPER_PAGE_CSS` nimmt den Abstand weg). */
+   dieselben 12 mm frei, auf jeder Druckseite (`box-decoration-break: clone`, wie der Rahmen mit Briefpapier). Die Ränder
+   bleiben gleich, aber eine Druckseite fasst in Firefox rund 2 mm mehr (vorher endete der Inhalt bei rund 282 bis 284 mm,
+   jetzt bis 285 mm): Der wiederholte Fußvermerk steht 2,2 mm tiefer, Seitenumbrüche können um wenige Millimeter wandern
+   (nachgemessen). Erkannt wird Firefox ausdrücklich (`pageEdges`). Mit Briefpapier setzt die Seite ihre Ränder selbst (`PAPER_PAGE_CSS` nimmt den Abstand weg). */
 @page { @top-center { content: ""; } @bottom-center { content: ""; } }
 @media print { html.print-page-edge body { padding: 12mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; } }
 /* In WebKit ist das Dokument im Druck so breit wie die Seite ohne Rand. WebKit legt die Druckseite sonst 1,25-mal so

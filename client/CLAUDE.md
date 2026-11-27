@@ -385,14 +385,17 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   unteren Rand ein Randfeld steht; letter.css setzt oben und unten je ein leeres (`@top-center`, `@bottom-center`), der
   Rand bleibt, nichts verschiebt sich. Firefox kennt keine Randfelder, druckt die Zeilen aber nicht bei Rand 0
   (`nsPageFrame::DrawHeaderFooter` zeichnet nur, wenn die Zeile in den Rand passt; ein Rand 0 wird nicht auf den
-  unbedruckbaren Rand des Druckers angehoben). Dort (`print-page-edge` an `html`, `markPageEdges` beim Start: ohne
-  `CSSMarginRule`, mit `box-decoration-break: clone`) druckt die Seite ohne Rand (`PAGE_EDGE_CSS`), und body hält die
-  12 mm als Innenabstand frei, den `clone` auf jeder Druckseite wiederholt; alles steht, wo es mit Rand stand (nur der
-  wiederholte Fußvermerk der Aufstellung steht 2,2 mm tiefer, so tief wie in Chromium). Mit Briefpapier nimmt
+  unbedruckbaren Rand des Druckers angehoben). Dort (`print-page-edge` an `html`, `markPageEdges` beim Start: Gecko,
+  ausdrücklich erkannt an `-moz-orient`, mit `box-decoration-break: clone`; Randfelder nur in Blink, Hersteller
+  „Google Inc.“, damit ein künftiges Safari mit `clone` ohne Präfix nicht an der Blattkante druckt) druckt die Seite ohne
+  Rand (`PAGE_EDGE_CSS`), und body hält die 12 mm als Innenabstand frei, den `clone` auf jeder Druckseite wiederholt. Die
+  Ränder bleiben gleich, aber eine Druckseite fasst in Firefox rund 2 mm mehr (vorher endete der Inhalt bei rund 282 bis
+  284 mm, jetzt bis 285 mm): Der wiederholte Fußvermerk der Aufstellung steht 2,2 mm tiefer (so tief wie in Chromium),
+  und Seitenumbrüche können um wenige Millimeter wandern (in der Steuer nachgemessen). Mit Briefpapier nimmt
   `PAPER_PAGE_CSS` den Abstand weg. Die Notbremse misst gegen die Seite abzüglich dieses Abstands (`printLimitPx`).
   WebKit kann keinen Rand je Seite und behält Rand und Zeilen; dort nennen die Fenster „Drucken“ der Abrechnung, der
-  Kaution und der Mieterhöhung den Weg in Safari (`browserLinesNote`, nach Apples Anleitung: Einblendmenü „Safari“,
-  sonst erst „Details einblenden“). Ein
+  Kaution und der Mieterhöhung den Weg in Safari (`browserLinesNote`, nach Apples Anleitung: Einblendmenü „Safari“;
+  „Details einblenden“ belegt sie nur für ältere Fassungen von macOS und steht deshalb nicht im Satz). Ein
   langer Brief druckt auf einer Folgeseite mit Rand weiter; Seite und Seitenfenster warnen vorher
   (`exceedsOnePage`, eine Schätzung nach Zeilen). Die Texte setzt der Server ein (`Settlement.letters`); die Seite
   wählt die Bausteine (`chooseLetterBlocks`) und setzt nur `{Datum}` und `{AnzahlBelege}` ein. Absender,
@@ -514,8 +517,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Briefs, das der Folgeseiten ohne eigene Höhe im `thead` der Hülle (`follow`, Verzierung: Chromium und Firefox
   wiederholen ihn); die Belegkopien stehen in einer eigenen Hülle ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten
   Inhalt einer Zelle wirkte nicht). Deshalb hat die Karte im Druck keinen Grund. **Briefpapier nur, wo der Browser die
-  Ränder je Seite wiederholen kann** (`canPagePaper`: `CSS.supports('box-decoration-break', 'clone')`, Chromium ab 130
-  und Firefox). WebKit nimmt die Ränder der ersten Seite für alle Seiten, auch die aus `@page :first`, wiederholt weder
+  Ränder je Seite wiederholen kann** (`canPagePaper`: `CSS.supports('box-decoration-break', 'clone')` und ausdrücklich
+  Gecko oder Blink, also Chromium ab 130 und Firefox; Durchsicht S2 zu #735). WebKit nimmt die Ränder der ersten Seite für alle Seiten, auch die aus `@page :first`, wiederholt weder
   `thead`/`tfoot` noch ein fest positioniertes Element und schneidet ab, was in den Seitenrand ragt; `page` (benannte
   Seiten) nimmt es an, wirkt aber nicht (alles nachgemessen mit dem Workflow „Druck in Safari“, #286). Papier bis zur
   Blattkante und Ränder auf den Folgeseiten gehen dort nicht zusammen. Safari druckt deshalb wie ohne Briefpapier (mit

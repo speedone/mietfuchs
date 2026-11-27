@@ -32,16 +32,26 @@ const NONE: PrintDesign = { logo: null, paper: null, follow: null, margins: null
 // Die Ränder des Briefpapiers setzt die Seite selbst. Ohne Schicht, schlägt also letter.css.
 export const PAPER_PAGE_CSS = '@page { margin: 0; } @media print { html.print-page-edge body { padding: 0; } }'
 
+type Css = { supports: (property: string, value: string) => boolean } | undefined
+const browserVendor = (): string => globalThis.navigator?.vendor ?? ''
+// Gecko (Firefox): `-moz-orient` kennt nur Gecko (der Build nutzt die Angabe schon). Blink (Chrome, Edge, das
+// Programmfenster): Hersteller „Google Inc.“; Safari meldet „Apple Computer, Inc.“, Firefox nichts.
+const isGecko = (css: Css): boolean => typeof css?.supports === 'function' && css.supports('-moz-orient', 'inline')
+const isBlink = (vendor: string): boolean => vendor === 'Google Inc.'
+const canClone = (css: Css): boolean => typeof css?.supports === 'function' && css.supports('box-decoration-break', 'clone')
+
 // Kann der Browser den Innenabstand eines Blocks auf jeder Druckseite wiederholen? Chromium ab 130 und Firefox ja,
-// WebKit nur mit Präfix und nur für Zeilen, nicht für Druckseiten (nachgemessen).
-export const canPagePaper = (css: { supports: (property: string, value: string) => boolean } | undefined = globalThis.CSS): boolean =>
-  typeof css?.supports === 'function' && css.supports('box-decoration-break', 'clone')
+// WebKit nur mit Präfix und nur für Zeilen, nicht für Druckseiten (nachgemessen). Verlangt werden die Funktion und
+// ausdrücklich Gecko oder Blink (Durchsicht S2 zu #735): Kennte Safari künftig die Angabe ohne Präfix, ohne sie je
+// Druckseite zu wiederholen, stünde der Text der Folgeseiten sonst im Papier oder an der Blattkante.
+export const canPagePaper = (css: Css = globalThis.CSS, vendor: string = browserVendor()): boolean =>
+  canClone(css) && (isGecko(css) || isBlink(vendor))
 
 // Die feste Breite des Dokuments im Druck (letter.css) nur in einem Browser ohne Ränder je Seite, also WebKit: Dort legt
 // der Druck die Seite sonst um ein Viertel breiter an und druckt rund 7 % größer; in Chromium und Firefox schaltete sie
 // die Skalierung des Druckdialogs ab (Durchsicht K1 zu PR #443). Einmal beim Start (main.tsx), auch für Strg+P.
-export function markPrintWidth(root: { classList: { toggle: (name: string, on: boolean) => unknown } }, css: Parameters<typeof canPagePaper>[0] = globalThis.CSS): void {
-  root.classList.toggle('print-fixed-width', !canPagePaper(css))
+export function markPrintWidth(root: { classList: { toggle: (name: string, on: boolean) => unknown } }, css: Css = globalThis.CSS, vendor: string = browserVendor()): void {
+  root.classList.toggle('print-fixed-width', !canPagePaper(css, vendor))
 }
 
 // **Kopf- und Fußzeilen des Browsers** (#735): Adresse, Datum und „Seite x von y“ des Browsers stehen im Seitenrand.
@@ -57,9 +67,13 @@ export type PageEdges = 'margin-boxes' | 'page-edge' | 'browser'
 
 const hasMarginRules = (): boolean => typeof (globalThis as { CSSMarginRule?: unknown }).CSSMarginRule === 'function'
 
-export function pageEdges(css: Parameters<typeof canPagePaper>[0] = globalThis.CSS, marginRules: boolean = hasMarginRules()): PageEdges {
-  if (marginRules) return 'margin-boxes'
-  return canPagePaper(css) ? 'page-edge' : 'browser'
+// Ausdrücklich je Engine (Durchsicht S2): Rand 0 nur in Gecko mit `clone`, auch wenn Firefox künftig Randfelder kennt
+// (nachgemessen ist nur der Rand 0); Randfelder nur in Blink. Ein Safari mit `clone` ohne Präfix bekäme sonst Rand 0 und
+// druckte die Folgeseiten an der Blattkante.
+export function pageEdges(css: Css = globalThis.CSS, marginRules: boolean = hasMarginRules(), vendor: string = browserVendor()): PageEdges {
+  if (isGecko(css)) return canClone(css) ? 'page-edge' : 'browser'
+  if (isBlink(vendor) && marginRules) return 'margin-boxes'
+  return 'browser'
 }
 
 // `!important`, damit der Rand 0 vor dem aus letter.css gilt, gleich in welcher Reihenfolge die Stylesheets geladen werden.
@@ -72,8 +86,8 @@ type EdgeDocument = {
 }
 
 // Einmal beim Start (main.tsx), auch für Strg+P.
-export function markPageEdges(doc: EdgeDocument, css: Parameters<typeof canPagePaper>[0] = globalThis.CSS, marginRules: boolean = hasMarginRules()): void {
-  const edge = pageEdges(css, marginRules) === 'page-edge'
+export function markPageEdges(doc: EdgeDocument, css: Css = globalThis.CSS, marginRules: boolean = hasMarginRules(), vendor: string = browserVendor()): void {
+  const edge = pageEdges(css, marginRules, vendor) === 'page-edge'
   doc.documentElement.classList.toggle('print-page-edge', edge)
   if (!edge) return
   const style = doc.createElement('style')
@@ -83,10 +97,11 @@ export function markPageEdges(doc: EdgeDocument, css: Parameters<typeof canPageP
 }
 
 // Der Satz im Fenster „Drucken“, wo die Zeilen bleiben. Der Weg in Safari nach Apples Anleitung „Webseiten in Safari auf
-// dem Mac drucken“: Einblendmenü „Safari“, sonst erst „Details einblenden“. Sonst (Chromium vor 130) ohne Beschriftung.
-export function browserLinesNote(edges: PageEdges, vendor: string = globalThis.navigator?.vendor ?? ''): string | null {
+// dem Mac drucken“: Einblendmenü „Safari“ (den Knopf „Details einblenden“ belegt sie nur für ältere Fassungen von macOS,
+// Durchsicht K1). Sonst (Chromium vor 131, ohne Randfelder) ohne Beschriftung.
+export function browserLinesNote(edges: PageEdges, vendor: string = browserVendor()): string | null {
   if (edges !== 'browser') return null
-  if (vendor.startsWith('Apple')) return 'Adresse und Datum oben und unten auf dem Blatt setzt Safari selbst dazu. Abschalten können Sie das im Fenster „Drucken“ unter „Safari“ (fehlt die Auswahl, klicken Sie erst auf „Details einblenden“).'
+  if (vendor.startsWith('Apple')) return 'Adresse und Datum oben und unten auf dem Blatt setzt Safari selbst dazu. Abschalten können Sie das im Fenster „Drucken“ unter „Safari“.'
   return 'Adresse, Datum und Seitenzahl oben und unten auf dem Blatt setzt der Browser selbst dazu. Abschalten können Sie das in seinem Druckfenster bei den Kopf- und Fußzeilen.'
 }
 
