@@ -17,7 +17,7 @@ import { useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import { useSaving } from '../useSaving'
 import {
-  adjustFromHint, customCentsOf, customHeatingCentsOf, monthlessAdjustTexts, splitlessAdjustTexts, draftNewCents, insertField, letterProblems, ownOf, previewOf, salutationHint, setText, shownText, textChanges,
+  adjustFromHint, CREDIT_MOVED_OUT_HINT, creditMovedOutHint, customCentsOf, customHeatingCentsOf, monthlessAdjustTexts, splitlessAdjustTexts, draftNewCents, insertField, letterProblems, ownOf, previewOf, salutationHint, setText, shownText, textChanges,
   type LetterDraft, type LetterFieldKey, type LetterLevel,
 } from '../letterForm'
 
@@ -102,7 +102,8 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
   // #624: Der Verwendungszweck ist kein Absatz des Briefs, er steht nur im QR-Code.
   const longLetter = exceedsOnePage(LETTER_BLOCKS
     .filter((b) => b.id !== 'paymentPurpose')
-    .filter((b) => (shown ? shown.includes(b.id) : !['backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'attachments'].includes(b.id)))
+    // Ohne Mieter je Ergebnis ein Satz: das Guthaben, ohne die Fassung nach dem Auszug (#691), die nie daneben steht
+    .filter((b) => (shown ? shown.includes(b.id) : !['creditMovedOut', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'attachments'].includes(b.id)))
     .map((b) => previewOf(shownText(draft, base, b.id), previewValues)))
 
   function save() {
@@ -228,6 +229,8 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
         const text = shownText(draft, base, b.id)
         // #624: Der Verwendungszweck erscheint, wo die Nachzahlung erscheint (im Code neben ihrem Satz).
         const appears = shown ? shown.includes(b.id === 'paymentPurpose' ? 'backPayment' : b.id) : true
+        // #691, Durchsicht: ein eigener Text zum Guthaben, der nach dem Auszug nicht gilt
+        const movedOutHint = b.id === 'creditMovedOut' && creditMovedOutHint(draft, base, level)
         const cut = b.id === 'paymentPurpose' && [...epcText(previewOf(text, previewValues))].length > EPC_PURPOSE_MAX
         const inherited = draft.own[b.id] === null
         return (
@@ -257,6 +260,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
             </div>
             {text.trim() !== '' && <p className="letter-preview"><span className="muted">Vorschau: </span>{previewOf(text, previewValues)}</p>}
             {cut && <p className="muted m-0">{`Wird im QR-Code auf ${EPC_PURPOSE_MAX} Zeichen gekürzt.`}</p>}
+            {movedOutHint && <NoticeBox level="hint" action={CREDIT_MOVED_OUT_HINT} />}
             {b.id === 'salutation' && salutations && salutationHint(salutations.names, salutations.total, text) && (
               <NoticeBox level="hint" action={salutationHint(salutations.names, salutations.total, text)} fix={salutations.fix ?? null} />
             )}

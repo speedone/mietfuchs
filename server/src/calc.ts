@@ -3,6 +3,7 @@
 import { compareName } from '../../shared/compareName.ts'
 import type {
   AppliedValue,
+  SuggestionScaling,
   BillingPeriod,
   CaptureMethod,
   HcaDeviceLine,
@@ -121,7 +122,7 @@ import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, isFuelMarked, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
-import { degreeDayPermille, type DayRange } from '../../shared/degreeDays.ts'
+import { degreeDayPermille, yearDaysFrom, type DayRange } from '../../shared/degreeDays.ts'
 import { claimDeadline, nextSettlement, prepaymentAgreed, refundDueDate, refundLawAt, refundProposal, refundSteps, type LawAsk } from './co2Refund.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import {
@@ -11233,6 +11234,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // `annualFactors` je Position hoch (#208).
     const end = tenancyEnd.get(st.tenancyId)
     const noFuture = (end != null && end <= yTo) || st.days <= 0
+    // Wie hochgerechnet wurde (#691), aus denselben Faktoren wie der Vorschlag: je Zeile, die zählt, das Maß vom Anteil
+    // zum Jahresbetrag. Alle 1: nichts hochgerechnet. Alle gleich und gleich „ein Jahr durch die Tage des Mieters“: der
+    // Satz mit den Tagen geht rechnerisch auf. Sonst gemischt.
+    const scalingOf = (multipliers: number[]): SuggestionScaling => {
+      const same = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b))
+      if (multipliers.every((m) => same(m, 1))) return 'none'
+      const [first] = multipliers
+      // „Ein Jahr“: zwölf Monate ab Beginn des Zeitraums oder der Nutzung; die Tage des Zeitraums nur, wenn er kein Rumpf ist
+      const byDays = [...(period.short ? [] : [diy]), yearDaysFrom(yFrom), yearDaysFrom(st.periodStart)].some((y) => first !== undefined && same(first, y / st.days))
+      return multipliers.every((m) => first !== undefined && same(m, first)) && byDays ? 'days' : 'mixed'
+    }
     if (noFuture || (shortBasis !== null && !shortBasis.ok)) {
       st.suggestedMonthlyCents = 0
     } else if (shortBasis !== null) {
@@ -11249,6 +11261,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         : st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
       heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || !heatingRow(row, st.secondPrepaymentCoversWater === true) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0))
+      st.suggestionScaling = scalingOf(st.rows.filter((row) => !laterSeparate(row) && row.shareCents !== 0)
+        .map((row) => (factorOf(row) * diy) / (basisDays === st.days ? basisDays : daysOf(row))))
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
       // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
@@ -11259,6 +11273,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         : st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' ? 0 : (row.shareCents * diy) / daysOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
       heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' || !heatingRow(row, st.secondPrepaymentCoversWater === true) ? 0 : (row.shareCents * diy) / daysOf(row)), 0))
+      st.suggestionScaling = scalingOf(st.rows.filter((row) => !laterSeparate(row) && row.kind !== 'co2Refund' && row.shareCents !== 0)
+        .map((row) => diy / (basisDays === st.days ? basisDays : daysOf(row))))
     }
   }
   return result

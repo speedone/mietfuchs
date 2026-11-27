@@ -107,13 +107,13 @@ test('Logo ohne Briefpapier: oben rechts im Briefkopf, sonst bleibt alles wie bi
 })
 
 test('Briefpapier: ohne Seitenrand, Papier auf der ersten und den Folgeseiten, ohne Absender und Fußzeile von Mietfuchs', async () => {
-  const own: LetterDesign = { ...DEFAULT_LETTER_DESIGN, logo: LOGO, paper: PAPER, paperNext: 'other', paperNextFile: NEXT, margins: { top: 40, right: 15, bottom: 30, left: 25 } }
+  const own: LetterDesign = { ...DEFAULT_LETTER_DESIGN, logo: LOGO, paper: PAPER, paperNext: 'other', paperNextFile: NEXT, margins: { top: 30, right: 15, bottom: 30, left: 25 } }
   designs = { installation: DEFAULT_LETTER_DESIGN, property: own }
   const { container } = show({ ...SETTINGS, printFooter: true })
   const card = await statementOf()
   await waitFor(() => expect(card.querySelector('img.letter-paper')?.getAttribute('src')).toBe(url(PAPER)), SLOW)
   expect(card.classList.contains('paper-print')).toBe(true)
-  expect((card as HTMLElement).style.getPropertyValue('--paper-top')).toBe('40mm')
+  expect((card as HTMLElement).style.getPropertyValue('--paper-top')).toBe('30mm')
   expect(container.querySelector('style')?.textContent).toMatch(/@page\s*\{\s*margin:\s*0/)
   // Das Papier der Folgeseiten liegt im Kopf der Hülle, den Chromium und Firefox je Seite wiederholen, nicht unter den
   // Belegkopien; einen Rand hält der Kopf nicht frei, das tut der Rahmen um die Hülle (letter.css).
@@ -159,6 +159,31 @@ test('ein Browser ohne Ränder je Seite (Safari): ohne Briefpapier, mit Logo, Ra
   // sich wie Safari als „Apple Computer, Inc.“).
   expect(drawer.textContent).toMatch(/setzt Safari selbst dazu/)
   expect((within(drawer).getByRole('button', { name: 'Drucken' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+// #691, Durchsicht: Lässt der Rand oben dem Logo auf dem Briefpapier keinen Platz, druckt es nicht (kein Fleck), und das
+// Fenster „Drucken“ sagt es mit dem Weg zum Fenster „Logo und Briefpapier“. Mit wenig Platz druckt es und wird genannt.
+test('Logo auf Briefpapier ohne Platz: nicht im Dokument, und das Fenster „Drucken“ sagt es', async () => {
+  designs = { installation: { ...DEFAULT_LETTER_DESIGN, logo: LOGO, paper: PAPER, margins: { top: 45, right: 20, bottom: 30, left: 25 } }, property: null }
+  show()
+  const card = await statementOf()
+  await waitFor(() => expect(card.querySelector('img.letter-paper')).not.toBeNull(), SLOW)
+  expect(card.querySelector('img.letter-logo')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  const drawer = await screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
+  expect(drawer.textContent).toContain('Logo wird nicht gedruckt')
+  expect(drawer.textContent).toContain('Den Rand oben ändern Sie im Fenster „Logo und Briefpapier“')
+  expect((within(drawer).getByRole('button', { name: 'Drucken' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+test('Logo auf Briefpapier mit wenig Platz: gedruckt, und das Fenster „Drucken“ nennt es', async () => {
+  designs = { installation: { ...DEFAULT_LETTER_DESIGN, logo: LOGO, paper: PAPER, margins: { top: 36, right: 20, bottom: 30, left: 25 } }, property: null }
+  show()
+  const card = await statementOf()
+  await waitFor(() => expect(card.querySelector('img.letter-logo')).not.toBeNull(), SLOW)
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  const drawer = await screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
+  expect(drawer.textContent).toContain('Logo wird kleiner gedruckt')
 })
 
 // Durchsicht (S2): Wer die Bankverbindung auf dem Briefpapier führt, bekommt „Bankverbindung fehlt“ nicht.

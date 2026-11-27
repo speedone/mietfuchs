@@ -11,6 +11,8 @@ import { useFormError } from './ErrorSummary'
 import { useSaving } from '../useSaving'
 import { openPdf, renderPage } from '../pdf'
 import { designImage, pdfPageCount, svgToPng } from '../letterPaper'
+import { logoBox, logoPrintNote, logoSpace } from '../letterDesignView'
+import { NoticeBox } from './Notice'
 import {
   FILE_LABEL, PAPER_NEXT_CHOICES, SLOT_OF, checkChosenFile, designDraftValue, designPayload, designProblems, initialDesignDraft, onePageProblem,
   type DesignDraft, type DesignField, type DesignFileField, type DesignPayload, type FileState,
@@ -67,10 +69,13 @@ function usePreview(state: FileState): string | null {
 }
 
 // Ein A4-Blatt im Maßstab: Briefpapier, Logo, der Rahmen des Anschriftfelds (DIN 5008, bleibt frei) und der
-// Textbereich aus den Rändern. Ränder, die (noch) keine Zahl sind, zeichnet sie mit der Vorgabe nicht.
+// Textbereich aus den Rändern. Ränder, die (noch) keine Zahl sind, zeichnet sie mit der Vorgabe nicht. Das Logo steht,
+// wo es gedruckt wird (`logoBox`): mit Briefpapier ab dem Rand oben und vor dem Informationsblock (#691).
 export function PaperPreview({ paper, logo, margins }: { paper: string | null, logo: string | null, margins: Partial<LetterMargins> }) {
   const pct = (mm: number | undefined, of: number) => (typeof mm === 'number' && Number.isFinite(mm) ? `${(mm / of) * 100}%` : undefined)
+  const box = paper && typeof margins.top === 'number' && Number.isFinite(margins.top) ? logoBox(margins.top) : null
   const vars = {
+    ...(box ? { '--preview-logo-top': pct(box.top, 297), '--preview-logo-height': pct(box.maxHeight, 297) } : {}),
     '--preview-top': pct(margins.top, 297),
     '--preview-right': pct(margins.right, 210),
     '--preview-bottom': pct(margins.bottom, 297),
@@ -81,7 +86,7 @@ export function PaperPreview({ paper, logo, margins }: { paper: string | null, l
     <figure className="m-0">
       <div className="paper-preview" style={vars} role="img" aria-label="Vorschau der ersten Seite: Briefpapier, Anschriftfeld und Textbereich">
         {paper && <img className="paper-preview-sheet" src={paper} alt="" />}
-        {logo && <img className="paper-preview-logo" src={logo} alt="" />}
+        {logo && box?.maxHeight !== 0 && <img className="paper-preview-logo" src={logo} alt="" />}
         <div className="paper-preview-frame paper-preview-window" />
         {text && <div className="paper-preview-frame paper-preview-text" />}
       </div>
@@ -171,6 +176,8 @@ export default function LetterDesignDrawer({ open, level, title, stored, install
   )
 
   const margins = Object.fromEntries(MARGIN_KEYS.map((k) => [k, /^\d+$/.test(draft.margins[k]) ? Number(draft.margins[k]) : undefined])) as Partial<LetterMargins>
+  // Logo und Briefpapier zusammen: Lässt der Rand oben dem Logo wenig oder keinen Platz, sagt es das Fenster vorher.
+  const logoNote = own && draft.logo && draft.paper && typeof margins.top === 'number' ? logoPrintNote(logoSpace(margins.top)) : null
   return (
     <Drawer
       open={open}
@@ -228,6 +235,7 @@ export default function LetterDesignDrawer({ open, level, title, stored, install
               </p>
             </>
           )}
+          {logoNote && <NoticeBox level="info" title={logoNote.title} action={`${logoNote.reason} Mit einem kleineren Rand oben bekommt es Platz.`} />}
           <PaperPreview paper={paperSrc} logo={logoSrc} margins={draft.paper ? margins : {}} />
         </>
       )}

@@ -22,9 +22,10 @@ export type PrintDesign = {
   follow: LetterDesignFile | null // Folgeseiten
   margins: LetterMargins | null // nur mit Briefpapier
   paperSkipped: boolean // ein Briefpapier ist gewählt, aber dieser Browser kann es nicht drucken (Safari)
+  logoSpace: LogoSpace // Logo auf Briefpapier: druckt nicht (`none`, `printedDesign` lässt es dann weg) oder kleiner (`small`)
 }
 
-const NONE: PrintDesign = { logo: null, paper: null, follow: null, margins: null, paperSkipped: false }
+const NONE: PrintDesign = { logo: null, paper: null, follow: null, margins: null, paperSkipped: false, logoSpace: null }
 
 // Ohne Seitenrand. Eine feste Breite des Dokuments (für WebKit, letter.css) braucht es nicht: Briefpapier druckt nur ein
 // Browser mit Rändern je Seite (`canPagePaper`), und dort schaltete sie die Skalierung des Druckdialogs ab.
@@ -110,12 +111,15 @@ export function printDesign(designs: LetterDesigns | null, { legacy, pagedPaper 
   if (!designs || legacy) return NONE
   const d = effectiveLetterDesign(designs)
   const paper = pagedPaper ? d.paper : null
+  // Logo auf Briefpapier (#691): Ohne Platz zwischen Rand oben und Informationsblock druckt es nicht (`printedDesign`).
+  const space = paper && d.logo ? logoSpace(d.margins.top) : null
   return {
     logo: d.logo,
     paper,
     follow: paper ? followPaper(d) : null,
     margins: paper ? d.margins : null,
     paperSkipped: !!d.paper && !paper,
+    logoSpace: space,
   }
 }
 
@@ -135,6 +139,44 @@ export const paperVars = (m: LetterMargins): Record<string, string> => ({
   '--paper-left': `${m.left}mm`,
 })
 
+// Wo das Logo im Druck steht, in mm ab der oberen Blattkante (#691). Ohne Briefpapier ab 15 mm, höchstens 25 mm hoch. Mit
+// Briefpapier im freien Bereich: ab dem Rand oben, der den Kopf des Briefpapiers freihält (nie höher als 15 mm), und nur
+// so hoch, dass es 2 mm vor dem Informationsblock endet (50 mm nach DIN 5008, er bleibt an seinem Platz). Dieselben Maße
+// stehen in letter.css (`.paper-print .letter-logo`, Wächter in letterCss.test.ts). Bleiben weniger als 10 mm Höhe,
+// druckt es nicht (`maxHeight` 0, `printDesign` lässt es weg): Geschrumpft blieb ein Fleck (gemessen 2,9 × 9,8 mm bei
+// 45 mm Rand).
+export const LOGO_TOP_MM = 15
+export const LOGO_MAX_HEIGHT_MM = 25
+export const LOGO_BOTTOM_LIMIT_MM = 48
+export const LOGO_MIN_HEIGHT_MM = 10
+// Darunter gilt das Logo als klein gedruckt, und der Druck sagt es
+const LOGO_SMALL_BELOW_MM = 15
+export function logoBox(paperTop: number | null): { top: number; maxHeight: number } {
+  if (paperTop === null) return { top: LOGO_TOP_MM, maxHeight: LOGO_MAX_HEIGHT_MM }
+  const top = Math.max(LOGO_TOP_MM, paperTop)
+  const height = Math.min(LOGO_MAX_HEIGHT_MM, LOGO_BOTTOM_LIMIT_MM - top)
+  return { top, maxHeight: height < LOGO_MIN_HEIGHT_MM ? 0 : height }
+}
+
+// Wie viel Platz das Logo auf Briefpapier hat: `none` druckt es nicht, `small` kleiner (unter 15 mm Höhe), sonst `null`.
+export type LogoSpace = 'none' | 'small' | null
+export function logoSpace(paperTop: number): LogoSpace {
+  const { maxHeight } = logoBox(paperTop)
+  return maxHeight === 0 ? 'none' : maxHeight < LOGO_SMALL_BELOW_MM ? 'small' : null
+}
+
+// Der Hinweis dazu, ein Baustein für jedes Fenster, das mit Logo und Briefpapier druckt (Abrechnung, Mieterhöhung,
+// Kaution) und für das Fenster „Logo und Briefpapier“ selbst: Wer die Einstellung schon hat, erfährt es beim Drucken.
+// `reason`: der Satz ohne den Weg, für das Fenster „Logo und Briefpapier“ selbst.
+export function logoPrintNote(space: LogoSpace): { title: string; text: string; reason: string } | null {
+  if (space === null) return null
+  const way = 'Den Rand oben ändern Sie im Fenster „Logo und Briefpapier“: in den Einstellungen, für ein einzelnes Objekt auf der Seite Abrechnung unter „Mehr“.'
+  const note = (title: string, reason: string) => ({ title, text: `${reason} ${way}`, reason })
+  return space === 'none'
+    ? note('Logo wird nicht gedruckt', 'Zwischen dem Rand oben des Briefpapiers und dem Datum im Briefkopf ist zu wenig Platz für das Logo.')
+    : note('Logo wird kleiner gedruckt', 'Zwischen dem Rand oben des Briefpapiers und dem Datum im Briefkopf ist wenig Platz für das Logo.')
+}
+
 // Was geladen ist (Adressen bzw. gerenderte Bilder), für einen Stand der Dateien (`key`); `failed` nennt, was fehlt.
 export type LoadedDesign = { key: string; logo: string | null; paper: string | null; follow: string | null; failed: string[] }
 export const designKey = (p: PrintDesign): string => [p.logo?.file, p.paper?.file, p.follow?.file].map((f) => f ?? '').join('|')
@@ -150,7 +192,8 @@ export function printedDesign(planned: PrintDesign, loaded: LoadedDesign | null)
   }
   const paper = planned.paper ? loaded.paper : null
   return {
-    logo: planned.logo ? loaded.logo : null,
+    // Ohne Platz auf dem Briefpapier kein Logo (#691); fehlt das Briefpapier, druckt es wie ohne.
+    logo: planned.logo && !(paper && planned.logoSpace === 'none') ? loaded.logo : null,
     paper,
     follow: paper && planned.follow ? loaded.follow : null,
     margins: paper ? planned.margins : null,

@@ -126,3 +126,45 @@ test('#735: leere Randfelder oben und unten, und ohne Seitenrand derselbe Abstan
   const main = fs.readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
   expect(main).toMatch(/markPageEdges\(document\)/)
 })
+
+// #691, im Druck gemessen (scripts/print-width-check.mjs, Fall `abrechnung-briefpapier`): Nach dem Anschreiben beginnt der
+// Rahmen der Aufstellung eine Seite, und der Abstand zwischen den Teilen einer Karte (12 px) schob das Briefpapier dieser
+// einen Seite 3,2 mm nach unten. Wächter, dass der Abstand dort null bleibt.
+test('Briefpapier nach dem Anschreiben: der Rahmen der Aufstellung beginnt ohne Abstand oben', () => {
+  // Auch der Rahmen der Belegkopien, der immer eine Seite beginnt (ohne Anschreiben lag er sonst weiter 3,2 mm tiefer)
+  const frame = rules(print).find((r) => r.selector === '.paper-print .letter:not(.letter-top) ~ .print-pages-frame, .paper-print .print-pages-frame.print-pages-new')?.body ?? ''
+  expect(frame).toMatch(/margin-top: 0(;|\s|$)/)
+})
+
+// #691, Durchsicht: Ohne Anschreiben beginnt der Rahmen an der Blattkante (er rückt um die Höhe des Kopfs zurück), und
+// die Zelle hält genau diese Höhe samt dem Abstand der Karte frei; beide Angaben gehören zusammen, sonst wandert der Text.
+test('Briefpapier ohne Anschreiben: der Rahmen rückt um die Höhe des Kopfs zurück, die Zelle hält sie frei', () => {
+  const head = rules(print).find((r) => r.selector === '.paper-print .letter.letter-top')?.body ?? ''
+  expect(head).toContain('height: calc(98.46mm - 2mm - var(--paper-top));')
+  const frame = rules(print).find((r) => r.selector === '.paper-print .letter.letter-top ~ .print-pages-frame:not(.print-pages-new)')?.body ?? ''
+  // Der Kopf selbst steht 12 px unter dem Anfang der Karte (Abstand ihrer Teile); der Rahmen rückt auch darum zurück, sonst
+  // lag das Papier der Folgeseiten auf Seite 1 bei 3,2 bis 300,3 mm (nachgemessen)
+  expect(frame).toContain('margin-top: calc(var(--paper-top) + 2mm - 98.46mm - 12px);')
+  const cell = rules(print).find((r) => r.selector === '.paper-print .letter.letter-top ~ .print-pages-frame:not(.print-pages-new) > .print-pages > tbody > tr > .print-pages-cell')?.body ?? ''
+  expect(cell).toContain('padding-top: calc(98.46mm - 2mm - var(--paper-top) + 24px);')
+})
+
+// #691: Das Logo auf Briefpapier steht zwischen dem Rand oben und dem Informationsblock; die Maße sind die von `logoBox`
+// (letterDesignView.ts), nach denen Vorschau und Hinweis im Seitenfenster rechnen.
+test('Logo auf Briefpapier: ab dem Rand oben, vor dem Informationsblock, mit den Maßen von logoBox', async () => {
+  const { LOGO_BOTTOM_LIMIT_MM, LOGO_MAX_HEIGHT_MM, LOGO_TOP_MM } = await import('./letterDesignView')
+  const logo = rules(print).find((r) => r.selector === '.paper-print .letter-logo')?.body ?? ''
+  expect(logo).toContain(`top: max(${LOGO_TOP_MM}mm, var(--paper-top));`)
+  expect(logo).toContain(`max-height: max(0mm, min(${LOGO_MAX_HEIGHT_MM}mm, calc(${LOGO_BOTTOM_LIMIT_MM}mm - max(${LOGO_TOP_MM}mm, var(--paper-top)))));`)
+  // Ohne Briefpapier dieselben Ausgangsmaße
+  expect(print).toMatch(new RegExp(`\\.letter-logo \\{ top: calc\\(${LOGO_TOP_MM}mm - var\\(--page\\)\\);[^}]*max-height: ${LOGO_MAX_HEIGHT_MM}mm;`))
+})
+
+// #691, Durchsicht: Ohne Anschreiben liegen auf Seite 1 das Papier der ersten Seite und das der Folgeseiten übereinander;
+// sein weißer Grund deckt das untere zu, auch in einem Browser, der Hintergründe sonst weglässt.
+test('Briefpapier: das Papier der ersten Seite druckt seinen Grund immer', () => {
+  const paper = rules(print).find((r) => r.selector === '.letter-paper')?.body ?? ''
+  expect(paper).toContain('-webkit-print-color-adjust: exact;')
+  expect(paper).toContain('print-color-adjust: exact;')
+  expect(paper).toContain('background: var(--card);')
+})

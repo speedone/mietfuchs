@@ -10,7 +10,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { localToday } from '../periodForm'
 import { DECISION_LABELS, EXTRA_PARAGRAPH_HINT, PAPER_BROWSER_NOTE, PARTIES_HINT, RENT_INCREASE_STATUS_LABELS, SEVERAL_LANDLORDS_LABEL, decisionQuestion, followPlanRange, justificationOptions, notYetNote, qualifiedSurveyOptions, rentIncreaseDecisions, rentLetterInput, rentLetterStart, rentLetterWarnings, sendQuestion, senderNote, type RentLetterValue, type RentSurveyValue } from '../rentIncreaseLetterForm'
 import { SENDER_MISSING_DRAFT, SENDER_ON_PAPER_ONLY, rentIncreaseBasisProblem, rentSenderWarning } from '../../../shared/rentIncreaseLetter.ts'
-import { asLetterDesigns, browserLinesNote, canPagePaper, pageEdges, printDesign } from '../letterDesignView'
+import { asLetterDesigns, browserLinesNote, canPagePaper, logoPrintNote, pageEdges, printDesign, type LogoSpace } from '../letterDesignView'
 import { withProperty } from '../property'
 import { sameDraft } from '../draft'
 import { effectiveLandlord } from '../landlord'
@@ -67,6 +67,9 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   const [paper, setPaper] = useState<boolean | null>(null)
   const [paperSkipped, setPaperSkipped] = useState(false)
   const linesNote = browserLinesNote(pageEdges())
+  // #691: Logo auf Briefpapier ohne oder mit wenig Platz, gesagt beim Drucken (`logoPrintNote`)
+  const [logoSpace, setLogoSpace] = useState<LogoSpace>(null)
+  const logoNote = logoPrintNote(logoSpace)
   useEffect(() => {
     let alive = true
     api<unknown>(withProperty('/api/letter-design', propertyId))
@@ -75,6 +78,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
         const planned = printDesign(asLetterDesigns(d), { legacy: false, pagedPaper: canPagePaper() })
         setPaper(planned.paper !== null)
         setPaperSkipped(planned.paperSkipped)
+        setLogoSpace(planned.logoSpace)
       })
       .catch(() => { if (alive) setPaper(false) })
     return () => { alive = false }
@@ -332,6 +336,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
         {/* #735: wo der Browser seine Kopf- und Fußzeilen trotzdem druckt (Safari), der Weg, sie abzuschalten */}
         {(increases?.length ?? 0) > 0 && linesNote && <p className="muted m-0">{linesNote}</p>}
         {paperSkipped && (increases?.length ?? 0) > 0 && <NoticeBox level="info" title="Briefpapier druckt dieser Browser nicht">{PAPER_BROWSER_NOTE}</NoticeBox>}
+        {logoNote && (increases?.length ?? 0) > 0 && <NoticeBox level="info" title={logoNote.title} action={logoNote.text} />}
         {increases?.map((x) => (
           <IncreaseItem key={x.id} x={x} busy={saving.busy} landlord={landlord} onPrint={() => void print(x)}
             onSend={(receivedOn) => void saving.run(() => send(x, receivedOn))}

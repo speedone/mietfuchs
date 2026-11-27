@@ -112,13 +112,23 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   ohne Rand mit 12 mm Innenabstand an body, #735, dort ist das Fenster so breit wie die Seite und erlaubt, was vor dem
   Abstand rechts endet, `printArea`); und in der PDF aus Chromium ist
   jede Seite A4, auf jeder Seite mit Anschreiben steht der Betreff (fehlt er als eigenes Textstück, ist das ein Befund) bei 98,46 mm und, wo gedruckt, die Fußzeile ab 275 mm.
+  Dazu (#691) bricht die lange E-Mail im Informationsblock nur nach „@“, vor einem Punkt oder nach einem Bindestrich um
+  (`mailBreaks`; rot davor: „…wegen|er-musterstadt@…“), und mit Briefpapier liegt jedes Bild über die ganze Blattbreite
+  auf jeder Seite bei 0 bis 297 mm (`readImages` verfolgt die Matrix der Bilder in der PDF; rot davor: Seite nach dem
+  Anschreiben 3,2 bis 300,3 mm), das Logo zwischen dem Rand oben und 50 mm (`logoTop`; rot davor: 15,1 bis 34,4 mm bei
+  Rand 25 mm). Der Fall `abrechnung-briefpapier` hat deshalb 25 mm Rand oben. Lässt der Rand dem Logo keinen Platz
+  (`noLogo`, Fall `kaution-briefpapier` mit 45 mm), steht außer dem Briefpapier kein Bild auf einer Seite (rot davor:
+  ein Fleck von 2,9 × 9,8 mm bei 45,0 bis 47,9 mm). Der Fall `abrechnung-briefpapier-ohne-anschreiben` druckt mit
+  Briefpapier ohne Anschreiben (rot davor: Papier der Folgeseiten auf Seite 1 bei 59,5 bis 356,7 mm, Rest auf Seite 2;
+  danach noch 3,2 bis 300,3 mm, bis der Rahmen auch um den Abstand des Kopfs zurückrückte).
   **Erst messen, dann `page.pdf()`**: Das löst `afterprint` aus, und Ableseformular und Monatsinformation nehmen dann ihre
   Druckklasse wieder ab. Bericht `bericht.md` und PDFs in `--out`, Exit 1 bei Befunden, 2 bei gescheitertem Lauf.
   Dazu in jedem Fall und jeder Engine `beforeprint`: Die Notbremse (client/src/printFit.ts) darf nichts markieren; im
   Fall `notbremse` steht eine fremde, nicht umbrechende Zeile in der Abrechnung, dort muss sie greifen, danach ragt
   nichts hinaus, und in der PDF stehen Betreff und Fußzeile richtig und jedes Wort der Zeile (rot ohne Notbremse:
   Fußzeile bei 191 mm, 29 Wörter abgeschnitten).
-  `--cases` nimmt einzelne Fälle. Rot nachgewiesen am Stand vor dem Fix (Fußzeile bei 191 mm, Steuer 1110 px mit
+  `--cases` nimmt einzelne Fälle, `--measure` nennt dazu die gemessenen Lagen (jedes Bild mit Briefpapier, erste Textzeile
+  je Seite, Zeilen der langen E-Mail) auf der Konsole und im Bericht unter „Gemessen“. Rot nachgewiesen am Stand vor dem Fix (Fußzeile bei 191 mm, Steuer 1110 px mit
   abgeschnittener Spalte „Zuordnung“, CO₂-Blatt 811 px) und gegen jede einzelne Abhilfe (ohne die Regel für Fließtext:
   Betreff bei 77 mm). Abhilfe steht in client/src/letter.css (`@media print`) und softBreak.ts (client/CLAUDE.md,
   „Druckbreite“).

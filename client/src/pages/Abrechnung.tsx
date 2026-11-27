@@ -51,12 +51,13 @@ import { closeWithQuestions } from '../fuelClose'
 import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, exportQuestion, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { calendarPeriod } from '../../../shared/period.ts'
-import { adjustFromFor, mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
+import { CREDIT_MOVED_OUT_PAGE_TEXT } from '../letterForm'
+import { adjustFromFor, creditTextUnused, mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
 import Card from '../components/Card'
 import ControlView from '../components/ControlView'
 import Letter, { PrintPages, StatementHead } from '../components/Letter'
 import LetterDesignDrawer, { designSummary, sendLetterDesign } from '../components/LetterDesignDrawer'
-import { PAPER_PAGE_CSS, asLetterDesigns, canPagePaper, designKey, paperVars, printDesign, printedDesign, type LoadedDesign } from '../letterDesignView'
+import { PAPER_PAGE_CSS, asLetterDesigns, canPagePaper, designKey, logoPrintNote, paperVars, printDesign, printedDesign, type LoadedDesign } from '../letterDesignView'
 import { designImage } from '../letterPaper'
 import type { LetterDesigns } from '../../../shared/types.ts'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
@@ -733,6 +734,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     if (!data?.closed?.sentAt && v.letter && ibanMissing({ balanceCents: v.st.balanceCents, iban: v.letter.values?.IBAN, sentence: backPayment, paper })) {
       out.push({ code: 'page.iban', level: 'warning', title: IBAN_MISSING_TITLE, text: data?.closed ? IBAN_MISSING_CLOSED_TEXT : IBAN_MISSING_TEXT })
     }
+    // #691, Durchsicht: Ein eigener Text zum Guthaben in Vorlage oder Objekt gilt nach dem Auszug nicht; ruhig genannt,
+    // solange die Abrechnung offen ist (danach ist der Text eingefroren).
+    if (!data?.closed && v.letter?.ended && v.st.balanceCents > 0
+      && creditTextUnused({ installation: templates?.installation, property: templates?.property, own: tenancyLetters[v.st.tenancyId]?.texts })) {
+      out.push({ code: 'page.credit-moved-out', level: 'hint', title: `Eigener Text zum Guthaben gilt nicht nach dem Auszug (${who})`, text: CREDIT_MOVED_OUT_PAGE_TEXT })
+    }
     return out
   }
   // Je Hinweis einmal (die Rücksendeangabe ist bei allen Mietern dieselbe).
@@ -779,6 +786,9 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     : !design.ready ? 'Logo und Briefpapier werden noch vorbereitet …' : null
   const printWarnings = uniqueChecks(printViews.flatMap(pageChecks))
   if (planned.paperSkipped) printWarnings.push({ code: 'page.paper-browser', level: 'info', title: 'Briefpapier druckt dieser Browser nicht', text: PAPER_BROWSER_TEXT })
+  // #691: Logo auf Briefpapier ohne oder mit wenig Platz; wer die Einstellung schon hat, erfährt es hier.
+  const logoNote = logoPrintNote(planned.logoSpace)
+  if (logoNote) printWarnings.push({ code: 'page.logo-space', level: 'info', ...logoNote })
 
   return (
     <>

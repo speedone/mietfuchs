@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LetterDesign } from '../../shared/types.ts'
 import { DEFAULT_LETTER_DESIGN } from '../../shared/letterDesign.ts'
-import { PAGE_EDGE_CSS, PAPER_PAGE_CSS, browserLinesNote, canPagePaper, designKey, markPageEdges, markPrintWidth, pageEdges, paperVars, printDesign, printedDesign } from './letterDesignView'
+import { PAGE_EDGE_CSS, PAPER_PAGE_CSS, browserLinesNote, canPagePaper, designKey, logoBox, logoPrintNote, logoSpace, markPageEdges, markPrintWidth, pageEdges, paperVars, printDesign, printedDesign } from './letterDesignView'
 
 const logo = { file: 'logo-0123456789abcdef.png', type: 'png' as const }
 const paper = { file: 'paper-0123456789abcdef.pdf', type: 'pdf' as const }
@@ -10,11 +10,11 @@ const second = { file: 'paper-1123456789abcdef.jpg', type: 'jpg' as const }
 const engine = ({ clone, gecko = false }: { clone: boolean, gecko?: boolean }) => ({
   supports: (p: string, v: string) => (p === 'box-decoration-break' && v === 'clone' && clone) || (p === '-moz-orient' && v === 'inline' && gecko),
 })
-const withPaper: LetterDesign = { ...DEFAULT_LETTER_DESIGN, logo, paper, margins: { top: 40, right: 15, bottom: 30, left: 25 } }
+const withPaper: LetterDesign = { ...DEFAULT_LETTER_DESIGN, logo, paper, margins: { top: 30, right: 15, bottom: 30, left: 25 } }
 
 describe('Logo und Briefpapier im Druck (#415, Teil 2b)', () => {
   it('ohne Gestaltung: nichts davon', () => {
-    expect(printDesign({ installation: DEFAULT_LETTER_DESIGN, property: null }, { legacy: false, pagedPaper: true })).toEqual({ logo: null, paper: null, follow: null, margins: null, paperSkipped: false })
+    expect(printDesign({ installation: DEFAULT_LETTER_DESIGN, property: null }, { legacy: false, pagedPaper: true })).toEqual({ logo: null, paper: null, follow: null, margins: null, paperSkipped: false, logoSpace: null })
   })
 
   it('das Objekt geht vor', () => {
@@ -32,11 +32,11 @@ describe('Logo und Briefpapier im Druck (#415, Teil 2b)', () => {
   })
 
   it('eine vor #415 abgeschlossene Abrechnung druckt wie damals, ohne Logo und Briefpapier', () => {
-    expect(printDesign({ installation: withPaper, property: null }, { legacy: true, pagedPaper: true })).toEqual({ logo: null, paper: null, follow: null, margins: null, paperSkipped: false })
+    expect(printDesign({ installation: withPaper, property: null }, { legacy: true, pagedPaper: true })).toEqual({ logo: null, paper: null, follow: null, margins: null, paperSkipped: false, logoSpace: null })
   })
 
   it('Ränder als Variablen in Millimetern, und ohne Seitenrand gedruckt', () => {
-    expect(paperVars(withPaper.margins)).toEqual({ '--paper-top': '40mm', '--paper-right': '15mm', '--paper-bottom': '30mm', '--paper-left': '25mm' })
+    expect(paperVars(withPaper.margins)).toEqual({ '--paper-top': '30mm', '--paper-right': '15mm', '--paper-bottom': '30mm', '--paper-left': '25mm' })
     expect(PAPER_PAGE_CSS).toMatch(/@page\s*\{\s*margin:\s*0/)
     // Briefpapier druckt nur ein Browser mit Rändern je Seite (nicht WebKit); dort braucht es keine feste Breite, die die
     // Skalierung des Druckdialogs abschalten würde (Durchsicht K1 zu PR #443).
@@ -52,7 +52,7 @@ describe('Logo und Briefpapier im Druck (#415, Teil 2b)', () => {
   // Seite der Aufstellung, letter.css) druckt die Seite deshalb ohne Briefpapier, wie wenn die Datei fehlte; das Logo bleibt.
   it('ein Browser ohne Ränder je Seite (Safari) druckt ohne Briefpapier, mit Logo, und sagt es', () => {
     const d = printDesign({ installation: withPaper, property: null }, { legacy: false, pagedPaper: false })
-    expect(d).toEqual({ logo, paper: null, follow: null, margins: null, paperSkipped: true })
+    expect(d).toEqual({ logo, paper: null, follow: null, margins: null, paperSkipped: true, logoSpace: null })
     // Ohne Briefpapier gibt es nichts zu sagen.
     expect(printDesign({ installation: { ...withPaper, paper: null }, property: null }, { legacy: false, pagedPaper: false }).paperSkipped).toBe(false)
     expect(printDesign({ installation: withPaper, property: null }, { legacy: true, pagedPaper: false }).paperSkipped).toBe(false)
@@ -156,5 +156,54 @@ describe('Kopf- und Fußzeilen des Browsers (#735)', () => {
     const other = browserLinesNote('browser', 'Google Inc.')
     expect(other).not.toMatch(/Safari/)
     expect(other).toMatch(/Kopf- und Fußzeilen/)
+  })
+})
+
+// #691: Das Logo stand mit Briefpapier fest ab 15 mm und überdeckte dessen Kopf (nachgemessen: 15,1 bis 34,4 mm bei einem
+// Rand oben von 25 mm). Es steht jetzt im freien Bereich zwischen dem Rand oben und dem Informationsblock (50 mm).
+// Durchsicht: Bleiben dafür weniger als 10 mm Höhe, druckt es gar nicht, statt zu einem Fleck zu schrumpfen (gemessen
+// bei 45 mm Rand: 2,9 × 9,8 mm), und der Druck sagt es.
+describe('Lage des Logos im Druck (#691)', () => {
+  it('ohne Briefpapier wie bisher: ab 15 mm, höchstens 25 mm hoch', () => {
+    expect(logoBox(null)).toEqual({ top: 15, maxHeight: 25 })
+  })
+  it('mit Briefpapier ab dem Rand oben und vor dem Informationsblock; unter 10 mm Höhe gar nicht', () => {
+    expect(logoBox(10)).toEqual({ top: 15, maxHeight: 25 })
+    expect(logoBox(20)).toEqual({ top: 20, maxHeight: 25 })
+    expect(logoBox(25)).toEqual({ top: 25, maxHeight: 23 })
+    expect(logoBox(38)).toEqual({ top: 38, maxHeight: 10 })
+    expect(logoBox(39)).toEqual({ top: 39, maxHeight: 0 })
+    expect(logoBox(45)).toEqual({ top: 45, maxHeight: 0 })
+    expect(logoBox(70)).toEqual({ top: 70, maxHeight: 0 })
+  })
+  it('wie viel Platz bleibt: genug, wenig (unter 15 mm), keiner', () => {
+    expect([20, 33, 34, 38, 39, 45].map(logoSpace)).toEqual([null, null, 'small', 'small', 'none', 'none'])
+  })
+  const withBoth: LetterDesign = { ...DEFAULT_LETTER_DESIGN, logo: { file: 'logo-0123456789abcdef.png', type: 'png' }, paper: { file: 'paper-0123456789abcdef.png', type: 'png' } }
+  const planned = (top: number, pagedPaper = true) => printDesign({ installation: { ...withBoth, margins: { ...withBoth.margins, top } }, property: null }, { legacy: false, pagedPaper })
+  it('ohne Platz druckt das Logo nicht (kein Fleck), und der Plan sagt warum', () => {
+    expect(planned(20)).toMatchObject({ logo: withBoth.logo, logoSpace: null })
+    expect(planned(36)).toMatchObject({ logo: withBoth.logo, logoSpace: 'small' })
+    expect(planned(45)).toMatchObject({ logoSpace: 'none' })
+    const loaded = (p: ReturnType<typeof planned>, paperLoaded = true) => printedDesign(p, { key: designKey(p), logo: 'L', paper: paperLoaded ? 'P' : null, follow: paperLoaded ? 'F' : null, failed: paperLoaded ? [] : ['Briefpapier'] })
+    expect(loaded(planned(45))).toMatchObject({ logo: null, paper: 'P' })
+    expect(loaded(planned(36))).toMatchObject({ logo: 'L', paper: 'P' })
+    // Fehlt die Datei des Briefpapiers, druckt die Seite ohne es, und das Logo steht wie ohne Briefpapier
+    expect(loaded(planned(45), false)).toMatchObject({ logo: 'L', paper: null })
+    // Druckt der Browser kein Briefpapier (Safari), steht das Logo wie ohne Briefpapier
+    expect(planned(45, false)).toMatchObject({ logo: withBoth.logo, logoSpace: null, paperSkipped: true })
+    // Ohne Logo gibt es nichts zu sagen
+    expect(printDesign({ installation: { ...withBoth, logo: null, margins: { ...withBoth.margins, top: 45 } }, property: null }, { legacy: false, pagedPaper: true }).logoSpace).toBeNull()
+  })
+  it('der Hinweis beim Drucken nennt Folge, Grund und den Weg zum Fenster „Logo und Briefpapier“', () => {
+    expect(logoPrintNote(null)).toBeNull()
+    expect(logoPrintNote('none')).toEqual({
+      title: 'Logo wird nicht gedruckt',
+      text: 'Zwischen dem Rand oben des Briefpapiers und dem Datum im Briefkopf ist zu wenig Platz für das Logo. Den Rand oben ändern Sie im Fenster „Logo und Briefpapier“: in den Einstellungen, für ein einzelnes Objekt auf der Seite Abrechnung unter „Mehr“.',
+      // Der Satz ohne den Weg, für das Fenster „Logo und Briefpapier“ selbst (Durchsicht)
+      reason: 'Zwischen dem Rand oben des Briefpapiers und dem Datum im Briefkopf ist zu wenig Platz für das Logo.',
+    })
+    expect(logoPrintNote('small')?.title).toBe('Logo wird kleiner gedruckt')
+    expect(logoPrintNote('small')?.text).toMatch(/wenig Platz für das Logo\. Den Rand oben ändern Sie im Fenster „Logo und Briefpapier“/)
   })
 })

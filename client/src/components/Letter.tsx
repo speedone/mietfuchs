@@ -31,14 +31,27 @@ type Props = HeadProps & {
   paymentQr?: PaymentQrData | null // #624: der Zahlungs-QR-Code, direkt nach dem Satz zur Nachzahlung
 }
 
-// Eine E-Mail darf nach dem @ umbrechen, statt über den rechten Rand zu ragen (Druck in Safari, #286); was dann noch zu
-// lang ist, bricht `overflow-wrap: anywhere` (letter.css).
+// Eine E-Mail darf nach dem @ und vor jedem Punkt umbrechen, statt über den rechten Rand zu ragen (Druck in Safari, #286).
+// Nur nach dem @ genügte nicht: Ein langer Teil davor oder danach brach mitten im Wort um („…wegen|er-musterstadt@…“,
+// nachgemessen), denn was dann noch zu lang ist, bricht `overflow-wrap: anywhere` (letter.css). Das bleibt die Notbremse
+// für ein Stück, das allein nicht in die Zeile passt. Ein Wert ohne @ (Name, Telefon) bleibt, wie er ist.
 export function breakAfterAt(text: string): ReactNode {
-  const parts = text.split('@')
-  return parts.length < 2 ? text : parts.map((p, i) => (i === 0 ? p : <Fragment key={i}>@<wbr />{p}</Fragment>))
+  if (!text.includes('@')) return text
+  // Stücke, vor denen umgebrochen werden darf: nach jedem @, vor jedem Punkt. Ohne Lookbehind im Muster, das ältere
+  // Safari nicht lesen (die ganze Datei fiele dort aus).
+  const pieces: string[] = []
+  let from = 0
+  for (let i = 0; i < text.length; i += 1) {
+    const cut = text[i] === '@' ? i + 1 : text[i] === '.' ? i : -1
+    if (cut <= from || cut >= text.length) continue
+    pieces.push(text.slice(from, cut))
+    from = cut
+  }
+  pieces.push(text.slice(from))
+  return pieces.map((p, i) => (i === 0 ? p : <Fragment key={i}><wbr />{p}</Fragment>))
 }
 
-const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
+const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'creditMovedOut', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
 
 export function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper }: HeadProps) {
   return (

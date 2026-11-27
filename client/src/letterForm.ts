@@ -2,7 +2,7 @@
 // beim Speichern geschickt wird, und was die Prüfung meldet. Die Prüfung der Platzhalter ist dieselbe
 // wie beim Server (`templateProblems` in shared/letter.ts); was hier durchgeht, lehnt er nicht ab.
 import type { LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts } from './types'
-import { blockLabel, LETTER_BLOCK_IDS, resolveTemplate, templateProblems, unmaskLetterText } from '../../shared/letter.ts'
+import { blockLabel, DEFAULT_LETTER_TEXTS, LETTER_BLOCK_IDS, resolveTemplate, templateProblems, unmaskLetterText } from '../../shared/letter.ts'
 import { fmtEuro, parseEuro } from './api'
 import type { Problem } from './formProblems'
 import { andList } from '../../shared/wording.ts'
@@ -127,6 +127,18 @@ export function monthlessAdjustTexts(draft: LetterDraft, base: Record<LetterBloc
     ? (draft.adjust === 'none' ? [] : [draft.adjust === 'custom' ? 'adjustCustom' : 'adjustSuggestion'])
     : (['adjustSuggestion', 'adjustCustom'] as const).filter((b) => draft.own[b] !== null)
   return blocks.filter((b) => adjustTextLacksMonth(shownText(draft, base, b)))
+}
+
+// #691, Durchsicht: Ein eigener Text zum Guthaben in der Vorlage oder am Objekt gilt nicht für Mieter, deren
+// Mietverhältnis beendet ist; für sie steht „Guthaben nach dem Auszug“. Das Fenster sagt es, solange dieser Baustein auf
+// keiner Ebene einen eigenen Text hat (`base` gleich der Vorgabe). Beim Mieter gilt sein eigener Text zum Guthaben ohnehin.
+export const CREDIT_MOVED_OUT_HINT = 'Ihr eigener Text zum Guthaben gilt nicht für Mieter, deren Mietverhältnis beendet ist; für sie steht der Satz von Mietfuchs, der nach der Bankverbindung fragt. Soll Ihr Wortlaut auch dort stehen: Text für „Guthaben nach dem Auszug“ anpassen.'
+// Dasselbe in „Zu prüfen“ der Seite Abrechnung, je ausgezogenem Mieter mit Guthaben (`creditTextUnused` in shared/letter.ts)
+export const CREDIT_MOVED_OUT_PAGE_TEXT = 'Ihr eigener Text zum Guthaben aus der Vorlage oder für dieses Objekt gilt nicht für Mieter, deren Mietverhältnis beendet ist; dieses Anschreiben trägt den Satz von Mietfuchs, der nach der Bankverbindung fragt. Soll Ihr Wortlaut auch hier stehen: Text für „Guthaben nach dem Auszug“ anpassen, in den Einstellungen unter „Anschreiben zur Abrechnung“ oder unter „Mehr“ mit „Vorlage für dieses Objekt bearbeiten“.'
+export function creditMovedOutHint(draft: LetterDraft, base: Record<LetterBlock, string>, level: LetterLevel): boolean {
+  if (level === 'tenancy') return false
+  const ownCredit = draft.own.credit !== null || base.credit !== DEFAULT_LETTER_TEXTS.credit
+  return ownCredit && draft.own.creditMovedOut === null && base.creditMovedOut === DEFAULT_LETTER_TEXTS.creditMovedOut
 }
 
 // Druck (#415): Ohne eingetragene Anrede beginnt der Brief mit „Guten Tag {Name},“. Das Seitenfenster sagt es, solange der

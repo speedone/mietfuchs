@@ -1370,6 +1370,12 @@ export type Statement = {
   // Wasser/Abwasser“ (`secondPrepaymentLabel`). Steht am Stand der Abrechnung, damit eine abgeschlossene ihren Wortlaut
   // behält, wenn die Angabe an der Anlage später geändert wird.
   secondPrepaymentCoversWater?: boolean
+  // Wie der Vorschlag gerechnet ist (#691), damit der Satz im Anschreiben sagt, was geschah (`suggestionBasis` in
+  // shared/letter.ts): `none` = ein Zwölftel der Kosten, nichts hochgerechnet; `days` = alle Kosten im selben Maß von den
+  // Tagen des Mieters auf ein volles Jahr; `mixed` = Positionen in verschiedenem Maß (im Rumpf je Position nach ihrem
+  // Leistungszeitraum, eine Heizperiode als Rumpf, Nutzungswechsel). Nur gesetzt, wo es einen Vorschlag gibt; ein vorher
+  // eingefrorener Stand kennt es nicht, dann gilt die frühere Regel nach den Tagen.
+  suggestionScaling?: SuggestionScaling
   balanceCents: number
   // Heizung PR 5 (Entwurf 5.7). `scope`: 'heating' in der Heizkostenabrechnung einer Heizperiode
   // (Weg d); fehlt es, ist es die Betriebskostenabrechnung. `heatingOnly`: Das Mietverhältnis hat im
@@ -1466,6 +1472,8 @@ export type LawOverrideSlot = {
 // 0.11.0 abgeschlossene Abrechnung es nicht kennt.
 export type LegalBasis = { asOf: string; rules: AppliedRule[]; values?: AppliedValue[] }
 
+export type SuggestionScaling = 'none' | 'days' | 'mixed'
+
 export type Settlement = {
   // Kalenderjahr, in dem der Abrechnungszeitraum beginnt (#208); bei einem Kalenderobjekt das
   // Abrechnungsjahr wie bisher.
@@ -1526,6 +1534,8 @@ export type Settlement = {
 export type LetterBlock =
   | 'subject' | 'salutation' | 'intro'
   | 'credit' | 'backPayment' | 'balanced'
+  // #691: Guthaben bei beendetem Mietverhältnis (fragt nach der Bankverbindung statt „mit der nächsten Mietzahlung verrechnet“)
+  | 'creditMovedOut'
   | 'adjustSuggestion' | 'adjustCustom'
   | 'receipts' | 'attachments'
   // Verwendungszweck des Zahlungs-QR-Codes (#624): kein Absatz, nur im Code und im Kasten daneben
@@ -1578,6 +1588,9 @@ export type StatementLetter = {
   // eingefroren; fehlen sie (vorher abgeschlossen), druckt die Aufstellung ohne diese Angaben.
   premises?: { address: string; areaM2: number | null }
   labor35a?: Record<string, { amountCents: number; laborCents: number }>
+  // #691: Das Mietverhältnis endet im abgerechneten Zeitraum oder vor dem Tag des Briefs; ein Guthaben steht dann im
+  // Baustein `creditMovedOut`. Nur gesetzt, wenn es so ist; ein vorher eingefrorenes Anschreiben kennt die Angabe nicht.
+  ended?: true
 }
 // ---------- Anpassung in die Staffel übernehmen (#317) ----------
 

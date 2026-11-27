@@ -805,3 +805,34 @@ test('#624: abgeschlossen ohne eingefrorenen Verwendungszweck druckt keinen Code
   await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
   expect(qrImg()).toBeNull()
 })
+
+// #691: Ein ausgezogener Mieter mit Guthaben bekommt den Satz, der nach der Bankverbindung fragt, im Anschreiben und,
+// ohne Anschreiben, unter der Tabelle; nie den Satz von der Verrechnung mit der nächsten Mietzahlung.
+test('#691: Guthaben nach dem Auszug: im Brief der Satz mit der Bankverbindung, nicht die Verrechnung mit der Miete', async () => {
+  const moved: Tenancy[] = [{ ...TENANCIES[0] as Tenancy, end: `${YEAR}-06-30` }]
+  const st = { ...STATEMENT, periodEnd: `${YEAR}-06-30`, balanceCents: 3000, suggestedMonthlyCents: 0 }
+  const base: Settlement = { ...settlement, statements: [st], letters: undefined }
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: moved, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
+  show()
+  const letter = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  const text = plain(letter.textContent)
+  expect(text).toContain('Es ergibt sich ein Guthaben von 30,00 €. Da Ihr Mietverhältnis beendet ist, wird es Ihnen überwiesen; bitte teilen Sie dafür Ihre Bankverbindung mit.')
+  expect(text).not.toContain('mit der nächsten Mietzahlung verrechnet')
+})
+
+// #691, Durchsicht: Hat nur die Vorlage einen eigenen Text zum Guthaben, steht beim Ausgezogenen die Vorgabe nach dem
+// Auszug, und „Zu prüfen“ nennt es ruhig.
+test('#691: eigener Text zum Guthaben nur in der Vorlage: „Zu prüfen“ nennt es beim ausgezogenen Mieter', async () => {
+  const moved: Tenancy[] = [{ ...TENANCIES[0] as Tenancy, end: `${YEAR}-06-30` }]
+  const st = { ...STATEMENT, periodEnd: `${YEAR}-06-30`, balanceCents: 3000, suggestedMonthlyCents: 0 }
+  const base: Settlement = { ...settlement, statements: [st], letters: undefined }
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+  const installation = { credit: 'Ihr Guthaben von {Betrag} verrechne ich mit der Miete.' }
+  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: moved, installation, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
+  templates = { ...TEMPLATES, installation }
+  show()
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  const [checks] = await screen.findAllByText(/Eigener Text zum Guthaben gilt nicht nach dem Auszug \(Meier, EG\)/, {}, SLOW)
+  expect(plain(checks?.closest('.card')?.textContent)).toMatch(/Text für „Guthaben nach dem Auszug“ anpassen/)
+})

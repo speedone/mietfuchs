@@ -14,7 +14,12 @@
 //      dann druckt die Seite ohne Rand); jedes sichtbare Element, das hinausragt, ist ein Befund (mit Klasse und Text).
 //   2. PDF, nur Chromium (`page.pdf`, wie der Druck): jede Seite A4, und auf jeder Seite mit Anschreiben steht der Betreff
 //      an seiner Stelle (98,46 mm nach DIN 5008) und, wo gedruckt, die Fußzeile unten (ab 275 mm). Das ist die Wirkung, die
-//      der Nutzer sieht; Prüfung 1 nennt die Ursache.
+//      der Nutzer sieht; Prüfung 1 nennt die Ursache. Auf jeder Seite mit Anschreiben bricht die lange E-Mail im
+//      Informationsblock nur nach „@“, vor einem Punkt oder nach einem Bindestrich um (#691). Mit Briefpapier (#691) liegt
+//      das Papier auf jeder Seite genau auf dem Blatt (0 bis 297 mm; vorher auf der Seite nach dem Anschreiben 3,2 mm zu
+//      tief), und das Logo steht im freien Bereich zwischen dem Rand oben und dem Informationsblock (50 mm; vorher fest
+//      ab 15 mm, über dem Kopf des Briefpapiers); bleibt dafür kein Platz (Rand 45 mm, Fall `kaution-briefpapier`),
+//      druckt kein Logo und kein Fleck.
 // Die Fälle der Seite Abrechnung stehen hier, die übrigen Druckansichten (Ableseformular, Kaution, …) in
 // print-width-views.mjs.
 //
@@ -33,6 +38,9 @@ const option = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i 
 const out = path.resolve(option('--out') ?? path.join(os.tmpdir(), 'mietfuchs-druckbreite'))
 const engines = (option('--engines') ?? 'chromium').split(',')
 const only = option('--cases')?.split(',')
+// `--measure`: dazu die gemessenen Lagen (Briefpapier und Logo je Seite, Zeilen der langen E-Mail) auf der Konsole und im
+// Bericht, für Nachmessungen wie in #691
+const measure = argv.includes('--measure')
 
 const MM = 25.4 / 72
 const PX_PER_MM = 96 / 25.4
@@ -43,6 +51,10 @@ const PAGE_WIDTH_PX = 210 * PX_PER_MM
 const FOOTER_MIN_MM = 275
 // Der Betreff beginnt bei 98,46 mm (DIN 5008 Form B); die Grundlinie seiner Zeile liegt wenige Millimeter darunter
 const SUBJECT_MM = [98, 106]
+// Der Informationsblock beginnt nach DIN 5008 bei 50 mm; ein Logo auf Briefpapier endet davor
+const INFO_BLOCK_MM = 50
+// Toleranz für die Lage von Bildern in der PDF (Rundung auf Punkt und Pixel)
+const IMAGE_SLACK_MM = 0.5
 const LONG_MAIL = 'hausverwaltung.klaus.wegener-musterstadt@beispiel-hausverwaltung-mit-langem-namen.example.org'
 
 /** @type {typeof import('./demo-stock.mjs')} */
@@ -56,7 +68,10 @@ let pdfjs = null
  * Ein Fall: welches Objekt, wie man zur gedruckten Ansicht kommt, und was die PDF zeigen muss.
  * `band`: Ränder des Textbereichs mit Briefpapier in mm; dann steht auf jeder Seite der PDF aller Text dazwischen, und
  * die PDF hat mehr als eine Seite (Mieterhöhung mit Briefpapier: vorher lief der Text über den Fuß des Papiers).
- * @typedef {{ name: string, label: string, property: string, paper?: boolean, letters?: boolean, footer?: boolean, band?: { top: number, bottom: number },
+ * `logoTop`: Rand oben in mm bei Logo auf Briefpapier; dann steht auf jeder Seite mit Logo dieses zwischen dem Rand und
+ * dem Informationsblock, und es gibt mindestens eine solche Seite. `noLogo`: Ein Logo ist hochgeladen, der Rand oben
+ * lässt ihm aber keinen Platz (45 mm); dann steht auf keiner Seite ein Bild außer dem Briefpapier, auch kein Fleck.
+ * @typedef {{ name: string, label: string, property: string, paper?: boolean, letters?: boolean, footer?: boolean, band?: { top: number, bottom: number }, logoTop?: number, noLogo?: boolean,
  *   before?: (api: any, ids: any) => Promise<void>, after?: (api: any, ids: any) => Promise<void>,
  *   open: (page: any, ids: any) => Promise<void>, brake?: boolean }} PrintCase
  */
@@ -160,9 +175,72 @@ async function readPages(file) {
     const page = await doc.getPage(i)
     const vp = page.getViewport({ scale: 1 })
     const items = (await page.getTextContent()).items.filter((it) => 'str' in it && it.str.trim() !== '').map((it) => ({ s: it.str, y: (vp.height - it.transform[5]) * MM }))
-    pages.push({ w: vp.width * MM, h: vp.height * MM, items, text: items.map((it) => it.s).join(' ') })
+    pages.push({ w: vp.width * MM, h: vp.height * MM, items, text: items.map((it) => it.s).join(' '), images: await readImages(page, vp.height) })
   }
   return pages
+}
+
+// Wo die Bilder einer Seite liegen (Briefpapier, Logo), in mm ab der oberen linken Blattkante: Die Anweisungen der Seite
+// werden mit ihrer Matrix verfolgt; ein Bild füllt das Einheitsquadrat seiner Matrix.
+/** @returns {Promise<{ left: number, right: number, top: number, bottom: number }[]>} */
+async function readImages(page, pageHeight) {
+  const ops = await page.getOperatorList()
+  const name = Object.fromEntries(Object.entries(pdfjs.OPS).map(([k, v]) => [v, k]))
+  /** @param {number[]} a @param {number[]} b */
+  const mul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]]
+  let ctm = [1, 0, 0, 1, 0, 0]
+  /** @type {number[][]} */
+  const stack = []
+  const images = []
+  ops.fnArray.forEach((fn, i) => {
+    const args = ops.argsArray[i]
+    const op = name[fn] ?? ''
+    if (op === 'save') stack.push(ctm)
+    else if (op === 'restore') ctm = stack.pop() ?? ctm
+    else if (op === 'transform') ctm = mul(ctm, args)
+    else if (op === 'paintFormXObjectBegin') { stack.push(ctm); if (Array.isArray(args?.[0])) ctm = mul(ctm, args[0]) }
+    else if (op === 'paintFormXObjectEnd') ctm = stack.pop() ?? ctm
+    else if (op.startsWith('paintImage')) {
+      const xs = [ctm[4], ctm[0] + ctm[4]]
+      const ys = [ctm[5], ctm[3] + ctm[5]]
+      images.push({ left: Math.min(...xs) * MM, right: Math.max(...xs) * MM, top: (pageHeight - Math.max(...ys)) * MM, bottom: (pageHeight - Math.min(...ys)) * MM })
+    }
+  })
+  return images
+}
+
+// Wo die lange E-Mail im Text einer Seite umbricht: die Stellen, an denen sie mitten im Wort getrennt ist (leer, wenn
+// sie nur nach „@“, vor einem Punkt oder nach einem Bindestrich umbricht), oder `null`, wenn sie nicht als Folge von
+// Textstücken zu finden ist.
+/** @param {{ s: string }[]} items @returns {string[] | null} */
+export function mailBreaks(items, mail = LONG_MAIL) {
+  const start = items.findIndex((it) => it.s.length > 3 && mail.startsWith(it.s.trim()))
+  if (start < 0) return null
+  let seen = ''
+  /** @type {string[]} */
+  const wrong = []
+  for (let i = start; i < items.length && seen !== mail; i += 1) {
+    const piece = (items[i]?.s ?? '').trim()
+    if (!mail.startsWith(seen + piece)) return null
+    if (seen !== '' && !(seen.endsWith('@') || seen.endsWith('-') || piece.startsWith('.'))) wrong.push(`„${seen.slice(-8)}|${piece.slice(0, 8)}“`)
+    seen += piece
+  }
+  return seen === mail ? wrong : null
+}
+
+// Die Stücke der langen E-Mail, wie sie in der PDF auf Zeilen stehen (nur für `--measure`)
+/** @param {{ s: string }[]} items */
+function mailLines(items, mail = LONG_MAIL) {
+  const start = items.findIndex((it) => it.s.length > 3 && mail.startsWith(it.s.trim()))
+  /** @type {string[]} */
+  const lines = []
+  let seen = ''
+  for (let i = start; start >= 0 && i < items.length && seen !== mail; i += 1) {
+    const piece = (items[i]?.s ?? '').trim()
+    lines.push(piece)
+    seen += piece
+  }
+  return lines
 }
 
 /** @param {any} browser @param {any} demo @param {{ name: string, label: string, property: string, paper?: boolean }} c */
@@ -209,9 +287,26 @@ function settlementCases(images, base) {
     { name: 'abrechnung-ulmenweg', label: 'Abrechnung Ulmenweg 7 (eigene Heizkostenabrechnung)', property: 'ulmenweg', letters: true, footer: true, open: openSettlement },
     { name: 'abrechnung-messdienst', label: 'Abrechnung Birkenweg 2 (Messdienst mit CO₂-Aufteilung)', property: 'messdienst', letters: true, footer: true, open: openSettlement },
     {
-      name: 'abrechnung-briefpapier', label: 'Abrechnung Lindenweg 12 mit Logo und Briefpapier', property: 'haus', paper: true, letters: true, footer: false,
-      before: () => putDesign(base, { logo: 'new', paper: 'new', paperNextFile: 'keep', paperNext: 'same', margins }, images),
+      // Rand oben 25 mm (#691): Das Logo hat dann zwischen Rand und Informationsblock Platz in voller Größe
+      name: 'abrechnung-briefpapier', label: 'Abrechnung Lindenweg 12 mit Logo und Briefpapier', property: 'haus', paper: true, letters: true, footer: false, logoTop: 25,
+      before: () => putDesign(base, { logo: 'new', paper: 'new', paperNextFile: 'keep', paperNext: 'same', margins: { ...margins, top: 25 } }, images),
       after: () => putDesign(base, { logo: 'remove', paper: 'remove', paperNextFile: 'keep', paperNext: 'none', margins }),
+      open: openSettlement,
+    },
+    // Ohne Anschreiben (#691, Durchsicht): Der Rahmen der Aufstellung begann mitten auf Seite 1, und das Papier der
+    // Folgeseiten in seinem Kopf lag dort bei 59,5 bis 356,7 mm und ragte auf Seite 2; mit einem transparenten
+    // Briefpapier druckte dessen Fuß ein zweites Mal quer über den Tabellenkopf von Seite 2. Geprüft wird die Lage
+    // jedes Blattes (0 bis 297 mm) wie in jedem Fall mit Briefpapier.
+    {
+      name: 'abrechnung-briefpapier-ohne-anschreiben', label: 'Abrechnung Lindenweg 12 mit Briefpapier, ohne Anschreiben', property: 'haus', paper: true,
+      before: async (api) => {
+        await api.put('/api/settings', { ...(await api.get('/api/settings')), printLetter: false })
+        await putDesign(base, { logo: 'keep', paper: 'new', paperNextFile: 'keep', paperNext: 'same', margins: { ...margins, top: 40 } }, { paper: images.paper })
+      },
+      after: async (api) => {
+        await putDesign(base, { logo: 'keep', paper: 'remove', paperNextFile: 'keep', paperNext: 'none', margins })
+        await api.put('/api/settings', { ...(await api.get('/api/settings')), printLetter: true })
+      },
       open: openSettlement,
     },
     { name: 'notbremse', label: 'Notbremse: unbekannte breite Zeile in der Abrechnung Lindenweg 12', property: 'haus', letters: true, footer: true, brake: true, open: openSettlementWithStranger },
@@ -249,7 +344,7 @@ function depositPaperCases(views, images, base) {
   /** @type {string[]} */
   const added = []
   return [{
-    name: 'kaution-briefpapier', label: 'Kaution, Brief mit Logo und Briefpapier über mehrere Seiten (Ränder je Seite)', property: 'haus', paper: true, band: { top: margins.top, bottom: margins.bottom },
+    name: 'kaution-briefpapier', label: 'Kaution, Brief mit Logo und Briefpapier über mehrere Seiten (Ränder je Seite)', property: 'haus', paper: true, band: { top: margins.top, bottom: margins.bottom }, noLogo: true,
     before: async (api, ids) => {
       /** @type {any[]} */
       const tenancies = await api.get(`/api/tenancies?property=${ids.haus}`)
@@ -294,6 +389,8 @@ async function main() {
   let demo = null
   /** @type {string[]} */
   const findings = []
+  /** @type {string[]} */
+  const measured = []
   // Ab hier räumt `finally` auf, auch wenn eine Engine nicht startet (sonst blieben die übrigen offen, und der Lauf endete nie)
   try {
     for (const e of engines) browsers[e] = await pw[e].launch()
@@ -405,12 +502,38 @@ async function main() {
                 }
                 letters += 1
                 if (subject.y < SUBJECT_MM[0] || subject.y > SUBJECT_MM[1]) findings.push(`${tag}: Seite ${i + 1} (Anschreiben): Betreff bei ${subject.y.toFixed(1)} mm statt bei 98,46 mm, der Druck ist verkleinert oder verschoben`)
+                const breaks = mailBreaks(p.items)
+                if (breaks === null) findings.push(`${tag}: Seite ${i + 1} (Anschreiben): die lange E-Mail steht nicht im Informationsblock; ihr Umbruch ist nicht prüfbar`)
+                if (measure && breaks !== null) measured.push(`${tag}: Seite ${i + 1}: E-Mail in Zeilen ${mailLines(p.items).map((l) => `„${l}“`).join(', ')}`)
+                if (breaks !== null && breaks.length > 0) findings.push(`${tag}: Seite ${i + 1} (Anschreiben): die E-Mail bricht mitten im Wort um (${breaks.join(', ')}), nicht nur nach „@“, vor einem Punkt oder nach einem Bindestrich`)
                 if (!c.footer) return
                 const footer = p.items.filter((it) => it.s.includes('Ahornstraße 3')).sort((a, b) => b.y - a.y)[0]
                 if (!footer) findings.push(`${tag}: Seite ${i + 1} (Anschreiben) ohne Fußzeile`)
                 else if (footer.y < FOOTER_MIN_MM) findings.push(`${tag}: Seite ${i + 1} (Anschreiben): Fußzeile bei ${footer.y.toFixed(1)} mm statt unten (ab ${FOOTER_MIN_MM} mm), der Druck ist verkleinert`)
               })
               if (c.letters && letters === 0) findings.push(`${tag}: kein Anschreiben im Druck, die Prüfung von Betreff und Fußzeile lief ins Leere`)
+              if (c.paper) {
+                // Briefpapier ist jedes Bild über die ganze Blattbreite; es liegt auf jeder Seite genau auf dem Blatt
+                let sheets = 0
+                let logos = 0
+                pages.forEach((p, i) => {
+                  for (const img of p.images) {
+                    if (measure) measured.push(`${tag}: Seite ${i + 1}: Bild bei ${img.top.toFixed(1)} bis ${img.bottom.toFixed(1)} mm, ${(img.right - img.left).toFixed(1)} mm breit`)
+                    if (img.right - img.left >= 200) {
+                      sheets += 1
+                      if (Math.abs(img.top) > IMAGE_SLACK_MM || Math.abs(img.bottom - 297) > IMAGE_SLACK_MM) findings.push(`${tag}: Seite ${i + 1}: Briefpapier bei ${img.top.toFixed(1)} bis ${img.bottom.toFixed(1)} mm statt 0 bis 297 mm`)
+                    } else if (c.noLogo) {
+                      findings.push(`${tag}: Seite ${i + 1}: ein Bild bei ${img.top.toFixed(1)} bis ${img.bottom.toFixed(1)} mm (${(img.right - img.left).toFixed(1)} mm breit), obwohl das Logo neben dem Briefpapier keinen Platz hat und nicht drucken soll`)
+                    } else if (c.logoTop !== undefined && img.left > 100 && img.top < 100) {
+                      logos += 1
+                      if (img.top < c.logoTop - IMAGE_SLACK_MM || img.bottom > INFO_BLOCK_MM) findings.push(`${tag}: Seite ${i + 1}: Logo bei ${img.top.toFixed(1)} bis ${img.bottom.toFixed(1)} mm, nicht im freien Bereich zwischen dem Rand oben (${c.logoTop} mm) und dem Informationsblock (${INFO_BLOCK_MM} mm)`)
+                    }
+                  }
+                })
+                if (measure) pages.forEach((p, i) => { const ys = p.items.map((it) => it.y); if (ys.length > 0) measured.push(`${tag}: Seite ${i + 1}: Text ab ${Math.min(...ys).toFixed(1)} mm`) })
+                if (sheets === 0) findings.push(`${tag}: kein Briefpapier im Druck, die Prüfung seiner Lage lief ins Leere`)
+                if (c.logoTop !== undefined && logos === 0) findings.push(`${tag}: kein Logo im Druck, die Prüfung seiner Lage lief ins Leere`)
+              }
               const band = c.band
               if (band) {
                 if (pages.length < 2) findings.push(`${tag}: nur ${pages.length} Seite, die Prüfung der Ränder je Seite lief ins Leere`)
@@ -438,7 +561,9 @@ async function main() {
     for (const b of Object.values(browsers)) await b.close()
     await demo?.stop()
   }
-  const report = findings.length === 0 ? '# Druckbreite\n\nKeine Befunde.\n' : `# Druckbreite\n\n${findings.map((f) => `- ${f}`).join('\n')}\n`
+  const report = (findings.length === 0 ? '# Druckbreite\n\nKeine Befunde.\n' : `# Druckbreite\n\n${findings.map((f) => `- ${f}`).join('\n')}\n`)
+    + (measured.length > 0 ? `\n## Gemessen\n\n${measured.map((m) => `- ${m}`).join('\n')}\n` : '')
+  if (measured.length > 0) for (const m of measured) console.log(`gemessen: ${m}`)
   fs.writeFileSync(path.join(out, 'bericht.md'), report)
   if (findings.length > 0) {
     console.log(`\n${findings.length} Befunde:`)

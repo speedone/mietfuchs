@@ -300,6 +300,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wie in der Cockpit-Zeile „Zählerstände“ („Ohne Ablesung vom … bis …“), mit dem Knopf „+ Ablesung anlegen“; wer im
   Cockpit „Stände erfassen“ wählt, sieht so, welcher Zähler gemeint ist. Der Satz steht nur an Zählern, die das Cockpit
   meldet ([#693](https://github.com/speedone/mietfuchs/issues/693)).
+- Schreiben und Druck: Mit Briefpapier liegt das Papier der Seite nach dem Anschreiben wieder an der Blattkante (vorher
+  3,2 mm zu tief), ohne Anschreiben auf jeder Seite nur einmal, und das Logo steht im freien Bereich zwischen dem Rand
+  oben und dem Datum, statt den Kopf des Briefpapiers zu überdecken; lässt der Rand oben dafür zu wenig Platz, druckt
+  es nicht, und die Fenster zum Drucken sagen es. Eine lange E-Mail-Adresse im Briefkopf bricht nur nach dem @ und vor
+  einem Punkt um. Im Rumpfzeitraum sagt der Satz zur neuen Vorauszahlung, wie hochgerechnet wurde, statt „ein Zwölftel Ihrer
+  Jahreskosten“. Die Seite Steuer bietet das ZIP „Belege für die Steuer“ an. Die Anleitung zur Einliegerwohnung
+  nennt beide Sätze von § 556a Abs. 1 BGB. Ein Guthaben nach dem Auszug hat einen eigenen Baustein „Guthaben nach dem
+  Auszug“, der nach der Bankverbindung fragt, statt die Verrechnung mit der nächsten Mietzahlung anzukündigen; er gilt,
+  wenn das Mietverhältnis im abgerechneten Zeitraum oder vor dem Brief endet (nicht bei einem Umzug im selben Haus), und
+  lässt sich wie jeder Baustein ändern; ein eigener Text zum Guthaben beim Mietverhältnis gilt weiter, einen eigenen in
+  Vorlage oder Objekt nennen das Fenster „Anschreiben“ und „Zu prüfen“ ([#691](https://github.com/speedone/mietfuchs/issues/691)).
 - Heizkostenverteiler ohne Skala: Unter „Zähler & Stände“ ließ sich ein Heizkostenverteiler anlegen, ohne die Skala zu
   wählen; in der Liste stand danach nur „Skala fehlt“. Ohne Skala verteilt die eigene Heizkostenabrechnung die
   Heizkosten nicht (sie bleiben mit einem Fehler unter „Zu prüfen“ beim Vermieter). Die Skala ist jetzt eine

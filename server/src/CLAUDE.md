@@ -559,7 +559,12 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
 - **Vorschlag nach § 560 im Rumpf** ([prepaymentSuggestion.ts](prepaymentSuggestion.ts)): Jahresfaktor
   je Position, kalt nach Tagen ihres Leistungszeitraums (ohne einen: Jahresbetrag und
   `prepayment.annual-assumed`), Brennstoff nach Gradtagen (`hkv.degree-days`), fehlt der Faktor,
-  kein Vorschlag.
+  kein Vorschlag. **Der Satz im Anschreiben folgt der Rechnung** (#691): calc.ts trägt an der Mieterabrechnung
+  `suggestionScaling` ein (`none` nichts hochgerechnet, `days` alles im Maß „ein Jahr durch die Tage des Mieters“,
+  `mixed` Positionen in verschiedenem Maß: Rumpf mit und ohne Leistungszeitraum, Heizperiode als Rumpf,
+  Nutzungswechsel), aus denselben Faktoren wie der Vorschlag; `suggestionBasis` (shared/letter.ts) wählt danach den
+  Satz und rät nie aus dem Zeitraum. Ohne die Angabe (vorher eingefrorener Stand) gilt die frühere Regel nach den
+  Tagen. Vom Bestand bis zum Satz samt Invariante geprüft in calc-vorschlag-satz.test.ts.
 - **Oberfläche** hält einen **Tag**, keinen Schlüssel ([client/src/period.tsx](../../client/src/period.tsx),
   [periodForm.ts](../../client/src/periodForm.ts)), so passt ein Objektwechsel den Zeitraum von
   selbst an. Beim Kalenderobjekt heißt er „Abrechnungsjahr“ und die Routen bekommen die Jahreszahl;
@@ -756,6 +761,17 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
 
 - **Die Vorgaben sind die bisherigen Sätze**, wortgleich, wo es sie gab (letter.test.ts). Neu: Betreff, Anrede,
   Einleitung, „ausgeglichen“ (bei 0 € stand vorher „Guthaben von 0,00 €“), Schluss, Gruß, Unterschrift.
+- **Guthaben nach dem Auszug** (#691, Baustein `creditMovedOut`, Schritt 0106): Endet das Mietverhältnis im abgerechneten
+  Zeitraum oder vor dem Tag des Briefs (`endedBy` in shared/letter.ts, `asOf`), trägt das Anschreiben `ended: true` (friert
+  mit ein), und `chooseLetterBlocks` nimmt bei einem Guthaben diesen Baustein statt `credit`: Es gibt keine nächste
+  Mietzahlung zum Verrechnen, der Satz fragt nach der Bankverbindung. Ohne die Angabe (vorher eingefroren) bleibt
+  `credit`. **Umzug im Haus ist kein Auszug**: ein späteres Mietverhältnis desselben Mieters (gleicher Name ohne Groß und
+  Klein und Leerraum, das Modell kennt keine Person) im selben Objekt, das am Tag des Briefs läuft. **Eigener Text zu
+  `credit`** (Durchsicht): Hat das Mietverhältnis selbst einen und keinen zu `creditMovedOut`, gilt er auch nach dem
+  Auszug (`lettersOf`, ohne Datenanweisung). Hat nur Vorlage oder Objekt einen und keine Ebene einen zu
+  `creditMovedOut` (`creditTextUnused`), steht die Vorgabe; das Fenster „Anschreiben“ sagt es am Baustein
+  (`creditMovedOutHint` in client/src/letterForm.ts) und „Zu prüfen“ je ausgezogenem Mieter mit Guthaben
+  (`page.credit-moved-out`, Stufe `hint`, nur offen).
 - **Ebenen** ([db/letters.ts](db/letters.ts), Schritt 0065): `letter_texts` (Installation), `property_letter_texts`
   (fällt mit dem Objekt), `tenancy_letter_texts` und `tenancy_letter_adjustments` je Mietverhältnis und Abrechnung
   (`doc`: Zeitraum, bei Weg d `heating:<Anlage>:<Heizperiode>`; fällt mit dem Mietverhältnis). Eine fehlende Zeile
@@ -880,7 +896,7 @@ Entwurf: [docs/superpowers/specs/2026-11-09-zahlungs-qr-design.md](../../docs/su
 - **Verwendungszweck = Baustein `paymentPurpose`** des Anschreibens, Vorgabe `{Name}, {Wohnung}, {Abrechnung}` (Name
   vorn, gekürzt wird hinten). Dieselben Ebenen und dasselbe Einfrieren wie jeder Baustein, aber **kein Absatz**:
   `chooseLetterBlocks`/`statementBlocks` nehmen ihn nie auf. Die Liste der Bausteine steht dreimal (shared/letter.ts,
-  `LetterBlock` in shared/types.ts, schema.ts mit CHECK in drei Tabellen, Schritt 0094).
+  `LetterBlock` in shared/types.ts, schema.ts mit CHECK in drei Tabellen, Schritt 0094, zuletzt 0106 für `creditMovedOut`).
 - **Schalter `settings.printPaymentQr`** (Spalte `print_payment_qr`, ohne Angabe aus) ist nur Druck wie die Fußzeile;
   `PUT /api/settings` lehnt eine Angabe außer ja/nein mit 400 ab.
 - **IBAN und Empfänger kommen aus dem Anschreiben** (`values.IBAN`, `values.Vermieter`, über `effectiveLandlord`, die
