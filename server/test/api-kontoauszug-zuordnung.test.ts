@@ -79,29 +79,30 @@ async function book(s: Server, decisions: unknown): Promise<{ ok: boolean; sente
 const payments = (s: Server) => s.api<(Payment & { fromBank?: true })[]>('/api/payments')
 const withoutIds = (v: unknown): unknown => JSON.parse(JSON.stringify(v, (k, x: unknown) => (k === 'id' || k === 'tenancyId' || k === 'paymentId' || k.endsWith('Id') ? undefined : x)))
 
-// #693: „Miete Juni Whg EG“ nennt den Monat, der Vorschlag ist deshalb gelb und trägt ihn; „Nachzahlung Miete Juni“ nicht.
-test('Zuordnen: Vorschlag, gebucht wie von Hand erfasst; Mietkonto und Steuer gleich', async () => {
+// #693: „Miete Juni Whg EG“ nennt den Monat. Er ändert hier nichts an der Tilgung (die erste Zahlung des Objekts, nichts
+// davor offen), deshalb bleibt der Vorschlag grün und ohne Monat.
+test('Zuordnen: Vorschlag grün, gebucht wie von Hand erfasst; Mietkonto und Steuer gleich', async () => {
   let ledgerA: RentLedger | null = null
   let taxA: TaxReport | null = null
   await withServer(async (s) => {
     await tenancy(s)
     await importJune(s)
     const open = await transactions(s)
-    assert.deepEqual(open.map((t) => [t.bookingDate, t.openCents, t.suggestion?.light]), [['2025-06-02', 85000, 'yellow'], ['2025-06-03', 85000, 'green']])
-    assert.deepEqual(open.map((t) => t.suggestion?.target), [{ type: 'newPayment', kind: 'rent', designatedMonth: '2025-06' }, { type: 'newPayment', kind: 'rent' }])
+    assert.deepEqual(open.map((t) => [t.bookingDate, t.openCents, t.suggestion?.light]), [['2025-06-02', 85000, 'green'], ['2025-06-03', 85000, 'green']])
+    assert.deepEqual(open.map((t) => t.suggestion?.target), [{ type: 'newPayment', kind: 'rent' }, { type: 'newPayment', kind: 'rent' }])
     assert.deepEqual(await book(s, asSuggested(open)), { ok: true, sentence: '2 Zahlungen gebucht.' })
     assert.deepEqual(await transactions(s), [])
     assert.equal((await transactions(s, 'done')).length, 2)
     const list = await payments(s)
-    assert.deepEqual(list.map((p) => [p.date, p.amountCents, p.note, p.designatedMonth, p.fromBank]), [['2025-06-02', 85000, 'Miete Juni Whg EG', '2025-06', true], ['2025-06-03', 85000, 'Nachzahlung Miete Juni', undefined, true]])
+    assert.deepEqual(list.map((p) => [p.date, p.amountCents, p.note, p.designatedMonth, p.fromBank]), [['2025-06-02', 85000, 'Miete Juni Whg EG', undefined, true], ['2025-06-03', 85000, 'Nachzahlung Miete Juni', undefined, true]])
     assert.equal((await newest(s)).description, '2 Umsätze aus dem Kontoauszug gebucht')
     ledgerA = await s.api<RentLedger>('/api/rentledger/2025')
     taxA = await s.api<TaxReport>('/api/taxreport/2025')
   })
   await withServer(async (s) => {
     const t = await tenancy(s)
-    for (const [date, note, designatedMonth] of [['2025-06-02', 'Miete Juni Whg EG', '2025-06'], ['2025-06-03', 'Nachzahlung Miete Juni']]) {
-      await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date, amountCents: 85000, note, ...(designatedMonth ? { designatedMonth } : {}) }) })
+    for (const [date, note] of [['2025-06-02', 'Miete Juni Whg EG'], ['2025-06-03', 'Nachzahlung Miete Juni']]) {
+      await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date, amountCents: 85000, note }) })
     }
     assert.deepStrictEqual(withoutIds(await s.api<RentLedger>('/api/rentledger/2025')), withoutIds(ledgerA))
     assert.deepStrictEqual(withoutIds(await s.api<TaxReport>('/api/taxreport/2025')), withoutIds(taxA))
@@ -203,7 +204,7 @@ test('Zuordnen: eine im Mietkonto gelöschte Zahlung öffnet den Umsatz mit sein
   assert.equal((await json(s, 'DELETE', `/api/payments/${p?.id}`)).status, 200)
   const open = await transactions(s)
   assert.equal(open.length, 1)
-  assert.deepEqual([open[0]?.purpose, open[0]?.suggestion?.light], ['Miete Juni Whg EG', 'yellow'])
+  assert.deepEqual([open[0]?.purpose, open[0]?.suggestion?.light], ['Miete Juni Whg EG', 'green'])
 }))
 
 test('Zuordnen: eine verknüpfte Zahlung lässt sich senken, nicht über den Umsatz heben und nicht umhängen', () => withServer(async (s) => {
@@ -524,3 +525,39 @@ test('#693: ein Monat außerhalb des Mietverhältnisses ist schon in der Vorscha
   assert.equal((await bookRaw(s, decisions, preview.token)).status, 400)
   assert.deepEqual(await payments(s), [])
 }))
+
+// Durchsicht: Wer nichts schuldet und jeden Monat den Monat nennt, bleibt grün; die Zahlung tilgt ohne Monat dasselbe.
+test('#693: alles bezahlt, „Miete 11/2026“: grün ohne Monat; mit Rückstand im April gelb mit Monat; ein Name wie ein Monat: kein Monat', () => withEnv({ NKA_TEST_TODAY: '2026-11-20' }, async (s) => {
+  const t = await tenancy(s, 'EG', TENANT, { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 15000 }], baseRents: [{ from: '2026-01', monthlyCents: 70000 }] })
+  const late = await tenancy(s, 'OG', SECOND, { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 15000 }], baseRents: [{ from: '2026-01', monthlyCents: 70000 }] })
+  for (let m = 1; m <= 10; m++) {
+    const month = `2026-${String(m).padStart(2, '0')}`
+    await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: `${month}-01`, amountCents: 85000, designatedMonth: month }) })
+    if (m !== 4) await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: late.id, date: `${month}-01`, amountCents: 85000, designatedMonth: month }) })
+  }
+  await importEntries(s, [
+    { date: '2026-11-03', cents: 85000, purpose: 'Miete 11/2026' },
+    { date: '2026-11-03', cents: 85000, purpose: 'Miete 11/2026', iban: SECOND },
+    { date: '2026-11-04', cents: 85000, purpose: 'Miete Jan Mueller' },
+  ])
+  const open = await transactions(s)
+  assert.deepEqual(open.map((o) => [o.purpose, o.suggestion?.tenancyId === t.id ? 'EG' : 'OG', o.suggestion?.light, o.suggestion?.target]), [
+    ['Miete 11/2026', 'EG', 'green', RENT_TARGET],
+    ['Miete 11/2026', 'OG', 'yellow', { type: 'newPayment', kind: 'rent', designatedMonth: '2026-11' }],
+    ['Miete Jan Mueller', 'EG', 'green', RENT_TARGET],
+  ])
+}))
+
+// Durchsicht: Das Soll kannte nur Jahre mit Umsätzen und das laufende; ein Monat im Nachbarjahr bekam keinen Vorschlag.
+for (const [today, entries, expected] of [
+  ['2026-12-30', [{ date: '2026-12-28', cents: 85000, purpose: 'Miete Januar' }, { date: '2026-12-29', cents: 85000, purpose: 'Miete 01/2027' }], ['2027-01', '2027-01']],
+  ['2027-01-10', [{ date: '2027-01-04', cents: 85000, purpose: 'Miete Dezember' }], ['2026-12']],
+] as const) {
+  test(`#693 Jahreswechsel, heute ${today}: der Monat im Nachbarjahr wird vorgeschlagen`, () => withEnv({ NKA_TEST_TODAY: today }, async (s) => {
+    const t = await tenancy(s, 'EG', TENANT, { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 15000 }], baseRents: [{ from: '2026-01', monthlyCents: 70000 }] })
+    // Nur der Januar 2026 ist bezahlt: Davor ist viel offen, der Monat ändert also die Tilgung.
+    await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: '2026-01-02', amountCents: 85000 }) })
+    await importEntries(s, entries)
+    assert.deepEqual((await transactions(s)).map((o) => [o.suggestion?.light, o.suggestion?.target]), expected.map((month) => ['yellow', { type: 'newPayment', kind: 'rent', designatedMonth: month }]))
+  }))
+}

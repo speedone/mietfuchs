@@ -84,6 +84,7 @@ import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
 import type { MatchContext } from './bank/match.ts'
 import { closedBalancesOf, openSettlementsOf, type OpenSettlement, type RentAccount } from './bank/settlementMatch.ts'
+import { designationChangesNothing } from './bank/monthEffect.ts'
 import { applyBankImport, applyBankLinks, BankError, readBankAccounts, readBankState, readBankStock, readTenancyPayers, removeBankImport, removeBankLink, removeTenancyPayer, setTransactionAside, updateBankAccount } from './db/bank.ts'
 import { linkToken, parseLinkDecisions, planBankLinks, type LinkDecision, type LinkPlan } from './bank/linkPlan.ts'
 import { decisionsOf, importToken, planBankImport, type ImportDecision, type ImportPlan } from './bank/importPlan.ts'
@@ -1270,12 +1271,20 @@ app.delete('/api/bank/imports/:id', async (req, res) => {
 // Seite Mietkonto) der Buchungsmonat und der Rückstand heute (Ansicht des laufenden Jahres, über alle Jahre), und aus den
 // aktuellen Abschlüssen die offenen Nachzahlungen und Guthaben (bank/settlementMatch.ts). `sollOnly`: nur das Soll, für
 // den Vorschlag zur Rückfrage beim Einlesen.
-async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>, { sollOnly = false } = {}): Promise<Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount'>> {
+async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>, { sollOnly = false } = {}): Promise<Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount' | 'monthChangesNothing'>> {
   const stock = await readStock(db)
   const asOf = today()
   const currentYear = Number(asOf.slice(0, 4))
-  const years = new Set(onlyYears ?? (await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).map((r) => Number(r.date.slice(0, 4))))
+  // Zu jedem Jahr mit Umsätzen auch das davor und das danach (#693): „Miete Dezember“ vom 04.01. und „Miete Januar“ vom
+  // 28.12. nennen einen Monat im Nachbarjahr, und ohne dessen Soll gäbe es keinen Vorschlag.
+  const years = new Set(onlyYears ?? (await db.select({ date: bankTransactionsTable.bookingDate }).from(bankTransactionsTable)).flatMap((r) => {
+    const y = Number(r.date.slice(0, 4))
+    return [y - 1, y, y + 1]
+  }))
   if (!sollOnly) years.add(currentYear)
+  // Mietverhältnis und Zahlungen seines Objekts, wie die Tilgung sie liest (für `monthChangesNothing`). Der Schnappschuss
+  // trägt beides vollständig, gleich für welches Jahr.
+  const allocationOf = new Map<string, { tenancy: Snapshot['tenancies'][number]; payments: Snapshot['payments'] }>()
   const soll = new Map<string, number>()
   const months = new Map<string, NonNullable<RentAccount['month']>>()
   const arrears = new Map<string, Omit<RentAccount, 'month'>>()
@@ -1287,6 +1296,7 @@ async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>, { sol
     for (const year of years) {
       const span = calendarYearPeriod(year)
       const snapshot = snapshotFor(stock, property.id, span)
+      for (const t of snapshot.tenancies) if (!allocationOf.has(t.id)) allocationOf.set(t.id, { tenancy: t, payments: snapshot.payments })
       const plantIds = new Set((snapshot.heatingPlants ?? []).map((p) => p.id))
       const statements = sollOnly ? [] : ledgerStatementsFor(snapshot, closedOfStock.filter((c) => c.propertyId === property.id), closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)), span.to)
       const ledger = rentLedger(snapshot, sollOnly ? { asOf } : { asOf, statements })
@@ -1326,6 +1336,10 @@ async function bankLedgerOf(db: Database, onlyYears?: ReadonlySet<number>, { sol
     rentAccount: (tenancyId, month) => {
       const known = arrears.get(tenancyId)
       return known ? { ...known, month: months.get(`${tenancyId}|${month}`) ?? null } : null
+    },
+    monthChangesNothing: (tenancyId, tx, month) => {
+      const known = allocationOf.get(tenancyId)
+      return known !== undefined && designationChangesNothing(known.tenancy, known.payments, { date: tx.bookingDate, amountCents: tx.amountCents }, month)
     },
   }
 }

@@ -180,6 +180,9 @@ test('#693: der Monat aus dem Zweck steht gelb als Vorschlag im Monatsfeld, zäh
   const month = within(first).getByRole('textbox', { name: /Für Monat \(laut Verwendungszweck\)/ }) as HTMLInputElement
   expect(month.value).toBe('Juni 2025')
   expect(within(first).getByText('Vorschlag aus dem Zweck')).toBeTruthy()
+  // Die Wirkung steht in einem Satz am Feld, sobald ein Monat darin steht.
+  expect(within(first).getByText(/Mit Monat tilgt die Zahlung diesen Monat statt der ältesten offenen Forderung\. Das ändert auch, was die Steuerübersicht/)).toBeTruthy()
+  expect(within(second).queryByText(/Mit Monat tilgt die Zahlung/)).toBeNull()
   expect(screen.getByRole('button', { name: 'Alle grünen übernehmen (1)' })).toBeTruthy()
   fireEvent.click(within(first).getByRole('button', { name: /^Buchen/ }))
   await waitFor(() => expect(posts('/api/bank/links').length).toBe(1))

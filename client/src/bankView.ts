@@ -55,6 +55,9 @@ function linkTargetOf(part: RowPart): BankLinkTarget | null {
   }
 }
 
+// Die Wirkung eines Monats in einem Satz, am Feld, sobald einer eingetragen ist (#693).
+export const BANK_MONTH_HINT = 'Mit Monat tilgt die Zahlung diesen Monat statt der ältesten offenen Forderung. Das ändert auch, was die Steuerübersicht als Miete und als Umlagen zählt.'
+
 // Der Monat, den der Server für diesen Teil aus dem Zweck vorschlägt (#693), oder null. Steht er noch so im Feld, trägt
 // es das Kennzeichen „Vorschlag aus dem Zweck“.
 export function suggestedMonth(tx: BankTransactionView, part: Pick<RowPart, 'key'>): string | null {

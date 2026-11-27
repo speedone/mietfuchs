@@ -1,5 +1,6 @@
 // Die Ampel „Zählerstände“ im Cockpit, ohne DOM prüfbar.
-import type { Meter, MeterType, Notice } from './types'
+import type { CostItem, Meter, MeterType, Notice } from './types'
+import { meterTypesInUse } from './cockpitChecks'
 import { andList } from '../../shared/wording.ts'
 import { sentences } from './noticeText'
 
@@ -43,6 +44,13 @@ export function meterReadiness(
   return { relevant, incomplete }
 }
 
+// Die Zähler, die die Cockpit-Zeile „Zählerstände“ rot meldet, aus den Kostenpositionen des Zeitraums (#693): eine
+// Auswahl für Cockpit und Seite Zähler. Ohne Umlage nach Verbrauch im Zeitraum (auch im laufenden Jahr, solange keine
+// solche Position erfasst ist) meldet sie keinen, ebenso wenig einen Zähler einer Sparte, nach der nichts umgelegt wird.
+export function reportedMeters(meters: Meter[], consumption: MeterConsumption[], periodItems: CostItem[]): Meter[] {
+  return meterReadiness(meters, consumption, meterTypesInUse(periodItems)).incomplete
+}
+
 // Ein Datum deutsch, aus der Zeichenkette gebaut, damit keine Zeitzone einen Tag verschiebt.
 const day = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
 const utc = (iso: string): number => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
@@ -83,7 +91,7 @@ const LATE_WAY = 'Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Z�
 // Der Satz am Zähler auf der Seite Zähler (#693): dieselben Tage und Auswege wie die Cockpit-Zeile, für einen Zähler.
 // Gefragt wird nur die Angabe des Servers (`periodGap`); ohne sie (gedeckt, älterer Server) steht nichts da, und die
 // Zelle sagt wie bisher „zu wenig Ablesungen“. Wer vom Cockpit über „Hier beheben“ kommt, sieht so, welcher Zähler
-// gemeint ist. Anders als die Cockpit-Zeile fragt der Satz nicht, ob eine Kostenposition den Zähler braucht.
+// gemeint ist. Ob der Satz erscheint, entscheidet die Seite mit `reportedMeters`: nur an Zählern, die das Cockpit meldet.
 export function gapNotice(c: MeterConsumption | undefined): string | null {
   const gap = c?.periodGap
   if (!gap) return null

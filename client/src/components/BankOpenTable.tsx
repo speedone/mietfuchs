@@ -2,7 +2,7 @@
 // Zweck, Mietverhältnis und Art (vorbelegt aus dem Vorschlag), Aufteilen, Beiseitelegen und „Buchen“. Die Zeilen hält die
 // Seite (Auswahl bleibt nach einer 409). Geld rechnet nur der Server; hier steht nur der Rest der Teile zur Anzeige.
 import { fmtDate, fmtEuro, parseEuro } from '../api'
-import { removePart, rowProblem, SET_ASIDE_OPTIONS, suggestedMonth, targetOptionsFor, type BankRow, type RowPart, type RowTarget } from '../bankView'
+import { BANK_MONTH_HINT, removePart, rowProblem, SET_ASIDE_OPTIONS, suggestedMonth, targetOptionsFor, type BankRow, type RowPart, type RowTarget } from '../bankView'
 import type { BankSetAside } from '../types'
 import type { TenancyOption } from './BankImportDrawer'
 import { FieldMessage } from './Field'
@@ -47,7 +47,7 @@ function PartFields({ row, part, index, tenancies, onChange, onRemove }: {
       {part.target === 'rent' && (
         <MonthField
           label={<>Für Monat (laut Verwendungszweck){part.month !== undefined && part.month === suggestedMonth(row.tx, part) && <> <span className="badge amber">Vorschlag aus dem Zweck</span></>}</>}
-          value={part.month ?? ''} placeholder="kein Monat" start={row.tx.bookingDate}
+          value={part.month ?? ''} placeholder="kein Monat" start={row.tx.bookingDate} hint={part.month !== undefined ? BANK_MONTH_HINT : undefined}
           onChange={(month) => onChange({ month: month === '' ? undefined : month })} />
       )}
       {row.parts.length > 1 && (

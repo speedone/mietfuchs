@@ -344,6 +344,26 @@ test('Vorschlag #693: „Miete November“ bei Betrag wie Monatsmiete schlägt d
   })
 })
 
+// Durchsicht: Wer jeden Monat „Miete 11/2026“ schreibt und nichts schuldet, stünde sonst jeden Monat gelb und fiele aus
+// „Alle grünen übernehmen“. Ändert der Monat nichts an der Tilgung, bleibt die Zeile, wie sie ohne Erkennung wäre.
+test('Vorschlag #693: ändert der genannte Monat nichts an der Tilgung, bleibt die Zeile grün ohne Monat', () => {
+  const asked: unknown[] = []
+  const quiet = ctx({ monthChangesNothing: (tenancyId, t, month) => { asked.push([tenancyId, t.bookingDate, t.amountCents, month]); return true } })
+  assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose: 'Miete 11/2026' }), quiet), {
+    tenancyId: 't1', target: { type: 'newPayment', kind: 'rent' }, light: 'green', reason: 'IBAN bekannt, Betrag wie Monatsmiete',
+  })
+  assert.deepEqual(asked, [['t1', '2026-11-03', 80000, '2026-11']])
+  // Ändert er etwas (Rückstand davor), oder fehlt die Auskunft: gelb mit Monat.
+  const loud = ctx({ monthChangesNothing: () => false })
+  assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose: 'Miete 11/2026' }), loud)?.target, { type: 'newPayment', kind: 'rent', designatedMonth: '2026-11' })
+  assert.equal(suggest(tx('2026-11-03', 80000, { purpose: 'Miete 11/2026' }), loud)?.light, 'yellow')
+  // Gefragt wird nur, wenn überhaupt ein Monat vorgeschlagen würde.
+  asked.length = 0
+  suggest(tx('2026-11-03', 80000, { purpose: 'Miete' }), quiet)
+  suggest(tx('2026-11-03', 50000, { purpose: 'Miete 11/2026' }), quiet)
+  assert.deepEqual(asked, [])
+})
+
 test('Vorschlag #693: ohne erkennbaren Monat bleibt alles wie bisher', () => {
   for (const purpose of ['Miete', 'Dauerauftrag seit Mai', 'Rechnung vom 03.11.', 'Miete Oktober und November', '']) {
     assert.deepEqual(suggest(tx('2026-11-03', 80000, { purpose }), ctx()), {

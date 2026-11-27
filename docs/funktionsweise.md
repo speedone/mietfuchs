@@ -139,8 +139,12 @@ Kurzfassung steht im [README](../README.md#funktionen).
    schlägt die Seite Mietverhältnis und Art vor (über die IBAN des Mieters oder eines gemerkten Zahlers), mit Ampel und
    Grund; „Buchen“ legt die Zahlung am Buchungstag im Mietkonto an, eine Kaution als Kautionsbuchung, und
    eine schon von Hand erfasste Zahlung wird nur verknüpft. Nennt der Verwendungszweck eindeutig einen Monat
-   („Miete November“) und passt der Betrag, steht er als Vorschlag im Feld „Für Monat (laut Verwendungszweck)“ und die
-   Zeile ist gelb; von selbst setzt Mietfuchs keinen Monat, von Hand lässt er sich dort eintragen. Ein Umsatz lässt sich auf mehrere Mietverhältnisse
+   („Miete November“), passt der Betrag und ist daneben noch etwas anderes offen, steht er als Vorschlag im Feld
+   „Für Monat (laut Verwendungszweck)“ und die Zeile ist gelb; von selbst setzt Mietfuchs keinen Monat, von Hand lässt
+   er sich dort eintragen. Mit Monat tilgt die Zahlung diesen Monat statt der ältesten offenen Forderung. Das ändert auch
+   die Steuerübersicht: wie viel des Eingangs als Miete und wie viel als Umlagen zählt, und eine Zahlung Ende Dezember
+   für den Januar kann im folgenden Jahr zählen. Ist sonst nichts offen, ändert der Monat nichts, und die Zeile bleibt
+   grün. Ein Umsatz lässt sich auf mehrere Mietverhältnisse
    aufteilen, beiseitelegen oder wieder lösen. Je Konto steht, ob es lückenlos eingelesen ist; über die
    Einnahmen sagt das nichts. Das Cockpit nennt Umsätze, die noch nicht zugeordnet sind. Kontoauszüge
    gehen nie an eine KI: Der Eingang der Belege weist sie ab.

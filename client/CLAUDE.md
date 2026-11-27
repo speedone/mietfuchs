@@ -132,7 +132,8 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   meldet die Seite als offenes Formular. Bei Art „Miete“ hat jeder Teil das Monatsfeld „Für Monat (laut Verwendungszweck)“
   (#693, `RowPart.month`): vorbelegt nur aus `suggestion.target.designatedMonth` (dann gelbe Zeile und das Abzeichen
   „Vorschlag aus dem Zweck“, solange der Wert noch der vorgeschlagene ist, `suggestedMonth`), sonst leer und von Hand
-  füllbar; gesendet wird der Monat nur bei Art Miete, ein Text, der kein Monat ist, macht die Zeile unbuchbar (`rowProblem`). Konten in [BankAccountsCard.tsx](src/components/BankAccountsCard.tsx), gemerkte Zahler mit „Entfernen …“ in [BankPayersCard.tsx](src/components/BankPayersCard.tsx). Trägt eine Rückfrage `suggestion`, belegt das Fenster die Antwort vor (nur ohne eigene Antwort) und nennt den Grund am Feld „Mietverhältnis“. **Nichts
+  füllbar; gesendet wird der Monat nur bei Art Miete, ein Text, der kein Monat ist, macht die Zeile unbuchbar (`rowProblem`).
+  Steht ein Monat im Feld, sagt ein Satz darunter die Wirkung (`BANK_MONTH_HINT`: Tilgung und Steuerübersicht). Konten in [BankAccountsCard.tsx](src/components/BankAccountsCard.tsx), gemerkte Zahler mit „Entfernen …“ in [BankPayersCard.tsx](src/components/BankPayersCard.tsx). Trägt eine Rückfrage `suggestion`, belegt das Fenster die Antwort vor (nur ohne eigene Antwort) und nennt den Grund am Feld „Mietverhältnis“. **Nichts
   davon geht in den Browserspeicher**: Rückfragen der Vorschau nennen private Umsätze. Der Eingang der Belege setzt an
   die Ablehnung eines Auszugs (`isBankFileError`) den Knopf „Zur Seite Kontoauszug“.
 - **Von Hand erfassen aus dem Beleg** (#490 PR 3, #487 Teil 2, Logik in [receiptForm.ts](src/receiptForm.ts)): „Von Hand
@@ -319,7 +320,10 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
 - **Lücke im Zeitraum am Zähler** (#693): Nennt der Server für einen Zähler `periodGap`, zeigt die Seite Zähler an ihm
   eine Warnung „Zeitraum nicht durch Ablesungen gedeckt“ mit dem Satz aus `gapNotice` ([meterCheck.ts](src/meterCheck.ts):
   dieselben Tage und Auswege wie die Cockpit-Zeile „Zählerstände“, `incompleteDetail`, gebaut aus denselben Teilen) und
-  dem Knopf „+ Ablesung anlegen“. Anders als das Cockpit fragt sie nicht, ob eine Kostenposition den Zähler braucht.
+  dem Knopf „+ Ablesung anlegen“, **aber nur an den Zählern, die das Cockpit meldet** (`reportedMeters`: dieselbe Auswahl
+  aus den Kostenpositionen des Zeitraums, `meterTypesInUse` und `meterReadiness`; die Seite lädt dafür die Positionen).
+  Ohne Umlage nach Verbrauch im Zeitraum, also meist im laufenden Jahr, in einem Jahr vor der ersten Ablesung und an
+  einem ausgebauten Zähler einer nicht genutzten Sparte, steht nichts da.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Ebenso das Mietkonto ohne Mietverhältnis im Jahr (`ledgerStep`), die Steuer ohne

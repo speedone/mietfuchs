@@ -154,7 +154,7 @@ export type BankTransactionView = BankTransaction & SharedTransactionView
 // Umsätze mit offenem Rest, Verknüpfungen und Vorschlag, dazu der Zusammenhang, gegen den geplant wird. Das Monats-Soll,
 // das Mietkonto und die offenen Beträge der Abrechnungen (#308) kommen von außen (index.ts), hier wird nichts davon neu
 // gerechnet.
-export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount'>): Promise<{ ctx: MatchContext; views: BankTransactionView[] }> {
+export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount' | 'monthChangesNothing'>): Promise<{ ctx: MatchContext; views: BankTransactionView[] }> {
   const stock = await readBankStock(db)
   const [tenancyRows, paymentList, deposits] = await Promise.all([
     db.select({ id: tenancies.id, iban: tenancies.iban, start: tenancies.start, end: tenancies.end, depositCents: tenancies.depositCents, depositStatus: tenancies.depositStatus, depositForm: tenancies.depositForm }).from(tenancies).orderBy(INSERTION_ORDER),
