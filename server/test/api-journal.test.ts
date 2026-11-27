@@ -13,7 +13,7 @@ import { connect } from '../src/db/client.ts'
 import { createPriorVersion } from '../src/db/priorVersions.ts'
 import { changeGroups, units } from '../src/db/schema.ts'
 import type { JournalGroupView, JournalRowView } from '../src/db/journal.ts'
-import { jsonOf, startServerIn, uploadBelegFile, type Server } from '../testing/api.ts'
+import { besideServer, jsonOf, startServerIn, uploadBelegFile, type Server } from '../testing/api.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 
 type Detail = JournalGroupView & { changes: JournalRowView[] }
@@ -36,6 +36,8 @@ async function stock(s: Server): Promise<{ unit: Unit, tenancy: Tenancy, meter: 
   return { unit, tenancy, meter }
 }
 
+// Nur für Dateien, die kein Server offen hat (Archiv, Vorversion). Neben einem laufenden Server scheitert schon das
+// Lesen mit „database is locked“, wenn es in den Augenblick fällt, in dem er festschreibt (#694, db/CLAUDE.md).
 const rowsOf = async (file: string, query: string): Promise<unknown[][]> => {
   const c = await connect(file)
   try {
@@ -112,16 +114,26 @@ test('Verlauf: Lesen und Systemarbeit im Hintergrund ergeben keine Gruppe, jede 
   const s = await startServerIn(dir)
   try {
     await uploadBelegFile(s, '%PDF-1.4 Grundsteuer', 'grundsteuer.pdf', { propertyId: 'objekt-1', year: '2024' })
-    // Die Prüfsumme leeren, damit GET sie nachträgt.
-    const file = path.join(dir, 'mietfuchs.sqlite')
-    const c = await connect(file)
-    c.exec("UPDATE uploads SET sha256 = ''")
-    c.close()
-    assert.equal((await fetch(`${s.base}/api/uploads`)).status, 200)
+    // Die Prüfsumme leeren, damit GET sie nachträgt. Der Server ruht hier; die Verbindung wartet trotzdem auf seine Sperre.
+    const c = await besideServer(dir)
+    try {
+      c.exec("UPDATE uploads SET sha256 = ''")
+    } finally {
+      c.close()
+    }
+    // Gefragt wird über die Schnittstelle, bis die Prüfsumme dasteht (#694): Ein zweiter Leser an der Datei scheiterte
+    // selbst an der Sperre des Servers und ließ, traf er dessen Schreiben, das Nachtragen scheitern. Jedes GET stößt es
+    // wieder an und ist selbst Lesen, das keine Gruppe ergeben darf. Die Grenze ist nur ein Netz.
+    const listed = async (): Promise<{ sha256: string }[]> => {
+      const res = await fetch(`${s.base}/api/uploads`)
+      assert.equal(res.status, 200)
+      return jsonOf<{ sha256: string }[]>(res)
+    }
+    assert.deepEqual((await listed()).map((u) => u.sha256), [''])
     let filled = false
-    for (let i = 0; i < 50 && !filled; i++) {
+    for (const deadline = Date.now() + 60000; !filled && Date.now() < deadline;) {
       await new Promise((r) => setTimeout(r, 100))
-      filled = Number((await rowsOf(file, 'SELECT count(*) FROM uploads WHERE sha256 <> \'\''))[0][0]) === 1
+      filled = (await listed()).every((u) => u.sha256 !== '')
     }
     assert.ok(filled, 'die Prüfsumme wurde nicht nachgetragen')
     assert.equal((await send(s, 'POST', '/api/ai/cancel/gibt-es-nicht')).status, 404)

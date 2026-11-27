@@ -274,7 +274,9 @@ export async function startServerBeside(service: { stop: () => void }, dataDir: 
 // Liest die Adresse aus der Startmeldung „Mietfuchs-Server läuft auf …“. Wirft, wenn der Prozess
 // vorher endet oder die Meldung ausbleibt. Die Ausgabe wird danach weiter gelesen, sonst liefe
 // der Puffer der Pipe voll und der Server bliebe beim nächsten console.log hängen.
-export function readStartUrl(child: ChildProcess & { stdout: Readable }, timeoutMs = 20000): Promise<string> {
+// Die Wartezeit ist nur ein Netz (#694): Entschieden wird an der Startzeile oder am Ende des Prozesses. Unter Last
+// brauchte ein Start im Versuch über 20 Sekunden, und ein gesunder Test fiel am Netz.
+export function readStartUrl(child: ChildProcess & { stdout: Readable }, timeoutMs = 60000): Promise<string> {
   return new Promise((resolve, reject) => {
     let output = ''
     let found = false
@@ -453,8 +455,13 @@ export function httpsFetch(base: string, urlPath: string, { method = 'GET', head
 // ---------- Start aus dem Startmenü (#45) ----------
 
 // Wartet, bis der Prozess endet, und liefert den Code. Wirft nach der Wartezeit.
+//
+// **Auch wenn er schon beendet ist** (#694): 'exit' kommt genau einmal. Wer erst eine Anfrage abwartet, die am Ende des
+// Prozesses scheitert, und danach hier wartet, hängte sich sonst unter Last zu spät an und lief in die Wartezeit, obwohl
+// der Prozess längst weg war. Die Wartezeit ist deshalb nur ein Netz für einen Prozess, der wirklich nicht endet.
 export const waitForExit = (child: ChildProcess, timeoutMs = 15000): Promise<number | null> =>
   new Promise((resolve, reject) => {
+    if (child.exitCode !== null || child.signalCode !== null) return void resolve(child.exitCode)
     const timer = setTimeout(() => reject(new Error('Der Prozess hat sich nicht beendet')), timeoutMs)
     child.on('exit', (code: number | null) => {
       clearTimeout(timer)

@@ -18,6 +18,15 @@
 // Startens mit `status: 'starting'`, samt Datenordner und Zeitpunkt des Bindens (`boundAt`). Wer später gebunden hat,
 // sieht den anderen sicher (der war schon gebunden, als er fragte) und weicht; wer früher gebunden hat, sieht den anderen
 // vielleicht nicht, und falls doch, weicht nach derselben Regel der andere. So bleibt genau einer.
+//
+// **Schweigt der Port aus der Lauf-Datei, wird nachgefragt** (#694): Wer zuerst gebunden hat, fragt, schreibt seine
+// Lauf-Datei und öffnet die Datenbank; die Migrationen halten seine Ereignisschleife an, bei einem frischen Ordner oder
+// nach einem Update auf einem langsamen Rechner länger als eine Frage dauert. Der Port nimmt die Verbindung dann an und
+// antwortet nicht. Das als „kein Mietfuchs“ zu werten ließ beide laufen (unter Last nachgestellt: die erste Frage traf
+// auf einen noch nicht gebundenen Port, die des zweiten lief nach 1,5 Sekunden ab). Eine Lauf-Datei in diesem Ordner
+// samt einem Port, der Verbindungen annimmt, ist aber ein starkes Zeichen; dort wird bis `SILENT_WAIT_MS` erneut
+// gefragt. Ein Port, der die Verbindung ablehnt (Datei nach einem Absturz), entscheidet weiter sofort, und ein
+// Standardport ohne Lauf-Datei wird weiter nur einmal gefragt, sonst wartete jeder Start, wenn dort etwas schweigt.
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -105,27 +114,61 @@ export function yieldsTo(self: Self, other: { boundAt: number, pid: number, port
 
 type Fetch = (url: string) => Promise<unknown>
 
+// Wie lange auf den Port aus der Lauf-Datei gewartet wird, wenn er Verbindungen annimmt und nicht antwortet
+export const SILENT_WAIT_MS = 30_000
+
+// Die Frage lief ab, ohne dass der Port antwortete (im Unterschied zu einer abgelehnten Verbindung)
+const isSilence = (err: unknown): boolean => err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+
+// Wie dieser Start beim Schweigen eines Ports Bescheid gibt: `onSilent` einmal je Port, sobald nachgefragt wird,
+// `onGaveUp`, wenn der Port bis zum Ende schwieg (er zählt dann als frei)
+type SilentHooks = { onSilent: (port: number) => void, onGaveUp: (port: number) => void }
+
 // Antwortet Mietfuchs auf diesem Port, mit welchem Bericht? Mehrmals, solange es meldet, dass es noch startet und seinen
-// Ordner nicht nennt (Fassungen vor 0.15). `null`: keine Antwort, kein Mietfuchs.
-async function askPort(port: number, fetchJson: Fetch, startingWaitMs: number, pause: (ms: number) => Promise<void>): Promise<unknown> {
+// Ordner nicht nennt (Fassungen vor 0.15), und solange ein Port schweigt, bei dem sich das Warten lohnt (`silentWaitMs`
+// über 0: der Port aus der Lauf-Datei). `silentWaitMs` wird erst beim Schweigen gefragt, denn der andere kann seine
+// Lauf-Datei geschrieben haben, nachdem dieser Start sie las. `settled`: Ein anderer Port hat den Zwilling schon
+// ergeben, weiter zu fragen lohnt nicht. `null`: keine Antwort, kein Mietfuchs.
+async function askPort(port: number, fetchJson: Fetch, startingWaitMs: number, pause: (ms: number) => Promise<void>, silentWaitMs: () => number, hooks: SilentHooks, settled: () => boolean): Promise<unknown> {
   const deadline = Date.now() + startingWaitMs
+  const start = Date.now()
+  let told = false
   for (;;) {
     let health: unknown
     try {
       health = await fetchJson(`http://127.0.0.1:${port}/healthz`)
-    } catch {
-      return null
+    } catch (err) {
+      if (!isSilence(err) || settled()) return null
+      if (Date.now() >= start + silentWaitMs()) {
+        if (told) hooks.onGaveUp(port)
+        return null
+      }
+      if (!told) hooks.onSilent(port)
+      told = true
+      // Die abgelaufene Frage war selbst die Wartezeit, deshalb ohne Pause weiter
+      continue
     }
     if (!isObject(health) || health.app !== 'mietfuchs') return null
     const waiting = health.status === 'starting' && typeof health.dataDir !== 'string'
-    if (!waiting || Date.now() >= deadline) return health
+    if (!waiting || Date.now() >= deadline || settled()) return health
     await pause(500)
   }
 }
 
+// Ergibt diese Antwort den Zwilling? Derselbe Ordner, und startet der andere gerade auch, weicht nur, wer später gebunden hat
+function twinFrom(self: Self, port: number, health: unknown, platform: NodeJS.Platform): Twin | null {
+  const dir = reportedDataDir(health, platform)
+  if (!dir || !sameDir(dir, self.dataDir, platform) || !isObject(health)) return null
+  if (health.status === 'starting' && typeof health.boundAt === 'number' && typeof health.pid === 'number') {
+    if (!yieldsTo(self, { boundAt: health.boundAt, pid: health.pid, port })) return null
+  }
+  return { port, url: `http://127.0.0.1:${port}`, version: typeof health.version === 'string' ? health.version : null }
+}
+
 /**
  * Läuft auf diesem Datenordner schon ein Mietfuchs? Gefragt werden der Port aus der Lauf-Datei und die Standardports,
- * außer dem eigenen. Ergibt den anderen oder `null`.
+ * außer dem eigenen, alle zugleich. Ergibt den anderen, sobald ein Port ihn ergibt (ohne auf einen schweigenden zu
+ * warten), sonst `null`, wenn alle geantwortet haben oder frei sind.
  */
 export async function findTwin(self: Self, options: {
   platform: NodeJS.Platform
@@ -133,23 +176,32 @@ export async function findTwin(self: Self, options: {
   fetchJson?: Fetch
   // Wie lange auf eine ältere Fassung gewartet wird, die noch startet und ihren Ordner noch nicht nennt
   startingWaitMs?: number
+  // Wie lange der Port aus der Lauf-Datei schweigen darf, bevor er als frei zählt
+  silentWaitMs?: number
+  // Einmal je Port, sobald wegen seines Schweigens nachgefragt wird (für eine Zeile auf der Konsole)
+  onSilent?: (port: number) => void
+  // Wenn ein Port, auf den gewartet wurde, bis zum Ende schwieg
+  onGaveUp?: (port: number) => void
   pause?: (ms: number) => Promise<void>
 }): Promise<Twin | null> {
   const fetchJson: Fetch = options.fetchJson ?? (async (url) => (await fetch(url, { signal: AbortSignal.timeout(1500) })).json())
   const pause = options.pause ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
   const run = readRunFile(self.dataDir)
   const ports = [...new Set([...(run ? [run.port] : []), ...(options.ports ?? DEFAULT_PORTS)])].filter((p) => p !== self.port && p > 0)
-  const answers = await Promise.all(ports.map(async (port) => ({ port, health: await askPort(port, fetchJson, options.startingWaitMs ?? 15_000, pause) })))
-  for (const { port, health } of answers) {
-    const dir = reportedDataDir(health, options.platform)
-    if (!dir || !sameDir(dir, self.dataDir, options.platform) || !isObject(health)) continue
-    // Startet der andere gerade auch, weicht nur, wer später gebunden hat
-    if (health.status === 'starting' && typeof health.boundAt === 'number' && typeof health.pid === 'number') {
-      if (!yieldsTo(self, { boundAt: health.boundAt, pid: health.pid, port })) continue
+  const hooks: SilentHooks = { onSilent: options.onSilent ?? (() => {}), onGaveUp: options.onGaveUp ?? (() => {}) }
+  const silentWaitFor = (port: number) => () => port === readRunFile(self.dataDir)?.port ? options.silentWaitMs ?? SILENT_WAIT_MS : 0
+  let found: Twin | null = null
+  return new Promise((resolve, reject) => {
+    let open = ports.length
+    if (open === 0) return resolve(null)
+    for (const port of ports) {
+      askPort(port, fetchJson, options.startingWaitMs ?? 15_000, pause, silentWaitFor(port), hooks, () => found !== null).then((health) => {
+        found = found ?? twinFrom(self, port, health, options.platform)
+        open--
+        if (found || open === 0) resolve(found)
+      }, reject)
     }
-    return { port, url: `http://127.0.0.1:${port}`, version: typeof health.version === 'string' ? health.version : null }
-  }
-  return null
+  })
 }
 
 // Was der Nutzer liest. Im Fenster als Meldung (desktop/src/server.js erkennt sie am Anfang), sonst auf der Konsole.

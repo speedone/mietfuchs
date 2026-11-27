@@ -80,7 +80,10 @@ offener Bestand wird nie gemerkt, ein Fehler nicht, das Ergebnis ist eingefroren
 **Eine zweite Verbindung auf die Datei gibt es nur in Tests**, und die Schlange ordnet sie nicht.
 Ohne WAL und ohne `busy_timeout` scheitert ein Schreiben dort sofort mit „database is locked“, wenn
 der Server gerade liest. Öffne sie deshalb mit `besideServer` aus server/testing/api.ts (wartet bis
-zu fünf Sekunden), wie `inDatabase` es tut. Die Hauptverbindung des Servers bekommt kein
+zu fünf Sekunden), wie `inDatabase` es tut. Auch ein **Lesen** scheitert so, wenn es in das Festschreiben des Servers
+fällt, und umgekehrt scheitert das Schreiben des Servers an einem Leser, denn er wartet nie (#694): Wer auf
+Hintergrundarbeit des Servers wartet, fragt deshalb über die Schnittstelle nach und nicht in einer Schleife an der Datei
+(api-journal.test.ts, Prüfsummen). Die Hauptverbindung des Servers bekommt kein
 `busy_timeout`: Im Betrieb gibt es keinen zweiten Schreiber, und ein Warten dort verdeckte genau den
 Fehler, dass doch einer dazukam. Und die Startzeile „läuft auf …“ kommt erst nach der Vorversion
 beim Start, denn wer auf sie wartet, hält den Server für fertig.

@@ -116,7 +116,7 @@ import { createUpdateChecker, forOtherDevice, mayAskGitHub, UPDATE_URL } from '.
 import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './version.ts'
 import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
-import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
+import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, SILENT_WAIT_MS, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy, originHostRefusal } from './requestGuard.ts'
 import { authSetting, fromThisComputer as fromThisComputerAt, readEnvPassword } from './access.ts'
 import { createProxyTrust } from './trustProxy.ts'
@@ -5673,8 +5673,22 @@ if (STANDALONE && !MOVED_AWAY) {
   const address = server.address()
   const self: Self = { dataDir: DATA_DIR, port: typeof address === 'object' && address ? address.port : PORT, pid: process.pid, boundAt }
   let twin = null
+  const gaveUp: number[] = []
   try {
-    twin = await findTwin(self, { platform: process.platform, ports: twinPorts() })
+    twin = await findTwin(self, {
+      platform: process.platform,
+      ports: twinPorts(),
+      // Vermutlich steckt dort ein anderes Mietfuchs in seinem Start (#694); ohne Zeile sähe dieser Start bis zu
+      // 30 Sekunden nach nichts aus. Aus dem Startmenü unter Linux gibt es keine Konsole, deshalb auch als Mitteilung
+      onSilent: (port) => {
+        const message = `Die Lauf-Datei im Datenordner nennt Port ${port}; dort antwortet noch nichts. Mietfuchs wartet bis zu ${SILENT_WAIT_MS / 1000} Sekunden auf eine Antwort.`
+        console.log(message)
+        if (!IN_WINDOW) notifyDesktop(message)
+      },
+      onGaveUp: (port) => gaveUp.push(port),
+    })
+    // Erst hier, denn ein anderer Port könnte den Zwilling noch ergeben haben
+    if (!twin) for (const port of gaveUp) console.log(`Auf Port ${port} antwortet weiterhin nichts. Mietfuchs startet selbst.`)
   } catch (err) {
     // Nie den Start eines einzelnen Mietfuchs verhindern: Ein Fehler der Frage zählt als frei
     console.error(`Ob schon ein Mietfuchs auf diesem Datenordner läuft, ließ sich nicht prüfen: ${messageOf(err)}`)

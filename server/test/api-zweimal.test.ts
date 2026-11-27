@@ -100,7 +100,8 @@ test('Zweimal derselbe Ordner: zwei gleichzeitige Starts auf verschiedenen Ports
   const a = startServerRaw(dataDir, { NKA_PORT: String(portA), NKA_RUNTIME: 'desktop', NKA_TEST_TWIN_PORTS: JSON.stringify([portB]) })
   const b = startServerRaw(dataDir, { NKA_PORT: String(portB), NKA_RUNTIME: 'desktop', NKA_TEST_TWIN_PORTS: JSON.stringify([portA]) })
   try {
-    await until(() => [a, b].filter((s) => /Mietfuchs-Server läuft auf/.test(s.out())).length + [a, b].filter((s) => s.child.exitCode !== null).length >= 2, 30000)
+    // Wer weicht, wartet seit #694 auf die Antwort des anderen, also dessen ganzen Start; die Grenze ist nur ein Netz
+    await until(() => [a, b].filter((s) => /Mietfuchs-Server läuft auf/.test(s.out())).length + [a, b].filter((s) => s.child.exitCode !== null).length >= 2, 90000)
     const running = [a, b].filter((s) => /Mietfuchs-Server läuft auf/.test(s.out()))
     const refused = [a, b].filter((s) => /läuft bereits mit denselben Daten/.test(s.out()))
     assert.equal(running.length, 1, `${a.out()}\n----\n${b.out()}`)
@@ -108,7 +109,9 @@ test('Zweimal derselbe Ordner: zwei gleichzeitige Starts auf verschiedenen Ports
   } finally {
     a.child.kill()
     b.child.kill()
-    await new Promise((r) => setTimeout(r, 300))
+    // Erst wenn beide wirklich beendet sind, hält niemand mehr die Datenbank im Ordner. Endet einer nicht, verdeckt das
+    // weder den Befund oben noch das Aufräumen
+    await Promise.allSettled([waitForExit(a.child), waitForExit(b.child)])
     removeDataDir(dataDir)
   }
 })
