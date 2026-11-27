@@ -288,6 +288,30 @@ const PLANT_MAI = {
   warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
 }
 
+// #704: Unter der NK-Vorauszahlung steht, wo sich eine eigene Vorauszahlung für Heizung und Warmwasser führen lässt. Die
+// Nachprüfung fand, dass der Einbau den Knopf „+ Erhöhung ab Monat …“ verdrängt hatte; beides steht hier zusammen.
+test('#704: Mietverhältnis ohne Aufteilung: der Satz nennt den Weg, und die Staffel behält ihren Knopf', async () => {
+  plants = [{ ...PLANT_MAI, periodStartMonth: null }]
+  page()
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis anlegen/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  expect(await within(dialog).findByText(/teilen Sie sie in der Karte „Heizung“ mit „Vorauszahlung aufteilen“ auf/, undefined, SLOW)).toBeTruthy()
+  expect(within(dialog).queryByText(/Heizvorauszahlung je Monat \(neben der übrigen Vorauszahlung\)/)).toBeNull()
+  const before = within(dialog).getAllByLabelText(/Betrag €\/Monat/).length
+  fireEvent.click(within(dialog).getByRole('button', { name: '+ Erhöhung ab Monat …' }))
+  expect(within(dialog).getAllByLabelText(/Betrag €\/Monat/).length).toBe(before + 1)
+})
+
+test('#704: aufgeteilt bei gleichem Zeitraum: die Heizstaffel erscheint mit dem Grund, und der Satz zur Summe schweigt', async () => {
+  plants = [{ ...PLANT_MAI, name: 'Gaskessel', periodStartMonth: null, separateSettlement: true }]
+  page()
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis anlegen/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  expect(await within(dialog).findByText(/weil für die Heizung „Gaskessel“ die Vorauszahlung aufgeteilt ist; die Abrechnung weist beide Vorauszahlungen getrennt aus/, undefined, SLOW)).toBeTruthy()
+  expect(within(dialog).queryByText(/Tragen Sie hier die Summe ein/)).toBeNull()
+  expect(within(dialog).getByRole('button', { name: '+ Erhöhung ab Monat …' })).toBeTruthy()
+})
+
 test('Laienprobe B1: Speichern schickt die Marke des geladenen Stands mit', async () => {
   const t = tenancy('t1', 'Beispiel', { prepayments: [{ from: '2025-01', monthlyCents: 25000 }] })
   page([t])

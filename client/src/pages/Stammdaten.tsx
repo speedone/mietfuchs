@@ -5,7 +5,8 @@ import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USA
 import { everRented } from '../../../shared/unitUsage.ts'
 import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, unitMoveLock, unitMoveQuestion, unitPropertyOptions, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
-import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
+import { prepaymentSplitHint, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
+import { settlesHeating } from '../../../shared/heatingModel.ts'
 import Drawer from '../components/Drawer'
 import { SheetPrinter } from '../components/ReadingSheet'
 import { buildReadingSheet, DEFAULT_SHEET_OPTIONS, todayIso, type ReadingSheet } from '../readingSheet'
@@ -940,6 +941,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               ))}
               <PartialMonthNote rows={tenForm.prepayments} start={tenForm.start} end={tenForm.end} kind="prepayment" />
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
+              {/* #704: wo sich eine eigene Vorauszahlung für Heizung und Warmwasser führen lässt */}
+              {(() => {
+                // Nur wenn die Heizkosten mit Vorauszahlung abgerechnet werden und noch keine Heizstaffel dasteht (Durchsicht M3).
+                const note = settlesHeating(tenForm.heatingModel)
+                  ? prepaymentSplitHint(units.find((u) => u.id === tenForm.unitId) ?? { id: tenForm.unitId }, plants, tenForm.heatingPrepayments.length > 0)
+                  : null
+                return note && <small className="muted">{note}</small>
+              })()}
             </div>
 
             {(() => {
@@ -955,7 +964,15 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <div className="field-group-label">Heizvorauszahlung je Monat (neben der übrigen Vorauszahlung) - Staffel</div>
                   <p className="muted">
                     {plant
-                      ? <>Erscheint, weil die Heizung „{plant.name || 'Heizanlage'}“ die Heizkosten getrennt abrechnet (<Term id="separateHeatingSettlement">getrennte Heizkostenabrechnung</Term> mit eigener Vorauszahlung). Ändern unter Stammdaten → Heizung.</>
+                      ? (
+                        <>
+                          {plant.separateSpans.some((x) => x.until === null)
+                            ? <>Erscheint, weil die Heizung „{plant.name || 'Heizanlage'}“ die Heizkosten getrennt abrechnet (<Term id="separateHeatingSettlement">getrennte Heizkostenabrechnung</Term> mit eigener Vorauszahlung).</>
+                            // #704, Durchsicht K3: Ohne Spanne bleibt es bei einer Abrechnung, aufgeteilt ist nur die Vorauszahlung.
+                            : <>Erscheint, weil für die Heizung „{plant.name || 'Heizanlage'}“ die Vorauszahlung aufgeteilt ist; die Abrechnung weist beide Vorauszahlungen getrennt aus.</>}
+                          {' '}Ändern unter Stammdaten → Heizung.
+                        </>
+                      )
                       : <>Erscheint, weil für dieses Mietverhältnis eine Heizvorauszahlung eingetragen ist.</>}
                     {' '}Die Staffel „NK-Vorauszahlung“ oben ist dann die übrige Vorauszahlung; ändert sich eine der beiden, tragen Sie die neue ab demselben Monat hier oder oben ein.
                   </p>

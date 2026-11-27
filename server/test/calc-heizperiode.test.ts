@@ -119,6 +119,29 @@ test('R13: getrennt abgerechnet, aber die Vorauszahlung nicht aufgeteilt', () =>
   assert.deepEqual([hint.level, hint.subject], ['hint', { kind: 'heatingPlant', id: 'hp1' }])
 })
 
+// #704, Durchsicht M6, K2, K3: Der Hinweis nennt, was bei gleichem Zeitraum wirklich gilt (eine Abrechnung, zwei
+// Vorauszahlungen), und schweigt, wo Aufteilen nichts änderte: mit Jahreskorrektur (sie kennt keine Aufteilung, erneutes
+// Aufteilen führte im Kreis) und bei einem Mieter, dessen Heizkosten nicht über Vorauszahlungen abgerechnet werden.
+test('#704: nicht aufgeteilt bei gleichem Zeitraum: der Satz sagt, was gilt, und schweigt bei Jahreskorrektur, Pauschale und Inklusivmiete', () => {
+  const src = (over: Record<string, unknown>) => haus({
+    heatingPlants: [anlage({ periodStartMonth: null, separateSettlement: true })],
+    tenancies: [mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 30000 }], over)],
+    costItems: [heizung('gas', '2025-01', 150000)],
+  })
+  const hints = (over: Record<string, unknown>) => (settle(src(over), '2025-01').notices ?? []).filter((n) => n.code === 'prepayment.heating-share-missing')
+  assert.deepEqual(hints({}).map((h) => h.text), [
+    'A (EG): Für die Heizung ist eine eigene Vorauszahlung vorgesehen, die Vorauszahlung dieses Mietverhältnisses ist aber nicht aufgeteilt; die Abrechnung weist für die Heizung 0 € aus. ' +
+      'Teilen Sie die Vorauszahlung unter Stammdaten → Heizung auf („Vorauszahlung aufteilen“); an der Summe ändert sich nichts.',
+  ])
+  assert.deepEqual(hints({ prepaymentOverrides: { '2025-01': 350000 } }), [])
+  assert.deepEqual(hints({ heatingModel: 'flatRate' }), [])
+  assert.deepEqual(hints({ heatingModel: 'inclusive' }), [])
+  assert.deepEqual(hints({ heatingModel: 'selfSupply' }), [])
+  assert.equal(hints({ heatingModel: 'settlement' }).length, 1)
+  // Aufgeteilt mit Jahreskorrektur: Die Korrektur kennt keine Aufteilung, der Hinweis schickt nicht mehr im Kreis.
+  assert.deepEqual(hints({ heatingPrepayments: [{ from: '2024-01', monthlyCents: 12000 }], prepayments: [{ from: '2024-01', monthlyCents: 18000 }], prepaymentOverrides: { '2025-01': 350000 } }), [])
+})
+
 test('R-h: Die Vorauszahlung steigt, die Heizvorauszahlung nicht (Review Focus 4)', () => {
   const s = settle(haus({
     heatingPlants: [anlage({ separateSettlement: true, separateSpans: [{ from: '2025-05', until: null }] })],

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers, initialSeparateAnswers,
-  heatingWays, separateAnswersOf, separatePanelIntro, suggestedWay,
+  heatingWays, separateActions, separateAnswersOf, separateOffBody, separatePanelIntro, separateSavedText, splitHint, suggestedWay,
 } from './heatingPeriodForm'
 import { CALENDAR_RULES, periodKey as k } from '../../shared/period.ts'
 import type { HeatingPeriodChangePreview, HeatingPlant, SeparatePreview } from './types'
@@ -113,5 +113,59 @@ describe('Getrennte Heizkostenabrechnung: Überschrift und Satz zum Monat', () =
     expect([off.title, off.monthLabel]).toEqual(['Getrennte Heizkostenabrechnung ausschalten', 'Ab welcher Heizperiode wieder gemeinsam? (Monat ihres Beginns)'])
     expect(off.text).toMatch(/Betriebskostenabrechnung/)
     expect(separatePanelIntro({ separateOn: false, own: false, afterPeriodChange: false }).title).toBe('Vorauszahlung aufteilen')
+  })
+})
+
+// #704: Rechnet die Heizung im Zeitraum des Objekts ab, ließ sich die Vorauszahlung nicht aufteilen: Der Knopf erschien
+// nur, wenn die Antwort „getrennt“ schon gespeichert war, und gefragt wurde sie nur bei eigener Heizperiode.
+describe('#704: Wege zur getrennten Vorauszahlung je Anlage', () => {
+  const split = { mode: 'on', label: 'Vorauszahlung aufteilen' }
+  const merge = { mode: 'off', label: 'Vorauszahlung wieder zusammenführen' }
+  test('wie das Objekt: aufteilen geht immer, zusammenführen erst danach', () => {
+    expect(separateActions(plant({ periodStartMonth: null, separateSettlement: null }))).toEqual([split])
+    expect(separateActions(plant({ periodStartMonth: null, separateSettlement: false }))).toEqual([split])
+    expect(separateActions(plant({ periodStartMonth: null, separateSettlement: true }))).toEqual([split, merge])
+  })
+  test('eigene Heizperiode: wie bisher ein Knopf, ein oder aus', () => {
+    expect(separateActions(plant({ periodStartMonth: 5 }))).toEqual([{ mode: 'on', label: 'Getrennte Heizkostenabrechnung einschalten' }])
+    expect(separateActions(plant({ periodStartMonth: 5, separateSettlement: true, separateSpans: [{ from: '2026-01', until: null }] }))).toEqual([{ mode: 'off', label: 'Getrennte Heizkostenabrechnung ausschalten' }])
+  })
+  // Durchsicht M1, M2: Die Knöpfe folgen dem, was der Server annimmt (offene Spanne, gespeicherte Antwort), nicht dem Rhythmus.
+  test('offene Spanne bei einer Anlage wie das Objekt (Weg d, danach Zeitraum umgestellt): nur ausschalten, mit der Heizperiode', () => {
+    const p = plant({ periodStartMonth: null, separateSettlement: true, separateSpans: [{ from: '2026-05', until: null }] })
+    expect(separateActions(p)).toEqual([{ mode: 'off', label: 'Getrennte Heizkostenabrechnung ausschalten' }])
+    expect(separateOffBody(p, '2027-01')).toEqual({ separate: false, until: '2027-01' })
+    expect(separateOffBody(p, '')).toEqual({ separate: false })
+    expect(separateOffBody(plant({ periodStartMonth: null, separateSettlement: true }), '2027-01')).toEqual({ separate: false, month: '2027-01' })
+    expect(separateOffBody(plant({ periodStartMonth: 5, separateSettlement: true, separateSpans: [{ from: '2026-05', until: null }] }), '2027-05')).toEqual({ separate: false, until: '2027-05' })
+  })
+  test('eigene Heizperiode, aufgeteilt ohne Spanne (H = P aufgeteilt, dann eigene Heizperiode): es gibt einen Rückweg', () => {
+    const p = plant({ periodStartMonth: 5, separateSettlement: true })
+    expect(separateActions(p)).toEqual([{ mode: 'on', label: 'Getrennte Heizkostenabrechnung einschalten' }, merge])
+    expect(separateOffBody(p, '2027-01')).toEqual({ separate: false, month: '2027-01' })
+  })
+  // Durchsicht M5: Nach einem Kesseltausch lehnt der Server das Aufteilen ab; dann gibt es weder Knopf noch Satz.
+  test('Kesseltausch: kein Knopf, der nur in eine Ablehnung führt', () => {
+    expect(separateActions(plant({ periodStartMonth: null, endsOn: '2025-06-30' }))).toEqual([])
+    expect(separateActions(plant({ periodStartMonth: null, replacesPlantId: 'alt' }))).toEqual([])
+    expect(separateActions(plant({ periodStartMonth: null, replacesPlantId: 'alt', separateSettlement: true }))).toEqual([merge])
+    expect(splitHint(plant({ periodStartMonth: null, endsOn: '2025-06-30' }))).toBeNull()
+    // Nachprüfung: auch bei eigener Heizperiode lehnt der Server nach einem Kesseltausch ab.
+    expect(separateActions(plant({ periodStartMonth: 5, replacesPlantId: 'alt' }))).toEqual([])
+    expect(separateActions(plant({ periodStartMonth: 5, replacesPlantId: 'alt', separateSettlement: true, separateSpans: [{ from: '2026-05', until: null }] }))).toEqual([{ mode: 'off', label: 'Getrennte Heizkostenabrechnung ausschalten' }])
+  })
+  test('das Fenster heißt wie sein Knopf, und der Satz in der Karte sagt, wozu der Knopf da ist', () => {
+    expect(separatePanelIntro({ separateOn: true, own: false, afterPeriodChange: false }).title).toBe('Vorauszahlung wieder zusammenführen')
+    expect(separatePanelIntro({ separateOn: true, own: true, span: false, afterPeriodChange: false }).title).toBe('Vorauszahlung wieder zusammenführen')
+    expect(separatePanelIntro({ separateOn: true, own: false, span: true, afterPeriodChange: false }).title).toBe('Getrennte Heizkostenabrechnung ausschalten')
+    expect(splitHint(plant({ periodStartMonth: null, separateSettlement: null }))).toBe('Zahlen Ihre Mieter laut Mietvertrag eine eigene Vorauszahlung für Heizung und Warmwasser neben der für die übrigen Nebenkosten? Mit „Vorauszahlung aufteilen“ führt Mietfuchs beide getrennt, und die Abrechnung weist sie getrennt aus.')
+    expect(splitHint(plant({ periodStartMonth: null, separateSettlement: true }))).toBe('Die Vorauszahlung ist aufgeteilt in Heizung und übrige Nebenkosten. Mit „Vorauszahlung aufteilen“ ändern Sie die Aufteilung, etwa für ein Mietverhältnis, dem die Heizvorauszahlung fehlt.')
+    expect(splitHint(plant({ periodStartMonth: 5 }))).toBeNull()
+  })
+  test('die Meldung nach dem Speichern nennt, was geschehen ist', () => {
+    expect(separateSavedText({ separate: true, way: 'samePeriod' })).toBe('Vorauszahlung aufgeteilt. Neue Mietverhältnisse bekommen ihre Heizvorauszahlung im Formular des Mietverhältnisses.')
+    expect(separateSavedText({ separate: false, way: 'samePeriod' })).toBe('Vorauszahlung wieder zusammengeführt.')
+    expect(separateSavedText({ separate: true, way: 'separate' })).toBe('Getrennte Heizkostenabrechnung eingeschaltet.')
+    expect(separateSavedText({ separate: false, way: 'separate' })).toBe('Getrennte Heizkostenabrechnung ausgeschaltet.')
   })
 })

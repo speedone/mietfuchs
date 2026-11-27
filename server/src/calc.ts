@@ -97,6 +97,7 @@ import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { dwellingsOf } from '../../shared/rooms.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
+import { settlesHeating } from '../../shared/heatingModel.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameMeterRest, sameUnits } from '../../shared/allocation.ts'
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
@@ -10313,9 +10314,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const plant = plants.find((p) => servesUnit(p, t.unit))
       if (!own || !plant) continue
       const same = periodOfKey(plantRules(wayOf(plant), objectRules), period.key)
-      if (plant.separateSettlement === true && same !== null && sameSpan(same, period) && own.prepaymentCents > 0 && (own.heatingPrepaymentCents ?? 0) === 0) {
+      // #704 (Durchsicht M6, K2, K3): nicht bei einer Jahreskorrektur (sie kennt keine Aufteilung, `computePrepaymentCents`;
+      // erneutes Aufteilen änderte nichts) und nicht, wenn die Heizkosten dieses Mieters gar nicht über Vorauszahlungen
+      // abgerechnet werden. Bei gleichem Zeitraum gibt es keine getrennte Abrechnung, nur zwei Vorauszahlungen.
+      if (plant.separateSettlement === true && same !== null && sameSpan(same, period) && own.prepaymentCents > 0 && (own.heatingPrepaymentCents ?? 0) === 0 && !own.prepaymentOverridden && settlesHeating(t.heatingModel)) {
         warn('prepayment.heating-share-missing',
-          `${t.tenantName} (${t.unit.name}): Die Heizkosten werden getrennt abgerechnet, die Vorauszahlung ist aber nicht aufgeteilt; die Abrechnung weist für die Heizung 0 € aus. ` +
+          `${t.tenantName} (${t.unit.name}): Für die Heizung ist eine eigene Vorauszahlung vorgesehen, die Vorauszahlung dieses Mietverhältnisses ist aber nicht aufgeteilt; die Abrechnung weist für die Heizung 0 € aus. ` +
             'Teilen Sie die Vorauszahlung unter Stammdaten → Heizung auf („Vorauszahlung aufteilen“); an der Summe ändert sich nichts.',
           { kind: 'heatingPlant', id: plant.id })
       }

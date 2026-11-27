@@ -28,6 +28,7 @@
 import crypto from 'node:crypto'
 import { and, eq, gte } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { settlesHeating } from '../../../shared/heatingModel.ts'
 import {
   hasOwnRhythm, heatingPeriodsEndingIn, isObjectPeriod, monthSpanText, plantRules, separateOwner, servesUnit, settledSeparately, type PlantWay,
 } from '../../../shared/heatingPeriod.ts'
@@ -173,7 +174,11 @@ function planOn(c: Ctx, rawMonth: unknown): Plan {
       tenancy: t, first,
       rows: bounds.map((from) => {
         const total = rate(t.prepayments, from) + rate(heat, from)
-        return { from, totalCents: total, heatingCents: share ? Math.round((total * share.permille) / 1000 / 100) * 100 : rate(heat, from) }
+        // #704: Eine schon geteilte Stufe behält ihren Heizanteil als Vorschlag (erneutes Aufteilen bei H = P, eine nach dem
+        // Ausschalten stehen gelassene Heizstaffel); der Anteil der letzten Abrechnung gilt nur, wo noch nichts geteilt ist.
+        // Wer die Heizung als Pauschale oder in der Miete zahlt oder selbst heizt, hat keine Heizvorauszahlung (Durchsicht K2).
+        const kept = rate(heat, from)
+        return { from, totalCents: total, heatingCents: kept > 0 ? kept : share && settlesHeating(t.heatingModel) ? Math.round((total * share.permille) / 1000 / 100) * 100 : 0 }
       }),
     }
   })
@@ -361,9 +366,13 @@ async function withEffects(db: Database, plantId: string, p: Plan, today: string
 }
 
 // Eine Staffel ab einem Monat ersetzen: Einträge davor bleiben, ab dort gelten die neuen.
-async function writeSchedule(tx: Executor, table: typeof prepayments | typeof heatingPrepayments, t: Tenancy, keep: readonly PrepaymentEntry[], rows: readonly PrepaymentEntry[]): Promise<void> {
+// `compact`: Eine neue Stufe, die nur den Betrag wiederholt, der vor ihr gilt, wird nicht geschrieben (Durchsicht von #704,
+// K1). Nur bei H = P, wo sich erneut aufteilen lässt und jede Runde sonst eine gleiche Stufe anhängte; bei Weg d bleibt
+// die Staffel, wie sie bisher geschrieben wurde. An keinem Monat ändert sich der Betrag.
+async function writeSchedule(tx: Executor, table: typeof prepayments | typeof heatingPrepayments, t: Tenancy, keep: readonly PrepaymentEntry[], rows: readonly PrepaymentEntry[], compact = false): Promise<void> {
   await tx.delete(table).where(eq(table.tenancyId, t.id))
-  const all = [...keep, ...rows]
+  const all = [...keep]
+  for (const row of rows) if (!compact || rate(all, row.from) !== row.monthlyCents) all.push(row)
   if (all.length > 0) await tx.insert(table).values(all.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
 }
 
@@ -380,7 +389,8 @@ async function setHeating(tx: Executor, tenancyId: string, plantId: string, peri
   })
 }
 
-export async function applySeparate(db: Database, plantId: string, body: unknown, today: string): Promise<{ plant: HeatingPlant } | { error: string; preview: SeparatePreview } | null> {
+// `way` und `separate` für den Satz im Verlauf: Ohne Spanne (H = P) wird keine getrennte Abrechnung umgestellt.
+export async function applySeparate(db: Database, plantId: string, body: unknown, today: string): Promise<{ plant: HeatingPlant; way: SeparatePreview['way']; separate: boolean } | { error: string; preview: SeparatePreview } | null> {
   const p = await plan(db, plantId, body, today)
   if (p === null) return null
   // Jede Antwort mit Vorschau trägt Fristen und Ergebnisse (Review der Laienprobe, Runde 1).
@@ -424,7 +434,9 @@ export async function applySeparate(db: Database, plantId: string, body: unknown
     }
   }
   if (missing.length > 0) return { error: `Es fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: await withEffects(db, plantId, p, today) }
-  const given: Given = { stepAnswers, overrideAnswers, totalAnswers, rests, merge: answers.merge !== false }
+  // Ohne Spanne (H = P) heißt Ausschalten Zusammenführen: Mit `merge: false` blieben die Staffeln geteilt und die Abrechnung
+  // wiese weiter getrennt aus, nur ohne Rückweg (Durchsicht von #704, M4). Bei Weg d bleibt es die Wahl des Vermieters.
+  const given: Given = { stepAnswers, overrideAnswers, totalAnswers, rests, merge: p.way === 'samePeriod' || answers.merge !== false }
   // Laienprobe B3a, Review Runde 1: Ändert das Aufteilen eine Abrechnung mit abgelaufener Frist, nur
   // mit ausdrücklicher Bestätigung (`understood`), gerechnet mit den Antworten.
   const checked = await withEffects(db, plantId, p, today, given)
@@ -435,7 +447,7 @@ export async function applySeparate(db: Database, plantId: string, body: unknown
 
   await db.transaction(async (tx) => writeSeparateIn(tx, plantId, p, given))
   const plant = (await readHeatingPlants(db)).find((x) => x.id === plantId)
-  return plant ? { plant } : null
+  return plant ? { plant, way: p.way, separate: p.separate } : null
 }
 
 type Given = {
@@ -457,8 +469,9 @@ async function writeSeparateIn(tx: Transaction, plantId: string, p: Plan, { step
           const v = given[from]
           return isCents(v) ? v : 0
         }
-        await writeSchedule(tx, prepayments, s.tenancy, s.tenancy.prepayments.filter((e) => e.from < s.first), s.rows.map((r) => ({ from: r.from, monthlyCents: r.totalCents - z(r.from) })))
-        await writeSchedule(tx, heatingPrepayments, s.tenancy, (s.tenancy.heatingPrepayments ?? []).filter((e) => e.from < s.first), s.rows.map((r) => ({ from: r.from, monthlyCents: z(r.from) })))
+        const compact = p.way === 'samePeriod'
+        await writeSchedule(tx, prepayments, s.tenancy, s.tenancy.prepayments.filter((e) => e.from < s.first), s.rows.map((r) => ({ from: r.from, monthlyCents: r.totalCents - z(r.from) })), compact)
+        await writeSchedule(tx, heatingPrepayments, s.tenancy, (s.tenancy.heatingPrepayments ?? []).filter((e) => e.from < s.first), s.rows.map((r) => ({ from: r.from, monthlyCents: z(r.from) })), compact)
       }
       for (const e of p.overrides) {
         const total = objectOr(totalAnswers[e.tenancy.id])[e.period.key]
@@ -488,8 +501,10 @@ async function writeSeparateIn(tx: Transaction, plantId: string, p: Plan, { step
         for (const m of p.merges) {
           const heat = m.tenancy.heatingPrepayments ?? []
           const before = heat.filter((e) => e.from < m.from)
-          await writeSchedule(tx, prepayments, m.tenancy, m.tenancy.prepayments.filter((e) => e.from < m.from), m.rows.map((r) => ({ from: r.from, monthlyCents: r.prepaymentCents })))
-          await writeSchedule(tx, heatingPrepayments, m.tenancy, before, before.length > 0 && rate(heat, m.from) > 0 ? [{ from: m.from, monthlyCents: 0 }] : [])
+          await writeSchedule(tx, prepayments, m.tenancy, m.tenancy.prepayments.filter((e) => e.from < m.from), m.rows.map((r) => ({ from: r.from, monthlyCents: r.prepaymentCents })), p.way === 'samePeriod')
+          // Die Stufe genau im Monat des Zusammenführens fällt weg; ob danach noch ein Heizbetrag gälte, sagen deshalb nur die
+          // Stufen davor (Nachprüfung von #704, B: Eine 0-Stufe in diesem Monat ließ sonst den früheren Betrag wieder aufleben).
+          await writeSchedule(tx, heatingPrepayments, m.tenancy, before, rate(before, m.from) > 0 ? [{ from: m.from, monthlyCents: 0 }] : [])
         }
       }
     }

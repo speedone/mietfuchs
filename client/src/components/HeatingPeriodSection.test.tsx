@@ -281,3 +281,61 @@ describe('Seitenfenster, Durchsicht', () => {
     expect(await screen.findByRole('alertdialog')).toBeTruthy()
   })
 })
+
+// #704: Rechnet die Heizung im Zeitraum des Objekts ab, gab es keinen Weg, die Vorauszahlung aufzuteilen.
+describe('#704: Vorauszahlung aufteilen bei gleichem Zeitraum', () => {
+  const on = { separate: true, way: 'samePeriod', month: '2026-01', earliestMonth: null, until: null, earliestUntil: null, blocked: [], share: null,
+    steps: [{ tenancyId: 't1', tenantName: 'Meier', rows: [{ from: '2026-01', totalCents: 30000, heatingCents: 12000 }] }], overrides: [], deadlines: [], effects: [], keep: [], merge: [], token: 's1' }
+  const off = { ...on, separate: false, steps: [], merge: [{ tenancyId: 't1', tenantName: 'Meier', rows: [{ from: '2026-03', prepaymentCents: 30000 }] }], month: '2026-03', token: 's2' }
+  function setup(p: HeatingPlant) {
+    const calls: { url: string; method: string; body: Record<string, unknown> }[] = []
+    const notes: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
+      calls.push({ url, method: init?.method ?? 'GET', body })
+      if (url.endsWith('/separate/preview')) return json(body.separate === true ? on : off)
+      return json({})
+    }))
+    render(<UIProvider><HeatingPeriodSection plant={p} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={(t) => notes.push(t)} /></UIProvider>)
+    return { calls, notes }
+  }
+
+  test('ohne gespeicherte Antwort: der Knopf ist da, der Satz erklärt ihn, und gespeichert wird die Aufteilung', async () => {
+    const { calls, notes } = setup(plant({ periodStartMonth: null, separateSettlement: null }))
+    expect(screen.getByText(/eigene Vorauszahlung für Heizung und Warmwasser/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Vorauszahlung wieder zusammenführen' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Vorauszahlung aufteilen' }))
+    const drawer = screen.getByRole('dialog', { name: 'Vorauszahlung aufteilen' })
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Vorschau' }))
+    const field = await within(drawer).findByLabelText(/Meier ab 01\/2026: davon Heizung/) as HTMLInputElement
+    expect(field.value).toBe('120,00')
+    expect(calls.find((c) => c.url.endsWith('/separate/preview'))?.body).toEqual({ separate: true })
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(notes).toEqual(['Vorauszahlung aufgeteilt. Neue Mietverhältnisse bekommen ihre Heizvorauszahlung im Formular des Mietverhältnisses.']))
+    expect(calls.find((c) => c.method === 'PUT')?.body).toMatchObject({ separate: true, month: '2026-01', answers: { steps: { t1: { '2026-01': 12000 } }, token: 's1' } })
+  })
+
+  test('schon aufgeteilt: erneut aufteilen fragt die Aufteilung an, zusammenführen schickt den gewählten Monat als Monat', async () => {
+    const { calls, notes } = setup(plant({ periodStartMonth: null, separateSettlement: true }))
+    expect(screen.queryByText(/eigene Vorauszahlung für Heizung und Warmwasser/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Vorauszahlung aufteilen' }))
+    const first = screen.getByRole('dialog', { name: 'Vorauszahlung aufteilen' })
+    fireEvent.click(within(first).getByRole('button', { name: 'Vorschau' }))
+    await within(first).findByLabelText(/Meier ab 01\/2026: davon Heizung/)
+    expect(calls.at(-1)?.body).toEqual({ separate: true })
+    fireEvent.click(within(first).getByRole('button', { name: 'Abbrechen' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Vorauszahlung aufteilen' })).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Vorauszahlung wieder zusammenführen' }))
+    const second = screen.getByRole('dialog', { name: 'Vorauszahlung wieder zusammenführen' })
+    fireEvent.change(within(second).getByRole('textbox', { name: /Ab welchem Monat/ }), { target: { value: '3.2026' } })
+    fireEvent.click(within(second).getByRole('button', { name: 'Vorschau' }))
+    // Durchsicht M4: Bei gleichem Zeitraum gibt es kein Häkchen; ohne Zusammenführen bliebe alles aufgeteilt.
+    await within(second).findByText(/Meier ab 03\/2026: wieder eine Vorauszahlung von 300,00 €/)
+    expect(within(second).queryByRole('checkbox')).toBeNull()
+    expect(calls.at(-1)?.body).toEqual({ separate: false, month: '2026-03' })
+    fireEvent.click(within(second).getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(notes).toEqual(['Vorauszahlung wieder zusammengeführt.']))
+    expect(calls.find((c) => c.method === 'PUT')?.body).toMatchObject({ separate: false, month: '2026-03', answers: { merge: true } })
+  })
+})

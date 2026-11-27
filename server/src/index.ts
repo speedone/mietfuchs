@@ -1408,7 +1408,14 @@ app.post('/api/heating-plants/:id/separate/preview', async (req, res) => {
   res.json(preview)
 })
 app.put('/api/heating-plants/:id/separate', async (req, res) => {
-  const result = await writeData((db) => applySeparate(db, req.params.id, bodyObject(req), today()))
+  const result = await writeData(async (db) => {
+    const applied = await applySeparate(db, req.params.id, bodyObject(req), today())
+    // Bei gleichem Zeitraum gibt es keine getrennte Abrechnung; der Verlauf nennt, was geschehen ist (#704).
+    if (applied && 'plant' in applied && applied.way === 'samePeriod') {
+      await retitleCurrentGroup(db, applied.separate ? 'Vorauszahlung in Heizung und übrige Nebenkosten aufgeteilt' : 'Vorauszahlung wieder zusammengeführt')
+    }
+    return applied
+  })
   if (!result) return res.status(404).json({ error: PLANT_GONE_TEXT })
   if ('error' in result) return res.status(409).json(result)
   res.json(result.plant)
