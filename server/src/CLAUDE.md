@@ -765,10 +765,10 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   Zeitraum oder vor dem Tag des Briefs (`endedBy` in shared/letter.ts, `asOf`), trägt das Anschreiben `ended: true` (friert
   mit ein), und `chooseLetterBlocks` nimmt bei einem Guthaben diesen Baustein statt `credit`: Es gibt keine nächste
   Mietzahlung zum Verrechnen, der Satz fragt nach der Bankverbindung. Ohne die Angabe (vorher eingefroren) bleibt
-  `credit`. **Umzug im Haus ist kein Auszug**: ein späteres Mietverhältnis desselben Mieters (gleicher Name ohne Groß und
+  `credit`. **Umzug im Haus ist kein Auszug**: ein Mietverhältnis desselben Mieters, das nach dem Beginn des beendeten beginnt (auch überlappend), (gleicher Name ohne Groß und
   Klein und Leerraum, das Modell kennt keine Person) im selben Objekt, das am Tag des Briefs läuft. **Eigener Text zu
   `credit`** (Durchsicht): Hat das Mietverhältnis selbst einen und keinen zu `creditMovedOut`, gilt er auch nach dem
-  Auszug (`lettersOf`, ohne Datenanweisung). Hat nur Vorlage oder Objekt einen und keine Ebene einen zu
+  Auszug (`movedOutTexts`, dieselbe Regel in `lettersOf` und im Fenster des Mieters, das sie so anzeigt; ohne Datenanweisung). Hat nur Vorlage oder Objekt einen und keine Ebene einen zu
   `creditMovedOut` (`creditTextUnused`), steht die Vorgabe; das Fenster „Anschreiben“ sagt es am Baustein
   (`creditMovedOutHint` in client/src/letterForm.ts) und „Zu prüfen“ je ausgezogenem Mieter mit Guthaben
   (`page.credit-moved-out`, Stufe `hint`, nur offen).

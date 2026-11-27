@@ -514,21 +514,27 @@ export const currentPrepaymentAt = (
 
 // #691: Ist das Mietverhältnis beendet, wenn der Brief entsteht? Es endet im abgerechneten Zeitraum oder vor dem Tag des
 // Briefs; dann gibt es keine nächste Mietzahlung, mit der sich ein Guthaben verrechnen ließe. Außer der Mieter wohnt im
-// selben Objekt weiter (Umzug im Haus, Durchsicht): ein späteres Mietverhältnis mit demselben Mieter, das am Tag des Briefs
-// läuft. Das Modell kennt keine Person; gleich heißt gleicher Name ohne Groß und Klein und mehrfachen Leerraum. Ist das
+// selben Objekt weiter (Umzug im Haus, Durchsicht): ein Mietverhältnis mit demselben Mieter, das nach dem Beginn des
+// beendeten beginnt (auch vor seinem Ende, Überschneidung beim Umzug) und am Tag des Briefs läuft. Das Modell kennt keine Person; gleich heißt gleicher Name ohne Groß und Klein und mehrfachen Leerraum. Ist das
 // Objekt einer Wohnung unbekannt, zählt es als dasselbe (dann bleibt der bisherige Satz, nie ein falsches „beendet“).
 type EndedTenancy = LetterSource['tenancies'][number]
 const personKey = (name: string | undefined): string => (name ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de-DE')
 function endedBy(t: EndedTenancy | undefined, periodTo: string, src: Pick<LetterSource, 'asOf' | 'tenancies' | 'units'>): boolean {
   if (!t?.end || !(t.end <= periodTo || t.end < src.asOf)) return false
-  const end = t.end
   const propertyOf = (unitId: string | undefined) => src.units?.find((u) => u.id === unitId)?.propertyId ?? null
   const here = propertyOf(t.unitId)
   const name = personKey(t.tenantName)
   const stays = name !== '' && src.tenancies.some((o) => o.id !== t.id && personKey(o.tenantName) === name
-    && !!o.start && o.start > end && o.start <= src.asOf && (o.end == null || o.end >= src.asOf)
+    && !!o.start && !!t.start && o.start > t.start && o.start <= src.asOf && (o.end == null || o.end >= src.asOf)
     && (here === null || propertyOf(o.unitId) === null || propertyOf(o.unitId) === here))
   return !stays
+}
+
+// #691, Durchsicht: Der eigene Text des Mieters zum Guthaben gilt nach dem Auszug, solange er keinen eigenen zum Guthaben
+// nach dem Auszug hat. Eine Regel für Brief (`lettersOf`) und Fenster des Mieters (LetterDrawer), damit es zeigt, was
+// gedruckt wird. Ein `null` heißt dort „Ebene darüber“, wie ein fehlender Schlüssel.
+export function movedOutTexts<T extends Partial<Record<LetterBlock, string | null>>>(own: T, ended: boolean): T {
+  return ended && typeof own.credit === 'string' && typeof own.creditMovedOut !== 'string' ? { ...own, creditMovedOut: own.credit } : own
 }
 
 // #691, Durchsicht: Ein eigener Text zum Guthaben in der Vorlage oder am Objekt gilt nicht für ausgezogene Mieter, wenn
@@ -554,9 +560,7 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
     const from = own?.adjustment?.from ?? adjustFromFor(src.asOf, s.period.to)
     const split = splitOf(st, tenancy, separate, from)
     const ended = endedBy(tenancy, s.period.to, src)
-    // #691, Durchsicht: Der eigene Text des Mieters zum Guthaben gilt nach dem Auszug, solange er keinen eigenen dafür hat.
-    const ownTexts = ended && typeof own?.texts.credit === 'string' && typeof own.texts.creditMovedOut !== 'string'
-      ? { ...own.texts, creditMovedOut: own.texts.credit } : own?.texts
+    const ownTexts = own ? movedOutTexts(own.texts, ended) : undefined
     const built = buildLetter({
       texts: mergeLetterTexts(src.installation, src.propertyTexts, ownTexts),
       adjustment: own?.adjustment ?? adjustmentDefault(src.settings),

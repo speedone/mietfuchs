@@ -1605,6 +1605,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             intro={`Gilt nur für diese Abrechnung von ${st.tenantName}. Mit dem Abschluss friert der Text ein; eine spätere Änderung der Vorlage ändert dann nicht mehr, was zugestellt wurde.`}
             base={mergeLetterTexts(templates.installation, templates.property)}
             own={own?.texts ?? {}}
+            ended={!!letter.ended}
             values={{ ...letter.values, Datum: fmtDate(data.closed?.sentAt ?? localToday()) }}
             adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: adjustFromFor(localToday(), data.period.to), currentAt: (month) => currentPrepaymentAt(data, st, tenancies.find((t) => t.id === st.tenancyId), month), split: { suggestedHeatingCents: st.suggestedHeatingMonthlyCents ?? null, heatingCents: own?.adjustment?.heatingCents ?? null, coversWater: st.secondPrepaymentCoversWater === true, at: (month) => currentSplitAt(data, st, tenancies.find((t) => t.id === st.tenancyId), month) } }}
             shown={letterParagraphs(letter, st.balanceCents, { date: localToday(), attachments: 0 }).map((p) => p.block)}

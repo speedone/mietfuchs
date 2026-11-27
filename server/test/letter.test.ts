@@ -588,6 +588,10 @@ test('#691: Umzug im Haus ist kein Auszug: späteres, laufendes Mietverhältnis 
     installation: {}, propertyTexts: {}, own: {}, asOf: '2026-03-15',
   }).t1 ?? assert.fail('kein Anschreiben')
   assert.equal(of({ tenantName: 'erika mustermann', unitId: 'u2' }).ended, undefined)
+  // Nachprüfung: Der neue Vertrag beginnt vor dem Ende des alten (Überschneidung beim Umzug): ebenso kein Auszug
+  assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'u2', start: '2025-06-15' }).ended, undefined)
+  // Ein Vertrag, der vor dem alten begann, zählt nicht
+  assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'u2', start: '2019-01-01' }).ended, true)
   // Ein anderer Mieter, ein anderes Objekt, ein Mietverhältnis, das am Tag des Briefs schon wieder beendet ist oder noch nicht begonnen hat: ausgezogen
   assert.equal(of({ tenantName: 'Paul Richter', unitId: 'u2' }).ended, true)
   assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'x1' }).ended, true)

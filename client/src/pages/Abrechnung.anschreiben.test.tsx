@@ -836,3 +836,34 @@ test('#691: eigener Text zum Guthaben nur in der Vorlage: „Zu prüfen“ nennt
   const [checks] = await screen.findAllByText(/Eigener Text zum Guthaben gilt nicht nach dem Auszug \(Meier, EG\)/, {}, SLOW)
   expect(plain(checks?.closest('.card')?.textContent)).toMatch(/Text für „Guthaben nach dem Auszug“ anpassen/)
 })
+
+// #691, Nachprüfung: Ein eigener Text des Mieters zum Guthaben druckt nach dem Auszug als „Guthaben nach dem Auszug“; das
+// Fenster zeigt dasselbe, statt „Es gilt die Vorlage“ und „(in diesem Anschreiben nicht)“.
+test('#691: eigener Text des Mieters zum Guthaben nach dem Auszug: das Fenster zeigt, was gedruckt wird', async () => {
+  const moved: Tenancy[] = [{ ...TENANCIES[0] as Tenancy, end: `${YEAR}-06-30` }]
+  const st = { ...STATEMENT, periodEnd: `${YEAR}-06-30`, balanceCents: 3000, suggestedMonthlyCents: 0 }
+  const base: Settlement = { ...settlement, statements: [st], letters: undefined }
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+  const own = { t1: { texts: { credit: 'Frau Meier bekommt {Betrag} bar.' }, adjustment: null } }
+  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: moved, installation: {}, propertyTexts: {}, own, asOf: `${YEAR + 1}-10-30` }) }
+  ownLetters = own
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={SETTINGS} units={[]} tenancies={moved} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const letter = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(plain(letter.textContent)).toContain('Frau Meier bekommt 30,00 € bar.')
+  await openPreview()
+  fireEvent.click(await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  const movedOut = within(dialog).getByRole('textbox', { name: 'Guthaben nach dem Auszug' }) as HTMLTextAreaElement
+  expect(movedOut.value).toBe('Frau Meier bekommt {Betrag} bar.')
+  const at = (name: string) => plain(within(dialog).getByRole('textbox', { name }).closest('.letter-edit')?.textContent)
+  expect(at('Guthaben nach dem Auszug')).not.toContain('Es gilt die Vorlage')
+  expect(at('Guthaben nach dem Auszug')).toContain('Es gilt Ihr Text zu „Guthaben“')
+  expect(at('Guthaben')).not.toContain('(in diesem Anschreiben nicht)')
+  expect(at('Guthaben')).toContain('nach dem Auszug')
+})

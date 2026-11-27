@@ -4,7 +4,7 @@
 // abweichend je Objekt und einmalig je Mieter (Abrechnung).
 import { useEffect, useRef, useState } from 'react'
 import type { LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts } from '../types'
-import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS, sameAmountHint, splitSentence } from '../../../shared/letter.ts'
+import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS, movedOutTexts, sameAmountHint, splitSentence } from '../../../shared/letter.ts'
 import { EPC_PURPOSE_MAX, epcText } from '../../../shared/epcQr.ts'
 import { secondPrepaymentLabel } from '../../../shared/heatingModel.ts'
 import MonthField from './MonthField'
@@ -47,6 +47,9 @@ type Props = {
   // Teil 2: „Anschreiben mitdrucken“. Installation: ja oder nein (`base` fehlt); Objekt: wie die Vorgabe (`null`,
   // `base` ist die Vorgabe der Einstellungen), ja oder nein. Fehlt es, fragt das Fenster nicht (Mieter).
   printLetter?: { value: boolean | null, base?: boolean }
+  // #691: Das Mietverhältnis ist beendet; ein eigener Text des Mieters zum Guthaben druckt dann als „Guthaben nach dem
+  // Auszug“ (`movedOutTexts`, dieselbe Regel wie der Brief)
+  ended?: boolean
   // Druck (#415): die Mieter ohne eingetragene Anrede (`names`) von allen, für die das Fenster gilt (`total`); dazu, wo man sie
   // einträgt (`fix`, beim Mieter)
   salutations?: { names: string[], total: number, fix?: { label: string, onClick: () => void } | null }
@@ -69,7 +72,7 @@ const centsText = (cents: number | null): string => (cents === null ? '' : (cent
 
 const PRINT_CHOICES = [{ id: 'inherit', value: null }, { id: 'yes', value: true }, { id: 'no', value: false }] as const
 
-export default function LetterDrawer({ open, level, title, intro, base, own, values, adjust, shown, printLetter, salutations, onClose, onSave }: Props) {
+export default function LetterDrawer({ open, level, title, intro, base, own, values, adjust, shown, printLetter, salutations, ended = false, onClose, onSave }: Props) {
   const initial = (): LetterDraft => ({ own: ownOf(own), adjust: adjust?.mode ?? 'none', adjustOwn: adjust?.own ?? true, customCents: centsText(adjust?.cents ?? null), customHeatingCents: centsText(adjust?.split?.heatingCents ?? null), adjustFrom: adjust?.from ?? null, printLetter: printLetter?.value ?? null })
   const [draft, setDraft] = useState<LetterDraft>(initial)
   // Beim Öffnen der gespeicherte Stand; ein offenes Fenster behält seine Eingaben.
@@ -226,19 +229,23 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
       {lacksSplit && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt die Teile für ${secondPrepaymentLabel(adjust?.split?.coversWater, 'short')} und übrige Nebenkosten nicht. Mit dem Platzhalter {Aufteilung} steht im Brief, um wie viel sich jede der beiden Vorauszahlungen ändert.`} />}
       {lacksMonth && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt den Monat nicht. Mit dem Platzhalter {AnpassungAb} steht ${level === 'tenancy' && /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : 'der Monat'} im Brief, und „In die Staffel übernehmen“ nimmt nach dem Abschluss denselben Monat.`} />}
       {LETTER_BLOCKS.map((b) => {
-        const text = shownText(draft, base, b.id)
+        // #691, Nachprüfung: beim Mieter nach dem Auszug, was der Brief druckt (`movedOutTexts`)
+        const effective = level === 'tenancy' ? movedOutTexts(draft.own, ended) : draft.own
+        const fromCredit = b.id === 'creditMovedOut' && draft.own.creditMovedOut === null && effective.creditMovedOut !== null
+        const asMovedOut = b.id === 'credit' && level === 'tenancy' && ended && effective.creditMovedOut === draft.own.credit && draft.own.creditMovedOut === null && draft.own.credit !== null
+        const text = effective[b.id] ?? base[b.id]
         // #624: Der Verwendungszweck erscheint, wo die Nachzahlung erscheint (im Code neben ihrem Satz).
-        const appears = shown ? shown.includes(b.id === 'paymentPurpose' ? 'backPayment' : b.id) : true
+        const appears = asMovedOut || (shown ? shown.includes(b.id === 'paymentPurpose' ? 'backPayment' : b.id) : true)
         // #691, Durchsicht: ein eigener Text zum Guthaben, der nach dem Auszug nicht gilt
         const movedOutHint = b.id === 'creditMovedOut' && creditMovedOutHint(draft, base, level)
         const cut = b.id === 'paymentPurpose' && [...epcText(previewOf(text, previewValues))].length > EPC_PURPOSE_MAX
-        const inherited = draft.own[b.id] === null
+        const inherited = draft.own[b.id] === null && !fromCredit
         return (
           <div key={b.id} className="letter-edit">
             <Field
               label={b.label}
               width="full"
-              hint={`Erscheint ${b.when}${appears ? '' : ' (in diesem Anschreiben nicht)'}.${inherited ? (level === 'installation' ? ' Vorgabe von Mietfuchs.' : ' Es gilt die Vorlage.') : ' Eigener Text.'} Leer heißt: weglassen.`}
+              hint={`Erscheint ${b.when}${appears ? '' : ' (in diesem Anschreiben nicht)'}.${asMovedOut ? ' Das Mietverhältnis ist beendet: Dieser Text steht im Brief an der Stelle „Guthaben nach dem Auszug“.' : ''}${fromCredit ? ' Es gilt Ihr Text zu „Guthaben“.' : inherited ? (level === 'installation' ? ' Vorgabe von Mietfuchs.' : ' Es gilt die Vorlage.') : ' Eigener Text.'} Leer heißt: weglassen.`}
               {...errors.field(b.id)}
             >
               <textarea
@@ -252,7 +259,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
               {fieldsFor(b.id).map((f) => (
                 <button key={f.id} type="button" className="chip-button" title={f.label} onClick={() => insert(b.id, f.id)}>{`{${f.id}}`}</button>
               ))}
-              {!inherited && (
+              {draft.own[b.id] !== null && (
                 <button type="button" className="btn small ghost" onClick={() => setDraft((d) => ({ ...d, own: { ...d.own, [b.id]: null } }))}>
                   Auf Vorgabe zurücksetzen<span className="sr-only">{` (${b.label})`}</span>
                 </button>
