@@ -605,3 +605,64 @@ test('Durchsicht #721 S8: Zustand mit leerer Wohnung nennt nur die vermieteten; 
   await waitFor(() => expect(sent.map((s) => s.method)).toEqual(['POST', 'PUT']))
   expect(sent[1]).toEqual({ method: 'PUT', url: '/api/tenancies/ta?property=objekt-1', body: { heatingModel: null, selfSupplyKind: null } })
 })
+
+// #690 Punkt 3: Die Erfassung der eigenen Abrechnung war nur über „Niemand“ änderbar, und das verwarf Anteile, Teil und
+// Ziel der Positionen. Der Knopf schickt nur die Erfassung; alles Übrige bleibt am Server.
+test('#690: eigene Abrechnung: „Erfassung ändern“ zeigt die gespeicherte Erfassung und schickt nur sie', async () => {
+  const self: HeatingPlant = { ...PLANT, energy: 'gas', method: 'self', capture: 'hca', selfSpans: [{ from: periodKey('2020-01'), until: null, capture: 'hca', hotWater: 'combined' }] }
+  plants = [self]
+  const base = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') !== 'PUT') return base(url, init)
+    sent.push({ method: 'PUT', url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+    return json({ plant: { ...self, capture: 'serviceValues' }, created: [], converted: 0, estimatesNotice: null })
+  })
+  render(<UIProvider><PropertyProvider><HeatingCard units={UNITS} /></PropertyProvider></UIProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Erfassung ändern' }))
+  // Die Einrichtung von vorn gibt es bei eigener Abrechnung nicht, den direkten Weg schon.
+  expect(screen.queryByRole('button', { name: 'Eigene Heizkostenabrechnung einrichten' })).toBeNull()
+  // Der angezeigte Wert ist der gespeicherte.
+  expect(valueOf(/Womit wird der Verbrauch erfasst/)).toBe('hca')
+  expect(screen.getByText(/Teil und Ziel der Heizpositionen bleiben, wie sie sind/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText(/Womit wird der Verbrauch erfasst/), { target: { value: 'serviceValues' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(sent.length).toBe(1))
+  expect(sent[0]?.url).toMatch(/^\/api\/heating-plants\/hp1\/self(\?property=objekt-1)?$/)
+  expect(Object.keys(sent[0]?.body ?? {}).sort()).toEqual(['capture', 'captureOnly', 'period'])
+  expect(sent[0]?.body).toMatchObject({ capture: 'serviceValues', captureOnly: true })
+  await waitFor(() => expect(screen.getAllByText(/Erfassung geändert; Anteile, Teil und Ziel der Heizpositionen sind geblieben/).length).toBeGreaterThan(0))
+})
+
+// #690, Durchsicht: Zählt nach dem Wechsel Erfasstes nicht mehr, fragt der Server (409, `question: 'capture'`). Die
+// Karte zeigt seinen Satz als Rückfrage und schickt erst nach „Erfassung ändern“ die Bestätigung; „Abbrechen“ lässt
+// das Fenster offen und schickt nichts.
+test('#690: „Erfassung ändern“ fragt vor einem Wechsel nach, nach dem Erfasstes nicht mehr zählt', async () => {
+  const self: HeatingPlant = { ...PLANT, energy: 'gas', method: 'self', capture: 'serviceValues', selfSpans: [{ from: periodKey('2020-01'), until: null, capture: 'serviceValues', hotWater: 'combined' }] }
+  plants = [self]
+  const question = 'Ab der Heizperiode 2026 rechnet Mietfuchs dann mit Heizkostenverteilern. Nicht mehr zählen die eingetragenen Werte des Ablesedienstes für 1 Wohnung. Gelöscht wird nichts: Stellen Sie die Erfassung zurück, zählt es wieder.'
+  const base = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') !== 'PUT') return base(url, init)
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+    sent.push({ method: 'PUT', url, body })
+    if (body.confirmCapture !== true) return json({ error: question, question: 'capture' }, 409)
+    return json({ plant: { ...self, capture: 'hca' }, created: [], converted: 0, estimatesNotice: null })
+  })
+  render(<UIProvider><PropertyProvider><HeatingCard units={UNITS} /></PropertyProvider></UIProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Erfassung ändern' }))
+  fireEvent.change(screen.getByLabelText(/Womit wird der Verbrauch erfasst/), { target: { value: 'hca' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  let dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Erfassung trotzdem ändern?')).toBeTruthy()
+  expect(dialog.textContent).toContain(question)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(sent.length).toBe(1)
+  expect(screen.getByLabelText(/Womit wird der Verbrauch erfasst/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  dialog = await screen.findByRole('alertdialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Erfassung ändern' }))
+  await waitFor(() => expect(sent.length).toBe(3))
+  expect(sent[2]?.body).toEqual({ period: sent[0]?.body.period, capture: 'hca', captureOnly: true, confirmCapture: true })
+  await waitFor(() => expect(screen.getAllByText(/Erfassung geändert/).length).toBeGreaterThan(0))
+})

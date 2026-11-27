@@ -78,7 +78,7 @@ import {
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
 import { MeterRestError } from './db/meterRest.ts'
-import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
+import { CaptureQuestion, removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
@@ -5404,6 +5404,8 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   }
   // Eigene Heizkostenabrechnung (Heizung PR 10): die Liste der Positionen, die umzustellen sind.
   if (err instanceof SelfItemsError) return res.status(409).json({ error: err.message, items: err.items })
+  // Wechsel der Erfassung, nach dem Erfasstes nicht mehr zählt (#690): dieselbe Gestalt wie die Rückfragen darunter.
+  if (err instanceof CaptureQuestion) return res.status(409).json({ error: err.message, question: 'capture' })
   // Das Zahlungsdatum (#255 PR 3): die Rückfrage mit eigenem Kennzeichen, wie beim Betriebsstrom.
   if (err instanceof PaidOnQuestion) return res.status(409).json({ error: err.message, question: 'paidOn' })
   // Das Jahr der Zahlung außerhalb der üblichen Spanne (#478, E2): dieselbe Gestalt, eigenes Kennzeichen.

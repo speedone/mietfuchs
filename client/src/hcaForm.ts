@@ -124,6 +124,13 @@ export function setupDoneText(capture: CaptureMethod | null): string {
   if (capture === 'serviceValues') return 'Eigene Heizkostenabrechnung eingerichtet. Tragen Sie die Werte des Ablesedienstes auf der Seite Heizkosten ein.'
   return 'Eigene Heizkostenabrechnung eingerichtet. Tragen Sie die Zählerstände auf der Seite Zähler ein.'
 }
+// #690: nach „Erfassung ändern“. Was bleibt, steht dabei, denn danach fragte der Vermieter vorher zu Recht.
+export function captureChangedText(capture: CaptureMethod | null): string {
+  const kept = 'Erfassung geändert; Anteile, Teil und Ziel der Heizpositionen sind geblieben.'
+  if (capture === 'hca') return `${kept} Legen Sie auf der Seite Zähler je Heizkörper einen Heizkostenverteiler mit Skala und Bewertungsfaktor an und tragen Sie die Stände ein.`
+  if (capture === 'serviceValues') return `${kept} Tragen Sie die Werte des Ablesedienstes auf der Seite Heizkosten ein.`
+  return `${kept} Tragen Sie die Zählerstände auf der Seite Zähler ein.`
+}
 
 // Die bewerteten Einheiten in der Zählerliste (Durchsicht von #241, Minor 3): bei der Einheitsskala
 // Ablesewert mal Faktor.

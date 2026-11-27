@@ -10,8 +10,9 @@ import { useSaving } from '../useSaving'
 import Term from './Term'
 import Field from './Field'
 import HeatingPeriodSection from './HeatingPeriodSection'
-import { setupDoneText } from '../hcaForm'
+import { captureChangedText, setupDoneText } from '../hcaForm'
 import HeatingSelfSetup from './HeatingSelfSetup'
+import HeatingCaptureChange from './HeatingCaptureChange'
 import HeatDeliveryFields from './HeatDeliveryFields'
 import { useOptionalPeriod } from '../period'
 import { localToday } from '../periodForm'
@@ -57,6 +58,8 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
   const [swap, setSwap] = useState<{ plant: HeatingPlant; form: SwapForm; meters: Meter[] } | null>(null)
   // Einrichtung Schritt 7 (Heizung PR 10): die Anlage, die selbst abrechnen soll.
   const [selfFor, setSelfFor] = useState<HeatingPlant | null>(null)
+  // #690: die Anlage mit eigener Abrechnung, deren Erfassung geändert wird.
+  const [captureFor, setCaptureFor] = useState<HeatingPlant | null>(null)
   // Schritt 7 legt den Anteil der Heizperiode fest, an der der Vermieter arbeitet: die, in der der gewählte
   // Zeitraum endet (ohne Zeitraum der Tag heute), nach dem Rhythmus der Anlage.
   const period = useOptionalPeriod()
@@ -481,6 +484,8 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
               <button className="btn secondary" onClick={() => openEdit(p)}>Ändern</button>
               {canSwap(p) && <button className="btn secondary" onClick={() => openSwap(p)}>Heizung erneuert (Kessel getauscht)</button>}
               {p.method === 'manual' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setSelfFor(p) }}>Eigene Heizkostenabrechnung einrichten</button>}
+              {/* #690: Die Erfassung der eigenen Abrechnung direkt ändern, ohne den Umweg über „Niemand“. */}
+              {p.method === 'self' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setCaptureFor(p) }}>Erfassung ändern</button>}
             </>}
             dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen …</button>}
           />
@@ -728,6 +733,20 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
             setSelfFor(null)
             await loadAll()
             toast(setupDoneText(p.capture))
+          }}
+        />
+      )}
+      {captureFor && (
+        <HeatingCaptureChange
+          key={captureFor.id}
+          plant={captureFor}
+          period={heatingKeyOf(captureFor)}
+          periodLabel={periodLabel(periodContaining(plantRules(captureFor, rulesOf(property)), period?.period.to ?? localToday()))}
+          onCancel={() => setCaptureFor(null)}
+          onDone={async (p) => {
+            setCaptureFor(null)
+            await loadAll()
+            toast(captureChangedText(p.capture))
           }}
         />
       )}
