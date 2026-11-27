@@ -368,7 +368,7 @@ test('#723: ein einziger Heizkostenverteiler ohne Skala: Fehler nennt Gerät und
 const withoutDevice = (base: Snapshot, id: string): Snapshot => ({ ...base, meters: base.meters.filter((m) => m.id !== id), readings: base.readings.filter((r) => r.meterId !== id) })
 const allRows = (s: ComputedSettlement) => s.statements.reduce((a, st) => a + st.rows.reduce((b, r) => b + r.shareCents, 0), 0) + s.landlord.rows.reduce((a, r) => a + r.shareCents, 0)
 
-test('#690: Wohnung ohne Heizkostenverteiler über der Grenze (B, 80 von 200 m²): Heizung nur nach Fläche, Kürzung vorsorglich für alle', () => {
+test('#690: Wohnung ohne Heizkostenverteiler über der Grenze (B, 80 von 200 m²): Heizung nur nach Fläche, Kürzung sicher für B, vorsorglich für die übrigen', () => {
   const mit = asHca(selfSnapshot())
   const s = computeSettlement(withoutDevice(mit, 'wz-b'))
   const ref = computeSettlement({ ...mit, meters: mit.meters.filter((m) => !HEAT.includes(m.id)), readings: mit.readings.filter((r) => !HEAT.includes(r.meterId)) })
@@ -385,12 +385,12 @@ test('#690: Wohnung ohne Heizkostenverteiler über der Grenze (B, 80 von 200 m²
   const n = s.notices.find((x) => x.code === 'heating.unit-without-device') ?? assert.fail(`keine Warnung, sondern: ${codes(s).join(', ')}`)
   assert.equal(n.level, 'warning')
   assert.deepEqual(n.subject, { kind: 'heatingCosts', id: 'hp' })
-  assert.match(n.text, /^Heizanlage, Heizperiode 2025: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon\. Nicht erfasst ist der Verbrauch für 80 von 200 m² \(40 %\)\./)
-  assert.match(n.text, /ausschließlich nach Fläche \(wie § 9a Abs\. 2 HeizkostenV\)/)
-  assert.match(n.text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV; BGH VIII ZR 151\/20\)\. Mietfuchs nennt die Kürzung deshalb vorsorglich für alle \(Auslegung\)/)
-  // Die Beträge wortgleich mit dem Hinweis ganz ohne Gerät (dieselbe Verteilung, dieselbe Kürzung „soweit“).
-  const list = /, hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: .*? und Mieter C2 \(C\) \d+,\d\d €/.exec(ref.notices.find((x) => x.code === 'heating.no-consumption')?.text ?? '')?.[0] ?? assert.fail('keine Beträge im Vergleich')
-  assert.ok(n.text.includes(list), `${n.text}\nerwartet: ${list}`)
+  assert.match(n.text, /^Heizanlage, Heizperiode 2025: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon\. Nicht erfasst ist der Verbrauch für 80 von 200 m² \(40 %\), mehr als 25 % der maßgeblichen Fläche; die Kosten der Heizung gehen deshalb nur nach Fläche \(wie § 9a Abs\. 2 HeizkostenV\)\./)
+  // Die Beträge wie im Hinweis ganz ohne Gerät (dieselbe Verteilung, dieselbe Kürzung „soweit“), getrennt sicher/vorsorglich.
+  const refText = ref.notices.find((x) => x.code === 'heating.no-consumption')?.text ?? assert.fail('kein Vergleich')
+  const amount = (text: string, who: string) => new RegExp(`${who} \\([A-C]\\) (\\d+,\\d\\d €)`).exec(text)?.[1] ?? assert.fail(`${who} fehlt`)
+  assert.match(n.text, new RegExp(`um 15 % kürzen \\(§ 12 Abs\\. 1 Satz 1 HeizkostenV\\), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter B \\(B\\) ${amount(refText, 'Mieter B')}\\. `))
+  assert.ok(n.text.includes(`Vorsorglich, weil nicht entschieden (Auslegung), auch die übrigen: Mieter A (A) ${amount(refText, 'Mieter A')}, Mieter C1 (C) ${amount(refText, 'Mieter C1')} und Mieter C2 (C) ${amount(refText, 'Mieter C2')}. `), n.text)
   // Der Weg zur Behebung: Gerät anlegen, bei Ausfall oder anderem zwingendem Grund Schätzung nach § 9a.
   assert.match(n.text, /„Zähler & Stände“.*„Schätzung \(§ 9a\)“/s)
   const steps = s.statements.flatMap((st) => st.rows.flatMap((r) => r.steps ?? [])).filter((x) => x.label === 'Verbrauchskosten Heizung')
@@ -417,11 +417,13 @@ test('#690: Wohnung ohne Heizkostenverteiler unter der Grenze: Durchschnitt je m
   const heating = selfOf(s).pots.find((p) => p.pot === 'heating') ?? assert.fail('kein Topf Heizung')
   assert.deepEqual([heating.overThreshold, heating.byAreaOnly, heating.consumptionPct, heating.consumption, heating.substitutedConsumption, heating.unequippedUnits], [false, false, 70, 35000, 7000, ['C']])
   const n = s.notices.find((x) => x.code === 'heating.unit-without-device') ?? assert.fail(codes(s).join(', '))
-  assert.match(n.text, /^Heizanlage, Heizperiode 2025: C hat keinen Heizkostenverteiler, die übrigen Wohnungen schon\. Für diese Wohnung setzt Mietfuchs den Durchschnitt je m² der abgelesenen Wohnungen an \(175 Einheiten je m²\)/)
-  assert.match(n.text, /BGH VIII ZR 329\/14/)
+  assert.match(n.text, /^Heizanlage, Heizperiode 2025: C hat keinen Heizkostenverteiler, die übrigen Wohnungen schon\. Mietfuchs setzt für sie den Durchschnitt je m² der abgelesenen Wohnungen an \(175 Einheiten je m²\)/)
+  assert.match(n.text, /Festlegung von Mietfuchs, entschieden ist der Fall nicht/)
   // Sicher: die Mieter von C; vorsorglich: A und B. Je Topf Heizung nach CO₂-Abzug laut Ausweis.
-  assert.match(n.text, /kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV; BGH VIII ZR 151\/20\), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter C1 \(C\) \d+,\d\d € und Mieter C2 \(C\) \d+,\d\d €\. /)
-  assert.match(n.text, /Vorsorglich nennt Mietfuchs die Kürzung auch für die übrigen Mieter.*\(Auslegung\): Mieter A \(A\) \d+,\d\d € und Mieter B \(B\) \d+,\d\d €\. /s)
+  assert.match(n.text, /kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter C1 \(C\) 98,78 € und Mieter C2 \(C\) 55,56 €\. /)
+  assert.match(n.text, /Vorsorglich, weil nicht entschieden \(Auslegung\), auch die übrigen: Mieter A \(A\) 254,66 € und Mieter B \(B\) 362,70 €\. /)
+  // Kern im Hinweis, Begründung in Anleitung und Lexikon (Durchsicht M2).
+  assert.ok(n.text.length < 1000, `${n.text.length} Zeichen`)
   const steps = s.statements.find((st) => st.tenancyId === 'C1')?.rows.flatMap((r) => r.steps ?? []).filter((x) => x.label === 'Verbrauchskosten Heizung') ?? []
   assert.ok(steps.length > 0 && steps.every((x) => /\(kein Heizkostenverteiler: Durchschnitt der abgelesenen Wohnungen je m²\)/.test(x.value)), JSON.stringify(steps))
 })
@@ -432,4 +434,74 @@ test('#690: beim Ablesedienst sperren fehlende Werte einer Wohnung weiter, mit d
   const sv = computeSettlement(ohneWerte)
   assert.match(sv.notices.find((x) => x.code === 'heating.self-incomplete')?.text ?? '', /Für B fehlen die Werte des Ablesedienstes.*„Schätzung \(§ 9a\)“/s)
   assert.ok(!codes(sv).includes('heating.unit-without-device'))
+})
+
+// Durchsicht von #690, M1 und S3: Fehlen in beiden Töpfen Geräte, nennt jede Warnung nur ihren eigenen Topf (§ 12 Abs. 1
+// Satz 1 „Soweit“, BGH VIII ZR 195/04: die Kürzung trifft nur die nicht verbrauchsabhängig abgerechneten Kosten), und die
+// Summe beider Warnungen ist je Mieter 15 % seiner Heizkostenzeilen nach CO₂-Abzug, nicht das Doppelte. Sicher
+// (Mieter der Wohnung ohne Gerät) und vorsorglich (übrige) stehen auch über der Grenze getrennt.
+const HEAT_ITEMS = new Set(['gas', 'strom', 'wartung', 'imm', 'wz', 'wwz'])
+const cutTotal = (s: ComputedSettlement, t: string): number => {
+  const st = s.statements.find((x) => x.tenancyId === t) ?? assert.fail(`keine Abrechnung ${t}`)
+  return Math.round((st.rows.filter((r) => HEAT_ITEMS.has(r.costItemId) || r.kind === 'co2Relief').reduce((a, r) => a + r.shareCents, 0) * 15) / 100)
+}
+const eurOf = (text: string, name: string): number => {
+  const m = new RegExp(`${name} \\([A-C]\\) (\\d+(?:\\.\\d{3})*),(\\d\\d) €`).exec(text) ?? assert.fail(`kein Betrag für ${name} in: ${text}`)
+  return Number((m[1] ?? '').replace(/\./g, '')) * 100 + Number(m[2])
+}
+const potNotices = (s: ComputedSettlement) => s.notices.filter((n) => n.code === 'heating.unit-without-device')
+// „sicher“ steht vor „Vorsorglich“; je Teil die genannten Mieter.
+const parts = (text: string): { sure: string; others: string } => {
+  const i = text.indexOf('Vorsorglich')
+  return { sure: i < 0 ? text : text.slice(0, i), others: i < 0 ? '' : text.slice(i) }
+}
+
+test('#690, Durchsicht M1/S3: B ohne Wärme- und Warmwasserzähler: je Topf eine Warnung mit nur ihrem Topf, zusammen 15 %', () => {
+  const s = computeSettlement(withoutDevice(withoutDevice(selfSnapshot(), 'wz-b'), 'xw-b'))
+  const [h, w] = potNotices(s)
+  if (!h || !w) return assert.fail(`zwei Warnungen erwartet: ${codes(s).join(', ')}`)
+  assert.match(h.text, /B hat keinen Wärmezähler/)
+  assert.match(w.text, /B hat keinen Warmwasserzähler/)
+  assert.match(h.text, /an den Kosten der Heizung um 15 % kürzen.*vom Topf Heizung nach CO₂-Abzug laut Ausweis/s)
+  assert.match(w.text, /an den Kosten des Warmwassers um 15 % kürzen.*vom Topf Warmwasser nach CO₂-Abzug laut Ausweis/s)
+  for (const n of [h, w]) {
+    const { sure, others } = parts(n.text)
+    assert.match(sure, /Mieter B \(B\)/)
+    assert.doesNotMatch(sure, /Mieter A \(A\)|Mieter C1/)
+    assert.match(others, /Mieter A \(A\) .* Mieter C1 \(C\) .* Mieter C2 \(C\)/)
+  }
+  for (const [t, name] of [['A', 'Mieter A'], ['B', 'Mieter B'], ['C1', 'Mieter C1'], ['C2', 'Mieter C2']] as const) {
+    const both = eurOf(h.text, name) + eurOf(w.text, name)
+    assert.ok(Math.abs(both - cutTotal(s, t)) <= 1, `${t}: ${both} statt ${cutTotal(s, t)}`)
+  }
+})
+
+test('#690, Durchsicht M1/S3: A ohne Wärmezähler, C ohne Warmwasserzähler: sicher je Topf die richtige Wohnung', () => {
+  const s = computeSettlement(withoutDevice(withoutDevice(selfSnapshot(), 'wz-a'), 'xw-c'))
+  const h = potNotices(s).find((n) => /Wärmezähler/.test(n.text)) ?? assert.fail(codes(s).join(', '))
+  const w = potNotices(s).find((n) => /Warmwasserzähler/.test(n.text)) ?? assert.fail(codes(s).join(', '))
+  assert.match(h.text, /A hat keinen Wärmezähler/)
+  assert.match(w.text, /C hat keinen Warmwasserzähler/)
+  assert.match(parts(h.text).sure, /vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter A \(A\) \d+,\d\d €\./)
+  assert.match(parts(h.text).others, /Mieter B \(B\) .*Mieter C1 \(C\) .*Mieter C2 \(C\)/)
+  assert.match(parts(w.text).sure, /vom Topf Warmwasser nach CO₂-Abzug laut Ausweis: Mieter C1 \(C\) \d+,\d\d € und Mieter C2 \(C\) \d+,\d\d €\./)
+  assert.match(parts(w.text).others, /Mieter A \(A\) .*Mieter B \(B\)/)
+  assert.doesNotMatch(parts(w.text).sure, /Mieter A \(A\)/)
+  for (const [t, name] of [['A', 'Mieter A'], ['B', 'Mieter B'], ['C1', 'Mieter C1'], ['C2', 'Mieter C2']] as const) {
+    const both = eurOf(h.text, name) + eurOf(w.text, name)
+    assert.ok(Math.abs(both - cutTotal(s, t)) <= 1, `${t}: ${both} statt ${cutTotal(s, t)}`)
+  }
+  assert.equal(allRows(s), s.totalCostsCents)
+})
+
+// Durchsicht von #690, S1: Geschätzte Ablesungen zählen für die Grenze mit der Fläche der Wohnung ohne Gerät zusammen.
+test('#690, Durchsicht S1: geschätzte Ablesungen und eine Wohnung ohne Gerät zusammen über der Grenze: Warnung nennt beide', () => {
+  const units = [selfUnit('a', 40), selfUnit('b', 120), selfUnit('c', 40)]
+  const base = withoutDevice(selfSnapshot({ units }), 'wz-c')
+  // A 40 m² mit geschätztem Endstand (#98) und C 40 m² ohne Gerät: 80 von 200 m², je allein 20 %, zusammen 40 %.
+  const snap: Snapshot = { ...base, readings: base.readings.map((r) => (r.meterId === 'wz-a' && r.date === '2025-12-31' ? { ...r, estimated: true } : r)) }
+  const s = computeSettlement(snap)
+  const n = s.notices.find((x) => x.code === 'heating.reading-estimate-over-25') ?? assert.fail(codes(s).join(', '))
+  assert.match(n.text, /betroffen sind 80 von 200 m² \(40 %\)/)
+  assert.match(n.text, /C ohne Wärmezähler/)
 })

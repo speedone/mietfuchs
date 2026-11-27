@@ -94,7 +94,7 @@ export function missingDevicesLines(self: Pick<SelfHeatingStatement, 'capture' |
     if (!p.noDevices && lacking.length > 0) {
       const how = p.byAreaOnly || p.overThreshold ? `verteilt wird deshalb nur nach ${by}` : 'angesetzt wird für sie der Durchschnitt der abgelesenen Wohnungen'
       return `${name}: ${andList(lacking)} ${lacking.length === 1 ? 'hat' : 'haben'} keinen ${device}, die übrigen Wohnungen schon; ${how}, und die Mieter dürfen ihren Anteil kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). ` +
-        `Legen Sie ${lacking.length === 1 ? 'das Gerät' : 'die Geräte'} auf der Seite „Zähler & Stände“ an; war eines eingebaut und ist ausgefallen, schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.`
+        `Legen Sie ${lacking.length === 1 ? 'das Gerät' : 'die Geräte'} auf der Seite „Zähler & Stände“ an; war eines eingebaut und ist ausgefallen, legen Sie es dort an und schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.`
     }
     if (self.capture === 'serviceValues') return `${name}: Es sind keine Werte des Ablesedienstes eingetragen; ${only} Tragen Sie die Werte auf dieser Seite unter „Werte des Ablesedienstes“ ein.`
     return `${name}: An keiner Wohnung ist ein ${device} angelegt; ${only} Legen Sie die Geräte auf der Seite „Zähler & Stände“ an und tragen Sie dort die Ablesungen zu Beginn und Ende der Heizperiode ein.`

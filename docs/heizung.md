@@ -508,20 +508,28 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
   der Wohnungen mit erfasstem Verbrauch ohne Schätzung (`substitutePerM2`, dieselbe Rechnung wie der Vorschlag
   „Durchschnitt des Gebäudes“), über ihre Nutzer nach Gradtagen bzw. Tagen geteilt wie eine Schätzung
   (`SelfUserPot.substituted`); centgenau wie eine Schätzung mit diesem Wert (Test in calc-hkv.test.ts). Ihre Fläche zählt
-  mit der geschätzten für die Grenze des § 9a Abs. 2 (`unequippedArea`); darüber, oder ohne abgelesene Wohnung, geht der
-  Topf nur nach Fläche. Warnung `heating.unit-without-device` je Topf (ersetzt dort `heating.estimate-over-25` und
+  mit der geschätzten und der geschätzter Ablesungen (`heating.reading-estimate-over-25`) für die Grenze des § 9a Abs. 2
+  (`unequippedArea`); darüber, oder ohne abgelesene Wohnung (auch wenn alle übrigen geschätzt sind: `substitutePerM2` null),
+  geht der Topf nur nach Fläche. Warnung `heating.unit-without-device` je Topf (ersetzt dort `heating.estimate-over-25` und
   `heating.no-consumption`), Ausweis `SelfPotView.unequippedUnits`/`substitutedConsumption`, Rechenweg und
-  `missingDevicesLines` nennen die Wohnung. **Rechtslage, am 27.11.2026 an den amtlichen Texten gelesen**: § 4 Abs. 1, 2
-  (Ausstattungspflicht), § 9a Abs. 1 („wegen Geräteausfalls oder aus anderen zwingenden Gründen“), § 12 Abs. 1 Satz 1
-  („Soweit … nicht verbrauchsabhängig“). Ob eine nie ausgestattete Wohnung ein zwingender Grund ist, hat der BGH nicht
-  entschieden: VIII ZR 373/04, Rn. 15 (zwingend, wenn nicht mehr behebbar) gegen Rn. 21 (§ 9a abgegrenzt von der „freien“
-  Schätzung „wegen fehlender Messgeräte“); VIII ZR 264/19, Rn. 20 (Gefahr, dass der Vermieter „aus Bequemlichkeit“ auf die
-  Erfassung verzichtet). Reine Fläche nur, wenn nach Verbrauch objektiv nicht möglich (VIII ZR 261/06, Rn. 16; VIII ZR
-  329/14, Rn. 17 f.: jede den Verbrauch einbeziehende Abrechnung geht vor), deshalb nicht das ganze Haus nach Fläche.
-  Kürzung: sicher für die Mieter der Wohnung ohne Gerät (VIII ZR 151/20, Rn. 35), **vorsorglich für die übrigen**
-  (Rn. 23: „auch nur teilweise“; dagegen VIII ZR 195/04, Trennung nach Kostenart), über der Grenze für alle. Das ist eine
-  Auslegung zur sicheren Seite des Vermieters (er kennt den höchsten Betrag, den er verlieren kann); der Weg selbst ist
-  Festlegung, nicht entschieden. Mit vollständigen Geräten ändert sich keine Zahl.
+  `missingDevicesLines` nennen die Wohnung. Die Warnung trägt den Kern, die Begründung mit allen Fundstellen steht in der
+  Anleitung „Heizkosten selbst abrechnen“ (shared/guides.ts) und knapp im Lexikon `heatingEstimate`.
+  **Rechtslage, am 27.11.2026 an den amtlichen Texten und BGH-Volltexten gelesen**: § 4 Abs. 1, 2 (Ausstattungspflicht),
+  § 9a Abs. 1 („wegen Geräteausfalls oder aus anderen zwingenden Gründen“), § 12 Abs. 1 Satz 1 („Soweit … nicht
+  verbrauchsabhängig“). Ob eine nie ausgestattete Wohnung ein zwingender Grund ist, hat der BGH nicht entschieden:
+  VIII ZR 373/04, Rn. 15 (zwingend, wenn nicht mehr behebbar) gegen Rn. 21 (§ 9a abgegrenzt von der „freien“ Schätzung
+  „wegen fehlender Messgeräte“); VIII ZR 264/19, Rn. 20 („aus Bequemlichkeit“). **Der Durchschnitt statt reiner Fläche ist
+  eine Festlegung von Mietfuchs.** Dafür: „grundsätzlich“ ist jede den Verbrauch einbeziehende Abrechnung der reinen
+  Flächenabrechnung vorzuziehen (VIII ZR 329/14, Rn. 17); VIII ZR 261/06, Rn. 15, lehnte § 9a im Haus ohne Ausstattung nur
+  mangels Schätzungsgrundlage ab; die 25-%-Grenze ist die Grenze der Ersatzkriterien (VIII ZR 264/19, Rn. 28). Dagegen:
+  rein nach Fläche, wenn ein verbrauchsbezogener Anteil nicht ermittelt worden ist und nicht mehr ermittelt werden kann
+  (VIII ZR 329/14, Rn. 18, mit Verweis auf VIII ZR 261/06 zum Fall fehlender Ausstattung). Für eine einzelne Wohnung ohne
+  Gerät neben ausgestatteten ist das nicht entschieden. **Kürzung je Topf** (Durchsicht M1): Jede Warnung nennt nur ihren
+  eigenen Topf („Soweit“; VIII ZR 195/04, II.: nicht die Kosten, deren Messgeräte vorhanden sind und genutzt werden), bei
+  einer Anlage ohne Warmwasser über die Heizkostenzeilen. Sicher für die Mieter der Wohnung ohne Gerät (VIII ZR 151/20,
+  Rn. 35), **vorsorglich für die übrigen** (Rn. 23: „auch nur teilweise“), auch über der Grenze getrennt (Durchsicht S3).
+  Das ist eine Auslegung zur sicheren Seite des Vermieters (er kennt den höchsten Betrag, den er verlieren kann). Mit
+  vollständigen Geräten ändert sich keine Zahl.
 - **Einheitsskala**: Ablesewert × Bewertungsfaktor; **Produktskala**: wie abgelesen. Ohne Skala oder
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine

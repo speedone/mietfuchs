@@ -303,7 +303,8 @@ test('F17 ohne Wärmezähler in C (#690): je ⅓ nach Fläche, 1.916,68 / 1.916,
     assert.equal(all, s.totalCostsCents)
     const n = s.notices.find((x) => x.code === 'heating.unit-without-device') ?? assert.fail(s.notices.map((x) => x.code).join(', '))
     assert.match(n.text, /C hat keinen Wärmezähler, die übrigen Wohnungen schon\./)
-    assert.match(n.text, /hier: Mieter A \(A\) 261,58 €, Mieter B \(B\) 261,57 € und Mieter C \(C\) 261,58 €\./)
+    // Sicher für den Mieter von C, vorsorglich für A und B (Durchsicht von #690, S3).
+    assert.match(n.text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\), hier: Mieter C \(C\) 261,58 €\. Vorsorglich, weil nicht entschieden \(Auslegung\), auch die übrigen: Mieter A \(A\) 261,58 € und Mieter B \(B\) 261,57 €\./)
   })
 })
 

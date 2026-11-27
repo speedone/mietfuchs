@@ -9401,12 +9401,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const flaggedArea = flagged.reduce((a, u) => a + areaOfUnit(u), 0)
         if (flaggedArea === 0 || !firstInLine(`${root}|reading-over|${p}`)) continue
         const limit = law(hkvEstimateThreshold, { period: lawPeriod }, lawLog)
-        const affected = flaggedArea + t.estimatedArea
+        // Durchsicht von #690, S1: die Fläche der Wohnungen ohne Gerät zählt mit (ihr Verbrauch ist ebenso nicht erfasst).
+        const affected = flaggedArea + t.estimatedArea + t.unequippedArea
         if (!(affected * 100 > t.area * limit)) continue
         const raum = basisUnitOf(sp, p) === 'm³'
         const qm = raum ? 'm³' : 'm²'
         warn('heating.reading-estimate-over-25',
-          `${where}: Der Verbrauch ${potWord(p)} beruht auf geschätzten Ablesungen bei ${andList(flagged.map((u) => u.unit.name))}${t.estimatedArea > 0 ? ` und auf Schätzungen nach § 9a für ${fmtNum(t.estimatedArea)} ${qm}` : ''}; betroffen sind ${fmtNum(affected)} von ${fmtNum(t.area)} ${qm} (${fmtPercent((affected * 100) / t.area)} %). ` +
+          `${where}: Der Verbrauch ${potWord(p)} beruht auf geschätzten Ablesungen bei ${andList(flagged.map((u) => u.unit.name))}${t.estimatedArea > 0 ? ` und auf Schätzungen nach § 9a für ${fmtNum(t.estimatedArea)} ${qm}` : ''}${t.unequipped.length > 0 ? `, bei ${andList(unequippedNames(sp, p))} ohne ${deviceWord(sp, p)} auf dem Durchschnitt der abgelesenen Wohnungen` : ''}; betroffen sind ${fmtNum(affected)} von ${fmtNum(t.area)} ${qm} (${fmtPercent((affected * 100) / t.area)} %). ` +
             `Das ${hkvEstimateThreshold.describe(limit)} ${raum ? 'des für die Verteilung maßgeblichen umbauten Raums' : 'der für die Verteilung maßgeblichen Fläche'}; dann sind die Kosten ${p === 'heating' ? 'der Heizung' : 'des Warmwassers'} ausschließlich nach ${raum ? 'umbautem Raum' : 'Fläche'} zu verteilen (§ 9a Abs. 2 HeizkostenV). ` +
             'Mietfuchs rechnet weiter nach Verbrauch mit den geschätzten Ständen. ' +
             `Tragen Sie die Schätzung stattdessen auf der Seite Heizkosten unter „Schätzung (§ 9a)“ ein; dann verteilt Mietfuchs ${p === 'heating' ? 'die Heizung' : 'das Warmwasser'} nach ${raum ? 'umbautem Raum' : 'Fläche'}. Lassen sich die Stände noch ablesen, tragen Sie die Ablesungen nach.`,
@@ -9545,13 +9546,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
     // #690: Einer Wohnung fehlt das Gerät eines Topfs, den übrigen nicht. Vorher sperrte das die ganze Anlage, auch für ein
     // Jahr, in dem das Gerät wirklich fehlte. Jetzt rechnet die Wohnung mit dem Durchschnitt je m² der abgelesenen
-    // (`substitutePerM2` in heating.ts), über der Grenze des § 9a Abs. 2 oder ohne abgelesene Wohnung geht der Topf nur nach
-    // Fläche. Eine nie ausgestattete Wohnung ist kein Geräteausfall; ob sie ein „anderer zwingender Grund“ nach § 9a Abs. 1
-    // ist, hat der BGH nicht entschieden (VIII ZR 373/04, Rn. 21 stellt „fehlende Messgeräte“ der freien Schätzung zu).
-    // Mietfuchs nennt deshalb die Kürzung nach § 12 Abs. 1 Satz 1: sicher für die Mieter der Wohnung ohne Gerät
-    // (VIII ZR 151/20, Rn. 35), vorsorglich für die übrigen, deren Anteil über den Gesamtverbrauch vom Ersatzwert abhängt
-    // (VIII ZR 151/20, Rn. 23: „auch nur teilweise“); geht der Topf nur nach Fläche, für alle. Nicht unter einer Ausnahme
-    // nach § 11, einer Vereinbarung nach § 2 oder solange die Verordnung für die Wärmepumpe noch nicht gilt.
+    // (`substitutePerM2` in heating.ts, Festlegung von Mietfuchs); über der Grenze des § 9a Abs. 2 oder ohne abgelesene
+    // Wohnung geht der Topf nur nach Fläche. Die Kürzung nach § 12 Abs. 1 Satz 1 nennt jede Warnung **nur für ihren Topf**
+    // („Soweit“; BGH VIII ZR 195/04, II.: nicht die Kosten, deren Messgeräte vorhanden sind und genutzt werden; Durchsicht
+    // M1), getrennt sicher für die Mieter der Wohnung ohne Gerät (VIII ZR 151/20, Rn. 35) und vorsorglich für die übrigen
+    // (Rn. 23 „auch nur teilweise“; Auslegung, Durchsicht S3). Die Begründung mit allen Fundstellen steht in Anleitung und
+    // Lexikon, der Hinweis trägt den Kern. Nicht unter einer Ausnahme nach § 11, einer Vereinbarung nach § 2 oder solange
+    // die Verordnung für die Wärmepumpe noch nicht gilt.
     const unequippedPots = sp.plan.pots.filter((p) => sp.plan.totals[p].unequipped.length > 0 && !exemptPot(plant.id, p, key))
     if (unequippedPots.length > 0 && !noCutPots(unequippedPots)) {
       const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
@@ -9559,38 +9560,30 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       for (const p of unequippedPots) {
         const t = sp.plan.totals[p]
         const names = unequippedNames(sp, p)
-        const device = deviceWord(sp, p)
+        const one = names.length === 1
         const raum = basisUnitOf(sp, p) === 'm³'
         const qm = raum ? 'm³' : 'm²'
         const byArea = raum ? 'umbautem Raum' : 'Fläche'
         const potText = p === 'heating' ? 'der Heizung' : 'des Warmwassers'
-        const ps = unequippedPots.length === sp.plan.pots.length ? unequippedPots : [p]
+        // Ein Topf allein (ohne Warmwasser) wird über die Heizkostenzeilen gekürzt, sonst nach seinem Anteil (M1).
+        const ps: SelfPot[] = [p]
+        const inPot = sp.plan.pots.length === 1 ? '' : ` vom Topf ${POT_NAME[p]} nach CO₂-Abzug laut Ausweis`
         const lacking = new Set(sp.plan.units.filter((u) => t.unequipped.includes(u.unit.id)).flatMap((u) => u.users.flatMap((x) => (x.tenancyId ? [x.tenancyId] : []))))
-        const head = `${where}: ${andList(names)} ${names.length === 1 ? 'hat' : 'haben'} keinen ${device}, die übrigen Wohnungen schon. `
-        const fix = `Legen Sie ${names.length === 1 ? 'das Gerät' : 'die Geräte'} auf der Seite „Zähler & Stände“ an und lesen Sie zu Beginn und Ende jeder Heizperiode ab (§ 4 Abs. 2 HeizkostenV). ` +
-          `War ein Gerät eingebaut und ist es ausgefallen, oder ließ sich der Verbrauch aus einem anderen zwingenden Grund nicht erfassen, legen Sie es dort an und schätzen Sie den Verbrauch auf der Seite Heizkosten unter „Schätzung (§ 9a)“ (§ 9a Abs. 1 HeizkostenV).`
+        const sure = potCutList(ps, cut, (id) => lacking.has(id))
+        const others = potCutList(ps, cut, (id) => !lacking.has(id))
         const affected = t.estimatedArea + t.unequippedArea
-        let body: string
-        if (t.measured && !t.overThreshold && t.substitutePerM2 !== null) {
-          const sure = potCutList(ps, cut, (id) => lacking.has(id))
-          const others = potCutList(ps, cut, (id) => !lacking.has(id))
-          const where2 = ps.length === sp.plan.pots.length ? '' : ` vom Topf ${POT_NAME[p]} nach CO₂-Abzug laut Ausweis`
-          body = `Für ${names.length === 1 ? 'diese Wohnung' : 'diese Wohnungen'} setzt Mietfuchs den Durchschnitt je ${qm} der abgelesenen Wohnungen an (${fmtNum(Math.round(t.substitutePerM2 * 1000) / 1000)} ${potShownUnit(sp, p)} je ${qm}) und verteilt ${p === 'heating' ? 'die Heizung' : 'das Warmwasser'} weiter nach Verbrauch; eine Abrechnung, die den Verbrauch einbezieht, geht der reinen Verteilung nach ${byArea} vor (BGH VIII ZR 329/14). ` +
-            `Eine Wohnung, in der nie ein Gerät war, ist kein Geräteausfall; ob sie ein anderer zwingender Grund für eine Schätzung nach § 9a HeizkostenV ist, ist nicht entschieden (BGH VIII ZR 373/04 grenzt § 9a von der freien Schätzung wegen fehlender Messgeräte ab). ` +
-            `Deshalb dürfen die Mieter ${names.length === 1 ? 'dieser Wohnung' : 'dieser Wohnungen'} ihren Anteil an den Kosten ${potText} um ${cut} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV; BGH VIII ZR 151/20)${sure.length > 0 ? `, hier${where2}: ${andList(sure)}` : ''}. ` +
-            (others.length > 0 ? `Vorsorglich nennt Mietfuchs die Kürzung auch für die übrigen Mieter, denn ihr Anteil hängt über den Gesamtverbrauch vom angesetzten Wert ab; ob sie kürzen dürfen, ist nicht entschieden (Auslegung): ${andList(others)}. ` : '') +
-            'Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. '
-        } else {
-          const all = potCutList(ps, cut)
-          const where2 = ps.length === sp.plan.pots.length ? '' : ` vom Topf ${POT_NAME[p]} nach CO₂-Abzug laut Ausweis`
-          const why = t.substitutePerM2 === null
-            ? `Ohne eine abgelesene Wohnung gibt es keinen Durchschnitt, den Mietfuchs ansetzen könnte; die Kosten ${potText} gehen deshalb nur nach ${byArea}. `
-            : `Nicht erfasst ist der Verbrauch für ${fmtNum(affected)} von ${fmtNum(t.area)} ${qm} (${fmtPercent((affected * 100) / t.area)} %). Das ${hkvEstimateThreshold.describe(limit)} ${raum ? 'des für die Verteilung maßgeblichen umbauten Raums' : 'der für die Verteilung maßgeblichen Fläche'}; die Kosten ${potText} gehen deshalb ausschließlich nach ${byArea} (wie § 9a Abs. 2 HeizkostenV). `
-          body = why +
-            `Ob eine Wohnung, in der nie ein Gerät war, unter § 9a HeizkostenV fällt, ist nicht entschieden (BGH VIII ZR 373/04 grenzt § 9a von der freien Schätzung wegen fehlender Messgeräte ab); sonst wäre nicht nach der Verordnung verteilt, und jeder Mieter darf seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV; BGH VIII ZR 151/20). Mietfuchs nennt die Kürzung deshalb vorsorglich für alle (Auslegung)${all.length > 0 ? `, hier${where2}: ${andList(all)}` : ''}. ` +
-            'Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. '
-        }
-        warn('heating.unit-without-device', head + body + fix, subject)
+        const how = t.measured && !t.overThreshold && t.substitutePerM2 !== null
+          ? `Mietfuchs setzt für ${one ? 'sie' : 'diese Wohnungen'} den Durchschnitt je ${qm} der abgelesenen Wohnungen an (${fmtNum(Math.round(t.substitutePerM2 * 1000) / 1000)} ${potShownUnit(sp, p)} je ${qm}) und verteilt ${p === 'heating' ? 'die Heizung' : 'das Warmwasser'} weiter nach Verbrauch; das ist eine Festlegung von Mietfuchs, entschieden ist der Fall nicht (Begründung in der Anleitung „Heizkosten selbst abrechnen“). `
+          : t.substitutePerM2 === null
+            ? `Ohne abgelesene Wohnung gibt es keinen Durchschnitt; die Kosten ${potText} gehen nur nach ${byArea}. `
+            : `Nicht erfasst ist der Verbrauch für ${fmtNum(affected)} von ${fmtNum(t.area)} ${qm} (${fmtNum(Math.round((affected * 1000) / t.area) / 10)} %), mehr als ${limit} % ${raum ? 'des maßgeblichen umbauten Raums' : 'der maßgeblichen Fläche'}; die Kosten ${potText} gehen deshalb nur nach ${byArea} (wie § 9a Abs. 2 HeizkostenV). `
+        warn('heating.unit-without-device',
+          `${where}: ${andList(names)} ${one ? 'hat' : 'haben'} keinen ${deviceWord(sp, p)}, die übrigen Wohnungen schon. ` + how +
+            `Die Mieter ${one ? 'dieser Wohnung' : 'dieser Wohnungen'} dürfen ihren Anteil an den Kosten ${potText} um ${cut} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV)${sure.length > 0 ? `, hier${inPot}: ${andList(sure)}` : ''}. ` +
+            (others.length > 0 ? `Vorsorglich, weil nicht entschieden (Auslegung), auch die übrigen: ${andList(others)}. ` : '') +
+            'Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. ' +
+            `Legen Sie ${one ? 'das Gerät' : 'die Geräte'} auf der Seite „Zähler & Stände“ an (§ 4 Abs. 1 und 2 HeizkostenV). War eines eingebaut und ist ausgefallen, legen Sie es dort an und schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.`,
+          subject)
       }
     }
     // Anteil anders als in der Vorperiode (§ 6 Abs. 4, R-A7).

@@ -58,7 +58,7 @@ describe('Ampel der Ablesungen (Heizung PR 10, Entwurf 3.5)', () => {
   it('#690: Wohnung ohne Gerät neben Wohnungen mit Gerät: der Satz nennt sie, die Fläche und die Kürzung', () => {
     const pot = (over: Partial<SelfHeatingStatement['pots'][number]>) => ({ pot: 'heating', byAreaOnly: true, ...over }) as SelfHeatingStatement['pots'][number]
     expect(missingDevicesLines({ capture: 'hca', pots: [pot({ unequippedUnits: ['B'] })] })).toEqual([
-      'Heizung: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon; verteilt wird deshalb nur nach Fläche, und die Mieter dürfen ihren Anteil kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). Legen Sie das Gerät auf der Seite „Zähler & Stände“ an; war eines eingebaut und ist ausgefallen, schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.',
+      'Heizung: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon; verteilt wird deshalb nur nach Fläche, und die Mieter dürfen ihren Anteil kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). Legen Sie das Gerät auf der Seite „Zähler & Stände“ an; war eines eingebaut und ist ausgefallen, legen Sie es dort an und schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.',
     ])
     // Bis zur Grenze des § 9a Abs. 2 trägt die Wohnung den Durchschnitt der abgelesenen.
     expect(missingDevicesLines({ capture: 'hca', pots: [pot({ byAreaOnly: false, unequippedUnits: ['B'] })] })[0]).toMatch(/^Heizung: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon; angesetzt wird für sie der Durchschnitt der abgelesenen Wohnungen, und die Mieter/)

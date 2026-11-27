@@ -359,8 +359,9 @@ export function planSelf(input: SelfInput): SelfPlan {
     area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false, devices: false, unequipped: [] as string[], unequippedArea: 0, substitutePerM2: null, estimatedArea: 0, overThreshold: false,
   }])) as SelfPlan['totals']
   // Ein Topf ohne einen einzigen Zähler ist nicht erfasst (nur nach Fläche, `heating.no-consumption`).
-  // Fehlt in einem Topf mit Zählern einer Wohnung mit Fläche das Gerät, geht er ebenso nur nach Fläche (#690,
-  // `unequipped`); beim Ablesedienst bleibt es ein Fehler, denn dort fehlen Werte, die sich nach § 9a schätzen lassen.
+  // Fehlt in einem Topf mit Zählern einer Wohnung mit Fläche das Gerät, steht sie in `unequipped` (#690) und trägt den
+  // Durchschnitt je m² der abgelesenen Wohnungen (unten); beim Ablesedienst bleibt es ein Fehler, denn dort fehlen Werte,
+  // die sich nach § 9a schätzen lassen.
   const potHasMeters = Object.fromEntries(pots.map((p) => [p, input.units.some((u) => metersOf(u.id, p).length > 0)])) as Record<SelfPot, boolean>
   // Eine Einheit ohne Fläche (Garage) braucht keinen Wert (Durchsicht S1).
   const noValue = input.areaBasisHeat === 'area' ? [] : input.units.filter((u) => (u.areaM2 || 0) > 0 && !((basisValueOf(u) ?? 0) > 0))
@@ -602,9 +603,14 @@ export function planSelf(input: SelfInput): SelfPlan {
 
   // #690: Der Verbrauch einer Wohnung ohne Gerät ist der Durchschnitt je m² der Wohnungen, deren Verbrauch ohne
   // Schätzung und ohne Fehler erfasst ist (dieselbe Rechnung wie `estimateProposals`, „Durchschnitt des Gebäudes“), über
-  // die Heizperiode auf ihre Nutzer nach Gradtagen bzw. Tagen geteilt wie eine Schätzung. Die Verordnung kennt für eine
-  // nie ausgestattete Wohnung keinen eigenen Weg; der BGH zieht jede Abrechnung, die den Verbrauch einbezieht, der reinen
-  // Flächenabrechnung vor (VIII ZR 329/14, Rn. 17), deshalb dieser Ersatzwert (Auslegung von Mietfuchs).
+  // die Heizperiode auf ihre Nutzer nach Gradtagen bzw. Tagen geteilt wie eine Schätzung. **Festlegung von Mietfuchs**, nicht
+  // entschieden: Die Verordnung kennt für eine nie ausgestattete Wohnung keinen eigenen Weg. Dafür: „grundsätzlich“ geht
+  // jede den Verbrauch einbeziehende Abrechnung der reinen Flächenabrechnung vor (VIII ZR 329/14, Rn. 17); VIII ZR 261/06,
+  // Rn. 15, lehnte § 9a bei fehlender Ausstattung nur mangels Schätzungsgrundlage ab; die 25-%-Grenze ist die Grenze der
+  // Ersatzkriterien (VIII ZR 264/19, Rn. 28). Dagegen: rein nach Fläche, wenn ein verbrauchsbezogener Anteil nicht ermittelt
+  // werden kann (VIII ZR 329/14, Rn. 18, mit Verweis auf VIII ZR 261/06); für eine einzelne Wohnung ohne Gerät neben
+  // ausgestatteten ist das nicht entschieden. Sind alle übrigen Wohnungen geschätzt, gibt es keinen Durchschnitt
+  // (`substitutePerM2` null), und der Topf geht nur nach Fläche.
   for (const p of pots) {
     if (totals[p].unequipped.length === 0) continue
     const others = units.filter((u) => u.captured[p] && areaOf(p, u.unit) > 0)
