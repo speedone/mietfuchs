@@ -156,6 +156,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // erzeugt). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0054_gutschrift_ohne_rechnung': '8633158cbfbdb4c92b7d28b86ad9a04bdba89cd44ea446794c8f5b74e0b2f5a5',
   '0055_gutschrift_ohne_rechnung_bedingungen': '1fc0eeeaf991d182b605ecf06f57b9d7ad8dde0cdd4a1eec7eac786c9ce4e476',
+  // Nachgetragen am 27.11.2026 (fehlten in der Liste, veröffentlicht seit 0.12.0; seit ihrem Anlegen unverändert).
+  '0056_zahlungsdatum': 'c9f10910019f7a08272fd0bc56e62b3083e7b213aac71f02c951cb9a9f94ffa9',
+  '0057_zahlungsdatum_bedingungen': 'df912a90cd6d9c64c5afb57461c52e95a1b14ef7d1b3015f962984b5068a7c8b',
   // #280: die Art einer Zahlung, Spalte mit Vorgabe „rent“ und Bedingung in zwei Schritten (nach #330 als 0058/0059 neu
   // erzeugt). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0058_zahlungsart': '8a8d8cb03e0b6097acf8ef304d1187492d5e8ee57b20877a53a3d4f68ed40581',
@@ -221,6 +224,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // erzeugt und die Marken ersetzt.
   '0082_verteilung_82b': '60d0a2823758b911783f46808c4699b28327240dacc9034eb1b5f7b4ef745668',
   '0083_verteilung_82b_bedingungen': 'c2babce16bbde1323bf14a69d4471e4ca11913f40a5722e22b6bc47e96ff7783',
+  // Nachgetragen am 27.11.2026 (fehlte in der Liste; seit dem Anlegen unverändert, gleich dem Stand von v0.18.1).
+  '0084_umstieg_hinweis': 'cd61f5b1e05649075b960531d03e9dce028400be80ef4ab738d5836e2fef93f7',
   // #98: Bezugszähler und verteilter Rest (vier Tabellen `cost_item_meter_rest…`, `meters.scope`), danach die Bedingungen an
   // `meters` (Neubau der Tabelle). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt
   // und die Marken ersetzt.
@@ -242,12 +247,26 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Merge; wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0092_faelligkeit_miete': '110f25e84f8afe184667df756d9af94cd697c7cfca424428188cefa74c8c6cb3',
   '0093_faelligkeit_miete_bedingungen': 'dbe03d831c0255cc3f4a0760880b480295aa8ae26bf6ded63965795fe82deb58',
+  // Nachgetragen am 27.11.2026: Zahlungs-QR-Code (#624), E-Rechnung (#189), Kaution (#228) und Kontoauszug (#188) sind
+  // mit 0.17.0 und 0.18.0 veröffentlicht, die Mieterhöhung (#191) seit dem 20.11.2026 im Image `:main`. Jeder dieser
+  // Schritte ist seit seinem Anlegen unverändert (ein Commit je Datei), 0094 bis 0102 gleich dem Stand von v0.18.1.
+  '0094_zahlungs_qr': '1544b207aa2f9b3bf8312fe905b932618466da458907c30187841cee99458073',
+  '0095_e_rechnung_herkunft': 'dd89ac9a3e8e7a211c2d55f2ae74c276ff6a68d96cacb945b2683cf5d0a0e6cf',
+  '0096_e_rechnung_herkunft_bedingungen': '92ab04693ca237367ab9d1d0981a4ba6c5d787b124935d60709608773a0d7482',
+  '0097_kaution_buchungen': '87c47a7c40b1600e6cd88e47b20e74e0bc3f9815a31d25c86eaa4079450065ff',
+  '0098_kaution_form_bedingung': '86a0a692338d534e8e650563dcb75f55ef1916ed6c34dd3bbac64190b6f6fe4d',
+  '0099_kaution_einbehalt': '08fd889894fb361d31d447a27a19aea2d5c2eceae877928de4af6e81c414a963',
+  '0100_kaution_einbehalt_bedingung': '13d74105b8cf26c73c6a35949ba78a7b204d7d20e8a21990ecd06abf83a262d0',
+  '0101_kaution_index': '3119a66932d46c33bbc17877d58016326b344cbdd84150c5dc468214f6372444',
+  '0102_kontoauszug': 'dfdbd48ad8f46c865a7d31a93ad9168d00f9545e70e21cb4a86d661634ef1aec',
+  '0103_mieterhoehung_daten': 'b561395ae0ba3a071321a363b23ce9f9f4d032b795a61d084c523907e45dc119',
+  '0104_mieterhoehung_bedingungen': '8d36b3e6fbf53e249a387fb0b90f2e6af2d638816d728bf6c839eb6f1a7e41a4',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
   for (const m of await loadMigrations()) {
     const erwartet = VEROEFFENTLICHT[m.tag]
-    if (!erwartet) continue // ein neuer Schritt, der noch nicht veröffentlicht ist
+    if (!erwartet) continue // ohne Marke: das meldet der Test darunter
     assert.equal(
       m.hash,
       erwartet,
@@ -256,6 +275,16 @@ test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async (
         `voneinander ab, die sich für denselben halten. Korrigiert wird mit einem neuen Schritt.`,
     )
   }
+})
+
+// Die Liste hatte Lücken: 14 Schritte waren veröffentlicht, aber nicht eingetragen, und der Wächter oben übersprang sie
+// still („ein neuer Schritt“). Seitdem gilt: Jeder Schritt der Kette trägt eine Marke. Ein neuer Schritt bekommt sie im
+// selben PR, vor dem Merge, denn jeder Push auf main veröffentlicht das Image `:main`.
+test('jeder Migrationsschritt trägt eine Marke in VEROEFFENTLICHT', async () => {
+  const ohne = (await loadMigrations()).filter((m) => VEROEFFENTLICHT[m.tag] === undefined).map((m) => `'${m.tag}': '${m.hash}',`)
+  assert.deepEqual(ohne, [], 'Marke in VEROEFFENTLICHT eintragen (die Zeile steht fertig hier), im selben PR wie der Schritt')
+  const tags = new Set((await loadMigrations()).map((m) => m.tag))
+  assert.deepEqual(Object.keys(VEROEFFENTLICHT).filter((tag) => !tags.has(tag)), [], 'Marke ohne Schritt: Ein Schritt wird nie gelöscht')
 })
 
 test('die Marke hängt wirklich am Inhalt', () => {
