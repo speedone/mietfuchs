@@ -18,7 +18,7 @@ import { snapshotFor, type Snapshot } from '../src/snapshot.ts'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
-import { selfSnapshot } from '../testing/selfHeating.ts'
+import { selfReadings, selfSnapshot } from '../testing/selfHeating.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
@@ -428,4 +428,22 @@ test('Testhelfer selfSnapshot (server/testing/selfHeating.ts) rechnet wie Beispi
     assert.deepEqual(rein.heating?.[0]?.self?.dhw, ueberDb.heating?.[0]?.self?.dhw)
     assert.deepEqual(rein.notices.map((n) => n.code).sort(), ueberDb.notices.map((n) => n.code).sort())
   })
+})
+
+// #721: Die Cockpit-Zeile „Zählerstände“ liest für die eigene Heizkostenabrechnung, was die Berechnung meldet
+// (`selfHeatingReadings` in client/src/meterCheck.ts): `self.ok` am Ausweis der Heizperiode, den Fehler
+// `heating.self-incomplete` an der Anlage und seinen ersten Satz. Dieser Test hält fest, worauf sie sich verlässt.
+test('#721: fehlt ein Stand der Heizperiode, meldet die Berechnung es an der Anlage, und der erste Satz nennt Gerät und Tag', () => {
+  const voll = computeSettlement(selfSnapshot())
+  const ausweis = voll.heating?.find((h) => h.self) ?? assert.fail('kein Ausweis der eigenen Heizkostenabrechnung')
+  assert.equal(ausweis.self?.ok, true)
+  assert.deepEqual(voll.notices.filter((n) => n.code === 'heating.self-incomplete'), [])
+
+  const ohneEndstand = computeSettlement(selfSnapshot({ readings: selfReadings().filter((r) => !(r.meterId === 'wz-a' && r.date === '2025-12-31')) }))
+  const offen = ohneEndstand.heating?.find((h) => h.self) ?? assert.fail('kein Ausweis der eigenen Heizkostenabrechnung')
+  assert.equal(offen.self?.ok, false)
+  const fehler = ohneEndstand.notices.filter((n) => n.code === 'heating.self-incomplete')
+  assert.equal(fehler.length, 1)
+  assert.deepEqual(fehler[0]?.subject, { kind: 'heatingCosts', id: offen.plantId })
+  assert.match(fehler[0]?.text ?? '', /^Heizanlage[^.]*, Heizperiode 2025: Für „[^“]+“ \(A\) fehlt ein Stand zum 31\.12\.2025\. /)
 })

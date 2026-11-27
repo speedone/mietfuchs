@@ -16,7 +16,7 @@ import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending, desktopHintVisible } from '../update'
-import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail, type MeterConsumption } from '../meterCheck'
+import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, selfHeatingReadings, slackDetail, type MeterConsumption } from '../meterCheck'
 import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { DesktopHint, UpdateConsent } from '../components/Update'
@@ -242,21 +242,34 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const meterTypes = meterTypesInUse(yearItems)
     const heatingIds = new Set(heatingWithoutConsumption(settlement))
     const heatingWithout = yearItems.filter((c) => heatingIds.has(c.id))
+    const selfReadings = selfHeatingReadings(settlement)
     if (meterTypes.size === 0 && heatingWithout.length > 0) {
       // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
       list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', focus: soleSubject('costItem', heatingWithout.map((c) => c.id)), cta: 'Heizkosten prüfen',
         detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
-    } else if (meterTypes.size === 0) {
+    } else if (meterTypes.size === 0 && !selfReadings) {
       list.push({ title: 'Zählerstände', level: 'leer',
         detail: 'Keine verbrauchsabhängige Umlage - Ablesungen nicht erforderlich.' })
     } else {
+      // #721: Die eigene Heizkostenabrechnung verteilt nach Ablesungen der Heizperiode, auch ohne Position „nach Zähler“.
+      // Fehlt dort etwas, sagt es die Zeile mit dem Sprung dorthin, wo es eingetragen wird; ein Zähler der übrigen
+      // Verbrauchsumlage ohne Stand geht vor, denn sein Sprung führt zum einzelnen Zähler.
       const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
+      const selfOpen = selfReadings?.state === 'incomplete' ? selfReadings : null
+      const selfJump = selfOpen
+        ? (selfOpen.target === 'zaehler'
+            ? { tab: 'zaehler' as const, cta: 'Stände erfassen' }
+            : { tab: 'heizkosten' as const, focus: { kind: 'heatingCosts' as const, id: selfOpen.plantId }, cta: 'Heizkosten prüfen' })
+        : null
       if (incomplete.length > 0) {
         list.push({ title: 'Zählerstände', level: 'rot', tab: 'zaehler', focus: soleSubject('meter', incomplete.map((m) => m.id)), cta: 'Stände erfassen',
-          detail: incompleteDetail(incomplete, consumption) })
+          detail: `${incompleteDetail(incomplete, consumption)}${selfOpen ? `. ${selfOpen.detail}` : ''}`, ...(selfOpen && selfOpen.lines.length > 0 ? { lines: selfOpen.lines } : {}) })
+      } else if (selfOpen && selfJump) {
+        list.push({ title: 'Zählerstände', level: 'rot', ...selfJump, detail: selfOpen.detail, ...(selfOpen.lines.length > 0 ? { lines: selfOpen.lines } : {}) })
       } else {
+        const counted = relevant.length > 0 || selfReadings?.state !== 'complete' ? `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.${slackDetail(relevant, consumption)}` : ''
         list.push({ title: 'Zählerstände', level: 'gruen',
-          detail: `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.${slackDetail(relevant, consumption)}` })
+          detail: [counted, selfReadings?.state === 'complete' ? selfReadings.detail : ''].filter((t) => t !== '').join(' ') })
       }
     }
     // 3b. Eichfrist (Heizung PR 21): eine eigene gelbe Zeile, denn Mietfuchs rechnet mit den Werten; die Ampel

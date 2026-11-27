@@ -2,7 +2,7 @@
 // kann er die Verteilbasis des Verbrauchsschlüssels sein.
 import { expect, test } from 'vitest'
 import type { Meter, Notice } from './types'
-import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail } from './meterCheck'
+import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail, selfHeatingReadings } from './meterCheck'
 
 const meter = (id: string, unitId: string | null, type: Meter['type'] = 'kaltwasser'): Meter =>
   ({ id, propertyId: 'p', name: id, type, unitId, unit: 'm³' })
@@ -127,4 +127,47 @@ test('Cockpit-Zeile „Eichfrist“: nennt die Zähler, dass Mietfuchs rechnet, 
   expect(text).toMatch(/Mietfuchs rechnet mit den Werten/)
   expect(text).toMatch(/müssen Sie beweisen, dass sie stimmen/)
   expect(text).toMatch(/Stichprobenverfahren/)
+})
+
+// #721: Mit eigener Heizkostenabrechnung (`method: 'self'`) verteilt Mietfuchs die Heizkosten nach Ablesungen, ohne dass
+// eine Position den Schlüssel „nach Zähler“ trägt. Das Cockpit sagte „Ablesungen nicht erforderlich“. Gelesen wird, was
+// die Berechnung meldet (`heating.self-incomplete`), nicht noch einmal ihre Regel.
+const SELF = { ok: true }
+const selfStatement = (over: Record<string, unknown> = {}) => ({ plantId: 'hp1', plantName: '', from: '2025-01-01', to: '2025-12-31', self: SELF, ...over })
+const unvollstaendig = (text: string, plantId = 'hp1'): Notice => ({ code: 'heating.self-incomplete', level: 'error', title: 'Heizkostenabrechnung unvollständig', text, subject: { kind: 'heatingCosts', id: plantId } })
+
+test('#721: ohne eigene Heizkostenabrechnung keine Aussage; nach Vereinbarung „nach Wohnfläche“ sind keine Ablesungen nötig', () => {
+  expect(selfHeatingReadings({})).toBeNull()
+  expect(selfHeatingReadings({ heating: [{ plantId: 'hp1', from: '2025-01-01', to: '2025-12-31' }] })).toBeNull()
+  expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: true, agreedArea: true } })] })).toBeNull()
+})
+
+test('#721: eigene Heizkostenabrechnung vollständig: die Zeile nennt die Heizperiode', () => {
+  expect(selfHeatingReadings({ heating: [selfStatement()], notices: [] }))
+    .toEqual({ state: 'complete', detail: 'Eigene Heizkostenabrechnung: Die Stände für die Heizperiode 01.01.2025 bis 31.12.2025 sind vollständig.' })
+})
+
+test('#721: fehlt ein Stand für die Heizperiode, sagt es die Zeile mit dem Satz der Berechnung und springt zur Seite Zähler', () => {
+  const text = 'Heizanlage, Heizperiode 2025: Für „WZ a“ (A) fehlt ein Stand zum 31.12.2025. Tragen Sie die Ablesung ein; liegt sie einige Tage daneben, gilt sie, wie sie ist. Lässt sich der Verbrauch nicht ordnungsgemäß erfassen, weil das Gerät ausgefallen ist oder ein anderer zwingender Grund vorliegt, schätzen Sie den Verbrauch auf der Seite Heizkosten unter „Schätzung (§ 9a)“. Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.'
+  const r = selfHeatingReadings({ heating: [selfStatement({ self: { ok: false } })], notices: [unvollstaendig(text), unvollstaendig(text.replace('WZ a“ (A)', 'WZ b“ (B)'))] })
+  expect(r).toEqual({
+    state: 'incomplete', plantId: 'hp1', target: 'zaehler',
+    detail: 'Die Heizkosten werden nach der Heizkostenverordnung mit Ablesungen verteilt. Für die eigene Heizkostenabrechnung fehlt noch:',
+    lines: ['Heizanlage, Heizperiode 2025: Für „WZ a“ (A) fehlt ein Stand zum 31.12.2025.', 'Heizanlage, Heizperiode 2025: Für „WZ b“ (B) fehlt ein Stand zum 31.12.2025.'],
+  })
+})
+
+test('#721: fehlen Werte des Ablesedienstes oder der Anteil nach Verbrauch, führt der Sprung zur Seite Heizkosten', () => {
+  const dienst = 'Heizanlage, Heizperiode 2025: Für OG fehlen die Werte des Ablesedienstes, die übrigen Wohnungen haben welche. Tragen Sie sie auf der Seite Heizkosten in der Karte „Werte des Ablesedienstes“ ein. Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.'
+  expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: false, capture: 'serviceValues' } })], notices: [unvollstaendig(dienst)] }))
+    .toMatchObject({ state: 'incomplete', target: 'heizkosten', lines: ['Heizanlage, Heizperiode 2025: Für OG fehlen die Werte des Ablesedienstes, die übrigen Wohnungen haben welche.'] })
+  const anteil = 'Heizanlage, Heizperiode 2025: Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben. Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.'
+  expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: false } })], notices: [unvollstaendig(anteil)] })).toMatchObject({ state: 'incomplete', target: 'heizkosten' })
+  // Ein Hinweis zu einer Anlage ohne eigene Abrechnung in dieser Abrechnung zählt nicht.
+  expect(selfHeatingReadings({ heating: [selfStatement()], notices: [unvollstaendig(anteil, 'andere')] })).toMatchObject({ state: 'complete' })
+})
+
+test('#721: unvollständig ohne Hinweis (ältere Abrechnung): die Zeile verweist auf die Seite Heizkosten', () => {
+  expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: false } })] }))
+    .toEqual({ state: 'incomplete', plantId: 'hp1', target: 'heizkosten', detail: 'Die Heizkosten werden nach der Heizkostenverordnung mit Ablesungen verteilt. Die eigene Heizkostenabrechnung ist noch unvollständig; was fehlt, steht auf der Seite Heizkosten.', lines: [] })
 })

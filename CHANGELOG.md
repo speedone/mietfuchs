@@ -227,6 +227,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
   selbst herüber. Kein Betrag der Abrechnung ändert sich
   ([#722](https://github.com/speedone/mietfuchs/issues/722)).
+- Cockpit, Zeile „Zählerstände“: Mit eigener Heizkostenabrechnung nach Heizkostenverordnung stand dort „Keine
+  verbrauchsabhängige Umlage - Ablesungen nicht erforderlich“, obwohl die Heizkosten nach Ablesungen verteilt werden. Die
+  Zeile nennt jetzt die Heizperiode, wenn die Stände vollständig sind, und sonst, was fehlt (etwa „Für „Wärme EG“ fehlt
+  ein Stand zum 31.12.2025“), mit Sprung zur Seite Zähler oder Heizkosten
+  ([#721](https://github.com/speedone/mietfuchs/issues/721)).
 - Kostenformular: Die Frage „Läuft dieser Betriebsstrom über den Stromzähler des Hauses?“ stand an jeder Position
   „Heizung und Warmwasser“, auch bei Heizöl, Gasrechnung und Wartung. Sie erscheint jetzt nur noch, wo die Position
   Betriebsstrom sein kann: wenn die Beschreibung Strom nennt, wenn unter „Weitere Angaben“ der Teil „Betrieb“ gewählt ist

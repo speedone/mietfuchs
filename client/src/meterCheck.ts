@@ -1,6 +1,7 @@
 // Die Ampel „Zählerstände“ im Cockpit, ohne DOM prüfbar.
 import type { Meter, MeterType, Notice } from './types'
 import { andList } from '../../shared/wording.ts'
+import { sentences } from './noticeText'
 
 // Verbrauchsangaben des Servers je Zähler (gleiche Form wie auf der Zähler-Seite). `notices` trägt dieselben
 // Meldungen wie `warnings` mit Code; ein älterer Server schickt sie nicht.
@@ -108,4 +109,38 @@ export function heatingWithoutConsumption(settlement: { notices?: Notice[] }): s
 export function calibrationDetail(overdue: Meter[]): string {
   return `Eichfrist abgelaufen bei: ${andList(overdue.map((m) => m.name))}. Mietfuchs rechnet mit den Werten; bestreitet ein Mieter sie, müssen Sie beweisen, dass sie stimmen. ` +
     'Hat der Messdienst die Frist im Stichprobenverfahren verlängern lassen, tragen Sie das verlängerte Jahr am Zähler ein.'
+}
+
+// Die eigene Heizkostenabrechnung in der Zeile „Zählerstände“ (#721): Bei `method: 'self'` verteilt Mietfuchs die
+// Heizkosten nach Ablesungen der Heizperiode, ohne dass eine Position den Schlüssel „nach Zähler“ trägt; die Zeile
+// sagte „Ablesungen nicht erforderlich“. Wie bei `heatingWithoutConsumption` wird gelesen, was die Berechnung meldet
+// (`heating.self-incomplete` an der Anlage), und nicht noch einmal ihre Regel angewendet: Sie kennt Stichtage,
+// Zwischenablesungen, Gerätewechsel und Schätzungen nach § 9a. Genannt wird je Befund der erste Satz, der sagt, was fehlt.
+// `null`: keine eigene Heizkostenabrechnung in dieser Abrechnung, oder sie verteilt nach einer Vereinbarung „nach
+// Wohnfläche“ und braucht keine Ablesungen. `target`: wo eingetragen wird, die Seite Zähler bei einem fehlenden oder
+// widersprüchlichen Stand, sonst die Seite Heizkosten (Werte des Ablesedienstes, Anteil nach Verbrauch, Vorrat).
+type SelfStatementRef = { plantId: string; from: string; to: string; self?: { ok: boolean; agreedArea?: true; capture?: string } }
+export type SelfHeatingReadings =
+  | { state: 'complete'; detail: string }
+  | { state: 'incomplete'; detail: string; lines: string[]; plantId: string; target: 'zaehler' | 'heizkosten' }
+const READING_MISSING = /fehlt ein Stand|Endstand des alten Geräts|zwei verschiedene Stände|weniger als vorher|tragen Sie die Stände ein/
+export function selfHeatingReadings(settlement: { heating?: readonly SelfStatementRef[]; notices?: Notice[] }): SelfHeatingReadings | null {
+  const own = (settlement.heating ?? []).filter((h) => h.self && !h.self.agreedArea)
+  const first = own[0]
+  if (!first) return null
+  const plantIds = new Set(own.map((h) => h.plantId))
+  const open = (settlement.notices ?? []).filter((n) => n.code === 'heating.self-incomplete' && n.subject?.kind === 'heatingCosts' && plantIds.has(n.subject.id))
+  const intro = 'Die Heizkosten werden nach der Heizkostenverordnung mit Ablesungen verteilt.'
+  if (open.length > 0) {
+    const lines = [...new Set(open.map((n) => (sentences(n.text)[0] ?? n.text).trim()))]
+    const service = own.some((h) => h.self?.capture === 'serviceValues')
+    const target = !service && lines.some((l) => READING_MISSING.test(l)) ? 'zaehler' : 'heizkosten'
+    return { state: 'incomplete', detail: `${intro} Für die eigene Heizkostenabrechnung fehlt noch:`, lines, plantId: open[0]?.subject?.id ?? first.plantId, target }
+  }
+  const broken = own.find((h) => h.self && !h.self.ok)
+  if (broken) {
+    return { state: 'incomplete', detail: `${intro} Die eigene Heizkostenabrechnung ist noch unvollständig; was fehlt, steht auf der Seite Heizkosten.`, lines: [], plantId: broken.plantId, target: 'heizkosten' }
+  }
+  const spans = [...new Set(own.map((h) => `${day(h.from)} bis ${day(h.to)}`))]
+  return { state: 'complete', detail: `Eigene Heizkostenabrechnung: Die Stände für die ${spans.length === 1 ? 'Heizperiode' : 'Heizperioden'} ${andList(spans)} sind vollständig.` }
 }
