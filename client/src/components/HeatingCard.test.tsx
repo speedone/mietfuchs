@@ -480,7 +480,7 @@ test('#721: alle laufenden Mietverhältnisse heizen selbst, keine Anlage: die Ka
   expect(within(card as HTMLElement).getByRole('button', { name: /CO₂-Erstattung/ })).toBeTruthy()
   expect(card.querySelector('details')?.textContent).toMatch(/Fristen und Hinweispflicht.*binnen \d+ Monaten nach der Abrechnung seines Lieferanten in Textform/)
   // Kein Leerzustand daneben.
-  expect(screen.queryByText(/Optional\. Wenn Sie hier angeben/)).toBeNull()
+  expect(screen.queryByText(/Bekommen Sie eine Heizkostenabrechnung von einem Messdienst/)).toBeNull()
   expect(screen.queryByRole('button', { name: 'Heizung einrichten' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
   expect(await screen.findByRole('dialog', { name: 'Heizung einrichten' })).toBeTruthy()
@@ -489,7 +489,7 @@ test('#721: alle laufenden Mietverhältnisse heizen selbst, keine Anlage: die Ka
 test('#721: heizt ein laufendes Mietverhältnis nicht selbst oder gibt es eine Anlage, bleibt die Karte, wie sie war', async () => {
   const { unmount } = render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} tenancies={[selfTenant('ta', 'eg'), tenant('tb', 'og', 'Mieter B')]} /></UIProvider></PropertyProvider>)
   expect(await screen.findByRole('button', { name: 'Heizung einrichten' })).toBeTruthy()
-  expect(screen.getByText(/Optional\. Wenn Sie hier angeben/)).toBeTruthy()
+  expect(screen.getByText(/Bekommen Sie eine Heizkostenabrechnung von einem Messdienst/)).toBeTruthy()
   expect(screen.queryByText(/Die Mieter heizen selbst/)).toBeNull()
   unmount()
   plants = [GAS]

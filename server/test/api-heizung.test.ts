@@ -1198,6 +1198,11 @@ test('Vorauszahlung aufteilen ohne Monat: Vorschlag ist der Beginn des noch offe
     assert.deepEqual(vorjahr.steps.map((x) => x.tenancyId).sort(), [alt.id, neu.id].sort())
     // Ein ausdrücklich gewählter Monat gilt weiter.
     assert.equal((await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-01' }))).month, '2025-01')
+  } finally {
+    s.stop()
+  }
+})
+
 // #720: „Ändern“ auf „Jede Wohnung hat eine eigene Heizung“ mit Vertrag beim Mieter. Die Karte fragt vor der Rückfrage,
 // ob sich die Anlage entfernen lässt, entfernt sie dann und stellt erst danach die Mietverhältnisse um.
 test('#720: Anlage auf eigene Heizung je Wohnung umgestellt: Auskunft zum Entfernen, danach kein Fehler in der Abrechnung', async () => {
@@ -1310,6 +1315,11 @@ test('Vorschlag beim Aufteilen: ist schon aufgeteilt, greift erneutes Aufteilen 
     const again = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true }))
     assert.equal(again.month, '2026-01')
     assert.deepEqual(again.steps.map((x) => [x.tenancyId, x.rows.map((r) => r.from)]).sort(), [[a.id, ['2026-01']], [b.id, ['2026-03']]].sort())
+  } finally {
+    s.stop()
+  }
+})
+
 // #720: Nur ein Teil der Wohnungen hat eigene Heizungen. Die Anlage bleibt für die übrigen; die betroffene Wohnung
 // hängt nicht mehr an ihr. Die Positionen der Anlage fasst die Karte nicht an (Geld): Bis der Vermieter die Wohnung dort
 // aus den Teilnehmern nimmt, bleibt der Fehler, mit dem passenden Rat.
