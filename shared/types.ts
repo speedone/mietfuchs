@@ -3837,8 +3837,10 @@ export type EInvoiceView = { invoice: EInvoice; notes: string[]; refusal: string
 
 export type BankSetAside = 'transfer' | 'notRental' | 'other'
 
+// `designatedMonth` (#693): der Monat laut Verwendungszweck ('JJJJ-MM'), nur an einer Mietzahlung. Im Vorschlag der im
+// Zweck erkannte Monat (dann immer gelb), in der Entscheidung der vom Vermieter bestätigte oder selbst eingetragene.
 export type BankLinkTarget =
-  | { type: 'newPayment'; kind: PaymentKind }
+  | { type: 'newPayment'; kind: PaymentKind; designatedMonth?: string }
   | { type: 'existingPayment'; paymentId: string }
   | { type: 'deposit'; kind: 'received' | 'refunded' }
   | { type: 'existingDeposit'; depositEntryId: string }

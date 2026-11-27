@@ -1061,7 +1061,42 @@ Entwurf: docs/superpowers/specs/2026-11-12-kontoauszug-design.md. Tabellen in se
   **Ausgang mit „Kaution“ im Zweck** ist bei vereinbarter Geldkaution gelb „Kaution zurückgezahlt“, auch ohne Buchung,
   aber nicht, wenn laut Buchungen nichts mehr beim Vermieter liegt
   (sonst griffe der allgemeine Rest „Auszahlung an den Mieter, etwa ein Guthaben“). Gebucht wird nur, was als Entscheidung kommt; Datum Buchungstag, Notiz der
-  Zweck, **nie ein Monat**. Der Stand der Kaution wird schon im Plan geprüft; fehlt jeder Eingang (auch im selben
+  Zweck, **nie ein Monat von selbst**. **Monat laut Verwendungszweck** (#693, `bank/purposeMonth.ts`, rein; die
+  Regel steht im Kopf der Datei, die Tabelle der Zwecke samt Fehlalarmen in bank-purpose-month.test.ts): `monthInPurpose`
+  erkennt einen Monat nur bei **genau einer** Nennung, die trägt: Monatsname mit vierstelligem Jahr direkt dahinter, ein
+  ausgeschriebener Name, der kein Vor- oder Nachname ist (nicht April, Mai, Juli, August), unmittelbar hinter dem Wort der
+  Miete, oder MM/JJJJ bzw. JJJJ-MM unmittelbar hinter ihm. Abkürzungen und Namen wie „Jan“, „August“, „Mai“ ohne Jahr, ein
+  Monat oder eine Zahlenform an anderer Stelle („Whg 5/2026“), ein Datum, „seit“/„ab“/„bis“ und ein zweiter Monat
+  verhindern den Vorschlag, ebenso „Kaution“, „Rechnung“, „Nachzahlung“, „Guthaben“. Ohne Jahr gilt der nächstliegende
+  Monat nur von zwei Monaten vor bis einen nach dem Buchungsmonat. **Im Zweifel kein Monat**: Ein verpasster kostet
+  nichts, ein falscher stünde dauerhaft gelb da. Liegt der Monat im Mietverhältnis, ist der Betrag genau das Soll dieses
+  Monats **und ändert der Monat die Tilgung**, trägt der Vorschlag „Miete“ ihn in `target.designatedMonth` und ist gelb,
+  auch wenn er sonst grün wäre (nur am letzten Schritt von `suggestInner`, also nie bei erfasster Zahlung, Kaution,
+  Rücklastschrift, Nachzahlung). **Ändert er nichts, bleibt die Zeile wie ohne Erkennung** (grün ohne Monat; wer jeden
+  Monat „Miete 11/2026“ schreibt und nichts schuldet): `monthChangesNothing` am `MatchContext`, gerechnet in
+  `bank/monthEffect.ts` mit der Tilgung selbst, keine zweite Regel. Der Eingang wird ohne und mit Monat zu den Zahlungen
+  des Objekts gelegt (je mit einer Kennung vor und nach allen anderen, weil sie am selben Tag die Reihenfolge
+  entscheidet); nur bei gleichem Beginn des Kontos (`ledgerStartOf`) und gleichen Teilen aus `allocateRentPayments`
+  ändert er nichts. Offene Umsätze desselben Mietverhältnisses bis zum selben Tag gehen dabei als Mietzahlungen ohne
+  Monat mit hinein (`readBankState`, denn sie können im selben Lauf gebucht werden; ein Auszug über ein Jahr bleibt so
+  grün), aber nur, wenn ihr eigener Vorschlag genau das ist (`newPayment` Miete ohne Monat, ohne `parts`). Jeder andere
+  offene Umsatz davor macht den Monat wirksam: verknüpfte erfasste Zahlung (stünde sonst doppelt in der Rechnung),
+  Kaution, Nachzahlung, Aufteilung, eigener Monat, Ausgang (Rücklastschrift), ohne Vorschlag, oder derselbe Tag, der
+  in der Folge erst danach kommt. **Grenze**: Gerechnet wird mit dem Vorschlag des Vorläufers. Bucht der Vermieter
+  einen grünen Vorläufer anders (andere Art, mit Monat, geteilt) oder legt ihn beiseite und bucht im selben Lauf den
+  späteren grün ohne Monat, kann dieser eine andere Forderung tilgen, als sein Zweck nennt. Bucht er den Vorläufer
+  zuerst, rechnet die Seite danach neu, denn dann ist er eine gebuchte Zahlung (oder kein offener Umsatz mehr). Invariante in invariant-kontoauszug-monat.test.ts: Dann sind `rentLedger` und `taxReport` jedes
+  Jahres mit und ohne Monat gleich (einzige Ausnahme der Vermerk `designatedOutside`). Der Planer liest den Zweck nie:
+  `designatedMonth` steht nur an der Zahlung, wenn die Entscheidung ihn nennt (bestätigter Vorschlag oder von Hand im
+  Monatsfeld der Zeile), nur bei Art Miete und nur für einen Monat des Mietverhältnisses, sonst ein Problem des Umsatzes
+  schon in der Vorschau (Wortlaut wie `guardPayment`). Grund: § 366 Abs. 1 BGB (die bestimmte Schuld wird getilgt); ob
+  ein Zweck eine Bestimmung ist, ist Auslegung und bleibt beim Vermieter. **Wirkung**: Ein Monat an der Zahlung ändert
+  die Teile der Tilgung und damit alles, was sie liest, wie bei jeder Zahlung mit `designatedMonth`: im Mietkonto, welcher
+  Monat offen ist, in der Steuer die Aufteilung des Zuflusses auf Miete und Umlagen (`income.received.rentCents`,
+  `allocationsCents`) und am Jahreswechsel das Jahr (`turnOfYear`: 850 € vom 28.12. mit Monat Januar stehen als
+  `forwardCents` und zählen im Folgejahr); Lexikon, Anleitung, docs/funktionsweise.md und der Hinweis am Feld sagen es.
+  Das Soll kennt `bankLedgerOf` für jedes Jahr mit Umsätzen, das davor und das danach und das laufende; ein Monat mit
+  Jahr weiter weg bekommt keinen Vorschlag. Der Stand der Kaution wird schon im Plan geprüft; fehlt jeder Eingang (auch im selben
   Lauf), nennt die Ablehnung den Weg über „Kaution führen“, und dass „erhalten“ in den Stammdaten keine Buchung ist.
   **Nachzahlung und Guthaben am Betrag** (#308, `bank/settlementMatch.ts`, rein): offen ist je Mietverhältnis und
   **aktuellem** Abschluss (Objekt und getrennte Heizkostenabrechnung, nie `closed_settlement_history`, nie die
@@ -1709,7 +1744,8 @@ importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die 
   Mietverhältnisse. Invariante in invariant-mietkonto.test.ts.
 - **Monat laut Verwendungszweck**: nur an `rent` und nur für einen Monat des Mietverhältnisses (400 in `guardPayment`,
   repository.ts); fällt er später heraus (Beginn oder Ende geändert), bleibt er stehen, wirkt wie keine Bestimmung und
-  steht in `designatedOutside`. Kontoauszug-Import und KI setzen ihn nie.
+  steht in `designatedOutside`. Die KI setzt ihn nie, der Kontoauszug nur als bestätigte Entscheidung des Vermieters (#693,
+  Abschnitt „Kontoauszug“, Zuordnen).
 - **Hinweis `prepayment.arrears`** (E6): Betrag = offene Vorauszahlungen der fälligen Monate des Zeitraums, die diese
   Abrechnung anrechnet, getilgt durch alle Mietzahlungen bis zum Stichtag; ist nur Kaltmiete offen, kein Hinweis.
 - **Nur die Miete** (#280): `payments.kind` ist `rent` oder `settlement` (fehlend: Miete,

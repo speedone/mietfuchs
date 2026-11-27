@@ -272,6 +272,58 @@ test('Geschätzte Ablesung: Stufe aus der Meldung, ein Hinweis und kein Fehler',
   expect(box?.className).not.toMatch(/error/)
 })
 
+// #693: Das Cockpit meldet rot, dass der Zeitraum nicht durch Ablesungen gedeckt ist; die Seite Zähler zeigte für
+// denselben Zähler nur die Verbrauchszahl. Jetzt steht am Zähler derselbe Satz, mit dem Knopf zur neuen Ablesung.
+// Durchsicht: nur an den Zählern, die das Cockpit meldet. Im laufenden Jahr und in einem Jahr ohne Umlage nach Verbrauch
+// trug sonst jeder Zähler die Warnung.
+const PERIOD = `${new Date().getFullYear() - 1}-01`
+const waterCost = { id: 'k1', propertyId: 'objekt-1', period: PERIOD, category: 'Wasserversorgung', description: 'Wasser', amountCents: 50000, key: 'meter', meterType: 'kaltwasser' }
+const gapRow = { meterId: 'm1', consumption: 80, readingCount: 2, periodCovered: false, periodGap: { from: '2025-12-17', to: '2025-12-31' }, periodSlack: [], lastReadingOn: '2025-12-16', longUnread: false, warnings: [], notices: [] }
+const stubGap = (rows: unknown[], costItems: unknown[]) => vi.stubGlobal('fetch', async (url: string) => {
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  const path = url.split('?')[0] ?? ''
+  if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+  if (path === '/api/meters') return json(METERS)
+  if (path === '/api/costItems') return json(costItems)
+  if (path.startsWith('/api/consumption')) return json(rows)
+  return json([])
+})
+
+test('#693: ist der Zeitraum nicht durch Ablesungen gedeckt und meldet das Cockpit den Zähler, steht es am Zähler, mit Knopf zur neuen Ablesung', async () => {
+  stubGap([gapRow], [waterCost])
+  renderPage()
+  const box = (await screen.findByText('Ohne Ablesung vom 17.12.2025 bis 31.12.2025.', undefined, { timeout: 5000 })).closest('.notice-item') as HTMLElement
+  // Dieselbe Stufe wie die Cockpit-Zeile: rot, also Fehler (notices.ts, `cockpitLevel`).
+  expect(box.textContent).toContain('Fehler')
+  expect(box.textContent).not.toContain('Warnung')
+  expect(box.textContent).toContain('Zeitraum nicht durch Ablesungen gedeckt')
+  // Die Verbrauchszahl bleibt stehen: Sie ist, was die Ablesungen hergeben.
+  expect(screen.getByText(/^80\sm³$/)).toBeTruthy()
+  fireEvent.click(within(box).getByRole('button', { name: '+ Ablesung anlegen' }))
+  expect(screen.getByRole('dialog', { name: /Neue Ablesung/ }).textContent).toContain('Wasser EG')
+})
+
+test('#693: kein Satz am Zähler, wo das Cockpit nichts meldet: gedeckt, keine Umlage nach Verbrauch, andere Sparte, nur nicht Umlagefähiges', async () => {
+  const cases: [string, unknown[], unknown[]][] = [
+    ['gedeckt', [{ ...gapRow, periodCovered: true, periodGap: null }], [waterCost]],
+    ['ohne Kosten im Zeitraum (laufendes Jahr)', [gapRow], []],
+    ['Kosten nach Fläche', [gapRow], [{ ...waterCost, key: 'area', meterType: undefined }]],
+    ['Verbrauch einer anderen Sparte', [gapRow], [{ ...waterCost, meterType: 'strom' }]],
+    ['Kosten eines anderen Zeitraums', [gapRow], [{ ...waterCost, period: `${new Date().getFullYear() - 3}-01` }]],
+    ['nicht umlagefähig', [gapRow], [{ ...waterCost, category: 'Nicht umlagefähig' }]],
+  ]
+  for (const [name, rows, costItems] of cases) {
+    stubGap(rows, costItems)
+    const view = renderPage()
+    expect(await screen.findByText(/^80\sm³$/, undefined, { timeout: 5000 }), name).toBeTruthy()
+    // Erst nach dem Laden der Kosten steht fest, was das Cockpit meldet.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByText(/Ohne Ablesung vom/), name).toBeNull()
+    expect(screen.queryByText('Zeitraum nicht durch Ablesungen gedeckt'), name).toBeNull()
+    view.unmount()
+  }
+})
+
 // ---------- #346 Schritt 7: die Ablesung im Seitenfenster, mit derselben Anfrage ----------
 // Die Rümpfe sind die, die die Ablesezeile vor dem Seitenfenster schickte.
 let calls: { url: string; method: string; body: unknown }[] = []

@@ -129,7 +129,11 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   [BankImportDrawer.tsx](src/components/BankImportDrawer.tsx) (Primärknopf „Einlesen“, Ausnahme in S16): jede Antwort plant
   neu, 409 zeigt die neue Vorschau. Offene Umsätze in [BankOpenTable.tsx](src/components/BankOpenTable.tsx) (`stacked`,
   Ampel immer mit Grund als Text), „Alle grünen übernehmen (n)“ mit einer Rückfrage; eine vom Vorschlag abweichende Wahl
-  meldet die Seite als offenes Formular. Konten in [BankAccountsCard.tsx](src/components/BankAccountsCard.tsx), gemerkte Zahler mit „Entfernen …“ in [BankPayersCard.tsx](src/components/BankPayersCard.tsx). Trägt eine Rückfrage `suggestion`, belegt das Fenster die Antwort vor (nur ohne eigene Antwort) und nennt den Grund am Feld „Mietverhältnis“. **Nichts
+  meldet die Seite als offenes Formular. Bei Art „Miete“ hat jeder Teil das Monatsfeld „Für Monat (laut Verwendungszweck)“
+  (#693, `RowPart.month`): vorbelegt nur aus `suggestion.target.designatedMonth` (dann gelbe Zeile und das Abzeichen
+  „Vorschlag aus dem Zweck“, solange der Wert noch der vorgeschlagene ist, `suggestedMonth`), sonst leer und von Hand
+  füllbar; gesendet wird der Monat nur bei Art Miete, ein Text, der kein Monat ist, macht die Zeile unbuchbar (`rowProblem`).
+  Steht ein Monat im Feld, sagt ein Satz darunter die Wirkung (`BANK_MONTH_HINT`: Tilgung und Steuerübersicht). Konten in [BankAccountsCard.tsx](src/components/BankAccountsCard.tsx), gemerkte Zahler mit „Entfernen …“ in [BankPayersCard.tsx](src/components/BankPayersCard.tsx). Trägt eine Rückfrage `suggestion`, belegt das Fenster die Antwort vor (nur ohne eigene Antwort) und nennt den Grund am Feld „Mietverhältnis“. **Nichts
   davon geht in den Browserspeicher**: Rückfragen der Vorschau nennen private Umsätze. Der Eingang der Belege setzt an
   die Ablehnung eines Auszugs (`isBankFileError`) den Knopf „Zur Seite Kontoauszug“.
 - **Von Hand erfassen aus dem Beleg** (#490 PR 3, #487 Teil 2, Logik in [receiptForm.ts](src/receiptForm.ts)): „Von Hand
@@ -313,6 +317,14 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   Ablehnung; ihr Satz (`frameMessage`) steht als `NoticeBox level="error"` in der Karte. Das Cockpit erinnert über [BackupReminder.tsx](src/components/BackupReminder.tsx) (eigener Abruf,
   `NoticeBox` Stufe `hint`, Sprung `BACKUP_TARGET`); wann, entscheidet der Server. Nach dem Wiederherstellen lädt die
   Seite mit `reloadWithArrival('backup')` neu; mit Hinweisen des Servers bleibt die Meldung stehen wie bisher.
+- **Lücke im Zeitraum am Zähler** (#693): Nennt der Server für einen Zähler `periodGap`, zeigt die Seite Zähler an ihm
+  einen Fehler „Zeitraum nicht durch Ablesungen gedeckt“ (Stufe wie die rote Cockpit-Zeile, `cockpitLevel` in notices.ts) mit dem Satz aus `gapNotice` ([meterCheck.ts](src/meterCheck.ts):
+  dieselben Tage und Auswege wie die Cockpit-Zeile „Zählerstände“, `incompleteDetail`, gebaut aus denselben Teilen) und
+  dem Knopf „+ Ablesung anlegen“, **aber nur an den Zählern, die das Cockpit meldet** (`reportedMeters`: dieselbe Auswahl
+  aus den Kostenpositionen des Zeitraums, die auch das Cockpit aufruft, `relevant` für die grüne Zeile, `incomplete` für
+  die rote; die Seite lädt dafür die Positionen).
+  Ohne Umlage nach Verbrauch im Zeitraum, also meist im laufenden Jahr, in einem Jahr vor der ersten Ablesung und an
+  einem ausgebauten Zähler einer nicht genutzten Sparte, steht nichts da.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Ebenso das Mietkonto ohne Mietverhältnis im Jahr (`ledgerStep`), die Steuer ohne

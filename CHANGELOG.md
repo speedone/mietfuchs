@@ -235,6 +235,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnungen, für Lieferungen, CO₂-Erstattungen, Kautionsbuchungen, Mieterhöhungen, den Mieterwechsel und
   fehlende Zwischenablesungen. Skripte, die kein Objekt nennen, arbeiten weiter wie bisher
   ([#692](https://github.com/speedone/mietfuchs/issues/692)).
+- Kontoauszug: Ein Mieteingang tilgte nach der Zuordnung immer die älteste offene Forderung, auch wenn der
+  Verwendungszweck den Monat nannte („Miete November“). Nennt der Zweck eindeutig einen Monat, passt der Betrag zum
+  Soll dieses Monats und ist daneben noch etwas anderes offen, steht der Monat gelb als Vorschlag im neuen Feld „Für
+  Monat (laut Verwendungszweck)“ der Zuordnung; Sie bestätigen ihn mit „Buchen“ oder leeren das Feld, und von Hand
+  lässt er sich dort auch eintragen. Erkannt wird streng: zwei Monate, ein Zeitraum („ab Januar“), ein Datum, Namen
+  und Straßen wie „August“ oder „Mai-Str.“, Abkürzungen ohne Jahr und Zwecke mit „Nachzahlung“, „Kaution“ oder
+  „Guthaben“ ergeben keinen Vorschlag; ohne Jahr gilt ein Monat nur nahe am Buchungstag, auch über den Jahreswechsel.
+  Ist sonst nichts offen, ändert der Monat nichts und die Zeile bleibt grün. Ohne erkennbaren Monat bleibt alles wie
+  bisher (§ 366 Abs. 2 BGB). Mit Monat tilgt die Zahlung diesen Monat (§ 366 Abs. 1 BGB); das ändert auch die
+  Aufteilung in der Steuerübersicht. Lösen, Rücksprung und Backup tragen den Monat mit der Zahlung
+  ([#693](https://github.com/speedone/mietfuchs/issues/693)).
+- Seite Zähler: Ist der Zeitraum für einen Zähler nicht durch Ablesungen gedeckt, steht am Zähler jetzt derselbe Satz
+  wie in der Cockpit-Zeile „Zählerstände“ („Ohne Ablesung vom … bis …“), mit dem Knopf „+ Ablesung anlegen“; wer im
+  Cockpit „Stände erfassen“ wählt, sieht so, welcher Zähler gemeint ist. Der Satz steht nur an Zählern, die das Cockpit
+  meldet ([#693](https://github.com/speedone/mietfuchs/issues/693)).
 - Heizkostenverteiler ohne Skala: Unter „Zähler & Stände“ ließ sich ein Heizkostenverteiler anlegen, ohne die Skala zu
   wählen; in der Liste stand danach nur „Skala fehlt“. Ohne Skala verteilt die eigene Heizkostenabrechnung die
   Heizkosten nicht (sie bleiben mit einem Fehler unter „Zu prüfen“ beim Vermieter). Die Skala ist jetzt eine

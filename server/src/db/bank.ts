@@ -10,7 +10,7 @@ import { coverageOf, type Coverage } from '../bank/coverage.ts'
 import type { BankAccount, BankImport, BankStock } from '../bank/model.ts'
 import type { ImportWrite } from '../bank/importPlan.ts'
 import type { LinkWrite, SetAsideReason } from '../bank/linkPlan.ts'
-import { linkedCents, openCents, suggestWithSettlement, type MatchContext, type Suggestion } from '../bank/match.ts'
+import { linkedCents, openCents, suggestWithSettlement, tenancyFor, type MatchContext, type Suggestion } from '../bank/match.ts'
 import type { BankTransaction } from '../bank/model.ts'
 import type { BankLinkView, BankPayerView, BankTransactionView as SharedTransactionView } from '../../../shared/types.ts'
 import { compareText } from '../apportion.ts'
@@ -154,7 +154,7 @@ export type BankTransactionView = BankTransaction & SharedTransactionView
 // Umsätze mit offenem Rest, Verknüpfungen und Vorschlag, dazu der Zusammenhang, gegen den geplant wird. Das Monats-Soll,
 // das Mietkonto und die offenen Beträge der Abrechnungen (#308) kommen von außen (index.ts), hier wird nichts davon neu
 // gerechnet.
-export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount'>): Promise<{ ctx: MatchContext; views: BankTransactionView[] }> {
+export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'monthlySollCents' | 'openSettlements' | 'rentAccount' | 'monthChangesNothing'>): Promise<{ ctx: MatchContext; views: BankTransactionView[] }> {
   const stock = await readBankStock(db)
   const [tenancyRows, paymentList, deposits] = await Promise.all([
     db.select({ id: tenancies.id, iban: tenancies.iban, start: tenancies.start, end: tenancies.end, depositCents: tenancies.depositCents, depositStatus: tenancies.depositStatus, depositForm: tenancies.depositForm }).from(tenancies).orderBy(INSERTION_ORDER),
@@ -189,15 +189,42 @@ export async function readBankState(db: Executor, ledger: Pick<MatchContext, 'mo
   const takenSettlements = new Set<string>()
   const allOpen = ctx.openSettlements
   const openSettlements = allOpen ? (tenancyId: string) => allOpen(tenancyId).filter((o) => !takenSettlements.has(o.key)) : undefined
+  // #693 (Durchsicht): `monthChangesNothing` rechnet gegen die gebuchten Zahlungen. Andere offene Umsätze desselben
+  // Mietverhältnisses am selben oder einem früheren Tag können im selben Lauf gebucht werden. Ist ihr eigener Vorschlag
+  // eine Mietzahlung ohne Monat und ohne Aufteilung, gehen sie als solche mit in die Rechnung (ein Kontoauszug über ein
+  // ganzes Jahr bleibt so grün). Jeder andere offene Umsatz davor macht den Monat wirksam (gelb mit Vorschlag): eine
+  // verknüpfte erfasste Zahlung (stünde doppelt da), Kaution, Nachzahlung, Aufteilung, ein eigener Monat, ein Ausgang
+  // (Rücklastschrift), einer ohne Vorschlag und einer desselben Tages, der in der Folge erst danach kommt. Spätere Umsätze
+  // ändern an einem früheren nichts.
+  const openOf = new Map<string, { id: string; bookingDate: string; amountCents: number }[]>()
+  for (const tx of stock.transactions) {
+    const open = openCents(tx, (linksOf.get(tx.id) ?? []).map((l) => l.cents))
+    if (tx.setAside !== null || open === 0) continue
+    const t = tenancyFor(tx, ctx)
+    if (t) openOf.set(t.id, [...(openOf.get(t.id) ?? []), { id: tx.id, bookingDate: tx.bookingDate, amountCents: open }])
+  }
+  // Die Vorschläge der Umsätze, die in der zeitlichen Folge schon dran waren.
+  const decided = new Map<string, Suggestion | null>()
+  const plainRent = (sg: Suggestion | null | undefined): boolean =>
+    sg != null && sg.parts === undefined && sg.target.type === 'newPayment' && sg.target.kind === 'rent' && sg.target.designatedMonth === undefined
+  const changes = ctx.monthChangesNothing
+  const monthChangesNothingFor = (self: string): MatchContext['monthChangesNothing'] => changes === undefined ? undefined
+    : (tenancyId, t, month) => {
+      const before = (openOf.get(tenancyId) ?? []).filter((o) => o.id !== self && o.bookingDate <= t.bookingDate)
+      return before.every((o) => o.amountCents > 0 && plainRent(decided.get(o.id)))
+        && changes(tenancyId, t, month, before.map((o) => ({ date: o.bookingDate, amountCents: o.amountCents })))
+    }
   const views = [...stock.transactions]
     .sort((a, b) => compareText(a.bookingDate, b.bookingDate))
     .map((tx) => {
       const links = linksOf.get(tx.id) ?? []
       const open = openCents(tx, links.map((l) => l.cents))
+      const monthChangesNothing = monthChangesNothingFor(tx.id)
       const { suggestion, settlementKey } = open !== 0
-        ? suggestWithSettlement({ ...tx, amountCents: open }, { ...ctx, linkedPaymentIds: reserved, ...(openSettlements ? { openSettlements } : {}) })
+        ? suggestWithSettlement({ ...tx, amountCents: open }, { ...ctx, linkedPaymentIds: reserved, ...(openSettlements ? { openSettlements } : {}), ...(monthChangesNothing ? { monthChangesNothing } : {}) })
         : { suggestion: null, settlementKey: null }
       if (suggestion?.target.type === 'existingPayment') reserved.add(suggestion.target.paymentId)
+      decided.set(tx.id, suggestion)
       if (settlementKey !== null) takenSettlements.add(settlementKey)
       return { ...tx, openCents: open, links, suggestion }
     })

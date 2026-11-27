@@ -1,8 +1,9 @@
 // Die Ampel „Zählerstände“ im Cockpit (#136): Sie muss den Hauptzähler mitzählen, denn seit #116
 // kann er die Verteilbasis des Verbrauchsschlüssels sein.
 import { expect, test } from 'vitest'
-import type { Meter, Notice } from './types'
-import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, slackDetail, selfHeatingReadings } from './meterCheck'
+import type { CostItem, Meter, Notice } from './types'
+import { calibrationDetail, gapNotice, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, reportedMeters, slackDetail, selfHeatingReadings } from './meterCheck'
+import { meterTypesInUse } from './cockpitChecks'
 
 const meter = (id: string, unitId: string | null, type: Meter['type'] = 'kaltwasser'): Meter =>
   ({ id, propertyId: 'p', name: id, type, unitId, unit: 'm³' })
@@ -61,6 +62,20 @@ test('Text der Zeile: fehlt der Anfang, nennt sie das Einbaudatum am Zähler als
   expect(spaet).toBe('Anfang/Ende fehlt oder unplausibel bei: neu (ohne Ablesung vom 01.01.2025 bis 30.06.2025). Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.')
   const ende = incompleteDetail([meter('neu', 'u1')], [{ meterId: 'neu', readingCount: 2, periodCovered: false, periodGap: { from: '2025-12-17', to: '2025-12-31' }, lastReadingOn: '2025-12-16', longUnread: false, warnings: [] }])
   expect(ende).not.toContain('Einbaudatum')
+})
+
+// #693: Die Seite Zähler sagt am Zähler dasselbe wie die Cockpit-Zeile, aus denselben Angaben des Servers.
+test('Satz am Zähler: dieselben Tage und Auswege wie die Cockpit-Zeile; gedeckt oder ohne Angabe des Servers kein Satz', () => {
+  const gap = { meterId: 'm', readingCount: 2, periodCovered: false, periodGap: { from: '2025-12-17', to: '2025-12-31' }, lastReadingOn: '2025-12-16', longUnread: false, warnings: [] }
+  expect(gapNotice(gap)).toBe('Ohne Ablesung vom 17.12.2025 bis 31.12.2025.')
+  expect(incompleteDetail([meter('m', 'u1')], [gap])).toContain('ohne Ablesung vom 17.12.2025 bis 31.12.2025')
+  expect(gapNotice({ ...gap, periodGap: { from: '2025-01-01', to: '2025-12-31' }, lastReadingOn: '2023-06-30', longUnread: true }))
+    .toBe('Ohne Ablesung vom 01.01.2025 bis 31.12.2025. Zuletzt abgelesen am 30.06.2023. Wurde der Zähler getauscht, erfassen Sie die erste Ablesung des neuen Geräts als Zählerwechsel.')
+  expect(gapNotice({ ...gap, periodGap: { from: '2025-01-01', to: '2025-06-30' }, lastReadingOn: '2025-12-31' }))
+    .toBe('Ohne Ablesung vom 01.01.2025 bis 30.06.2025. Wurde der Zähler erst im Zeitraum eingebaut, tragen Sie am Zähler das Einbaudatum ein.')
+  expect(gapNotice({ ...gap, periodCovered: true, periodGap: null })).toBeNull()
+  expect(gapNotice({ meterId: 'm', readingCount: 1, warnings: [] })).toBeNull()
+  expect(gapNotice(undefined)).toBeNull()
 })
 
 test('Grüne Zeile: Tage am Rand, die fehlen und hingenommen sind, stehen als Zusatz da', () => {
@@ -170,4 +185,19 @@ test('#721: fehlen Werte des Ablesedienstes oder der Anteil nach Verbrauch, füh
 test('#721: unvollständig ohne Hinweis (ältere Abrechnung): die Zeile verweist auf die Seite Heizkosten', () => {
   expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: false } })] }))
     .toEqual({ state: 'incomplete', plantId: 'hp1', target: 'heizkosten', detail: 'Die Heizkosten werden nach der Heizkostenverordnung mit Ablesungen verteilt. Die eigene Heizkostenabrechnung ist noch unvollständig; was fehlt, steht auf der Seite Heizkosten.', lines: [] })
+})
+
+// Durchsicht #693: Cockpit und Seite Zähler wählen die Zähler über dieselbe Funktion aus den Kostenpositionen des
+// Zeitraums; die grüne Zeile zählt `relevant`, die rote und die Sätze am Zähler nennen `incomplete`.
+test('Auswahl der Zähler: reportedMeters ist dieselbe Auswahl wie meterReadiness mit den Sparten der Positionen', () => {
+  const ms = [meter('kw1', 'u1'), meter('kw2', 'u2'), meter('strom', null, 'strom')]
+  const consumption = [ok('kw1'), { meterId: 'kw2', readingCount: 1, periodCovered: false, periodGap: { from: '2025-06-01', to: '2025-12-31' }, lastReadingOn: '2025-05-31', longUnread: false, warnings: [] }]
+  const water = { id: 'k', propertyId: 'p', period: '2025-01', category: 'Wasserversorgung', description: 'Wasser', amountCents: 1, key: 'meter', meterType: 'kaltwasser' } as CostItem
+  for (const items of [[water], [], [{ ...water, key: 'area', meterType: undefined } as CostItem], [{ ...water, category: 'Nicht umlagefähig' } as CostItem]]) {
+    const selected = reportedMeters(ms, consumption, items)
+    const direct = meterReadiness(ms, consumption, meterTypesInUse(items))
+    expect(selected).toEqual(direct)
+  }
+  expect(reportedMeters(ms, consumption, [water]).incomplete.map((m) => m.id)).toEqual(['kw2'])
+  expect(reportedMeters(ms, consumption, [water]).relevant.map((m) => m.id)).toEqual(['kw1', 'kw2'])
 })

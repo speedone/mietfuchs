@@ -2,10 +2,11 @@
 // Zweck, Mietverhältnis und Art (vorbelegt aus dem Vorschlag), Aufteilen, Beiseitelegen und „Buchen“. Die Zeilen hält die
 // Seite (Auswahl bleibt nach einer 409). Geld rechnet nur der Server; hier steht nur der Rest der Teile zur Anzeige.
 import { fmtDate, fmtEuro, parseEuro } from '../api'
-import { removePart, rowProblem, SET_ASIDE_OPTIONS, targetOptionsFor, type BankRow, type RowPart, type RowTarget } from '../bankView'
+import { BANK_MONTH_HINT, removePart, rowProblem, SET_ASIDE_OPTIONS, suggestedMonth, targetOptionsFor, type BankRow, type RowPart, type RowTarget } from '../bankView'
 import type { BankSetAside } from '../types'
 import type { TenancyOption } from './BankImportDrawer'
 import { FieldMessage } from './Field'
+import MonthField from './MonthField'
 import Table from './Table'
 import Term from './Term'
 
@@ -41,6 +42,14 @@ function PartFields({ row, part, index, tenancies, onChange, onRemove }: {
           {targetOptionsFor(row.tx, part.target).filter((o) => part.refId !== undefined || (o.value !== 'existingPayment' && o.value !== 'existingDeposit')).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
+      {/* #693: Nennt der Mieter in der Überweisung einen Monat, tilgt die Zahlung diesen (§ 366 Abs. 1 BGB). Aus dem Zweck
+          erkannt steht er als Vorschlag da (gelbe Zeile), sonst bleibt das Feld leer und lässt sich von Hand füllen. */}
+      {part.target === 'rent' && (
+        <MonthField
+          label={<>Für Monat (laut Verwendungszweck){part.month !== undefined && part.month === suggestedMonth(row.tx, part) && <> <span className="badge amber">Vorschlag aus dem Zweck</span></>}</>}
+          value={part.month ?? ''} placeholder="kein Monat" start={row.tx.bookingDate} hint={part.month !== undefined ? BANK_MONTH_HINT : undefined}
+          onChange={(month) => onChange({ month: month === '' ? undefined : month })} />
+      )}
       {row.parts.length > 1 && (
         <label className="field">
           <span>Betrag</span>
@@ -84,6 +93,7 @@ export default function BankOpenTable({ rows, tenancies, problems, busy, onChang
             if (k !== i) return p
             const next = { ...p, ...patch }
             if (next.amountText === undefined) delete next.amountText
+            if (next.month === undefined) delete next.month
             return next
           }) })
           const rest = tx.openCents - row.parts.reduce((a, p) => a + p.amountCents, 0)

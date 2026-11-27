@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useFormError } from '../components/ErrorSummary'
 import Field from '../components/Field'
 import YearField from '../components/YearField'
-import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
+import type { CostItem, HeatingPlant, HeatingRole, Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, READING_STALE_FIELDS, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, FREE_UNIT_PLACEHOLDER, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterScaleHint, meterToForm, SCALE_HELP, scaleRequired, meterTypeChoices, meterTypeHint, meterTypeOptionLabel, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
@@ -26,16 +26,19 @@ import HcaFields from '../components/HcaFields'
 import CutoffReadingForm from '../components/CutoffReadingForm'
 import { hcaSummary, isCutoffReading, ratedText } from '../hcaForm'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
+import { gapNotice, reportedMeters, type MeterConsumption } from '../meterCheck'
+import { itemsOfSettlement } from '../costPeriods'
 import { ifUnchanged, isStale, staleText, useSeenRecord, type StaleFields } from '../staleRecord'
 
 const METER_STALE_FIELDS: StaleFields = { name: 'Name', unitId: 'Wohnung', type: 'Zählertyp', meterNumber: 'Zählernummer', unit: 'Einheit', installedOn: 'Eingebaut am' }
 
 type Props = { units: Unit[] } & FocusProps
 
-type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
+// Die Angaben zur Deckung des Zeitraums (`periodGap` …) kommen mit derselben Antwort und gehören `MeterConsumption`.
+type Consumption = MeterConsumption & { consumption: number }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
-  const { param, label, period } = usePeriod()
+  const { param, label, period, key, rules } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -46,6 +49,18 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
+  // #693: Die Kostenpositionen sagen, welche Zähler das Cockpit meldet (Umlage nach Verbrauch im Zeitraum). Eigener
+  // Abruf neben der Liste: Scheitert er, steht nur der Satz am Zähler nicht da.
+  const [costItems, setCostItems] = useState<CostItem[]>([])
+  useEffect(() => {
+    let current = true
+    api<CostItem[]>(withProperty('/api/costItems', propertyId)).then((c) => { if (current) setCostItems(Array.isArray(c) ? c : []) }).catch(() => { if (current) setCostItems([]) })
+    return () => { current = false }
+  }, [propertyId, param])
+  const reported = useMemo(
+    () => new Set(reportedMeters(meters, consumption, itemsOfSettlement(costItems, key, rules, plants)).incomplete.map((m) => m.id)),
+    [meters, consumption, costItems, key, rules, plants],
+  )
   const [meterForm, setMeterForm] = useState<MeterForm | null>(null)
   // Der Stand des Zählers beim Öffnen des Formulars, als `ifUnchanged` beim Speichern (staleRecord.ts).
   // Beim Öffnen gegen den Bestand abgeglichen: Ein Zählerwechsel mit Eichjahr oder ein anderes Fenster ändert den Zähler.
@@ -283,6 +298,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     key={m.id}
                     meter={m}
                     cons={c}
+                    gap={reported.has(m.id) ? gapNotice(c) : null}
                     open={openMeterId === m.id}
                     focused={focusedId === m.id}
                     readings={mReadings}
@@ -544,6 +560,8 @@ function FragmentRow(props: {
   meter: Meter
   focused?: boolean
   cons?: Consumption
+  // Der Satz zur Lücke im Zeitraum, nur an einem Zähler, den das Cockpit meldet (#693).
+  gap: string | null
   open: boolean
   readings: Reading[]
   unitName: string
@@ -557,7 +575,7 @@ function FragmentRow(props: {
   onDeleteReading: (r: Reading) => void
   onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, onNewReading, onEditReading, onDeleteReading, onSaved } = props
+  const { meter: m, focused, cons, gap, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, onNewReading, onEditReading, onDeleteReading, onSaved } = props
   const digits = readingDigits(readings)
   const panelId = useId()
   return (
@@ -574,6 +592,9 @@ function FragmentRow(props: {
             const n = cons.notices?.[i]
             return <CalcNotice key={i} notice={{ code: n?.code ?? 'legacy', level: n?.level ?? 'error', title: n?.title ?? '', text: w }} />
           })}
+          {/* #693: derselbe Satz und dieselbe Stufe wie die Cockpit-Zeile „Zählerstände“ (rot, also Fehler, notices.ts) und
+              nur an den Zählern, die sie meldet (meterCheck.ts), mit dem Weg zur neuen Ablesung. */}
+          {gap && <NoticeBox level="error" title="Zeitraum nicht durch Ablesungen gedeckt" action={gap} fix={{ label: '+ Ablesung anlegen', onClick: onNewReading }} />}
         </td>
         <td data-label="Zuordnung">{unitName}</td>
         <td data-label="Sparte">{METER_TYPE_LABELS[m.type] ?? m.type}</td>

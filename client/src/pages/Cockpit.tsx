@@ -16,7 +16,7 @@ import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending, desktopHintVisible } from '../update'
-import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, meterReadiness, overdueMeters, selfHeatingReadings, slackDetail, type MeterConsumption } from '../meterCheck'
+import { calibrationDetail, heatingWithoutConsumption, incompleteDetail, overdueMeters, reportedMeters, selfHeatingReadings, slackDetail, type MeterConsumption } from '../meterCheck'
 import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { DesktopHint, UpdateConsent } from '../components/Update'
@@ -255,7 +255,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
       // #721: Die eigene Heizkostenabrechnung verteilt nach Ablesungen der Heizperiode, auch ohne Position „nach Zähler“.
       // Fehlt dort etwas, sagt es die Zeile mit dem Sprung dorthin, wo es eingetragen wird; ein Zähler der übrigen
       // Verbrauchsumlage ohne Stand geht vor, denn sein Sprung führt zum einzelnen Zähler.
-      const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
+      const { relevant, incomplete } = reportedMeters(meters, consumption, yearItems)
       const selfOpen = selfReadings?.state === 'incomplete' ? selfReadings : null
       const selfJump = selfOpen
         ? (selfOpen.target === 'zaehler'
