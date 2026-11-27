@@ -96,6 +96,7 @@ export const SERVICE_SCHEMA = {
                 to: { type: ['string', 'null'], description: 'Nutzungsende YYYY-MM-DD, falls gedruckt' },
                 amountEur: { type: ['number', 'null'], description: 'Kosten dieses Nutzers in diesem Block, vor Abzug von Vorauszahlungen; nie die Nachzahlung oder das Guthaben' },
                 vacancy: { type: 'boolean', description: 'true, wenn die Zeile Leerstand ist' },
+                changeFeeEur: { type: ['number', 'null'], description: 'Nutzerwechselgebühr und Kosten der Zwischenablesung, die im Betrag dieses Nutzers enthalten sind; sonst null' },
               },
               required: ['label', 'amountEur'],
             },
@@ -118,11 +119,13 @@ Dir liegt die Heiz- und Warmwasserkostenabrechnung eines Messdienstes (etwa Tech
 - "fuelGrossEur": die Brennstoffkosten in der Kostenaufstellung (etwa "Brennstoffkosten laut Rechnungen") vor einem Abzug; "fuelNetEur": die Brennstoffkosten nach der Abzugszeile, nur wenn eine solche Zeile dasteht, sonst null.
 - "co2": der CO₂-Block: CO₂-Ausstoß der Liegenschaft in kg ("emissionsKg"), die Fläche dafür in m² ("areaM2"), der Ausstoß je m² und Jahr ("kgPerM2"), der Anteil des Vermieters in Prozent ("landlordPercent"), die CO₂-Kosten insgesamt ("totalEur") und davon der Anteil des Vermieters in Euro ("landlordEur"). Gibt es keinen CO₂-Block, null.
 - "dhwMethod": wie der Wärmeanteil für Warmwasser ermittelt wurde: "heatMeter", wenn er mit einem Wärmezähler gemessen wurde; "volumeFormula", wenn er nach § 9 Abs. 2 Satz 2 HeizkostenV aus dem Warmwasservolumen errechnet wurde; "areaFormula", wenn er nach § 9 Abs. 2 Satz 4 HeizkostenV aus der Wohnfläche errechnet wurde. Steht dazu nichts da, null.
-- "blocks": je Kostenblock (Heizung und Warmwasser, Kaltwasser und Abwasser, Hausstrom, …) ein Eintrag mit Überschrift ("title"), Kostenart ("category", GENAU eine aus der Liste: ${EXTRACT_CATEGORIES.map((c) => `"${c}"`).join(', ')}), der gedruckten Summe der Nutzerkosten des Blocks ("totalEur") und einer Zeile je Nutzer ("lines"): Name, wie gedruckt ("label"), Lage oder Nummer der Nutzeinheit ("unitLabel"), Nutzungszeitraum, falls gedruckt ("from", "to" als YYYY-MM-DD), die Kosten dieses Nutzers in diesem Block ("amountEur"; bei Heizung und Warmwasser die Summe aus Heiz- und Warmwasserkosten des Nutzers; druckt die Abrechnung auch Vorauszahlungen und einen Saldo, dann die Kosten VOR Abzug der Vorauszahlungen, nie die Nachzahlung und nie das Guthaben) und "vacancy": true, wenn die Zeile Leerstand ist.
+- "blocks": je Kostenblock (Heizung und Warmwasser, Kaltwasser und Abwasser, Hausstrom, …) ein Eintrag mit Überschrift ("title"), Kostenart ("category", GENAU eine aus der Liste: ${EXTRACT_CATEGORIES.map((c) => `"${c}"`).join(', ')}), der gedruckten Summe der Nutzerkosten des Blocks ("totalEur") und einer Zeile je Nutzer ("lines"): Name, wie gedruckt ("label"), Lage oder Nummer der Nutzeinheit ("unitLabel"), Nutzungszeitraum, falls gedruckt ("from", "to" als YYYY-MM-DD), die Kosten dieses Nutzers in diesem Block ("amountEur"; bei Heizung und Warmwasser die Summe aus Heiz- und Warmwasserkosten des Nutzers; druckt die Abrechnung auch Vorauszahlungen und einen Saldo, dann die Kosten VOR Abzug der Vorauszahlungen, nie die Nachzahlung und nie das Guthaben), "vacancy": true, wenn die Zeile Leerstand ist, und "changeFeeEur": der Betrag, den die Abrechnung diesem Nutzer in diesem Block als Nutzerwechselgebühr, Nutzerwechselkosten oder Kosten der Zwischenablesung berechnet, sonst null; "amountEur" bleibt dabei, wie gedruckt: "amountEur" ist dann der Gesamtbetrag des Nutzers in diesem Block EINSCHLIESSLICH dieser Gebühr. Steht eine solche Gebühr nur in der Kostenaufstellung der Liegenschaft und nicht beim Nutzer, null; nenne sie nur in dem Block, in dem sie gedruckt ist.
 - Beträge in Euro mit Dezimalpunkt, so wie gedruckt. Datumsangaben als YYYY-MM-DD.`
 
 function lineOf(l: Record<string, unknown>): ServiceUserLine {
   const amount = num(l.amountEur)
+  // #713: nur eine Gebühr, die im Betrag stecken kann; alles andere ist verlesen und fällt weg.
+  const fee = num(l.changeFeeEur)
   return {
     label: textOrEmpty(l.label),
     unitLabel: text(l.unitLabel) ?? null,
@@ -130,6 +133,7 @@ function lineOf(l: Record<string, unknown>): ServiceUserLine {
     to: day(l.to) ?? null,
     ...(amount !== null ? { amountEur: amount } : {}),
     vacancy: l.vacancy === true,
+    ...(fee !== null && fee > 0 && amount !== null && fee <= amount ? { changeFeeEur: fee } : {}),
   }
 }
 

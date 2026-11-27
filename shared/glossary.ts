@@ -752,7 +752,7 @@ export const GLOSSARY = {
     example: 'Der Messdienst berechnet für die Zwischenablesung der Wasserzähler beim Auszug 30,00 €. Gehen sie nach Personen über drei Wohnungen, trüge jede rund 10,00 €; tatsächlich gehören die 30,00 € zu Ihrem Anteil.',
     norm: 'BGH, Urteil vom 14.11.2007, VIII ZR 19/07',
     needed:
-      'Bei jedem Mieterwechsel mit Zählern. Erfassen Sie die Gebühr unter „Nicht umlagefähig“. Haben Sie mit dem ausziehenden Mieter wirksam etwas anderes vereinbart, fordern Sie sie von ihm; ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden.',
+      'Bei jedem Mieterwechsel mit Zählern. Stellt der Messdienst sie Ihnen eigens in Rechnung, erfassen Sie sie unter „Nicht umlagefähig“. Steckt sie stattdessen bei Einzelbeträgen eines Messdienstes im Betrag des ausziehenden Mieters, ziehen Sie sie dort ab; der Betrag der Position bleibt, und eine eigene Position legen Sie dann nicht an. Beim Auslesen der Messdienstabrechnung zeigt Mietfuchs sie gesondert und nimmt sie heraus. Haben Sie mit dem ausziehenden Mieter wirksam etwas anderes vereinbart, fordern Sie sie von ihm; ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden.',
   },
   // #218: nur Erklärung und Hinweis; die Verteilung über Nutzergruppen rechnet Mietfuchs nicht.
   preCapture: {

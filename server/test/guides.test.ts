@@ -770,7 +770,7 @@ test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der 
   assert.doesNotMatch(amount ?? '', /Gesamtbetrag der Abrechnung/, 'der Gesamtbetrag ist beim Vorwegabzug netto')
   // Schritt 2: der Betrag, den die Abrechnung für den Mieter nennt, ohne selbst abzuziehen; sonst
   // entlastete Mietfuchs ihn bei „nur ausgewiesen“ ein zweites Mal (Durchsicht C1).
-  assert.match(perTenancy ?? '', /Tragen Sie die Kosten ein, die die Abrechnung für den Mieter nennt; ziehen Sie selbst nichts ab\./)
+  assert.match(perTenancy ?? '', /Tragen Sie die Kosten ein, die die Abrechnung für den Mieter nennt; ziehen Sie selbst nichts ab, außer einer Nutzerwechselgebühr oder den Kosten einer Zwischenablesung.*sonst tragen Sie sie \(BGH VIII ZR 19\/07\)\. Der Betrag der Position bleibt dabei/)
   // Messdienst mit Vorauszahlungen: die Kosten, nicht der Saldo (sonst wäre die Vorauszahlung doppelt angerechnet).
   assert.match(perTenancy ?? '', /Einzutragen sind die Kosten, nicht dieser Saldo, denn die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an\./)
   assert.doesNotMatch(perTenancy ?? '', /nach Abzug des CO₂-Anteils/)

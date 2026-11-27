@@ -192,3 +192,40 @@ test('ohne Nutzeinheiten in der Abrechnung gehen die Wohnungen an der Heizung in
   fireEvent.click(screen.getByText('CO₂-Angaben übernehmen'))
   await waitFor(() => expect(sent.find((s) => s.url.endsWith('/co2'))?.body).toMatchObject({ serviceUnitsCount: 2 }))
 })
+
+// #713: Eine Nutzerwechselgebühr im Betrag eines Mieters steht gesondert da; ohne Haken geht sie nicht zum Mieter.
+test('#713: Nutzerwechselgebühr: gesondert gezeigt, ohne Haken aus dem Betrag des Mieters genommen, mit Haken darin', async () => {
+  const first = x.blocks[0] ?? expect.fail('kein Block')
+  const fee: ServiceStatementExtraction = { ...x, blocks: [{ ...first, lines: first.lines.map((l, k) => (k === 0 ? { ...l, changeFeeEur: 25 } : l)) }] }
+  render(<ServiceImportReview x={fee} file="beleg.pdf" ctx={ctx} view={view()} onDone={() => {}} />)
+  expect(screen.getByText(/keine Betriebskosten, sondern Verwaltungskosten/)).toBeTruthy()
+  expect(screen.getByText(/darin Nutzerwechselgebühr oder Zwischenablesung 25,00 €/)).toBeTruthy()
+  expect(screen.getByText(/Für den Mieter angesetzt: 1\.155,25 €/)).toBeTruthy()
+  fireEvent.change(select('Zuordnung „Herr Unbekannt“'), { target: { value: 'vacancy' } })
+  fireEvent.click(screen.getByLabelText('Laut Mietvertrag trägt der Mieter die Gebühr „Mustermann, Erika“'))
+  expect(screen.getByText(/Für den Mieter angesetzt: 1\.180,25 €/)).toBeTruthy()
+  fireEvent.click(screen.getByLabelText('Laut Mietvertrag trägt der Mieter die Gebühr „Mustermann, Erika“'))
+  fireEvent.click(screen.getByText('Positionen anlegen'))
+  await waitFor(() => expect(sent.find((s) => s.method === 'POST')?.body).toMatchObject({ amountCents: 196985, tenancyAmounts: { t1: 115525 } }))
+})
+
+test('#713: ohne Gebühr in der Abrechnung steht dazu nichts da', () => {
+  render(<ServiceImportReview x={x} file="beleg.pdf" ctx={ctx} view={view()} onDone={() => {}} />)
+  expect(screen.queryByText(/Verwaltungskosten/)).toBeNull()
+  expect(screen.queryByText(/Für den Mieter angesetzt/)).toBeNull()
+})
+
+test('#713: Zuordnung auf Leerstand: die gelesene Gebühr bleibt sichtbar, Haken und Satz gehen; zurück zum Mieter ist der Haken leer', () => {
+  const first = x.blocks[0] ?? expect.fail('kein Block')
+  const fee: ServiceStatementExtraction = { ...x, blocks: [{ ...first, lines: first.lines.map((l, k) => (k === 0 ? { ...l, changeFeeEur: 25 } : l)) }] }
+  render(<ServiceImportReview x={fee} file="beleg.pdf" ctx={ctx} view={view()} onDone={() => {}} />)
+  const box = (): HTMLElement => screen.getByLabelText('Laut Mietvertrag trägt der Mieter die Gebühr „Mustermann, Erika“')
+  fireEvent.click(box())
+  fireEvent.change(select('Zuordnung „Mustermann, Erika“'), { target: { value: 'vacancy' } })
+  expect(screen.getByText(/darin Nutzerwechselgebühr oder Zwischenablesung 25,00 €/)).toBeTruthy()
+  expect(screen.queryByLabelText('Laut Mietvertrag trägt der Mieter die Gebühr „Mustermann, Erika“')).toBeNull()
+  expect(screen.queryByText(/keine Betriebskosten, sondern Verwaltungskosten/)).toBeNull()
+  fireEvent.change(select('Zuordnung „Mustermann, Erika“'), { target: { value: 'tenancy:t1' } })
+  const again = box()
+  expect(again instanceof HTMLInputElement && again.checked).toBe(false)
+})

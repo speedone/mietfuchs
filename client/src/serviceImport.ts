@@ -31,7 +31,9 @@ export type ImportContext = {
 
 // Je Block: übernehmen, Kostenart, Betrag der Position, das Ziel je Nutzerzeile (`''` offen, `'vacancy'`,
 // `'tenancy:<id>'`, `'self:<unitId>'`) und das Jahr der Zahlung, falls der Zeitraum über zwei Jahre reicht.
-export type BlockDraft = { include: boolean; category: string; amount: string; targets: string[]; taxYear: string }
+// `feeAgreed` je Nutzerzeile (#713): Der Mietvertrag legt dem Mieter die Nutzerwechselgebühr auf; ohne Haken geht sie
+// aus seinem Betrag heraus.
+export type BlockDraft = { include: boolean; category: string; amount: string; targets: string[]; taxYear: string; feeAgreed: boolean[] }
 
 export const DHW_LABELS: Record<DhwMethod, string> = {
   heatMeter: 'mit einem Wärmezähler gemessen',
@@ -104,6 +106,44 @@ const SALDO = 'Das ist ein Guthaben, also der Saldo nach Abzug der Vorauszahlung
 
 const isHeating = (category: string): boolean => category === HEATING_CATEGORY
 const cents = (eur: number): number => Math.round(eur * 100)
+
+// #713: Kosten der Verbrauchserfassung und Abrechnung, die wegen des Auszugs eines Mieters vor Ablauf des
+// Abrechnungszeitraums entstehen, sind keine Betriebskosten, sondern Verwaltungskosten des Vermieters, soweit nichts
+// anderes vereinbart ist (BGH, Urteil vom 14.11.2007, VIII ZR 19/07, Leitsatz). Der Messdienst rechnet sie dem
+// ausziehenden Nutzer zu; übernommen wird der Betrag des Mieters deshalb ohne sie. Der Betrag der Position bleibt, wie
+// bezahlt, und die Gebühr liegt mit dem Rest beim Vermieter (Schlüssel „Einzelbeträge“).
+export const CHANGE_FEE_NOTE = 'Nutzerwechselgebühr und Kosten der Zwischenablesung sind keine Betriebskosten, sondern Verwaltungskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). Mietfuchs nimmt sie deshalb aus dem Betrag des Mieters heraus; sie bleiben mit dem Rest der Position bei Ihnen. Legt Ihr Mietvertrag sie dem Mieter auf, setzen Sie den Haken an seiner Zeile; ob eine Klausel im Formularmietvertrag dafür genügt, hat der BGH nicht entschieden. Steht am Beleg keine solche Gebühr im Betrag des Nutzers, übernehmen Sie den Block nicht und erfassen Sie ihn auf der Seite Kosten.'
+
+// Die Gebühr in Cent, die aus dem Betrag der Zeile herausgeht, wenn sie einem Mieter gehört und nichts vereinbart ist;
+// 0 bei Leerstand und eigener Wohnung (dort trägt der Vermieter die Zeile ohnehin). Eine offene Zeile zählt wie ein Mieter,
+// damit die Prüfansicht die Gebühr schon vor der Zuordnung zeigt.
+export function changeFeeOf(line: ServiceUserLine, target: string): number {
+  if (line.changeFeeEur === undefined || line.amountEur === undefined) return 0
+  if (target === 'vacancy' || target.startsWith('self:')) return 0
+  return Math.min(cents(line.changeFeeEur), Math.max(0, cents(line.amountEur)))
+}
+
+// Was für die Zeile angesetzt wird; `null`, wenn kein Betrag gelesen wurde.
+export function tenantLineCents(line: ServiceUserLine, target: string, feeAgreed: boolean): number | null {
+  if (line.amountEur === undefined) return null
+  return cents(line.amountEur) - (feeAgreed ? 0 : changeFeeOf(line, target))
+}
+
+// Die gelesene Gebühr der Zeile in Cent, unabhängig vom Ziel: Sie ist eine Zahl vom Beleg und bleibt sichtbar, auch
+// wenn die Zeile Leerstand oder eigene Wohnung ist (Durchsicht von #713).
+export const readChangeFee = (line: ServiceUserLine): number => changeFeeOf(line, '')
+
+// Geht nach den gewählten Zielen irgendwo eine Gebühr aus dem Betrag eines Mieters heraus (oder ist die Zeile noch
+// offen)? Nur dann zeigt die Prüfansicht den Satz mit dem Haken; sonst gäbe es den Haken gar nicht.
+export function hasChangeFee(x: ServiceStatementExtraction, drafts: readonly BlockDraft[]): boolean {
+  return x.blocks.some((b, i) => b.lines.some((l, k) => changeFeeOf(l, drafts[i]?.targets[k] ?? '') > 0))
+}
+
+// Die Zuordnung einer Zeile ändern. Der Haken „laut Mietvertrag“ sagt etwas über den Vertrag des bisherigen Ziels und
+// geht deshalb mit zurück.
+export function retarget(d: BlockDraft, k: number, target: string): BlockDraft {
+  return { ...d, targets: d.targets.map((t, j) => (j === k ? target : t)), feeAgreed: d.feeAgreed.map((a, j) => (j === k ? false : a)) }
+}
 const linesCents = (b: ServiceBlock): number => b.lines.reduce((a, l) => a + cents(l.amountEur ?? 0), 0)
 const blockCents = (b: ServiceBlock): number => (b.totalEur !== undefined ? cents(b.totalEur) : linesCents(b))
 const euroText = (c: number): string => (c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -146,6 +186,7 @@ export function draftsOf(x: ServiceStatementExtraction, ctx: ImportContext): Blo
       amount: euroText(total),
       targets: b.lines.map((l) => matchLine(l, ctx)),
       taxYear: '',
+      feeAgreed: b.lines.map(() => false),
     }
   })
 }
@@ -225,7 +266,7 @@ export function itemBodies(x: ServiceStatementExtraction, drafts: readonly Block
       if (line.amountEur < 0) return { error: `„${line.label}“ (${name}) hat einen negativen Betrag. ${SALDO} Erfassen Sie diesen Block auf der Seite Kosten mit den Kosten je Nutzer.` }
       const [kind, id = ''] = target.split(':')
       const into = kind === 'self' ? selfAmounts : tenancyAmounts
-      into[id] = (into[id] ?? 0) + cents(line.amountEur)
+      into[id] = (into[id] ?? 0) + (tenantLineCents(line, target, d.feeAgreed[k] === true) ?? 0)
     }
     const heating = isHeating(block.category)
     const span = heating ? ctx.heating : ctx.object

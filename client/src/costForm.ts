@@ -327,6 +327,10 @@ const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy
 
 // Der Satz über den Feldern der Einzelbeträge. Viele Messdienste nehmen die Vorauszahlungen in ihre Abrechnung auf und
 // drucken je Nutzer Kosten, Vorauszahlung und Saldo; ins Feld gehören die Kosten.
+// #713: eigener Absatz mit Lexikonbegriff, nur wo ein Messdienst abrechnet (Heizung, Wasser). Der Betrag der Position
+// bleibt; eine zweite Position für die Gebühr stünde doppelt in Gesamtkosten und Steuer.
+export const AMOUNTS_FEE_HELP = 'Hat der Messdienst einem Mieter eine Nutzerwechselgebühr oder die Kosten einer Zwischenablesung berechnet, ziehen Sie sie von seinem Betrag ab, wenn der Mietvertrag sie ihm nicht auferlegt (BGH VIII ZR 19/07). Der Betrag der Position bleibt, so trägt der Vermieter die Gebühr; eine eigene Position legen Sie dafür nicht an.'
+export const showsAmountsFeeHelp = (category: string): boolean => category === HEATING_CATEGORY || category === 'Wasser/Abwasser'
 export const AMOUNTS_HELP = 'Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart (bei Heizung und Warmwasser die Zwischensumme der Heiz- und Warmwasserkosten, nicht die Gesamtkosten des Nutzers). Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.'
 // #714: Der Satz am Feld „Beschreibung“, wenn eine umlagefähige Position Rauchwarnmelder nennt (Regel und Wortlaut in
 // shared/smokeDetector.ts, dieselben wie im Hinweis der Abrechnung, hier ohne Betrag).

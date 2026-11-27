@@ -2,7 +2,7 @@
 // Prüfungen und die Rümpfe für die bestehenden Routen, ohne DOM.
 import { expect, test } from 'vitest'
 import {
-  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, dhwNote, draftsOf, duplicateBlocks, itemBodies, matchLine, SERVICE_COSTS_NOTE, serviceChecks, targetOptions,
+  answerConflict, blockBlocked, CHANGE_FEE_NOTE, changeFeeOf, co2FormFromExtraction, deductionHint, hasChangeFee, retarget, dhwNote, draftsOf, duplicateBlocks, itemBodies, matchLine, SERVICE_COSTS_NOTE, tenantLineCents, serviceChecks, targetOptions,
   type ImportContext,
 } from './serviceImport'
 import { co2ToForm } from './co2Form'
@@ -241,4 +241,77 @@ test('ein negativer Nutzerbetrag ist ein Saldo: Warnung in der Prüfung, und üb
 
 test('der Satz der Prüfansicht nennt den Ausweg, denn die Nutzerbeträge lassen sich dort nicht ändern', () => {
   expect(SERVICE_COSTS_NOTE).toBe('Je Nutzer zählen die Kosten. Nennt die Abrechnung auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, prüfen Sie, dass hier die Kosten stehen und nicht dieser Saldo; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Steht hier ein Saldo, übernehmen Sie den Block nicht und erfassen Sie ihn auf der Seite Kosten.')
+})
+
+// #713: Nutzerwechselgebühr und Zwischenablesung sind Verwaltungskosten des Vermieters (BGH VIII ZR 19/07). Steckt eine im
+// Betrag eines Mieters, nimmt die Übernahme sie heraus; der Betrag der Position bleibt, der Rest liegt beim Vermieter.
+const withFee: ServiceStatementExtraction = {
+  ...x,
+  blocks: [{
+    title: 'Heizung und Warmwasser', category: 'Heizung und Warmwasser', totalEur: 3944.5,
+    lines: [
+      { label: 'Mustermann, Erika', unitLabel: 'EG links', from: null, to: null, amountEur: 1180.25, vacancy: false },
+      { label: 'Leerstand', unitLabel: 'EG rechts', from: null, to: null, amountEur: 702.1, vacancy: true },
+      { label: 'Vorher, Hans', unitLabel: 'OG links', from: '2024-01-01', to: '2024-05-31', amountEur: 455.4, vacancy: false, changeFeeEur: 25 },
+      { label: 'Beispiel, Max', unitLabel: 'OG links', from: '2024-06-01', to: '2024-12-31', amountEur: 610, vacancy: false },
+      { label: 'Eigentümer (Eigennutzung)', unitLabel: 'OG rechts', from: null, to: null, amountEur: 996.75, vacancy: false, changeFeeEur: 25 },
+    ],
+  }],
+}
+const ctx24: ImportContext = { ...ctx, heating: { key: '2024-01', from: '2024-01-01', to: '2024-12-31' }, object: { key: '2024-01', from: '2024-01-01', to: '2024-12-31' } }
+
+test('#713: die Gebühr geht aus dem Betrag des Mieters heraus, der Betrag der Position bleibt; mit Haken bleibt sie beim Mieter', () => {
+  const drafts = draftsOf(withFee, ctx24)
+  expect(drafts[0]?.feeAgreed).toEqual([false, false, false, false, false])
+  expect(drafts[0]?.targets[2]).toBe('tenancy:t3')
+  const r = itemBodies(withFee, drafts, ctx24, 'beleg.pdf')
+  if ('error' in r) expect.fail(r.error)
+  expect(r.bodies[0]?.amountCents).toBe(394450 + 8750)
+  expect(r.bodies[0]?.tenancyAmounts).toEqual({ t1: 118025, t3: 43040, t2: 61000 })
+  // Die eigene Wohnung trägt ihre Zeile unverändert: Dort gibt es niemanden, dem die Gebühr zu Unrecht berechnet würde.
+  expect(r.bodies[0]?.selfAmounts).toEqual({ d: 99675 })
+  const agreed = itemBodies(withFee, drafts.map((d) => ({ ...d, feeAgreed: d.feeAgreed.map((_a, k) => k === 2) })), ctx24, 'beleg.pdf')
+  if ('error' in agreed) expect.fail(agreed.error)
+  expect(agreed.bodies[0]?.tenancyAmounts).toEqual({ t1: 118025, t3: 45540, t2: 61000 })
+})
+
+test('#713: changeFeeOf und tenantLineCents: nur beim Mieter, nur ohne Vereinbarung, nie unter null', () => {
+  const [, , hans, , owner] = withFee.blocks[0]?.lines ?? []
+  if (!hans || !owner) expect.fail('Zeilen fehlen')
+  expect(changeFeeOf(hans, 'tenancy:t3')).toBe(2500)
+  expect(changeFeeOf(hans, 'vacancy')).toBe(0)
+  expect(changeFeeOf(hans, '')).toBe(2500)
+  expect(changeFeeOf(owner, 'self:d')).toBe(0)
+  expect(tenantLineCents(hans, 'tenancy:t3', false)).toBe(43040)
+  expect(tenantLineCents(hans, 'tenancy:t3', true)).toBe(45540)
+  expect(tenantLineCents(owner, 'self:d', false)).toBe(99675)
+  expect(tenantLineCents({ ...hans, amountEur: undefined }, 'tenancy:t3', false)).toBeNull()
+  expect(CHANGE_FEE_NOTE).toMatch(/keine Betriebskosten, sondern Verwaltungskosten.*BGH VIII ZR 19\/07.*Haken/)
+})
+
+// Durchsicht von #713
+test('#713: Gebühr gleich dem Betrag ergibt 0 für den Mieter; zwei Zeilen eines Mieters, eine mit Gebühr; Gebühr im kalten Block', () => {
+  const block = withFee.blocks[0] ?? expect.fail('kein Block')
+  const two: ServiceStatementExtraction = { ...withFee, blocks: [
+    { ...block, lines: [{ label: 'Vorher, Hans', unitLabel: 'OG links', from: '2024-01-01', to: '2024-05-31', amountEur: 25, vacancy: false, changeFeeEur: 25 }, { label: 'Vorher, Hans', unitLabel: 'OG links', from: '2024-01-01', to: '2024-05-31', amountEur: 400, vacancy: false }] },
+    { title: 'Kaltwasser', category: 'Wasser/Abwasser', totalEur: 130, lines: [{ label: 'Vorher, Hans', unitLabel: 'OG links', from: '2024-01-01', to: '2024-05-31', amountEur: 130, vacancy: false, changeFeeEur: 30 }] },
+  ] }
+  const r = itemBodies(two, draftsOf(two, ctx24), ctx24, 'beleg.pdf')
+  if ('error' in r) expect.fail(r.error)
+  expect(r.bodies.map((b) => b.tenancyAmounts)).toEqual([{ t3: 40000 }, { t3: 10000 }])
+  expect(r.bodies[1]?.amountCents).toBe(13000)
+})
+
+test('#713: der Satz richtet sich nach den gewählten Zielen; ein Wechsel der Zuordnung nimmt den Haken zurück', () => {
+  const drafts = draftsOf(withFee, ctx24)
+  expect(hasChangeFee(withFee, drafts)).toBe(true)
+  // Nur die eigene Wohnung trägt noch eine Gebühr: kein Satz vom Haken, denn es gibt keinen.
+  const toVacancy = drafts.map((d) => retarget(d, 2, 'vacancy'))
+  expect(hasChangeFee(withFee, toVacancy)).toBe(false)
+  const agreed = drafts.map((d) => ({ ...d, feeAgreed: d.feeAgreed.map((_a, k) => k === 2) }))
+  const moved = agreed.map((d) => retarget(d, 2, 'tenancy:t2'))
+  expect(moved[0]?.targets[2]).toBe('tenancy:t2')
+  expect(moved[0]?.feeAgreed[2]).toBe(false)
+  expect(agreed.map((d) => retarget(d, 0, 'vacancy'))[0]?.feeAgreed[2]).toBe(true)
+  expect(CHANGE_FEE_NOTE).toMatch(/Steht am Beleg keine solche Gebühr im Betrag des Nutzers, übernehmen Sie den Block nicht/)
 })

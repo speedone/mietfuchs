@@ -2202,8 +2202,10 @@ export type IntakeResult = { file: string } & (
 // `toFuelExtraction`). Alles ist ein Vorschlag: Ein Mensch prüft und speichert über die bestehenden Routen.
 
 // Eine Nutzerzeile eines Kostenblocks: Name und Lage, wie gedruckt, der Nutzungszeitraum, falls gedruckt,
-// und der Betrag („Ihre Kosten“). `vacancy`: die Abrechnung nennt die Zeile Leerstand.
-export type ServiceUserLine = { label: string; unitLabel: string | null; from: string | null; to: string | null; amountEur?: number; vacancy: boolean }
+// und der Betrag („Ihre Kosten“). `vacancy`: die Abrechnung nennt die Zeile Leerstand. `changeFeeEur` (#713): die
+// Nutzerwechselgebühr oder die Kosten der Zwischenablesung, die **in** `amountEur` stecken; nur gesetzt, wenn größer als
+// null und nicht höher als der Betrag.
+export type ServiceUserLine = { label: string; unitLabel: string | null; from: string | null; to: string | null; amountEur?: number; vacancy: boolean; changeFeeEur?: number }
 
 // Ein Kostenblock der Abrechnung (Heizung und Warmwasser, Kaltwasser, …) mit der Kostenart aus der Liste
 // der Kostenarten (leer, wenn das Modell keine aus der Liste nannte) und der gedruckten Summe des Blocks.

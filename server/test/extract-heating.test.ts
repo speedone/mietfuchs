@@ -176,3 +176,25 @@ test('Prompts: Rechnungsbetrag vor Abschlägen, Brennwert ist kein Heizwert, § 
   assert.match(SERVICE_PROMPT, /Abzüglich CO₂-Kosten Vermieter/)
   assert.match(SERVICE_PROMPT, /§ 9 Abs\. 2 Satz 2 HeizkostenV/)
 })
+
+// #713: Die Nutzerwechselgebühr steckt im Betrag des Nutzers; gelesen wird sie daneben, damit die Prüfansicht sie zeigen kann.
+test('#713: Nutzerwechselgebühr je Nutzerzeile: als Zahl oder Text gelesen; null, negativ, unlesbar oder höher als der Betrag fällt weg', () => {
+  const line = (changeFeeEur: unknown) => ({ label: 'Vorher, Hans', unitLabel: 'OG links', amountEur: 430.4, vacancy: false, changeFeeEur })
+  const lines = toServiceExtraction({ blocks: [{ title: 'Heizung', category: 'Heizung und Warmwasser', lines: [line(25), line('25,00'), line(null), line(0), line(-25), line('siehe unten'), line(500)] }] }).blocks[0]?.lines ?? assert.fail('kein Block')
+  assert.deepEqual(lines.map((l) => l.changeFeeEur), [25, 25, undefined, undefined, undefined, undefined, undefined])
+  assert.equal('changeFeeEur' in (lines[2] ?? {}), false, 'ohne Gebühr fehlt das Feld')
+  assert.equal(lines[0]?.amountEur, 430.4, 'der Betrag bleibt, wie gedruckt')
+})
+
+test('#713: Schema und Prompt fragen nach der Nutzerwechselgebühr im Betrag des Nutzers', () => {
+  assert.match(JSON.stringify(SERVICE_SCHEMA), /"changeFeeEur"/)
+  assert.match(SERVICE_PROMPT, /"changeFeeEur".*Nutzerwechselgebühr.*Zwischenablesung.*sonst null/)
+  assert.match(SERVICE_PROMPT, /"amountEur" bleibt dabei, wie gedruckt/)
+})
+
+test('#713 Durchsicht: ohne gelesenen Betrag keine Gebühr; der Prompt sagt, dass der Betrag die Gebühr einschließt und wo sie nicht hingehört', () => {
+  const lines = toServiceExtraction({ blocks: [{ title: 'Heizung', category: 'Heizung und Warmwasser', lines: [{ label: 'Vorher, Hans', amountEur: null, changeFeeEur: 25 }] }] }).blocks[0]?.lines ?? assert.fail('kein Block')
+  assert.equal('changeFeeEur' in (lines[0] ?? {}), false)
+  assert.match(SERVICE_PROMPT, /"amountEur" ist dann der Gesamtbetrag des Nutzers in diesem Block EINSCHLIESSLICH dieser Gebühr/)
+  assert.match(SERVICE_PROMPT, /Steht eine solche Gebühr nur in der Kostenaufstellung der Liegenschaft und nicht beim Nutzer, null/)
+})

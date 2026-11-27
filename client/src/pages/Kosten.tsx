@@ -17,7 +17,7 @@ import {
   itemToForm,
   meterTypeOptions,
   waterMeterHint,
-  amountsSumText, AMOUNTS_HELP, smokeDetectorHint,
+  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, smokeDetectorHint,
   chimneySweepPlants,
   chimneySweepQuestion,
   notAgreedDroppedText,
@@ -1539,6 +1539,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
               <div className="field-group">
                 <div className="field-group-label"><Term id="individualAmounts">Einzelbeträge</Term> je Mieter</div>
                 <div className="muted">{AMOUNTS_HELP}</div>
+                {showsAmountsFeeHelp(form.category) && <div className="muted"><Term id="changeFee">Nutzerwechselgebühr</Term>: {AMOUNTS_FEE_HELP}</div>}
                 {tenanciesForAmounts(tenancies, units, period, form.participants).length === 0 ? (
                   <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>
                 ) : (

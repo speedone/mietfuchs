@@ -155,6 +155,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   vorgeschlagen statt „nach Wohnfläche“. Die Karte „Heizung“ der Stammdaten sagt, wann die Heizung einzurichten ist,
   und der Satz zum Rest bei Einzelbeträgen nennt neben dem Leerstand den vorab abgezogenen CO₂-Anteil
   ([#704](https://github.com/speedone/mietfuchs/issues/704)).
+- Nutzerwechselgebühr in der Messdienstabrechnung: Berechnet der Messdienst dem ausziehenden Mieter eine
+  Nutzerwechselgebühr oder die Kosten der Zwischenablesung, sind das Verwaltungskosten des Vermieters, soweit der
+  Mietvertrag nichts anderes regelt (BGH VIII ZR 19/07). Beim Auslesen der Messdienstabrechnung zeigt die Prüfansicht
+  sie an der Zeile des Nutzers gesondert und nimmt sie aus seinem Betrag heraus; mit dem Haken „Laut Mietvertrag
+  trägt der Mieter die Gebühr“ bleibt sie darin. Der Betrag der Position ändert sich nicht, die Gebühr liegt mit dem
+  Rest beim Vermieter. Kostenformular, Anleitung und Lexikon sagen dasselbe für die Eingabe von Hand
+  ([#713](https://github.com/speedone/mietfuchs/issues/713)).
 - Einzelbeträge vom Messdienst: Nimmt der Messdienst die Vorauszahlungen in seine Abrechnung auf, nennt er je Mieter
   Kosten, Vorauszahlung und eine Nachzahlung oder ein Guthaben. Kostenformular, Prüfansicht des Auslesens, Lexikon und
   Anleitung sagen jetzt ausdrücklich, dass die Kosten einzutragen sind und nicht dieser Saldo (sonst wäre die
