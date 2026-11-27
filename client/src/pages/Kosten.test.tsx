@@ -1155,3 +1155,67 @@ test('Allgemeinverbrauch (#98): ohne Wahl wie bisher, Speichern sendet null', as
   await waitFor(() => expect(sent.length).toBe(1))
   expect(sent[0]?.body).toMatchObject({ key: 'meter', meterRest: null })
 })
+
+// #724: Die Rechnung des Schornsteinfegers bei eigener Heizkostenabrechnung. Das Formular fragt und stellt auf Wunsch um;
+// angezeigt und gespeichert sind dieselben Werte.
+test('#724: „Schornsteinfeger“ neben einer zentralen Anlage mit eigener Heizkostenabrechnung: Frage mit Knopf, der auf „Heizung und Warmwasser“ mit dem Teil Betrieb umstellt', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  }]
+  await openForm()
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Schornsteinfeger 2025' } })
+  expect(screen.queryByText('Gehört die Rechnung zur zentralen Heizung?')).toBeNull()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Schornsteinfeger' } })
+  expect(await screen.findByText('Gehört die Rechnung zur zentralen Heizung?')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Auf „Heizung und Warmwasser“ umstellen' }))
+  await waitFor(() => expect(select(/Kostenart/i).value).toBe('Heizung und Warmwasser'))
+  expect(screen.queryByText('Gehört die Rechnung zur zentralen Heizung?')).toBeNull()
+  expect((screen.getByLabelText(/Beschreibung/i) as HTMLInputElement).value).toBe('Schornsteinfeger 2025')
+  expect(select(/^Teil der Heizkosten$/).value).toBe('operating')
+  expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem')
+  // Die Anlage bereitet kein Warmwasser: Das einzige Ziel steht im Feld und im Zustand.
+  await waitFor(() => expect(select(/^Ziel(?: \(beim Mieterwechsel\))?$/).value).toBe('heating'))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ category: 'Heizung und Warmwasser', description: 'Schornsteinfeger 2025', key: 'heatingSystem', heatingPart: 'operating', heatingTarget: 'heating', amountCents: 10000 })
+})
+
+test('#724: ohne eigene Heizkostenabrechnung fragt „Schornsteinfeger“ nicht', async () => {
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Schornsteinfeger' } })
+  expect(screen.queryByText('Gehört die Rechnung zur zentralen Heizung?')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Auf „Heizung und Warmwasser“ umstellen' })).toBeNull()
+})
+
+// Durchsicht von #724, S2: Der Knopf leert „nicht vereinbart“, denn der Server lehnt es bei Heizkosten ab. Vorher still;
+// jetzt nennt eine Zeile die Mietverhältnisse und sagt, dass ihr Anteil danach nach der Heizkostenverordnung geht.
+test('#724 Durchsicht S2: Umstellen mit „nicht vereinbart“: eine Zeile nennt das Mietverhältnis, gespeichert wird ohne', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  }]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS_258} settings={null} tenancies={mieter258()} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Schornsteinfeger' } })
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Schornsteinfeger 2025' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '120,00' } })
+  fireEvent.click(unitBox('EG links'))
+  fireEvent.click(screen.getByLabelText('Steht nicht im Mietvertrag von Anna Becker. Den Anteil trägt der Vermieter.'))
+  const zeile = 'Für Anna Becker war „Schornsteinfeger“ als nicht im Mietvertrag vereinbart erfasst. Nach dem Umstellen wird der Anteil dieses Mietverhältnisses mit den Heizkosten nach der Heizkostenverordnung verteilt; bei „Heizung und Warmwasser“ gibt es die Angabe „nicht vereinbart“ nicht.'
+  expect(screen.queryByText(zeile)).toBeNull()
+  fireEvent.click(await screen.findByRole('button', { name: 'Auf „Heizung und Warmwasser“ umstellen' }))
+  await waitFor(() => expect(select(/Kostenart/i).value).toBe('Heizung und Warmwasser'))
+  expect(screen.getByText(zeile)).toBeTruthy()
+  await waitFor(() => expect(select(/^Ziel(?: \(beim Mieterwechsel\))?$/).value).toBe('heating'))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ category: 'Heizung und Warmwasser', key: 'heatingSystem' })
+  expect(sent[0]?.body.notAgreedTenancyIds ?? null).toBeNull()
+})

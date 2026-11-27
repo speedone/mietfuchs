@@ -343,3 +343,19 @@ test('Wohnung ohne Gerät für einen Topf: ihre Grenzen nennen den Topf, die üb
   // Mit allen Geräten bleibt der Ausweis, wie er war.
   assert.ok(selfOf(computeSettlement(selfSnapshot())).units.every((u) => u.boundaries.every((b) => b.noDevicePots === undefined)))
 })
+
+// #723: Was die Berechnung ohne Skala tut. Sie rechnet nicht mit einer Annahme (etwa „wie abgelesen“): Schon ein Gerät
+// ohne Skala sperrt die Verteilung der ganzen Anlage, der Fehler nennt das Gerät, und die Heizkosten bleiben beim Vermieter.
+test('#723: ein einziger Heizkostenverteiler ohne Skala: Fehler nennt Gerät und Wohnung, kein Mieter trägt Heizkosten, nichts wird angenommen', () => {
+  const mit = asHca(selfSnapshot())
+  const ohneSkala: Snapshot = { ...mit, meters: mit.meters.map((m) => (m.id === 'wz-b' ? { ...m, hcaScale: null, ratingFactor: null } : m)) }
+  const s = computeSettlement(ohneSkala)
+  const n = s.notices.find((x) => x.code === 'heating.hca-factor-missing') ?? assert.fail(`kein Fehler, sondern: ${codes(s).join(', ')}`)
+  assert.equal(n.level, 'error')
+  assert.match(n.text, /Bei diesem Heizkostenverteiler fehlt „Wärme B“ \(B\): die Skala\./)
+  assert.match(n.text, /Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht/)
+  assert.equal(selfOf(s).ok, false)
+  // Kein Mieter trägt eine Heizposition; alle 6.660,00 € stehen beim Vermieter.
+  assert.deepEqual(s.statements.map((st) => st.totalShareCents), [0, 0, 0, 0])
+  assert.equal(s.landlord.totalCents, 666000)
+})

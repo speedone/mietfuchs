@@ -236,6 +236,16 @@ export function captureOf(p: { capture?: CaptureMethod | null; selfSpans?: reado
   return span?.capture ?? p.capture ?? 'heatMeter'
 }
 
+// Gilt die eigene Heizkostenabrechnung in der Heizperiode `key`? In jedem ihrer Zeiträume, der laufende nur,
+// solange die Anlage selbst abrechnet; ohne Zeiträume gilt die Art der Anlage. Eine Stelle für Server (Schnappschuss,
+// `guardHeatingSystem`) und Kostenformular (`chimneySweepPlants`, Durchsicht von #724, M2).
+export type SelfSpanned = { method: string; selfSpans?: readonly SelfSpanRange[] }
+export function selfActive(p: SelfSpanned, key: string): boolean {
+  const spans = p.selfSpans ?? []
+  if (spans.length === 0) return p.method === 'self'
+  return spans.some((s) => key >= s.from && (s.until === null ? p.method === 'self' : key < s.until))
+}
+
 // Wie das Warmwasser in einer Heizperiode bereitet wird (Durchsicht von #241, I2), nach demselben Muster.
 export function hotWaterOf(p: { hotWater?: HotWater | null; selfSpans?: readonly SelfSpanRange[] }, key: string): HotWater {
   const span = (p.selfSpans ?? []).find((s) => key >= s.from && (s.until === null || key < s.until))

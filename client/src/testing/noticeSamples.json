@@ -256,6 +256,10 @@
   "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Positionen der Lieferung „Gas 2025/2026“ (15.03.2025–14.03.2026) ergeben zusammen -500,00 €. Brennstoff kann nicht weniger als nichts kosten; eine solche Lieferung ist eine Gutschrift oder Stornorechnung ohne die Rechnung, die sie berichtigt. Mietfuchs rechnet ihren Zeitraum deshalb als nicht abgedeckt, nimmt sie nicht als Vorlage für Schätzungen und zählt keinen CO₂-Ausstoß für sie. Den Betrag verteilt Mietfuchs nach dem Verbrauch auf die Heizperioden ihres Zeitraums, damit die Gutschrift bei den Mietern ankommt (Auslegung nach dem Verbrauchsprinzip, § 7 Abs. 2 HeizkostenV). Gehört die Gutschrift zu einer anderen Lieferung, ordnen Sie sie auf der Seite Heizkosten dort zu; steht dort der Zahlbetrag nach Abzug der Abschläge, tragen Sie stattdessen die Kosten des Abrechnungszeitraums ein."
  },
  {
+  "code": "fuel.delivery-unlinked",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Lieferung „Gas 2025/2026“ (01.05.2025–30.04.2026) ist mit keiner Kostenposition verknüpft. Mietfuchs kennt ihren Rechnungsbetrag deshalb nicht: Die Abrechnung der Mieter nennt die Lieferung ohne Betrag, und abgegrenzt wird nichts. In Frage kommt die Position „Gas“ über 6.500,00 €. Verknüpfen Sie die Position auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung."
+ },
+ {
   "code": "fuel.estimate-overcharged",
   "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Für 2024/2025 war 2.569,08 € geschätzt; tatsächlich entfallen nur 983,39 €. Die Mieter dieser Heizperiode haben 1.585,69 € zu viel getragen, hier: Mieter A (A) 951,41 €, Mieter B1 (B) 528,28 € und Mieter B2 (B) 106,00 €. Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung. Bitte prüfen Sie sie. Eine Gutschrift ist jederzeit zulässig und wird empfohlen. Öffnen Sie die Abrechnung 2024/2025 wieder oder erfassen Sie die Gutschrift; bis dahin steht der Betrag bei Ihnen als Abweichung von der Schätzung."
  },
@@ -346,6 +350,10 @@
  {
   "code": "heating.change-split-time",
   "text": "Heizanlage, Heizperiode 2025: Beim Mieterwechsel teilen Sie die übrigen Heizkosten zeitanteilig. Die Heizkostenverordnung lässt auch die Gradtagszahlen zu, nach denen ein Wintermonat mehr wiegt als ein Sommermonat (§ 9b Abs. 2 HeizkostenV); beides ist zulässig. Mieter A1 (A): zeitanteilig 985,06 €, nach Gradtagen 1.078,84 €; Leerstand in A (01.06.2025 bis 31.08.2025): zeitanteilig 195,44 €, nach Gradtagen 68,21 €; Mieter A2 (A): zeitanteilig 745,81 €, nach Gradtagen 779,26 €. Den Leerstand teilt Mietfuchs wie einen Nutzerwechsel, denn für die leeren Räume sind Sie der Nutzer (Auslegung von Mietfuchs). Eine abweichende Vereinbarung im Mietvertrag geht vor (§ 9b Abs. 4 HeizkostenV)."
+ },
+ {
+  "code": "heating.chimney-sweep-central",
+  "text": "„Schornsteinfeger 2025“ (120,00 €) wird als „Schornsteinfeger“ nach dem Schlüssel „Wohnfläche“ verteilt. Die Kosten der Reinigung der Anlage und der Messungen nach dem Bundes-Immissionsschutzgesetz gehören zum Betrieb der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2 HeizkostenV). Kehrgebühren gehören nur dann zur Kostenart „Schornsteinfeger“, wenn sie nicht schon bei den Heizkosten stehen (§ 2 Nr. 12 BetrKV). Betrifft die Rechnung die zentrale Heizung, stellen Sie die Position im Kostenformular auf „Heizung und Warmwasser“ mit dem Teil „Betrieb, Wartung, Strom der Heizung“ um. Für Kaminöfen, Gasthermen einzelner Wohnungen und andere Feuerstätten bleibt sie, wie sie ist."
  },
  {
   "code": "heating.consumption-share",

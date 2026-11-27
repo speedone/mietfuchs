@@ -18,6 +18,9 @@ export const INFORMATIONAL: ReadonlySet<string> = new Set(['basis.unit-zero', 'b
   // Folge-PR zu #252 (#224, Entscheidung F6): Der Hinweis trifft auch den rechtmäßigen Fall „eigener Zähler,
   // Vermieter trägt den Strom selbst“ und lässt sich ohne Buchung nicht beheben; er färbt deshalb nicht.
   'heating.operating-power-missing',
+  // #724: Schornsteinfeger neben einer zentralen Heizanlage. Der Hinweis trifft auch die Rechnung für Kaminöfen oder
+  // Gasthermen einzelner Wohnungen, die zu Recht unter „Schornsteinfeger“ steht, und lässt sich dort nicht abstellen.
+  'heating.chimney-sweep-central',
   // Durchsicht des Zweigs fix/heizung-hinweise: Heizkosten ganz nach Zählern. Mit einer rechtsgeschäftlichen Bestimmung
   // nach § 10 HeizkostenV ist das rechtmäßig, und das Modell kennt sie nicht; der Hinweis ließe sich nie abstellen.
   'heating.all-by-consumption',

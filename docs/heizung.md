@@ -200,6 +200,21 @@ Gradtage des Orts in `degree_day_values`. CO₂-Merkmale an der Anlage (`non_res
   Heizwertangaben, `unfrozenAside`), Ablesungen des Versorgungszählers in abgeschlossenen
   Heizperioden (`guardSupplyReading`), und Lösen, Umhängen, Verschieben, Löschen der **letzten**
   Position einer Lieferung mit eingefrorenem Teil ≠ 0.
+- **Lieferung ohne Position** (#722, `fuel.delivery-unlinked`, warning, Ziel Heizkosten): Zeigt keine Position auf eine
+  Lieferung, die die Heizperiode berührt (auch keine aus einem anderen Zeitraum), kennt Mietfuchs ihren Betrag nicht. Die
+  Positionen werden trotzdem verteilt, ganz in ihrem Zeitraum; der Hinweis nennt die Lieferungen und die Positionen, die
+  in Frage kommen (Heizpositionen der Anlage ohne Lieferung, Teil Brennstoff oder ohne Angabe). **Zugeordnet wird nie von
+  selbst**, auch nicht bei einer Lieferung und einer Position: Die Verknüpfung grenzt ab und verschiebt Geld zwischen
+  Heizperioden, und ob die Position ein Abschlag einer anderen Rechnung ist, weiß nur der Vermieter. **Endet die Lieferung
+  in einer späteren Heizperiode**, nennt der Hinweis diese und dass dort zu verknüpfen ist (nur dort zeigt die Karte
+  „Lieferungen“ sie, `guardFuelLink`); den Teil für diese Heizperiode bucht danach der Übertrag `fuelCarry`. Ein Rat zum
+  Erfassen stünde dort falsch (Durchsicht M1: eine zweite Position, ganz verteilt). Ohne Kandidatin warnt der Satz davor,
+  eine schon in einem anderen Zeitraum erfasste Rechnung ein zweites Mal zu erfassen (S3; den Zeitraum einer Position
+  ändert das Kostenformular nicht). Ab zwei Anlagen ist eine Brennstoffposition ohne Anlage Kandidatin mit dem Schritt,
+  sie im Kostenformular der Anlage zuzuordnen, denn die Verknüpfung zeigt nur Positionen der Anlage (S4). Nicht beim Messdienst
+  (der Betrag steht an der Lieferung), nicht bei einer Schätzung, nicht beim Vorrat (dort `fuel.stock-unlinked`). Der
+  Druckblock „Brennstoff“ nennt eine Lieferung mit Betrag 0 ohne „= … von …“ (client/src/fuelView.ts, an der Zahl
+  entschieden, damit es auch für eingefrorene Stände gilt).
 - **Rückfrage beim Abschluss**: Bei einer Lücke mit Schätzvorschlag 409 mit `fuelGaps`;
   `fuelEstimates: 'estimate' | 'none'` entscheidet, in der Oberfläche ist **Abwarten** die Vorgabe
   (höchstrichterlich nicht entschieden). Rechnen, Schätzen, neu Rechnen, Abschließen und Einfrieren
@@ -369,6 +384,26 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   Fläche, § 9a Abs. 2, 0 oder 100 %) und ohne Betrag.
 - **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel Gradtage statt Tage; kombinierte
   Positionen bleiben nach Tagen.
+- **Schornsteinfeger neben der zentralen Anlage** (#724): Die Kostenart „Schornsteinfeger“ (§ 2 Nr. 12 BetrKV) verteilt
+  nach ihrem freien Schlüssel. Betrifft die Rechnung die zentrale Heizung, nennt § 7 Abs. 2 HeizkostenV „die Kosten der
+  Messungen nach dem Bundes-Immissionsschutzgesetz“ und die „der Reinigung der Anlage“ unter den Kosten des Betriebs der
+  zentralen Heizungsanlage einschließlich der Abgasanlage; Nr. 12 gilt für Kehrgebühren nur, „soweit sie nicht bereits
+  als Kosten nach Nummer 4 Buchstabe a berücksichtigt sind“ (beides am amtlichen Text gelesen am 27.11.2026; „Kehr- und
+  Überprüfungsgebühren“ stehen nicht in § 7 Abs. 2, deshalb nennt kein Text sie dort). **Gefragt wird, umgebucht nie**:
+  Ob die Rechnung die Heizung betrifft oder Kaminöfen und Gasthermen einzelner Wohnungen, weiß nur der Vermieter. Das
+  Kostenformular fragt, wenn die eigene Heizkostenabrechnung im Zeitraum der Position gilt (`chimneySweepQuestion`,
+  `chimneySweepPlants` mit `selfActive` aus shared/heatingPeriod.ts, derselben Stelle wie `guardHeatingSystem` und der
+  Schnappschuss; bei eigener Heizperiode mit deren Vorgabe; Durchsicht M2: sonst lehnte der Server mit 400 ab), nicht beim
+  Schlüssel „direkt“. Knopf `toCentralHeating` in client/src/costForm.ts: Kostenart, Schlüssel `heatingSystem`, Teil
+  `operating`; das Ziel wählt der Vermieter, wenn es mehr als eines gibt. „Nicht vereinbart“ geht nicht mit (bei
+  Heizkosten 400); eine Zeile nennt die Mietverhältnisse (`notAgreedDroppedText`, S2). Die Berechnung meldet je Position
+  `heating.chimney-sweep-central` (hint, `INFORMATIONAL`, Ziel die Position) bei `self` und, mit dem Satz zur doppelten
+  Verteilung statt des Rats zum Umstellen, bei `service`; nur in der Gesamtberechnung, nur neben einer laufenden zentralen
+  Anlage des Hauses, deren Art in diesem Zeitraum gilt (`selfAt`), nicht bei freien Schlüsseln, Etagenheizung, Abrechnung
+  einer Gemeinschaft, Direktzuordnung an eine Wohnung oder wenn kein Mieter etwas davon trägt. **Kein Betriebsstrom**
+  (S1): Eine Heizposition „Betrieb“, die dem Namen nach eine Rechnung des Schornsteinfegers ist (`chimneySweepLike` in
+  server/src/operatingPower.ts: Schornstein, Kamin, Kehr-, Abgas, Immission, Feuerstätte, ohne „Strom“), beantwortet die
+  Frage nach dem Betriebsstrom nicht; `heating.operating-power-missing` nennt sie dann.
 - **Invarianten** (fuel-invariant.test.ts, fuel-stock-invariant.test.ts) mit Varianten für eigene
   Abrechnung, Warmwasser, Heizkostenverteiler, Ablesedienst, Kesseltausch, Schätzung und Ausnahmen:
   Gewichte verteilen jeden Topf ganz, jede Lieferung steht genau einmal in den Zeilen, α, Q und
@@ -417,6 +452,17 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine
   abgeschlossene Heizperiode überdecken.
+- **Die Skala ist Pflicht** (#723), im Formular (`scaleRequired`, `SCALE_MISSING` in client/src/meterForm.ts, Feld
+  `hcaScale`) und am Server (`guardMeter`): für ein neues Gerät, beim Wechsel der Sparte zum Heizkostenverteiler und für
+  eine gespeicherte Skala, die geleert würde (auch durch einen unbekannten Wert). Wie bei der Einheit bleibt ein Gerät,
+  das schon ohne Skala gespeichert ist, speicherbar (`keptScale`; krumm, nicht kaputt), das Feld sagt dann, was fehlt
+  (`meterScaleHint`); Wiederherstellen und Umstieg laufen nicht durch `guardMeter`. **Ausnahme: gespeicherter Faktor ohne
+  Skala** (Altbestand, Durchsicht S6): Der Faktor bleibt beim Speichern erhalten (`hcaFieldsBody`; vorher fiel er still weg,
+  bei Ablesungen in einer abgeschlossenen Heizperiode mit 409), und das Formular verlangt die Skala mit
+  `SCALE_MISSING_WITH_FACTOR`, denn erst sie sagt, ob der Faktor gilt. Der Server verlangt sie dort nicht. Der Bewertungsfaktor bleibt bei der
+  Einheitsskala freiwillig beim Speichern (fehlt er, meldet die Abrechnung es wie bisher). Die Berechnung nimmt ohne
+  Skala nichts an: Schon ein Gerät ohne Skala sperrt die Verteilung der Anlage (Test in calc-hkv.test.ts). Die
+  Erkennungshilfe am Feld (`SCALE_HELP`) nennt nur, was aus der Bedeutung der Skalen folgt, keine Merkmale am Gerät.
 - **Stichtagswert** ist eine Ablesung mit `replacement` und Wert 0 (das Ableseergebnis zeigt
   `oldEndValue`); eine Rücksetzung mitten in der Heizperiode ergibt `heating.device-cutoff`.
 - **Gezählt wird ein Gerät nur in Heizperioden, die seine Ablesungen überdecken** (`coversPeriod`).

@@ -1006,6 +1006,7 @@ const requiredOutsideDrawer = (src: string): string[] => {
 // zeigt dann der Drawer. Mit Grund.
 const REQUIRED_HELPERS_IN_DRAWER = new Map<string, string>([
   ['./components/FuelCard.tsx', 'text() zeichnet die Felder der Lieferung, aufgerufen nur im Seitenfenster (#346 Schritt 7)'],
+  ['./components/HcaFields.tsx', 'Skala und Bewertungsfaktor eines Heizkostenverteilers, nur im Seitenfenster des Zählers (#723)'],
   ['./components/PropertyFields.tsx', 'die Felder eines Objekts, nur in den Seitenfenstern „Neues Objekt“ und „Objekt bearbeiten“'],
   ['./components/RentIncreaseDrawer.tsx', 'LetterInputs zeichnet die Eingaben des Schreibens einer Mieterhöhung, aufgerufen nur im Seitenfenster (#191 PR 3)'],
 ])

@@ -6,6 +6,7 @@ import { calendarPeriod, calendarYearPeriod, periodKey } from '../../shared/peri
 import { euro } from '../../shared/costItem.ts'
 import type { CostKey, Meter, MeterRest, MeterType, SplitPreviewPart, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
+import { CHIMNEY_SWEEP_QUESTION, chimneySweepPlants, chimneySweepQuestion, toCentralHeating } from './costForm'
 import {
   EMPTY_ITEM_FORM,
   needsSplitCheck,
@@ -1513,5 +1514,55 @@ describe('Heizposition bei Abrechnung durch einen Messdienst', () => {
   test('der Satz zum Rest nennt neben dem Leerstand den vorab abgezogenen CO₂-Anteil', () => {
     expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
       .toBe('Summe 700,00 € - den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand oder einen CO₂-Anteil, den der Messdienst vorab abgezogen hat)')
+  })
+})
+
+// #724: Die Rechnung des Schornsteinfegers bei einer zentralen Heizanlage mit eigener Heizkostenabrechnung.
+describe('#724: Schornsteinfeger bei zentraler Heizung', () => {
+  const plant = (over: Partial<Parameters<typeof chimneySweepPlants>[0][number]> = {}) => ({ id: 'hp1', supply: 'central' as const, method: 'self' as const, source: 'building' as const, endsOn: null, ...over })
+  const jahr = calendarYearPeriod(2025)
+  const form = { ...EMPTY_ITEM_FORM, category: 'Schornsteinfeger', description: 'Schornsteinfeger 2025', amount: '120,00', key: 'units' as const, participants: ['u1'], notAgreed: ['t1'], directUnitId: 'u1' }
+
+  test('gefragt wird nur bei „Schornsteinfeger“ und nur neben einer laufenden zentralen Anlage mit eigener Heizkostenabrechnung', () => {
+    expect(chimneySweepQuestion(form, [plant()], jahr)).toBe(CHIMNEY_SWEEP_QUESTION)
+    expect(CHIMNEY_SWEEP_QUESTION.text).toContain('§ 7 Abs. 2 HeizkostenV')
+    expect(CHIMNEY_SWEEP_QUESTION.text).toContain('Kaminöfen, Gasthermen einzelner Wohnungen')
+    expect(CHIMNEY_SWEEP_QUESTION.button).toBe('Auf „Heizung und Warmwasser“ umstellen')
+    expect(chimneySweepQuestion({ ...form, category: 'Gartenpflege' }, [plant()], jahr)).toBeNull()
+    expect(chimneySweepQuestion(form, [], jahr)).toBeNull()
+    // Messdienst und freie Schlüssel: Das Umstellen ergäbe dort keine Position nach Heizkostenverordnung.
+    expect(chimneySweepQuestion(form, [plant({ method: 'service' })], jahr)).toBeNull()
+    expect(chimneySweepQuestion(form, [plant({ method: 'manual' })], jahr)).toBeNull()
+    // Etagenheizung und stillgelegte Anlage.
+    expect(chimneySweepQuestion(form, [plant({ supply: 'perUnit' })], jahr)).toBeNull()
+    expect(chimneySweepQuestion(form, [plant({ endsOn: '2024-12-31' })], jahr)).toBeNull()
+    expect(chimneySweepQuestion(form, [plant({ endsOn: '2025-03-31' })], jahr)).toBe(CHIMNEY_SWEEP_QUESTION)
+  })
+
+  test('Umstellen: Kostenart, Schlüssel und Teil „Betrieb“; Beschreibung und Betrag bleiben; nichts von der alten Zuordnung geht mit', () => {
+    const nach = toCentralHeating(form)
+    expect(nach).toMatchObject({ category: 'Heizung und Warmwasser', key: 'heatingSystem', heatingPart: 'operating', heatingTarget: '', description: 'Schornsteinfeger 2025', amount: '120,00', participants: null, notAgreed: [], named: [], pendingWhy: [], directUnitId: '', meterType: '' })
+    // Die Anlage der Position: die einzige, die in Frage kommt, sonst bleibt die Wahl beim Vermieter.
+    expect(chimneySweepPlants([plant(), plant({ id: 'hp2', method: 'service' })], jahr).map((p) => p.id)).toEqual(['hp1'])
+    expect(chimneySweepPlants([plant(), plant({ id: 'hp2' })], jahr).map((p) => p.id)).toEqual(['hp1', 'hp2'])
+  })
+
+  // Durchsicht M2: Die eigene Heizkostenabrechnung gilt erst ab 2026. Für eine Position 2025 nähme der Server den
+  // Schlüssel „nach Heizkostenverordnung“ nicht an (400), und die Berechnung meldete `heating.target-invalid`.
+  test('Durchsicht M2: gefragt wird nur, wenn die eigene Heizkostenabrechnung im Zeitraum der Position gilt', () => {
+    const ab2026 = plant({ selfSpans: [{ from: periodKey('2026-01'), until: null }] })
+    expect(chimneySweepQuestion(form, [ab2026], jahr)).toBeNull()
+    expect(chimneySweepQuestion(form, [ab2026], calendarYearPeriod(2026))).toBe(CHIMNEY_SWEEP_QUESTION)
+    // Zurückgeschaltet zum 01.01.2026: 2025 rechnet noch nach der Verordnung, 2026 nicht mehr.
+    const bis2026 = plant({ method: 'manual', selfSpans: [{ from: periodKey('2024-01'), until: periodKey('2026-01') }] })
+    expect(chimneySweepQuestion(form, [bis2026], jahr)).toBe(CHIMNEY_SWEEP_QUESTION)
+    expect(chimneySweepQuestion(form, [bis2026], calendarYearPeriod(2026))).toBeNull()
+    // Eigene Heizperiode der Anlage: gefragt wird mit dem Schlüssel, den die Position bekäme.
+    expect(chimneySweepPlants([ab2026], jahr, () => periodKey('2026-01')).map((p) => p.id)).toEqual(['hp1'])
+  })
+
+  // Durchsicht S5: Direkt einer Wohnung zugeordnet ist es die Feuerstätte dieser Wohnung; die Berechnung fragt dort nicht.
+  test('Durchsicht S5: beim Schlüssel „direkt“ fragt das Formular nicht', () => {
+    expect(chimneySweepQuestion({ ...form, key: 'direct' }, [plant()], jahr)).toBeNull()
   })
 })

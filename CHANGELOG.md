@@ -8,6 +8,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Schornsteinfeger bei zentraler Heizung: Rechnen Sie die Heizkosten einer zentralen Heizanlage selbst nach der
+  Heizkostenverordnung ab, fragt das Kostenformular bei der Kostenart „Schornsteinfeger“, ob die Rechnung zur zentralen
+  Heizung gehört, und stellt die Position auf Wunsch auf „Heizung und Warmwasser“ mit dem Teil Betrieb um; Beschreibung
+  und Betrag bleiben. Die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz und der Reinigung der Anlage
+  zählen zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2
+  HeizkostenV) und werden dann mit den Heizkosten verteilt statt nach Wohnfläche. Unter „Zu prüfen“ steht dazu ein
+  Hinweis je Position mit ihrem Betrag, auch wenn ein Messdienst abrechnet (dort mit dem Satz, dass die Rechnung sonst
+  zweimal verteilt sein kann). Gefragt wird nur in Zeiträumen, in denen die eigene Heizkostenabrechnung gilt; war die
+  Rechnung für einzelne Mietverhältnisse als nicht vereinbart erfasst, sagt das Formular nach dem Umstellen, dass deren
+  Anteil mit den Heizkosten verteilt wird. Eine umgestellte Rechnung des Schornsteinfegers gilt nicht als erfasster
+  Betriebsstrom der Heizung. Umgebucht wird nichts von selbst: Für Kaminöfen und Gasthermen einzelner Wohnungen
+  bleibt es bei „Schornsteinfeger“ ([#724](https://github.com/speedone/mietfuchs/issues/724)).
 - Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
   für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach
   § 560 Abs. 4 BGB auch die beiden Teile mit ihrem bisherigen Betrag. Der Vorschlag teilt sich nach den Kosten dieser
@@ -175,6 +187,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Heizkostenverteiler ohne Skala: Unter „Zähler & Stände“ ließ sich ein Heizkostenverteiler anlegen, ohne die Skala zu
+  wählen; in der Liste stand danach nur „Skala fehlt“. Ohne Skala verteilt die eigene Heizkostenabrechnung die
+  Heizkosten nicht (sie bleiben mit einem Fehler unter „Zu prüfen“ beim Vermieter). Die Skala ist jetzt eine
+  Pflichtangabe, im Formular mit Meldung am Feld und ebenso am Server. Ein Gerät, das schon ohne Skala gespeichert ist,
+  bleibt bearbeitbar; das Feld sagt dort, dass die Skala fehlt. Ist für ein solches Gerät ein Bewertungsfaktor
+  gespeichert, bleibt er beim Speichern erhalten (vorher fiel er still weg), und das Formular verlangt die Skala, denn
+  erst sie sagt, ob der Faktor gilt. Die Hilfe am Feld nennt, wo die Skala steht, auch ohne
+  Messdienst: in der Montage- oder Bedienungsanleitung des Herstellers oder im Ableseprotokoll, und woran eine frühere
+  Heizkostenabrechnung sie erkennen lässt ([#723](https://github.com/speedone/mietfuchs/issues/723)).
+- Lieferung ohne verknüpfte Kostenposition: Stand eine Brennstoffrechnung auf der Seite Heizkosten als Lieferung und
+  ihr Betrag als Kostenposition, ohne dass beide verknüpft waren, nannte die gedruckte Abrechnung unter „Brennstoff“
+  „0,00 € von 0,00 €“, und nichts wies darauf hin. Jetzt steht unter „Zu prüfen“ ein Hinweis, der die Lieferung und die
+  in Frage kommende Position nennt und zur Karte „Lieferungen“ führt; die Abrechnung nennt die Lieferung bis dahin mit
+  Anteil und CO₂-Ausstoß, aber ohne Betrag. Endet die Rechnung erst in der folgenden Heizperiode, nennt der Hinweis
+  diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
+  selbst herüber. Kein Betrag der Abrechnung ändert sich
+  ([#722](https://github.com/speedone/mietfuchs/issues/722)).
 - Vorauszahlung getrennt nach Heizung und übrigen Nebenkosten: Rechnet die Heizung im selben Zeitraum ab wie das
   Objekt, ließ sich die Vorauszahlung nicht aufteilen, weil der Knopf dafür nie erschien. Die Karte „Heizung“ der
   Stammdaten bietet jetzt „Vorauszahlung aufteilen“ an und erklärt, wozu; danach führen die Mietverhältnisse mit

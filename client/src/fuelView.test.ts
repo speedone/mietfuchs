@@ -39,3 +39,10 @@ test('Nachprüfung G-b: Nur eine Lücke, keine Rechnung und kein Übertrag: der 
   expect(nurLuecke.rows).toEqual([])
   expect(nurLuecke.notes).toEqual(['Für 01.05.2025–30.04.2026 lag keine Rechnung vor; diese Kosten sind nicht enthalten, eine Nachberechnung bleibt vorbehalten.'])
 })
+
+test('#722: Lieferung ohne verknüpfte Kostenposition steht mit Anteil und Ausstoß, aber ohne „0,00 € von 0,00 €“', () => {
+  const erste = brennstoff.deliveries[0] ?? assert.fail('keine Lieferung')
+  const ohneBetrag = fuelBlock(anlage({ ...brennstoff, deliveries: [{ ...erste, method: 'inside', sharePermille: 1000, split: false, amountCents: 0, inPeriodCents: 0 }], carries: [] })) ?? assert.fail('kein Block')
+  expect(ohneBetrag.rows[0]).toEqual({ label: 'Gas 2025/2026 (15.03.2025–14.03.2026)', value: '1.000 ‰ ganz in der Heizperiode, 4.588,3 kg CO₂' })
+  expect(ohneBetrag.rows.map((r) => r.value).join(' ')).not.toContain('0,00')
+})

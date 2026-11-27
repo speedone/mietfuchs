@@ -410,6 +410,8 @@ const noticeKinds = {
   'fuel.estimate-settled': { level: 'warning', title: 'Schätzung durch die Rechnung ersetzt', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.estimate-overcharged': { level: 'warning', title: 'Schätzung war zu hoch', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.loose-item': { level: 'hint', title: 'Heizposition ohne Lieferung neben einer Lücke', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'fuelDelivery'] },
+  // #722: Die Lieferung steht auf der Seite Heizkosten, ihr Betrag als Position auf der Seite Kosten, die Verknüpfung fehlt.
+  'fuel.delivery-unlinked': { level: 'warning', title: 'Lieferung ohne Kostenposition', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
   'fuel.cancelled-after-close': { level: 'warning', title: 'Rechnung nach dem Abschluss storniert', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'settlementDeadline'] },
   // #251 (R-4): Der heutige Teil einer abgeschlossenen Heizperiode liegt unter dem eingefrorenen, bis unter 0 €.
   'fuel.reduced-after-close': { level: 'warning', title: 'Rechnung nach dem Abschluss gemindert', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'settlementDeadline'] },
@@ -542,6 +544,9 @@ const noticeKinds = {
   // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
   // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
   'heating.operating-power-deduction-missing': { level: 'hint', title: 'Abzug des Betriebsstroms fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // #724: Rechnung des Schornsteinfegers unter „Schornsteinfeger“ neben einer zentralen Heizanlage, die nach der
+  // Heizkostenverordnung abgerechnet wird. Nur eine Frage: Ob die Rechnung die Heizung betrifft, weiß der Vermieter.
+  'heating.chimney-sweep-central': { level: 'hint', title: 'Schornsteinfeger bei zentraler Heizung', terms: ['heatingCostOrdinance', 'heatingSystem'] },
   // Heizung PR 19, Durchsicht S-2: zentrale Heizung mit Brennstoff beim Mieter, ohne Heizanlage.
   'heating.self-supply-operating-power': { level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', terms: ['operatingPower', 'co2Refund'] },
   'heating.operating-power-bill-missing': { level: 'hint', title: 'Rechnung des Heizungsstromzählers fehlt', terms: ['operatingPower'] },
@@ -611,6 +616,25 @@ function makeNotice(code: NoticeCode, text: string, subject: NoticeSubject | und
   return { code, level: kind.level, title: kind.title, text, ...(subject ? { subject } : {}), ...(kind.rule ? { rule: kind.rule } : {}), terms: kind.terms }
 }
 const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem', id: item.id })
+
+// #724: die Kostenart nach § 2 Nr. 12 BetrKV und der Text des Hinweises `heating.chimney-sweep-central`. `self`: Im
+// Objekt rechnet Mietfuchs eine zentrale Anlage selbst ab (dann lässt sich die Position umstellen); sonst rechnet ein
+// Messdienst ab, und die Rechnung stünde, wenn er sie schon verteilt, zweimal in der Abrechnung. Der Teil heißt wie in
+// der Auswahl des Kostenformulars (`HEATING_PART_OPTIONS` in client/src/costForm.ts).
+const CHIMNEY_SWEEP_CATEGORY = 'Schornsteinfeger'
+function chimneySweepText(c: { description: string; amountCents: number; key: CostKey }, self: boolean): string {
+  // Durchsicht S5: gekürzt (vorher rund 880 Zeichen); der Kern bleibt: § 7 Abs. 2 HeizkostenV am amtlichen Text („Zu den
+  // Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage gehören … der Reinigung der Anlage und
+  // des Betriebsraumes, die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz …“), was zu tun ist, und der Satz
+  // zu Kaminöfen und Gasthermen.
+  return `„${c.description}“ (${fmtCents(c.amountCents)}) wird als „${CHIMNEY_SWEEP_CATEGORY}“ nach dem Schlüssel „${KEY_LABELS[c.key]}“ verteilt. ` +
+    'Die Kosten der Reinigung der Anlage und der Messungen nach dem Bundes-Immissionsschutzgesetz gehören zum Betrieb der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2 HeizkostenV). ' +
+    `Kehrgebühren gehören nur dann zur Kostenart „${CHIMNEY_SWEEP_CATEGORY}“, wenn sie nicht schon bei den Heizkosten stehen (§ 2 Nr. 12 BetrKV). ` +
+    (self
+      ? `Betrifft die Rechnung die zentrale Heizung, stellen Sie die Position im Kostenformular auf „${HEATING_CATEGORY}“ mit dem Teil „Betrieb, Wartung, Strom der Heizung“ um. `
+      : 'Betrifft sie die zentrale Heizung und steht sie schon in der Abrechnung des Messdienstes, wird sie hier ein zweites Mal verteilt. ') +
+    'Für Kaminöfen, Gasthermen einzelner Wohnungen und andere Feuerstätten bleibt sie, wie sie ist.'
+}
 // Der Ausweg, wenn einer Einheit kein Zähler fehlt, weil sie keinen Anschluss hat (#117); wörtlich wie bisher.
 const NO_CONNECTION_HINT = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'
 
@@ -7700,6 +7724,70 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           `Ein Zählerstand allein schließt die Lücke nicht, er macht die Aufteilung der Folgerechnung genauer: Lesen Sie ${zaehler} zum ${fmtDay(g.to)} ab und tragen Sie den Stand auf der Seite Zähler ein; nach Zählerstand teilt Mietfuchs, wenn auch Stände am Tag vor Beginn und am letzten Tag der Rechnung eingetragen sind.`,
         subject)
     }
+    // #722: Eine Lieferung, auf die keine Position zeigt (auch keine aus einem anderen Zeitraum), hat für Mietfuchs keinen
+    // Betrag: Verteilt wird die Position trotzdem, in voller Höhe in ihrem Zeitraum, aber der Druckblock „Brennstoff“
+    // nannte „0,00 € von 0,00 €“, und nichts wies darauf hin. Zugeordnet wird nie von selbst: Eine Verknüpfung grenzt ab
+    // und verschiebt damit Geld zwischen Heizperioden, und ob die Position zu dieser Rechnung gehört (und nicht ein
+    // Abschlag einer anderen ist), weiß nur der Vermieter. Nicht beim Messdienst (der Betrag steht an der Lieferung), nicht
+    // bei einer Schätzung (sie trägt ihren Betrag selbst); Storno und Gutschrift haben Positionen.
+    if (plant.method !== 'service') {
+      const linked = new Set((fuel?.items ?? []).map((c) => c.fuelDeliveryId))
+      const bare = result.lines.filter((l) => !l.estimated && !linked.has(l.deliveryId))
+      if (bare.length > 0) {
+        // Durchsicht M1: Eine Position steht in der Heizperiode, in der die Rechnung endet (`guardFuelLink`), und nur dort
+        // zeigt die Karte „Lieferungen“ die Lieferung zur Verknüpfung. Endet sie in einer späteren Heizperiode, ist dort zu
+        // verknüpfen; den Teil für diese Heizperiode bucht Mietfuchs dann als Übertrag herüber (`fuelCarry`). Ein Rat, sie
+        // hier zu erfassen, ergäbe eine zweite Position, die ganz verteilt würde.
+        const rulesH = plantRules(wayOf(plant), objectRules)
+        const endsIn = (l: (typeof bare)[number]): BillingPeriod | null => {
+          if (!l.to) return null
+          const h = periodContaining(rulesH, l.to)
+          return h.key === period.key ? null : h
+        }
+        const here = bare.filter((l) => endsIn(l) === null)
+        const later = new Map<string, { h: BillingPeriod; lines: typeof bare }>()
+        for (const l of bare) {
+          const h = endsIn(l)
+          if (h) later.set(String(h.key), { h, lines: [...(later.get(String(h.key))?.lines ?? []), l] })
+        }
+        const fuelLike = (c: SnapshotCostItem): boolean => c.category === HEATING_CATEGORY && !c.fuelDeliveryId && c.amountCents !== 0
+          && (c.heatingPart === undefined || c.heatingPart === null || c.heatingPart === 'fuel')
+        const candidates = items.filter((c) => fuelLike(c) && (c.heatingPlantId === plant.id || (!c.heatingPlantId && plants.length === 1)))
+        // Durchsicht S4: Ab zwei Anlagen zeigt die Verknüpfung nur Positionen der Anlage (db/co2.ts); eine Position ohne
+        // Anlage kommt in Frage, muss aber zuerst im Kostenformular der Anlage zugeordnet werden.
+        const unassigned = plants.length > 1 ? items.filter((c) => fuelLike(c) && !c.heatingPlantId) : []
+        const one = bare.length === 1
+        const names = andList(bare.map((l) => `„${nameOf(l.deliveryId)}“${l.from && l.to && nameOf(l.deliveryId) !== formatDayRange(l.from, l.to) ? ` (${formatDayRange(l.from, l.to)})` : ''}`))
+        const link = 'auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung'
+        const all = [...candidates, ...unassigned]
+        const hereWay = all.length > 0
+          ? `In Frage ${all.length === 1 ? 'kommt die Position' : 'kommen die Positionen'} ${andList(all.map((c) => `„${c.description}“ über ${fmtCents(c.amountCents)}`))}. ` +
+            (unassigned.length === 0 ? ''
+              : `${all.length === 1 ? 'Sie ist' : `${andList(unassigned.map((c) => `„${c.description}“`))} ${unassigned.length === 1 ? 'ist' : 'sind'}`} noch keiner Heizanlage zugeordnet: ` +
+                `Wählen Sie im Kostenformular bei „Heizanlage“ die Anlage ${plant.name ? `„${plant.name}“` : 'dieser Lieferung'}; erst dann steht ${unassigned.length === 1 ? 'sie' : 'jede'} in der Karte „Lieferungen“ zur Wahl. `) +
+            `Verknüpfen Sie ${all.length === 1 ? 'die' : 'jede'} Position ${link}.`
+          : `Eine Brennstoffposition ohne Lieferung gibt es in diesem Zeitraum nicht. Erfassen Sie den Rechnungsbetrag auf der Seite Kosten als Position „${HEATING_CATEGORY}“ und verknüpfen Sie sie danach ${link}. ` +
+            // Durchsicht S3: Die Rechnung kam spät und steht schon in einem späteren Zeitraum. Einen Zeitraum einer Position
+            // ändert das Kostenformular nicht; verknüpfen lässt sie sich nur in der Heizperiode, in der die Rechnung endet.
+            'Steht die Rechnung schon als Position in einem anderen Zeitraum, erfassen Sie sie nicht ein zweites Mal: Verknüpfen lässt sich nur eine Position der Heizperiode, in der die Rechnung endet. Entfernen Sie die Position dort und erfassen Sie sie in diesem Zeitraum.'
+        const laterWay = [...later.values()].map(({ h, lines }) => {
+          const many = lines.length > 1
+          const hl = periodLabel(h)
+          return `${andList(lines.map((l) => `„${nameOf(l.deliveryId)}“`))} ${many ? 'enden' : 'endet'} erst in der Heizperiode ${hl}. ` +
+            `Die ${many ? 'Positionen' : 'Position'} dafür ${many ? 'gehören' : 'gehört'} in die Heizperiode, in der die Rechnung endet: ` +
+            `Verknüpfen Sie ${many ? 'jede' : 'sie'} in der Heizperiode ${hl} ${link}. ` +
+            `Den Teil für ${label} bucht Mietfuchs danach selbst in diese Heizperiode.`
+        })
+        const way = [
+          ...(here.length > 0 ? [`${later.size > 0 ? `Für ${andList(here.map((l) => `„${nameOf(l.deliveryId)}“`))}: ` : ''}${hereWay}`] : []),
+          ...laterWay,
+        ].join(' ')
+        warn('fuel.delivery-unlinked',
+          `${where}: Die ${one ? 'Lieferung' : 'Lieferungen'} ${names} ${one ? 'ist' : 'sind'} mit keiner Kostenposition verknüpft. ` +
+            `Mietfuchs kennt ${one ? 'ihren Rechnungsbetrag' : 'ihre Rechnungsbeträge'} deshalb nicht: Die Abrechnung der Mieter nennt die ${one ? 'Lieferung' : 'Lieferungen'} ohne Betrag, und abgegrenzt wird nichts. ${way}`,
+          subject)
+      }
+    }
     if (result.looseWithoutRange) {
       warn('fuel.loose-item',
         `${where}: Neben der Lücke steht eine Heizposition dieser Anlage ohne Lieferung und ohne Leistungszeitraum. Ist die Rechnung schon als Position erfasst? Verknüpfen Sie sie auf der Seite Heizkosten mit ihrer Lieferung oder tragen Sie bei der Position den Leistungszeitraum ein. ` +
@@ -10586,6 +10674,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const unitName = snapshot.units.find((u) => u.id === t.unitId)?.name ?? ''
           warn('heating.self-supply-operating-power', selfSupplyPowerText(t.tenantName, unitName, generals), { kind: 'tenancy', id: t.id })
         }
+      }
+    }
+    // #724: Schornsteinfeger neben einer zentralen Heizanlage, die nach der Heizkostenverordnung abgerechnet wird. § 7
+    // Abs. 2 HeizkostenV zählt zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage
+    // „die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz“ und die „der Reinigung der Anlage“; § 2 Nr. 12
+    // BetrKV nennt Kehrgebühren nur, „soweit sie nicht bereits als Kosten nach Nummer 4 Buchstabe a berücksichtigt
+    // sind“ (beides am amtlichen Text gelesen am 27.11.2026). Ob die Rechnung die Heizung betrifft (und nicht Kaminöfen
+    // oder Gasthermen einzelner Wohnungen), weiß nur der Vermieter: gefragt wird, umgebucht nie, keine Zahl ändert sich.
+    // Der Hinweis trifft auch den rechtmäßigen Fall und lässt sich dort nicht abstellen; er färbt deshalb nicht
+    // (INFORMATIONAL in shared/notices.ts). Er schweigt bei freien Schlüsseln (dort verteilt Mietfuchs nicht nach der
+    // Verordnung), bei Etagenheizungen, bei der Abrechnung einer Gemeinschaft, bei einer stillgelegten Anlage, bei einer
+    // Position direkt an einer Wohnung (die Feuerstätte dieser Wohnung) und wenn kein Mieter etwas davon trägt.
+    const centralBilled = plants.filter((p) => (p.supply ?? 'central') === 'central' && p.source === 'building' && p.method !== 'manual' && activeIn(p))
+    if (centralBilled.length > 0) {
+      const self = centralBilled.some((p) => p.method === 'self')
+      for (const c of items) {
+        if (c.category !== CHIMNEY_SWEEP_CATEGORY || c.key === 'direct') continue
+        if (![...statements.values()].some((st) => st.rows.some((r) => r.costItemId === c.id && r.shareCents !== 0))) continue
+        warn('heating.chimney-sweep-central', chimneySweepText(c, self), itemSubject(c))
       }
     }
     // #270: Abzug ohne Verweis, dem Messdienst nach Angabe nicht gemeldet.

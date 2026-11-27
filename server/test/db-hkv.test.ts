@@ -13,7 +13,7 @@ import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../
 import { saveDistribution, setUpSelf } from '../src/db/heatingSelf.ts'
 import { dropIfEmpty, heatingPeriodViews } from '../src/db/co2.ts'
 import { saveServiceValues } from '../src/db/serviceValues.ts'
-import { heatingSelfSpans, heatingServiceValues } from '../src/db/schema.ts'
+import { heatingSelfSpans, heatingServiceValues, meters } from '../src/db/schema.ts'
 import { eq } from 'drizzle-orm'
 import { periodKey } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -32,7 +32,7 @@ async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<voi
 const heatingError = (status: 400 | 409, text: RegExp) => (err: unknown) =>
   err instanceof HeatingError && err.status === status && text.test(err.message)
 
-test('Heizkostenverteiler: Skala und Faktor werden gespeichert und ergänzend geändert; eine unbekannte Skala ergibt null', async () => {
+test('Heizkostenverteiler: Skala und Faktor werden gespeichert und ergänzend geändert; eine unbekannte Skala wird abgelehnt', async () => {
   await withDatabase(async (opened) => {
     await opened.write(async (db) => {
       await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 50, participates: true })
@@ -44,8 +44,9 @@ test('Heizkostenverteiler: Skala und Faktor werden gespeichert und ergänzend ge
     assert.deepEqual([(await meter()).hcaScale, (await meter()).ratingFactor], ['unit', 1.25])
     await opened.write((db) => updateEntity(db, 'meters', 'h1', { hcaScale: 'product', ratingFactor: null }))
     assert.deepEqual([(await meter()).hcaScale, (await meter()).ratingFactor ?? null], ['product', null])
-    await opened.write((db) => updateEntity(db, 'meters', 'h1', { hcaScale: 'linear' }))
-    assert.equal((await meter()).hcaScale ?? null, null)
+    // #723: Eine unbekannte Skala ist keine; eine gespeicherte wird dadurch nicht geleert.
+    await assert.rejects(opened.write((db) => updateEntity(db, 'meters', 'h1', { hcaScale: 'linear' })), heatingError(400, /Bitte wählen Sie die Skala des Heizkostenverteilers/))
+    assert.equal((await meter()).hcaScale, 'product')
   })
 })
 
@@ -53,7 +54,7 @@ test('Heizkostenverteiler: Faktor über 0, Skala und Faktor nur am Heizkostenver
   await withDatabase(async (opened) => {
     await opened.write(async (db) => {
       await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 50, participates: true })
-      await createEntity(db, 'meters', 'h1', { propertyId: 'objekt-1', unitId: 'a', name: 'Wohnzimmer', type: 'hkv', unit: 'Einheiten' })
+      await createEntity(db, 'meters', 'h1', { propertyId: 'objekt-1', unitId: 'a', name: 'Wohnzimmer', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit' })
       await createEntity(db, 'meters', 'k1', { propertyId: 'objekt-1', unitId: 'a', name: 'Kaltwasser', type: 'kaltwasser', unit: 'm³' })
     })
     await assert.rejects(opened.write((db) => updateEntity(db, 'meters', 'h1', { ratingFactor: 0 })), heatingError(400, /Zahl über 0, etwa 0,8 oder 1,25/))
@@ -381,5 +382,35 @@ test('Ablesedienst: eine Wohnung mit Zimmern bekommt keine Zeile, die Zimmer sch
     await assert.rejects(opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [zeile('w', '2025-01-01', '2025-12-31', 1)] })),
       heatingError(400, /„WG“ hat Zimmer.*Gespeichert wurde nichts/))
     assert.equal((await opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [zeile('z1', '2025-01-01', '2025-12-31', 1)] })))?.length, 1)
+  })
+})
+
+// #723: Ohne Skala verteilt die eigene Heizkostenabrechnung nichts; ein neues Gerät ohne Skala nimmt der Server deshalb
+// nicht an. Wie bei der Einheit (#342) wird nur geprüft, was neu ist oder sich ändert: Ein Gerät, das schon ohne Skala
+// gespeichert ist (Bestand vor #723, wiederhergestelltes Backup), bleibt lesbar und in seinen anderen Feldern speicherbar.
+test('#723: ein neuer Heizkostenverteiler braucht die Skala; ein ohne Skala gespeicherter bleibt bearbeitbar', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 50, participates: true })
+      await createEntity(db, 'meters', 'k1', { propertyId: 'objekt-1', unitId: 'a', name: 'Zähler', type: 'sonstig', unit: 'Einheiten' })
+      // Bestand: unmittelbar geschrieben, wie ihn ein älterer Stand oder ein Backup mitbringt.
+      await db.insert(meters).values({ id: 'alt', propertyId: 'objekt-1', name: 'Bad', unitId: 'a', type: 'hkv', unit: 'Einheiten' })
+    })
+    const fehlt = heatingError(400, /Bitte wählen Sie die Skala des Heizkostenverteilers: Einheitsskala oder Produktskala\. Ohne Skala verteilt die eigene Heizkostenabrechnung die Heizkosten nicht\./)
+    await assert.rejects(opened.write((db) => createEntity(db, 'meters', 'h1', { propertyId: 'objekt-1', unitId: 'a', name: 'Wohnzimmer', type: 'hkv', unit: 'Einheiten' })), fehlt)
+    await assert.rejects(opened.write((db) => createEntity(db, 'meters', 'h1', { propertyId: 'objekt-1', unitId: 'a', name: 'Wohnzimmer', type: 'hkv', unit: 'Einheiten', hcaScale: 'linear' })), fehlt, 'eine unbekannte Skala ist keine')
+    // Der Wechsel der Sparte zum Heizkostenverteiler ebenso.
+    await assert.rejects(opened.write((db) => updateEntity(db, 'meters', 'k1', { type: 'hkv' })), fehlt)
+    await opened.write((db) => updateEntity(db, 'meters', 'k1', { type: 'hkv', hcaScale: 'product' }))
+    // Eine gespeicherte Skala wird nicht geleert.
+    await assert.rejects(opened.write((db) => updateEntity(db, 'meters', 'k1', { hcaScale: null })), fehlt)
+    const read = async (id: string) => (await opened.read(readMeters)).find((m) => m.id === id) ?? assert.fail(`kein Zähler ${id}`)
+    assert.equal((await read('k1')).hcaScale, 'product')
+    // Der Bestand ohne Skala: lesbar, Name und Zählernummer speicherbar, die Skala nachtragbar.
+    assert.equal((await read('alt')).hcaScale ?? null, null)
+    await opened.write((db) => updateEntity(db, 'meters', 'alt', { name: 'Bad oben', meterNumber: '4711' }))
+    assert.deepEqual([(await read('alt')).name, (await read('alt')).hcaScale ?? null], ['Bad oben', null])
+    await opened.write((db) => updateEntity(db, 'meters', 'alt', { hcaScale: 'unit', ratingFactor: 0.8 }))
+    assert.deepEqual([(await read('alt')).hcaScale, (await read('alt')).ratingFactor], ['unit', 0.8])
   })
 })

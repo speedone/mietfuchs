@@ -6,6 +6,7 @@
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
 import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { andList } from '../../shared/wording.ts'
 import { asksOperatingPowerHandling, euro, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED, deductionReported, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
@@ -200,7 +201,18 @@ export type MissingPowerFinding = {
   // Ob die Anlage in P eine Heizposition „Betrieb“ ohne Kennzeichnung oder eine ohne Teil hat (Lage O); bei
   // `deductionMissing` sagt der Text dann, dass sie den Abzug nicht ersetzt und wie man nicht doppelt bucht.
   hasOperatingPart: boolean
+  // Durchsicht von #724, S1: Heizpositionen „Betrieb“, die dem Namen nach Rechnungen des Schornsteinfegers sind und
+  // deshalb nicht als Betriebsstrom zählen (`chimneySweepLike`); der Text nennt sie.
+  sweepItems: string[]
 }
+
+// Durchsicht von #724, S1: Eine Rechnung des Schornsteinfegers (Kehren, Abgas- oder Immissionsmessung) enthält keinen
+// Strom. Steht sie nach dem Umstellen im Kostenformular mit dem Teil „Betrieb“ bei den Heizkosten, beantwortet sie die
+// Frage nach dem Betriebsstrom nicht; vorher schwieg `heating.operating-power-missing` dann. Erkannt wird sie am Namen
+// (wie die Kostenart „Schornsteinfeger“ in `matchCategory`, dazu Kehren, Abgas und Immission); nennt der Name auch
+// Strom, zählt die Position weiter. Eine Zahl ändert sich nicht, nur ob der Hinweis kommt.
+const SWEEP_WORDS = /schornstein|kamin|(?<![a-zäöüß])kehr|abgas|immission|feuerstätt/i
+export const chimneySweepLike = (description: string): boolean => SWEEP_WORDS.test(description) && !/strom/i.test(description)
 
 export function missingPowerFindings(input: {
   period: { from: string; to: string }
@@ -242,8 +254,10 @@ export function missingPowerFindings(input: {
     // D: ein Abzug in P, der zu dieser Anlage gehören kann.
     if (deductions.some((d) => !d.operatingPowerItemId || (plantOf.get(d.operatingPowerItemId) ?? plant.id) === plant.id)) continue
     const partless = (c: PowerItem): boolean => c.heatingPart === undefined && !c.fuelDeliveryId
-    // O: eine Heizposition „Betrieb“ (ohne Kennzeichnung, die steht oben) oder eine ohne Teil.
-    const operatingPart = heat.some((c) => c.heatingPart === 'operating' || partless(c))
+    // O: eine Heizposition „Betrieb“ (ohne Kennzeichnung, die steht oben) oder eine ohne Teil, die Strom enthalten kann.
+    const operatingLike = heat.filter((c) => c.heatingPart === 'operating' || partless(c))
+    const sweepItems = operatingLike.filter((c) => chimneySweepLike(c.description))
+    const operatingPart = operatingLike.some((c) => !chimneySweepLike(c.description))
     if (generation) {
       const replaced = plant.replacesPlantId ? input.plants.find((p) => p.id === plant.replacesPlantId) : undefined
       if (replaced?.endsOn && replaced.endsOn >= input.period.to) continue
@@ -256,7 +270,7 @@ export function missingPowerFindings(input: {
       if (handling !== 'deducted' && operatingPart) continue
     }
     const kind = generation ? 'generation' : handling === 'deducted' ? 'deductionMissing' : handling === 'ownMeter' ? 'billMissing' : 'operating'
-    out.push({ kind, plantId: plant.id, plantName: plant.name ?? '', energy: plant.energy, generals: generals.map((g) => ({ id: g.id, description: g.description })), hasOperatingPart: operatingPart })
+    out.push({ kind, plantId: plant.id, plantName: plant.name ?? '', energy: plant.energy, generals: generals.map((g) => ({ id: g.id, description: g.description })), hasOperatingPart: operatingPart, sweepItems: sweepItems.map((c) => c.description) })
   }
   return out
 }
@@ -279,7 +293,11 @@ const KEPT_SENTENCE = `Den Abzug erfassen Sie dann im Kostenformular beim Allgem
 
 // A (#224): Text des Hinweises `heating.operating-power-missing`.
 export function missingOperatingPowerText(f: MissingPowerFinding, label: string): string {
-  return `${plantText(f)} ist für ${label} kein Betriebsstrom erfasst (keine Heizposition mit dem Teil „Betrieb“), und beim Allgemeinstrom ${generalsText(f)} steht kein Abzug dafür. ` +
+  // Durchsicht von #724, S1: Steht eine Rechnung des Schornsteinfegers mit dem Teil „Betrieb“ da, wäre „keine
+  // Heizposition mit dem Teil Betrieb“ falsch; ohne sie bleibt der Satz wortgleich.
+  const sweeps = f.sweepItems.length === 0 ? ''
+    : `, die Strom enthalten kann; ${andList(f.sweepItems.map((d) => `„${d}“`))} ${f.sweepItems.length === 1 ? 'ist dem Namen nach eine Rechnung' : 'sind dem Namen nach Rechnungen'} des Schornsteinfegers`
+  return `${plantText(f)} ist für ${label} kein Betriebsstrom erfasst (keine Heizposition mit dem Teil „Betrieb“${sweeps}), und beim Allgemeinstrom ${generalsText(f)} steht kein Abzug dafür. ` +
     'Brenner, Umwälzpumpen und Regelung einer Zentralheizung verbrauchen Strom. Dieser Betriebsstrom gehört zu den Heiz- und Warmwasserkosten (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; § 2 Nr. 4 Buchst. a, Nr. 5 Buchst. a BetrKV). ' +
     'Läuft er über den Stromzähler des Hauses, steckt er in dieser Stromrechnung und wird mit ihrem Schlüssel verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ' +
     `Erfassen Sie ihn dann mit der Karte „Betriebsstrom“ auf der Seite Heizkosten. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (${ESTIMATE_LAW}). ` +
