@@ -239,7 +239,37 @@ const REFUND_TEXT =
   'Erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. Ist eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Betriebskostenabrechnung nach der Anzeige verrechnen; ' +
   `sonst zahlen Sie ihn spätestens ${SELF.refundMonths} Monate nach der Anzeige aus. ` +
   `Bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG müssen Sie den Mieter in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6).`
-const SELF_SUPPLY = `Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. ${REFUND_TEXT}`
+// #721: Dieser Text (rund 900 Zeichen) stand nur in der Mitteilung nach dem Einrichten und war nach Sekunden weg. Die
+// Mitteilung ist jetzt kurz; was die Lage bedeutet, zeigt die Karte „Heizung“ dauerhaft (`ownHeatingState`,
+// `OWN_HEATING_NOTE`), die Fristen und die Hinweispflicht darunter zum Aufklappen (`SELF_SUPPLY_REFUND`).
+const SELF_SUPPLY = 'Gespeichert. Hat jeder Mieter einen eigenen Vertrag für seine Heizung, legt Mietfuchs keine Heizanlage an.'
+export const SELF_SUPPLY_REFUND = REFUND_TEXT
+export const SELF_SUPPLY_REFUND_TITLE = 'Fristen und Hinweispflicht bei der CO₂-Erstattung'
+
+// Der Zustand „Mieter heizen selbst“ der Karte (#721): Es gibt keine Anlage, und jedes am Tag `today` laufende
+// Mietverhältnis der Wohnungen des Objekts steht auf „Mieter heizt selbst“. Beendete und künftige zählen nicht, denn die
+// Karte stellt nur laufende um (`selfSupplyOffer`); ohne laufendes Mietverhältnis gibt es nichts zu sagen. Der Wert ist
+// die Art der Heizung, wenn alle dieselbe tragen, sonst `mixed` (auch ohne Angabe).
+export type OwnHeatingState = 'perUnit' | 'central' | 'mixed'
+export function ownHeatingState(
+  units: readonly { id: string }[],
+  tenancies: readonly { unitId: string; start: string; end?: string | null; heatingModel?: string; selfSupplyKind?: string | null }[],
+  today: string,
+): OwnHeatingState | null {
+  const ids = new Set(units.map((u) => u.id))
+  const running = tenancies.filter((t) => ids.has(t.unitId) && t.start <= today && (t.end == null || t.end >= today))
+  if (running.length === 0 || running.some((t) => t.heatingModel !== 'selfSupply')) return null
+  const kinds = new Set(running.map((t) => t.selfSupplyKind ?? null))
+  const only = kinds.size === 1 ? [...kinds][0] : null
+  return only === 'perUnit' || only === 'central' ? only : 'mixed'
+}
+const OWN_HEATING_TAIL = 'Ihren Anteil an den CO₂-Kosten erstatten Sie nur, wenn der Mieter es verlangt.'
+const NO_BUILDING_SETTLEMENT = 'Eine Heizkostenabrechnung des Hauses gibt es deshalb nicht, und Mietfuchs führt keine Heizanlage.'
+export const OWN_HEATING_NOTE: Record<OwnHeatingState, string> = {
+  perUnit: `Die Mieter heizen selbst: Jede Wohnung hat eine eigene Heizung, und der Mieter hat den Vertrag. ${NO_BUILDING_SETTLEMENT} Die Wartung der Thermen erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“ mit Direktzuordnung je Wohnung. ${OWN_HEATING_TAIL}`,
+  central: `Die Mieter heizen selbst: Brennstoff oder Wärme der zentralen Heizung beziehen sie über einen eigenen Vertrag. ${NO_BUILDING_SETTLEMENT} Was Ihnen für die Heizung selbst entsteht, etwa Wartung oder Betriebsstrom über Ihren Zähler, erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“ und legen es wie vereinbart um. ${OWN_HEATING_TAIL}`,
+  mixed: `Die Mieter heizen selbst: Brennstoff oder Wärme beziehen sie über einen eigenen Vertrag. ${NO_BUILDING_SETTLEMENT} Was Ihnen für die Heizungen selbst entsteht, etwa die Wartung, erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“, bei einer Heizung je Wohnung mit Direktzuordnung. ${OWN_HEATING_TAIL}`,
+}
 // Zentrale Heizung, Brennstoffvertrag beim Mieter (Prüfung M1, S7): keine Anlage, denn der Vermieter bezieht weder
 // Brennstoff noch Wärme. Was ihm für die Anlage selbst entsteht, legt er um wie vereinbart (§ 2 Nr. 4 a BetrKV).
 const CENTRAL_SELF_SUPPLY =

@@ -227,6 +227,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
   selbst herüber. Kein Betrag der Abrechnung ändert sich
   ([#722](https://github.com/speedone/mietfuchs/issues/722)).
+- Karte „Heizung“, wenn die Mieter selbst heizen: Was es bedeutet, dass jeder Mieter einen eigenen Vertrag für seine
+  Heizung hat, stand nur in einer Meldung, die nach wenigen Sekunden verschwand; danach zeigte die Karte wieder
+  „Optional“ und „Heizung einrichten“. Solange es keine Heizanlage gibt und alle laufenden Mietverhältnisse des Objekts
+  auf „Mieter heizt selbst“ stehen, sagt die Karte das jetzt dauerhaft: keine Heizkostenabrechnung des Hauses, Wartung der
+  Thermen als Kostenposition mit Direktzuordnung je Wohnung, CO₂-Erstattung nur auf Verlangen des Mieters, mit den
+  Fristen zum Aufklappen und einem Knopf „Ändern“. Die Meldung nach dem Einrichten ist kurz
+  ([#721](https://github.com/speedone/mietfuchs/issues/721)).
 - Cockpit, Zeile „Zählerstände“: Mit eigener Heizkostenabrechnung nach Heizkostenverordnung stand dort „Keine
   verbrauchsabhängige Umlage - Ablesungen nicht erforderlich“, obwohl die Heizkosten nach Ablesungen verteilt werden. Die
   Zeile nennt jetzt die Heizperiode, wenn die Stände vollständig sind, und sonst, was fehlt (etwa „Für „Wärme EG“ fehlt

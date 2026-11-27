@@ -466,3 +466,48 @@ test('#720: nur eine Wohnung mit eigener Heizung: die Anlage behält die übrige
     ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }],
   ])
 })
+
+// #721: Der erklärende Text zur Etagenheizung mit Vertrag beim Mieter stand nur in der flüchtigen Mitteilung; danach
+// zeigte die Karte wieder „Optional …“ und „Heizung einrichten“.
+const selfTenant = (id: string, unitId: string, over: Record<string, unknown> = {}) => ({ ...tenant(id, unitId, `Mieter ${id}`), heatingModel: 'selfSupply' as const, selfSupplyKind: 'perUnit' as const, ...over })
+
+test('#721: alle laufenden Mietverhältnisse heizen selbst, keine Anlage: die Karte zeigt den Zustand dauerhaft, mit Lexikonbegriff und „Ändern“', async () => {
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} tenancies={[selfTenant('ta', 'eg'), selfTenant('tb', 'og')]} /></UIProvider></PropertyProvider>)
+  const note = await screen.findByText(/Die Mieter heizen selbst: Jede Wohnung hat eine eigene Heizung, und der Mieter hat den Vertrag\. Eine Heizkostenabrechnung des Hauses gibt es deshalb nicht/)
+  const card = note.closest('.card') ?? document.body
+  expect(card.textContent).toMatch(/Wartung der Thermen erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“ mit Direktzuordnung je Wohnung/)
+  // Der Lexikonbegriff zur CO₂-Erstattung und der lange Text mit Fristen, aufklappbar.
+  expect(within(card as HTMLElement).getByRole('button', { name: /CO₂-Erstattung/ })).toBeTruthy()
+  expect(card.querySelector('details')?.textContent).toMatch(/Fristen und Hinweispflicht.*binnen \d+ Monaten nach der Abrechnung seines Lieferanten in Textform/)
+  // Kein Leerzustand daneben.
+  expect(screen.queryByText(/Optional\. Wenn Sie hier angeben/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Heizung einrichten' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
+  expect(await screen.findByRole('dialog', { name: 'Heizung einrichten' })).toBeTruthy()
+})
+
+test('#721: heizt ein laufendes Mietverhältnis nicht selbst oder gibt es eine Anlage, bleibt die Karte, wie sie war', async () => {
+  const { unmount } = render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} tenancies={[selfTenant('ta', 'eg'), tenant('tb', 'og', 'Mieter B')]} /></UIProvider></PropertyProvider>)
+  expect(await screen.findByRole('button', { name: 'Heizung einrichten' })).toBeTruthy()
+  expect(screen.getByText(/Optional\. Wenn Sie hier angeben/)).toBeTruthy()
+  expect(screen.queryByText(/Die Mieter heizen selbst/)).toBeNull()
+  unmount()
+  plants = [GAS]
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} tenancies={[selfTenant('ta', 'eg'), selfTenant('tb', 'og')]} /></UIProvider></PropertyProvider>)
+  // „Entfernen …“ gibt es nur an einer Anlage; „Ändern“ trägt auch der Zustand, solange die Anlagen noch laden.
+  expect(await screen.findByRole('button', { name: 'Entfernen …' })).toBeTruthy()
+  expect(screen.queryByText(/Die Mieter heizen selbst/)).toBeNull()
+})
+
+test('#721: Einrichten mit Vertrag beim Mieter: die Mitteilung ist kurz', async () => {
+  stubChange(null)
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} /></UIProvider></PropertyProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Heizung einrichten' }))
+  fireEvent.change(await screen.findByLabelText(/Womit wird geheizt/), { target: { value: 'perUnit' } })
+  fireEvent.change(screen.getByLabelText(/Wer hat den Vertrag für die Heizung in der Wohnung/), { target: { value: 'tenant' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await screen.findByRole('alertdialog')
+  const saved = screen.getAllByText('Gespeichert. Hat jeder Mieter einen eigenen Vertrag für seine Heizung, legt Mietfuchs keine Heizanlage an.')
+  expect(saved.length).toBeGreaterThan(0)
+  expect(document.body.textContent).not.toMatch(/binnen \d+ Monaten nach der Abrechnung seines Lieferanten/)
+})

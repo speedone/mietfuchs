@@ -25,6 +25,7 @@ import {
   asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
   SELF_UNTIL_SWITCH, heatingSetUpMessage,
+  ownHeatingState, OWN_HEATING_NOTE, SELF_SUPPLY_REFUND, SELF_SUPPLY_REFUND_TITLE,
   selfSupplyChange, selfSupplyBlocked, selfSupplyReduceNote, selfSupplyTenanciesNote, SELF_SUPPLY_NO_UNIT, SELF_SUPPLY_REDUCE_ITEMS,
 } from '../heatingForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
@@ -35,7 +36,9 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 // Server nimmt genau diese, oder er lehnt ab, wenn sich die Liste inzwischen geändert hat.
 // `onChanged` (Laienprobe B1): Die Seite lädt danach Mietverhältnisse und Anlagen neu, denn das
 // Aufteilen der Vorauszahlung und das Umschlüsseln ändern Daten außerhalb dieser Karte.
-export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { units: Unit[]; onChanged?: () => Promise<void> } & FocusProps) {
+// `tenancies` (#721): die Mietverhältnisse der Seite. Heizen alle laufenden selbst und gibt es keine Anlage, zeigt die
+// Karte das dauerhaft statt des Leerzustands; ohne die Angabe bleibt sie beim Leerzustand.
+export default function HeatingCard({ units, tenancies, focus, onFocusDone, onChanged }: { units: Unit[]; tenancies?: readonly Tenancy[]; onChanged?: () => Promise<void> } & FocusProps) {
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -341,6 +344,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   }
 
   const kind = property?.kind ?? 'mfh'
+  const ownHeating = plants.length === 0 ? ownHeatingState(units, tenancies ?? [], localToday()) : null
   // Welche Wohnungen an der Anlage hängen, bei zentraler Heizung wie bei der Etagenheizung (Heizung PR 9).
   // Heizung PR 19: Der Mieter hat den Vertrag (Etagenheizung oder zentrale Heizung).
   const fuelByTenant = form !== null && asksFuelContract(form, editingId) && form.fuelContract !== 'landlord'
@@ -384,7 +388,19 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       {plants.length === 0 && units.length === 0 && (
         <p className="muted">Optional. Die Heizung richten Sie ein, sobald Sie die Wohnungen angelegt haben.</p>
       )}
-      {plants.length === 0 && units.length > 0 && (
+      {/* #721: Die Mieter heizen selbst (eigener Vertrag), und es gibt keine Anlage: Das steht hier dauerhaft, nicht nur
+          in der Mitteilung nach dem Einrichten. */}
+      {plants.length === 0 && units.length > 0 && ownHeating && (
+        <>
+          <p>{OWN_HEATING_NOTE[ownHeating]} Mehr dazu: <Term id="co2Refund">CO₂-Erstattung</Term>.</p>
+          <details className="extra-details">
+            <summary>{SELF_SUPPLY_REFUND_TITLE}</summary>
+            <p className="muted">{SELF_SUPPLY_REFUND}</p>
+          </details>
+          <button className="btn secondary" data-jump-focus="" onClick={openNew}>Ändern</button>
+        </>
+      )}
+      {plants.length === 0 && units.length > 0 && !ownHeating && (
         <>
           <p className="muted">
             Bekommen Sie eine Heizkostenabrechnung von einem Messdienst, rechnen Sie die Heizkosten selbst ab oder zahlen

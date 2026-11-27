@@ -771,6 +771,11 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   entsteht keine Heizanlage. `selfSupplyKind` (`perUnit`/`central`); bei `central`
   `heating.self-supply-operating-power`, wenn andere Mieter den Allgemeinstrom tragen und kein Abzug
   erfasst ist.
+- **Die Karte „Heizung“ zeigt den Zustand dauerhaft** (#721, `ownHeatingState`, `OWN_HEATING_NOTE` in heatingForm.ts):
+  ohne Anlage, wenn jedes heute laufende Mietverhältnis des Objekts auf „Mieter heizt selbst“ steht (beendete und künftige
+  zählen nicht). Ein Satz je Art (`perUnit`, `central`, gemischt), der Lexikonbegriff `co2Refund`, die Fristen zum
+  Aufklappen und „Ändern“ (öffnet die Einrichtung). Die Mitteilung nach dem Einrichten der Etagenheizung ist kurz; bei
+  der zentralen Heizung mit Vertrag des Mieters und beim Wärmelieferanten steht der lange Text weiter in der Mitteilung.
 - **Ändern einer Anlage auf „Jede Wohnung hat eine eigene Heizung“, Vertrag beim Mieter** (#720, `changeToSelfSupply` in
   HeatingCard.tsx, `selfSupplyChange` in heatingForm.ts): Sind alle Wohnungen der Anlage angehakt, entfernt die Karte sie
   nach einer Rückfrage (Weg und Sperren von „Entfernen …“; die Sperre fragt sie vorher über
