@@ -123,7 +123,9 @@ export function invoiceSumCheck(positionsSumCents: number, totalGrossCents: numb
 // Woraus der Vorschlag für eine neue Position entsteht: die Positionen des Objekts (alle Jahre),
 // das Abrechnungsjahr und die Art des Objekts. `at` ist der Zeitraum, in dem gebucht wird, mit
 // seinem Vorzeitraum (#208); fehlt er, ist es das Kalenderjahr `year` (Tests, Kalenderobjekt).
-export type KeyContext = { items: readonly CostItem[]; year: number; at?: PeriodContext; propertyKind?: PropertyKind | null }
+// `serviceHeating`: Im Objekt rechnet ein Messdienst die Heizung ab (laufende Heizanlage mit `method: 'service'`); eine neue
+// Position „Heizung und Warmwasser“ bekommt dann „Einzelbeträge“ vorgeschlagen.
+export type KeyContext = { items: readonly CostItem[]; year: number; at?: PeriodContext; propertyKind?: PropertyKind | null; serviceHeating?: boolean }
 
 // Maßstab und Summe der Anteile der zuletzt erfassten Position „laut Gemeinschaftsabrechnung“ im
 // Objekt, jüngstes Jahr zuerst, sonst die zuletzt angelegte.

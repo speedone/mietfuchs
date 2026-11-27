@@ -314,8 +314,10 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       {plants.length === 0 && units.length > 0 && (
         <>
           <p className="muted">
-            Optional. Wenn Sie hier angeben, womit geheizt wird und wer abrechnet, sagt die Abrechnung, ob Mieter wegen nicht
-            fernablesbarer Geräte kürzen dürfen. An Ihren Beträgen ändert sich dadurch nichts.
+            Bekommen Sie eine Heizkostenabrechnung von einem Messdienst, rechnen Sie die Heizkosten selbst ab oder zahlen
+            Ihre Mieter eine eigene Heizkostenvorauszahlung? Dann richten Sie hier die Heizung ein: Erst damit gibt es die
+            Seite „Heizkosten“ mit der Aufteilung der CO₂-Kosten und die getrennte Vorauszahlung. Sonst ist die Angabe
+            freiwillig; die Abrechnung sagt dann nur, ob Mieter wegen nicht fernablesbarer Geräte kürzen dürfen.
           </p>
           <button className="btn secondary" data-jump-focus="" onClick={openNew}>Heizung einrichten</button>
         </>

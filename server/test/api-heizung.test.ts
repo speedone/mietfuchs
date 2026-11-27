@@ -1173,3 +1173,32 @@ test('Zählerwechsel mit Eichjahr des neuen Zählers: Jahr am Zähler, Warnung w
     s.stop()
   }
 })
+
+// Bedienprüfung mit einer Musterabrechnung (27.11.2026): Wer im Februar die Abrechnung des Vorjahrs macht und beim Aufteilen
+// der Vorauszahlung den Monat offen lässt, bekam den Januar des laufenden Jahres vorgeschlagen; die Abrechnung des Vorjahrs
+// hatte dann nur eine Vorauszahlung, und ein im Vorjahr ausgezogener Mieter fehlte in der Vorschau. Bei gemeinsamer
+// Abrechnung ist der Vorschlag deshalb der Beginn des Zeitraums davor, solange er nicht abgeschlossen ist und es darin
+// ein Mietverhältnis gab.
+test('Vorauszahlung aufteilen ohne Monat: Vorschlag ist der Beginn des noch offenen Vorjahrs, sonst das laufende Jahr', async () => {
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), { NKA_TEST_TODAY: '2025-02-10' })
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const unit = await s.api<{ id: string }>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const preview = async () => jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true }))
+    // Noch kein Mietverhältnis im Vorjahr: das laufende Jahr, wie bisher.
+    const neu = await s.api<{ id: string }>('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'Neu', persons: 1, start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    assert.equal((await preview()).month, '2025-01')
+    // Mit einem Mietverhältnis im Vorjahr, auch einem dort beendeten: der Beginn des Vorjahrs, und der Ausgezogene steht in der Vorschau.
+    const unit2 = await s.api<{ id: string }>('/api/units', jsonPost({ name: 'OG', areaM2: 60, participates: true }))
+    const alt = await s.api<{ id: string }>('/api/tenancies', jsonPost({ unitId: unit2.id, tenantName: 'Ausgezogen', persons: 1, start: '2023-01-01', end: '2024-06-30', prepayments: [{ from: '2023-01', monthlyCents: 25000 }] }))
+    const vorjahr = await preview()
+    assert.deepEqual([vorjahr.way, vorjahr.month], ['samePeriod', '2024-01'])
+    assert.deepEqual(vorjahr.steps.map((x) => x.tenancyId).sort(), [alt.id, neu.id].sort())
+    // Ein ausdrücklich gewählter Monat gilt weiter.
+    assert.equal((await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-01' }))).month, '2025-01')
+  } finally {
+    s.stop()
+  }
+})

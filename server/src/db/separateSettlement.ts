@@ -151,7 +151,20 @@ function planOn(c: Ctx, rawMonth: unknown): Plan {
   }
   const earliest = earliestMonth(c)
   const current = monthOf(periodContaining(c.rules, c.today).from)
-  const x = readMonth(rawMonth, 'Beginn') ?? (earliest !== null && earliest > current ? earliest : current)
+  // Der Vorschlag ohne gewählten Monat. Bei gemeinsamer Abrechnung (Anlage rechnet wie das Objekt) wird meist gerade der
+  // Zeitraum davor abgerechnet: Ist er nicht abgeschlossen und gab es darin ein Mietverhältnis, beginnt die Aufteilung
+  // dort. Sonst hatte die Abrechnung des Vorjahrs nur eine Vorauszahlung, und ein dort ausgezogener Mieter fehlte in der
+  // Vorschau (Bedienprüfung vom 27.11.2026). Mit eigener Heizperiode bleibt es beim laufenden Zeitraum.
+  const proposed = (): string => {
+    if (earliest !== null && earliest > current) return earliest
+    if (hasOwnRhythm(c.plant)) return current
+    const before = previousPeriod(c.objectRules, periodContaining(c.objectRules, c.today))
+    const beforeStart = monthOf(before.from)
+    const open = earliest === null || earliest <= beforeStart
+    const lived = c.tenancies.some((t) => t.start <= before.to && (t.end === null || t.end >= before.from))
+    return open && lived ? beforeStart : current
+  }
+  const x = readMonth(rawMonth, 'Beginn') ?? proposed()
   const blocked: string[] = []
   const last = lastClosed(c)
   if (earliest !== null && last !== null && x < earliest) {

@@ -346,7 +346,7 @@ export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenanc
   // Gerundet wird bei Einzelbeträgen nichts (#142); ein Rest entsteht, wenn für einen Zeitraum
   // kein Mieter einen Betrag hat, etwa bei Leerstand.
   if (sum === amount) return `Summe ${fmtCentsInput(sum)} €${ownText} - der Rechnungsbetrag ist vollständig verteilt`
-  return `Summe ${fmtCentsInput(sum)} €${ownText} - den Rest von ${fmtCentsInput(amount - sum)} € trägt der Vermieter (etwa für Leerstand)`
+  return `Summe ${fmtCentsInput(sum)} €${ownText} - den Rest von ${fmtCentsInput(amount - sum)} € trägt der Vermieter (etwa für Leerstand oder einen CO₂-Anteil, den der Messdienst vorab abgezogen hat)`
 }
 
 // Wohnungen der Abrechnungseinheit - nur sie können einen vereinbarten Anteil tragen
@@ -425,6 +425,9 @@ function proposal(previous: ItemForm, category: string, units: Unit[], meters: M
     const last = ctx ? lastExternalBasis(ctx.items) : null
     return { ...form, key: 'external', meterType: '', ...(last ? externalFields(last) : {}) }
   }
+  // Rechnet ein Messdienst die Heizung ab (Heizanlage so eingerichtet), kommen die Heizkosten als Beträge je Mieter: Der
+  // Vorschlag ist „Einzelbeträge“, sonst verteilte eine unveränderte Position sie nach Wohnfläche (Bedienprüfung 27.11.2026).
+  if (category === HEATING_CATEGORY && ctx?.serviceHeating === true) return { ...form, key: 'amounts', meterType: '' }
   return { ...form, ...suggestedKey(category, units, meters, ctx ? calendarYearPeriod(ctx.year) : undefined) }
 }
 

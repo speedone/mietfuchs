@@ -302,10 +302,13 @@ test('Laienprobe B19: Heizung mit Einzelbeträgen bei Messdienst-Anlage nennt de
   }]
   await openForm()
   fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
-  expect(screen.queryByText(/Kosten vor „Abzüglich CO₂-Kosten Vermieter“/)).toBeNull()
-  await waitFor(() => expect([...select(/Umlageschlüssel/i).options].some((o) => o.value === 'amounts')).toBe(true))
-  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
+  // Bedienprüfung 27.11.2026: Bei einer Messdienst-Anlage ist „Einzelbeträge“ vorbelegt, der Satz steht sofort da. Vorher
+  // blieb der Schlüssel auf „nach Wohnfläche“, und wer nicht umstellte, verteilte die Heizkosten nach Fläche.
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('amounts'))
   expect(await screen.findByText(/Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein/)).toBeTruthy()
+  // Wer anders verteilt, stellt um; der Satz geht dann weg.
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'area' } })
+  expect(screen.queryByText(/Kosten vor „Abzüglich CO₂-Kosten Vermieter“/)).toBeNull()
 })
 
 test('Zwei Heizanlagen (Heizung PR 9): die Heizposition wählt ihre Anlage; ohne Wahl ordnet der Server nach den Wohnungen', async () => {
