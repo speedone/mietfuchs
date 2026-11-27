@@ -351,6 +351,18 @@ test('Messdienst-Anlage kommt nach der Wahl der Kostenart an: Der Schlüssel wir
   expect(await screen.findByText(/Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein/)).toBeTruthy()
 })
 
+// Nachprüfung: Die Beschreibung tippt man gleich nach der Kostenart; sie beendet die späte Vorbelegung nicht.
+test('Kostenart, dann Beschreibung, dann kommt die Messdienst-Anlage: Der Schlüssel wird „Einzelbeträge“', async () => {
+  plants = [servicePlant]
+  const release = holdPlants()
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Heizkosten 2025' } })
+  await release()
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('amounts'))
+  expect((screen.getByLabelText(/Beschreibung/i) as HTMLInputElement).value).toBe('Heizkosten 2025')
+})
+
 test('Messdienst-Anlage kommt an, nachdem der Nutzer den Schlüssel gewählt hat: Seine Wahl bleibt', async () => {
   plants = [servicePlant]
   const release = holdPlants()

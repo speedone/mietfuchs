@@ -1707,10 +1707,39 @@ describe('Vorschlag, dessen Grundlage nach der Wahl der Kostenart ankommt', () =
     const typed = { ...opened, tenancyAmounts: { t1: '300,00' } }
     expect(withLateContext(typed, units, [], withPrior)).toBe(typed)
   })
-  test('späte Positionen: auch die Beschreibung beendet die Vorbelegung (Tippen ändert nie den Schlüssel)', () => {
-    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], service)
-    const typed = { ...opened, description: 'Heizung 2025' }
-    expect(withLateContext(typed, units, [], withPrior)).toBe(typed)
+  // Nachprüfung: Die Beschreibung tippt man üblich gleich nach der Kostenart. Sie beendet die späte Vorbelegung nicht, sonst
+  // wäre der ursprüngliche Fehler zurück; nur bei einer breiten Kostenart bestimmt sie den Vorschlag und beendet sie.
+  test('Beschreibung getippt, dann kommt die Messdienst-Anlage: „Einzelbeträge“', () => {
+    const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], before)
+    const typed = { ...opened, description: 'Heizkosten 2025' }
+    expect(withLateContext(typed, units, [], after)).toMatchObject({ key: 'amounts', description: 'Heizkosten 2025' })
+  })
+  test('„Sonstige Betriebskosten“: Die Beschreibung bestimmt den Vorschlag und beendet die späte Vorbelegung', () => {
+    const other: CostItemOf = { id: 's', propertyId: 'p', period: periodKey('2024-01'), category: 'Sonstige Betriebskosten', description: 'Dachrinne', amountCents: 10000, key: 'units' }
+    const opened = withCategory(form(), 'Sonstige Betriebskosten', units, [], before)
+    expect(withLateContext(opened, units, [], { ...before, items: [other] })).toBe(opened)
+    const typed = { ...opened, description: 'Dachrinne' }
+    expect(withLateContext(typed, units, [], { ...before, items: [other] })).toBe(typed)
+  })
+  // Nachprüfung K1: Was der Wechsel der Kostenart stehen lässt (Einzelbeträge, Zimmer, Teil und Ziel, Angaben zum Vertrag),
+  // ist eine Eingabe; der Vorschlag danach gilt nicht als unberührt, und die Beträge bleiben sichtbar.
+  test('Heizung mit Einzelbeträgen → Grundsteuer → Heizung: Das Vorjahr ändert den Schlüssel nicht', () => {
+    const heating = withCategory(form(), 'Heizung und Warmwasser', units, [], service)
+    const typed = { ...heating, tenancyAmounts: { t1: '300,00' } }
+    const back = withCategory(withCategory(typed, 'Grundsteuer', units, [], service), 'Heizung und Warmwasser', units, [], service)
+    expect(back).toMatchObject({ key: 'amounts', tenancyAmounts: { t1: '300,00' } })
+    expect(withLateContext(back, units, [], withPrior)).toBe(back)
+  })
+  test.each([
+    ['selfAmounts', { selfAmounts: { a: '10,00' } }],
+    ['roomSplit', { roomSplit: 'persons' as const }],
+    ['heatingPart', { heatingPart: 'fuel' as const }],
+    ['heatingTarget', { heatingTarget: 'both' as const }],
+    ['notAgreed', { notAgreed: ['t1'] }],
+    ['named', { named: ['t1'] }],
+  ])('stehen gebliebene Eingabe (%s) verhindert die späte Vorbelegung', (_name, patch) => {
+    const changed = withCategory({ ...form(), ...patch }, 'Heizung und Warmwasser', units, [], before)
+    expect(withLateContext(changed, units, [], after)).toBe(changed)
   })
   test('Betrag, Rechnungssteller, Beleg und Daten beenden sie nicht', () => {
     const opened = withCategory(form(), 'Heizung und Warmwasser', units, [], service)

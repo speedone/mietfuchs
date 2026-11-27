@@ -229,8 +229,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Neue Position „Heizung und Warmwasser“ bei einer Heizung mit Messdienst: Wählte man die Kostenart, bevor die
   Heizanlagen geladen waren, blieb der Schlüssel auf „nach Wohnfläche“ statt „Einzelbeträge“, und wer nicht umstellte,
   verteilte die Heizkosten nach Fläche. Der Vorschlag folgt jetzt den später geladenen Angaben (Heizanlagen, Positionen,
-  Zähler), solange im Formular außer Betrag, Rechnungssteller, Beleg und Daten nichts eingegeben ist; jede andere Eingabe
-  und bestehende Positionen bleiben, wie sie sind
+  Zähler), solange im Formular außer Beschreibung, Betrag, Rechnungssteller, Beleg und Daten nichts eingegeben ist; jede
+  andere Eingabe und bestehende Positionen bleiben, wie sie sind
   ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Zweimal derselbe Datenordner: Startete Mietfuchs (Fenster, Programmdatei, Paket oder Store), während ein anderes
   Mietfuchs auf demselben Datenordner gerade seine Datenbank öffnete, etwa beim ersten Start oder nach einem Update auf
