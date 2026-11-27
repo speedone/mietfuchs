@@ -1130,3 +1130,60 @@ test('#722: kein Hinweis bei einer Schätzung, bei einer stornierten Rechnung un
   // Beim Messdienst steht der Betrag an der Lieferung, verknüpft wird nichts.
   frei(settle('2025-05', { heatingPlants: [anlage({ method: 'service' })], fuelDeliveries: [lieferung({ amountCents: 650000 })], costItems: [position({ id: 'hz', key: 'amounts', tenancyAmounts: { ta: 240000, tb: 160000 }, amountCents: 400000, fuelDeliveryId: null })] }))
 })
+
+// Durchsicht von #722, M1: Die Rechnung 15.03.2025–14.03.2026 endet in 2025/2026; dort steht ihre Position ohne
+// Verknüpfung. Die Karte „Lieferungen“ von 2024/2025 zeigt die Lieferung nicht zur Verknüpfung, und der Server lehnt eine
+// Position aus 2024/2025 ab (`guardFuelLink`). Der Rat, sie in 2024/2025 zu erfassen, ergäbe eine zweite Position über
+// 6.500 €, die ganz verteilt würde. Verknüpft in 2025/2026 bucht Mietfuchs den Teil für 2024/2025 selbst herüber.
+test('#722 Durchsicht M1: Lieferung, die in einer späteren Heizperiode endet: der Hinweis nennt sie und rät nicht zum Erfassen', () => {
+  const lose = { costItems: [position({ id: 'gas', fuelDeliveryId: null })] }
+  const t = textOf(settle('2024-05', lose), 'fuel.delivery-unlinked')
+  assert.equal(t,
+    'Heizanlage „Gas“, Heizperiode 2024/2025: Die Lieferung „Gas 2025/2026“ (15.03.2025–14.03.2026) ist mit keiner Kostenposition verknüpft. ' +
+    'Mietfuchs kennt ihren Rechnungsbetrag deshalb nicht: Die Abrechnung der Mieter nennt die Lieferung ohne Betrag, und abgegrenzt wird nichts. ' +
+    '„Gas 2025/2026“ endet erst in der Heizperiode 2025/2026. Die Position dafür gehört in die Heizperiode, in der die Rechnung endet: ' +
+    'Verknüpfen Sie sie in der Heizperiode 2025/2026 auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung. ' +
+    'Den Teil für 2024/2025 bucht Mietfuchs danach selbst in diese Heizperiode.')
+  assert.doesNotMatch(t, /Erfassen Sie/)
+  // 2025/2026 nennt die Position wie bisher.
+  assert.match(textOf(settle('2025-05', lose), 'fuel.delivery-unlinked'), /In Frage kommt die Position „Gas“ über 6\.500,00 €\./)
+  // Was der Satz zusagt: verknüpft in 2025/2026, trägt 2024/2025 seinen Teil ohne eigene Position, und kein Hinweis bleibt.
+  const verknuepft = settle('2024-05')
+  assert.ok(!codes(verknuepft).includes('fuel.delivery-unlinked'), codes(verknuepft).join(', '))
+  assert.deepEqual(verknuepft.statements.map((st) => st.totalShareCents), [59003, 39336])
+})
+
+test('#722 Durchsicht M1: endet eine Lieferung hier und eine später, bekommt jede ihren Weg', () => {
+  const zwei = [
+    lieferung({ id: 'd1', label: 'Gas Winter', invoiceFrom: '2024-05-01', invoiceTo: '2025-02-28' }),
+    lieferung({ id: 'd2', label: 'Gas Frühjahr', invoiceFrom: '2025-03-01', invoiceTo: '2025-06-30' }),
+  ]
+  const t = textOf(settle('2024-05', { fuelDeliveries: zwei, costItems: [position({ id: 'g1', period: periodKey('2024-05'), description: 'Abschläge', amountCents: 300000, fuelDeliveryId: null })] }), 'fuel.delivery-unlinked')
+  assert.match(t, /Die Lieferungen „Gas Winter“ \(01\.05\.2024–28\.02\.2025\) und „Gas Frühjahr“ \(01\.03\.–30\.06\.2025\) sind mit keiner Kostenposition verknüpft\./)
+  assert.match(t, /Für „Gas Winter“: In Frage kommt die Position „Abschläge“ über 3\.000,00 €\. Verknüpfen Sie die Position /)
+  assert.match(t, /„Gas Frühjahr“ endet erst in der Heizperiode 2025\/2026\./)
+  assert.doesNotMatch(t, /Erfassen Sie/)
+})
+
+// Durchsicht von #722, S3: Die Rechnung endet in 2024/2025, ihre Position steht schon in 2025/2026 (die Rechnung kam im
+// Juni). Verknüpfen lässt sich nur eine Position der Heizperiode, in der die Rechnung endet; ein zweites Erfassen
+// verteilte den Betrag zweimal.
+test('#722 Durchsicht S3: ohne Position in dieser Heizperiode warnt der Hinweis vor dem zweiten Erfassen', () => {
+  const spaet = { fuelDeliveries: [lieferung({ invoiceFrom: '2024-05-01', invoiceTo: '2025-04-30' })], costItems: [position({ id: 'gas', fuelDeliveryId: null })] }
+  const t = textOf(settle('2024-05', spaet), 'fuel.delivery-unlinked')
+  assert.match(t, /Eine Brennstoffposition ohne Lieferung gibt es in diesem Zeitraum nicht\. Erfassen Sie den Rechnungsbetrag auf der Seite Kosten als Position „Heizung und Warmwasser“ und verknüpfen Sie sie danach auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung\?“ mit ihrer Lieferung\. /)
+  assert.match(t, / Steht die Rechnung schon als Position in einem anderen Zeitraum, erfassen Sie sie nicht ein zweites Mal: Verknüpfen lässt sich nur eine Position der Heizperiode, in der die Rechnung endet\. Entfernen Sie die Position dort und erfassen Sie sie in diesem Zeitraum\.$/)
+})
+
+// Durchsicht von #722, S4: Zwei Anlagen, die Brennstoffposition hat keine Anlage. Die Verknüpfung auf der Seite
+// Heizkosten zeigt nur Positionen der Anlage (db/co2.ts); der Hinweis nennt die Position und den Schritt davor.
+test('#722 Durchsicht S4: eine Brennstoffposition ohne Anlage ist Kandidatin, zuerst der Anlage zuzuordnen', () => {
+  const zwei = {
+    heatingPlants: [anlage(), anlage({ id: 'hp2', name: 'Fernwärme', energy: 'districtHeating' as const, units: [{ unitId: 'b', heatedAreaM2: null }] })],
+    fuelDeliveries: [lieferung({ invoiceFrom: '2025-05-01', invoiceTo: '2026-04-30' })],
+    costItems: [position({ id: 'gas', fuelDeliveryId: null, heatingPlantId: null })],
+  }
+  const t = textOf(settle('2025-05', zwei), 'fuel.delivery-unlinked')
+  assert.doesNotMatch(t, /gibt es in diesem Zeitraum nicht/)
+  assert.match(t, /In Frage kommt die Position „Gas“ über 6\.500,00 €\. Sie ist noch keiner Heizanlage zugeordnet: Wählen Sie im Kostenformular bei „Heizanlage“ die Anlage „Gas“; erst dann steht sie in der Karte „Lieferungen“ zur Wahl\. Verknüpfen Sie die Position auf der Seite Heizkosten /)
+})

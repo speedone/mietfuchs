@@ -205,7 +205,13 @@ Gradtage des Orts in `degree_day_values`. CO₂-Merkmale an der Anlage (`non_res
   Positionen werden trotzdem verteilt, ganz in ihrem Zeitraum; der Hinweis nennt die Lieferungen und die Positionen, die
   in Frage kommen (Heizpositionen der Anlage ohne Lieferung, Teil Brennstoff oder ohne Angabe). **Zugeordnet wird nie von
   selbst**, auch nicht bei einer Lieferung und einer Position: Die Verknüpfung grenzt ab und verschiebt Geld zwischen
-  Heizperioden, und ob die Position ein Abschlag einer anderen Rechnung ist, weiß nur der Vermieter. Nicht beim Messdienst
+  Heizperioden, und ob die Position ein Abschlag einer anderen Rechnung ist, weiß nur der Vermieter. **Endet die Lieferung
+  in einer späteren Heizperiode**, nennt der Hinweis diese und dass dort zu verknüpfen ist (nur dort zeigt die Karte
+  „Lieferungen“ sie, `guardFuelLink`); den Teil für diese Heizperiode bucht danach der Übertrag `fuelCarry`. Ein Rat zum
+  Erfassen stünde dort falsch (Durchsicht M1: eine zweite Position, ganz verteilt). Ohne Kandidatin warnt der Satz davor,
+  eine schon in einem anderen Zeitraum erfasste Rechnung ein zweites Mal zu erfassen (S3; den Zeitraum einer Position
+  ändert das Kostenformular nicht). Ab zwei Anlagen ist eine Brennstoffposition ohne Anlage Kandidatin mit dem Schritt,
+  sie im Kostenformular der Anlage zuzuordnen, denn die Verknüpfung zeigt nur Positionen der Anlage (S4). Nicht beim Messdienst
   (der Betrag steht an der Lieferung), nicht bei einer Schätzung, nicht beim Vorrat (dort `fuel.stock-unlinked`). Der
   Druckblock „Brennstoff“ nennt eine Lieferung mit Betrag 0 ohne „= … von …“ (client/src/fuelView.ts, an der Zahl
   entschieden, damit es auch für eingefrorene Stände gilt).

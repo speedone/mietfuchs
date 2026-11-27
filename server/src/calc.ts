@@ -7731,15 +7731,54 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const linked = new Set((fuel?.items ?? []).map((c) => c.fuelDeliveryId))
       const bare = result.lines.filter((l) => !l.estimated && !linked.has(l.deliveryId))
       if (bare.length > 0) {
-        const candidates = items.filter((c) => c.category === HEATING_CATEGORY && !c.fuelDeliveryId && c.amountCents !== 0
-          && (c.heatingPlantId === plant.id || (!c.heatingPlantId && plants.length === 1))
-          && (c.heatingPart === undefined || c.heatingPart === null || c.heatingPart === 'fuel'))
+        // Durchsicht M1: Eine Position steht in der Heizperiode, in der die Rechnung endet (`guardFuelLink`), und nur dort
+        // zeigt die Karte „Lieferungen“ die Lieferung zur Verknüpfung. Endet sie in einer späteren Heizperiode, ist dort zu
+        // verknüpfen; den Teil für diese Heizperiode bucht Mietfuchs dann als Übertrag herüber (`fuelCarry`). Ein Rat, sie
+        // hier zu erfassen, ergäbe eine zweite Position, die ganz verteilt würde.
+        const rulesH = plantRules(wayOf(plant), objectRules)
+        const endsIn = (l: (typeof bare)[number]): BillingPeriod | null => {
+          if (!l.to) return null
+          const h = periodContaining(rulesH, l.to)
+          return h.key === period.key ? null : h
+        }
+        const here = bare.filter((l) => endsIn(l) === null)
+        const later = new Map<string, { h: BillingPeriod; lines: typeof bare }>()
+        for (const l of bare) {
+          const h = endsIn(l)
+          if (h) later.set(String(h.key), { h, lines: [...(later.get(String(h.key))?.lines ?? []), l] })
+        }
+        const fuelLike = (c: SnapshotCostItem): boolean => c.category === HEATING_CATEGORY && !c.fuelDeliveryId && c.amountCents !== 0
+          && (c.heatingPart === undefined || c.heatingPart === null || c.heatingPart === 'fuel')
+        const candidates = items.filter((c) => fuelLike(c) && (c.heatingPlantId === plant.id || (!c.heatingPlantId && plants.length === 1)))
+        // Durchsicht S4: Ab zwei Anlagen zeigt die Verknüpfung nur Positionen der Anlage (db/co2.ts); eine Position ohne
+        // Anlage kommt in Frage, muss aber zuerst im Kostenformular der Anlage zugeordnet werden.
+        const unassigned = plants.length > 1 ? items.filter((c) => fuelLike(c) && !c.heatingPlantId) : []
         const one = bare.length === 1
         const names = andList(bare.map((l) => `„${nameOf(l.deliveryId)}“${l.from && l.to && nameOf(l.deliveryId) !== formatDayRange(l.from, l.to) ? ` (${formatDayRange(l.from, l.to)})` : ''}`))
-        const way = candidates.length > 0
-          ? `In Frage ${candidates.length === 1 ? 'kommt die Position' : 'kommen die Positionen'} ${andList(candidates.map((c) => `„${c.description}“ über ${fmtCents(c.amountCents)}`))}. ` +
-            `Verknüpfen Sie ${candidates.length === 1 ? 'die' : 'jede'} Position auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung.`
-          : `Eine Brennstoffposition ohne Lieferung gibt es in diesem Zeitraum nicht. Erfassen Sie den Rechnungsbetrag auf der Seite Kosten als Position „${HEATING_CATEGORY}“ und verknüpfen Sie sie danach auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung.`
+        const link = 'auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung'
+        const all = [...candidates, ...unassigned]
+        const hereWay = all.length > 0
+          ? `In Frage ${all.length === 1 ? 'kommt die Position' : 'kommen die Positionen'} ${andList(all.map((c) => `„${c.description}“ über ${fmtCents(c.amountCents)}`))}. ` +
+            (unassigned.length === 0 ? ''
+              : `${all.length === 1 ? 'Sie ist' : `${andList(unassigned.map((c) => `„${c.description}“`))} ${unassigned.length === 1 ? 'ist' : 'sind'}`} noch keiner Heizanlage zugeordnet: ` +
+                `Wählen Sie im Kostenformular bei „Heizanlage“ die Anlage ${plant.name ? `„${plant.name}“` : 'dieser Lieferung'}; erst dann steht ${unassigned.length === 1 ? 'sie' : 'jede'} in der Karte „Lieferungen“ zur Wahl. `) +
+            `Verknüpfen Sie ${all.length === 1 ? 'die' : 'jede'} Position ${link}.`
+          : `Eine Brennstoffposition ohne Lieferung gibt es in diesem Zeitraum nicht. Erfassen Sie den Rechnungsbetrag auf der Seite Kosten als Position „${HEATING_CATEGORY}“ und verknüpfen Sie sie danach ${link}. ` +
+            // Durchsicht S3: Die Rechnung kam spät und steht schon in einem späteren Zeitraum. Einen Zeitraum einer Position
+            // ändert das Kostenformular nicht; verknüpfen lässt sie sich nur in der Heizperiode, in der die Rechnung endet.
+            'Steht die Rechnung schon als Position in einem anderen Zeitraum, erfassen Sie sie nicht ein zweites Mal: Verknüpfen lässt sich nur eine Position der Heizperiode, in der die Rechnung endet. Entfernen Sie die Position dort und erfassen Sie sie in diesem Zeitraum.'
+        const laterWay = [...later.values()].map(({ h, lines }) => {
+          const many = lines.length > 1
+          const hl = periodLabel(h)
+          return `${andList(lines.map((l) => `„${nameOf(l.deliveryId)}“`))} ${many ? 'enden' : 'endet'} erst in der Heizperiode ${hl}. ` +
+            `Die ${many ? 'Positionen' : 'Position'} dafür ${many ? 'gehören' : 'gehört'} in die Heizperiode, in der die Rechnung endet: ` +
+            `Verknüpfen Sie ${many ? 'jede' : 'sie'} in der Heizperiode ${hl} ${link}. ` +
+            `Den Teil für ${label} bucht Mietfuchs danach selbst in diese Heizperiode.`
+        })
+        const way = [
+          ...(here.length > 0 ? [`${later.size > 0 ? `Für ${andList(here.map((l) => `„${nameOf(l.deliveryId)}“`))}: ` : ''}${hereWay}`] : []),
+          ...laterWay,
+        ].join(' ')
         warn('fuel.delivery-unlinked',
           `${where}: Die ${one ? 'Lieferung' : 'Lieferungen'} ${names} ${one ? 'ist' : 'sind'} mit keiner Kostenposition verknüpft. ` +
             `Mietfuchs kennt ${one ? 'ihren Rechnungsbetrag' : 'ihre Rechnungsbeträge'} deshalb nicht: Die Abrechnung der Mieter nennt die ${one ? 'Lieferung' : 'Lieferungen'} ohne Betrag, und abgegrenzt wird nichts. ${way}`,

@@ -195,7 +195,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ihr Betrag als Kostenposition, ohne dass beide verknüpft waren, nannte die gedruckte Abrechnung unter „Brennstoff“
   „0,00 € von 0,00 €“, und nichts wies darauf hin. Jetzt steht unter „Zu prüfen“ ein Hinweis, der die Lieferung und die
   in Frage kommende Position nennt und zur Karte „Lieferungen“ führt; die Abrechnung nennt die Lieferung bis dahin mit
-  Anteil und CO₂-Ausstoß, aber ohne Betrag. Kein Betrag der Abrechnung ändert sich
+  Anteil und CO₂-Ausstoß, aber ohne Betrag. Endet die Rechnung erst in der folgenden Heizperiode, nennt der Hinweis
+  diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
+  selbst herüber. Kein Betrag der Abrechnung ändert sich
   ([#722](https://github.com/speedone/mietfuchs/issues/722)).
 - Vorauszahlung getrennt nach Heizung und übrigen Nebenkosten: Rechnet die Heizung im selben Zeitraum ab wie das
   Objekt, ließ sich die Vorauszahlung nicht aufteilen, weil der Knopf dafür nie erschien. Die Karte „Heizung“ der
