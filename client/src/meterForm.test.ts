@@ -1,7 +1,8 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { FREE_UNIT_PLACEHOLDER, HEATING_ROLE_HELP, asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterScaleHint, scaleRequired, meterToForm, meterTypeChoices, meterTypeHint, meterTypeOptionLabel, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
+import { hcaFieldsBody } from './hcaForm'
+import { SCALE_MISSING_WITH_FACTOR, FREE_UNIT_PLACEHOLDER, HEATING_ROLE_HELP, asksCalibration, asksRemote, asksScope, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterScaleHint, scaleRequired, meterToForm, meterTypeChoices, meterTypeHint, meterTypeOptionLabel, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -414,5 +415,26 @@ describe('#723: Skala des Heizkostenverteilers ist Pflicht', () => {
     const gewechselt = withMeterType(wasser, 'hkv')
     expect(scaleRequired(gewechselt)).toBe(true)
     expect(meterBody(gewechselt, null)).toMatchObject({ field: 'hcaScale' })
+  })
+})
+
+// Durchsicht von #723, S6: Altbestand mit Faktor, aber ohne Skala. Vorher fiel der Faktor beim Speichern eines anderen
+// Felds still weg (`hcaFieldsBody` schickte ohne Einheitsskala `null`), und zählten die Ablesungen in einer
+// abgeschlossenen Heizperiode, lehnte der Server mit 409 ab.
+describe('#723 Durchsicht S6: gespeicherter Faktor ohne Skala', () => {
+  const alt = meterToForm({ id: 'h1', propertyId: 'objekt-1', name: 'Bad', unitId: 'eg', type: 'hkv', unit: 'Einheiten', ratingFactor: 0.825 })
+  test('der Faktor bleibt erhalten, solange niemand ihn ändert', () => {
+    expect(hcaFieldsBody('hkv', alt.hca)).toEqual({ body: { hcaScale: null, ratingFactor: 0.825 } })
+    expect(meterBody({ ...alt, name: 'Bad oben', hca: { ...alt.hca, scale: 'unit' } }, null)).toMatchObject({ body: { name: 'Bad oben', hcaScale: 'unit', ratingFactor: 0.825 } })
+    // Die Produktskala enthält den Faktor; ihn zu leeren ist dann die Wahl des Vermieters.
+    expect(meterBody({ ...alt, hca: { ...alt.hca, scale: 'product' } }, null)).toMatchObject({ body: { hcaScale: 'product', ratingFactor: null } })
+  })
+  test('beim Bearbeiten verlangt das Formular die Skala und sagt, warum', () => {
+    expect(scaleRequired(alt)).toBe(true)
+    const ohne = meterBody({ ...alt, name: 'Bad oben' }, null)
+    expect(ohne).toMatchObject({ error: SCALE_MISSING_WITH_FACTOR, field: 'hcaScale', short: 'Skala fehlt' })
+    expect(SCALE_MISSING_WITH_FACTOR).toBe('Für dieses Gerät ist ein Bewertungsfaktor gespeichert, aber keine Skala. Bitte wählen Sie die Skala: Erst sie sagt, ob die Abrechnung den Ablesewert mit dem Faktor malnimmt (Einheitsskala) oder ob er im Wert schon enthalten ist (Produktskala). Ohne Skala verteilt die eigene Heizkostenabrechnung die Heizkosten nicht.')
+    expect(meterScaleHint(alt)).toBe(SCALE_MISSING_WITH_FACTOR)
+    expect(meterScaleHint({ ...alt, hca: { ...alt.hca, scale: 'unit' } })).toBeNull()
   })
 })

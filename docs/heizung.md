@@ -449,7 +449,10 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
   `hcaScale`) und am Server (`guardMeter`): für ein neues Gerät, beim Wechsel der Sparte zum Heizkostenverteiler und für
   eine gespeicherte Skala, die geleert würde (auch durch einen unbekannten Wert). Wie bei der Einheit bleibt ein Gerät,
   das schon ohne Skala gespeichert ist, speicherbar (`keptScale`; krumm, nicht kaputt), das Feld sagt dann, was fehlt
-  (`meterScaleHint`); Wiederherstellen und Umstieg laufen nicht durch `guardMeter`. Der Bewertungsfaktor bleibt bei der
+  (`meterScaleHint`); Wiederherstellen und Umstieg laufen nicht durch `guardMeter`. **Ausnahme: gespeicherter Faktor ohne
+  Skala** (Altbestand, Durchsicht S6): Der Faktor bleibt beim Speichern erhalten (`hcaFieldsBody`; vorher fiel er still weg,
+  bei Ablesungen in einer abgeschlossenen Heizperiode mit 409), und das Formular verlangt die Skala mit
+  `SCALE_MISSING_WITH_FACTOR`, denn erst sie sagt, ob der Faktor gilt. Der Server verlangt sie dort nicht. Der Bewertungsfaktor bleibt bei der
   Einheitsskala freiwillig beim Speichern (fehlt er, meldet die Abrechnung es wie bisher). Die Berechnung nimmt ohne
   Skala nichts an: Schon ein Gerät ohne Skala sperrt die Verteilung der Anlage (Test in calc-hkv.test.ts). Die
   Erkennungshilfe am Feld (`SCALE_HELP`) nennt nur, was aus der Bedeutung der Skalen folgt, keine Merkmale am Gerät.

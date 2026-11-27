@@ -218,13 +218,25 @@ const failed = (problems: Problem<MeterField>[]): MeterError => {
 // Gerät, nach einem Wechsel der Sparte und für eine gespeicherte Skala, die geleert würde; ein Gerät, das schon ohne Skala
 // gespeichert ist, bleibt speicherbar, wie es ist (krumm, nicht kaputt): Wer nur den Namen berichtigt, kennt die Skala
 // vielleicht noch nicht, und zählen seine Ablesungen in einer abgeschlossenen Heizperiode, nimmt der Server keine an.
-// Dieselbe Regel prüft der Server (`guardMeter`).
-export const scaleRequired = (form: Pick<MeterForm, 'id' | 'type' | 'keptType' | 'keptScale'>): boolean =>
-  form.type === 'hkv' && !(form.id !== undefined && form.keptType === 'hkv' && form.keptScale === '')
+// Dieselbe Regel prüft der Server (`guardMeter`); die Ausnahme mit gespeichertem Faktor (S6) verlangt nur das Formular.
+// Durchsicht von #723, S6: Ein Altbestand mit Faktor, aber ohne Skala, ist nicht „krumm, aber vollständig“: Ob der
+// gespeicherte Faktor gilt, sagt erst die Skala. Beim Bearbeiten verlangt das Formular sie deshalb (der Faktor bleibt
+// bis dahin, `hcaFieldsBody`). Ohne Skala gibt es kein Feld für den Faktor; ein Text im Feld kommt also aus dem Bestand.
+const keptWithoutScale = (form: Pick<MeterForm, 'id' | 'keptType' | 'keptScale'>): boolean =>
+  form.id !== undefined && form.keptType === 'hkv' && form.keptScale === ''
+const keptFactorWithoutScale = (form: Pick<MeterForm, 'id' | 'type' | 'keptType' | 'keptScale' | 'hca'>): boolean =>
+  form.type === 'hkv' && keptWithoutScale(form) && form.hca.factor.trim() !== ''
+export const scaleRequired = (form: Pick<MeterForm, 'id' | 'type' | 'keptType' | 'keptScale' | 'hca'>): boolean =>
+  form.type === 'hkv' && (!keptWithoutScale(form) || keptFactorWithoutScale(form))
 export const SCALE_MISSING = 'Bitte wählen Sie die Skala des Heizkostenverteilers: Einheitsskala oder Produktskala.'
-// Der Hinweis am Feld für ein Gerät, das ohne Skala gespeichert ist und so bleiben darf, oder null.
+export const SCALE_MISSING_WITH_FACTOR =
+  'Für dieses Gerät ist ein Bewertungsfaktor gespeichert, aber keine Skala. Bitte wählen Sie die Skala: Erst sie sagt, ob die Abrechnung den Ablesewert mit dem Faktor malnimmt (Einheitsskala) oder ob er im Wert schon enthalten ist (Produktskala). Ohne Skala verteilt die eigene Heizkostenabrechnung die Heizkosten nicht.'
+// Der Hinweis am Feld für ein Gerät, das ohne Skala gespeichert ist, oder null: ohne Faktor darf es so bleiben, mit Faktor
+// verlangt das Formular die Skala und sagt schon vor dem Speichern, warum.
 export function meterScaleHint(form: Pick<MeterForm, 'id' | 'type' | 'keptType' | 'keptScale' | 'hca'>): string | null {
-  if (form.type !== 'hkv' || form.hca.scale !== '' || scaleRequired(form)) return null
+  if (form.type !== 'hkv' || form.hca.scale !== '') return null
+  if (keptFactorWithoutScale(form)) return SCALE_MISSING_WITH_FACTOR
+  if (scaleRequired(form)) return null
   return 'Für dieses Gerät ist keine Skala gespeichert. Ohne Skala verteilt die eigene Heizkostenabrechnung die Heizkosten nicht; bitte wählen Sie sie, sobald Sie sie kennen.'
 }
 // Die Erkennungshilfe am Feld (#723), auch für Vermieter ohne Messdienst. Sie nennt nur, was aus der Bedeutung der beiden
@@ -254,7 +266,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   const number = form.meterNumber.trim()
   const hca = hcaFieldsBody(form.type, form.hca)
   if ('error' in hca) problems.push({ text: hca.error })
-  if (scaleRequired(form) && form.hca.scale === '') problems.push({ text: SCALE_MISSING, field: 'hcaScale', short: 'Skala fehlt' })
+  if (scaleRequired(form) && form.hca.scale === '') problems.push({ text: keptFactorWithoutScale(form) ? SCALE_MISSING_WITH_FACTOR : SCALE_MISSING, field: 'hcaScale', short: 'Skala fehlt' })
   // #342: Eine neue oder geänderte Einheit muss die Sparte kennen; eine gespeicherte, die unverändert bleibt, nicht.
   const entered = form.unit.trim()
   // Bei Sparten mit Auswahl wird nur gespeichert, was gewählt ist (Durchsicht S2, S6). Ohne Wahl darf nur ein schon

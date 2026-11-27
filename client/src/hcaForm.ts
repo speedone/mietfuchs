@@ -53,11 +53,14 @@ export const EMPTY_HCA_FIELDS: HcaFieldsForm = { scale: '', factor: '' }
 
 // Skala und Faktor gibt es nur am Heizkostenverteiler; bei jeder anderen Sparte schickt das Formular
 // `null`, sonst lehnte der Server ab. Bei der Produktskala ist der Faktor im Wert enthalten; ein Feld dafür
-// gibt es dann nicht, und er wird geleert.
+// gibt es dann nicht, und er wird geleert. Ohne Skala bleibt ein gespeicherter Faktor (Durchsicht von #723, S6).
 export function hcaFieldsBody(type: MeterType, f: HcaFieldsForm): { body: { hcaScale: HcaScale | null; ratingFactor: number | null } } | { error: string } {
   if (type !== 'hkv') return { body: { hcaScale: null, ratingFactor: null } }
-  if (f.scale !== 'unit') return { body: { hcaScale: f.scale === '' ? null : f.scale, ratingFactor: null } }
+  if (f.scale === 'product') return { body: { hcaScale: 'product', ratingFactor: null } }
   const factor = readNumber(f.factor, 'Bewertungsfaktor')
+  // Durchsicht von #723, S6: Ohne Skala gibt es kein Feld für den Faktor. Ein gespeicherter (Altbestand) bleibt dann, wie er
+  // ist; vorher fiel er beim Speichern eines anderen Felds still weg. Ihn ändert nur, wer eine Skala wählt.
+  if (f.scale === '') return { body: { hcaScale: null, ratingFactor: factor !== null && typeof factor === 'number' && factor > 0 ? factor : null } }
   if (factor !== null && typeof factor === 'object') return factor
   if (factor !== null && !(factor > 0)) return { error: 'Der Bewertungsfaktor ist eine Zahl über 0, etwa 0,8 oder 1,25.' }
   if (factor !== null && factor > FACTOR_PLAUSIBLE && !f.confirmed) {
