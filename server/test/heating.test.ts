@@ -281,9 +281,42 @@ test('#322: fehlt einer Wohnung der Rauminhalt, wird nicht verteilt und die Wohn
   assert.deepEqual(plan.problems, [{ kind: 'noBasisValue', basis: 'volume', unitNames: ['B'] }])
 })
 
-test('Review Focus 4: eine Wohnung ohne Wärmezähler ist ein Fehler, nicht eine Wohnung ohne Verbrauch', () => {
+// #690: Vorher sperrte eine Wohnung ohne Gerät die ganze Anlage (Fehler `noMeter`, alle Kosten beim Vermieter). Jetzt trägt
+// sie den Durchschnitt je m² der abgelesenen Wohnungen (wie der Vorschlag „Durchschnitt des Gebäudes“ einer Schätzung,
+// über ihre Nutzer nach Gradtagen geteilt), ihre Fläche zählt für die Grenze des § 9a Abs. 2, und darüber geht der Topf nur
+// nach Fläche. Der andere Topf bleibt, wie er ist. Eine Einheit ohne Fläche (Garage) braucht kein Gerät.
+test('#690: eine Wohnung ohne Wärmezähler sperrt nicht; sie trägt den Durchschnitt je m², über der Grenze nur Fläche', () => {
   const plan = planSelf(input({ meters: METERS.filter((m) => m.id !== 'wb') }))
-  assert.deepEqual(plan.problems, [{ kind: 'missing', pot: 'heating', unitId: 'b', unitName: 'B', boundary: null, reason: 'noMeter', meterName: null }])
+  assert.deepEqual(plan.problems, [])
+  assert.deepEqual([plan.totals.heating.unequipped, plan.totals.heating.unequippedArea, plan.totals.heating.measured, plan.totals.heating.devices], [['b'], 80, true, true])
+  // A 12.000 kWh und C 12.000 kWh auf 120 m²: 200 kWh je m², B mit 80 m² also 16.000 kWh.
+  near(plan.totals.heating.substitutePerM2 ?? -1, 200, 'Durchschnitt je m²')
+  near(userOf(plan, 'B').pots.heating.value ?? -1, 16000, 'B')
+  assert.equal(userOf(plan, 'B').pots.heating.substituted, true)
+  assert.equal(userOf(plan, 'A').pots.heating.substituted, undefined)
+  assert.deepEqual(plan.totals.water.unequipped, [])
+  // B hat abgelesen genau 16.000 kWh (Beispiel A): dieselben Gewichte wie mit dem Zähler.
+  const voll = weightsOf(planSelf(input()), { heating: 70, water: 70 }, 0.15)
+  const w = weightsOf(plan, { heating: 70, water: 70 }, 0.15)
+  for (const k of ['A', 'B', 'C1', 'C2']) near(w.get(k)?.both ?? -1, voll.get(k)?.both ?? -2, k)
+  // Dieselbe Rechnung wie eine Schätzung nach dem Durchschnitt: C ohne Zähler gegen C mit Zähler ohne Stände und Schätzung.
+  const ohneC = planSelf(input({ meters: METERS.filter((m) => m.id !== 'wc') }))
+  near(ohneC.totals.heating.substitutePerM2 ?? -1, (12000 + 16000) / 140, 'Durchschnitt aus A und B')
+  const geschaetzt = planSelf(input({ readings: READINGS.filter((x) => x.meterId !== 'wc'), estimates: new Map([['c:heating', (28000 / 140) * 60]]) }))
+  const wo = weightsOf(ohneC, { heating: 70, water: 70 }, 0.15)
+  const ws = weightsOf(geschaetzt, { heating: 70, water: 70 }, 0.15)
+  for (const k of ['A', 'B', 'C1', 'C2']) near(wo.get(k)?.heating ?? -1, ws.get(k)?.heating ?? -2, `${k} wie geschätzt`)
+  // Über der Grenze des § 9a Abs. 2 (80 von 200 m² = 40 % > 25 %) nur nach Fläche, wie ganz ohne Wärmezähler.
+  const grenze = planSelf(input({ meters: METERS.filter((m) => m.id !== 'wb'), estimateThreshold: () => 25 }))
+  assert.equal(grenze.totals.heating.overThreshold, true)
+  const ohneAlle = weightsOf(planSelf(input({ meters: METERS.filter((m) => m.type !== 'waerme') })), { heating: 70, water: 70 }, 0.15)
+  const wg = weightsOf(grenze, { heating: 70, water: 70 }, 0.15)
+  for (const k of ['A', 'B', 'C1', 'C2']) near(wg.get(k)?.heating ?? -1, ohneAlle.get(k)?.heating ?? -2, `${k} nach Fläche`)
+  // Ohne eine abgelesene Wohnung gibt es keinen Durchschnitt: nur nach Fläche.
+  const keiner = planSelf(input({ meters: METERS.filter((m) => m.id !== 'wb'), readings: READINGS.filter((x) => x.meterId !== 'wa' && x.meterId !== 'wc'), estimates: new Map([['a:heating', 12000], ['c:heating', 12000]]) }))
+  assert.deepEqual([keiner.totals.heating.substitutePerM2, keiner.totals.heating.measured], [null, false])
+  const garage = planSelf(input({ units: [...UNITS, { id: 'g', name: 'Garage', areaM2: 0, heatedAreaM2: null, role: 'rented' }] }))
+  assert.deepEqual([garage.problems, garage.totals.heating.unequipped], [[], []])
 })
 
 test('Fehlender Stand am Ende, Zählerwechsel ohne Endstand und negativer Verbrauch sind ohne Schätzung nach § 9a Fehler', () => {
@@ -483,7 +516,8 @@ test('HKV im Grenzmodell: Differenz mal Faktor des Geräts; Zwischenablesung je 
   ])
   // Ohne Gerät des richtigen Typs fehlt der Wert.
   const ohne = planSelf(input({ hotWater: 'none', capture: 'hca', meters: HKV.filter((m) => m.unitId !== 'b'), readings: HKV_READINGS }))
-  assert.deepEqual(ohne.problems.map((p) => (p.kind === 'missing' ? [p.unitId, p.reason] : p.kind)), [['b', 'noMeter']])
+  // #690: kein Fehler mehr; B trägt den Durchschnitt je m² der abgelesenen Wohnungen.
+  assert.deepEqual([ohne.problems, ohne.totals.heating.unequipped, ohne.totals.heating.measured], [[], ['b'], true])
   // Ohne `capture` rechnet planSelf wie in PR 10 mit Wärmezählern; die Geräte vom Typ `hkv` zählen dann nicht.
   assert.equal(planSelf(input({ hotWater: 'none', meters: HKV, readings: HKV_READINGS })).totals.heating.measured, false)
 })

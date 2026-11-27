@@ -10,7 +10,7 @@ import type { Snapshot, SnapshotReading } from '../src/snapshot.ts'
 import type { CaptureMethod, CostItem, HeatingPlant, HeatingServiceValue, Meter, Reading } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { dayAfter } from '../../shared/law/register.ts'
-import { selfDelivery, selfMeter, selfMeters, selfReading, selfReadings, selfRow, selfSnapshot } from '../testing/selfHeating.ts'
+import { selfDelivery, selfMeter, selfMeters, selfReading, selfReadings, selfRow, selfSnapshot, selfUnit } from '../testing/selfHeating.ts'
 import { periodKey } from '../../shared/period.ts'
 
 const codes = (s: ComputedSettlement) => s.notices.map((n) => n.code)
@@ -334,7 +334,8 @@ test('#218 Vorerfassung: In einem Gebäude, das überwiegend nicht dem Wohnen di
 // Warmwasserzähler, aber keinen Wärmezähler, stand an ihren Grenzen grün „abgelesen“ neben „B hat keinen Wärmezähler“.
 test('Wohnung ohne Gerät für einen Topf: ihre Grenzen nennen den Topf, die übrigen Wohnungen nichts', () => {
   const ohneWaerme = computeSettlement(selfSnapshot({ meters: selfMeters().filter((m) => m.id !== 'wz-b'), readings: selfReadings().filter((r) => r.meterId !== 'wz-b') }))
-  assert.match(ohneWaerme.notices.find((n) => n.code === 'heating.self-incomplete')?.text ?? '', /B hat keinen Wärmezähler/)
+  // Seit #690 kein Fehler mehr, sondern die Warnung mit dem Weg zur Abrechnung.
+  assert.match(ohneWaerme.notices.find((n) => n.code === 'heating.unit-without-device')?.text ?? '', /B hat keinen Wärmezähler/)
   assert.deepEqual(selfOf(ohneWaerme).units.map((u) => [u.unitName, ...new Set(u.boundaries.map((b) => (b.noDevicePots ?? []).join('+')))]), [['A', ''], ['B', 'heating'], ['C', '']])
   // Kein Topf ist ganz ohne Gerät: Die Töpfe selbst melden nichts.
   assert.deepEqual(selfOf(ohneWaerme).pots.map((p) => p.noDevices), [undefined, undefined])
@@ -358,4 +359,77 @@ test('#723: ein einziger Heizkostenverteiler ohne Skala: Fehler nennt Gerät und
   // Kein Mieter trägt eine Heizposition; alle 6.660,00 € stehen beim Vermieter.
   assert.deepEqual(s.statements.map((st) => st.totalShareCents), [0, 0, 0, 0])
   assert.equal(s.landlord.totalCents, 666000)
+})
+
+// #690: Eine Wohnung ohne Heizkostenverteiler, die übrigen mit. Vorher sperrte das die ganze Anlage (Fehler, alle Kosten
+// beim Vermieter, jeder Mieter 0,00 €), auch für ein Jahr, in dem das Gerät wirklich fehlte. Jetzt trägt die Wohnung den
+// Durchschnitt je m² der abgelesenen; über der Grenze des § 9a Abs. 2 geht der Topf nur nach Fläche. Eine Warnung nennt die
+// Wohnung, die Kürzung nach § 12 Abs. 1 Satz 1 HeizkostenV je Mieter in Euro und den Weg zur Behebung.
+const withoutDevice = (base: Snapshot, id: string): Snapshot => ({ ...base, meters: base.meters.filter((m) => m.id !== id), readings: base.readings.filter((r) => r.meterId !== id) })
+const allRows = (s: ComputedSettlement) => s.statements.reduce((a, st) => a + st.rows.reduce((b, r) => b + r.shareCents, 0), 0) + s.landlord.rows.reduce((a, r) => a + r.shareCents, 0)
+
+test('#690: Wohnung ohne Heizkostenverteiler über der Grenze (B, 80 von 200 m²): Heizung nur nach Fläche, Kürzung vorsorglich für alle', () => {
+  const mit = asHca(selfSnapshot())
+  const s = computeSettlement(withoutDevice(mit, 'wz-b'))
+  const ref = computeSettlement({ ...mit, meters: mit.meters.filter((m) => !HEAT.includes(m.id)), readings: mit.readings.filter((r) => !HEAT.includes(r.meterId)) })
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+  assert.equal(selfOf(s).ok, true)
+  // Centgenau wie ohne ein einziges Gerät der Heizung: Topf Heizung nach Fläche, Warmwasser nach Verbrauch.
+  assert.deepEqual(amounts(s), amounts(ref))
+  assert.ok(s.statements.every((st) => st.totalShareCents > 0), 'jeder Mieter trägt seinen Anteil')
+  assert.equal(allRows(s), s.totalCostsCents)
+  const heating = selfOf(s).pots.find((p) => p.pot === 'heating') ?? assert.fail('kein Topf Heizung')
+  assert.deepEqual([heating.overThreshold, heating.consumptionPct, heating.noDevices, heating.unequippedUnits], [true, 0, undefined, ['B']])
+  assert.equal(selfOf(s).pots.find((p) => p.pot === 'water')?.unequippedUnits, undefined)
+  for (const c of ['heating.no-consumption', 'heating.estimate-over-25']) assert.ok(!codes(s).includes(c), c)
+  const n = s.notices.find((x) => x.code === 'heating.unit-without-device') ?? assert.fail(`keine Warnung, sondern: ${codes(s).join(', ')}`)
+  assert.equal(n.level, 'warning')
+  assert.deepEqual(n.subject, { kind: 'heatingCosts', id: 'hp' })
+  assert.match(n.text, /^Heizanlage, Heizperiode 2025: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon\. Nicht erfasst ist der Verbrauch für 80 von 200 m² \(40 %\)\./)
+  assert.match(n.text, /ausschließlich nach Fläche \(wie § 9a Abs\. 2 HeizkostenV\)/)
+  assert.match(n.text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV; BGH VIII ZR 151\/20\)\. Mietfuchs nennt die Kürzung deshalb vorsorglich für alle \(Auslegung\)/)
+  // Die Beträge wortgleich mit dem Hinweis ganz ohne Gerät (dieselbe Verteilung, dieselbe Kürzung „soweit“).
+  const list = /, hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: .*? und Mieter C2 \(C\) \d+,\d\d €/.exec(ref.notices.find((x) => x.code === 'heating.no-consumption')?.text ?? '')?.[0] ?? assert.fail('keine Beträge im Vergleich')
+  assert.ok(n.text.includes(list), `${n.text}\nerwartet: ${list}`)
+  // Der Weg zur Behebung: Gerät anlegen, bei Ausfall oder anderem zwingendem Grund Schätzung nach § 9a.
+  assert.match(n.text, /„Zähler & Stände“.*„Schätzung \(§ 9a\)“/s)
+  const steps = s.statements.flatMap((st) => st.rows.flatMap((r) => r.steps ?? [])).filter((x) => x.label === 'Verbrauchskosten Heizung')
+  assert.ok(steps.length > 0 && steps.every((x) => /nicht erfasst für 80 von 200 m² \(B ohne Heizkostenverteiler\).*nur nach Fläche verteilt/.test(x.value)), JSON.stringify(steps))
+  // Mit allen Geräten bleibt alles, wie es war.
+  const voll = computeSettlement(mit)
+  assert.ok(!codes(voll).includes('heating.unit-without-device'))
+  assert.equal(selfOf(voll).pots.find((p) => p.pot === 'heating')?.unequippedUnits, undefined)
+})
+
+// Unter der Grenze (C, 40 von 200 m² = 20 %): C trägt den Durchschnitt je m² von A und B, centgenau wie eine Schätzung nach
+// dem Durchschnitt des Gebäudes. A: 6.000 · 2 = 12.000 Einheiten auf 60 m², B: 16.000 auf 100 m², also 175 je m², C 7.000.
+test('#690: Wohnung ohne Heizkostenverteiler unter der Grenze: Durchschnitt je m², sicher für C, vorsorglich für A und B', () => {
+  const units = [selfUnit('a', 60), selfUnit('b', 100), selfUnit('c', 40)]
+  const mit = asHca(selfSnapshot({ units }))
+  const s = computeSettlement(withoutDevice(mit, 'wz-c'))
+  const est = computeSettlement({
+    ...mit, readings: mit.readings.filter((r) => r.meterId !== 'wz-c'),
+    heatingEstimates: [{ plantId: 'hp', period: periodKey('2025-01'), unitId: 'c', part: 'heat', value: 7000, method: 'buildingAverage', reason: 'Gerät defekt', confirmed: true, cause: 'deviceFailure', capture: 'hca', valueUnit: 'Einheiten' }],
+  })
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+  assert.deepEqual(amounts(s), amounts(est))
+  assert.equal(allRows(s), s.totalCostsCents)
+  const heating = selfOf(s).pots.find((p) => p.pot === 'heating') ?? assert.fail('kein Topf Heizung')
+  assert.deepEqual([heating.overThreshold, heating.byAreaOnly, heating.consumptionPct, heating.consumption, heating.substitutedConsumption, heating.unequippedUnits], [false, false, 70, 35000, 7000, ['C']])
+  const n = s.notices.find((x) => x.code === 'heating.unit-without-device') ?? assert.fail(codes(s).join(', '))
+  assert.match(n.text, /^Heizanlage, Heizperiode 2025: C hat keinen Heizkostenverteiler, die übrigen Wohnungen schon\. Für diese Wohnung setzt Mietfuchs den Durchschnitt je m² der abgelesenen Wohnungen an \(175 Einheiten je m²\)/)
+  assert.match(n.text, /BGH VIII ZR 329\/14/)
+  // Sicher: die Mieter von C; vorsorglich: A und B. Je Topf Heizung nach CO₂-Abzug laut Ausweis.
+  assert.match(n.text, /kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV; BGH VIII ZR 151\/20\), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter C1 \(C\) \d+,\d\d € und Mieter C2 \(C\) \d+,\d\d €\. /)
+  assert.match(n.text, /Vorsorglich nennt Mietfuchs die Kürzung auch für die übrigen Mieter.*\(Auslegung\): Mieter A \(A\) \d+,\d\d € und Mieter B \(B\) \d+,\d\d €\. /s)
+  const steps = s.statements.find((st) => st.tenancyId === 'C1')?.rows.flatMap((r) => r.steps ?? []).filter((x) => x.label === 'Verbrauchskosten Heizung') ?? []
+  assert.ok(steps.length > 0 && steps.every((x) => /\(kein Heizkostenverteiler: Durchschnitt der abgelesenen Wohnungen je m²\)/.test(x.value)), JSON.stringify(steps))
+})
+
+test('#690: beim Ablesedienst sperren fehlende Werte einer Wohnung weiter, mit dem Weg der Schätzung nach § 9a', () => {
+  const svc = asService()
+  const ohneWerte: Snapshot = { ...svc, heatingServiceValues: (svc.heatingServiceValues ?? []).filter((v) => v.unitId !== 'b') }
+  const sv = computeSettlement(ohneWerte)
+  assert.match(sv.notices.find((x) => x.code === 'heating.self-incomplete')?.text ?? '', /Für B fehlen die Werte des Ablesedienstes.*„Schätzung \(§ 9a\)“/s)
+  assert.ok(!codes(sv).includes('heating.unit-without-device'))
 })

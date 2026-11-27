@@ -3394,6 +3394,11 @@ export type SelfPotView = {
   // Systemprüfung: Für diesen Topf ist an keiner Wohnung ein Gerät angelegt (bei einem Ablesedienst: kein Wert
   // eingetragen); er geht deshalb nur nach Fläche. Fehlt sonst und in älteren Abrechnungen.
   noDevices?: true
+  // #690: Die Wohnungen (Namen), die für diesen Topf kein Gerät haben, während andere eins haben; der Topf geht deshalb
+  // nur nach Fläche (`byAreaOnly`). Fehlt sonst und in älteren Abrechnungen (dort sperrte eine solche Wohnung die Anlage).
+  unequippedUnits?: string[]
+  // #690: der Teil von `consumption`, den diese Wohnungen als Durchschnitt je m² der abgelesenen tragen (0 ohne Durchschnitt).
+  substitutedConsumption?: number
 }
 // Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
 // `oldEndValue` (Durchsicht von #241, Recht-I2): bei einem Wechsel oder Stichtag an der Grenze der Stand davor; beim

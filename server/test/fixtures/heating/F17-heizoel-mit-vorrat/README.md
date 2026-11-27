@@ -61,3 +61,26 @@ drei Wärmezähler 10.000 kWh (Festlegung des Plans, der Entwurf nennt keine Zä
 × 42,8 GJ/t × 0,074 t CO₂/GJ = 8.028,85 kg und 8,0289 t × 55 €/t × 1,19 = 525,49 €; 2.500 l ergeben
 6.690,71 kg und 437,91 €. Beide passen, es gibt keinen Hinweis; die benutzten Werte (`co2.ebev-factors`,
 `co2.price`, `ustg.standard-rate`) stehen im Rechtsstand.
+
+## Variante C ohne Wärmezähler (#690)
+
+Wie oben, aber Wohnung C hat keinen Wärmezähler (nach der Einrichtung gelöscht). C hat 100 von 300 m², also 33,3 % der
+Fläche ohne erfassten Verbrauch; das ist mehr als die Grenze von 25 % (§ 9a Abs. 2 HeizkostenV), und die Heizung geht
+ausschließlich nach Fläche, je ⅓. Vorher sperrte die Wohnung die Anlage (alle 5.750,00 € beim Vermieter).
+
+| Zeile | je Mieter exakt | A | B | C |
+|---|---|---|---|---|
+| Heizöl l1 3.150,00 € | 1.050,00 € | 1.050,00 € | 1.050,00 € | 1.050,00 € |
+| Heizöl l2 2.500,00 € | 833,333… € | 833,34 € | 833,33 € | 833,33 € |
+| aus dem Vorrat 1.900,00 € | 633,333… € | 633,34 € | 633,33 € | 633,33 € |
+| im Vorrat −1.800,00 € | −600,00 € | −600,00 € | −600,00 € | −600,00 € |
+| zusammen | 1.916,666… € | **1.916,68 €** | **1.916,66 €** | **1.916,66 €** |
+
+Den Restcent je Zeile bekommt bei Gleichstand der Reihe nach der erste Mieter (#202, ohne Vermieter in der Zeile).
+Zusammen 5.750,00 €; mit −100,00 € `fuelCarry` beim Vermieter 5.650,00 € = Gesamtkosten.
+
+**CO₂.** L = 518,48 € nach dem Anteil am Brennstoff, je ⅓ = 172,826… €: A 172,83 €, B 172,83 €, C 172,82 €.
+
+**Kürzung** (§ 12 Abs. 1 Satz 1, vorsorglich für alle): 15 % der Heizkostenzeilen nach CO₂-Abzug, je Mieter gerundet:
+A (1.916,68 − 172,83) · 0,15 = 261,5775 → **261,58 €**, B (1.916,66 − 172,83) · 0,15 = 261,5745 → **261,57 €**,
+C (1.916,66 − 172,82) · 0,15 = 261,576 → **261,58 €**.

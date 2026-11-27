@@ -232,6 +232,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Zähler), solange im Formular außer Beschreibung, Betrag, Rechnungssteller, Beleg und Daten nichts eingegeben ist; jede
   andere Eingabe und bestehende Positionen bleiben, wie sie sind
   ([#704](https://github.com/speedone/mietfuchs/issues/704)).
+- Eigene Heizkostenabrechnung, eine Wohnung ohne Gerät: Hatte eine Wohnung keinen Heizkostenverteiler (oder
+  Wärme- bzw. Warmwasserzähler), die übrigen aber schon, verteilte Mietfuchs die ganze Anlage nicht; alle Heizkosten
+  standen beim Vermieter, jeder Mieter bei 0,00 €, auch für ein Jahr, in dem das Gerät wirklich fehlte. Jetzt rechnet die
+  Wohnung mit dem Durchschnitt je m² der abgelesenen Wohnungen, und die übrigen bleiben nach Verbrauch. Liegt die
+  Fläche ohne erfassten Verbrauch über 25 % (§ 9a Abs. 2 HeizkostenV) oder ist keine Wohnung abgelesen, geht der Topf
+  nur nach Fläche. Eine Warnung nennt die Wohnung und die Kürzung um 15 % nach § 12 Abs. 1 Satz 1 HeizkostenV je
+  Mieter in Euro: sicher für die Mieter der Wohnung ohne Gerät, vorsorglich für die übrigen. Dazu der Weg: Gerät auf
+  der Seite „Zähler & Stände“ anlegen, und war eines eingebaut und ist ausgefallen, den Verbrauch unter „Schätzung
+  (§ 9a)“ schätzen. Mit vollständigen Geräten ändert sich keine Zahl; Werte eines Ablesedienstes, die für eine Wohnung
+  fehlen, sperren weiter, bis sie eingetragen oder geschätzt sind
+  ([#690](https://github.com/speedone/mietfuchs/issues/690)).
 - Zweimal derselbe Datenordner: Startete Mietfuchs (Fenster, Programmdatei, Paket oder Store), während ein anderes
   Mietfuchs auf demselben Datenordner gerade seine Datenbank öffnete, etwa beim ersten Start oder nach einem Update auf
   einem langsamen Rechner, hielt der neue Start den anderen für abwesend, weil der länger als anderthalb Sekunden nicht

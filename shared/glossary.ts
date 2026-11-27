@@ -817,7 +817,8 @@ export const GLOSSARY = {
       'Ist ein Wert nur einige Tage neben dem Stichtag abgelesen, gilt er, wie er ist; das ist kein Grund zu schätzen. ' +
       `Maßgeblich für die Grenze von ${ESTIMATE_THRESHOLD} % ist die Fläche der geschätzten Wohnungen, nicht ihre Zahl: Bei vier gleich großen Wohnungen hat jede genau ${ESTIMATE_THRESHOLD} %, das ist keine Überschreitung. ` +
       `Sind die Wohnungen verschieden groß, zählt die Fläche: Eine Wohnung mit mehr als ${ESTIMATE_THRESHOLD} % der Fläche überschreitet die Grenze allein, und mehrere kleinere können es zusammen. Mietfuchs zählt die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs. ` +
-      'Haben Sie eine Ablesung auf der Seite Zähler als geschätzt gekennzeichnet, zählt die Fläche dieser Wohnung für die Grenze mit; darüber warnt Mietfuchs, rechnet aber weiter nach Verbrauch, bis Sie die Schätzung auf der Seite Heizkosten eintragen.',
+      'Haben Sie eine Ablesung auf der Seite Zähler als geschätzt gekennzeichnet, zählt die Fläche dieser Wohnung für die Grenze mit; darüber warnt Mietfuchs, rechnet aber weiter nach Verbrauch, bis Sie die Schätzung auf der Seite Heizkosten eintragen. ' +
+      'Eine Wohnung, in der nie ein Gerät war, ist kein Geräteausfall; geschätzt wird dort nicht. Mietfuchs setzt für sie den Durchschnitt je m² der abgelesenen Wohnungen an, zählt ihre Fläche für die Grenze mit und nennt, um wie viel die Mieter ihren Anteil kürzen dürfen (§ 12 Abs. 1 Satz 1 HeizkostenV).',
   },
   // Heizung PR 14 (#99, Entwurf 10.3). Die Zahlen sind Beispielzahlen.
   billingInfo: {

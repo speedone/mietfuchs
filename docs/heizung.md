@@ -375,7 +375,7 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   gilt er weiter, in derselben Heizperiode lehnt `saveDistribution` einen anderen ab. Läuft eine Anlage
   nur einen Teil der Heizperiode, wird die Wärme am Speicher an ihrer Laufzeit abgegrenzt (Stand am
   Tauschtag nötig, sonst `heating.self-incomplete`).
-- **Nicht verteilbar** (fehlender Stand, Zähler, Anteil, α) heißt Fehler an der Anlage und alle
+- **Nicht verteilbar** (fehlender Stand, Zähler nur noch beim Ablesedienst, Anteil, α; eine Wohnung ohne Gerät seit #690 nicht mehr) heißt Fehler an der Anlage und alle
   Positionen beim Vermieter. Hinweise zu Ablesungen rechnen nach dem CO₂-Block (ihre Kürzungen stehen
   auf den gedruckten Zeilen); fehlende Zwischenablesungen beantwortet der Vermieter in
   `interim_reading_gaps` („Ablesung verwenden“ / „Nach § 9b Abs. 3“, `usableAt`). Ein Wechsel nur zwischen Rollen des
@@ -502,6 +502,26 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
   statt „abgelesen“ den fehlenden Schritt (`missingDevicesLines`, `estimateIdleText` in client/src/heatingSelfView.ts),
   und `heating.no-consumption` nennt neben der Kürzung, dass die Geräte auf der Seite „Zähler & Stände“ anzulegen sind.
   Keine Zahl ändert sich.
+- **Eine Wohnung ohne Gerät, die übrigen mit** (#690): Vorher `noMeter` als Fehler, die Anlage gesperrt, alle Kosten beim
+  Vermieter. Jetzt steht die Wohnung in `totals[p].unequipped` (planSelf, nur Wohnungen mit Fläche, nicht beim Ablesedienst:
+  dort bleiben fehlende Werte ein Fehler mit dem Weg der Schätzung). Ihr Verbrauch ist der Durchschnitt je m² (bzw. m³)
+  der Wohnungen mit erfasstem Verbrauch ohne Schätzung (`substitutePerM2`, dieselbe Rechnung wie der Vorschlag
+  „Durchschnitt des Gebäudes“), über ihre Nutzer nach Gradtagen bzw. Tagen geteilt wie eine Schätzung
+  (`SelfUserPot.substituted`); centgenau wie eine Schätzung mit diesem Wert (Test in calc-hkv.test.ts). Ihre Fläche zählt
+  mit der geschätzten für die Grenze des § 9a Abs. 2 (`unequippedArea`); darüber, oder ohne abgelesene Wohnung, geht der
+  Topf nur nach Fläche. Warnung `heating.unit-without-device` je Topf (ersetzt dort `heating.estimate-over-25` und
+  `heating.no-consumption`), Ausweis `SelfPotView.unequippedUnits`/`substitutedConsumption`, Rechenweg und
+  `missingDevicesLines` nennen die Wohnung. **Rechtslage, am 27.11.2026 an den amtlichen Texten gelesen**: § 4 Abs. 1, 2
+  (Ausstattungspflicht), § 9a Abs. 1 („wegen Geräteausfalls oder aus anderen zwingenden Gründen“), § 12 Abs. 1 Satz 1
+  („Soweit … nicht verbrauchsabhängig“). Ob eine nie ausgestattete Wohnung ein zwingender Grund ist, hat der BGH nicht
+  entschieden: VIII ZR 373/04, Rn. 15 (zwingend, wenn nicht mehr behebbar) gegen Rn. 21 (§ 9a abgegrenzt von der „freien“
+  Schätzung „wegen fehlender Messgeräte“); VIII ZR 264/19, Rn. 20 (Gefahr, dass der Vermieter „aus Bequemlichkeit“ auf die
+  Erfassung verzichtet). Reine Fläche nur, wenn nach Verbrauch objektiv nicht möglich (VIII ZR 261/06, Rn. 16; VIII ZR
+  329/14, Rn. 17 f.: jede den Verbrauch einbeziehende Abrechnung geht vor), deshalb nicht das ganze Haus nach Fläche.
+  Kürzung: sicher für die Mieter der Wohnung ohne Gerät (VIII ZR 151/20, Rn. 35), **vorsorglich für die übrigen**
+  (Rn. 23: „auch nur teilweise“; dagegen VIII ZR 195/04, Trennung nach Kostenart), über der Grenze für alle. Das ist eine
+  Auslegung zur sicheren Seite des Vermieters (er kennt den höchsten Betrag, den er verlieren kann); der Weg selbst ist
+  Festlegung, nicht entschieden. Mit vollständigen Geräten ändert sich keine Zahl.
 - **Einheitsskala**: Ablesewert × Bewertungsfaktor; **Produktskala**: wie abgelesen. Ohne Skala oder
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine

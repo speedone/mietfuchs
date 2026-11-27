@@ -17,7 +17,7 @@ import { saveStock } from '../src/db/fuelStock.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
-import { createEntity } from '../src/db/repository.ts'
+import { createEntity, removeEntity } from '../src/db/repository.ts'
 import { properties } from '../src/db/schema.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -244,7 +244,8 @@ test('F16 Eigene Heizkostenabrechnung: 1.961,89 / 2.615,84 / 1.331,52 / 750,75 �
 })
 
 // F17: drei Wohnungen à 100 m², Öl mit Vorrat, kein Warmwasser. `heat` sind die kWh der Wärmezähler.
-async function f17(opened: Opened, selfC: boolean, heat: [number, number, number]): Promise<ReturnType<typeof snapshotFor>> {
+// #690: `null` heißt, die Wohnung hat keinen Wärmezähler (er wird nach der Einrichtung gelöscht, wie beim Nutzer).
+async function f17(opened: Opened, selfC: boolean, heat: [number | null, number | null, number | null]): Promise<ReturnType<typeof snapshotFor>> {
   await opened.write(async (db) => {
     for (const u of ['a', 'b', 'c']) {
       const self = selfC && u === 'c'
@@ -261,7 +262,15 @@ async function f17(opened: Opened, selfC: boolean, heat: [number, number, number
       await createEntity(db, 'costItems', id, { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: `Heizöl ${id}`, amountCents, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'fuel', heatingTarget: 'heating', fuelDeliveryId: d })
     }
   })
-  await ablesen(opened, (['a', 'b', 'c'] as const).flatMap((u, i): [string, string, null, string, number][] => [[u, 'waerme', null, '2024-12-31', 0], [u, 'waerme', null, '2025-12-31', heat[i] ?? 0]]))
+  const ohne = (['a', 'b', 'c'] as const).filter((_, i) => heat[i] === null)
+  const meters = (await opened.read(readStock)).meters
+  await opened.write(async (db) => {
+    for (const u of ohne) await removeEntity(db, 'meters', meters.find((m) => m.unitId === u && m.type === 'waerme')?.id ?? assert.fail(`kein Wärmezähler ${u}`))
+  })
+  await ablesen(opened, (['a', 'b', 'c'] as const).flatMap((u, i): [string, string, null, string, number][] => {
+    const v = heat[i]
+    return v === null || v === undefined ? [] : [[u, 'waerme', null, '2024-12-31', 0], [u, 'waerme', null, '2025-12-31', v]]
+  }))
   return snapshotFor(await opened.read(readStock), 'objekt-1', P2025())
 }
 
@@ -278,6 +287,23 @@ test('F17 Heizöl mit Vorrat: 5.750,00 € nach Verbrauch, Überträge durch die
     // der Prüfung stehen im Rechtsstand.
     assert.ok(!s.notices.some((n) => n.code === 'co2.cost-implausible'))
     assert.ok(['co2.ebev-factors', 'co2.price', 'ustg.standard-rate'].every((id) => s.legalBasis.values.some((v) => v.id === id)))
+  })
+})
+
+// #690: F17, aber Wohnung C hat keinen Wärmezähler. Vorher sperrte das die Anlage (alle 5.750,00 € beim Vermieter); jetzt
+// geht die Heizung nur nach Fläche, je ⅓, und die Warnung nennt je Mieter 15 % seines Anteils nach CO₂-Abzug (README).
+test('F17 ohne Wärmezähler in C (#690): je ⅓ nach Fläche, 1.916,68 / 1.916,66 / 1.916,66 €, Kürzung 261,58 / 261,57 / 261,58 €', async () => {
+  await withDatabase(async (opened) => {
+    const s = computeSettlement(await f17(opened, false, [10000, 12000, null]))
+    assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+    assert.deepEqual(['ta', 'tb', 'tc'].map((t) => summe(s, t)), [191668, 191666, 191666])
+    assert.deepEqual(['ta', 'tb', 'tc'].map((t) => entlastung(s, t)), [-17283, -17283, -17282])
+    assert.equal(s.totalCostsCents, 565000)
+    const all = s.statements.reduce((a, st) => a + st.rows.reduce((b, r) => b + r.shareCents, 0), 0) + s.landlord.rows.reduce((a, r) => a + r.shareCents, 0)
+    assert.equal(all, s.totalCostsCents)
+    const n = s.notices.find((x) => x.code === 'heating.unit-without-device') ?? assert.fail(s.notices.map((x) => x.code).join(', '))
+    assert.match(n.text, /C hat keinen Wärmezähler, die übrigen Wohnungen schon\./)
+    assert.match(n.text, /hier: Mieter A \(A\) 261,58 €, Mieter B \(B\) 261,57 € und Mieter C \(C\) 261,58 €\./)
   })
 })
 

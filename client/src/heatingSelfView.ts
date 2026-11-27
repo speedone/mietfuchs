@@ -7,6 +7,7 @@ import { CAUSE_TEXT } from './estimateForm'
 import { shareBounds } from './heatingSelfForm'
 import { hkvConsumptionShareForced, hkvCutNotByConsumption } from '../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { andList } from '../../shared/wording.ts'
 
 // ---------- Wärmeschutz und Pflichtanteil (Durchsicht von #239, C1 und M1) ----------
 
@@ -82,12 +83,20 @@ function statusText(b: SelfBoundaryView): string {
 
 // Systemprüfung: Je Topf, für den an keiner Wohnung ein Gerät angelegt ist, der fehlende Schritt. Die Seite meldete
 // sonst jede Wohnung als abgelesen, während ganz nach Fläche verteilt wird. Der Seitenname steht wie in der Navigation.
+// #690: ebenso je Topf, dem nur an einzelnen Wohnungen das Gerät fehlt (`unequippedUnits`); vorher sperrte das die Anlage.
 export function missingDevicesLines(self: Pick<SelfHeatingStatement, 'capture' | 'pots'>): string[] {
-  return self.pots.filter((p) => p.noDevices).map((p) => {
+  return self.pots.filter((p) => p.noDevices || (p.unequippedUnits ?? []).length > 0).map((p) => {
     const name = p.pot === 'heating' ? 'Heizung' : 'Warmwasser'
-    const only = `verteilt wird deshalb nur nach ${p.basisUnit === 'm³' ? 'umbautem Raum' : 'Fläche'}.`
-    if (self.capture === 'serviceValues') return `${name}: Es sind keine Werte des Ablesedienstes eingetragen; ${only} Tragen Sie die Werte auf dieser Seite unter „Werte des Ablesedienstes“ ein.`
+    const by = p.basisUnit === 'm³' ? 'umbautem Raum' : 'Fläche'
+    const only = `verteilt wird deshalb nur nach ${by}.`
     const device = p.pot === 'water' ? 'Warmwasserzähler' : self.capture === 'hca' ? 'Heizkostenverteiler' : 'Wärmezähler'
+    const lacking = p.unequippedUnits ?? []
+    if (!p.noDevices && lacking.length > 0) {
+      const how = p.byAreaOnly || p.overThreshold ? `verteilt wird deshalb nur nach ${by}` : 'angesetzt wird für sie der Durchschnitt der abgelesenen Wohnungen'
+      return `${name}: ${andList(lacking)} ${lacking.length === 1 ? 'hat' : 'haben'} keinen ${device}, die übrigen Wohnungen schon; ${how}, und die Mieter dürfen ihren Anteil kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). ` +
+        `Legen Sie ${lacking.length === 1 ? 'das Gerät' : 'die Geräte'} auf der Seite „Zähler & Stände“ an; war eines eingebaut und ist ausgefallen, schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.`
+    }
+    if (self.capture === 'serviceValues') return `${name}: Es sind keine Werte des Ablesedienstes eingetragen; ${only} Tragen Sie die Werte auf dieser Seite unter „Werte des Ablesedienstes“ ein.`
     return `${name}: An keiner Wohnung ist ein ${device} angelegt; ${only} Legen Sie die Geräte auf der Seite „Zähler & Stände“ an und tragen Sie dort die Ablesungen zu Beginn und Ende der Heizperiode ein.`
   })
 }
@@ -95,7 +104,7 @@ export function missingDevicesLines(self: Pick<SelfHeatingStatement, 'capture' |
 // Schätzung an (beim Ablesedienst schon), deshalb dort dieser Satz.
 export const ESTIMATE_NEEDS_DEVICES = 'Solange kein Gerät angelegt ist, nimmt Mietfuchs keine Schätzung an.'
 export const estimateIdleText = (self: Pick<SelfHeatingStatement, 'capture' | 'pots'>): string =>
-  (self.capture !== 'serviceValues' && self.pots.some((p) => p.noDevices) ? ESTIMATE_NEEDS_DEVICES : 'Für keine Wohnung fehlt ein Wert.')
+  (self.capture !== 'serviceValues' && self.pots.some((p) => p.noDevices || (p.unequippedUnits ?? []).length > 0) ? ESTIMATE_NEEDS_DEVICES : 'Für keine Wohnung fehlt ein Wert.')
 
 // Befund M7 aus #341: welchem Zähler der Stand fehlt, mit Zählernummer. Ältere Abrechnungen führen die
 // Angabe nicht; dann bleibt der Satz, wie er war.
@@ -165,14 +174,19 @@ export function potLines(p: SelfPotView): string[] {
   // #322: Steht der Topf nach umbautem Raum, sind es Kubikmeter.
   const unit = p.basisUnit ?? 'm²'
   lines.push(`Grundkosten ${percent(100 - p.consumptionPct)} %: ${eur(Math.round(base))} für ${quantity(p.areaM2, p.baseCentsPerM2)} ${unit}, ${perUnit(p.baseCentsPerM2, p.areaM2, 4)} je ${unit}`)
+  const lacking = p.unequippedUnits ?? []
+  // #690: Einer Wohnung fehlt das Gerät, und der Topf geht nur nach Fläche (über der Grenze oder ohne abgelesene Wohnung).
+  if (lacking.length > 0 && (p.overThreshold || p.byAreaOnly)) lines.push(`Ohne Gerät bei ${andList(lacking)} ist der Verbrauch nicht für alle Wohnungen erfasst: nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
   // § 9a Abs. 2 (Heizung PR 13): über der Grenze nur nach Fläche.
-  if (p.overThreshold) lines.push(`Geschätzt ist der Verbrauch für ${quantity(p.estimatedAreaM2 ?? 0)} von ${quantity(p.areaM2)} ${unit}; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
+  else if (p.overThreshold) lines.push(`Geschätzt ist der Verbrauch für ${quantity(p.estimatedAreaM2 ?? 0)} von ${quantity(p.areaM2)} ${unit}; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
   else if (p.byAreaOnly) lines.push(`Kein Verbrauch erfasst: nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
   else if (p.consumptionCentsPerUnit !== null) {
     // „je Einheit“, nicht „je Einheiten“ (Durchsicht von #241, Minor 2).
     // Durchsicht von #242, R-M9: der geschätzte Teil, ohne eine Wohnung zu nennen.
     const estimated = (p.estimatedConsumption ?? 0) > 0 ? ` (davon geschätzt nach § 9a HeizkostenV: ${quantity(p.estimatedConsumption ?? 0, p.consumptionCentsPerUnit)} ${p.consumptionUnit})` : ''
-    lines.push(`Verbrauchskosten ${percent(p.consumptionPct)} %: ${eur(Math.round(p.costCents - base))} für ${quantity(p.consumption, p.consumptionCentsPerUnit)} ${p.consumptionUnit}${estimated}, ${perUnit(p.consumptionCentsPerUnit, p.consumption, 6)} je ${p.consumptionUnit === 'Einheiten' ? 'Einheit' : p.consumptionUnit}`)
+    // #690: der Teil der Wohnungen ohne Gerät, mit Namen (der Mieter dieser Wohnung sieht, wofür er zahlt).
+    const substituted = lacking.length > 0 ? ` (davon für ${andList(lacking)} ohne Gerät als Durchschnitt der abgelesenen Wohnungen: ${quantity(p.substitutedConsumption ?? 0, p.consumptionCentsPerUnit)} ${p.consumptionUnit})` : ''
+    lines.push(`Verbrauchskosten ${percent(p.consumptionPct)} %: ${eur(Math.round(p.costCents - base))} für ${quantity(p.consumption, p.consumptionCentsPerUnit)} ${p.consumptionUnit}${estimated}${substituted}, ${perUnit(p.consumptionCentsPerUnit, p.consumption, 6)} je ${p.consumptionUnit === 'Einheiten' ? 'Einheit' : p.consumptionUnit}`)
   }
   return lines
 }
