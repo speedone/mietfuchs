@@ -5,7 +5,7 @@ import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { asksReplacementCalibration, buildReadingBody, buildReadingUpdate, EMPTY_READING, ESTIMATE_HELP, latestReading, newReadingForm, PREFILLED_DATE_HINT, READING_STALE_FIELDS, readingQuestion, readingToForm, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, FREE_UNIT_PLACEHOLDER, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterToForm, meterTypeChoices, meterTypeHint, meterTypeOptionLabel, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, asksScope, CALIBRATION_MARK_HELP, SCOPE_HELP, SCOPE_OPTIONS, calibrationSuggestion, emptyMeterForm, FREE_UNIT_PLACEHOLDER, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, houseLabel, meterBody, meterDeleteMessage, meterPlantId, meterScaleHint, meterToForm, SCALE_HELP, scaleRequired, meterTypeChoices, meterTypeHint, meterTypeOptionLabel, meterUnitChoices, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, INSTALLED_ON_HINT, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate, loadErrorText } from '../api'
 import { usePeriod } from '../period'
@@ -452,7 +452,16 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 : <input value={meterForm.unit} placeholder={meterForm.type === 'sonstig' ? FREE_UNIT_PLACEHOLDER : undefined} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />}
             </Field>
             {/* Heizung PR 12: Skala und Bewertungsfaktor des Heizkostenverteilers. */}
-            {meterForm.type === 'hkv' && <HcaFields form={meterForm.hca} onChange={(hca) => setMeterForm({ ...meterForm, hca })} />}
+            {meterForm.type === 'hkv' && (
+              <HcaFields
+                form={meterForm.hca}
+                onChange={(hca) => setMeterForm({ ...meterForm, hca })}
+                // #723: Pflicht, außer das Gerät ist schon ohne Skala gespeichert; dann sagt der Hinweis, was fehlt.
+                required={scaleRequired(meterForm)}
+                hint={<>{meterScaleHint(meterForm) && <><strong>{meterScaleHint(meterForm)}</strong>{' '}</>}{SCALE_HELP}</>}
+                field={meterErrors.field('hcaScale')}
+              />
+            )}
             {heatingRoleOptions(meterForm, plants.length > 0).length > 0 && (
               <label className="field">
                 Gehört zur Heizanlage?

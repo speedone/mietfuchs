@@ -1,18 +1,29 @@
 // Skala und Bewertungsfaktor eines Heizkostenverteilers im Zählerformular (Heizung PR 12, Entwurf 8.1).
 // Die Auswahl zeigt den gespeicherten Wert (CLAUDE.md, Kosten.test.tsx); ohne Skala steht „bitte wählen“.
+import type { ReactNode } from 'react'
 import Term from './Term'
+import Field from './Field'
 import { asksFactorConfirm, HCA_SCALE_OPTIONS, scaleOfOption, type HcaFieldsForm } from '../hcaForm'
 
-export default function HcaFields({ form, onChange }: { form: HcaFieldsForm; onChange: (f: HcaFieldsForm) => void }) {
+// `required`, `hint` und die Meldung am Feld (#723) kommen vom Zählerformular (`scaleRequired`, `SCALE_HELP`,
+// `meterScaleHint` in meterForm.ts); die Skala ist dort Pflicht.
+type Props = {
+  form: HcaFieldsForm
+  onChange: (f: HcaFieldsForm) => void
+  required?: boolean
+  hint?: ReactNode
+  // Aus `useFormError().field('hcaScale')`: Kennung, Meldung und `onFix`.
+  field?: { id: string; error?: string; onFix: () => void }
+}
+
+export default function HcaFields({ form, onChange, required, hint, field }: Props) {
   return (
     <>
-      <label className="field">
-        <span>Skala des <Term id="heatCostAllocator">Heizkostenverteilers</Term></span>
+      <Field label={<>Skala des <Term id="heatCostAllocator">Heizkostenverteilers</Term></>} required={required === true} hint={hint} {...field}>
         <select value={form.scale} onChange={(e) => onChange({ ...form, scale: scaleOfOption(e.target.value) })}>
           {HCA_SCALE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <small className="muted">Skala und Faktor stehen in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers, bei manchen Geräten auch auf dem Gerät. Ein Gerät mit anderem Faktor, etwa nach einem Tausch, legen Sie als neuen Zähler an.</small>
-      </label>
+      </Field>
       {form.scale === 'unit' && (
         <label className="field">
           Bewertungsfaktor des Heizkörpers

@@ -44,6 +44,8 @@ export type MeterForm = {
   heatingPlantId: string
   // Heizung PR 12: Skala und Bewertungsfaktor, nur beim Heizkostenverteiler.
   hca: HcaFieldsForm
+  // Die gespeicherte Skala (#723): Ein ohne Skala gespeicherter Heizkostenverteiler bleibt speicherbar, wie er ist.
+  keptScale: HcaScale | ''
   // Heizung PR 21: geeicht bis Ende dieses Jahres; leer heißt „nicht angegeben“.
   calibratedUntil: string
   // #98: Was ein Zähler ohne Wohnung misst: das ganze Haus (Hauptzähler, wie bisher) oder einen Teil davon.
@@ -83,7 +85,7 @@ export function meterUnitHint(form: Pick<MeterForm, 'id' | 'type' | 'unit' | 'un
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), keptUnit: '', unitDropped: '', keptType: '', heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '', scope: 'property',
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), keptUnit: '', unitDropped: '', keptType: '', heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, keptScale: '', calibratedUntil: '', scope: 'property',
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -104,6 +106,7 @@ export const meterToForm = (m: Meter): MeterForm => ({
   installedOn: m.installedOn ?? '',
   heatingPlantId: m.heatingPlantId ?? '',
   hca: hcaFieldsOf(m),
+  keptScale: m.type === 'hkv' ? (m.hcaScale ?? '') : '',
   calibratedUntil: m.calibratedUntil == null ? '' : String(m.calibratedUntil),
   scope: m.scope === 'common' ? 'common' : 'property',
 })
@@ -202,13 +205,36 @@ export const REMOTE_RULE_TEXT =
 // Die Anlage eines Zählers mit Rolle an der Heizanlage (Heizung PR 9): bei einer Anlage diese, ab zwei
 // die gewählte. Ohne Rolle gehört der Zähler zu keiner.
 // Die Felder des Zählerformulars, an denen eine Meldung stehen kann (#346, Schritt 3).
-export type MeterField = 'name' | 'unitId' | 'unit' | 'heatingPlantId' | 'calibratedUntil'
+export type MeterField = 'name' | 'unitId' | 'unit' | 'heatingPlantId' | 'calibratedUntil' | 'hcaScale'
 // `problems` nennt alle Angaben auf einmal (#346, Schritt 3); `error`, `field` und `short` sind die erste davon.
 type MeterError = { error: string; field?: MeterField; short?: string; problems: Problem<MeterField>[] }
 const failed = (problems: Problem<MeterField>[]): MeterError => {
   const first = problems[0] ?? { text: '' }
   return { error: first.text, ...(first.field ? { field: first.field } : {}), ...(first.short ? { short: first.short } : {}), problems }
 }
+
+// #723: Die Skala eines Heizkostenverteilers ist Pflicht, denn ohne sie verteilt die eigene Heizkostenabrechnung nichts
+// (`heating.hca-factor-missing`: die Heizkosten bleiben beim Vermieter). Wie bei der Einheit (#342) gilt das für ein neues
+// Gerät, nach einem Wechsel der Sparte und für eine gespeicherte Skala, die geleert würde; ein Gerät, das schon ohne Skala
+// gespeichert ist, bleibt speicherbar, wie es ist (krumm, nicht kaputt): Wer nur den Namen berichtigt, kennt die Skala
+// vielleicht noch nicht, und zählen seine Ablesungen in einer abgeschlossenen Heizperiode, nimmt der Server keine an.
+// Dieselbe Regel prüft der Server (`guardMeter`).
+export const scaleRequired = (form: Pick<MeterForm, 'id' | 'type' | 'keptType' | 'keptScale'>): boolean =>
+  form.type === 'hkv' && !(form.id !== undefined && form.keptType === 'hkv' && form.keptScale === '')
+export const SCALE_MISSING = 'Bitte wählen Sie die Skala des Heizkostenverteilers: Einheitsskala oder Produktskala.'
+// Der Hinweis am Feld für ein Gerät, das ohne Skala gespeichert ist und so bleiben darf, oder null.
+export function meterScaleHint(form: Pick<MeterForm, 'id' | 'type' | 'keptType' | 'keptScale' | 'hca'>): string | null {
+  if (form.type !== 'hkv' || form.hca.scale !== '' || scaleRequired(form)) return null
+  return 'Für dieses Gerät ist keine Skala gespeichert. Ohne Skala verteilt die eigene Heizkostenabrechnung die Heizkosten nicht; bitte wählen Sie sie, sobald Sie sie kennen.'
+}
+// Die Erkennungshilfe am Feld (#723), auch für Vermieter ohne Messdienst. Sie nennt nur, was aus der Bedeutung der beiden
+// Skalen folgt (Lexikon `heatCostAllocator`): Bei der Einheitsskala nimmt die Abrechnung den Ablesewert mit dem
+// Bewertungsfaktor mal, bei der Produktskala ist er im Wert enthalten. Merkmale am Gerät nennt sie nicht; die sind je
+// Hersteller verschieden und nirgends belegt.
+export const SCALE_HELP =
+  'Die Skala steht in der Montage- oder Bedienungsanleitung des Herstellers, im Ableseprotokoll oder in der Geräteliste eines Messdienstes, bei manchen Geräten auch auf dem Gerät. ' +
+  'Ein Anhaltspunkt ist eine frühere Heizkostenabrechnung: Nennt sie je Gerät einen Bewertungsfaktor, mit dem der Ablesewert malgenommen wird, ist es die Einheitsskala; rechnet sie mit den abgelesenen Werten ohne Faktor, ist es die Produktskala. ' +
+  'Ein Gerät mit anderem Faktor, etwa nach einem Tausch, legen Sie als neuen Zähler an.'
 
 export function meterPlantId(form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'heatingPlantId'>, plants: readonly { id: string }[]): { plantId: string | null } | MeterError {
   if (form.unitId || form.heatingRole === '') return { plantId: null }
@@ -228,6 +254,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   const number = form.meterNumber.trim()
   const hca = hcaFieldsBody(form.type, form.hca)
   if ('error' in hca) problems.push({ text: hca.error })
+  if (scaleRequired(form) && form.hca.scale === '') problems.push({ text: SCALE_MISSING, field: 'hcaScale', short: 'Skala fehlt' })
   // #342: Eine neue oder geänderte Einheit muss die Sparte kennen; eine gespeicherte, die unverändert bleibt, nicht.
   const entered = form.unit.trim()
   // Bei Sparten mit Auswahl wird nur gespeichert, was gewählt ist (Durchsicht S2, S6). Ohne Wahl darf nur ein schon

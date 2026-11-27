@@ -1164,7 +1164,7 @@ test('Zählerwechsel mit Eichjahr des neuen Zählers: Jahr am Zähler, Warnung w
     assert.equal(geaendert.status, 400)
     assert.match(await errorFrom(geaendert), /Zähler bearbeiten/)
 
-    const hkv = await s.api<Meter>('/api/meters', jsonPost({ name: 'HKV', unitId: unit.id, type: 'hkv', unit: 'Einheiten' }))
+    const hkv = await s.api<Meter>('/api/meters', jsonPost({ name: 'HKV', unitId: unit.id, type: 'hkv', unit: 'Einheiten', hcaScale: 'product' }))
     const amHkv = await post({ meterId: hkv.id, date: '2025-03-31', value: 0, replacement: true, oldEndValue: 5, newCalibratedUntil: 2031 })
     assert.equal(amHkv.status, 400)
     assert.match(await errorFrom(amHkv), /Heizkostenverteiler sind keine eichpflichtigen Messgeräte/)

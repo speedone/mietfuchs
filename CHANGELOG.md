@@ -175,6 +175,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Heizkostenverteiler ohne Skala: Unter „Zähler & Stände“ ließ sich ein Heizkostenverteiler anlegen, ohne die Skala zu
+  wählen; in der Liste stand danach nur „Skala fehlt“. Ohne Skala verteilt die eigene Heizkostenabrechnung die
+  Heizkosten nicht (sie bleiben mit einem Fehler unter „Zu prüfen“ beim Vermieter). Die Skala ist jetzt eine
+  Pflichtangabe, im Formular mit Meldung am Feld und ebenso am Server. Ein Gerät, das schon ohne Skala gespeichert ist,
+  bleibt bearbeitbar; das Feld sagt dort, dass die Skala fehlt. Die Hilfe am Feld nennt, wo die Skala steht, auch ohne
+  Messdienst: in der Montage- oder Bedienungsanleitung des Herstellers oder im Ableseprotokoll, und woran eine frühere
+  Heizkostenabrechnung sie erkennen lässt ([#723](https://github.com/speedone/mietfuchs/issues/723)).
 - Lieferung ohne verknüpfte Kostenposition: Stand eine Brennstoffrechnung auf der Seite Heizkosten als Lieferung und
   ihr Betrag als Kostenposition, ohne dass beide verknüpft waren, nannte die gedruckte Abrechnung unter „Brennstoff“
   „0,00 € von 0,00 €“, und nichts wies darauf hin. Jetzt steht unter „Zu prüfen“ ein Hinweis, der die Lieferung und die

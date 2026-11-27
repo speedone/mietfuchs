@@ -112,7 +112,7 @@ test('Review Focus 4: Heizkostenverteiler ohne Eichjahr; beim Umstellen fällt e
   await withDatabase(async (opened) => {
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true }))
     await opened.write((db) => createEntity(db, 'meters', 'm1', zaehler({ name: 'Wärme EG', unitId: 'u1', type: 'waerme', unit: 'kWh', calibratedUntil: 2027 })))
-    const umgestellt = await opened.write((db) => updateEntity(db, 'meters', 'm1', { type: 'hkv', unit: 'Einheiten' }))
+    const umgestellt = await opened.write((db) => updateEntity(db, 'meters', 'm1', { type: 'hkv', unit: 'Einheiten', hcaScale: 'product' }))
     assert.equal(fieldOf(umgestellt, 'calibratedUntil'), undefined)
     await assert.rejects(
       opened.write((db) => updateEntity(db, 'meters', 'm1', { calibratedUntil: 2030 })),
@@ -123,7 +123,7 @@ test('Review Focus 4: Heizkostenverteiler ohne Eichjahr; beim Umstellen fällt e
       (e: unknown) => e instanceof HeatingError && e.status === 400 && /Heizkostenverteiler sind keine eichpflichtigen Messgeräte/.test(e.message),
     )
     // Ein leeres Feld beim Heizkostenverteiler ist keine Angabe und wird angenommen (alter Tab, Formular).
-    const leer = await opened.write((db) => createEntity(db, 'meters', 'm3', zaehler({ name: 'HKV 2', unitId: 'u1', type: 'hkv', unit: 'Einheiten', calibratedUntil: null })))
+    const leer = await opened.write((db) => createEntity(db, 'meters', 'm3', zaehler({ name: 'HKV 2', unitId: 'u1', type: 'hkv', unit: 'Einheiten', hcaScale: 'product', calibratedUntil: null })))
     assert.equal(fieldOf(leer, 'calibratedUntil'), undefined)
   })
 })

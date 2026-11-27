@@ -126,6 +126,16 @@ test('Zähler: Name und Einheit (Kaltwasser)', async () => {
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Name', 'Einheit'])
 })
 
+// #723: Beim Heizkostenverteiler sind auch Wohnung und Skala Pflicht.
+test('Zähler: Name, Zuordnung und Skala (Heizkostenverteiler)', async () => {
+  shell(<Zaehler units={UNITS} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/i }))
+  fireEvent.change(screen.getByLabelText(/^Sparte/), { target: { value: 'hkv' } })
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Name', 'Zuordnung (Haupt- oder Zwischenzähler)', 'Skala des Heizkostenverteilers'])
+  // Die Erkennungshilfe nennt, wo die Skala steht, ohne einen Messdienst vorauszusetzen.
+  expect(dialog().textContent).toContain('Montage- oder Bedienungsanleitung des Herstellers')
+})
+
 test('Ablesung: Datum und Zählerstand, mit Legende', async () => {
   shell(<Zaehler units={UNITS} />)
   fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/i }))

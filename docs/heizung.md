@@ -426,6 +426,14 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine
   abgeschlossene Heizperiode überdecken.
+- **Die Skala ist Pflicht** (#723), im Formular (`scaleRequired`, `SCALE_MISSING` in client/src/meterForm.ts, Feld
+  `hcaScale`) und am Server (`guardMeter`): für ein neues Gerät, beim Wechsel der Sparte zum Heizkostenverteiler und für
+  eine gespeicherte Skala, die geleert würde (auch durch einen unbekannten Wert). Wie bei der Einheit bleibt ein Gerät,
+  das schon ohne Skala gespeichert ist, speicherbar (`keptScale`; krumm, nicht kaputt), das Feld sagt dann, was fehlt
+  (`meterScaleHint`); Wiederherstellen und Umstieg laufen nicht durch `guardMeter`. Der Bewertungsfaktor bleibt bei der
+  Einheitsskala freiwillig beim Speichern (fehlt er, meldet die Abrechnung es wie bisher). Die Berechnung nimmt ohne
+  Skala nichts an: Schon ein Gerät ohne Skala sperrt die Verteilung der Anlage (Test in calc-hkv.test.ts). Die
+  Erkennungshilfe am Feld (`SCALE_HELP`) nennt nur, was aus der Bedeutung der Skalen folgt, keine Merkmale am Gerät.
 - **Stichtagswert** ist eine Ablesung mit `replacement` und Wert 0 (das Ableseergebnis zeigt
   `oldEndValue`); eine Rücksetzung mitten in der Heizperiode ergibt `heating.device-cutoff`.
 - **Gezählt wird ein Gerät nur in Heizperioden, die seine Ablesungen überdecken** (`coversPeriod`).

@@ -335,7 +335,7 @@ test('Zähler der Anlage: mit Rolle und ohne Wohnung; jede Abweichung mit einem 
       propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten', installedOn: '15.12.2021',
     })), refused(400, /kein Datum/))
     const hkv = await opened.write((db) => createEntity(db, 'meters', 'm6', {
-      propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten', remoteReadable: true,
+      propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten', hcaScale: 'product', remoteReadable: true,
     }))
     assert.equal(fieldOf(hkv, 'remoteReadable'), true)
     assert.equal(fieldOf(hkv, 'heatingPlantId'), undefined)

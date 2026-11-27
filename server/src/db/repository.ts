@@ -1822,6 +1822,13 @@ async function guardMeter(db: Executor, before: Meter | null, after: Meter): Pro
   if (after.type !== 'hkv' && ((after.hcaScale ?? null) !== null || (after.ratingFactor ?? null) !== null)) {
     throw new HeatingError(400, 'Skala und Bewertungsfaktor gibt es nur bei einem Heizkostenverteiler. Lassen Sie beide Felder leer oder wählen Sie die Sparte „Heizkostenverteiler“.')
   }
+  // #723: Ein Heizkostenverteiler braucht seine Skala, sonst verteilt die eigene Heizkostenabrechnung nichts
+  // (`heating.hca-factor-missing`). Geprüft wird nur ein neues Gerät, ein Wechsel der Sparte und eine Skala, die geleert
+  // würde (wie die Einheit, `acceptMeterUnit`): Ein Gerät, das schon ohne Skala gespeichert ist, bleibt speicherbar, und
+  // Wiederherstellen und Umstieg laufen nicht hier durch. Dieselbe Regel im Formular (`scaleRequired` in meterForm.ts).
+  if (after.type === 'hkv' && (after.hcaScale ?? null) === null && (!before || before.type !== 'hkv' || (before.hcaScale ?? null) !== null)) {
+    throw new HeatingError(400, 'Bitte wählen Sie die Skala des Heizkostenverteilers: Einheitsskala oder Produktskala. Ohne Skala verteilt die eigene Heizkostenabrechnung die Heizkosten nicht. Sie steht in der Montage- oder Bedienungsanleitung des Herstellers, im Ableseprotokoll oder in der Geräteliste eines Messdienstes.')
+  }
   if (after.ratingFactor !== undefined && after.ratingFactor !== null && !(after.ratingFactor > 0)) {
     throw new HeatingError(400, 'Der Bewertungsfaktor ist eine Zahl über 0, etwa 0,8 oder 1,25. Er steht in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers.')
   }
