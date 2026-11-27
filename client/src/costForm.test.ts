@@ -1485,7 +1485,7 @@ const itemOf = (key: CostKey): CostItemOf => ({
 // am Feld sagt es, und ein negativer Betrag (ein Guthaben) wird nicht mehr still als 0 gezählt.
 describe('Einzelbeträge: die Kosten des Mieters, nicht sein Saldo', () => {
   test('der Satz am Feld nennt Kosten, Vorauszahlung und Saldo', () => {
-    expect(AMOUNTS_HELP).toBe('Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart. Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.')
+    expect(AMOUNTS_HELP).toBe('Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart (bei Heizung und Warmwasser die Zwischensumme der Heiz- und Warmwasserkosten, nicht die Gesamtkosten des Nutzers). Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.')
   })
   test('ein negativer Einzelbetrag ist ein Saldo und wird benannt, statt als 0 zu zählen', () => {
     const f = form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '-45,20', t2: '400,00' } })

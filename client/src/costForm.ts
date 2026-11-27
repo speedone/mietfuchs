@@ -325,7 +325,7 @@ const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy
 
 // Der Satz über den Feldern der Einzelbeträge. Viele Messdienste nehmen die Vorauszahlungen in ihre Abrechnung auf und
 // drucken je Nutzer Kosten, Vorauszahlung und Saldo; ins Feld gehören die Kosten.
-export const AMOUNTS_HELP = 'Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart. Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.'
+export const AMOUNTS_HELP = 'Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart (bei Heizung und Warmwasser die Zwischensumme der Heiz- und Warmwasserkosten, nicht die Gesamtkosten des Nutzers). Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.'
 
 export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], period?: number | BillingPeriod): string {
   const amount = parseEuro(form.amount) ?? 0
