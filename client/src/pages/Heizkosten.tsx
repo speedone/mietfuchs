@@ -4,9 +4,12 @@
 // „Gradtagzahlen Ihres Orts“. Seit Heizung PR 17 je Heizperiode mit Rechnungen der Ausdruck „CO₂-Angaben
 // für den Messdienst“ (#210), der die Seite ersetzt, bis man zurückgeht. Sie steht erst ab einer
 // Heizanlage in der Navigation (`navFor`). Seit #266 je Anlage die Karte „Betriebsstrom der Heizung“.
+// Bei eigener Abrechnung (#690 Punkt 6) steht je Heizperiode zuerst „Was fehlt noch“ (`selfTodos`), das Seltene
+// (Ausnahmen, Blatt für den Messdienst, die Angaben je Anlage) hinter dem Nötigen; beim Messdienst und bei freien
+// Schlüsseln bleibt die Reihenfolge, wie sie war. Der Untertitel richtet sich nach der Art der Abrechnung.
 import Card from '../components/Card'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Co2Sheet, CostItem, DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
+import type { Co2Sheet, CostItem, DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Meter, Notice, Tenancy, Unit } from '../types'
 import { api, errorText } from '../api'
 import { usePeriod } from '../period'
 import { useHasOpenForm, useProperty, withProperty } from '../property'
@@ -30,6 +33,8 @@ import SelfHeatingCards from '../components/SelfHeatingCards'
 import HeatingInfoCard from '../components/HeatingInfoCard'
 import HeatingRulesCard from '../components/HeatingRulesCard'
 import MonthlyInfoCard from '../components/MonthlyInfoCard'
+import HeatingTodoCard from '../components/HeatingTodoCard'
+import { extraNotices, heatingSituation, heatingSubtitle, lineOf, noticesOf, subjectPlants, todosFor, type TodoStep } from '../heatingPageView'
 import ServiceValuesCard from '../components/ServiceValuesCard'
 import { showsStockCard } from '../stockForm'
 import Term from '../components/Term'
@@ -43,13 +48,16 @@ import { germanDate } from '../../../shared/law/register.ts'
 import { NoticeBox } from '../components/Notice'
 import EmptyState from '../components/EmptyState'
 import { useSubjectJump, type FocusProps, type JumpTarget } from '../focus'
-import { SET_UP_HEATING_TARGET } from '../jumpTargets'
+import { CHECKS_TARGET, NEW_COST_ITEM_TARGET, SET_UP_HEATING_TARGET } from '../jumpTargets'
 import type { NoticeTab } from '../notices'
 
 // `heating`: der Ausweis der Abrechnung des Zeitraums (Heizung PR 10), für die eigene Heizkostenabrechnung.
 // `findings`: die Befunde der CO₂-Prüfung je Anlage und Heizperiode, je Lieferung (Heizung PR 17, #246 R-K7).
 // `items`: alle Positionen des Objekts aus allen Zeiträumen, für die Karte „Betriebsstrom“ (Heizung PR 15).
-type Loaded = { items: CostItem[]; plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[]; findings: Record<string, Record<string, string[]>> }
+// `notices`: die Hinweise derselben Abrechnung, für die Liste „Was fehlt noch“ (#690): Sie folgt ihnen.
+// `meters`: die Zähler des Objekts, damit „Was fehlt noch“ ab zwei Anlagen einen Zählerhinweis seiner Anlage zuordnet
+// (Durchsicht M1); nur dann geladen.
+type Loaded = { items: CostItem[]; plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[]; notices: Notice[]; meters: Meter[]; findings: Record<string, Record<string, string[]>> }
 
 // `onOpenReceipt`, `onOpenAiSettings`: Auswege, wenn die KI an einer Rechnung oder Abrechnung scheitert (#487)
 // `focus`: „Hier beheben →“ an einem Hinweis zu den Heizkosten einer Anlage; ihr Bereich wird hervorgehoben. Mehr als
@@ -92,9 +100,12 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
       const items = await api<CostItem[]>(withProperty('/api/costItems', property?.id))
       const degreeDays = property ? await api<DegreeDayValue[]>(`/api/properties/${property.id}/degree-days`) : []
       // Heizung PR 10: Ausweis, Ablesungen und Verteilung der eigenen Heizkostenabrechnung stehen in der Abrechnung.
-      const heating = plants.some((p) => p.method === 'self')
-        ? ((await api<{ heating?: HeatingStatement[] }>(withProperty(`/api/settlement/${encodeURIComponent(period.param)}`, property?.id))).heating ?? [])
-        : []
+      const settlement = plants.some((p) => p.method === 'self')
+        ? await api<{ heating?: HeatingStatement[]; notices?: Notice[] }>(withProperty(`/api/settlement/${encodeURIComponent(period.param)}`, property?.id))
+        : null
+      const heating = settlement?.heating ?? []
+      const notices = settlement?.notices ?? []
+      const meters = settlement !== null && plants.length > 1 ? await api<Meter[]>(withProperty('/api/meters', property?.id)) : []
       // Die Befunde der Prüfung kommen aus dem Blatt für den Messdienst: dieselbe Prüfung wie in der Abrechnung.
       const sheetKeys = plants.flatMap((p, i) => (asksCo2Facts(p) ? (views[i] ?? []).filter((v) => hasSheet(deliveries[i] ?? [], v)).map((v) => ({ p, v })) : []))
       const sheets = await Promise.all(sheetKeys.map(({ p, v }) => api<Co2Sheet>(withProperty(`/api/heating-plants/${p.id}/periods/${encodeURIComponent(String(v.period))}/co2-sheet`, property?.id))))
@@ -103,6 +114,8 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
         items,
         findings,
         heating,
+        notices,
+        meters,
         plants,
         views: Object.fromEntries(plants.map((p, i) => [p.id, views[i] ?? []])),
         deliveries: Object.fromEntries(plants.map((p, i) => [p.id, deliveries[i] ?? []])),
@@ -125,13 +138,96 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
   const servedArea = (plant: HeatingPlant): number =>
     units.filter((u) => servesUnit(plant, u)).reduce((a, u) => a + (u.areaM2 || 0), 0)
 
+  // „Was fehlt noch“ (#690 Punkt 6): die Zeilen aus Ansicht, Ausweis und den Hinweisen der Abrechnung zu dieser Anlage
+  // und Heizperiode. Die Knöpfe der Zeilen springen an die Stelle, an der man es erledigt: das Formular einer neuen
+  // Position, „Zu prüfen“ in der Abrechnung; die Seite der Zähler hat kein einzelnes Ziel.
+  // Durchsicht S2: Ein Schritt, dessen Karte auf dieser Seite steht, springt zu ihrer Überschrift in derselben Heizperiode.
+  const revealCard = (block: string, card: string) => {
+    const root = [...document.querySelectorAll<HTMLElement>('[data-heating-period]')].find((el) => el.dataset.heatingPeriod === block)
+    const heading = [...(root?.querySelectorAll<HTMLElement>('h2, h3') ?? [])].find((h) => (h.textContent ?? '').trim().startsWith(card))
+    if (!heading) return
+    heading.setAttribute('tabindex', '-1')
+    heading.scrollIntoView?.({ block: 'start' })
+    heading.focus()
+  }
+  // Nachprüfung M1: zur Überschrift einer anderen Anlage derselben Linie (ihr Bereich trägt `data-jump`).
+  const revealPlant = (plantId: string) => {
+    const area = document.querySelector<HTMLElement>(`[data-jump="heatingCosts:${plantId}"]`)
+    const heading = area?.querySelector<HTMLElement>('[data-jump-focus]')
+    if (!heading) return
+    heading.setAttribute('tabindex', '-1')
+    heading.scrollIntoView?.({ block: 'start' })
+    heading.focus()
+  }
+  const TODO_JUMP: Record<NonNullable<TodoStep['page']>, JumpTarget | undefined> = { kosten: NEW_COST_ITEM_TARGET, abrechnung: CHECKS_TARGET, zaehler: undefined }
+  // Ab zwei Anlagen: zu welcher Anlage ein Hinweis an Zähler, Wohnung oder Mieter gehört (Durchsicht M1).
+  const owner = data && data.plants.length > 1 ? subjectPlants({ plants: data.plants, units, meters: data.meters, tenancies }) : undefined
+  const todoCard = (plant: HeatingPlant, v: HeatingPeriodView) => {
+    const views = data?.views[plant.id] ?? []
+    // Positionen aller übrigen Heizperioden (auch anderer Anlagen): ihre Hinweise gehören dorthin.
+    const foreignItems = new Set(Object.values(data?.views ?? {}).flat().filter((x) => x !== v).flatMap((x) => x.items.map((i) => i.id)))
+    const { line, host } = lineOf(plant, data?.plants ?? [], v.to)
+    const notices = noticesOf(data?.notices ?? [], { plantId: plant.id, plants: data?.plants.length ?? 1, view: v, labels: views.map((x) => x.label), owner, foreignItems, line })
+    const statement = data?.heating.find((h) => h.plantId === plant.id && h.period === v.period) ?? null
+    // Eine getrennt abgerechnete Heizperiode (Weg d) steht nicht in der Abrechnung des Zeitraums.
+    const separate = statement === null && (plant.separateSpans ?? []).length > 0
+    const steps = todosFor(heatingSituation(plant), { view: v, statement, notices, deliveries: ownedBy(data?.deliveries[plant.id] ?? [], v).length, co2: v.from >= first && asksCo2Facts(plant), separate, host })
+    if (steps === null) return null
+    return (
+      <HeatingTodoCard
+        steps={steps} extra={extraNotices(notices)} separate={separate}
+        onNavigate={onNavigate ? (page) => onNavigate(page, TODO_JUMP[page]) : undefined}
+        onCard={(card) => revealCard(`${plant.id}:${v.period}`, card)}
+        onPlant={revealPlant}
+      />
+    )
+  }
+  // Die Angaben je Anlage, die selten gebraucht werden: beim Messdienst und bei freien Schlüsseln über den
+  // Heizperioden wie bisher, bei eigener Abrechnung dahinter (#690 Punkt 6).
+  // `level`: unter der Überschrift „Seltener gebraucht“ sind die Karten eine Ebene tiefer.
+  const plantCards = (plant: HeatingPlant, level?: 3) => (
+    <>
+      {/* #266: wie der Betriebsstrom erfasst ist, je Anlage. */}
+      {showsHandlingCard(plant) && (
+        <OperatingPowerHandlingCard key={`ophandling:${plant.id}`} plant={plant} level={level} onSaved={() => void load()} />
+      )}
+      {/* Heizung PR 18 (#215): Heizung nach § 43 GModG, je Anlage. Bei Contracting zählt der Brennstoff des
+          Lieferanten (`plant.energy`). */}
+      {halfSplitAvailable(plant.energy) && (
+        <HalfSplitCard
+          key={`half:${plant.id}:${JSON.stringify([plant.gmodg43InstalledOn, plant.emergencyInstall, plant.emergencyPriorDuty, plant.newBuildingFirstUse, plant.buildingApplicationBefore20260513])}`}
+          plant={plant} tenancies={tenancies} level={level} onSaved={() => void load()}
+          onNoticeSaved={() => { void load(); void onTenanciesChanged?.() }}
+        />
+      )}
+    </>
+  )
+  // Das Blatt der CO₂-Angaben zum Weitergeben (Heizung PR 17, #210), sobald es Rechnungen gibt.
+  const sheetCard = (plant: HeatingPlant, v: HeatingPeriodView) => asksCo2Facts(plant) && hasSheet(data?.deliveries[plant.id] ?? [], v) && (
+    <Card title="CO₂-Angaben für den Messdienst" level={3} className="no-print">
+      <p className="muted">
+        Ein Blatt mit den CO₂-Angaben Ihrer Rechnungen dieser Heizperiode (kg CO₂, CO₂-Kosten, Energiegehalt, Menge) und den Angaben zum
+        Gebäude, zum Ausdrucken oder Weitergeben an den Messdienst, die Gemeinschaft oder Ihr Steuerbüro.
+      </p>
+      <div className="row">
+        <button className="btn secondary" type="button" onClick={() => void openSheet(plant.id, String(v.period))}>Blatt „CO₂-Angaben für den Messdienst“ öffnen</button>
+      </div>
+    </Card>
+  )
+  // Ausnahme, Vereinbarung und monatliche Information je Heizperiode (Heizung PR 14). Für Etagenheizungen gilt die
+  // Verordnung nicht. Ohne den Stand im Schlüssel: Speichert eine andere Karte, bliebe sonst ein Entwurf hier nicht
+  // stehen (Durchsicht zu #309, SOLLTE 5). Neue gespeicherte Werte übernimmt useDraft selbst.
+  const rulesCard = (plant: HeatingPlant, v: HeatingPeriodView) => (plant.supply ?? 'central') === 'central' && (
+    <HeatingRulesCard key={`rules:${plant.id}:${v.period}`} plant={plant} view={v} onChanged={() => void load()} />
+  )
+
   if (sheetFor) return <Co2SheetView plantId={sheetFor.plantId} period={sheetFor.period} onClose={() => setSheetFor(null)} />
 
   return (
     <div>
       <PageHeader
         title={`Heizkosten ${period.label}`}
-        subtitle="Je Heizperiode die Angaben aus der Heizkostenabrechnung: CO₂-Kosten, Warmwasser und Lieferungen."
+        subtitle={heatingSubtitle(data ? data.plants : null)}
       />
       {error && <NoticeBox level="error" action={error} />}
       {data !== null && data.plants.length === 0 && (
@@ -164,22 +260,13 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
                 )}
               </NoticeBox>
             )}
-            {/* #266: wie der Betriebsstrom erfasst ist, je Anlage über den Heizperioden. */}
-            {showsHandlingCard(plant) && (
-              <OperatingPowerHandlingCard key={`ophandling:${plant.id}`} plant={plant} onSaved={() => void load()} />
-            )}
-            {/* Heizung PR 18 (#215): Heizung nach § 43 GModG, je Anlage über den Heizperioden. Bei Contracting zählt der
-                Brennstoff des Lieferanten (`plant.energy`). */}
-            {halfSplitAvailable(plant.energy) && (
-              <HalfSplitCard
-                key={`half:${plant.id}:${JSON.stringify([plant.gmodg43InstalledOn, plant.emergencyInstall, plant.emergencyPriorDuty, plant.newBuildingFirstUse, plant.buildingApplicationBefore20260513])}`}
-                plant={plant} tenancies={tenancies} onSaved={() => void load()}
-                onNoticeSaved={() => { void load(); void onTenanciesChanged?.() }}
-              />
-            )}
+            {/* #690: Bei eigener Abrechnung stehen die Angaben der Anlage hinter den Heizperioden (Nötiges vor Seltenem). */}
+            {plant.method !== 'self' && plantCards(plant)}
             {(data?.views[plant.id] ?? []).map((v) => (
-              <div key={v.period}>
+              <div key={v.period} data-heating-period={`${plant.id}:${v.period}`}>
                 <h2 className="section-title">{plant.name || 'Heizanlage'}, Heizperiode {v.label}</h2>
+                {/* #690 Punkt 6: bei eigener Abrechnung zuerst, was noch fehlt. Abgeschlossen fehlt nichts mehr. */}
+                {!v.closed && todoCard(plant, v)}
                 {/* Heizung PR 20 (#103): die Abrechnung des Messdienstes mit der KI auslesen; übernommen wird in der Prüfansicht. */}
                 {plant.method === 'service' && (
                   <ServiceImportCard plant={plant} view={v} object={period.period} tenancies={tenancies} units={units} items={data?.items ?? []} co2={v.from >= first} onSaved={() => void load()}
@@ -198,18 +285,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
                 <OperatingPowerCard plant={plant} view={v} rules={period.rules} items={data?.items ?? []} onBooked={() => void load()} />
                 {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={asksCo2Facts(plant)} energy={billingEnergy(plant)} onSaved={() => void load()} />}
                 {v.from >= first && asksCo2Facts(plant) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
-                {/* Heizung PR 17 (#210): die CO₂-Angaben der Rechnungen zum Weitergeben, sobald es Rechnungen gibt. */}
-                {asksCo2Facts(plant) && hasSheet(data?.deliveries[plant.id] ?? [], v) && (
-                  <Card title="CO₂-Angaben für den Messdienst" level={3} className="no-print">
-                    <p className="muted">
-                      Ein Blatt mit den CO₂-Angaben Ihrer Rechnungen dieser Heizperiode (kg CO₂, CO₂-Kosten, Energiegehalt, Menge) und den Angaben zum
-                      Gebäude, zum Ausdrucken oder Weitergeben an den Messdienst, die Gemeinschaft oder Ihr Steuerbüro.
-                    </p>
-                    <div className="row">
-                      <button className="btn secondary" type="button" onClick={() => void openSheet(plant.id, String(v.period))}>Blatt „CO₂-Angaben für den Messdienst“ öffnen</button>
-                    </div>
-                  </Card>
-                )}
+                {plant.method !== 'self' && sheetCard(plant, v)}
                 {/* Heizung PR 12: die Werte des Ablesedienstes, wenn diese Heizperiode so erfasst wird. */}
                 {v.capture === 'serviceValues' && (
                   <ServiceValuesCard
@@ -222,13 +298,8 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
                 {plant.method === 'self' && (
                   <SelfHeatingCards plant={plant} view={v} self={data?.heating.find((h) => h.plantId === plant.id && h.period === v.period)?.self ?? null} onChanged={() => void load()} />
                 )}
-                {/* Heizung PR 14: Ausnahme, Vereinbarung und monatliche Information je Heizperiode; die Angaben nach
-                    § 6a bei eigener Abrechnung und freien Schlüsseln. Für Etagenheizungen gilt die Verordnung nicht. */}
-                {/* Ohne den Stand im Schlüssel: Speichert eine andere Karte, bliebe sonst ein Entwurf hier nicht stehen
-                    (Durchsicht zu #309, SOLLTE 5). Neue gespeicherte Werte übernimmt useDraft selbst. */}
-                {(plant.supply ?? 'central') === 'central' && (
-                  <HeatingRulesCard key={`rules:${plant.id}:${v.period}`} plant={plant} view={v} onChanged={() => void load()} />
-                )}
+                {plant.method !== 'self' && rulesCard(plant, v)}
+                {/* Heizung PR 14: die Angaben nach § 6a bei eigener Abrechnung und freien Schlüsseln. */}
                 {(plant.supply ?? 'central') === 'central' && plant.method !== 'service' && v.rules.exemptionScope !== 'both' && (
                   <HeatingInfoCard key={`info:${v.period}:${JSON.stringify(v.info)}:${v.rules.consumerContract ?? ''}`} plant={plant} view={v} onChanged={() => void load()} />
                 )}
@@ -236,10 +307,19 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
                     so ist, sagt der Server (`managed`); ohne sie oder mit „anders mitgeteilt“ bleibt die Karte leer. Der Schlüssel
                     lädt sie neu, wenn sich die Angaben der Heizperiode ändern. */}
                 {(plant.supply ?? 'central') === 'central' && plant.method === 'self' && v.rules.exemptionScope !== 'both' && (
-                  <MonthlyInfoCard key={`monthly:${v.period}:${JSON.stringify(v.rules)}:${JSON.stringify(v.hotWater)}`} plantId={plant.id} period={String(v.period)} propertyName={property?.name ?? ''} />
+                  <MonthlyInfoCard key={`monthly:${v.period}:${JSON.stringify(v.rules)}:${JSON.stringify(v.hotWater)}`} plantId={plant.id} period={String(v.period)} propertyName={property?.name ?? ''} byService={v.capture === 'serviceValues'} />
                 )}
+                {/* #690 Punkt 6: Bei eigener Abrechnung steht das Seltene hinter dem Nötigen. */}
+                {plant.method === 'self' && rulesCard(plant, v)}
+                {plant.method === 'self' && sheetCard(plant, v)}
               </div>
             ))}
+            {plant.method === 'self' && (showsHandlingCard(plant) || halfSplitAvailable(plant.energy)) && (
+              <>
+                <h2 className="section-title">{plant.name || 'Heizanlage'}: Seltener gebraucht</h2>
+                {plantCards(plant, 3)}
+              </>
+            )}
           </>
         </div>
       ))}

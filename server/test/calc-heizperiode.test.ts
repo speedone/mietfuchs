@@ -221,8 +221,10 @@ test('Durchsicht von #239, N3: zwei Heizperioden in einer Abrechnung, die eigene
   assert.deepEqual(s.heatingPeriods?.map((h) => h.period.label), ['2024/2025', '01.05.–31.12.2025'])
   assert.equal(st(s, 'A').rows.find((r) => r.costItemId === 'h2024')?.shareCents, 120000)
   // Nur die zweite Heizperiode rechnet nach der Verordnung; für die erste gibt es keinen Befund der eigenen Abrechnung.
-  assert.ok(!s.notices.some((n) => n.code === 'heating.self-incomplete' && /2024\/2025/.test(n.text)), s.notices.map((n) => n.text).join('\n'))
-  assert.ok(s.notices.some((n) => n.code === 'heating.self-incomplete' && /01\.05\.–31\.12\.2025/.test(n.text)))
+  // Seit #690 meldet ein fehlender Anteil nach Verbrauch `heating.share-invalid` statt `heating.self-incomplete`.
+  const blocks = (n: { code: string }) => n.code === 'heating.self-incomplete' || n.code === 'heating.share-invalid'
+  assert.ok(!s.notices.some((n) => blocks(n) && /2024\/2025/.test(n.text)), s.notices.map((n) => n.text).join('\n'))
+  assert.ok(s.notices.some((n) => blocks(n) && /01\.05\.–31\.12\.2025/.test(n.text)))
 })
 
 test('Ein Rumpf der Heizperiode in P: ohne Brennstoffkennzeichen kein Vorschlag (R11)', () => {

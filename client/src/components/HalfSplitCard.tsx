@@ -12,7 +12,9 @@ import { halfSplitFirstDay } from '../../../shared/law/co2kostaufg.ts'
 import type { HeatingEnergy, HeatingPlant } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 
-export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved }: {
+export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved, level }: {
+  // Die Ebene der Überschrift, wenn die Karte unter einem Abschnittstitel steht (#690).
+  level?: 2 | 3
   plant: HalfSplitBody & Pick<HeatingPlant, 'units'> & { id: string; energy: HeatingEnergy }
   tenancies: readonly NoticeTenancy[]
   onSaved: () => void
@@ -53,7 +55,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
   }
 
   return (
-    <Card title={<>Heizung nach <Term id="co2HalfSplit">§ 43 GModG</Term> {`(ab ${HALF_SPLIT_YEAR})`}</>}>
+    <Card title={<>Heizung nach <Term id="co2HalfSplit">§ 43 GModG</Term> {`(ab ${HALF_SPLIT_YEAR})`}</>} level={level}>
       <ErrorSummary errors={errors} />
       <p className="muted">{HALF_SPLIT_SCOPE}</p>
       <label className="field">

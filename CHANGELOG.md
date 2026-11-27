@@ -8,6 +8,27 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Seite Heizkosten bei eigener Heizkostenabrechnung: Je offener Heizperiode steht zuerst die Karte „Was fehlt noch“ mit
+  den nötigen Schritten (Kosten, Anteil nach Verbrauch, Warmwasser, Ablesungen, Verteilung, CO₂, Angaben nach § 6a), je
+  mit Stand als Wort und Farbe und einem Knopf zur Seite, auf der der Schritt erledigt wird. Die Liste folgt den
+  Hinweisen der Abrechnung: Eine Zeile ist erst erledigt, wenn die Abrechnung zu ihrem Thema keinen Fehler und keine
+  Warnung meldet, und sie nennt deren Titel. Ausnahmen und Vereinbarungen, das Blatt für den Messdienst und unter
+  „Seltener gebraucht“ Betriebsstrom und § 43 GModG stehen hinter dem Nötigen. Der Untertitel der Seite richtet sich
+  nach der Lage (Messdienst, eigene Abrechnung, freie Schlüssel, Etagenheizung); beim Messdienst, bei freien Schlüsseln
+  und bei der Etagenheizung bleibt die Reihenfolge der Karten. Bei mehreren Anlagen und nach einem Kesseltausch steht
+  jeder Hinweis bei seiner Anlage oder, wo er keiner sicher gehört, bei jeder als weiterer Hinweis; nach einem
+  Kesseltausch verweist die alte Anlage bei den Angaben nach § 6a auf die neue. Ein fehlender oder unzulässiger Anteil
+  nach Verbrauch heißt unter „Zu prüfen“ jetzt „Anteil nach Verbrauch ungültig“
+  ([#690](https://github.com/speedone/mietfuchs/issues/690)).
+- Vergleichswert eines Durchschnittsnutzers ohne Ablesedienst: Wer selbst abrechnet, findet an der Karte „Angaben zur
+  Abrechnung (§ 6a)“ unter „Woher bekomme ich den Vergleichswert ohne Ablesedienst?“ einen Weg: Vergleichsprofile bei
+  Verbraucherorganisationen, Energieagenturen oder ähnlichen Einrichtungen (§ 6a Abs. 3 Satz 1 Nr. 2 HeizkostenV), etwa
+  der Energieberatung der Verbraucherzentralen (BR-Drs. 643/21, S. 20), ausdrücklich als Auslegung. Hinweis der
+  Abrechnung und Meldung beim Speichern nennen den Ablesedienst nur noch, wo Werte eines Ablesedienstes erfasst werden,
+  auch bei der monatlichen Verbrauchsinformation. Der Weg steht nur bei Wärmezählern, wo Mietfuchs den Vergleich selbst
+  erstellt, und sagt, dass der Wert nur diesen Vergleich erfüllt: Den Vergleich mit dem Vorjahr kann Mietfuchs im
+  ersten Jahr der eigenen Abrechnung meist nicht erstellen
+  ([#690](https://github.com/speedone/mietfuchs/issues/690)).
 - Schornsteinfeger bei zentraler Heizung: Rechnen Sie die Heizkosten einer zentralen Heizanlage selbst nach der
   Heizkostenverordnung ab, fragt das Kostenformular bei der Kostenart „Schornsteinfeger“, ob die Rechnung zur zentralen
   Heizung gehört, und stellt die Position auf Wunsch auf „Heizung und Warmwasser“ mit dem Teil Betrieb um; Beschreibung

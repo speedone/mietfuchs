@@ -158,7 +158,8 @@ export function selfHeatingReadings(settlement: { heating?: readonly SelfStateme
   const first = own[0]
   if (!first) return null
   const plantIds = new Set(own.map((h) => h.plantId))
-  const open = (settlement.notices ?? []).filter((n) => n.code === 'heating.self-incomplete' && n.subject?.kind === 'heatingCosts' && plantIds.has(n.subject.id))
+  // `heating.share-invalid` (#690): der fehlende oder ungültige Anteil nach Verbrauch, früher unter „unvollständig“.
+  const open = (settlement.notices ?? []).filter((n) => (n.code === 'heating.self-incomplete' || n.code === 'heating.share-invalid') && n.subject?.kind === 'heatingCosts' && plantIds.has(n.subject.id))
   const intro = 'Die Heizkosten werden nach der Heizkostenverordnung mit Ablesungen verteilt.'
   if (open.length > 0) {
     const lines = [...new Set(open.map((n) => (sentences(n.text)[0] ?? n.text).trim()))]

@@ -12,7 +12,8 @@ import { useOptionalProperty, withProperty } from '../property'
 // Karte „Betriebsstrom der Heizung“ der Seite Heizkosten (#266): je Anlage, über den Heizperioden. Die Angabe ändert keine
 // Zahl, nur den Hinweis „Betriebsstrom fehlt“. Die Auswahl ist ein Entwurf am Feld (#309); erst „Speichern“
 // schickt sie, danach lädt die Seite neu.
-export default function OperatingPowerHandlingCard({ plant, onSaved }: { plant: HeatingPlant; onSaved: () => void }) {
+// `level`: die Ebene der Überschrift, wenn die Karte unter einem Abschnittstitel steht (#690).
+export default function OperatingPowerHandlingCard({ plant, onSaved, level }: { plant: HeatingPlant; onSaved: () => void; level?: 2 | 3 }) {
   const propertyId = useOptionalProperty()?.property?.id
   const toast = useToast()
   const draft = useDraft<'' | OperatingPowerHandling>(handlingValue(plant), { scope: plant.id })
@@ -22,7 +23,7 @@ export default function OperatingPowerHandlingCard({ plant, onSaved }: { plant: 
     onSaved()
   }
   return (
-    <Card title={<><Term id="operatingPower">Betriebsstrom der Heizung</Term>{plant.name ? ` „${plant.name}“` : ''}</>} className="no-print">
+    <Card title={<><Term id="operatingPower">Betriebsstrom der Heizung</Term>{plant.name ? ` „${plant.name}“` : ''}</>} level={level} className="no-print">
       <label className="field">
         <span>{OPERATING_POWER_HANDLING_QUESTION}</span>
         <select value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value as '' | OperatingPowerHandling)}>
