@@ -128,7 +128,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - CO₂-Kosten bei Abrechnung durch einen Messdienst: Hilfetext und Anleitung nennen jetzt auch für die Abrechnung von
   ista, wo die Summe der Kosten aller Nutzer steht (Abschnitt „Aufteilung der Gesamtkosten“, Zeile „Heiz- und
   Warmwasserkosten“) und wie die Abzugszeile des CO₂-Anteils des Vermieters heißt; Grundlage ist die öffentliche
-  Musterabrechnung 2025 ([#704](https://github.com/speedone/mietfuchs/issues/704)).
+  Musterabrechnung 2025. Die Anleitung zur Messdienstabrechnung sagt außerdem, dass ein „Kaltwasseranteil für
+  Warmwasser“ zu „Heizung und Warmwasser“ gehört und nicht noch einmal unter „Wasser/Abwasser“ erfasst wird
+  ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Zähler: Im Zählerformular heißt die Sparte „Sonstiges“ in der Auswahl „Sonstiges (z. B. Gaszähler)“. Ein Satz unter
   der Sparte sagt bei „Wärme“, dass ein Gaszähler (m³) in die Sparte „Sonstiges“ gehört, und bei „Sonstiges“, dass dort
   die Einheit des Zählers einzutragen ist und er für die Heizkosten erst als Versorgungszähler einer Heizanlage zählt;
