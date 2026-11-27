@@ -210,6 +210,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Druck: Oben und unten auf dem Blatt standen Adresse, Datum und Seitenzahl des Browsers. Chrome, Edge, das
+  Programmfenster und Firefox drucken sie nicht mehr. Die Ränder bleiben gleich; in Firefox fasst eine Seite etwas
+  mehr, Seitenumbrüche können dort um wenige Millimeter wandern. In
+  Safari lässt sich das nicht aus der Seite abschalten, dort nennen die Fenster „Drucken“ der Abrechnung, der Kaution und
+  der Mieterhöhung den Weg im Druckfenster von Safari. „Seite x von y“ beim Druck einer einzelnen Abrechnung bleibt in
+  Chrome und Edge; Firefox und Safari kennen dafür keinen Weg in der Seite
+  ([#735](https://github.com/speedone/mietfuchs/issues/735)).
 - Zweimal derselbe Datenordner: Startete Mietfuchs (Fenster, Programmdatei, Paket oder Store), während ein anderes
   Mietfuchs auf demselben Datenordner gerade seine Datenbank öffnete, etwa beim ersten Start oder nach einem Update auf
   einem langsamen Rechner, hielt der neue Start den anderen für abwesend, weil der länger als anderthalb Sekunden nicht

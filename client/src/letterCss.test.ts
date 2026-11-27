@@ -110,3 +110,19 @@ test('Zahlungs-QR am Handy: Beschriftung über dem Wert', () => {
   const phone = [...css.matchAll(/@media screen and \(max-width: 640px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '').join('\n')
   expect(phone).toMatch(/\.payment-qr-facts \{[^}]*grid-template-columns: minmax\(0, 1fr\)/)
 })
+
+// #735: Kopf- und Fußzeilen des Browsers (Adresse, Datum, Seitenzahl) stehen im Seitenrand. Chromium druckt dort keine,
+// wo ein Randfeld steht (nachgemessen: oben und unten je ein leeres genügt, „Seite x von y“ rechts unten bleibt), Firefox
+// keine bei Rand 0 (nachgemessen; `nsPageFrame::DrawHeaderFooter` zeichnet nur, wenn die Zeile in den Rand passt). Dort
+// (`print-page-edge`, letterDesignView.ts) hält body die 12 mm frei, auf jeder Druckseite, also stehen Brief und
+// Aufstellung, wo sie mit Rand standen.
+test('#735: leere Randfelder oben und unten, und ohne Seitenrand derselbe Abstand als Innenabstand von body', () => {
+  const page = Number(css.match(/@page \{ size: A4; margin: ([\d.]+)mm; \}/)?.[1])
+  expect(css).toMatch(/@page \{ @top-center \{ content: ""; \} @bottom-center \{ content: ""; \} \}/)
+  const edge = rules(print).find((r) => r.selector === 'html.print-page-edge body')?.body ?? ''
+  expect(Number(edge.match(/(?:^|;)\s*padding: ([\d.]+)mm/)?.[1])).toBe(page)
+  expect(edge).toMatch(/(^|[\s;])box-decoration-break: clone/)
+  expect(edge).toMatch(/-webkit-box-decoration-break: clone/)
+  const main = fs.readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
+  expect(main).toMatch(/markPageEdges\(document\)/)
+})

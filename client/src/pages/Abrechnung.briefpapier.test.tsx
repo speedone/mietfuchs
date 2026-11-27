@@ -43,7 +43,8 @@ let puts: { url: string, body: unknown }[]
 let pagedPaper: boolean
 beforeEach(() => {
   pagedPaper = true
-  vi.stubGlobal('CSS', { supports: (property: string, value: string) => pagedPaper && property === 'box-decoration-break' && value === 'clone' })
+  // Wie Firefox (`-moz-orient`, Durchsicht S2 zu #735); jsdom meldet sich als „Apple Computer, Inc.“
+  vi.stubGlobal('CSS', { supports: (property: string, value: string) => pagedPaper && ((property === 'box-decoration-break' && value === 'clone') || (property === '-moz-orient' && value === 'inline')) })
   const base: Settlement = {
     year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [STATEMENT],
     landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 120000, warnings: [], notices: [], closed: null,
@@ -127,6 +128,10 @@ test('Briefpapier: ohne Seitenrand, Papier auf der ersten und den Folgeseiten, o
   expect(card.querySelector('.print-pages-spacer')).toBeNull()
   // Kann der Browser Ränder je Seite, gibt es nichts zu sagen.
   expect(container.textContent).not.toContain('Briefpapier druckt dieser Browser nicht')
+  // #735: Wer Ränder je Seite kann (Firefox), druckt ohne Seitenrand und damit ohne Kopf- und Fußzeilen des Browsers.
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  const drawer = await screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
+  expect(drawer.textContent).not.toMatch(/selbst dazu/)
 })
 
 // Druck in Safari (#286): WebKit nimmt die Ränder der ersten Seite für alle Seiten und wiederholt nichts je Seite; mit
@@ -150,6 +155,9 @@ test('ein Browser ohne Ränder je Seite (Safari): ohne Briefpapier, mit Logo, Ra
   const drawer = await screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
   expect(drawer.textContent).toContain('Briefpapier druckt dieser Browser nicht')
   expect(drawer.textContent).toContain('Chrome, Edge oder Firefox')
+  // #735: Safari behält Rand und eigene Kopf- und Fußzeilen; das Fenster nennt den Weg, sie abzuschalten (jsdom meldet
+  // sich wie Safari als „Apple Computer, Inc.“).
+  expect(drawer.textContent).toMatch(/setzt Safari selbst dazu/)
   expect((within(drawer).getByRole('button', { name: 'Drucken' }) as HTMLButtonElement).disabled).toBe(false)
 })
 

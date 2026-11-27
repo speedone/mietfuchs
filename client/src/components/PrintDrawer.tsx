@@ -9,6 +9,7 @@ import Drawer from './Drawer'
 import Field from './Field'
 import DraftActions from './DraftActions'
 import type { Draft } from '../useDraft'
+import { browserLinesNote, pageEdges } from '../letterDesignView'
 
 export type PrintSettings = { printFoldMarks: boolean; printAttachments: boolean; printFooter: boolean; printPaymentQr: boolean }
 // `all` druckt alle Mieter, sonst die Kennung eines Mietverhältnisses.
@@ -40,6 +41,8 @@ export default function PrintDrawer({ scope, onScope, tenants, withLetter, onLet
 }) {
   const settings = draft.value
   const print = () => { if (!blocked && !busy) onPrint() }
+  // #735: Wo der Browser seine Kopf- und Fußzeilen trotzdem druckt (Safari), der Weg, sie abzuschalten
+  const linesNote = browserLinesNote(pageEdges())
   return (
     <Drawer
       open
@@ -100,6 +103,7 @@ export default function PrintDrawer({ scope, onScope, tenants, withLetter, onLet
         <DraftActions draft={draft} onSave={onSaveDraft} what="Druckeinstellungen" />
         {draft.dirty && <span className="muted">{draftNote}</span>}
       </div>
+      {linesNote && <p className="muted m-0">{linesNote}</p>}
       {warnings}
     </Drawer>
   )

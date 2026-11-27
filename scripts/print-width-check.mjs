@@ -185,6 +185,20 @@ async function openPage(browser, demo, c, open) {
   return { context, page, pageErrors }
 }
 
+// Wie breit das Fenster der Messung ist und wie weit der Druck reichen darf. Sonst der Satzspiegel (mit Briefpapier die
+// Seite). In Firefox druckt die Seite ohne Rand, und body hält die 12 mm frei (#735, `print-page-edge` in letter.css):
+// Dann ist das Fenster so breit wie die Seite, und erlaubt ist, was vor dem Innenabstand rechts endet (mit Briefpapier
+// gibt es keinen).
+/** @param {any} page @param {{ paper?: boolean }} c */
+async function printArea(page, c) {
+  const edge = await page.evaluate(() => /** @type {any} */ (globalThis).document.documentElement.classList.contains('print-page-edge'))
+  if (!edge) {
+    const limit = c.paper ? PAGE_WIDTH_PX : TEXT_WIDTH_PX
+    return { viewport: limit, limit }
+  }
+  return { viewport: PAGE_WIDTH_PX, limit: c.paper ? PAGE_WIDTH_PX : PAGE_WIDTH_PX - 12 * PX_PER_MM }
+}
+
 /** @returns {PrintCase[]} */
 function settlementCases(images, base) {
   const margins = { top: 45, right: 20, bottom: 30, left: 25 }
@@ -306,9 +320,9 @@ async function main() {
             const tag = tagOf(c, engine)
             // Erst messen, dann die PDF: page.pdf() löst `afterprint` aus, und Blätter wie Ableseformular und
             // Monatsinformation räumen dann ihre Druckklasse ab (die Messung danach sähe die ganze Oberfläche)
-            const limit = c.paper ? PAGE_WIDTH_PX : TEXT_WIDTH_PX
+            const { viewport, limit } = await printArea(page, c)
             await page.emulateMedia({ media: 'print' })
-            await page.setViewportSize({ width: Math.floor(limit), height: 900 })
+            await page.setViewportSize({ width: Math.floor(viewport), height: 900 })
             await page.waitForTimeout(300)
             const width = await page.evaluate(overflowingElements, limit)
             // Notbremse (client/src/printFit.ts) wie beim Druck: `beforeprint` aus dem Zustand am Bildschirm (Medium screen,
@@ -333,7 +347,7 @@ async function main() {
               if (width.found.length === 0) findings.push(`${tag}: die fremde Zeile ragt nicht hinaus, der Fall prüft die Notbremse nicht`)
               if (fitted.marks.length === 0) findings.push(`${tag}: die Notbremse markierte nichts`)
               await page.emulateMedia({ media: 'print' })
-              await page.setViewportSize({ width: Math.floor(limit), height: 900 })
+              await page.setViewportSize({ width: Math.floor(viewport), height: 900 })
               await page.waitForTimeout(300)
               const after = await page.evaluate(overflowingElements, limit)
               if (after.found.length > 0) findings.push(`${tag}: nach der Notbremse ragen noch ${after.found.length} Elemente hinaus, darunter <${after.found[0].tag}> „${after.found[0].text}“ (bis ${after.found[0].right} px)`)
@@ -364,12 +378,12 @@ async function main() {
               if (!c.brake && pdfFit.marks > 0) findings.push(`${tag}: die Notbremse griff beim Druck (${pdfFit.marks} Elemente)`)
               if (c.brake && pdfFit.marks === 0) findings.push(`${tag}: die Notbremse markierte beim Druck nichts`)
             }
-            if (width.found.length > 0 || width.documentWidth > limit + 1) {
+            if (width.found.length > 0 || width.documentWidth > viewport + 1) {
               // Eine zu breite Tabelle schiebt jede ihrer Zellen mit hinaus; je Fall eine Zeile und die ersten verschiedenen Elemente
               const seen = new Set()
               const distinct = width.found.filter((f) => { const k = `${f.tag}.${f.cls}`; if (seen.has(k)) return false; seen.add(k); return true })
               const sample = distinct.slice(0, 8).map((f) => `<${f.tag}${f.cls ? ` class="${f.cls}"` : ''}> „${f.text}“ (bis ${f.right} px)`)
-              findings.push(`${tag}: im Druck ${width.documentWidth} px breit, erlaubt ${Math.floor(limit)} px; ${width.found.length} Elemente ragen hinaus, darunter ${sample.join('; ') || 'keines einzeln erkennbar'}`)
+              findings.push(`${tag}: im Druck ${width.documentWidth} px breit (Fenster ${Math.floor(viewport)} px), erlaubt bis ${Math.floor(limit)} px; ${width.found.length} Elemente ragen hinaus, darunter ${sample.join('; ') || 'keines einzeln erkennbar'}`)
             }
             for (const e of pageErrors) findings.push(`${tag}: Fehler in der Seite: ${e}`)
             let summary = `${width.found.length} Elemente zu breit`

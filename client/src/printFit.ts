@@ -38,6 +38,12 @@ export function pageContentWidthPx(marginLeft: string | null, marginRight: strin
   return A4_WIDTH_MM * MM - (lengthPx(marginLeft) ?? fallback) - (lengthPx(marginRight) ?? fallback)
 }
 
+// Wie weit der Druck reichen darf: der Satzspiegel abzüglich des Innenabstands von body. Den gibt es nur, wo die Seite
+// ohne Rand druckt und body die 12 mm freihält (Firefox, #735, `print-page-edge` in letter.css); mit Briefpapier ist er 0.
+export function printLimitPx(width: number, bodyPaddingRight: string): number {
+  return width - (lengthPx(bodyPaddingRight) ?? 0)
+}
+
 const WIDTH_RANGE = /^\(\s*width\s*(<=|>=|<|>|=)\s*(\d*\.?\d+)(px|rem|em)\s*\)$/
 const WIDTH_MIN_MAX = /^\(\s*(min|max)-width\s*:\s*(\d*\.?\d+)(px|rem|em)\s*\)$/
 const DEVICE = /^\(\s*(any-)?(hover|pointer)\s*(:|\))|^\(\s*prefers-/
@@ -177,8 +183,9 @@ export function fitForPrint(win: Window = window): Element[] | null {
     })
     root.style.setProperty('width', `${width}px`, 'important')
     // Höchstens vier Runden: zuerst die Tabellen, dann, was danach noch hinausragt
+    const limit = printLimitPx(width, win.getComputedStyle(doc.body).paddingRight)
     for (let round = 0; round < 4; round++) {
-      const found = overflowing(win, doc, width)
+      const found = overflowing(win, doc, limit)
       if (found.length === 0) break
       const tables = new Set<Element>()
       for (const el of found) {
