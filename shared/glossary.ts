@@ -306,6 +306,15 @@ export const GLOSSARY = {
     norm: '§ 556 Abs. 1 Satz 1 BGB; zur Aufzählung einzelner Kostenarten BGH, Urteil vom 10.10.2007, VIII ZR 279/06. Dass der Anteil beim Vermieter bleibt, ist eine Auslegung von Mietfuchs nach dem Grundsatz zum Leerstand (BGH, Urteil vom 31.05.2006, VIII ZR 159/05).',
     needed: 'Nur wenn ein Mietvertrag einzelne Kostenarten aufzählt und eine davon fehlt, oder bei sonstigen Betriebskosten, die er nicht beim Namen nennt. Verweist der Vertrag allgemein auf die Betriebskosten, trägt der Mieter die Kostenarten der Betriebskostenverordnung außer den sonstigen (BGH, Urteil vom 10.02.2016, VIII ZR 137/15). Tragen Sie bei der Kostenposition ein, welches Mietverhältnis sie laut Vertrag nicht trägt; Mietfuchs rechnet den Anteil dann Ihnen zu und lässt die Position in der Abrechnung dieses Mieters weg.',
   },
+  // #714: Rauchwarnmelder. Beide Leitsätze gelesen am 27.11.2026 (bundesgerichtshof.de).
+  smokeDetectors: {
+    topic: 'costs',
+    title: 'Rauchwarnmelder: Miete und Wartung',
+    short: 'Die Miete von Rauchwarnmeldern ist nicht umlagefähig, denn sie steht dem Kauf der Geräte gleich, der es ebenso wenig ist. Umlegbar sind nur die Kosten der Wartung, also der regelmäßigen Prüfung der Betriebsbereitschaft, als sonstige Betriebskosten, wenn der Mietvertrag sie nennt.',
+    example: 'Die Rechnung nennt 13,66 € Miete und 8,02 € Wartung je Wohnung. Die Wartung über 8,02 € erfassen Sie als „Sonstige Betriebskosten“, die Miete über 13,66 € als eigene Position „Nicht umlagefähig“; sie bleibt bei Ihnen und zählt in der Steuerübersicht weiter als Ausgabe.',
+    norm: '§ 2 Nr. 17 BetrKV; BGH, Urteil vom 11.05.2022, VIII ZR 379/20 (Miete); BGH, Urteil vom 05.10.2022, VIII ZR 117/21 (Wartung)',
+    needed: 'Wenn Sie Rauchwarnmelder gemietet haben oder warten lassen und die Kosten umlegen wollen. Nennt die Beschreibung einer umgelegten Position die Miete, weist die Abrechnung darauf hin und nennt den Betrag. Nennt die Rechnung nur einen Gesamtbetrag für Miete und Wartung, fragen Sie den Anbieter nach dem Anteil der Miete.',
+  },
   namedOtherCosts: {
     topic: 'costs',
     title: 'Sonstige Betriebskosten im Mietvertrag benannt',

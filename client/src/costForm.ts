@@ -1,6 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird - sie ist in client/src/costForm.test.ts geprüft.
+import { smokeDetectorKind, smokeDetectorText } from '../../shared/smokeDetector.ts'
 import type { BillingPeriod, CostItem, CostKey, SelfSpanRange, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, PropertyKind, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
@@ -327,6 +328,13 @@ const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy
 // Der Satz über den Feldern der Einzelbeträge. Viele Messdienste nehmen die Vorauszahlungen in ihre Abrechnung auf und
 // drucken je Nutzer Kosten, Vorauszahlung und Saldo; ins Feld gehören die Kosten.
 export const AMOUNTS_HELP = 'Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart (bei Heizung und Warmwasser die Zwischensumme der Heiz- und Warmwasserkosten, nicht die Gesamtkosten des Nutzers). Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.'
+// #714: Der Satz am Feld „Beschreibung“, wenn eine umlagefähige Position Rauchwarnmelder nennt (Regel und Wortlaut in
+// shared/smokeDetector.ts, dieselben wie im Hinweis der Abrechnung, hier ohne Betrag).
+export function smokeDetectorHint(form: Pick<ItemForm, 'category' | 'description'>): string | null {
+  if (isNotAllocable(form.category)) return null
+  const kind = smokeDetectorKind(form.description)
+  return kind === null ? null : smokeDetectorText(kind, null)
+}
 
 export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], period?: number | BillingPeriod): string {
   const amount = parseEuro(form.amount) ?? 0

@@ -23,7 +23,7 @@ import {
   meterTypeOptions,
   suggestedKey,
   waterMeterHint,
-  amountsSumText, AMOUNTS_HELP,
+  amountsSumText, AMOUNTS_HELP, smokeDetectorHint,
   externalHint,
   externalMismatch,
   othersOfSourceCents,
@@ -1564,5 +1564,17 @@ describe('#724: Schornsteinfeger bei zentraler Heizung', () => {
   // Durchsicht S5: Direkt einer Wohnung zugeordnet ist es die Feuerstätte dieser Wohnung; die Berechnung fragt dort nicht.
   test('Durchsicht S5: beim Schlüssel „direkt“ fragt das Formular nicht', () => {
     expect(chimneySweepQuestion({ ...form, key: 'direct' }, [plant()], jahr)).toBeNull()
+  })
+})
+
+// #714: Nennt die Beschreibung einer umlagefähigen Position Rauchwarnmelder, sagt das Formular gleich, dass die Miete der
+// Geräte nicht umlagefähig ist; nur Wartung oder „Nicht umlagefähig“ braucht keinen Satz.
+describe('#714: Rauchwarnmelder im Kostenformular', () => {
+  test('Miete genannt, unklar, nur Wartung, nicht umlagefähig', () => {
+    expect(smokeDetectorHint(form({ category: 'Sonstige Betriebskosten', description: 'Rauchwarnmelder Miete und Wartung' }))).toBe('Die Miete von Rauchwarnmeldern ist nicht umlagefähig, ebenso wenig ihr Kauf (BGH VIII ZR 379/20); umlegbar sind nur die Kosten der Wartung als sonstige Betriebskosten, wenn der Mietvertrag sie nennt (BGH VIII ZR 117/21). Erfassen Sie die Miete als eigene Position mit der Kostenart „Nicht umlagefähig“ und hier nur die Wartung; enthält die Position nur die Miete, ändern Sie ihre Kostenart. Trennt die Rechnung beides nicht, fragen Sie den Anbieter nach dem Anteil der Miete. Der Hinweis richtet sich nach der Beschreibung.')
+    expect(smokeDetectorHint(form({ category: 'Sonstige Betriebskosten', description: 'Rauchwarnmelder' }))).toMatch(/^Enthält der Betrag Miete, Kauf oder Einbau der Geräte\?/)
+    expect(smokeDetectorHint(form({ category: 'Sonstige Betriebskosten', description: 'Rauchwarnmelder Wartung' }))).toBeNull()
+    expect(smokeDetectorHint(form({ category: 'Nicht umlagefähig', description: 'Rauchwarnmelder Miete' }))).toBeNull()
+    expect(smokeDetectorHint(form({ category: 'Sonstige Betriebskosten', description: 'Dachrinne' }))).toBeNull()
   })
 })

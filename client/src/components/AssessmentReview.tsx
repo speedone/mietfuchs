@@ -2,6 +2,7 @@
 // Vorschlag und Kandidaten, die Vorschau des Servers und das Buchen genau dieser Vorschau.
 // Der Eingang der Seite Belege und die KI auf der Kostenseite benutzen sie; „Weiter prüfen“ an einem Beleg ohne
 // Position springt zu ihr (#490). Die Entscheidungslogik steht in client/src/assessment.ts.
+import { smokeDetectorHint } from '../costForm'
 import { useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
@@ -328,7 +329,12 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                   <td className="num" data-label="Betrag €"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
                 </tr>
                 <tr>
-                  <td data-label="Beschreibung"><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} className="input-wide" /></td>
+                  <td data-label="Beschreibung">
+                    <input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} className="input-wide" />
+                    {/* #714: derselbe Satz wie im Kostenformular, wenn eine umlagefähige Zeile Rauchwarnmelder nennt; solange
+                        die Zeile offen ist oder angelegt wird (bei „Verwerfen“ oder „Verknüpfen“ gibt es hier nichts zu entscheiden) */}
+                    {(row.action === 'create' || row.action === '') && smokeDetectorHint(row) !== null && <small className="muted">{smokeDetectorHint(row)}</small>}
+                  </td>
                   <td data-label="Kostenart">
                     <select aria-label="Kostenart" value={row.category}
                       onChange={(e) => patch(line.idx, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, [], keyContext, row.description) })}>

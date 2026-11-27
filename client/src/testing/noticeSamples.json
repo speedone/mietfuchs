@@ -216,6 +216,14 @@
   "text": "„Abzug 2026-01-0“ (-70,86 €, ohne Beleg) und „Abzug 2026-01-1“ (-35,26 €, ohne Beleg) stehen beide 01.01.–30.04.2026 unter „Beleuchtung/Allgemeinstrom“. Ist das dieselbe Rechnung, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. Nur den Beleg zuzuordnen genügt nicht: Die Rechnung stünde weiter zweimal in der Summe. Sind es verschiedene Rechnungen, ist nichts zu tun."
  },
  {
+  "code": "cost.smoke-detector-rent",
+  "text": "„Rauchwarnmelder Miete und Wartung“: Die Miete von Rauchwarnmeldern ist nicht umlagefähig, ebenso wenig ihr Kauf (BGH VIII ZR 379/20); umlegbar sind nur die Kosten der Wartung als sonstige Betriebskosten, wenn der Mietvertrag sie nennt (BGH VIII ZR 117/21). Die Position legt 60,00 € auf Mieter um. Erfassen Sie die Miete als eigene Position mit der Kostenart „Nicht umlagefähig“ und hier nur die Wartung; enthält die Position nur die Miete, ändern Sie ihre Kostenart. Trennt die Rechnung beides nicht, fragen Sie den Anbieter nach dem Anteil der Miete. Der Hinweis richtet sich nach der Beschreibung."
+ },
+ {
+  "code": "cost.smoke-detector-unclear",
+  "text": "„Rauchwarnmelder“: Enthält der Betrag Miete, Kauf oder Einbau der Geräte? Die Miete von Rauchwarnmeldern ist nicht umlagefähig, ebenso wenig ihr Kauf (BGH VIII ZR 379/20); umlegbar sind nur die Kosten der Wartung als sonstige Betriebskosten, wenn der Mietvertrag sie nennt (BGH VIII ZR 117/21). Die Position legt 60,00 € auf Mieter um. Steckt eines davon darin, erfassen Sie es als eigene Position mit der Kostenart „Nicht umlagefähig“; nennt die Beschreibung nur die Wartung, entfällt dieser Hinweis."
+ },
+ {
   "code": "custom.forfeited",
   "text": "„Vereinbart“: der vereinbarte Anteil für EG (Eigennutzung) entfällt - die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter."
  },

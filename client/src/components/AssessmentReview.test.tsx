@@ -3,7 +3,7 @@
 // Liste der Kostenpositionen auf derselben Seite. Dort sagt der Satz nicht „auf der Seite Kosten“, und es gibt keinen
 // Knopf „Position öffnen“, der nur das Fenster ohne Löschen öffnete.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { AssessmentView, Extraction } from '../types'
 import { PropertyProvider } from '../property'
 import { UIProvider } from './feedback'
@@ -52,4 +52,18 @@ test('angelegte Zeile außerhalb der Seite Kosten: der Satz führt auf die Seite
   show(await created())
   expect(await screen.findByText(/Rückgängig machen Sie das auf der Seite Kosten:/)).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Position öffnen (Sperrmüll)' })).toBeTruthy()
+})
+
+// #714: Eine ausgelesene Zeile zu Rauchwarnmeldern, die als umlagefähige Position angelegt würde, trägt den Satz zur Miete.
+test('#714: Zeile mit Miete von Rauchwarnmeldern: der Satz steht an der Beschreibung, nicht mehr bei „Nicht umlagefähig“ oder nur Wartung', async () => {
+  const fake = fakeBooking({ items: [], units: [] })
+  const v = fake.evaluate('rwm.pdf', { vendor: 'Brandschutz Beispiel', invoiceDate: `${YEAR}-12-31`, positions: [{ description: 'Rauchwarnmelder Miete und Wartung', category: 'Sonstige Betriebskosten', amountEur: 80 }] } as Extraction, { year: YEAR })
+  show(v)
+  expect(await screen.findByText(/Die Miete von Rauchwarnmeldern ist nicht umlagefähig/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Kostenart'), { target: { value: 'Nicht umlagefähig' } })
+  expect(screen.queryByText(/Die Miete von Rauchwarnmeldern ist nicht umlagefähig/)).toBeNull()
+  fireEvent.change(screen.getByLabelText('Kostenart'), { target: { value: 'Sonstige Betriebskosten' } })
+  expect(screen.getByText(/Die Miete von Rauchwarnmeldern ist nicht umlagefähig/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Beschreibung'), { target: { value: 'Rauchwarnmelder Wartung' } })
+  expect(screen.queryByText(/Die Miete von Rauchwarnmeldern ist nicht umlagefähig/)).toBeNull()
 })

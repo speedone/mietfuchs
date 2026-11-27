@@ -98,6 +98,7 @@ import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherw
 import { dwellingsOf } from '../../shared/rooms.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import { settlesHeating } from '../../shared/heatingModel.ts'
+import { smokeDetectorKind, smokeDetectorText } from '../../shared/smokeDetector.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameMeterRest, sameUnits } from '../../shared/allocation.ts'
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
@@ -569,6 +570,9 @@ const noticeKinds = {
   // Hinweis, denn zwei Rechnungen derselben Kostenart gibt es; zu prüfen ist es trotzdem, deshalb
   // zählt er in der Ampel des Cockpits mit.
   'cost.possible-duplicate': { level: 'hint', title: 'Dieselbe Rechnung zweimal erfasst?', terms: ['allocable'] },
+  // #714: Die Stufe hängt am Code, deshalb zwei: Miete genannt (Warnung) oder unklar (Hinweis).
+  'cost.smoke-detector-rent': { level: 'warning', title: 'Miete von Rauchwarnmeldern umgelegt', terms: ['smokeDetectors'] },
+  'cost.smoke-detector-unclear': { level: 'hint', title: 'Rauchwarnmelder: Miete enthalten?', terms: ['smokeDetectors'] },
   // Abrechnungszeitraum (#208, Entwurf 3.4, 3.6, 10.1)
   'period.short': { level: 'hint', title: 'Rumpfzeitraum', terms: ['shortPeriod', 'billingPeriod'] },
   'period.item-outside': { level: 'warning', title: 'Leistungszeitraum außerhalb des Abrechnungszeitraums', terms: ['accrualPrinciple', 'billingPeriod'] },
@@ -7422,6 +7426,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             'Sonstige Betriebskosten trägt ein Mieter nur, wenn sein Vertrag sie beim Namen nennt; ein Verweis auf die Betriebskostenverordnung genügt dafür nicht (BGH VIII ZR 167/03). ' +
             'Bis zu Ihrer Angabe verteilt Mietfuchs die Position wie erfasst. Geben Sie bei der Position je Mieter an, ob sein Vertrag sie nennt; nennt er sie nicht, trägt der Vermieter seinen Anteil.',
           itemSubject(item))
+      }
+    }
+    // #714: Rauchwarnmelder. Die Miete der Geräte ist nicht umlagefähig, die Wartung schon (shared/smokeDetector.ts).
+    // Verteilt wird wie erfasst; gesagt wird es nur, wo die Position Geld auf Mieter umlegt.
+    const detector = carry || isNotAllocable(item.category) ? null : smokeDetectorKind(item.description)
+    if (detector !== null) {
+      const tenantCents = targets.reduce((a, _x, i) => a + (booked[i] ? shareOf(i) : 0), 0)
+      if (tenantCents > 0) {
+        warn(detector === 'rent' ? 'cost.smoke-detector-rent' : 'cost.smoke-detector-unclear', `„${item.description}“: ${smokeDetectorText(detector, fmtCents(tenantCents))}`, itemSubject(item))
       }
     }
     // §35a-Lohnanteil, mitverteilt in denselben Zeilen (siehe `distributeLaborCents`): Wer 55/365
