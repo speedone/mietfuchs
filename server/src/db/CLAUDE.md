@@ -182,7 +182,7 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Spalten (alle Bausteine haben dieselbe Gestalt); die Datenbank sichert nur den Baustein, die Platzhalter prüft
   shared/letter.ts vor dem Schreiben. Der Schlüssel `doc` je Mieter nennt seit Schritt 0068 das Objekt
   (`<Objekt>:<Zeitraum>`, Datenanweisung im selben Schritt). Ein neuer Baustein erweitert die Bedingung `…_block_known` der drei
-  Tabellen (Neubau, ohne Datenanweisung): `paymentPurpose` in 0094, `creditMovedOut` in 0106 (#691). Siehe server/src/CLAUDE.md.
+  Tabellen (Neubau, ohne Datenanweisung): `paymentPurpose` in 0094, `creditMovedOut` in 0107 (#691). Siehe server/src/CLAUDE.md.
 - **[schema.test.ts](../../test/schema.test.ts)** hält Schema und `shared/types.ts` zur
   Übersetzungszeit zusammen (die Typen bleiben von Hand geschrieben, der Browser kennt kein Drizzle).
 

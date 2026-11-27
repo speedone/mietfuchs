@@ -761,7 +761,7 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
 
 - **Die Vorgaben sind die bisherigen Sätze**, wortgleich, wo es sie gab (letter.test.ts). Neu: Betreff, Anrede,
   Einleitung, „ausgeglichen“ (bei 0 € stand vorher „Guthaben von 0,00 €“), Schluss, Gruß, Unterschrift.
-- **Guthaben nach dem Auszug** (#691, Baustein `creditMovedOut`, Schritt 0106): Endet das Mietverhältnis im abgerechneten
+- **Guthaben nach dem Auszug** (#691, Baustein `creditMovedOut`, Schritt 0107): Endet das Mietverhältnis im abgerechneten
   Zeitraum oder vor dem Tag des Briefs (`endedBy` in shared/letter.ts, `asOf`), trägt das Anschreiben `ended: true` (friert
   mit ein), und `chooseLetterBlocks` nimmt bei einem Guthaben diesen Baustein statt `credit`: Es gibt keine nächste
   Mietzahlung zum Verrechnen, der Satz fragt nach der Bankverbindung. Ohne die Angabe (vorher eingefroren) bleibt
@@ -896,7 +896,7 @@ Entwurf: [docs/superpowers/specs/2026-11-09-zahlungs-qr-design.md](../../docs/su
 - **Verwendungszweck = Baustein `paymentPurpose`** des Anschreibens, Vorgabe `{Name}, {Wohnung}, {Abrechnung}` (Name
   vorn, gekürzt wird hinten). Dieselben Ebenen und dasselbe Einfrieren wie jeder Baustein, aber **kein Absatz**:
   `chooseLetterBlocks`/`statementBlocks` nehmen ihn nie auf. Die Liste der Bausteine steht dreimal (shared/letter.ts,
-  `LetterBlock` in shared/types.ts, schema.ts mit CHECK in drei Tabellen, Schritt 0094, zuletzt 0106 für `creditMovedOut`).
+  `LetterBlock` in shared/types.ts, schema.ts mit CHECK in drei Tabellen, Schritt 0094, zuletzt 0107 für `creditMovedOut`).
 - **Schalter `settings.printPaymentQr`** (Spalte `print_payment_qr`, ohne Angabe aus) ist nur Druck wie die Fußzeile;
   `PUT /api/settings` lehnt eine Angabe außer ja/nein mit 400 ab.
 - **IBAN und Empfänger kommen aus dem Anschreiben** (`values.IBAN`, `values.Vermieter`, über `effectiveLandlord`, die

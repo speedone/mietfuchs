@@ -267,6 +267,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #712: was die zweite Vorauszahlung deckt (`heating_plants.second_prepayment_covers_water`). Eingetragen vor dem Merge;
   // wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0106_zweite_vorauszahlung_wasser': '4b8cb23563f48b9e7172c7c9f8b5aecf02e9764d5ad8317c16543bcac9af43f9',
+  // #691: Baustein „Guthaben nach dem Auszug“ in den Bedingungen der drei Tabellen der Anschreiben (Neubau). Eingetragen vor
+  // dem Merge; wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0107_guthaben_auszug': '88add08b2804dc438a158347ce5fe06f267a46d4b1af7d4f6d5ce6198e28e1b4',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
