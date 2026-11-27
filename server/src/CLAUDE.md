@@ -180,12 +180,29 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
 - **`NKA_AUTH`** `auto` (leer), `on` (auch lokal, dann ohne Übergang), `off` (aus, für Docker mit `-p 127.0.0.1:…`
   oder einen Proxy mit eigener Anmeldung); ein anderer Wert verhindert den Start wie bei `NKA_HOST`. Gesetzt heißt
   `envFixed`, die Karte zeigt nur an. Das installierte Fenster löscht ein geerbtes `NKA_AUTH` (`serverEnv`, wie die Testgriffe).
-- **Zustände** (`AccessView`): `setup`, `password`, `off` aus `zugang.json`, dazu `transition` (Übergang) und `none`
-  (lokal ohne Datei, nichts entschieden). `initialAccess` beim Start, vor dem Öffnen der Datenbank (`hasStock` danach
-  wäre immer wahr): Eine Datei gilt; eine verdorbene heißt `setup` (streng, nie offen, im Protokoll). Ohne Datei im
-  Netz **Stufe A** (0.17.0): ohne Bestand `setup` (Datei wird geschrieben; sichere Voreinstellung für Docker, #447),
-  mit Bestand `transition`: offen wie bisher, Hinweis in Oberfläche und Protokoll, Code zum Festlegen. **Stufe B**
-  (Pflicht, `stage: 'B'`) ist eine eigene kleine PR vor 1.0.0-rc.1.
+- **Zustände** (`AccessView`): `setup`, `password`, `off` aus `zugang.json`, dazu `none` (lokal ohne Datei, nichts
+  entschieden) und `transition` (offen mit Hinweis und Code; nur noch über `noticeProxy`, unten). `initialAccess` beim
+  Start: Eine Datei gilt; eine verdorbene heißt `setup` (streng, nie offen, im Protokoll). **Ohne Datei im Netz immer
+  `setup`**, die Datei wird geschrieben (sichere Voreinstellung für Docker, #447), **auch mit Bestand** (Stufe B, #692;
+  in 0.17 und 0.18 blieb ein Bestand als Übergang offen, Stufe A, angekündigt „ab 1.0.0-rc.1“). Offen bleibt nur der
+  ausdrückliche Verzicht: `off` in der Datei („Ohne Passwort weiter“ mit Code oder im Fenster) oder `NKA_AUTH=off`.
+  **Niemand wird ausgesperrt, der Bestand wird nie angefasst**: Der Code steht auf dem Rechner (Protokoll, Datei, voller
+  Pfad nur von dort, die Programmdatei öffnet den Browser mit dem Code), `NKA_PASSWORD_FILE` gilt weiter, das Fenster
+  ist über seinen Schlüssel angemeldet und richtet ohne Code ein; ein zweiter Start der Programmdatei öffnet die
+  laufende Einrichtung ebenfalls mit dem Code (`secondStartUrl`: Code nur aus der Datei im eigenen Datenordner und nur,
+  wenn der volle `/healthz`-Bericht denselben Ordner nennt). Der Bestand entscheidet nichts mehr: `noteStock` nach dem
+  Öffnen der Datenbank (`carriesStock`, wirklich Daten darin, nicht nur eine Datei) fügt dem Protokoll in der
+  Einrichtung im Netz den Satz hinzu, dass die Daten unverändert da sind (`STOCK_LINE`), und `GET /api/auth` meldet
+  dann `stock: true`, worauf die Einrichtungsseite dasselbe sagt. Ein **umgezogener Ordner** (#517) ohne `zugang.json`
+  bleibt von außen streng (`setup`), schreibt aber weder Datei noch Code; `/api/auth` meldet `moved` (der Vermerk, von
+  außen `movedAwayPublicMessage` ohne den neuen Ort, der meist den Benutzernamen nennt), die Seite zeigt ihn statt des
+  Formulars, `POST /api/auth/setup` antwortet 423. **Am Rechner selbst** (`fromThisComputer`, `frozenHere`) gilt der
+  Vermerk „nur noch ansehen“: Die Vorschaltung lässt jede Anfrage durch, `required` ist `false`, Schreiben bekommt die
+  423 des Vermerks in index.ts. Nicht bei `NKA_AUTH=on` (ein Weiterleiter ohne Proxy-Kopfzeilen wie `ssh -L`
+  sähe aus wie der Rechner selbst). `noteStock` scheitert nie am Start (Lesefehler: die Datei entscheidet, Zeile im
+  Protokoll). Geprüft in api-anmeldung.test.ts („bestehender
+  Bestand …“, „neue Installation … zweiter Start“, „umgezogener Bestand …“, „Programmdatei, zweiter Start …“) und
+  api-fenster.test.ts.
 - **Dateien im Datenordner**: `zugang.json` (`version`, `mode`, `instance` aus 6 Hex für den Cookie-Namen, `hash`
   `scrypt$17$8$1$…`, `changedAt`; 0600, Zwischendatei und Umbenennen wie secrets.json), `einrichtungscode.txt`
   (solange `setup`, Übergang oder `off` im Netz; neu je Start, danach gelöscht), `passwort-zuruecksetzen`. **Nie in
@@ -218,7 +235,7 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
   `…/pair` und `GET /healthz`. Übrige `GET`/`HEAD` (Oberfläche, Skripte, Manifest) sind frei. Sonst 401 mit `login: true` bzw.
   `setup: true`, auch für `/uploads`, Backup, Update und die ND-JSON-Ströme. `Cache-Control: no-store` auf geschützten
   Pfaden, solange die Anmeldung gilt.
-- **Wann sie gilt** (`gateActive`): nicht bei `NKA_AUTH=off`, `off`, Übergang und `none`; sonst bei `required` (Netz
+- **Wann sie gilt** (`gateActive`): nicht bei `NKA_AUTH=off`, `off`, `transition` und `none`; sonst bei `required` (Netz
   oder `on`). Lokal lauschend mit Passwort nur für Anfragen mit **Proxy-Kopfzeilen** (`Forwarded`, `X-Forwarded-For`,
   `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Real-IP`, `Via`, `proxyHeadersPresent`; eine gefälschte macht nur strenger). Lokal ohne Passwort schreibt der erste
   Abruf über einen Proxy einmal je Start ins Protokoll und schaltet auf den Hinweis des Übergangs mit Code
@@ -263,10 +280,10 @@ Vertrauenszone (andere Dienste auf anderem Port bekommen das Cookie).
 - **Passwort aus der Umgebung** (`readEnvPassword` in access.ts, `applyEnvPassword` in accessServer.ts): `NKA_PASSWORD_FILE`
   (Docker Secrets, Zeilenumbrüche am Ende fallen weg) vor `NKA_PASSWORD`, leer heißt nicht gesetzt. index.ts liest beide
   und löscht sie aus `process.env` (wie den Fensterschlüssel) und übernimmt nach `start`, vor der ersten Anfrage. Nur
-  solange nichts entschieden ist (`setup`, Übergang, `none`; auch gleich nach einem Zurücksetzen beim Start), nicht bei
+  solange nichts entschieden ist (`setup`, `none`; auch gleich nach einem Zurücksetzen beim Start), nicht bei
   `password` und `off` aus `zugang.json` und nie bei `NKA_AUTH=off`; geprüft wie in der Oberfläche (`passwordProblem`).
-  **Unbrauchbar** (Datei fehlt oder leer, zu kurz …): eine Zeile auf der Fehlerausgabe, und ein Übergang wird zur
-  Einrichtung mit Code (wer ein Passwort vorgibt, will Schutz). Keine Meldung nennt den Wert, auch nicht den Pfad (wer
+  **Unbrauchbar** (Datei fehlt oder leer, zu kurz …): eine Zeile auf der Fehlerausgabe, im Netz bleibt es bei der
+  Einrichtung mit Code. Keine Meldung nennt den Wert, auch nicht den Pfad (wer
   die Variablen verwechselt, hätte dort das Passwort); ein BOM am Anfang fällt weg. Das installierte Fenster löscht beide (`serverEnv`); Tests und Skripte
   leeren sie (`startServerIn`/`startServerRaw`). Geprüft in access.test.ts und api-anmeldung.test.ts.
 - **Zurücksetzen** über die Datei `passwort-zuruecksetzen` (nur eine Datei zählt, nie ihr Inhalt): geprüft beim

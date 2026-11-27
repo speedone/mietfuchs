@@ -875,8 +875,9 @@ fall(18, 'Datenbank von 0.13 mit aufgeteilten Rechnungen, Update auf Quellen (#4
   })
 })
 
-// Anmeldung (#528, Stufe A): Wer Mietfuchs schon im Netz betreibt, wird nach dem Update nicht ausgesperrt; ein neuer
-// Datenordner im Netz verlangt das Passwort von Anfang an. Zugang und Code gehen nie ins Backup.
+// Anmeldung (#528, Stufe B seit #692): Wer Mietfuchs schon im Netz betreibt, sieht nach dem Update die Einrichtung und
+// kommt mit dem Code vom Rechner wieder an seinen Bestand; ein neuer Datenordner im Netz verlangt das Passwort ebenso
+// von Anfang an. Zugang und Code gehen nie ins Backup.
 const IM_NETZ = { NKA_HOST: '0.0.0.0' }
 const codeIn = (dataDir) => fs.readFileSync(path.join(dataDir, 'einrichtungscode.txt'), 'utf8').trim()
 const einrichten = async (base, dataDir, password = 'ein langes Passwort im Praxislauf') => {
@@ -884,27 +885,38 @@ const einrichten = async (base, dataDir, password = 'ein langes Passwort im Prax
   return { status: res.status, cookie: (res.headers.get('set-cookie') ?? '').split(';')[0] }
 }
 
-fall(19, 'Anmeldung: alter Bestand im Netz bleibt offen mit Hinweis, neuer Ordner startet in der Einrichtung (#528)', async () => {
+fall(19, 'Anmeldung: alter Bestand im Netz startet in der Einrichtung und ist mit dem Code wieder da, neuer Ordner ebenso (#528, #692)', async () => {
   // Ein Bestand einer frühen Fassung (db.json aus 0.2), jetzt im Netz gestartet
   const alt = tempDir()
   fs.writeFileSync(path.join(alt, 'db.json'), JSON.stringify(bestand02()))
+  let cookieAlt = ''
   await withServer(alt, async ({ base, log }) => {
+    // Der Umstieg läuft vor jeder Anmeldung; den vollen Zustandsbericht gibt es vom Rechner selbst auch ohne Sitzung
     await umstiegGelungen(base, 'im Netz')
     const zugang = await holen(base, '/api/auth')
-    gleich([zugang.mode, zugang.required], ['transition', false], 'alter Bestand im Netz: Übergang, keine Anmeldung nötig')
-    gleich((await fetch(`${base}/api/units`)).status, 200, 'alter Bestand im Netz: die Daten sind ohne Anmeldung lesbar wie bisher')
-    enthaelt(log(), 'Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.', 'alter Bestand im Netz: das Protokoll nennt die Pflicht ab 1.0.0-rc.1')
-    enthaelt(log(), `Einrichtungscode zum Festlegen eines Passworts: ${codeIn(alt)}`, 'alter Bestand im Netz: das Protokoll nennt den Code')
-    gleich(fs.existsSync(path.join(alt, 'zugang.json')), false, 'alter Bestand im Netz: es wird nichts entschieden (keine zugang.json)')
+    gleich([zugang.mode, zugang.required], ['setup', true], 'alter Bestand im Netz: Einrichtung, die Anmeldung gilt')
+    gleich((await fetch(`${base}/api/units`)).status, 401, 'alter Bestand im Netz: ohne Einrichtung keine Daten')
+    enthaelt(log(), `Einrichtungscode: ${codeIn(alt)}`, 'alter Bestand im Netz: das Protokoll nennt den Code')
+    enthaelt(log(), 'Ihre Daten sind unverändert vorhanden.', 'alter Bestand im Netz: das Protokoll sagt, dass die Daten da sind')
+    gleich(JSON.parse(fs.readFileSync(path.join(alt, 'zugang.json'), 'utf8')).mode, 'setup', 'alter Bestand im Netz: die Einrichtung steht in zugang.json')
+    const eingerichtet = await einrichten(base, alt)
+    gleich(eingerichtet.status, 200, 'alter Bestand im Netz: mit dem Code eingerichtet')
+    cookieAlt = eingerichtet.cookie
+    const wohnungen = await fetch(`${base}/api/units`, { headers: { cookie: cookieAlt } })
+    gleich(wohnungen.status, 200, 'alter Bestand im Netz: nach der Einrichtung sind die Daten lesbar')
+    const liste = /** @type {any} */ (await wohnungen.json())
+    gleich(liste.length > 0, true, 'alter Bestand im Netz: der Bestand aus db.json ist hinübergewandert und da')
   }, IM_NETZ)
-  // Ein zweiter Start im Netz entscheidet ebenso wenig: weiter Übergang, weiter keine zugang.json
+  // Ein zweiter Start im Netz: Das Passwort gilt weiter, die Sitzung von vorher nicht (Neustart meldet ab)
   await withServer(alt, async ({ base }) => {
-    gleich((await holen(base, '/api/auth')).mode, 'transition', 'alter Bestand, zweiter Start im Netz: weiter im Übergang')
-    gleich(fs.existsSync(path.join(alt, 'zugang.json')), false, 'alter Bestand, zweiter Start im Netz: weiter keine zugang.json')
+    gleich((await holen(base, '/api/auth')).mode, 'password', 'alter Bestand, zweiter Start im Netz: das Passwort gilt')
+    gleich((await fetch(`${base}/api/units`, { headers: { cookie: cookieAlt } })).status, 401, 'alter Bestand, zweiter Start im Netz: neu anmelden')
   }, IM_NETZ)
-  // Derselbe Bestand, inzwischen in der Datenbank, wieder lokal: nichts davon
+  // Derselbe Bestand wieder lokal: Das Passwort bleibt festgelegt, verlangt wird es am Rechner selbst nicht
   await withServer(alt, async ({ base }) => {
-    gleich((await holen(base, '/api/auth')).mode, 'none', 'lokal: keine Anmeldung, kein Hinweis')
+    const lokal = await holen(base, '/api/auth')
+    gleich([lokal.mode, lokal.required], ['password', false], 'lokal: keine Anmeldung nötig')
+    gleich((await fetch(`${base}/api/units`)).status, 200, 'lokal: die Daten sind ohne Anmeldung lesbar')
     gleich(fs.existsSync(path.join(alt, 'einrichtungscode.txt')), false, 'lokal: kein Code')
   })
 

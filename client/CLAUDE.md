@@ -186,10 +186,13 @@ Regeln und Zustände stehen im Server (server/src/CLAUDE.md, „Anmeldung“); d
   Meldet das Ereignis `setup`, fragt `AccessGate` neu (dann die Einrichtung statt des Dialogs).
 - **Karte „Anmeldung“** ([AccessCard.tsx](src/components/AccessCard.tsx), Felder in
   [AccessFields.tsx](src/components/AccessFields.tsx), Passphrase in [passphrase.ts](src/passphrase.ts)) in den
-  Einstellungen, nur im Netz, mit Passwort oder im Übergang (`showsAccessCard`): „Passwort festlegen“ (mit Code, im
-  Fenster ohne), „Passwort ändern“, „Auf allen Geräten abmelden“, „Anmeldung ausschalten …“ (Rückfrage); mit
-  `envFixed` nur Anzeige. Im Übergang steht unten in der Seitenleiste „Ohne Passwort im Netz“
-  ([AccessHint.tsx](src/components/AccessHint.tsx), wie NetworkHint), „⎋ Abmelden“ nur mit Sitzung, nie im Fenster
+  Einstellungen, nur im Netz, mit Passwort oder offen mit Hinweis (`showsAccessCard`): „Passwort festlegen“ (mit Code, im
+  Fenster ohne; solange nichts entschieden ist, steht dort auch „Ohne Passwort weiter …“), „Passwort ändern“, „Auf allen Geräten abmelden“, „Anmeldung ausschalten …“ (Rückfrage); mit
+  `envFixed` nur Anzeige. Meldet der Server `transition` (seit #692 nur noch ein Proxy vor einem lokal lauschenden
+  Mietfuchs ohne Passwort; ein Bestand im Netz startet in der Einrichtung), steht unten in der Seitenleiste „Ohne Passwort im Netz“
+  ([AccessHint.tsx](src/components/AccessHint.tsx), wie NetworkHint); im Fenster mit Heimnetz in der Einrichtung dort
+  „Passwort für andere Geräte festlegen“ (`accessHintOf`, beide führen zur Karte „Anmeldung“). Ein umgezogener Ordner
+  zeigt statt des Formulars der Einrichtung den Vermerk (`moved`, Einrichtung.tsx), „⎋ Abmelden“ nur mit Sitzung, nie im Fenster
   (`showsSignOut`). Die Heimnetz-Karte fragt beim Einschalten nach dem Passwort (scripts/CLAUDE.md, Programmfenster).
   Verbunden mit einem Mietfuchs im Heimnetz steht „🔗 Verbunden mit …“ ([RemoteHint.tsx](src/components/RemoteHint.tsx),
   wie NetworkHint), beim ersten Start im Fenster bietet Umzug.tsx dazu den dritten Weg mit RemoteCard. Kopieren in die

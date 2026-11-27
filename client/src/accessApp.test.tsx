@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Die Anmeldung in der App (#528): vor der Schale `GET /api/auth`; ohne Sitzung die Anmeldeseite ohne Seitenleiste,
 // mitten in der Arbeit ein Dialog über der Seite, dessen Eingaben stehen bleiben; „Abmelden“ nur mit Sitzung, im
-// Übergang „Ohne Passwort im Netz“ mit Sprung zur Karte „Anmeldung“.
+// Hinweis „Ohne Passwort im Netz“ mit Sprung zur Karte „Anmeldung“.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from './App'
@@ -106,12 +106,14 @@ test('„Abmelden“ mit Sitzung führt zur Anmeldeseite; im Fenster gibt es kei
   expect(screen.queryByRole('button', { name: /Abmelden/ })).toBeNull()
 })
 
-test('im Übergang „Ohne Passwort im Netz“, führt zur Karte „Anmeldung“', async () => {
+test('offen mit Hinweis (Proxy vor lokalem Mietfuchs): „Ohne Passwort im Netz“ führt zur Karte „Anmeldung“', async () => {
   auth = info({ mode: 'transition', required: false, signedIn: false })
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Ohne Passwort im Netz/ }))
   expect(await screen.findByRole('heading', { name: 'Anmeldung' })).toBeTruthy()
-  expect(document.body.textContent).toContain('Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.')
+  expect(document.body.textContent).toContain('Mietfuchs ist im Netz ohne Passwort erreichbar')
+  // Eine Ankündigung gibt es nicht mehr (#692): Im Netz gilt die Pflicht, offen mit Hinweis ist nur noch der Proxy vor einem lokalen Mietfuchs
+  expect(document.body.textContent).not.toContain('Ab Version')
   expect(screen.queryByRole('button', { name: /Abmelden/ })).toBeNull()
 })
 

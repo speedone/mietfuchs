@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { api, ApiError, errorText } from '../api'
 import { useAccess, type AccessInfo } from '../access'
 import {
-  accessStateText, ENV_FIXED_NOTE, passwordProblems, setupErrorField, setupProblems, showsAccessCard, TRANSITION_NOTE,
+  accessStateText, ENV_FIXED_NOTE, passwordProblems, setupErrorField, setupProblems, showsAccessCard,
   WITHOUT_PASSWORD_WARNING, type AccessField,
 } from '../accessView'
 import type { JumpProps } from '../focus'
@@ -96,7 +96,7 @@ export default function AccessCard({ jump }: { jump?: JumpProps }) {
     if (ok) await run(current, '/api/auth/off', 'POST', 'Die Anmeldung ist ausgeschaltet.')
   }
 
-  // Nur im Übergang: bewusst ohne Passwort, mit Code (bzw. im Fenster) und Rückfrage
+  // Solange nichts entschieden ist (Einrichtung, offen mit Hinweis): bewusst ohne Passwort, mit Code (bzw. im Fenster) und Rückfrage
   async function withoutPassword(f: Form) {
     if (busy || !info) return
     const problems = setupProblems(info, f.code, null)
@@ -108,7 +108,6 @@ export default function AccessCard({ jump }: { jump?: JumpProps }) {
   return (
     <Card title="Anmeldung" {...jump}>
       <p>{accessStateText(info)}</p>
-      {info.mode === 'transition' && <p>{TRANSITION_NOTE}</p>}
       {info.envFixed && <p className="muted">{ENV_FIXED_NOTE}</p>}
       <div className="row">
         {canSetUp && <button type="button" className="btn" onClick={() => open('setup')}>Passwort festlegen</button>}
@@ -121,7 +120,7 @@ export default function AccessCard({ jump }: { jump?: JumpProps }) {
         onClose={() => setForm(null)} onSubmit={() => { if (form) void submit(form) }}
         actions={form && (
           <>
-            {form.action === 'setup' && info.mode === 'transition' && !info.envFixed && (
+            {form.action === 'setup' && (info.mode === 'transition' || info.mode === 'setup') && !info.envFixed && (
               <button type="button" className="btn secondary" disabled={busy} onClick={() => void withoutPassword(form)}>Ohne Passwort weiter …</button>
             )}
             <button type="button" className="btn" disabled={busy} onClick={() => void submit(form)}>
@@ -135,7 +134,6 @@ export default function AccessCard({ jump }: { jump?: JumpProps }) {
             {form.action === 'change' && <p>Alle anderen Geräte sind danach abgemeldet.</p>}
             {form.action === 'off' && <p>{`${WITHOUT_PASSWORD_WARNING} Wieder einschalten lässt sich die Anmeldung mit dem Einrichtungscode.`}</p>}
             {form.action === 'setup' && <p>Andere Geräte brauchen danach dieses Passwort.</p>}
-            {form.action === 'setup' && info.mode === 'transition' && <p className="muted">{TRANSITION_NOTE}</p>}
             {needsCurrent(info, form.action) && (
               <Field label="Bisheriges Passwort" width="l" {...errors.field('current')}>
                 <input type="password" autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} />

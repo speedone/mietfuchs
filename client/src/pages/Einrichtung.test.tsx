@@ -31,6 +31,8 @@ test('der Satz des Entwurfs, Code aus der Adresse vorbelegt, wo er steht', () =>
   expect(document.body.textContent).toContain('Mietfuchs ist von anderen Geräten in Ihrem Netz erreichbar. Legen Sie ein Passwort fest, damit nur Sie Ihre Daten sehen.')
   expect((screen.getByLabelText('Einrichtungscode') as HTMLInputElement).value).toBe('K7QM-4XPA-9TRW')
   expect(document.body.textContent).toContain('Konsolenfenster')
+  // Ohne Daten (neue Installation) kein Satz zu vorhandenen Daten (#692)
+  expect(document.body.textContent).not.toContain('Ihre Daten sind unverändert')
   expect(document.body.textContent).toContain('/home/v/mietfuchs/data/einrichtungscode.txt')
   expect(screen.getByLabelText('Passwort wiederholen')).toBeTruthy()
 })
@@ -110,4 +112,18 @@ test('409 (inzwischen anderswo festgelegt): Zustand neu lesen und den Satz als M
   fill()
   await waitFor(() => expect(onDone).toHaveBeenCalled())
   expect(await screen.findAllByText('Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.')).not.toHaveLength(0)
+})
+
+// Stufe B (#692): Ein Bestand, der bisher offen im Netz stand, sieht nach dem Update diese Seite statt seiner Daten
+test('Bestand mit Daten: der Satz, dass die Daten unverändert da sind', () => {
+  setup({ ...base, stock: true }, 'K7QM-4XPA-9TRW')
+  expect(document.body.textContent).toContain('Haben Sie Mietfuchs bisher ohne Passwort genutzt? Ihre Daten sind unverändert da und erscheinen nach diesem Schritt wieder.')
+})
+
+// Ein umgezogener Ordner (#517) wird nicht mehr geändert: statt der Einrichtung der Vermerk, kein Formular
+test('umgezogener Ordner: der Vermerk statt des Formulars', () => {
+  setup({ ...base, moved: 'Ihre Daten sind ins neue Mietfuchs umgezogen.' })
+  expect(document.body.textContent).toContain('Ihre Daten sind ins neue Mietfuchs umgezogen.')
+  expect(screen.queryByLabelText('Einrichtungscode')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Passwort festlegen' })).toBeNull()
 })

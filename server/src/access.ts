@@ -6,8 +6,9 @@
 //   Reverse-Proxy auf demselben Rechner ließe sonst jede Anfrage wie vom Rechner selbst aussehen.
 // - **Zustand** in `zugang.json` im Datenordner, nie in der Datenbank: Er geht nicht ins Backup, nicht in Vorversionen
 //   und nicht in den Umzug, und ein Rücksprung ändert das Passwort nicht.
-// - **Stufe A** (0.17.0): Ein neuer Datenordner im Netz startet in der Einrichtung; ein Bestand ohne `zugang.json` ist im
-//   Übergang und bleibt offen, mit Hinweis. Stufe B (Pflicht) folgt vor 1.0.0-rc.1.
+// - **Pflicht im Netz** (Stufe B, #692): Ohne `zugang.json` startet jeder Datenordner im Netz in der Einrichtung, auch
+//   ein Bestand aus der Zeit vor der Anmeldung (in 0.17 und 0.18 blieb er offen, mit Hinweis: Stufe A). Offen bleibt nur,
+//   wer es ausdrücklich so entschieden hat: `off` in der Datei (mit Code „Ohne Passwort weiter“) oder `NKA_AUTH=off`.
 //
 // Keine Bibliothek, nur node:crypto: scrypt nach OWASP Password Storage, Sitzungen nach OWASP Session Management, die
 // Bremse verlangsamt und sperrt nie (sonst sperrte ein Gerät im Netz den Vermieter aus).
@@ -19,9 +20,9 @@ import path from 'node:path'
 export type AccessMode = 'setup' | 'password' | 'off'
 export type Reachable = 'local' | 'network'
 export type AuthSetting = 'auto' | 'on' | 'off'
-// Was gilt: `none` heißt nichts entschieden und nichts nötig (lokal ohne Datei), `transition` der Übergang der Stufe A
+// Was gilt: `none` heißt nichts entschieden und nichts nötig (lokal ohne Datei), `transition` offen mit Hinweis und
+// Code. Den gibt es nur noch lokal lauschend hinter einem Proxy (`noticeProxy` in accessServer.ts), nie mehr beim Start.
 export type AccessView = AccessMode | 'transition' | 'none'
-export type Stage = 'A' | 'B'
 
 // Ein gekoppeltes Programmfenster (#528, Schritt 2): vom Schlüssel nur sein SHA-256, `lastSeen` höchstens stündlich
 export type Device = { id: string, name: string, keyHash: string, pairedAt: string, lastSeen: string | null }
@@ -76,11 +77,9 @@ export type InitialInput = {
   setting: AuthSetting
   // `corrupt`: eine Datei, die sich nicht lesen lässt; sie gilt als Einrichtung (streng, nie offen)
   file: AccessFile | 'corrupt' | null
-  hasStock: boolean
-  stage: Stage
 }
 
-export function initialAccess({ reachable, setting, file, hasStock, stage }: InitialInput): { state: AccessState, write: AccessFile | null } {
+export function initialAccess({ reachable, setting, file }: InitialInput): { state: AccessState, write: AccessFile | null } {
   const exposed = reachable === 'network' || setting === 'on'
   const base = { reachable, setting }
   if (file === 'corrupt') {
@@ -91,8 +90,7 @@ export function initialAccess({ reachable, setting, file, hasStock, stage }: Ini
     return { state: { ...base, mode: file.mode, required, instance: file.instance, hash: file.hash ?? null }, write: null }
   }
   if (setting === 'off' || !exposed) return { state: { ...base, mode: 'none', required: false, instance: newInstance(), hash: null }, write: null }
-  // NKA_AUTH=on ist eine ausdrückliche Bitte um die Anmeldung, der Übergang gilt dann nicht
-  if (hasStock && stage === 'A' && setting !== 'on') return { state: { ...base, mode: 'transition', required: false, instance: newInstance(), hash: null }, write: null }
+  // Mit oder ohne Bestand (Stufe B): Die Datei wird geschrieben, die Einrichtung gilt bis zur Entscheidung mit Code
   const write: AccessFile = { version: 1, mode: 'setup', instance: newInstance(), changedAt: new Date().toISOString() }
   return { state: { ...base, mode: 'setup', required: true, instance: write.instance, hash: null }, write }
 }

@@ -46,24 +46,21 @@ test('Zugang: NKA_AUTH kennt auto, on und off, alles andere ist ein Satz', () =>
 const passwordFile: AccessFile = { version: 1, mode: 'password', instance: 'abc123', hash: 'scrypt$10$8$1$AA$AA', changedAt: '2026-11-07T10:00:00.000Z' }
 const offFile: AccessFile = { version: 1, mode: 'off', instance: 'abc123', changedAt: '2026-11-07T10:00:00.000Z' }
 
-test('Zugang: Anfangszustand als Tabelle (Stufe A und B)', () => {
+// Stufe B (#692): Der Bestand entscheidet nichts mehr. Ohne Datei im Netz gilt die Einrichtung, offen bleibt nur der
+// ausdrückliche Verzicht (`off` in der Datei, NKA_AUTH=off).
+test('Zugang: Anfangszustand als Tabelle', () => {
   const cases: [string, Parameters<typeof initialAccess>[0], { mode: string, required: boolean, writes: boolean }][] = [
-    ['lokal, nichts eingestellt', { reachable: 'local', setting: 'auto', file: null, hasStock: false, stage: 'A' }, { mode: 'none', required: false, writes: false }],
-    ['lokal mit Bestand', { reachable: 'local', setting: 'auto', file: null, hasStock: true, stage: 'B' }, { mode: 'none', required: false, writes: false }],
-    ['im Netz, neuer Ordner', { reachable: 'network', setting: 'auto', file: null, hasStock: false, stage: 'A' }, { mode: 'setup', required: true, writes: true }],
-    ['im Netz, Bestand, Stufe A', { reachable: 'network', setting: 'auto', file: null, hasStock: true, stage: 'A' }, { mode: 'transition', required: false, writes: false }],
-    ['im Netz, Bestand, Stufe B', { reachable: 'network', setting: 'auto', file: null, hasStock: true, stage: 'B' }, { mode: 'setup', required: true, writes: true }],
-    ['Datei off, Stufe A', { reachable: 'network', setting: 'auto', file: offFile, hasStock: true, stage: 'A' }, { mode: 'off', required: false, writes: false }],
-    ['Datei off, Stufe B', { reachable: 'network', setting: 'auto', file: offFile, hasStock: true, stage: 'B' }, { mode: 'off', required: false, writes: false }],
-    ['Datei password im Netz', { reachable: 'network', setting: 'auto', file: passwordFile, hasStock: true, stage: 'A' }, { mode: 'password', required: true, writes: false }],
-    ['Datei password lokal', { reachable: 'local', setting: 'auto', file: passwordFile, hasStock: true, stage: 'A' }, { mode: 'password', required: false, writes: false }],
-    ['NKA_AUTH=off schlägt alles', { reachable: 'network', setting: 'off', file: passwordFile, hasStock: false, stage: 'B' }, { mode: 'password', required: false, writes: false }],
-    ['NKA_AUTH=off ohne Datei', { reachable: 'network', setting: 'off', file: null, hasStock: false, stage: 'B' }, { mode: 'none', required: false, writes: false }],
-    ['NKA_AUTH=on lokal mit password', { reachable: 'local', setting: 'on', file: passwordFile, hasStock: true, stage: 'A' }, { mode: 'password', required: true, writes: false }],
-    ['NKA_AUTH=on lokal, neuer Ordner', { reachable: 'local', setting: 'on', file: null, hasStock: false, stage: 'A' }, { mode: 'setup', required: true, writes: true }],
-    ['NKA_AUTH=on mit Bestand, Stufe A: kein Übergang', { reachable: 'local', setting: 'on', file: null, hasStock: true, stage: 'A' }, { mode: 'setup', required: true, writes: true }],
-    ['NKA_AUTH=on im Netz mit Bestand, Stufe A', { reachable: 'network', setting: 'on', file: null, hasStock: true, stage: 'A' }, { mode: 'setup', required: true, writes: true }],
-    ['verdorbene Datei gilt als setup', { reachable: 'network', setting: 'auto', file: 'corrupt', hasStock: true, stage: 'A' }, { mode: 'setup', required: true, writes: false }],
+    ['lokal, nichts eingestellt', { reachable: 'local', setting: 'auto', file: null }, { mode: 'none', required: false, writes: false }],
+    ['im Netz ohne Datei (neuer Ordner wie Bestand)', { reachable: 'network', setting: 'auto', file: null }, { mode: 'setup', required: true, writes: true }],
+    ['Datei off im Netz', { reachable: 'network', setting: 'auto', file: offFile }, { mode: 'off', required: false, writes: false }],
+    ['Datei password im Netz', { reachable: 'network', setting: 'auto', file: passwordFile }, { mode: 'password', required: true, writes: false }],
+    ['Datei password lokal', { reachable: 'local', setting: 'auto', file: passwordFile }, { mode: 'password', required: false, writes: false }],
+    ['NKA_AUTH=off schlägt alles', { reachable: 'network', setting: 'off', file: passwordFile }, { mode: 'password', required: false, writes: false }],
+    ['NKA_AUTH=off ohne Datei', { reachable: 'network', setting: 'off', file: null }, { mode: 'none', required: false, writes: false }],
+    ['NKA_AUTH=on lokal mit password', { reachable: 'local', setting: 'on', file: passwordFile }, { mode: 'password', required: true, writes: false }],
+    ['NKA_AUTH=on lokal ohne Datei', { reachable: 'local', setting: 'on', file: null }, { mode: 'setup', required: true, writes: true }],
+    ['NKA_AUTH=on im Netz ohne Datei', { reachable: 'network', setting: 'on', file: null }, { mode: 'setup', required: true, writes: true }],
+    ['verdorbene Datei gilt als setup', { reachable: 'network', setting: 'auto', file: 'corrupt' }, { mode: 'setup', required: true, writes: false }],
   ]
   for (const [name, input, expected] of cases) {
     const { state, write } = initialAccess(input)
@@ -79,7 +76,7 @@ test('Zugang: Anfangszustand als Tabelle (Stufe A und B)', () => {
 })
 
 test('Zugang: die Kennung der Installation bleibt, eine neue ist zufällig', () => {
-  const { state } = initialAccess({ reachable: 'network', setting: 'auto', file: passwordFile, hasStock: true, stage: 'A' })
+  const { state } = initialAccess({ reachable: 'network', setting: 'auto', file: passwordFile })
   assert.equal(state.instance, 'abc123')
   assert.match(newInstance(), /^[0-9a-f]{6}$/)
   assert.notEqual(newInstance(), newInstance())
@@ -686,7 +683,7 @@ test('Geräte: „zuletzt gesehen“ steht sofort in der Liste, in zugang.json h
   const certificate = await ensureCertificate(dir)
   if ('problem' in certificate) return assert.fail(certificate.problem)
   const access = createAccess({ dataDir: dir, host: '0.0.0.0', setting: 'auto', allowedHosts: undefined, runtime: 'docker', tls: { certSha256: certificate.certSha256 }, now: () => clock, log: () => {}, logError: () => {} })
-  access.start({ hasStock: true })
+  access.start()
   const app = express()
   app.use(access.middleware)
   access.install(app)
@@ -805,7 +802,7 @@ test('Vorschaltung: nur eine Anfrage mit Proxy-Kopfzeilen fragt NKA_TRUST_PROXY 
   const asked: Array<string | undefined> = []
   const trustProxy = { configured: true, problems: [], trusts: async (address: string | undefined) => { asked.push(address); return true } }
   const access = createAccess({ dataDir: dir, host: '0.0.0.0', setting: 'auto', allowedHosts: undefined, runtime: 'docker', tls: { certSha256: 'c'.repeat(64) }, trustProxy, log: () => {}, logError: () => {} })
-  access.start({ hasStock: true })
+  access.start()
   const app = express()
   app.use(access.middleware)
   access.install(app)

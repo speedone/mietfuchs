@@ -4,7 +4,7 @@ import type { JumpTarget } from './focus'
 import { ACCESS_TARGET, AI_SETTINGS_TARGET, NEW_UNIT_TARGET, UPDATE_GUIDE_TARGET } from './jumpTargets'
 import { api, errorText } from './api'
 import { AccessContext, announceSignedIn, loadAccess, onAccessDemand, onSignedInAgain, useAccess, type AccessInfo } from './access'
-import { accessView, failedAttemptsText, showsSignOut, showsTransitionHint, takeSetupCode } from './accessView'
+import { accessView, failedAttemptsText, showsSignOut, accessHintOf, takeSetupCode } from './accessView'
 import AccessHint from './components/AccessHint'
 import { EInvoicePage } from './components/EInvoicePage'
 import LoginDialog, { type LoginResult } from './components/LoginDialog'
@@ -558,8 +558,8 @@ function Shell() {
         {/* Im Programmfenster, solange es mit einem Mietfuchs im Heimnetz verbunden ist (#528); führt zur Karte in den Einstellungen */}
         {remote && <RemoteHint bridge={remote} onOpen={() => { void navigateFromNav('einstellungen').then((done) => { if (done) close?.() }) }} />}
         {network && <NetworkHint bridge={network} onOpen={() => { void navigateFromNav('einstellungen').then((done) => { if (done) close?.() }) }} />}
-        {/* Im Übergang (#528, Stufe A): ohne Passwort im Netz erreichbar; führt zur Karte „Anmeldung“ */}
-        {showsTransitionHint(access?.info ?? null) && <AccessHint onOpen={() => { void navigate('einstellungen', ACCESS_TARGET, null).then((done) => { if (done) close?.() }) }} />}
+        {/* Offen mit Hinweis (#528, `transition`): über einen Proxy ohne Passwort erreichbar; führt zur Karte „Anmeldung“ */}
+        {accessHintOf(access?.info ?? null) && <AccessHint kind={accessHintOf(access?.info ?? null) ?? 'open'} onOpen={() => { void navigate('einstellungen', ACCESS_TARGET, null).then((done) => { if (done) close?.() }) }} />}
         {themeButton}
         {showsSignOut(access?.info ?? null) && <button type="button" className="theme-toggle" onClick={() => void signOut()}><span aria-hidden="true">⎋</span> Abmelden</button>}
         {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}

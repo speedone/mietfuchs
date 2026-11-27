@@ -1,5 +1,5 @@
 // Anmeldung (#528, Schritt 1) gegen den echten Server: Vorschaltung, Routen unter /api/auth, Bremse, Origin und der
-// Übergang der Stufe A. Die Entscheidungen ohne Server prüft access.test.ts. Server im Netz lauschen hier auf 0.0.0.0
+// Bestand (Stufe B, #692). Die Entscheidungen ohne Server prüft access.test.ts. Server im Netz lauschen hier auf 0.0.0.0
 // und werden über 127.0.0.1 gefragt; wo die Adresse einer Netzwerkkarte gebraucht wird, ist der Test ohne Karte
 // übersprungen.
 import { test } from 'node:test'
@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { createProperty } from '../src/db/repository.ts'
+import { createEntity, createProperty } from '../src/db/repository.ts'
 import {
   TEST_PASSWORD, jsonOf, rawRequest, sessionOf, setupCode, signIn, startServerIn, startServerRaw, waitForExit,
 } from '../testing/api.ts'
@@ -23,7 +23,7 @@ const viaLan = (base: string): string | null => {
   return lan ? `http://${lan}:${new URL(base).port}` : null
 }
 const post = (body: unknown, headers: Record<string, string> = {}): RequestInit => ({ method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) })
-type AuthInfo = { mode: string, required: boolean, signedIn: boolean, reachable: string, envFixed: boolean, codeFile?: string, codeFileName?: string, minLength: number }
+type AuthInfo = { mode: string, required: boolean, signedIn: boolean, stock?: boolean, moved?: string, reachable: string, envFixed: boolean, codeFile?: string, codeFileName?: string, minLength: number }
 const authOf = async (base: string, headers: Record<string, string> = {}): Promise<AuthInfo> => jsonOf<AuthInfo>(await fetch(`${base}/api/auth`, { headers }))
 
 // Ein Ordner mit Bestand, wie ihn eine frühere Fassung hinterlässt
@@ -31,6 +31,8 @@ async function stockDir(): Promise<string> {
   const dir = freshDir()
   const opened = await openFreshDatabase(dir)
   await createProperty(opened.db, 'haus-am-see', { name: 'Haus am See' })
+  // Eine Wohnung, damit der Bestand wirklich Daten trägt (`carriesStock`; ein Objekt allein zählt nicht)
+  await createEntity(opened.db, 'units', 'eg', { propertyId: 'haus-am-see', name: 'EG', areaM2: 60, participates: true })
   opened.close()
   return dir
 }
@@ -360,24 +362,165 @@ test('Anmeldung: Einrichtung ohne Passwort mit Code, danach offen mit neuem Code
   }
 })
 
-test('Anmeldung: bestehender Bestand im Netz ist im Übergang, offen, nichts geschrieben außer dem Code', async () => {
+// Stufe B (#692): Auch ein Bestand aus der Zeit vor der Anmeldung verlangt im Netz ein Passwort. Ausgesperrt wird
+// niemand: Der Code steht auf dem Rechner (Protokoll und Datei, der volle Pfad nur dort), und die Daten sind nach der
+// Einrichtung unverändert da.
+test('Anmeldung: bestehender Bestand im Netz startet in der Einrichtung; mit dem Code vom Rechner sind die Daten wieder da', async () => {
   const dir = await stockDir()
   const s = await startServerIn(dir, NETWORK)
   try {
     const auth = await authOf(s.base)
-    assert.equal(auth.mode, 'transition')
-    assert.equal(auth.required, false)
-    const units = await fetch(`${s.base}/api/properties`)
-    assert.equal(units.status, 200)
-    assert.equal(fs.existsSync(path.join(dir, 'zugang.json')), false)
-    assert.ok(fs.existsSync(path.join(dir, 'einrichtungscode.txt')))
-    await waitFor(() => /Ab Version 1\.0\.0-rc\.1, der ersten Testversion von 1\.0, verlangt Mietfuchs hier ein Passwort\./.test(s.output()))
+    assert.equal(auth.mode, 'setup')
+    assert.equal(auth.required, true)
+    assert.equal(auth.signedIn, false)
+    assert.equal(auth.stock, true, 'nur Ja oder Nein: Hier liegen Daten')
+    const closed = await fetch(`${s.base}/api/properties`)
+    assert.equal(closed.status, 401)
+    assert.deepEqual(await jsonOf(closed), { error: 'Bitte legen Sie zuerst ein Passwort für Mietfuchs fest.', setup: true })
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'zugang.json'), 'utf8')).mode, 'setup')
+    // Am Rechner selbst nennt Mietfuchs den vollen Pfad der Datei mit dem Code, und das Protokoll nennt den Code
+    assert.equal(auth.codeFile, path.join(dir, 'einrichtungscode.txt'))
+    await waitFor(() => s.output().includes(`Einrichtungscode: ${setupCode(dir)}`))
+    await waitFor(() => s.output().includes('Ihre Daten sind unverändert vorhanden. Mietfuchs zeigt sie wieder, sobald Sie mit dem Einrichtungscode ein Passwort festgelegt haben.'))
+    assert.ok(!s.output().includes('Ab Version 1.0.0-rc.1'), 'kein Übergang mehr angekündigt')
     assert.equal((await fetch(`${s.base}/api/auth/setup`, post({ password: TEST_PASSWORD }))).status, 403)
-    // eine fremde Seite, die der Browser als solche ausweist, schreibt auch im Übergang nicht
-    assert.equal((await rawRequest(s.base, { method: 'POST', urlPath: '/api/units', headers: { 'sec-fetch-site': 'cross-site' }, body: '{}' })).status, 403)
-    // mit Code eingerichtet gilt die Anmeldung ab sofort
-    await signIn(s)
+    // mit dem Code eingerichtet: Der Bestand ist da, ohne Sitzung bleibt er zu
+    const signed = await signIn(s)
+    const properties = await jsonOf<{ id: string, name: string }[]>(await signed.fetch('/api/properties'))
+    assert.ok(properties.some((p) => p.id === 'haus-am-see' && p.name === 'Haus am See'), 'der Bestand ist nach der Einrichtung unverändert da')
     assert.equal((await fetch(`${s.base}/api/properties`)).status, 401)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht (#692): Der Satz zu den unveränderten Daten gilt nur, wenn wirklich Daten da sind. Eine neue Installation
+// hat ab dem zweiten Start zwar eine Datenbank, aber nichts darin.
+test('Anmeldung: neue Installation im Netz, zweiter Start vor der Einrichtung: kein Satz zu vorhandenen Daten', async () => {
+  const dir = freshDir()
+  const first = await startServerIn(dir, NETWORK)
+  first.child.kill()
+  await waitForExit(first.child).catch(() => null)
+  assert.ok(fs.existsSync(path.join(dir, 'mietfuchs.sqlite')), 'die Datenbank liegt schon da')
+  const s = await startServerIn(dir, NETWORK)
+  try {
+    const auth = await authOf(s.base)
+    assert.equal(auth.mode, 'setup')
+    assert.notEqual(auth.stock, true)
+    await waitFor(() => s.output().includes(`Einrichtungscode: ${setupCode(dir)}`))
+    assert.ok(!s.output().includes('Ihre Daten sind unverändert vorhanden'), 'ohne Daten kein Satz dazu')
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht (#692): Ein umgezogener Ordner wird nur noch gelesen (#517). Ohne zugang.json schreibt der Start dort
+// nichts, und statt einer Einrichtung für den abgelösten Ordner steht der Vermerk.
+test('Anmeldung: umgezogener Bestand im Netz ohne zugang.json: nichts geschrieben, keine Einrichtung, der Vermerk zuerst', async () => {
+  const dir = await stockDir()
+  fs.writeFileSync(path.join(dir, 'umgezogen.json'), JSON.stringify({ version: 1, movedTo: '/anderswo', at: '2026-11-01T10:00:00.000Z', appVersion: '0.16.0' }))
+  const before = fs.readdirSync(dir).sort()
+  const s = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: ENV_PASSWORD })
+  // Von außen: dieselbe Adresse mit einer Proxy-Kopfzeile ist nie „vom Rechner selbst“ (fromThisComputer)
+  const outside = { 'x-forwarded-for': '192.168.178.20' }
+  try {
+    // Von außen streng, und der Vermerk ohne Pfad (er nennt meist den Benutzernamen)
+    const away = await authOf(s.base, outside)
+    assert.equal(away.mode, 'setup')
+    assert.equal(away.required, true)
+    assert.match(away.moved ?? '', /Ihre Daten sind ins neue Mietfuchs umgezogen/)
+    assert.ok(!(away.moved ?? '').includes('/anderswo'), 'von außen kein Pfad')
+    assert.equal(away.codeFile, undefined)
+    assert.equal((await fetch(`${s.base}/api/properties`, { headers: outside })).status, 401)
+    const setupAway = await fetch(`${s.base}/api/auth/setup`, post({ code: 'AAAA-AAAA-AAAA', password: TEST_PASSWORD }, outside))
+    assert.equal(setupAway.status, 423)
+    const refusal = (await jsonOf<{ error: string }>(setupAway)).error
+    assert.match(refusal, /Ihre Daten sind ins neue Mietfuchs umgezogen/)
+    assert.ok(!refusal.includes('/anderswo'), 'von außen kein Pfad in der Ablehnung')
+    // Am Rechner selbst gilt der Vermerk „nur noch ansehen“: lesen geht, schreiben bekommt die 423 des Vermerks
+    const here = await authOf(s.base)
+    assert.equal(here.required, false, 'am Rechner selbst keine Einrichtung')
+    assert.match(here.moved ?? '', /\/anderswo/, 'am Rechner selbst mit Pfad')
+    const read = await fetch(`${s.base}/api/properties`)
+    assert.equal(read.status, 200)
+    assert.ok((await jsonOf<Array<{ id: string }>>(read)).some((p) => p.id === 'haus-am-see'))
+    const write = await fetch(`${s.base}/api/properties`, post({ name: 'Neu' }))
+    assert.equal(write.status, 423)
+    assert.equal((await fetch(`${s.base}/api/auth/setup`, post({ code: 'AAAA-AAAA-AAAA', withoutPassword: true }))).status, 423)
+    await waitFor(() => s.output().includes('Dieser Datenordner ist umgezogen und wird nicht mehr geändert.'))
+    assert.ok(!s.output().includes('Einrichtungscode'), 'kein Code für einen Ordner, der nicht mehr geändert wird')
+    // Von der Anmeldung entsteht im alten Ordner nichts. Den leeren Ordner uploads/ legt der Belegempfang (multer) bei
+    // jedem Start an, unabhängig von der Anmeldung; er ist hier ausgenommen.
+    assert.deepEqual(fs.readdirSync(dir).filter((name) => name !== 'uploads').sort(), before.filter((name) => name !== 'uploads'), 'im alten Ordner entsteht nichts')
+    assert.ok(!fs.existsSync(path.join(dir, 'zugang.json')) && !fs.existsSync(path.join(dir, 'einrichtungscode.txt')))
+  } finally {
+    s.child.kill()
+    await waitForExit(s.child).catch(() => null)
+  }
+})
+
+// Nachprüfung (#692): Mit NKA_AUTH=on gilt die Ausnahme „am Rechner selbst“ im umgezogenen Ordner nicht. Ein
+// Weiterleiter ohne Proxy-Kopfzeilen (ssh -L, netsh portproxy) sieht aus wie der Rechner selbst.
+test('Anmeldung: umgezogener Bestand mit NKA_AUTH=on bleibt auch am Rechner selbst gesperrt', async () => {
+  const dir = await stockDir()
+  fs.writeFileSync(path.join(dir, 'umgezogen.json'), JSON.stringify({ version: 1, movedTo: '/anderswo', at: '2026-11-01T10:00:00.000Z', appVersion: '0.16.0' }))
+  const s = await startServerIn(dir, { NKA_AUTH: 'on' })
+  try {
+    const auth = await authOf(s.base)
+    assert.equal(auth.required, true)
+    assert.equal((await fetch(`${s.base}/api/properties`)).status, 401)
+  } finally {
+    s.child.kill()
+    await waitForExit(s.child).catch(() => null)
+  }
+})
+
+// Der bewusste Verzicht bleibt: in der Einrichtung mit Code „Ohne Passwort weiter“, oder NKA_AUTH=off von vornherein.
+test('Anmeldung: bestehender Bestand im Netz bleibt nur mit ausdrücklichem Verzicht offen (Code oder NKA_AUTH=off)', async () => {
+  const dir = await stockDir()
+  const first = await startServerIn(dir, NETWORK)
+  try {
+    assert.equal((await fetch(`${first.base}/api/properties`)).status, 401)
+    assert.equal((await fetch(`${first.base}/api/auth/setup`, post({ withoutPassword: true }))).status, 403)
+    assert.equal((await fetch(`${first.base}/api/auth/setup`, post({ code: setupCode(dir), withoutPassword: true }))).status, 200)
+    assert.equal((await fetch(`${first.base}/api/properties`)).status, 200)
+  } finally {
+    first.child.kill()
+    await waitForExit(first.child).catch(() => null)
+  }
+  // Die Entscheidung gilt über den Neustart hinweg
+  const again = await startServerIn(dir, NETWORK)
+  try {
+    const auth = await authOf(again.base)
+    assert.equal(auth.mode, 'off')
+    assert.equal(auth.required, false)
+    assert.equal((await fetch(`${again.base}/api/properties`)).status, 200)
+  } finally {
+    again.child.kill()
+    await waitForExit(again.child).catch(() => null)
+  }
+  const envDir = await stockDir()
+  const off = await startServerIn(envDir, { ...NETWORK, NKA_AUTH: 'off' })
+  try {
+    assert.equal((await authOf(off.base)).required, false)
+    assert.equal((await fetch(`${off.base}/api/properties`)).status, 200)
+    assert.equal(fs.existsSync(path.join(envDir, 'zugang.json')), false)
+    assert.equal(fs.existsSync(path.join(envDir, 'einrichtungscode.txt')), false)
+  } finally {
+    off.stop()
+  }
+})
+
+// Derselbe Bestand nur auf diesem Rechner (Programmfenster ohne Heimnetz, NKA_HOST=127.0.0.1): nichts davon
+test('Anmeldung: bestehender Bestand nur auf diesem Rechner bleibt ohne Anmeldung und ohne Datei', async () => {
+  const dir = await stockDir()
+  const s = await startServerIn(dir)
+  try {
+    const auth = await authOf(s.base)
+    assert.equal(auth.mode, 'none')
+    assert.equal(auth.required, false)
+    assert.equal((await fetch(`${s.base}/api/properties`)).status, 200)
+    assert.equal(fs.existsSync(path.join(dir, 'zugang.json')), false)
   } finally {
     s.stop()
   }
@@ -632,6 +775,27 @@ test('Proxy vor einem lokalen Mietfuchs ohne Passwort: eine Zeile im Protokoll, 
   }
 })
 
+// Durchsicht (#692): Ein zweiter Klick im Startmenü öffnet die laufende Instanz. Steht sie in der Einrichtung, bekommt
+// der Browser den Code wie beim ersten Start, gelesen aus der Datei im eigenen Datenordner, nie aus einer Antwort.
+test('Programmdatei, zweiter Start: Code im Fragment nur für denselben Datenordner in der Einrichtung, sonst die blanke Adresse', async () => {
+  const { secondStartUrl } = await import('../src/accessServer.ts')
+  const url = 'http://127.0.0.1:3001'
+  const dir = freshDir()
+  const health = { app: 'mietfuchs', status: 'ok', dataDir: dir }
+  const setup = { mode: 'setup', required: true }
+  assert.equal(secondStartUrl(url, { auth: setup, health, dataDir: dir }), url, 'ohne Datei kein Code')
+  fs.writeFileSync(path.join(dir, 'einrichtungscode.txt'), 'K7QM-4XPA-9TRW\n')
+  assert.equal(secondStartUrl(url, { auth: setup, health, dataDir: dir }), `${url}/#einrichtung=K7QM-4XPA-9TRW`)
+  assert.equal(secondStartUrl(url, { auth: { mode: 'password', required: true }, health, dataDir: dir }), url, 'mit Passwort kein Code')
+  assert.equal(secondStartUrl(url, { auth: { mode: 'off', required: false }, health, dataDir: dir }), url, 'ausgeschaltet: kein Code')
+  assert.equal(secondStartUrl(url, { auth: setup, health: { ...health, dataDir: path.join(dir, 'anderswo') }, dataDir: dir }), url, 'ein anderer Datenordner: kein Code')
+  assert.equal(secondStartUrl(url, { auth: setup, health: { app: 'mietfuchs', status: 'ok' }, dataDir: dir }), url, 'gekürzter Bericht (nicht vom Rechner selbst): kein Code')
+  assert.equal(secondStartUrl(url, { auth: null, health, dataDir: dir }), url)
+  // Was in der Datei steht, geht nur als Code in die Adresse: zwölf Zeichen des Alphabets, sonst nichts
+  fs.writeFileSync(path.join(dir, 'einrichtungscode.txt'), 'x"><script>alert(1)</script>')
+  assert.equal(secondStartUrl(url, { auth: setup, health, dataDir: dir }), url)
+})
+
 test('Programmdatei: der Browser öffnet die Einrichtung mit dem Code im Fragment', async () => {
   const { browserUrlFor } = await import('../src/accessServer.ts')
   assert.equal(browserUrlFor('http://127.0.0.1:3001', 'setup', 'K7QM4XPA9TRW'), 'http://127.0.0.1:3001/#einrichtung=K7QM-4XPA-9TRW')
@@ -752,7 +916,7 @@ test('Passwort aus NKA_PASSWORD_FILE: neuer Datenordner startet mit Passwort, oh
   }
 })
 
-test('Passwort aus NKA_PASSWORD: beendet den Übergang eines bestehenden Bestands; NKA_AUTH=off ändert nichts', async () => {
+test('Passwort aus NKA_PASSWORD: legt es für einen bestehenden Bestand im Netz fest; NKA_AUTH=off ändert nichts', async () => {
   const dir = await stockDir()
   const off = await startServerIn(dir, { ...NETWORK, NKA_AUTH: 'off', NKA_PASSWORD: ENV_PASSWORD })
   try {
@@ -777,7 +941,7 @@ test('Passwort aus NKA_PASSWORD: beendet den Übergang eines bestehenden Bestand
 })
 
 // Durchsicht S2: Wer ein Passwort vorgibt, will Schutz. Ist die Angabe unbrauchbar, bleibt ein bestehender Bestand nicht
-// offen im Übergang, sondern startet in der Einrichtung mit Code.
+// offen, sondern startet in der Einrichtung mit Code (seit Stufe B wie ohne Angabe).
 test('Passwort aus der Umgebung unbrauchbar: bestehender Bestand im Netz startet streng in der Einrichtung', async () => {
   const dir = await stockDir()
   const short = await startServerIn(dir, { ...NETWORK, NKA_PASSWORD: 'zu kurz' })
