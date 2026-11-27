@@ -247,6 +247,10 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Ein Ziel, das zur Warmwasserbereitung nicht passt, wird nie still ersetzt, sondern als Fehler am Feld
   // genannt; gespeichert wird erst nach einer Wahl.
   const targetInvalid = !!form && selfPlant && form.heatingTarget !== '' && !targetChoices.some((o) => o.value === form.heatingTarget)
+  // Der Speicher gilt dem Formular, in dem gesetzt wurde: Öffnet sich eine andere Position, ohne dass das Fenster
+  // dazwischen schließt („Stattdessen … bearbeiten“), beginnt er leer (Integrationsdurchsicht #690, K2). Vor dem
+  // Effekt darunter, damit dieser schon mit dem leeren Speicher läuft.
+  useEffect(() => { selfKeyMemo.current = null }, [form?.id])
   useEffect(() => {
     if (!form) { selfKeyMemo.current = null; return }
     // Gespeichert wird, was zu sehen ist: Bei eigener Abrechnung steht der Schlüssel fest, und eine einzige
@@ -1344,6 +1348,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 <small className="muted">Automatisch: Mietfuchs nimmt die Anlage, an der alle beteiligten Wohnungen hängen und die zu Beginn des Leistungszeitraums heizt; passt keine eindeutig, bleibt die Position ohne Anlage, und die Abrechnung sagt es.</small>
               </label>
             )}
+            {/* Vorgabe ist die erste Option (`chosenHeatingPeriod`): die endende Heizperiode, in einem Rumpfzeitraum ohne
+                endende die laufende (#690). */}
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
               <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
             )}

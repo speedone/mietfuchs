@@ -105,7 +105,8 @@ export function cockpitHeatingRows(list: readonly HeatingSettlementInfo[], today
 
 // Die Heizperioden, die das Kostenformular bei einer Heizposition anbietet: je Anlage mit eigener
 // Heizperiode die, die im gewählten Zeitraum enden (Entwurf 3.0). #690: Mit `today` dazu die laufende, wenn sie erst
-// nach dem gewählten Zeitraum endet (`current`, immer zuletzt: Die Vorgabe bleibt die endende); sonst ließen sich ihre
+// nach dem gewählten Zeitraum endet (`current`, immer zuletzt: Vorgabe ist die erste, also die endende, wenn es eine gibt;
+// endet in einem Rumpfzeitraum keine, ist die laufende die einzige und damit vorgewählt); sonst ließen sich ihre
 // Kosten erst erfassen, wenn die Auswahl den nächsten Zeitraum des Objekts anbietet.
 export type HeatingItemOption = { value: string; label: string; startYear: number; endYear: number; current?: true }
 
@@ -127,8 +128,8 @@ export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules:
   })
 }
 
-// Die Heizperiode einer Heizposition aus der Auswahl des Formulars: die gewählte, ohne Wahl die Vorgabe (die erste, also
-// die endende). Eine Stelle für das Formular (Schlüssel, Ziel, Jahr der Zahlung, gespeicherter Zeitraum) und die Frage
+// Die Heizperiode einer Heizposition aus der Auswahl des Formulars: die gewählte, ohne Wahl die Vorgabe (die erste: die
+// endende, in einem Rumpfzeitraum ohne endende die laufende). Eine Stelle für das Formular (Schlüssel, Ziel, Jahr der Zahlung, gespeicherter Zeitraum) und die Frage
 // beim Schornsteinfeger (#724), damit beide mit derselben Heizperiode `selfActive` fragen (#690). `undefined` ohne eigene
 // Heizperiode der Anlage; dann gilt der Zeitraum des Objekts.
 export function chosenHeatingPeriod(own: { options: readonly HeatingItemOption[] } | undefined, chosen: string): HeatingItemOption | undefined {

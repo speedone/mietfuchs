@@ -67,7 +67,8 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
 - **Die laufende Heizperiode ist erreichbar** (#690, `runningHeatingPeriod`): Liegt heute im gewählten Zeitraum P und
   endet die Heizperiode von heute erst nach P (Kalenderjahr, Heizung Juli bis Juni, heute im November), liefert
   `heatingPeriodViews` sie zusätzlich (`current`), das Kostenformular bietet sie zusätzlich an (`heatingItemPeriods` mit
-  `today`, Vorgabe bleibt die endende), und die Seite Kosten zeigt ihre Positionen mit Vermerk, ohne sie in die Summe
+  `today`, Vorgabe bleibt die endende; endet in einem Rumpfzeitraum keine, ist die laufende die einzige Wahl und damit
+  vorgewählt), und die Seite Kosten zeigt ihre Positionen mit Vermerk, ohne sie in die Summe
   des Zeitraums zu zählen. Das ist nur der Zugang zum Erfassen (Kosten, Lieferungen, monatliche Verbrauchsinformation
   nach § 6a Abs. 1 HeizkostenV); abgerechnet wird unverändert dort, wo sie endet. Der Ausweis der eigenen
   Heizkostenabrechnung (Ablesungen, Verteilung) kommt aus der Abrechnung des gewählten Zeitraums und fehlt für sie,
