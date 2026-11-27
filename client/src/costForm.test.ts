@@ -1514,6 +1514,9 @@ describe('Heizposition bei Abrechnung durch einen Messdienst', () => {
   test('der Satz zum Rest nennt neben dem Leerstand den vorab abgezogenen CO₂-Anteil', () => {
     expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
       .toBe('Summe 700,00 € - den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand oder einen CO₂-Anteil, den der Messdienst vorab abgezogen hat)')
+  })
+})
+
 // #724: Die Rechnung des Schornsteinfegers bei einer zentralen Heizanlage mit eigener Heizkostenabrechnung.
 describe('#724: Schornsteinfeger bei zentraler Heizung', () => {
   const plant = (over: Partial<Parameters<typeof chimneySweepPlants>[0][number]> = {}) => ({ id: 'hp1', supply: 'central' as const, method: 'self' as const, source: 'building' as const, endsOn: null, ...over })

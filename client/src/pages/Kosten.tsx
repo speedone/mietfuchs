@@ -22,7 +22,6 @@ import {
   chimneySweepQuestion,
   notAgreedDroppedText,
   toCentralHeating,
-  amountsSumText,
   externalHint,
   externalMismatch,
   tenanciesForAmounts,
