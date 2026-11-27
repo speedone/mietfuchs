@@ -130,6 +130,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Warmwasserkosten“) und wie die Abzugszeile des CO₂-Anteils des Vermieters heißt; Grundlage ist die öffentliche
   Musterabrechnung 2025. Die Anleitung zur Messdienstabrechnung sagt außerdem, dass ein „Kaltwasseranteil für
   Warmwasser“ zu „Heizung und Warmwasser“ gehört und nicht noch einmal unter „Wasser/Abwasser“ erfasst wird
+- Abrechnung durch einen Messdienst, zwei Vorbelegungen: „Vorauszahlung aufteilen“ schlägt ohne gewählten Monat den
+  Beginn des noch nicht abgeschlossenen Vorjahrs vor, wenn es darin ein Mietverhältnis gab (vorher den laufenden
+  Zeitraum; die Abrechnung des Vorjahrs hatte dann nur eine Vorauszahlung). Ist die Heizung als „Messdienst“
+  eingerichtet, bekommt eine neue Position „Heizung und Warmwasser“ den Umlageschlüssel „Einzelbeträge je Mieter“
+  vorgeschlagen statt „nach Wohnfläche“. Die Karte „Heizung“ der Stammdaten sagt, wann die Heizung einzurichten ist,
+  und der Satz zum Rest bei Einzelbeträgen nennt neben dem Leerstand den vorab abgezogenen CO₂-Anteil
   ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Einzelbeträge vom Messdienst: Nimmt der Messdienst die Vorauszahlungen in seine Abrechnung auf, nennt er je Mieter
   Kosten, Vorauszahlung und eine Nachzahlung oder ein Guthaben. Kostenformular, Prüfansicht des Auslesens, Lexikon und

@@ -602,7 +602,7 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
 
   test('Einzelbeträge: „den Rest trägt der Vermieter“, und ohne Rest steht kein Rest da', () => {
     expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
-      .toBe('Summe 700,00 € - den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand)')
+      .toBe('Summe 700,00 € - den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand oder einen CO₂-Anteil, den der Messdienst vorab abgezogen hat)')
     expect(amountsSumText(form({ key: 'amounts', amount: '700,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
       .toBe('Summe 700,00 € - der Rechnungsbetrag ist vollständig verteilt')
     // Laienprobe B24: leer heißt nicht „vollständig verteilt“.
@@ -1495,5 +1495,23 @@ describe('Einzelbeträge: die Kosten des Mieters, nicht sein Saldo', () => {
     // Speichern lässt sich das nicht, mit demselben Satz.
     expect(buildCostItemBody(f, UNITS, 2025)).toEqual({ error: 'Ein Einzelbetrag ist negativ. Einzutragen sind die Kosten, nie ein Guthaben oder eine Nachzahlung; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an.' })
     expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS)).toMatch(/700,00.*100,00 .*Vermieter/)
+  })
+})
+
+// Bedienprüfung mit einer Musterabrechnung (27.11.2026): Ist die Heizung als „Messdienst“ eingerichtet, blieb eine neue
+// Position „Heizung und Warmwasser“ auf „nach Wohnfläche“; wer nicht umstellte, verteilte die Heizkosten nach Fläche.
+describe('Heizposition bei Abrechnung durch einen Messdienst', () => {
+  const unit = (id: string): Unit => ({ id, propertyId: 'p', name: id, areaM2: 50, participates: true })
+  const base = { items: [], year: 2025, propertyKind: null }
+  test('eine neue Position „Heizung und Warmwasser“ bekommt „Einzelbeträge“ vorgeschlagen', () => {
+    expect(withCategory(form(), 'Heizung und Warmwasser', [unit('a')], [], { ...base, serviceHeating: true })).toMatchObject({ key: 'amounts' })
+    expect(withCategory(form(), 'Heizung und Warmwasser', [unit('a')], [], { ...base, serviceHeating: false })).toMatchObject({ key: 'area' })
+    expect(withCategory(form(), 'Heizung und Warmwasser', [unit('a')], [], base)).toMatchObject({ key: 'area' })
+    // Andere Kostenarten bleiben bei ihrem Vorschlag.
+    expect(withCategory(form(), 'Grundsteuer', [unit('a')], [], { ...base, serviceHeating: true })).toMatchObject({ key: 'area' })
+  })
+  test('der Satz zum Rest nennt neben dem Leerstand den vorab abgezogenen CO₂-Anteil', () => {
+    expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
+      .toBe('Summe 700,00 € - den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand oder einen CO₂-Anteil, den der Messdienst vorab abgezogen hat)')
   })
 })

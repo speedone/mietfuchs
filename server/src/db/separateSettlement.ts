@@ -107,9 +107,13 @@ const earliestMonth = (c: Ctx): string | null => {
 
 // Der Anteil der Heizkosten an allen Kosten der letzten Abrechnung vor X (B1), in Promille.
 function lastShare(c: Ctx, x: string): { permille: number; source: string } | null {
-  let p = periodContaining(c.objectRules, `${x}-01`)
-  for (let i = 0; i < 3; i++) {
-    p = previousPeriod(c.objectRules, p)
+  // Erst die drei Zeiträume vor X; findet sich dort nichts, der Zeitraum, der X enthält (Durchsicht vom 27.11.2026: Beginnt
+  // die Aufteilung im Vorjahr und sind nur dessen Kosten erfasst, bliebe der Heizanteil sonst ohne Vorbelegung auf 0).
+  const own = periodContaining(c.objectRules, `${x}-01`)
+  const candidates: BillingPeriod[] = []
+  for (let i = 0, q = own; i < 3; i++) { q = previousPeriod(c.objectRules, q); candidates.push(q) }
+  candidates.push(own)
+  for (const p of candidates) {
     const keys = new Set(hasOwnRhythm(c.plant) ? heatingPeriodsEndingIn(c.rules, p).map((h) => String(h.key)) : [String(p.key)])
     const inP = c.items.filter((it) => (it.heatingPlantId === c.plant.id ? keys.has(String(it.period)) : it.period === p.key))
     const total = inP.reduce((a, it) => a + it.amountCents, 0)
@@ -151,7 +155,26 @@ function planOn(c: Ctx, rawMonth: unknown): Plan {
   }
   const earliest = earliestMonth(c)
   const current = monthOf(periodContaining(c.rules, c.today).from)
-  const x = readMonth(rawMonth, 'Beginn') ?? (earliest !== null && earliest > current ? earliest : current)
+  // Der Vorschlag ohne gewählten Monat. Bei gemeinsamer Abrechnung (Anlage rechnet wie das Objekt) wird meist gerade der
+  // Zeitraum davor abgerechnet: Ist er nicht abgeschlossen und gab es darin ein Mietverhältnis, beginnt die Aufteilung
+  // dort. Sonst hatte die Abrechnung des Vorjahrs nur eine Vorauszahlung, und ein dort ausgezogener Mieter fehlte in der
+  // Vorschau (Bedienprüfung vom 27.11.2026). Mit eigener Heizperiode bleibt es beim laufenden Zeitraum.
+  const lastUntilOf = c.plant.separateSpans.flatMap((s) => (s.until === null ? [] : [String(s.until)])).sort().pop()
+  const proposed = (): string => {
+    if (earliest !== null && earliest > current) return earliest
+    if (hasOwnRhythm(c.plant)) return current
+    // Nur beim ersten Aufteilen: Ist schon aufgeteilt, ergänzt „erneut aufteilen“ meist ein neues Mietverhältnis; ein
+    // früherer Beginn teilte dann das Vorjahr der übrigen rückwirkend mit (Durchsicht, S2).
+    if (c.plant.separateSettlement === true || c.tenancies.some((t) => (t.heatingPrepayments ?? []).length > 0)) return current
+    const before = previousPeriod(c.objectRules, periodContaining(c.objectRules, c.today))
+    const beforeStart = monthOf(before.from)
+    // Der Vorschlag löst nie selbst eine Sperre aus: nicht vor dem Ende einer früheren getrennten Abrechnung (Durchsicht, M1).
+    if (lastUntilOf !== undefined && beforeStart < lastUntilOf) return current
+    const open = earliest === null || earliest <= beforeStart
+    const lived = c.tenancies.some((t) => t.start <= before.to && (t.end === null || t.end >= before.from))
+    return open && lived ? beforeStart : current
+  }
+  const x = readMonth(rawMonth, 'Beginn') ?? proposed()
   const blocked: string[] = []
   const last = lastClosed(c)
   if (earliest !== null && last !== null && x < earliest) {

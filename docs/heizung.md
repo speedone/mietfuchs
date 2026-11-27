@@ -75,7 +75,9 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
   Frist und Abschluss (`closed_heating_settlements` samt Verlauf). Bei H = P eine Gesamtabrechnung mit
   getrennt ausgewiesenen Vorauszahlungen.
 - **H = P: nur die Vorauszahlung aufteilen** (#704): Rechnet die Anlage im Zeitraum des Objekts ab, gibt es keine
-  getrennte Abrechnung, nur zwei Staffeln in einer Abrechnung (`way: 'samePeriod'`, ohne Spanne). **Die Knöpfe der Karte
+  getrennte Abrechnung, nur zwei Staffeln in einer Abrechnung (`way: 'samePeriod'`, ohne Spanne). Ohne gewählten Monat
+  schlägt `planOn` dabei den Beginn des Zeitraums vor dem laufenden vor, solange er nicht abgeschlossen ist und es darin
+  ein Mietverhältnis gab (meist wird gerade er abgerechnet); mit eigener Heizperiode den laufenden Zeitraum. **Die Knöpfe der Karte
   „Heizung“ folgen dem, was der Server annimmt** (`separateActions` in client/src/heatingPeriodForm.ts), nicht dem
   Rhythmus allein: mit offener Spanne nur „Getrennte Heizkostenabrechnung ausschalten“ (mit `until`), sonst „Vorauszahlung
   aufteilen“ (wie das Objekt, nicht nach einem Kesseltausch, den `planOn` ablehnt) bzw. „… einschalten“ (eigene

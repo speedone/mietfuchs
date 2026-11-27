@@ -474,7 +474,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Objekts, das Jahr und die Art des Objekts.
   // Mit dem Zeitraum der Abrechnung je Position: Eine Heizposition mit eigener Heizperiode zählt dort,
   // wo ihre Heizperiode endet, wie in der Übernahme aus dem Vorjahr.
-  const keyCtx: KeyContext = useMemo(() => ({ items: filedItems, year, at, propertyKind: property?.kind ?? null }), [filedItems, year, at, property?.kind])
+  const keyCtx: KeyContext = useMemo(() => ({ items: filedItems, year, at, propertyKind: property?.kind ?? null, serviceHeating: plants.some((p) => p.method === 'service' && (p.endsOn ?? null) === null) }), [filedItems, year, at, property?.kind, plants])
   // Der Vorschlag zu einer Belegauswertung sieht in den Zeitraum, in den sie bucht (#208).
   const keyCtxOf = (v: AssessmentView): KeyContext => {
     const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))
