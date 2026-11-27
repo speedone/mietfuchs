@@ -1202,3 +1202,71 @@ test('Vorauszahlung aufteilen ohne Monat: Vorschlag ist der Beginn des noch offe
     s.stop()
   }
 })
+
+// Durchsicht der Vorbelegung (27.11.2026), drei Fälle, in denen der frühere Beginn schadete.
+const openAt = (today: string) => startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), { NKA_TEST_TODAY: today })
+const sender = (s: { base: string }) => (url: string, method: string, body: unknown) =>
+  fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+test('Vorschlag beim Aufteilen: läuft nie in die Sperre einer früheren getrennten Heizkostenabrechnung', async () => {
+  const s = await openAt('2026-02-10')
+  try {
+    const send = sender(s)
+    const unit = await s.api<{ id: string }>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const m = await s.api<{ id: string }>('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2023-01-01', prepayments: [{ from: '2023-01', monthlyCents: 30000 }] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const token = async (url: string, body: unknown) => (await jsonOf<{ token: string }>(await send(url, 'POST', body))).token
+    // Eigene Heizperiode ab Mai, getrennt ab 05/2024, ausgeschaltet zum 05/2025, dann zurück auf „wie das Objekt“.
+    const rules = { startMonth: 5, changes: [] }
+    assert.equal((await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules, answers: { understood: true, token: await token(`/api/heating-plants/${plant.id}/period/preview`, { rules }) } })).status, 200)
+    const on = { separate: true, month: '2024-05' }
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { ...on, answers: { understood: true, steps: { [m.id]: { '2024-05': 10000 } }, token: await token(`/api/heating-plants/${plant.id}/separate/preview`, on) } })).status, 200)
+    const off = { separate: false, until: '2025-05' }
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { ...off, answers: { understood: true, merge: true, totals: {}, token: await token(`/api/heating-plants/${plant.id}/separate/preview`, off) } })).status, 200)
+    assert.equal((await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: null, answers: { understood: true, token: await token(`/api/heating-plants/${plant.id}/period/preview`, { rules: null }) } })).status, 200)
+    const vorschau = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true }))
+    assert.deepEqual([vorschau.month, vorschau.blocked], ['2026-01', []])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Vorschlag beim Aufteilen: der Heizanteil ist auch beim Beginn im Vorjahr vorbelegt, aus den Kosten dieses Zeitraums', async () => {
+  const s = await openAt('2026-02-10')
+  try {
+    const send = sender(s)
+    const unit = await s.api<{ id: string }>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const m = await s.api<{ id: string }>('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 150000, key: 'area', heatingPlantId: plant.id }))
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 200000, key: 'area' }))
+    const vorschau = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true }))
+    assert.equal(vorschau.month, '2025-01')
+    // 1.500 € von 3.500 € = 42,9 %; 300 € → 129 €, auf volle Euro
+    assert.equal(vorschau.share?.permille, 429)
+    assert.match(vorschau.share?.source ?? '', /Abrechnung 2025: Heizkosten 1\.500,00 € von 3\.500,00 €/)
+    assert.deepEqual(vorschau.steps.find((x) => x.tenancyId === m.id)?.rows, [{ from: '2025-01', totalCents: 30000, heatingCents: 12900 }])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Vorschlag beim Aufteilen: ist schon aufgeteilt, greift erneutes Aufteilen nicht rückwirkend ins Vorjahr', async () => {
+  const s = await openAt('2026-04-10')
+  try {
+    const send = sender(s)
+    const u1 = await s.api<{ id: string }>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const u2 = await s.api<{ id: string }>('/api/units', jsonPost({ name: 'OG', areaM2: 60, participates: true }))
+    const a = await s.api<{ id: string }>('/api/tenancies', jsonPost({ unitId: u1.id, tenantName: 'A', persons: 1, start: '2023-01-01', prepayments: [{ from: '2023-01', monthlyCents: 30000 }] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const on = { separate: true, month: '2026-01' }
+    const first = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', on))
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { ...on, answers: { steps: { [a.id]: { '2026-01': 12000 } }, token: first.token } })).status, 200)
+    const b = await s.api<{ id: string }>('/api/tenancies', jsonPost({ unitId: u2.id, tenantName: 'B', persons: 1, start: '2026-03-01', prepayments: [{ from: '2026-03', monthlyCents: 20000 }] }))
+    const again = await jsonOf<SeparatePreview>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true }))
+    assert.equal(again.month, '2026-01')
+    assert.deepEqual(again.steps.map((x) => [x.tenancyId, x.rows.map((r) => r.from)]).sort(), [[a.id, ['2026-01']], [b.id, ['2026-03']]].sort())
+  } finally {
+    s.stop()
+  }
+})

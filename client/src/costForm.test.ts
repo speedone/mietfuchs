@@ -1495,6 +1495,9 @@ describe('Einzelbeträge: die Kosten des Mieters, nicht sein Saldo', () => {
     // Speichern lässt sich das nicht, mit demselben Satz.
     expect(buildCostItemBody(f, UNITS, 2025)).toEqual({ error: 'Ein Einzelbetrag ist negativ. Einzutragen sind die Kosten, nie ein Guthaben oder eine Nachzahlung; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an.' })
     expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS)).toMatch(/700,00.*100,00 .*Vermieter/)
+  })
+})
+
 // Bedienprüfung mit einer Musterabrechnung (27.11.2026): Ist die Heizung als „Messdienst“ eingerichtet, blieb eine neue
 // Position „Heizung und Warmwasser“ auf „nach Wohnfläche“; wer nicht umstellte, verteilte die Heizkosten nach Fläche.
 describe('Heizposition bei Abrechnung durch einen Messdienst', () => {
