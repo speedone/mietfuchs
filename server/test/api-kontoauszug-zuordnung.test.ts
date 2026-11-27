@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DepositEntry, Payment, RentLedger, TaxReport, Tenancy, Unit } from '../../shared/types.ts'
-import { errorFrom, startServer, withEnv, type Server } from '../testing/api.ts'
+import { errorFrom, restore, startServer, withEnv, type Server } from '../testing/api.ts'
 import { journalOf, newest, revert } from '../testing/revert.ts'
 
 const OWN = 'DE89370400440532013000'
@@ -561,3 +561,47 @@ for (const [today, entries, expected] of [
     assert.deepEqual((await transactions(s)).map((o) => [o.suggestion?.light, o.suggestion?.target]), expected.map((month) => ['yellow', { type: 'newPayment', kind: 'rent', designatedMonth: month }]))
   }))
 }
+
+// Zurücknehmen und Backup: Der Monat steht nur an der Zahlung. Der Rücksprung im Verlauf, das Lösen mit Löschen und ein
+// Backup von vorher bringen die Tilgung ohne die Buchung zurück und den Umsatz mit seinem gelben Vorschlag; ein Backup
+// mit der Buchung trägt den Monat.
+test('#693: Zurücknehmen und Backup einer Buchung mit Monat: der Monat geht mit der Zahlung', () => withEnv({ NKA_TEST_TODAY: '2026-11-20' }, async (s) => {
+  const t = await tenancy(s, 'EG', TENANT, { start: '2026-01-01', prepayments: [{ from: '2026-01', monthlyCents: 15000 }], baseRents: [{ from: '2026-01', monthlyCents: 70000 }] })
+  await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: '2026-01-02', amountCents: 15000 }) })
+  for (let m = 2; m <= 10; m++) {
+    const month = `2026-${String(m).padStart(2, '0')}`
+    await s.api('/api/payments', { method: 'POST', body: JSON.stringify({ tenancyId: t.id, date: `${month}-01`, amountCents: 85000, designatedMonth: month }) })
+  }
+  await importEntries(s, [{ date: '2026-11-03', cents: 85000, purpose: 'Miete November' }])
+  const state = async () => {
+    const months = await monthsOf(s, 2026, t.id)
+    return {
+      jan: paidOf(months, 1), nov: paidOf(months, 11), paid: months.reduce((a, m) => a + m.paidCents, 0),
+      open: (await transactions(s)).map((o) => [o.suggestion?.light, o.suggestion?.target]),
+      fromBank: (await payments(s)).filter((p) => p.fromBank).map((p) => [p.date, p.designatedMonth]),
+    }
+  }
+  const unbooked = await state()
+  assert.deepEqual([unbooked.jan, unbooked.nov, unbooked.open, unbooked.fromBank], [15000, 0, [['yellow', { type: 'newPayment', kind: 'rent', designatedMonth: '2026-11' }]], []])
+  const booked = { ...unbooked, nov: 85000, paid: unbooked.paid + 85000, open: [], fromBank: [['2026-11-03', '2026-11']] }
+  const backupBefore = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+
+  // Rücksprung im Verlauf über die Buchung.
+  await book(s, asSuggested(await transactions(s)))
+  assert.deepEqual(await state(), booked)
+  await revert(s, (await newest(s)).id)
+  assert.deepEqual(await state(), unbooked)
+
+  // Lösen mit Löschen der angelegten Zahlung.
+  await book(s, asSuggested(await transactions(s)))
+  const backupBooked = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+  const [link] = (await transactions(s, 'done'))[0]?.links ?? []
+  assert.equal((await json(s, 'DELETE', `/api/bank/links/${link?.id}?payment=delete`)).status, 200)
+  assert.deepEqual(await state(), unbooked)
+
+  // Ein Backup mit der Buchung trägt den Monat an der Zahlung, eines von vorher nimmt beides wieder heraus.
+  assert.equal((await restore(s, backupBooked)).status, 200)
+  assert.deepEqual(await state(), booked)
+  assert.equal((await restore(s, backupBefore)).status, 200)
+  assert.deepEqual(await state(), unbooked)
+}))

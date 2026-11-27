@@ -48,7 +48,8 @@ const NONE: readonly (readonly [string, string])[] = [
   ['Miete November 26', D], ['Miete Maier', D], ['Miete Augustastr. 5', D], ['Miete Whg Junior', D], ['Miete 11/26', D], ['Miete 11', D],
   ['Miete 13/2026', D], ['Miete 2026', D], ['Miete November 2019', D], ['Miete 11/2031', D], ['Miete Oktober und November', D],
   ['Miete 10/2026 und 11/2026', D], ['Miete Okt-Nov 2026', D], ['Miete November 2026 Rest 10/2026', D], ['Miete Oktober-Str. 4', D],
-  ['Miete Februar', D], ['Miete Juni', D],
+  ['Miete Februar', D], ['Miete Juni', D], ['Miete Nachzahlung 2024', D], ['Nachzahlung 2024 Miete Dezember', D],
+  ['Miete Dezember 2025 und Januar 2026', '2026-01-05'], ['Miete 12/2026-01/2027', '2026-12-29'],
 ]
 
 // Verpasst: Ein Mensch läse den Monat, die Regel lässt ihn aus, weil dieselbe Form sonst Fehlalarme ergäbe.
