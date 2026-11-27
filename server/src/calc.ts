@@ -131,6 +131,7 @@ import {
 import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
 import { CAPTURE_TEXT, captureOf, coversPeriod, estimateFits, hotWaterOf, lineServiceRows, potUnitFor, serviceUnitsMixed, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters, withoutEstimatedSwitches } from './hca.ts'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
+import { heatingKindOf } from '../../shared/heatingKind.ts'
 import { calibrationOverdue, readingsUsedFor } from './calibration.ts'
 import { estimatedReadingsUsed, estimatedSuffix } from './readingEstimate.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotPayment, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
@@ -593,6 +594,8 @@ const noticeKinds = {
   'co2.half-split-missing': { level: 'warning', title: 'Angaben für die Teilung nach § 5a fehlen', rule: 'co2-half-split', terms: ['co2HalfSplit'] },
   // Heizung PR 19 (#97): Mieter, die selbst heizen (Prüfung M3).
   'co2.self-supply-items': { level: 'hint', title: 'Heizkosten bei einem Mieter, der selbst heizt', rule: 'co2-self-supply', terms: ['co2Refund', 'co2Split'] },
+  // Durchsicht von #720 (M1): eine Brennstoff- oder Energierechnung bei Mietern, die selbst heizen. Färbt das Cockpit.
+  'heating.fuel-for-self-supply': { level: 'warning', title: 'Brennstoffrechnung bei Mietern, die selbst heizen', terms: ['co2Refund'] },
   'co2.self-supply-mixed': { level: 'error', title: 'Mieter heizt selbst und hängt an Ihrer Heizanlage', rule: 'co2-self-supply', terms: ['co2Refund', 'heatingSystem'] },
   'co2.refund-late': { level: 'hint', title: 'CO₂-Erstattung nach Ablauf der Frist verlangt', rule: 'co2-self-supply', terms: ['co2Refund'] },
   'co2.refund-not-next': { level: 'hint', title: 'CO₂-Erstattung nicht in der nächsten Abrechnung', rule: 'co2-self-supply', terms: ['co2Refund'] },
@@ -10008,7 +10011,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const bearers = bearersOf(c.id)
     return bearers.length > 0 && bearers.every((st) => selfSupplied.has(st.tenancyId))
   }
-  const selfSupplyItems = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !c.heatingPlantId && selfOnly(c))
+  // Durchsicht von #720 (M1): Brennstoff oder Energie ohne Heizanlage, die Mieter tragen, die selbst heizen. Bezieht der
+  // Mieter Brennstoff oder Wärme selbst, hat der Vermieter für seine Wohnung keine solche Rechnung; meist ist es eine
+  // Position aus der Zeit, als die Wohnung an einer Heizanlage hing (etwa nach dem Entfernen der Anlage über die Karte
+  // „Heizung“, deren Positionen bleiben), oder sie betrifft andere Wohnungen. Erkannt am Teil `fuel`, an der verknüpften
+  // Lieferung oder ohne Teil an der Beschreibung (`heatingKindOf`). Für sie gilt `co2.self-supply-items` nicht, denn dessen
+  // Satz „Darin stecken keine CO₂-Kosten“ stimmt für eine Brennstoffrechnung des Vermieters nicht. Die Zahl ändert sich nicht.
+  const isFuelItem = (c: SnapshotCostItem): boolean =>
+    c.heatingPart === 'fuel' || c.fuelDeliveryId != null || (!c.heatingPart && heatingKindOf(c.description) === 'fuel')
+  const fuelForSelf = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !c.heatingPlantId &&
+    isFuelItem(c) && bearersOf(c.id).some((st) => selfSupplied.has(st.tenancyId)))
+  for (const c of fuelForSelf) {
+    const shares = bearersOf(c.id).filter((st) => selfSupplied.has(st.tenancyId)).map((st) =>
+      `${st.tenantName} (${st.unitName}) ${fmtCents(st.rows.filter((r) => r.costItemId === c.id).reduce((a, r) => a + r.shareCents, 0))}`)
+    warn('heating.fuel-for-self-supply',
+      `„${c.description}“ (${fmtCents(c.amountCents)}) ist eine Brennstoff- oder Energierechnung und wird auch auf Mieter verteilt, die laut Mietverhältnis selbst heizen: ${andList(shares)}. ` +
+        'Bezieht der Mieter Brennstoff oder Wärme selbst, gehört eine Brennstoffrechnung von Ihnen für seine Wohnung nicht in seine Abrechnung. Bitte prüfen Sie die Position: ' +
+        'Ist sie eine alte oder versehentlich erfasste Position, löschen Sie sie auf der Seite Kosten; betrifft sie andere Wohnungen, beschränken Sie die Position unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ auf diese. ' +
+        'Heizt der Mieter nicht selbst, ändern Sie unter Stammdaten am Mietverhältnis die Angabe „Mieter heizt selbst“.',
+      itemSubject(c))
+  }
+  const fuelForSelfIds = new Set(fuelForSelf.map((c) => c.id))
+  const selfSupplyItems = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !c.heatingPlantId && !fuelForSelfIds.has(c.id) && selfOnly(c))
   if (selfSupplyItems.length > 0 && law(co2ApplicableFrom, { period: lawPeriod }, lawLog)) {
     const names = andList(selfSupplyItems.map((c) => `„${c.description}“`))
     const one = selfSupplyItems.length === 1

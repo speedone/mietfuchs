@@ -666,8 +666,11 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   nur mit positivem Betrag.
 - **Wo das Kostenformular fragt** (`showsOperatingPower` in client/src/costForm.ts, #721): mit dem Teil „Betrieb“ immer
   (dorthin führen die Hinweise), mit „Brennstoff/Energie“ nur bei Wärmepumpe und Stromheizung, **ohne Teil nur, wenn die
-  Beschreibung Strom nennt oder die Antwort schon gespeichert ist** (sonst stand die Frage auch bei Heizöl, Gas und
-  Wartung). Der Rumpf schickt `included` nur, wo die Frage steht; deshalb zählt die gespeicherte Antwort mit.
+  Beschreibung Strom, Pumpe oder Brenner nennt (nicht bei Wartung, Schornsteinfeger, Messdienst nach `heatingKindOf`),
+  die Anlage eine Wärmepumpe oder Stromheizung ist (`POWER_GENERATED`) oder die Antwort schon gespeichert ist** (sonst
+  stand die Frage auch bei Heizöl, Gas und Wartung). Der Rumpf schickt `included` nur, wo die Frage steht; deshalb zählt
+  die gespeicherte Antwort mit. Steht eine Position ohne Teil da, nennt `heating.operating-power-deduction-missing` zuerst
+  den Teil `OPERATING_PART_LABEL` (shared/operatingPower.ts, dieselbe Konstante wie im Formular; `hasPartless`).
 - Die Abrechnung prüft jede Position gegen die Abzüge **aus allen Zeiträumen** (`deductionsOf`;
   `heating.operating-power-double`, `-key`, `-exceeds`). Ein Abzug in einer abgeschlossenen
   Abrechnung hat vier Zustände (gutgeschrieben, geändert, nicht darin, unlesbar), je ein Satz;
@@ -771,19 +774,34 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   entsteht keine Heizanlage. `selfSupplyKind` (`perUnit`/`central`); bei `central`
   `heating.self-supply-operating-power`, wenn andere Mieter den Allgemeinstrom tragen und kein Abzug
   erfasst ist.
-- **Die Karte „Heizung“ zeigt den Zustand dauerhaft** (#721, `ownHeatingState`, `OWN_HEATING_NOTE` in heatingForm.ts):
+- **Die Karte „Heizung“ zeigt den Zustand dauerhaft** (#721, `ownHeatingState`, `ownHeatingNote` in heatingForm.ts):
   ohne Anlage, wenn jedes heute laufende Mietverhältnis des Objekts auf „Mieter heizt selbst“ steht (beendete und künftige
-  zählen nicht). Ein Satz je Art (`perUnit`, `central`, gemischt), der Lexikonbegriff `co2Refund`, die Fristen zum
-  Aufklappen und „Ändern“ (öffnet die Einrichtung). Die Mitteilung nach dem Einrichten der Etagenheizung ist kurz; bei
+  zählen nicht). Ein Satz je Art (`perUnit`, `central`, gemischt), mit einer Wohnung ohne laufendes Mietverhältnis nur
+  „In den vermieteten Wohnungen …“ (`someUnitUnlet`), der Lexikonbegriff `co2Refund`, die Fristen zum Aufklappen und
+  „Ändern“ (öffnet die Einrichtung). Entsteht danach eine Anlage des Vermieters, bietet die Karte an, die Mietverhältnisse
+  der versorgten Wohnungen, die noch auf „Mieter heizt selbst“ stehen (laufende und künftige), wieder abzurechnen
+  (`settlementBackOffer`); sonst folgt `co2.self-supply-mixed`. Die Mitteilung nach dem Einrichten der Etagenheizung ist kurz; bei
   der zentralen Heizung mit Vertrag des Mieters und beim Wärmelieferanten steht der lange Text weiter in der Mitteilung.
 - **Ändern einer Anlage auf „Jede Wohnung hat eine eigene Heizung“, Vertrag beim Mieter** (#720, `changeToSelfSupply` in
   HeatingCard.tsx, `selfSupplyChange` in heatingForm.ts): Sind alle Wohnungen der Anlage angehakt, entfernt die Karte sie
   nach einer Rückfrage (Weg und Sperren von „Entfernen …“; die Sperre fragt sie vorher über
   `GET /api/heating-plants/:id/removal`, gesperrt heißt Meldung im Fenster und keine Änderung), dann erst stellt sie die
-  Mietverhältnisse um. Ist nur ein Teil angehakt, behält die Anlage die übrigen Wohnungen (`PUT` mit `units`). **Die
-  Heizpositionen fasst die Karte nie an**: Tragen Selbstversorger weiter eine Position der Anlage, bleibt
-  `co2.self-supply-mixed`, und sein Text nennt „nur bestimmte Wohnungen beteiligen“, wenn die Wohnung nicht an der Anlage
-  hängt.
+  Mietverhältnisse um, auch die künftigen (`selfSupplyOffer` mit `withFuture`). Ist nur ein Teil angehakt, behält die
+  Anlage die übrigen Wohnungen (`PUT` mit `units`). **Die Heizpositionen fasst die Karte nie an**: Tragen Selbstversorger
+  weiter eine Position der Anlage, bleibt `co2.self-supply-mixed`, und sein Text nennt „nur bestimmte Wohnungen
+  beteiligen“, wenn die Wohnung nicht an der Anlage hängt. Die Auskunft trägt deshalb auch `items`, die Heizpositionen der
+  Anlage in offenen Zeiträumen (`heatingPlantOpenItems`, Regel `itemPeriodClosed`), und die Rückfrage nennt höchstens fünf
+  davon (`selfSupplyItemsNote`): danach ohne Anlage nach ihrem Schlüssel, also auch bei Selbstversorgern. Ist die Anlage
+  die neue eines Kesseltauschs, sagen Rückfrage und Mitteilung, dass die ersetzte wieder heizt (`replacedHeatsAgain`,
+  `replacedAlsoRemove`); entfernt wird sie nicht mit, denn ob sie in ihrer Zeit über den Vertrag des Vermieters heizte,
+  weiß nur er, und zwei Entfernungen nacheinander wären keine Transaktion. Scheitert nach dem Schreiben an der Anlage ein
+  Mietverhältnis, steht `selfSupplyPartial` oben in der Karte.
+- **Brennstoff bei Selbstversorgern** (Durchsicht von #720, `heating.fuel-for-self-supply`, warning, färbt): eine
+  Heizposition ohne Anlage mit Teil `fuel`, verknüpfter Lieferung oder ohne Teil mit einer Beschreibung der Art `fuel`
+  (`heatingKindOf` in [shared/heatingKind.ts](../shared/heatingKind.ts), kleine Wortliste, eine Art außer Brennstoff
+  geht vor), die ein Mietverhältnis mit „Mieter heizt selbst“ trägt. Text: Position, Betrag, die Selbstversorger mit
+  Anteil, was zu prüfen ist (löschen, auf andere Wohnungen beschränken, Angabe am Mietverhältnis). Ohne Paragrafen. Für
+  diese Positionen entfällt `co2.self-supply-items`.
 - Heizpositionen nur von Selbstversorgern: keine Kürzung nach § 7 Abs. 4 CO2KostAufG oder § 12
   HeizkostenV, sondern `co2.self-supply-items`; gemischt mit Positionen einer Heizanlage
   `co2.self-supply-mixed` (error).

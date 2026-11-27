@@ -208,3 +208,37 @@ test('#225: Wärmelieferant rechnet unmittelbar ab (keine Anlage, Mieter heizt s
   const n = r.notices[0] ?? assert.fail('kein Hinweis')
   assert.match(n.text, /deren Brennstoff oder Wärme der Mieter selbst bezieht/)
 })
+
+// Durchsicht von #720 (M1): Nach „Ändern“ auf eigene Heizung je Wohnung mit Vertrag beim Mieter ist die Anlage weg, und
+// die Gasrechnung des Vermieters ging ohne Anlage nach Wohnfläche auf Mieter, die ihr Gas selbst bezahlen. Der einzige
+// Hinweis war `co2.self-supply-items` („Darin stecken keine CO₂-Kosten“). Eine Brennstoff- oder Energieposition bei
+// Mietern, die selbst heizen, ist eine Warnung mit Betrag und Anteilen.
+test('#720: Brennstoffrechnung ohne Anlage bei Mietern, die selbst heizen: Warnung mit Position, Betrag und Anteilen, nicht co2.self-supply-items', () => {
+  const selbst = { heatingModel: 'selfSupply' as const, selfSupplyKind: 'perUnit' as const }
+  const tenancies = [tenancy('Mieter A', 'a', selbst), tenancy('Mieter B', 'b', selbst)]
+  const gas = item(2025, { id: 'gas', description: 'Gas 2025', amountCents: 120000, heatingPart: 'fuel' })
+  const r = settle({ units: ZWEI, tenancies, costItems: [gas, item(2025)] })
+  const n = r.notices.find((x) => x.code === 'heating.fuel-for-self-supply') ?? assert.fail(codes(r).join(', '))
+  assert.equal(n.level, 'warning')
+  assert.equal(n.title, 'Brennstoffrechnung bei Mietern, die selbst heizen')
+  assert.deepEqual(n.subject, { kind: 'costItem', id: 'gas' })
+  assert.match(n.text, /^„Gas 2025“ \(1\.200,00 €\) ist eine Brennstoff- oder Energierechnung und wird auch auf Mieter verteilt, die laut Mietverhältnis selbst heizen: Mieter A \(a\) 500,00 € und Mieter B \(b\) 700,00 €\. /)
+  assert.match(n.text, /Bezieht der Mieter Brennstoff oder Wärme selbst, gehört eine Brennstoffrechnung von Ihnen für seine Wohnung nicht in seine Abrechnung\./)
+  assert.match(n.text, /Ist sie eine alte oder versehentlich erfasste Position, löschen Sie sie auf der Seite Kosten; betrifft sie andere Wohnungen, beschränken Sie die Position unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ auf diese\./)
+  // Die Wartung bleibt beim bisherigen Hinweis, die Gasrechnung steht dort nicht mehr.
+  const hint = r.notices.find((x) => x.code === 'co2.self-supply-items') ?? assert.fail(codes(r).join(', '))
+  assert.doesNotMatch(hint.text, /Gas 2025/)
+  assert.match(hint.text, /„Wartung der Heizung“/)
+  // Ohne Teil erkannt an der Beschreibung, ebenso mit verknüpfter Lieferung; die Wartung ohne Teil nicht.
+  for (const over of [{ heatingPart: undefined }, { heatingPart: undefined, description: 'Heizöl 2.300 Liter' }, { heatingPart: undefined, description: 'Rechnung', fuelDeliveryId: 'l1' }]) {
+    const x = settle({ units: ZWEI, tenancies, costItems: [{ ...gas, ...over }] })
+    assert.deepEqual(codes(x).filter((c) => c === 'heating.fuel-for-self-supply'), ['heating.fuel-for-self-supply'], JSON.stringify(over))
+  }
+  assert.ok(!codes(settle({ units: ZWEI, tenancies, costItems: [item(2025)] })).includes('heating.fuel-for-self-supply'))
+  // Nur der Mieter, der selbst heizt, wird genannt.
+  const gemischt = settle({ units: ZWEI, tenancies: [tenancy('Mieter A', 'a', selbst), tenancy('Mieter B', 'b')], costItems: [gas] })
+  const g = gemischt.notices.find((x) => x.code === 'heating.fuel-for-self-supply') ?? assert.fail(codes(gemischt).join(', '))
+  assert.match(g.text, /selbst heizen: Mieter A \(a\) 500,00 €\. /)
+  // Ohne Mieter, die selbst heizen, keine Warnung.
+  assert.ok(!codes(settle({ units: ZWEI, tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')], costItems: [gas] })).includes('heating.fuel-for-self-supply'))
+})

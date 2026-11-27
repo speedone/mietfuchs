@@ -990,6 +990,26 @@ async function removalBlock(tx: Executor, id: string): Promise<PlantRemovalBlock
 // Die Auskunft vor dem Entfernen (#720), ohne etwas zu ändern.
 export const heatingPlantRemovalBlock = (db: Database, id: string): Promise<PlantRemovalBlock | null> => removalBlock(db, id)
 
+// Die Heizpositionen der Anlage in Zeiträumen, die nicht abgeschlossen sind (Durchsicht von #720, M1 b): Nach dem
+// Entfernen gehen sie ohne Anlage nach ihrem Schlüssel, und die Rückfrage der Karte nennt sie. Abgeschlossene bleiben,
+// wie sie zugestellt wurden. Sortiert nach Zeitraum und Beschreibung, wie die Vorschau der Zuordnung.
+export async function heatingPlantOpenItems(db: Database, id: string): Promise<AssignableHeatingItem[]> {
+  const [plant] = await db.select({ propertyId: heatingPlants.propertyId }).from(heatingPlants).where(eq(heatingPlants.id, id))
+  if (!plant) return []
+  const rows = await db
+    .select({ id: costItems.id, period: costItems.period, description: costItems.description, amountCents: costItems.amountCents })
+    .from(costItems)
+    .where(eq(costItems.heatingPlantId, id))
+    .orderBy(costItems.period, costItems.description)
+  const offen: AssignableHeatingItem[] = []
+  for (const c of rows) {
+    const period = periodKey(String(c.period))
+    // Dieselbe Regel wie beim Schreiben einer Position (eigene Heizperioden eingeschlossen).
+    if (!(await itemPeriodClosed(db, { heatingPlantId: id, propertyId: plant.propertyId, period }))) offen.push({ id: c.id, period, description: c.description, amountCents: c.amountCents })
+  }
+  return offen
+}
+
 export async function removeHeatingPlant(db: Database, id: string): Promise<PlantRemoval> {
   // Prüfen und Entfernen in einer Transaktion (Durchsicht von #230): Zwischen der Frage nach den
   // Zählern und dem Löschen darf kein Zähler dazukommen.

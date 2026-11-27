@@ -101,7 +101,7 @@ import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
 import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, reassignCredit, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
-import { assignableHeatingItems, createHeatingPlant, heatingPlantRemovalBlock, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant, type PlantRemoval } from './db/heating.ts'
+import { assignableHeatingItems, createHeatingPlant, heatingPlantOpenItems, heatingPlantRemovalBlock, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant, type PlantRemoval } from './db/heating.ts'
 import { bookOperatingPower, OperatingPowerQuestion } from './db/operatingPower.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { testTodayOf } from './testToday.ts'
@@ -923,11 +923,12 @@ function plantRemovalRefusal(result: Exclude<PlantRemoval, { removed: true } | {
   return `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
     'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.'
 }
-// Auskunft vor dem Entfernen (#720): `blocked` ist der Satz der Sperre oder `null`. Nichts wird geändert.
+// Auskunft vor dem Entfernen (#720): `blocked` ist der Satz der Sperre oder `null`, `items` die Heizpositionen der Anlage
+// in offenen Zeiträumen (Durchsicht von #720, M1 b; die Rückfrage der Karte nennt sie). Nichts wird geändert.
 app.get('/api/heating-plants/:id/removal', async (req, res) => {
-  const block = await readData((db) => heatingPlantRemovalBlock(db, req.params.id))
+  const { block, items } = await readData(async (db) => ({ block: await heatingPlantRemovalBlock(db, req.params.id), items: await heatingPlantOpenItems(db, req.params.id) }))
   if (block?.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
-  res.json({ blocked: block ? plantRemovalRefusal(block) : null })
+  res.json({ blocked: block ? plantRemovalRefusal(block) : null, items })
 })
 app.delete('/api/heating-plants/:id', async (req, res) => {
   const result = await writeData((db) => removeHeatingPlant(db, req.params.id))

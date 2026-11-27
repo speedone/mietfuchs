@@ -1234,7 +1234,7 @@ test('#720: Anlage auf eigene Heizung je Wohnung umgestellt: Auskunft zum Entfer
     assert.equal(await errorFrom(abgelehnt), gesperrt.blocked)
     assert.equal((await s.api<HeatingPlant[]>('/api/heating-plants')).length, 1, 'die Auskunft entfernt nichts')
     await send(`/api/meters/${zaehler.id}`, { method: 'DELETE' })
-    assert.deepEqual(await s.api<{ blocked: string | null }>(`/api/heating-plants/${plant.id}/removal`), { blocked: null })
+    assert.equal((await s.api<{ blocked: string | null }>(`/api/heating-plants/${plant.id}/removal`)).blocked, null)
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/removal', { method: 'GET' })).status, 404)
 
     // Der neue Weg: Anlage entfernen, die Mietverhältnisse stehen auf „Mieter heizt selbst“. Kein Fehler mehr.
@@ -1340,6 +1340,51 @@ test('#720: nur eine Wohnung mit eigener Heizung: die Anlage bleibt für die üb
     assert.doesNotMatch(offen?.text ?? '', /Entfernen Sie die Heizanlage/)
     await s.api(`/api/costItems/${gas.id}`, { method: 'PUT', body: JSON.stringify({ participantUnitIds: [eg.id] }) })
     assert.deepEqual((await fehler()).map((n) => `${n.code}: ${n.text}`), [])
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht von #720 (M1): Nach dem Ablauf der Karte (Auskunft, Entfernen, Mietverhältnisse umstellen) blieb die
+// Gasrechnung ohne Anlage nach Wohnfläche bei Mietern mit eigenem Gasvertrag, und die einzige Meldung sagte, darin
+// steckten keine CO₂-Kosten. Die Auskunft nennt jetzt die Heizpositionen offener Zeiträume, und die Abrechnung warnt.
+test('#720: Auskunft nennt die offenen Heizpositionen der Anlage, danach warnt die Abrechnung vor der Gasrechnung bei Selbstversorgern', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const mieter = (unitId: string, tenantName: string) => s.api<Tenancy>('/api/tenancies', jsonPost({
+      unitId, tenantName, personHistory: [{ from: '2024-01-01', persons: 2 }], start: '2024-01-01', end: null,
+      prepayments: [{ from: '2024-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [],
+    }))
+    const eg = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const og = await s.api<Unit>('/api/units', jsonPost({ name: 'OG', areaM2: 60, participates: true }))
+    const ta = await mieter(eg.id, 'Mieter A')
+    const tb = await mieter(og.id, 'Mieter B')
+    const post = (period: string, description: string, amountCents: number, heatingPart?: string) =>
+      s.api<CostItem>('/api/costItems', jsonPost({ period, category: 'Heizung und Warmwasser', description, amountCents, key: 'area', ...(heatingPart ? { heatingPart } : {}) }))
+    const g24 = await post('2024-01', 'Gas 2024', 100000, 'fuel')
+    const g25 = await post('2025-01', 'Gas 2025', 120000, 'fuel')
+    const w25 = await post('2025-01', 'Wartung', 20000)
+    const { plant } = await s.api<{ plant: HeatingPlant }>('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual', assignItemIds: [g24.id, g25.id, w25.id] }))
+    // 2024 abschließen: Seine Position steht nicht in der Auskunft, denn der eingefrorene Stand bleibt.
+    let close = await send('/api/settlement/2024-01/close', jsonPost({}))
+    if (close.status === 409) {
+      const body = await close.json() as { errorToken?: string }
+      close = await send('/api/settlement/2024-01/close', jsonPost({ despiteErrors: body.errorToken }))
+    }
+    assert.equal(close.status, 201)
+    const auskunft = await s.api<{ blocked: string | null; items: { id: string; description: string; amountCents: number }[] }>(`/api/heating-plants/${plant.id}/removal`)
+    assert.equal(auskunft.blocked, null)
+    assert.deepEqual(auskunft.items.map((i) => [i.description, i.amountCents]), [['Gas 2025', 120000], ['Wartung', 20000]])
+
+    assert.equal((await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })).status, 200)
+    for (const t of [ta, tb]) await s.api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }) })
+    const notices = (await s.api<Settlement>('/api/settlement/2025-01')).notices ?? []
+    const warnung = notices.find((n) => n.code === 'heating.fuel-for-self-supply') ?? assert.fail(notices.map((n) => n.code).join(', '))
+    assert.equal(warnung.level, 'warning')
+    assert.match(warnung.text, /^„Gas 2025“ \(1\.200,00 €\) ist eine Brennstoff- oder Energierechnung .* Mieter A \(EG\) 685,71 € und Mieter B \(OG\) 514,29 €\./)
+    assert.deepEqual(warnung.subject, { kind: 'costItem', id: g25.id })
+    for (const n of notices.filter((x) => x.code === 'co2.self-supply-items')) assert.doesNotMatch(n.text, /Gas 2025/)
   } finally {
     s.stop()
   }

@@ -412,7 +412,7 @@ test('#720: Ändern auf eigene Heizung je Wohnung: eine Rückfrage, dann wird di
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
   const dialog = await screen.findByRole('alertdialog')
   expect(within(dialog).getByText('Heizanlage entfernen?')).toBeTruthy()
-  expect(within(dialog).getByText(/Mietfuchs entfernt die Heizanlage\. Die Heizpositionen bleiben, wie sie sind, nur ohne Heizanlage\. Die laufenden Mietverhältnisse von Mieter A, Mieter B werden unter Heizung auf „Mieter heizt selbst“ gestellt/)).toBeTruthy()
+  expect(dialog.textContent).toMatch(/Mietfuchs entfernt die Heizanlage\. Die Heizpositionen bleiben, wie sie sind, nur ohne Heizanlage\.Die laufenden Mietverhältnisse von Mieter A, Mieter B werden unter Heizung auf „Mieter heizt selbst“ gestellt/)
   // Vor der Antwort ist nichts geschrieben.
   expect(sent).toEqual([])
   fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
@@ -475,7 +475,7 @@ test('#721: alle laufenden Mietverhältnisse heizen selbst, keine Anlage: die Ka
   render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} tenancies={[selfTenant('ta', 'eg'), selfTenant('tb', 'og')]} /></UIProvider></PropertyProvider>)
   const note = await screen.findByText(/Die Mieter heizen selbst: Jede Wohnung hat eine eigene Heizung, und der Mieter hat den Vertrag\. Eine Heizkostenabrechnung des Hauses gibt es deshalb nicht/)
   const card = note.closest('.card') ?? document.body
-  expect(card.textContent).toMatch(/Wartung der Thermen erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“ mit Direktzuordnung je Wohnung/)
+  expect(card.textContent).toMatch(/Ist die Wartung der Thermen im Mietvertrag als umlegbar vereinbart, erfassen Sie sie auf der Seite Kosten unter „Heizung und Warmwasser“ mit Direktzuordnung je Wohnung/)
   // Der Lexikonbegriff zur CO₂-Erstattung und der lange Text mit Fristen, aufklappbar.
   expect(within(card as HTMLElement).getByRole('button', { name: /CO₂-Erstattung/ })).toBeTruthy()
   expect(card.querySelector('details')?.textContent).toMatch(/Fristen und Hinweispflicht.*binnen \d+ Monaten nach der Abrechnung seines Lieferanten in Textform/)
@@ -510,4 +510,98 @@ test('#721: Einrichten mit Vertrag beim Mieter: die Mitteilung ist kurz', async 
   const saved = screen.getAllByText('Gespeichert. Hat jeder Mieter einen eigenen Vertrag für seine Heizung, legt Mietfuchs keine Heizanlage an.')
   expect(saved.length).toBeGreaterThan(0)
   expect(document.body.textContent).not.toMatch(/binnen \d+ Monaten nach der Abrechnung seines Lieferanten/)
+})
+
+// Durchsicht von #720 und #721: Rückfrage mit den Heizpositionen, Kesseltausch-Linie, Teilausfall, künftige
+// Mietverhältnisse, Zustand „Mieter heizen selbst“ mit leerer Wohnung und der Weg zurück zur Anlage des Vermieters.
+type Flow = { items?: { id: string; period: string; description: string; amountCents: number }[]; tenancies?: (Omit<ReturnType<typeof tenant>, 'end'> & { end: string | null })[]; failPut?: string }
+function stubFlow(flow: Flow) {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    const path = url.split('?')[0] ?? ''
+    if (method !== 'GET') {
+      sent.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+      if (method === 'DELETE') plants = plants.filter((p) => !url.endsWith(`/${p.id}`))
+      if (flow.failPut && method === 'PUT' && path === flow.failPut) return json({ error: 'Das Mietverhältnis wurde inzwischen geändert.' }, 409)
+      if (method === 'POST') return json({ plant: PLANT, assigned: 0 }, 201)
+      return json({ ok: true })
+    }
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json(plants)
+    if (/^\/api\/heating-plants\/[^/]+\/removal$/.test(path)) return json({ blocked: null, items: flow.items ?? [] })
+    if (path === '/api/tenancies') return json(flow.tenancies ?? [tenant('ta', 'eg', 'Mieter A'), tenant('tb', 'og', 'Mieter B')])
+    return json([])
+  })
+}
+
+test('Durchsicht #720 M1 b: die Rückfrage nennt die offenen Heizpositionen und dass sie danach auch auf Mieter gehen, die selbst heizen', async () => {
+  plants = [GAS]
+  stubFlow({ items: [{ id: 'g25', period: '2025-01', description: 'Gas 2025', amountCents: 120000 }, { id: 'w25', period: '2025-01', description: 'Wartung', amountCents: 20000 }] })
+  await changeToOwnHeating()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Diese Heizpositionen der Anlage in noch offenen Abrechnungen werden danach ohne Heizanlage nach ihrem Schlüssel verteilt, also auch auf Mieter, die selbst heizen:')).toBeTruthy()
+  expect(within(dialog).getAllByRole('listitem').map((li) => li.textContent?.replace(/\s/g, ' '))).toEqual(['„Gas 2025“ 1.200,00 €', '„Wartung“ 200,00 €'])
+  expect(within(dialog).getByText('Brennstoffrechnungen, die Sie für diese Wohnungen nicht haben, löschen Sie danach auf der Seite Kosten.')).toBeTruthy()
+})
+
+test('Durchsicht #720 S1: die aktuelle Anlage einer Linie: Rückfrage und Mitteilung sagen, dass die ersetzte wieder heizt', async () => {
+  const alt: HeatingPlant = { ...PLANT, id: 'hp0', energy: 'oil', name: 'Ölkessel', endsOn: '2025-06-30' }
+  plants = [alt, { ...GAS, name: 'Gastherme', replacesPlantId: 'hp0' }]
+  stubFlow({})
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} /></UIProvider></PropertyProvider>)
+  await screen.findAllByText(/Gastherme/)
+  const buttons = await screen.findAllByRole('button', { name: 'Ändern' })
+  fireEvent.click(buttons[buttons.length - 1] ?? document.body)
+  fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'perUnit' } })
+  fireEvent.change(screen.getByLabelText(/Wer hat den Vertrag für die Heizung in der Wohnung/), { target: { value: 'tenant' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  const dialog = await screen.findByRole('alertdialog')
+  const satz = /„Ölkessel“ heizt danach wieder ab dem 01\.07\.2025, denn das Entfernen macht den Kesseltausch rückgängig\. Hat jeder Mieter auch dort seine eigene Heizung mit eigenem Vertrag, entfernen Sie danach auch „Ölkessel“ mit „Entfernen …“/
+  expect(dialog.textContent).toMatch(satz)
+  expect(dialog.textContent?.split('heizt danach wieder')).toHaveLength(2)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
+  await waitFor(() => expect(sent.map((s) => s.method)).toEqual(['DELETE', 'PUT', 'PUT']))
+  expect(sent[0]?.url).toBe('/api/heating-plants/hp1')
+  await waitFor(() => expect(screen.getAllByText(/^Heizanlage entfernt\./).some((n) => satz.test(n.textContent ?? ''))).toBe(true))
+})
+
+test('Durchsicht #720 S2: scheitert danach ein Mietverhältnis, sagt die Karte, dass die Anlage entfernt ist und was von Hand bleibt', async () => {
+  plants = [GAS]
+  stubFlow({ failPut: '/api/tenancies/tb' })
+  await changeToOwnHeating()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Entfernen' }))
+  expect(await screen.findByText('Die Heizanlage ist entfernt; das Mietverhältnis von Mieter B ließ sich nicht umstellen: Das Mietverhältnis wurde inzwischen geändert. Stellen Sie es unter Stammdaten am Mietverhältnis bei „Heizung und Warmwasser“ auf „Mieter heizt selbst (eigener Vertrag für Brennstoff oder Wärme)“.')).toBeTruthy()
+  expect(sent.map((s) => [s.method, s.url])).toEqual([['DELETE', '/api/heating-plants/hp1'], ['PUT', '/api/tenancies/ta'], ['PUT', '/api/tenancies/tb']])
+})
+
+test('Durchsicht #720 S3: künftige Mietverhältnisse der Wohnungen werden mit umgestellt, beendete nicht', async () => {
+  plants = [GAS]
+  stubFlow({ tenancies: [{ ...tenant('alt', 'eg', 'Mieter Alt'), end: '2021-12-31' }, tenant('ta', 'eg', 'Mieter A'), { ...tenant('neu', 'og', 'Mieter Neu'), start: '2099-01-01' }] })
+  await changeToOwnHeating()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/Die laufenden und künftigen Mietverhältnisse von Mieter A, Mieter Neu werden unter Heizung auf „Mieter heizt selbst“ gestellt/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
+  await waitFor(() => expect(sent).toHaveLength(3))
+  expect(sent.slice(1).map((s) => s.url)).toEqual(['/api/tenancies/ta', '/api/tenancies/neu'])
+})
+
+test('Durchsicht #721 S8: Zustand mit leerer Wohnung nennt nur die vermieteten; „Ändern“ zur Anlage des Vermieters bietet die Abrechnung wieder an', async () => {
+  const selbst = [selfTenant('ta', 'eg')]
+  stubFlow({ tenancies: selbst })
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} tenancies={selbst} /></UIProvider></PropertyProvider>)
+  const note = await screen.findByText(/^In den vermieteten Wohnungen heizen die Mieter selbst: Jede Wohnung hat eine eigene Heizung/)
+  expect(note.textContent).toMatch(/Ist die Wartung der Thermen im Mietvertrag als umlegbar vereinbart, erfassen Sie sie auf der Seite Kosten unter „Heizung und Warmwasser“ mit Direktzuordnung je Wohnung\./)
+  fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
+  fireEvent.change(await screen.findByLabelText(/Womit wird geheizt/), { target: { value: 'gas' } })
+  fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'service' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Auf „Vorauszahlung mit Abrechnung“ stellen?')).toBeTruthy()
+  expect(dialog.textContent).toMatch(/Die Mietverhältnisse von Mieter ta stehen unter „Heizung und Warmwasser“ noch auf „Mieter heizt selbst \(eigener Vertrag für Brennstoff oder Wärme\)“\. Bezieht die neue Heizanlage Brennstoff oder Wärme über Ihren Vertrag/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
+  await waitFor(() => expect(sent.map((s) => s.method)).toEqual(['POST', 'PUT']))
+  expect(sent[1]).toEqual({ method: 'PUT', url: '/api/tenancies/ta', body: { heatingModel: null, selfSupplyKind: null } })
 })

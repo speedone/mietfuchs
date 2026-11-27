@@ -25,8 +25,9 @@ import {
   asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
   SELF_UNTIL_SWITCH, heatingSetUpMessage,
-  ownHeatingState, OWN_HEATING_NOTE, SELF_SUPPLY_REFUND, SELF_SUPPLY_REFUND_TITLE,
+  ownHeatingState, SELF_SUPPLY_REFUND, SELF_SUPPLY_REFUND_TITLE,
   selfSupplyChange, selfSupplyBlocked, selfSupplyReduceNote, selfSupplyTenanciesNote, SELF_SUPPLY_NO_UNIT, SELF_SUPPLY_REDUCE_ITEMS,
+  selfSupplyItemsNote, replacedHeatsAgain, replacedAlsoRemove, selfSupplyPartial, ownHeatingNote, someUnitUnlet, settlementBackOffer, settlementBackNote, SETTLEMENT_BACK_TITLE,
 } from '../heatingForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 
@@ -166,26 +167,48 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
     const change = selfSupplyChange(plant, units, unitIds)
     if (change.kind === 'keep') return false
     let written = false
+    let tenancies: Tenancy[] = []
     try {
-      const tenancies = await api<Tenancy[]>(withProperty('/api/tenancies', propertyId))
-      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), false)
+      tenancies = await api<Tenancy[]>(withProperty('/api/tenancies', propertyId))
+      // Durchsicht von #720 (S3): auch die künftigen Mietverhältnisse der Wohnungen.
+      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), false, false, true)
       if ('error' in offer) {
         setError(offer.error)
         return true
       }
+      let items: AssignableHeatingItem[] = []
       if (change.kind === 'remove') {
-        const { blocked } = await api<{ blocked: string | null }>(`/api/heating-plants/${plant.id}/removal`)
-        if (blocked) {
-          setError(selfSupplyBlocked(blocked))
+        const removal = await api<{ blocked: string | null; items?: AssignableHeatingItem[] }>(`/api/heating-plants/${plant.id}/removal`)
+        if (removal.blocked) {
+          setError(selfSupplyBlocked(removal.blocked))
           return true
         }
+        items = removal.items ?? []
       }
-      const tenancyNote = offer.names.length > 0 ? ` ${selfSupplyTenanciesNote(offer.names)}` : ''
+      const tenancyNote = offer.names.length > 0 ? ` ${selfSupplyTenanciesNote(offer.names, offer.future === true)}` : ''
       const unitNames = change.unitIds.map((id) => units.find((u) => u.id === id)?.name ?? id)
+      // Durchsicht von #720 (S1): Die ersetzte Anlage einer Linie heizt danach wieder. Dass sie wieder heizt, sagt schon
+      // `removalNote`; die Rückfrage ergänzt den Rat, die Mitteilung danach sagt beides.
+      const before = change.kind === 'remove' && !plants.some((x) => x.replacesPlantId === plant.id) ? plants.find((x) => x.id === plant.replacesPlantId) : undefined
+      const lineNote = before ? ` ${replacedAlsoRemove(before)}` : ''
+      const lineDone = before ? ` ${replacedHeatsAgain(before)} ${replacedAlsoRemove(before)}` : ''
+      const itemsNote = selfSupplyItemsNote(items)
       const ok = await confirm(change.kind === 'remove'
         ? {
             title: 'Heizanlage entfernen?',
-            message: `Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es dafür keine Heizanlage: Mietfuchs entfernt die Heizanlage. ${removalNote(plant)}${tenancyNote}`,
+            message: (
+              <>
+                <p>{`Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es dafür keine Heizanlage: Mietfuchs entfernt die Heizanlage. ${removalNote(plant)}${lineNote}`}</p>
+                {itemsNote && (
+                  <>
+                    <p>{itemsNote.intro}</p>
+                    <ul>{itemsNote.lines.map((l) => <li key={l}>{l}</li>)}</ul>
+                    <p>{itemsNote.outro}</p>
+                  </>
+                )}
+                {tenancyNote && <p>{tenancyNote.trim()}</p>}
+              </>
+            ),
             confirmLabel: 'Entfernen',
             danger: true,
           }
@@ -199,13 +222,23 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
       if (change.kind === 'remove') notice = (await api<{ notice?: string | null }>(`/api/heating-plants/${plant.id}`, { method: 'DELETE' }))?.notice ?? null
       else await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ units: change.units }) })
       written = true
-      for (const id of offer.kindTenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ selfSupplyKind: 'perUnit' }) })
-      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' }) })
+      // Durchsicht von #720 (S2): Scheitert danach ein Mietverhältnis, sagt die Karte, was schon geändert ist und was
+      // von Hand bleibt.
+      const nameOf = (id: string) => tenancies.find((t) => t.id === id)?.tenantName.trim() ?? ''
+      const put = async (id: string, body: object) => {
+        try {
+          await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+        } catch (e) {
+          throw new Error(selfSupplyPartial(change.kind === 'remove', nameOf(id), errorText(e)))
+        }
+      }
+      for (const id of offer.kindTenancyIds) await put(id, { selfSupplyKind: 'perUnit' })
+      for (const id of offer.tenancyIds) await put(id, { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' })
       close()
       await loadAll()
       const switched = offer.tenancyIds.length > 0 ? ' Die Mietverhältnisse stehen auf „Mieter heizt selbst“.' : ''
       toast(change.kind === 'remove'
-        ? `Heizanlage entfernt.${switched}${notice ? ` ${notice}` : ''}`
+        ? `Heizanlage entfernt.${switched}${notice ? ` ${notice}` : ''}${lineDone}`
         : `Gespeichert.${switched} Prüfen Sie auf der Seite Kosten, welche Wohnungen die Heizpositionen der Anlage tragen.`)
     } catch (e) {
       // Nach dem Schreiben an der Anlage zeigt die Karte den neuen Stand, auch wenn ein Mietverhältnis ablehnt.
@@ -213,9 +246,27 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
         close()
         await loadAll().catch(() => undefined)
       }
+      // Das Fenster ist dann zu; die Meldung steht oben in der Karte und bleibt.
       setError(errorText(e))
     }
     return true
+  }
+
+  // Durchsicht von #721 (S8): Eine neue Anlage, deren Brennstoff oder Wärme der Vermieter bezieht, an Wohnungen, deren
+  // Mietverhältnisse noch auf „Mieter heizt selbst“ stehen (etwa über „Ändern“ aus dem Zustand „Mieter heizen selbst“).
+  // Nach Rückfrage wieder auf Abrechnung; das Umgekehrte von `offerSelfSupply`.
+  async function offerSettlementBack(plant: HeatingPlant) {
+    try {
+      const tenancies = await api<Tenancy[]>(withProperty('/api/tenancies', propertyId))
+      const offer = settlementBackOffer(plant, units, tenancies, localToday())
+      if (offer.tenancyIds.length === 0) return
+      const ok = await confirm({ title: SETTLEMENT_BACK_TITLE, message: settlementBackNote(offer.names), confirmLabel: 'Umstellen' })
+      if (!ok) return
+      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: null, selfSupplyKind: null }) })
+      await onChanged?.()
+    } catch (e) {
+      setError(errorText(e))
+    }
   }
 
   async function save() {
@@ -273,6 +324,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
     const first = plants.length === 0
     close()
     await loadAll()
+    if (created && saved) await offerSettlementBack(saved)
     // Schritt 7: Die Anlage steht bei „Niemand“, bis die Fragen zur eigenen Abrechnung beantwortet sind.
     if (result.setUpSelf && saved && saved.method !== 'self') {
       setSelfFor(saved)
@@ -318,7 +370,9 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
     // Mitten aus einer Linie von Täuschen (Nachprüfung von #238): Die nächste Anlage übernimmt den Zeitraum.
     const next = plants.find((x) => x.replacesPlantId === p.id)
     const before = plants.find((x) => x.id === p.replacesPlantId)
-    const line = next && before ? ` „${next.name}“ übernimmt danach den Zeitraum dieser Anlage und heizt im Anschluss an „${before.name}“.` : ''
+    const line = next && before
+      ? ` „${next.name}“ übernimmt danach den Zeitraum dieser Anlage und heizt im Anschluss an „${before.name}“.`
+      : before ? ` ${replacedHeatsAgain(before)}` : ''
     return `Die Heizpositionen bleiben, wie sie sind, nur ohne Heizanlage.${meters}${line}`
   }
 
@@ -340,7 +394,9 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
     }
     setError('')
     await loadAll()
-    toast(notice ? `Heizanlage entfernt. ${notice}` : 'Heizanlage entfernt.')
+    // Durchsicht von #720 (S1): nach einem Kesseltausch auch hier, dass die ersetzte Anlage wieder heizt.
+    const before = !plants.some((x) => x.replacesPlantId === p.id) ? plants.find((x) => x.id === p.replacesPlantId) : undefined
+    toast(`Heizanlage entfernt.${notice ? ` ${notice}` : ''}${before ? ` ${replacedHeatsAgain(before)}` : ''}`)
   }
 
   const kind = property?.kind ?? 'mfh'
@@ -392,7 +448,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
           in der Mitteilung nach dem Einrichten. */}
       {plants.length === 0 && units.length > 0 && ownHeating && (
         <>
-          <p>{OWN_HEATING_NOTE[ownHeating]} Mehr dazu: <Term id="co2Refund">CO₂-Erstattung</Term>.</p>
+          <p>{ownHeatingNote(ownHeating, someUnitUnlet(units, tenancies ?? [], localToday()))} Mehr dazu: <Term id="co2Refund">CO₂-Erstattung</Term>.</p>
           <details className="extra-details">
             <summary>{SELF_SUPPLY_REFUND_TITLE}</summary>
             <p className="muted">{SELF_SUPPLY_REFUND}</p>
