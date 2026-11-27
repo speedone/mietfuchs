@@ -178,7 +178,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
       }
       let items: AssignableHeatingItem[] = []
       if (change.kind === 'remove') {
-        const removal = await api<{ blocked: string | null; items?: AssignableHeatingItem[] }>(`/api/heating-plants/${plant.id}/removal`)
+        const removal = await api<{ blocked: string | null; items?: AssignableHeatingItem[] }>(withProperty(`/api/heating-plants/${plant.id}/removal`, propertyId))
         if (removal.blocked) {
           setError(selfSupplyBlocked(removal.blocked))
           return true
@@ -219,15 +219,15 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
           })
       if (!ok) return true
       let notice: string | null = null
-      if (change.kind === 'remove') notice = (await api<{ notice?: string | null }>(`/api/heating-plants/${plant.id}`, { method: 'DELETE' }))?.notice ?? null
-      else await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ units: change.units }) })
+      if (change.kind === 'remove') notice = (await api<{ notice?: string | null }>(withProperty(`/api/heating-plants/${plant.id}`, propertyId), { method: 'DELETE' }))?.notice ?? null
+      else await api(withProperty(`/api/heating-plants/${plant.id}`, propertyId), { method: 'PUT', body: JSON.stringify({ units: change.units }) })
       written = true
       // Durchsicht von #720 (S2): Scheitert danach ein Mietverhältnis, sagt die Karte, was schon geändert ist und was
       // von Hand bleibt.
       const nameOf = (id: string) => tenancies.find((t) => t.id === id)?.tenantName.trim() ?? ''
       const put = async (id: string, body: object) => {
         try {
-          await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+          await api(withProperty(`/api/tenancies/${id}`, propertyId), { method: 'PUT', body: JSON.stringify(body) })
         } catch (e) {
           throw new Error(selfSupplyPartial(change.kind === 'remove', nameOf(id), errorText(e)))
         }
@@ -262,7 +262,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
       if (offer.tenancyIds.length === 0) return
       const ok = await confirm({ title: SETTLEMENT_BACK_TITLE, message: settlementBackNote(offer.names), confirmLabel: 'Umstellen' })
       if (!ok) return
-      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: null, selfSupplyKind: null }) })
+      for (const id of offer.tenancyIds) await api(withProperty(`/api/tenancies/${id}`, propertyId), { method: 'PUT', body: JSON.stringify({ heatingModel: null, selfSupplyKind: null }) })
       await onChanged?.()
     } catch (e) {
       setError(errorText(e))
