@@ -15,7 +15,7 @@ import type { BillingPeriod, PeriodRules, SeparateSpan } from '../../shared/type
 type Source = Parameters<typeof snapshotFor>[0]
 const of = (rules: PeriodRules, key: string): BillingPeriod => periodOfKey(rules, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
 
-type PlantOver = { id?: string; name?: string; periodStartMonth?: number | null; separateSpans?: SeparateSpan[]; separateSettlement?: boolean | null; secondPrepaymentCoversWater?: boolean; units?: { unitId: string; heatedAreaM2: number | null }[] | null }
+type PlantOver = { id?: string; name?: string; periodStartMonth?: number | null; separateSpans?: SeparateSpan[]; separateSettlement?: boolean | null; secondPrepaymentCoversWater?: boolean; endsOn?: string | null; replacesPlantId?: string | null; units?: { unitId: string; heatedAreaM2: number | null }[] | null }
 const anlage = (over: PlantOver = {}) => ({
   id: 'hp1', propertyId: 'objekt-1', name: '', method: 'service' as const, source: 'building' as const,
   energy: 'gas' as const, devicesRemote: 'unknown' as const, devicesInstalledAfter2021: 'unknown' as const, newDevicesInstall: null, units: null,
@@ -162,4 +162,18 @@ test('#712: Invariante über Zufallsbestände: mit und ohne Angabe dieselben Sum
   }
   // Der Test prüft etwas: viele Aufstellungen mit Teil, und in vielen wandert der Wasseranteil.
   assert.ok(statements > 300 && parts > 100 && moved > 50, `zu wenige Fälle: ${statements} Aufstellungen, ${parts} mit Teil, ${moved} verschoben`)
+})
+
+// Durchsicht M1: Nach einem Kesseltausch steht die Wahl nur an der neuen Anlage (die stillgelegte zeigt sie nicht). Es gilt
+// deshalb die Angabe der laufenden Anlage der Wohnung, auch für einen Zeitraum, in dem noch die alte geheizt hat, und
+// unabhängig von der Reihenfolge der Anlagen.
+test('#712: nach einem Kesseltausch gilt die Angabe der laufenden Anlage, in jeder Reihenfolge, vor und nach dem Tausch', () => {
+  const alt = (flag: boolean) => anlage({ id: 'alt', name: 'Alt', endsOn: '2026-02-28', secondPrepaymentCoversWater: flag })
+  const neu = (flag: boolean) => anlage({ id: 'neu', name: 'Neu', replacesPlantId: 'alt', secondPrepaymentCoversWater: flag })
+  for (const [altFlag, neuFlag, part, kept] of [[true, false, 12500, undefined], [false, true, 17500, true]] as const) {
+    for (const plants of [[alt(altFlag), neu(neuFlag)], [neu(neuFlag), alt(altFlag)]]) {
+      const a = st(settle(haus({ heatingPlants: plants, tenancies: [mieter('A', 'u1')], costItems: kosten('alt') }), '2025-01'), 'A')
+      assert.deepEqual([a.suggestedMonthlyCents, a.suggestedHeatingMonthlyCents, a.secondPrepaymentCoversWater], [34200, part, kept], `alt=${altFlag} neu=${neuFlag}, zuerst ${plants[0]?.id}`)
+    }
+  }
 })

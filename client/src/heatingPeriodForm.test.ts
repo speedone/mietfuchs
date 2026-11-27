@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers, initialSeparateAnswers,
   heatingWays, separateActions, separateAnswersOf, separateOffBody, separatePanelIntro, separateSavedText, splitHint, suggestedWay,
-  SECOND_PREPAYMENT_HELP, SECOND_PREPAYMENT_OPTIONS, SECOND_PREPAYMENT_OWN_PERIOD_NOTE, secondPrepaymentBody, secondPrepaymentState, secondPrepaymentValue,
+  coversWaterNote, SECOND_PREPAYMENT_HELP, SECOND_PREPAYMENT_OPTIONS, SECOND_PREPAYMENT_OWN_PERIOD_NOTE, secondPrepaymentBody, secondPrepaymentState, secondPrepaymentValue,
 } from './heatingPeriodForm'
 import { CALENDAR_RULES, periodKey as k } from '../../shared/period.ts'
 import type { HeatingPeriodChangePreview, HeatingPlant, SeparatePreview } from './types'
@@ -187,12 +187,14 @@ describe('#712: Was deckt die zweite Vorauszahlung?', () => {
   })
   test('eigene Heizperiode oder Weg d: keine Auswahl, sondern der Satz, warum; ohne zwei Vorauszahlungen nichts', () => {
     const note = { kind: 'note', text: SECOND_PREPAYMENT_OWN_PERIOD_NOTE }
-    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }] }))).toEqual(note)
-    expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSpans: [{ from: '2025-05', until: null }] }))).toEqual(note)
-    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSettlement: true }))).toEqual(note)
+    // Durchsicht S1: Wer nie etwas gewählt hat, sieht bei Weg d nichts Neues; nur eine stehengebliebene Angabe wird genannt.
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }] }))).toBeNull()
+    expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSpans: [{ from: '2025-05', until: null }] }))).toBeNull()
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSettlement: true }))).toBeNull()
     expect(secondPrepaymentState(plant({ periodStartMonth: 5, secondPrepaymentCoversWater: true }))).toEqual(note)
+    expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }], secondPrepaymentCoversWater: true }))).toEqual(note)
     expect(secondPrepaymentState(plant({ periodStartMonth: 5, separateSettlement: false }))).toBeNull()
-    expect(SECOND_PREPAYMENT_OWN_PERIOD_NOTE).toMatch(/rechnet nur Heizung und Warmwasser ab/)
+    expect(SECOND_PREPAYMENT_OWN_PERIOD_NOTE).toMatch(/wirkt Ihre Angabe nicht.*rechnet nur Heizung und Warmwasser ab/)
     // Eine stillgelegte Anlage (Kesseltausch) fragt nicht: Es gilt die Angabe der Nachfolgerin.
     expect(secondPrepaymentState(plant({ periodStartMonth: null, separateSettlement: true, endsOn: '2025-06-30' }))).toBeNull()
   })
@@ -206,4 +208,15 @@ describe('#712: Was deckt die zweite Vorauszahlung?', () => {
     expect(SECOND_PREPAYMENT_HELP).toMatch(/ändert keine Summe der Abrechnung/)
     expect(SECOND_PREPAYMENT_HELP).toMatch(/Mietfuchs verschiebt keine Beträge zwischen den Staffeln/)
   })
+})
+
+// Durchsicht M3 und S3 von #712
+test('#712: an den Eingabefeldern der zweiten Vorauszahlung steht, dass sie auch Wasser deckt; nur wo die Angabe wirkt', () => {
+  const base = { periodStartMonth: null, periodChanges: [], separateSpans: [], separateSettlement: true, endsOn: null }
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true })).toBe('Sie deckt hier auch Wasser und Abwasser (Stammdaten → Heizung, „Was deckt die zweite Vorauszahlung?“).')
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: false })).toBeNull()
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true, periodStartMonth: 5 })).toBeNull()
+  expect(coversWaterNote({ ...base, secondPrepaymentCoversWater: true, separateSpans: [{ from: '2025-05', until: null }] })).toBeNull()
+  expect(coversWaterNote(null)).toBeNull()
+  expect(SECOND_PREPAYMENT_HELP).toMatch(/tragen Sie ihn unter Stammdaten am Mietverhältnis ab demselben Monat in die Heizvorauszahlung um; die Summe beider bleibt, was der Mieter zahlt\./)
 })

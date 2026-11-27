@@ -9,6 +9,7 @@ import { useSaving } from '../useSaving'
 import MonthField from './MonthField'
 import { parseMonthText } from '../monthText'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
+import { secondPrepaymentLabel } from '../../../shared/heatingModel.ts'
 import {
   PERIOD_CHOICE_OPTIONS, SEPARATE_OPTIONS, heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers,
   heatingWays, initialSeparateAnswers, isCalendarObject, separateActions, separateAnswersOf, separateOffBody, separatePanelIntro, separateSavedText, splitHint, suggestedWay, type HeatingPeriodAnswerForm, type HeatingPeriodForm, type PeriodChoice, type SeparateAnswerForm,
@@ -414,12 +415,12 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           {separatePreview && separateAnswers && (
             <div className="preview">
               {separatePreview.blocked.map((b) => <NoticeBox key={b} level="error" action={b} />)}
-              {separatePreview.share && <p className="muted">{`Vorbelegt mit dem Anteil der Heizkosten: ${(separatePreview.share.permille / 10).toLocaleString('de-DE')} % (${separatePreview.share.source}).`}</p>}
+              {separatePreview.share && <p className="muted">{`Vorbelegt mit dem Anteil der ${separatePreview.share.coversWater === true ? `Kosten für ${secondPrepaymentLabel(true)}` : 'Heizkosten'}: ${(separatePreview.share.permille / 10).toLocaleString('de-DE')} % (${separatePreview.share.source}).`}</p>}
               {separatePreview.steps.flatMap((s) => s.rows.map((r) => {
                 const key = `${s.tenancyId}|${r.from}`
                 return (
                   <label key={key} className="field">
-                    {`${s.tenantName} ab ${r.from.slice(5, 7)}/${r.from.slice(0, 4)}: davon Heizung (Vorauszahlung ${fmtEuro(r.totalCents)})`}
+                    {`${s.tenantName} ab ${r.from.slice(5, 7)}/${r.from.slice(0, 4)}: davon ${secondPrepaymentLabel(separatePreview.share?.coversWater === true || (separatePreview.way === 'samePeriod' && plant.secondPrepaymentCoversWater === true), 'short')} (Vorauszahlung ${fmtEuro(r.totalCents)})`}
                     <input inputMode="decimal" value={separateAnswers.steps[key] ?? ''} onChange={(e) => setSeparateAnswers({ ...separateAnswers, steps: { ...separateAnswers.steps, [key]: e.target.value } })} />
                   </label>
                 )

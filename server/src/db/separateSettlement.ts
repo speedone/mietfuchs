@@ -28,7 +28,7 @@
 import crypto from 'node:crypto'
 import { and, eq, gte } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { settlesHeating } from '../../../shared/heatingModel.ts'
+import { secondPrepaymentLabel, settlesHeating, WATER_CATEGORY } from '../../../shared/heatingModel.ts'
 import {
   hasOwnRhythm, heatingPeriodsEndingIn, isObjectPeriod, monthSpanText, plantRules, separateOwner, servesUnit, settledSeparately, type PlantWay,
 } from '../../../shared/heatingPeriod.ts'
@@ -105,8 +105,10 @@ const earliestMonth = (c: Ctx): string | null => {
   return last === null ? null : shiftMonth(monthOf(last.to), 1)
 }
 
-// Der Anteil der Heizkosten an allen Kosten der letzten Abrechnung vor X (B1), in Promille.
-function lastShare(c: Ctx, x: string): { permille: number; source: string } | null {
+// Der Anteil der Heizkosten an allen Kosten der letzten Abrechnung vor X (B1), in Promille. #712, Durchsicht M2: Deckt die
+// zweite Vorauszahlung laut Anlage auch Wasser/Abwasser (`withWater`, nur bei gemeinsamer Abrechnung), zählt diese
+// Kostenart mit; `waterPermille` ist dann ihr Anteil allein, für ein Mietverhältnis, das die Heizung nicht abrechnet.
+function lastShare(c: Ctx, x: string, withWater: boolean): { permille: number; source: string; coversWater?: true; waterPermille?: number } | null {
   // Erst die drei Zeiträume vor X; findet sich dort nichts, der Zeitraum, der X enthält (Durchsicht vom 27.11.2026: Beginnt
   // die Aufteilung im Vorjahr und sind nur dessen Kosten erfasst, bliebe der Heizanteil sonst ohne Vorbelegung auf 0).
   const own = periodContaining(c.objectRules, `${x}-01`)
@@ -118,6 +120,16 @@ function lastShare(c: Ctx, x: string): { permille: number; source: string } | nu
     const inP = c.items.filter((it) => (it.heatingPlantId === c.plant.id ? keys.has(String(it.period)) : it.period === p.key))
     const total = inP.reduce((a, it) => a + it.amountCents, 0)
     const heating = inP.filter((it) => it.category === HEATING_CATEGORY).reduce((a, it) => a + it.amountCents, 0)
+    if (withWater) {
+      const water = inP.filter((it) => it.category === WATER_CATEGORY).reduce((a, it) => a + it.amountCents, 0)
+      if (total > 0 && heating + water > 0) {
+        return {
+          permille: Math.round(((heating + water) * 1000) / total), coversWater: true, waterPermille: Math.max(0, Math.round((water * 1000) / total)),
+          source: `Abrechnung ${periodLabel(p)}: ${secondPrepaymentLabel(true)} ${euro(heating + water)} von ${euro(total)}`,
+        }
+      }
+      continue
+    }
     if (total > 0 && heating > 0) return { permille: Math.round((heating * 1000) / total), source: `Abrechnung ${periodLabel(p)}: Heizkosten ${euro(heating)} von ${euro(total)}` }
   }
   return null
@@ -187,7 +199,7 @@ function planOn(c: Ctx, rawMonth: unknown): Plan {
   const hX = periodContaining(c.rules, `${x}-01`)
   const way = hasOwnRhythm(c.plant) && !isObjectPeriod(c.objectRules, hX) ? 'separate' : 'samePeriod'
   const next: PlantWay = way === 'separate' ? { ...c.plant, separateSpans: [...c.plant.separateSpans, { from: x, until: null }] } : c.plant
-  const share = lastShare(c, x)
+  const share = lastShare(c, x, way === 'samePeriod' && c.plant.secondPrepaymentCoversWater === true)
 
   const steps: StepEntry[] = c.tenancies.filter((t) => !(t.end !== null && t.end < `${x}-01`)).map((t) => {
     const first = monthOf(t.start) > x ? monthOf(t.start) : x
@@ -201,7 +213,9 @@ function planOn(c: Ctx, rawMonth: unknown): Plan {
         // Ausschalten stehen gelassene Heizstaffel); der Anteil der letzten Abrechnung gilt nur, wo noch nichts geteilt ist.
         // Wer die Heizung als Pauschale oder in der Miete zahlt oder selbst heizt, hat keine Heizvorauszahlung (Durchsicht K2).
         const kept = rate(heat, from)
-        return { from, totalCents: total, heatingCents: kept > 0 ? kept : share && settlesHeating(t.heatingModel) ? Math.round((total * share.permille) / 1000 / 100) * 100 : 0 }
+        // #712: Wer die Heizung nicht abrechnet, zahlt mit der zweiten Vorauszahlung nur das Wasser, wenn sie es deckt.
+        const permille = share === null ? 0 : settlesHeating(t.heatingModel) ? share.permille : share.waterPermille ?? 0
+        return { from, totalCents: total, heatingCents: kept > 0 ? kept : Math.round((total * permille) / 1000 / 100) * 100 }
       }),
     }
   })

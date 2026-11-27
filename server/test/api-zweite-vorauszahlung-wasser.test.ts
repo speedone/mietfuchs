@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { HeatingPlant, PrepaymentStepPlan, Settlement, Tenancy, Unit } from '../../shared/types.ts'
+import type { HeatingPlant, PrepaymentStepPlan, SeparatePreview, Settlement, Tenancy, Unit } from '../../shared/types.ts'
 import { type Server, jsonOf, restore, startServerIn } from '../testing/api.ts'
 import type { SettlementExport } from '../src/settlementExport.ts'
 
@@ -121,6 +121,30 @@ test('#712: eigene Heizperiode: der Server lehnt die Angabe mit Satz ab', async 
     assert.equal(res.status, 400)
     assert.equal((await jsonOf<{ error: string }>(res)).error, 'Die zweite Vorauszahlung kann nur in einer gemeinsamen Abrechnung auch Wasser und Abwasser decken. Diese Heizanlage rechnet in eigenen Heizperioden ab, und die Heizkostenabrechnung rechnet nur Heizung und Warmwasser ab.')
     assert.equal((await plantOf(s, plant.id)).secondPrepaymentCoversWater, false)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht M2: „Vorauszahlung aufteilen“ belegt den zweiten Teil eines neuen Mietverhältnisses mit dem Anteil der Kosten
+// vor, die er deckt: mit der Angabe Heizung und Wasser/Abwasser, ohne sie wie bisher nur die Heizung.
+test('#712: erneutes Aufteilen belegt mit dem Anteil von Heizung und Wasser vor, ohne die Angabe nur mit der Heizung', async () => {
+  const s = await start()
+  try {
+    const { plantId } = await house(s)
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 60, participates: true }) })
+    const neu = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'Max Beispiel', persons: 1, start: '2026-01-01', end: null, prepayments: [{ from: '2026-01', monthlyCents: 30000 }] }) })
+    const preview = async () => jsonOf<SeparatePreview>(await send(s, `/api/heating-plants/${plantId}/separate/preview`, 'POST', { separate: true, month: '2026-01' }))
+    const rowOf = (p: SeparatePreview) => p.steps.find((x) => x.tenancyId === neu.id)?.rows[0] ?? assert.fail('keine Zeile')
+    // 1.500 € von 4.100 € = 36,6 %; 300 € → 110 €
+    const ohne = await preview()
+    assert.deepEqual([ohne.share?.permille, ohne.share?.coversWater, rowOf(ohne).heatingCents], [366, undefined, 11000])
+    assert.match(ohne.share?.source ?? '', /Heizkosten 1\.500,00 € von 4\.100,00 €/)
+    assert.equal((await send(s, `/api/heating-plants/${plantId}`, 'PUT', { secondPrepaymentCoversWater: true })).status, 200)
+    // 2.100 € von 4.100 € = 51,2 %; 300 € → 154 €
+    const mit = await preview()
+    assert.deepEqual([mit.share?.permille, mit.share?.coversWater, rowOf(mit).heatingCents], [512, true, 15400])
+    assert.match(mit.share?.source ?? '', /Heizung, Warmwasser und Wasser\/Abwasser 2\.100,00 € von 4\.100,00 €/)
   } finally {
     s.stop()
   }

@@ -1057,7 +1057,8 @@ export type SeparatePreview = {
   earliestMonth: string | null
   until: PeriodKey | null
   earliestUntil: PeriodKey | null
-  share: { permille: number; source: string } | null
+  // `coversWater` (#712): Der Anteil zählt neben der Heizung auch Wasser/Abwasser, weil die zweite Vorauszahlung es deckt.
+  share: { permille: number; source: string; coversWater?: true; waterPermille?: number } | null
   steps: { tenancyId: string; tenantName: string; rows: { from: string; totalCents: number; heatingCents: number }[] }[]
   overrides: {
     tenancyId: string

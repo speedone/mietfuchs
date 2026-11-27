@@ -312,8 +312,10 @@ export const SECOND_PREPAYMENT_OPTIONS: { value: SecondPrepaymentChoice; label: 
   { value: 'water', label: secondPrepaymentLabel(true) },
 ]
 export const SECOND_PREPAYMENT_QUESTION = 'Was deckt die zweite Vorauszahlung?'
-export const SECOND_PREPAYMENT_HELP = 'Rechnet Ihr Messdienst neben Heizung und Warmwasser auch Kaltwasser und Abwasser ab und zahlen Ihre Mieter dafür eine gemeinsame Vorauszahlung, wählen Sie den zweiten Eintrag. Das ändert keine Summe der Abrechnung, nur die Bezeichnung der zweiten Vorauszahlung und den Anteil je Teil, wenn die Vorauszahlung angepasst wird. Die Staffel der Heizvorauszahlung enthält dann auch die Vorauszahlung für Wasser/Abwasser: Mietfuchs verschiebt keine Beträge zwischen den Staffeln, prüfen Sie deshalb die beiden Beträge an jedem Mietverhältnis.'
-export const SECOND_PREPAYMENT_OWN_PERIOD_NOTE = 'Die Heizvorauszahlung gilt hier nur Heizung und Warmwasser: Die Heizkostenabrechnung je Heizperiode rechnet nur Heizung und Warmwasser ab, Wasser und Abwasser bleiben bei den übrigen Nebenkosten.'
+export const SECOND_PREPAYMENT_HELP = 'Rechnet Ihr Messdienst neben Heizung und Warmwasser auch Kaltwasser und Abwasser ab und zahlen Ihre Mieter dafür eine gemeinsame Vorauszahlung, wählen Sie den zweiten Eintrag. Das ändert keine Summe der Abrechnung, nur die Bezeichnung der zweiten Vorauszahlung und den Anteil je Teil, wenn die Vorauszahlung angepasst wird. Die Staffel der Heizvorauszahlung enthält dann auch die Vorauszahlung für Wasser/Abwasser: Mietfuchs verschiebt keine Beträge zwischen den Staffeln. Enthält die NK-Vorauszahlung eines Mietverhältnisses noch den Betrag für Wasser und Abwasser, tragen Sie ihn unter Stammdaten am Mietverhältnis ab demselben Monat in die Heizvorauszahlung um; die Summe beider bleibt, was der Mieter zahlt.'
+// Nur wenn eine frühere Wahl stehen geblieben ist (Durchsicht S1): Wer nie etwas gewählt hat, sieht bei einer eigenen
+// Heizperiode nichts Neues.
+export const SECOND_PREPAYMENT_OWN_PERIOD_NOTE = 'Nach Ihrer Angabe deckt die zweite Vorauszahlung auch Wasser und Abwasser. Solange diese Heizanlage die Heizkosten je Heizperiode getrennt abrechnet, wirkt Ihre Angabe nicht: Die Heizkostenabrechnung rechnet nur Heizung und Warmwasser ab, Wasser und Abwasser bleiben bei den übrigen Nebenkosten.'
 
 export const secondPrepaymentValue = (plant: Pick<HeatingPlant, 'secondPrepaymentCoversWater'>): SecondPrepaymentChoice => (plant.secondPrepaymentCoversWater === true ? 'water' : 'heating')
 export const secondPrepaymentBody = (value: SecondPrepaymentChoice): { secondPrepaymentCoversWater: boolean } => ({ secondPrepaymentCoversWater: value === 'water' })
@@ -323,7 +325,15 @@ export const secondPrepaymentBody = (value: SecondPrepaymentChoice): { secondPre
 export function secondPrepaymentState(plant: HeatingPlant): { kind: 'choice' } | { kind: 'note'; text: string } | null {
   if ((plant.endsOn ?? null) !== null) return null
   if (hasOwnRhythm(plant) || hasOpenSpan(plant)) {
-    return hasOpenSpan(plant) || plant.separateSettlement === true || plant.secondPrepaymentCoversWater === true ? { kind: 'note', text: SECOND_PREPAYMENT_OWN_PERIOD_NOTE } : null
+    return plant.secondPrepaymentCoversWater === true ? { kind: 'note', text: SECOND_PREPAYMENT_OWN_PERIOD_NOTE } : null
   }
   return plant.separateSettlement === true ? { kind: 'choice' } : null
+}
+
+// Durchsicht M3: Die Eingabefelder der zweiten Vorauszahlung (Staffel am Mietverhältnis, Mieterwechsel) heißen weiter
+// „Heizvorauszahlung“. Wo die Angabe wirkt, sagt dieser Satz daneben, dass der Betrag auch Wasser und Abwasser enthält;
+// sonst trüge ein Vermieter dort nur die Heizung ein, und Ausweis und „bisher“ im Anschreiben stimmten nicht.
+export function coversWaterNote(plant: Pick<HeatingPlant, 'secondPrepaymentCoversWater' | 'periodStartMonth' | 'periodChanges' | 'separateSpans'> | null | undefined): string | null {
+  if (!plant || plant.secondPrepaymentCoversWater !== true || plant.periodStartMonth !== null || plant.separateSpans.some((s) => s.until === null)) return null
+  return 'Sie deckt hier auch Wasser und Abwasser (Stammdaten → Heizung, „Was deckt die zweite Vorauszahlung?“).'
 }

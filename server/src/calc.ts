@@ -4461,7 +4461,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return note ? { ...pp, note } : pp
   }
   // #712: Deckt die zweite Vorauszahlung dieses Mietverhältnisses auch „Wasser/Abwasser“? Die Angabe steht an der Anlage,
-  // die seine Wohnung versorgt (nach einem Kesseltausch an der, die am Ende des Zeitraums heizt), und wirkt nur in einer
+  // die seine Wohnung versorgt; nach einem Kesseltausch gilt die der laufenden Anlage, denn nur an ihr lässt sie sich
+  // wählen (Durchsicht M1: Sonst entschiede für einen Zeitraum vor dem Tausch die stillgelegte Anlage, die niemand mehr
+  // ändern kann, und die Reihenfolge der Anlagen). Ob gemeinsam abgerechnet wird, entscheidet die Anlage, die am Ende des
+  // Zeitraums heizt. Die Angabe wirkt nur in einer
   // gemeinsamen Abrechnung: Die Anlage rechnet im Zeitraum des Objekts ab (H = P), und kein Monat des Zeitraums und nicht
   // der Monat danach gehört einer getrennt abgerechneten Heizperiode. Eine Heizkostenabrechnung je Heizperiode (Weg d)
   // rechnet nur Heizung und Warmwasser ab; dort bleibt alles, wie es war. Nur bei einem Mietverhältnis mit Heizstaffel.
@@ -4469,7 +4472,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (scope !== 'all' || !Array.isArray(t.heatingPrepayments) || t.heatingPrepayments.length === 0) return false
     const serving = plants.filter((p) => servesUnit(p, t.unit))
     const plant = serving.find((p) => (p.endsOn ?? null) === null || (p.endsOn ?? '') >= period.to) ?? serving[0]
-    if (!plant || plant.secondPrepaymentCoversWater !== true) return false
+    const chosenAt = serving.find((p) => (p.endsOn ?? null) === null) ?? plant
+    if (!plant || chosenAt?.secondPrepaymentCoversWater !== true) return false
     const way = wayOf(plant)
     const same = periodOfKey(plantRules(way, objectRules), period.key)
     if (same === null || !sameSpan(same, period)) return false

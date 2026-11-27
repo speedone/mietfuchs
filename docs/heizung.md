@@ -127,7 +127,8 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
   `secondPrepaymentLabel` in shared/heatingModel.ts (Formen `costs`, `prepayment`, `short`): gedruckte Abrechnung
   (`prepaymentSplit`), Satz `{Aufteilung}` (`splitSentence`), Fenster „Anschreiben bearbeiten“, Übersicht, Karte und
   Rückfrage der Übernahme, Meldungen zum eigenen Teil. **Gewirkt wird nur in einer gemeinsamen Abrechnung** (`coversWater`
-  in calc.ts): Die Anlage, die die Wohnung versorgt (nach einem Kesseltausch die am Ende des Zeitraums heizende), rechnet
+  in calc.ts): Die Anlage, die die Wohnung versorgt (nach einem Kesseltausch die am Ende des Zeitraums heizende; die Angabe selbst
+  liest `coversWater` von der laufenden Anlage, denn nur an ihr lässt sie sich wählen), rechnet
   im Zeitraum des Objekts ab, kein Monat des Zeitraums und nicht der danach gehört einer getrennt abgerechneten
   Heizperiode, und das Mietverhältnis führt eine Heizstaffel. Eine Heizkostenabrechnung je Heizperiode (Weg d) rechnet nur
   Heizung und Warmwasser ab und bleibt wortgleich; der Server lehnt das Setzen an einer Anlage mit eigener Heizperiode
@@ -142,7 +143,7 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
   übernimmt die Angabe. Fundstellen (nur im Lexikon und in der Anleitung zum Messdienst): BGH, Urteil vom 26.10.2011,
   VIII ZR 268/10, Rn. 11 (die Zuordnung von Kaltwasser und Entwässerung ändert die Summe nicht; ob getrennt ausgewiesene
   Vorauszahlungen auf Abrechnungskreise festlegen, bleibt offen) und BGH, Urteil vom 28.09.2011, VIII ZR 294/10, Rn. 26
-  (Erhöhung wegen einer Kostenart nur bei deren Vorauszahlung). Tests: calc-zweite-vorauszahlung-wasser.test.ts
+  (Erhöhung wegen einer Kostenart nur bei deren Vorauszahlung oder nur anteilig). Tests: calc-zweite-vorauszahlung-wasser.test.ts
   (Beispiele und Invariante über Zufallsbestände), api-zweite-vorauszahlung-wasser.test.ts, db-heizanlage.test.ts.
 - **Jeder Monat der Heizstaffel wird genau einmal angerechnet**: Er gehört der getrennt abgerechneten
   Heizperiode, wenn er ab ihrem Beginn liegt, sonst P (`separateOwner`, die einzige Stelle). Die

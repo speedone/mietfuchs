@@ -79,8 +79,12 @@ test('#712: ohne aufgeteilte Vorauszahlung gibt es die Wahl nicht', () => {
   expect(screen.queryByText(SECOND_PREPAYMENT_OWN_PERIOD_NOTE)).toBeNull()
 })
 
-test('#712: eigene Heizkostenabrechnung je Heizperiode: keine Wahl, nur der Satz, warum', () => {
+test('#712: eigene Heizkostenabrechnung je Heizperiode: keine Wahl; nur eine stehengebliebene Angabe wird genannt', () => {
   section(plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }] }))
+  expect(screen.queryByRole('combobox', { name: SECOND_PREPAYMENT_QUESTION })).toBeNull()
+  expect(screen.queryByText(SECOND_PREPAYMENT_OWN_PERIOD_NOTE)).toBeNull()
+  cleanup()
+  section(plant({ periodStartMonth: 5, separateSpans: [{ from: '2025-05', until: null }], secondPrepaymentCoversWater: true }))
   expect(screen.queryByRole('combobox', { name: SECOND_PREPAYMENT_QUESTION })).toBeNull()
   expect(screen.getByText(SECOND_PREPAYMENT_OWN_PERIOD_NOTE)).toBeTruthy()
 })
