@@ -18,6 +18,10 @@ import {
   meterTypeOptions,
   waterMeterHint,
   amountsSumText, AMOUNTS_HELP,
+  chimneySweepPlants,
+  chimneySweepQuestion,
+  toCentralHeating,
+  amountsSumText,
   externalHint,
   externalMismatch,
   tenanciesForAmounts,
@@ -200,6 +204,17 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     ? (plants.find((p) => p.id === (heatingPlantId || ownPlant?.plantId)) ?? (plants.length === 1 ? plants[0] : undefined))
     : undefined
   const selfPlant = plantOfForm?.method === 'self'
+  // #724: die Frage bei „Schornsteinfeger“ und ihr Knopf. Kommt genau eine Anlage in Frage, ist sie die Anlage der
+  // Position (ab zwei Anlagen im Objekt die Auswahl „Heizanlage“); sonst bleibt die Wahl beim Vermieter.
+  const chimneyQuestion = form ? chimneySweepQuestion(form, plants, period) : null
+  const convertToHeating = () => {
+    if (!form) return
+    const candidates = chimneySweepPlants(plants, period)
+    const [only, ...more] = candidates
+    if (plantChoices.length > 0 && only && more.length === 0) setHeatingPlantId(only.id)
+    setHeatingPeriod('')
+    setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, toCentralHeating(form), period))))
+  }
   const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
     ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
   // Die Warmwasserbereitung der Heizperiode des Formulars, nicht die heutige der Anlage (Durchsicht von #241,
@@ -1266,6 +1281,11 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             <ReceiptPreview upload={uploadOf(form.invoiceFile) ?? { file: form.invoiceFile, mimeType: /\.pdf$/i.test(form.invoiceFile) ? 'application/pdf' : 'image/*', originalName: '' }} render={renderThumb} />
           )}
           {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <NoticeBox level="warning" action={categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)} />}
+          {/* #724: Schornsteinfeger neben einer zentralen Anlage mit eigener Heizkostenabrechnung. Der Knopf ändert nur den
+              Entwurf (Kostenart, Schlüssel, Teil „Betrieb“); gespeichert wird erst mit „Speichern“ bzw. „Anlegen“. */}
+          {chimneyQuestion && (
+            <NoticeBox level="hint" title={chimneyQuestion.title} action={chimneyQuestion.text} fix={{ label: chimneyQuestion.button, onClick: convertToHeating }} />
+          )}
           <div className="row">
             {/* Leer nur aus einem Beleg, dessen Name keine Kostenart nennt: Die Auswahl zeigt das ehrlich, statt still die
                 erste Kostenart (angezeigt = gespeichert) */}

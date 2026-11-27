@@ -582,6 +582,39 @@ export function waterMeterHint(
     : `${WATER_METER_QUESTION} dann steht hier „${KEY_LABELS.meter}“ zur Wahl.`
 }
 
+// Schornsteinfeger bei zentraler Heizung (#724): Wer die Rechnung des Schornsteinfegers erfasst, wählt die Kostenart,
+// die auf der Rechnung steht, und verteilt sie damit nach Wohnfläche. Betrifft sie die zentrale Heizung, zählt § 7 Abs. 2
+// HeizkostenV „die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz“ und die „der Reinigung der Anlage“ zu
+// den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage (am amtlichen Text gelesen am
+// 27.11.2026); § 2 Nr. 12 BetrKV nennt Kehrgebühren nur, soweit sie nicht schon dort berücksichtigt sind. Ob die
+// Rechnung die Heizung betrifft, weiß nur der Vermieter: Das Formular fragt und stellt auf Wunsch um, von selbst nie.
+// Gefragt wird neben einer laufenden zentralen Anlage des Hauses mit eigener Heizkostenabrechnung; beim Messdienst und
+// bei freien Schlüsseln ergäbe das Umstellen keine Position nach Heizkostenverordnung (dort fragt nur die Berechnung,
+// `heating.chimney-sweep-central`). Was die Rechnung des Schornsteinfegers auf der Rechnung „Abgasmessung“ oder
+// „Emissionsmessung“ nennt, sagt der Text nicht: Das Gesetz nennt nur die Messungen nach dem
+// Bundes-Immissionsschutzgesetz.
+const CHIMNEY_SWEEP_CATEGORY = 'Schornsteinfeger'
+type ChimneyPlant = { id: string; supply?: 'central' | 'perUnit'; method: 'service' | 'self' | 'manual'; source?: 'building' | 'homeowners'; endsOn?: string | null }
+export function chimneySweepPlants<P extends ChimneyPlant>(plants: readonly P[], period: Pick<BillingPeriod, 'from'>): P[] {
+  return plants.filter((p) => (p.supply ?? 'central') === 'central' && (p.source ?? 'building') === 'building' && p.method === 'self' && !(p.endsOn && p.endsOn < period.from))
+}
+export const CHIMNEY_SWEEP_QUESTION = {
+  title: 'Gehört die Rechnung zur zentralen Heizung?',
+  text: 'Die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz und der Reinigung der zentralen Heizungsanlage einschließlich der Abgasanlage zählen zu den Kosten ihres Betriebs (§ 7 Abs. 2 HeizkostenV). ' +
+    `Mietfuchs verteilt sie dann mit den Heizkosten nach der Heizkostenverordnung statt nach dem Schlüssel dieser Kostenart. Für Kaminöfen, Gasthermen einzelner Wohnungen und andere Feuerstätten bleibt es bei „${CHIMNEY_SWEEP_CATEGORY}“.`,
+  button: `Auf „${HEATING_CATEGORY}“ umstellen`,
+} as const
+export function chimneySweepQuestion(form: Pick<ItemForm, 'category'>, plants: readonly ChimneyPlant[], period: Pick<BillingPeriod, 'from'>): typeof CHIMNEY_SWEEP_QUESTION | null {
+  return form.category === CHIMNEY_SWEEP_CATEGORY && chimneySweepPlants(plants, period).length > 0 ? CHIMNEY_SWEEP_QUESTION : null
+}
+// Der Knopf der Frage: die Position als Heizkosten nach Heizkostenverordnung mit dem Teil „Betrieb“. Beschreibung,
+// Betrag, Beleg und Leistungszeitraum bleiben; die Zuordnung der alten Kostenart (Teilnehmer, direkte Wohnung, „nicht
+// vereinbart“, Zählertyp) geht nicht mit, denn der Server lehnt sie bei Heizkosten ab. Das Ziel bleibt leer: Gibt es
+// nur eines, füllt das Formular es wie bei jeder Heizposition, sonst wählt der Vermieter (Pflichtfeld).
+export function toCentralHeating(form: ItemForm): ItemForm {
+  return { ...form, category: HEATING_CATEGORY, key: 'heatingSystem', heatingPart: 'operating', heatingTarget: '', directUnitId: '', meterType: '', participants: null, notAgreed: [], named: [], pendingWhy: [] }
+}
+
 // Kostenart wechseln. Eine neue Position bekommt den Vorschlag der Kostenart; eine bestehende
 // behält ihren Schlüssel, denn er ist eine Wahl des Nutzers. Ausnahme (Durchsicht zu #142): Wird
 // eine nicht umlagefähige Position umlagefähig, ist ihr gespeicherter Schlüssel nur die neutrale

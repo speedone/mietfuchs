@@ -544,6 +544,9 @@ const noticeKinds = {
   // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
   // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
   'heating.operating-power-deduction-missing': { level: 'hint', title: 'Abzug des Betriebsstroms fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // #724: Rechnung des Schornsteinfegers unter „Schornsteinfeger“ neben einer zentralen Heizanlage, die nach der
+  // Heizkostenverordnung abgerechnet wird. Nur eine Frage: Ob die Rechnung die Heizung betrifft, weiß der Vermieter.
+  'heating.chimney-sweep-central': { level: 'hint', title: 'Schornsteinfeger bei zentraler Heizung', terms: ['heatingCostOrdinance', 'heatingSystem'] },
   // Heizung PR 19, Durchsicht S-2: zentrale Heizung mit Brennstoff beim Mieter, ohne Heizanlage.
   'heating.self-supply-operating-power': { level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', terms: ['operatingPower', 'co2Refund'] },
   'heating.operating-power-bill-missing': { level: 'hint', title: 'Rechnung des Heizungsstromzählers fehlt', terms: ['operatingPower'] },
@@ -613,6 +616,22 @@ function makeNotice(code: NoticeCode, text: string, subject: NoticeSubject | und
   return { code, level: kind.level, title: kind.title, text, ...(subject ? { subject } : {}), ...(kind.rule ? { rule: kind.rule } : {}), terms: kind.terms }
 }
 const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem', id: item.id })
+
+// #724: die Kostenart nach § 2 Nr. 12 BetrKV und der Text des Hinweises `heating.chimney-sweep-central`. `self`: Im
+// Objekt rechnet Mietfuchs eine zentrale Anlage selbst ab (dann lässt sich die Position umstellen); sonst rechnet ein
+// Messdienst ab, und die Rechnung stünde, wenn er sie schon verteilt, zweimal in der Abrechnung. Der Teil heißt wie in
+// der Auswahl des Kostenformulars (`HEATING_PART_OPTIONS` in client/src/costForm.ts).
+const CHIMNEY_SWEEP_CATEGORY = 'Schornsteinfeger'
+function chimneySweepText(c: { description: string; amountCents: number; key: CostKey }, self: boolean): string {
+  return `„${c.description}“ (${fmtCents(c.amountCents)}) ist unter der Kostenart „${CHIMNEY_SWEEP_CATEGORY}“ erfasst und wird nach dem Schlüssel „${KEY_LABELS[c.key]}“ verteilt. ` +
+    `In diesem Objekt läuft eine zentrale Heizanlage${self ? ' mit eigener Heizkostenabrechnung' : ', deren Heizkosten ein Messdienst abrechnet'}. Bitte prüfen Sie, ob die Rechnung diese Heizung betrifft: ` +
+    'Die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz und der Reinigung der Anlage gehören zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2 HeizkostenV) und werden mit den Heizkosten nach der Heizkostenverordnung verteilt. ' +
+    'Kehrgebühren sind Kosten der Schornsteinreinigung nur, soweit sie nicht schon dort berücksichtigt sind (§ 2 Nr. 12 BetrKV). ' +
+    (self
+      ? `Betrifft die Rechnung die zentrale Heizung, stellen Sie die Position im Kostenformular auf „${HEATING_CATEGORY}“ mit dem Teil „Betrieb, Wartung, Strom der Heizung“ um. `
+      : 'Betrifft die Rechnung die zentrale Heizung und steht sie schon in der Abrechnung des Messdienstes, wird sie hier ein zweites Mal verteilt. ') +
+    'Betrifft sie Kaminöfen, Gasthermen einzelner Wohnungen oder andere Feuerstätten, bleibt sie, wie sie ist.'
+}
 // Der Ausweg, wenn einer Einheit kein Zähler fehlt, weil sie keinen Anschluss hat (#117); wörtlich wie bisher.
 const NO_CONNECTION_HINT = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'
 
@@ -10613,6 +10632,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const unitName = snapshot.units.find((u) => u.id === t.unitId)?.name ?? ''
           warn('heating.self-supply-operating-power', selfSupplyPowerText(t.tenantName, unitName, generals), { kind: 'tenancy', id: t.id })
         }
+      }
+    }
+    // #724: Schornsteinfeger neben einer zentralen Heizanlage, die nach der Heizkostenverordnung abgerechnet wird. § 7
+    // Abs. 2 HeizkostenV zählt zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage
+    // „die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz“ und die „der Reinigung der Anlage“; § 2 Nr. 12
+    // BetrKV nennt Kehrgebühren nur, „soweit sie nicht bereits als Kosten nach Nummer 4 Buchstabe a berücksichtigt
+    // sind“ (beides am amtlichen Text gelesen am 27.11.2026). Ob die Rechnung die Heizung betrifft (und nicht Kaminöfen
+    // oder Gasthermen einzelner Wohnungen), weiß nur der Vermieter: gefragt wird, umgebucht nie, keine Zahl ändert sich.
+    // Der Hinweis trifft auch den rechtmäßigen Fall und lässt sich dort nicht abstellen; er färbt deshalb nicht
+    // (INFORMATIONAL in shared/notices.ts). Er schweigt bei freien Schlüsseln (dort verteilt Mietfuchs nicht nach der
+    // Verordnung), bei Etagenheizungen, bei der Abrechnung einer Gemeinschaft, bei einer stillgelegten Anlage, bei einer
+    // Position direkt an einer Wohnung (die Feuerstätte dieser Wohnung) und wenn kein Mieter etwas davon trägt.
+    const centralBilled = plants.filter((p) => (p.supply ?? 'central') === 'central' && p.source === 'building' && p.method !== 'manual' && activeIn(p))
+    if (centralBilled.length > 0) {
+      const self = centralBilled.some((p) => p.method === 'self')
+      for (const c of items) {
+        if (c.category !== CHIMNEY_SWEEP_CATEGORY || c.key === 'direct') continue
+        if (![...statements.values()].some((st) => st.rows.some((r) => r.costItemId === c.id && r.shareCents !== 0))) continue
+        warn('heating.chimney-sweep-central', chimneySweepText(c, self), itemSubject(c))
       }
     }
     // #270: Abzug ohne Verweis, dem Messdienst nach Angabe nicht gemeldet.

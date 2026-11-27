@@ -8,6 +8,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Schornsteinfeger bei zentraler Heizung: Rechnen Sie die Heizkosten einer zentralen Heizanlage selbst nach der
+  Heizkostenverordnung ab, fragt das Kostenformular bei der Kostenart „Schornsteinfeger“, ob die Rechnung zur zentralen
+  Heizung gehört, und stellt die Position auf Wunsch auf „Heizung und Warmwasser“ mit dem Teil Betrieb um; Beschreibung
+  und Betrag bleiben. Die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz und der Reinigung der Anlage
+  zählen zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2
+  HeizkostenV) und werden dann mit den Heizkosten verteilt statt nach Wohnfläche. Unter „Zu prüfen“ steht dazu ein
+  Hinweis je Position mit ihrem Betrag, auch wenn ein Messdienst abrechnet (dort mit dem Satz, dass die Rechnung sonst
+  zweimal verteilt sein kann). Umgebucht wird nichts von selbst: Für Kaminöfen und Gasthermen einzelner Wohnungen
+  bleibt es bei „Schornsteinfeger“ ([#724](https://github.com/speedone/mietfuchs/issues/724)).
 - Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
   für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach
   § 560 Abs. 4 BGB auch die beiden Teile mit ihrem bisherigen Betrag. Der Vorschlag teilt sich nach den Kosten dieser
