@@ -195,7 +195,9 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Repository (Wächter in data-steps.test.ts); nach der Veröffentlichung nie geändert
   ([../../drizzle/README.md](../../drizzle/README.md)).
 - **Ein Schritt wird nie gelöscht und nie geändert**, ein Fehler wird mit einem neuen Schritt
-  geradegerückt; ein Test hält die Marke jedes veröffentlichten Schrittes fest.
+  geradegerückt; ein Test hält die Marke jedes Schrittes fest (`VEROEFFENTLICHT` in server/test/migrations.test.ts).
+  **Ein neuer Schritt bekommt seine Marke im selben PR**: Ohne sie ist der Test rot und nennt die fertige Zeile (bis
+  zum 27.11.2026 übersprang er Schritte ohne Marke still, 14 veröffentlichte fehlten).
 - Für die Programmdatei bettet [scripts/embed-migrations.mjs](../../../scripts/embed-migrations.mjs)
   die Schritte in ein gitignoriertes Modul ein (Zeilenenden vereinheitlicht, sonst hinge die Marke
   am Rechner); ein Test hält beide Wege gegeneinander.
