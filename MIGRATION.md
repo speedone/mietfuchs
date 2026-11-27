@@ -24,12 +24,46 @@ können: im Docker-Container, als Programmdatei, als Linux-Paket und im Programm
 aus dem Heimnetz“. Nutzen Sie das Programmfenster (auch die App aus dem Microsoft Store) ohne
 „Zugriff aus dem Heimnetz“, ändert sich für Sie nichts.
 
-**Sie hatten schon Daten:** Dann bleibt zunächst alles, wie es war, Mietfuchs ist weiter ohne
-Passwort erreichbar. Unten in der Seitenleiste steht „Ohne Passwort im Netz“; ein Klick führt zur
-Karte „Anmeldung“ in den Einstellungen, dort legen Sie ein Passwort fest. **Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs das Passwort.** An Ihren Daten ändert sich dadurch nichts.
+**Sie hatten schon Daten und haben Mietfuchs bisher ohne Passwort im Netz genutzt** (dazu zählt
+jede Programmdatei und jedes Linux-Paket, auch wenn Sie nur an einem Rechner arbeiten)**:** In den
+Versionen 0.17 und 0.18 blieb Mietfuchs dann offen, mit dem Hinweis „Ohne Passwort im Netz“ in der
+Seitenleiste. **Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs auch hier
+ein Passwort.** Nach dem Update sehen Sie deshalb statt Ihrer Daten die Seite „Mietfuchs
+einrichten“. **Ihre Daten sind unverändert da** und erscheinen wieder, sobald Sie dort den
+Einrichtungscode eingetragen und ein Passwort festgelegt haben. Ausgesperrt werden Sie nicht: Den
+Code finden Sie immer auf dem Rechner, auf dem Mietfuchs läuft (Liste unten).
 
-**Mietfuchs zeigt „Passwort festlegen“ und fragt nach einem Einrichtungscode:** Das geschieht bei
-einem neuen Datenordner und nach dem Zurücksetzen. Der Code hat zwölf Zeichen in drei Gruppen, etwa
+- **Programmdatei (Windows, macOS, Linux) und Linux-Paket:** Das betrifft Sie auch dann, wenn Sie
+  Mietfuchs nur an diesem einen Rechner nutzen. Die Programmdatei ist ohne weitere Angabe auch aus
+  dem Heimnetz erreichbar und gilt deshalb als „im Netz“. Nach dem Update öffnet der Browser die Seite
+  „Mietfuchs einrichten“ mit dem Code schon eingetragen; Sie legen nur noch ein Passwort fest und
+  melden sich künftig damit an, auch an diesem Rechner. Brauchen Sie keinen Zugriff von Handy oder
+  anderen Rechnern, starten Sie Mietfuchs stattdessen mit `NKA_HOST=127.0.0.1` (siehe
+  [Umgebungsvariablen](docs/installation.md#umgebungsvariablen)): Dann ist es nur an diesem Rechner
+  erreichbar und fragt nach keinem Passwort. Noch einfacher ist das Programmfenster (Installer oder
+  Microsoft Store), das von sich aus nur an diesem Rechner erreichbar ist.
+- **Programmfenster mit „Zugriff aus dem Heimnetz“:** Im Fenster arbeiten Sie weiter wie bisher,
+  ohne Anmeldung. Nur Handy, Tablet und andere Rechner sehen die Einrichtung, bis ein Passwort
+  festgelegt ist. Das erledigen Sie im Fenster ohne Code: *Einstellungen → Anmeldung →
+  „Passwort festlegen“*; unten in der Seitenleiste führt „Passwort für andere Geräte festlegen“
+  dorthin.
+- **Programmfenster ohne „Zugriff aus dem Heimnetz“** (auch die App aus dem Microsoft Store): Es
+  ändert sich nichts.
+- **Docker auf einem Gerät ohne Bildschirm:** Den Code zeigt `docker compose logs mietfuchs`; Sie
+  tragen ihn auf dem Handy oder Rechner ein, mit dem Sie Mietfuchs öffnen. Wahlweise geben Sie das
+  Passwort beim Start mit `NKA_PASSWORD_FILE` vor (docs/docker.md).
+- **Sie wollen bewusst ohne Passwort weiterarbeiten:** Tragen Sie auf der Seite „Mietfuchs
+  einrichten“ den Code ein und wählen Sie „Ohne Passwort weiter …“; im Programmfenster steht
+  dieselbe Wahl unter *Einstellungen → Anmeldung → „Passwort festlegen“*. Jedes Gerät in Ihrem Netz
+  kann dann Ihre Daten sehen und ändern. In Docker und beim Start der Programmdatei schaltet die
+  Umgebungsvariable `NKA_AUTH=off` die Anmeldung von vornherein ab; das ist gedacht für einen Proxy
+  mit eigener Anmeldung oder einen Port, den nur der eigene Rechner erreicht.
+- **Sie haben schon in 0.17 oder 0.18 ein Passwort festgelegt, „Ohne Passwort weiter“ gewählt oder
+  `NKA_AUTH=off` gesetzt:** Dann ändert sich nichts.
+
+**Mietfuchs zeigt „Mietfuchs einrichten“ und fragt nach einem Einrichtungscode:** Das geschieht bei
+einem neuen Datenordner, bei Daten, die bisher ohne Passwort im Netz erreichbar waren, und nach dem
+Zurücksetzen. Der Code hat zwölf Zeichen in drei Gruppen, etwa
 `K7QM-4XPA-9TRW`, und gilt einmal. Sie finden ihn hier:
 
 - **Programmdatei:** Der Browser öffnet die Seite mit dem Code schon eingetragen. Sonst steht er im
@@ -38,7 +72,8 @@ einem neuen Datenordner und nach dem Zurücksetzen. Der Code hat zwölf Zeichen 
   der Ausgabe im Terminal und in `~/.local/share/mietfuchs/einrichtungscode.txt`.
 - **Docker:** `docker compose logs mietfuchs` zeigt die Zeile „Einrichtungscode: …“.
 - **Programmfenster:** Dort braucht es keinen Code; die Karte „Zugriff aus dem Heimnetz“ fragt beim
-  Einschalten nach dem Passwort.
+  Einschalten nach dem Passwort. War der Zugriff schon vorher eingeschaltet, legen Sie es unter
+  *Einstellungen → Anmeldung* fest.
 
 Das Passwort braucht mindestens 15 Zeichen, Leerzeichen sind erlaubt; die Seite schlägt einen Satz
 aus mehreren Wörtern vor. Danach melden Sie sich auf jedem Gerät damit an.

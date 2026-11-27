@@ -214,9 +214,11 @@ alle Geräte ab. Ändern, abschalten oder auf allen Geräten abmelden geht unter
 Anmeldung*. Lässt du das Passwort weg („Ohne Passwort weiter“), kann jeder in deinem Heimnetz deine
 Daten öffnen und ändern. Auch mit Passwort lässt sich über `http://` im Heimnetz mitlesen, das
 Passwort eingeschlossen: Erlaube den Zugriff nur in einem Netz, dem du vertraust. Hattest du den
-Zugriff schon vor Version 0.17 an, bleibt er offen wie bisher; unten in der Seitenleiste steht dann
-„Ohne Passwort im Netz“, und unter *Einstellungen → Anmeldung* legst du ein Passwort fest. Ab
-Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs dort ein Passwort.
+Zugriff schon vor Version 0.17 an und noch kein Passwort festgelegt, verlangt Mietfuchs es ab
+Version 1.0.0-rc.1, der ersten Testversion von 1.0: Im Fenster arbeitest du weiter wie bisher,
+andere Geräte sehen „Mietfuchs einrichten“, bis du unter *Einstellungen → Anmeldung* ein Passwort
+festgelegt hast (im Fenster ohne Code; dort steht auch „Ohne Passwort weiter …“). Die Daten bleiben
+unverändert.
 
 **Tipp: Mietfuchs auf den Startbildschirm legen.**
 
@@ -389,7 +391,10 @@ eingetragen; der Code steht auch im Konsolenfenster und in `einrichtungscode.txt
 `data/`. Legst du ein Passwort fest (mindestens 15 Zeichen), melden sich alle Geräte damit an, auch
 dieser Rechner. Brauchst du keinen Zugriff von anderen Geräten, starte die Datei mit
 `NKA_HOST=127.0.0.1` (unten): Dann gibt es keine Anmeldung. Ein Ordner `data/` mit Daten von vor
-Version 0.17 bleibt offen wie bisher, mit Hinweis in der Seitenleiste; ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs auch dort ein Passwort. **Passwort vergessen:** Lege im Ordner `data/` eine leere Datei
+Version 0.17, der bisher ohne Passwort offen blieb, startet ab Version 1.0.0-rc.1, der ersten
+Testversion von 1.0, ebenfalls mit „Mietfuchs einrichten“; die Daten sind unverändert da und
+erscheinen nach der Einrichtung wieder (oder nach „Ohne Passwort weiter …“, wenn du bewusst darauf
+verzichtest). **Passwort vergessen:** Lege im Ordner `data/` eine leere Datei
 `passwort-zuruecksetzen` an und lade die Seite neu. Mietfuchs löscht das Passwort, meldet alle
 Geräte ab und nennt im Konsolenfenster einen neuen Code; die Daten bleiben.
 

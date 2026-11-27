@@ -295,8 +295,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Rechner selbst an (server/src/CLAUDE.md, „API“). **Beim Einschalten fragt die Karte nach einem Passwort für andere
   Geräte** (#528, `askForPassword` in desktopNetwork.ts: solange keines festgelegt ist und `NKA_AUTH` nichts
   festlegt), festgelegt über den Fensterschlüssel ohne Code, noch vor dem Neustart auf `0.0.0.0`; „Ohne Passwort im
-  Heimnetz?“ mit Rückfrage ergibt den Zustand `off`. War der Zugriff schon vor 0.17 an, gilt der Übergang
-  (server/src/CLAUDE.md, „Anmeldung“).
+  Heimnetz?“ mit Rückfrage ergibt den Zustand `off`. War der Zugriff schon vor 0.17 an und nichts entschieden, gilt seit
+  #692 die Einrichtung: Das Fenster bleibt über seinen Schlüssel angemeldet, andere Geräte brauchen das Passwort, das
+  die Karte „Anmeldung“ im Fenster ohne Code festlegt (server/src/CLAUDE.md, „Anmeldung“).
 - **Fensterschlüssel** (#528): main.js erzeugt je Start des Servers 32 Zufallsbytes (`windowKey`) und reicht sie über
   `serverEnv` als `NKA_WINDOW_KEY` (eine geerbte Angabe gilt nie). Die Seite bekommt die Kopfzeile
   `X-Mietfuchs-Window` über `session.defaultSession.webRequest.onBeforeSendHeaders`, gefiltert auf den eigenen
@@ -652,8 +653,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   (`bestandAnderesHaus`), sonst blieben die Zusicherungen grün, auch wenn nichts übernommen wurde.
   **Fall 18** legt rohe Zeilen auf den Stand 0076 und prüft den Datenschritt 0077 (Quellen, #455) über
   echte Starts; er wird rot, wenn der Schritt in `DATA_STEPS` fehlt. **Fall 19** (Anmeldung, #528): ein Bestand einer
-  frühen Fassung im Netz (`NKA_HOST=0.0.0.0`) bleibt im Übergang offen, mit Pflicht ab 1.0 und Code im Protokoll, auch
-  beim zweiten Start ohne `zugang.json`; lokal kein Code; ein neuer Ordner im Netz startet in der Einrichtung; nach dem
+  frühen Fassung im Netz (`NKA_HOST=0.0.0.0`) wandert hinüber und startet in der Einrichtung (#692), mit Code und dem
+  Satz zu den unveränderten Daten im Protokoll; mit dem Code eingerichtet ist der Bestand da, auch nach einem zweiten
+  Start; lokal kein Code; ein neuer Ordner im Netz startet in der Einrichtung; nach dem
   Wiederherstellen auf einem anderen Ordner gilt dessen Anmeldung. Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
   `--slow-ai 320` lässt das Ollama über fünf Minuten schweigen; das läuft im vollen Umfang auf den
   Programmdateien (Linux x64, Windows x64, Apple Silicon) und gegen Node.
