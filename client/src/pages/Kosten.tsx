@@ -22,7 +22,7 @@ import {
   chimneySweepQuestion,
   notAgreedDroppedText,
   toCentralHeating,
-  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, showsIncludesWater, INCLUDES_WATER_LABEL, INCLUDES_WATER_HELP, INCLUDES_WATER_CO2_HELP, waterTwiceHints, smokeDetectorHint,
+  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, showsIncludesWater, INCLUDES_WATER_LABEL, INCLUDES_WATER_WHEN, INCLUDES_WATER_HELP, INCLUDES_WATER_CO2_HELP, waterTwiceHints, smokeDetectorHint,
   externalHint,
   externalMismatch,
   tenanciesForAmounts,
@@ -1577,7 +1577,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                         {INCLUDES_WATER_LABEL}
                       </span>
                     </label>
-                    <div className="muted">{INCLUDES_WATER_HELP} <Term id="combinedLine">Was ist eine Sammelzeile?</Term></div>
+                    <div className="muted">{INCLUDES_WATER_WHEN} <Term id="combinedLine">Was ist eine Sammelzeile?</Term></div>
+                    {form.includesWater && <div className="muted">{INCLUDES_WATER_HELP}</div>}
                     {form.includesWater && <div className="muted">{INCLUDES_WATER_CO2_HELP}</div>}
                     {waterTwiceHints(form, yearItems).map((text) => <NoticeBox key={text} level="warning" action={text} />)}
                   </>

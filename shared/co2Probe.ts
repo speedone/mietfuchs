@@ -48,7 +48,7 @@ export const includesWaterProbeText = (names: string, several: boolean, homeowne
   `Hat ${homeowners ? 'die Gemeinschaft' : 'der Messdienst'} den CO₂-Anteil des Vermieters vor der Verteilung abgezogen, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ ${enclosedWay(homeowners)}. ` +
   'Weist die Abrechnung den Anteil nur aus, passt der Sammelbetrag nicht: Erfassen Sie dann Heizung und Warmwasser und das Wasser als getrennte Positionen, damit Mietfuchs den Anteil des Vermieters abziehen kann.'
 // Der Zusatz zum Steuerrat bei „liegt bei“ (Durchsicht M2), wortgleich in Hinweis, Karte, Lexikon und Anleitung.
-export const ENCLOSED_SELF_USED = 'Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, gehört der Teil, der auf Ihre selbst bewohnte Wohnung entfällt, zu deren Eigenbetrag und ist privat.'
+export const ENCLOSED_SELF_USED = 'Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, tragen Sie den Eigenbetrag Ihrer selbst bewohnten Wohnung um den Teil erhöht ein, der auf sie entfällt; er ist privat.'
 // Das Feld der Karte „CO₂-Kosten“ für den Ausstoß; `co2.classification-incomplete` nennt es wörtlich.
 export const CO2_EMISSIONS_FIELD = 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)'
 

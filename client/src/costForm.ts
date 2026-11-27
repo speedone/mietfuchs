@@ -386,10 +386,11 @@ export function smokeDetectorHint(form: Pick<ItemForm, 'category' | 'description
 // wie der Server, `allowsIncludesWater`).
 export const showsIncludesWater = (form: Pick<ItemForm, 'category' | 'key'>): boolean => allowsIncludesWater(form)
 export { INCLUDES_WATER_LABEL }
-// Der Hilfesatz unter dem Haken, kurze Sätze (Durchsicht S8): wann, was sich ändert, die Rechtslage (gelesen am
-// 27.11.2026, shared/includesWater.ts) vor der Aufforderung zur Beilage, und was daneben nicht steht.
+// Die Sätze am Haken (Durchsicht S8, Nachprüfung 7). Ohne Haken steht nur, wann er passt (`INCLUDES_WATER_WHEN`), mit dem
+// Lexikonlink; erst mit Haken folgen `INCLUDES_WATER_HELP`: was sich ändert, die Rechtslage (gelesen am 27.11.2026,
+// shared/includesWater.ts) vor der Aufforderung zur Beilage, und was daneben nicht steht.
+export const INCLUDES_WATER_WHEN = 'Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag für Heizung, Warmwasser, Kaltwasser und Abwasser nennt.'
 export const INCLUDES_WATER_HELP =
-  'Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag für Heizung, Warmwasser, Kaltwasser und Abwasser nennt. ' +
   'Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters. ' +
   `${COMBINED_LINE_RISK} ` +
   'Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei; sie schlüsselt die Kostenarten auf. ' +

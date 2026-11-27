@@ -1501,7 +1501,11 @@ test('Sammelbetrag (#704): der Haken erscheint nur bei Heizung und Warmwasser mi
   await waitFor(() => expect([...select(/Umlageschlüssel/i).options].some((o) => o.value === 'amounts')).toBe(true))
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
   expect(haken704().checked).toBe(false)
-  expect(screen.getByText(/Eine solche Sammelzeile ist formell angreifbar: Ob die beiliegende Abrechnung des Messdienstes als Aufschlüsselung genügt, hat der Bundesgerichtshof nicht entschieden/)).toBeTruthy()
+  // Nachprüfung 7: Ohne Haken steht nur, wann er passt, mit dem Lexikonlink; der Rest erst mit Haken.
+  expect(screen.getByText(/^Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag/)).toBeTruthy()
+  expect(screen.getByText('Was ist eine Sammelzeile?')).toBeTruthy()
+  expect(screen.queryByText(/Eine solche Sammelzeile ist formell angreifbar/)).toBeNull()
+  expect(screen.queryByText(/Der Haken ändert keinen Betrag/)).toBeNull()
   // Durchsicht S7: Der Haken steht über den Betragsfeldern, gleich unter dem Satz zu den Einzelbeträgen.
   const satz = screen.getByText(/tragen Sie die Kosten ein, nicht diesen Saldo/)
   const feld = screen.getByLabelText(/^Meier \(OG links\)$/)
@@ -1510,6 +1514,8 @@ test('Sammelbetrag (#704): der Haken erscheint nur bei Heizung und Warmwasser mi
   expect(screen.queryByText(/wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ nach „Ja, es gibt eine Abzugszeile“/)).toBeNull()
   fireEvent.click(haken704())
   expect(haken704().checked).toBe(true)
+  expect(screen.getByText(/^Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag/)).toBeTruthy()
+  expect(screen.getByText(/^Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters\. Eine solche Sammelzeile ist formell angreifbar: Ob die beiliegende Abrechnung des Messdienstes als Aufschlüsselung genügt, hat der Bundesgerichtshof nicht entschieden/)).toBeTruthy()
   expect(screen.getByText(/wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ nach „Ja, es gibt eine Abzugszeile“ die Angabe „Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei“/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText(/^Meier \(OG links\)$/), { target: { value: '1.823,40' } })
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))

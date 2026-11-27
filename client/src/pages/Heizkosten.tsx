@@ -41,7 +41,8 @@ import Term from '../components/Term'
 import { asksCo2Facts, monthsOf, ownedBy } from '../fuelForm'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
-import { sameBuilding, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { servesUnit } from '../../../shared/heatingPeriod.ts'
+import { classifiedJointly } from '../co2Form'
 import { flatIdsWithRooms } from '../unitForm'
 import { selfUsedWithin } from '../../../shared/unitUsage.ts'
 import { germanDate } from '../../../shared/law/register.ts'
@@ -277,7 +278,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
                 {plant.method === 'service' && (v.from >= first ? (
                   <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={units.filter((u) => servesUnit(plant, u)).length} hasSelfUsed={units.some((u) => selfUsedWithin(u, v.from, v.to))} homeowners={plant.source === 'homeowners'}
                     offersEnclosed={asksCo2Facts(plant) || plant.energy === 'other'}
-                    joint={(data?.plants ?? []).some((other) => sameLine(plant, other, data?.plants ?? []) || sameBuilding(plant, other, data?.plants ?? []))}
+                    joint={classifiedJointly(plant, data?.plants ?? [], v)}
                     onSaved={() => void load()} />
                 ) : (
                   <div className="card"><p className="muted">Für Heizperioden, die vor dem {germanDate(first)} beginnen, sind die CO₂-Kosten nicht aufzuteilen.</p></div>

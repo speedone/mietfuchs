@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { fmtEuro } from './api'
-import { buildCostItemBody, EMPTY_ITEM_FORM, INCLUDES_WATER_CO2_HELP, INCLUDES_WATER_HELP, INCLUDES_WATER_LABEL, itemToForm, showsIncludesWater, waterTwiceHints, type ItemForm } from './costForm'
+import { buildCostItemBody, EMPTY_ITEM_FORM, INCLUDES_WATER_CO2_HELP, INCLUDES_WATER_HELP, INCLUDES_WATER_LABEL, INCLUDES_WATER_WHEN, itemToForm, showsIncludesWater, waterTwiceHints, type ItemForm } from './costForm'
 import { carryOverForm, carryOverRows } from './carryOver'
 import { CO2_ANSWER_OPTIONS, CO2_ENCLOSED_JOINT, CO2_ENCLOSED_TAX, CO2_ENTRY_OPTIONS, CO2_ENTRY_QUESTION, CO2_EXAMPLE, CO2_NOT_A_SIGN, co2Body, co2EnclosedHelp, co2EntryLabel, co2ToForm, includesWaterNote, isEnclosed, probeLine, showsEntry, type Co2Context } from './co2Form'
 import { co2Block, co2EnclosedReference } from './co2View'
@@ -61,14 +61,16 @@ test('Haken: nur bei „Heizung und Warmwasser“ mit Einzelbeträgen; gespeiche
 test('Hilfesatz am Haken (Durchsicht S8): kurze Sätze, die Rechtslage vor der Beilage, und zur Karte „CO₂-Kosten“ nur der Verweis', () => {
   expect(INCLUDES_WATER_LABEL).toBe('Der Betrag enthält auch Kaltwasser und Abwasser (der Messdienst rechnet sie in einem Betrag je Nutzer ab)')
   // Rechtslage gelesen am 27.11.2026: Der Satz dazu steht vor der Aufforderung, die Einzelabrechnung beizulegen.
-  expect(INCLUDES_WATER_HELP).toBe('Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag für Heizung, Warmwasser, Kaltwasser und Abwasser nennt. Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters. Eine solche Sammelzeile ist formell angreifbar: Ob die beiliegende Abrechnung des Messdienstes als Aufschlüsselung genügt, hat der Bundesgerichtshof nicht entschieden. Sicher sind getrennte Positionen für Heizung und Warmwasser sowie für Kaltwasser und Abwasser. Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei; sie schlüsselt die Kostenarten auf. Eine eigene Position „Wasser/Abwasser“ für dieselben Kosten legen Sie dann nicht an.')
+  // Nachprüfung 7: Der erste Satz steht für sich (ohne Haken nur er), der Rest erst mit Haken.
+  expect(INCLUDES_WATER_WHEN).toBe('Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag für Heizung, Warmwasser, Kaltwasser und Abwasser nennt.')
+  expect(INCLUDES_WATER_HELP).toBe('Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters. Eine solche Sammelzeile ist formell angreifbar: Ob die beiliegende Abrechnung des Messdienstes als Aufschlüsselung genügt, hat der Bundesgerichtshof nicht entschieden. Sicher sind getrennte Positionen für Heizung und Warmwasser sowie für Kaltwasser und Abwasser. Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei; sie schlüsselt die Kostenarten auf. Eine eigene Position „Wasser/Abwasser“ für dieselben Kosten legen Sie dann nicht an.')
   expect(INCLUDES_WATER_HELP.indexOf('formell angreifbar')).toBeLessThan(INCLUDES_WATER_HELP.indexOf('Legen Sie jedem Mieter'))
   expect(INCLUDES_WATER_HELP).not.toMatch(/ist nicht entschieden\./)
   // Durchsicht M1: der Weg über „Ja“, und bei „nur ausgewiesen“ getrennte Positionen. Kein Steuersatz mehr an dieser Stelle.
   expect(INCLUDES_WATER_CO2_HELP).toBe(`CO₂-Kosten: Hat der Messdienst den CO₂-Anteil des Vermieters vor der Verteilung abgezogen, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ nach „${CO2_DEDUCTED_LABEL}“ die Angabe „${CO2_ENCLOSED_LABEL}“. Weist er ihn nur aus, erfassen Sie Heizung und Warmwasser und das Wasser als getrennte Positionen, damit Mietfuchs den Anteil abziehen kann.`)
   expect(INCLUDES_WATER_CO2_HELP).not.toMatch(/Werbungskosten/)
   // Die Fundstellen stehen im Lexikon unter „Sammelzeile“, genau die belegten.
-  expect(GLOSSARY.combinedLine.norm).toBe('BGH, Urteil vom 15.07.2009, VIII ZR 340/08, Rn. 19; BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 40 bis 42; Urteil vom 14.02.2007, VIII ZR 1/06, Rn. 11, 12; BGH, Urteil vom 26.10.2011, VIII ZR 268/10, Rn. 11; zur Aufschlüsselung in einer Anlage BGH, Beschluss vom 06.07.2021, VIII ZR 371/19, Rn. 14; Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5 bis 7')
+  expect(GLOSSARY.combinedLine.norm).toBe('BGH, Urteil vom 15.07.2009, VIII ZR 340/08, Rn. 19; BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 40 bis 42; Urteil vom 14.02.2007, VIII ZR 1/06, Rn. 11, 12; zu den Vorauszahlungen BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 38 und 44; BGH, Urteil vom 26.10.2011, VIII ZR 268/10, Rn. 11; zur Aufschlüsselung in einer Anlage BGH, Beschluss vom 06.07.2021, VIII ZR 371/19, Rn. 14; Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5 bis 7')
   expect(GLOSSARY.combinedLine.short).toContain(COMBINED_LINE_RISK)
 })
 
@@ -176,7 +178,9 @@ test('Texte zu „liegt bei“: zuerst die Voraussetzung Vorwegabzug, die Pflich
   expect(help).toBe('Das setzt voraus, dass der Messdienst den CO₂-Anteil des Vermieters vor der Verteilung abgezogen hat und die Beträge je Mieter ihn nicht enthalten. Weist die Abrechnung den Anteil nur aus, muss Mietfuchs ihn abziehen, sonst tragen die Mieter ihn mit. Mietfuchs prüft und bucht dann keine CO₂-Aufteilung; die Abrechnung jedes Mieters verweist auf die beiliegende Heizkostenabrechnung des Messdienstes. Nach § 7 Abs. 3 CO2KostAufG weisen Sie in der Heizkostenabrechnung den Anteil des Mieters an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen aus; fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 4 CO2KostAufG). Ob der Verweis auf die beiliegende Abrechnung des Messdienstes dafür genügt, ist nicht entschieden.')
   expect(help).not.toMatch(/\d\s?%/)
   expect(co2EnclosedHelp(true)).toContain('dass die Gemeinschaft den CO₂-Anteil des Vermieters vor der Verteilung abgezogen hat')
-  expect(CO2_ENCLOSED_TAX).toBe('Für die Steuer: Den CO₂-Anteil des Vermieters kennt Mietfuchs dann nicht als eigenen Posten. Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil. Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, gehört der Teil, der auf Ihre selbst bewohnte Wohnung entfällt, zu deren Eigenbetrag und ist privat.')
+  expect(CO2_ENCLOSED_TAX).toBe('Für die Steuer: Den CO₂-Anteil des Vermieters kennt Mietfuchs dann nicht als eigenen Posten. Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil. Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, tragen Sie den Eigenbetrag Ihrer selbst bewohnten Wohnung um den Teil erhöht ein, der auf sie entfällt; er ist privat.')
+  // Nachprüfung 8: Der Satz sagt, was zu tun ist.
+  expect(CO2_ENCLOSED_TAX).not.toMatch(/gehört der Teil/)
 })
 
 test('Haken und eine Antwort mit Probe: die Karte nennt den Grund, den Weg über „Ja“ und sagt, dass der Sammelbetrag bei „nur ausgewiesen“ nicht passt', () => {
@@ -305,6 +309,20 @@ test('Karte: Eigentumswohnung, kein CO₂-pflichtiger Energieträger und gemeins
   card(view(statement({ method: 'serviceDeducted', serviceUsersTotalCents: 182340, serviceLandlordCents: 0, serviceUnitsCount: 1 })), () => {}, { offersEnclosed: false })
   expect(frage().value).toBe('deducted')
   expect(screen.queryByLabelText('CO₂-Angaben eintragen')).toBeNull()
+  cleanup()
+  // Nachprüfung 9: Ein gespeichertes „liegt bei“ bleibt auch ohne CO₂-Kosten sichtbar, wie gespeichert, in beiden
+  // Auswahlfeldern; Speichern schickt unverändert dieselbe Methode.
+  const ohneCo2 = vi.fn()
+  card(view(statement()), ohneCo2, { offersEnclosed: false })
+  expect(frage().value).toBe('deducted')
+  expect(frage().selectedOptions[0]?.textContent).toBe(CO2_DEDUCTED_LABEL)
+  expect(eintragen().value).toBe('enclosed')
+  expect(eintragen().selectedOptions[0]?.textContent).toBe(CO2_ENCLOSED_LABEL)
+  expect([...eintragen().options].map((o) => o.value)).toContain('enclosed')
+  fireEvent.click(screen.getByText('CO₂-Angaben speichern'))
+  await waitFor(() => expect(ohneCo2).toHaveBeenCalled())
+  expect(sent.at(-1)?.body).toEqual({ method: 'serviceEnclosed' })
+  sent = []
   cleanup()
   // Durchsicht S2: mit einer zweiten Anlage im Gebäude fragt die Karte bei „liegt bei“ nach dem Ausstoß, und nur danach.
   const saved = vi.fn()

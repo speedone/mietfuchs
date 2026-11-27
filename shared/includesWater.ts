@@ -45,15 +45,23 @@ export const COMBINED_LINE_FORMAL = 'BGH, Urteil vom 22.09.2010, VIII ZR 285/09,
 export const COMBINED_LINE_ENCLOSURE = 'BGH, Beschluss vom 06.07.2021, VIII ZR 371/19, Rn. 14; Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5 bis 7'
 export const COMBINED_LINE_HEATING_BILL = 'BGH, Urteil vom 26.10.2011, VIII ZR 268/10, Rn. 11'
 // Für das Feld `norm` in Lexikon und Anleitung.
-export const COMBINED_LINE_NORM = `${COMBINED_LINE_SEPARATE}; ${COMBINED_LINE_FORMAL}; ${COMBINED_LINE_HEATING_BILL}; zur Aufschlüsselung in einer Anlage ${COMBINED_LINE_ENCLOSURE}`
+export const COMBINED_LINE_NORM = `${COMBINED_LINE_SEPARATE}; ${COMBINED_LINE_FORMAL}; zu den Vorauszahlungen BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 38 und 44; ${COMBINED_LINE_HEATING_BILL}; zur Aufschlüsselung in einer Anlage ${COMBINED_LINE_ENCLOSURE}`
 // Der Satz zur Rechtslage am Haken, in Lexikon und Anleitung derselbe.
 export const COMBINED_LINE_RISK = 'Eine solche Sammelzeile ist formell angreifbar: Ob die beiliegende Abrechnung des Messdienstes als Aufschlüsselung genügt, hat der Bundesgerichtshof nicht entschieden. Sicher sind getrennte Positionen für Heizung und Warmwasser sowie für Kaltwasser und Abwasser.'
+// Die Vorauszahlungen (Nachprüfung 1, VIII ZR 285/09 am Volltext): Nach Ende des Mietverhältnisses kann der Mieter
+// Vorauszahlungen zurückfordern, solange keine formell ordnungsgemäße Abrechnung vorliegt (Rn. 38). Dieser Anspruch
+// ist vorläufig: Der Vermieter kann ordnungsgemäß nachabrechnen, endgültig ausgeschlossen ist er nur mit
+// Nachzahlungsansprüchen (Rn. 44). „Vorauszahlungen sind nicht berührt“ wäre deshalb zu absolut.
+export const COMBINED_LINE_PREPAYMENTS = 'BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 44'
 // Der Hinweis `amounts.combined-line` der Abrechnung. `affected`: die Mieter mit dem Betrag ihrer Zeile, schon verbunden.
-// „Bis zu“: Verloren wäre nur eine Nachforderung aus dieser Position, nicht eine gezahlte Vorauszahlung.
-export const combinedLineText = (description: string, affected: string): string =>
+// „Bis zu“ der volle Betrag der Zeile: Endgültig verloren ist die Nachforderung, also höchstens so viel; bei einem
+// ausgezogenen Mieter stehen vorläufig auch die Vorauszahlungen auf diese Position im Raum (Rn. 38).
+// `homeowners`: Bei einer Eigentumswohnung rechnet die Gemeinschaft ab.
+export const combinedLineText = (description: string, affected: string, homeowners = false): string =>
   `„${description}“ fasst Heizung, Warmwasser, Kaltwasser und Abwasser in einer Zeile zusammen. ` +
-  `Eine Betriebskostenabrechnung muss die Kosten nach Kostenarten trennen; zusammenfassen darf sie nur Kostenarten, die sachlich eng zusammenhängen (${COMBINED_LINE_SEPARATE}). ` +
-  `Ob es genügt, dass die beiliegende Abrechnung des Messdienstes sie aufschlüsselt, hat der Bundesgerichtshof nicht entschieden (${COMBINED_LINE_ENCLOSURE}). ` +
-  `Hält ein Gericht die Zeile für einen Formfehler, können Sie nach Ablauf der Abrechnungsfrist aus dieser Position nichts nachfordern (${COMBINED_LINE_FORMAL}); gezahlte Vorauszahlungen sind davon nicht berührt. ` +
+  `Eine Betriebskostenabrechnung muss die Kosten nach Kostenarten trennen und darf nur zusammenfassen, was sachlich eng zusammenhängt (${COMBINED_LINE_SEPARATE}); ` +
+  `ob es genügt, dass die beiliegende Abrechnung ${homeowners ? 'der Gemeinschaft' : 'des Messdienstes'} sie aufschlüsselt, hat der Bundesgerichtshof nicht entschieden (${COMBINED_LINE_ENCLOSURE}). ` +
+  `Hält ein Gericht die Zeile für einen Formfehler, können Sie nach Ablauf der Abrechnungsfrist aus dieser Position nichts nachfordern (${COMBINED_LINE_FORMAL}). ` +
+  `Endgültig verloren ist nur die Nachforderung; für die Vorauszahlungen können Sie eine Abrechnung mit getrennten Positionen nachreichen (${COMBINED_LINE_PREPAYMENTS}). ` +
   `Betroffen wäre hier eine Nachforderung von bis zu: ${affected}. ` +
-  'Sicher ist es, Heizung und Warmwasser sowie Kaltwasser und Abwasser als getrennte Positionen mit den Beträgen aus der Einzelabrechnung zu erfassen. Legen Sie die Einzelabrechnung des Messdienstes in jedem Fall bei.'
+  'Sicher ist es, Heizung und Warmwasser sowie Kaltwasser und Abwasser als getrennte Positionen mit den Beträgen aus der Einzelabrechnung zu erfassen.'

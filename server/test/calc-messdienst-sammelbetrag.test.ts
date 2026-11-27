@@ -96,7 +96,9 @@ test('„Liegt bei“ (serviceEnclosed): kein co2.missing, kein co2.sum-check, k
   assert.deepEqual(hints[0]?.subject, { kind: 'heatingCosts', id: 'hp' })
   assert.match(textOf(r, 'co2.service-enclosed'), /§ 7 Abs\. 3 CO2KostAufG/)
   assert.match(textOf(r, 'co2.service-enclosed'), /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\)/)
-  assert.match(textOf(r, 'co2.service-enclosed'), /Legen Sie jedem Mieter die Heizkostenabrechnung des Messdienstes mit dem Abschnitt zu den CO₂-Kosten bei\./)
+  assert.match(textOf(r, 'co2.service-enclosed'), /weil die Heizkostenabrechnung des Messdienstes mit dem Abschnitt zu den CO₂-Kosten jeder Abrechnung beiliegt/)
+  // Nachprüfung 7: einmal gesagt, nicht zweimal.
+  assert.doesNotMatch(textOf(r, 'co2.service-enclosed'), /Legen Sie jedem Mieter/)
   // Keine Buchung: keine Abzugszeile, kein co2Share beim Vermieter, jeder Mieter trägt seinen Einzelbetrag.
   assert.ok(r.statements.every((st) => st.rows.every((x) => x.kind !== 'co2Relief')))
   assert.ok(r.landlord.rows.every((x) => (x.landlordParts ?? []).every((p) => p.reason !== 'co2Share')))
@@ -294,9 +296,10 @@ test('Durchsicht M2: „liegt bei“ mit Betrag S + L und Eigenbetrag + L_self e
   // Ohne L_self im Eigenbetrag stünden 20 € zu viel in den Werbungskosten; deshalb sagt es der Hinweis.
   assert.deepEqual(taxOf(mitEigener(co2({}), 310000, 60000)), [310000, 60000, 250000])
   const mit = textOf(computeSettlement(enclosed), 'co2.service-enclosed')
-  assert.match(mit, /Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, gehört der Teil, der auf Ihre selbst bewohnte Wohnung entfällt, zu deren Eigenbetrag und ist privat\./)
+  // Nachprüfung 8: Der Satz sagt, was zu tun ist.
+  assert.match(mit, /Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, tragen Sie den Eigenbetrag Ihrer selbst bewohnten Wohnung um den Teil erhöht ein, der auf sie entfällt; er ist privat\./)
   const ohne = textOf(settle({ units: [unit('a'), unit('b')], tenancies: haus.tenancies, costItems: [messdienst(333615, BETRAEGE)] }, [co2({})]), 'co2.service-enclosed')
-  assert.doesNotMatch(ohne, /selbst bewohnte Wohnung/)
+  assert.doesNotMatch(ohne, /selbst bewohnte/)
 })
 
 // S1: Die Kürzung bezieht sich auf die Heizkosten; im Sammelbetrag steckt auch Wasser. Der Betrag steht dann als Höchstbetrag.
@@ -364,13 +367,19 @@ test('Sammelzeile: Warnung genau an der Position mit Haken, mit Namen und Beträ
   const n = r.notices.filter((x) => x.code === 'amounts.combined-line')
   assert.equal(n.length, 1)
   assert.deepEqual([n[0]?.level, n[0]?.title, n[0]?.subject], ['warning', 'Sammelzeile aus Heizung und Wasser: formell angreifbar', { kind: 'costItem', id: 'hz' }])
-  assert.equal(n[0]?.text,
+  const text = n[0]?.text ?? ''
+  assert.equal(text,
     '„Abrechnung des Messdienstes“ fasst Heizung, Warmwasser, Kaltwasser und Abwasser in einer Zeile zusammen. ' +
-    'Eine Betriebskostenabrechnung muss die Kosten nach Kostenarten trennen; zusammenfassen darf sie nur Kostenarten, die sachlich eng zusammenhängen (BGH, Urteil vom 15.07.2009, VIII ZR 340/08, Rn. 19). ' +
-    'Ob es genügt, dass die beiliegende Abrechnung des Messdienstes sie aufschlüsselt, hat der Bundesgerichtshof nicht entschieden (BGH, Beschluss vom 06.07.2021, VIII ZR 371/19, Rn. 14; Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5 bis 7). ' +
-    'Hält ein Gericht die Zeile für einen Formfehler, können Sie nach Ablauf der Abrechnungsfrist aus dieser Position nichts nachfordern (BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 40 bis 42; Urteil vom 14.02.2007, VIII ZR 1/06, Rn. 11, 12); gezahlte Vorauszahlungen sind davon nicht berührt. ' +
+    'Eine Betriebskostenabrechnung muss die Kosten nach Kostenarten trennen und darf nur zusammenfassen, was sachlich eng zusammenhängt (BGH, Urteil vom 15.07.2009, VIII ZR 340/08, Rn. 19); ' +
+    'ob es genügt, dass die beiliegende Abrechnung des Messdienstes sie aufschlüsselt, hat der Bundesgerichtshof nicht entschieden (BGH, Beschluss vom 06.07.2021, VIII ZR 371/19, Rn. 14; Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5 bis 7). ' +
+    'Hält ein Gericht die Zeile für einen Formfehler, können Sie nach Ablauf der Abrechnungsfrist aus dieser Position nichts nachfordern (BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 40 bis 42; Urteil vom 14.02.2007, VIII ZR 1/06, Rn. 11, 12). ' +
+    'Endgültig verloren ist nur die Nachforderung; für die Vorauszahlungen können Sie eine Abrechnung mit getrennten Positionen nachreichen (BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 44). ' +
     'Betroffen wäre hier eine Nachforderung von bis zu: ta (a) 1.823,40 € und tb (b) 1.512,75 €. ' +
-    'Sicher ist es, Heizung und Warmwasser sowie Kaltwasser und Abwasser als getrennte Positionen mit den Beträgen aus der Einzelabrechnung zu erfassen. Legen Sie die Einzelabrechnung des Messdienstes in jedem Fall bei.')
+    'Sicher ist es, Heizung und Warmwasser sowie Kaltwasser und Abwasser als getrennte Positionen mit den Beträgen aus der Einzelabrechnung zu erfassen.')
+  // Nachprüfung 1: Dass Vorauszahlungen unberührt blieben, ist nicht belegt (VIII ZR 285/09, Rn. 38 und 44).
+  assert.doesNotMatch(text, /nicht berührt/)
+  // Nachprüfung 7: Die Beilage steht am Haken, nicht noch einmal hier.
+  assert.doesNotMatch(text, /Legen Sie/)
   // Sie färbt das Cockpit: Der sichere Weg stellt sie ab.
   assert.ok(!INFORMATIONAL.has('amounts.combined-line'))
   // Nicht ohne Haken, und keine Zahl ändert sich.
@@ -390,4 +399,29 @@ test('Sammelzeile: je Position eine Warnung; nicht, wenn kein Mieter eine Zeile 
   assert.ok(!codes(eigen).includes('amounts.combined-line'))
   const pauschal = settle({ units: haus.units, tenancies: haus.tenancies.map((t) => ({ ...t, heatingModel: 'flatRate' as const })), costItems: [sammel({ includesWater: true })] })
   assert.ok(!codes(pauschal).includes('amounts.combined-line'))
+})
+
+// ---------- Befunde der Nachprüfung ----------
+
+// 2: Jede Kürzungsliste, die auf einer Zeile mit Sammelbetrag rechnet, trägt den Zusatz, nicht nur die über `cutsOn`.
+test('Nachprüfung 2: nicht fernablesbare Geräte und Haken: der Kürzungsbetrag steht als Höchstbetrag mit dem Grund; bei einem Mieter in der Einzahl; ohne Haken wie bisher', () => {
+  // Nach dieser Angabe ist die Kürzung möglich, nicht sicher: Der Hinweis nennt die Beträge mit „bis zu“.
+  const geraete = plant({ devicesRemote: 'none', devicesInstalledAfter2021: 'unknown' })
+  const mit = textOf(settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [], [geraete]), 'heating.remote-reading')
+  assert.match(mit, /, hier bis zu: ta \(a\) [\d.,]+ € und tb \(b\) [\d.,]+ € \(die Beträge enthalten auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht\)\./)
+  const ohne = textOf(settle({ ...haus, costItems: [sammel()] }, [], [geraete]), 'heating.remote-reading')
+  assert.match(ohne, /, hier bis zu: ta \(a\) [\d.,]+ € und tb \(b\) [\d.,]+ €\./)
+  assert.doesNotMatch(ohne, /Kaltwasser/)
+  const einer = { units: [unit('a')], tenancies: [tenancy('ta', 'a')], costItems: [messdienst(182340, { ta: 182340 }, { includesWater: true })] }
+  const einzeln = textOf(settle(einer, [], [geraete]), 'heating.remote-reading')
+  assert.match(einzeln, /, hier bis zu: ta \(a\) [\d.,]+ € \(darin auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht\)\./)
+  assert.match(textOf(settle(einer), 'co2.missing'), /, hier höchstens: ta \(a\) 54,70 € \(darin auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht\)\./)
+})
+
+// 4: Bei einer Eigentumswohnung rechnet die Gemeinschaft ab.
+test('Nachprüfung 4: die Warnung zur Sammelzeile nennt bei einer Eigentumswohnung die Abrechnung der Gemeinschaft', () => {
+  const r = settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [], [plant({ source: 'homeowners' })])
+  const text = textOf(r, 'amounts.combined-line')
+  assert.match(text, /dass die beiliegende Abrechnung der Gemeinschaft sie aufschlüsselt/)
+  assert.doesNotMatch(text, /Abrechnung des Messdienstes sie aufschlüsselt/)
 })

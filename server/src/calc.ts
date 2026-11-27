@@ -8073,18 +8073,29 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Wer selbst heizt (Heizung PR 19), trägt in den Heizkosten des Vermieters keine CO₂-Kosten und kürzt nicht nach
   // § 7 Abs. 4 CO2KostAufG; an die Stelle tritt die Erstattung nach § 6 Abs. 2 (Gegenprüfung M3).
   const selfSupplied = new Set(snapshot.tenancies.filter((t) => t.heatingModel === 'selfSupply').map((t) => t.id))
+  // Eine Stelle für jede Liste von Kürzungsbeträgen je Mieter (#704, Nachprüfung 2). Rechnet die Liste auf einer Zeile mit
+  // Sammelbetrag des Messdienstes (`includesWater`), steckt darin auch Wasser, und die Kürzungen nach § 7 Abs. 4
+  // CO2KostAufG und § 12 HeizkostenV gelten dem Anteil an den Heizkosten. Den Heizanteil kennt Mietfuchs nicht; der Betrag
+  // steht dann als Höchstbetrag mit dem Grund, statt ihn wegzulassen (er bleibt die Größenordnung, um die es geht).
+  // `lead`: „hier“ oder „hier bis zu“; `onRow`: die Zeilen, auf denen die Liste rechnet; `tenancyIds`: nur diese Mieter.
+  // Ohne Sammelbetrag bleibt jeder Wortlaut zeichengleich („, hier: …“). Nicht hierher gehört die Gutschrift bei
+  // `fuel.estimate-overcharged`: Sie ist keine Kürzung und rechnet auf Lieferzeilen, die keinen Sammelbetrag tragen.
+  const onCombinedLine = (onRow: (row: SettlementRow) => boolean, tenancyIds?: readonly string[]): boolean =>
+    [...statements.values()].some((st) => !selfSupplied.has(st.tenancyId) && (tenancyIds === undefined || tenancyIds.includes(st.tenancyId)) &&
+      st.rows.some((r) => r.includesWater === true && r.shareCents > 0 && onRow(r)))
+  const cutList = (lead: string, list: readonly string[], water: boolean): string => {
+    if (list.length === 0) return ''
+    if (!water) return `, ${lead}: ${andList(list)}`
+    const reason = list.length === 1 ? 'darin auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht' : 'die Beträge enthalten auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht'
+    return `, ${lead.includes('bis zu') ? lead : `${lead} höchstens`}: ${andList(list)} (${reason})`
+  }
   const cutsOn = (ids: ReadonlySet<string>, pct: number): string => {
     const list = [...statements.values()].flatMap((st) => {
       if (selfSupplied.has(st.tenancyId)) return []
       const sum = st.rows.filter((r) => ids.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0)
       return sum > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((sum * pct) / 100))}`] : []
     })
-    // #704 (Durchsicht S1): Trägt eine der Zeilen einen Sammelbetrag des Messdienstes, steckt darin auch Wasser, und die
-    // Kürzung nach § 7 Abs. 4 CO2KostAufG gilt dem „Anteil an den Heizkosten“. Den Heizanteil kennt Mietfuchs nicht; der
-    // Betrag steht deshalb als Höchstbetrag mit dem Grund, statt ihn wegzulassen (er bleibt die Größenordnung, um die es geht).
-    const water = [...statements.values()].some((st) => !selfSupplied.has(st.tenancyId) && st.rows.some((r) => ids.has(r.costItemId) && r.includesWater === true && r.shareCents > 0))
-    if (list.length === 0) return ''
-    return water ? `, hier höchstens: ${andList(list)} (die Beträge enthalten auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht)` : `, hier: ${andList(list)}`
+    return cutList('hier', list, onCombinedLine((r) => ids.has(r.costItemId)))
   }
   // Die Grundlage einer Kürzung, wenn nach § 11 nur die Wärme ausgenommen ist (Durchsicht von #243, G-W2): je Mieter
   // sein Anteil am Topf Warmwasser der Anlagen, nach dem CO₂-Abzug (Entwurf 6.5). Bei der eigenen Abrechnung der
@@ -8131,7 +8142,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (c > 0) list.push(`${st.tenantName} (${st.unitName}) ${fmtCents(c)}`)
       if (b.unknown) unknown.push(`${st.tenantName} (${st.unitName})`)
     }
-    return `${list.length > 0 ? `, hier: ${andList(list)}` : ''}${unknown.length > 0 ? `; bei ${andList(unknown)} kommt der Anteil Warmwasser an Positionen für Heizung und Warmwasser hinzu, den Mietfuchs bei diesen Schlüsseln nicht kennt` : ''}`
+    // Auch hier über `cutList` (Nachprüfung 2): Eine Position mit Ziel Warmwasser kann einen Sammelbetrag tragen.
+    const waterIds = new Set(co2Pots.filter((x) => plantIds.includes(x.plantId)).flatMap((x) => x.items.filter((c) => c.heatingTarget === 'water').map((c) => c.id)))
+    return `${cutList('hier', list, onCombinedLine((r) => waterIds.has(r.costItemId)))}${unknown.length > 0 ? `; bei ${andList(unknown)} kommt der Anteil Warmwasser an Positionen für Heizung und Warmwasser hinzu, den Mietfuchs bei diesen Schlüsseln nicht kennt` : ''}`
   }
   // Die Messdienstbeträge je Mieter im Topf, wie sie gedruckt sind (x beim reinen Ausweis, 7.5).
   const sharesOf = (pot: Co2Pot): ReliefShare[] => {
@@ -8708,8 +8721,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const selfUsed = pot.serviceItems.some((c) => Object.values(c.selfAmounts ?? {}).some((x) => x > 0))
           // Durchsicht S6: Die Pflicht nach § 7 Abs. 3 trifft den Vermieter; dass die Beilage genügt, behauptet der Text nicht.
           warn('co2.service-enclosed',
-            `${where}: Die CO₂-Angaben sind nach Ihrer Wahl nicht eingetragen, weil ${bill} jeder Abrechnung beiliegt; Mietfuchs prüft und bucht deshalb keine CO₂-Aufteilung. ` +
-              `${enclosedCondition(homeowners)} Legen Sie jedem Mieter ${bill} mit dem Abschnitt zu den CO₂-Kosten bei. ` +
+            `${where}: Die CO₂-Angaben sind nach Ihrer Wahl nicht eingetragen, weil ${bill} mit dem Abschnitt zu den CO₂-Kosten jeder Abrechnung beiliegt; Mietfuchs prüft und bucht deshalb keine CO₂-Aufteilung. ` +
+              `${enclosedCondition(homeowners)} ` +
               `Nach § 7 Abs. 3 CO2KostAufG weisen Sie in der Heizkostenabrechnung den Anteil des Mieters an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen aus; fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG). ` +
               `Ob der Verweis auf die beiliegende Abrechnung ${homeowners ? 'der Gemeinschaft' : 'des Messdienstes'} dafür genügt, ist nicht entschieden.` +
               (selfUsed ? ` ${ENCLOSED_SELF_USED}` : ''),
@@ -9265,7 +9278,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             // Warmwasser insgesamt, und dieser Betrag steht als Obergrenze dabei.
             ? `Sonst darf jeder Mieter seinen Anteil kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV). Der BGH hat dafür im Fall ohne Ausnahme die Kosten für Wärme und Warmwasser insgesamt um ${cut} % gekürzt (BGH, Urteil vom 12.01.2022, VIII ZR 151/20). ` +
               `Weil die Wärme nach Ihrer Angabe nach § 11 HeizkostenV ausgenommen ist, nennt Mietfuchs nur ${cut} % des Anteils am Warmwasser${waterCutsOn([pot.plantId], cut)}: Gekürzt werden darf nur, „soweit“ entgegen den Vorschriften der Verordnung abgerechnet wird (§ 12 Abs. 1 Satz 1), und für die ausgenommene Wärme gelten sie nicht (§ 11 Abs. 1). Das ist eine Auslegung von Mietfuchs, entschieden ist es nicht; ` +
-              `bis zum Betrag auf Wärme und Warmwasser insgesamt ist eine Kürzung deshalb nicht ausgeschlossen${cutsOn(ids, cut).replace(', hier: ', ', das wären ')}. `
+              `bis zum Betrag auf Wärme und Warmwasser insgesamt ist eine Kürzung deshalb nicht ausgeschlossen${cutsOn(ids, cut).replace(/^, hier( höchstens)?: /, ', das wären$1 ')}. `
             : `Sonst darf jeder Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20)${cutsOn(ids, cut)}. `) +
           'Trifft die Voraussetzung bei Ihnen zu, bestätigen Sie das auf der Seite Heizkosten und bewahren einen Nachweis auf.',
         plantSubject)
@@ -9805,6 +9818,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const st = statements.get(tenancyId)
       return { cents: st ? st.rows.filter((r) => ids.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0) : 0, unknown: false }
     }
+    // Ob die Beträge dieser Mieter auf einer Zeile mit Sammelbetrag rechnen (für `cutList`).
+    const heatingOnCombinedLine = (tenancyIds: readonly string[]): boolean => scope !== 'heat' && onCombinedLine((r) => ids.has(r.costItemId), tenancyIds)
     const amountsFor = (tenancyIds: readonly string[], pct: number): { list: string[]; unknown: string[] } => {
       const list: string[] = []
       const unknown: string[] = []
@@ -9944,7 +9959,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const amountsOf = (ids: readonly string[]): string => {
         const a = amountsFor(ids.filter((id) => !named.includes(id)), cut)
         unknown.push(...a.unknown)
-        return a.list.length > 0 ? `, hier: ${andList(a.list)}` : ''
+        return cutList('hier', a.list, heatingOnCombinedLine(ids.filter((id) => !named.includes(id))))
       }
       const notSent = open.filter((o) => o.notSent).map((o) => o.month)
       // Monate mit denselben Lücken zu einer Spanne.
@@ -9993,7 +10008,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const a = amountsFor(rest, cut)
       const amounts = rest.length === 0
         ? ' Die Beträge je Mieter stehen beim Hinweis zu den Angaben zur Heizkostenabrechnung.'
-        : `${a.list.length > 0 ? `, hier bis zu: ${andList(a.list)}` : ''}.${named.length > 0 ? ` Für ${andList(named.map(nameOf))} stehen die Beträge beim Hinweis zu den Angaben zur Heizkostenabrechnung.` : ''}${unknownText(a.unknown)}`
+        : `${cutList('hier bis zu', a.list, heatingOnCombinedLine(rest))}.${named.length > 0 ? ` Für ${andList(named.map(nameOf))} stehen die Beträge beim Hinweis zu den Angaben zur Heizkostenabrechnung.` : ''}${unknownText(a.unknown)}`
       warn('heating.monthly-info',
         `${where}: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann stehen den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} monatliche Verbrauchsinformationen zu: der Verbrauch des letzten Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind, und der Vergleich mit einem Durchschnittsnutzer (§ 6a Abs. 1 und 2 HeizkostenV). ` +
           `Fehlen sie, darf jeder Mieter seinen Anteil${waterWord} um bis zu ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${rest.length === 0 ? '.' : ''}${amounts} ` +
@@ -10010,7 +10025,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const a = amountsFor(infoCut, cut)
       const all = infoCut.length === billed.length
       parts.push(`Es fehlen: ${andList(info.missing.map((x) => ITEM_TEXT[x]))}${!all ? `, und zwar für ${andList(infoCut.map(nameOf))}` : ''}. ` +
-        `Fehlt eine dieser Angaben, darf ${all ? 'jeder Mieter' : 'der Mieter, dem sie fehlt,'} seinen Anteil${waterWord} um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${a.list.length > 0 ? `, hier: ${andList(a.list)}` : ''}.${unknownText(a.unknown)} ${ONE_RIGHT}`)
+        `Fehlt eine dieser Angaben, darf ${all ? 'jeder Mieter' : 'der Mieter, dem sie fehlt,'} seinen Anteil${waterWord} um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${cutList('hier', a.list, heatingOnCombinedLine(infoCut))}.${unknownText(a.unknown)} ${ONE_RIGHT}`)
     }
     if (info.missing.includes('1a')) {
       if (info.mixedGeneration) parts.push('Ihre Anlage erzeugt die Wärme mit einem weiteren Erzeuger; den Anteil der Energieträger (Nr. 1 a) kennt Mietfuchs dann nicht. Legen Sie ihn der Abrechnung bei.')
@@ -10335,6 +10350,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const sum = heat + water.cents
       return sum > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((sum * remoteCut) / 100))}`] : []
     })
+    const remoteOnCombinedLine = onCombinedLine((r) => r.category === HEATING_CATEGORY && !heatOnlyItems.has(r.costItemId), [...statements.values()].filter((st) => served.has(st.unitId)).map((st) => st.tenancyId))
     const remoteWaterNote = heatOnlyPlants.size > 0
       ? ` Bei einer Anlage, deren Wärme nach § 11 HeizkostenV ausgenommen ist, zählt nur der Anteil Warmwasser${remoteUnknown ? '; bei Positionen für Heizung und Warmwasser mit freiem Schlüssel kennt Mietfuchs ihn nicht und rechnet ihn nicht mit' : ''}.`
       : ''
@@ -10352,13 +10368,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (remote.level === 'required') {
       warn('heating.remote-reading-missing',
         `${which} ${rule} In diesem Zeitraum gilt das für diese Geräte. Jeder Mieter darf seinen Anteil an den Heizkosten deshalb um ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
-          `${cuts.length > 0 ? `, hier: ${andList(cuts)}` : ''}.${remoteWaterNote} Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. ` +
+          `${cutList('hier', cuts, remoteOnCombinedLine)}.${remoteWaterNote} Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. ` +
           'Ausgenommen sind ein einzelnes Gerät, das in einem nicht fernablesbaren System ersetzt oder ergänzt wurde (§ 5 Abs. 2 Satz 4), und Fälle, in denen die Nachrüstung technisch nicht möglich ist oder eine unbillige Härte wäre (§ 5 Abs. 3 Satz 2); bewahren Sie dafür einen Nachweis auf.',
         subject)
     } else {
       warn('heating.remote-reading',
         `${which} ${rule} Ob das in diesem Zeitraum schon für diese Geräte gilt, hängt an ihrem Einbaudatum und daran, ob ein einzelnes Gerät in einem System ersetzt oder ergänzt wurde, dessen übrige Geräte nicht fernablesbar sind; dann gilt die Frist für die übrigen (§ 5 Abs. 2 Satz 4). Wenn ja, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
-          `${cuts.length > 0 ? `, hier bis zu: ${andList(cuts)}` : ''}.${remoteWaterNote} ` +
+          `${cutList('hier bis zu', cuts, remoteOnCombinedLine)}.${remoteWaterNote} ` +
           (remote.askInstall
             ? `Sagen Sie Mietfuchs an der Heizanlage, ob die nicht fernablesbaren Geräte, die nach dem ${fmtDay(newDevices.installedAfter)} eingebaut wurden, einzeln als Ersatz oder Ergänzung in ein bestehendes, nicht fernablesbares System kamen oder ob das System als Ganzes neu installiert wurde; dann rechnet Mietfuchs es genau.`
             : 'Tragen Sie das Einbaudatum am Zähler oder die Angabe an der Heizanlage ein; dann rechnet Mietfuchs es genau.'),
@@ -10406,7 +10422,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         `„${item.description}“: Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
           (waterPart
             ? `Die Ausnahme nach § 11 HeizkostenV betrifft nach Ihrer Angabe nur die Wärme. Sonst darf jeder Mieter deshalb nur den Anteil Warmwasser an seinem Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV); diesen Anteil kennt Mietfuchs bei diesem Schlüssel nicht und nennt keinen Betrag. `
-            : `Sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${andList(cuts)}. `) +
+            : `Sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV)${cutList('hier', cuts, onCombinedLine((r) => r.costItemId === item.id))}. `) +
           `Verteilen Sie ${hkvConsumptionShare.describe(share)} nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.`,
         itemSubject(item))
     } else {
@@ -10613,6 +10629,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Die Sammelzeile selbst (#704, Rechtslage gelesen am 27.11.2026): je Position mit `includesWater` eine Warnung mit
     // den Mietern, die eine Zeile daraus tragen, und dem Betrag dieser Zeile: so viel wäre im schlimmsten Fall nicht
     // nachzufordern. Ohne Mieter mit Zeile (Leerstand, Eigennutzung, Pauschale) gibt es niemanden, also keinen Hinweis.
+    // Nachprüfung 4: Bei einer Eigentumswohnung rechnet die Gemeinschaft ab; die Anlage steht an der Position, auch an
+    // der einer Heizperiode nach Weg b.
+    const combinedHomeowners = (costItemId: string): boolean => {
+      const position = [...snapshot.costItems, ...(snapshot.heatingParts ?? []).flatMap((x) => x.items)].find((c) => c.id === costItemId)
+      return plants.find((p) => p.id === position?.heatingPlantId)?.source === 'homeowners'
+    }
     const combinedLines = new Map<string, { description: string; affected: string[] }>()
     for (const own of statements.values()) {
       for (const row of own.rows) {
@@ -10622,7 +10644,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         combinedLines.set(row.costItemId, entry)
       }
     }
-    for (const [id, line] of combinedLines) warn('amounts.combined-line', combinedLineText(line.description, andList(line.affected)), { kind: 'costItem', id })
+    for (const [id, line] of combinedLines) warn('amounts.combined-line', combinedLineText(line.description, andList(line.affected), combinedHomeowners(id)), { kind: 'costItem', id })
     const waterTwice = new Map<string, { combined: SettlementRow; water: SettlementRow }>()
     for (const own of statements.values()) {
       const combined = own.rows.find((x) => x.includesWater === true && x.shareCents > 0)

@@ -8,6 +8,8 @@ import { fmtEuro, parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { CO2_DEDUCTED_LABEL, CO2_EMISSIONS_FIELD, CO2_ENCLOSED_LABEL, CO2_ENCLOSED_LABEL_HOMEOWNERS, CO2_ENTER_LABEL, CO2_SHOWN_LABEL, ENCLOSED_SELF_USED, enclosedCondition, enteredCentsOf, includesWaterProbeText, serviceProbe } from '../../shared/co2Probe.ts'
 import { andList } from '../../shared/wording.ts'
+import { plantSpan, sameBuilding, sameLine } from '../../shared/heatingPeriod.ts'
+import { asksCo2Facts } from './fuelForm'
 import type { Co2Method, Co2Statement, HeatingPeriodView } from './types'
 import { KEY_LABELS } from './types'
 
@@ -63,7 +65,17 @@ export const co2EnclosedHelp = (homeowners: boolean): string =>
 export const CO2_ENCLOSED_TAX = `Für die Steuer: Den CO₂-Anteil des Vermieters kennt Mietfuchs dann nicht als eigenen Posten. Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil. ${ENCLOSED_SELF_USED}`
 // Durchsicht S2: Heizt im selben Gebäude oder in derselben Linie eine zweite Anlage, braucht deren Einstufung den Ausstoß
 // dieser Anlage; nur dann zeigt die Karte bei „liegt bei“ dieses eine Feld. Die Fläche liest die Berechnung nicht.
-export const CO2_ENCLOSED_JOINT = `Im selben Gebäude heizt eine weitere Anlage, und eingestuft wird über beide gemeinsam. Tragen Sie deshalb den CO₂-Ausstoß dieser Anlage aus der Abrechnung ein; sonst stuft Mietfuchs die andere Anlage ohne ihn ein, und die Stufe kann zu niedrig liegen.`
+export const CO2_ENCLOSED_JOINT = 'Diese Anlage wird gemeinsam mit einer weiteren eingestuft. Tragen Sie deshalb den CO₂-Ausstoß dieser Anlage aus der Abrechnung ein; sonst stuft Mietfuchs die andere Anlage ohne ihn ein, und die Stufe kann falsch liegen.'
+// Ob die Anlage in der Heizperiode der Ansicht gemeinsam mit einer anderen eingestuft wird (Nachprüfung 3): eine Anlage
+// derselben Linie (Kesseltausch) oder desselben Gebäudes, die in dieser Heizperiode heizt (nach einem Tausch also nur in
+// der Heizperiode des Tauschs) und selbst eine CO₂-Einstufung braucht (`asksCo2Facts`, wie `co2Required` am Server).
+type JointPlant = Parameters<typeof plantSpan>[0] & Parameters<typeof sameBuilding>[0] & Parameters<typeof asksCo2Facts>[0]
+export const classifiedJointly = (plant: JointPlant, plants: readonly JointPlant[], view: { from: string; to: string }): boolean =>
+  plants.some((other) => {
+    if (!sameLine(plant, other, plants) && !sameBuilding(plant, other, plants)) return false
+    const span = plantSpan(other, plants)
+    return (span.to === null || span.to >= view.from) && (span.from === null || span.from <= view.to) && asksCo2Facts(other)
+  })
 export { CO2_EMISSIONS_FIELD }
 
 // Sammelbetrag des Messdienstes (#704): Steckt Wasser im Betrag einer Messdienstposition und ist eine Antwort mit Probe

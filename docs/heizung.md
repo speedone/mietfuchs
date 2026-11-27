@@ -199,8 +199,12 @@ zeigt sie live). Rechtswerte in [shared/law/co2kostaufg.ts](../shared/law/co2kos
   Hinweise: Die Zeilen tragen `includesWater: true` (auch eingefroren), gedruckt wird die Kostenart über
   `categoryLabelOf` mit Zusatz (Abrechnung des Mieters, Aufstellung des Vermieters, CSV; im JSON-Export bleibt `category`
   der Datenwert, daneben `includesWater`); die Prüfung nach der Heizkostenverordnung behandelt die Position wie jede mit
-  Einzelbeträgen. Ein Kürzungsbetrag auf eine solche Zeile steht als „höchstens“ mit dem Grund (`cutsOn`): Die Kürzung
-  gilt dem Anteil an den Heizkosten, und den Heizanteil des Sammelbetrags kennt Mietfuchs nicht.
+  Einzelbeträgen. Ein Kürzungsbetrag auf eine solche Zeile steht als „höchstens“ (oder beim schon vorhandenen „bis zu“
+  ohne Zusatzwort) mit dem Grund: Die Kürzung gilt dem Anteil an den Heizkosten, und den Heizanteil des Sammelbetrags
+  kennt Mietfuchs nicht. Das macht eine Stelle, `cutList` in `computeSettlement`, für jede Liste von Kürzungsbeträgen je
+  Mieter (`cutsOn`, `waterCutsOn`, § 12 Abs. 1 Satz 2 und 3 HeizkostenV, Verteilung nicht nach Verbrauch); bei einem
+  Mieter heißt der Grund „darin auch Kaltwasser und Abwasser …“. Ohne Haken bleibt jeder Wortlaut zeichengleich.
+  Nicht darunter fällt die Gutschrift bei `fuel.estimate-overcharged` (keine Kürzung, Lieferzeilen).
   - **`serviceEnclosed` gibt es nur beim Vorwegabzug** (Durchsicht M1). Die Frage nach der Abzugszeile behält ihre drei
     Antworten; nur nach „Ja, es gibt eine Abzugszeile“ folgt die zweite Wahl (`Co2Form.entry`, `showsEntry`): „Angaben
     aus der Abrechnung hier eintragen …“ (`serviceDeducted`, Voreinstellung) oder „Nicht eintragen: Die
@@ -223,8 +227,10 @@ zeigt sie live). Rechtswerte in [shared/law/co2kostaufg.ts](../shared/law/co2kos
   - **Was von den Angaben der Karte bleibt**: Die Karte schickt nur `{ method }`; früher eingetragene Werte bleiben
     gespeichert. Gelesen wird davon bei `serviceEnclosed` genau einer, **der Ausstoß** (`serviceEmissionsKg`), und nur für
     die gemeinsame Einstufung mit einer Anlage im selben Gebäude oder derselben Linie (`contributionOf`). Hat die Anlage
-    eine solche Partnerin (`joint`, `sameLine`/`sameBuilding`), zeigt die Karte bei „liegt bei“ dieses eine Feld und
-    schickt es mit; `co2.classification-incomplete` nennt es dann. Die Fläche der Einstufung kommt bei einer Anlage mit
+    eine solche Partnerin, die in der Heizperiode der Ansicht heizt und selbst eine CO₂-Einstufung braucht (`joint`,
+    `classifiedJointly` in client/src/co2Form.ts: `sameLine`/`sameBuilding`, `plantSpan`, `asksCo2Facts`; nach einem
+    Kesseltausch also nur in der Heizperiode des Tauschs), zeigt die Karte bei „liegt bei“ dieses eine Feld
+    (`CO2_ENCLOSED_JOINT`) und schickt es mit; `co2.classification-incomplete` nennt es dann. Die Fläche der Einstufung kommt bei einer Anlage mit
     Messdienst aus den versorgten Wohnungen, ein Feld dafür gibt es deshalb nicht.
   - **Steuer**: Den vorab abgezogenen CO₂-Anteil des Vermieters kennt Mietfuchs so nicht als eigenen Posten (kein
     `co2Share`, L_self nicht getrennt); wer ihn als Werbungskosten will, nimmt als Betrag der Position die Summe aller
@@ -244,10 +250,18 @@ zeigt sie live). Rechtswerte in [shared/law/co2kostaufg.ts](../shared/law/co2kos
     Rn. 14) gegen einen mitgeschickten Bescheid, der nicht half (BGH, Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5
     bis 7); beides Beschlüsse, so zitiert. **Folge**: keine Sperre (Zielbild: angreifbar heißt unterstützt, mit Warnung
     und Betrag), sondern `amounts.combined-line` (warning, färbt das Cockpit, weil getrennte Positionen sie abstellen):
-    je Position mit Haken einmal, mit den Mietern und dem Betrag ihrer Zeile als „Nachforderung von bis zu“ (verloren
-    wäre nur eine Nachforderung, keine gezahlte Vorauszahlung); ohne Mieter mit Zeile kein Hinweis. Haken
-    (`INCLUDES_WATER_HELP`), Lexikon („Sammelzeile“, `combinedLine`) und Anleitung sagen denselben Satz
-    (`COMBINED_LINE_RISK`). Die gedruckte Abrechnung des Mieters sagt dazu nichts.
+    je Position mit Haken einmal, mit den Mietern und dem Betrag ihrer Zeile als „Nachforderung von bis zu“; ohne Mieter
+    mit Zeile kein Hinweis. Zu den Vorauszahlungen (BGH, Urteil vom 22.09.2010, VIII ZR 285/09): Nach Ende des
+    Mietverhältnisses kann der Mieter Vorauszahlungen zurückfordern, solange keine formell ordnungsgemäße Abrechnung
+    vorliegt (Rn. 38); ein ausgezogener Mieter kann also die Vorauszahlungen auf diese Position vorläufig zurückverlangen.
+    Der Anspruch ist vorläufig: Der Vermieter kann ordnungsgemäß nachabrechnen, endgültig ausgeschlossen ist er nur mit
+    Nachzahlungsansprüchen (Rn. 44). Endgültig verloren ist deshalb nur die Nachforderung; „Vorauszahlungen sind nicht
+    berührt“ wäre zu absolut. Den vollen Zeilenbetrag nennt `amounts.combined-line` als „bis zu“, obwohl verloren nur
+    die Nachforderung ist: Mietfuchs kennt den Teil der Vorauszahlungen, der auf die Zeile entfällt, nicht, und bei einem
+    ausgezogenen Mieter steht wegen Rn. 38 vorläufig auch die Vorauszahlung im Raum; als Obergrenze ist der volle
+    Betrag deshalb vertretbar. Bei einer Eigentumswohnung sagt der Hinweis „Abrechnung der Gemeinschaft“. Haken
+    (`INCLUDES_WATER_HELP`, erst mit gesetztem Haken; ohne ihn nur `INCLUDES_WATER_WHEN` und der Lexikonlink), Lexikon
+    („Sammelzeile“, `combinedLine`) und Anleitung sagen denselben Satz (`COMBINED_LINE_RISK`). Die gedruckte Abrechnung des Mieters sagt dazu nichts.
   - **Doppelerfassung**: Hat ein Mieter in derselben Abrechnung eine Zeile mit `includesWater` und eine der Kostenart
     „Wasser/Abwasser“, warnt `amounts.water-twice` (warning) an der Wasserposition, gefragt an den gedruckten Zeilen nach
     dem Zusammenführen (Weg b). Der Rat heißt „gar nicht als eigene Position erfassen“, nie „Nicht umlagefähig“: Dort
