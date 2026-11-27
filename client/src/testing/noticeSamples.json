@@ -256,6 +256,10 @@
   "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Positionen der Lieferung „Gas 2025/2026“ (15.03.2025–14.03.2026) ergeben zusammen -500,00 €. Brennstoff kann nicht weniger als nichts kosten; eine solche Lieferung ist eine Gutschrift oder Stornorechnung ohne die Rechnung, die sie berichtigt. Mietfuchs rechnet ihren Zeitraum deshalb als nicht abgedeckt, nimmt sie nicht als Vorlage für Schätzungen und zählt keinen CO₂-Ausstoß für sie. Den Betrag verteilt Mietfuchs nach dem Verbrauch auf die Heizperioden ihres Zeitraums, damit die Gutschrift bei den Mietern ankommt (Auslegung nach dem Verbrauchsprinzip, § 7 Abs. 2 HeizkostenV). Gehört die Gutschrift zu einer anderen Lieferung, ordnen Sie sie auf der Seite Heizkosten dort zu; steht dort der Zahlbetrag nach Abzug der Abschläge, tragen Sie stattdessen die Kosten des Abrechnungszeitraums ein."
  },
  {
+  "code": "fuel.delivery-unlinked",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Lieferung „Gas 2025/2026“ (01.05.2025–30.04.2026) ist mit keiner Kostenposition verknüpft. Mietfuchs kennt ihren Rechnungsbetrag deshalb nicht: Die Abrechnung der Mieter nennt die Lieferung ohne Betrag, und abgegrenzt wird nichts. In Frage kommt die Position „Gas“ über 6.500,00 €. Verknüpfen Sie die Position auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung."
+ },
+ {
   "code": "fuel.estimate-overcharged",
   "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Für 2024/2025 war 2.569,08 € geschätzt; tatsächlich entfallen nur 983,39 €. Die Mieter dieser Heizperiode haben 1.585,69 € zu viel getragen, hier: Mieter A (A) 951,41 €, Mieter B1 (B) 528,28 € und Mieter B2 (B) 106,00 €. Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung. Bitte prüfen Sie sie. Eine Gutschrift ist jederzeit zulässig und wird empfohlen. Öffnen Sie die Abrechnung 2024/2025 wieder oder erfassen Sie die Gutschrift; bis dahin steht der Betrag bei Ihnen als Abweichung von der Schätzung."
  },

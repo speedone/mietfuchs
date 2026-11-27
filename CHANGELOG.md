@@ -175,6 +175,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Lieferung ohne verknüpfte Kostenposition: Stand eine Brennstoffrechnung auf der Seite Heizkosten als Lieferung und
+  ihr Betrag als Kostenposition, ohne dass beide verknüpft waren, nannte die gedruckte Abrechnung unter „Brennstoff“
+  „0,00 € von 0,00 €“, und nichts wies darauf hin. Jetzt steht unter „Zu prüfen“ ein Hinweis, der die Lieferung und die
+  in Frage kommende Position nennt und zur Karte „Lieferungen“ führt; die Abrechnung nennt die Lieferung bis dahin mit
+  Anteil und CO₂-Ausstoß, aber ohne Betrag. Kein Betrag der Abrechnung ändert sich
+  ([#722](https://github.com/speedone/mietfuchs/issues/722)).
 - Vorauszahlung getrennt nach Heizung und übrigen Nebenkosten: Rechnet die Heizung im selben Zeitraum ab wie das
   Objekt, ließ sich die Vorauszahlung nicht aufteilen, weil der Knopf dafür nie erschien. Die Karte „Heizung“ der
   Stammdaten bietet jetzt „Vorauszahlung aufteilen“ an und erklärt, wozu; danach führen die Mietverhältnisse mit

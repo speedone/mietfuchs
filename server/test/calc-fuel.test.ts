@@ -1077,3 +1077,56 @@ test('#251 R-2: Rechnung nach dem Abschluss gestiegen: die offene Heizperiode tr
   assert.match(t, /Der Teil der Rechnung „Gas 2025\/2026“ für 2024\/2025 beträgt heute 983,39 €; die abgeschlossene Abrechnung 2024\/2025 enthält dafür 900,00 €\. Die Differenz von 83,39 € gehört in jene Abrechnung; bis Sie sie nachfordern, steht sie bei Ihnen\./)
   assert.match(t, /Solange die Frist dieser Abrechnung läuft/)
 })
+
+// ---------- #722: Lieferung ohne verknüpfte Kostenposition ----------
+
+test('#722: Lieferung ohne verknüpfte Position: Hinweis nennt Lieferung, Position und den Ort der Verknüpfung; keine Zahl ändert sich', () => {
+  // Die Gasrechnung 01.05.2025–30.04.2026 liegt ganz in der Heizperiode; ihr Betrag steht als Position ohne Verknüpfung.
+  const lage = (fuelDeliveryId: string | null) => ({
+    fuelDeliveries: [lieferung({ invoiceFrom: '2025-05-01', invoiceTo: '2026-04-30' })],
+    costItems: [position({ id: 'gas', fuelDeliveryId }), position({ id: 'mess', description: 'Messkosten', amountCents: 100000, key: 'units' as const, fuelDeliveryId: null, heatingPart: 'metering' as const })],
+  })
+  const lose = settle('2025-05', lage(null))
+  const verknuepft = settle('2025-05', lage('d'))
+  assert.ok(!codes(verknuepft).includes('fuel.delivery-unlinked'), codes(verknuepft).join(', '))
+  const n = lose.notices.find((x) => x.code === 'fuel.delivery-unlinked') ?? assert.fail(`kein Hinweis, sondern: ${codes(lose).join(', ')}`)
+  assert.equal(n.level, 'warning')
+  assert.deepEqual(n.subject, { kind: 'heatingCosts', id: 'hp' })
+  assert.equal(n.text,
+    'Heizanlage „Gas“, Heizperiode 2025/2026: Die Lieferung „Gas 2025/2026“ (01.05.2025–30.04.2026) ist mit keiner Kostenposition verknüpft. ' +
+    'Mietfuchs kennt ihren Rechnungsbetrag deshalb nicht: Die Abrechnung der Mieter nennt die Lieferung ohne Betrag, und abgegrenzt wird nichts. ' +
+    'In Frage kommt die Position „Gas“ über 6.500,00 €. ' +
+    'Verknüpfen Sie die Position auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung?“ mit ihrer Lieferung.')
+  // Die Position „Messkosten“ ist kein Brennstoff und wird nicht genannt.
+  assert.doesNotMatch(n.text, /Messkosten/)
+  assert.deepEqual(lose.statements.map((st) => st.totalShareCents), verknuepft.statements.map((st) => st.totalShareCents))
+  assert.equal(summe(lose), summe(verknuepft))
+})
+
+test('#722: mehrere Lieferungen und Positionen in einem Hinweis; ohne passende Position der Weg über die Seite Kosten', () => {
+  const zwei = [
+    lieferung({ id: 'd1', label: 'Gas Sommer', invoiceFrom: '2025-05-01', invoiceTo: '2025-10-31' }),
+    lieferung({ id: 'd2', label: 'Gas Winter', invoiceFrom: '2025-11-01', invoiceTo: '2026-04-30' }),
+  ]
+  const beide = settle('2025-05', { fuelDeliveries: zwei, costItems: [position({ id: 'g1', description: 'Abschläge', amountCents: 300000, fuelDeliveryId: null }), position({ id: 'g2', description: 'Schlussrechnung', amountCents: 50000, fuelDeliveryId: null })] })
+  assert.equal(codes(beide).filter((c) => c === 'fuel.delivery-unlinked').length, 1)
+  const t = textOf(beide, 'fuel.delivery-unlinked')
+  assert.match(t, /Die Lieferungen „Gas Sommer“ \(01\.05\.–31\.10\.2025\) und „Gas Winter“ \(01\.11\.2025–30\.04\.2026\) sind mit keiner Kostenposition verknüpft\./)
+  assert.match(t, /In Frage kommen die Positionen „Abschläge“ über 3\.000,00 € und „Schlussrechnung“ über 500,00 €\. Verknüpfen Sie jede Position /)
+  // Eine ist verknüpft: genannt wird nur die andere.
+  const eine = settle('2025-05', { fuelDeliveries: zwei, costItems: [position({ id: 'g1', fuelDeliveryId: 'd1' })] })
+  const ohne = textOf(eine, 'fuel.delivery-unlinked')
+  assert.match(ohne, /Die Lieferung „Gas Winter“ \(01\.11\.2025–30\.04\.2026\) ist mit keiner Kostenposition verknüpft\./)
+  assert.doesNotMatch(ohne, /Gas Sommer/)
+  assert.match(ohne, /Eine Brennstoffposition ohne Lieferung gibt es in diesem Zeitraum nicht\. Erfassen Sie den Rechnungsbetrag auf der Seite Kosten als Position „Heizung und Warmwasser“ und verknüpfen Sie sie danach auf der Seite Heizkosten in der Karte „Lieferungen“ unter „Welche Position gehört zu welcher Rechnung\?“ mit ihrer Lieferung\./)
+})
+
+test('#722: kein Hinweis bei einer Schätzung, bei einer stornierten Rechnung und beim Messdienst', () => {
+  const frei = (r: ComputedSettlement) => assert.ok(!codes(r).includes('fuel.delivery-unlinked'), codes(r).join(', '))
+  // Eine geschätzte Lieferung trägt ihren Betrag selbst.
+  frei(settle('2025-05', { fuelDeliveries: [lieferung({ invoiceFrom: '2025-05-01', invoiceTo: '2026-04-30', amountCents: 500000, estimated: true })], costItems: [position({ id: 'mess', key: 'units', fuelDeliveryId: null, heatingPart: 'metering' })] }))
+  // Positionen, die zusammen 0 € ergeben, sind verknüpft (`fuel.zero-invoice`).
+  frei(settle('2025-05', { costItems: [position({ id: 'gas' }), position({ id: 'storno', amountCents: -650000 })] }))
+  // Beim Messdienst steht der Betrag an der Lieferung, verknüpft wird nichts.
+  frei(settle('2025-05', { heatingPlants: [anlage({ method: 'service' })], fuelDeliveries: [lieferung({ amountCents: 650000 })], costItems: [position({ id: 'hz', key: 'amounts', tenancyAmounts: { ta: 240000, tb: 160000 }, amountCents: 400000, fuelDeliveryId: null })] }))
+})

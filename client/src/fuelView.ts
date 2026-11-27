@@ -33,7 +33,11 @@ export function fuelBlock(h: HeatingStatement): FuelBlockView | null {
     const range = d.from && d.to ? ` (${formatDayRange(d.from, d.to)})` : ''
     const label = `${(d.estimated ? d.label.split(': ')[0] : d.label) || 'Lieferung'}${range}`
     if (d.estimated) return { label, value: `geschätzt, ${fmtEuro(d.inPeriodCents ?? d.amountCents ?? 0)}` }
-    const amount = d.inPeriodCents !== null && d.amountCents !== null ? ` = ${fmtEuro(d.inPeriodCents)} von ${fmtEuro(d.amountCents)}` : ''
+    // #722: Ein Betrag von 0 heißt hier, dass keine Kostenposition auf die Lieferung zeigt (Positionen, die zusammen 0 €
+    // ergeben, gelten als storniert und haben keine Zeile). „0,00 € von 0,00 €“ wäre dann falsch: Der Betrag steht in den
+    // Kostenzeilen der Abrechnung. Die Zeile bleibt, denn Anteil und Ausstoß der Rechnung gehören zu den
+    // Berechnungsgrundlagen der CO₂-Aufteilung; entschieden an der Zahl, damit es auch für eingefrorene Stände gilt.
+    const amount = d.inPeriodCents !== null && d.amountCents !== null && d.amountCents !== 0 ? ` = ${fmtEuro(d.inPeriodCents)} von ${fmtEuro(d.amountCents)}` : ''
     const kg = d.emissionsKg !== null ? `, ${num(d.emissionsKg, 1)} kg CO₂` : ''
     return { label, value: `${num(d.sharePermille, 2)} ‰ ${FUEL_METHOD_LABELS[d.method]}${amount}${kg}` }
   })

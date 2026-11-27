@@ -200,6 +200,15 @@ Gradtage des Orts in `degree_day_values`. CO₂-Merkmale an der Anlage (`non_res
   Heizwertangaben, `unfrozenAside`), Ablesungen des Versorgungszählers in abgeschlossenen
   Heizperioden (`guardSupplyReading`), und Lösen, Umhängen, Verschieben, Löschen der **letzten**
   Position einer Lieferung mit eingefrorenem Teil ≠ 0.
+- **Lieferung ohne Position** (#722, `fuel.delivery-unlinked`, warning, Ziel Heizkosten): Zeigt keine Position auf eine
+  Lieferung, die die Heizperiode berührt (auch keine aus einem anderen Zeitraum), kennt Mietfuchs ihren Betrag nicht. Die
+  Positionen werden trotzdem verteilt, ganz in ihrem Zeitraum; der Hinweis nennt die Lieferungen und die Positionen, die
+  in Frage kommen (Heizpositionen der Anlage ohne Lieferung, Teil Brennstoff oder ohne Angabe). **Zugeordnet wird nie von
+  selbst**, auch nicht bei einer Lieferung und einer Position: Die Verknüpfung grenzt ab und verschiebt Geld zwischen
+  Heizperioden, und ob die Position ein Abschlag einer anderen Rechnung ist, weiß nur der Vermieter. Nicht beim Messdienst
+  (der Betrag steht an der Lieferung), nicht bei einer Schätzung, nicht beim Vorrat (dort `fuel.stock-unlinked`). Der
+  Druckblock „Brennstoff“ nennt eine Lieferung mit Betrag 0 ohne „= … von …“ (client/src/fuelView.ts, an der Zahl
+  entschieden, damit es auch für eingefrorene Stände gilt).
 - **Rückfrage beim Abschluss**: Bei einer Lücke mit Schätzvorschlag 409 mit `fuelGaps`;
   `fuelEstimates: 'estimate' | 'none'` entscheidet, in der Oberfläche ist **Abwarten** die Vorgabe
   (höchstrichterlich nicht entschieden). Rechnen, Schätzen, neu Rechnen, Abschließen und Einfrieren
