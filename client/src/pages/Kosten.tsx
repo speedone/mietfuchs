@@ -18,11 +18,11 @@ import {
   itemToForm,
   meterTypeOptions,
   waterMeterHint,
-  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, smokeDetectorHint,
   chimneySweepPlants,
   chimneySweepQuestion,
   notAgreedDroppedText,
   toCentralHeating,
+  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, showsIncludesWater, INCLUDES_WATER_LABEL, INCLUDES_WATER_HELP, INCLUDES_WATER_CO2_HELP, waterTwiceHints, smokeDetectorHint,
   externalHint,
   externalMismatch,
   tenanciesForAmounts,
@@ -1601,6 +1601,20 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                   </div>
                 )}
                 <div className="muted">{amountsSumText(form, units, tenancies, period)}</div>
+                {/* Sammelbetrag des Messdienstes (#704): nur bei „Heizung und Warmwasser“. Der Haken ändert keine Zahl. */}
+                {showsIncludesWater(form) && (
+                  <>
+                    <label className="field checkline">
+                      <span>
+                        <input type="checkbox" checked={form.includesWater} onChange={(e) => setForm({ ...form, includesWater: e.target.checked })} />
+                        {INCLUDES_WATER_LABEL}
+                      </span>
+                    </label>
+                    <div className="muted">{INCLUDES_WATER_HELP}</div>
+                    {form.includesWater && <div className="muted">{INCLUDES_WATER_CO2_HELP}</div>}
+                    {waterTwiceHints(form, yearItems).map((text) => <NoticeBox key={text} level="warning" action={text} />)}
+                  </>
+                )}
               </div>
             )}
             {PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1 && (

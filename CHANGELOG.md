@@ -51,6 +51,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   eigene Heizkostenabrechnung je Heizperiode rechnet weiter nur Heizung und Warmwasser ab, und eine abgeschlossene
   Abrechnung behält ihren Wortlaut. Der Export der Abrechnung nennt die Angabe neben `heatingCents` als `coversWater`,
   nur wo sie gilt ([#712](https://github.com/speedone/mietfuchs/issues/712)).
+- Sammelbetrag des Messdienstes: Rechnet Ihr Messdienst Heizung, Warmwasser, Kaltwasser und Abwasser in einem Betrag je
+  Mieter ab, tragen Sie genau diesen Betrag ein, ohne etwas herauszurechnen. An einer Position „Heizung und Warmwasser“
+  mit Einzelbeträgen gibt es dafür den Haken „Der Betrag enthält auch Kaltwasser und Abwasser (der Messdienst rechnet sie
+  in einem Betrag je Nutzer ab)“. Er ändert keinen Betrag: Die Abrechnung des Mieters nennt die Zeile dann „Heizung und
+  Warmwasser einschließlich Kaltwasser und Abwasser (laut Abrechnung des Messdienstes)“, und eine Warnung meldet, wenn
+  daneben eine Position „Wasser/Abwasser“ auf dieselben Mieter umgelegt wird. In der Karte „CO₂-Kosten“ der Seite
+  Heizkosten gibt es die neue Antwort „Der Messdienst hat die CO₂-Kosten aufgeteilt und weist das in seiner Abrechnung
+  aus; ich lege sie der Abrechnung bei“: Mietfuchs prüft und bucht dann keine CO₂-Aufteilung, verlangt keine weiteren
+  Angaben, und die Abrechnung des Mieters verweist statt des Blocks „CO₂-Kostenaufteilung“ auf die beiliegende
+  Heizkostenabrechnung des Messdienstes; ein Hinweis erinnert an die Beilage. Ohne Haken und ohne die neue Antwort bleibt
+  jede Abrechnung, wie sie war. Im JSON-Export der Abrechnung tragen solche Zeilen das neue Feld `includesWater`, die CSV
+  nennt die Kostenart mit dem Zusatz ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
   für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach
   § 560 Abs. 4 BGB auch die beiden Teile mit ihrem bisherigen Betrag. Der Vorschlag teilt sich nach den Kosten dieser

@@ -5,6 +5,15 @@ import type { Co2BlockView } from '../co2View'
 
 export default function Co2Block({ view }: { view: Co2BlockView | null }) {
   if (!view) return null
+  // #704: Der Messdienst hat aufgeteilt; statt des Ausweises ein Satz, der auf seine beiliegende Abrechnung verweist.
+  if (view.reference) {
+    return (
+      <div className="co2-block">
+        <h3>{view.title}</h3>
+        <p>{view.reference}</p>
+      </div>
+    )
+  }
   return (
     <div className="co2-block">
       <h3>{view.title}</h3>

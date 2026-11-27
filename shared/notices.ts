@@ -47,7 +47,10 @@ export const INFORMATIONAL: ReadonlySet<string> = new Set(['basis.unit-zero', 'b
   'prepayment.partial-month',
   // #258: Auskunft, dass eine Position laut Mietvertrag nicht umgelegt wird und ihr Anteil beim Vermieter bleibt; richtig
   // erfasst, nichts zu beheben. `allocation.other-unanswered` steht bewusst nicht hier: Es fragt nach einer Angabe.
-  'allocation.not-agreed'])
+  'allocation.not-agreed',
+  // #704: Der Messdienst hat die CO₂-Kosten aufgeteilt, seine Abrechnung liegt bei. Rechtmäßig und in Mietfuchs nicht
+  // abzustellen; der Hinweis erinnert jedes Jahr an die Beilage und färbt deshalb nicht.
+  'co2.service-enclosed'])
 
 // Die Hinweise, die das Abschließen einer Abrechnung absichern (#319): Stufe `error`, also Angaben,
 // die sich widersprechen (eine Position wird nicht verteilt, Mietverhältnisse überschneiden sich).

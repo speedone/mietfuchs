@@ -7,7 +7,14 @@ import { energyLabelOf } from './heatingForm'
 import { halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import type { Co2Adjustment, HeatingStatement } from './types'
 
-export type Co2BlockView = { title: string; lines: { label: string; value: string }[]; table: { range: string; percent: string; marked: boolean }[]; notes: string[] }
+// `reference` (#704): Der Messdienst hat aufgeteilt und weist es in seiner Abrechnung aus; statt Zeilen und Stufentabelle
+// steht dann nur dieser Satz, der auf die beiliegende Heizkostenabrechnung verweist.
+export type Co2BlockView = { title: string; lines: { label: string; value: string }[]; table: { range: string; percent: string; marked: boolean }[]; notes: string[]; reference?: string }
+
+// Der Verweis in der Abrechnung des Mieters, wenn der Messdienst (bei einer Eigentumswohnung die Gemeinschaft) die
+// CO₂-Kosten aufgeteilt hat und der Vermieter dessen Abrechnung beilegt. Die Pflichtangaben nennt § 7 Abs. 3 CO2KostAufG.
+export const co2EnclosedReference = (homeowners: boolean): string =>
+  `Die CO₂-Kosten hat ${homeowners ? 'die Abrechnung der Gemeinschaft' : 'der Messdienst'} zwischen Vermieter und Mieter aufgeteilt. Ihren Anteil an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen weist die beiliegende ${homeowners ? 'Einzelabrechnung der Heizkosten' : 'Heizkostenabrechnung des Messdienstes'} aus (§ 7 Abs. 3 CO2KostAufG).`
 
 const num = (n: number, digits = 1): string => n.toLocaleString('de-DE', { maximumFractionDigits: digits })
 
@@ -16,6 +23,12 @@ const num = (n: number, digits = 1): string => n.toLocaleString('de-DE', { maxim
 // 'deliveries'`) stehen die Werte, wie Mietfuchs sie aus den Rechnungen gerechnet hat.
 export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView | null {
   const c = h.co2
+  // #704: Verweis statt Block, für jeden Mieter mit einer Zeile aus den Messdienstpositionen dieser Heizperiode.
+  if (c?.method === 'serviceEnclosed') {
+    return (c.enclosedFor ?? []).includes(tenancyId)
+      ? { title: 'CO₂-Kostenaufteilung', lines: [], table: [], notes: [], reference: co2EnclosedReference(c.enclosedBy === 'homeowners') }
+      : null
+  }
   if (!c || !c.booked) return null
   const tenant = c.tenants.find((t) => t.tenancyId === tenancyId)
   if (!tenant) return null

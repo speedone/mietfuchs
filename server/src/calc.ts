@@ -76,7 +76,8 @@ import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, ra
 import { allocateRentPayments, ledgerStartOf, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
-import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
+import { CO2_RELIEF_LABEL, includesWaterProbeText } from '../../shared/co2Probe.ts'
+import { allowsIncludesWater, WATER_CATEGORY, waterTwiceText } from '../../shared/includesWater.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
@@ -341,6 +342,8 @@ const noticeKinds = {
   'amounts.missing': { level: 'warning', title: 'Einzelbetrag fehlt', terms: ['individualAmounts'] },
   'amounts.self-hidden': { level: 'hint', title: 'Eigenanteil nicht ausgewiesen', terms: ['individualAmounts', 'ownShare'] },
   'amounts.self-forfeited': { level: 'warning', title: 'Eigenbetrag ohne selbstgenutzte Wohnung', terms: ['individualAmounts', 'ownShare'] },
+  // #704: Der Sammelbetrag des Messdienstes enthält Wasser, und daneben steht eine Position „Wasser/Abwasser“.
+  'amounts.water-twice': { level: 'warning', title: 'Wasser möglicherweise doppelt umgelegt', terms: ['individualAmounts'] },
   'custom.forfeited': { level: 'warning', title: 'Vereinbarter Anteil entfällt', terms: ['agreedShares', 'billingUnit'] },
   'custom.none': { level: 'warning', title: 'Keine vereinbarten Anteile', terms: ['agreedShares'] },
   'custom.over-100': { level: 'error', title: 'Vereinbarte Anteile über 100 %', terms: ['agreedShares'] },
@@ -381,6 +384,8 @@ const noticeKinds = {
   // denn dann wird für die Heizperiode nichts gebucht; mit geschätztem S nur ein Hinweis (R6).
   'co2.sum-check': { level: 'error', title: 'CO₂-Angaben passen nicht zu den Positionen', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'co2.sum-check-approx': { level: 'hint', title: 'CO₂-Angaben mit geschätzter Summe', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
+  // #704: Der Messdienst hat aufgeteilt, seine Abrechnung liegt bei; Mietfuchs prüft und bucht nichts.
+  'co2.service-enclosed': { level: 'hint', title: 'CO₂-Aufteilung laut beiliegender Abrechnung des Messdienstes', rule: 'co2-split', terms: ['co2Split', 'individualAmounts'] },
   'co2.pool-foreign-item': { level: 'hint', title: 'Position ohne Einzelbeträge bei der Heizanlage', terms: ['individualAmounts', 'co2Split'] },
   'co2.share-capped': { level: 'hint', title: 'CO₂-Anteil des Vermieters passt nicht in die Position', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'co2.reliefs-invalid': { level: 'error', title: 'Beträge „vom Vermieter übernommen“ passen nicht', rule: 'co2-split', terms: ['co2Split'] },
@@ -648,6 +653,10 @@ function chimneySweepText(c: { description: string; amountCents: number; key: Co
       : 'Betrifft sie die zentrale Heizung und steht sie schon in der Abrechnung des Messdienstes, wird sie hier ein zweites Mal verteilt. ') +
     'Für Kaminöfen, Gasthermen einzelner Wohnungen und andere Feuerstätten bleibt sie, wie sie ist.'
 }
+// Sammelbetrag des Messdienstes (#704): Die Zeile trägt das Kennzeichen nur, wo die Angabe gilt (Kostenart „Heizung und
+// Warmwasser“ mit Einzelbeträgen); ohne sie bleibt die Zeile, wie sie war. Geändert wird damit nur die Bezeichnung.
+const includesWaterField = (item: { category: string; key: string; includesWater?: boolean }): { includesWater?: true } =>
+  (item.includesWater === true && allowsIncludesWater(item) ? { includesWater: true } : {})
 // Der Ausweg, wenn einer Einheit kein Zähler fehlt, weil sie keinen Anschluss hat (#117); wörtlich wie bisher.
 const NO_CONNECTION_HINT = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'
 
@@ -7591,6 +7600,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         costItemId: item.id,
         ...(carry ? { kind: 'fuelCarry' as const } : {}),
         category: item.category,
+        ...includesWaterField(item),
         description: item.description,
         totalCents: item.amountCents,
         key: item.key,
@@ -7702,6 +7712,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       landlordRows.push({
         costItemId: item.id,
         category: item.category,
+        ...includesWaterField(item),
         description: item.description,
         totalCents: item.amountCents,
         keyLabel: KEY_LABELS[item.key] || item.key,
@@ -8650,7 +8661,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Messdienst ohne Aufteilung mit erfasstem Vorrat, der fehlt oder nicht aufgeht: Die Kürzung meldet
     // `fuel.stock-missing` bzw. `fuel.stock-invalid` statt `co2.service-unsplit`, nie beide.
     const stockHandled = stockEntry !== undefined && stockTouched(stockEntry.chain)
-    if (stockEntry && stockHandled && !stockEntry.result.ok && pot.method === 'service' && applicable && co2Relevant && settledHere) {
+    // #704: Mit der Antwort „liegt bei“ teilt der Messdienst auf und weist es in seiner Abrechnung aus; Mietfuchs prüft
+    // und bucht dann nichts, und kein Hinweis dieses Topfs nennt eine Kürzung, außer dem einen unten.
+    const enclosed = st?.method === 'serviceEnclosed'
+    if (stockEntry && stockHandled && !stockEntry.result.ok && pot.method === 'service' && applicable && co2Relevant && settledHere && !enclosed) {
       const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
       const problem = stockEntry.result.problem
       const tail = ` Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}.`
@@ -8665,7 +8679,27 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           plantSubject)
       }
     }
-    if (st && applicable && !ownSplit) {
+    if (st && enclosed && applicable && !ownSplit) {
+      // Keine Probe (`co2PotsOf` rechnet sie nur für die beiden Antworten mit Zahlen), keine Nachstufung, keine Buchung:
+      // Was in der Karte früher eingetragen wurde, bleibt gespeichert und unbenutzt. Der Ausweis nennt nur, für wen der
+      // Verweis auf die beiliegende Abrechnung gedruckt wird: die Mieter mit einer Zeile aus den Messdienstpositionen.
+      report.co2 = {
+        method: st.method, booked: false, deducted: false, totalCents: null, landlordCents: null, landlordPermille: null, kgPerM2: null,
+        emissionsKg: null, areaM2: null, stage: null, table: [], shortened: pot.period.short, stageMatches: null, selfLandlordCents: null,
+        selfApproximated: false, tenants: [], enclosedFor: sharesOf(pot).map((s) => s.tenancyId), enclosedBy: potPlant?.source === 'homeowners' ? 'homeowners' : 'service',
+      }
+      if (settledHere) {
+        const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+        const homeowners = potPlant?.source === 'homeowners'
+        const bill = homeowners ? 'Die Einzelabrechnung (Heizung) Ihrer Wohnung aus der Abrechnung der Gemeinschaft' : 'Die Heizkostenabrechnung des Messdienstes'
+        warn('co2.service-enclosed',
+          `${where}: Nach Ihrer Angabe hat ${homeowners ? 'die Gemeinschaft' : 'der Messdienst'} die CO₂-Kosten aufgeteilt und weist das in ${homeowners ? 'ihrer' : 'seiner'} Abrechnung aus. Mietfuchs prüft diese Aufteilung nicht, bucht keinen CO₂-Anteil und druckt keinen eigenen Ausweis; die Abrechnung jedes Mieters verweist stattdessen auf die beiliegende Heizkostenabrechnung. ` +
+            `Legen Sie deshalb jedem Mieter ${homeowners ? 'diese Einzelabrechnung' : 'die Heizkostenabrechnung des Messdienstes'} mit dem Abschnitt zu den CO₂-Kosten bei. ` +
+            `${bill} muss den auf den Mieter entfallenden Anteil an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG); enthält sie das nicht, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG). ` +
+            'Den CO₂-Anteil des Vermieters kennt Mietfuchs so nicht als eigenen Posten: Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil.',
+          plantSubject)
+      }
+    } else if (st && applicable && !ownSplit) {
       const ranges = stageRanges(law(co2StageTable, { period: hPeriod }, lawLog), tableFactor(pot.period))
       // § 8 und § 9 nach den Angaben zum Gebäude (Durchsicht von #233, Recht I4): Die Nachstufung erwartet
       // den angepassten Anteil, wie die eigene Aufteilung ihn rechnet (`selfSplit`).
@@ -8727,8 +8761,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             ? ''
             : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als ${usersName} und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
           const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+          // #704: Steckt Wasser im Betrag einer Messdienstposition, kann die Probe nicht aufgehen; der Satz nennt den
+          // Grund und die Antwort „liegt bei“. Nur in diesem Fall, sonst bleibt der Wortlaut.
+          const combined = pot.serviceItems.filter((c) => c.includesWater === true)
+          const waterText = combined.length === 0 ? '' : ` ${includesWaterProbeText(andList(combined.map((c) => `„${c.description}“`)), combined.length > 1, homeowners)}`
           warn('co2.sum-check',
-            `${where}: Die Probe der CO₂-Angaben geht nicht auf.${noServiceItems ? '' : approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und ${noServiceItems ? 'die Heizkosten werden nach ihrem Schlüssel verteilt' : 'die Mieter tragen ihre Einzelbeträge wie eingetragen'}. ` +
+            `${where}: Die Probe der CO₂-Angaben geht nicht auf.${noServiceItems ? '' : approxText} ${lines}${entered}${waterText} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und ${noServiceItems ? 'die Heizkosten werden nach ihrem Schlüssel verteilt' : 'die Mieter tragen ihre Einzelbeträge wie eingetragen'}. ` +
               (st.method === 'serviceShown'
                 ? `Stimmt Ihre Antwort, dass die Abrechnung die CO₂-Kosten nur ausweist, tragen die Mieter auch den CO₂-Anteil des Vermieters von ${fmtCents(L)} mit; den dürfen Sie nicht auf sie umlegen, eine Vereinbarung, nach der der Mieter mehr als seinen Anteil trägt, ist unwirksam (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). `
                 : '') +
@@ -10548,6 +10586,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         mergeHeatingPart(sub, part)
         mergedParts.push(part)
       }
+    }
+    // Doppelerfassung beim Sammelbetrag des Messdienstes (#704): Eine Position mit `includesWater` und eine umlagefähige
+    // Position „Wasser/Abwasser“, die in dieser Abrechnung auf denselben Mieter gehen. Gefragt wird an den gedruckten
+    // Zeilen, also nach dem Zusammenführen einer Heizperiode nach Weg b; „Nicht umlagefähig“ hat eine andere Kostenart
+    // und keine Zeile beim Mieter. Je Wasserposition ein Hinweis, an ihr; keine Zahl ändert sich.
+    const waterTwice = new Map<string, { combined: SettlementRow; water: SettlementRow }>()
+    for (const own of statements.values()) {
+      const combined = own.rows.find((x) => x.includesWater === true && x.shareCents > 0)
+      if (!combined) continue
+      for (const water of own.rows) {
+        if (water.category === WATER_CATEGORY && water.kind === undefined && water.shareCents !== 0 && !waterTwice.has(water.costItemId)) waterTwice.set(water.costItemId, { combined, water })
+      }
+    }
+    for (const { combined, water } of waterTwice.values()) {
+      warn('amounts.water-twice',
+        waterTwiceText({ description: combined.description, amount: fmtCents(combined.totalCents) }, { description: water.description, amount: fmtCents(water.totalCents) }),
+        { kind: 'costItem', id: water.costItemId })
     }
     // Hinweise zur Heizstaffel (R13, R-h), je Mietverhältnis, das eine Anlage versorgt.
     for (const t of partTenancies) {

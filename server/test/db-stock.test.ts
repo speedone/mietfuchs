@@ -383,6 +383,9 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'spreadYears',
   // Zimmer einer Wohnung und ihre Teilung (#573) kennt die db.json nicht; die Rundreise prüfen db-repository.test.ts und api-zimmer.test.ts.
   'parentUnitId', 'roomSplit',
+  // Den Sammelbetrag des Messdienstes (#704) kennt die db.json nicht; jede Position bekommt NULL, die Rundreise prüfen
+  // db-repository.test.ts und api-messdienst-sammelbetrag.test.ts (Backup).
+  'includesWater',
   // Die Form der Sicherheit (#228) kennt die db.json nicht; die Rundreise prüft db-kaution.test.ts.
   'depositForm', 'depositHoldCents', 'depositHoldNote',
   // Die Angaben zur Mieterhöhung (#191) kennt die db.json nicht; die Rundreise prüfen db-mieterhoehung.test.ts und

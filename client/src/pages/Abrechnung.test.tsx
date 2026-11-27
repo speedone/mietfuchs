@@ -1104,3 +1104,32 @@ test('Belegkopien: Drucken wartet auf die Liste der gebuchten Belege (#470)', as
   release([BESCHEID])
   expect(await screen.findByText('Anlage beim Druck: Stadtkasse - Grundsteuer', {}, SLOW)).toBeTruthy()
 })
+
+// #704: Sammelbetrag des Messdienstes. Die Zeile nennt, was im Betrag steckt, in der Aufstellung des Mieters und in der
+// des Vermieters; anstelle des CO₂-Blocks steht der Verweis auf die beiliegende Heizkostenabrechnung des Messdienstes.
+test('Sammelbetrag (#704): die Zeile heißt mit Zusatz, die Kostenart ohne Angabe bleibt, und der CO₂-Verweis steht auf dem Papier', async () => {
+  const LABEL = 'Heizung und Warmwasser einschließlich Kaltwasser und Abwasser (laut Abrechnung des Messdienstes)'
+  const heiz = { costItemId: 'hz', category: 'Heizung und Warmwasser', includesWater: true as const, description: 'Abrechnung des Messdienstes', totalCents: 410000, keyLabel: 'Einzelbeträge', shareCents: 182340 }
+  const wartung = { costItemId: 'w', category: 'Heizung und Warmwasser', description: 'Wartung', totalCents: 20000, keyLabel: 'Wohnfläche', shareCents: 10000 }
+  settlement = {
+    ...settlement,
+    statements: [{ ...STATEMENT, rows: [...STATEMENT.rows, heiz, wartung], totalShareCents: 252340, balanceCents: -202340 }],
+    landlord: { rows: [{ ...heiz, shareCents: 76385 }], totalCents: 76385 },
+    heating: [{
+      plantId: 'hp', plantName: 'Gas', energy: 'gas', period: calendarPeriod(YEAR), from: `${YEAR}-01-01`, to: `${YEAR}-12-31`,
+      co2: {
+        method: 'serviceEnclosed', booked: false, deducted: false, totalCents: null, landlordCents: null, landlordPermille: null, kgPerM2: null, emissionsKg: null, areaM2: null,
+        stage: null, table: [], shortened: false, selfLandlordCents: null, selfApproximated: false, tenants: [], enclosedFor: ['t1'], enclosedBy: 'service',
+      },
+    }],
+  }
+  show()
+  // Beim Mieter und beim Vermieter je einmal.
+  await waitFor(() => expect(screen.getAllByText(LABEL)).toHaveLength(2), SLOW)
+  // Die Wartung derselben Kostenart ohne die Angabe heißt weiter „Heizung und Warmwasser“ und bildet keine gemeinsame Zwischensumme mit dem Sammelbetrag.
+  expect(screen.getAllByText('Heizung und Warmwasser').length).toBeGreaterThan(0)
+  expect(screen.queryByText(/^Summe Heizung und Warmwasser/)).toBeNull()
+  const verweis = screen.getByText(/Ihren Anteil an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen weist die beiliegende Heizkostenabrechnung des Messdienstes aus/)
+  expect(verweis.closest('.no-print')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'CO₂-Kostenaufteilung' })).toBeTruthy()
+})

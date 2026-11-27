@@ -114,6 +114,8 @@ export type SnapshotCostItem = Pick<
   | 'externalBasis'
   | 'tenancyAmounts'
   | 'selfAmounts'
+  // Sammelbetrag des Messdienstes (#704): nur für Bezeichnung und Hinweise; verteilt wird nicht danach.
+  | 'includesWater'
   // Die Umlagevereinbarung je Mietverhältnis (#258): wer die Position laut Vertrag nicht trägt.
   | 'notAgreedTenancyIds'
   | 'namedTenancyIds'

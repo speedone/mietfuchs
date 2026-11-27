@@ -1302,6 +1302,11 @@ export const costItems = sqliteTable(
     // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573); NULL heißt Fläche. Gespeichert nur bei Schlüssel `meter`
     // (repository.ts). Bedingung im zweiten Schritt.
     roomSplit: text('room_split', { enum: ROOM_SPLITS }),
+    // Sammelbetrag des Messdienstes (#704): 1 = die Einzelbeträge enthalten auch Kaltwasser und Abwasser, NULL = keine
+    // Angabe (wie bisher). Gespeichert nur bei der Kostenart „Heizung und Warmwasser“ mit Schlüssel `amounts`
+    // (repository.ts, `allowsIncludesWater`); die Kostenarten sind Text, eine Bedingung hier müsste bei jeder neuen die
+    // Tabelle neu bauen. Die Abrechnung liest die Spalte nur für Bezeichnung und Hinweise.
+    includesWater: integer('includes_water', { mode: 'boolean' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -2237,7 +2242,7 @@ export const assessmentLines = sqliteTable(
 
 // ---------- CO₂ (Heizung PR 6, Entwurf 5.5) ----------
 
-export const CO2_METHODS = exactly<Co2Method>()(['serviceDeducted', 'serviceShown', 'selfAfterService', 'self'] as const)
+export const CO2_METHODS = exactly<Co2Method>()(['serviceDeducted', 'serviceShown', 'selfAfterService', 'self', 'serviceEnclosed'] as const)
 
 // Die CO₂-Angaben einer Heizperiode, eine Zeile je Heizperiode (Primärschlüssel ist die
 // Heizperiode). Die Methode hat keine Vorgabe: Der Vermieter beantwortet die Frage nach der

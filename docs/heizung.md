@@ -175,7 +175,8 @@ in `computeSettlement`; die Probe in [shared/co2Probe.ts](../shared/co2Probe.ts)
 zeigt sie live). Rechtswerte in [shared/law/co2kostaufg.ts](../shared/law/co2kostaufg.ts).
 
 - **Die Methode ist eine Antwort, keine Vorgabe**: `serviceDeducted` (Abzugszeile), `serviceShown`
-  (nur ausgewiesen), `selfAfterService` (nicht aufgeteilt); bei freien Schlüsseln `self`.
+  (nur ausgewiesen), `selfAfterService` (nicht aufgeteilt), `serviceEnclosed` (aufgeteilt, die Abrechnung des
+  Messdienstes liegt bei, #704, siehe unten); bei freien Schlüsseln `self`.
 - **S ist die gedruckte Kostensumme**, nicht die Summe gerundeter Nutzerzeilen. Die Probe läuft über
   die Messdienstpositionen (`amounts`): Vorwegabzug Σ = S + L ± 1 ct, nur ausgewiesen Σ = S, Einzel-
   und Eigenbeträge ≤ S + NE · 2 ct. **Scheitert sie, wird nichts gebucht** (`co2.sum-check`, error);
@@ -191,6 +192,35 @@ zeigt sie live). Rechtswerte in [shared/law/co2kostaufg.ts](../shared/law/co2kos
 - **Nur ausgewiesen**: Zeilen `kind: 'co2Relief'` ohne Position (`co2:<Anlage>:<Heizperiode>`), je
   Mieter laut Messdienst oder L · x / S, eine Verteilung von R mit `distributeCents`, der Vermieter
   trägt R als `co2Share`. Σ aller Zeilen bleibt Σ der Positionen.
+- **Sammelbetrag und „liegt bei“** (#704): Rechnet der Messdienst Heizung, Warmwasser, Kaltwasser und Abwasser in einem
+  Betrag je Nutzer ab, trägt die Position (nur „Heizung und Warmwasser“ mit Schlüssel `amounts`, `allowsIncludesWater`
+  in [shared/includesWater.ts](../shared/includesWater.ts); an jeder anderen fällt die Angabe beim Speichern still weg)
+  den Haken `includesWater` (`cost_items.includes_water`, Schritt 0108). **Er ändert keine Zahl**, nur Bezeichnung und
+  Hinweise: Die Zeilen tragen `includesWater: true` (auch eingefroren), gedruckt wird die Kostenart über
+  `categoryLabelOf` mit Zusatz (Abrechnung des Mieters, Aufstellung des Vermieters, CSV; im JSON-Export bleibt `category`
+  der Datenwert, daneben `includesWater`); die Prüfung nach der Heizkostenverordnung behandelt die Position wie jede mit
+  Einzelbeträgen. Die Probe kann mit Wasser im Betrag nicht aufgehen: Bei `serviceDeducted`/`serviceShown` nennen Karte
+  (`includesWaterNote`) und `co2.sum-check` den Grund und die vierte Antwort der Karte, **`serviceEnclosed`**
+  („Der Messdienst hat die CO₂-Kosten aufgeteilt und weist das in seiner Abrechnung aus; ich lege sie der Abrechnung
+  bei“, `CO2_ENCLOSED_LABEL` in shared/co2Probe.ts). Sie steht jeder Anlage mit Messdienst offen, auch ohne Haken, und
+  heißt: keine Probe (`co2PotsOf` rechnet sie nur für die beiden Antworten mit Zahlen), keine Nachstufung, keine
+  Buchung, kein `co2.missing`, `co2.sum-check`, `co2.service-unsplit`, `co2.incomplete`; statt dessen einmal je Topf
+  `co2.service-enclosed` (hint, `INFORMATIONAL`, nur mit `settledOn`), der die Beilage und § 7 Abs. 3 und 4 CO2KostAufG
+  nennt. Die Karte schickt dann nur `{ method }`, früher eingetragene Werte bleiben gespeichert und unbenutzt. Der
+  Ausweis ist `co2` mit `method: 'serviceEnclosed'`, `booked: false`, leeren Zahlen und `enclosedFor` (die
+  Mietverhältnisse mit einer Zeile aus den Messdienstpositionen, `sharesOf`), `enclosedBy` für die Eigentumswohnung;
+  `co2Block` druckt dafür statt des Blocks einen Satz, der auf die beiliegende Heizkostenabrechnung verweist
+  (`reference`). **Bekannte Folge**: Den vorab abgezogenen CO₂-Anteil des Vermieters kennt Mietfuchs so nicht als
+  eigenen Posten (kein `co2Share`, L_self nicht getrennt); wer ihn als Werbungskosten will, nimmt als Betrag der Position
+  die Summe aller Nutzer plus diesen Anteil, er steht dann als Rest der Einzelbeträge beim Vermieter. Ob eine
+  Sammelzeile aus Heizung und Wasser formell genügt, ist nicht entschieden; Haken, Lexikon und Anleitung sagen es, ohne
+  Fundstelle. **Doppelerfassung**: Hat ein Mieter in derselben Abrechnung eine Zeile mit `includesWater` und eine der
+  Kostenart „Wasser/Abwasser“, warnt `amounts.water-twice` (warning) an der Wasserposition, gefragt an den gedruckten
+  Zeilen nach dem Zusammenführen (Weg b), mit „Prüfen Sie“, denn Gartenwasser daneben ist berechtigt; das Kostenformular
+  sagt denselben Satz (`waterTwiceText`) für jede Wasserposition des Zeitraums, weil es die Verteilung nicht kennt. Bei
+  Weg d steht die Heizperiode in einer eigenen Abrechnung, dort warnt nichts. Die KI-Auslesung der
+  Messdienstabrechnung kennt beides nicht. Tests: calc-messdienst-sammelbetrag.test.ts (mit Invariante),
+  api-messdienst-sammelbetrag.test.ts, client/src/sammelbetrag.test.tsx.
 - **Kürzungen** je Mieter auf seine gedruckten Zeilen im Topf, nie summiert: 3 % nach § 7 Abs. 4
   CO2KostAufG (`co2.missing`, `co2.service-unsplit`, `co2.incomplete`, `co2.sum-check`,
   `co2.fuel-unknown`, `co2.missing-first-year`), 15 % bei Warmwasser nach Formel

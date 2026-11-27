@@ -601,6 +601,9 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Rechtsgrundlage, „Brauche ich das?“. Rechtsaussagen nur, wo sie im Gesetz stehen; Beispiele werden
   nachgerechnet; Rechtszahlen aus dem Register. Jeder Hinweis-Code trägt mindestens einen Begriff
   (`terms`, glossary.test.ts).
+- **Texte, die Hinweis, Karte, Formular, Lexikon und Anleitung wortgleich nennen, stehen einmal in `shared/`** (#704):
+  die Beschriftung des Hakens und der Zusatz der Kostenart in shared/includesWater.ts, die Antwort „liegt bei“ der Karte
+  „CO₂-Kosten“ in shared/co2Probe.ts. Die Anleitungen setzen sie als Konstante ein; guides.test.ts findet sie so im Quelltext.
 - **[Term.tsx](src/components/Term.tsx)**: Auslöser ist ein `span` mit `role="button"` (ein `<button>`
   im `<label>` nähme dem Feld die Beschriftung), dahinter ein „?“ aus CSS (`term-q`, für Vorleser
   ausgeblendet). Die Erklärung ist ein Popover (am Handy Blatt unten) mit Erklärung und Beispiel und

@@ -50,6 +50,7 @@ import { fuelBlock } from '../fuelView'
 import { closeWithQuestions } from '../fuelClose'
 import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, exportQuestion, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
+import { categoryLabelOf } from '../../../shared/includesWater.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
 import { CREDIT_MOVED_OUT_PAGE_TEXT } from '../letterForm'
 import { adjustFromFor, creditTextUnused, mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
@@ -645,11 +646,14 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               const attachmentsReady = stFiles.every((f) => attachmentPages[f])
               // Positionen nach Kostenart gruppieren - mit Zwischensumme, sobald eine
               // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).
+              // #704: Gruppiert wird nach der Bezeichnung (`categoryLabelOf`): Ein Sammelbetrag des Messdienstes mit Wasser
+              // heißt anders als „Heizung und Warmwasser“ allein und bekommt keine gemeinsame Zwischensumme damit. Ohne die
+              // Angabe ist die Bezeichnung die Kostenart, die Gruppen also dieselben wie zuvor.
               const groups: { category: string; rows: SettlementRow[] }[] = []
               for (const r of st.rows) {
-                const g = groups.find((x) => x.category === r.category)
+                const g = groups.find((x) => x.category === categoryLabelOf(r))
                 if (g) g.rows.push(r)
-                else groups.push({ category: r.category, rows: [r] })
+                else groups.push({ category: categoryLabelOf(r), rows: [r] })
               }
               const letter = legacy ? null : letterOf(data, st, { settings, property, tenancies })
               const attachmentCount = printAttachments ? stFiles.length : 0
@@ -1243,7 +1247,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                             {(toggle) => (
                               <tr>
                                 <td>
-                                  {softBreak(r.category)}
+                                  {softBreak(categoryLabelOf(r))}
                                   {r.description !== r.category && <div className="muted">{softBreak(r.description)}</div>}
                                 </td>
                                 <td className="num">
@@ -1376,7 +1380,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                         <tbody>
                           {st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r, i) => (
                             <tr key={i}>
-                              <td>{softBreak(`${r.category} - ${r.description}`)}</td>
+                              <td>{softBreak(`${categoryLabelOf(r)} - ${r.description}`)}</td>
                               <td className="num">{fmtEuro(r.labor35aCents!)}</td>
                             </tr>
                           ))}
@@ -1482,7 +1486,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                     <tbody>
                       {data.landlord.rows.map((r, i) => (
                         <tr key={i}>
-                          <td>{r.category}<div className="muted">{r.description}</div></td>
+                          <td>{categoryLabelOf(r)}<div className="muted">{r.description}</div></td>
                           <td className="num">{fmtEuro(r.totalCents)}</td>
                           <td className="muted">{landlordReasonText(r)}</td>
                           <td className="num">{fmtEuro(r.shareCents)}</td>

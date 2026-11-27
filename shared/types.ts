@@ -827,6 +827,11 @@ export type CostItem = {
   // Dazu die Beträge selbstgenutzter Wohnungen (#104): Wohnungs-ID → Betrag in Cent. Sie sind der
   // Eigenanteil des Vermieters und in der Steuer privat.
   selfAmounts?: Record<string, number> | null
+  // Sammelbetrag des Messdienstes (#704): Die Einzelbeträge enthalten neben Heizung und Warmwasser auch Kaltwasser und
+  // Abwasser, weil der Messdienst alles in einem Betrag je Nutzer abrechnet. Nur bei der Kostenart „Heizung und
+  // Warmwasser“ mit dem Schlüssel `amounts`; fehlt, wenn nicht gesetzt. Ändert nur Bezeichnung und Hinweise, nie eine
+  // Zahl (`categoryLabelOf` in shared/includesWater.ts).
+  includesWater?: boolean
   // Die Umlagevereinbarung je Mietverhältnis (#258, Entwurf Entscheidung 1): Mietverhältnis-Kennungen derselben
   // Position. `notAgreedTenancyIds`: Der Mietvertrag legt diese Position nicht um, ihr Anteil bleibt beim
   // Vermieter. `namedTenancyIds`: Der Vertrag nennt die Position ausdrücklich (bestätigt, bei „Sonstige“).
@@ -1301,6 +1306,10 @@ export type SettlementRow = {
   // Erstattung an einen Mieter, der selbst heizt (§ 6 Abs. 2 CO2KostAufG), mit der Abrechnung verrechnet, ohne
   // Kostenposition; `costItemId` ist `co2refund:<Erstattung>`.
   kind?: 'co2Relief' | 'fuelCarry' | 'gmodgRelief' | 'co2Refund'
+  // Sammelbetrag des Messdienstes (#704): Die Position enthält nach Angabe des Vermieters auch Kaltwasser und Abwasser.
+  // Die Kostenart bleibt „Heizung und Warmwasser“; gedruckt wird sie mit Zusatz (`categoryLabelOf` in
+  // shared/includesWater.ts). Fehlt ohne die Angabe, also auch in jeder vorher abgeschlossenen Abrechnung.
+  includesWater?: true
 }
 
 // Die Gründe, aus denen ein Teil einer Position beim Vermieter bleibt (#142):
@@ -2796,8 +2805,9 @@ export type HeatingSettlementInfo = SeparateHeatingRef & { closed: { closedAt: s
 // Wie die CO₂-Kosten in der Heizkostenabrechnung stehen. `serviceDeducted`: Der Messdienst hat den
 // Anteil des Vermieters in der Kostenaufstellung abgezogen („Abzüglich CO₂-Kosten Vermieter“);
 // `serviceShown`: nur ausgewiesen; `selfAfterService`: gar nicht aufgeteilt; `self`: Mietfuchs teilt
-// selbst auf (PR 7).
-export type Co2Method = 'serviceDeducted' | 'serviceShown' | 'selfAfterService' | 'self'
+// selbst auf (PR 7). `serviceEnclosed` (#704): Der Messdienst hat aufgeteilt und weist es in seiner Abrechnung aus, die
+// der Vermieter jedem Mieter beilegt; Mietfuchs prüft und bucht dann nichts und druckt statt des Blocks einen Verweis.
+export type Co2Method = 'serviceDeducted' | 'serviceShown' | 'selfAfterService' | 'self' | 'serviceEnclosed'
 
 // Ein Betrag „vom Vermieter übernommen“ laut Messdienst, je Mietverhältnis.
 export type Co2TenantRelief = { tenancyId: string; cents: number }
@@ -2921,6 +2931,11 @@ export type Co2Assessment = {
   areaScope?: 'plant' | 'building'
   // Hälftige Teilung nach § 5a CO2KostAufG (Heizung PR 18); fehlt ohne Heizung nach § 43 Abs. 1 GModG.
   halfSplit?: Co2HalfSplit
+  // Nur bei `method: 'serviceEnclosed'` (#704): die Mietverhältnisse mit einer Zeile aus den Messdienstpositionen dieser
+  // Heizperiode. Ihre Abrechnung verweist anstelle des Blocks auf die beiliegende Heizkostenabrechnung des Messdienstes.
+  enclosedFor?: string[]
+  // Wer abgerechnet hat, für den Wortlaut des Verweises: der Messdienst oder, bei einer Eigentumswohnung, die Gemeinschaft.
+  enclosedBy?: 'service' | 'homeowners'
 }
 
 // Eine Heizanlage in einer Abrechnung, mit der Heizperiode, die darin abgerechnet wird.
@@ -2979,7 +2994,7 @@ export type HeatingPeriodView = {
   // (`running`, sonst null); fehlt ein Stand, sagt `volumeMissing`, welcher.
   hotWaterBasis: { volumeFromMetersM3: number | null; volumeMissing: string | null; running: { from: string; to: string } | null; suppliedAreaM2: number }
   co2: Co2Statement | null
-  items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId'>[]
+  items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId' | 'includesWater'>[]
   // Der Vorrat dieser Heizperiode (Heizung PR 8); `null` bei einer Anlage ohne Vorratsenergie.
   stock: StockView | null
   // Anteil nach Verbrauch dieser Heizperiode (Heizung PR 10), nur bei `method = 'self'`.

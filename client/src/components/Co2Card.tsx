@@ -6,7 +6,7 @@ import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
-import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, probeQuestion, type Co2Form } from '../co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_ENCLOSED_TAX, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2AnswerLabel, co2Body, co2EnclosedHelp, co2Labels, co2ToForm, includesWaterNote, probeLine, probeQuestion, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
@@ -32,6 +32,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
   const confirm = useConfirm()
   const set = <K extends keyof Co2Form>(key: K, value: Co2Form[K]) => setForm((f) => ({ ...f, [key]: value }))
   const probe = probeLine(form, ctx)
+  const waterNote = includesWaterNote(form, ctx)
   const serviceItems = view.items.filter((i) => i.key === 'amounts')
   const billed = tenancies.filter((t) => serviceItems.some((i) => (i.tenancyAmounts?.[t.id] ?? 0) > 0))
   const service = form.answer === 'deducted' || form.answer === 'shown'
@@ -103,7 +104,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           disabled={view.closed}
           onChange={(e) => set('answer', CO2_ANSWER_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}
         >
-          {CO2_ANSWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{homeowners && o.value === 'unsplit' ? 'Die Abrechnung der Gemeinschaft teilt die CO₂-Kosten gar nicht auf' : o.label}</option>)}
+          {CO2_ANSWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{co2AnswerLabel(o, homeowners)}</option>)}
         </select>
       </label>
       <p className="muted">{CO2_EXAMPLE} · <Term id="co2Deducted">Was ist die Abzugszeile?</Term></p>
@@ -111,6 +112,14 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
       {form.answer === 'unsplit' && (
         <NoticeBox level="warning" action={<>Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie {homeowners ? 'die Verwaltung der Gemeinschaft' : 'den Messdienst'} um eine Abrechnung mit CO₂-Aufteilung.</>} />
       )}
+      {/* #704: Der Messdienst hat aufgeteilt, seine Abrechnung liegt bei. Keine weiteren Felder, keine Probe. */}
+      {form.answer === 'enclosed' && (
+        <>
+          <p className="muted">{co2EnclosedHelp(homeowners)}</p>
+          <p className="muted">{CO2_ENCLOSED_TAX}</p>
+        </>
+      )}
+      {waterNote && <NoticeBox level="warning" action={waterNote} />}
       {service && (
         <>
           {/* Sichtprüfung E38: der Hilfetext unmittelbar unter seinem Feld, das Kästchen neben seiner Beschriftung */}

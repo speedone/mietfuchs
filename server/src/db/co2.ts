@@ -151,7 +151,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       co2: statements.find((s) => s.period === h.key) ?? null,
       items: items
         .filter((c) => c.period === h.key)
-        .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
+        .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId, ...(c.includesWater === true ? { includesWater: true } : {}) })),
       stock: stockData ? stockViewFor(stockData, ctx, h, closed) : null,
       // Anteil nach Verbrauch (Heizung PR 10), nur bei eigener Abrechnung.
       // Über die Linie (Durchsicht von #239, I3), und erst ab dem Beginn der eigenen Abrechnung (I1).

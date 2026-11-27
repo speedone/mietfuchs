@@ -6,14 +6,16 @@
 // dem Papier, und eine Vorgabe wäre bei einem Teil der Messdienste falsch.
 import { fmtEuro, parseEuro } from './api'
 import { parseNumberDe } from './numbers'
-import { enteredCentsOf, serviceProbe } from '../../shared/co2Probe.ts'
+import { CO2_ENCLOSED_LABEL, CO2_ENCLOSED_LABEL_HOMEOWNERS, enteredCentsOf, includesWaterProbeText, serviceProbe } from '../../shared/co2Probe.ts'
+import { andList } from '../../shared/wording.ts'
 import type { Co2Method, Co2Statement, HeatingPeriodView } from './types'
 import { KEY_LABELS } from './types'
 
-export type Co2Answer = '' | 'deducted' | 'shown' | 'unsplit'
-const METHOD_OF: Record<Exclude<Co2Answer, ''>, Co2Method> = { deducted: 'serviceDeducted', shown: 'serviceShown', unsplit: 'selfAfterService' }
+// `enclosed` (#704): Der Messdienst hat aufgeteilt und weist es aus, seine Abrechnung liegt bei; keine Probe, keine Buchung.
+export type Co2Answer = '' | 'deducted' | 'shown' | 'unsplit' | 'enclosed'
+const METHOD_OF: Record<Exclude<Co2Answer, ''>, Co2Method> = { deducted: 'serviceDeducted', shown: 'serviceShown', unsplit: 'selfAfterService', enclosed: 'serviceEnclosed' }
 const answerOf = (m: Co2Method): Co2Answer =>
-  m === 'serviceDeducted' ? 'deducted' : m === 'serviceShown' ? 'shown' : m === 'selfAfterService' ? 'unsplit' : ''
+  m === 'serviceDeducted' ? 'deducted' : m === 'serviceShown' ? 'shown' : m === 'selfAfterService' ? 'unsplit' : m === 'serviceEnclosed' ? 'enclosed' : ''
 
 // Gefragt wird nur nach der Zeile in der Kostenaufstellung, die den Anteil vor der Verteilung abzieht
 // (Durchsicht I1). „Vom Vermieter übernommen“ bei den einzelnen Nutzern weisen Messdienste auch ohne
@@ -27,7 +29,33 @@ export const CO2_ANSWER_OPTIONS: readonly { value: Co2Answer; label: string }[] 
   { value: 'deducted', label: 'Ja, es gibt eine Abzugszeile' },
   { value: 'shown', label: 'Nein, die CO₂-Kosten sind nur ausgewiesen' },
   { value: 'unsplit', label: 'Der Messdienst hat die CO₂-Kosten gar nicht aufgeteilt' },
+  { value: 'enclosed', label: CO2_ENCLOSED_LABEL },
 ]
+// Bei einer Eigentumswohnung rechnet die Gemeinschaft ab (Abdeckung V14); die Karte zeigt dann diese Beschriftungen.
+const HOMEOWNERS_LABELS: Partial<Record<Co2Answer, string>> = {
+  unsplit: 'Die Abrechnung der Gemeinschaft teilt die CO₂-Kosten gar nicht auf',
+  enclosed: CO2_ENCLOSED_LABEL_HOMEOWNERS,
+}
+export const co2AnswerLabel = (option: { value: Co2Answer; label: string }, homeowners: boolean): string => (homeowners ? HOMEOWNERS_LABELS[option.value] : undefined) ?? option.label
+
+// Was die Antwort „liegt bei“ bedeutet (#704), unter der Auswahl: nichts wird geprüft oder gebucht, die Abrechnung des
+// Messdienstes liegt jedem Mieter bei, und was ihr fehlen darf, sagt das Gesetz. Den Kürzungssatz nennt die Abrechnung
+// (er steht im Rechtsregister), hier steht er nicht.
+export const co2EnclosedHelp = (homeowners: boolean): string =>
+  `Mietfuchs prüft diese Aufteilung dann nicht, bucht keinen CO₂-Anteil und druckt keinen eigenen Ausweis; die übrigen Angaben dieser Karte sind nicht nötig. Die Abrechnung jedes Mieters verweist auf die beiliegende Heizkostenabrechnung. ` +
+  `Legen Sie deshalb jedem Mieter ${homeowners ? 'die Einzelabrechnung (Heizung) Ihrer Wohnung' : 'die Heizkostenabrechnung des Messdienstes'} mit dem Abschnitt zu den CO₂-Kosten bei: Sie muss den Anteil des Mieters an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). ` +
+  'Enthält sie das nicht, darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 4 CO2KostAufG); den Satz nennt der Hinweis der Abrechnung.'
+export const CO2_ENCLOSED_TAX = 'Für die Steuer: Den CO₂-Anteil des Vermieters, den der Messdienst vorab abgezogen hat, kennt Mietfuchs dann nicht als eigenen Posten. Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil.'
+
+// Sammelbetrag des Messdienstes (#704): Steckt Wasser im Betrag einer Messdienstposition und ist eine der beiden
+// Antworten mit Probe gewählt, sagt die Karte, warum die Probe nicht aufgehen kann, und nennt die Antwort „liegt bei“.
+// Derselbe Satz wie in der Meldung `co2.sum-check` der Abrechnung.
+export function includesWaterNote(form: Pick<Co2Form, 'answer'>, ctx: Co2Context): string | null {
+  if (form.answer !== 'deducted' && form.answer !== 'shown') return null
+  const combined = serviceItemsOf(ctx).filter((i) => i.includesWater === true)
+  if (combined.length === 0) return null
+  return includesWaterProbeText(andList(combined.map((i) => `„${i.description}“`)), combined.length > 1, ctx.homeowners === true)
+}
 
 export type Co2Form = {
   answer: Co2Answer
@@ -117,6 +145,9 @@ export function usersTotalOf(form: Co2Form, ctx: Co2Context): number | null {
 export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, unknown> } | { error: string } {
   if (form.answer === '') return { error: 'Bitte beantworten Sie zuerst die Frage nach der Abzugszeile.' }
   const method = METHOD_OF[form.answer]
+  // #704: Mit „liegt bei“ ist nichts weiter nötig, und nichts weiter wird geschickt. Der Server ergänzt nach Anwesenheit
+  // eines Schlüssels: Was früher eingetragen war, bleibt gespeichert, und ein halb getipptes Feld hält das Speichern nicht auf.
+  if (method === 'serviceEnclosed') return { body: { method } }
   const errors: string[] = []
   const cents = (text: string, label: string): number | null => {
     if (text.trim() === '') return null

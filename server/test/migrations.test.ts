@@ -270,6 +270,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #691: Baustein „Guthaben nach dem Auszug“ in den Bedingungen der drei Tabellen der Anschreiben (Neubau). Eingetragen vor
   // dem Merge; wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0107_guthaben_auszug': '88add08b2804dc438a158347ce5fe06f267a46d4b1af7d4f6d5ce6198e28e1b4',
+  // #704: Sammelbetrag des Messdienstes (`cost_items.includes_water`) und die Antwort `serviceEnclosed` der CO₂-Angaben
+  // (Neubau von `co2_statements` wegen der Bedingung an `method`). Eingetragen vor dem Merge; wird vor dem Merge ein
+  // anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0108_messdienst_sammelbetrag': '4698a3a1257f0578f15e9cab867866dfef2824201c71250bdd0ff17bdb97b152',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

@@ -19,6 +19,8 @@ import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, shiftMon
 import { practiceEvaporatorWindow, practiceMeterRestHigh, practiceVpiSeries } from './law/practice.ts'
 import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
+import { CO2_ENCLOSED_LABEL } from './co2Probe.ts'
+import { INCLUDES_WATER_LABEL, INCLUDES_WATER_SUFFIX } from './includesWater.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
 import { estgAcquisitionRelated, estgCheapRent, estgShortPeriodDays, yearsWord } from './law/estg.ts'
@@ -610,7 +612,7 @@ export const GLOSSARY = {
     short: 'Seit 2023 tragen Vermieter einen Teil der CO₂-Kosten der Heizung, und zwar umso mehr, je mehr CO₂ das Gebäude je Quadratmeter Wohnfläche ausstößt. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen.',
     example: `600 € CO₂-Kosten in der Gasrechnung, 24.105,6 kg CO₂ bei 600 m² Wohnfläche: 40,2 kg je m², Stufe ${B1.range}. Der Vermieter trägt ${B1.percent} % der CO₂-Kosten, also ${(600 * B1.percent) / 100} €, die Mieter tragen ${600 - (600 * B1.percent) / 100} €. Fehlt die Aufteilung in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} % kürzen.`,
     norm: '§§ 5, 7 CO2KostAufG',
-    needed: `Ja, wenn Sie mit Gas, Heizöl, Flüssiggas oder Kohle heizen oder Ihr Wärmelieferant CO₂-Kosten ausweist, für jeden Abrechnungszeitraum, der am oder nach dem ${CO2_FROM} beginnt. Rechnet ein Messdienst oder die Gemeinschaft ab, übernehmen Sie deren Angaben auf der Seite Heizkosten.`,
+    needed: `Ja, wenn Sie mit Gas, Heizöl, Flüssiggas oder Kohle heizen oder Ihr Wärmelieferant CO₂-Kosten ausweist, für jeden Abrechnungszeitraum, der am oder nach dem ${CO2_FROM} beginnt. Rechnet ein Messdienst oder die Gemeinschaft ab, übernehmen Sie deren Angaben auf der Seite Heizkosten. Hat der Messdienst aufgeteilt und weist er das in seiner Abrechnung aus, können Sie stattdessen die Antwort „${CO2_ENCLOSED_LABEL}“ wählen: Mietfuchs prüft und bucht dann nichts, die Abrechnung des Mieters verweist auf die beiliegende Heizkostenabrechnung des Messdienstes, und die muss den Anteil des Mieters, die Einstufung und die Berechnungsgrundlagen selbst ausweisen (§ 7 Abs. 3 CO2KostAufG). Den CO₂-Anteil des Vermieters, den der Messdienst vorab abgezogen hat, kennt Mietfuchs dann nicht als eigenen Posten: Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil.`,
   },
   co2Stage: {
     topic: 'co2',
@@ -955,7 +957,7 @@ export const GLOSSARY = {
   individualAmounts: {
     topic: 'costs',
     title: 'Einzelbeträge',
-    short: 'Die Beträge je Mieter stehen schon fest, etwa in der Abrechnung eines Messdienstes, und werden unverändert übernommen. Gemeint sind die Kosten des Mieters: Nennt die Abrechnung auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, zählt die Zeile mit den Kosten, denn die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an.',
+    short: `Die Beträge je Mieter stehen schon fest, etwa in der Abrechnung eines Messdienstes, und werden unverändert übernommen. Gemeint sind die Kosten des Mieters: Nennt die Abrechnung auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, zählt die Zeile mit den Kosten, denn die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Rechnet der Messdienst Heizung, Warmwasser, Kaltwasser und Abwasser in einem Betrag je Nutzer ab, tragen Sie diesen Betrag an einer Position „Heizung und Warmwasser“ ein und setzen den Haken „${INCLUDES_WATER_LABEL}“: Die Abrechnung des Mieters nennt die Zeile dann mit dem Zusatz „${INCLUDES_WATER_SUFFIX}“, die Beträge bleiben. Die Einzelabrechnung des Messdienstes legen Sie bei, denn sie schlüsselt die Kostenarten auf; ob eine Sammelzeile aus Heizung und Wasser in der Betriebskostenabrechnung genügt, ist nicht entschieden. Eine eigene Position „Wasser/Abwasser“ für dieselben Kosten steht dann nicht daneben.`,
     example: 'Die Heizkostenabrechnung des Messdienstes über 3.000 € nennt 1.240 € für Wohnung A und 1.160 € für B; 600 € entfallen auf Ihre eigene Wohnung.',
     needed: 'Wenn ein Dienstleister wie ein Messdienst bereits je Wohnung abgerechnet hat.',
   },

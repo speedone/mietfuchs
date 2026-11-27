@@ -28,6 +28,10 @@
   "text": "„Heizung laut Messdienst“: der Anteil der selbstgenutzten Wohnung Hauptwohnung ist bei Einzelbeträgen nicht eingetragen - er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig."
  },
  {
+  "code": "amounts.water-twice",
+  "text": "„Abrechnung des Messdienstes“ (4.100,00 €) enthält nach Ihrer Angabe auch Kaltwasser und Abwasser, und daneben wird „Stadtwerke Wasser“ (640,00 €) mit der Kostenart „Wasser/Abwasser“ auf dieselben Mieter umgelegt. Prüfen Sie, ob das dieselben Kosten sind: Hat der Messdienst die Rechnung des Wasserversorgers schon in seinen Beträgen je Nutzer verteilt, tragen die Mieter sie so zweimal. Dann erfassen Sie die Rechnung des Versorgers nicht als eigene umlagefähige Position. Betrifft die zweite Position anderes Wasser, das der Messdienst nicht abgerechnet hat, etwa Gartenwasser, ist nichts zu tun."
+ },
+ {
   "code": "basis.self-no-area",
   "text": "Für die selbstgenutzte Wohnung EG (Eigennutzung) ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt nur auf die Mieter."
  },
@@ -174,6 +178,10 @@
  {
   "code": "co2.self-supply-mixed",
   "text": "Mieter A (A) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an „Gas“ einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“. Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen …“ (die Heizpositionen bleiben, nur ohne Anlage), klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“. Hat jede Wohnung ihre eigene Therme oder Heizung mit einem Vertrag des Mieters, klicken Sie stattdessen in der Karte „Heizung“ auf „Ändern“, wählen Sie bei „Womit wird geheizt?“ „Jede Wohnung hat eine eigene Heizung“ und bei „Wer hat den Vertrag für die Heizung in der Wohnung?“ „Der Mieter hat den Vertrag, etwa für die Gastherme“; Mietfuchs entfernt die Heizanlage dann nach einer Rückfrage."
+ },
+ {
+  "code": "co2.service-enclosed",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Nach Ihrer Angabe hat der Messdienst die CO₂-Kosten aufgeteilt und weist das in seiner Abrechnung aus. Mietfuchs prüft diese Aufteilung nicht, bucht keinen CO₂-Anteil und druckt keinen eigenen Ausweis; die Abrechnung jedes Mieters verweist stattdessen auf die beiliegende Heizkostenabrechnung. Legen Sie deshalb jedem Mieter die Heizkostenabrechnung des Messdienstes mit dem Abschnitt zu den CO₂-Kosten bei. Die Heizkostenabrechnung des Messdienstes muss den auf den Mieter entfallenden Anteil an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG); enthält sie das nicht, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG). Den CO₂-Anteil des Vermieters kennt Mietfuchs so nicht als eigenen Posten: Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil."
  },
  {
   "code": "co2.service-fuel-mismatch",

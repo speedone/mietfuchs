@@ -123,6 +123,9 @@ export type CostItemBody = {
   operatingPowerGeneralId?: string | null
   // #270: am Abzug ohne Verweis, ob er dem Messdienst gemeldet ist.
   operatingPowerReported?: boolean | null
+  // #704: Die Einzelbeträge enthalten auch Kaltwasser und Abwasser. Nur das Kostenformular setzt es; fehlt es, lässt der
+  // Server die Angabe stehen.
+  includesWater?: boolean
 }
 
 // **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,

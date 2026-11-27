@@ -23,6 +23,17 @@ const HALF_CENT = 0.5
 // schreibt sie, Anleitung und Oberfläche nennen sie.
 export const CO2_RELIEF_LABEL = 'CO₂-Kosten: Anteil des Vermieters'
 
+// Die Antwort „liegt bei“ auf die Frage nach der Abzugszeile (#704, `serviceEnclosed`): Der Messdienst hat aufgeteilt,
+// der Vermieter legt dessen Abrechnung bei, und Mietfuchs prüft und bucht nichts. Die Karte „CO₂-Kosten“ bietet sie an,
+// die Meldung `co2.sum-check` und das Lexikon nennen sie wörtlich. Bei einer Eigentumswohnung rechnet die Gemeinschaft ab.
+export const CO2_ENCLOSED_LABEL = 'Der Messdienst hat die CO₂-Kosten aufgeteilt und weist das in seiner Abrechnung aus; ich lege sie der Abrechnung bei'
+export const CO2_ENCLOSED_LABEL_HOMEOWNERS = 'Die Abrechnung der Gemeinschaft teilt die CO₂-Kosten auf und weist das aus; ich lege sie der Abrechnung bei'
+// Warum die Probe mit einem Sammelbetrag nicht aufgehen kann, in einem Satz für Karte und Meldung. `names`: die
+// Positionen mit dem Haken, schon in Anführungszeichen und verbunden.
+export const includesWaterProbeText = (names: string, several: boolean, homeowners = false): string =>
+  `${names} ${several ? 'enthalten' : 'enthält'} nach Ihrer Angabe auch Kaltwasser und Abwasser; die Probe vergleicht den Betrag aber mit den Kosten für Heizung und Warmwasser allein und kann so nicht aufgehen. ` +
+  `Hat ${homeowners ? 'die Gemeinschaft' : 'der Messdienst'} die CO₂-Kosten aufgeteilt, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ die Antwort „${homeowners ? CO2_ENCLOSED_LABEL_HOMEOWNERS : CO2_ENCLOSED_LABEL}“.`
+
 const positive = (amounts: Readonly<Record<string, number>> | null | undefined): number =>
   Object.values(amounts ?? {}).reduce((a, c) => a + Math.max(0, c), 0)
 

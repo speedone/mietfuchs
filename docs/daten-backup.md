@@ -143,7 +143,7 @@ bleibt immer gleich. Beträge sind Cent als ganze Zahlen, Datumsangaben `JJJJ-MM
 | `draft`, `errors` | Eine offene Abrechnung mit Fehlern ist ein Entwurf; `errors` nennt sie mit `code` und `title`. |
 | `totalCostsCents` | Gesamtkosten des Zeitraums. |
 | `statements` | Je Mietverhältnis: `tenancyId`, `unitId`, `unitName`, `tenantName`, `persons`, `days`, `periodStart`, `periodEnd`, `rows`, `totalShareCents`, `total35aCents`, `prepaymentCents`, `balanceCents` (positiv ist ein Guthaben, negativ eine Nachzahlung), `prepaymentOverridden`, `suggestedMonthlyCents`, `heatingPrepaymentCents`, `prepaymentNote`, `scope`, `heatingOnly`, `recommendedDeadline`, `adjustment`. |
-| `rows` (je Zeile) | `costItemId`, `category`, `description`, `totalCents`, `kind`, `key`, `keyLabel`, `basisText`, `shareCents`, `labor35aCents`. |
+| `rows` (je Zeile) | `costItemId`, `category`, `description`, `totalCents`, `kind`, `key`, `keyLabel`, `basisText`, `shareCents`, `labor35aCents`. Nur wenn gesetzt: `includesWater: true` an einer Zeile „Heizung und Warmwasser“, deren Betrag laut Abrechnung des Messdienstes auch Kaltwasser und Abwasser enthält; `category` bleibt dabei „Heizung und Warmwasser“. |
 | `landlord` | Anteil des Vermieters: `totalCents`, `rows`. |
 | `heating` | Die Angaben der Heizkostenabrechnung je Heizanlage (§ 6a HeizkostenV, CO₂, Vorrat, Lieferungen); leer ohne Heizanlage. Bei der eigenen Heizkostenabrechnung je Nutzer `heatingCents` und `waterCents` als Summe seiner verteilten Zeilen, dazu `heatingRows` und `waterRows` (Zahl dieser Zeilen; neu, ohne Verteilung fehlen sie) und je Wohnung `noDevicePots` (neu; nur, wenn für Heizung oder Warmwasser ein Gerät fehlt). |
 
