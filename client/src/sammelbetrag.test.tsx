@@ -7,15 +7,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { fmtEuro } from './api'
 import { buildCostItemBody, EMPTY_ITEM_FORM, INCLUDES_WATER_CO2_HELP, INCLUDES_WATER_HELP, INCLUDES_WATER_LABEL, itemToForm, showsIncludesWater, waterTwiceHints, type ItemForm } from './costForm'
 import { carryOverForm, carryOverRows } from './carryOver'
-import { CO2_ANSWER_OPTIONS, CO2_ENCLOSED_TAX, co2AnswerLabel, co2Body, co2EnclosedHelp, co2ToForm, includesWaterNote, probeLine, type Co2Context } from './co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_ENCLOSED_JOINT, CO2_ENCLOSED_TAX, CO2_ENTRY_OPTIONS, CO2_ENTRY_QUESTION, CO2_EXAMPLE, CO2_NOT_A_SIGN, co2Body, co2EnclosedHelp, co2EntryLabel, co2ToForm, includesWaterNote, isEnclosed, probeLine, showsEntry, type Co2Context } from './co2Form'
 import { co2Block, co2EnclosedReference } from './co2View'
 import Co2Block from './components/Co2Block'
 import Co2Card from './components/Co2Card'
 import { UIProvider } from './components/feedback'
 import { fieldLabel, formatValue } from './journalView'
 import { noInfoView } from './testing/heatingView'
-import { CO2_ENCLOSED_LABEL, CO2_ENCLOSED_LABEL_HOMEOWNERS } from '../../shared/co2Probe.ts'
-import { categoryLabelOf, INCLUDES_WATER_SUFFIX } from '../../shared/includesWater.ts'
+import { CO2_DEDUCTED_LABEL, CO2_EMISSIONS_FIELD, CO2_ENCLOSED_LABEL, CO2_ENCLOSED_LABEL_HOMEOWNERS, CO2_ENTER_LABEL } from '../../shared/co2Probe.ts'
+import { categoryLabelOf, COMBINED_LINE_RISK, INCLUDES_WATER_SUFFIX } from '../../shared/includesWater.ts'
+import { GLOSSARY } from '../../shared/glossary.ts'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { Co2Assessment, Co2Statement, CostItem, HeatingPeriodView, HeatingStatement, Tenancy, Unit } from './types'
 
@@ -57,16 +58,18 @@ test('Haken: nur bei „Heizung und Warmwasser“ mit Einzelbeträgen; gespeiche
   expect(itemToForm(alt).includesWater).toBe(false)
 })
 
-test('Hilfesatz am Haken: Bezeichnung, Beilage, die offene Frage, keine zweite Wasserposition, CO₂-Probe und Steuer', () => {
+test('Hilfesatz am Haken (Durchsicht S8): kurze Sätze, die Rechtslage vor der Beilage, und zur Karte „CO₂-Kosten“ nur der Verweis', () => {
   expect(INCLUDES_WATER_LABEL).toBe('Der Betrag enthält auch Kaltwasser und Abwasser (der Messdienst rechnet sie in einem Betrag je Nutzer ab)')
-  expect(INCLUDES_WATER_HELP).toContain('„Heizung und Warmwasser einschließlich Kaltwasser und Abwasser (laut Abrechnung des Messdienstes)“')
-  expect(INCLUDES_WATER_HELP).toContain('Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei')
-  expect(INCLUDES_WATER_HELP).toContain('ist nicht entschieden')
-  expect(INCLUDES_WATER_HELP).toContain('Eine eigene Position „Wasser/Abwasser“ für dieselben Kosten legen Sie dann nicht an.')
-  expect(INCLUDES_WATER_CO2_HELP).toContain(`„${CO2_ENCLOSED_LABEL}“`)
-  expect(INCLUDES_WATER_CO2_HELP).toContain('Summe aller Nutzer plus diesen Anteil')
-  // Keine erfundene Fundstelle zur offenen Frage.
-  expect(INCLUDES_WATER_HELP).not.toMatch(/§|BGH|Az\./)
+  // Rechtslage gelesen am 27.11.2026: Der Satz dazu steht vor der Aufforderung, die Einzelabrechnung beizulegen.
+  expect(INCLUDES_WATER_HELP).toBe('Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag für Heizung, Warmwasser, Kaltwasser und Abwasser nennt. Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters. Eine solche Sammelzeile ist formell angreifbar: Ob die beiliegende Abrechnung des Messdienstes als Aufschlüsselung genügt, hat der Bundesgerichtshof nicht entschieden. Sicher sind getrennte Positionen für Heizung und Warmwasser sowie für Kaltwasser und Abwasser. Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei; sie schlüsselt die Kostenarten auf. Eine eigene Position „Wasser/Abwasser“ für dieselben Kosten legen Sie dann nicht an.')
+  expect(INCLUDES_WATER_HELP.indexOf('formell angreifbar')).toBeLessThan(INCLUDES_WATER_HELP.indexOf('Legen Sie jedem Mieter'))
+  expect(INCLUDES_WATER_HELP).not.toMatch(/ist nicht entschieden\./)
+  // Durchsicht M1: der Weg über „Ja“, und bei „nur ausgewiesen“ getrennte Positionen. Kein Steuersatz mehr an dieser Stelle.
+  expect(INCLUDES_WATER_CO2_HELP).toBe(`CO₂-Kosten: Hat der Messdienst den CO₂-Anteil des Vermieters vor der Verteilung abgezogen, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ nach „${CO2_DEDUCTED_LABEL}“ die Angabe „${CO2_ENCLOSED_LABEL}“. Weist er ihn nur aus, erfassen Sie Heizung und Warmwasser und das Wasser als getrennte Positionen, damit Mietfuchs den Anteil abziehen kann.`)
+  expect(INCLUDES_WATER_CO2_HELP).not.toMatch(/Werbungskosten/)
+  // Die Fundstellen stehen im Lexikon unter „Sammelzeile“, genau die belegten.
+  expect(GLOSSARY.combinedLine.norm).toBe('BGH, Urteil vom 15.07.2009, VIII ZR 340/08, Rn. 19; BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 40 bis 42; Urteil vom 14.02.2007, VIII ZR 1/06, Rn. 11, 12; BGH, Urteil vom 26.10.2011, VIII ZR 268/10, Rn. 11; zur Aufschlüsselung in einer Anlage BGH, Beschluss vom 06.07.2021, VIII ZR 371/19, Rn. 14; Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5 bis 7')
+  expect(GLOSSARY.combinedLine.short).toContain(COMBINED_LINE_RISK)
 })
 
 test('Doppelerfassung im Formular: derselbe Satz wie in der Abrechnung, nur mit Haken und nur für Wasserpositionen des Zeitraums', () => {
@@ -78,7 +81,10 @@ test('Doppelerfassung im Formular: derselbe Satz wie in der Abrechnung, nur mit 
   expect(hints[0]).toContain(`„Abrechnung des Messdienstes“ (${fmtEuro(182340)})`)
   expect(hints[0]).toContain(`„Stadtwerke Wasser“ (${fmtEuro(64000)})`)
   expect(hints[0]).toMatch(/Prüfen Sie/)
-  expect(hints[0]).toMatch(/Gartenwasser/)
+  // Durchsicht S3: gar nicht erfassen, nicht „nicht umlagefähig“.
+  expect(hints[0]).toContain('Dann erfassen Sie die Rechnung des Versorgers gar nicht als eigene Position; ihre Kosten stecken schon im Betrag des Messdienstes.')
+  expect(hints[0]).not.toMatch(/umlagefähige Position/)
+  expect(hints[0]).toMatch(/Wasser einer Wohnung, die der Messdienst nicht abrechnet, oder Gartenwasser/)
   expect(waterTwiceHints({ ...form, includesWater: false }, [wasser])).toEqual([])
   expect(waterTwiceHints({ ...form, key: 'area' }, [wasser])).toEqual([])
   expect(waterTwiceHints(form, [andere])).toEqual([])
@@ -111,46 +117,82 @@ const statement = (over: Partial<Co2Statement> = {}): Co2Statement => ({
   serviceFuelGrossCents: null, serviceFuelNetCents: null, reliefs: [], ...over,
 })
 
-test('Neue Antwort: steht in der Optionsliste, kommt aus dem gespeicherten Wert und geht als Methode allein in den Rumpf', () => {
-  expect(CO2_ANSWER_OPTIONS.map((o) => o.value)).toEqual(['', 'deducted', 'shown', 'unsplit', 'enclosed'])
-  const option = CO2_ANSWER_OPTIONS.find((o) => o.value === 'enclosed')
-  expect(option?.label).toBe('Der Messdienst hat die CO₂-Kosten aufgeteilt und weist das in seiner Abrechnung aus; ich lege sie der Abrechnung bei')
-  expect(option && co2AnswerLabel(option, true)).toBe(CO2_ENCLOSED_LABEL_HOMEOWNERS)
+// Durchsicht M1: „Liegt bei“ ist keine vierte Antwort mehr. Die Frage nach der Abzugszeile behält ihre drei Antworten;
+// nur nach „Ja“ folgt die zweite Wahl, eintragen oder nicht eintragen.
+test('Zweistufige Wahl: drei Antworten zur Abzugszeile, die zweite Wahl nur nach „Ja“; gespeichertes „liegt bei“ zeigt „Ja“ und „Nicht eintragen“', () => {
+  expect(CO2_ANSWER_OPTIONS.map((o) => o.value)).toEqual(['', 'deducted', 'shown', 'unsplit'])
+  expect(CO2_ENTRY_OPTIONS).toEqual([
+    { value: 'enter', label: 'Angaben aus der Abrechnung hier eintragen (Mietfuchs prüft und druckt die CO₂-Aufteilung)' },
+    { value: 'enclosed', label: 'Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei' },
+  ])
+  expect(CO2_ENTRY_OPTIONS[0]?.label).toBe(CO2_ENTER_LABEL)
+  const enclosedOption = CO2_ENTRY_OPTIONS[1]
+  expect(enclosedOption && co2EntryLabel(enclosedOption, true)).toBe(CO2_ENCLOSED_LABEL_HOMEOWNERS)
   const form = co2ToForm(statement(), ctx([item()]))
-  expect(form.answer).toBe('enclosed')
+  expect([form.answer, form.entry, isEnclosed(form)]).toEqual(['deducted', 'enclosed', true])
+  // Ein gespeicherter Vorwegabzug mit Angaben und eine neue Heizperiode stehen auf „eintragen“.
+  expect(co2ToForm(statement({ method: 'serviceDeducted' }), ctx([item()])).entry).toBe('enter')
+  expect(co2ToForm(null, ctx([item()])).entry).toBe('enter')
+  // Die zweite Wahl gibt es nur nach „Ja“.
+  expect(showsEntry({ answer: 'deducted', entry: 'enter' }, {})).toBe(true)
+  for (const answer of ['', 'shown', 'unsplit'] as const) {
+    expect(showsEntry({ answer, entry: 'enclosed' }, {})).toBe(false)
+    expect(isEnclosed({ answer, entry: 'enclosed' })).toBe(false)
+  }
+  // Durchsicht S11: ohne CO₂-Kosten wird sie nicht angeboten, ein gespeichertes „liegt bei“ bleibt aber sichtbar.
+  expect(showsEntry({ answer: 'deducted', entry: 'enter' }, { offersEnclosed: false })).toBe(false)
+  expect(showsEntry({ answer: 'deducted', entry: 'enclosed' }, { offersEnclosed: false })).toBe(true)
+})
+
+test('Rumpf: „Ja“ mit „Nicht eintragen“ schickt nur die Methode; „nur ausgewiesen“ bleibt serviceShown, auch wenn die zweite Wahl noch auf „Nicht eintragen“ steht', () => {
+  const form = co2ToForm(statement(), ctx([item()]))
   // Keine weiteren Angaben nötig, und keine wird geschickt: Was früher gespeichert war, bleibt beim Server stehen.
   expect(co2Body(form, ctx([item()]))).toEqual({ body: { method: 'serviceEnclosed' } })
   // Auch ein halb getipptes Feld einer anderen Antwort hält das Speichern nicht auf.
   expect(co2Body({ ...form, usersTotal: 'abc', landlordCo2: '', unitsCount: '' }, ctx([item()]))).toEqual({ body: { method: 'serviceEnclosed' } })
   expect(probeLine(form, ctx([item()]))).toBeNull()
-  // Die übrigen Antworten verlangen ihre Angaben wie bisher.
-  expect(co2Body({ ...form, answer: 'deducted' }, ctx([item()]))).toMatchObject({ error: expect.stringMatching(/Summe der Kosten aller Nutzer/) })
+  // „Ja“ mit „eintragen“ verlangt die Angaben wie bisher und speichert serviceDeducted.
+  expect(co2Body({ ...form, entry: 'enter' }, ctx([item()]))).toMatchObject({ error: expect.stringMatching(/Summe der Kosten aller Nutzer/) })
+  expect(co2Body({ ...form, entry: 'enter', usersTotal: '1.818,40', landlordCo2: '5,00', unitsCount: '1' }, ctx([item()]))).toMatchObject({ body: { method: 'serviceDeducted' } })
+  // Wechselt die Antwort auf „nur ausgewiesen“, gilt die zweite Wahl nicht mehr: nie serviceEnclosed.
+  expect(co2Body({ ...form, answer: 'shown', usersTotal: '1.823,40', landlordCo2: '5,00', unitsCount: '1' }, ctx([item()]))).toMatchObject({ body: { method: 'serviceShown' } })
+  expect(co2Body({ ...form, answer: 'unsplit' }, ctx([item()]))).toMatchObject({ body: { method: 'selfAfterService' } })
+  // Ohne Antwort auf die erste Frage passt die Meldung zu beiden Stufen: Sie nennt die Frage nach der Abzugszeile.
+  expect(co2Body({ ...form, answer: '' }, ctx([item()]))).toEqual({ error: 'Bitte beantworten Sie zuerst die Frage nach der Abzugszeile.' })
 })
 
-test('Texte der neuen Antwort: Beilage, § 7 Abs. 3 und 4 CO2KostAufG ohne Prozentzahl, und die Folge für die Steuer', () => {
+test('Durchsicht S2: bei gemeinsamer Einstufung geht mit „liegt bei“ der Ausstoß mit, sonst nichts', () => {
+  const form = { ...co2ToForm(statement(), ctx([item()])), emissionsKg: '3.000' }
+  const joint: Co2Context = { ...ctx([item()]), joint: true }
+  expect(co2Body(form, joint)).toEqual({ body: { method: 'serviceEnclosed', serviceEmissionsKg: 3000 } })
+  expect(co2Body({ ...form, emissionsKg: '' }, joint)).toEqual({ body: { method: 'serviceEnclosed', serviceEmissionsKg: null } })
+  expect(co2Body({ ...form, emissionsKg: 'viel' }, joint)).toEqual({ error: `Bitte prüfen Sie „${CO2_EMISSIONS_FIELD}“: keine Zahl ab 0.` })
+  expect(co2Body(form, ctx([item()]))).toEqual({ body: { method: 'serviceEnclosed' } })
+  expect(CO2_ENCLOSED_JOINT).toContain('Tragen Sie deshalb den CO₂-Ausstoß dieser Anlage aus der Abrechnung ein')
+})
+
+test('Texte zu „liegt bei“: zuerst die Voraussetzung Vorwegabzug, die Pflicht des Vermieters mit Vorbehalt, ohne Prozentzahl; Steuer mit der eigenen Wohnung', () => {
   const help = co2EnclosedHelp(false)
-  expect(help).toContain('die übrigen Angaben dieser Karte sind nicht nötig')
-  expect(help).toContain('Legen Sie deshalb jedem Mieter die Heizkostenabrechnung des Messdienstes mit dem Abschnitt zu den CO₂-Kosten bei')
-  expect(help).toContain('(§ 7 Abs. 3 CO2KostAufG)')
-  expect(help).toContain('(§ 7 Abs. 4 CO2KostAufG)')
+  expect(help).toBe('Das setzt voraus, dass der Messdienst den CO₂-Anteil des Vermieters vor der Verteilung abgezogen hat und die Beträge je Mieter ihn nicht enthalten. Weist die Abrechnung den Anteil nur aus, muss Mietfuchs ihn abziehen, sonst tragen die Mieter ihn mit. Mietfuchs prüft und bucht dann keine CO₂-Aufteilung; die Abrechnung jedes Mieters verweist auf die beiliegende Heizkostenabrechnung des Messdienstes. Nach § 7 Abs. 3 CO2KostAufG weisen Sie in der Heizkostenabrechnung den Anteil des Mieters an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen aus; fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 4 CO2KostAufG). Ob der Verweis auf die beiliegende Abrechnung des Messdienstes dafür genügt, ist nicht entschieden.')
   expect(help).not.toMatch(/\d\s?%/)
-  expect(co2EnclosedHelp(true)).toContain('die Einzelabrechnung (Heizung) Ihrer Wohnung')
-  expect(CO2_ENCLOSED_TAX).toContain('Summe aller Nutzer plus diesen Anteil')
+  expect(co2EnclosedHelp(true)).toContain('dass die Gemeinschaft den CO₂-Anteil des Vermieters vor der Verteilung abgezogen hat')
+  expect(CO2_ENCLOSED_TAX).toBe('Für die Steuer: Den CO₂-Anteil des Vermieters kennt Mietfuchs dann nicht als eigenen Posten. Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil. Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, gehört der Teil, der auf Ihre selbst bewohnte Wohnung entfällt, zu deren Eigenbetrag und ist privat.')
 })
 
-test('Haken und eine Antwort mit Probe: die Karte sagt, warum die Probe nicht aufgehen kann, und nennt die neue Antwort', () => {
+test('Haken und eine Antwort mit Probe: die Karte nennt den Grund, den Weg über „Ja“ und sagt, dass der Sammelbetrag bei „nur ausgewiesen“ nicht passt', () => {
   const mit = ctx([item({ includesWater: true })])
-  const note = includesWaterNote({ answer: 'deducted' }, mit)
-  expect(note).toContain('„Abrechnung des Messdienstes“ enthält nach Ihrer Angabe auch Kaltwasser und Abwasser')
-  expect(note).toContain(`„${CO2_ENCLOSED_LABEL}“`)
-  expect(includesWaterNote({ answer: 'shown' }, mit)).toBe(note)
-  expect(includesWaterNote({ answer: 'enclosed' }, mit)).toBeNull()
-  expect(includesWaterNote({ answer: 'unsplit' }, mit)).toBeNull()
-  expect(includesWaterNote({ answer: '' }, mit)).toBeNull()
-  expect(includesWaterNote({ answer: 'deducted' }, ctx([item()]))).toBeNull()
+  const note = includesWaterNote({ answer: 'deducted', entry: 'enter' }, mit)
+  expect(note).toBe(`„Abrechnung des Messdienstes“ enthält nach Ihrer Angabe auch Kaltwasser und Abwasser; die Probe vergleicht den Betrag aber mit den Kosten für Heizung und Warmwasser allein und kann so nicht aufgehen. Hat der Messdienst den CO₂-Anteil des Vermieters vor der Verteilung abgezogen, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ nach „${CO2_DEDUCTED_LABEL}“ die Angabe „${CO2_ENCLOSED_LABEL}“. Weist die Abrechnung den Anteil nur aus, passt der Sammelbetrag nicht: Erfassen Sie dann Heizung und Warmwasser und das Wasser als getrennte Positionen, damit Mietfuchs den Anteil des Vermieters abziehen kann.`)
+  expect(includesWaterNote({ answer: 'shown', entry: 'enter' }, mit)).toBe(note)
+  // „Nur ausgewiesen“ bleibt eine Antwort mit Probe, gleich wo die zweite Wahl steht.
+  expect(includesWaterNote({ answer: 'shown', entry: 'enclosed' }, mit)).toBe(note)
+  expect(includesWaterNote({ answer: 'deducted', entry: 'enclosed' }, mit)).toBeNull()
+  expect(includesWaterNote({ answer: 'unsplit', entry: 'enter' }, mit)).toBeNull()
+  expect(includesWaterNote({ answer: '', entry: 'enter' }, mit)).toBeNull()
+  expect(includesWaterNote({ answer: 'deducted', entry: 'enter' }, ctx([item()]))).toBeNull()
   // Der Haken an einer Position ohne Einzelbeträge zählt nicht (der Server speichert ihn dort auch nicht).
-  expect(includesWaterNote({ answer: 'deducted' }, ctx([item({ key: 'area', includesWater: true })]))).toBeNull()
-  expect(includesWaterNote({ answer: 'deducted' }, ctx([item({ includesWater: true })], true))).toContain(`„${CO2_ENCLOSED_LABEL_HOMEOWNERS}“`)
+  expect(includesWaterNote({ answer: 'deducted', entry: 'enter' }, ctx([item({ key: 'area', includesWater: true })]))).toBeNull()
+  expect(includesWaterNote({ answer: 'deducted', entry: 'enter' }, ctx([item({ includesWater: true })], true))).toContain(`„${CO2_ENCLOSED_LABEL_HOMEOWNERS}“`)
 })
 
 // ---------- Druck: Verweis statt Block ----------
@@ -196,49 +238,95 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
-const frage = (): HTMLSelectElement => {
-  const el = screen.getByLabelText('Abzugszeile')
+const auswahl = (name: string): HTMLSelectElement => {
+  const el = screen.getByLabelText(name)
   if (!(el instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
   return el
 }
-const card = (v: HeatingPeriodView, onSaved: () => void = () => {}, homeowners = false) => render(<UIProvider><Co2Card view={v} tenancies={TENANCIES} unitsCount={1} homeowners={homeowners} onSaved={onSaved} /></UIProvider>)
+const frage = (): HTMLSelectElement => auswahl('Abzugszeile')
+const eintragen = (): HTMLSelectElement => auswahl('CO₂-Angaben eintragen')
+type CardProps = { homeowners?: boolean; offersEnclosed?: boolean; joint?: boolean }
+const card = (v: HeatingPeriodView, onSaved: () => void = () => {}, props: CardProps = {}) => render(<UIProvider><Co2Card view={v} tenancies={TENANCIES} unitsCount={1} {...props} onSaved={onSaved} /></UIProvider>)
 
-test('Karte: die Auswahl zeigt die gespeicherte neue Antwort, ohne weitere Felder und ohne Probe; Speichern schickt genau sie', async () => {
+test('Karte: gespeichertes „liegt bei“ zeigt in der ersten Auswahl „Ja“, in der zweiten „Nicht eintragen“, ohne weitere Felder und ohne Probe; Speichern schickt genau das', async () => {
   const saved = vi.fn()
   card(view(statement()), saved)
-  expect(frage().value).toBe('enclosed')
-  expect(frage().selectedOptions[0]?.textContent).toBe(CO2_ENCLOSED_LABEL)
+  expect(frage().value).toBe('deducted')
+  expect(frage().selectedOptions[0]?.textContent).toBe(CO2_DEDUCTED_LABEL)
+  expect([...frage().options].map((o) => o.value)).toEqual(['', 'deducted', 'shown', 'unsplit'])
+  expect(screen.getByText(CO2_ENTRY_QUESTION)).toBeTruthy()
+  expect(eintragen().value).toBe('enclosed')
+  expect(eintragen().selectedOptions[0]?.textContent).toBe(CO2_ENCLOSED_LABEL)
   expect(screen.getByText(co2EnclosedHelp(false))).toBeTruthy()
   expect(screen.getByText(CO2_ENCLOSED_TAX)).toBeTruthy()
+  // Beispielzeile und der Satz „kein Zeichen“ stehen weiter an der ersten Frage, je einmal.
+  expect(screen.getAllByText(CO2_EXAMPLE, { exact: false })).toHaveLength(1)
+  expect(screen.getAllByText(CO2_NOT_A_SIGN)).toHaveLength(1)
   expect(screen.queryByLabelText(/Summe der Kosten aller Nutzer/)).toBeNull()
   expect(screen.queryByLabelText(/Nutzeinheiten/)).toBeNull()
+  expect(screen.queryByLabelText(/CO₂-Ausstoß insgesamt/)).toBeNull()
   expect(screen.queryByText(/^Probe:/)).toBeNull()
   fireEvent.click(screen.getByText('CO₂-Angaben speichern'))
   await waitFor(() => expect(saved).toHaveBeenCalled())
   expect(sent).toEqual([{ url: '/api/heating-plants/hp/periods/2025-01/co2', method: 'PUT', body: { method: 'serviceEnclosed' } }])
 })
 
-test('Karte: neue Heizperiode, Antwort gewählt, gespeichert wird der angezeigte Wert; bei der Eigentumswohnung heißt die Antwort nach der Gemeinschaft', async () => {
+test('Karte: die zweite Auswahl gibt es nur nach „Ja“; sie steht auf „eintragen“, und gespeichert wird, was beide Auswahlfelder zeigen', async () => {
   const saved = vi.fn()
   card(view(null), saved)
   expect(frage().value).toBe('')
-  fireEvent.change(frage(), { target: { value: 'enclosed' } })
-  expect(frage().value).toBe('enclosed')
-  expect(frage().selectedOptions[0]?.textContent).toBe(CO2_ENCLOSED_LABEL)
+  expect(screen.queryByLabelText('CO₂-Angaben eintragen')).toBeNull()
+  fireEvent.change(frage(), { target: { value: 'shown' } })
+  expect(screen.queryByLabelText('CO₂-Angaben eintragen')).toBeNull()
+  fireEvent.change(frage(), { target: { value: 'unsplit' } })
+  expect(screen.queryByLabelText('CO₂-Angaben eintragen')).toBeNull()
+  fireEvent.change(frage(), { target: { value: 'deducted' } })
+  expect(eintragen().value).toBe('enter')
+  expect(eintragen().selectedOptions[0]?.textContent).toBe(CO2_ENTER_LABEL)
+  expect(screen.getByLabelText(/Summe der Kosten aller Nutzer/)).toBeTruthy()
+  fireEvent.change(eintragen(), { target: { value: 'enclosed' } })
+  expect(eintragen().value).toBe('enclosed')
+  expect(screen.queryByLabelText(/Summe der Kosten aller Nutzer/)).toBeNull()
   fireEvent.click(screen.getByText('CO₂-Angaben speichern'))
   await waitFor(() => expect(saved).toHaveBeenCalled())
   expect(sent[0]?.body).toEqual({ method: 'serviceEnclosed' })
-  cleanup()
-  card(view(statement()), () => {}, true)
-  expect(frage().selectedOptions[0]?.textContent).toBe(CO2_ENCLOSED_LABEL_HOMEOWNERS)
+  // Zurück auf „nur ausgewiesen“: Die zweite Auswahl verschwindet, die Felder der Probe sind wieder da.
+  fireEvent.change(frage(), { target: { value: 'shown' } })
+  expect(screen.queryByLabelText('CO₂-Angaben eintragen')).toBeNull()
+  expect(screen.getByLabelText(/Summe der Kosten aller Nutzer/)).toBeTruthy()
+  expect(screen.queryByText(co2EnclosedHelp(false))).toBeNull()
 })
 
-test('Karte: Haken an der Position und eine Antwort mit Probe: ein Satz nennt den Grund und die neue Antwort; ohne Haken nicht', () => {
+test('Karte: Eigentumswohnung, kein CO₂-pflichtiger Energieträger und gemeinsame Einstufung', async () => {
+  card(view(statement()), () => {}, { homeowners: true })
+  expect(eintragen().selectedOptions[0]?.textContent).toBe(CO2_ENCLOSED_LABEL_HOMEOWNERS)
+  cleanup()
+  // Durchsicht S11: ohne CO₂-Kosten bietet die Karte die Wahl nicht an.
+  card(view(statement({ method: 'serviceDeducted', serviceUsersTotalCents: 182340, serviceLandlordCents: 0, serviceUnitsCount: 1 })), () => {}, { offersEnclosed: false })
+  expect(frage().value).toBe('deducted')
+  expect(screen.queryByLabelText('CO₂-Angaben eintragen')).toBeNull()
+  cleanup()
+  // Durchsicht S2: mit einer zweiten Anlage im Gebäude fragt die Karte bei „liegt bei“ nach dem Ausstoß, und nur danach.
+  const saved = vi.fn()
+  card(view(statement({ serviceEmissionsKg: 3000 })), saved, { joint: true })
+  const feld = screen.getByLabelText(CO2_EMISSIONS_FIELD) as HTMLInputElement
+  expect(feld.value).toBe('3000')
+  expect(screen.getByText(CO2_ENCLOSED_JOINT)).toBeTruthy()
+  expect(screen.queryByLabelText(/Wohnfläche/)).toBeNull()
+  fireEvent.change(feld, { target: { value: '3.250' } })
+  fireEvent.click(screen.getByText('CO₂-Angaben speichern'))
+  await waitFor(() => expect(saved).toHaveBeenCalled())
+  expect(sent[0]?.body).toEqual({ method: 'serviceEnclosed', serviceEmissionsKg: 3250 })
+})
+
+test('Karte: Haken an der Position und eine Antwort mit Probe: ein Satz nennt den Grund und den Weg; mit „Nicht eintragen“ und ohne Haken nicht', () => {
   const deducted = statement({ method: 'serviceDeducted', serviceUsersTotalCents: 150000, serviceLandlordCents: 500, serviceUnitsCount: 1 })
   card(view(deducted, [item({ includesWater: true })]))
   expect(screen.getByText(/enthält nach Ihrer Angabe auch Kaltwasser und Abwasser/)).toBeTruthy()
-  fireEvent.change(frage(), { target: { value: 'enclosed' } })
+  fireEvent.change(eintragen(), { target: { value: 'enclosed' } })
   expect(screen.queryByText(/enthält nach Ihrer Angabe auch Kaltwasser und Abwasser/)).toBeNull()
+  fireEvent.change(frage(), { target: { value: 'shown' } })
+  expect(screen.getByText(/Weist die Abrechnung den Anteil nur aus, passt der Sammelbetrag nicht/)).toBeTruthy()
   cleanup()
   card(view(deducted))
   expect(screen.queryByText(/enthält nach Ihrer Angabe auch Kaltwasser und Abwasser/)).toBeNull()

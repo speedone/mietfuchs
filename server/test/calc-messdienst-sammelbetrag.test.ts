@@ -4,10 +4,12 @@
 // und Buchung ab und verweist auf die beiliegende Heizkostenabrechnung des Messdienstes.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotHeatingPlant, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
+import { computeSettlement, taxReport, type ComputedSettlement } from '../src/calc.ts'
+import { snapshotFor, snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotHeatingPlant, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { calendarPeriod } from '../../shared/period.ts'
+import { INFORMATIONAL } from '../../shared/notices.ts'
+import { CALENDAR_RULES, calendarPeriod, periodKey, periodOfKey } from '../../shared/period.ts'
+import { CO2_DEDUCTED_LABEL, CO2_ENCLOSED_LABEL } from '../../shared/co2Probe.ts'
 import type { Co2Statement } from '../../shared/types.ts'
 
 const P = calendarPeriod(2025)
@@ -72,11 +74,15 @@ test('Haken: dieselben Summen, Zeilenbeträge, Vorauszahlungen und Salden wie oh
   assert.equal(mit.landlord.rows.find((x) => x.costItemId === 'hz')?.includesWater, true)
   assert.ok(ohne.statements.every((st) => st.rows.every((x) => !('includesWater' in x))), 'ohne Haken kein neues Feld in den Zeilen')
   assert.ok(ohne.landlord.rows.every((x) => !('includesWater' in x)))
-  // Die Hinweise ohne Haken und mit Haken sind dieselben (ohne zweite Wasserposition und ohne CO₂-Angaben).
-  assert.deepEqual(mit.notices, ohne.notices)
+  // Die Hinweise ohne Haken und mit Haken sind dieselben (ohne zweite Wasserposition und ohne CO₂-Angaben); nur der
+  // Kürzungsbetrag in co2.missing steht mit Haken als Höchstbetrag (Durchsicht S1, eigener Test unten).
+  // Dazu kommt mit Haken die Warnung zur Sammelzeile (`amounts.combined-line`, eigener Test unten).
+  const rest = (r: ComputedSettlement) => r.notices.filter((n) => n.code !== 'co2.missing' && n.code !== 'amounts.combined-line')
+  assert.deepEqual(codes(mit).filter((c) => c !== 'amounts.combined-line'), codes(ohne))
+  assert.deepEqual(rest(mit), rest(ohne))
 })
 
-test('Neue Antwort „Messdienst hat aufgeteilt, Abrechnung liegt bei“: kein co2.missing, kein co2.sum-check, keine Buchung, ein ruhiger Hinweis', () => {
+test('„Liegt bei“ (serviceEnclosed): kein co2.missing, kein co2.sum-check, keine Buchung, ein ruhiger Hinweis', () => {
   const s = { ...haus, costItems: [sammel({ includesWater: true })] }
   const ohne = settle(s)
   assert.ok(codes(ohne).includes('co2.missing'), 'ohne Angaben warnt die Abrechnung wie bisher')
@@ -90,7 +96,7 @@ test('Neue Antwort „Messdienst hat aufgeteilt, Abrechnung liegt bei“: kein c
   assert.deepEqual(hints[0]?.subject, { kind: 'heatingCosts', id: 'hp' })
   assert.match(textOf(r, 'co2.service-enclosed'), /§ 7 Abs\. 3 CO2KostAufG/)
   assert.match(textOf(r, 'co2.service-enclosed'), /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\)/)
-  assert.match(textOf(r, 'co2.service-enclosed'), /Legen Sie .* bei/)
+  assert.match(textOf(r, 'co2.service-enclosed'), /Legen Sie jedem Mieter die Heizkostenabrechnung des Messdienstes mit dem Abschnitt zu den CO₂-Kosten bei\./)
   // Keine Buchung: keine Abzugszeile, kein co2Share beim Vermieter, jeder Mieter trägt seinen Einzelbetrag.
   assert.ok(r.statements.every((st) => st.rows.every((x) => x.kind !== 'co2Relief')))
   assert.ok(r.landlord.rows.every((x) => (x.landlordParts ?? []).every((p) => p.reason !== 'co2Share')))
@@ -123,11 +129,14 @@ test('Haken und eine der bisherigen Antworten: co2.sum-check nennt, warum die Pr
   const mit = settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [st])
   assert.equal(mit.notices.find((n) => n.code === 'co2.sum-check')?.level, 'error')
   assert.match(textOf(mit, 'co2.sum-check'), /enthält nach Ihrer Angabe auch Kaltwasser und Abwasser/)
-  assert.match(textOf(mit, 'co2.sum-check'), /„Der Messdienst hat die CO₂-Kosten aufgeteilt und weist das in seiner Abrechnung aus; ich lege sie der Abrechnung bei“/)
+  assert.match(textOf(mit, 'co2.sum-check'), /„Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei“/)
   // Ohne Haken bleibt der Wortlaut, wie er war.
   const ohne = settle({ ...haus, costItems: [sammel()] }, [st])
   assert.doesNotMatch(textOf(ohne, 'co2.sum-check'), /Kaltwasser/)
-  assert.equal(textOf(mit, 'co2.sum-check').replace(/ „Abrechnung des Messdienstes“ enthält nach Ihrer Angabe[^]*?ich lege sie der Abrechnung bei“\./, ''), textOf(ohne, 'co2.sum-check'))
+  const bereinigt = textOf(mit, 'co2.sum-check')
+    .replace(/ „Abrechnung des Messdienstes“ enthält nach Ihrer Angabe[^]*?damit Mietfuchs den Anteil des Vermieters abziehen kann\./, '')
+    .replace(', hier höchstens: ', ', hier: ').replace(' (die Beträge enthalten auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht)', '')
+  assert.equal(bereinigt, textOf(ohne, 'co2.sum-check'))
   // Geht die Probe trotz Haken auf, steht der Satz nirgends.
   const passt = settle({ ...haus, costItems: [sammel({ includesWater: true, selfAmounts: { c: 66385 } })] }, [co2({ method: 'serviceDeducted', serviceUsersTotalCents: 400000, serviceLandlordCents: 10000, serviceUnitsCount: 3 })])
   assert.ok(!codes(passt).includes('co2.sum-check'))
@@ -231,4 +240,154 @@ test('Invariante: über 300 zufällige Bestände ändern Haken und neue Antwort 
     const both = flagged.statements.some((st) => st.rows.some((x) => x.costItemId === 'hz' && x.shareCents > 0) && st.rows.some((x) => x.costItemId === 'wasser' && x.shareCents !== 0))
     assert.equal(codes(flagged).includes('amounts.water-twice'), both, where)
   }
+})
+
+// ---------- Befunde der Durchsicht ----------
+
+// M1: „liegt bei“ gilt nur beim Vorwegabzug. Hinweis und Zusatz in co2.sum-check nennen die Voraussetzung und den Weg.
+test('Durchsicht M1: der Hinweis nennt die Voraussetzung Vorwegabzug; co2.sum-check nennt den Weg über „Ja“ und sagt, dass der Sammelbetrag bei „nur ausgewiesen“ nicht passt', () => {
+  assert.equal(CO2_ENCLOSED_LABEL, 'Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei')
+  assert.equal(CO2_DEDUCTED_LABEL, 'Ja, es gibt eine Abzugszeile')
+  const hint = textOf(settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [co2({})]), 'co2.service-enclosed')
+  assert.match(hint, /vor der Verteilung abgezogen/)
+  assert.match(hint, /Weist die Abrechnung den Anteil nur aus, muss Mietfuchs ihn abziehen, sonst tragen die Mieter ihn mit/)
+  for (const method of ['serviceDeducted', 'serviceShown'] as const) {
+    const text = textOf(settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [co2({ method, serviceUsersTotalCents: 250000, serviceLandlordCents: 10000, serviceUnitsCount: 3 })]), 'co2.sum-check')
+    assert.match(text, /nach „Ja, es gibt eine Abzugszeile“ die Angabe „Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei“/)
+    assert.match(text, /Weist die Abrechnung den Anteil nur aus, passt der Sammelbetrag nicht/)
+    assert.match(text, /als getrennte Positionen/)
+  }
+})
+
+// S6, S10: Die Pflicht trifft den Vermieter; ob der Verweis genügt, ist nicht entschieden. Kein Steuersatz mehr im Hinweis.
+test('Durchsicht S6/S10: der Hinweis behauptet nicht, die Beilage genüge, und ist gekürzt', () => {
+  const hint = textOf(settle({ units: [unit('a'), unit('b')], tenancies: haus.tenancies, costItems: [messdienst(333615, BETRAEGE)] }, [co2({})]), 'co2.service-enclosed')
+  assert.match(hint, /Nach § 7 Abs\. 3 CO2KostAufG weisen Sie in der Heizkostenabrechnung den Anteil des Mieters an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen aus; fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\)\./)
+  assert.match(hint, /Ob der Verweis auf die beiliegende Abrechnung des Messdienstes dafür genügt, ist nicht entschieden\./)
+  assert.doesNotMatch(hint, /druckt keinen eigenen Ausweis/)
+  assert.doesNotMatch(hint, /Werbungskosten/)
+  assert.doesNotMatch(hint, /selbst bewohnt/)
+})
+
+// M2: Bewohnt der Vermieter selbst eine Wohnung, gehört sein Teil des CO₂-Anteils in den Eigenbetrag und ist privat.
+// Messdienst mit Abzugszeile, S = 3.000 € (Mieter 1.400 € und 1.000 €, eigene Wohnung 600 €), L = 100 €, L_self = 20 €.
+const P25 = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+const mitEigener = (statement: Co2Statement, amountCents: number, selfCents: number): Snapshot => snapshotFor({
+  properties: [{ id: 'o', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
+  units: [{ ...unit('a'), propertyId: 'o' }, { ...unit('b'), propertyId: 'o' }, { ...own('c'), propertyId: 'o' }],
+  tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
+  costItems: [{ ...messdienst(amountCents, { ta: 140000, tb: 100000 }, { selfAmounts: { c: selfCents } }), propertyId: 'o', period: P25.key }],
+  meters: [], readings: [], payments: [], closedSettlements: [],
+  heatingPlants: [{ ...plant(), propertyId: 'o' }],
+  co2Statements: [{ ...statement, period: P25.key }],
+} as unknown as Parameters<typeof snapshotFor>[0], 'o', P25)
+const taxOf = (s: Snapshot) => {
+  const x = taxReport(s).expenses.items.find((i) => i.costItemId === 'hz') ?? assert.fail('Position fehlt in der Steuerübersicht')
+  return [x.amountCents, x.privateCents, x.deductibleCents]
+}
+
+test('Durchsicht M2: „liegt bei“ mit Betrag S + L und Eigenbetrag + L_self ergibt dieselbe Steuer wie die Abzugszeile mit Angaben; der Hinweis nennt die eigene Wohnung genau dann, wenn es einen Eigenbetrag gibt', () => {
+  const deducted = mitEigener(co2({ method: 'serviceDeducted', serviceUsersTotalCents: 300000, serviceLandlordCents: 10000, serviceUnitsCount: 3 }), 310000, 60000)
+  const enclosed = mitEigener(co2({}), 310000, 62000)
+  assert.deepEqual(taxOf(deducted), [310000, 62000, 248000])
+  assert.deepEqual(taxOf(enclosed), taxOf(deducted))
+  // Ohne L_self im Eigenbetrag stünden 20 € zu viel in den Werbungskosten; deshalb sagt es der Hinweis.
+  assert.deepEqual(taxOf(mitEigener(co2({}), 310000, 60000)), [310000, 60000, 250000])
+  const mit = textOf(computeSettlement(enclosed), 'co2.service-enclosed')
+  assert.match(mit, /Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, gehört der Teil, der auf Ihre selbst bewohnte Wohnung entfällt, zu deren Eigenbetrag und ist privat\./)
+  const ohne = textOf(settle({ units: [unit('a'), unit('b')], tenancies: haus.tenancies, costItems: [messdienst(333615, BETRAEGE)] }, [co2({})]), 'co2.service-enclosed')
+  assert.doesNotMatch(ohne, /selbst bewohnte Wohnung/)
+})
+
+// S1: Die Kürzung bezieht sich auf die Heizkosten; im Sammelbetrag steckt auch Wasser. Der Betrag steht dann als Höchstbetrag.
+test('Durchsicht S1: Kürzungsbeträge auf einen Sammelbetrag stehen als „höchstens“ mit dem Grund; ohne Haken wortgleich wie bisher', () => {
+  const ohne = textOf(settle({ ...haus, costItems: [sammel()] }), 'co2.missing')
+  const mit = textOf(settle({ ...haus, costItems: [sammel({ includesWater: true })] }), 'co2.missing')
+  assert.match(ohne, /\(§ 7 Abs\. 4 CO2KostAufG\), hier: ta \(a\) 54,70 € und tb \(b\) 45,38 €\./)
+  assert.match(mit, /\(§ 7 Abs\. 4 CO2KostAufG\), hier höchstens: ta \(a\) 54,70 € und tb \(b\) 45,38 € \(die Beträge enthalten auch Kaltwasser und Abwasser, auf die sich die Kürzung nicht bezieht\)\./)
+  const check = textOf(settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [co2({ method: 'serviceDeducted', serviceUsersTotalCents: 250000, serviceLandlordCents: 10000, serviceUnitsCount: 3 })]), 'co2.sum-check')
+  assert.match(check, /hier höchstens: /)
+})
+
+// S3, S4: Der Ausweg ist, die Rechnung des Versorgers gar nicht zu erfassen, nicht „Nicht umlagefähig“.
+test('Durchsicht S3/S4: die Warnung zur Doppelerfassung rät, die Versorgerrechnung gar nicht als eigene Position zu erfassen, und nennt einen häufigeren berechtigten Fall', () => {
+  const text = textOf(settle({ ...haus, costItems: [sammel({ includesWater: true }), cost('wasser', 'Wasser/Abwasser', 64000, { key: 'persons' })] }), 'amounts.water-twice')
+  assert.match(text, /Dann erfassen Sie die Rechnung des Versorgers gar nicht als eigene Position; ihre Kosten stecken schon im Betrag des Messdienstes\./)
+  assert.doesNotMatch(text, /umlagefähige Position/)
+  assert.match(text, /etwa Wasser einer Wohnung, die der Messdienst nicht abrechnet, oder Gartenwasser/)
+})
+
+// S11: Ohne CO₂-Pflicht (Pellets) gibt es weder Hinweis noch Verweis, und auch keine andere CO₂-Meldung.
+test('Durchsicht S11: bei einem Energieträger ohne CO₂-Kosten ergibt „liegt bei“ weder Hinweis noch Verweis im Druck', () => {
+  const r = settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [co2({})], [plant({ energy: 'pellets' })])
+  assert.deepEqual(codes(r).filter((c) => c.startsWith('co2.')), [])
+  assert.equal(r.heating?.[0]?.co2 ?? null, null)
+  assert.deepEqual(money(r), money(settle({ ...haus, costItems: [sammel({ includesWater: true })] }, [], [plant({ energy: 'pellets' })])))
+})
+
+// S2: Zwei Anlagen im selben Gebäude. H1 mit freien Schlüsseln und Lieferung teilt selbst auf, H2 rechnet der Messdienst ab.
+const lieferung = { id: 'd1', plantId: 'H1', label: 'Gas', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', unitId: null, amountCents: null, quantity: null, quantityUnit: null,
+  energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 12000, co2CostCents: 66000, emissionFactor: null, gridFeeCents: null, bioCostCents: null,
+  sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null }
+const zweiAnlagen = (statement: Co2Statement): ComputedSettlement => computeSettlement(snapshotFor({
+  properties: [{ id: 'o', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
+  units: ['a', 'b', 'c'].map((id) => ({ ...unit(id, { areaM2: 100 }), propertyId: 'o' })), tenancies: ['a', 'b', 'c'].map((u) => tenancy(`t${u}`, u)),
+  costItems: [
+    { id: 'g1', propertyId: 'o', period: P25.key, category: HEATING_CATEGORY, description: 'Gas', amountCents: 200000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'H1', fuelDeliveryId: 'd1', participantUnitIds: ['a', 'b'] },
+    { id: 'm2', propertyId: 'o', period: P25.key, category: HEATING_CATEGORY, description: 'Messdienst C', amountCents: 100000, key: 'amounts', tenancyAmounts: { tc: 100000 }, heatingPlantId: 'H2' },
+  ],
+  meters: [], readings: [], payments: [], closedSettlements: [],
+  heatingPlants: [
+    { ...plant({ id: 'H1', name: 'Zentral AB', method: 'manual', units: [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }] }), propertyId: 'o' },
+    { ...plant({ id: 'H2', name: 'Zentral C', units: [{ unitId: 'c', heatedAreaM2: null }], buildingWith: 'H1' }), propertyId: 'o' },
+  ],
+  fuelDeliveries: [lieferung],
+  co2Statements: [{ ...statement, plantId: 'H2', period: P25.key }],
+} as unknown as Parameters<typeof snapshotFor>[0], 'o', P25))
+
+test('Durchsicht S2: liegt die Abrechnung des Messdienstes bei, braucht die Anlage daneben dessen Ausstoß; der Hinweis nennt das Feld, und mit dem Wert stuft sie gemeinsam ein', () => {
+  const ohne = zweiAnlagen(co2({}))
+  const text = textOf(ohne, 'co2.classification-incomplete')
+  assert.match(text, /Liegt dort die Abrechnung des Messdienstes bei, tragen Sie in der Karte „CO₂-Kosten“ unter „CO₂-Ausstoß insgesamt laut Abrechnung \(kg\)“ den Ausstoß ein\./)
+  const mit = zweiAnlagen(co2({ serviceEmissionsKg: 3000 }))
+  assert.ok(!codes(mit).includes('co2.classification-incomplete'))
+  // Derselbe Ausstoß wie mit den Angaben der Abzugszeile führt zur selben Einstufung der Anlage daneben.
+  const angaben = zweiAnlagen(co2({ method: 'serviceDeducted', serviceUsersTotalCents: 98000, serviceLandlordCents: 2000, serviceUnitsCount: 1, serviceEmissionsKg: 3000 }))
+  const stufe = (r: ComputedSettlement) => r.heating?.find((h) => h.plantId === 'H1')?.co2?.stage ?? assert.fail('keine Einstufung von H1')
+  assert.deepEqual(stufe(mit), stufe(angaben))
+  assert.notDeepEqual(stufe(mit), stufe(ohne))
+})
+
+// Rechtslage der Sammelzeile (gelesen am 27.11.2026): Die Warnung nennt die betroffenen Mieter mit dem Betrag ihrer Zeile.
+test('Sammelzeile: Warnung genau an der Position mit Haken, mit Namen und Beträgen der Mieter, den Fundstellen und dem sicheren Weg', () => {
+  const r = settle({ ...haus, costItems: [sammel({ includesWater: true }), cost('grundsteuer', 'Grundsteuer', 90000)] })
+  const n = r.notices.filter((x) => x.code === 'amounts.combined-line')
+  assert.equal(n.length, 1)
+  assert.deepEqual([n[0]?.level, n[0]?.title, n[0]?.subject], ['warning', 'Sammelzeile aus Heizung und Wasser: formell angreifbar', { kind: 'costItem', id: 'hz' }])
+  assert.equal(n[0]?.text,
+    '„Abrechnung des Messdienstes“ fasst Heizung, Warmwasser, Kaltwasser und Abwasser in einer Zeile zusammen. ' +
+    'Eine Betriebskostenabrechnung muss die Kosten nach Kostenarten trennen; zusammenfassen darf sie nur Kostenarten, die sachlich eng zusammenhängen (BGH, Urteil vom 15.07.2009, VIII ZR 340/08, Rn. 19). ' +
+    'Ob es genügt, dass die beiliegende Abrechnung des Messdienstes sie aufschlüsselt, hat der Bundesgerichtshof nicht entschieden (BGH, Beschluss vom 06.07.2021, VIII ZR 371/19, Rn. 14; Beschluss vom 24.01.2017, VIII ZR 285/15, Rn. 5 bis 7). ' +
+    'Hält ein Gericht die Zeile für einen Formfehler, können Sie nach Ablauf der Abrechnungsfrist aus dieser Position nichts nachfordern (BGH, Urteil vom 22.09.2010, VIII ZR 285/09, Rn. 40 bis 42; Urteil vom 14.02.2007, VIII ZR 1/06, Rn. 11, 12); gezahlte Vorauszahlungen sind davon nicht berührt. ' +
+    'Betroffen wäre hier eine Nachforderung von bis zu: ta (a) 1.823,40 € und tb (b) 1.512,75 €. ' +
+    'Sicher ist es, Heizung und Warmwasser sowie Kaltwasser und Abwasser als getrennte Positionen mit den Beträgen aus der Einzelabrechnung zu erfassen. Legen Sie die Einzelabrechnung des Messdienstes in jedem Fall bei.')
+  // Sie färbt das Cockpit: Der sichere Weg stellt sie ab.
+  assert.ok(!INFORMATIONAL.has('amounts.combined-line'))
+  // Nicht ohne Haken, und keine Zahl ändert sich.
+  const ohne = settle({ ...haus, costItems: [sammel(), cost('grundsteuer', 'Grundsteuer', 90000)] })
+  assert.ok(!codes(ohne).includes('amounts.combined-line'))
+  assert.deepEqual(money(r), money(ohne))
+})
+
+test('Sammelzeile: je Position eine Warnung; nicht, wenn kein Mieter eine Zeile daraus hat (nur Leerstand, Eigennutzung oder Pauschale)', () => {
+  // Zwei Sammelbeträge (etwa zwei Abrechnungen des Messdienstes): je Position eine Warnung mit ihren Mietern.
+  const zwei = settle({ ...haus, costItems: [sammel({ includesWater: true }), messdienst(50000, { ta: 50000 }, { id: 'hz2', description: 'Nachberechnung', includesWater: true })] })
+  const texte = zwei.notices.filter((x) => x.code === 'amounts.combined-line')
+  assert.deepEqual(texte.map((x) => x.subject?.id), ['hz', 'hz2'])
+  assert.match(texte[1]?.text ?? '', /Betroffen wäre hier eine Nachforderung von bis zu: ta \(a\) 500,00 €\. /)
+  // Nur die eigene Wohnung und Leerstand tragen: niemand, dem gegenüber etwas nachzufordern wäre.
+  const eigen = settle({ units: [unit('a'), own('c')], tenancies: [], costItems: [messdienst(100000, {}, { selfAmounts: { c: 60000 }, includesWater: true })] })
+  assert.ok(!codes(eigen).includes('amounts.combined-line'))
+  const pauschal = settle({ units: haus.units, tenancies: haus.tenancies.map((t) => ({ ...t, heatingModel: 'flatRate' as const })), costItems: [sammel({ includesWater: true })] })
+  assert.ok(!codes(pauschal).includes('amounts.combined-line'))
 })

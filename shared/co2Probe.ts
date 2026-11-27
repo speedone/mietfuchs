@@ -23,16 +23,34 @@ const HALF_CENT = 0.5
 // schreibt sie, Anleitung und Oberfläche nennen sie.
 export const CO2_RELIEF_LABEL = 'CO₂-Kosten: Anteil des Vermieters'
 
-// Die Antwort „liegt bei“ auf die Frage nach der Abzugszeile (#704, `serviceEnclosed`): Der Messdienst hat aufgeteilt,
-// der Vermieter legt dessen Abrechnung bei, und Mietfuchs prüft und bucht nichts. Die Karte „CO₂-Kosten“ bietet sie an,
-// die Meldung `co2.sum-check` und das Lexikon nennen sie wörtlich. Bei einer Eigentumswohnung rechnet die Gemeinschaft ab.
-export const CO2_ENCLOSED_LABEL = 'Der Messdienst hat die CO₂-Kosten aufgeteilt und weist das in seiner Abrechnung aus; ich lege sie der Abrechnung bei'
-export const CO2_ENCLOSED_LABEL_HOMEOWNERS = 'Die Abrechnung der Gemeinschaft teilt die CO₂-Kosten auf und weist das aus; ich lege sie der Abrechnung bei'
-// Warum die Probe mit einem Sammelbetrag nicht aufgehen kann, in einem Satz für Karte und Meldung. `names`: die
-// Positionen mit dem Haken, schon in Anführungszeichen und verbunden.
+// „Liegt bei“ (#704, `serviceEnclosed`): Nur nach der Antwort „Ja, es gibt eine Abzugszeile“ wählt der Vermieter, ob er
+// die Angaben der Abrechnung einträgt (`serviceDeducted`, Mietfuchs prüft und druckt) oder nicht einträgt, weil die
+// Heizkostenabrechnung des Messdienstes jeder Abrechnung beiliegt (`serviceEnclosed`: keine Probe, keine Buchung). Bei
+// „nur ausgewiesen“ gibt es die Wahl nicht (Durchsicht M1): Dort enthalten die Beträge je Mieter den Anteil des
+// Vermieters, und ohne Buchung trügen die Mieter ihn mit. Karte, `co2.sum-check`, Lexikon und Anleitung nennen die
+// Beschriftungen wörtlich. Bei einer Eigentumswohnung rechnet die Gemeinschaft ab.
+export const CO2_DEDUCTED_LABEL = 'Ja, es gibt eine Abzugszeile'
+export const CO2_SHOWN_LABEL = 'Nein, die CO₂-Kosten sind nur ausgewiesen'
+export const CO2_ENTER_LABEL = 'Angaben aus der Abrechnung hier eintragen (Mietfuchs prüft und druckt die CO₂-Aufteilung)'
+export const CO2_ENCLOSED_LABEL = 'Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei'
+export const CO2_ENCLOSED_LABEL_HOMEOWNERS = 'Nicht eintragen: Die Einzelabrechnung der Heizkosten Ihrer Wohnung liegt jeder Abrechnung bei'
+// Die Voraussetzung von „liegt bei“, wortgleich in Karte und Hinweis `co2.service-enclosed`.
+export const enclosedCondition = (homeowners = false): string =>
+  `Das setzt voraus, dass ${homeowners ? 'die Gemeinschaft' : 'der Messdienst'} den CO₂-Anteil des Vermieters vor der Verteilung abgezogen hat und die Beträge je Mieter ihn nicht enthalten. Weist die Abrechnung den Anteil nur aus, muss Mietfuchs ihn abziehen, sonst tragen die Mieter ihn mit.`
+// Der Weg zu „liegt bei“ in einem Satzteil, für die Texte, die dorthin führen.
+export const enclosedWay = (homeowners = false): string =>
+  `nach „${CO2_DEDUCTED_LABEL}“ die Angabe „${homeowners ? CO2_ENCLOSED_LABEL_HOMEOWNERS : CO2_ENCLOSED_LABEL}“`
+// Warum die Probe mit einem Sammelbetrag nicht aufgehen kann, für Karte und Meldung. `names`: die Positionen mit dem
+// Haken, schon in Anführungszeichen und verbunden. Bei „nur ausgewiesen“ passt der Sammelbetrag gar nicht: Dann muss
+// Mietfuchs den Anteil des Vermieters abziehen, und das geht nur an einer Position ohne Wasser.
 export const includesWaterProbeText = (names: string, several: boolean, homeowners = false): string =>
   `${names} ${several ? 'enthalten' : 'enthält'} nach Ihrer Angabe auch Kaltwasser und Abwasser; die Probe vergleicht den Betrag aber mit den Kosten für Heizung und Warmwasser allein und kann so nicht aufgehen. ` +
-  `Hat ${homeowners ? 'die Gemeinschaft' : 'der Messdienst'} die CO₂-Kosten aufgeteilt, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ die Antwort „${homeowners ? CO2_ENCLOSED_LABEL_HOMEOWNERS : CO2_ENCLOSED_LABEL}“.`
+  `Hat ${homeowners ? 'die Gemeinschaft' : 'der Messdienst'} den CO₂-Anteil des Vermieters vor der Verteilung abgezogen, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ ${enclosedWay(homeowners)}. ` +
+  'Weist die Abrechnung den Anteil nur aus, passt der Sammelbetrag nicht: Erfassen Sie dann Heizung und Warmwasser und das Wasser als getrennte Positionen, damit Mietfuchs den Anteil des Vermieters abziehen kann.'
+// Der Zusatz zum Steuerrat bei „liegt bei“ (Durchsicht M2), wortgleich in Hinweis, Karte, Lexikon und Anleitung.
+export const ENCLOSED_SELF_USED = 'Setzen Sie den CO₂-Anteil des Vermieters als Werbungskosten an, gehört der Teil, der auf Ihre selbst bewohnte Wohnung entfällt, zu deren Eigenbetrag und ist privat.'
+// Das Feld der Karte „CO₂-Kosten“ für den Ausstoß; `co2.classification-incomplete` nennt es wörtlich.
+export const CO2_EMISSIONS_FIELD = 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)'
 
 const positive = (amounts: Readonly<Record<string, number>> | null | undefined): number =>
   Object.values(amounts ?? {}).reduce((a, c) => a + Math.max(0, c), 0)

@@ -122,8 +122,8 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Wechsel der Wohnung in ein anderes Objekt (`guardUnit`). Beschreibung in [../CLAUDE.md](../CLAUDE.md) unter „Mieterhöhung“.
 - **Sammelbetrag des Messdienstes** (#704): Schritt 0108 fügt `cost_items.includes_water` an (nur `1` oder `NULL`, ohne
   Bedingung: Wo die Angabe gilt, hängt an Kostenart und Schlüssel, und die Kostenarten sind Text; das Repository
-  schreibt sie nur über `allowsIncludesWater`) und baut `co2_statements` neu, weil die Bedingung an `method` die Antwort
-  `serviceEnclosed` aufnimmt. Zwei Tabellen in einem Schritt; die Regel „neue Spalte und Bedingung nie in einem Schritt“
+  schreibt sie nur über `allowsIncludesWater`) und baut `co2_statements` neu, weil die Bedingung an `method` den Wert
+  `serviceEnclosed` aufnimmt (Angaben nicht eingetragen, die Abrechnung des Messdienstes liegt bei). Zwei Tabellen in einem Schritt; die Regel „neue Spalte und Bedingung nie in einem Schritt“
   gilt je Tabelle. Keine Datenanweisung; db.json und ältere Backups kommen ohne Angabe an. Beschreibung in
   docs/heizung.md unter „CO₂ beim Messdienst“.
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,

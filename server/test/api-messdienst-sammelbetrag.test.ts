@@ -151,12 +151,15 @@ test('Abschluss und Export: der Stand friert Kennzeichen und Verweis ein; der Ex
   })
 })
 
-test('Doppelerfassung über die Routen: Warnung an der Wasserposition, nicht mehr als „Nicht umlagefähig“', async () => {
+test('Doppelerfassung über die Routen: Warnung an der Wasserposition; ist die Position gelöscht, ist sie weg', async () => {
   await withStock(async (s) => {
     const wasser = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Wasser/Abwasser', description: 'Stadtwerke', amountCents: 64000, key: 'persons' }))
     const r = await s.api<Settlement>('/api/settlement/2025-01')
     assert.deepEqual((r.notices ?? []).filter((n) => n.code === 'amounts.water-twice').map((n) => [n.level, n.subject?.id]), [['warning', wasser.id]])
-    await s.api(`/api/costItems/${wasser.id}`, jsonPut({ category: 'Nicht umlagefähig' }))
+    // Durchsicht S3: Der Ausweg ist, die Rechnung des Versorgers gar nicht zu erfassen. Als „Nicht umlagefähig“ stünde das
+    // Wasser, das schon im Betrag des Messdienstes steckt, ein zweites Mal in den Werbungskosten.
+    assert.match((r.notices ?? []).find((n) => n.code === 'amounts.water-twice')?.text ?? '', /gar nicht als eigene Position/)
+    assert.equal((await fetch(`${s.base}/api/costItems/${wasser.id}`, { method: 'DELETE' })).status, 200)
     const danach = await s.api<Settlement>('/api/settlement/2025-01')
     assert.ok(!(danach.notices ?? []).some((n) => n.code === 'amounts.water-twice'))
   })

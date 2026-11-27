@@ -20,8 +20,8 @@ import { CREDIT_WITH_AMOUNTS, NEGATIVE_AMOUNT, costItemBody, euro, type CostItem
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { allowsIncludesWater, categoryLabelOf, INCLUDES_WATER_LABEL, WATER_CATEGORY, waterTwiceText } from '../../shared/includesWater.ts'
-import { CO2_ENCLOSED_LABEL } from '../../shared/co2Probe.ts'
+import { allowsIncludesWater, COMBINED_LINE_RISK, INCLUDES_WATER_LABEL, WATER_CATEGORY, waterTwiceText } from '../../shared/includesWater.ts'
+import { enclosedWay } from '../../shared/co2Probe.ts'
 import { partShare } from '../../shared/splitPart.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
@@ -386,16 +386,18 @@ export function smokeDetectorHint(form: Pick<ItemForm, 'category' | 'description
 // wie der Server, `allowsIncludesWater`).
 export const showsIncludesWater = (form: Pick<ItemForm, 'category' | 'key'>): boolean => allowsIncludesWater(form)
 export { INCLUDES_WATER_LABEL }
-// Der Hilfesatz unter dem Haken: was sich ändert, was beiliegen muss, was unentschieden ist und was daneben nicht steht.
+// Der Hilfesatz unter dem Haken, kurze Sätze (Durchsicht S8): wann, was sich ändert, die Rechtslage (gelesen am
+// 27.11.2026, shared/includesWater.ts) vor der Aufforderung zur Beilage, und was daneben nicht steht.
 export const INCLUDES_WATER_HELP =
-  'Setzen Sie den Haken, wenn die Abrechnung des Messdienstes je Mieter nur einen Gesamtbetrag aus Heizung, Warmwasser, Kaltwasser und Abwasser nennt und Sie genau diesen Betrag eintragen. ' +
-  `An den Beträgen ändert der Haken nichts; die Abrechnung des Mieters nennt die Zeile dann „${categoryLabelOf({ category: HEATING_CATEGORY, includesWater: true })}“. ` +
-  'Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei, denn sie schlüsselt die Kostenarten auf. Ob eine Sammelzeile aus Heizung und Wasser in der Betriebskostenabrechnung genügt, ist nicht entschieden. ' +
+  'Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag für Heizung, Warmwasser, Kaltwasser und Abwasser nennt. ' +
+  'Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters. ' +
+  `${COMBINED_LINE_RISK} ` +
+  'Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei; sie schlüsselt die Kostenarten auf. ' +
   `Eine eigene Position „${WATER_CATEGORY}“ für dieselben Kosten legen Sie dann nicht an.`
-// Die Folge für die Karte „CO₂-Kosten“, ein eigener Absatz, weil er auf eine andere Seite führt.
+// Die Folge für die Karte „CO₂-Kosten“, nur der Verweis dorthin (Durchsicht S8); Voraussetzung und Steuer stehen an der Karte.
 export const INCLUDES_WATER_CO2_HELP =
-  `Die Probe der Karte „CO₂-Kosten“ auf der Seite Heizkosten vergleicht den Betrag mit den Kosten für Heizung und Warmwasser allein und geht mit einem solchen Betrag nicht auf. Hat der Messdienst die CO₂-Kosten aufgeteilt, wählen Sie dort die Antwort „${CO2_ENCLOSED_LABEL}“. ` +
-  'Den CO₂-Anteil des Vermieters, den der Messdienst vorab abgezogen hat, kennt Mietfuchs dann nicht als eigenen Posten: Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil.'
+  `CO₂-Kosten: Hat der Messdienst den CO₂-Anteil des Vermieters vor der Verteilung abgezogen, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ ${enclosedWay()}. ` +
+  'Weist er ihn nur aus, erfassen Sie Heizung und Warmwasser und das Wasser als getrennte Positionen, damit Mietfuchs den Anteil abziehen kann.'
 
 // Doppelerfassung (#704): Steht im selben Zeitraum schon eine Position „Wasser/Abwasser“, sagt das Formular beim Haken
 // denselben Satz wie der Hinweis `amounts.water-twice` der Abrechnung. Das Formular kennt die Verteilung nicht; es
