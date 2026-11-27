@@ -449,11 +449,9 @@ async function refreshSettings(): Promise<void> {
   storedSettings = await readData(readSettings)
 }
 
-// Speichert den übergebenen Stand und übernimmt danach, was wirklich dasteht.
-async function saveSettings(next: MigratedSettings): Promise<void> {
-  await writeData((db) => writeSettings(db, next))
-  await refreshSettings()
-}
+// Geschrieben werden die Einstellungen nur in einem Schreibvorgang, der sie vorher aus der Datenbank liest
+// (`readSettings(db)`), nie aus diesem Zwischenspeicher: Eine Kopie von ihm schriebe den Stand von vor einem
+// gleichzeitigen Speichern zurück (Nachprüfung zu #692). Danach übernimmt `refreshSettings`, was wirklich dasteht.
 
 function aiOf(settings: Settings): AiSettings {
   if (!settings.ai) throw new Error('Die KI-Einstellungen fehlen im Datenbestand.')
@@ -509,9 +507,19 @@ app.use((req, res, next) => {
 })
 
 // Wo geändert wurde, weiß der Server nicht (auch eine andere Karte im selben Tab schreibt): kein „zweites Fenster“.
-// Eine fehlende Zahlungsfrist ist die Voreinstellung (Durchsicht K2): Die Karte zeigt sie als 30 Tage und speichert sie so.
-const withDeadline = (x: Record<string, unknown>): Record<string, unknown> =>
-  Object.hasOwn(x, 'paymentDeadlineDays') && x.paymentDeadlineDays == null ? { ...x, paymentDeadlineDays: DEFAULT_SETTINGS.paymentDeadlineDays } : x
+// Was die Karte ohne Angabe zeigt und so speichert, gleicht der fehlenden Angabe (Durchsicht K2, Nachprüfung): eine
+// fehlende Zahlungsfrist die Voreinstellung von 30 Tagen, ein fehlender Druckschalter „aus“.
+const SHOWN_DEFAULTS: Record<string, unknown> = {
+  paymentDeadlineDays: DEFAULT_SETTINGS.paymentDeadlineDays,
+  printFoldMarks: false, printAttachments: false, printFooter: false, printPaymentQr: false,
+}
+// Im gesehenen Stand nur für mitgeschickte Schlüssel (verglichen wird nur, was die Karte nennt), im Stand von jetzt auch
+// für fehlende: Ein nie gespeicherter Schalter steht dort gar nicht.
+const withShownDefaults = (x: Record<string, unknown>, missingToo = false): Record<string, unknown> => {
+  const out = { ...x }
+  for (const [key, shown] of Object.entries(SHOWN_DEFAULTS)) if ((missingToo || Object.hasOwn(out, key)) && out[key] == null) out[key] = shown
+  return out
+}
 const SETTINGS_STALE = 'Die Einstellungen wurden inzwischen geändert. Gespeichert wurde nichts, damit diese Änderung nicht verloren geht.'
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', async (req, res) => {
@@ -552,7 +560,7 @@ app.put('/api/settings', async (req, res) => {
       // finden in den Spalten aber keinen Ort mehr und sind nach dem Zurücklesen verschwunden (#60).
       Object.assign(next, changes)
       const current = settingsForClient(stored)
-      if (isObject(ifUnchanged) && seenPartChanged(withDeadline(ifUnchanged), withDeadline(current)) && recordMark(next) !== recordMark(stored)) {
+      if (isObject(ifUnchanged) && seenPartChanged(withShownDefaults(ifUnchanged), withShownDefaults(current, true)) && recordMark(next) !== recordMark(stored)) {
         throw new StaleRecordError(SETTINGS_STALE, current)
       }
       await writeSettings(db, next)
@@ -599,21 +607,29 @@ app.post('/api/ai/consent', async (req, res) => {
   const target = effective[slot]
   if (!target) return res.status(400).json({ error: NO_SLOT })
   const { url, model } = target
-  const next = structuredClone(storedSettings)
-  const ai = aiOf(next)
-  ai.consent = { ...ai.consent, [slot]: { url, model, date: new Date().toISOString().slice(0, 10) } }
-  await saveSettings(next)
+  // Auf dem Stand der Datenbank im selben Schreibvorgang (Nachprüfung zu #692): Eine Kopie des Zwischenspeichers schriebe
+  // sonst den Stand von vor einem gleichzeitigen Speichern der Einstellungen zurück.
+  await writeData(async (db) => {
+    const next = await readSettings(db)
+    const ai = aiOf(next)
+    ai.consent = { ...ai.consent, [slot]: { url, model, date: new Date().toISOString().slice(0, 10) } }
+    await writeSettings(db, next)
+  })
+  await refreshSettings()
   res.json(settingsForClient())
 })
 
 app.delete('/api/ai/consent/:slot', async (req, res) => {
   const slot = slotNameOf(req.params.slot)
   if (!slot) return res.status(400).json({ error: 'Unbekannter Platz.' })
-  const next = structuredClone(storedSettings)
-  const ai = aiOf(next)
-  const { [slot]: _revoked, ...rest } = ai.consent
-  ai.consent = rest
-  await saveSettings(next)
+  await writeData(async (db) => {
+    const next = await readSettings(db)
+    const ai = aiOf(next)
+    const { [slot]: _revoked, ...rest } = ai.consent
+    ai.consent = rest
+    await writeSettings(db, next)
+  })
+  await refreshSettings()
   res.json(settingsForClient())
 })
 
@@ -1851,16 +1867,19 @@ app.put('/api/letter-texts', async (req, res) => {
   const printLetter: unknown = body.printLetter
   if (printLetter !== undefined && typeof printLetter !== 'boolean') return res.status(400).json({ error: '„Anschreiben mitdrucken“ ist ja oder nein.' })
   // Texte und Vorgabe in einer Transaktion: Scheitert eines, bleibt beides beim Alten (Durchsicht K7).
-  const next = adjust === undefined && printLetter === undefined ? null : {
-    ...structuredClone(storedSettings),
-    ...(adjust === undefined ? {} : { printAdjustSuggestion: adjust === 'suggestion' }),
-    ...(printLetter === undefined ? {} : { printLetter }),
-  }
+  const changesSettings = adjust !== undefined || printLetter !== undefined
+  // Die Einstellungen auf dem Stand der Datenbank in derselben Transaktion (Nachprüfung zu #692, wie PUT /api/settings).
   await writeData((db) => db.transaction(async (tx) => {
     await saveInstallationLetterTexts(tx, texts)
-    if (next) await writeSettingsIn(tx, next)
+    if (!changesSettings) return
+    const next = {
+      ...await readSettings(tx),
+      ...(adjust === undefined ? {} : { printAdjustSuggestion: adjust === 'suggestion' }),
+      ...(printLetter === undefined ? {} : { printLetter }),
+    }
+    await writeSettingsIn(tx, next)
   }))
-  if (next) await refreshSettings()
+  if (changesSettings) await refreshSettings()
   res.json({ ok: true })
 })
 

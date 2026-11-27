@@ -335,3 +335,45 @@ test('Einstellungen: leerer Text gegen fehlende Angabe und die Voreinstellung de
     s.stop()
   }
 })
+
+// Nachprüfung: Die Druckschalter zeigt die Karte ohne Angabe als „aus“. Ein Speichern ohne Änderung schreibt dort `false`;
+// das zweite Fenster mit dem Stand davor (fehlend bzw. `null`) hat nichts anderes gesehen.
+test('Einstellungen: ein fehlender Druckschalter gleicht „aus“', async () => {
+  const s = await startServer()
+  try {
+    const seen = pick(await settingsOf(s), PRINT)
+    assert.equal(seen.printFooter, null)
+    const off = { printFoldMarks: false, printAttachments: false, printFooter: false, printPaymentQr: false }
+    assert.equal((await put(s, '/api/settings', { ...off, ifUnchanged: seen })).status, 200)
+    const b = await put(s, '/api/settings', { ...off, printFoldMarks: true, ifUnchanged: seen })
+    assert.equal(b.status, 200, String(b.body.error))
+    // Ein echter Unterschied bleibt einer.
+    const c = await put(s, '/api/settings', { ...off, printFooter: true, ifUnchanged: seen })
+    assert.equal(c.status, 409)
+  } finally {
+    s.stop()
+  }
+})
+
+// Nachprüfung: Die Zustimmung zu einem KI-Dienst schreibt über dieselbe Schlange auf dem Stand der Datenbank. Läuft sie
+// neben einem Speichern der Einstellungen, bleiben beide Änderungen stehen.
+test('Einstellungen: Zustimmung und Speichern zugleich, keine Änderung geht verloren', async () => {
+  const s = await startServer()
+  try {
+    const answers = await Promise.all([
+      ...Array.from({ length: 4 }, (_, n) => put(s, '/api/settings', { landlordContact: `Tel. ${n}` })),
+      send(s, 'POST', '/api/ai/consent', { slot: 'text' }),
+      ...Array.from({ length: 4 }, (_, n) => put(s, '/api/settings', { landlordAddress: `Weg ${n}` })),
+    ])
+    assert.ok(answers.every((answer) => answer.status === 200), answers.map((answer) => answer.status).join(', '))
+    const stored = await settingsOf(s)
+    const ai = stored.ai
+    if (ai === null || typeof ai !== 'object' || !('consent' in ai)) assert.fail('Die KI-Einstellungen fehlen.')
+    const consent = ai.consent
+    assert.ok(consent !== null && typeof consent === 'object' && 'text' in consent, 'Die Zustimmung fehlt.')
+    assert.match(String(stored.landlordContact), /^Tel\. \d$/)
+    assert.match(String(stored.landlordAddress), /^Weg \d$/)
+  } finally {
+    s.stop()
+  }
+})
