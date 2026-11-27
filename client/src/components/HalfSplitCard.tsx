@@ -1,5 +1,6 @@
 // Die Karte „Heizung nach § 43 GModG“ (Heizung PR 18, #215; Entwurf 3.9, 5.3): Tag des Einbaus, Notfalleinbau,
 // Neubau, gespeichert an der Anlage, und die Mitteilung nach § 5d Abs. 4 je Mietverhältnis.
+import { useOptionalProperty, withProperty } from '../property'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
@@ -19,6 +20,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
   // Seitenwechsel wieder leer); ohne Angabe `onSaved`.
   onNoticeSaved?: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   // Die Merkmale der Anlage sind ein Entwurf mit einem „Speichern“ am Fuß der Karte (#346 Schritt 7, N8); die Mitteilung
   // je Mietverhältnis ist ein Entwurf an ihrer Zeile (NoticeRow). Beide melden sich bei einer Änderung als offenes
   // Formular an (#346, 7a), und ein gespeicherter Wert gilt sofort als gespeichert, auch bevor die Seite neu geladen hat.
@@ -40,7 +42,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
       return keepDraft
     }
     try {
-      await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
+      await api(withProperty(`/api/heating-plants/${plant.id}`, propertyId), { method: 'PUT', body: JSON.stringify(result.body) })
     } catch (e) {
       setError(errorText(e))
       return keepDraft
@@ -114,10 +116,11 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
 function NoticeRow({ tenancy: t, onSaved }: { tenancy: NoticeTenancy; onSaved: () => void }) {
   const draft = useDraft(t.halfSplitNoticeOn ?? '', { scope: t.id })
   const what = `Mitteilung an ${t.tenantName}`
+  const propertyId = useOptionalProperty()?.property?.id
   async function save(value: string) {
     const result = noticeBody(value)
     if ('error' in result) throw new Error(result.error)
-    await api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
+    await api(withProperty(`/api/tenancies/${t.id}`, propertyId), { method: 'PUT', body: JSON.stringify(result.body) })
     onSaved()
   }
   return (

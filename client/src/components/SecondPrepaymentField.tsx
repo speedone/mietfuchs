@@ -12,15 +12,17 @@ import {
   SECOND_PREPAYMENT_HELP, SECOND_PREPAYMENT_OPTIONS, SECOND_PREPAYMENT_QUESTION, secondPrepaymentBody, secondPrepaymentState, secondPrepaymentValue,
   type SecondPrepaymentChoice,
 } from '../heatingPeriodForm'
+import { useOptionalProperty, withProperty } from '../property'
 
 export default function SecondPrepaymentField({ plant, onChanged, notify }: { plant: HeatingPlant; onChanged: () => Promise<void>; notify: (text: string) => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const state = secondPrepaymentState(plant)
   const draft = useDraft<SecondPrepaymentChoice>(secondPrepaymentValue(plant), { scope: plant.id, isValid: (v) => SECOND_PREPAYMENT_OPTIONS.some((o) => o.value === v) })
   const errors = useFormError()
 
   async function save(value: SecondPrepaymentChoice) {
     try {
-      await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(secondPrepaymentBody(value)) })
+      await api(withProperty(`/api/heating-plants/${plant.id}`, propertyId), { method: 'PUT', body: JSON.stringify(secondPrepaymentBody(value)) })
     } catch (e) {
       errors.set(errorText(e))
       return keepDraft

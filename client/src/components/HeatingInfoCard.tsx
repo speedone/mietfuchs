@@ -8,11 +8,13 @@ import { useOpenWhenDiffers } from '../useDraft'
 import { CONTRACT_HELP, CONTRACT_OPTIONS, contractBody, contractToForm, dwdHint, infoBody, infoToForm, type ContractForm, type InfoForm } from '../heatingInfoForm'
 import { inheritedText } from '../heatingRulesForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { useOptionalProperty, withProperty } from '../property'
 
 // Karte „Angaben zur Abrechnung (§ 6a)“ (Heizung PR 14): was Mietfuchs für die Informationen nach § 6a Abs. 3
 // HeizkostenV nicht selbst kennt. Die Vergleiche (Nr. 4, 5) rechnet Mietfuchs nur bei eigener Abrechnung; dort
 // fragt die Karte den Vergleichswert und die Klimafaktoren, je mit Quelle.
 export default function HeatingInfoCard({ plant, view, onChanged }: { plant: HeatingPlant; view: HeatingPeriodView; onChanged: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const toast = useToast()
   const [form, setForm] = useState<InfoForm>(() => infoToForm(view.info))
   const [contract, setContract] = useState<ContractForm>(() => contractToForm(view.rules.consumerContract))
@@ -32,11 +34,11 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
     const c = contractBody(contract)
     if ('error' in c) return setError(c.error)
     try {
-      await api(`/api/heating-plants/${plant.id}/periods/${view.period}/info`, { method: 'PUT', body: JSON.stringify(r.body) })
+      await api(withProperty(`/api/heating-plants/${plant.id}/periods/${view.period}/info`, propertyId), { method: 'PUT', body: JSON.stringify(r.body) })
       // Der Verbrauchervertrag gilt wie die Angaben zu § 11 ab dieser Heizperiode; gespeichert wird er nur, wenn er
       // sich gegenüber dem geltenden ändert, damit eine geerbte Antwort nicht still zur eigenen wird.
       if (c.body.consumerContract !== view.rules.consumerContract) {
-        await api(`/api/heating-plants/${plant.id}/periods/${view.period}/rules`, { method: 'PUT', body: JSON.stringify(c.body) })
+        await api(withProperty(`/api/heating-plants/${plant.id}/periods/${view.period}/rules`, propertyId), { method: 'PUT', body: JSON.stringify(c.body) })
       }
       setError('')
       markSaved()

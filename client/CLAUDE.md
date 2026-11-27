@@ -763,6 +763,14 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   readingForm.ts, der Zählerstand mit dem Wert von jetzt) und Objekt; das Mietverhältnis hat
   `tenancyStamp`. Teilrümpfe (Beleg zuordnen, Betrag prüfen, Art einer Zahlung) schicken nichts mit, sie ändern nur, was
   sie nennen. Tests: gleichzeitigBearbeiten.test.tsx, kostenGleichzeitig.test.tsx.
+- **Ändern und Löschen nennen das gewählte Objekt** (#692): Jeder Aufruf von `PUT`/`DELETE /api/<Sammlung>/:id` (und
+  `…/split`) geht durch `withProperty(…, propertyId)`, ebenso jeder Aufruf an Heizanlage, Lieferung, CO₂-Erstattung,
+  Kautionsbuchung, Mieterhöhung und an `…/change`, `…/rent-increases`, `…/rent-increase/plan`, `…/interim-gaps` (dort
+  auch die lesenden, der Wächter sieht die Methode nicht); der Server prüft beim Ändern, Löschen und Versenden, ob der
+  Datensatz dazu gehört, und lehnt sonst ab. Dasselbe gilt für Adressen aus `settlementPaths` und `closedCheckPath`
+  (zweiter Wächter dort). Unterkomponenten ohne Prop nehmen `useOptionalProperty()`. Ausgenommen ist
+  nur, was über alle Objekte arbeitet (Ordner der Belege, „Beleg zuordnen“, „Betrag prüfen“), und fuelCredit.ts, das nur
+  die Adresse baut (FuelCard hängt das Objekt an). Wächter mit Ausnahmeliste in pages/objektBeimAendern.test.tsx.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus
   [src/testing/dialog.ts](src/testing/dialog.ts), Tastendrücke wie im Browser aus
   [src/testing/keys.ts](src/testing/keys.ts) (`press`). `<dialog>` hat die Rolle `dialog`, die

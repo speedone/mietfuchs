@@ -11,6 +11,7 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 import Drawer from './Drawer'
 import { estimateIdleText } from '../heatingSelfView'
 import { useSaving } from '../useSaving'
+import { useOptionalProperty, withProperty } from '../property'
 
 const POT_TEXT = { heat: 'Heizung', water: 'Warmwasser' } as const
 const POT_OF = { heat: 'heating', water: 'water' } as const
@@ -22,6 +23,7 @@ const num = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 
 export default function EstimateCard({ plant, view, self, onChanged }: {
   plant: HeatingPlant; view: HeatingPeriodView; self: SelfHeatingStatement; onChanged: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const toast = useToast()
   const [open, setOpen] = useState<SelfEstimateOption | null>(null)
   const [form, setForm] = useState<EstimateForm | null>(null)
@@ -38,7 +40,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   const threshold = self.threshold ?? valueAt(hkvEstimateThreshold, view.from)
   const existingOf = (o: Pick<SelfEstimateOption, 'unitId' | 'part'>): SelfEstimateView | undefined => estimates.find((e) => e.unitId === o.unitId && e.part === o.part)
   // Eine Schätzung an der Vorgängerin der Linie (Kesseltausch) wird dort geändert und entfernt.
-  const url = (o: Pick<SelfEstimateOption, 'unitId' | 'part'>) => `/api/heating-plants/${existingOf(o)?.plantId ?? plant.id}/periods/${view.period}/estimates/${o.unitId}/${o.part}`
+  const url = (o: Pick<SelfEstimateOption, 'unitId' | 'part'>) => withProperty(`/api/heating-plants/${existingOf(o)?.plantId ?? plant.id}/periods/${view.period}/estimates/${o.unitId}/${o.part}`, propertyId)
   const potOf = (o: SelfEstimateOption) => self.pots.find((p) => p.pot === POT_OF[o.part])
 
   // Dieselbe Bedingung wie in saveEstimate: Ablesedienst und noch kein Wert (der Ausweis setzt `serviceValues` nur mit Werten).

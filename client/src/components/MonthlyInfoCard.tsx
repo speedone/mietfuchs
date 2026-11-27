@@ -15,11 +15,13 @@ import { monthStatus, periodReferenceText, rowBody, rowToForm, tempBody, type Mo
 import { monthName } from '../../../shared/monthlyInfo.ts'
 import type { MonthlyInfoMonth, MonthlyInfoRow, MonthlyInfoView } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { useOptionalProperty, withProperty } from '../property'
 
 // Die Farbe des Stands: grün mitgeteilt, gelb offen, rot unvollständig, grau ohne Pflicht in diesem Monat.
 const TONE_CHIP = { ok: 'gruen', open: 'gelb', warn: 'rot', none: '' } as const
 
 export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: { plantId: string; period: string; propertyName?: string }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [view, setView] = useState<MonthlyInfoView | null>(null)
   const [printing, setPrinting] = useState<string | null>(null)
   // Fehler beim Laden als Sammelmeldung oben in der Karte (#346, Schritt 3)
@@ -32,7 +34,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
 
   async function load() {
     try {
-      const v = await api<MonthlyInfoView>(`/api/heating-plants/${plantId}/periods/${period}/monthly-info`)
+      const v = await api<MonthlyInfoView>(withProperty(`/api/heating-plants/${plantId}/periods/${period}/monthly-info`, propertyId))
       setView(v)
       setError('')
     } catch (e) {
@@ -64,7 +66,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
   async function saveRow(month: string, form: MonthlyRowForm) {
     const r = rowBody(form)
     if ('error' in r) throw new Error(r.error)
-    await api<MonthlyInfoRow>(`/api/heating-plants/${plantId}/monthly-info/${month}`, { method: 'PUT', body: JSON.stringify(r.body) })
+    await api<MonthlyInfoRow>(withProperty(`/api/heating-plants/${plantId}/monthly-info/${month}`, propertyId), { method: 'PUT', body: JSON.stringify(r.body) })
     toast('Gespeichert.')
     await load()
   }
@@ -74,7 +76,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
   async function saveTemp(temp: string) {
     const r = tempBody(temp)
     if ('error' in r) throw new Error(r.error)
-    await api(`/api/heating-plants/${plantId}/periods/${period}/dhw-temperature`, { method: 'PUT', body: JSON.stringify(r.body) })
+    await api(withProperty(`/api/heating-plants/${plantId}/periods/${period}/dhw-temperature`, propertyId), { method: 'PUT', body: JSON.stringify(r.body) })
     toast('Gespeichert.')
     await load()
   }

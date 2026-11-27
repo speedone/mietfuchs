@@ -365,6 +365,36 @@ test('Mieterhöhung, Entwurf löschen: nur ein Entwurf, nur mit gültiger Marke'
   }
 })
 
+test('Mieterhöhung: Anlegen, Versand, Antwort und Löschen lehnen ein anderes Objekt ab und ändern nichts (#692)', async () => {
+  const c = await setup()
+  try {
+    const draft = await jsonOf<RentIncreaseView>(await c.create())
+    const other = (await c.s.api<Property[]>('/api/properties')).find((x) => x.id !== c.p.id) ?? assert.fail('zweites Objekt fehlt')
+    const stepsBefore = (await journalOf(c.s, '?limit=200')).map((g) => g.id)
+    // Das zweite Objekt ist das des frischen Bestands, ohne Namen; es heißt wie im Umschalter.
+    const satz = /^Diese Mieterhöhung gehört zu „Haus“, gewählt ist „Ohne Namen“\. Geändert wurde nichts\. Wechseln Sie zu „Haus“ oder laden Sie die Seite neu\.$/
+    for (const [method, url, body] of [
+      ['POST', `/api/rent-increases/${draft.id}/send?property=${other.id}`, { receivedOn: TODAY, token: draft.token }],
+      ['POST', `/api/rent-increases/${draft.id}/status?property=${other.id}`, { status: 'refused', decidedOn: TODAY, token: draft.token }],
+      ['DELETE', `/api/rent-increases/${draft.id}?property=${other.id}`, { token: draft.token }],
+    ] as const) {
+      const res = await send(c.s, method, url, body)
+      assert.equal(res.status, 409, `${method} ${url}`)
+      assert.match(await errorFrom(res), satz)
+    }
+    const plan = await c.plan()
+    const created = await send(c.s, 'POST', `/api/tenancies/${c.t.id}/rent-increases?property=${other.id}`, { request: COMPARISON, letter: LETTER, token: plan.token })
+    assert.equal(created.status, 409)
+    assert.match(await errorFrom(created), /Dieses Mietverhältnis gehört zu „Haus“, gewählt ist „Ohne Namen“/)
+    assert.deepEqual(await c.list(), [draft], 'Entwurf unverändert')
+    assert.deepEqual((await journalOf(c.s, '?limit=200')).map((g) => g.id), stepsBefore, 'kein Schritt im Verlauf')
+    // Mit dem eigenen Objekt geht es wie bisher.
+    assert.equal((await send(c.s, 'DELETE', `/api/rent-increases/${draft.id}?property=${c.p.id}`, { token: draft.token })).status, 200)
+  } finally {
+    c.s.stop()
+  }
+})
+
 test('Mieterhöhung, Verlauf und Backup: Rücksprung nimmt Zustimmung und Stufe zurück, Backup bringt die Verlangen mit', async () => {
   const c = await setup()
   try {

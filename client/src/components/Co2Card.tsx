@@ -10,6 +10,7 @@ import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body,
 import type { HeatingPeriodView, Tenancy } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
+import { useOptionalProperty, withProperty } from '../property'
 
 type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serviceArea' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
 
@@ -17,6 +18,7 @@ type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serv
 // Feld für ihren CO₂-Anteil; im ganz vermieteten Haus hielt man es sonst für den eigenen Anteil.
 // `homeowners` (Abdeckung V14): Bei einer Eigentumswohnung rechnet die Gemeinschaft ab; gefragt ist der eigene Anteil.
 export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = false, homeowners = false, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; hasSelfUsed?: boolean; homeowners?: boolean; onSaved: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const ctx = { items: view.items, unitsCount, homeowners }
   const labels = co2Labels(homeowners)
   const [form, setForm] = useState<Co2Form>(() => co2ToForm(view.co2, ctx))
@@ -33,7 +35,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
   const serviceItems = view.items.filter((i) => i.key === 'amounts')
   const billed = tenancies.filter((t) => serviceItems.some((i) => (i.tenancyAmounts?.[t.id] ?? 0) > 0))
   const service = form.answer === 'deducted' || form.answer === 'shown'
-  const url = `/api/heating-plants/${view.plantId}/periods/${view.period}/co2`
+  const url = withProperty(`/api/heating-plants/${view.plantId}/periods/${view.period}/co2`, propertyId)
 
   async function save() {
     const r = co2Body(form, ctx)

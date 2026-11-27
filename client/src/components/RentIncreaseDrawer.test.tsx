@@ -32,7 +32,9 @@ beforeEach(() => {
   // Ein Browser, der Ränder je Druckseite kann (Chromium, Firefox); jsdom kennt die Eigenschaft nicht.
   vi.stubGlobal('CSS', { supports: () => true })
   reply = () => PLAN
-  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+  vi.stubGlobal('fetch', async (address: string, init?: RequestInit) => {
+    // Die Aufrufe nennen das gewählte Objekt (#692, Wächter in objektBeimAendern.test.tsx); verglichen wird der Pfad.
+    const url = address.split('?')[0] ?? address
     const method = init?.method ?? 'GET'
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
     sent.push({ url, method, body })

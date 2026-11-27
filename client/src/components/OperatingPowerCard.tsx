@@ -11,11 +11,13 @@ import { useOpenWhenDiffers } from '../useDraft'
 import type { CostItem, HeatingPeriodView, HeatingPlant, PeriodRules } from '../types'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { NoticeBox } from './Notice'
+import { useOptionalProperty, withProperty } from '../property'
 
 // `rules`: der Rhythmus des Objekts, nach dem die Stromrechnungen ihren Zeitraum haben (G-K1).
 export default function OperatingPowerCard({ plant, view, rules, items, onBooked }: {
   plant: Pick<HeatingPlant, 'id' | 'method' | 'energy'> & Partial<Pick<HeatingPlant, 'contracting'>>; view: Pick<HeatingPeriodView, 'period' | 'label' | 'from' | 'to' | 'closed'>; rules: PeriodRules; items: readonly CostItem[]; onBooked: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [form, setForm] = useState(emptyOperatingPowerForm)
   const [busy, setBusy] = useState(false)
   // Eine angefangene Schätzung zählt als offenes Formular (#346, 7a); nach dem Buchen ist das Formular leer.
@@ -46,7 +48,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
     setBusy(true)
     try {
       const body = { ...operatingPowerRequest(form, String(view.period)), ...(despiteExisting ? { despiteExisting: true } : {}) }
-      await api(`/api/heating-plants/${plant.id}/operating-power`, { method: 'POST', body: JSON.stringify(body) })
+      await api(withProperty(`/api/heating-plants/${plant.id}/operating-power`, propertyId), { method: 'POST', body: JSON.stringify(body) })
       setQuestion(null)
       toast(service
         ? 'Der Abzug beim Allgemeinstrom ist angelegt. Melden Sie denselben Betrag Ihrem Messdienst als Betriebsstrom.'

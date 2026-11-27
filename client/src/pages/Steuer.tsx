@@ -11,7 +11,7 @@ import { useSaving } from '../useSaving'
 import { localToday } from '../periodForm'
 import { usePeriod } from '../period'
 import { CalendarYearSelect } from '../components/PeriodSelect'
-import { useProperty, useSwitchProperty, withProperty } from '../property'
+import { useOptionalProperty, useProperty, useSwitchProperty, withProperty } from '../property'
 import Card from '../components/Card'
 import { OVERVIEW_NOTE, overviewMore, overviewView, showsOverview } from '../taxOverview'
 import { effectiveLandlord, letterhead } from '../landlord'
@@ -1256,6 +1256,7 @@ function OverviewCard({ year, basis, refresh }: { year: number; basis: Basis; re
 // Je Zahlung, die wie die Kaution aussieht, ein Knopf zum Umbuchen (#228): Die Mietzahlung wird zum Eingang der
 // Kaution. Die Rückfrage sagt, dass die Monate, die sie gedeckt hat, wieder offen sind.
 function DepositMoveButtons({ deposits, onMoved }: { deposits: TaxReceived['possibleDeposits']; onMoved: () => Promise<unknown> }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const confirm = useConfirm()
   const toast = useToast()
   const saving = useSaving()
@@ -1267,7 +1268,7 @@ function DepositMoveButtons({ deposits, onMoved }: { deposits: TaxReceived['poss
     })
     if (!ok) return
     try {
-      await api(`/api/deposit-entries/from-payment/${d.paymentId}`, { method: 'POST' })
+      await api(withProperty(`/api/deposit-entries/from-payment/${d.paymentId}`, propertyId), { method: 'POST' })
     } catch (e) {
       toast(errorText(e), 'error')
       return

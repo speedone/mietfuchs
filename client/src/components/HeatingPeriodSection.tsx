@@ -18,6 +18,7 @@ import {
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import SecondPrepaymentField from './SecondPrepaymentField'
+import { useOptionalProperty, withProperty } from '../property'
 
 // Der Abschnitt „Zeitraum der Heizung“ einer Anlage in der Karte „Heizung“ (Heizung PR 5, Entwurf 11.2
 // Schritt 3): Zeitraum wechseln mit Vorschau, getrennte Heizkostenabrechnung ein- und ausschalten mit
@@ -43,6 +44,7 @@ function freshPreview<T>(e: unknown): T | null {
 }
 
 export default function HeatingPeriodSection({ plant, objectRules, hasCalendarData, onChanged, notify, actions, dangerAction }: Props) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [open, setOpen] = useState<'none' | 'period' | 'separate'>('none')
   const [form, setForm] = useState<HeatingPeriodForm>(heatingPeriodForm(plant))
   // Gespeichert wird im Seitenfenster (#346 Schritt 12, wie der Abrechnungszeitraum in Schritt 7); ein geändertes Fenster
@@ -116,7 +118,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     if ('error' in body) return errors.report([{ field: body.field, short: body.short, text: body.error }])
     const seq = ++previewSeq.current
     try {
-      const p = await api<HeatingPeriodChangePreview>(`/api/heating-plants/${plant.id}/period/preview`, { method: 'POST', body: JSON.stringify(body) })
+      const p = await api<HeatingPeriodChangePreview>(withProperty(`/api/heating-plants/${plant.id}/period/preview`, propertyId), { method: 'POST', body: JSON.stringify(body) })
       if (seq !== previewSeq.current) return
       setStale(false)
       setPeriodPreview(p)
@@ -136,7 +138,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     const answers = heatingPeriodAnswersOf(periodPreview, periodAnswers)
     if ('error' in answers) { setError(answers.error); return false }
     try {
-      await api(`/api/heating-plants/${plant.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: body.rules, answers: { ...answers, understood: periodUnderstood } }) })
+      await api(withProperty(`/api/heating-plants/${plant.id}/period`, propertyId), { method: 'PUT', body: JSON.stringify({ rules: body.rules, answers: { ...answers, understood: periodUnderstood } }) })
     } catch (e) {
       const fresh = freshPreview<HeatingPeriodChangePreview>(e)
       if (fresh) {
@@ -181,7 +183,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     const body = mode === 'off' && !switchOn ? separateOffBody(plant, forMonth) : { separate: true, ...(forMonth ? { month: forMonth } : {}) }
     const seq = ++previewSeq.current
     try {
-      const p = await api<SeparatePreview>(`/api/heating-plants/${plant.id}/separate/preview`, { method: 'POST', body: JSON.stringify(body) })
+      const p = await api<SeparatePreview>(withProperty(`/api/heating-plants/${plant.id}/separate/preview`, propertyId), { method: 'POST', body: JSON.stringify(body) })
       if (seq !== previewSeq.current) return
       setStale(false)
       setSeparatePreview(p)
@@ -204,7 +206,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       ? { separate: true, month: separatePreview.month, answers: confirmed }
       : { separate: false, ...(separatePreview.until ? { until: separatePreview.until } : { month: separatePreview.month }), answers: confirmed }
     try {
-      await api(`/api/heating-plants/${plant.id}/separate`, { method: 'PUT', body: JSON.stringify(body) })
+      await api(withProperty(`/api/heating-plants/${plant.id}/separate`, propertyId), { method: 'PUT', body: JSON.stringify(body) })
     } catch (e) {
       const fresh = freshPreview<SeparatePreview>(e)
       if (fresh) {

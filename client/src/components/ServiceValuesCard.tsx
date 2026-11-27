@@ -10,6 +10,7 @@ import { useOpenWhenDiffers } from '../useDraft'
 import { emptyServiceRow, SERVICE_UNIT_OPTIONS, serviceRowsOf, serviceUnitOfOption, serviceValuesBody, SERVICE_VALUES_HINTS, type ServiceRowForm } from '../hcaForm'
 import type { HeatingServiceValue, PeriodKey } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { useOptionalProperty, withProperty } from '../property'
 
 type Props = {
   plantId: string
@@ -25,6 +26,7 @@ type Props = {
 }
 
 export default function ServiceValuesCard({ plantId, period, from, to, closed, units, values, remoteUnknown = false, onSaved }: Props) {
+  const propertyId = useOptionalProperty()?.property?.id
   const savedRows = (): ServiceRowForm[] => (values.length > 0 ? serviceRowsOf(values) : units.map((u) => ({ ...emptyServiceRow(from, to), unitId: u.id })))
   const [rows, setRows] = useState<ServiceRowForm[]>(savedRows)
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
@@ -42,7 +44,7 @@ export default function ServiceValuesCard({ plantId, period, from, to, closed, u
       return
     }
     try {
-      await api(`/api/heating-plants/${plantId}/periods/${period}/service-values`, { method: 'PUT', body: JSON.stringify(b.body) })
+      await api(withProperty(`/api/heating-plants/${plantId}/periods/${period}/service-values`, propertyId), { method: 'PUT', body: JSON.stringify(b.body) })
       setError('')
       markSaved()
       toast('Werte des Ablesedienstes gespeichert.')

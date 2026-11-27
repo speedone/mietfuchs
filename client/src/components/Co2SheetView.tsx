@@ -8,12 +8,14 @@ import Table from './Table'
 import type { Co2Sheet } from '../types'
 import { NoticeBox } from './Notice'
 import { softBreak } from '../softBreak'
+import { useOptionalProperty, withProperty } from '../property'
 
 export default function Co2SheetView({ plantId, period, onClose }: { plantId: string; period: string; onClose: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [sheet, setSheet] = useState<Co2Sheet | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
-    api<Co2Sheet>(`/api/heating-plants/${encodeURIComponent(plantId)}/periods/${encodeURIComponent(period)}/co2-sheet`).then(setSheet).catch((e: unknown) => setError(errorText(e)))
+    api<Co2Sheet>(withProperty(`/api/heating-plants/${encodeURIComponent(plantId)}/periods/${encodeURIComponent(period)}/co2-sheet`, propertyId)).then(setSheet).catch((e: unknown) => setError(errorText(e)))
   }, [plantId, period])
   const back = <button className="btn secondary" type="button" onClick={onClose}>Zurück zu den Heizkosten</button>
   if (error) return <div className="card"><NoticeBox level="error" action={error} /><div className="row no-print">{back}</div></div>

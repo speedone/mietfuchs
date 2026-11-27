@@ -11,6 +11,7 @@ import { STOCK_UNIT_TEXT } from '../../../shared/fuelStock.ts'
 import type { HeatingEnergy, HeatingPeriodView } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
+import { useOptionalProperty, withProperty } from '../property'
 
 type TextKey = 'openingQuantity' | 'openingCost' | 'openingKg' | 'openingCo2' | 'closingQuantity'
 
@@ -26,6 +27,7 @@ const HOW_TO_MEASURE: Partial<Record<HeatingEnergy, string>> = {
 // `co2Fields`: kg und CO₂-Kosten gibt es nur bei Brennstoffen, deren CO₂-Kosten aufzuteilen sind
 // (Heizöl, Flüssiggas, Kohle; § 2 Abs. 1 CO2KostAufG), nicht bei Pellets und Holz.
 export default function StockCard({ view, onSaved, co2Fields = true, energy }: { view: HeatingPeriodView; onSaved: () => void; co2Fields?: boolean; energy?: HeatingEnergy }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const stock = view.stock
   const [form, setForm] = useState<StockForm | null>(() => (stock ? stockToForm(stock) : null))
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
@@ -38,7 +40,7 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
   const confirm = useConfirm()
   if (!stock || !form) return null
   const set = <K extends keyof StockForm>(key: K, value: StockForm[K]) => setForm((f) => (f ? { ...f, [key]: value } : f))
-  const url = `/api/heating-plants/${view.plantId}/periods/${view.period}/stock`
+  const url = withProperty(`/api/heating-plants/${view.plantId}/periods/${view.period}/stock`, propertyId)
 
   async function save() {
     if (!stock || !form) return

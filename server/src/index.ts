@@ -727,7 +727,10 @@ app.post('/api/costItems/:id/split/preview', async (req, res) => {
   res.json(await readData(async (db) => ({ parts: await previewCostItemSplit(db, null, bodyObject(req), req.params.id) })))
 })
 app.put('/api/costItems/:id/split', async (req, res) => {
-  res.json(await writeData((db) => saveCostItemSplit(db, null, bodyObject(req), req.params.id, newId)))
+  res.json(await writeData(async (db) => {
+    await requireInProperty(db, req, 'costItems', req.params.id)
+    return saveCostItemSplit(db, null, bodyObject(req), req.params.id, newId)
+  }))
 })
 
 // Jemand speichert an einem Datensatz, den ein anderes Fenster oder Gerät inzwischen gelöscht hat: ein Satz statt
@@ -740,6 +743,105 @@ const GONE: Record<CollectionName, string> = {
   meters: `Dieser Zähler ${GONE_REST}`,
   readings: `Diese Ablesung ${GONE_REST}`,
   payments: `Diese Zahlung ${GONE_REST}`,
+}
+// Ändern und Löschen eines Datensatzes (#692): **Nennt die Anfrage ein Objekt und gehört der Datensatz zu einem anderen,
+// wird abgelehnt.** Der Server verlässt sich damit nicht darauf, dass die Oberfläche nur Datensätze des gewählten
+// Objekts zeigt. **Ohne `?property=` gilt die Kennung allein, wie bisher**, auch bei mehreren Objekten: Die
+// Kennung ist eindeutig, Skripte und Tabs von vor dem Update arbeiten weiter, und Seiten über alle Objekte (Ordner der
+// Belege) nennen keines. Das Objekt eines Datensatzes folgt derselben Regel wie `narrowToProperty`: Die Wurzeln tragen
+// es, Mietverhältnisse erben es von ihrer Wohnung, Zahlungen vom Mietverhältnis, Ablesungen vom Zähler. Einen
+// Datensatz, den es nicht gibt, meldet die Route selbst (404); einer, dessen Objekt sich nicht ermitteln lässt, geht durch.
+const ELSEWHERE: Record<CollectionName, string> = {
+  units: 'Diese Wohnung',
+  tenancies: 'Dieses Mietverhältnis',
+  costItems: 'Diese Kostenposition',
+  meters: 'Dieser Zähler',
+  readings: 'Diese Ablesung',
+  payments: 'Diese Zahlung',
+}
+// Das Objekt eines Datensatzes, gezielt nach Kennung gelesen (eine Abfrage, keine ganze Sammlung je Anfrage, vgl. #651):
+// Wurzeln tragen es, Mietverhältnisse über ihre Wohnung, Zahlungen, Kautionsbuchungen, CO₂-Erstattungen und
+// Mieterhöhungen über ihr Mietverhältnis, Ablesungen über ihren Zähler, Lieferungen über ihre Heizanlage. `null`, wenn es
+// den Datensatz nicht gibt.
+async function propertyOfRecord(db: Database, kind: CollectionName | OwnedKind, id: string): Promise<string | null> {
+  const viaTenancy = (table: string) => sql`SELECT u.property_id FROM ${sql.raw(table)} x JOIN tenancies t ON t.id = x.tenancy_id JOIN units u ON u.id = t.unit_id WHERE x.id = ${id}`
+  const query = {
+    units: sql`SELECT property_id FROM units WHERE id = ${id}`,
+    meters: sql`SELECT property_id FROM meters WHERE id = ${id}`,
+    costItems: sql`SELECT property_id FROM cost_items WHERE id = ${id}`,
+    heatingPlants: sql`SELECT property_id FROM heating_plants WHERE id = ${id}`,
+    tenancies: sql`SELECT u.property_id FROM tenancies t JOIN units u ON u.id = t.unit_id WHERE t.id = ${id}`,
+    readings: sql`SELECT m.property_id FROM readings r JOIN meters m ON m.id = r.meter_id WHERE r.id = ${id}`,
+    fuelDeliveries: sql`SELECT p.property_id FROM fuel_deliveries d JOIN heating_plants p ON p.id = d.plant_id WHERE d.id = ${id}`,
+    payments: viaTenancy('payments'),
+    depositEntries: viaTenancy('deposit_entries'),
+    co2Refunds: viaTenancy('co2_refunds'),
+    rentIncreases: viaTenancy('rent_increases'),
+  }[kind]
+  const row = await db.get<[string | null]>(query)
+  return row?.[0] ?? null
+}
+// Gehört der Datensatz nicht zum Objekt aus `?property=`, eine 409 mit beiden Objekten und dem Ausweg. Namen wie im
+// Umschalter (client/src/property.tsx), ein Objekt ohne Bezeichnung heißt „Ohne Namen“.
+async function requireInProperty(db: Database, req: Request, coll: CollectionName | OwnedKind, id: string): Promise<void> {
+  const query: unknown = req.query.property
+  if (typeof query !== 'string' || query === '') return
+  const wanted = await propertyOf(db, req)
+  const actual = await propertyOfRecord(db, coll, id)
+  if (actual === null || actual === wanted) return
+  const properties = await listProperties(db)
+  const nameOf = (propertyId: string) => properties.find((p) => p.id === propertyId)?.name || 'Ohne Namen'
+  const subject = isCollection(coll) ? ELSEWHERE[coll] : OWNED_ELSEWHERE[coll]
+  throw new RouteProblem(409, `${subject} gehört zu „${nameOf(actual)}“, gewählt ist „${nameOf(wanted)}“. Geändert wurde nichts. ` +
+    `Wechseln Sie zu „${nameOf(actual)}“ oder laden Sie die Seite neu.`)
+}
+// Beim Anlegen mit einem Verweis (Wohnung eines Mietverhältnisses, Mietverhältnis einer Zahlung, Kautionsbuchung oder
+// CO₂-Erstattung, Zähler einer Ablesung): Nennt die Anfrage ein Objekt, muss der Verweis dazu gehören. Ein Verweis, den
+// es nicht gibt, meldet die Route selbst.
+async function requireReferenceInProperty(db: Database, req: Request, coll: CollectionName, ref: unknown): Promise<void> {
+  if (typeof ref === 'string' && ref !== '') await requireInProperty(db, req, coll, ref)
+}
+const isCollection = (x: CollectionName | OwnedKind): x is CollectionName => (COLLECTIONS as string[]).includes(x)
+// Dieselbe Prüfung für die übrigen Routen an einem Datensatz eines Objekts (#692): Heizanlage samt allem unter ihr
+// (Heizperioden, Lieferungen anlegen, eigene Abrechnung, Zeitraum, getrennte Heizkostenabrechnung), Lieferung,
+// CO₂-Erstattung, Kautionsbuchung, Mieterhöhung, und unter Mietverhältnis und Wohnung die Unterrouten (Mieterwechsel,
+// Mieterhöhung anlegen, Zwischenablesung; das Aufteilen einer Kostenposition prüft seine Route selbst). Jede schreibende
+// Anfrage (auch eine Vorschau per POST) geht vor der Route durch die Vorschaltung unten; GET liest nur.
+// Nicht dabei, mit Grund: `/api/properties/:id/…` (die Kennung ist das Objekt selbst); Belege, Kontoauszug, Rechtswerte,
+// KI, Verlauf, Vorversionen und Geräte (installationsweit); Auswertungen (`/api/assessments/:id`: Sie hängen an einem
+// Beleg und wählen ihr Objekt selbst, gebucht wird immer in diesem, und nach der ersten gebuchten Zeile ist es fest,
+// `placeAssessment`); `/api/settlement/:period/…` und `/api/rentledger/:year/…` (das Objekt kommt ohnehin aus
+// `?property=`); Briefe je Mietverhältnis (`letterTarget` prüft das Objekt schon).
+// Geprüft wird in einem eigenen Lesevorgang vor dem Schreiben; dass zwischen beiden ein Datensatz das Objekt wechselt
+// (nur eine Wohnung kann das, mit ihr ihre Mietverhältnisse), ist hingenommen.
+type OwnedKind = 'heatingPlants' | 'fuelDeliveries' | 'co2Refunds' | 'depositEntries' | 'rentIncreases'
+const OWNED_ELSEWHERE: Record<OwnedKind, string> = {
+  heatingPlants: 'Diese Heizanlage',
+  fuelDeliveries: 'Diese Lieferung',
+  co2Refunds: 'Diese Erstattung',
+  depositEntries: 'Diese Kautionsbuchung',
+  rentIncreases: 'Diese Mieterhöhung',
+}
+// Die längere Adresse zuerst: `/api/deposit-entries/from-payment/:id` nennt eine Zahlung, nicht eine Buchung.
+const RECORD_ROUTES: [string, CollectionName | OwnedKind][] = [
+  ['/api/heating-plants/:id', 'heatingPlants'],
+  ['/api/heating-settlement/:id', 'heatingPlants'],
+  ['/api/fuel-deliveries/:id', 'fuelDeliveries'],
+  ['/api/co2-refunds/:id', 'co2Refunds'],
+  ['/api/deposit-entries/from-payment/:id', 'payments'],
+  ['/api/deposit-entries/:id', 'depositEntries'],
+  ['/api/rent-increases/:id', 'rentIncreases'],
+  ['/api/tenancies/:id', 'tenancies'],
+  ['/api/units/:id', 'units'],
+]
+for (const [route, kind] of RECORD_ROUTES) {
+  app.use(route, async (req, _res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') return next()
+    const id = req.params.id
+    // `from-payment` unter `/api/deposit-entries/:id` ist keine Buchung; sie prüft der Eintrag davor.
+    if (typeof id === 'string' && !(kind === 'depositEntries' && id === 'from-payment')) await readData((db) => requireInProperty(db, req, kind, id))
+    next()
+  })
 }
 for (const coll of COLLECTIONS) {
   // Aufgelistet wird über `narrowToProperty`, dieselbe Regel wie beim Rechnen; eine zweite
@@ -776,12 +878,16 @@ for (const coll of COLLECTIONS) {
     const body = bodyObject(req)
     if (coll === 'costItems') requireInvoiceFile(body, undefined)
     res.status(201).json(await writeData(async (db) => {
+      if (coll === 'tenancies') await requireReferenceInProperty(db, req, 'units', body.unitId)
+      if (coll === 'payments') await requireReferenceInProperty(db, req, 'tenancies', body.tenancyId)
+      if (coll === 'readings') await requireReferenceInProperty(db, req, 'meters', body.meterId)
       const withProperty = ROOTS.includes(coll) ? { ...body, propertyId: await propertyOf(db, req, true) } : body
       return coll === 'readings' ? createReading(db, newId(), withProperty) : createEntity(db, coll, newId(), withProperty)
     }))
   })
   app.put(`/api/${coll}/:id`, async (req, res) => {
     const item = await writeData(async (db) => {
+      await requireInProperty(db, req, coll, req.params.id)
       if (coll === 'costItems') {
         const current = await findEntity(db, 'costItems', req.params.id)
         requireInvoiceFile(bodyObject(req), current && 'invoiceFile' in current ? current.invoiceFile : undefined)
@@ -792,7 +898,10 @@ for (const coll of COLLECTIONS) {
     res.json(item)
   })
   app.delete(`/api/${coll}/:id`, async (req, res) => {
-    const geloescht = await writeData((db) => removeEntity(db, coll, req.params.id))
+    const geloescht = await writeData(async (db) => {
+      await requireInProperty(db, req, coll, req.params.id)
+      return removeEntity(db, coll, req.params.id)
+    })
     if (!geloescht) return res.status(404).json({ error: 'Nicht gefunden' })
     res.json({ ok: true })
   })
@@ -1058,7 +1167,10 @@ app.get('/api/co2-refunds', async (req, res) => {
   res.json(await readData(async (db) => listRefunds(db, await propertyOf(db, req))))
 })
 app.post('/api/co2-refunds', async (req, res) => {
-  res.status(201).json(await writeData((db) => createRefund(db, newId(), bodyObject(req))))
+  res.status(201).json(await writeData(async (db) => {
+    await requireReferenceInProperty(db, req, 'tenancies', bodyObject(req).tenancyId)
+    return createRefund(db, newId(), bodyObject(req))
+  }))
 })
 app.put('/api/co2-refunds/:id', async (req, res) => {
   const r = await writeData((db) => updateRefund(db, req.params.id, bodyObject(req)))
@@ -1306,7 +1418,10 @@ app.get('/api/deposit-entries/statements', async (req, res) => {
   }))
 })
 app.post('/api/deposit-entries', async (req, res) => {
-  res.status(201).json(await writeData((db) => createDepositEntry(db, bodyObject(req), newId)))
+  res.status(201).json(await writeData(async (db) => {
+    await requireReferenceInProperty(db, req, 'tenancies', bodyObject(req).tenancyId)
+    return createDepositEntry(db, bodyObject(req), newId)
+  }))
 })
 app.post('/api/deposit-entries/from-payment/:paymentId', async (req, res) => {
   const entry = await writeData((db) => moveToDeposit(db, req.params.paymentId, newId))

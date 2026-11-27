@@ -15,10 +15,12 @@ import { germanDate, onlyVersion } from '../../../shared/law/register.ts'
 import type { Co2Restriction, HeatingEnergy, HeatingMethod, HeatingPeriodView } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
+import { useOptionalProperty, withProperty } from '../property'
 
 type Facts = { id: string; energy: HeatingEnergy; method: HeatingMethod; nonResidential: boolean; restriction: Co2Restriction; districtEtsNew: boolean }
 
 export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { plant: Facts; view: HeatingPeriodView; servedAreaM2: number; onSaved: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const savedArea = view.co2?.areaM2 == null ? '' : view.co2.areaM2.toLocaleString('de-DE', { useGrouping: false })
   // Eine Karte, ein Speichern (#346 Schritt 7, N8): Angaben zum Gebäude und Fläche der Einstufung sind ein Entwurf;
   // gesendet wird nur, was sich geändert hat, an die Anlage bzw. an die Heizperiode, wie vorher die beiden Knöpfe.
@@ -42,14 +44,14 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
     }
     try {
       if (factsChanged) {
-        await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ nonResidential: value.nonResidential, restriction: value.restriction, districtEtsNew: value.districtEtsNew }) })
+        await api(withProperty(`/api/heating-plants/${plant.id}`, propertyId), { method: 'PUT', body: JSON.stringify({ nonResidential: value.nonResidential, restriction: value.restriction, districtEtsNew: value.districtEtsNew }) })
       }
     } catch (e) {
       setError(errorText(e))
       return keepDraft
     }
     if (areaChanged) {
-      const url = `/api/heating-plants/${plant.id}/periods/${view.period}/co2`
+      const url = withProperty(`/api/heating-plants/${plant.id}/periods/${view.period}/co2`, propertyId)
       try {
         if (areaValue === null) await api(url, { method: 'DELETE' })
         else await api(url, { method: 'PUT', body: JSON.stringify({ method: 'self', areaM2: areaValue }) })

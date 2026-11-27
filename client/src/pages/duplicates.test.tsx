@@ -97,7 +97,7 @@ test('Kostenformular: „Trotzdem anlegen“ legt an; beim Bearbeiten wird nicht
   fireEvent.change(screen.getByLabelText(/Betrag/), { target: { value: '615,00' } })
   fireEvent.click(screen.getByRole('button', { name: /^(Übernehmen|Speichern)$/ }))
   await waitFor(() => expect(sent).toHaveLength(2), SLOW)
-  expect(sent[1]).toMatchObject({ method: 'PUT', url: '/api/costItems/gs' })
+  expect(sent[1]).toMatchObject({ method: 'PUT', url: '/api/costItems/gs?property=objekt-1' })
   expect(screen.queryByRole('button', { name: 'Trotzdem anlegen' })).toBeNull()
 })
 

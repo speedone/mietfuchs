@@ -50,7 +50,7 @@ export default function CheapRentCard({ propertyId, year, report, onSaved }: {
   useEffect(() => { void load() }, [load])
 
   async function store(unitId: string, localRents: unknown) {
-    await api(`/api/units/${unitId}`, { method: 'PUT', body: JSON.stringify({ localRents }) })
+    await api(withProperty(`/api/units/${unitId}`, propertyId), { method: 'PUT', body: JSON.stringify({ localRents }) })
     await load()
     onSaved()
   }
@@ -73,7 +73,7 @@ export default function CheapRentCard({ propertyId, year, report, onSaved }: {
   }
 
   async function storeDirect(tenancyId: string, directCharges: unknown) {
-    await api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ directCharges }) })
+    await api(withProperty(`/api/tenancies/${tenancyId}`, propertyId), { method: 'PUT', body: JSON.stringify({ directCharges }) })
     await load()
     onSaved()
   }

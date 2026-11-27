@@ -4,7 +4,7 @@ import { api, ApiError, errorText, fmtDate, fmtEuro } from '../api'
 import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
-import { useProperty, withProperty } from '../property'
+import { useOptionalProperty, useProperty, withProperty } from '../property'
 import { bookingDate, carriedText, carryText, ledgerStartText, closingLines, dueDetails, dueLine, monthDueText, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rowStanding, shareText } from '../ledgerView'
 import { holidaysCheckedOn } from '../../../shared/holidaysChecked.ts'
 import { DESIGNATED_MONTH_HINT, emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentChangeBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentDraft, type PaymentField, type PaymentForm } from '../paymentForm'
@@ -118,7 +118,7 @@ export default function Mietkonto({ focus, onFocusDone, onNavigate }: FocusProps
     })
     if (!ok) return
     try {
-      await api(`/api/payments/${p.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/payments/${p.id}`, propertyId), { method: 'DELETE' })
     } catch (e) {
       toast(errorText(e), 'error')
       return
@@ -639,6 +639,7 @@ function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
 }) {
   const confirm = useConfirm()
   const toast = useToast()
+  const propertyId = useOptionalProperty()?.property?.id
   const saved: PaymentDraft = { kind: p.kind, month: p.designatedMonth ?? '' }
   const draft = useDraft(saved, { scope: p.id })
   const value = draft.value
@@ -651,7 +652,7 @@ function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
       if (!ok) return keepDraft
     }
     if (Object.keys(built.body).length === 0) return undefined
-    await api(`/api/payments/${p.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+    await api(withProperty(`/api/payments/${p.id}`, propertyId), { method: 'PUT', body: JSON.stringify(built.body) })
     await onSaved()
     toast(built.body.kind !== undefined
       ? `${what} ist jetzt „${PAYMENT_KIND_OPTIONS.find((o) => o.value === built.body.kind)?.label ?? built.body.kind}“.`
