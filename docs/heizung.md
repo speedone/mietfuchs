@@ -391,12 +391,19 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   als Kosten nach Nummer 4 Buchstabe a berücksichtigt sind“ (beides am amtlichen Text gelesen am 27.11.2026; „Kehr- und
   Überprüfungsgebühren“ stehen nicht in § 7 Abs. 2, deshalb nennt kein Text sie dort). **Gefragt wird, umgebucht nie**:
   Ob die Rechnung die Heizung betrifft oder Kaminöfen und Gasthermen einzelner Wohnungen, weiß nur der Vermieter. Das
-  Kostenformular fragt bei `method = 'self'` (`chimneySweepQuestion`, Knopf `toCentralHeating` in
-  client/src/costForm.ts: Kostenart, Schlüssel `heatingSystem`, Teil `operating`; das Ziel wählt der Vermieter, wenn es
-  mehr als eines gibt). Die Berechnung meldet je Position `heating.chimney-sweep-central` (hint, `INFORMATIONAL`, Ziel
-  die Position) bei `self` und, mit dem Satz zur doppelten Verteilung statt des Rats zum Umstellen, bei `service`; nur
-  in der Gesamtberechnung, nur neben einer laufenden zentralen Anlage des Hauses, nicht bei freien Schlüsseln,
-  Etagenheizung, Abrechnung einer Gemeinschaft, Direktzuordnung an eine Wohnung oder wenn kein Mieter etwas davon trägt.
+  Kostenformular fragt, wenn die eigene Heizkostenabrechnung im Zeitraum der Position gilt (`chimneySweepQuestion`,
+  `chimneySweepPlants` mit `selfActive` aus shared/heatingPeriod.ts, derselben Stelle wie `guardHeatingSystem` und der
+  Schnappschuss; bei eigener Heizperiode mit deren Vorgabe; Durchsicht M2: sonst lehnte der Server mit 400 ab), nicht beim
+  Schlüssel „direkt“. Knopf `toCentralHeating` in client/src/costForm.ts: Kostenart, Schlüssel `heatingSystem`, Teil
+  `operating`; das Ziel wählt der Vermieter, wenn es mehr als eines gibt. „Nicht vereinbart“ geht nicht mit (bei
+  Heizkosten 400); eine Zeile nennt die Mietverhältnisse (`notAgreedDroppedText`, S2). Die Berechnung meldet je Position
+  `heating.chimney-sweep-central` (hint, `INFORMATIONAL`, Ziel die Position) bei `self` und, mit dem Satz zur doppelten
+  Verteilung statt des Rats zum Umstellen, bei `service`; nur in der Gesamtberechnung, nur neben einer laufenden zentralen
+  Anlage des Hauses, deren Art in diesem Zeitraum gilt (`selfAt`), nicht bei freien Schlüsseln, Etagenheizung, Abrechnung
+  einer Gemeinschaft, Direktzuordnung an eine Wohnung oder wenn kein Mieter etwas davon trägt. **Kein Betriebsstrom**
+  (S1): Eine Heizposition „Betrieb“, die dem Namen nach eine Rechnung des Schornsteinfegers ist (`chimneySweepLike` in
+  server/src/operatingPower.ts: Schornstein, Kamin, Kehr-, Abgas, Immission, Feuerstätte, ohne „Strom“), beantwortet die
+  Frage nach dem Betriebsstrom nicht; `heating.operating-power-missing` nennt sie dann.
 - **Invarianten** (fuel-invariant.test.ts, fuel-stock-invariant.test.ts) mit Varianten für eigene
   Abrechnung, Warmwasser, Heizkostenverteiler, Ablesedienst, Kesseltausch, Schätzung und Ausnahmen:
   Gewichte verteilen jeden Topf ganz, jede Lieferung steht genau einmal in den Zeilen, α, Q und

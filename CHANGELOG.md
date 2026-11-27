@@ -15,7 +15,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zählen zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2
   HeizkostenV) und werden dann mit den Heizkosten verteilt statt nach Wohnfläche. Unter „Zu prüfen“ steht dazu ein
   Hinweis je Position mit ihrem Betrag, auch wenn ein Messdienst abrechnet (dort mit dem Satz, dass die Rechnung sonst
-  zweimal verteilt sein kann). Umgebucht wird nichts von selbst: Für Kaminöfen und Gasthermen einzelner Wohnungen
+  zweimal verteilt sein kann). Gefragt wird nur in Zeiträumen, in denen die eigene Heizkostenabrechnung gilt; war die
+  Rechnung für einzelne Mietverhältnisse als nicht vereinbart erfasst, sagt das Formular nach dem Umstellen, dass deren
+  Anteil mit den Heizkosten verteilt wird. Eine umgestellte Rechnung des Schornsteinfegers gilt nicht als erfasster
+  Betriebsstrom der Heizung. Umgebucht wird nichts von selbst: Für Kaminöfen und Gasthermen einzelner Wohnungen
   bleibt es bei „Schornsteinfeger“ ([#724](https://github.com/speedone/mietfuchs/issues/724)).
 - Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
   für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach

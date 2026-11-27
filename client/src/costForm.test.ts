@@ -1543,4 +1543,23 @@ describe('#724: Schornsteinfeger bei zentraler Heizung', () => {
     expect(chimneySweepPlants([plant(), plant({ id: 'hp2', method: 'service' })], jahr).map((p) => p.id)).toEqual(['hp1'])
     expect(chimneySweepPlants([plant(), plant({ id: 'hp2' })], jahr).map((p) => p.id)).toEqual(['hp1', 'hp2'])
   })
+
+  // Durchsicht M2: Die eigene Heizkostenabrechnung gilt erst ab 2026. Für eine Position 2025 nähme der Server den
+  // Schlüssel „nach Heizkostenverordnung“ nicht an (400), und die Berechnung meldete `heating.target-invalid`.
+  test('Durchsicht M2: gefragt wird nur, wenn die eigene Heizkostenabrechnung im Zeitraum der Position gilt', () => {
+    const ab2026 = plant({ selfSpans: [{ from: periodKey('2026-01'), until: null }] })
+    expect(chimneySweepQuestion(form, [ab2026], jahr)).toBeNull()
+    expect(chimneySweepQuestion(form, [ab2026], calendarYearPeriod(2026))).toBe(CHIMNEY_SWEEP_QUESTION)
+    // Zurückgeschaltet zum 01.01.2026: 2025 rechnet noch nach der Verordnung, 2026 nicht mehr.
+    const bis2026 = plant({ method: 'manual', selfSpans: [{ from: periodKey('2024-01'), until: periodKey('2026-01') }] })
+    expect(chimneySweepQuestion(form, [bis2026], jahr)).toBe(CHIMNEY_SWEEP_QUESTION)
+    expect(chimneySweepQuestion(form, [bis2026], calendarYearPeriod(2026))).toBeNull()
+    // Eigene Heizperiode der Anlage: gefragt wird mit dem Schlüssel, den die Position bekäme.
+    expect(chimneySweepPlants([ab2026], jahr, () => periodKey('2026-01')).map((p) => p.id)).toEqual(['hp1'])
+  })
+
+  // Durchsicht S5: Direkt einer Wohnung zugeordnet ist es die Feuerstätte dieser Wohnung; die Berechnung fragt dort nicht.
+  test('Durchsicht S5: beim Schlüssel „direkt“ fragt das Formular nicht', () => {
+    expect(chimneySweepQuestion({ ...form, key: 'direct' }, [plant()], jahr)).toBeNull()
+  })
 })

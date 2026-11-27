@@ -28,9 +28,11 @@ const hints = (s: ComputedSettlement) => s.notices.filter((n) => n.code === CODE
 const share = (s: ComputedSettlement, tenancyId: string, itemId: string): number =>
   s.statements.find((st) => st.tenancyId === tenancyId)?.rows.filter((r) => r.costItemId === itemId).reduce((a, r) => a + r.shareCents, 0) ?? assert.fail(`keine Abrechnung ${tenancyId}`)
 
-const LAW = 'Die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz und der Reinigung der Anlage gehören zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2 HeizkostenV) und werden mit den Heizkosten nach der Heizkostenverordnung verteilt. ' +
-  'Kehrgebühren sind Kosten der Schornsteinreinigung nur, soweit sie nicht schon dort berücksichtigt sind (§ 2 Nr. 12 BetrKV). '
-const STAYS = 'Betrifft sie Kaminöfen, Gasthermen einzelner Wohnungen oder andere Feuerstätten, bleibt sie, wie sie ist.'
+// Durchsicht S5: gekürzt; der Satz zu § 2 Nr. 12 BetrKV sagt jetzt, wann Kehrgebühren zur Kostenart gehören.
+const HEAD = '„Schornsteinfeger 2025“ (120,00 €) wird als „Schornsteinfeger“ nach dem Schlüssel „Wohnfläche“ verteilt. '
+const LAW = 'Die Kosten der Reinigung der Anlage und der Messungen nach dem Bundes-Immissionsschutzgesetz gehören zum Betrieb der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2 HeizkostenV). ' +
+  'Kehrgebühren gehören nur dann zur Kostenart „Schornsteinfeger“, wenn sie nicht schon bei den Heizkosten stehen (§ 2 Nr. 12 BetrKV). '
+const STAYS = 'Für Kaminöfen, Gasthermen einzelner Wohnungen und andere Feuerstätten bleibt sie, wie sie ist.'
 
 test('#724: eigene Heizkostenabrechnung, Schornsteinfeger nach Wohnfläche: ruhiger Hinweis mit Betrag an der Position; verteilt wird wie erfasst', () => {
   const s = settle([...SELF_ITEMS, sweep()])
@@ -40,10 +42,10 @@ test('#724: eigene Heizkostenabrechnung, Schornsteinfeger nach Wohnfläche: ruhi
   assert.equal(n.level, 'hint')
   assert.equal(n.title, 'Schornsteinfeger bei zentraler Heizung')
   assert.deepEqual(n.subject, { kind: 'costItem', id: 'kehr' })
-  assert.equal(n.text,
-    '„Schornsteinfeger 2025“ (120,00 €) ist unter der Kostenart „Schornsteinfeger“ erfasst und wird nach dem Schlüssel „Wohnfläche“ verteilt. ' +
-    'In diesem Objekt läuft eine zentrale Heizanlage mit eigener Heizkostenabrechnung. Bitte prüfen Sie, ob die Rechnung diese Heizung betrifft: ' + LAW +
+  assert.equal(n.text, HEAD + LAW +
     'Betrifft die Rechnung die zentrale Heizung, stellen Sie die Position im Kostenformular auf „Heizung und Warmwasser“ mit dem Teil „Betrieb, Wartung, Strom der Heizung“ um. ' + STAYS)
+  // Durchsicht S5: vorher rund 880 Zeichen.
+  assert.ok(n.text.length <= 710, String(n.text.length))
   // Eine Auskunft: Sie färbt das Cockpit nicht und sichert das Abschließen nicht ab.
   assert.ok(INFORMATIONAL.has(CODE))
   assert.ok(!blockingErrors(s.notices).some((x) => x.code === CODE))
@@ -55,7 +57,7 @@ test('#724: eigene Heizkostenabrechnung, Schornsteinfeger nach Wohnfläche: ruhi
 
 test('#724: je Position ein Hinweis; steht die Rechnung schon bei den Heizkosten, keiner', () => {
   const zwei = settle([...SELF_ITEMS, sweep(), sweep({ id: 'mess', description: 'Abgasmessung', amountCents: 4500, key: 'units' })])
-  assert.deepEqual(hints(zwei).map((n) => [n.subject?.id, /^„Abgasmessung“ \(45,00 €\) .* nach dem Schlüssel „Wohneinheiten“ verteilt/.test(n.text)]), [['kehr', false], ['mess', true]])
+  assert.deepEqual(hints(zwei).map((n) => [n.subject?.id, /^„Abgasmessung“ \(45,00 €\) wird als „Schornsteinfeger“ nach dem Schlüssel „Wohneinheiten“ verteilt/.test(n.text)]), [['kehr', false], ['mess', true]])
   assert.deepEqual(hints(settle([...SELF_ITEMS, heating('imm', 'Immissionsmessung', 6000, 'operating', 'both')])), [])
 })
 
@@ -63,10 +65,8 @@ test('#724: Messdienst: derselbe Hinweis mit dem Satz zur doppelten Verteilung, 
   const s = settle([sweep()], { method: 'service' })
   const [n] = hints(s)
   assert.ok(n, `kein Hinweis, sondern: ${s.notices.map((x) => x.code).join(', ')}`)
-  assert.equal(n.text,
-    '„Schornsteinfeger 2025“ (120,00 €) ist unter der Kostenart „Schornsteinfeger“ erfasst und wird nach dem Schlüssel „Wohnfläche“ verteilt. ' +
-    'In diesem Objekt läuft eine zentrale Heizanlage, deren Heizkosten ein Messdienst abrechnet. Bitte prüfen Sie, ob die Rechnung diese Heizung betrifft: ' + LAW +
-    'Betrifft die Rechnung die zentrale Heizung und steht sie schon in der Abrechnung des Messdienstes, wird sie hier ein zweites Mal verteilt. ' + STAYS)
+  assert.equal(n.text, HEAD + LAW +
+    'Betrifft sie die zentrale Heizung und steht sie schon in der Abrechnung des Messdienstes, wird sie hier ein zweites Mal verteilt. ' + STAYS)
 })
 
 test('#724: kein Hinweis ohne Heizanlage, bei freien Schlüsseln, bei Etagenheizung, bei „Mieter heizt selbst“, bei einer stillgelegten Anlage und bei Direktzuordnung', () => {
@@ -87,4 +87,38 @@ test('#724: kein Hinweis ohne Heizanlage, bei freien Schlüsseln, bei Etagenheiz
   assert.equal(share(ohneAnlage, 'B', 'kehr'), 4800)
   // Kein Mieter trägt die Position (nicht umlagefähig erfasst): nichts zu prüfen.
   assert.deepEqual(hints(settle([...SELF_ITEMS, sweep({ category: 'Nicht umlagefähig' })])), [])
+})
+
+// Durchsicht M2: Das Formular fragt nur, wenn die eigene Heizkostenabrechnung im Zeitraum der Position gilt
+// (`selfActive`); der Hinweis fragt dieselbe Bedingung über den Schnappschuss (`selfAt`).
+test('#724 Durchsicht M2: eigene Heizkostenabrechnung erst ab 2026: 2025 kein Hinweis, 2026 der Hinweis mit Rat zum Umstellen', () => {
+  const ab2026: Partial<HeatingPlant> = { selfSpans: [{ from: periodKey('2026-01'), until: null }] }
+  const s2025 = computeSettlement(selfSnapshot({ plant: ab2026, costItems: [heating('gas', 'Erdgas', 600000, undefined, undefined, { key: 'area', fuelDeliveryId: 'd1' }), sweep()] }))
+  assert.deepEqual(hints(s2025), [])
+  const k2026 = periodKey('2026-01')
+  const s2026 = computeSettlement(selfSnapshot({ year: 2026, plant: ab2026, costItems: [
+    heating('gas', 'Erdgas', 600000, 'fuel', 'both', { period: k2026, fuelDeliveryId: 'd1' }), heating('wartung', 'Wartung', 24000, 'operating', 'both', { period: k2026 }), sweep({ period: k2026, description: 'Schornsteinfeger 2026' }),
+  ] }))
+  const [n] = hints(s2026)
+  assert.ok(n, `kein Hinweis, sondern: ${s2026.notices.map((x) => x.code).join(', ')}`)
+  assert.match(n.text, /stellen Sie die Position im Kostenformular auf „Heizung und Warmwasser“/)
+})
+
+// Durchsicht S1: Ohne Angabe an der Anlage galt jede Heizposition mit dem Teil „Betrieb“ als Antwort auf die Frage nach
+// dem Betriebsstrom. Eine Rechnung des Schornsteinfegers enthält keinen Strom; nach dem Umstellen schwieg der Hinweis.
+test('#724 Durchsicht S1: die umgestellte Rechnung des Schornsteinfegers beantwortet die Frage nach dem Betriebsstrom nicht', () => {
+  const gas = heating('gas', 'Erdgas', 600000, 'fuel', 'both', { fuelDeliveryId: 'd1' })
+  const strom: CostItem = { id: 'as', propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Allgemeinstrom', amountCents: 50000, key: 'area' }
+  const umgestellt = heating('kehr', 'Schornsteinfeger 2025', 12000, 'operating', 'both')
+  const power = (s: ComputedSettlement) => s.notices.filter((x) => x.code === 'heating.operating-power-missing')
+  assert.equal(power(settle([gas, strom, sweep()])).length, 1)
+  const [n, ...more] = power(settle([gas, strom, umgestellt]))
+  assert.deepEqual(more, [])
+  assert.ok(n, 'der Hinweis zum Betriebsstrom fehlt nach dem Umstellen')
+  assert.match(n.text, /^Für die Heizanlage ist für 2025 kein Betriebsstrom erfasst \(keine Heizposition mit dem Teil „Betrieb“, die Strom enthalten kann; „Schornsteinfeger 2025“ ist dem Namen nach eine Rechnung des Schornsteinfegers\), und beim Allgemeinstrom „Allgemeinstrom“ steht kein Abzug dafür\. /)
+  // Ebenso Abgas- und Immissionsmessung und Kehrgebühren; eine Position, die Strom nennt, und jede andere „Betrieb“ zählen weiter.
+  for (const d of ['Abgasmessung', 'Immissionsmessung 2025', 'Kehrgebühren', 'Kaminkehrer']) assert.equal(power(settle([gas, strom, heating('x', d, 5000, 'operating', 'both')])).length, 1, d)
+  for (const d of ['Betriebsstrom Heizung', 'Wartung', 'Strom für Brenner und Abgasgebläse']) assert.deepEqual(power(settle([gas, strom, heating('x', d, 5000, 'operating', 'both')])), [], d)
+  // Der Text ohne solche Position bleibt wortgleich.
+  assert.match(power(settle([gas, strom, sweep()]))[0]?.text ?? '', /^Für die Heizanlage ist für 2025 kein Betriebsstrom erfasst \(keine Heizposition mit dem Teil „Betrieb“\), und /)
 })

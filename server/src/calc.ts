@@ -623,14 +623,17 @@ const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem'
 // der Auswahl des Kostenformulars (`HEATING_PART_OPTIONS` in client/src/costForm.ts).
 const CHIMNEY_SWEEP_CATEGORY = 'Schornsteinfeger'
 function chimneySweepText(c: { description: string; amountCents: number; key: CostKey }, self: boolean): string {
-  return `„${c.description}“ (${fmtCents(c.amountCents)}) ist unter der Kostenart „${CHIMNEY_SWEEP_CATEGORY}“ erfasst und wird nach dem Schlüssel „${KEY_LABELS[c.key]}“ verteilt. ` +
-    `In diesem Objekt läuft eine zentrale Heizanlage${self ? ' mit eigener Heizkostenabrechnung' : ', deren Heizkosten ein Messdienst abrechnet'}. Bitte prüfen Sie, ob die Rechnung diese Heizung betrifft: ` +
-    'Die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz und der Reinigung der Anlage gehören zu den Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2 HeizkostenV) und werden mit den Heizkosten nach der Heizkostenverordnung verteilt. ' +
-    'Kehrgebühren sind Kosten der Schornsteinreinigung nur, soweit sie nicht schon dort berücksichtigt sind (§ 2 Nr. 12 BetrKV). ' +
+  // Durchsicht S5: gekürzt (vorher rund 880 Zeichen); der Kern bleibt: § 7 Abs. 2 HeizkostenV am amtlichen Text („Zu den
+  // Kosten des Betriebs der zentralen Heizungsanlage einschließlich der Abgasanlage gehören … der Reinigung der Anlage und
+  // des Betriebsraumes, die Kosten der Messungen nach dem Bundes-Immissionsschutzgesetz …“), was zu tun ist, und der Satz
+  // zu Kaminöfen und Gasthermen.
+  return `„${c.description}“ (${fmtCents(c.amountCents)}) wird als „${CHIMNEY_SWEEP_CATEGORY}“ nach dem Schlüssel „${KEY_LABELS[c.key]}“ verteilt. ` +
+    'Die Kosten der Reinigung der Anlage und der Messungen nach dem Bundes-Immissionsschutzgesetz gehören zum Betrieb der zentralen Heizungsanlage einschließlich der Abgasanlage (§ 7 Abs. 2 HeizkostenV). ' +
+    `Kehrgebühren gehören nur dann zur Kostenart „${CHIMNEY_SWEEP_CATEGORY}“, wenn sie nicht schon bei den Heizkosten stehen (§ 2 Nr. 12 BetrKV). ` +
     (self
       ? `Betrifft die Rechnung die zentrale Heizung, stellen Sie die Position im Kostenformular auf „${HEATING_CATEGORY}“ mit dem Teil „Betrieb, Wartung, Strom der Heizung“ um. `
-      : 'Betrifft die Rechnung die zentrale Heizung und steht sie schon in der Abrechnung des Messdienstes, wird sie hier ein zweites Mal verteilt. ') +
-    'Betrifft sie Kaminöfen, Gasthermen einzelner Wohnungen oder andere Feuerstätten, bleibt sie, wie sie ist.'
+      : 'Betrifft sie die zentrale Heizung und steht sie schon in der Abrechnung des Messdienstes, wird sie hier ein zweites Mal verteilt. ') +
+    'Für Kaminöfen, Gasthermen einzelner Wohnungen und andere Feuerstätten bleibt sie, wie sie ist.'
 }
 // Der Ausweg, wenn einer Einheit kein Zähler fehlt, weil sie keinen Anschluss hat (#117); wörtlich wie bisher.
 const NO_CONNECTION_HINT = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'

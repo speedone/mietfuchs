@@ -20,6 +20,7 @@ import {
   amountsSumText, AMOUNTS_HELP,
   chimneySweepPlants,
   chimneySweepQuestion,
+  notAgreedDroppedText,
   toCentralHeating,
   amountsSumText,
   externalHint,
@@ -206,10 +207,16 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   const selfPlant = plantOfForm?.method === 'self'
   // #724: die Frage bei „Schornsteinfeger“ und ihr Knopf. Kommt genau eine Anlage in Frage, ist sie die Anlage der
   // Position (ab zwei Anlagen im Objekt die Auswahl „Heizanlage“); sonst bleibt die Wahl beim Vermieter.
-  const chimneyQuestion = form ? chimneySweepQuestion(form, plants, period) : null
+  // Durchsicht M2: gefragt mit dem Schlüssel, den die umgestellte Position bekäme (eigene Heizperiode: deren Vorgabe).
+  const chimneyKeyOf = (p: HeatingPlant): string => heatingOptions.find((h) => h.plantId === p.id)?.options[0]?.value ?? key
+  const chimneyQuestion = form ? chimneySweepQuestion(form, plants, period, chimneyKeyOf) : null
+  // Durchsicht S2: wer vor dem Umstellen als „nicht vereinbart“ erfasst war; die Zeile darunter nennt sie.
+  const [droppedNotAgreed, setDroppedNotAgreed] = useState<string[]>([])
+  useEffect(() => setDroppedNotAgreed([]), [form === null, form?.id])
   const convertToHeating = () => {
     if (!form) return
-    const candidates = chimneySweepPlants(plants, period)
+    setDroppedNotAgreed(form.notAgreed)
+    const candidates = chimneySweepPlants(plants, period, chimneyKeyOf)
     const [only, ...more] = candidates
     if (plantChoices.length > 0 && only && more.length === 0) setHeatingPlantId(only.id)
     setHeatingPeriod('')
@@ -1286,6 +1293,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           {chimneyQuestion && (
             <NoticeBox level="hint" title={chimneyQuestion.title} action={chimneyQuestion.text} fix={{ label: chimneyQuestion.button, onClick: convertToHeating }} />
           )}
+          {form.category === HEATING_CATEGORY && notAgreedDroppedText(droppedNotAgreed, tenancies) && <NoticeBox level="hint" action={notAgreedDroppedText(droppedNotAgreed, tenancies)} />}
           <div className="row">
             {/* Leer nur aus einem Beleg, dessen Name keine Kostenart nennt: Die Auswahl zeigt das ehrlich, statt still die
                 erste Kostenart (angezeigt = gespeichert) */}

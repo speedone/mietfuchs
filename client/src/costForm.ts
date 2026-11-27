@@ -1,7 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird - sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, PropertyKind, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, SelfSpanRange, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, PropertyKind, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
@@ -12,6 +12,7 @@ import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
 import { usageOf } from './types'
+import { selfActive } from '../../shared/heatingPeriod.ts'
 import { rentedWithin, tenancyRentedWithin } from '../../shared/unitUsage.ts'
 import { CREDIT_WITH_AMOUNTS, NEGATIVE_AMOUNT, costItemBody, euro, type CostItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
@@ -593,10 +594,13 @@ export function waterMeterHint(
 // `heating.chimney-sweep-central`). Was die Rechnung des Schornsteinfegers auf der Rechnung „Abgasmessung“ oder
 // „Emissionsmessung“ nennt, sagt der Text nicht: Das Gesetz nennt nur die Messungen nach dem
 // Bundes-Immissionsschutzgesetz.
+// Durchsicht M2: Die eigene Heizkostenabrechnung muss im Zeitraum der Position gelten (`selfActive`, dieselbe Stelle wie
+// beim Server in `guardHeatingSystem` und im Schnappschuss), sonst lehnte der Server den Schlüssel ab. `keyOf` nennt den
+// Schlüssel, den die umgestellte Position bei der Anlage bekäme: bei eigener Heizperiode deren Vorgabe, sonst der Zeitraum.
 const CHIMNEY_SWEEP_CATEGORY = 'Schornsteinfeger'
-type ChimneyPlant = { id: string; supply?: 'central' | 'perUnit'; method: 'service' | 'self' | 'manual'; source?: 'building' | 'homeowners'; endsOn?: string | null }
-export function chimneySweepPlants<P extends ChimneyPlant>(plants: readonly P[], period: Pick<BillingPeriod, 'from'>): P[] {
-  return plants.filter((p) => (p.supply ?? 'central') === 'central' && (p.source ?? 'building') === 'building' && p.method === 'self' && !(p.endsOn && p.endsOn < period.from))
+type ChimneyPlant = { id: string; supply?: 'central' | 'perUnit'; method: 'service' | 'self' | 'manual'; source?: 'building' | 'homeowners'; endsOn?: string | null; selfSpans?: readonly SelfSpanRange[] }
+export function chimneySweepPlants<P extends ChimneyPlant>(plants: readonly P[], period: Pick<BillingPeriod, 'from' | 'key'>, keyOf: (p: P) => string = () => period.key): P[] {
+  return plants.filter((p) => (p.supply ?? 'central') === 'central' && (p.source ?? 'building') === 'building' && selfActive(p, keyOf(p)) && !(p.endsOn && p.endsOn < period.from))
 }
 export const CHIMNEY_SWEEP_QUESTION = {
   title: 'Gehört die Rechnung zur zentralen Heizung?',
@@ -604,13 +608,24 @@ export const CHIMNEY_SWEEP_QUESTION = {
     `Mietfuchs verteilt sie dann mit den Heizkosten nach der Heizkostenverordnung statt nach dem Schlüssel dieser Kostenart. Für Kaminöfen, Gasthermen einzelner Wohnungen und andere Feuerstätten bleibt es bei „${CHIMNEY_SWEEP_CATEGORY}“.`,
   button: `Auf „${HEATING_CATEGORY}“ umstellen`,
 } as const
-export function chimneySweepQuestion(form: Pick<ItemForm, 'category'>, plants: readonly ChimneyPlant[], period: Pick<BillingPeriod, 'from'>): typeof CHIMNEY_SWEEP_QUESTION | null {
-  return form.category === CHIMNEY_SWEEP_CATEGORY && chimneySweepPlants(plants, period).length > 0 ? CHIMNEY_SWEEP_QUESTION : null
+// Beim Schlüssel „direkt“ fragt das Formular nicht (Durchsicht S5): Eine Rechnung für eine Wohnung betrifft deren
+// Feuerstätte; die Berechnung schweigt dort ebenso.
+export function chimneySweepQuestion<P extends ChimneyPlant>(form: Pick<ItemForm, 'category' | 'key'>, plants: readonly P[], period: Pick<BillingPeriod, 'from' | 'key'>, keyOf?: (p: P) => string): typeof CHIMNEY_SWEEP_QUESTION | null {
+  return form.category === CHIMNEY_SWEEP_CATEGORY && form.key !== 'direct' && chimneySweepPlants(plants, period, keyOf).length > 0 ? CHIMNEY_SWEEP_QUESTION : null
 }
 // Der Knopf der Frage: die Position als Heizkosten nach Heizkostenverordnung mit dem Teil „Betrieb“. Beschreibung,
 // Betrag, Beleg und Leistungszeitraum bleiben; die Zuordnung der alten Kostenart (Teilnehmer, direkte Wohnung, „nicht
 // vereinbart“, Zählertyp) geht nicht mit, denn der Server lehnt sie bei Heizkosten ab. Das Ziel bleibt leer: Gibt es
 // nur eines, füllt das Formular es wie bei jeder Heizposition, sonst wählt der Vermieter (Pflichtfeld).
+// Durchsicht S2: Der Knopf leert „nicht vereinbart“ (der Server lehnt die Liste bei Heizkosten ab). Die Zeile im Formular
+// sagt es, mit den Namen der Mietverhältnisse; ohne solche nichts.
+export function notAgreedDroppedText(ids: readonly string[], tenancies: readonly Pick<Tenancy, 'id' | 'tenantName'>[]): string | null {
+  if (ids.length === 0) return null
+  const one = ids.length === 1
+  const names = andList(ids.map((id) => tenancies.find((t) => t.id === id)?.tenantName ?? '?'))
+  return `Für ${names} war „${CHIMNEY_SWEEP_CATEGORY}“ als nicht im Mietvertrag vereinbart erfasst. ` +
+    `Nach dem Umstellen wird der Anteil ${one ? 'dieses Mietverhältnisses' : 'dieser Mietverhältnisse'} mit den Heizkosten nach der Heizkostenverordnung verteilt; bei „${HEATING_CATEGORY}“ gibt es die Angabe „nicht vereinbart“ nicht.`
+}
 export function toCentralHeating(form: ItemForm): ItemForm {
   return { ...form, category: HEATING_CATEGORY, key: 'heatingSystem', heatingPart: 'operating', heatingTarget: '', directUnitId: '', meterType: '', participants: null, notAgreed: [], named: [], pendingWhy: [] }
 }

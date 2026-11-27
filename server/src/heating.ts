@@ -31,7 +31,7 @@ import { generatorEnergy } from '../../shared/heatDelivery.ts'
 import type { ReadingOffWarning } from '../../shared/law/practice.ts'
 import { dayAfter, dayBefore, law, shiftMonths, type LawLog, type Period } from '../../shared/law/register.ts'
 import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.ts'
-import { lineRoot } from '../../shared/heatingPeriod.ts'
+import { lineRoot, type SelfSpanned } from '../../shared/heatingPeriod.ts'
 import type {
   SelfSpanRange, UnitUsage,
   AreaBasisHeat, CaptureMethod, ChangeSplit, ComparableUnit, EstimatePart, EstimateProposal, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatPumpMajority, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
@@ -746,14 +746,8 @@ export function hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null 
 
 // ---------- Zeitraum der eigenen Abrechnung (Durchsicht von #239, Runde 3) ----------
 
-// Gilt die eigene Heizkostenabrechnung in der Heizperiode `key`? In jedem ihrer Zeiträume, der laufende nur,
-// solange die Anlage selbst abrechnet; ohne Zeiträume gilt die Art der Anlage.
-export type SelfSpanned = { method: string; selfSpans?: readonly SelfSpanRange[] }
-export function selfActive(p: SelfSpanned, key: string): boolean {
-  const spans = p.selfSpans ?? []
-  if (spans.length === 0) return p.method === 'self'
-  return spans.some((s) => key >= s.from && (s.until === null ? p.method === 'self' : key < s.until))
-}
+// `selfActive` steht in shared/heatingPeriod.ts, denn das Kostenformular fragt dieselbe Bedingung (Durchsicht von #724, M2).
+export { selfActive, type SelfSpanned } from '../../shared/heatingPeriod.ts'
 // Der laufende Zeitraum und sein Beginn.
 export const openSelfSpan = (p: SelfSpanned): SelfSpanRange | null => (p.method === 'self' ? (p.selfSpans ?? []).find((s) => s.until === null) ?? null : null)
 export const selfFromOf = (p: SelfSpanned): string | null => openSelfSpan(p)?.from ?? null
