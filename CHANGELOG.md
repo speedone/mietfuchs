@@ -227,6 +227,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   diese, denn nur dort lässt sich die Position verknüpfen; den Teil für die frühere Heizperiode bucht Mietfuchs danach
   selbst herüber. Kein Betrag der Abrechnung ändert sich
   ([#722](https://github.com/speedone/mietfuchs/issues/722)).
+- Kostenformular: Die Frage „Läuft dieser Betriebsstrom über den Stromzähler des Hauses?“ stand an jeder Position
+  „Heizung und Warmwasser“, auch bei Heizöl, Gasrechnung und Wartung. Sie erscheint jetzt nur noch, wo die Position
+  Betriebsstrom sein kann: wenn die Beschreibung Strom nennt, wenn unter „Weitere Angaben“ der Teil „Betrieb“ gewählt ist
+  oder wenn die Frage an der Position schon beantwortet ist. Gespeicherte Antworten bleiben
+  ([#721](https://github.com/speedone/mietfuchs/issues/721)).
 - „Dieselbe Rechnung?“ fragt gezielter: Die Rückfrage beim Anlegen einer Kostenposition und der Hinweis „Mögliche
   doppelte Position“ kamen auch bei zwei Heizpositionen, die nichts verbindet („Wartung Ölheizung“ gegen „Heizöl“), und
   bei Wartungsrechnungen, die verschiedenen Wohnungen direkt zugeordnet sind. Bei „Heizung und Warmwasser“ bleibt es

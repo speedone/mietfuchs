@@ -998,6 +998,27 @@ test('Betriebsstrom: Abzug im Steuerjahr seiner Stromrechnung, kein eigenes Jahr
   expect(built.body.taxYear).toBeNull()
 })
 
+// #721: Die Frage stand an jeder Position „Heizung und Warmwasser“ ohne Teil, auch bei Heizöl, Gasrechnung und Wartung.
+// Ohne Teil erscheint sie nur noch, wo die Beschreibung Strom nennt oder die Antwort schon gespeichert ist; mit dem Teil
+// „Betrieb“ wie bisher immer, denn dorthin führen die Hinweise der Abrechnung.
+test('#721 Betriebsstrom: ohne Teil fragt das Formular nur, wo die Position Betriebsstrom sein kann; eine gespeicherte Antwort bleibt', () => {
+  const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser' }
+  for (const description of ['Heizöl 2.300 Liter', 'Gasrechnung Stadtwerke', 'Wartung Ölheizung', 'Schornsteinfeger', 'Wartung Wärmepumpe', '']) {
+    expect(showsOperatingPower({ ...heiz, description }), description).toBe(false)
+  }
+  for (const description of ['Betriebsstrom Heizung (geschätzt)', 'Strom Heizungsanlage', 'Umwälzpumpe und Regelung', 'Heizung elektrisch, Anteil Hausstrom']) {
+    expect(showsOperatingPower({ ...heiz, description }), description).toBe(true)
+  }
+  // Mit dem Teil „Betrieb“ immer, gleich wie die Position heißt.
+  expect(showsOperatingPower({ ...heiz, description: 'Wartung Ölheizung', heatingPart: 'operating' })).toBe(true)
+  // Eine gespeicherte Antwort geht nicht verloren: Die Frage bleibt sichtbar, und der Rumpf trägt sie weiter.
+  const gespeichert = { ...heiz, description: 'Heizung Nebenkosten', operatingPower: 'included' as const, operatingPowerBasis: 'Pumpe 45 W' }
+  expect(showsOperatingPower(gespeichert)).toBe(true)
+  expect(withOperatingPower({}, gespeichert)).toMatchObject({ operatingPower: 'included', operatingPowerBasis: 'Pumpe 45 W' })
+  // Ohne Antwort und ohne Frage bleibt der Rumpf ohne Kennzeichnung, wie bisher bei „Nein“.
+  expect(withOperatingPower({}, { ...heiz, description: 'Heizöl' })).toMatchObject({ operatingPower: null, operatingPowerBasis: null })
+})
+
 // Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position
 // (Teil „Brennstoff“), ob sie über den Zähler des Hauses läuft; bei Gas nicht.
 test('Betriebsstrom: Strom zur Wärmeerzeugung bei Wärmepumpe und Stromheizung lässt sich kennzeichnen', () => {

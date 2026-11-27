@@ -814,7 +814,7 @@ function withContractAgreement<B extends object>(body: B, form: ItemForm, units:
 // ---------- Betriebsstrom der Heizung (Heizung PR 15, #212) ----------
 
 // Die Frage, ob dieser Strom auch im Allgemeinstrom steckt. Nur bei Heizkosten mit Teil „Betrieb“ oder
-// ohne Teil, wie die Bedingung der Datenbank.
+// ohne Teil, wie die Bedingung der Datenbank; ohne Teil nur, wo die Position Betriebsstrom sein kann (#721).
 export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[] = [
   { value: '', label: 'Nein (eigener Stromvertrag oder kein Betriebsstrom)' },
   // Wortgleich im Hinweis „Abzug des Betriebsstroms fehlt“ (#266).
@@ -822,8 +822,15 @@ export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[
 ]
 // R-W2 (Durchsicht von #252): bei einer Wärmepumpe oder Stromheizung auch an der Strom-Position (Teil
 // „Brennstoff/Energie“), denn auch dieser Strom läuft oft über den Zähler des Hauses.
-export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'>, plantEnergy?: HeatingEnergy): boolean =>
-  form.category === HEATING_CATEGORY && (form.heatingPart === '' || form.heatingPart === 'operating' ||
+// #721: Ohne Teil stand die Frage an jeder Heizposition, auch bei Heizöl, Gasrechnung und Wartung. Ohne Teil erscheint sie
+// jetzt nur, wo die Position Betriebsstrom sein kann: Die Beschreibung nennt Strom oder die Umwälzpumpe
+// (`namesOperatingPower`), oder die Antwort ist schon gespeichert; sonst ginge sie beim nächsten Speichern verloren
+// (`withOperatingPower` schickt die Kennzeichnung nur, wo die Frage steht). Mit dem Teil „Betrieb“ bleibt sie immer:
+// Dorthin führen die Hinweise der Abrechnung („mit dem Teil „Betrieb“ … wählen Sie dort bei …“, server/src/operatingPower.ts).
+const namesOperatingPower = (description: string | undefined): boolean => /strom|elektr|umwälzpumpe/i.test((description ?? '').normalize('NFC'))
+export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'> & Partial<Pick<ItemForm, 'description' | 'operatingPower'>>, plantEnergy?: HeatingEnergy): boolean =>
+  form.category === HEATING_CATEGORY && (form.heatingPart === 'operating' ||
+    (form.heatingPart === '' && (form.operatingPower === 'included' || namesOperatingPower(form.description))) ||
     (form.heatingPart === 'fuel' && plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy)))
 
 // Ein Abzug am Allgemeinstrom (P-W2): negativer Betrag bei „Beleuchtung/Allgemeinstrom“. Dann fragt das
@@ -900,7 +907,7 @@ export function withGeneralChoice(form: ItemForm, id: string, items: readonly Co
 export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | null; operatingPowerItemId: string | null; operatingPowerGeneralId: string | null; operatingPowerBasis: string | null; operatingPowerReported: boolean | null }
 export function withOperatingPower<B extends object>(
   body: B,
-  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerGeneralId' | 'operatingPowerBasis'> & Partial<Pick<ItemForm, 'operatingPowerReported'>>,
+  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerGeneralId' | 'operatingPowerBasis'> & Partial<Pick<ItemForm, 'operatingPowerReported' | 'description'>>,
   plantEnergy?: HeatingEnergy,
 ): B & Partial<OperatingPowerBody> {
   const basis = (marked: boolean) => (marked && form.operatingPowerBasis.trim() !== '' ? form.operatingPowerBasis.trim() : null)

@@ -664,6 +664,10 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   (`operating_power_general_id`: gleiches Objekt und gleicher Zeitraum, Rechnung solange gesperrt).
   Verweisbedingungen vergleichen mit `IS`, weil `NULL = …` in SQLite kein Verstoß ist. `included`
   nur mit positivem Betrag.
+- **Wo das Kostenformular fragt** (`showsOperatingPower` in client/src/costForm.ts, #721): mit dem Teil „Betrieb“ immer
+  (dorthin führen die Hinweise), mit „Brennstoff/Energie“ nur bei Wärmepumpe und Stromheizung, **ohne Teil nur, wenn die
+  Beschreibung Strom nennt oder die Antwort schon gespeichert ist** (sonst stand die Frage auch bei Heizöl, Gas und
+  Wartung). Der Rumpf schickt `included` nur, wo die Frage steht; deshalb zählt die gespeicherte Antwort mit.
 - Die Abrechnung prüft jede Position gegen die Abzüge **aus allen Zeiträumen** (`deductionsOf`;
   `heating.operating-power-double`, `-key`, `-exceeds`). Ein Abzug in einer abgeschlossenen
   Abrechnung hat vier Zustände (gutgeschrieben, geändert, nicht darin, unlesbar), je ein Satz;
