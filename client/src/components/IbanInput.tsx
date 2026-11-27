@@ -18,9 +18,11 @@ type Props = {
   id?: string
   error?: string
   onFix?: () => void
+  // Ein Hinweis des Formulars am Feld (etwa „inzwischen anderswo geändert“); steht vor dem zur gespeicherten IBAN.
+  hint?: string
 }
 
-export default function IbanInput({ label, value, stored, onChange, placeholder, id, error: saveError, onFix }: Props) {
+export default function IbanInput({ label, value, stored, onChange, placeholder, id, error: saveError, onFix, hint }: Props) {
   const [left, setLeft] = useState(false)
   const state = ibanFieldState(value, stored)
   const error = saveError ?? (left ? state.error : null) ?? undefined
@@ -31,7 +33,7 @@ export default function IbanInput({ label, value, stored, onChange, placeholder,
       onFix={onFix}
       error={error}
       announce={!saveError}
-      hint={state.notice ? <span className="text-amber">{state.notice}</span> : undefined}
+      hint={hint || state.notice ? <>{hint}{hint && state.notice ? ' ' : ''}{state.notice && <span className="text-amber">{state.notice}</span>}</> : undefined}
     >
       <input
         value={value}

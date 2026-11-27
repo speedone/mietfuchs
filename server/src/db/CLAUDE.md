@@ -225,7 +225,14 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   einer Sammlung ein Feld dazusetzt, das nicht gespeichert ist, trägt es in `LIST_ONLY_FIELDS` ein (shared/recordMark.ts, für beide Seiten;
   der Wächter-Test wird sonst rot), sonst lehnte jedes Speichern ab. Ein `PUT` auf einen gelöschten Datensatz ist eine 404 mit Satz je
   Sammlung (`GONE` in index.ts, auch für Teilrümpfe ohne Formular). Geprüft in api-gleichzeitig.test.ts; ein Wächter dort
-  speichert jeden Datensatz jeder Liste mit seinem Stand aus der Liste und verlangt 200. Noch ohne Erkennung: `PUT /api/settings`.
+  speichert jeden Datensatz jeder Liste mit seinem Stand aus der Liste und verlangt 200. **`PUT /api/settings`** hat
+  dieselbe Erkennung in eigener Gestalt (`seenPartChanged`, in index.ts an der Route): Die Einstellungen sind eine Zeile,
+  mehrere Karten schreiben je ihren Teil, und die Antwort ist angereichert. `ifUnchanged` trägt deshalb **nur die
+  Schlüssel, die die Karte schreibt**, wie `GET /api/settings` sie geliefert hat, und nur die werden verglichen (in die
+  Tiefe, `ai.text`; gegen `settingsForClient()`, also die wirksamen KI-Werte). `consent`, `aiKeys`, die Antwort zur
+  Update-Prüfung und die Vorgaben des Anschreibens haben eigene Wege und gehören in keinen Vergleich einer anderen Karte. Fehlend, `null` und leerer
+  Text gelten dabei als gleich, eine fehlende Zahlungsfrist als die Voreinstellung (30 Tage). Lesen, Prüfen und Schreiben
+  laufen in **einem** Schreibvorgang auf dem Stand der Datenbank, nicht auf dem Zwischenspeicher der Einstellungen.
 - **Was krumm hereinkommt, wird geradegerückt, nicht abgelehnt**: Bei zwei Staffeleinträgen zum
   selben Stichtag gilt der letzte (Regel einmal in [../schedule.ts](../schedule.ts)); die
   Jahreskorrektur eines Kalenderobjekts braucht eine vierstellige Jahreszahl. **Ausnahme

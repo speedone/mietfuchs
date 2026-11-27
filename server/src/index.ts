@@ -75,8 +75,9 @@ import {
 import {
   changeTenant, closeSettlement, createEntity, DepositHoldError, rulesForProperty, insertPayments, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, RentDataError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, SpreadQuestion, TaxYearQuestion, PeriodConflict, PeriodError, StaleRecordError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
-  TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
+  TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, seenPartChanged, type CollectionName,
 } from './db/repository.ts'
+import { recordMark } from '../../shared/recordMark.ts'
 import { MeterRestError } from './db/meterRest.ts'
 import { CaptureQuestion, removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
@@ -461,16 +462,15 @@ function aiOf(settings: Settings): AiSettings {
 
 // Was tatsächlich gilt: gespeicherte Einstellungen, überlagert von der Umgebung. ollamaUrl und
 // ollamaModel zeigen dabei, was für Ollama gilt, für Tabs von vor dem Update.
-function effectiveSettings(): Settings & { ai: AiSettings } {
-  const settings = storedSettings
+function effectiveSettings(settings: Settings = storedSettings): Settings & { ai: AiSettings } {
   const ai = effectiveAi(aiOf(settings), AI_ENV)
   const legacy = ai.text.provider === 'ollama' ? { ollamaUrl: ai.text.url, ollamaModel: ai.text.model } : {}
   return { ...settings, ...legacy, ai }
 }
 
 // Pfade wie 'ai.text.url', dazu die alten Namen, die ein Tab von vor dem Update kennt
-function fixedByEnv(): string[] {
-  const ai = aiOf(storedSettings)
+function fixedByEnv(settings: Settings = storedSettings): string[] {
+  const ai = aiOf(settings)
   const paths = fixedFields(ai, AI_ENV)
   const legacy = effectiveAi(ai, AI_ENV).text.provider === 'ollama'
     ? [['ai.text.url', 'ollamaUrl'], ['ai.text.model', 'ollamaModel']].filter(([p]) => paths.includes(p)).map(([, name]) => name)
@@ -481,13 +481,13 @@ function fixedByEnv(): string[] {
 // `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.ts), nie welcher.
 // `aiExternal` sagt je Platz, ob die Adresse aus dem Haus zeigt und die Belege deshalb erst nach
 // einer Bestätigung dorthin gehen. So entscheidet allein der Server, was als extern gilt.
-function settingsForClient() {
+function settingsForClient(stored: Settings = storedSettings) {
   // Name und Adresse gehören seit #92 zum Objekt. Die Spalten stehen noch da, weil der
   // eingefrorene Eingang sie schreibt und Migration 0001 sie abliest; ausgeliefert werden sie
   // nicht mehr, sonst zeigte die Oberfläche zwei Wahrheiten.
-  const { houseName: _houseName, address: _address, ...settings } = effectiveSettings()
+  const { houseName: _houseName, address: _address, ...settings } = effectiveSettings(stored)
   const aiExternal = { text: isExternalUrl(settings.ai.text.url), images: settings.ai.images ? isExternalUrl(settings.ai.images.url) : false }
-  return { ...settings, fixedByEnv: fixedByEnv(), aiKeys: keyInfo(), aiExternal }
+  return { ...settings, fixedByEnv: fixedByEnv(stored), aiKeys: keyInfo(), aiExternal }
 }
 
 // Im Fenster gehört einiges an den Rechner selbst, nicht ans Handy im Heimnetz (Durchsicht vor 0.15.0, K6): Beenden
@@ -508,6 +508,11 @@ app.use((req, res, next) => {
   next()
 })
 
+// Wo geändert wurde, weiß der Server nicht (auch eine andere Karte im selben Tab schreibt): kein „zweites Fenster“.
+// Eine fehlende Zahlungsfrist ist die Voreinstellung (Durchsicht K2): Die Karte zeigt sie als 30 Tage und speichert sie so.
+const withDeadline = (x: Record<string, unknown>): Record<string, unknown> =>
+  Object.hasOwn(x, 'paymentDeadlineDays') && x.paymentDeadlineDays == null ? { ...x, paymentDeadlineDays: DEFAULT_SETTINGS.paymentDeadlineDays } : x
+const SETTINGS_STALE = 'Die Einstellungen wurden inzwischen geändert. Gespeichert wurde nichts, damit diese Änderung nicht verloren geht.'
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', async (req, res) => {
   const body = bodyObject(req)
@@ -517,31 +522,46 @@ app.put('/api/settings', async (req, res) => {
   }
   // `houseName` und `address` schickt nur ein Tab von vor #92; sie gehören jetzt zum Objekt und
   // werden hier verworfen, statt eine Spalte zu beschreiben, die niemand mehr liest.
-  const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, houseName, address, ...changes } = body
-  // Gearbeitet wird auf einer Kopie und nicht auf dem Zwischenspeicher: Scheitert das
-  // Schreiben, soll der Stand im Arbeitsspeicher nicht schon verändert sein und etwas anzeigen,
-  // das nirgends steht.
-  const next = structuredClone(storedSettings)
-  // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
+  const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, houseName, address, ifUnchanged, ...changes } = body
+  // Zwei Fenster, eine Zeile (Systemprüfung): Die Karte schickt die Schlüssel mit, die sie schreibt, wie sie sie geladen
+  // hat (`ifUnchanged`); gleicht einer dem Stand von jetzt nicht mehr, wird nichts gespeichert, und die Antwort nennt
+  // diesen Stand. Verglichen wird mit dem, was `GET /api/settings` ausliefert (wirksame KI-Werte), denn das hat die
+  // Karte gesehen. Ohne die Angabe gilt wie bisher der letzte (Skripte, ältere Tabs, Teilrümpfe wie die Antwort zur
+  // Update-Prüfung), und ein Rumpf, der genau den Stand herstellt, der schon gilt, ist Erfolg (Doppelklick).
+  // **Lesen, Prüfen und Schreiben sind ein Vorgang in der Schlange** (Durchsicht K1, wie `requireUnchanged`): Gearbeitet
+  // wird auf dem Stand der Datenbank in diesem Schreibvorgang, nicht auf dem Zwischenspeicher, sonst prüften zwei
+  // gleichzeitige Anfragen beide gegen denselben alten Stand, und die zweite schriebe ihn mit der Änderung der ersten
+  // zurück. Scheitert etwas, ist nichts geschrieben, und der Zwischenspeicher zeigt nichts, das nirgends steht.
   try {
-    applyAiChanges(next, body, AI_ENV)
-    // Die IBAN des Vermieters nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
-    if (Object.hasOwn(changes, 'iban')) changes.iban = acceptIban(changes.iban, storedSettings.iban, IBAN_LABELS.settings) ?? ''
-    // Teil 2 von #415: Anschrift und Kontakt als Zeile, die Schalter des Drucks als ja/nein. Eine Angabe anderer Art
-    // ist eine 400, statt still in eine Spalte zu geraten.
-    for (const [key, label] of [['landlordAddress', 'Die Anschrift des Vermieters'], ['landlordContact', 'Der Kontakt des Vermieters']] as const) {
-      if (Object.hasOwn(changes, key)) changes[key] = nullableLine(changes[key], label) ?? ''
-    }
-    for (const [key, label] of [['printLetter', '„Anschreiben mitdrucken“'], ['printFooter', '„Fußzeile mit Kontakt und Bank“'], ['printPaymentQr', '„QR-Code zum Bezahlen bei Nachzahlung“']] as const) {
-      if (Object.hasOwn(changes, key) && changes[key] !== null && typeof changes[key] !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
-    }
+    await writeData(async (db) => {
+      const stored = await readSettings(db)
+      const next = structuredClone(stored)
+      // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
+      applyAiChanges(next, body, AI_ENV)
+      // Die IBAN des Vermieters nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
+      if (Object.hasOwn(changes, 'iban')) changes.iban = acceptIban(changes.iban, stored.iban, IBAN_LABELS.settings) ?? ''
+      // Teil 2 von #415: Anschrift und Kontakt als Zeile, die Schalter des Drucks als ja/nein. Eine Angabe anderer Art
+      // ist eine 400, statt still in eine Spalte zu geraten.
+      for (const [key, label] of [['landlordAddress', 'Die Anschrift des Vermieters'], ['landlordContact', 'Der Kontakt des Vermieters']] as const) {
+        if (Object.hasOwn(changes, key)) changes[key] = nullableLine(changes[key], label) ?? ''
+      }
+      for (const [key, label] of [['printLetter', '„Anschreiben mitdrucken“'], ['printFooter', '„Fußzeile mit Kontakt und Bank“'], ['printPaymentQr', '„QR-Code zum Bezahlen bei Nachzahlung“']] as const) {
+        if (Object.hasOwn(changes, key) && changes[key] !== null && typeof changes[key] !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
+      }
+      // `changes` trägt alles, was nicht KI ist. Unbekannte Schlüssel kommen hier zwar noch mit,
+      // finden in den Spalten aber keinen Ort mehr und sind nach dem Zurücklesen verschwunden (#60).
+      Object.assign(next, changes)
+      const current = settingsForClient(stored)
+      if (isObject(ifUnchanged) && seenPartChanged(withDeadline(ifUnchanged), withDeadline(current)) && recordMark(next) !== recordMark(stored)) {
+        throw new StaleRecordError(SETTINGS_STALE, current)
+      }
+      await writeSettings(db, next)
+    })
   } catch (err) {
+    if (err instanceof StaleRecordError) return res.status(409).json({ error: err.message, stale: true, current: err.current })
     return res.status(statusOf(err)).json({ error: messageOf(err) })
   }
-  // `changes` trägt alles, was nicht KI ist. Unbekannte Schlüssel kommen hier zwar noch mit,
-  // finden in den Spalten aber keinen Ort mehr und sind nach dem Zurücklesen verschwunden (#60).
-  Object.assign(next, changes)
-  await saveSettings(next)
+  await refreshSettings()
   res.json(settingsForClient())
 })
 

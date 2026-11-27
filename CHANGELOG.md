@@ -322,6 +322,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wenn das Mietverhältnis im abgerechneten Zeitraum oder vor dem Brief endet (nicht bei einem Umzug im selben Haus), und
   lässt sich wie jeder Baustein ändern; ein eigener Text zum Guthaben beim Mietverhältnis gilt weiter, einen eigenen in
   Vorlage oder Objekt nennen das Fenster „Anschreiben“ und „Zu prüfen“ ([#691](https://github.com/speedone/mietfuchs/issues/691)).
+- Einstellungen in zwei Fenstern: Speicherte ein zweites Fenster mit altem Stand die Karte „Vermieter & Zahlung“, die
+  Druckeinstellungen oder die KI-Belegauswertung, überschrieb es still, was im ersten inzwischen geändert war, etwa die
+  IBAN im Brief. Jetzt lehnt Mietfuchs das Speichern ab, nennt, was inzwischen geändert wurde, mit dem Wert von jetzt,
+  und zeigt diesen Stand; was Sie selbst geändert haben, bleibt stehen. Haben beide Fenster dieselbe Angabe geändert,
+  oder Name und IBAN bzw. Name und Anschrift getrennt voneinander, entscheiden Sie vor dem erneuten Speichern, was
+  gelten soll. Verglichen wird nur, was die jeweilige Karte speichert; beim Öffnen der Seite holen die Karten den Stand
+  von jetzt ([#692](https://github.com/speedone/mietfuchs/issues/692)).
 - Heizkostenverteiler ohne Skala: Unter „Zähler & Stände“ ließ sich ein Heizkostenverteiler anlegen, ohne die Skala zu
   wählen; in der Liste stand danach nur „Skala fehlt“. Ohne Skala verteilt die eigene Heizkostenabrechnung die
   Heizkosten nicht (sie bleiben mit einem Fehler unter „Zu prüfen“ beim Vermieter). Die Skala ist jetzt eine

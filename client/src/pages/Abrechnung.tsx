@@ -14,6 +14,8 @@ import { itemsOfFile, settledInvoiceFiles, statementInvoiceFiles, type BookedFil
 import { filesByItem } from '../receipts'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { keepDraft, useConfirmDiscard, useDraft } from '../useDraft'
+import { ifUnchanged } from '../staleRecord'
+import { PRINT_KEYS, PRINT_STALE_FIELDS, seenPart, settingsStaleText, staleCurrent, useFreshSettings } from '../settingsSeen'
 import { useSaving } from '../useSaving'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
@@ -207,8 +209,33 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const [letterChoice, setLetterChoice] = useState<boolean | null>(null)
   useEffect(() => { setLetterChoice(null) }, [param, propertyId])
   const withLetter = letterChoice ?? letterDefault
+  // Der Stand der Druckeinstellungen, auf dem der Entwurf steht, als `ifUnchanged` beim Speichern (settingsSeen.ts): wie
+  // der Server ihn geliefert hat, gemerkt, solange kein Entwurf offen ist (die Einstellungen der App laden zwischendurch neu).
+  // Beim Öffnen des Fensters „Drucken“ fragt die Seite den Stand von jetzt (ein Tab im Hintergrund kennt einen alten);
+  // weicht er ab, lädt die App neu, und ohne offenen Entwurf zeigen die Häkchen ihn.
+  useFreshSettings(settings, PRINT_KEYS, reload, printDrawer !== null)
+  const seenPrint = useRef(seenPart(settings, PRINT_KEYS))
+  if (!printDraft.dirty) seenPrint.current = seenPart(settings, PRINT_KEYS)
   async function savePrint(value: typeof printDraft.value) {
-    await api('/api/settings', { method: 'PUT', body: JSON.stringify(value) })
+    try {
+      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...value, ...ifUnchanged(settings ? seenPrint.current : null) }) })
+    } catch (e) {
+      const refused = settingsStaleText(e, seenPrint.current, PRINT_STALE_FIELDS, 'Die Häkchen zeigen jetzt diesen Stand; was Sie hier selbst geändert haben, steht weiter da. Bitte prüfen Sie die Angaben und speichern Sie erneut.')
+      if (refused === null) throw e
+      // Wie bei der KI-Karte (Durchsicht K3): Die eigenen Häkchen bleiben, die übrigen zeigen den Stand von jetzt, und
+      // der gilt als gesehen; wer nach dem Prüfen erneut speichert, speichert bewusst und wird nicht noch einmal
+      // abgelehnt. Die App lädt die Einstellungen neu.
+      const now = staleCurrent(e)
+      if (now) {
+        const seen = seenPrint.current
+        const merged = { ...value }
+        for (const key of PRINT_KEYS) if (value[key] === (seen[key] === true)) merged[key] = now[key] === true
+        seenPrint.current = seenPart(now, PRINT_KEYS)
+        printDraft.set(merged)
+      }
+      await reload().catch(() => { /* die Meldung steht gleich */ })
+      throw new Error(refused)
+    }
     await reload()
   }
   async function saveLetter(save: LetterSave) {

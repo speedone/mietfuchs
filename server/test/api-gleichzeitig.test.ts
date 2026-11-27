@@ -205,3 +205,133 @@ test('Mit dem Stand aus der Liste gespeichert: keine Sammlung und kein Objekt le
     s.stop()
   }
 })
+
+// Die Einstellungen (Vermieter, Bankverbindung, Druck, KI) sind eine Zeile, und jede Karte schickt nur ihren Teil. Die
+// Antwort ist angereichert (`fixedByEnv`, `aiKeys`, `aiExternal`, wirksame KI-Werte). Deshalb schickt die Karte als
+// `ifUnchanged` nur die Schlüssel mit, die sie selbst schreibt, wie sie sie geladen hat, und nur die werden verglichen.
+const pick = (from: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> => Object.fromEntries(keys.map((key) => [key, from[key] ?? null]))
+const LANDLORD = ['landlordName', 'iban', 'paymentDeadlineDays', 'landlordAddress', 'landlordContact'] as const
+const PRINT = ['printFoldMarks', 'printAttachments', 'printFooter', 'printPaymentQr'] as const
+const settingsOf = (s: Server) => s.api<Record<string, unknown>>('/api/settings')
+// Was die KI-Karte schickt: alles außer `consent`, das nur die eigene Route ändert.
+const aiFormOf = (settings: Record<string, unknown>): Record<string, unknown> => {
+  const ai = settings.ai
+  if (ai === null || typeof ai !== 'object') assert.fail('Die Einstellungen tragen keine KI-Einstellungen.')
+  const { consent: _consent, ...form } = { ...ai } as Record<string, unknown>
+  return form
+}
+
+test('Einstellungen: Das zweite Fenster überschreibt die IBAN des ersten nicht mehr still', async () => {
+  const s = await startServer()
+  try {
+    await put(s, '/api/settings', { landlordName: 'Erika Muster', iban: 'DE89370400440532013000', paymentDeadlineDays: 30 })
+    // Beide Fenster laden die Einstellungen.
+    const seen = pick(await settingsOf(s), LANDLORD)
+    const form = { ...seen, landlordAddress: '', landlordContact: '' }
+
+    // Fenster A: neue IBAN.
+    const a = await put(s, '/api/settings', { ...form, iban: 'DE02120300000000202051', ifUnchanged: seen })
+    assert.equal(a.status, 200)
+    // Fenster B kennt noch die alte und ändert nur den Kontakt.
+    const b = await put(s, '/api/settings', { ...form, landlordContact: 'Tel. 0123 456789', ifUnchanged: seen })
+    assert.equal(b.status, 409)
+    assert.match(String(b.body.error), /Einstellungen wurden inzwischen geändert/)
+    assert.match(String(b.body.error), /Gespeichert wurde nichts/)
+    assert.doesNotMatch(String(b.body.error), /Fenster|Gerät/)
+    assert.equal(b.body.stale, true)
+    const current = b.body.current
+    assert.ok(current !== null && typeof current === 'object' && 'iban' in current && current.iban === 'DE02120300000000202051', 'Die Antwort nennt den Stand von jetzt.')
+    const stored = await settingsOf(s)
+    assert.equal(stored.iban, 'DE02120300000000202051')
+    assert.ok(!stored.landlordContact)
+    assert.ok(!('ifUnchanged' in stored))
+
+    // Dieselbe Anfrage noch einmal (Doppelklick, Wiederholung nach verlorener Antwort): Der Stand gilt schon, Erfolg.
+    assert.equal((await put(s, '/api/settings', { ...form, iban: 'DE02 1203 0000 0000 2020 51', ifUnchanged: seen })).status, 200)
+    // Mit dem Stand von jetzt geht B durch.
+    assert.equal((await put(s, '/api/settings', { ...form, iban: stored.iban, landlordContact: 'Tel. 0123 456789', ifUnchanged: pick(stored, LANDLORD) })).status, 200)
+    // Ohne die Angabe (älterer Tab, Skript) gilt wie bisher der letzte.
+    assert.equal((await put(s, '/api/settings', { ...form })).status, 200)
+    assert.equal((await settingsOf(s)).iban, 'DE89370400440532013000')
+  } finally {
+    s.stop()
+  }
+})
+
+test('Einstellungen: Verglichen werden nur die Schlüssel der Karte, eine andere Karte stört nicht', async () => {
+  const s = await startServer()
+  try {
+    // Ein Fenster lädt einmal und speichert dann eine Karte nach der anderen, jede mit dem Stand vom Laden.
+    const loaded = await settingsOf(s)
+    const aiForm = aiFormOf(loaded)
+    const landlord = pick(loaded, LANDLORD)
+
+    // Vermieter, aus dem frischen Bestand (alles leer bzw. Vorgabe).
+    const first = await put(s, '/api/settings', { ...landlord, landlordName: 'Erika Muster', ifUnchanged: landlord })
+    assert.equal(first.status, 200, String(first.body.error))
+    // Druck: Die Seite Abrechnung kennt die Einstellungen von vor dem Speichern des Vermieters.
+    const print = await put(s, '/api/settings', { printFoldMarks: true, printAttachments: false, printFooter: true, printPaymentQr: false, ifUnchanged: pick(loaded, PRINT) })
+    assert.equal(print.status, 200, String(print.body.error))
+    // KI: ebenso, mit dem geladenen Stand ihrer eigenen Schlüssel.
+    const ki = await put(s, '/api/settings', { ai: { ...aiForm, extraInstructions: 'Bitte genau lesen.' }, ifUnchanged: { ai: aiForm } })
+    assert.equal(ki.status, 200, String(ki.body.error))
+    // Die Update-Prüfung (Teilrumpf ohne Angabe) ändert nichts, was eine Karte vergleicht.
+    assert.equal((await put(s, '/api/settings', { updateCheck: 'off' })).status, 200)
+    // Vermieter noch einmal, mit dem Stand aus der Antwort des eigenen Speicherns.
+    const again = await put(s, '/api/settings', { ...pick(first.body, LANDLORD), landlordContact: 'Tel. 0123 456789', ifUnchanged: pick(first.body, LANDLORD) })
+    assert.equal(again.status, 200, String(again.body.error))
+
+    const stored = await settingsOf(s)
+    assert.equal(stored.landlordName, 'Erika Muster')
+    assert.equal(stored.landlordContact, 'Tel. 0123 456789')
+    assert.equal(stored.printFooter, true)
+
+    // Die KI-Karte eines zweiten Fensters mit dem Stand von vorher wird abgelehnt; mit dem Stand von jetzt geht sie durch.
+    const stale = await put(s, '/api/settings', { ai: { ...aiForm, extraInstructions: 'Anders.' }, ifUnchanged: { ai: aiForm } })
+    assert.equal(stale.status, 409)
+    const nowForm = aiFormOf(stored)
+    assert.equal((await put(s, '/api/settings', { ai: { ...nowForm, extraInstructions: 'Anders.' }, ifUnchanged: { ai: nowForm } })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht K1: Prüfung und Schreiben sind ein Vorgang. Kommen beide Fenster im selben Augenblick, geht genau eines
+// durch, und das andere überschreibt dessen Änderung weder mit seinem Stand noch mit dem alten.
+test('Einstellungen: gleichzeitige Speichern mit demselben Stand, genau eines geht durch', async () => {
+  const s = await startServer()
+  try {
+    await put(s, '/api/settings', { landlordName: 'Erika Muster', iban: 'DE89370400440532013000', paymentDeadlineDays: 30 })
+    const seen = pick(await settingsOf(s), LANDLORD)
+    // Acht Fenster mit demselben Stand, jedes mit einem anderen Kontakt.
+    const answers = await Promise.all(Array.from({ length: 8 }, (_, n) => put(s, '/api/settings', { ...seen, landlordContact: `Tel. ${n}`, ifUnchanged: seen })))
+    const through = answers.flatMap((answer, n) => (answer.status === 200 ? [n] : []))
+    assert.equal(through.length, 1, `Durchgegangen: ${through.join(', ')}`)
+    assert.ok(answers.every((answer) => answer.status === 200 || answer.status === 409))
+    assert.equal((await settingsOf(s)).landlordContact, `Tel. ${String(through[0])}`)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht K2: Auf einem frischen Bestand fehlen Anschrift und Kontakt (die Karte sah `null`); ein Speichern ohne
+// Änderung schreibt dort leeren Text. Das ist für das zweite Fenster keine Änderung, ebenso wenig eine fehlende
+// Zahlungsfrist gegen die Voreinstellung 30 Tage.
+test('Einstellungen: leerer Text gegen fehlende Angabe und die Voreinstellung der Frist sind keine Änderung', async () => {
+  const s = await startServer()
+  try {
+    const seen = pick(await settingsOf(s), LANDLORD)
+    assert.equal(seen.landlordAddress, null)
+    // Fenster A speichert, ohne etwas zu ändern: Anschrift und Kontakt stehen danach als leerer Text da.
+    assert.equal((await put(s, '/api/settings', { ...seen, landlordAddress: '', landlordContact: '', paymentDeadlineDays: 30, ifUnchanged: seen })).status, 200)
+    assert.equal((await settingsOf(s)).landlordAddress, '')
+    // Fenster B kennt den Stand davor und ändert nur den Namen.
+    const b = await put(s, '/api/settings', { ...seen, landlordName: 'Erika Muster', landlordAddress: '', landlordContact: '', paymentDeadlineDays: 30, ifUnchanged: seen })
+    assert.equal(b.status, 200, String(b.body.error))
+    // Eine fehlende Frist im gesehenen Stand gleicht der Voreinstellung.
+    const c = await put(s, '/api/settings', { landlordContact: 'Tel. 1', ifUnchanged: { ...pick(await settingsOf(s), LANDLORD), paymentDeadlineDays: null, landlordContact: null } })
+    assert.equal(c.status, 200, String(c.body.error))
+  } finally {
+    s.stop()
+  }
+})
