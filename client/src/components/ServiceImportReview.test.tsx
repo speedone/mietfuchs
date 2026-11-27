@@ -55,6 +55,8 @@ const select = (label: string): HTMLSelectElement => {
 
 test('Jede Auswahl zeigt den Wert, mit dem gespeichert wird; eine offene Zeile verhindert Übernehmen', async () => {
   render(<ServiceImportReview x={x} file="beleg.pdf" ctx={ctx} view={view()} onDone={() => {}} />)
+  // Kosten, nicht Saldo: Der Satz steht über der Prüfung und nennt den Ausweg.
+  expect(screen.getByText(/prüfen Sie, dass hier die Kosten stehen und nicht dieser Saldo.*Steht hier ein Saldo, übernehmen Sie den Block nicht/)).toBeTruthy()
   expect(select('Zuordnung „Mustermann, Erika“').value).toBe('tenancy:t1')
   expect(select('Zuordnung „Herr Unbekannt“').value).toBe('')
   expect(select('Kostenart „Heizung und Warmwasser“').value).toBe('Heizung und Warmwasser')

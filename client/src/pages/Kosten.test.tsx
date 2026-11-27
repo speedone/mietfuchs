@@ -245,6 +245,10 @@ test('Einzelbeträge (#94): je Mieter ein Feld, gespeichert wird genau das Einge
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '800,00' } })
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
   expect(select(/Umlageschlüssel/i).value).toBe('amounts')
+  // Messdienst mit Vorauszahlungen: Der Satz über den Feldern sagt, dass die Kosten gemeint sind und nicht der Saldo.
+  expect(screen.getByText(/tragen Sie die Kosten ein, nicht diesen Saldo/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText(/^Meier \(OG links\)$/), { target: { value: '-45,20' } })
+  expect(screen.getByText(/Ein Einzelbetrag ist negativ\. Einzutragen sind die Kosten/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText(/^Meier \(OG links\)$/), { target: { value: '312,40' } })
   expect(screen.getByText(/487,60 € trägt der Vermieter/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))

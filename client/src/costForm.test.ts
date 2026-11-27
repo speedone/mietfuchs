@@ -22,7 +22,7 @@ import {
   meterTypeOptions,
   suggestedKey,
   waterMeterHint,
-  amountsSumText,
+  amountsSumText, AMOUNTS_HELP,
   externalHint,
   externalMismatch,
   othersOfSourceCents,
@@ -1478,4 +1478,22 @@ describe('Wohnung mit Zimmern als Empfänger', () => {
 })
 const itemOf = (key: CostKey): CostItemOf => ({
   id: 'c1', propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Wasser', description: 'Wasser', amountCents: 10000, key, meterType: 'kaltwasser',
+})
+
+// Messdienst mit Vorauszahlungen: Druckt die Einzelabrechnung Kosten, Vorauszahlung und Saldo, gehören die Kosten ins Feld.
+// Wer den Saldo einträgt, rechnet die Vorauszahlung doppelt an (sie steht in der Staffel des Mietverhältnisses). Der Satz
+// am Feld sagt es, und ein negativer Betrag (ein Guthaben) wird nicht mehr still als 0 gezählt.
+describe('Einzelbeträge: die Kosten des Mieters, nicht sein Saldo', () => {
+  test('der Satz am Feld nennt Kosten, Vorauszahlung und Saldo', () => {
+    expect(AMOUNTS_HELP).toBe('Die Kosten je Mieter aus der Einzelabrechnung, etwa vom Messdienst; rechnet er mehrere Kostenarten in einer Abrechnung ab, nur den Teil dieser Kostenart. Nennt sie auch Vorauszahlungen und eine Nachzahlung oder ein Guthaben, tragen Sie die Kosten ein, nicht diesen Saldo: Die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an. Bei einem Mieterwechsel teilt der Messdienst selbst auf; den Rest trägt der Vermieter.')
+  })
+  test('ein negativer Einzelbetrag ist ein Saldo und wird benannt, statt als 0 zu zählen', () => {
+    const f = form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '-45,20', t2: '400,00' } })
+    expect(amountsSumText(f, UNITS)).toBe('Ein Einzelbetrag ist negativ. Einzutragen sind die Kosten, nie ein Guthaben oder eine Nachzahlung; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an.')
+    const own = [unit('u1', { participates: false, selfUsed: true }), unit('u2')]
+    expect(amountsSumText(form({ key: 'amounts', amount: '800,00', selfAmounts: { u1: '-1' } }), own)).toMatch(/^Ein Einzelbetrag ist negativ/)
+    // Speichern lässt sich das nicht, mit demselben Satz.
+    expect(buildCostItemBody(f, UNITS, 2025)).toEqual({ error: 'Ein Einzelbetrag ist negativ. Einzutragen sind die Kosten, nie ein Guthaben oder eine Nachzahlung; die Vorauszahlungen rechnet Mietfuchs aus dem Mietverhältnis selbst an.' })
+    expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS)).toMatch(/700,00.*100,00 .*Vermieter/)
+  })
 })

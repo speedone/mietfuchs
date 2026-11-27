@@ -165,6 +165,9 @@ test('Schemas verlangen das Nötigste und nennen die Felder des Ausgangs; Kosten
 
 test('Prompts: Rechnungsbetrag vor Abschlägen, Brennwert ist kein Heizwert, § 43 Abs. 1 GModG mit Wasserstoff (Prüfung M5)', () => {
   assert.match(FUEL_PROMPT, /VOR Abzug geleisteter Abschläge/)
+  // Messdienst mit Vorauszahlungen: je Nutzer die Kosten, nie der Saldo (sonst wäre die Vorauszahlung doppelt angerechnet).
+  assert.match(SERVICE_PROMPT, /VOR Abzug der Vorauszahlungen, nie die Nachzahlung und nie das Guthaben/)
+  assert.match(JSON.stringify(SERVICE_SCHEMA), /vor Abzug von Vorauszahlungen; nie die Nachzahlung oder das Guthaben/)
   assert.match(FUEL_PROMPT, /Ein Brennwert ist kein Heizwert/)
   assert.match(FUEL_PROMPT, /Schüttraummeter/)
   assert.match(FUEL_PROMPT, /§ 43 Abs\. 1 GModG/)
