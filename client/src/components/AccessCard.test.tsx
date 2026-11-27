@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Karte „Anmeldung“ in den Einstellungen (#528): Passwort ändern verlangt das bisherige, „Anmeldung ausschalten“ fragt
-// zurück, bei NKA_AUTH nur Anzeige des Schalters, im Übergang der Satz zu Version 1.0.
+// zurück, bei NKA_AUTH nur Anzeige des Schalters, in der Einrichtung beide Wege (Passwort oder bewusst ohne).
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { AccessContext, type AccessInfo } from '../access'
@@ -81,9 +81,10 @@ test('NKA_AUTH=off im Netz: nur Anzeige', () => {
   expect(screen.queryAllByRole('button')).toHaveLength(0)
 })
 
-test('im Übergang: Satz zu Version 1.0, Passwort festlegen mit Code aus der Adresse, ohne Passwort weiter mit Rückfrage', async () => {
+test('offen mit Hinweis: keine Ankündigung einer Version mehr, Passwort festlegen mit Code aus der Adresse, ohne Passwort weiter mit Rückfrage', async () => {
   const { calls, clearSetupCode } = setup({ ...base, mode: 'transition', required: false, signedIn: false, codeFileName: 'einrichtungscode.txt' }, 'K7QM-4XPA-9TRW')
-  expect(document.body.textContent).toContain('Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.')
+  expect(document.body.textContent).toContain('Mietfuchs ist im Netz ohne Passwort erreichbar')
+  expect(document.body.textContent).not.toContain('Ab Version')
   expect(screen.queryByRole('button', { name: 'Passwort ändern' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Passwort festlegen' }))
   expect((within(drawer()).getByLabelText('Einrichtungscode') as HTMLInputElement).value).toBe('K7QM-4XPA-9TRW')
@@ -93,6 +94,19 @@ test('im Übergang: Satz zu Version 1.0, Passwort festlegen mit Code aus der Adr
   await waitFor(() => expect(calls).toEqual([{ url: '/api/auth/setup', method: 'POST', body: { code: 'K7QM-4XPA-9TRW', withoutPassword: true } }]))
   // Der Server gibt danach einen neuen Code aus; der aus der Adresse gilt nicht mehr
   await waitFor(() => expect(clearSetupCode).toHaveBeenCalled())
+})
+
+// Ein Bestand im Programmfenster mit Zugriff aus dem Heimnetz (#692): Das Fenster ist angemeldet und sieht die Karte in
+// der Einrichtung. Es legt das Passwort ohne Code fest oder verzichtet ausdrücklich darauf.
+test('Einrichtung im Fenster: Passwort festlegen ohne Code, „Ohne Passwort weiter …“ mit Rückfrage', async () => {
+  const { calls } = setup({ ...base, mode: 'setup', window: true, runtime: 'desktop' })
+  expect(document.body.textContent).toContain('Mietfuchs verlangt ein Passwort, es ist aber noch keines festgelegt.')
+  fireEvent.click(screen.getByRole('button', { name: 'Passwort festlegen' }))
+  expect(within(drawer()).queryByLabelText('Einrichtungscode')).toBeNull()
+  fireEvent.click(within(drawer()).getByRole('button', { name: 'Ohne Passwort weiter …' }))
+  const question = await screen.findByRole('alertdialog')
+  fireEvent.click(within(question).getByRole('button', { name: 'Ohne Passwort weiter' }))
+  await waitFor(() => expect(calls).toEqual([{ url: '/api/auth/setup', method: 'POST', body: { withoutPassword: true } }]))
 })
 
 test('„Das bisherige Passwort stimmt nicht.“ steht am Feld', async () => {

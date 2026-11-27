@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import type { AccessInfo } from './access'
 import {
   accessView, codeFromHash, codePlaces, failedAttemptsText, passwordProblems, showsAccessCard, showsSignOut,
-  setupErrorField, showsTransitionHint, takeSetupCode, waitText, withoutSetupHash,
+  setupErrorField, accessHintOf, takeSetupCode, waitText, withoutSetupHash,
 } from './accessView'
 import { ApiError } from './api'
 import { passphrase, PASSPHRASE_WORDS } from './passphrase'
@@ -25,9 +25,15 @@ describe('Ansicht', () => {
     expect(accessView(null)).toBe('app')
   })
   test('Übergang mit Hinweis; Abmelden nur mit Sitzung und nicht im Fenster', () => {
-    expect(showsTransitionHint(info({ mode: 'transition', required: false }))).toBe(true)
-    expect(showsTransitionHint(info({ mode: 'off', required: false }))).toBe(false)
-    expect(showsTransitionHint(null)).toBe(false)
+    expect(accessHintOf(info({ mode: 'transition', required: false }))).toBe('open')
+    expect(accessHintOf(info({ mode: 'off', required: false }))).toBeNull()
+    expect(accessHintOf(null)).toBeNull()
+    // Programmfenster mit Heimnetz in der Einrichtung (#692): das Fenster arbeitet weiter, andere Geräte sehen die
+    // Einrichtung; der Hinweis führt zur Karte „Anmeldung“
+    expect(accessHintOf(info({ mode: 'setup', window: true, signedIn: true, reachable: 'network' }))).toBe('setup')
+    expect(accessHintOf(info({ mode: 'setup', window: true, signedIn: true, reachable: 'local' }))).toBeNull()
+    expect(accessHintOf(info({ mode: 'setup', window: false, signedIn: false }))).toBeNull()
+    expect(accessHintOf(info({ mode: 'password', window: true, signedIn: true }))).toBeNull()
     expect(showsSignOut(info({ signedIn: true }))).toBe(true)
     expect(showsSignOut(info({ signedIn: true, window: true }))).toBe(false)
     // Ein gekoppeltes Fenster bleibt über seinen Geräteschlüssel angemeldet; Abmelden bewirkte nichts
@@ -84,6 +90,13 @@ describe('Sätze', () => {
     expect(codePlaces(info({ runtime: 'docker', codeFileName: 'einrichtungscode.txt' })).join(' ')).toMatch(/einrichtungscode\.txt/)
     expect(codePlaces(info({ runtime: 'binary', codeFile: 'C:\\Mietfuchs\\data\\einrichtungscode.txt' })).join(' ')).toMatch(/Konsolenfenster/)
     expect(codePlaces(info({ runtime: 'binary', codeFile: 'C:\\Mietfuchs\\data\\einrichtungscode.txt' })).join(' ')).toContain('C:\\Mietfuchs\\data\\einrichtungscode.txt')
+    // Das Programmfenster hat kein Konsolenfenster (#692): Wer vom Handy kommt, legt das Passwort im Fenster ohne Code fest
+    for (const runtime of ['desktop', 'store']) {
+      const places = codePlaces(info({ runtime, codeFileName: 'einrichtungscode.txt' })).join(' ')
+      expect(places).toContain('Im Programmfenster von Mietfuchs legen Sie das Passwort ohne Code fest: in den Einstellungen unter „Anmeldung“.')
+      expect(places).not.toMatch(/Konsolenfenster/)
+      expect(places).toMatch(/einrichtungscode\.txt/)
+    }
   })
   test('Fehlversuche seit der letzten Anmeldung, Wartezeit', () => {
     expect(failedAttemptsText(0)).toBeNull()

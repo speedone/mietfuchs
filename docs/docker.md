@@ -120,10 +120,22 @@ Mit `NKA_AUTH=on` oder `off` zeigt die Karte in den Einstellungen nur noch an, w
 
 ### Container von vor Version 0.17
 
-Ein Volume, das schon Daten hatte, bleibt nach dem Update **offen wie bisher**: Unten in der
-Seitenleiste steht „Ohne Passwort im Netz“, und das Protokoll nennt einen Einrichtungscode. Mit
-ihm legst du unter *Einstellungen → Anmeldung* ein Passwort fest, ab dann gilt es. **Ab Version
-1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.** Für die Daten selbst ist nichts zu tun.
+In 0.17 und 0.18 blieb ein Volume, das schon Daten hatte, nach dem Update offen, mit dem Hinweis
+„Ohne Passwort im Netz“. **Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs
+auch hier ein Passwort:** Nach `docker compose pull && docker compose up -d` zeigt der Browser statt
+deiner Daten die Seite „Mietfuchs einrichten“. **Die Daten sind unverändert da** und erscheinen
+wieder, sobald du dort den Einrichtungscode eingetragen und ein Passwort festgelegt hast. Den Code
+zeigt `docker compose logs mietfuchs` (Zeile „Einrichtungscode: …“), er steht auch in
+`einrichtungscode.txt` im Volume. Für die Daten selbst ist nichts zu tun.
+
+- **Ohne Browser einrichten:** Gib das Passwort mit `NKA_PASSWORD_FILE` vor
+  ([oben](#passwort-beim-ersten-start-vorgeben-nka_password_file)); es gilt, solange noch nichts
+  entschieden ist, also auch für ein solches Volume.
+- **Bewusst ohne Passwort:** Trag auf der Seite den Code ein und wähle „Ohne Passwort weiter …“, oder
+  setze `NKA_AUTH: "off"` (Tabelle oben), wenn ein Proxy davor selbst nach einem Passwort fragt oder
+  nur dieses Gerät an den Port kommt.
+- **Schon entschieden:** Wer in 0.17 oder 0.18 ein Passwort festgelegt, „Ohne Passwort weiter“
+  gewählt oder `NKA_AUTH=off` gesetzt hat, merkt nichts.
 
 ## Welche Datei nehme ich?
 

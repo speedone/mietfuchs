@@ -713,7 +713,7 @@ const GUIDE_DATA = {
       { text: 'Beim ersten Öffnen zeigt Mietfuchs „Mietfuchs einrichten“. Tragen Sie den „Einrichtungscode“ ein: Er steht im Konsolenfenster von Mietfuchs, bei Docker in der Ausgabe von docker compose logs mietfuchs, und in der Datei einrichtungscode.txt im Datenordner.' },
       { text: 'Tragen Sie unter „Passwort“ und „Passwort wiederholen“ ein Passwort mit mindestens 15 Zeichen ein; „Passwort vorschlagen“ trägt vier zufällige Wörter ein, die Sie sich aufschreiben. Klicken Sie auf „Passwort festlegen“.' },
       { text: 'Auf jedem anderen Gerät melden Sie sich mit diesem Passwort und „Anmelden“ an. Am Ende melden Sie sich unten in der Seitenleiste mit „Abmelden“ ab.' },
-      { page: 'einstellungen', text: 'Läuft Mietfuchs schon länger ohne Passwort im Netz, steht unten in der Seitenleiste „Ohne Passwort im Netz“. Es führt zur Karte „Anmeldung“: Klicken Sie dort auf „Passwort festlegen“, tragen Sie Einrichtungscode und Passwort ein und klicken Sie auf „Speichern“.' },
+      { page: 'einstellungen', text: 'Lief Mietfuchs bisher ohne Passwort im Netz, zeigt es nach dem Update ebenfalls „Mietfuchs einrichten“ statt Ihrer Daten. Die Daten sind unverändert da: Gehen Sie vor wie beim ersten Öffnen, danach erscheinen sie wieder. Im Programmfenster mit Zugriff aus dem Heimnetz arbeiten Sie weiter wie bisher und legen das Passwort für die anderen Geräte in den Einstellungen in der Karte „Anmeldung“ mit „Passwort festlegen“ fest, ohne Code.' },
       { page: 'einstellungen', text: 'Ändern lässt sich das Passwort in der Karte „Anmeldung“ mit „Passwort ändern“. Ist ein Handy verloren, melden Sie dort mit „Auf allen Geräten abmelden“ jedes andere Gerät ab. Gekoppelte Programmfenster bleiben dabei angemeldet; die entfernen Sie einzeln in der Liste darunter.' },
       { text: 'Passwort vergessen: Legen Sie im Datenordner von Mietfuchs eine leere Datei mit dem Namen passwort-zuruecksetzen an, im Container mit docker compose exec mietfuchs touch /app/server/data/passwort-zuruecksetzen. Laden Sie die Seite danach neu; Mietfuchs fragt dann wie beim ersten Öffnen nach Einrichtungscode und neuem Passwort.' },
     ],
@@ -727,7 +727,7 @@ const GUIDE_DATA = {
     example: 'Ein Passwort aus vier Wörtern wie tisch-garten-wolke-ofen hat 23 Zeichen; Mietfuchs verlangt mindestens 15. Der Einrichtungscode hat 12 Zeichen in drei Gruppen, etwa K7QM-4XPA-9TRW. Eine Anmeldung gilt bis 30 Minuten ohne Aktivität und höchstens 8 Stunden.',
     caveats: [
       { text: 'Im Browser geht das Passwort im Heimnetz ohne Verschlüsselung über die Leitung (HTTP); wer den Verkehr im selben Netz mitschneidet, kann es lesen. Nutzen Sie Mietfuchs deshalb nur in einem Netz, dem Sie vertrauen, nicht in einem öffentlichen WLAN.' },
-      { text: 'Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs im Netz ein Passwort. Wer bis dahin bewusst „Ohne Passwort weiter“ gewählt hat, bleibt dabei; jedes Gerät in Ihrem Netz kann dann Ihre Daten sehen und ändern.' },
+      { text: 'Im Netz verlangt Mietfuchs ein Passwort, auch für Daten aus der Zeit vor der Anmeldung. Wer bewusst „Ohne Passwort weiter …“ gewählt hat, bleibt dabei; jedes Gerät in Ihrem Netz kann dann Ihre Daten sehen und ändern.' },
       { text: 'Der Einrichtungscode gilt nur bis zur Einrichtung. Geben Sie ihn nicht weiter: Wer ihn kennt, kann bis dahin das Passwort festlegen.' },
     ],
     gaps: [

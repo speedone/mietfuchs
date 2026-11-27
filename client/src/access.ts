@@ -4,7 +4,7 @@
 // folgt, entscheidet accessView.ts.
 import { createContext, useContext } from 'react'
 
-// Was der Server meldet; `transition` ist der Übergang der Stufe A, `none` heißt: nichts nötig und nichts entschieden.
+// Was der Server meldet; `transition` heißt offen mit Hinweis (Proxy vor einem lokalen Mietfuchs), `none` heißt: nichts nötig und nichts entschieden.
 export type AccessMode = 'setup' | 'password' | 'off' | 'transition' | 'none'
 export type AccessInfo = {
   mode: AccessMode
@@ -25,6 +25,10 @@ export type AccessInfo = {
   codeFileName?: string
   // Programmfenster koppeln (#528, Schritt 2): ob der Server das kann (Passwort und HTTPS) und wie viele gekoppelt sind
   pairing?: { available: boolean; devices: number }
+  // Nur in der Einrichtung (#692): Hier liegen Daten, die nach der Einrichtung wieder erscheinen
+  stock?: true
+  // Umgezogener Ordner ohne Entscheidung (#692, #517): der Satz des Vermerks statt der Einrichtung
+  moved?: string
 }
 
 const MODES: readonly AccessMode[] = ['setup', 'password', 'off', 'transition', 'none']
@@ -47,6 +51,8 @@ export function accessInfoOf(raw: unknown): AccessInfo | null {
     runtime: typeof raw.runtime === 'string' ? raw.runtime : '',
     ...(typeof raw.codeFile === 'string' && raw.codeFile ? { codeFile: raw.codeFile } : {}),
     ...(typeof raw.codeFileName === 'string' && raw.codeFileName ? { codeFileName: raw.codeFileName } : {}),
+    ...(raw.stock === true ? { stock: true as const } : {}),
+    ...(typeof raw.moved === 'string' && raw.moved ? { moved: raw.moved } : {}),
     ...(isObject(raw.pairing) ? { pairing: { available: raw.pairing.available === true, devices: typeof raw.pairing.devices === 'number' ? raw.pairing.devices : 0 } } : {}),
   }
 }

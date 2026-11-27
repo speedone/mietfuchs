@@ -120,12 +120,12 @@ import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRun
 import { checkRequest, guardPolicy, originHostRefusal } from './requestGuard.ts'
 import { authSetting, fromThisComputer as fromThisComputerAt, readEnvPassword } from './access.ts'
 import { createProxyTrust } from './trustProxy.ts'
-import { createAccess } from './accessServer.ts'
+import { createAccess, secondStartUrl } from './accessServer.ts'
 import { createDualServer } from './dualPort.ts'
 import { ensureCertificate, readCertificate } from './tls.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
-  ADOPT_UNCHANGED, classifyChoice, damagedStockText, placeOf, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, markStock, stockChanged, memoByStamp, copyAndHash, writePending, readPending, clearPending, switchedOver, type StockMark, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
+  ADOPT_UNCHANGED, classifyChoice, damagedStockText, placeOf, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, markStock, stockChanged, memoByStamp, copyAndHash, writePending, readPending, clearPending, switchedOver, type StockMark, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedAwayPublicMessage, movedDate, originalCounts, readDecision,
   readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders, searchRoots, stockKind,
   writeDecision, writeMovedMarker, type CandidateInfo, type FileSize, type MovedMarker,
 } from './relocation.ts'
@@ -5590,6 +5590,18 @@ function notifyDesktop(message: string): void {
   }
 }
 
+// Die Adresse für den Browser beim zweiten Start (#692): in der Einrichtung mit dem Code im Fragment wie beim ersten
+// Start (`secondStartUrl`: Code aus der Datei im eigenen Datenordner, nur für denselben Datenordner). Scheitert eine
+// Abfrage, bleibt es bei der blanken Adresse.
+async function runningUrl(running: string): Promise<string> {
+  try {
+    const ask = async (urlPath: string): Promise<unknown> => (await fetch(`${running}${urlPath}`, { signal: AbortSignal.timeout(PROBE_ATTEMPT_MS) })).json()
+    return secondStartUrl(running, { auth: await ask('/api/auth'), health: await ask('/healthz'), dataDir: DATA_DIR })
+  } catch {
+    return running
+  }
+}
+
 // Der Start endet hier, ohne dass die Datenbank berührt wurde. Fehler von node:net tragen
 // `code`, das Error selbst nicht.
 async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
@@ -5599,7 +5611,7 @@ async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
     // Oberfläche nach vorn (#45).
     if (STANDALONE && await mietfuchsAlreadyOn(running)) {
       console.log(`Mietfuchs läuft bereits auf ${running}. Die Oberfläche wird geöffnet.`)
-      if (!ciSet(process.env) && !IN_WINDOW) openBrowser(running)
+      if (!ciSet(process.env) && !IN_WINDOW) openBrowser(await runningUrl(running))
       process.exit(0)
     }
     const message = `Port ${PORT} ist bereits belegt. Dort antwortet ein anderes Programm. Mit NKA_PORT lässt sich ein anderer Port setzen.`
@@ -5736,8 +5748,8 @@ const startDelayMs = Number(process.env.NKA_TEST_START_DELAY_MS || 0)
 if (startDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, startDelayMs))
 
 // Der Zugang (#528), bevor die Datenbank geöffnet wird: Danach läge in jedem Ordner ein Bestand (`hasStock`), und ein
-// neuer Datenordner im Netz soll in der Einrichtung starten (Stufe A)
-ACCESS.start({ hasStock: hasStock(DATA_DIR) })
+// Datenordner ohne Entscheidung soll im Netz in der Einrichtung starten. Im umgezogenen Ordner schreibt er nichts (#692).
+ACCESS.start({ moved: MOVED_AWAY ? { message: movedAwayMessage(MOVED_AWAY), publicMessage: movedAwayPublicMessage(MOVED_AWAY) } : null })
 await ACCESS.applyEnvPassword()
 
 // Ein umgezogener Ordner (#517) wird nur gelesen: Geöffnet wird eine Kopie außerhalb, sonst migrierte dieser Start die
@@ -5773,6 +5785,15 @@ let changeover: ChangeoverResult = database
 database = changeover.database
 if (!database) openProblem = openProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
 if (changeover.state === 'done') await markBarrier('changeover')
+// Anmeldung (#692): Liegen wirklich Daten da, sagt die Einrichtung, dass sie unverändert sind. Lässt sich die Datenbank
+// nicht öffnen, entscheidet die Datei (wie hasOwnStock).
+// Ein Fehler beim Lesen beendet den Start nicht: Dann entscheidet die Datei, und das Protokoll nennt ihn.
+try {
+  ACCESS.noteStock(database ? await database.read(carriesStock) : hasStock(DATA_DIR))
+} catch (err) {
+  console.error(`Ob Daten vorhanden sind, ließ sich nicht lesen: ${(err as Error).message}`)
+  ACCESS.noteStock(hasStock(DATA_DIR))
+}
 // Erst jetzt, denn ob die Sicherung ein Rückweg ist, hängt am Ausgang des Umstiegs.
 const backupOfThisStart = noteAfterChangeover(changeover.state, backupBeforeChangeover)?.file ?? null
 

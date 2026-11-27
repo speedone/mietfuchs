@@ -143,6 +143,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **Passwort im Netz jetzt auch für bestehende Installationen; bitte vor dem Update lesen**
+  ([#692](https://github.com/speedone/mietfuchs/issues/692)). Wer Mietfuchs schon vor 0.17 im Netz genutzt und seither
+  weder ein Passwort festgelegt noch „Ohne Passwort weiter“ gewählt hat, sah bisher nur den Hinweis „Ohne Passwort im
+  Netz“. **Dazu zählen Programmdatei (Windows, macOS, Linux), Linux-Paket, Docker und `npm start`, auch bei Nutzung an
+  nur einem Rechner**, denn ohne `NKA_HOST` ist Mietfuchs aus dem Heimnetz erreichbar; die Programmdatei öffnet die
+  Einrichtung mit dem Code schon eingetragen. Nach dem Update zeigen Browser, Handy und Tablet stattdessen die Seite
+  „Mietfuchs einrichten“. Wer nur an diesem Rechner arbeitet, kann stattdessen mit `NKA_HOST=127.0.0.1` starten und
+  braucht dann kein Passwort. Die Daten
+  sind unverändert da und erscheinen wieder, sobald dort mit dem Einrichtungscode ein Passwort festgelegt ist. Den Code
+  nennen Konsolenfenster bzw. Protokoll (in Docker `docker compose logs mietfuchs`) und die Datei `einrichtungscode.txt`
+  im Datenordner; im Programmfenster legen Sie das Passwort ohne Code unter *Einstellungen → Anmeldung* fest und
+  arbeiten bis dahin weiter wie bisher; unten in der Seitenleiste führt „Passwort für andere Geräte festlegen“ dorthin.
+  `NKA_PASSWORD_FILE` gibt das Passwort ohne Browser vor. Wer bewusst ohne
+  Passwort arbeitet, wählt auf der Seite „Ohne Passwort weiter …“ oder setzt `NKA_AUTH=off`. Lauscht Mietfuchs nur auf
+  diesem Rechner (127.0.0.1), ändert sich nichts, ebenso für alle, die schon entschieden haben. Ein umgezogener
+  Datenordner lässt sich am Rechner selbst weiter ansehen; andere Geräte sehen statt der Einrichtung den Hinweis auf
+  den Umzug, ohne den neuen Ort. Schritte in [MIGRATION.md](MIGRATION.md).
 - CO₂-Kosten bei Abrechnung durch einen Messdienst: Hilfetext und Anleitung nennen jetzt auch für die Abrechnung von
   ista, wo die Summe der Kosten aller Nutzer steht (Abschnitt „Aufteilung der Gesamtkosten“, Zeile „Heiz- und
   Warmwasserkosten“) und wie die Abzugszeile des CO₂-Anteils des Vermieters heißt; Grundlage ist die öffentliche

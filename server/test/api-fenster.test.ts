@@ -11,7 +11,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { UpdateStatus } from '../../shared/types.ts'
+import { createProperty } from '../src/db/repository.ts'
 import { startServerIn, startServerRaw, waitForExit } from '../testing/api.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 
 const freshDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
 
@@ -304,6 +306,30 @@ test('Fensterschlüssel: angemeldet ohne Cookie, Einrichtung ohne Code, nur übe
     if (!lan) return t.skip('keine Netzwerkkarte')
     const fromLan = await send(`http://${lan}:${new URL(s.base).port}`, { urlPath: '/api/units', headers: windowHeaders() })
     assert.equal(fromLan.status, 401)
+  } finally {
+    s.stop()
+  }
+})
+
+// Stufe B (#692): Ein Bestand, dessen Fenster schon vor der Anmeldung „Zugriff aus dem Heimnetz“ erlaubt hat, verlangt
+// jetzt auf anderen Geräten ein Passwort. Das Fenster selbst bleibt angemeldet, zeigt den Bestand und legt das Passwort
+// ohne Code fest.
+test('Fensterschlüssel: Bestand mit Zugriff aus dem Heimnetz, das Fenster bleibt drin, andere Geräte brauchen die Einrichtung', async () => {
+  const dir = freshDir()
+  const opened = await openFreshDatabase(dir)
+  await createProperty(opened.db, 'haus-am-see', { name: 'Haus am See' })
+  opened.close()
+  const s = await startServerIn(dir, { NKA_RUNTIME: 'desktop', NKA_HOST: '0.0.0.0', NKA_WINDOW_KEY: WINDOW_KEY })
+  try {
+    const auth = await (await fetch(`${s.base}/api/auth`, { headers: windowHeaders() })).json() as { mode: string, required: boolean, window: boolean, signedIn: boolean }
+    assert.deepEqual([auth.mode, auth.required, auth.window, auth.signedIn], ['setup', true, true, true])
+    const properties = await (await fetch(`${s.base}/api/properties`, { headers: windowHeaders() })).json() as { id: string }[]
+    assert.ok(properties.some((p) => p.id === 'haus-am-see'), 'das Fenster zeigt den Bestand')
+    assert.equal((await fetch(`${s.base}/api/properties`)).status, 401)
+    const setup = await fetch(`${s.base}/api/auth/setup`, { method: 'POST', headers: { ...windowHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ password: 'ein langes Fensterpasswort' }) })
+    assert.equal(setup.status, 200)
+    const login = await fetch(`${s.base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'ein langes Fensterpasswort' }) })
+    assert.equal(login.status, 200)
   } finally {
     s.stop()
   }

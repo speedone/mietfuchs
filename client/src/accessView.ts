@@ -16,12 +16,20 @@ export function accessView(info: AccessInfo | null): AccessViewKind {
   return 'app'
 }
 
-// Im Übergang (bestehender Bestand im Netz, noch nichts entschieden) ein ruhiger Hinweis in der Seitenleiste
-export const showsTransitionHint = (info: AccessInfo | null): boolean => info?.mode === 'transition'
+// Offen mit Hinweis (`transition`): ein ruhiger Hinweis in der Seitenleiste. Seit der Pflicht im Netz (#692) meldet der
+// Server das nur noch, wenn ein Proxy vor einem lokal lauschenden Mietfuchs ohne Passwort steht.
+// Im Programmfenster mit Heimnetz in der Einrichtung (#692): Das Fenster ist über seinen Schlüssel angemeldet und arbeitet
+// weiter, andere Geräte sehen bis zum Passwort die Einrichtung. Auch das steht ruhig in der Seitenleiste.
+export type AccessHintKind = 'open' | 'setup'
+export function accessHintOf(info: AccessInfo | null): AccessHintKind | null {
+  if (info?.mode === 'transition') return 'open'
+  if (info?.mode === 'setup' && info.window && info.reachable === 'network') return 'setup'
+  return null
+}
 // „Abmelden“ nur mit einer Sitzung; das Fenster ist über seinen Schlüssel angemeldet, ein gekoppeltes Fenster über
 // seinen Geräteschlüssel, und beide bleiben es auch nach dem Abmelden
 export const showsSignOut = (info: AccessInfo | null): boolean => !!info && info.signedIn && !info.window && !info.device && info.mode === 'password'
-// Die Karte „Anmeldung“: im Netz erreichbar, mit Passwort oder im Übergang
+// Die Karte „Anmeldung“: im Netz erreichbar, mit Passwort oder offen mit Hinweis
 export const showsAccessCard = (info: AccessInfo | null): boolean =>
   !!info && (info.reachable === 'network' || info.mode === 'password' || info.mode === 'transition')
 
@@ -89,7 +97,10 @@ export function setupErrorField(e: unknown): AccessField | null {
 // Wo der Einrichtungscode steht, je Betriebsart. Den vollen Pfad nennt der Server nur am Rechner selbst.
 export function codePlaces(info: AccessInfo): string[] {
   const file = info.codeFile ?? (info.codeFileName ? `${info.codeFileName} im Datenordner von Mietfuchs` : 'einrichtungscode.txt im Datenordner von Mietfuchs')
-  const log = info.runtime === 'docker'
+  // Das Programmfenster hat kein Konsolenfenster; dort geht die Einrichtung ohne Code (Fensterschlüssel)
+  const log = info.runtime === 'desktop' || info.runtime === 'store'
+    ? 'Im Programmfenster von Mietfuchs legen Sie das Passwort ohne Code fest: in den Einstellungen unter „Anmeldung“.'
+    : info.runtime === 'docker'
     ? 'Auf dem Rechner, auf dem der Container läuft, zeigt ihn der Befehl docker compose logs mietfuchs.'
     : info.runtime === 'package'
       ? 'Er steht im Protokoll von Mietfuchs (etwa mit journalctl).'
@@ -129,7 +140,6 @@ export function accessStateText(info: AccessInfo): string {
   }
 }
 
-export const TRANSITION_NOTE = 'Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.'
 export const ENV_FIXED_NOTE = 'Von der Umgebung festgelegt (NKA_AUTH)'
 // Dieselbe Warnung an jeder Stelle, an der man ohne Passwort weitergeht oder die Anmeldung ausschaltet
 export const WITHOUT_PASSWORD_WARNING = 'Ohne Passwort kann jedes Gerät in Ihrem Netz Ihre Daten sehen und ändern. Wählen Sie das nur in einem Netz, dem Sie vertrauen, nicht in einem öffentlichen WLAN.'

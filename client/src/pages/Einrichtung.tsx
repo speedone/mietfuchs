@@ -62,6 +62,21 @@ export default function Einrichtung({ info, code: initialCode, onDone }: { info:
     if (ok) await send({ withoutPassword: true })
   }
 
+  // Ein umgezogener Ordner wird nicht mehr geändert (#517): Eingerichtet wird im neuen Mietfuchs, hier steht nur der Vermerk
+  if (info.moved) {
+    return (
+      <main className="stopped">
+        <div className="card text-left">
+          <div className="flex items-center gap-3 mb-4">
+            <FoxLogo size={40} />
+            <h1 className="m-0">Mietfuchs ist umgezogen</h1>
+          </div>
+          <p>{info.moved}</p>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="stopped">
       <div className="card text-left">
@@ -70,6 +85,9 @@ export default function Einrichtung({ info, code: initialCode, onDone }: { info:
           <h1 className="m-0">Mietfuchs einrichten</h1>
         </div>
         <p>Mietfuchs ist von anderen Geräten in Ihrem Netz erreichbar. Legen Sie ein Passwort fest, damit nur Sie Ihre Daten sehen.</p>
+        {/* Ein Bestand, der bisher offen im Netz stand, sieht nach dem Update diese Seite statt seiner Daten (#692); den
+            Satz gibt es nur, wenn der Server meldet, dass wirklich Daten da sind */}
+        {info.stock && <p className="muted">Haben Sie Mietfuchs bisher ohne Passwort genutzt? Ihre Daten sind unverändert da und erscheinen nach diesem Schritt wieder.</p>}
         {/* `stack` gibt den Feldern denselben Abstand wie in jeder Karte; die beiden Wege stehen in einer Zeile,
             der Hauptweg vorn (UI-Durchsicht 0.17.0) */}
         <form noValidate onSubmit={(e) => void submit(e)} className="stack">

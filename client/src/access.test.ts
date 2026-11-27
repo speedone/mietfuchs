@@ -50,6 +50,11 @@ test('der Zustand wird nur aus einer passenden Antwort gelesen', () => {
   expect(accessInfoOf({ mode: 'password', required: true, signedIn: false, window: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' }))
     .toEqual({ mode: 'password', required: true, signedIn: false, window: false, device: false, reachable: 'network', envFixed: false, minLength: 15, runtime: 'docker' })
   expect(accessInfoOf({ mode: 'password', signedIn: true, device: true })?.device).toBe(true)
+  // Stufe B (#692): Bestand mit Daten und umgezogener Ordner, nur in passender Form
+  expect(accessInfoOf({ mode: 'setup', stock: true })?.stock).toBe(true)
+  expect(accessInfoOf({ mode: 'setup', stock: 'ja' })?.stock).toBeUndefined()
+  expect(accessInfoOf({ mode: 'setup', moved: 'Ihre Daten sind umgezogen.' })?.moved).toBe('Ihre Daten sind umgezogen.')
+  expect(accessInfoOf({ mode: 'setup', moved: 3 })?.moved).toBeUndefined()
 })
 
 // Wächter: Ein roher `fetch(` ginge an der Anmeldung vorbei; die Seite bliebe dann stumm bei einem Fehler stehen.

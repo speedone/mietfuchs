@@ -7,10 +7,10 @@ import crypto from 'node:crypto'
 import path from 'node:path'
 import type { TLSSocket } from 'node:tls'
 import {
-  ACCESS_FILE, CODE_FILE, DEVICE_HEADER, DEVICE_NAME_MAX, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, deviceKeyHash, matchDevice, newDeviceId, newDeviceKey, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
+  ACCESS_FILE, CODE_ALPHABET, CODE_FILE, CODE_LENGTH, normalizeCode, DEVICE_HEADER, DEVICE_NAME_MAX, MAX_DEVICES, MIN_PASSWORD, PAIRING_MINUTES, deviceKeyHash, matchDevice, newDeviceId, newDeviceKey, RESET_FILE, clearedCookie, cookieName, cookieValues, createBrake, createHashQueue, createSessions, formatCode,
   gate, gateActive, hashPassword, initialAccess, needsRehash, newInstance, fromThisComputer, newSetupCode, passwordProblem, readAccessFile, reachableOf, removeCodeFile,
   sameCode, sameKey, sessionCookie, verifyPassword, viaHttps, proxyHeadersPresent, isLoopback, writeAccessFile, writeCodeFile,
-  channelOf, expectedProofs, pairingConfirmation, type Channel, type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword, type Stage,
+  channelOf, expectedProofs, pairingConfirmation, type Channel, type AccessFile, type AccessMode, type AccessState, type AttemptKind, type AuthSetting, type Device, type EnvPassword,
 } from './access.ts'
 import type { ProxyTrust } from './trustProxy.ts'
 
@@ -26,7 +26,6 @@ export type AccessOptions = {
   windowKey?: string | null
   // Passwort aus NKA_PASSWORD_FILE oder NKA_PASSWORD (`readEnvPassword`), übernommen mit `applyEnvPassword` nach `start`
   envPassword?: EnvPassword | null
-  stage?: Stage
   // Fingerabdruck des Zertifikats, gegen das ein Fenster seinen Beweis rechnet (#528, Schritt 2). Fehlt beim Bau oft
   // noch: Ein neues Zertifikat entsteht erst nach dem Binden (index.ts), dann setzt `useTls` es nach. `null` heißt
   // ohne HTTPS, dann gibt es keine Kopplung.
@@ -91,8 +90,36 @@ const minutesText = (seconds: number): string => {
 export const browserUrlFor = (url: string, mode: AccessState['mode'], code: string | null): string =>
   mode === 'setup' && code ? `${url}/#einrichtung=${formatCode(code)}` : url
 
+// Beim Start mit Bestand in der Einrichtung, auch im Protokoll von Docker: Wer bisher ohne Passwort im Netz gearbeitet
+// hat, sieht statt seiner Daten die Einrichtung (Stufe B, #692)
+export const STOCK_LINE = 'Ihre Daten sind unverändert vorhanden. Mietfuchs zeigt sie wieder, sobald Sie mit dem Einrichtungscode ein Passwort festgelegt haben.'
+
+// Der zweite Start der Programmdatei (Klick im Startmenü, während Mietfuchs schon läuft) öffnet die laufende Instanz. In
+// der Einrichtung bekommt der Browser den Code wie beim ersten Start. Gelesen wird er **aus der Datei im eigenen
+// Datenordner**, nie aus einer Antwort des anderen Prozesses, und nur, wenn der volle Zustandsbericht (den es nur vom
+// Rechner selbst gibt) denselben Datenordner nennt. In die Adresse geht nur, was wie ein Code aussieht; sie zeigt auf
+// 127.0.0.1, und ein Fragment verlässt den Browser nicht.
+export function secondStartUrl(url: string, { auth, health, dataDir }: { auth: unknown, health: unknown, dataDir: string }): string {
+  const field = (value: unknown, name: string): unknown => (value && typeof value === 'object' ? (value as Record<string, unknown>)[name] : undefined)
+  if (field(auth, 'mode') !== 'setup') return url
+  const theirs = field(health, 'dataDir')
+  if (typeof theirs !== 'string' || path.resolve(theirs) !== path.resolve(dataDir)) return url
+  let text: string
+  try {
+    text = fs.readFileSync(path.join(dataDir, CODE_FILE), 'utf8').trim()
+  } catch {
+    return url
+  }
+  const code = normalizeCode(text)
+  if (formatCode(code) !== text.toUpperCase() || code.length !== CODE_LENGTH || [...code].some((c) => !CODE_ALPHABET.includes(c))) return url
+  return browserUrlFor(url, 'setup', code)
+}
+
+// Vermerk eines umgezogenen Ordners (#517): `message` mit dem neuen Ort für den Rechner selbst, `publicMessage` ohne
+export type MovedNote = { message: string, publicMessage: string }
+
 export function createAccess(options: AccessOptions) {
-  const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, envPassword = null, stage = 'A', version = '', log = console.log, logError = console.error, now = Date.now } = options
+  const { dataDir, host, setting, runtime, inWindow = false, windowKey = null, envPassword = null, version = '', log = console.log, logError = console.error, now = Date.now } = options
   const pairingMs = (options.pairingSeconds ?? PAIRING_MINUTES * 60) * 1000
   let tls = options.tls ?? null
   const trustProxy = options.trustProxy ?? NO_PROXY
@@ -115,6 +142,8 @@ export function createAccess(options: AccessOptions) {
   let code: string | null = null
   let failedSinceLogin = 0
   const startLines: string[] = []
+  // Umgezogener Ordner ohne zugang.json: der Satz des Vermerks, sonst null (siehe `start`)
+  let frozen: MovedNote | null = null
   // Gekoppelte Programmfenster wie in zugang.json; `changedAt` der Datei bleibt beim Schreiben von `lastSeen` stehen
   let devices: Device[] = []
   let changedAt = ''
@@ -214,7 +243,7 @@ export function createAccess(options: AccessOptions) {
   }
 
   // Zustand beim Start, vor dem Öffnen der Datenbank (`hasStock` danach wäre immer wahr)
-  function start({ hasStock }: { hasStock: boolean }): void {
+  function start({ moved = null }: { moved?: MovedNote | null } = {}): void {
     const resetAtStart = setting !== 'off' && resetRequested()
     const read = readAccessFile(dataDir)
     if (read.problem) logError(read.problem)
@@ -234,14 +263,17 @@ export function createAccess(options: AccessOptions) {
         logError(`${RESET_FILE} ließ sich nicht löschen: ${(err as Error).message}. Bitte entfernen Sie die Datei, sonst setzt jeder Start das Passwort erneut zurück.`)
       }
     }
-    const initial = initialAccess({ reachable: state.reachable, setting, file, hasStock, stage })
+    const initial = initialAccess({ reachable: state.reachable, setting, file })
     state = { ...initial.state, proxyStrict: resetAtStart }
     const known = initial.write ?? (file && file !== 'corrupt' ? file : null)
     // Geräte nur mit Passwort: Eine von Hand geänderte Datei mit `off` oder `setup` ließe sie sonst bei einer späteren
     // Einrichtung wieder aufleben
     devices = known?.mode === 'password' ? known.devices ?? [] : []
     changedAt = known?.changedAt ?? ''
-    if (initial.write) {
+    // Ein umgezogener Ordner (#517) wird nur noch gelesen: Ohne Datei entsteht dort keine, auch kein Code. Streng bleibt
+    // es (der Zustand im Speicher ist `setup`), eingerichtet wird hier aber nichts mehr; die Oberfläche zeigt den Vermerk.
+    frozen = initial.write && moved !== null ? moved : null
+    if (initial.write && !frozen) {
       try {
         writeAccessFile(dataDir, initial.write)
       } catch (err) {
@@ -250,7 +282,11 @@ export function createAccess(options: AccessOptions) {
       }
     }
     startLines.length = 0
-    const open = state.mode === 'setup' || state.mode === 'transition' || state.mode === 'off'
+    const open = state.mode === 'setup' || state.mode === 'off'
+    if (frozen) {
+      startLines.push('Dieser Datenordner ist umgezogen und wird nicht mehr geändert. Mietfuchs legt hier deshalb kein Passwort an; andere Geräte sehen die alten Daten nicht.')
+      return
+    }
     if (setting !== 'off' && (exposed() || resetAtStart) && open) issueCode()
     else if (fs.existsSync(codePath)) dropCode()
     if (setting === 'off') {
@@ -260,21 +296,26 @@ export function createAccess(options: AccessOptions) {
     if (resetAtStart) startLines.push('Das Passwort ist zurückgesetzt (Datei passwort-zuruecksetzen). Bitte legen Sie ein neues fest.')
     if (state.mode === 'setup' && (exposed() || resetAtStart)) {
       startLines.push(exposed() ? 'Mietfuchs ist im Netz erreichbar und noch ohne Passwort.' : 'Mietfuchs ist noch ohne Passwort.', codeLine('Einrichtungscode'))
-    } else if (state.mode === 'transition') {
-      startLines.push(
-        'Mietfuchs ist im Netz erreichbar, aber ohne Passwort: Jedes Gerät in Ihrem Netz kann Ihre Daten sehen. Ab Version 1.0.0-rc.1, der ersten Testversion von 1.0, verlangt Mietfuchs hier ein Passwort.',
-        codeLine('Einrichtungscode zum Festlegen eines Passworts'),
-      )
     } else if (state.mode === 'off' && exposed()) {
       startLines.push('Die Anmeldung ist ausgeschaltet. Mietfuchs ist im Netz ohne Passwort erreichbar.', codeLine('Einrichtungscode zum Einschalten'))
     }
   }
 
+  // Liegen wirklich Daten im Bestand (`carriesStock`, nach dem Öffnen der Datenbank und dem Umstieg)? Dann sagen
+  // Protokoll und Einrichtungsseite, dass sie unverändert da sind (Stufe B, #692: Die Einrichtung ist kein Datenverlust).
+  // Eine neue Installation hat ab dem zweiten Start eine Datenbank, aber nichts darin; sie bekommt den Satz nicht. Nach
+  // außen geht nur dieses Ja oder Nein, und nur in der Einrichtung.
+  let carries = false
+  function noteStock(value: boolean): void {
+    carries = value
+    if (carries && !frozen && state.mode === 'setup' && exposed() && state.setting !== 'off' && code) startLines.push(STOCK_LINE)
+  }
+
   // ---------- Passwort aus der Umgebung ----------
   // Nach `start`, vor der ersten Anfrage (index.ts wartet darauf). Legt das Passwort nur fest, solange nichts entschieden
-  // ist (`setup`, Übergang, `none`), auch gleich nach einem Zurücksetzen: Ein festgelegtes Passwort und eine in der
-  // Oberfläche ausgeschaltete Anmeldung bleiben (Durchsicht S3). Ist die Angabe unbrauchbar, bleibt ein Übergang nicht
-  // offen, sondern wird zur Einrichtung (S2). Weder Passwort noch Wert stehen im Protokoll.
+  // ist (`setup`, `none`), auch gleich nach einem Zurücksetzen: Ein festgelegtes Passwort und eine in der
+  // Oberfläche ausgeschaltete Anmeldung bleiben (Durchsicht S3). Ist die Angabe unbrauchbar, bleibt es im Netz bei der
+  // Einrichtung mit Code (S2). Weder Passwort noch Wert stehen im Protokoll.
   async function applyEnvPassword(): Promise<void> {
     if (envPassword === null) return
     const { source } = envPassword
@@ -282,21 +323,13 @@ export function createAccess(options: AccessOptions) {
     if ('ignored' in envPassword && envPassword.ignored) notes.push(`${envPassword.ignored} wird neben ${source} nicht beachtet.`)
     const skip = (reason: string): void => void startLines.push(...notes, `${source} wird nicht übernommen: ${reason}`)
     if (setting === 'off') return skip('Die Anmeldung ist über NKA_AUTH=off abgeschaltet.')
+    if (frozen) return skip('Dieser Datenordner ist umgezogen und wird nicht mehr geändert.')
     if (state.mode === 'password') return skip(`Für Mietfuchs ist schon ein Passwort festgelegt. Ändern lässt es sich unter Einstellungen → Anmeldung; die Angabe ${source} können Sie entfernen.`)
     if (state.mode === 'off') return skip('Die Anmeldung ist in der Oberfläche ausgeschaltet. Einschalten lässt sie sich unter Einstellungen → Anmeldung mit dem Einrichtungscode.')
     const password = 'problem' in envPassword ? null : envPassword.password
     const problem = 'problem' in envPassword ? envPassword.problem : passwordProblem(password)
     if (problem !== null || password === null) {
       logError(`${'problem' in envPassword ? '' : `${source}: `}${problem} Das Passwort wird nicht übernommen.`)
-      if (state.mode === 'transition') {
-        try {
-          save(fileOf('setup'))
-        } catch (err) {
-          logError(`${ACCESS_FILE} ließ sich nicht schreiben: ${(err as Error).message}`)
-          state = { ...state, mode: 'setup', required: requiredFor('setup') }
-        }
-        if (!code) issueCode()
-      }
       if (state.mode === 'setup' && exposed()) {
         startLines.length = 0
         startLines.push(...notes, `Das Passwort aus ${source} ließ sich nicht übernehmen (siehe Fehlerausgabe). Mietfuchs bleibt deshalb geschützt, bis ein Passwort festgelegt ist.`, codeLine('Einrichtungscode'))
@@ -315,7 +348,7 @@ export function createAccess(options: AccessOptions) {
     }
     dropCode()
     sessions.revokeAll()
-    // Die Zeilen von `start` sprachen von Einrichtung, Übergang oder Zurücksetzen samt Code; das gilt nicht mehr
+    // Die Zeilen von `start` sprachen von Einrichtung oder Zurücksetzen samt Code; das gilt nicht mehr
     startLines.length = 0
     startLines.push(
       ...notes,
@@ -344,6 +377,10 @@ export function createAccess(options: AccessOptions) {
   const signedIn = (req: Request): boolean => atWindow(req) || hasSession(req) || deviceOf(req) !== null
 
   // ---------- Vorschaltung ----------
+  // Nicht bei NKA_AUTH=on: Dann ist die Anmeldung auch lokal verlangt, und ein Weiterleiter ohne Proxy-Kopfzeilen
+  // (ssh -L, netsh portproxy) sähe aus wie der Rechner selbst
+  const frozenHere = (req: Request): boolean => frozen !== null && setting !== 'on' && fromThisComputer(req.socket.remoteAddress, req.headers)
+
   async function middleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     checkReset(true)
     const proxied = proxyHeadersPresent(req.headers)
@@ -351,6 +388,14 @@ export function createAccess(options: AccessOptions) {
     const trustedPeer = proxied && await trustProxy.trusts(req.socket.remoteAddress)
     channels.set(req, channelOf({ encrypted: (req.socket as TLSSocket).encrypted === true, trustedPeer, headers: req.headers }))
     if (proxied) noticeProxy()
+    // Umgezogener Ordner ohne Entscheidung (#692): Am Rechner selbst gilt, was der Vermerk sagt, „nur noch ansehen“.
+    // Lesen geht ohne Anmeldung; Schreiben bekommt danach die 423 des Vermerks (index.ts), nicht die Einrichtung, die es
+    // hier nicht gibt. Von außen bleibt es streng.
+    if (frozenHere(req)) {
+      if (/^\/(api|uploads|healthz)(\/|$)/i.test(req.path)) res.setHeader('Cache-Control', 'no-store')
+      res.locals.shortHealth = false
+      return void next()
+    }
     const signed = signedIn(req)
     const decision = gate(state, {
       method: req.method,
@@ -470,7 +515,8 @@ export function createAccess(options: AccessOptions) {
     const device = deviceOf(req) !== null
     return {
       mode: state.mode,
-      required: gateActive(state, proxyHeadersPresent(req.headers)),
+      // Im umgezogenen Ordner gilt am Rechner selbst „nur noch ansehen“, keine Einrichtung (`frozenHere`)
+      required: gateActive(state, proxyHeadersPresent(req.headers)) && !frozenHere(req),
       signedIn: window || device || hasSession(req),
       window,
       device,
@@ -478,6 +524,11 @@ export function createAccess(options: AccessOptions) {
       envFixed: setting !== 'auto',
       minLength: MIN_PASSWORD,
       runtime,
+      // Nur in der Einrichtung, nur Ja: Hier liegen Daten, die nach der Einrichtung wieder erscheinen
+      ...(state.mode === 'setup' && carries && !frozen ? { stock: true } : {}),
+      // Umgezogener Ordner ohne Entscheidung: statt der Einrichtung der Vermerk
+      // Der Pfad des neuen Orts nur am Rechner selbst (er nennt meist den Benutzernamen)
+      ...(frozen ? { moved: here || window ? frozen.message : frozen.publicMessage } : {}),
       // Der volle Pfad nur am Rechner selbst; von außen der Name (der Datenordner nennt den Benutzer)
       ...(code ? (here || window ? { codeFile: codePath } : { codeFileName: CODE_FILE }) : {}),
       // Die Zahl der Geräte nur für wen, der sie auch verwalten darf
@@ -526,6 +577,8 @@ export function createAccess(options: AccessOptions) {
       checkReset()
       if (setting === 'off') return res.status(409).json({ error: 'Die Anmeldung ist über NKA_AUTH=off abgeschaltet.' })
       if (state.mode === 'password') return res.status(409).json({ error: 'Ein Passwort ist schon festgelegt. Ändern lässt es sich in den Einstellungen.' })
+      // Im umgezogenen Ordner wird nichts mehr eingerichtet (dort entstünde zugang.json)
+      if (frozen) return res.status(423).json({ error: fromThisComputer(req.socket.remoteAddress, req.headers) ? frozen.message : frozen.publicMessage })
       const body = bodyOf(req)
       const withoutPassword = body.withoutPassword === true
       const here = atWindow(req)
@@ -776,6 +829,7 @@ export function createAccess(options: AccessOptions) {
     middleware,
     install,
     startLines: (): readonly string[] => startLines,
+    noteStock,
     applyEnvPassword,
     // Das Zertifikat entsteht oft erst nach dem Bau (index.ts); ab dann lässt sich koppeln
     useTls: (next: { certSha256: string } | null): void => {

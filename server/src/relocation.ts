@@ -437,6 +437,12 @@ export function movedNoteText(marker: MovedMarker): string {
 }
 
 // Was eine aktuelle Fassung in einem umgezogenen Ordner auf jede Änderung antwortet und in der Oberfläche sagt.
+// Für Geräte ohne Anmeldung (#692): ohne den Pfad, er nennt meist den Benutzernamen. Ansehen geht nur am Rechner selbst.
+export function movedAwayPublicMessage(marker: MovedMarker): string {
+  return `Ihre Daten sind ins neue Mietfuchs umgezogen (am ${movedDate(marker.at)}). ` +
+    'Ansehen lassen sie sich hier nur noch am Rechner, auf dem Mietfuchs läuft; ändern Sie sie bitte im neuen Mietfuchs.'
+}
+
 export function movedAwayMessage(marker: MovedMarker): string {
   return `Ihre Daten sind ins neue Mietfuchs umgezogen (am ${movedDate(marker.at)} nach ${marker.movedTo}). ` +
     'Hier können Sie sie nur noch ansehen; ändern Sie sie bitte im neuen Mietfuchs.'
