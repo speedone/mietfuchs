@@ -169,7 +169,7 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
 // Energieträger, Pflicht: Von ihm hängt ab, ob CO₂-Kosten aufzuteilen sind. Seit PR 7 die
 // CO₂-Merkmale (§ 8, § 9, § 2 Abs. 4 Satz 2 CO2KostAufG); fehlen sie, hat die Anlage keine.
 export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
-  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith' | 'takesOverStock'>>
+  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'secondPrepaymentCoversWater' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith' | 'takesOverStock'>>
   // Eigene Heizkostenabrechnung (Heizung PR 10). Fehlt ein Feld, gilt die Vorgabe der Spalte
   // (`combined`, `area`, `degreeDays`); `capture` und die Angaben zur Wärmepumpe fehlen dann.
   & Partial<Pick<HeatingPlant, 'changeSplit' | 'hotWater' | 'capture' | 'areaBasisHeat' | 'capturedOnOct2024' | 'captureInstalledOn' | 'heatPumpInstalledOn' | 'selfSpans' | 'basisValues'>>

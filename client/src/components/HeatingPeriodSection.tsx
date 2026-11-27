@@ -16,6 +16,7 @@ import {
 } from '../heatingPeriodForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
+import SecondPrepaymentField from './SecondPrepaymentField'
 
 // Der Abschnitt „Zeitraum der Heizung“ einer Anlage in der Karte „Heizung“ (Heizung PR 5, Entwurf 11.2
 // Schritt 3): Zeitraum wechseln mit Vorschau, getrennte Heizkostenabrechnung ein- und ausschalten mit
@@ -246,6 +247,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
         {dangerAction && <span className="ml-auto">{dangerAction}</span>}
       </div>
       {hint && <p className="muted">{hint}</p>}
+      <SecondPrepaymentField plant={plant} onChanged={onChanged} notify={notify} />
       {open === 'none' && <ErrorSummary errors={errors} />}
 
       {open === 'period' && (

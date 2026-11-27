@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts } from '../types'
 import { ADJUSTMENT_MODES, adjustmentHint, exceedsOnePage, fieldsFor, LETTER_BLOCKS, sameAmountHint, splitSentence } from '../../../shared/letter.ts'
 import { EPC_PURPOSE_MAX, epcText } from '../../../shared/epcQr.ts'
+import { secondPrepaymentLabel } from '../../../shared/heatingModel.ts'
 import MonthField from './MonthField'
 import { monthLabel } from '../monthText'
 import { localToday } from '../periodForm'
@@ -59,6 +60,8 @@ type Props = {
 export type SplitInfo = {
   suggestedHeatingCents: number | null
   heatingCents: number | null
+  // #712: Die zweite Vorauszahlung deckt laut Aufstellung auch Wasser/Abwasser; Feld, Satz und Meldungen nennen sie dann so.
+  coversWater?: boolean
   at: (month: string) => { beforeCents: number; unchangedCents: number | null; totalBeforeCents: number | null } | null
 }
 
@@ -87,7 +90,8 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
   // #704: zwei Staffeln im Monat der Anpassung; dann gehört zum eigenen Betrag sein Teil für Heizung und Warmwasser.
   const splitNow = level === 'tenancy' && adjust?.split && draft.adjust !== 'none' ? adjust.split.at(/^\d{4}-\d{2}$/.test(shownFrom) ? shownFrom : adjust.defaultFrom ?? '') : null
   const heatingPart = !splitNow ? null : draft.adjust === 'custom' ? customHeatingCentsOf(draft) : adjust?.split?.suggestedHeatingCents ?? null
-  const splitText = splitNow && draftCents !== null && heatingPart !== null && heatingPart <= draftCents ? splitSentence(draftCents, heatingPart, splitNow.totalBeforeCents, splitNow.beforeCents) : ''
+  const splitText = splitNow && draftCents !== null && heatingPart !== null && heatingPart <= draftCents ? splitSentence(draftCents, heatingPart, splitNow.totalBeforeCents, splitNow.beforeCents, adjust?.split?.coversWater === true) : ''
+  const secondPart = secondPrepaymentLabel(adjust?.split?.coversWater)
   const lacksSplit = !!splitNow && splitlessAdjustTexts(draft, base, level).length > 0
   // Gleiche Summe mit anderen Teilen ist eine Anpassung (wie `buildLetter`); nennt der Text die Teile nicht, zählt nur die Summe.
   const partsDiffer = !!splitNow && !lacksSplit && heatingPart !== null && heatingPart !== splitNow.unchangedCents
@@ -103,7 +107,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
 
   function save() {
     void run(async () => {
-      const problems = letterProblems(draft, base, level, { split: !!splitNow })
+      const problems = letterProblems(draft, base, level, { split: !!splitNow, coversWater: adjust?.split?.coversWater === true })
       if (problems.length > 0) {
         errors.report(problems)
         return
@@ -190,12 +194,12 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
           </Field>
         )}
         {level === 'tenancy' && draft.adjust === 'custom' && splitNow && (
-          <Field label="Davon für Heizung und Warmwasser (€)" width="s" required hint={`Der Rest gilt den übrigen Nebenkosten. Bisher ${fmtEuro(splitNow.beforeCents)} für Heizung und Warmwasser.`} {...errors.field('customHeatingCents')}>
+          <Field label={`Davon für ${secondPart} (€)`} width="s" required hint={`Der Rest gilt den übrigen Nebenkosten. Bisher ${fmtEuro(splitNow.beforeCents)} für ${secondPart}.`} {...errors.field('customHeatingCents')}>
             <input inputMode="decimal" value={draft.customHeatingCents ?? ''} onChange={(e) => setDraft((d) => ({ ...d, customHeatingCents: e.target.value }))} />
           </Field>
         )}
         {level === 'tenancy' && draft.adjust === 'suggestion' && splitNow && heatingPart !== null && draftCents !== null && (
-          <p className="muted">{`Vom Vorschlag entfallen ${fmtEuro(heatingPart)} auf Heizung und Warmwasser und ${fmtEuro(draftCents - heatingPart)} auf die übrigen Nebenkosten, nach den Kosten dieser Abrechnung.`}</p>
+          <p className="muted">{`Vom Vorschlag entfallen ${fmtEuro(heatingPart)} auf ${secondPart} und ${fmtEuro(draftCents - heatingPart)} auf die übrigen Nebenkosten, nach den Kosten dieser Abrechnung.`}</p>
         )}
         {hint && <NoticeBox level="hint" action={hint} />}
         {level === 'tenancy' && draft.adjust !== 'none' && (
@@ -218,7 +222,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
         )}
       </fieldset>}
       {/* K3 der Durchsicht zu PR #435: auf jeder Ebene, auch ohne Auswahl der Anpassung (Objekt) */}
-      {lacksSplit && <NoticeBox level="hint" action="Ihr Text zur Anpassung nennt die Teile für Heizung und übrige Nebenkosten nicht. Mit dem Platzhalter {Aufteilung} steht im Brief, um wie viel sich jede der beiden Vorauszahlungen ändert." />}
+      {lacksSplit && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt die Teile für ${secondPrepaymentLabel(adjust?.split?.coversWater, 'short')} und übrige Nebenkosten nicht. Mit dem Platzhalter {Aufteilung} steht im Brief, um wie viel sich jede der beiden Vorauszahlungen ändert.`} />}
       {lacksMonth && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt den Monat nicht. Mit dem Platzhalter {AnpassungAb} steht ${level === 'tenancy' && /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : 'der Monat'} im Brief, und „In die Staffel übernehmen“ nimmt nach dem Abschluss denselben Monat.`} />}
       {LETTER_BLOCKS.map((b) => {
         const text = shownText(draft, base, b.id)

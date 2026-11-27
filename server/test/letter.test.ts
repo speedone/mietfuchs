@@ -1,6 +1,7 @@
 // Das Anschreiben zur Abrechnung (#415): Platzhalter prüfen und einsetzen, Bausteine wählen, und dass
 // die Vorgaben die Sätze wortgleich drucken, die bis #415 fest unter der Aufstellung standen.
 import test from 'node:test'
+import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 import assert from 'node:assert/strict'
 import {
   adjustedCents, adjustmentHint, buildLetter, chooseLetterBlocks, DEFAULT_LETTER_TEXTS, LETTER_BLOCK_IDS, LETTER_FIELDS, mergeLetterTexts, parseLetterAdjustment,
@@ -453,4 +454,33 @@ test('#704: keine Teile, wo der Brief sie nicht nennt: Heizstaffel im Monat der 
 test('#704: die Beispielwerte der Vorschau nennen keine Teile; wer nicht aufteilt, liest den Satz nie', () => {
   assert.equal(SAMPLE_LETTER_VALUES.Aufteilung, '')
   assert.doesNotMatch(resolveTemplate(DEFAULT_LETTER_TEXTS.adjustSuggestion, SAMPLE_LETTER_VALUES), /Davon entfallen|\{Aufteilung\}/)
+})
+
+// #712: Deckt die zweite Vorauszahlung laut Aufstellung auch Wasser/Abwasser, nennt der Satz zu den Teilen sie so, und
+// das Schreiben trägt die Angabe neben dem Teil (für Übersicht und Übernahme). Ohne die Angabe bleibt alles wortgleich.
+test('#712: Anpassung je Teil mit Wasser/Abwasser: Satz, Angabe am Schreiben und Meldungen nennen den zweiten Teil so', () => {
+  const st = (coversWater: boolean) => ({ ...oneStatement, statements: oneStatement.statements.map((x) => ({ ...x, suggestedMonthlyCents: 34200, suggestedHeatingMonthlyCents: coversWater ? 17500 : 12500, ...(coversWater ? { secondPrepaymentCoversWater: true } : {}) })) })
+  const base = { settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 }, property: house, installation: {}, propertyTexts: {}, asOf: '2026-11-01' }
+  const split = { id: 't1', end: null, prepayments: [{ from: '2024-01', monthlyCents: 18000 }], heatingPrepayments: [{ from: '2024-01', monthlyCents: 12000 }], correspondenceAddress: '' }
+  const l = lettersOf(st(true), { ...base, tenancies: [split], own: {} }).t1 ?? assert.fail('Anschreiben fehlt')
+  assert.deepEqual(l.adjustment, { mode: 'suggestion', newCents: 34200, from: '2027-01', heatingCents: 17500, coversWater: true })
+  assert.equal(plain(l.values.Aufteilung), 'Davon entfallen 175,00 € auf Heizung, Warmwasser und Wasser/Abwasser (bisher 120,00 €) und 167,00 € auf die übrigen Nebenkosten (bisher 180,00 €).')
+  // ohne die Angabe wie vor #712, und ohne das Feld am Schreiben
+  const plainLetter = lettersOf(st(false), { ...base, tenancies: [split], own: {} }).t1 ?? assert.fail('Anschreiben fehlt')
+  assert.deepEqual(plainLetter.adjustment, { mode: 'suggestion', newCents: 34200, from: '2027-01', heatingCents: 12500 })
+  assert.equal(plain(plainLetter.values.Aufteilung), 'Davon entfallen 125,00 € auf Heizung und Warmwasser (bisher 120,00 €) und 217,00 € auf die übrigen Nebenkosten (bisher 180,00 €).')
+  // Nennt das Schreiben keine Teile, trägt es auch die Angabe nicht.
+  const none = lettersOf(st(true), { ...base, tenancies: [{ ...split, heatingPrepayments: [] }], own: {} }).t1 ?? assert.fail('Anschreiben fehlt')
+  assert.deepEqual([none.adjustment.heatingCents ?? null, none.adjustment.coversWater ?? null], [null, null])
+  // Die Meldungen zum eigenen Teil
+  assert.equal(Reflect.get(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: 32000 }, true) ?? {}, 'error'), 'Der Teil für Heizung, Warmwasser und Wasser/Abwasser liegt über der neuen Vorauszahlung.')
+  assert.equal(Reflect.get(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: -1 }, true) ?? {}, 'error'), 'Bitte nennen Sie den Teil für Heizung, Warmwasser und Wasser/Abwasser als Betrag in Euro, nicht negativ.')
+  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 31000, heatingCents: 19000 }, true), { mode: 'custom', cents: 31000, from: null, heatingCents: 19000 })
+})
+
+test('#712: die eine Stelle für die Bezeichnung des zweiten Teils', () => {
+  assert.deepEqual([secondPrepaymentLabel(false), secondPrepaymentLabel(false, 'prepayment'), secondPrepaymentLabel(false, 'short')], ['Heizung und Warmwasser', 'Heizvorauszahlung', 'Heizung'])
+  assert.deepEqual([secondPrepaymentLabel(undefined), secondPrepaymentLabel(null, 'prepayment')], ['Heizung und Warmwasser', 'Heizvorauszahlung'])
+  assert.deepEqual([secondPrepaymentLabel(true), secondPrepaymentLabel(true, 'prepayment'), secondPrepaymentLabel(true, 'short')],
+    ['Heizung, Warmwasser und Wasser/Abwasser', 'Vorauszahlung für Heizung, Warmwasser und Wasser/Abwasser', 'Heizung, Warmwasser und Wasser/Abwasser'])
 })

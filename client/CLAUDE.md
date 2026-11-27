@@ -419,6 +419,12 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   abgeschlossen) gelten als leer, sonst stünde der Platzhalter nackt in der Vorschau. Die Übersicht nennt „davon Heizung“,
   die Karte der Übernahme je Staffel eine Zeile (`stepRows`, `stepTotal` in prepaymentSteps.ts), und die Rückfrage fragt
   nur zu der Staffel, die geschrieben wird. Die Knöpfe der Karte „Heizung“ zum Aufteilen stehen in docs/heizung.md.
+  **Den zweiten Teil benennt nur `secondPrepaymentLabel`** (shared/heatingModel.ts, #712): Deckt die zweite Vorauszahlung
+  laut Aufstellung (`Statement.secondPrepaymentCoversWater`) oder Schreiben (`adjustment.coversWater`) auch
+  Wasser/Abwasser, heißen Feld, Sätze, Übersicht und Zeilen der Übernahme „Heizung, Warmwasser und Wasser/Abwasser“; wer
+  dort einen neuen Text schreibt, fragt die Funktion und schreibt nicht „Heizung“. Die Auswahl dazu
+  (`SecondPrepaymentField` im Abschnitt „Zeitraum der Heizung“, Optionen und Zustand in heatingPeriodForm.ts) ist ein
+  Entwurf und erscheint nur bei aufgeteilter Vorauszahlung im Zeitraum des Objekts.
 - **Ab Monat und „In die Staffel übernehmen“** (#317): Das Seitenfenster des Mieters hat bei einer Anpassung ein
   Monatsfeld „Ab Monat“ (`adjustFrom` im Entwurf, `null` = Vorgabe `adjustFromFor`), mit Hinweis bei einem Monat
   nicht in der Zukunft (`adjustFromHint`) und bei einem eigenen Text ohne `{AnpassungAb}` (auf jeder Ebene,

@@ -1363,6 +1363,12 @@ export type Statement = {
   // Zeilen und derselben Hochrechnung wie der Vorschlag, auf volle Euro, nie über ihm; der Rest gilt den übrigen Nebenkosten.
   // Über 0 und unter dem Vorschlag oder gar nicht: Ohne Heizkosten beim Mieter und ohne Rest für die übrigen fehlt das Feld.
   suggestedHeatingMonthlyCents?: number
+  // #712: Die zweite Vorauszahlung dieses Mietverhältnisses (Heizstaffel) deckt laut Heizanlage auch „Wasser/Abwasser“.
+  // Nur gesetzt (`true`) in einer gemeinsamen Abrechnung bei einem Mietverhältnis mit Heizstaffel; dann zählen die Zeilen
+  // dieser Kostenart zu `suggestedHeatingMonthlyCents`, und der zweite Teil heißt „Heizung, Warmwasser und
+  // Wasser/Abwasser“ (`secondPrepaymentLabel`). Steht am Stand der Abrechnung, damit eine abgeschlossene ihren Wortlaut
+  // behält, wenn die Angabe an der Anlage später geändert wird.
+  secondPrepaymentCoversWater?: boolean
   balanceCents: number
   // Heizung PR 5 (Entwurf 5.7). `scope`: 'heating' in der Heizkostenabrechnung einer Heizperiode
   // (Weg d); fehlt es, ist es die Betriebskostenabrechnung. `heatingOnly`: Das Mietverhältnis hat im
@@ -1555,7 +1561,8 @@ export type StatementLetter = {
   // vor #317 eingefroren und nannte „ab dem übernächsten Monat“.
   // `heatingCents` (#704): der Teil von `newCents` für Heizung und Warmwasser, wenn das Schreiben die Anpassung je Teil
   // nennt (zwei Staffeln in einer Gesamtabrechnung); sonst `null` oder fehlend.
-  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null; heatingCents?: number | null }
+  // `coversWater` (#712): `heatingCents` gilt Heizung, Warmwasser und Wasser/Abwasser; nur neben `heatingCents`, nur `true`.
+  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null; heatingCents?: number | null; coversWater?: boolean }
   values: Record<LetterField, string>
   // Absender, Rücksendeangabe und Anschrift, wie gedruckt; mit dem Abschluss eingefroren (Durchsicht S2).
   // Optional, weil Abschlüsse aus der ersten Fassung von #415 sie nicht kennen.
@@ -1600,7 +1607,8 @@ export type PrepaymentStepItem = {
   // #704: Nennt das Schreiben einer Gesamtabrechnung die Teile für zwei Staffeln, ist `cents` der Teil der übrigen
   // Nebenkosten (Staffel `prepayments`) und `heating` der für Heizung und Warmwasser, mit Stand und Stufen der Heizstaffel.
   // Übernommen (`taken`) ist erst, wenn beide Staffeln ihren Betrag tragen.
-  heating?: { cents: number; currentCents: number; existing: PrepaymentEntry[]; earlier: PrepaymentEntry[] }
+  // `coversWater` (#712): Der zweite Teil gilt laut dem abgeschlossenen Schreiben auch Wasser/Abwasser.
+  heating?: { cents: number; currentCents: number; existing: PrepaymentEntry[]; earlier: PrepaymentEntry[]; coversWater?: boolean }
 }
 // `errors`: Titel der Fehler der eingefrorenen Abrechnung (`blockingErrors`). `token`: Marke des Plans; übernommen
 // wird nur mit der Marke des Plans, den der Vermieter gesehen hat.
@@ -2522,6 +2530,11 @@ export type HeatingPlant = {
   nonResidential: boolean
   restriction: Co2Restriction
   districtEtsNew: boolean
+  // #712: Deckt die zweite Vorauszahlung (Heizstaffel) neben Heizung und Warmwasser auch die Kostenart „Wasser/Abwasser“
+  // (was der Messdienst abrechnet)? Wirkt nur bei gemeinsamer Abrechnung, also wo die Anlage im Zeitraum des Objekts
+  // abrechnet und die Vorauszahlung aufgeteilt ist: auf den Ausweis und auf den Anteil je Teil bei der Anpassung nach
+  // § 560 Abs. 4 BGB, nie auf eine Summe. `false` ist das bisherige Verhalten (Heizung und Warmwasser).
+  secondPrepaymentCoversWater: boolean
   // Eigene Heizperiode (#217, Heizung PR 5); `null` heißt wie das Objekt. Gesetzt nur über den Wechsel mit Vorschau.
   periodStartMonth: number | null
   // Die Wechsel der eigenen Heizperiode als 'JJJJ-MM', aufsteigend, wie beim Objekt (Heizung PR 5).

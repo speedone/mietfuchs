@@ -743,6 +743,13 @@
       "when": 1795772775871,
       "tag": "0105_anpassung_heizanteil",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "6",
+      "when": 1795782494422,
+      "tag": "0106_zweite_vorauszahlung_wasser",
+      "breakpoints": true
     }
   ]
 }

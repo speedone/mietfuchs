@@ -4,6 +4,7 @@ import { fmtDate, fmtEuro } from './api'
 import type { NotSettled, Notice, Settlement, Statement, StatementLetter } from './types'
 import { chooseLetterBlocks } from '../../shared/letter.ts'
 import { monthName } from '../../shared/monthlyInfo.ts'
+import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 import { isAction, PROTECTED, sentences } from './noticeText'
 import { notSettledReason } from './tenancyModel'
 
@@ -84,7 +85,7 @@ export function announcedAdjustment(letter: Pick<StatementLetter, 'adjustment' |
   const from = letter.adjustment.from
   // #704: bei zwei Staffeln mit dem Teil für Heizung und Warmwasser
   const heating = letter.adjustment.heatingCents ?? null
-  return `Brief kündigt an: Vorauszahlung ${fmtEuro(cents)}${from ? ` ab ${monthName(from)}` : ''}${heating === null ? '' : `, davon Heizung ${fmtEuro(heating)}`}`
+  return `Brief kündigt an: Vorauszahlung ${fmtEuro(cents)}${from ? ` ab ${monthName(from)}` : ''}${heating === null ? '' : `, davon ${secondPrepaymentLabel(letter.adjustment.coversWater, 'short')} ${fmtEuro(heating)}`}`
 }
 // Durchsicht (S1): Der gewählte Betrag (Vorschlag oder eigener, `chosenCents`) gilt schon (`currentPrepaymentAt`), der Brief
 // lässt den Satz deshalb weg. Die Übersicht sagt es, statt gar nichts zu zeigen.

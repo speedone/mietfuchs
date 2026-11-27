@@ -97,7 +97,7 @@ import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { dwellingsOf } from '../../shared/rooms.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
-import { settlesHeating } from '../../shared/heatingModel.ts'
+import { settlesHeating, WATER_CATEGORY } from '../../shared/heatingModel.ts'
 import { smokeDetectorKind, smokeDetectorText } from '../../shared/smokeDetector.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameMeterRest, sameUnits } from '../../shared/allocation.ts'
@@ -4460,6 +4460,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const note = [...byOwner.values()].map((e) => `Ihre Heizkostenvorauszahlungen ${monthSpanText(e.months)} sind hier nicht angerechnet; sie werden in der Heizkostenabrechnung ${e.label} abgerechnet.`).join(' ')
     return note ? { ...pp, note } : pp
   }
+  // #712: Deckt die zweite Vorauszahlung dieses Mietverhältnisses auch „Wasser/Abwasser“? Die Angabe steht an der Anlage,
+  // die seine Wohnung versorgt (nach einem Kesseltausch an der, die am Ende des Zeitraums heizt), und wirkt nur in einer
+  // gemeinsamen Abrechnung: Die Anlage rechnet im Zeitraum des Objekts ab (H = P), und kein Monat des Zeitraums und nicht
+  // der Monat danach gehört einer getrennt abgerechneten Heizperiode. Eine Heizkostenabrechnung je Heizperiode (Weg d)
+  // rechnet nur Heizung und Warmwasser ab; dort bleibt alles, wie es war. Nur bei einem Mietverhältnis mit Heizstaffel.
+  const coversWater = (t: TenancyWithUnit): boolean => {
+    if (scope !== 'all' || !Array.isArray(t.heatingPrepayments) || t.heatingPrepayments.length === 0) return false
+    const serving = plants.filter((p) => servesUnit(p, t.unit))
+    const plant = serving.find((p) => (p.endsOn ?? null) === null || (p.endsOn ?? '') >= period.to) ?? serving[0]
+    if (!plant || plant.secondPrepaymentCoversWater !== true) return false
+    const way = wayOf(plant)
+    const same = periodOfKey(plantRules(way, objectRules), period.key)
+    if (same === null || !sameSpan(same, period)) return false
+    return [...periodMonths(period), dayAfter(period.to).slice(0, 7)].every((m) => separateOwner(way, objectRules, m) === null)
+  }
   const statements = new Map<string, Statement>()
   // Angebrochene Monate je Mietverhältnis (#311): der Hinweis an den Vermieter entsteht erst, wenn
   // feststeht, welche Abrechnungen bleiben (unten, nach „Ohne Abrechnung“).
@@ -4489,6 +4504,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       prepaymentCents: pp.cents,
       prepaymentOverridden: pp.overridden,
       ...(pp.heatingCents !== undefined ? { heatingPrepaymentCents: pp.heatingCents } : {}),
+      ...(coversWater(t) ? { secondPrepaymentCoversWater: true } : {}),
       ...(pp.note ? { prepaymentNote: pp.note } : {}),
       ...(scope === 'heating' ? { scope: 'heating' as const } : {}),
       suggestedMonthlyCents: 0,
@@ -11055,9 +11071,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const splitTenancies = new Set(scope === 'all' && result.suggestionWithoutHeating !== true
     ? partTenancies.filter((t) => Array.isArray(t.heatingPrepayments) && t.heatingPrepayments.length > 0).map((t) => t.id)
     : [])
-  const heatingRow = (row: SettlementRow): boolean => {
+  // #712: Deckt die zweite Vorauszahlung laut Anlage auch „Wasser/Abwasser“ (`secondPrepaymentCoversWater` an der
+  // Aufstellung), zählen die Zeilen dieser Kostenart zu ihrem Teil. Die Summe des Vorschlags bleibt, wie sie ist.
+  const heatingRow = (row: SettlementRow, withWater: boolean): boolean => {
     if (row.kind === 'co2Relief' || row.kind === 'gmodgRelief') return true
-    return (itemById.get(row.costItemId) ?? syntheticById.get(row.costItemId))?.category === HEATING_CATEGORY
+    const category = (itemById.get(row.costItemId) ?? syntheticById.get(row.costItemId))?.category
+    return category === HEATING_CATEGORY || (withWater && category === WATER_CATEGORY)
   }
   const heatingPart = (st: Statement, yearlyHeating: number): void => {
     if (!splitTenancies.has(st.tenancyId) || st.suggestedMonthlyCents <= 0) return
@@ -11106,7 +11125,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? (st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : row.shareCents * factorOf(row)), 0) * diy) / basisDays
         : st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
-      heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || !heatingRow(row) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0))
+      heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || !heatingRow(row, st.secondPrepaymentCoversWater === true) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0))
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
       // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
@@ -11116,7 +11135,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? ((recurringShareCents(st) - later) * diy) / basisDays
         : st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' ? 0 : (row.shareCents * diy) / daysOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
-      heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' || !heatingRow(row) ? 0 : (row.shareCents * diy) / daysOf(row)), 0))
+      heatingPart(st, st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' || !heatingRow(row, st.secondPrepaymentCoversWater === true) ? 0 : (row.shareCents * diy) / daysOf(row)), 0))
     }
   }
   return result

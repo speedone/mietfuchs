@@ -10,10 +10,12 @@ import type { PrepaymentEntry, PrepaymentStepItem, PrepaymentStepPlan, Prepaymen
 import { rateAtMonth } from '../../shared/monthRate.ts'
 import { addMonths, monthName } from '../../shared/monthlyInfo.ts'
 import { adjustFromFor, isMonthKey } from '../../shared/letter.ts'
+import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 import { compareText } from './calc.ts'
 
 // `heatingCents` (#704): der Teil für Heizung und Warmwasser, wenn das Schreiben die Anpassung je Teil nennt.
-export type StepLetter = { tenancyId: string, tenantName: string, unitName: string, cents: number, from: string | null, heatingCents?: number | null }
+// `coversWater` (#712): Die zweite Vorauszahlung gilt laut dem abgeschlossenen Stand auch Wasser/Abwasser.
+export type StepLetter = { tenancyId: string, tenantName: string, unitName: string, cents: number, from: string | null, heatingCents?: number | null, coversWater?: boolean }
 export type StepInput = {
   // `heating`: die Heizkostenabrechnung nach Weg d; ihre Anpassung gilt der Heizstaffel.
   scope: 'all' | 'heating'
@@ -106,12 +108,13 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
         const heating = {
           cents: part, currentCents: rateAtMonth(heat, from), existing: heat.filter((e) => e.from >= from).map((e) => ({ ...e })),
           earlier: heat.filter((e) => e.from > i.periodTo.slice(0, 7) && e.from < from).map((e) => ({ ...e })),
+          ...(l.coversWater === true ? { coversWater: true } : {}),
         }
         const rest = l.cents - part
         const done = currentCents === rest && heating.currentCents === part
         return { ...base, cents: rest, heating, state: done ? 'taken' : 'pending', overdue: !done && i.today.slice(0, 7) >= from }
       }
-      return blocked(`Die Vorauszahlung steht in zwei Staffeln (übrige Nebenkosten und Heizung, zusammen ${euro(currentCents + rateAtMonth(t.heatingPrepayments ?? [], from))}); der angekündigte Betrag gilt beiden zusammen, und das Schreiben nennt die Teile nicht. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
+      return blocked(`Die Vorauszahlung steht in zwei Staffeln (übrige Nebenkosten und ${secondPrepaymentLabel(l.coversWater, 'short')}, zusammen ${euro(currentCents + rateAtMonth(t.heatingPrepayments ?? [], from))}); der angekündigte Betrag gilt beiden zusammen, und das Schreiben nennt die Teile nicht. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
     }
     // Integrationsdurchsicht 0.13.0 (#435): Der Vorschlag ist ohne Heizung, Weg d endet aber vor dem Monat, und eine eigene
     // Heizstaffel gibt es dann nicht. Die Staffel der übrigen Nebenkosten trägt ab dort auch die Heizung (P rechnet sie an);

@@ -1,0 +1,1 @@
+ALTER TABLE `heating_plants` ADD `second_prepayment_covers_water` integer DEFAULT false NOT NULL;

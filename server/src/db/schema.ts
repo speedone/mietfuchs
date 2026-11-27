@@ -604,6 +604,10 @@ export const heatingPlants = sqliteTable(
     nonResidential: integer('non_residential', { mode: 'boolean' }).notNull().default(false),
     restriction: text('restriction', { enum: CO2_RESTRICTIONS }).notNull().default('none'),
     districtEtsNew: integer('district_ets_new', { mode: 'boolean' }).notNull().default(false),
+    // #712: Deckt die zweite Vorauszahlung (Heizstaffel) neben Heizung und Warmwasser auch die Kostenart „Wasser/Abwasser“?
+    // Nur bei gemeinsamer Abrechnung (H = P, aufgeteilte Vorauszahlung); ändert Ausweis und Anteil je Teil bei der
+    // Anpassung, nie eine Summe. Die Voreinstellung 0 ist das bisherige Verhalten.
+    secondPrepaymentCoversWater: integer('second_prepayment_covers_water', { mode: 'boolean' }).notNull().default(false),
     // Kesseltausch (Heizung PR 9): letzter Betriebstag der alten Anlage und an der neuen die Anlage,
     // die sie ersetzt. Ohne Bedingung im SQL (README der Migrationen: neue Spalten und Bedingungen nie
     // in einem Schritt); das Datum prüft heating.ts.

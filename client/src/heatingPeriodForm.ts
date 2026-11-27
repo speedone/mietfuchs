@@ -5,6 +5,7 @@ import { parseEuro } from './api'
 import { monthFieldError, rhythmText, type MonthFieldError } from './periodForm'
 import { hasOwnRhythm, monthSpanText, plantRules } from '../../shared/heatingPeriod.ts'
 import { isCalendarRules, parsePeriodKey } from '../../shared/period.ts'
+import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 import type { HeatingPeriodChangeAnswers, HeatingPeriodChangePreview, HeatingPlant, PeriodRules, SeparateAnswers, SeparatePreview } from './types'
 
 export type PeriodChoice = 'object' | 'own'
@@ -284,7 +285,8 @@ export function separateOffBody(plant: HeatingPlant, month: string): { separate:
 export function splitHint(plant: HeatingPlant): string | null {
   if (hasOwnRhythm(plant) || hasOpenSpan(plant) || wasSwapped(plant)) return null
   return plant.separateSettlement === true
-    ? 'Die Vorauszahlung ist aufgeteilt in Heizung und übrige Nebenkosten. Mit „Vorauszahlung aufteilen“ ändern Sie die Aufteilung, etwa für ein Mietverhältnis, dem die Heizvorauszahlung fehlt.'
+    // #712: Die zweite Vorauszahlung heißt, wie die Auswahl darunter sie führt.
+    ? `Die Vorauszahlung ist aufgeteilt in ${secondPrepaymentLabel(plant.secondPrepaymentCoversWater, 'short')} und übrige Nebenkosten. Mit „Vorauszahlung aufteilen“ ändern Sie die Aufteilung, etwa für ein Mietverhältnis, dem die ${plant.secondPrepaymentCoversWater === true ? 'zweite Vorauszahlung' : 'Heizvorauszahlung'} fehlt.`
     : 'Zahlen Ihre Mieter laut Mietvertrag eine eigene Vorauszahlung für Heizung und Warmwasser neben der für die übrigen Nebenkosten? Mit „Vorauszahlung aufteilen“ führt Mietfuchs beide getrennt, und die Abrechnung weist sie getrennt aus.'
 }
 
@@ -296,4 +298,32 @@ export function separateSavedText(preview: Pick<SeparatePreview, 'separate' | 'w
       : 'Vorauszahlung wieder zusammengeführt.'
   }
   return preview.separate ? 'Getrennte Heizkostenabrechnung eingeschaltet.' : 'Getrennte Heizkostenabrechnung ausgeschaltet.'
+}
+
+// ---------- Was die zweite Vorauszahlung deckt (#712) ----------
+
+// Die Wahl steht dort, wo die Vorauszahlung aufgeteilt wird, und nur, wo sie wirkt: aufgeteilt und gemeinsam abgerechnet
+// (Zeitraum wie das Objekt, keine getrennte Heizkostenabrechnung). Bei einer eigenen Heizperiode sagt ein Satz, warum es
+// sie nicht gibt; ohne zwei Vorauszahlungen steht nichts da. Die Bezeichnungen kommen aus `secondPrepaymentLabel`, damit
+// die Auswahl so heißt wie der zweite Teil in Abrechnung und Anschreiben.
+export type SecondPrepaymentChoice = 'heating' | 'water'
+export const SECOND_PREPAYMENT_OPTIONS: { value: SecondPrepaymentChoice; label: string }[] = [
+  { value: 'heating', label: secondPrepaymentLabel(false) },
+  { value: 'water', label: secondPrepaymentLabel(true) },
+]
+export const SECOND_PREPAYMENT_QUESTION = 'Was deckt die zweite Vorauszahlung?'
+export const SECOND_PREPAYMENT_HELP = 'Rechnet Ihr Messdienst neben Heizung und Warmwasser auch Kaltwasser und Abwasser ab und zahlen Ihre Mieter dafür eine gemeinsame Vorauszahlung, wählen Sie den zweiten Eintrag. Das ändert keine Summe der Abrechnung, nur die Bezeichnung der zweiten Vorauszahlung und den Anteil je Teil, wenn die Vorauszahlung angepasst wird. Die Staffel der Heizvorauszahlung enthält dann auch die Vorauszahlung für Wasser/Abwasser: Mietfuchs verschiebt keine Beträge zwischen den Staffeln, prüfen Sie deshalb die beiden Beträge an jedem Mietverhältnis.'
+export const SECOND_PREPAYMENT_OWN_PERIOD_NOTE = 'Die Heizvorauszahlung gilt hier nur Heizung und Warmwasser: Die Heizkostenabrechnung je Heizperiode rechnet nur Heizung und Warmwasser ab, Wasser und Abwasser bleiben bei den übrigen Nebenkosten.'
+
+export const secondPrepaymentValue = (plant: Pick<HeatingPlant, 'secondPrepaymentCoversWater'>): SecondPrepaymentChoice => (plant.secondPrepaymentCoversWater === true ? 'water' : 'heating')
+export const secondPrepaymentBody = (value: SecondPrepaymentChoice): { secondPrepaymentCoversWater: boolean } => ({ secondPrepaymentCoversWater: value === 'water' })
+
+// `choice`: die Auswahl; `note`: nur der Satz, warum es sie nicht gibt; `null`: nichts (keine zwei Vorauszahlungen, oder
+// die Anlage ist stillgelegt und die Angabe steht an ihrer Nachfolgerin).
+export function secondPrepaymentState(plant: HeatingPlant): { kind: 'choice' } | { kind: 'note'; text: string } | null {
+  if ((plant.endsOn ?? null) !== null) return null
+  if (hasOwnRhythm(plant) || hasOpenSpan(plant)) {
+    return hasOpenSpan(plant) || plant.separateSettlement === true || plant.secondPrepaymentCoversWater === true ? { kind: 'note', text: SECOND_PREPAYMENT_OWN_PERIOD_NOTE } : null
+  }
+  return plant.separateSettlement === true ? { kind: 'choice' } : null
 }

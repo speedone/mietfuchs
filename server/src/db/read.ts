@@ -441,6 +441,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     nonResidential: p.nonResidential,
     restriction: p.restriction,
     districtEtsNew: p.districtEtsNew,
+    secondPrepaymentCoversWater: p.secondPrepaymentCoversWater,
     periodStartMonth: p.periodStartMonth,
     periodChanges: wechsel.get(p.id) ?? [],
     separateSpans: spannen.get(p.id) ?? [],

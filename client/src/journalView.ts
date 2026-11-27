@@ -160,6 +160,8 @@ const FIELD_LABELS: Record<string, string> = {
   deposit_hold_cents: 'Einbehalt',
   // #704: der Teil der eigenen Anpassung für Heizung und Warmwasser
   heating_cents: 'davon für Heizung und Warmwasser',
+  // #712: an der Heizanlage, was die zweite Vorauszahlung deckt
+  second_prepayment_covers_water: 'Zweite Vorauszahlung deckt auch Wasser/Abwasser',
   deposit_hold_note: 'Grund für den Einbehalt',
   purpose: 'Verrechnet mit',
   payment_id: 'Zahlung im Mietkonto',

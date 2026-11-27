@@ -3,6 +3,7 @@
 // Heizkostenabrechnungen, ihre Fristen im Cockpit, die Heizkorrektur, die Heizperioden im
 // Kostenformular und die Heizstaffel im Mietverhältnis. Ohne DOM prüfbar.
 import { fmtDate } from './api'
+import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
 import { formatDayRange, paymentYear, periodLabel } from '../../shared/period.ts'
 import { taxYearOptions } from './costForm'
@@ -36,10 +37,12 @@ export const prepaymentLabel = (st: Pick<Statement, 'scope'>): string =>
 // Heizkostenabrechnung hat nur die eine. Ohne Heizvorauszahlung in diesem Zeitraum keine Zeilen
 // (Laienprobe B18, Sichtprüfung E42): „davon Heizvorauszahlung 0,00 €“ ließ den Mieter fragen, wo
 // sie geblieben ist. Gehört sie einer eigenen Heizkostenabrechnung, sagt `prepaymentNote` es.
-export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents'>): { label: string; cents: number }[] {
+// #712: Deckt die zweite Vorauszahlung laut Heizanlage auch Wasser/Abwasser, heißt sie so; die Angabe steht an der
+// Aufstellung (`secondPrepaymentCoversWater`), eine abgeschlossene Abrechnung behält also ihren Wortlaut.
+export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents' | 'secondPrepaymentCoversWater'>): { label: string; cents: number }[] {
   if (st.scope === 'heating' || st.heatingPrepaymentCents === undefined || st.heatingPrepaymentCents === 0) return []
   return [
-    { label: 'davon Heizvorauszahlung', cents: st.heatingPrepaymentCents },
+    { label: `davon ${secondPrepaymentLabel(st.secondPrepaymentCoversWater, 'prepayment')}`, cents: st.heatingPrepaymentCents },
     { label: 'davon übrige Vorauszahlungen', cents: st.prepaymentCents - st.heatingPrepaymentCents },
   ]
 }

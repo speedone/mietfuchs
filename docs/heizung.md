@@ -118,6 +118,32 @@ ihres Objekts (`period_start_month` NULL) oder in eigenen Heizperioden (`period_
   der Teil der übrigen Nebenkosten); ohne Teile bleibt es bei zwei Staffeln gesperrt. Dass sich die Anpassung nach den
   Kosten je Teil richtet, ist eine Rechnung von Mietfuchs: § 560 Abs. 4 BGB nennt nur „eine Anpassung auf eine angemessene
   Höhe“ und keine Aufteilung.
+- **Was die zweite Vorauszahlung deckt** (#712): Voreinstellung ist die Kostenart „Heizung und Warmwasser“. An der Anlage
+  lässt sich wählen, dass sie auch „Wasser/Abwasser“ deckt (`secondPrepaymentCoversWater`, Spalte
+  `second_prepayment_covers_water`, Schritt 0106, Voreinstellung 0), also was der Messdienst oft mit abrechnet. **Keine
+  Summe ändert sich** (Gesamtkosten, Zeilen, angerechnete Vorauszahlungen, Saldo, `suggestedMonthlyCents`), nur zweierlei:
+  `suggestedHeatingMonthlyCents` zählt auch die Zeilen der Kostenart „Wasser/Abwasser“ (`heatingRow` in calc.ts), und der
+  zweite Teil heißt überall „Heizung, Warmwasser und Wasser/Abwasser“. **Die Bezeichnung hat eine Stelle**,
+  `secondPrepaymentLabel` in shared/heatingModel.ts (Formen `costs`, `prepayment`, `short`): gedruckte Abrechnung
+  (`prepaymentSplit`), Satz `{Aufteilung}` (`splitSentence`), Fenster „Anschreiben bearbeiten“, Übersicht, Karte und
+  Rückfrage der Übernahme, Meldungen zum eigenen Teil. **Gewirkt wird nur in einer gemeinsamen Abrechnung** (`coversWater`
+  in calc.ts): Die Anlage, die die Wohnung versorgt (nach einem Kesseltausch die am Ende des Zeitraums heizende), rechnet
+  im Zeitraum des Objekts ab, kein Monat des Zeitraums und nicht der danach gehört einer getrennt abgerechneten
+  Heizperiode, und das Mietverhältnis führt eine Heizstaffel. Eine Heizkostenabrechnung je Heizperiode (Weg d) rechnet nur
+  Heizung und Warmwasser ab und bleibt wortgleich; der Server lehnt das Setzen an einer Anlage mit eigener Heizperiode
+  oder offener Spanne mit Satz ab (`SECOND_PREPAYMENT_OWN_PERIOD`), eine schon gesetzte Angabe bleibt stehen und wirkt
+  dann nicht. **Eingefroren wird die Angabe mit dem Stand**: `Statement.secondPrepaymentCoversWater` (nur `true`) und am
+  Schreiben `adjustment.coversWater` neben `heatingCents`; eine abgeschlossene Abrechnung, ihre Übersicht, die Übernahme
+  (`StepLetter.coversWater`, `PrepaymentStepItem.heating.coversWater`) und der Export behalten so ihren Wortlaut, wenn die
+  Angabe später geändert wird. Die Auswahl „Was deckt die zweite Vorauszahlung?“ steht im Abschnitt „Zeitraum der
+  Heizung“ (`SecondPrepaymentField`, `secondPrepaymentState` in client/src/heatingPeriodForm.ts) nur bei aufgeteilter
+  Vorauszahlung im Zeitraum des Objekts, als Entwurf; bei eigener Heizperiode steht der Satz, warum es sie nicht gibt.
+  **Mietfuchs verschiebt keine Beträge zwischen den Staffeln**, das sagt der Satz unter der Auswahl. Der Kesseltausch
+  übernimmt die Angabe. Fundstellen (nur im Lexikon und in der Anleitung zum Messdienst): BGH, Urteil vom 26.10.2011,
+  VIII ZR 268/10, Rn. 11 (die Zuordnung von Kaltwasser und Entwässerung ändert die Summe nicht; ob getrennt ausgewiesene
+  Vorauszahlungen auf Abrechnungskreise festlegen, bleibt offen) und BGH, Urteil vom 28.09.2011, VIII ZR 294/10, Rn. 26
+  (Erhöhung wegen einer Kostenart nur bei deren Vorauszahlung). Tests: calc-zweite-vorauszahlung-wasser.test.ts
+  (Beispiele und Invariante über Zufallsbestände), api-zweite-vorauszahlung-wasser.test.ts, db-heizanlage.test.ts.
 - **Jeder Monat der Heizstaffel wird genau einmal angerechnet**: Er gehört der getrennt abgerechneten
   Heizperiode, wenn er ab ihrem Beginn liegt, sonst P (`separateOwner`, die einzige Stelle). Die
   Jahreskorrektur von P gilt für alles, was P anrechnet; eine Heizkorrektur

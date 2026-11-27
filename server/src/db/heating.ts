@@ -22,7 +22,8 @@
 import { and, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit, PeriodKey, SelfSpanRange } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { plantRules } from '../../../shared/heatingPeriod.ts'
+import { hasOwnRhythm, plantRules } from '../../../shared/heatingPeriod.ts'
+import { SECOND_PREPAYMENT_OWN_PERIOD } from '../../../shared/heatingModel.ts'
 import { co2Required } from '../co2.ts'
 import { billingEnergy, CONTRACTING_ENERGIES, isHeatDelivery } from '../../../shared/heatDelivery.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
@@ -141,6 +142,8 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     nonResidential: merged(body, 'nonResidential', current.nonResidential, (v) => v === true),
     restriction: merged(body, 'restriction', current.restriction, (v) => oneOfOrUndefined(CO2_RESTRICTIONS, v) ?? current.restriction),
     districtEtsNew: merged(body, 'districtEtsNew', current.districtEtsNew, (v) => v === true),
+    // #712: was die zweite Vorauszahlung deckt; nur `true` schaltet ein.
+    secondPrepaymentCoversWater: merged(body, 'secondPrepaymentCoversWater', current.secondPrepaymentCoversWater, (v) => v === true),
     periodStartMonth: merged(body, 'periodStartMonth', current.periodStartMonth, nullableNumber),
     // Wechsel und Spannen setzen nur die Routen mit Vorschau (Heizung PR 5, Task 4 und 9).
     periodChanges: current.periodChanges,
@@ -206,7 +209,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
-  nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+  nonResidential: false, restriction: 'none', districtEtsNew: false, secondPrepaymentCoversWater: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
   hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, selfSpans: [],
   contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
   gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null,
@@ -298,6 +301,12 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
   // ist H = P, und die Antwort ist eine Angabe.
   if (before !== null && after.periodStartMonth !== null && before.separateSettlement !== after.separateSettlement) {
     throw new HeatingError(400, LATER.separateVia)
+  }
+  // #712: Die zweite Vorauszahlung deckt Wasser und Abwasser nur in einer gemeinsamen Abrechnung. Mit eigener Heizperiode
+  // rechnet die Heizkostenabrechnung nur Heizung und Warmwasser ab; dort lässt sich die Angabe nicht setzen. Eine schon
+  // gesetzte bleibt stehen (sie wirkt dann nicht), sonst ließe sich an der Anlage nichts anderes mehr speichern.
+  if (after.secondPrepaymentCoversWater && before?.secondPrepaymentCoversWater !== true && (hasOwnRhythm(after) || after.separateSpans.some((s) => s.until === null))) {
+    throw new HeatingError(400, SECOND_PREPAYMENT_OWN_PERIOD)
   }
   // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, 8.1, 8.3, Abweichungen 10 und 17).
   if (after.method === 'self') {
@@ -488,6 +497,7 @@ export const plantRow = (p: HeatingPlant) => ({
   warmRentAverageCents: p.warmRentAverageCents, changeSplit: p.changeSplit, periodStartMonth: p.periodStartMonth,
   unitsLimited: p.units !== null,
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
+  secondPrepaymentCoversWater: p.secondPrepaymentCoversWater,
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
   heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority, hcaModel: p.hcaModel ?? null,
