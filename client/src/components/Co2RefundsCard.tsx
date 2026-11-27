@@ -55,7 +55,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
       return
     }
     try {
-      if (editing.id) await api(`/api/co2-refunds/${editing.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
+      if (editing.id) await api(withProperty(`/api/co2-refunds/${editing.id}`, propertyId), { method: 'PUT', body: JSON.stringify(result.body) })
       else await api('/api/co2-refunds', { method: 'POST', body: JSON.stringify(result.body) })
       setEditing(null)
       setError('')
@@ -69,7 +69,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
   async function remove(id: string) {
     if (!(await confirm({ title: 'Erstattung löschen?', message: 'Die Erstattung wird gelöscht; eine Gutschrift in einer offenen Abrechnung entfällt.', confirmLabel: 'Löschen' }))) return
     try {
-      await api(`/api/co2-refunds/${id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/co2-refunds/${id}`, propertyId), { method: 'DELETE' })
       await load()
     } catch (e) {
       setError(errorText(e))

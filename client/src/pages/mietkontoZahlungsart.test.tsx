@@ -135,7 +135,7 @@ test('Mietkonto: die Art einer erfassten Zahlung ist ein Entwurf; Speichern frag
   fireEvent.click(speichern())
   fireEvent.click(await screen.findByRole('button', { name: /^Art umstellen$/ }))
   await waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]).toEqual({ url: '/api/payments/p3', method: 'PUT', body: { kind: 'settlement' } })
+  expect(sent[0]).toEqual({ url: '/api/payments/p3?property=objekt-1', method: 'PUT', body: { kind: 'settlement' } })
 })
 
 test('Mietkonto: der Monat laut Verwendungszweck zeigt den gespeicherten Monat und wird als Entwurf gespeichert oder geleert (#281)', async () => {
@@ -161,12 +161,12 @@ test('Mietkonto: der Monat laut Verwendungszweck zeigt den gespeicherten Monat u
   expect(sent).toHaveLength(0)
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Speichern \\(Zahlung vom 03\\.04\\.${YEAR}\\)$`) }))
   await waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]).toEqual({ url: '/api/payments/p4', method: 'PUT', body: { designatedMonth: `${YEAR}-04` } })
+  expect(sent[0]).toEqual({ url: '/api/payments/p4?property=objekt-1', method: 'PUT', body: { designatedMonth: `${YEAR}-04` } })
   // Leeren heißt: nach gesetzlicher Reihenfolge.
   fireEvent.change(monat('20.03'), { target: { value: '' } })
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Speichern \\(Zahlung vom 20\\.03\\.${YEAR}\\)$`) }))
   await waitFor(() => expect(sent).toHaveLength(2))
-  expect(sent[1]).toEqual({ url: '/api/payments/p3', method: 'PUT', body: { designatedMonth: null } })
+  expect(sent[1]).toEqual({ url: '/api/payments/p3?property=objekt-1', method: 'PUT', body: { designatedMonth: null } })
 })
 
 test('Mietkonto: Übertrag, Stand zum 31.12., nicht einforderbare Vorauszahlung und offene Salden Ausgezogener (#281)', async () => {

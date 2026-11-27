@@ -57,7 +57,7 @@ beforeEach(() => {
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     if (path.endsWith('/rent-increase/plan')) return json({ ...PLAN, token: 'marke-plan' })
     if (method !== 'GET') {
-      sent.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) })
+      sent.push({ url: path, method, body: JSON.parse(String(init?.body ?? '{}')) })
       // Die Zustimmung schreibt die Stufe; die Liste nennt danach den neuen Stand.
       if (path === '/api/rent-increases/r1/status') increases = [{ ...SENT, status: 'agreed', decidedOn: '2026-11-20', token: 'marke-r1b' }]
       return json({ ok: true })

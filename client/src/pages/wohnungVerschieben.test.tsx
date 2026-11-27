@@ -127,7 +127,7 @@ test('zwei Objekte: das Feld zeigt das gespeicherte Objekt; der Wechsel fragt, n
   fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
   fireEvent.click(within(await screen.findByRole('alertdialog', undefined, SLOW)).getByRole('button', { name: 'Verschieben' }))
   await vi.waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]).toMatchObject({ url: '/api/units/eg', method: 'PUT', body: { propertyId: 'objekt-2' } })
+  expect(sent[0]).toMatchObject({ url: '/api/units/eg?property=objekt-1', method: 'PUT', body: { propertyId: 'objekt-2' } })
   expect(await screen.findByText(/steht jetzt im Objekt „Gartenweg 3“/, undefined, SLOW)).toBeTruthy()
 })
 

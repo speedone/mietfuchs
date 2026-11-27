@@ -14,7 +14,7 @@ import type { JournalGroupView } from '../src/db/journal.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { newest, revert } from '../testing/revert.ts'
 import type {
-  CostItem, Meter, Payment, Property, Reading, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
+  CostItem, DepositEntry, FuelDelivery, HeatingPlant, Meter, Payment, Property, Reading, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
 } from '../../shared/types.ts'
 import {
   type ClientSettings, type Server, archive, databaseOfV080, errorFrom, jsonOf, restore, startServer, wechsel, withProperties,
@@ -197,6 +197,194 @@ test('Objekt: abgelehnter Wechsel nennt den Grund und speichert nichts (#180)', 
     assert.equal(res.status, 400)
     assert.match(await errorFrom(res), /abgeschlossenen Abrechnung 2024 des bisherigen Objekts/)
     assert.deepEqual((await s.api<Unit[]>('/api/units?property=objekt-1')).map((u) => u.id), [w.id])
+  })
+})
+
+// ---------- Ändern und Löschen prüfen das genannte Objekt (#692) ----------
+// Ein Tab, der nach einem Objektwechsel noch die Liste des alten Objekts zeigt, nennt beim Speichern das neue. Der
+// Server lehnt dann ab, statt im falschen Haus zu ändern oder zu löschen. Ohne Angabe gilt wie bisher die Kennung allein.
+
+test('Objekt: Ändern und Löschen lehnen ab, wenn der Datensatz nicht zum genannten Objekt gehört, und ändern nichts (#692)', async () => {
+  await withProperties(async (s, b) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const a = 'objekt-1'
+    const unit = await post<Unit>(`/api/units?property=${a}`, { name: 'A-EG', areaM2: 50, participates: true })
+    const tenancy = await post<Tenancy>(`/api/tenancies?property=${a}`, {
+      unitId: unit.id, tenantName: 'Schulz', persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    })
+    const payment = await post<Payment>(`/api/payments?property=${a}`, { tenancyId: tenancy.id, date: '2025-01-03', amountCents: 65000 })
+    const item = await post<CostItem>(`/api/costItems?property=${a}`, { year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area' })
+    // Ein Hauptzähler hat keine Wohnung, sein Objekt trägt er selbst.
+    const meter = await post<Meter>(`/api/meters?property=${a}`, { name: 'Haupt', unitId: null, type: 'kaltwasser', unit: 'm³' })
+    const reading = await post<Reading>(`/api/readings?property=${a}`, { meterId: meter.id, date: '2025-01-01', value: 10 })
+
+    const records: [string, string, Record<string, unknown>, RegExp][] = [
+      ['units', unit.id, { areaM2: 51 }, /Diese Wohnung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['tenancies', tenancy.id, { persons: 2 }, /Dieses Mietverhältnis gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['payments', payment.id, { amountCents: 1 }, /Diese Zahlung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['costItems', item.id, { amountCents: 1 }, /Diese Kostenposition gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['meters', meter.id, { name: 'Anders' }, /Dieser Zähler gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['readings', reading.id, { value: 11 }, /Diese Ablesung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+    ]
+    const stock = async () => Object.fromEntries(await Promise.all(records.map(async ([coll]) => [coll, await s.api<unknown[]>(`/api/${coll}?property=${a}`)] as const)))
+    const before = await stock()
+    const stepsBefore = await journalSteps(s)
+
+    for (const [coll, id, body, satz] of records) {
+      const put = await sendJson(s, `/api/${coll}/${id}?property=${b.id}`, body)
+      assert.equal(put.status, 409, `PUT ${coll}`)
+      const meldung = await errorFrom(put)
+      assert.match(meldung, satz)
+      assert.match(meldung, /Geändert wurde nichts\. Wechseln Sie zu „[^“]+“ oder laden Sie die Seite neu\./)
+      const del = await fetch(`${s.base}/api/${coll}/${id}?property=${b.id}`, { method: 'DELETE' })
+      assert.equal(del.status, 409, `DELETE ${coll}`)
+      assert.match(await errorFrom(del), satz)
+      // Ein Objekt, das es nicht gibt, ist wie bei jeder Route eine 404.
+      assert.equal((await sendJson(s, `/api/${coll}/${id}?property=gibt-es-nicht`, body)).status, 404, `PUT ${coll}, unbekanntes Objekt`)
+      assert.equal((await fetch(`${s.base}/api/${coll}/${id}?property=gibt-es-nicht`, { method: 'DELETE' })).status, 404, `DELETE ${coll}, unbekanntes Objekt`)
+    }
+    // Der ganze Satz: das Objekt des Datensatzes, das gewählte und der Ausweg. Das Objekt des frischen Bestands hat keinen
+    // Namen und heißt wie im Umschalter.
+    const objektA = (await s.api<Property[]>('/api/properties')).find((p) => p.id === a)?.name || 'Ohne Namen'
+    assert.equal(await errorFrom(await sendJson(s, `/api/units/${unit.id}?property=${b.id}`, { areaM2: 51 })),
+      `Diese Wohnung gehört zu „${objektA}“, gewählt ist „Gartenweg 3“. Geändert wurde nichts. Wechseln Sie zu „${objektA}“ oder laden Sie die Seite neu.`)
+    // Auch das Aufteilen einer Position über zwei Zeiträume schreibt an ihr.
+    const split = await sendJson(s, `/api/costItems/${item.id}/split?property=${b.id}`, {})
+    assert.equal(split.status, 409)
+    assert.match(await errorFrom(split), /Diese Kostenposition gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/)
+    assert.deepEqual(await stock(), before, 'nichts geändert, nichts gelöscht')
+    assert.deepEqual(await journalSteps(s), stepsBefore, 'kein Schritt im Verlauf')
+
+    // Einen Datensatz, den es nicht mehr gibt, meldet die Route wie bisher, mit und ohne Objekt.
+    assert.equal((await sendJson(s, `/api/units/gibt-es-nicht?property=${b.id}`, { areaM2: 1 })).status, 404)
+    assert.equal((await fetch(`${s.base}/api/units/gibt-es-nicht?property=${b.id}`, { method: 'DELETE' })).status, 404)
+  })
+})
+
+test('Objekt: Ändern und Löschen mit dem richtigen Objekt und ohne Angabe gehen durch wie bisher (#692)', async () => {
+  await withProperties(async (s, b) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const put = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'PUT', body: JSON.stringify(body) })
+    const unit = await post<Unit>(`/api/units?property=${b.id}`, { name: 'B-EG', areaM2: 50, participates: true })
+    const tenancy = await post<Tenancy>(`/api/tenancies?property=${b.id}`, {
+      unitId: unit.id, tenantName: 'Schulz', persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    })
+    const payment = await post<Payment>(`/api/payments?property=${b.id}`, { tenancyId: tenancy.id, date: '2025-01-03', amountCents: 65000 })
+    const meter = await post<Meter>(`/api/meters?property=${b.id}`, { name: 'KW', unitId: unit.id, type: 'kaltwasser', unit: 'm³' })
+    const reading = await post<Reading>(`/api/readings?property=${b.id}`, { meterId: meter.id, date: '2025-01-01', value: 10 })
+    const item = await post<CostItem>(`/api/costItems?property=${b.id}`, { year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area' })
+
+    // Mit dem Objekt des Datensatzes.
+    assert.equal((await put<Unit>(`/api/units/${unit.id}?property=${b.id}`, { areaM2: 51 })).areaM2, 51)
+    assert.equal((await put<Tenancy>(`/api/tenancies/${tenancy.id}?property=${b.id}`, { persons: 2 })).persons, 2)
+    assert.equal((await put<Payment>(`/api/payments/${payment.id}?property=${b.id}`, { amountCents: 65001 })).amountCents, 65001)
+    assert.equal((await put<Meter>(`/api/meters/${meter.id}?property=${b.id}`, { name: 'Kaltwasser' })).name, 'Kaltwasser')
+    assert.equal((await put<Reading>(`/api/readings/${reading.id}?property=${b.id}`, { value: 11 })).value, 11)
+    assert.equal((await put<CostItem>(`/api/costItems/${item.id}?property=${b.id}`, { amountCents: 10001 })).amountCents, 10001)
+    // Ohne Angabe, auch bei mehreren Objekten: Die Kennung allein genügt wie bisher (Skripte, Tabs von vor dem Update,
+    // und Seiten über alle Objekte wie der Ordner der Belege).
+    assert.equal((await put<Unit>(`/api/units/${unit.id}`, { areaM2: 52 })).areaM2, 52)
+    assert.equal((await put<Payment>(`/api/payments/${payment.id}`, { amountCents: 65002 })).amountCents, 65002)
+    assert.equal((await put<CostItem>(`/api/costItems/${item.id}`, { amountCents: 10002 })).amountCents, 10002)
+    await s.api(`/api/readings/${reading.id}`, { method: 'DELETE' })
+    await s.api(`/api/payments/${payment.id}?property=${b.id}`, { method: 'DELETE' })
+    await s.api(`/api/costItems/${item.id}?property=${b.id}`, { method: 'DELETE' })
+
+    // Wohnung verschieben (#180): Die Adresse nennt das bisherige Objekt, der Rumpf das neue. Ein Zähler hielte sie
+    // im bisherigen Objekt fest (`guardUnit`), deshalb vorher weg.
+    await s.api(`/api/meters/${meter.id}?property=${b.id}`, { method: 'DELETE' })
+    assert.equal((await put<Unit>(`/api/units/${unit.id}?property=${b.id}`, { propertyId: 'objekt-1' })).propertyId, 'objekt-1')
+    // Das Mietverhältnis ist mitgewandert: Unter dem neuen Objekt geht es, unter dem alten nicht mehr.
+    assert.equal((await put<Tenancy>(`/api/tenancies/${tenancy.id}?property=objekt-1`, { persons: 3 })).persons, 3)
+    assert.equal((await sendJson(s, `/api/tenancies/${tenancy.id}?property=${b.id}`, { persons: 4 })).status, 409)
+    await s.api(`/api/units/${unit.id}?property=objekt-1`, { method: 'DELETE' })
+  })
+})
+
+// Die übrigen Routen an einem Datensatz eines Objekts (#692): Heizanlage und alles unter ihr, Lieferung, CO₂-Erstattung,
+// Kautionsbuchung und die Unterrouten von Mietverhältnis und Wohnung. Die Mieterhöhung steht in
+// api-mieterhoehung-schreiben.test.ts.
+test('Objekt: auch Heizanlage, Lieferung, Erstattung, Kaution, Mieterwechsel und Zwischenablesung lehnen ein anderes Objekt ab (#692)', async () => {
+  await withProperties(async (s, b) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const a = 'objekt-1'
+    const unit = await post<Unit>(`/api/units?property=${a}`, { name: 'A-EG', areaM2: 50, participates: true })
+    const tenancy = await post<Tenancy>(`/api/tenancies?property=${a}`, {
+      unitId: unit.id, tenantName: 'Schulz', persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    })
+    const payment = await post<Payment>(`/api/payments?property=${a}`, { tenancyId: tenancy.id, date: '2025-01-03', amountCents: 65000 })
+    const deposit = await post<DepositEntry>(`/api/deposit-entries?property=${a}`, { tenancyId: tenancy.id, date: '2025-01-02', kind: 'received', amountCents: 100000 })
+    const { plant } = await post<{ plant: HeatingPlant }>(`/api/heating-plants?property=${a}`, { energy: 'gas', method: 'manual' })
+    const delivery = await post<FuelDelivery>(`/api/heating-plants/${plant.id}/deliveries?property=${a}`, { label: 'Gas', invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', emissionsKg: 100 })
+    await s.api(`/api/tenancies/${tenancy.id}?property=${a}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply' }) })
+    const refund = await post<{ id: string }>(`/api/co2-refunds?property=${a}`, { tenancyId: tenancy.id, supplierBilledAt: '2025-01-20', claimedAt: '2025-03-01', amountCents: 24000, settlePeriod: '2025-01' })
+
+    const lists = async () => ({
+      plants: await s.api<unknown[]>(`/api/heating-plants?property=${a}`),
+      deliveries: await s.api<unknown[]>(`/api/heating-plants/${plant.id}/deliveries`),
+      refunds: await s.api<unknown[]>(`/api/co2-refunds?property=${a}`),
+      deposits: await s.api<unknown[]>(`/api/deposit-entries?property=${a}`),
+      tenancies: await s.api<unknown[]>(`/api/tenancies?property=${a}`),
+      payments: await s.api<unknown[]>(`/api/payments?property=${a}`),
+    })
+    const before = await lists()
+    const stepsBefore = await journalSteps(s)
+
+    const other = `property=${b.id}`
+    const calls: [string, string, unknown, RegExp][] = [
+      ['PUT', `/api/heating-plants/${plant.id}?${other}`, { name: 'Anders' }, /Diese Heizanlage gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['DELETE', `/api/heating-plants/${plant.id}?${other}`, undefined, /Diese Heizanlage/],
+      ['PUT', `/api/heating-plants/${plant.id}/periods/2025-01/co2?${other}`, {}, /Diese Heizanlage/],
+      ['POST', `/api/heating-plants/${plant.id}/deliveries?${other}`, { label: 'Öl', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31' }, /Diese Heizanlage/],
+      ['POST', `/api/heating-plants/${plant.id}/replace?${other}`, { date: '2025-06-01' }, /Diese Heizanlage/],
+      ['POST', `/api/heating-settlement/${plant.id}/2025-01/close?${other}`, {}, /Diese Heizanlage/],
+      ['PUT', `/api/fuel-deliveries/${delivery.id}?${other}`, { fixedCents: 1 }, /Diese Lieferung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['DELETE', `/api/fuel-deliveries/${delivery.id}?${other}`, undefined, /Diese Lieferung/],
+      ['PUT', `/api/co2-refunds/${refund.id}?${other}`, { amountCents: 1 }, /Diese Erstattung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['DELETE', `/api/co2-refunds/${refund.id}?${other}`, undefined, /Diese Erstattung/],
+      ['PUT', `/api/deposit-entries/${deposit.id}?${other}`, { amountCents: 1 }, /Diese Kautionsbuchung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['DELETE', `/api/deposit-entries/${deposit.id}?${other}`, undefined, /Diese Kautionsbuchung/],
+      ['POST', `/api/deposit-entries/from-payment/${payment.id}?${other}`, undefined, /Diese Zahlung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['POST', `/api/tenancies/${tenancy.id}/change?${other}`, { end: '2025-06-30' }, /Dieses Mietverhältnis gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      ['PUT', `/api/units/${unit.id}/interim-gaps/2025-06-30?${other}`, { status: 'missed', reason: '' }, /Diese Wohnung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+    ]
+    for (const [method, url, body, satz] of calls) {
+      const res = await fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+      assert.equal(res.status, 409, `${method} ${url}`)
+      const meldung = await errorFrom(res)
+      assert.match(meldung, satz, `${method} ${url}`)
+      assert.match(meldung, /Geändert wurde nichts\. Wechseln Sie zu „[^“]+“ oder laden Sie die Seite neu\./)
+    }
+    // Anlegen mit einem Verweis in ein anderes Objekt (Durchsicht, Kann 1): Nennt die Anfrage B, gehört aber die Wohnung,
+    // das Mietverhältnis oder der Zähler im Rumpf zu A, wird nichts angelegt.
+    const meter = await post<Meter>(`/api/meters?property=${a}`, { name: 'KW', unitId: unit.id, type: 'kaltwasser', unit: 'm³' })
+    const metersBefore = await s.api<unknown[]>(`/api/readings?property=${a}`)
+    const stepsAfterMeter = await journalSteps(s)
+    const creates: [string, unknown, RegExp][] = [
+      [`/api/tenancies?${other}`, { unitId: unit.id, tenantName: 'Neu', persons: 1, personHistory: [], start: '2026-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }, /^Diese Wohnung gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/],
+      [`/api/payments?${other}`, { tenancyId: tenancy.id, date: '2025-02-03', amountCents: 1 }, /^Dieses Mietverhältnis gehört zu/],
+      [`/api/readings?${other}`, { meterId: meter.id, date: '2025-01-01', value: 1 }, /^Dieser Zähler gehört zu/],
+      [`/api/deposit-entries?${other}`, { tenancyId: tenancy.id, date: '2025-02-02', kind: 'received', amountCents: 1 }, /^Dieses Mietverhältnis gehört zu/],
+      [`/api/co2-refunds?${other}`, { tenancyId: tenancy.id, supplierBilledAt: '2025-01-20', claimedAt: '2025-03-02', amountCents: 1, settlePeriod: '2025-01' }, /^Dieses Mietverhältnis gehört zu/],
+    ]
+    for (const [url, body, satz] of creates) {
+      const res = await sendJson(s, url, body, 'POST')
+      assert.equal(res.status, 409, `POST ${url}`)
+      assert.match(await errorFrom(res), satz, `POST ${url}`)
+    }
+    assert.deepEqual(await lists(), before, 'nichts angelegt')
+    assert.deepEqual(await s.api<unknown[]>(`/api/readings?property=${a}`), metersBefore)
+    assert.deepEqual(await journalSteps(s), stepsAfterMeter, 'kein Schritt im Verlauf')
+    // Mit dem Objekt des Verweises geht es.
+    assert.equal((await sendJson(s, `/api/payments?property=${a}`, { tenancyId: tenancy.id, date: '2025-02-03', amountCents: 1 }, 'POST')).status, 201)
+
+    // Mit dem Objekt des Datensatzes und ohne Angabe wie bisher; GET liest auch mit einem anderen Objekt.
+    assert.equal((await s.api<HeatingPlant>(`/api/heating-plants/${plant.id}?property=${a}`, { method: 'PUT', body: JSON.stringify({ name: 'Kessel' }) })).name, 'Kessel')
+    assert.equal((await s.api<FuelDelivery>(`/api/fuel-deliveries/${delivery.id}`, { method: 'PUT', body: JSON.stringify({ fixedCents: 12000 }) })).fixedCents, 12000)
+    assert.equal((await fetch(`${s.base}/api/heating-plants/${plant.id}/deliveries?${other}`)).status, 200)
+    await s.api(`/api/deposit-entries/${deposit.id}?property=${a}`, { method: 'DELETE' })
+    // Eine Kennung, die es nicht gibt, meldet die Route wie bisher.
+    assert.equal((await sendJson(s, `/api/fuel-deliveries/gibt-es-nicht?${other}`, { fixedCents: 1 })).status, 404)
   })
 })
 
@@ -653,13 +841,14 @@ test('Mieterwechsel (#150): unsinnige Angaben werden mit einem Satz abgelehnt, o
   }
 })
 
-test('Mieterwechsel (#150): über die Grenze eines Objekts wird mit 400 abgelehnt und nichts gespeichert', async () => {
+test('Mieterwechsel (#150): über die Grenze eines Objekts wird abgelehnt und nichts gespeichert', async () => {
   await withProperties(async (s, b) => {
     const a = await changeStock(s, 'objekt-1')
     const fremd = await changeStock(s, b.id)
-    // Das Mietverhältnis gehört zu Objekt A, die Anfrage nennt B.
+    // Das Mietverhältnis gehört zu Objekt A, die Anfrage nennt B: seit #692 wie jede Route an einem Datensatz 409 mit Satz.
     const falschesObjekt = await postChange(s, a.tenancy.id, { end: '2025-06-30', readings: [], newTenancy: null }, b.id)
-    assert.equal(falschesObjekt.status, 400)
+    assert.equal(falschesObjekt.status, 409)
+    assert.match(await errorFrom(falschesObjekt), /Dieses Mietverhältnis gehört zu „[^“]+“, gewählt ist „Gartenweg 3“/)
     // Ein Zähler aus Objekt B.
     const fremderZaehler = await postChange(s, a.tenancy.id, { end: '2025-06-30', readings: [{ meterId: fremd.wasser.id, value: 1 }], newTenancy: null })
     assert.equal(fremderZaehler.status, 400)
@@ -685,6 +874,8 @@ const IBAN_OK = 'DE89370400440532013000'
 const IBAN_OK_2 = 'DE02120300000000202051'
 const IBAN_FALSCH = 'DE00370400440532013000'
 
+// Die Kennungen der Schritte im Verlauf: Eine Ablehnung legt keinen an.
+const journalSteps = async (s: Server): Promise<number[]> => (await jsonOf<JournalGroupView[]>(await fetch(`${s.base}/api/journal?limit=200`))).map((g) => g.id)
 const sendJson = (s: Server, url: string, body: unknown, method = 'PUT') =>
   fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 

@@ -49,7 +49,7 @@ test('Bearbeiten: Auswahl „Verrechnung“ und § 9 zeigen die gespeicherten We
   // Bearbeiten öffnet ein Seitenfenster (#346 Schritt 12): Titel „Erstattung bearbeiten“, Primärknopf „Speichern“
   const drawer = screen.getByRole('dialog', { name: 'Erstattung bearbeiten' })
   fireEvent.click(within(drawer).getByRole('button', { name: 'Speichern' }))
-  await waitFor(() => expect(sent.at(-1)?.url).toBe('/api/co2-refunds/e'))
+  await waitFor(() => expect(sent.at(-1)?.url).toBe('/api/co2-refunds/e?property=objekt-1'))
   expect(sent.at(-1)?.method).toBe('PUT')
   expect(sent.at(-1)?.body).toMatchObject({ settlePeriod: '2025-01', restriction: 'building', amountCents: 24000 })
 })

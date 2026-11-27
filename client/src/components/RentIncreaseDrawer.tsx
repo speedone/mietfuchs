@@ -104,8 +104,8 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   }
 
   const loadIncreases = useCallback(() => {
-    api<RentIncreaseView[]>(`/api/tenancies/${tenancy.id}/rent-increases`).then(setIncreases).catch((e: unknown) => toast(errorText(e), 'error'))
-  }, [tenancy.id])
+    api<RentIncreaseView[]>(withProperty(`/api/tenancies/${tenancy.id}/rent-increases`, propertyId)).then(setIncreases).catch((e: unknown) => toast(errorText(e), 'error'))
+  }, [tenancy.id, propertyId])
   useEffect(loadIncreases, [loadIncreases])
 
   // Die heute geltende Stufe, nach dem Tag des Servers, solange keiner bekannt ist nach dem des Rechners (Durchsicht S4).
@@ -125,7 +125,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
     }
     setNote(null)
     const timer = setTimeout(() => {
-      api<PlanWithToken>(`/api/tenancies/${tenancy.id}/rent-increase/plan`, { method: 'POST', body: JSON.stringify(built.body) })
+      api<PlanWithToken>(withProperty(`/api/tenancies/${tenancy.id}/rent-increase/plan`, propertyId), { method: 'POST', body: JSON.stringify(built.body) })
         .then((p) => {
           if (n !== seq.current) return
           setPlan(p)
@@ -149,7 +149,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
     if (!plan) return
     const creating = { value, letter }
     try {
-      await api<RentIncreaseView>(`/api/tenancies/${tenancy.id}/rent-increases`, { method: 'POST', body: JSON.stringify({ request: built.body, letter: checked.body, token: plan.token }) })
+      await api<RentIncreaseView>(withProperty(`/api/tenancies/${tenancy.id}/rent-increases`, propertyId), { method: 'POST', body: JSON.stringify({ request: built.body, letter: checked.body, token: plan.token }) })
       toast('Schreiben als Entwurf angelegt.')
       setSaved(creating)
       loadIncreases()
@@ -177,11 +177,11 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
   }
   async function send(x: RentIncreaseView, receivedOn: string) {
     if (!(await confirm(sendQuestion(x, receivedOn, x.basis.sender.name.trim() === '')))) return
-    await act(`/api/rent-increases/${x.id}/send`, { method: 'POST', body: JSON.stringify({ receivedOn, token: x.token }) }, 'Als versendet gespeichert.', true)
+    await act(withProperty(`/api/rent-increases/${x.id}/send`, propertyId), { method: 'POST', body: JSON.stringify({ receivedOn, token: x.token }) }, 'Als versendet gespeichert.', true)
   }
   async function decide(x: RentIncreaseView, decision: RentIncreaseDecision, agreedCents: number | null, decidedOn: string) {
     if (!(await confirm(decisionQuestion(x, decision, agreedCents)))) return
-    await act(`/api/rent-increases/${x.id}/status`, { method: 'POST', body: JSON.stringify({ status: decision, agreedCents, decidedOn, token: x.token }) }, `${RENT_INCREASE_STATUS_LABELS[decision]}: gespeichert.`, true)
+    await act(withProperty(`/api/rent-increases/${x.id}/status`, propertyId), { method: 'POST', body: JSON.stringify({ status: decision, agreedCents, decidedOn, token: x.token }) }, `${RENT_INCREASE_STATUS_LABELS[decision]}: gespeichert.`, true)
   }
   // Vor dem Druck eines Entwurfs, der noch nicht zugehen darf, die Rückfrage mit dem frühesten Tag (Durchsicht S1).
   async function print(x: RentIncreaseView) {
@@ -193,7 +193,7 @@ export default function RentIncreaseDrawer({ tenancy, unit, property, settings =
     if (!(await confirm({ title: 'Entwurf löschen?', message: 'Der Entwurf des Schreibens wird gelöscht. Ihre Eingaben in diesem Fenster bleiben stehen.', confirmLabel: 'Löschen', danger: true }))) return
     // Mit dem Entwurf ist auch weg, was die Eingaben als gespeichert gelten ließ: Sie sind wieder ungespeichert, und
     // „Schließen“ fragt.
-    if (await act(`/api/rent-increases/${x.id}`, { method: 'DELETE', body: JSON.stringify({ token: x.token }) }, 'Entwurf gelöscht.')) setSaved(null)
+    if (await act(withProperty(`/api/rent-increases/${x.id}`, propertyId), { method: 'DELETE', body: JSON.stringify({ token: x.token }) }, 'Entwurf gelöscht.')) setSaved(null)
   }
   // „Hier beheben“ zur Art der Miete verlässt das Fenster: mit Eingaben fragen wie jedes Schließen (Drawer.tsx).
   async function editTenancy() {

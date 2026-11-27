@@ -157,7 +157,7 @@ test('Heizung erneuert (Kessel getauscht): Tag, Energie und Namen gehen an die R
   fireEvent.change(screen.getByLabelText('Name der bisherigen Heizanlage'), { target: { value: 'Ölkessel' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]?.url).toBe('/api/heating-plants/hp1/replace')
+  expect(sent[0]?.url).toBe('/api/heating-plants/hp1/replace?property=objekt-1')
   expect(sent[0]?.body).toMatchObject({ date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' })
 })
 
@@ -306,8 +306,8 @@ test('Zentrale Heizung, Brennstoffvertrag beim Mieter: keine Anlage, nach Rückf
   fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
   await waitFor(() => expect(sent).toHaveLength(2))
   expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
-    ['PUT', '/api/tenancies/ta', { heatingModel: 'selfSupply', selfSupplyKind: 'central' }],
-    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply', selfSupplyKind: 'central' }],
+    ['PUT', '/api/tenancies/ta?property=objekt-1', { heatingModel: 'selfSupply', selfSupplyKind: 'central' }],
+    ['PUT', '/api/tenancies/tb?property=objekt-1', { heatingModel: 'selfSupply', selfSupplyKind: 'central' }],
   ])
   expect(sent.some((s) => s.url.startsWith('/api/heating-plants'))).toBe(false)
 })
@@ -336,8 +336,8 @@ test('N-3: schon „Mieter heizt selbst“ ohne Art: die Einrichtung trägt „z
   await waitFor(() => expect(sent).toHaveLength(2))
   expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
-    ['PUT', '/api/tenancies/ta', { selfSupplyKind: 'central' }],
-    ['PUT', '/api/tenancies/tb', { selfSupplyKind: 'central' }],
+    ['PUT', '/api/tenancies/ta?property=objekt-1', { selfSupplyKind: 'central' }],
+    ['PUT', '/api/tenancies/tb?property=objekt-1', { selfSupplyKind: 'central' }],
   ])
 })
 

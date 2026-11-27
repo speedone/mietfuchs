@@ -97,7 +97,7 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
       return
     }
     try {
-      await api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
+      await api(withProperty(`/api/tenancies/${tenancy.id}`, propertyId), { method: 'PUT', body: JSON.stringify(result.body) })
       holdErrors.set('')
       toast('Einbehalt gespeichert.')
       // Wie nach dem Anlegen: Der gespeicherte Stand ist der neue Ausgangsstand, „Schließen“ fragt nicht nach. Nicht, wenn
@@ -142,7 +142,7 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
       if (!ok) return
     }
     try {
-      if (editing) await api(`/api/deposit-entries/${editing.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
+      if (editing) await api(withProperty(`/api/deposit-entries/${editing.id}`, propertyId), { method: 'PUT', body: JSON.stringify(result.body) })
       else await api('/api/deposit-entries', { method: 'POST', body: JSON.stringify(result.body) })
       // Das Fenster bleibt offen: Raten und Zinsen kommen oft in einem Zug. Das Datum bleibt nach dem Anlegen stehen.
       // Neu aufbauen nur, wenn der Einbehalt nichts Ungespeichertes trägt; sonst ginge er beim Schließen ohne Rückfrage
@@ -190,7 +190,7 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
     })
     if (!ok) return
     try {
-      await api(`/api/deposit-entries/${entry.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/deposit-entries/${entry.id}`, propertyId), { method: 'DELETE' })
       if (editing?.id === entry.id) stopEdit()
       errors.set('')
       onChanged()

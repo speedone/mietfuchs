@@ -13,6 +13,7 @@ import {
 } from '../heatingSelfForm'
 import { INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained, percentOf, unsureShareHint } from '../heatingSelfView'
 import { NoticeBox } from './Notice'
+import { useOptionalProperty, withProperty } from '../property'
 
 // Einrichtung Schritt 7 (Heizung PR 10, Entwurf 11.2): Heizkosten selbst abrechnen. Antwortet der
 // Server mit 409, nennt er die Heizpositionen offener Zeiträume, die Teil und Ziel brauchen; sie
@@ -22,6 +23,7 @@ import { NoticeBox } from './Notice'
 export default function HeatingSelfSetup({ plant, units = [], period, periodLabel, onDone, onCancel }: {
   plant: HeatingPlant; units?: readonly { id: string; name: string; parentUnitId?: string | null }[]; period: string; periodLabel?: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [form, setForm] = useState(() => emptySelfSetup(plant, period))
   const errors = useFormError<SelfSetupField>()
   const toast = useToast()
@@ -40,7 +42,7 @@ export default function HeatingSelfSetup({ plant, units = [], period, periodLabe
     }
     setBusy(true)
     try {
-      const done = await api<{ plant: HeatingPlant; created: unknown[]; converted: number; estimatesNotice?: string | null }>(`/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify(result.body) })
+      const done = await api<{ plant: HeatingPlant; created: unknown[]; converted: number; estimatesNotice?: string | null }>(withProperty(`/api/heating-plants/${plant.id}/self`, propertyId), { method: 'PUT', body: JSON.stringify(result.body) })
       errors.clear()
       // Durchsicht von #242, G-I1: Schätzungen, die nach dem Wechsel der Erfassung nicht mehr rechnen.
       if (done.estimatesNotice) toast(done.estimatesNotice, 'error')

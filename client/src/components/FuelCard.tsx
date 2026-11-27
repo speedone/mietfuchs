@@ -1,6 +1,7 @@
 // Die Karte „Lieferungen“ einer Heizperiode (Heizung PR 7, Entwurf 3.2, 5.4, 11.4): die Rechnungen des
 // Versorgers, die in dieser Heizperiode enden, und bei freien Schlüsseln die Verknüpfung der Positionen.
 // Mietfuchs teilt jede Rechnung auf die Heizperioden auf; die Abrechnung zeigt, wie.
+import { useOptionalProperty, withProperty } from '../property'
 import Card from '../components/Card'
 import { useRef, useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
@@ -51,6 +52,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   // Fehler mit Ausweg (#487): die KI-Einstellungen öffnen
   onOpenAiSettings?: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   // Die Lieferung im Seitenfenster (#346 Schritt 7): 'neu' oder die Kennung der Lieferung, `null` ohne Fenster.
   const [editing, setEditing] = useState<string | null>(null)
   // Ein Formular mit dem Vorschlag der KI gilt schon beim Öffnen als geändert gegenüber dem leeren Formular
@@ -122,7 +124,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     try {
       const upload = plant.propertyId ? await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(view.period) }) : await heatingUpload(file, null)
       const fd = stored ? asStored(upload, stored) : upload
-      const r = await aiRequest<FuelExtractResult>(`/api/heating-plants/${plant.id}/fuel-invoice`, fd, { onProgress: setReading })
+      const r = await aiRequest<FuelExtractResult>(withProperty(`/api/heating-plants/${plant.id}/fuel-invoice`, propertyId), fd, { onProgress: setReading })
       // Durchsicht S1: nur vorbelegen, was die Karte unten zeigt (CO₂-Felder, Bezug der kWh bei Gas).
       const co2 = plant.energy === undefined || asksCo2Facts({ energy: plant.energy, contracting: plant.contracting, heatGeneration: plant.heatGeneration ?? null })
       const place = { method: plant.method, stock, halfSplit, co2, gas: !stock && energy === 'gas' }
@@ -160,8 +162,8 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     // Die Wohnung nur bei einer Etagenheizung; sonst bleibt der Rumpf, wie er war.
     const body = plant.supply === 'perUnit' ? { ...r.body, unitId: unit.unitId } : r.body
     try {
-      if (editing === 'neu') await api(`/api/heating-plants/${plant.id}/deliveries`, { method: 'POST', body: JSON.stringify(body) })
-      else await api(`/api/fuel-deliveries/${editing}`, { method: 'PUT', body: JSON.stringify(body) })
+      if (editing === 'neu') await api(withProperty(`/api/heating-plants/${plant.id}/deliveries`, propertyId), { method: 'POST', body: JSON.stringify(body) })
+      else await api(withProperty(`/api/fuel-deliveries/${editing}`, propertyId), { method: 'PUT', body: JSON.stringify(body) })
       const created = editing === 'neu'
       if (created) setKept(null)
       close()
@@ -183,7 +185,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     })
     if (!ok) return
     try {
-      await api(`/api/fuel-deliveries/${d.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/fuel-deliveries/${d.id}`, propertyId), { method: 'DELETE' })
       toast('Lieferung entfernt.')
       onSaved()
     } catch (e) {
@@ -202,7 +204,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     const action = creditAction(value, d)
     if (action.kind !== 'save') return
     try {
-      await api(action.url, { method: 'PUT', body: JSON.stringify(action.body) })
+      await api(withProperty(action.url, propertyId), { method: 'PUT', body: JSON.stringify(action.body) })
       toast('Angabe gespeichert.')
       setCredit(null)
       onSaved()
@@ -218,7 +220,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       return
     }
     try {
-      const result = await api<{ sourceEmpty: boolean }>(`/api/fuel-deliveries/${d.id}/reassign-credit`, { method: 'POST', body: JSON.stringify(r.body) })
+      const result = await api<{ sourceEmpty: boolean }>(withProperty(`/api/fuel-deliveries/${d.id}/reassign-credit`, propertyId), { method: 'POST', body: JSON.stringify(r.body) })
       setCredit(null)
       setError('')
       toast('Gutschrift zugeordnet.')
@@ -229,7 +231,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           confirmLabel: 'Entfernen',
           defaultChoice: 'cancel',
         })
-        if (ok) await api(`/api/fuel-deliveries/${d.id}`, { method: 'DELETE' })
+        if (ok) await api(withProperty(`/api/fuel-deliveries/${d.id}`, propertyId), { method: 'DELETE' })
       }
       onSaved()
     } catch (e) {
@@ -506,8 +508,9 @@ function LinkRow({ item, options, closed, onSaved }: {
   // Verschwindet die gewählte Lieferung aus der Liste, ist der Entwurf verworfen (Durchsicht zu #309, MUSS 2).
   const draft = useDraft(item.fuelDeliveryId ?? '', { scope: item.id, isValid: (v) => options.some((o) => o.value === v) })
   const what = `Lieferung zu „${item.description}“`
+  const propertyId = useOptionalProperty()?.property?.id
   async function link(deliveryId: string) {
-    await api(`/api/costItems/${item.id}`, { method: 'PUT', body: JSON.stringify({ fuelDeliveryId: deliveryId === '' ? null : deliveryId }) })
+    await api(withProperty(`/api/costItems/${item.id}`, propertyId), { method: 'PUT', body: JSON.stringify({ fuelDeliveryId: deliveryId === '' ? null : deliveryId }) })
     onSaved()
   }
   return (

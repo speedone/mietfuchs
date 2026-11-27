@@ -440,6 +440,24 @@ vorverteilt (#95), die Flexibilität steckt in der Kostenposition (#94).
 - **Routen nehmen `?property=`**, beim Anlegen einer Wurzel `propertyId` im Rumpf (`propertyOf`).
   **Fehlt die Angabe und gibt es genau ein Objekt, gilt dieses**; bei mehreren 400 statt still
   alle. Belege, Backup und die Gesamtsicht der Steuer (`/api/tax/overview`) sind installationsweit.
+- **Ändern und Löschen prüfen das genannte Objekt** (#692, `requireInProperty` in index.ts): `PUT` und `DELETE
+  /api/<Sammlung>/:id` und `PUT /api/costItems/:id/split` lehnen mit 409 und Satz ab („Diese Wohnung gehört zu „A“, gewählt
+  ist „B“. Geändert wurde nichts. Wechseln Sie zu „A“ oder laden Sie die Seite neu.“, ohne Bezeichnung „Ohne Namen“), wenn `?property=` ein anderes Objekt nennt als das des Datensatzes (Wurzel oder geerbt wie
+  in `narrowToProperty`). **Ohne `?property=` gilt die Kennung allein, wie bisher**, auch bei mehreren Objekten: Skripte
+  und alte Tabs arbeiten weiter, und Seiten über alle Objekte (Ordner der Belege) nennen keines. Beim Verschieben einer
+  Wohnung nennt die Adresse das bisherige Objekt, der Rumpf das neue. Die Oberfläche schickt das gewählte Objekt mit
+  (Wächter in client/src/pages/objektBeimAendern.test.tsx). **Dieselbe Prüfung als Vorschaltung** (`RECORD_ROUTES`) vor
+  jeder Anfrage außer GET an `/api/heating-plants/:id/…` und `/api/heating-settlement/:plant/…` (Heizanlage),
+  `/api/fuel-deliveries/:id`, `/api/co2-refunds/:id`, `/api/deposit-entries/:id`, `…/from-payment/:paymentId` (Zahlung),
+  `/api/rent-increases/:id` und unter `/api/tenancies/:id/…` (Mieterwechsel, Mieterhöhung) und `/api/units/:id/…`
+  (Zwischenablesung); sie liest vor dem Schreiben in einem eigenen Vorgang. Das Objekt eines Datensatzes liest
+  `propertyOfRecord` mit einer Abfrage nach Kennung. **Beim Anlegen** prüfen `POST /api/tenancies` (Wohnung), `payments`
+  und `/api/deposit-entries`, `/api/co2-refunds` (Mietverhältnis) und `readings` (Zähler) den Verweis im Rumpf gegen
+  `?property=` (`requireReferenceInProperty`). Ohne Prüfung, mit Grund: `/api/properties/:id/…` (die Kennung ist das
+  Objekt), Auswertungen (am Beleg, Objekt fest nach der ersten Buchung, `placeAssessment`), Belege, Kontoauszug, Rechtswerte, KI, Verlauf,
+  Vorversionen, Geräte (installationsweit), `/api/settlement/:period/…` und `/api/rentledger/:year/…` (Objekt nur aus
+  `?property=`), Anschreiben je Mietverhältnis (`letterTarget` prüft schon). Eine Ablehnung schreibt nichts und legt
+  keinen Schritt im Verlauf an (api-objekte.test.ts, api-mieterhoehung-schreiben.test.ts).
 - **Einstellungen**: Name und Adresse gehören zum Objekt (`settings.house_name`/`address` stehen
   nur noch für den eingefrorenen Eingang da). Vermieter, IBAN und Zahlungsfrist sind in `settings`
   die Vorgabe, am Objekt `null` = „Vorgabe gilt“ (`effectiveLandlord` in client/src/landlord.ts).

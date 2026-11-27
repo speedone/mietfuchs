@@ -757,7 +757,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           }
         }
         try {
-          const done = await sendConfirmed((b) => api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body: b }), bodyOf())
+          const done = await sendConfirmed((b) => api(withProperty(editing ? `/api/costItems/${form.id}/split` : '/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body: b }), bodyOf())
           if (!done) return
         } catch (e) {
           refused(e)
@@ -795,7 +795,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     try {
       const done = await sendConfirmed(async (b) => {
         created.item = await (editing
-          ? api(`/api/costItems/${form.id}`, { method: 'PUT', body: b })
+          ? api(withProperty(`/api/costItems/${form.id}`, propertyId), { method: 'PUT', body: b })
           : api(withProperty('/api/costItems', propertyId), { method: 'POST', body: b }))
       }, body)
       if (!done) return
@@ -844,7 +844,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     })
     if (!ok) return
     try {
-      await api(`/api/costItems/${i.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/costItems/${i.id}`, propertyId), { method: 'DELETE' })
     } catch (e) {
       // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
       toast(errorText(e), 'error')

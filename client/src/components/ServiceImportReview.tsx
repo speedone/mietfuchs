@@ -17,6 +17,7 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { CATEGORIES, type HeatingPeriodView, type ServiceStatementExtraction } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
+import { useOptionalProperty, withProperty } from '../property'
 
 export default function ServiceImportReview({ x, file, ctx, view, co2 = true, onDone }: {
   x: ServiceStatementExtraction
@@ -27,6 +28,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
   co2?: boolean
   onDone: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [drafts, setDrafts] = useState<BlockDraft[]>(() => draftsOf(x, ctx))
   const [answer, setAnswer] = useState<Co2Answer>('')
   // Die eben angelegte Heizposition, mit der die CO₂-Angaben verknüpft werden (Prüfung S5).
@@ -105,7 +107,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
       if (!ok) return
     }
     try {
-      await api(`/api/heating-plants/${ctx.plantId}/periods/${ctx.heating.key}/co2`, { method: 'PUT', body: JSON.stringify(r.body) })
+      await api(withProperty(`/api/heating-plants/${ctx.plantId}/periods/${ctx.heating.key}/co2`, propertyId), { method: 'PUT', body: JSON.stringify(r.body) })
       setError('')
       toast('CO₂-Angaben gespeichert.')
       onDone()
@@ -117,7 +119,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
   async function saveHotWater() {
     if (!x.dhwMethod) return
     try {
-      await api(`/api/heating-plants/${ctx.plantId}/periods/${ctx.heating.key}/hot-water`, { method: 'PUT', body: JSON.stringify({ dhwMethod: x.dhwMethod }) })
+      await api(withProperty(`/api/heating-plants/${ctx.plantId}/periods/${ctx.heating.key}/hot-water`, propertyId), { method: 'PUT', body: JSON.stringify({ dhwMethod: x.dhwMethod }) })
       setError('')
       toast('Angabe zum Warmwasser gespeichert.')
       onDone()

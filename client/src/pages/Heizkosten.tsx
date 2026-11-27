@@ -86,8 +86,8 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
   const load = useCallback(async () => {
     try {
       const plants = await api<HeatingPlant[]>(withProperty('/api/heating-plants', property?.id))
-      const views = await Promise.all(plants.map((p) => api<HeatingPeriodView[]>(`/api/heating-plants/${p.id}/periods?period=${encodeURIComponent(period.param)}`)))
-      const deliveries = await Promise.all(plants.map((p) => api<FuelDelivery[]>(`/api/heating-plants/${p.id}/deliveries`)))
+      const views = await Promise.all(plants.map((p) => api<HeatingPeriodView[]>(withProperty(`/api/heating-plants/${p.id}/periods?period=${encodeURIComponent(period.param)}`, property?.id))))
+      const deliveries = await Promise.all(plants.map((p) => api<FuelDelivery[]>(withProperty(`/api/heating-plants/${p.id}/deliveries`, property?.id))))
       // Heizung PR 15: alle Positionen des Objekts aus allen Zeiträumen, für die Karte „Betriebsstrom“.
       const items = await api<CostItem[]>(withProperty('/api/costItems', property?.id))
       const degreeDays = property ? await api<DegreeDayValue[]>(`/api/properties/${property.id}/degree-days`) : []
@@ -97,7 +97,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
         : []
       // Die Befunde der Prüfung kommen aus dem Blatt für den Messdienst: dieselbe Prüfung wie in der Abrechnung.
       const sheetKeys = plants.flatMap((p, i) => (asksCo2Facts(p) ? (views[i] ?? []).filter((v) => hasSheet(deliveries[i] ?? [], v)).map((v) => ({ p, v })) : []))
-      const sheets = await Promise.all(sheetKeys.map(({ p, v }) => api<Co2Sheet>(`/api/heating-plants/${p.id}/periods/${encodeURIComponent(String(v.period))}/co2-sheet`)))
+      const sheets = await Promise.all(sheetKeys.map(({ p, v }) => api<Co2Sheet>(withProperty(`/api/heating-plants/${p.id}/periods/${encodeURIComponent(String(v.period))}/co2-sheet`, property?.id))))
       const findings = Object.fromEntries(sheetKeys.map(({ p, v }, i) => [`${p.id}:${v.period}`, Object.fromEntries((sheets[i]?.deliveries ?? []).map((d) => [d.id, d.findings]))]))
       setData({
         items,

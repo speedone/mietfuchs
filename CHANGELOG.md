@@ -218,6 +218,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   30 Sekunden auf eine Antwort und sagt das auf der Konsole bzw. im Protokoll (unter Linux außerhalb des Fensters auch
   als Mitteilung). Antwortet das andere Mietfuchs, öffnet es wie bisher dessen Oberfläche oder meldet es; schweigt der
   Port weiter, startet Mietfuchs selbst ([#694](https://github.com/speedone/mietfuchs/issues/694)).
+- Objekt beim Ändern prüfen: Der Server prüft beim Ändern, Löschen und Versenden, ob der Datensatz zum genannten Objekt
+  gehört, und beim Anlegen mit genanntem Objekt, ob die gewählte Wohnung, das Mietverhältnis oder der Zähler dazu gehört.
+  Bisher nahm er dafür allein die Kennung; in der Oberfläche fiel das nicht auf, weil sie nur Datensätze des gewählten
+  Objekts zeigt. Die Oberfläche nennt das gewählte Objekt jetzt bei jedem Ändern, Löschen und Versenden. Passt es nicht, lehnt der Server ab, etwa
+  mit „Diese Zahlung gehört zu „Lindenstraße 7“, gewählt ist „Gartenweg 3“. Geändert wurde nichts. Wechseln Sie zu
+  „Lindenstraße 7“ oder laden Sie die Seite neu.“; im Verlauf entsteht dabei kein Eintrag. Das gilt für Wohnungen,
+  Mietverhältnisse, Kostenpositionen, Zähler, Ablesungen und Zahlungen, für Heizanlagen samt ihrer Heizperioden und
+  Heizkostenabrechnungen, für Lieferungen, CO₂-Erstattungen, Kautionsbuchungen, Mieterhöhungen, den Mieterwechsel und
+  fehlende Zwischenablesungen. Skripte, die kein Objekt nennen, arbeiten weiter wie bisher
+  ([#692](https://github.com/speedone/mietfuchs/issues/692)).
 - Heizkostenverteiler ohne Skala: Unter „Zähler & Stände“ ließ sich ein Heizkostenverteiler anlegen, ohne die Skala zu
   wählen; in der Liste stand danach nur „Skala fehlt“. Ohne Skala verteilt die eigene Heizkostenabrechnung die
   Heizkosten nicht (sie bleiben mit einem Fehler unter „Zu prüfen“ beim Vermieter). Die Skala ist jetzt eine

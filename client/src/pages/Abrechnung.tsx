@@ -490,7 +490,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       : { prepaymentOverrides: overrides }
     // Lehnt der Server ab, steht sein Satz am Feld und nicht oben auf der Seite (#346, Schritt 3).
     try {
-      await api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify(body) })
+      await api(withProperty(`/api/tenancies/${tenancyId}`, propertyId), { method: 'PUT', body: JSON.stringify(body) })
     } catch (e) {
       if (cents === null) toast(errorText(e), 'error')
       else setPpEdit((p) => (p ? { ...p, error: errorText(e) } : p))

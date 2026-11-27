@@ -6,6 +6,7 @@ import Term from './Term'
 import DraftActions from './DraftActions'
 import { keepDraft, useDraft } from '../useDraft'
 import { AGREED_OPTIONS, asksBilling, asksScope, billingText, EXEMPTION_NOT_OFFERED, EXEMPTION_OPTIONS, EXEMPTION_SCOPE_OPTIONS, inheritedText, laterClosedText, MONTHLY_ELSEWHERE_LABEL } from '../heatingRulesForm'
+import { useOptionalProperty, withProperty } from '../property'
 
 type RulesBody = Partial<Pick<HeatingPeriodData, 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'>>
 // Was die Karte zeigt und als Entwurf hält (#309). Der Umfang ohne Antwort zeigt „nur die Wärme“, wie die
@@ -32,6 +33,7 @@ export function rulesBody(saved: Shown, draft: Shown): RulesBody {
 // folgenden, bis eine spätere etwas anderes sagt; eine frühere ändert sie nicht. Angezeigt wird, was gilt.
 // Die Felder sind ein Entwurf mit einem „Speichern“ für die ganze Karte (#309, Karte mit einem Speichern).
 export default function HeatingRulesCard({ plant, view, onChanged }: { plant: HeatingPlant; view: HeatingPeriodView; onChanged: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const toast = useToast()
   const confirm = useConfirm()
   const saved: Shown = {
@@ -46,7 +48,7 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
     const next = { ...r, ...patch }
     draft.set(next.exemption === 'none' ? { ...next, exemptionScope: saved.exemptionScope, exemptionBillingAgreed: saved.exemptionBillingAgreed } : next)
   }
-  const url = `/api/heating-plants/${plant.id}/periods/${view.period}/rules`
+  const url = withProperty(`/api/heating-plants/${plant.id}/periods/${view.period}/rules`, propertyId)
   async function save(value: Shown) {
     const body = rulesBody(saved, value)
     // Erst nachrechnen: Wirkt die Angabe an abgeschlossenen Heizperioden vorbei auf eine offene, fragt die Karte

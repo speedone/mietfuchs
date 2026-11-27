@@ -132,7 +132,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
       }
       const kind = central ? 'central' : 'perUnit'
       // Nachprüfung N-3: die Art bei denen nachtragen, die schon „Mieter heizt selbst“ sind.
-      for (const id of offer.kindTenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ selfSupplyKind: kind }) })
+      for (const id of offer.kindTenancyIds) await api(withProperty(`/api/tenancies/${id}`, propertyId), { method: 'PUT', body: JSON.stringify({ selfSupplyKind: kind }) })
       if (offer.tenancyIds.length === 0) {
         if (offer.kindTenancyIds.length > 0) {
           toast('Art der Heizung bei „Mieter heizt selbst“ nachgetragen.')
@@ -146,7 +146,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
         confirmLabel: 'Umstellen',
       })
       if (!ok) return
-      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: kind }) })
+      for (const id of offer.tenancyIds) await api(withProperty(`/api/tenancies/${id}`, propertyId), { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: kind }) })
       toast('Umgestellt.')
       await onChanged?.()
     } catch (e) {
@@ -298,7 +298,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
     try {
       if (editingId) {
         try {
-          saved = await api<HeatingPlant>(`/api/heating-plants/${editingId}`, { method: 'PUT', body: JSON.stringify(body) })
+          saved = await api<HeatingPlant>(withProperty(`/api/heating-plants/${editingId}`, propertyId), { method: 'PUT', body: JSON.stringify(body) })
         } catch (e) {
           // Zurück von der eigenen Abrechnung: Die offenen Positionen gehen nach Wohnfläche, nach Rückfrage.
           if (!(e instanceof ApiError && e.status === 409 && Array.isArray(e.data.items))) throw e
@@ -308,7 +308,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
             confirmLabel: 'Umstellen',
           })
           if (!ok) return
-          saved = await api<HeatingPlant>(`/api/heating-plants/${editingId}`, { method: 'PUT', body: JSON.stringify({ ...body, convertItems: 'area' }) })
+          saved = await api<HeatingPlant>(withProperty(`/api/heating-plants/${editingId}`, propertyId), { method: 'PUT', body: JSON.stringify({ ...body, convertItems: 'area' }) })
         }
       } else {
         saved = (await api<{ plant: HeatingPlant }>(withProperty('/api/heating-plants', propertyId), {
@@ -351,7 +351,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
       return
     }
     try {
-      await api(`/api/heating-plants/${swap.plant.id}/replace`, { method: 'POST', body: JSON.stringify({ ...result.body, method: swap.plant.method, source: swap.plant.source }) })
+      await api(withProperty(`/api/heating-plants/${swap.plant.id}/replace`, propertyId), { method: 'POST', body: JSON.stringify({ ...result.body, method: swap.plant.method, source: swap.plant.source }) })
     } catch (e) {
       setError(errorText(e))
       return
@@ -386,7 +386,7 @@ export default function HeatingCard({ units, tenancies, focus, onFocusDone, onCh
     if (!ok) return
     let notice: string | null = null
     try {
-      const result = await api<{ notice?: string | null }>(`/api/heating-plants/${p.id}`, { method: 'DELETE' })
+      const result = await api<{ notice?: string | null }>(withProperty(`/api/heating-plants/${p.id}`, propertyId), { method: 'DELETE' })
       notice = result?.notice ?? null
     } catch (e) {
       setError(errorText(e))

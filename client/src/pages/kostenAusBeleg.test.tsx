@@ -293,7 +293,7 @@ test('S3: eine bestehende Position bearbeiten: kein Vorschlag, kein Datum an den
   expect(readText).not.toHaveBeenCalled()
   expect(within(box).queryByText('Vorschlag aus dem Beleg')).toBeNull()
   fireEvent.click(within(box).getByRole('button', { name: /^Speichern$/ }))
-  await waitFor(() => expect(sent.some((r) => r.url === '/api/costItems/k1')).toBe(true))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/costItems/k1?property=objekt-1')).toBe(true))
   expect(sent.some((r) => r.url.startsWith('/api/uploads/'))).toBe(false)
 })
 

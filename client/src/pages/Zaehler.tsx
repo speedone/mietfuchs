@@ -126,7 +126,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     const body = JSON.stringify({ ...result.body, ...(editing ? ifUnchanged(seenMeter.current) : {}) })
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
-      if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
+      if (editing) await api(withProperty(`/api/meters/${meterForm.id}`, propertyId), { method: 'PUT', body })
       else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
     } catch (e) {
       meterErrors.show(staleText(e, seenMeter.current, METER_STALE_FIELDS) ?? errorText(e))
@@ -149,7 +149,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     })
     if (!ok) return
     try {
-      await api(`/api/meters/${m.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/meters/${m.id}`, propertyId), { method: 'DELETE' })
     } catch (e) {
       // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
       toast(errorText(e), 'error')
@@ -204,7 +204,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     )
     if (question && !(await confirm(question))) return
     try {
-      if (editedReading) await api(`/api/readings/${editedReading.id}`, { method: 'PUT', body: JSON.stringify({ ...built.body, ...ifUnchanged(seenReading.current) }) })
+      if (editedReading) await api(withProperty(`/api/readings/${editedReading.id}`, propertyId), { method: 'PUT', body: JSON.stringify({ ...built.body, ...ifUnchanged(seenReading.current) }) })
       else await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
     } catch (e) {
       readingError.show(staleText(e, seenReading.current, READING_STALE_FIELDS) ?? errorText(e))
@@ -229,7 +229,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     })
     if (!ok) return
     try {
-      await api(`/api/readings/${r.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/readings/${r.id}`, propertyId), { method: 'DELETE' })
     } catch (e) {
       toast(errorText(e), 'error')
       return

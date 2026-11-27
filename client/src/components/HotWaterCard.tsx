@@ -15,8 +15,10 @@ import {
 } from '../heatingForm'
 import type { HeatingPeriodView, HeatingPlant } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { useOptionalProperty, withProperty } from '../property'
 
 export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPeriodView; plant: Pick<HeatingPlant, 'method' | 'heatGeneration'>; onSaved: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const self = plant.method === 'self'
   const [choice, setChoice] = useState<HotWaterChoice>(view.hotWater.dhwMethod ?? (self ? 'heatMeter' : ''))
   const [unmeasurable, setUnmeasurable] = useState(view.hotWater.dhwUnmeasurable === true)
@@ -40,7 +42,7 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
       return
     }
     try {
-      await api(`/api/heating-plants/${view.plantId}/periods/${view.period}/hot-water`, { method: 'PUT', body: JSON.stringify({ ...hotWaterBody(choice, unmeasurable), ...extra.body }) })
+      await api(withProperty(`/api/heating-plants/${view.plantId}/periods/${view.period}/hot-water`, propertyId), { method: 'PUT', body: JSON.stringify({ ...hotWaterBody(choice, unmeasurable), ...extra.body }) })
       setError('')
       markSaved()
       toast('Angabe zum Warmwasser gespeichert.')

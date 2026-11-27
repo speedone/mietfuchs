@@ -16,6 +16,7 @@ import {
 import { forcedShare, shareBounds } from '../heatingSelfForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
+import { useOptionalProperty, withProperty } from '../property'
 
 // Die Farbe der Ampel, wie im Cockpit.
 const AMPEL: Record<Light, string> = { green: 'gruen', yellow: 'gelb', red: 'rot' }
@@ -27,6 +28,7 @@ const AMPEL: Record<Light, string> = { green: 'gruen', yellow: 'gelb', red: 'rot
 export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   plant: HeatingPlant; view: HeatingPeriodView; self: SelfHeatingStatement | null; onChanged: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const toast = useToast()
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
@@ -90,7 +92,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
       return keepDraft
     }
     try {
-      await api(`/api/heating-plants/${plant.id}/periods/${view.period}/distribution`, {
+      await api(withProperty(`/api/heating-plants/${plant.id}/periods/${view.period}/distribution`, propertyId), {
         method: 'PUT',
         // § 8 Abs. 1: beide Werte, das Warmwasser nur bei zentralem Warmwasser (Abweichung 14).
         body: JSON.stringify({
@@ -110,7 +112,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   }
   async function answer(unitId: string, date: string, status: InterimGapStatus | null, reason = '') {
     try {
-      const url = `/api/units/${unitId}/interim-gaps/${date}`
+      const url = withProperty(`/api/units/${unitId}/interim-gaps/${date}`, propertyId)
       if (status === null) await api(url, { method: 'DELETE' })
       else await api(url, { method: 'PUT', body: JSON.stringify({ status, reason }) })
       setError('')

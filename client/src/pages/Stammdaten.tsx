@@ -351,7 +351,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     if (move && !(await confirm(move))) return
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
-      if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
+      if (editing) await api(withProperty(`/api/units/${unitForm.id}`, propertyId), { method: 'PUT', body })
       else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
     } catch (e) {
       unitErrors.show(staleText(e, seenUnit.current, UNIT_STALE_FIELDS) ?? errorText(e))
@@ -398,7 +398,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     })
     if (!ok) return
     try {
-      await api(`/api/units/${u.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/units/${u.id}`, propertyId), { method: 'DELETE' })
     } catch (e) {
       toast(errorText(e), 'error')
       return
@@ -507,7 +507,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const overlap = overlapQuestion({ id: tenForm.id, unitId: tenForm.unitId, start: tenForm.start, end: tenForm.end || null }, tenancies)
     if (overlap && !(await confirm(overlap))) return
     try {
-      if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
+      if (editing) await api(withProperty(`/api/tenancies/${tenForm.id}`, propertyId), { method: 'PUT', body })
       else await api('/api/tenancies', { method: 'POST', body })
     } catch (e) {
       tenErrors.show(errorText(e))
@@ -524,7 +524,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     // Was mitgelöscht wird und wo es danach fehlt, aus vorhandenen Routen; ohne Antwort der Satz ohne Zahlen.
     const payments = await api<PaymentListItem[]>(withProperty('/api/payments', propertyId)).catch(() => null)
     const mine = Array.isArray(payments) ? payments.filter((p) => p.tenancyId === t.id) : null
-    const increases = await api<unknown[]>(`/api/tenancies/${t.id}/rent-increases`).catch(() => null)
+    const increases = await api<unknown[]>(withProperty(`/api/tenancies/${t.id}/rent-increases`, propertyId)).catch(() => null)
     const ok = await confirm({
       title: `Mietverhältnis „${t.tenantName}“ löschen?`,
       message: tenancyDeleteMessage({
@@ -540,7 +540,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     })
     if (!ok) return
     try {
-      await api(`/api/tenancies/${t.id}`, { method: 'DELETE' })
+      await api(withProperty(`/api/tenancies/${t.id}`, propertyId), { method: 'DELETE' })
     } catch (e) {
       toast(errorText(e), 'error')
       return

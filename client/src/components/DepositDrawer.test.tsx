@@ -210,7 +210,7 @@ test('Einbehalt speichern schickt Betrag und Grund ans Mietverhältnis', async (
   fireEvent.change(screen.getByLabelText(/^Grund/), { target: { value: 'Nebenkosten 2025' } })
   fireEvent.click(screen.getByRole('button', { name: 'Einbehalt speichern' }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
-  expect(sent.at(-1)).toMatchObject({ url: '/api/tenancies/t', method: 'PUT', body: { depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' } })
+  expect(sent.at(-1)).toMatchObject({ url: '/api/tenancies/t?property=p', method: 'PUT', body: { depositHoldCents: 30000, depositHoldNote: 'Nebenkosten 2025' } })
 })
 
 test('ein Einbehalt ohne Grund wird nicht gesendet', async () => {

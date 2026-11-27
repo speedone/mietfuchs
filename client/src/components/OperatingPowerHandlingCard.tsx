@@ -7,15 +7,17 @@ import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import { handlingBody, handlingOptions, handlingValue } from '../operatingPowerHandling'
 import { OPERATING_POWER_HANDLING_QUESTION } from '../../../shared/operatingPower.ts'
+import { useOptionalProperty, withProperty } from '../property'
 
 // Karte „Betriebsstrom der Heizung“ der Seite Heizkosten (#266): je Anlage, über den Heizperioden. Die Angabe ändert keine
 // Zahl, nur den Hinweis „Betriebsstrom fehlt“. Die Auswahl ist ein Entwurf am Feld (#309); erst „Speichern“
 // schickt sie, danach lädt die Seite neu.
 export default function OperatingPowerHandlingCard({ plant, onSaved }: { plant: HeatingPlant; onSaved: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const toast = useToast()
   const draft = useDraft<'' | OperatingPowerHandling>(handlingValue(plant), { scope: plant.id })
   async function save(value: '' | OperatingPowerHandling) {
-    await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(handlingBody(value)) })
+    await api(withProperty(`/api/heating-plants/${plant.id}`, propertyId), { method: 'PUT', body: JSON.stringify(handlingBody(value)) })
     toast('Die Angabe ist gespeichert.')
     onSaved()
   }

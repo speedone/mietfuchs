@@ -99,7 +99,7 @@ test('Zahlung löschen: Esc bricht ab, Enter auf „Löschen“ löscht', async 
   expect(focusedText()).toBe('Löschen')
   key('Enter')
   await act(async () => {})
-  expect(sent).toEqual([{ url: '/api/payments/p1', method: 'DELETE' }])
+  expect(sent).toEqual([{ url: '/api/payments/p1?property=objekt-1', method: 'DELETE' }])
 })
 
 test('#644: eine Zahlung aus dem Kontoauszug sagt beim Löschen, dass der Umsatz wieder offen ist', async () => {

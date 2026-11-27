@@ -2,7 +2,7 @@
 // lesen lassen, Ergebnis prüfen und übernehmen. Gespeichert wird erst in der Prüfansicht.
 import Card from '../components/Card'
 import { useEffect, useRef, useState } from 'react'
-import { useOpenForm } from '../property'
+import { useOpenForm, useOptionalProperty, withProperty } from '../property'
 import { errorText } from '../api'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
 import { asStored, heatingUpload } from '../aiUpload'
@@ -32,6 +32,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
   onOpenReceipt?: (file: string) => void
   onOpenAiSettings?: () => void
 }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [result, setResult] = useState<ServiceExtractResult | null>(null)
   const [progress, setProgress] = useState<AiProgress | null>(null)
   const [busy, setBusy] = useState(false)
@@ -74,7 +75,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
     try {
       const upload = await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(object.key) })
       const fd = stored ? asStored(upload, stored) : upload
-      setResult(await aiRequest<ServiceExtractResult>(`/api/heating-plants/${plant.id}/service-statement`, fd, { onProgress: setProgress, signal: abort.current.signal }))
+      setResult(await aiRequest<ServiceExtractResult>(withProperty(`/api/heating-plants/${plant.id}/service-statement`, propertyId), fd, { onProgress: setProgress, signal: abort.current.signal }))
     } catch (e) {
       const failure = failureOf(e)
       // Selbst abgebrochen: am Signal erkennbar, auch wenn der Abbruch als DOMException ankommt
