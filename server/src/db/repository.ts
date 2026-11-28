@@ -1433,6 +1433,21 @@ export function requireUnchanged(what: string, current: object, next: object | n
     current,
   )
 }
+
+// Die Einstellungen sind eine Zeile, in die mehrere Karten je ihren Teil schreiben (Vermieter und Bank, Druck, KI), und
+// ihre Antwort ist angereichert. Eine Karte schickt deshalb als `ifUnchanged` nur die Schlüssel mit, die sie selbst
+// schreibt, wie sie sie geladen hat; verglichen wird **nur, was dort steht**, in die Tiefe (`ai.text`), Listen und
+// einfache Werte mit `recordMark`. Was `seen` nicht nennt, hat die Karte nicht gesehen und stört nicht.
+const isPlainObject = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === 'object' && !Array.isArray(x)
+// Fehlend, `null` und leerer Text gelten als dasselbe (Durchsicht K2): Ein Speichern ohne Änderung schreibt leeren Text,
+// wo vorher nichts stand, und ein zweites Fenster mit dem Stand davor lehnte sonst zu Unrecht ab.
+const blankSeen = (x: unknown): boolean => x === undefined || x === null || x === ''
+export function seenPartChanged(seen: unknown, current: unknown): boolean {
+  if (blankSeen(seen) && blankSeen(current)) return false
+  if (!isPlainObject(seen)) return recordMark(seen, false) !== recordMark(current, false)
+  if (!isPlainObject(current)) return true
+  return Object.entries(seen).some(([key, value]) => seenPartChanged(value, current[key]))
+}
 const RECORD_NAMES: Record<Exclude<CollectionName, 'tenancies'>, (x: Record<string, unknown>) => string> = {
   units: (x) => `Die Wohnung „${String(x.name ?? '')}“`,
   costItems: (x) => `Die Kostenposition „${String(x.description ?? '')}“`,

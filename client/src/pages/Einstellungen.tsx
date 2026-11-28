@@ -25,6 +25,8 @@ import { networkBridge } from '../desktopNetwork'
 import { remoteBridge } from '../desktopRemote'
 import RemoteCard from '../components/RemoteCard'
 import { useSectionJump, type FocusProps } from '../focus'
+import { ifUnchanged, sameRecord } from '../staleRecord'
+import { deadlineDays, LANDLORD_GROUPS, LANDLORD_KEYS, LANDLORD_LABELS, LANDLORD_STALE_FIELDS, mergeStale, sameLandlordInput, seenPart, settingsStaleText, staleCurrent, useFreshSettings, type LandlordKey } from '../settingsSeen'
 
 const SOURCE_URL = 'https://github.com/speedone/mietfuchs'
 const WEBSITE_URL = 'https://mietfuchs-app.de'
@@ -40,20 +42,69 @@ type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateSt
 const BACKUP_FRAME = 'mietfuchs-backup'
 
 const SETTINGS_SECTIONS = ['landlord', 'ai', 'about', 'access', 'backup'] as const
+// Was die Karten dieser Seite aus den Einstellungen der App füllen (settingsSeen.ts, `useFreshSettings`).
+const FRESH_KEYS = [...LANDLORD_KEYS, 'ai'] as const
+
+// Das Formular der Karte „Vermieter & Zahlung“ aus den Einstellungen, wie der Server sie liefert (auch aus dem Stand von
+// jetzt nach einer Ablehnung, deshalb lose getippt).
+const text = (value: unknown): string => (typeof value === 'string' ? value : '')
+const landlordForm = (from: Record<string, unknown>) => ({
+  landlordName: text(from.landlordName),
+  iban: ibanToInput(text(from.iban)),
+  paymentDeadlineDays: String(typeof from.paymentDeadlineDays === 'number' ? from.paymentDeadlineDays : 30),
+  // Teil 2 von #415: Rücksendeangabe und Fußzeile des Briefs
+  landlordAddress: text(from.landlordAddress),
+  landlordContact: text(from.landlordContact),
+})
+type LandlordForm = ReturnType<typeof landlordForm>
+const sameLandlordForm = (a: LandlordForm, b: LandlordForm): boolean => LANDLORD_KEYS.every((key) => sameLandlordInput(key, a[key], b[key]))
+// Der Wert von dort, wie er am Feld und in der Entscheidung steht.
+const shownValue = (key: LandlordKey, value: string): string => (value.trim() === '' ? 'leer' : key === 'iban' ? value : key === 'paymentDeadlineDays' ? `${deadlineDays(value)} Tage` : `„${value.trim()}“`)
+// Nach einer Ablehnung: was hier und anderswo geändert wurde und noch zu entscheiden ist (`mergeStale`), je Einheit die
+// Felder, dazu der Stand von dort (`now`), der gesehene davor (`before`) und was dort geändert wurde (`theirs`).
+type Pending = { units: LandlordKey[][]; now: LandlordForm; before: LandlordForm; theirs: LandlordKey[] }
 
 export default function Einstellungen({ settings, reload, update, onNavigate, onOpenRelocation, reloadPage = reloadWithArrival, focus, onFocusDone }: Props) {
   const jumpAt = useSectionJump(focus, SETTINGS_SECTIONS, true, onFocusDone)
   const { properties } = useProperty()
   const toast = useToast()
   const confirm = useConfirm()
-  const [form, setForm] = useState({
-    landlordName: settings.landlordName ?? '',
-    iban: ibanToInput(settings.iban),
-    paymentDeadlineDays: String(settings.paymentDeadlineDays ?? 30),
-    // Teil 2 von #415: Rücksendeangabe und Fußzeile des Briefs
-    landlordAddress: settings.landlordAddress ?? '',
-    landlordContact: settings.landlordContact ?? '',
-  })
+  const [form, setForm] = useState(() => landlordForm({ ...settings }))
+  // Der Stand, aus dem das Formular gefüllt wurde, als `ifUnchanged` beim Speichern (settingsSeen.ts): nur die Schlüssel
+  // dieser Karte, wie der Server sie geliefert hat. Nach dem eigenen Speichern der Stand aus der Antwort.
+  const seen = useRef(seenPart(settings, LANDLORD_KEYS))
+  const [pending, setPending] = useState<Pending | null>(null)
+  const pendingRef = useRef(pending)
+  pendingRef.current = pending
+  // Ein Tab im Hintergrund kennt einen alten Stand: Beim Öffnen fragt die Seite den von jetzt, und die App lädt neu,
+  // wenn er abweicht. Liefert die App neuere Einstellungen, übernimmt die Karte sie, solange hier nichts geändert und
+  // nichts zu entscheiden ist; sonst bleibt der alte Stand gesehen, und das Speichern wird abgelehnt.
+  useFreshSettings(settings, FRESH_KEYS, reload)
+  const formRef = useRef(form)
+  formRef.current = form
+  useEffect(() => {
+    const now = seenPart(settings, LANDLORD_KEYS)
+    if (sameRecord(now, seen.current) || pendingRef.current || !sameLandlordForm(formRef.current, landlordForm(seen.current))) return
+    seen.current = now
+    setForm(landlordForm(now))
+  }, [settings])
+  // Der Hinweis am Feld, solange über das Feld noch zu entscheiden ist.
+  const conflictHint = (key: LandlordKey): string | undefined => {
+    if (!pending || !pending.units.some((unit) => unit.includes(key))) return undefined
+    const there = shownValue(key, pending.now[key])
+    // Nur dort geändert (Durchsicht S1): Das Feld zeigt schon den Wert von dort, und der Hinweis sagt es.
+    if (sameLandlordInput(key, form[key], pending.now[key])) return pending.theirs.includes(key) ? `Inzwischen anderswo geändert auf ${there}. Das steht jetzt hier.` : undefined
+    if (!pending.theirs.includes(key)) return `Hier von Ihnen geändert. Anderswo steht ${there}.`
+    const own = !sameLandlordInput(key, form[key], pending.before[key])
+    return `Inzwischen anderswo geändert auf ${there}. Hier steht ${own ? 'Ihre Eingabe' : 'der Stand von vorher'}.`
+  }
+  const decide = (unit: LandlordKey[], theirs: boolean) => {
+    if (!pending) return
+    if (theirs) setForm((shown) => ({ ...shown, ...Object.fromEntries(unit.map((key) => [key, pending.now[key]])) }))
+    const units = pending.units.filter((other) => other !== unit)
+    setPending(units.length > 0 ? { ...pending, units } : null)
+    saveErrors.clear()
+  }
   // Ungespeicherte Vermieterdaten: Ein Objektwechsel stellt die Seiten neu auf und fragt deshalb
   // vorher (#145).
   useOpenForm(
@@ -142,6 +193,10 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
   }
 
   async function save() {
+    if (pending) {
+      saveErrors.show('Bitte entscheiden Sie zuerst bei den gekennzeichneten Angaben, was gelten soll: Ihre Eingabe oder der Stand von dort.')
+      return
+    }
     // Eine neue ungültige IBAN wird nicht gespeichert (#279); eine gespeicherte ungültige geht
     // unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
     const iban = ibanForSave(form.iban, settings.iban, IBAN_LABELS.settings)
@@ -151,16 +206,34 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
     }
     // Lehnt der Server ab (#146), steht sein Satz unter den Feldern.
     try {
-      await api('/api/settings', {
+      const saved = await api<Settings>('/api/settings', {
         method: 'PUT',
         body: JSON.stringify({
           ...form,
           iban: iban.value,
-          paymentDeadlineDays: Math.max(1, Number(form.paymentDeadlineDays) || 30),
+          paymentDeadlineDays: deadlineDays(form.paymentDeadlineDays),
+          ...ifUnchanged(seen.current),
         }),
       })
+      seen.current = seenPart(saved, LANDLORD_KEYS)
     } catch (e) {
-      saveErrors.show(errorText(e))
+      // Inzwischen anderswo geändert (ein zweites Fenster, ein anderes Gerät): Gespeichert ist nichts. Die Karte zeigt
+      // dann den Stand von jetzt, außer in den Feldern, die hier geändert wurden, und der gilt als gesehen. Was beide
+      // geändert haben oder im Brief zusammengehört (`LANDLORD_GROUPS`), bleibt, wie es hier steht, und ist vor dem
+      // nächsten Speichern zu entscheiden.
+      const now = staleCurrent(e)
+      const before = landlordForm(seen.current)
+      const merged = now ? mergeStale(form, before, landlordForm(now), { same: sameLandlordInput, groups: LANDLORD_GROUPS }) : null
+      const refused = settingsStaleText(e, seen.current, LANDLORD_STALE_FIELDS, merged && merged.conflicts.length > 0
+        ? 'Was hier und anderswo geändert wurde, ist unten gekennzeichnet: Bitte entscheiden Sie dort und speichern Sie dann erneut.'
+        : 'Die Felder zeigen jetzt diesen Stand; was Sie hier selbst geändert haben, steht weiter da. Bitte prüfen Sie die Angaben und speichern Sie erneut.')
+      if (now && merged) {
+        setForm(merged.form)
+        setPending(merged.conflicts.length > 0 ? { units: merged.conflicts, now: landlordForm(now), before, theirs: merged.theirs } : null)
+        seen.current = seenPart(now, LANDLORD_KEYS)
+        await reload().catch(() => { /* die Meldung in der Karte steht gleich */ })
+      }
+      saveErrors.show(refused ?? errorText(e))
       return
     }
     saveErrors.clear()
@@ -179,24 +252,41 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
           {properties.length > 1 && ' Die Angaben gelten als Vorgabe für alle Objekte; in den Stammdaten kann ein Objekt abweichen.'}
         </p>
         <div className="row">
-          <label className="field">
-            Name des Vermieters
+          <Field label="Name des Vermieters" hint={conflictHint('landlordName')}>
             <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} placeholder="Vor- und Nachname" />
-          </label>
-          <IbanInput label="IBAN für Nachzahlungen" value={form.iban} stored={settings.iban} onChange={(iban) => setForm({ ...form, iban })} placeholder="DE.." {...saveErrors.field('iban')} />
-          <label className="field">
-            Zahlungsfrist (Tage)
+          </Field>
+          <IbanInput label="IBAN für Nachzahlungen" value={form.iban} stored={settings.iban} onChange={(iban) => setForm({ ...form, iban })} placeholder="DE.." hint={conflictHint('iban')} {...saveErrors.field('iban')} />
+          <Field label="Zahlungsfrist (Tage)" hint={conflictHint('paymentDeadlineDays')}>
             <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
-          </label>
+          </Field>
         </div>
         <div className="row">
-          <Field label="Anschrift des Vermieters" width="l" hint="Für Rücksendeangabe, Briefkopf und Fußzeile des Briefs. Ohne Angabe nennt die Rücksendeangabe die Adresse des Objekts; Briefkopf und Fußzeile bleiben ohne Anschrift.">
+          <Field label="Anschrift des Vermieters" width="l" hint={conflictHint('landlordAddress') ?? 'Für Rücksendeangabe, Briefkopf und Fußzeile des Briefs. Ohne Angabe nennt die Rücksendeangabe die Adresse des Objekts; Briefkopf und Fußzeile bleiben ohne Anschrift.'}>
             <input value={form.landlordAddress} onChange={(e) => setForm({ ...form, landlordAddress: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
           </Field>
-          <Field label="Kontakt" width="l" hint="Optional: Telefon oder E-Mail für die Fußzeile mit Kontakt und Bank.">
+          <Field label="Kontakt" width="l" hint={conflictHint('landlordContact') ?? 'Optional: Telefon oder E-Mail für die Fußzeile mit Kontakt und Bank.'}>
             <input value={form.landlordContact} onChange={(e) => setForm({ ...form, landlordContact: e.target.value })} placeholder="z. B. Tel. 0123 456789" />
           </Field>
         </div>
+        {/* Nach einer Ablehnung: je Feld oder Gruppe, die hier und anderswo geändert wurde, eine Entscheidung */}
+        {pending?.units.map((unit) => {
+          // Je Knopf genau die Werte, die danach gelten (Durchsicht S1).
+          const theirsLabel = unit.length > 1 ? 'Werte von dort übernehmen' : 'Wert von dort übernehmen'
+          const values = (from: LandlordForm) => unit.map((key) => `${LANDLORD_LABELS[key]} ${shownValue(key, from[key])}`).join(', ')
+          return (
+            <NoticeBox
+              key={unit.join(',')}
+              level="hint"
+              title={unit.length > 1 ? 'Hier und anderswo geändert: Diese Angaben stehen zusammen im Brief' : `Hier und anderswo geändert: ${unit.map((key) => LANDLORD_LABELS[key]).join('')}`}
+              action={`Mit „Meine Eingabe behalten“ gilt: ${values(form)}. Mit „${theirsLabel}“ gilt: ${values(pending.now)}.`}
+            >
+              <div className="row">
+                <button type="button" className="btn secondary small" onClick={() => decide(unit, false)}>Meine Eingabe behalten</button>
+                <button type="button" className="btn secondary small" onClick={() => decide(unit, true)}>{theirsLabel}</button>
+              </div>
+            </NoticeBox>
+          )
+        })}
         {/* Sichtprüfung E52: Speichern steht unter den Feldern wie in den anderen Karten */}
         <div className="row">
           <button className="btn" onClick={save}>Speichern</button>

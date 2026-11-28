@@ -633,6 +633,10 @@ const attachBox = () => screen.getByLabelText(/Belegkopien als Anlage/) as HTMLI
 // Seit der Neuordnung der Seite stehen die Häkchen im Fenster „Drucken“, das „🖨 Drucken / PDF“ öffnet.
 const openPrintSettings = async () => fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
 
+// Der Stand, auf dem der Entwurf der Druckeinstellungen steht, geht als `ifUnchanged` mit (settingsSeen.ts): wie der
+// Server ihn geliefert hat; die Einstellungen dieser Tests tragen keine der vier Angaben.
+const PRINT_SEEN = { printFoldMarks: null, printAttachments: null, printFooter: null, printPaymentQr: null }
+
 test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide genau einmal (#309)', async () => {
   const puts: unknown[] = []
   stubSettings(puts)
@@ -651,7 +655,7 @@ test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide 
   fireEvent.click(speichern)
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
   // Die Fußzeile (#415, Teil 2) gehört zu denselben Druckeinstellungen und geht unverändert mit.
-  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false, printPaymentQr: false }])
+  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false, printPaymentQr: false, ifUnchanged: PRINT_SEEN }])
   expect(reload).toHaveBeenCalledTimes(1)
 })
 
@@ -683,6 +687,71 @@ test('Druckeinstellungen: scheitert das Speichern, steht der Grund am Knopf und 
   expect((await foldBox()).checked).toBe(true)
   expect(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeTruthy()
   expect(reload).not.toHaveBeenCalled()
+})
+
+// Zwei Fenster (settingsSeen.ts): Der Entwurf steht auf einem Stand, den ein anderes Fenster inzwischen geändert hat.
+// Durchsicht K3: Wie bei der KI-Karte führt die Seite zusammen (die eigenen Häkchen bleiben, die übrigen zeigen den Stand
+// von jetzt), und der gilt als gesehen; erneutes Speichern geht ohne zweite Ablehnung.
+test('Druckeinstellungen: anderswo geändert, die Ablehnung nennt den Wert von jetzt, die Häkchen führen zusammen, erneut speichern geht', async () => {
+  const puts: unknown[] = []
+  const now: Settings = { ...SETTINGS, printFooter: true }
+  const before = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings' && init?.method === 'PUT') {
+      puts.push(JSON.parse(String(init.body)))
+      if (puts.length > 1) return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+      const stale = { error: 'Die Einstellungen wurden inzwischen geändert. Gespeichert wurde nichts, damit diese Änderung nicht verloren geht.', stale: true, current: now }
+      return new Response(JSON.stringify(stale), { status: 409, headers: { 'content-type': 'application/json' } })
+    }
+    return before(url, init)
+  })
+  const reload = vi.fn(async () => {})
+  const view = showWithSettings(SETTINGS, reload)
+  await openPrintSettings()
+  fireEvent.click(await foldBox())
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
+  const alert = await screen.findByRole('alert', {}, SLOW)
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: Die Einstellungen wurden inzwischen geändert\./)
+  expect(alert.textContent).toContain('Inzwischen geändert: Fußzeile mit Kontakt und Bank (jetzt ein).')
+  expect(alert.textContent).toContain('Die Häkchen zeigen jetzt diesen Stand; was Sie hier selbst geändert haben, steht weiter da.')
+  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: false, printFooter: false, printPaymentQr: false, ifUnchanged: PRINT_SEEN }])
+  // Das eigene Häkchen bleibt, das von dort steht da, und die App lädt die Einstellungen neu.
+  expect((await foldBox()).checked).toBe(true)
+  await waitFor(() => expect((screen.getByLabelText(/Fußzeile mit Kontakt und Bank/) as HTMLInputElement).checked).toBe(true), SLOW)
+  expect(reload).toHaveBeenCalledTimes(1)
+  view.rerender(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><PeriodSelect /><Abrechnung settings={now} units={[]} tenancies={TENANCIES} reload={reload} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  // Erneut speichern: mit dem Stand von jetzt als gesehen, die Fußzeile von dort geht mit.
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
+  await waitFor(() => expect(puts).toHaveLength(2), SLOW)
+  expect(puts[1]).toEqual({ printFoldMarks: true, printAttachments: false, printFooter: true, printPaymentQr: false, ifUnchanged: { ...PRINT_SEEN, printFooter: true } })
+})
+
+test('Drucken: Beim Öffnen fragt das Fenster den Stand von jetzt; weicht er ab, lädt die App neu', async () => {
+  const before = globalThis.fetch
+  let fresh: unknown = { ...SETTINGS, fixedByEnv: [] }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings' && (init?.method ?? 'GET') === 'GET') return new Response(JSON.stringify(fresh), { status: 200, headers: { 'content-type': 'application/json' } })
+    return before(url, init)
+  })
+  const reload = vi.fn(async () => {})
+  showWithSettings(SETTINGS, reload)
+  // Derselbe Stand: Nichts lädt neu.
+  await openPrintSettings()
+  const drawer = await printDrawer()
+  await new Promise((r) => setTimeout(r, 50))
+  expect(reload).not.toHaveBeenCalled()
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)
+  // Ein anderes Fenster hat die Fußzeile eingeschaltet.
+  fresh = { ...SETTINGS, printFooter: true, fixedByEnv: [] }
+  await openPrintSettings()
+  await waitFor(() => expect(reload).toHaveBeenCalledTimes(1), SLOW)
 })
 
 test('Druckeinstellungen: ungespeichert fragt der Wechsel des Jahres nach (#309)', async () => {
@@ -1018,7 +1087,7 @@ test('Drucken: nach „Speichern“ schließt „Abbrechen“ ohne Rückfrage un
   await openPrintSettings()
   fireEvent.click(attachBox())
   fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
-  await waitFor(() => expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false, printPaymentQr: false }]), SLOW)
+  await waitFor(() => expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false, printPaymentQr: false, ifUnchanged: PRINT_SEEN }]), SLOW)
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
   fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)

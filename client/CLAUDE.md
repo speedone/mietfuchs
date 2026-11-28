@@ -820,6 +820,25 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   (zweiter Wächter dort). Unterkomponenten ohne Prop nehmen `useOptionalProperty()`. Ausgenommen ist
   nur, was über alle Objekte arbeitet (Ordner der Belege, „Beleg zuordnen“, „Betrag prüfen“), und fuelCredit.ts, das nur
   die Adresse baut (FuelCard hängt das Objekt an). Wächter mit Ausnahmeliste in pages/objektBeimAendern.test.tsx.
+- **Die Einstellungen schicken nur die Schlüssel ihrer Karte mit** ([settingsSeen.ts](src/settingsSeen.ts)): „Vermieter &
+  Zahlung“, die Druckeinstellungen der Seite Abrechnung und die KI-Belegauswertung (ohne `consent`) hängen
+  `ifUnchanged(seenPart(…))` an `PUT /api/settings`. **Gesehen ist, was der Server geliefert hat, nicht was das Formular
+  zeigt** (eine Vorgabe wie „30 Tage“ oder „aus“ gliche dem gespeicherten „nichts“ nicht), gemerkt beim Füllen des
+  Formulars und nach dem eigenen Speichern aus der Antwort; die Druckeinstellungen merken ihn, solange kein Entwurf offen
+  ist. Nach einer Ablehnung zeigt die Karte „Vermieter & Zahlung“ den Stand von jetzt, außer in den hier geänderten
+  Feldern (`mergeStale`), nennt das Geänderte mit seinem Wert von jetzt und lässt erneut speichern (eine Karte hat kein
+  „schließen und erneut öffnen“). **Was beide geändert haben, und was im Brief zusammensteht** (`LANDLORD_GROUPS`:
+  Name und IBAN, Name und Anschrift), ist vor dem nächsten Speichern zu entscheiden („Meine Eingabe behalten“ /
+  „Wert(e) von dort übernehmen“), und die Entscheidung nennt je Knopf die Werte, die danach gelten; sonst stünde still
+  ein Kontoinhaber neben einer IBAN, die niemand so zusammen eingegeben hat. **Ein Feld, das nur dort geändert wurde,
+  zeigt auch in einer solchen Gruppe den Wert von dort, nie den alten** (Durchsicht S1: sonst setzte „Meine Eingabe
+  behalten“ die IBAN des anderen Fensters still zurück); zur Wahl steht nur die eigene Eingabe. Die KI-Karte
+  (`keepOwnValues`) und die Druckeinstellungen führen ebenso zusammen, ohne Rückfrage, und der Stand von jetzt gilt
+  danach als gesehen. **Die
+  Einstellungen hält die App** und lädt sie beim Seitenwechsel nicht neu: Beim Öffnen fragen die Seite Einstellungen und
+  das Fenster „Drucken“ den Stand von jetzt (`useFreshSettings`), weicht er ab, lädt die App neu, und ein unberührtes
+  Formular übernimmt ihn. Die Antwort zur Update-Prüfung bleibt ein Teilrumpf ohne Angabe. Wer einer dieser Karten ein Feld gibt, trägt es in ihre
+  Schlüsselliste ein. Tests: Einstellungen.gleichzeitig.test.tsx.
 - **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus
   [src/testing/dialog.ts](src/testing/dialog.ts), Tastendrücke wie im Browser aus
   [src/testing/keys.ts](src/testing/keys.ts) (`press`). `<dialog>` hat die Rolle `dialog`, die

@@ -40,6 +40,10 @@ test('Anschrift und Kontakt des Vermieters werden mit den Vermieterdaten gespeic
   await waitFor(() => expect(puts).toHaveLength(1), SLOW)
   expect(puts[0]).toEqual({
     url: '/api/settings',
-    body: { landlordName: 'Max Vermieter', iban: '', paymentDeadlineDays: 30, landlordAddress: 'Hauptstr. 1, 10115 Berlin', landlordContact: 'Tel. 030 123456' },
+    body: {
+      landlordName: 'Max Vermieter', iban: '', paymentDeadlineDays: 30, landlordAddress: 'Hauptstr. 1, 10115 Berlin', landlordContact: 'Tel. 030 123456',
+      // Der Stand, aus dem die Karte gefüllt wurde (settingsSeen.ts): Der Kontakt fehlte im Bestand.
+      ifUnchanged: { landlordName: 'Max Vermieter', iban: '', paymentDeadlineDays: 30, landlordAddress: 'Hauptstr. 1, 10115 Berlin', landlordContact: null },
+    },
   })
 })

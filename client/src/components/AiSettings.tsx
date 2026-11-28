@@ -20,6 +20,8 @@ import { INTAKE_EDGE } from '../pdf'
 import { useToast, useConfirm } from './feedback'
 import { NoticeBox } from './Notice'
 import { useOpenForm } from '../property'
+import { ifUnchanged, sameRecord } from '../staleRecord'
+import { AI_KEYS, AI_STALE_FIELDS, keepOwnValues, seenPart, settingsStaleText, staleCurrent } from '../settingsSeen'
 import Card from './Card'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung'
@@ -44,6 +46,8 @@ function EnvHint({ path }: { path: string }) {
 // `jump`: Kennung und Hervorhebung der Karte für den Sprung aus einem Fehler der Auswertung (#554, focus.ts)
 type Props = { settings: Settings; reload: () => Promise<void>; jump?: JumpProps }
 
+// Was das Formular selbst hält; die Zahlenfelder und der Denkaufwand stehen als Text in `advanced`.
+const FORM_KEYS = ['text', 'images', 'jsonMode', 'extraInstructions'] as const
 const advancedFrom = (settings: Settings) => ({
   timeoutSeconds: String(settings.ai?.timeoutSeconds ?? ''),
   numCtx: String(settings.ai?.numCtx ?? ''),
@@ -57,12 +61,32 @@ export function AiSettings({ settings, reload, jump }: Props) {
   const confirm = useConfirm()
   const [presets, setPresets] = useState<AiPreset[]>([])
   const [form, setForm] = useState<AiSettingsValues>(() => aiFormFrom(settings))
+  // Der Stand, aus dem das Formular gefüllt wurde, als `ifUnchanged` beim Speichern (settingsSeen.ts); nach dem eigenen
+  // Speichern der aus der Antwort. Ohne `ai` (Server von vor #18) keiner.
+  const seenAi = useRef(settings.ai)
   // Zahlenfelder und Denkaufwand als Text, damit ein leeres Feld „Standard“ heißen kann
   const [advanced, setAdvanced] = useState(() => advancedFrom(settings))
   // Ungespeicherte Änderungen: Ein Objektwechsel stellt die Seiten neu auf und fragt deshalb
   // vorher (#145). Verglichen wird mit dem gespeicherten Stand, Leerzeichen zählen nicht.
   const trimmed = (a: Record<string, string>) => JSON.stringify(Object.values(a).map((v) => v.trim()))
   useOpenForm(JSON.stringify(form) !== JSON.stringify(aiFormFrom(settings)) || trimmed(advanced) !== trimmed(advancedFrom(settings)))
+  // Liefert die App neuere Einstellungen (ein Tab im Hintergrund, `useFreshSettings` der Seite), übernimmt die Karte sie,
+  // solange hier nichts geändert ist; sonst bleibt der alte Stand gesehen, und das Speichern wird abgelehnt. Die
+  // Zustimmungen zählen nicht: Sie ändert die eigene Route, auch in diesem Fenster.
+  const shownRef = useRef({ form, advanced })
+  shownRef.current = { form, advanced }
+  useEffect(() => {
+    const now = settings.ai
+    const old = seenAi.current
+    if (!now || !old || sameRecord(seenPart(now, AI_KEYS), seenPart(old, AI_KEYS))) return
+    const before: Settings = { ...settings, ai: old }
+    const shown = shownRef.current
+    if (!sameRecord(seenPart(shown.form, FORM_KEYS), seenPart(old, FORM_KEYS)) || trimmed(shown.advanced) !== trimmed(advancedFrom(before))) return
+    seenAi.current = now
+    setForm(aiFormFrom(settings))
+    setAdvanced(advancedFrom(settings))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings])
   const [status, setStatus] = useState<Partial<Record<AiSlotName, { of: string; value: AiStatus }>>>({})
   const [checking, setChecking] = useState<Partial<Record<AiSlotName, boolean>>>({})
   const [saving, setSaving] = useState(false)
@@ -124,11 +148,39 @@ export function AiSettings({ settings, reload, jump }: Props) {
     }
     setSaving(true)
     try {
-      const updated = await api<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ai }) })
+      // Verglichen wird nur, was die Karte schreibt: `consent` ändert die eigene Route, auch in diesem Fenster.
+      const seen = seenAi.current ? { ai: seenPart(seenAi.current, Object.keys(ai).filter((key) => key !== 'consent')) } : null
+      const updated = await api<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ai, ...ifUnchanged(seen) }) })
+      seenAi.current = updated.ai
       setForm(aiFormFrom(updated))
       await reload()
       return updated
     } catch (e) {
+      // Inzwischen anderswo geändert: Gespeichert ist nichts. Wie bei „Vermieter & Zahlung“ zeigt die Karte dann den
+      // Stand von jetzt, außer wo hier etwas geändert wurde, und der gilt als gesehen; die Mitteilung nennt das
+      // Geänderte mit seinem Wert, und erneutes Speichern geht. (API-Schlüssel stehen nicht in den Einstellungen.)
+      const now = staleCurrent(e)
+      const nowAi = now?.ai
+      const old = seenAi.current
+      if (now && old && nowAi !== null && typeof nowAi === 'object') {
+        const fresh: Settings = { ...settings, ai: { ...old, ...nowAi } }
+        const refused = settingsStaleText(e, seenPart(old, AI_KEYS), AI_STALE_FIELDS,
+          'Die Karte zeigt jetzt diesen Stand; was Sie hier selbst geändert haben, steht weiter da. Bitte prüfen Sie die Angaben und speichern Sie erneut.', seenPart(nowAi, AI_KEYS))
+        const before = advancedFrom({ ...settings, ai: old })
+        const after = advancedFrom(fresh)
+        setForm((shown) => keepOwnValues(shown, { ...old }, { ...fresh.ai }, FORM_KEYS))
+        setAdvanced((shown) => ({
+          timeoutSeconds: shown.timeoutSeconds.trim() === before.timeoutSeconds ? after.timeoutSeconds : shown.timeoutSeconds,
+          numCtx: shown.numCtx.trim() === before.numCtx ? after.numCtx : shown.numCtx,
+          maxOutputTokens: shown.maxOutputTokens.trim() === before.maxOutputTokens ? after.maxOutputTokens : shown.maxOutputTokens,
+          pageImageEdge: shown.pageImageEdge.trim() === before.pageImageEdge ? after.pageImageEdge : shown.pageImageEdge,
+          reasoningEffort: shown.reasoningEffort.trim() === before.reasoningEffort ? after.reasoningEffort : shown.reasoningEffort,
+        }))
+        seenAi.current = fresh.ai
+        await reload().catch(() => { /* die Mitteilung steht gleich */ })
+        toast(refused ?? errorText(e), 'error')
+        return null
+      }
       toast(`Speichern ging nicht: ${errorText(e)}`, 'error')
       return null
     } finally {
