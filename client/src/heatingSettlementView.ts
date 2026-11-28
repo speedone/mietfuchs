@@ -4,7 +4,7 @@
 // Kostenformular und die Heizstaffel im Mietverhältnis. Ohne DOM prüfbar.
 import { fmtDate } from './api'
 import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
-import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
+import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, runningHeatingPeriod, servesUnit } from '../../shared/heatingPeriod.ts'
 import { formatDayRange, paymentYear, periodLabel } from '../../shared/period.ts'
 import { taxYearOptions } from './costForm'
 import { sentAtRefusal } from './sentAtStep'
@@ -104,18 +104,40 @@ export function cockpitHeatingRows(list: readonly HeatingSettlementInfo[], today
 }
 
 // Die Heizperioden, die das Kostenformular bei einer Heizposition anbietet: je Anlage mit eigener
-// Heizperiode die, die im gewählten Zeitraum enden (Entwurf 3.0).
-export type HeatingItemOption = { value: string; label: string; startYear: number; endYear: number }
+// Heizperiode die, die im gewählten Zeitraum enden (Entwurf 3.0). #690: Mit `today` dazu die laufende, wenn sie erst
+// nach dem gewählten Zeitraum endet (`current`, immer zuletzt: Vorgabe ist die erste, also die endende, wenn es eine gibt;
+// endet in einem Rumpfzeitraum keine, ist die laufende die einzige und damit vorgewählt); sonst ließen sich ihre
+// Kosten erst erfassen, wenn die Auswahl den nächsten Zeitraum des Objekts anbietet.
+export type HeatingItemOption = { value: string; label: string; startYear: number; endYear: number; current?: true }
 
-export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules: PeriodRules, p: Pick<BillingPeriod, 'from' | 'to'>): { plantId: string; options: HeatingItemOption[] }[] {
-  return plants.filter((plant) => hasOwnRhythm(plant)).map((plant) => ({
-    plantId: plant.id,
-    options: heatingPeriodsEndingIn(plantRules(plant, objectRules), p).map((h) => ({
-      // Laienprobe B13: mit Tagen, denn „2025/2026“ heißt beim Objekt etwas anderes als bei der Heizung.
-      value: h.key, label: `Heizperiode ${periodLabel(h)}${h.short ? '' : ` (${formatDayRange(h.from, h.to)})`}`, startYear: Number(h.from.slice(0, 4)), endYear: Number(h.to.slice(0, 4)),
-    })),
-  }))
+export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules: PeriodRules, p: Pick<BillingPeriod, 'from' | 'to'>, today?: string): { plantId: string; options: HeatingItemOption[] }[] {
+  // Laienprobe B13: mit Tagen, denn „2025/2026“ heißt beim Objekt etwas anderes als bei der Heizung.
+  const option = (h: BillingPeriod): HeatingItemOption => ({
+    value: h.key, label: `Heizperiode ${periodLabel(h)}${h.short ? '' : ` (${formatDayRange(h.from, h.to)})`}`, startYear: Number(h.from.slice(0, 4)), endYear: Number(h.to.slice(0, 4)),
+  })
+  return plants.filter((plant) => hasOwnRhythm(plant)).map((plant) => {
+    const rules = plantRules(plant, objectRules)
+    const current = today === undefined ? null : runningHeatingPeriod(rules, p, today)
+    return {
+      plantId: plant.id,
+      options: [
+        ...heatingPeriodsEndingIn(rules, p).map(option),
+        ...(current ? [{ ...option(current), label: `${option(current).label}, läuft noch`, current: true as const }] : []),
+      ],
+    }
+  })
 }
+
+// Die Heizperiode einer Heizposition aus der Auswahl des Formulars: die gewählte, ohne Wahl die Vorgabe (die erste: die
+// endende, in einem Rumpfzeitraum ohne endende die laufende). Eine Stelle für das Formular (Schlüssel, Ziel, Jahr der Zahlung, gespeicherter Zeitraum) und die Frage
+// beim Schornsteinfeger (#724), damit beide mit derselben Heizperiode `selfActive` fragen (#690). `undefined` ohne eigene
+// Heizperiode der Anlage; dann gilt der Zeitraum des Objekts.
+export function chosenHeatingPeriod(own: { options: readonly HeatingItemOption[] } | undefined, chosen: string): HeatingItemOption | undefined {
+  return own?.options.find((o) => o.value === (chosen || own.options[0]?.value))
+}
+
+// #690: Eine Position der laufenden Heizperiode steht auf der Seite Kosten, zählt aber nicht zum gewählten Zeitraum.
+export const RUNNING_PERIOD_NOTE = 'Laufende Heizperiode: zählt erst in der Abrechnung des Zeitraums, in dem sie endet.'
 
 // Die Positionen eines Zeitraums auf der Seite Kosten: seine eigenen und die Heizpositionen der
 // Heizperioden, die darin enden.

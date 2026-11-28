@@ -12,6 +12,7 @@ import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import { press, tabbables } from '../testing/keys'
 import Kosten from './Kosten'
+import { PeriodSelect } from '../components/PeriodSelect'
 import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { estgShortPeriodDays } from '../../../shared/law/estg.ts'
 
@@ -62,7 +63,17 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
+
+// Ein fester Tag für Tests, die an `localToday` hängen (#690: die laufende Heizperiode). Nur Date ist gefälscht, damit
+// findBy…/waitFor weiter laufen; je Test zwei Tage, damit er im Frühjahr wie im Herbst etwas prüft.
+const RUNNING_DAYS = ['2026-03-15', '2026-10-15'] as const
+const onDay = (day: string) => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(`${day}T12:00:00`))
+  return { year: Number(day.slice(0, 4)), month: Number(day.slice(5, 7)) }
+}
 
 const openForm = async () => {
   render(
@@ -464,6 +475,162 @@ test('Heizung PR 10: bei freien Schlüsseln „nur Heizung“ wählbar, ohne Wah
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].body).toMatchObject({ key: 'area', heatingTarget: 'heating' })
+})
+
+// #690 Punkt 4: Rechnet die Anlage erst ab dem folgenden Zeitraum selbst ab, erzwang das Formular trotzdem den Schlüssel
+// nach Heizkostenverordnung, und der Server lehnte ihn für den früheren Zeitraum ab: Die Position war nicht speicherbar.
+test('#690: vor Beginn der eigenen Heizkostenabrechnung bleibt der freie Schlüssel; ab ihrem Beginn gilt der nach Heizkostenverordnung', async () => {
+  const year = new Date().getFullYear() - 1
+  const anlage = (from: number) => ({
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+    selfSpans: [{ from: calendarPeriod(from), until: null, capture: 'heatMeter', hotWater: 'combined' }],
+  })
+  // Eigene Abrechnung erst ab dem Zeitraum nach dem gewählten.
+  plants = [anlage(year + 1)]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect([...select(/^Ziel(?: \(beim Mieterwechsel\))?$/).options].map((o) => o.value)).toEqual(['', 'heating']))
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).not.toContain('heatingSystem')
+  expect(select(/Umlageschlüssel/i).value).not.toBe('heatingSystem')
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body.key).not.toBe('heatingSystem')
+  cleanup()
+  // Gilt sie schon im gewählten Zeitraum, bleibt es beim Schlüssel nach Heizkostenverordnung.
+  sent = []
+  plants = [anlage(year)]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).toEqual(['heatingSystem'])
+})
+
+// #690 (Durchsicht): Heizperiode hin und zurück. Die Anlage rechnet erst ab der laufenden Heizperiode selbst ab; wer sie
+// im Formular wählt und zurückwechselt, hat wieder Schlüssel und Ziel von vorher, nicht still „nur Heizung“.
+test.each(RUNNING_DAYS)('#690: Heizperiode auf „läuft noch“ und zurück stellt Schlüssel und Ziel wieder her (heute %s)', async (day) => {
+  // Heute im gewählten Zeitraum: Der Test wählt den laufenden Zeitraum des Objekts und eine Heizperiode, die im Monat von
+  // heute beginnt und also erst im nächsten Zeitraum endet.
+  const { year, month } = onDay(day)
+  const start = month // Heizperiode beginnt im laufenden Monat dieses Jahres und endet im nächsten Jahr
+  const running = `${year}-${String(start).padStart(2, '0')}`
+  const ending = `${year - 1}-${String(start).padStart(2, '0')}`
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: start, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+    selfSpans: [{ from: running, until: null, capture: 'heatMeter', hotWater: 'none' }],
+  }]
+  render(<PeriodProvider><PropertyProvider><PeriodSelect /><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition anlegen/i })).toBeTruthy())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Abrechnungsjahr' }), { target: { value: String(year) } })
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Gas' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '100,00' } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  const periode = await waitFor(() => select(/^Heizperiode$/))
+  expect([...periode.options].map((o) => o.value)).toEqual([ending, running])
+  expect(periode.value).toBe(ending)
+  const ziel = () => select(/^Ziel(?: \(beim Mieterwechsel\))?$/)
+  const vorher = { key: select(/Umlageschlüssel/i).value, target: ziel().value }
+  expect(vorher.key).not.toBe('heatingSystem')
+  expect(vorher.target).toBe('')
+  fireEvent.change(periode, { target: { value: running } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  await waitFor(() => expect(ziel().value).toBe('heating'))
+  fireEvent.change(select(/^Heizperiode$/), { target: { value: ending } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe(vorher.key))
+  expect(ziel().value).toBe('')
+  // Angezeigt ist, was gespeichert würde: Der Schlüssel nach Heizkostenverordnung steht nicht mehr zur Wahl.
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).not.toContain('heatingSystem')
+  // Ein von Hand gewähltes Ziel bleibt dagegen über den Wechsel hinweg stehen.
+  fireEvent.change(ziel(), { target: { value: 'heating' } })
+  fireEvent.change(select(/^Heizperiode$/), { target: { value: running } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  fireEvent.change(select(/^Heizperiode$/), { target: { value: ending } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe(vorher.key))
+  expect(ziel().value).toBe('heating')
+})
+
+// #690 mit #724: Die Anlage rechnete bis zur laufenden Heizperiode selbst ab und ist seither wieder „Niemand“. Eine
+// Rechnung des Schornsteinfegers, mit dem Knopf auf „Heizung und Warmwasser“ umgestellt, trägt den Schlüssel nach
+// Heizkostenverordnung, den der Knopf gesetzt hat. Wechselt die Heizperiode danach auf „läuft noch“, galt er dort nicht
+// mehr, blieb aber stehen, und der Server lehnte die Position ab. Wie bei `settleSelfKey` nimmt das Formular zurück, was
+// es selbst gesetzt hat.
+test.each(RUNNING_DAYS)('#690 mit #724: nach „Auf Heizung und Warmwasser umstellen“ nimmt der Wechsel in eine Heizperiode ohne eigene Abrechnung den Schlüssel zurück (heute %s)', async (day) => {
+  const { year, month } = onDay(day)
+  const running = `${year}-${String(month).padStart(2, '0')}`
+  const ending = `${year - 1}-${String(month).padStart(2, '0')}`
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'manual', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: month, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+    selfSpans: [{ from: ending, until: running, capture: 'heatMeter', hotWater: 'none' }],
+  }]
+  render(<PeriodProvider><PropertyProvider><PeriodSelect /><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition anlegen/i })).toBeTruthy())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Abrechnungsjahr' }), { target: { value: String(year) } })
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Schornsteinfeger' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '100,00' } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Schornsteinfeger' } })
+  const vorher = select(/Umlageschlüssel/i).value
+  fireEvent.click(await screen.findByRole('button', { name: 'Auf „Heizung und Warmwasser“ umstellen' }))
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  const periode = select(/^Heizperiode$/)
+  expect(periode.value).toBe(ending)
+  fireEvent.change(periode, { target: { value: running } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe(vorher))
+  // Angezeigt ist, was gespeichert würde: Der Schlüssel nach Heizkostenverordnung steht nicht mehr zur Wahl.
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).not.toContain('heatingSystem')
+  // Zurück in die endende Heizperiode: wieder nach Heizkostenverordnung.
+  fireEvent.change(select(/^Heizperiode$/), { target: { value: ending } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+})
+
+// #690 (Integrationsdurchsicht K2): Was das Formular selbst gesetzt hat, gilt nur für das Formular, in dem es geschah.
+// Öffnet sich eine andere Position, ohne dass das Fenster dazwischen schließt („Stattdessen … bearbeiten“, ebenso ✎),
+// nahm `settleSelfKey` sonst ihr gespeichertes Ziel „nur Heizung“ still zurück, weil es dem gemerkten glich.
+test.each(RUNNING_DAYS)('#690: eine andere Position im offenen Fenster erbt nicht, was das Formular vorher selbst gesetzt hat (heute %s)', async (day) => {
+  const { year, month } = onDay(day)
+  const running = `${year}-${String(month).padStart(2, '0')}`
+  const ending = `${year - 1}-${String(month).padStart(2, '0')}`
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: month, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+    selfSpans: [{ from: running, until: null, capture: 'heatMeter', hotWater: 'none' }],
+  }]
+  // Gespeichert in der endenden Heizperiode, vor der eigenen Abrechnung: freier Schlüssel, Ziel „nur Heizung“.
+  costItems = [{
+    id: 'c1', propertyId: 'objekt-1', period: ending, year, category: 'Heizung und Warmwasser', description: 'Gas Vorjahr', amountCents: 30000,
+    key: 'area', meterType: null, directUnitId: null, customShares: null, participantUnitIds: null, heatingPart: null, heatingTarget: 'heating', heatingPlantId: 'hp1',
+  }]
+  render(<PeriodProvider><PropertyProvider><PeriodSelect /><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition anlegen/i })).toBeTruthy())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Abrechnungsjahr' }), { target: { value: String(year) } })
+  await screen.findByRole('button', { name: 'Kostenposition bearbeiten' })
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  fireEvent.change(await waitFor(() => select(/^Heizperiode$/)), { target: { value: running } })
+  const ziel = () => select(/^Ziel(?: \(beim Mieterwechsel\))?$/)
+  // In der laufenden Heizperiode setzt das Formular Schlüssel und das einzige Ziel selbst.
+  await waitFor(() => expect(ziel().value).toBe('heating'))
+  // Ohne zu schließen die gespeicherte Position öffnen (derselbe Übergang wie „Stattdessen … bearbeiten“).
+  fireEvent.click(screen.getByRole('button', { name: 'Kostenposition bearbeiten' }))
+  await waitFor(() => expect((screen.getByLabelText(/Beschreibung/i) as HTMLInputElement).value).toBe('Gas Vorjahr'))
+  await waitFor(() => expect(select(/^Heizperiode$/).value).toBe(ending))
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('area'))
+  expect(ziel().value).toBe('heating')
 })
 
 test('Durchsicht #241 Runde 2, H1: Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet; ein unpassendes Ziel wird nie still ersetzt', async () => {

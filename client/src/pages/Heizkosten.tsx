@@ -265,8 +265,10 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
             {(data?.views[plant.id] ?? []).map((v) => (
               <div key={v.period} data-heating-period={`${plant.id}:${v.period}`}>
                 <h2 className="section-title">{plant.name || 'Heizanlage'}, Heizperiode {v.label}</h2>
-                {/* #690 Punkt 6: bei eigener Abrechnung zuerst, was noch fehlt. Abgeschlossen fehlt nichts mehr. */}
-                {!v.closed && todoCard(plant, v)}
+                {/* #690: die laufende Heizperiode, die erst nach dem gewählten Zeitraum endet (`runningHeatingPeriod`). */}
+                {v.current && <p className="muted">Diese Heizperiode läuft noch: Sie endet am {germanDate(v.to)} und wird in dem Abrechnungszeitraum abgerechnet, in dem sie endet. Kosten, Lieferungen und die monatliche Verbrauchsinformation können Sie schon jetzt erfassen.</p>}
+                {/* #690 Punkt 6: bei eigener Abrechnung zuerst, was noch fehlt. Abgeschlossen fehlt nichts mehr; für die laufende Heizperiode (#701) gibt es noch keine Abrechnung, aus der die Liste ihren Stand ableiten könnte. */}
+                {!v.closed && !v.current && todoCard(plant, v)}
                 {/* Heizung PR 20 (#103): die Abrechnung des Messdienstes mit der KI auslesen; übernommen wird in der Prüfansicht. */}
                 {plant.method === 'service' && (
                   <ServiceImportCard plant={plant} view={v} object={period.period} tenancies={tenancies} units={units} items={data?.items ?? []} co2={v.from >= first} onSaved={() => void load()}

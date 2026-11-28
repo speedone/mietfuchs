@@ -2956,6 +2956,9 @@ export type HeatingPeriodView = {
   to: string
   short: boolean
   closed: boolean
+  // #690: Die laufende Heizperiode, die erst nach dem gefragten Zeitraum endet (`runningHeatingPeriod`). Sie steht hier
+  // nur zum Erfassen; abgerechnet wird sie in dem Zeitraum, in dem sie endet.
+  current?: boolean
   hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable' | 'dhwHeatKwh' | 'totalHeatKwh' | 'dhwVolumeM3' | 'dhwTempC'>
   // Für die Formeln (Heizung PR 11): Σ der Warmwasserzähler der angeschlossenen Wohnungen in der
   // Heizperiode als Vorschlag für V (null ohne solche Zähler) und die mit Warmwasser versorgte Fläche.

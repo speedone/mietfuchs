@@ -267,6 +267,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   geschätzt sind. Für bestehende Daten ist nichts zu tun: Abgeschlossene Abrechnungen bleiben, wie sie zugestellt sind;
   war bei einer davon eine Wohnung ohne Gerät, kann der Vergleich mit der heutigen Berechnung dort eine Abweichung
   zeigen ([#690](https://github.com/speedone/mietfuchs/issues/690)).
+- Laufende Heizperiode erfassbar: Rechnet Ihre Heizung in einem anderen Zeitraum ab als das Objekt (etwa Juli bis Juni
+  bei einem Objekt im Kalenderjahr), steht die laufende Heizperiode jetzt schon im laufenden Abrechnungszeitraum zur
+  Wahl, auf der Seite Heizkosten und im Kostenformular. Kosten, Lieferungen und die monatliche Verbrauchsinformation
+  lassen sich damit erfassen, sobald sie anfallen; abgerechnet wird die Heizperiode weiter in dem Zeitraum, in dem sie
+  endet. Die Seite Kosten zeigt ihre Positionen mit einem Vermerk und zählt sie nicht in die Summe. Eine Heizposition aus
+  der Zeit vor Beginn Ihrer eigenen Heizkostenabrechnung behält im Kostenformular den freien Umlageschlüssel, statt den
+  nach Heizkostenverordnung zu verlangen, den Mietfuchs dann beim Speichern ablehnte; wechseln Sie die Heizperiode hin
+  und zurück, stellt das Formular Schlüssel und Ziel wieder her, die es selbst gesetzt hatte, auch nach „Auf „Heizung und
+  Warmwasser“ umstellen“ bei einer Rechnung des Schornsteinfegers. Die Karten „Lieferungen“ und „Messdienstabrechnung
+  auslesen“ speichern den Beleg, bevor die KI ihn liest: Bricht die Auswertung ab, liegt er auf der Seite Belege unter
+  „Ohne Position“ ([#690](https://github.com/speedone/mietfuchs/issues/690)).
 - Zweimal derselbe Datenordner: Startete Mietfuchs (Fenster, Programmdatei, Paket oder Store), während ein anderes
   Mietfuchs auf demselben Datenordner gerade seine Datenbank öffnete, etwa beim ersten Start oder nach einem Update auf
   einem langsamen Rechner, hielt der neue Start den anderen für abwesend, weil der länger als anderthalb Sekunden nicht

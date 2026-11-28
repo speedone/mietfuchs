@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, HeatingPlant, Meter, MeterType, Reading, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
-import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
+import { chosenHeatingPeriod, heatingItemPeriods, heatingTaxYear, itemsOfPeriod, RUNNING_PERIOD_NOTE } from '../heatingSettlementView'
+import { localToday } from '../periodForm'
 import { plantOptions } from '../heatingForm'
 import { filedUnderSettlement } from '../costPeriods'
 import { calendarPeriod, periodContext, periodLabel, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
@@ -75,7 +76,7 @@ import {
   formPartOf,
   type CostField,
   COST_STALE_FIELDS,
-} from '../costForm'
+ settleSelfKey, type SelfKeyMemo } from '../costForm'
 import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import CostPeriodFields from '../components/CostPeriodFields'
@@ -83,7 +84,7 @@ import SpreadField from '../components/SpreadField'
 import OperatingPowerFields from '../components/OperatingPowerFields'
 import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
+import { hotWaterOf, selfActive } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
 import { joinQuestions, paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
 import { spreadPartsRefusal } from '../../../shared/spread.ts'
@@ -192,10 +193,14 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   useEffect(() => {
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
   }, [propertyId])
-  const heatingOptions = heatingItemPeriods(plants, view.rules, period)
+  // #690: mit der laufenden Heizperiode, wenn sie erst nach dem gewählten Zeitraum endet.
+  const heatingOptions = heatingItemPeriods(plants, view.rules, period, localToday())
   // Die Positionen mit dem Zeitraum ihrer Abrechnung, für Vorjahr und „schon erfasst“ (costPeriods.ts).
   const filedItems = useMemo(() => filedUnderSettlement(items, () => view.rules, () => plants), [items, view.rules, plants])
   const heatingKeys = heatingOptions.flatMap((h) => h.options.map((o) => ({ plantId: h.plantId, key: o.value })))
+  // Ihre Positionen stehen in der Liste, zählen aber nicht zur Summe des gewählten Zeitraums.
+  const runningText = JSON.stringify(heatingOptions.flatMap((h) => h.options.filter((o) => o.current).map((o) => `${h.plantId}|${o.value}`)))
+  const inRunningPeriod = (c: Pick<CostItem, 'period' | 'heatingPlantId'>): boolean => !!c.heatingPlantId && (JSON.parse(runningText) as string[]).includes(`${c.heatingPlantId}|${c.period}`)
   // Heizung PR 9: Ab zwei Anlagen wählt der Vermieter die Anlage einer Heizposition. Leer heißt: Der
   // Server ordnet nach den Wohnungen der Position zu (`plantForNewItem`).
   const [heatingPlantId, setHeatingPlantId] = useState('')
@@ -206,26 +211,35 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   const plantOfForm = form?.category === HEATING_CATEGORY
     ? (plants.find((p) => p.id === (heatingPlantId || ownPlant?.plantId)) ?? (plants.length === 1 ? plants[0] : undefined))
     : undefined
-  const selfPlant = plantOfForm?.method === 'self'
   // #724: die Frage bei „Schornsteinfeger“ und ihr Knopf. Kommt genau eine Anlage in Frage, ist sie die Anlage der
   // Position (ab zwei Anlagen im Objekt die Auswahl „Heizanlage“); sonst bleibt die Wahl beim Vermieter.
   // Durchsicht M2: gefragt mit dem Schlüssel, den die umgestellte Position bekäme (eigene Heizperiode: deren Vorgabe).
-  const chimneyKeyOf = (p: HeatingPlant): string => heatingOptions.find((h) => h.plantId === p.id)?.options[0]?.value ?? key
+  // #690: dieselbe Wahl wie für das Formular (`chosenHeatingPeriod`), mit der Vorgabe der Auswahl, denn der Knopf leert sie.
+  const chimneyKeyOf = (p: HeatingPlant): string => chosenHeatingPeriod(heatingOptions.find((h) => h.plantId === p.id), '')?.value ?? key
   const chimneyQuestion = form ? chimneySweepQuestion(form, plants, period, chimneyKeyOf) : null
   // Durchsicht S2: wer vor dem Umstellen als „nicht vereinbart“ erfasst war; die Zeile darunter nennt sie.
   const [droppedNotAgreed, setDroppedNotAgreed] = useState<string[]>([])
   useEffect(() => setDroppedNotAgreed([]), [form === null, form?.id])
+  // Was das Formular selbst an Schlüssel und Ziel gesetzt hat, je geöffnetem Formular (#690): Wechselt die Heizperiode
+  // zurück in eine mit freien Schlüsseln, nimmt `settleSelfKey` es wieder zurück.
+  const selfKeyMemo = useRef<SelfKeyMemo | null>(null)
   const convertToHeating = () => {
     if (!form) return
     setDroppedNotAgreed(form.notAgreed)
+    // #690 mit #724: Auch den Schlüssel nach Heizkostenverordnung setzt hier das Formular. Gilt die eigene Abrechnung in
+    // einer danach gewählten Heizperiode nicht (etwa „läuft noch“ nach dem Zurückschalten), geht der freie Schlüssel von
+    // vorher zurück, statt dass der Server die Position ablehnt.
+    selfKeyMemo.current = { ...selfKeyMemo.current, key: { key: form.key, participants: form.participants } }
     const candidates = chimneySweepPlants(plants, period, chimneyKeyOf)
     const [only, ...more] = candidates
     if (plantChoices.length > 0 && only && more.length === 0) setHeatingPlantId(only.id)
     setHeatingPeriod('')
     setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, toCentralHeating(form), period))))
   }
-  const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
-    ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
+  const heatingOption = form?.category === HEATING_CATEGORY ? chosenHeatingPeriod(ownPlant, heatingPeriod) : undefined
+  // #690: Ob sie selbst abrechnet, entscheidet der Zeitraum der Position, wie beim Server (`guardHeatingSystem`), nicht
+  // die Art der Anlage von heute: Vor dem Beginn der eigenen Abrechnung bleibt es bei den freien Schlüsseln.
+  const selfPlant = !!plantOfForm && selfActive(plantOfForm, heatingOption?.value ?? key)
   // Die Warmwasserbereitung der Heizperiode des Formulars, nicht die heutige der Anlage (Durchsicht von #241,
   // Runde 2, H1): Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet.
   const formHotWater = plantOfForm ? hotWaterOf(plantOfForm, heatingOption?.value ?? key) : 'combined'
@@ -233,15 +247,17 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Ein Ziel, das zur Warmwasserbereitung nicht passt, wird nie still ersetzt, sondern als Fehler am Feld
   // genannt; gespeichert wird erst nach einer Wahl.
   const targetInvalid = !!form && selfPlant && form.heatingTarget !== '' && !targetChoices.some((o) => o.value === form.heatingTarget)
+  // Der Speicher gilt dem Formular, in dem gesetzt wurde: Öffnet sich eine andere Position, ohne dass das Fenster
+  // dazwischen schließt („Stattdessen … bearbeiten“), beginnt er leer (Integrationsdurchsicht #690, K2). Vor dem
+  // Effekt darunter, damit dieser schon mit dem leeren Speicher läuft.
+  useEffect(() => { selfKeyMemo.current = null }, [form?.id])
   useEffect(() => {
-    if (!form) return
+    if (!form) { selfKeyMemo.current = null; return }
     // Gespeichert wird, was zu sehen ist: Bei eigener Abrechnung steht der Schlüssel fest, und eine einzige
     // passende Wahl füllt ein leeres Ziel.
-    const only = selfPlant && targetChoices.length === 1 ? (targetChoices[0]?.value ?? '') : null
-    const target = selfPlant && form.heatingTarget === '' && only !== null ? only : form.heatingTarget
-    if ((selfPlant && form.key !== 'heatingSystem') || target !== form.heatingTarget) {
-      setForm({ ...form, ...(selfPlant ? { key: 'heatingSystem' as const, participants: null } : {}), heatingTarget: target })
-    }
+    const settled = settleSelfKey(form, selfPlant, targetChoices.map((o) => o.value), selfKeyMemo.current)
+    selfKeyMemo.current = settled.memo
+    if (settled.form !== form) setForm(settled.form)
   }, [form, selfPlant, targetChoices])
   // Beim Öffnen einer bestehenden Position ihre Heizperiode und Anlage, sonst die Vorgabe der Auswahl. Nur beim
   // Öffnen (neue `formId`), nicht bei jeder neu geladenen Liste: Kam die Liste erst nach der Wahl an (etwa das
@@ -509,7 +525,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))
     return target ? { items: filedItems, year: v.year, at: periodContext(view.rules, target), propertyKind: property?.kind ?? null } : { items: filedItems, year: v.year, propertyKind: property?.kind ?? null }
   }
-  const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
+  const totalCents = yearItems.reduce((a, i) => a + (inRunningPeriod(i) ? 0 : i.amountCents), 0)
 
   // Nach Beleg (Rechnung) gruppiert - alle Positionen eines Belegs stehen zusammen, mit
   // Zwischensumme = Belegsumme. So lassen sich die einzelnen Beträge und die Summe direkt
@@ -1203,6 +1219,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                     {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
                     {/* #455: ein Teil einer aufgeteilten Rechnung, die Summe über alle Zeiträume */}
                     {partLabels.get(i.id) && <div className="muted">{partLabels.get(i.id)}</div>}
+                    {inRunningPeriod(i) && <div className="muted">{RUNNING_PERIOD_NOTE}</div>}
                   </td>
                   <td data-label="Umlageschlüssel">
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}
@@ -1258,7 +1275,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3}>Summe</td>
+                <td colSpan={3}>{yearItems.some(inRunningPeriod) ? 'Summe (ohne laufende Heizperiode)' : 'Summe'}</td>
                 <td className="num">{fmtEuro(totalCents)}</td>
                 <td className="no-print"></td>
               </tr>
@@ -1331,6 +1348,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 <small className="muted">Automatisch: Mietfuchs nimmt die Anlage, an der alle beteiligten Wohnungen hängen und die zu Beginn des Leistungszeitraums heizt; passt keine eindeutig, bleibt die Position ohne Anlage, und die Abrechnung sagt es.</small>
               </label>
             )}
+            {/* Vorgabe ist die erste Option (`chosenHeatingPeriod`): die endende Heizperiode, in einem Rumpfzeitraum ohne
+                endende die laufende (#690). */}
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
               <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
             )}
