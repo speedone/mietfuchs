@@ -1304,6 +1304,14 @@ export const GLOSSARY = {
     norm: 'Format nach der Richtlinie EPC069-12 des European Payments Council (SEPA-Überweisung)',
     needed: 'Nein, er ist eine Erleichterung für den Mieter. Sie schalten ihn beim Drucken ein („QR-Code zum Bezahlen bei Nachzahlung“). Er erscheint nur bei einer Nachzahlung und nur mit Vermieter und einer IBAN aus dem Europäischen Wirtschaftsraum; hat das Objekt eine eigene IBAN, steht diese im Code. Den Verwendungszweck ändern Sie in der Vorlage des Anschreibens, für alle Objekte, ein Objekt oder einen Mieter. Der Code entsteht auf Ihrem Rechner, nichts geht ins Netz. Abrechnungen, die vor dieser Funktion abgeschlossen wurden, bekommen keinen Code.',
   },
+  // #691: der Baustein des Anschreibens für ein Guthaben nach dem Auszug
+  creditMovedOut: {
+    topic: 'tenants',
+    title: 'Guthaben nach dem Auszug',
+    short: 'Ein eigener Baustein des Anschreibens für ein Guthaben, wenn das Mietverhältnis beendet ist. Statt „mit der nächsten Mietzahlung verrechnet“ sagt er, dass der Betrag überwiesen wird, und bittet um die Bankverbindung, denn eine nächste Mietzahlung, mit der sich verrechnen ließe, kommt nicht mehr.',
+    example: 'Erika Mustermann ist zum 30.06.2025 ausgezogen, ihre Abrechnung 2025 ergibt ein Guthaben von 40,00 €. Im Anschreiben steht: „Es ergibt sich ein Guthaben von 40,00 €. Da Ihr Mietverhältnis beendet ist, wird es Ihnen überwiesen; bitte teilen Sie dafür Ihre Bankverbindung mit.“ Bei einem Mieter, der weiter wohnt, bleibt der Satz zur Verrechnung mit der nächsten Mietzahlung.',
+    needed: 'Mietfuchs wählt ihn von selbst, wenn das Mietverhältnis im abgerechneten Zeitraum oder vor dem Tag des Briefs endet. Zieht der Mieter nur innerhalb desselben Objekts in eine andere Wohnung um (ein neues Mietverhältnis mit demselben Namen, das am Tag des Briefs läuft), gilt er als nicht ausgezogen. Den Text ändern Sie in der Vorlage des Anschreibens, für alle Objekte, ein Objekt oder einen Mieter. Haben Sie beim Mieter selbst einen eigenen Text zum Guthaben geschrieben, gilt dieser auch nach dem Auszug, solange es für ihn keinen eigenen zum Guthaben nach dem Auszug gibt. Ein eigener Text zum Guthaben in der Vorlage oder am Objekt gilt dagegen nicht für Ausgezogene; das Fenster „Anschreiben“ und „Zu prüfen“ sagen es. Abrechnungen, die vorher abgeschlossen wurden, behalten ihren Satz.',
+  },
   // Datensicherung: das Backup als ZIP-Datei, im Unterschied zu den automatischen Sicherungen im Verlauf
   backup: {
     topic: 'operation',

@@ -8,7 +8,8 @@
 // **Beim Release einer neuen Nebenversion hier eintragen**, mit der Zahl der Dateien in server/drizzle/*.sql. Ein
 // Wächter in snapshots.test.ts verlangt nur, dass die Nebenversion aus server/package.json eingetragen ist; die Zahl der
 // Schritte prüft erst beim Tag law-release.test.ts (`MIETFUCHS_RELEASE=1`, Schritt „Rechtsregister geprüft?“ in
-// release.yml). Patchversionen ohne neuen Schritt brauchen keinen. Gezählt aus den Tags (git ls-tree v0.x.0 -- server/drizzle).
+// release.yml). Patchversionen ohne neuen Schritt brauchen keinen; eine Patchversion mit neuen Schritten (kleine Releases
+// erscheinen als Patch) bekommt einen eigenen Eintrag mit ihrer Fassung. Gezählt aus den Tags (git ls-tree v0.x.0 -- server/drizzle).
 export const RELEASE_STEPS: readonly { version: string, steps: number }[] = [
   { version: '0.8.0', steps: 1 },
   { version: '0.9.0', steps: 12 },
