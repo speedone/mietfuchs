@@ -1544,6 +1544,6 @@ test('Sammelbetrag (#704): eine gespeicherte Position zeigt den Haken; daneben e
   expect(screen.queryByText(/Prüfen Sie, ob das dieselben Kosten sind/)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /^Speichern$/i }))
   await waitFor(() => expect(sent.length).toBeGreaterThan(0))
-  expect(sent[0]?.url).toBe('/api/costItems/c1')
+  expect(sent[0]?.url).toBe('/api/costItems/c1?property=objekt-1')
   expect(sent[0]?.body).toMatchObject({ includesWater: false })
 })

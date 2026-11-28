@@ -3,8 +3,7 @@
 // einem Haken, dass Wasser darin steckt (`CostItem.includesWater`). Die Kostenart bleibt der Datenwert; wie die Zeile
 // heißt, steht nur hier, für die Abrechnung des Mieters, die Aufstellung des Vermieters und den Export.
 import { HEATING_CATEGORY } from './heating.ts'
-
-export const WATER_CATEGORY = 'Wasser/Abwasser'
+import { WATER_CATEGORY } from './heatingModel.ts'
 
 // Der Zusatz hinter der Kostenart in der gedruckten Abrechnung.
 export const INCLUDES_WATER_SUFFIX = 'einschließlich Kaltwasser und Abwasser (laut Abrechnung des Messdienstes)'

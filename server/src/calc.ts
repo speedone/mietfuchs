@@ -77,7 +77,7 @@ import { allocateRentPayments, ledgerStartOf, ledgerTenancy, monthCoverage, reco
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_EMISSIONS_FIELD, CO2_RELIEF_LABEL, ENCLOSED_SELF_USED, enclosedCondition, includesWaterProbeText } from '../../shared/co2Probe.ts'
-import { allowsIncludesWater, combinedLineText, WATER_CATEGORY, waterTwiceText } from '../../shared/includesWater.ts'
+import { allowsIncludesWater, combinedLineText, waterTwiceText } from '../../shared/includesWater.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.

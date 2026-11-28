@@ -66,9 +66,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   und das Wasser sind dann getrennt zu erfassen. Eine Sammelzeile aus Heizung und Wasser ist formell angreifbar: Mietfuchs
   lässt sie zu, warnt aber in der Abrechnung, nennt je Mieter den Betrag, der im schlimmsten Fall nicht nachzufordern
   wäre, und den sicheren Weg (getrennte Positionen); das Lexikon erklärt die „Sammelzeile“ mit den Fundstellen. Ohne
-  Haken und ohne die neue Wahl bleibt
-  jede Abrechnung, wie sie war. Im JSON-Export der Abrechnung tragen solche Zeilen das neue Feld `includesWater`, die CSV
-  nennt die Kostenart mit dem Zusatz ([#704](https://github.com/speedone/mietfuchs/issues/704)).
+  Haken und ohne die neue Wahl bleibt jede Abrechnung, wie sie war. Im JSON-Export der Abrechnung tragen solche Zeilen
+  das neue Feld `includesWater`, die CSV nennt die Kostenart mit dem Zusatz ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
   für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach
   § 560 Abs. 4 BGB auch die beiden Teile mit ihrem bisherigen Betrag. Der Vorschlag teilt sich nach den Kosten dieser

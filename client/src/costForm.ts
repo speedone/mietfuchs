@@ -20,7 +20,8 @@ import { CREDIT_WITH_AMOUNTS, NEGATIVE_AMOUNT, costItemBody, euro, type CostItem
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { allowsIncludesWater, COMBINED_LINE_RISK, INCLUDES_WATER_LABEL, WATER_CATEGORY, waterTwiceText } from '../../shared/includesWater.ts'
+import { allowsIncludesWater, COMBINED_LINE_RISK, INCLUDES_WATER_LABEL, waterTwiceText } from '../../shared/includesWater.ts'
+import { WATER_CATEGORY } from '../../shared/heatingModel.ts'
 import { enclosedWay } from '../../shared/co2Probe.ts'
 import { partShare } from '../../shared/splitPart.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
