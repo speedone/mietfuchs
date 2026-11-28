@@ -80,7 +80,12 @@ Kurzfassung steht im [README](../README.md#funktionen).
    oder abweichend am Objekt),
    §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Bei einer Nachzahlung
    auf Wunsch ein QR-Code zum Bezahlen (EPC-QR-Code für die Banking-App, Verwendungszweck in der
-   Vorlage des Anschreibens einstellbar). Dazu eine
+   Vorlage des Anschreibens einstellbar). Ist das Mietverhältnis beendet (im abgerechneten Zeitraum oder vor dem
+   Tag des Briefs), steht bei einem Guthaben der Baustein „Guthaben nach dem Auszug“: Er bittet um die
+   Bankverbindung, statt die Verrechnung mit der nächsten Mietzahlung anzukündigen. Ein Umzug in eine andere Wohnung
+   desselben Objekts (neues Mietverhältnis mit demselben Namen, das am Tag des Briefs läuft) zählt nicht als Auszug.
+   Hast du beim Mieter selbst einen eigenen Text zum Guthaben, gilt er auch nach dem Auszug; einen eigenen Text in der
+   Vorlage oder am Objekt nennen das Fenster „Anschreiben“ und „Zu prüfen“, denn er gilt dort nicht. Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
    Vor dem Versand wird die Abrechnung **abgeschlossen** und damit eingefroren; ändert sich danach
    etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf. Ist sie

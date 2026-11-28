@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { releaseStepsOf } from '../src/db/releaseSteps.ts'
 import { APP_VERSION } from '../src/version.ts'
+import { missingStepsMessage } from '../testing/releaseSteps.ts'
 import type { LawParam, Timing } from '../../shared/law/register.ts'
 import type { LawValue } from '../../shared/types.ts'
 
@@ -31,7 +32,16 @@ test('Release: RELEASE_STEPS nennt die Schritte dieser Version', { skip: process
   const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../drizzle')
   const steps = fs.readdirSync(dir).filter((n) => n.endsWith('.sql')).length
   assert.equal(releaseStepsOf(APP_VERSION), steps,
-    `In server/src/db/releaseSteps.ts fehlt ein Eintrag { version: '${APP_VERSION.replace(/-.*$/, '').replace(/\.\d+$/, '.0')}', steps: ${steps} }.`)
+    missingStepsMessage(APP_VERSION, steps))
+})
+
+// Die Meldung schlägt die Fassung vor, die getaggt wird, auch eine Patchversion: Kleine Releases mit neuen Schritten
+// erscheinen als Patch (0.18.2), und für 0.18.0 steht schon ein Eintrag mit weniger Schritten da. Ein Zusatz wie `-rc.1`
+// fällt weg. Läuft immer, damit die Meldung nicht erst beim Tag falsch auffällt.
+test('Release: die Meldung zu RELEASE_STEPS nennt die Fassung des Tags, nicht x.y.0', () => {
+  assert.equal(missingStepsMessage('0.18.2', 108), "In server/src/db/releaseSteps.ts fehlt ein Eintrag { version: '0.18.2', steps: 108 }.")
+  assert.equal(missingStepsMessage('0.19.0', 110), "In server/src/db/releaseSteps.ts fehlt ein Eintrag { version: '0.19.0', steps: 110 }.")
+  assert.equal(missingStepsMessage('1.0.0-rc.1', 120), "In server/src/db/releaseSteps.ts fehlt ein Eintrag { version: '1.0.0', steps: 120 }.")
 })
 
 test('Release-Sperre: sie findet einen ungeprüften Wert und übersieht die geprüften', () => {
