@@ -10,7 +10,7 @@ import {
 import { DEPOSIT_SENDER_MISSING_TEXT, depositLetterView, depositSenderMissing } from '../depositLetter'
 import { depositSettlement } from '../depositSettlement'
 import { effectiveLandlord } from '../landlord'
-import { asLetterDesigns, browserLinesNote, canPagePaper, pageEdges, printDesign } from '../letterDesignView'
+import { asLetterDesigns, browserLinesNote, canPagePaper, logoPrintNote, pageEdges, printDesign, type LogoSpace } from '../letterDesignView'
 import { withProperty } from '../property'
 import { PAPER_BROWSER_NOTE } from '../rentIncreaseLetterForm'
 import { NoticeBox } from './Notice'
@@ -73,6 +73,9 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
   const [paper, setPaper] = useState<boolean | null>(null)
   const [paperSkipped, setPaperSkipped] = useState(false)
   const linesNote = browserLinesNote(pageEdges())
+  // #691: Logo auf Briefpapier ohne oder mit wenig Platz, gesagt beim Drucken (`logoPrintNote`)
+  const [logoSpace, setLogoSpace] = useState<LogoSpace>(null)
+  const logoNote = logoPrintNote(logoSpace)
   const propertyId = property?.id
   useEffect(() => {
     let alive = true
@@ -82,6 +85,7 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
         const planned = printDesign(asLetterDesigns(d), { legacy: false, pagedPaper: canPagePaper() })
         setPaper(planned.paper !== null)
         setPaperSkipped(planned.paperSkipped)
+        setLogoSpace(planned.logoSpace)
       })
       .catch(() => { if (alive) setPaper(false) })
     return () => { alive = false }
@@ -231,6 +235,7 @@ export default function DepositDrawer({ tenancy, entries, info, unit, property =
           {/* #735: wo der Browser seine Kopf- und Fußzeilen trotzdem druckt (Safari), der Weg, sie abzuschalten */}
           {letter && linesNote && <p className="muted m-0">{linesNote}</p>}
           {letter && paperSkipped && <NoticeBox level="info" title="Briefpapier druckt dieser Browser nicht">{PAPER_BROWSER_NOTE}</NoticeBox>}
+          {letter && logoNote && <NoticeBox level="info" title={logoNote.title} action={logoNote.text} />}
           {letter && depositSenderMissing(letter, paper ?? true) && <p className="muted">{DEPOSIT_SENDER_MISSING_TEXT}</p>}
         </section>
       )}

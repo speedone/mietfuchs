@@ -296,6 +296,15 @@ test('kann der Browser kein Briefpapier je Seite drucken, sagt es das Fenster, u
   expect(within(drawer).getByText(/Im Brief steht kein Name des Vermieters/)).toBeTruthy()
 })
 
+// #691, Durchsicht: Logo und Briefpapier, und der Rand oben lässt dem Logo keinen Platz: Das Fenster sagt es beim Drucken.
+test('Logo auf Briefpapier ohne Platz: das Fenster sagt, dass es nicht gedruckt wird', async () => {
+  designReply = { installation: { ...withPaper.installation, logo: { name: 'logo.png', file: 'logo.png', size: 1, mime: 'image/png' } }, property: null }
+  vi.stubGlobal('CSS', { supports: () => true })
+  const { drawer } = openMoved(MOVED, LETTER)
+  expect(await within(drawer).findByText('Logo wird nicht gedruckt')).toBeTruthy()
+  expect(within(drawer).getByText(/Den Rand oben ändern Sie im Fenster „Logo und Briefpapier“/)).toBeTruthy()
+})
+
 test('mit Namen des Vermieters warnt die Aufstellung nicht', () => {
   const { drawer } = openMoved()
   expect(within(drawer).queryByText(/kein Name des Vermieters/)).toBeNull()

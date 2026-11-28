@@ -109,3 +109,16 @@ test('G-K6 (#246): ein Wert, der nur der Prüfung dient, ist als solcher gekennz
   )
   assert.deepEqual(r.valueChanges, [{ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', frozenText: '64,20 €/t', currentText: '65,10 €/t', checkOnly: true }])
 })
+
+// #691: Ein beschreibendes Feld, das erst nach dem Abschluss hinzukam (`suggestionScaling` an der Mieterabrechnung, `ended`
+// am Anschreiben), fehlt im eingefrorenen Stand. Verglichen werden nur Salden; die Abrechnung erscheint nicht als abweichend.
+test('#691: ein neu hinzugekommenes beschreibendes Feld macht keine Abweichung', () => {
+  // Die heutige Berechnung trägt das Feld, der eingefrorene Stand (wie aus der Datenbank gelesen: `unknown`) nicht
+  const current = { ...statement('t', 6667), suggestionScaling: 'days' as const }
+  const r = compareWithFrozen(
+    { statements: [statement('t', 6667)] },
+    { statements: [current] },
+    '2026-12-31', '2026-10-01',
+  )
+  assert.deepEqual(r, { comparable: true, deviations: [], valueChanges: [], deadline: '2026-12-31', deadlinePassed: false })
+})

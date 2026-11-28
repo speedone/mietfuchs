@@ -14,7 +14,8 @@
 .letter-return { display: inline-block; font-size: var(--text-xs); color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: var(--space-1); }
 .letter-address { font-style: normal; }
 /* Lange Angaben (eine E-Mail) brechen um, statt über den rechten Rand zu ragen (Druck in Safari, #286: mit der Schrift des
-   Systems auf dem Mac 1,9 mm darüber); Letter.tsx erlaubt den Umbruch nach dem @. */
+   Systems auf dem Mac 1,9 mm darüber); Letter.tsx erlaubt den Umbruch nach dem @ und vor jedem Punkt, `anywhere` greift nur noch bei einem Stück, das
+   allein nicht in die Zeile passt (#691: vorher brach die Adresse mitten im Wort um). */
 .letter-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 var(--space-3); margin-bottom: var(--space-4); font-size: var(--text-s); overflow-wrap: anywhere; }
 .letter-info-label { color: var(--muted); }
 .letter-info-wide { grid-column: 1 / -1; }
@@ -59,7 +60,7 @@
 .paper-preview { position: relative; width: 100%; max-width: 14rem; aspect-ratio: 210 / 297; border: 1px solid var(--line); background: var(--card); overflow: hidden; }
 .paper-preview img { position: absolute; }
 .paper-preview .paper-preview-sheet { inset: 0; width: 100%; height: 100%; object-fit: fill; }
-.paper-preview .paper-preview-logo { top: 5.05%; right: 9.52%; max-height: 8.4%; max-width: 31%; object-fit: contain; }
+.paper-preview .paper-preview-logo { top: var(--preview-logo-top, 5.05%); right: 9.52%; max-height: var(--preview-logo-height, 8.4%); max-width: 31%; object-fit: contain; }
 .paper-preview-frame { position: absolute; border: 1px dashed var(--muted); }
 .paper-preview-window { left: 9.52%; top: 15.15%; width: 40.48%; height: 15.15%; border-color: var(--accent); }
 .paper-preview-text { top: var(--preview-top); right: var(--preview-right); bottom: var(--preview-bottom); left: var(--preview-left); }
@@ -216,17 +217,40 @@
      Abrechnung darf keinen eigenen Grund haben, sonst läge er über dem Papier. Ein Bild druckt der Browser immer, auch
      ohne „Hintergrundgrafiken“. */
   .paper-print .letter { --page: 0mm; }
-  .letter-paper { display: block; position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -1; background: var(--card); }
+  .letter-paper { -webkit-print-color-adjust: exact; print-color-adjust: exact; display: block; position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -1; background: var(--card); }
   .paper-print .print-pages-frame { padding: var(--paper-top) 0 var(--paper-bottom); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  /* Nach dem Anschreiben beginnt der Rahmen eine Seite, und der Abstand zwischen den Teilen einer Karte (12 px,
+     index.css) bleibt nach dem erzwungenen Umbruch stehen: Das Briefpapier dieser einen Seite lag 3,2 mm zu tief, und
+     unten fehlten 3,2 mm (#691, nachgemessen; scripts/print-width-check.mjs). Nach dem Kopf ohne Anschreiben
+     (`letter-top`) bleibt der Abstand, dort steht der Rahmen mitten auf der Seite. Der Rahmen der Belegkopien beginnt
+     immer eine Seite (`print-pages-new`), auch ohne Anschreiben (Durchsicht: erste Belegseite ab 43,4 statt 40,2 mm). */
+  .paper-print .letter:not(.letter-top) ~ .print-pages-frame, .paper-print .print-pages-frame.print-pages-new { margin-top: 0; }
   .paper-print .print-pages > thead { display: table-header-group; }
   .paper-print .print-pages > thead > tr { display: table-row; }
   .print-pages-follow { position: relative; }
   .paper-follow { display: block; position: absolute; top: calc(-1 * var(--paper-top)); left: calc(-1 * var(--paper-left)); width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -2; }
   .card.statement.paper-print { background: none; }
+  /* Das Logo auf Briefpapier (#691): im freien Bereich zwischen dem Rand oben, der den Kopf des Briefpapiers freihält,
+     und dem Informationsblock (ab 50 mm, 2 mm Abstand). Vorher stand es fest ab 15 mm und überdeckte den Kopf. Bleiben
+     dazwischen weniger als 10 mm Höhe, steht es gar nicht im Dokument (`printDesign`), und jedes Fenster, das druckt,
+     sagt es (`logoBox`, `logoPrintNote` in letterDesignView.ts, dieselben Maße). */
+  .paper-print .letter-logo { top: max(15mm, var(--paper-top)); max-height: max(0mm, min(25mm, calc(48mm - max(15mm, var(--paper-top))))); }
   /* Ränder des Textbereichs: im Brief nur der Text (Anschriftfeld und Informationsblock bleiben nach DIN 5008),
      in der Aufstellung die Seiten über die Zelle, oben und unten über den Rahmen. */
   .paper-print .letter-body { padding-left: var(--paper-left); padding-right: var(--paper-right); padding-bottom: var(--paper-bottom); }
   .paper-print .letter.letter-top { height: calc(98.46mm - 2mm - var(--paper-top)); }
+  /* Ohne Anschreiben beginnt der Rahmen der Aufstellung trotzdem an der Blattkante (#691, Durchsicht): Er rückt um die
+     Höhe des Kopfs zurück, und die Zelle hält dieselbe Höhe samt dem Abstand der Karte (12 px) vor ihrem Inhalt frei,
+     nur einmal, am Anfang. Der Text steht, wo er stand; aber der Kopf der Hülle mit dem Papier der Folgeseiten liegt so
+     auch auf Seite 1 am Rand oben, das Papier also bei 0 bis 297 mm unter dem der ersten Seite. Vorher lag es dort bei
+     59,5 bis 356,7 mm und ragte auf Seite 2: Mit einem transparenten Briefpapier druckte dessen Fuß ein zweites Mal
+     quer über den Tabellenkopf (nachgemessen, Fall `abrechnung-briefpapier-ohne-anschreiben`). Dazu 12 px, nachgemessen
+     und nicht hergeleitet: Der Kopf steht bei 0 ohne Außenabstand (Durchsicht, im Druck gemessen), aber nur um seine Höhe
+     zurückgerückt lag das Papier der Folgeseiten auf Seite 1 bei 3,2 bis 300,3 mm; mit den 12 px liegt es bei 0,0 bis
+     297,1 mm, und die Zelle hält Höhe und beide 12 px frei (24 px), damit der Text bleibt, wo er stand (Seite 1 ab
+     53,2 mm). Woher die 12 px kommen, ist offen (der Abstand der Teile einer Karte ist es nicht, er ist hier 0). */
+  .paper-print .letter.letter-top ~ .print-pages-frame:not(.print-pages-new) { margin-top: calc(var(--paper-top) + 2mm - 98.46mm - 12px); }
+  .paper-print .letter.letter-top ~ .print-pages-frame:not(.print-pages-new) > .print-pages > tbody > tr > .print-pages-cell { padding-top: calc(98.46mm - 2mm - var(--paper-top) + 24px); }
   .paper-print .print-pages-cell { padding: 0 var(--paper-right) 0 var(--paper-left); }
   /* Belegkopien mit Briefpapier: so hoch, wie die Ränder lassen, abzüglich Beschriftung und Fußvermerk (Durchsicht S2). */
   .paper-print .attachments img { max-height: calc(297mm - var(--paper-top) - var(--paper-bottom) - 20mm); }

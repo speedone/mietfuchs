@@ -1,7 +1,7 @@
 // Bearbeiten des Anschreibens und Ergebniskasten (#415), ohne DOM.
 import { expect, test } from 'vitest'
 import { DEFAULT_LETTER_TEXTS, mergeLetterTexts, SAMPLE_LETTER_VALUES } from '../../shared/letter.ts'
-import { customHeatingCentsOf, insertField, letterProblems, monthlessAdjustTexts, ownOf, salutationHint, setText, shownText, splitlessAdjustTexts, textChanges, type LetterDraft } from './letterForm'
+import { CREDIT_MOVED_OUT_HINT, creditMovedOutHint, customHeatingCentsOf, insertField, letterProblems, monthlessAdjustTexts, ownOf, salutationHint, setText, shownText, splitlessAdjustTexts, textChanges, type LetterDraft } from './letterForm'
 import { letterParagraphs, resultRows } from './letterView'
 import type { Statement, StatementLetter } from './types'
 
@@ -124,4 +124,19 @@ test('#712: Meldungen zum zweiten Teil nennen Wasser/Abwasser, wenn die zweite V
   // ohne die Angabe wortgleich wie vor #712
   expect(texts(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '' }), false)).toEqual(['Davon für Heizung und Warmwasser: Geben Sie einen Betrag in Euro ein, etwa 45,00; ohne Heizvorauszahlung 0.'])
   expect(texts(draft({ adjust: 'custom', customCents: '310,00', customHeatingCents: '320,00' }), false)).toEqual(['Davon für Heizung und Warmwasser: Der Teil liegt über der neuen Vorauszahlung.'])
+})
+
+// #691, Durchsicht: Ein eigener Text zum Guthaben in Vorlage oder Objekt gilt nicht für ausgezogene Mieter; das Fenster sagt
+// es, solange keine Ebene einen eigenen Text zum Guthaben nach dem Auszug hat. Beim Mieter gilt sein eigener ohnehin.
+test('#691: eigener Text zum Guthaben ohne einen nach dem Auszug: Hinweis in Vorlage und Objekt, nicht beim Mieter', () => {
+  const draft = (own: Partial<Record<string, string | null>>): LetterDraft => ({ own: { ...ownOf({}), ...own }, adjust: 'suggestion', adjustOwn: true, customCents: '' })
+  const base = mergeLetterTexts()
+  expect(creditMovedOutHint(draft({}), base, 'installation')).toBe(false)
+  expect(creditMovedOutHint(draft({ credit: 'Eigener Satz {Betrag}.' }), base, 'installation')).toBe(true)
+  expect(creditMovedOutHint(draft({ credit: 'Eigener Satz {Betrag}.', creditMovedOut: 'Nach dem Auszug {Betrag}.' }), base, 'installation')).toBe(false)
+  // Am Objekt: geerbt aus der Vorlage zählt mit, ein eigener nach dem Auszug darüber ebenso
+  expect(creditMovedOutHint(draft({}), mergeLetterTexts({ credit: 'Vorlage {Betrag}.' }), 'property')).toBe(true)
+  expect(creditMovedOutHint(draft({}), mergeLetterTexts({ credit: 'Vorlage {Betrag}.', creditMovedOut: 'Auszug {Betrag}.' }), 'property')).toBe(false)
+  expect(creditMovedOutHint(draft({ credit: 'Eigener Satz {Betrag}.' }), base, 'tenancy')).toBe(false)
+  expect(CREDIT_MOVED_OUT_HINT).toMatch(/Text für „Guthaben nach dem Auszug“ anpassen/)
 })

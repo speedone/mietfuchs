@@ -6,7 +6,7 @@
 // Die Vorlagen sind bewusst ohne Logik: Ein Baustein ist Text mit Platzhaltern wie `{Betrag}`, mehr
 // nicht. Welcher Baustein erscheint (Guthaben oder Nachzahlung, Anpassung oder keine), entscheidet
 // Mietfuchs in `chooseLetterBlocks`. Beträge und Daten formatiert Mietfuchs.
-import type { CostItem, LetterAdjustment, LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts, Property, Settings, Settlement, StatementLetter, Tenancy, TenancyLetter, Unit } from './types.ts'
+import type { CostItem, LetterAdjustment, LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts, Property, Settings, Settlement, StatementLetter, SuggestionScaling, Tenancy, TenancyLetter, Unit } from './types.ts'
 import { euro } from './costItem.ts'
 import { formatIban } from './iban.ts'
 import { effectiveLandlord, footerLine, recipientLines, returnLine } from './landlord.ts'
@@ -21,7 +21,9 @@ export const LETTER_BLOCKS: readonly LetterBlockInfo[] = [
   { id: 'subject', label: 'Betreff', when: 'immer, fett über der Anrede', multiline: false },
   { id: 'salutation', label: 'Anrede', when: 'immer', multiline: false },
   { id: 'intro', label: 'Einleitung', when: 'immer', multiline: true },
-  { id: 'credit', label: 'Guthaben', when: 'nur bei einem Guthaben', multiline: true },
+  { id: 'credit', label: 'Guthaben', when: 'nur bei einem Guthaben, solange das Mietverhältnis läuft', multiline: true },
+  // #691: Nach dem Auszug gibt es keine nächste Mietzahlung, mit der sich verrechnen ließe.
+  { id: 'creditMovedOut', label: 'Guthaben nach dem Auszug', when: 'nur bei einem Guthaben, wenn das Mietverhältnis im Zeitraum oder vor dem Brief endet', multiline: true },
   { id: 'backPayment', label: 'Nachzahlung', when: 'nur bei einer Nachzahlung', multiline: true },
   { id: 'balanced', label: 'Ausgeglichen', when: 'nur, wenn weder Nachzahlung noch Guthaben entsteht', multiline: true },
   { id: 'adjustSuggestion', label: 'Anpassung der Vorauszahlung (Vorschlag)', when: 'nur, wenn der Vorschlag von Mietfuchs angekündigt wird', multiline: true },
@@ -88,6 +90,8 @@ export const DEFAULT_LETTER_TEXTS: Record<LetterBlock, string> = {
   salutation: '{Anrede}',
   intro: 'mit diesem Schreiben erhalten Sie die Abrechnung für den Zeitraum {Zeitraum}. Die Aufstellung auf den folgenden Seiten zeigt die Kosten, wie sie verteilt sind, und Ihren Anteil.',
   credit: 'Es ergibt sich ein Guthaben von {Betrag}. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.',
+  // #691: Wer ausgezogen ist, zahlt keine Miete mehr; das Guthaben wird überwiesen, und dafür fehlt meist das Konto.
+  creditMovedOut: 'Es ergibt sich ein Guthaben von {Betrag}. Da Ihr Mietverhältnis beendet ist, wird es Ihnen überwiesen; bitte teilen Sie dafür Ihre Bankverbindung mit.',
   backPayment: 'Es ergibt sich eine Nachzahlung von {Betrag}. Bitte überweisen Sie den Betrag innerhalb von {Zahlungsfrist} Tagen nach Zugang dieser Abrechnung {Konto}.',
   balanced: 'Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.',
   // `{Aufteilung}` (#704) ist ohne getrennte Vorauszahlung leer und nimmt dann das Leerzeichen davor mit: Der Satz bleibt wortgleich.
@@ -182,10 +186,20 @@ export const adjustedPrepaymentLabel = (st: { scope?: 'all' | 'heating' }, separ
 // Wie der Vorschlag für die neue Vorauszahlung (§ 560 Abs. 4 BGB) entsteht (#134). Bei Einzug im
 // Jahr ist der Anteil zuerst auf ein volles Jahr hochgerechnet; der Satz sagt das, sonst ergäbe ein
 // Zwölftel der angezeigten Kosten nicht den angezeigten Betrag (zweite Browserabnahme).
-export function suggestionBasis(st: { days: number }, daysInYear: number): string {
-  return st.days < daysInYear
+// Der Satz folgt dem, wie der Vorschlag wirklich gerechnet ist (#691, `suggestionScaling` aus calc.ts), nicht dem
+// Zeitraum: Im Rumpf rechnet calc.ts je Position nach ihrem Leistungszeitraum hoch, eine Position ohne gilt als
+// Jahresbetrag (`annualFactors`). `none`: nichts hochgerechnet, der Vorschlag ist das gerundete Zwölftel der Kosten.
+// `days`: alles im Maß „ein Jahr durch die Tage des Mieters“, der Satz mit den Tagen geht auf. `mixed`: Positionen in
+// verschiedenem Maß; der Satz behauptet dann keine Rechnung, die nicht aufgeht. Ohne die Angabe (ein vorher
+// eingefrorener Stand, LegacyStatement.tsx) gilt die frühere Regel nach den Tagen, wortgleich.
+export const SUGGESTION_BASIS_PLAIN = 'ein Zwölftel Ihrer Jahreskosten, gerundet'
+export const SUGGESTION_BASIS_MIXED = 'Kosten, die nur einen Teil des Jahres betreffen, auf ein volles Jahr hochgerechnet, von der Summe ein Zwölftel, gerundet'
+export function suggestionBasis(st: { days: number; suggestionScaling?: SuggestionScaling }, daysInYear: number): string {
+  const scaling: SuggestionScaling = st.suggestionScaling ?? (st.days < daysInYear ? 'days' : 'none')
+  if (scaling === 'mixed') return SUGGESTION_BASIS_MIXED
+  return scaling === 'days'
     ? `Ihr Anteil für ${st.days} Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet`
-    : 'ein Zwölftel Ihrer Jahreskosten, gerundet'
+    : SUGGESTION_BASIS_PLAIN
 }
 
 // Was das Anschreiben eines Mieters an Werten braucht. Gerechnet wird hier nichts: Die Zahlen kommen
@@ -321,8 +335,10 @@ export function buildLetter(i: {
 
 // Welche Bausteine erscheinen, in der Reihenfolge des Briefs. `attachments`: Zahl der mitgedruckten
 // Belege (0, wenn keine mitgedruckt werden). Ein leerer Baustein erscheint nicht.
-export function chooseLetterBlocks(letter: Pick<StatementLetter, 'adjustment' | 'texts'>, balanceCents: number, attachments: number): LetterBlock[] {
-  const result: LetterBlock = balanceCents > 0 ? 'credit' : balanceCents < 0 ? 'backPayment' : 'balanced'
+// Ein Guthaben nach dem Auszug (`ended`, #691) steht in `creditMovedOut`; ein Anschreiben ohne die Angabe (vorher
+// eingefroren) druckt den bisherigen Satz.
+export function chooseLetterBlocks(letter: Pick<StatementLetter, 'adjustment' | 'texts' | 'ended'>, balanceCents: number, attachments: number): LetterBlock[] {
+  const result: LetterBlock = balanceCents > 0 ? (letter.ended ? 'creditMovedOut' : 'credit') : balanceCents < 0 ? 'backPayment' : 'balanced'
   const adjust: LetterBlock[] = letter.adjustment.newCents === null ? [] : [letter.adjustment.mode === 'custom' ? 'adjustCustom' : 'adjustSuggestion']
   const order: LetterBlock[] = ['subject', 'salutation', 'intro', result, ...adjust, attachments > 0 ? 'attachments' : 'receipts', 'closing', 'greeting', 'signature']
   return order.filter((b) => (letter.texts[b] ?? '').trim() !== '')
@@ -330,8 +346,8 @@ export function chooseLetterBlocks(letter: Pick<StatementLetter, 'adjustment' | 
 
 // Ohne Anschreiben (Teil 2) stehen diese Bausteine unter der Aufstellung, mit denselben Texten: Ergebnis mit
 // Zahlung, Frist und Konto, die Anpassung der Vorauszahlung und die Belegeinsicht.
-const STATEMENT_BLOCKS: readonly LetterBlock[] = ['credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments']
-export function statementBlocks(letter: Pick<StatementLetter, 'adjustment' | 'texts'>, balanceCents: number, attachments: number): LetterBlock[] {
+const STATEMENT_BLOCKS: readonly LetterBlock[] = ['credit', 'creditMovedOut', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments']
+export function statementBlocks(letter: Pick<StatementLetter, 'adjustment' | 'texts' | 'ended'>, balanceCents: number, attachments: number): LetterBlock[] {
   return chooseLetterBlocks(letter, balanceCents, attachments).filter((b) => STATEMENT_BLOCKS.includes(b))
 }
 
@@ -425,7 +441,9 @@ export function parseLetterAdjustment(input: unknown, coversWater = false): Lett
 export type LetterSource = {
   settings: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'printAdjustSuggestion' | 'landlordAddress' | 'landlordContact'>
   property: Property | null
-  tenancies: readonly (Pick<Tenancy, 'id' | 'end' | 'prepayments' | 'heatingPrepayments' | 'correspondenceAddress' | 'letterSalutation'>)[]
+  // `tenantName`, `start`, `unitId` (#691): ob ein Ausgezogener im selben Objekt weiter wohnt (`endedBy`); fehlen sie, gilt
+  // allein das Ende
+  tenancies: readonly (Pick<Tenancy, 'id' | 'end' | 'prepayments' | 'heatingPrepayments' | 'correspondenceAddress' | 'letterSalutation'> & Partial<Pick<Tenancy, 'tenantName' | 'start' | 'unitId'>>)[]
   installation: LetterTexts
   propertyTexts: LetterTexts
   own: Record<string, TenancyLetter>
@@ -433,7 +451,7 @@ export type LetterSource = {
   asOf: string
   // Druck (#415): Wohnfläche für den Kopf der Aufstellung und Rechnungsbetrag samt Lohnanteil für die Tabelle nach § 35a
   // EStG. Ohne sie (die Oberfläche, wenn eine Antwort kein Anschreiben trägt) fehlen nur diese Angaben.
-  units?: readonly Pick<Unit, 'id' | 'areaM2'>[]
+  units?: readonly (Pick<Unit, 'id' | 'areaM2'> & Partial<Pick<Unit, 'propertyId'>>)[]
   costItems?: readonly Pick<CostItem, 'id' | 'amountCents' | 'labor35aCents'>[]
 }
 
@@ -494,6 +512,41 @@ export const currentPrepaymentAt = (
   s: Pick<Settlement, 'scope' | 'suggestionWithoutHeating' | 'separateHeating'>, st: Pick<Settlement['statements'][number], 'scope' | 'periodEnd'>, t: LetterTenancy | undefined, month: string,
 ): number | null => unchangedPrepayment(st, t, separateOf(s), month)
 
+// #691: Ist das Mietverhältnis beendet, wenn der Brief entsteht? Es endet im abgerechneten Zeitraum oder vor dem Tag des
+// Briefs; dann gibt es keine nächste Mietzahlung, mit der sich ein Guthaben verrechnen ließe. Außer der Mieter wohnt im
+// selben Objekt weiter (Umzug im Haus, Durchsicht): ein Mietverhältnis mit demselben Mieter, das nach dem Beginn des
+// beendeten beginnt (auch vor seinem Ende, Überschneidung beim Umzug) und am Tag des Briefs läuft. Das Modell kennt keine Person; gleich heißt gleicher Name ohne Groß und Klein und mehrfachen Leerraum. Ist das
+// Objekt einer Wohnung unbekannt, zählt es als dasselbe (dann bleibt der bisherige Satz, nie ein falsches „beendet“).
+type EndedTenancy = LetterSource['tenancies'][number]
+const personKey = (name: string | undefined): string => (name ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de-DE')
+function endedBy(t: EndedTenancy | undefined, periodTo: string, src: Pick<LetterSource, 'asOf' | 'tenancies' | 'units'>): boolean {
+  if (!t?.end || !(t.end <= periodTo || t.end < src.asOf)) return false
+  const propertyOf = (unitId: string | undefined) => src.units?.find((u) => u.id === unitId)?.propertyId ?? null
+  const here = propertyOf(t.unitId)
+  const name = personKey(t.tenantName)
+  const stays = name !== '' && src.tenancies.some((o) => o.id !== t.id && personKey(o.tenantName) === name
+    && !!o.start && !!t.start && o.start > t.start && o.start <= src.asOf && (o.end == null || o.end >= src.asOf)
+    && (here === null || propertyOf(o.unitId) === null || propertyOf(o.unitId) === here))
+  return !stays
+}
+
+// #691, Durchsicht: Der eigene Text des Mieters zum Guthaben gilt nach dem Auszug, solange er keinen eigenen zum Guthaben
+// nach dem Auszug hat. Eine Regel für Brief (`lettersOf`) und Fenster des Mieters (LetterDrawer), damit es zeigt, was
+// gedruckt wird. Ein `null` heißt dort „Ebene darüber“, wie ein fehlender Schlüssel.
+export function movedOutTexts<T extends Partial<Record<LetterBlock, string | null>>>(own: T, ended: boolean): T {
+  return ended && typeof own.credit === 'string' && typeof own.creditMovedOut !== 'string' ? { ...own, creditMovedOut: own.credit } : own
+}
+
+// #691, Durchsicht: Ein eigener Text zum Guthaben in der Vorlage oder am Objekt gilt nicht für ausgezogene Mieter, wenn
+// keine Ebene einen eigenen zum Guthaben nach dem Auszug hat; dann steht dort die Vorgabe von Mietfuchs, und das soll
+// der Vermieter erfahren. Ein eigener Text des Mieters zum Guthaben gilt ohnehin auch nach dem Auszug (`lettersOf`).
+export function creditTextUnused(layers: { installation?: LetterTexts | null; property?: LetterTexts | null; own?: LetterTexts | null }): boolean {
+  const all = [layers.installation, layers.property, layers.own]
+  if (all.some((l) => typeof l?.creditMovedOut === 'string')) return false
+  if (typeof layers.own?.credit === 'string') return false
+  return typeof layers.installation?.credit === 'string' || typeof layers.property?.credit === 'string'
+}
+
 // Das Anschreiben je Mietverhältnis einer Abrechnung. Der Server ruft es mit den Texten aller Ebenen auf; die
 // Oberfläche nur, wenn eine Antwort keines trägt (dann mit den Vorgaben von Mietfuchs).
 export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heatingPeriods' | 'scope' | 'daysInYear' | 'suggestionWithoutHeating' | 'separateHeating'>, src: LetterSource): Record<string, StatementLetter> {
@@ -506,8 +559,10 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
     const tenancy = src.tenancies.find((t) => t.id === st.tenancyId)
     const from = own?.adjustment?.from ?? adjustFromFor(src.asOf, s.period.to)
     const split = splitOf(st, tenancy, separate, from)
+    const ended = endedBy(tenancy, s.period.to, src)
+    const ownTexts = own ? movedOutTexts(own.texts, ended) : undefined
     const built = buildLetter({
-      texts: mergeLetterTexts(src.installation, src.propertyTexts, own?.texts),
+      texts: mergeLetterTexts(src.installation, src.propertyTexts, ownTexts),
       adjustment: own?.adjustment ?? adjustmentDefault(src.settings),
       suggestedCents: st.suggestedMonthlyCents,
       from,
@@ -548,6 +603,7 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
       recipient: recipientLines(st.tenantName, tenancy, src.property),
       premises: { address: (src.property?.address ?? '').trim(), areaM2: area > 0 ? area : null },
       ...(Object.keys(labor35a).length > 0 ? { labor35a } : {}),
+      ...(ended ? { ended: true as const } : {}),
     }
   }
   return out

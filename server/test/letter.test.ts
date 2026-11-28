@@ -5,10 +5,10 @@ import { secondPrepaymentLabel } from '../../shared/heatingModel.ts'
 import assert from 'node:assert/strict'
 import {
   adjustedCents, adjustmentHint, buildLetter, chooseLetterBlocks, DEFAULT_LETTER_TEXTS, LETTER_BLOCK_IDS, LETTER_FIELDS, mergeLetterTexts, parseLetterAdjustment,
-  exceedsOnePage, lettersOf, parseLetterTexts, sameAmountHint, printsLetter, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES, statementBlocks, templateProblems, type LetterFacts,
+  exceedsOnePage, lettersOf, parseLetterTexts, sameAmountHint, printsLetter, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES, statementBlocks, suggestionBasis, creditTextUnused, templateProblems, type LetterFacts,
 } from '../../shared/letter.ts'
 import type { LetterAdjustment, Property, Settings, Tenancy } from '../../shared/types.ts'
-import { calendarYearPeriod, settlementPeriod } from '../../shared/period.ts'
+import { calendarYearPeriod, periodKey, settlementPeriod } from '../../shared/period.ts'
 
 const facts = (over: Partial<LetterFacts> = {}): LetterFacts => ({
   tenantName: 'Erika Mustermann',
@@ -147,7 +147,10 @@ test('S2: Absender, Rücksendeangabe und Anschrift stehen im Anschreiben und fri
 })
 
 test('S3: ein Anschreiben, das nicht auf eine Seite passt, wird erkannt', () => {
-  assert.equal(exceedsOnePage(Object.values(DEFAULT_LETTER_TEXTS)), false)
+  // Alle Vorgaben zusammen, obwohl Guthaben, Nachzahlung und Ausgleich einander ausschließen; nur die beiden Sätze zum
+  // Guthaben (#691: laufendes und beendetes Mietverhältnis) zählen einmal, der längere, denn nie stehen beide im Brief.
+  const { credit: _shorter, ...defaults } = DEFAULT_LETTER_TEXTS
+  assert.equal(exceedsOnePage(Object.values(defaults)), false)
   assert.equal(exceedsOnePage([...Object.values(DEFAULT_LETTER_TEXTS), 'Wort '.repeat(700)]), true)
   assert.equal(exceedsOnePage(Array.from({ length: 30 }, () => 'Kurzer Absatz.')), true)
 })
@@ -483,4 +486,115 @@ test('#712: die eine Stelle für die Bezeichnung des zweiten Teils', () => {
   assert.deepEqual([secondPrepaymentLabel(undefined), secondPrepaymentLabel(null, 'prepayment')], ['Heizung und Warmwasser', 'Heizvorauszahlung'])
   assert.deepEqual([secondPrepaymentLabel(true), secondPrepaymentLabel(true, 'prepayment'), secondPrepaymentLabel(true, 'short')],
     ['Heizung, Warmwasser und Wasser/Abwasser', 'Vorauszahlung für Heizung, Warmwasser und Wasser/Abwasser', 'Heizung, Warmwasser und Wasser/Abwasser'])
+})
+
+// Der Satz zum Vorschlag folgt der Angabe der Berechnung (`suggestionScaling`, #691), nicht dem Zeitraum; durch die
+// Berechnung geprüft in calc-vorschlag-satz.test.ts. Hier: `lettersOf` reicht sie in {Grundlage} durch, und ohne die
+// Angabe (ein vorher eingefrorener Stand, LegacyStatement.tsx) bleibt der Satz, wie er war.
+test('Satz zum Vorschlag: aus der Angabe der Berechnung, ohne sie wie bisher nach den Tagen', () => {
+  const [st] = oneStatement.statements
+  if (!st) return assert.fail('kein Mieter')
+  const of = (scaling: 'none' | 'days' | 'mixed' | undefined) => lettersOf({
+    statements: [{ ...st, days: 120, periodStart: '2025-01-01', periodEnd: '2025-04-30', totalShareCents: 17754, suggestedMonthlyCents: 4500, ...(scaling ? { suggestionScaling: scaling } : {}) }],
+    period: settlementPeriod({ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-04-30', short: true }),
+    daysInYear: 120,
+  }, {
+    settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 },
+    property: house,
+    tenancies: [{ id: 't1', end: null, prepayments: [], correspondenceAddress: '' }],
+    installation: {}, propertyTexts: {}, own: {}, asOf: '2026-03-15',
+  }).t1 ?? assert.fail('kein Anschreiben')
+  assert.equal(of('days').values.Grundlage, 'Ihr Anteil für 120 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet')
+  assert.match(plain(of('days').texts.adjustSuggestion), /auf 45,00 € angepasst \(Ihr Anteil für 120 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet\)/)
+  assert.equal(of('none').values.Grundlage, 'ein Zwölftel Ihrer Jahreskosten, gerundet')
+  assert.equal(of('mixed').values.Grundlage, 'Kosten, die nur einen Teil des Jahres betreffen, auf ein volles Jahr hochgerechnet, von der Summe ein Zwölftel, gerundet')
+  assert.equal(of(undefined).values.Grundlage, 'ein Zwölftel Ihrer Jahreskosten, gerundet')
+  assert.equal(suggestionBasis({ days: 120 }, 120), 'ein Zwölftel Ihrer Jahreskosten, gerundet')
+  assert.equal(suggestionBasis({ days: 306 }, 365), 'Ihr Anteil für 306 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet')
+})
+
+// #691: Ein ausgezogener Mieter hat keine nächste Mietzahlung, mit der sich ein Guthaben verrechnen ließe. Für ihn gilt ein
+// eigener Baustein, der nach der Bankverbindung fragt. Ausgezogen heißt: Das Mietverhältnis endet im abgerechneten Zeitraum
+// oder vor dem Tag des Briefs. Ein vorher eingefrorenes Anschreiben kennt die Angabe nicht und druckt den bisherigen Satz.
+test('#691: Guthaben bei beendetem Mietverhältnis: eigener Baustein, der nach der Bankverbindung fragt', () => {
+  const [st] = oneStatement.statements
+  if (!st) return assert.fail('kein Mieter')
+  const of = (end: string | null, asOf = '2026-03-15') => lettersOf({ ...oneStatement, statements: [{ ...st, balanceCents: 4000 }] }, {
+    settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 },
+    property: house,
+    tenancies: [{ id: 't1', end, prepayments: [], correspondenceAddress: '' }],
+    installation: {}, propertyTexts: {}, own: {}, asOf,
+  }).t1 ?? assert.fail('kein Anschreiben')
+  assert.equal(DEFAULT_LETTER_TEXTS.creditMovedOut, 'Es ergibt sich ein Guthaben von {Betrag}. Da Ihr Mietverhältnis beendet ist, wird es Ihnen überwiesen; bitte teilen Sie dafür Ihre Bankverbindung mit.')
+  const moved = of('2025-08-31')
+  assert.equal(moved.ended, true)
+  assert.deepEqual(chooseLetterBlocks(moved, 4000, 0).filter((b) => b === 'credit' || b === 'creditMovedOut'), ['creditMovedOut'])
+  assert.deepEqual(statementBlocks(moved, 4000, 0).filter((b) => b === 'credit' || b === 'creditMovedOut'), ['creditMovedOut'])
+  assert.equal(plain(moved.texts.creditMovedOut), 'Es ergibt sich ein Guthaben von 40,00 €. Da Ihr Mietverhältnis beendet ist, wird es Ihnen überwiesen; bitte teilen Sie dafür Ihre Bankverbindung mit.')
+  // Nach dem Zeitraum, aber vor dem Brief ausgezogen: ebenso
+  assert.equal(of('2026-01-31').ended, true)
+  // Läuft weiter oder endet erst nach dem Brief: der bisherige Satz, und die Angabe fehlt (wie bei einem vorher eingefrorenen)
+  for (const end of [null, '2026-06-30']) {
+    const running = of(end)
+    assert.equal(running.ended, undefined)
+    assert.deepEqual(chooseLetterBlocks(running, 4000, 0).filter((b) => b === 'credit' || b === 'creditMovedOut'), ['credit'])
+  }
+  // Nur beim Guthaben: Nachzahlung und Ausgleich bleiben
+  assert.equal(chooseLetterBlocks(moved, -4000, 0).includes('backPayment'), true)
+  assert.equal(chooseLetterBlocks(moved, 0, 0).includes('balanced'), true)
+  // Ein geleerter Baustein erscheint nicht, wie jeder andere
+  assert.equal(chooseLetterBlocks({ ...moved, texts: { ...moved.texts, creditMovedOut: '' } }, 4000, 0).some((b) => b === 'credit' || b === 'creditMovedOut'), false)
+})
+
+// #691, Durchsicht: Ein eigener Text zum Guthaben, den der Vermieter für genau dieses Mietverhältnis geschrieben hat, gilt
+// auch nach dem Auszug, solange es dort keinen eigenen zum Guthaben nach dem Auszug gibt. Keine Datenanweisung.
+test('#691: eigener Text des Mieters zum Guthaben gilt nach dem Auszug, ein eigener nach dem Auszug geht vor', () => {
+  const [st] = oneStatement.statements
+  if (!st) return assert.fail('kein Mieter')
+  const of = (texts: Record<string, string>) => lettersOf({ ...oneStatement, statements: [{ ...st, balanceCents: 4000 }] }, {
+    settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 },
+    property: house,
+    tenancies: [{ id: 't1', end: '2025-08-31', prepayments: [], correspondenceAddress: '' }],
+    installation: { creditMovedOut: 'Vorlage nach dem Auszug: {Betrag}.' }, propertyTexts: {}, own: { t1: { texts, adjustment: null } }, asOf: '2026-03-15',
+  }).t1 ?? assert.fail('kein Anschreiben')
+  assert.equal(plain(of({ credit: 'Frau Erika bekommt {Betrag} bar zurück.' }).texts.creditMovedOut), 'Frau Erika bekommt 40,00 € bar zurück.')
+  assert.equal(plain(of({ credit: 'Bar zurück: {Betrag}.', creditMovedOut: 'Überweisung: {Betrag}.' }).texts.creditMovedOut), 'Überweisung: 40,00 €.')
+  // Ohne eigenen Text des Mieters gilt die Vorlage
+  assert.equal(plain(of({}).texts.creditMovedOut), 'Vorlage nach dem Auszug: 40,00 €.')
+})
+
+test('#691: eigener Text zum Guthaben nur in Vorlage oder Objekt, keiner nach dem Auszug: das wird genannt', () => {
+  assert.equal(creditTextUnused({ installation: { credit: 'Eigener Satz' }, property: null, own: null }), true)
+  assert.equal(creditTextUnused({ installation: {}, property: { credit: 'Eigener Satz' }, own: {} }), true)
+  assert.equal(creditTextUnused({ installation: { credit: 'Eigener Satz', creditMovedOut: 'Auch nach dem Auszug' }, property: null, own: null }), false)
+  assert.equal(creditTextUnused({ installation: { credit: 'Eigener Satz' }, property: { creditMovedOut: 'Objekt' }, own: null }), false)
+  // Der eigene Text des Mieters gilt ohnehin (vorheriger Test)
+  assert.equal(creditTextUnused({ installation: { credit: 'Eigener Satz' }, property: null, own: { credit: 'Mieter' } }), false)
+  assert.equal(creditTextUnused({ installation: {}, property: null, own: null }), false)
+})
+
+// #691, Durchsicht: Zieht der Mieter im selben Objekt in eine andere Wohnung um, ist er nicht ausgezogen; die nächste
+// Mietzahlung gibt es weiter. Gleicher Mieter heißt gleicher Name (das Modell kennt keine Person), ohne Groß und Klein und
+// Leerraum.
+test('#691: Umzug im Haus ist kein Auszug: späteres, laufendes Mietverhältnis desselben Mieters im selben Objekt', () => {
+  const [st] = oneStatement.statements
+  if (!st) return assert.fail('kein Mieter')
+  const old = { id: 't1', unitId: 'u1', tenantName: 'Erika  Mustermann', start: '2020-01-01', end: '2025-06-30', prepayments: [], correspondenceAddress: '' }
+  const of = (next: { tenantName: string, unitId: string, start?: string, end?: string | null }) => lettersOf({ ...oneStatement, statements: [{ ...st, balanceCents: 4000 }] }, {
+    settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 },
+    property: house,
+    tenancies: [old, { id: 't2', start: '2025-07-01', end: null, prepayments: [], correspondenceAddress: '', ...next }],
+    units: [{ id: 'u1', areaM2: 60, propertyId: 'p' }, { id: 'u2', areaM2: 80, propertyId: 'p' }, { id: 'x1', areaM2: 50, propertyId: 'anderes' }],
+    installation: {}, propertyTexts: {}, own: {}, asOf: '2026-03-15',
+  }).t1 ?? assert.fail('kein Anschreiben')
+  assert.equal(of({ tenantName: 'erika mustermann', unitId: 'u2' }).ended, undefined)
+  // Nachprüfung: Der neue Vertrag beginnt vor dem Ende des alten (Überschneidung beim Umzug): ebenso kein Auszug
+  assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'u2', start: '2025-06-15' }).ended, undefined)
+  // Ein Vertrag, der vor dem alten begann, zählt nicht
+  assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'u2', start: '2019-01-01' }).ended, true)
+  // Ein anderer Mieter, ein anderes Objekt, ein Mietverhältnis, das am Tag des Briefs schon wieder beendet ist oder noch nicht begonnen hat: ausgezogen
+  assert.equal(of({ tenantName: 'Paul Richter', unitId: 'u2' }).ended, true)
+  assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'x1' }).ended, true)
+  assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'u2', end: '2026-01-31' }).ended, true)
+  assert.equal(of({ tenantName: 'Erika Mustermann', unitId: 'u2', start: '2026-05-01' }).ended, true)
 })

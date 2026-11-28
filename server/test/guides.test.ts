@@ -841,6 +841,19 @@ test('Durchsicht: Normen genauer (§ 535, § 556a Abs. 1 Satz 2, § 16 Abs. 2 WE
   assert.equal(aufstellung?.norm, undefined, 'eine Anleitung des Vordrucks ist kein Gesetz')
 })
 
+// § 556a Abs. 1 BGB hat zwei Sätze: Wohnfläche nur „vorbehaltlich anderweitiger Vorschriften“ (Satz 1), und bei erfasstem
+// Verbrauch oder erfasster Verursachung ein Maßstab, der dem Rechnung trägt (Satz 2). Die Anleitung zur Einliegerwohnung
+// nannte nur Satz 1 und widersprach damit ihrem eigenen Schritt zum Wasser nach Zählern.
+test('Einliegerwohnung: der Hinweis zum Umlageschlüssel nennt § 556a Abs. 1 BGB mit beiden Sätzen', () => {
+  const key = GUIDES.granny.caveats.find((c) => /§ 556a/.test(c.norm ?? ''))
+  if (!key) return assert.fail('kein Hinweis zum Umlageschlüssel')
+  assert.equal(key.norm, '§ 556a Abs. 1 Satz 1 und 2 BGB')
+  assert.match(key.text, /nichts anderes vereinbart/)
+  assert.match(key.text, /vorbehaltlich anderweitiger Vorschriften nach dem Anteil der Wohnfläche/)
+  assert.match(key.text, /erfassten Verbrauch oder einer erfassten Verursachung durch die Mieter/)
+  assert.match(key.text, /Maßstab umzulegen, der dem unterschiedlichen Verbrauch oder der unterschiedlichen Verursachung Rechnung trägt/)
+})
+
 test('Durchsicht: Wortlaute „Vermieter & Zahlung“, Inklusivmiete und die neue Anschrift', () => {
   assert.match(GUIDES.properties.steps.map((s) => s.text).join(' '), /„Vermieter & Zahlung“/)
   assert.match(GUIDES.flatRate.steps.map((s) => s.text).join(' '), /Ist alles inklusive, /)

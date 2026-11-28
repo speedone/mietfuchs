@@ -23,6 +23,9 @@ export type HeadProps = {
   draftMark?: string | null // „Entwurf, nicht versenden“, nur im Druck
   logo?: string | null // Teil 2b: Adresse des Logos, oben rechts im Briefkopf
   paper?: string | null // Teil 2b: Briefpapier der ersten Seite (Adresse oder gerendertes Bild), nur im Druck
+  // #691 mit #735: Ohne Anschreiben liegt das Papier der Folgeseiten auch auf Seite 1; ist es dasselbe, zeichnet der Kopf
+  // es nicht noch einmal (eine Ebene). Der Absender bleibt weg, denn das Papier trägt ihn.
+  paperFromFollow?: boolean
 }
 
 type Props = HeadProps & {
@@ -31,21 +34,34 @@ type Props = HeadProps & {
   paymentQr?: PaymentQrData | null // #624: der Zahlungs-QR-Code, direkt nach dem Satz zur Nachzahlung
 }
 
-// Eine E-Mail darf nach dem @ umbrechen, statt über den rechten Rand zu ragen (Druck in Safari, #286); was dann noch zu
-// lang ist, bricht `overflow-wrap: anywhere` (letter.css).
+// Eine E-Mail darf nach dem @ und vor jedem Punkt umbrechen, statt über den rechten Rand zu ragen (Druck in Safari, #286).
+// Nur nach dem @ genügte nicht: Ein langer Teil davor oder danach brach mitten im Wort um („…wegen|er-musterstadt@…“,
+// nachgemessen), denn was dann noch zu lang ist, bricht `overflow-wrap: anywhere` (letter.css). Das bleibt die Notbremse
+// für ein Stück, das allein nicht in die Zeile passt. Ein Wert ohne @ (Name, Telefon) bleibt, wie er ist.
 export function breakAfterAt(text: string): ReactNode {
-  const parts = text.split('@')
-  return parts.length < 2 ? text : parts.map((p, i) => (i === 0 ? p : <Fragment key={i}>@<wbr />{p}</Fragment>))
+  if (!text.includes('@')) return text
+  // Stücke, vor denen umgebrochen werden darf: nach jedem @, vor jedem Punkt. Ohne Lookbehind im Muster, das ältere
+  // Safari nicht lesen (die ganze Datei fiele dort aus).
+  const pieces: string[] = []
+  let from = 0
+  for (let i = 0; i < text.length; i += 1) {
+    const cut = text[i] === '@' ? i + 1 : text[i] === '.' ? i : -1
+    if (cut <= from || cut >= text.length) continue
+    pieces.push(text.slice(from, cut))
+    from = cut
+  }
+  pieces.push(text.slice(from))
+  return pieces.map((p, i) => (i === 0 ? p : <Fragment key={i}><wbr />{p}</Fragment>))
 }
 
-const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
+const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'creditMovedOut', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
 
-export function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper }: HeadProps) {
+export function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper, paperFromFollow = false }: HeadProps) {
   return (
     <>
       {/* Das Briefpapier liegt unter allem auf der ganzen Seite; mit ihm entfällt der Absender von Mietfuchs (der Kopf
           des Briefpapiers nennt ihn). Die Rücksendeangabe im Fenster bleibt. Immer ein Bild (PNG, JPG, gerenderte PDF). */}
-      {paper && <img className="letter-paper" src={paper} alt="" aria-hidden="true" />}
+      {paper && !paperFromFollow && <img className="letter-paper" src={paper} alt="" aria-hidden="true" />}
       {logo && <img className="letter-logo" src={logo} alt="Logo" />}
       {foldMarks && (
         <>

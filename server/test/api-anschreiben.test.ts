@@ -445,3 +445,32 @@ test('Zahlungs-QR (#624): Verwendungszweck je Ebene speicherbar, eingefroren; Sc
     s.stop()
   }
 })
+
+// #691: Der Baustein für ein Guthaben nach dem Auszug lässt sich auf jeder Ebene speichern (die Datenbank kennt ihn), und
+// die Abrechnung eines ausgezogenen Mieters wählt ihn; mit dem Abschluss friert die Angabe ein.
+test('#691: Guthaben nach dem Auszug: eigener Baustein, je Ebene speicherbar, eingefroren', async () => {
+  const s = await startServer()
+  try {
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Max Vermieter', iban: '', paymentDeadlineDays: 14 }) })
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const tenancy = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'Erika Mustermann', persons: 1, start: '2024-01-01', end: '2025-06-30', prepayments: [{ from: '2024-01', monthlyCents: 10000 }] }) })
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 60000, key: 'area' }) })
+    const propertyId = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    const live = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.equal(live.ended, true)
+    assert.match(plain(live.texts.creditMovedOut), /^Es ergibt sich ein Guthaben von \d+,\d\d €\. Da Ihr Mietverhältnis beendet ist, .*Bankverbindung/)
+    assert.equal((await send(s, '/api/letter-texts', 'PUT', { texts: { creditMovedOut: 'Guthaben {Betrag}, bitte Konto nennen.' } })).status, 200)
+    assert.equal((await send(s, `/api/properties/${propertyId}/letter-texts`, 'PUT', { texts: { creditMovedOut: 'Haus: Guthaben {Betrag}.' } })).status, 200)
+    assert.equal((await send(s, `/api/settlement/2025/letters/${tenancy.id}`, 'PUT', { texts: { creditMovedOut: 'Frau {Name}: {Betrag} zurück.' } })).status, 200)
+    assert.match(plain(letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id).texts.creditMovedOut), /^Frau Erika Mustermann: \d+,\d\d € zurück\.$/)
+    const bad = await send(s, '/api/letter-texts', 'PUT', { texts: { creditMovedOut: '{VorauszahlungNeu}' } })
+    assert.equal(bad.status, 400)
+    assert.match((await jsonOf<{ error: string }>(bad)).error, /Guthaben nach dem Auszug/)
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', {})).status, 201)
+    const closed = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.equal(closed.ended, true)
+    assert.match(plain(closed.texts.creditMovedOut), /^Frau Erika Mustermann/)
+  } finally {
+    s.stop()
+  }
+})

@@ -347,6 +347,15 @@ for (const hint of TAX_HINTS) {
   })
 }
 
+// Das ZIP „Belege für die Steuer“ stand nur im Ordner der Seite Belege; wer die Steuerübersicht druckt, fand es nicht.
+test('Die Seite Steuer bietet das ZIP „Belege für die Steuer“ des gewählten Jahres und Objekts an, nicht im Druck', async () => {
+  await zeige(REPORT(), 'ist', 'mfh')
+  const link = await screen.findByRole('link', { name: /Belege für die Steuer \(ZIP\)/ })
+  expect(link.getAttribute('href')).toBe(`/api/receipts/tax/${JAHR}?property=p`)
+  expect(link.hasAttribute('download')).toBe(true)
+  expect(link.closest('.no-print')).not.toBeNull()
+})
+
 test('Der Soll-Vorbehalt nennt den Paragraphen und steht nicht auf der Ist-Grundlage', async () => {
   await zeige(REPORT(), 'soll')
   expect(screen.getByText(/Diese Ansicht rechnet mit dem vereinbarten Soll/i).closest('.notice-item')?.textContent).toMatch(/§ 11 Abs. 1 Satz 1 EStG/)

@@ -164,7 +164,10 @@ der Gemeinschaft`. Die Spalte `Zeile` sagt, was die Zeile ist: `Position`, die A
 `Nachzahlung`, `Guthaben` oder `Ausgeglichen`. Hinweise (Entwurf, Verweis auf das JSON bei
 Heizungsangaben) stehen am Ende nach einer Leerzeile.
 
-### Belege für die Steuer (Seite Belege, ZIP)
+### Belege für die Steuer (Seiten Steuer und Belege, ZIP)
+
+Du lädst es auf der Seite Steuer mit „Belege für die Steuer (ZIP)“ neben „Drucken / PDF“ oder im Ordner der Seite
+Belege; beide Knöpfe liefern dieselbe Datei für das gewählte Jahr und Objekt.
 
 Das ZIP enthält die Belege in einem Ordner je Gruppe der Anlage V und zwei CSV-Dateien. **Ihre Form
 kann sich mit Ankündigung im Changelog ändern**, etwa wenn ein neuer Vordruck der Anlage V eine weitere

@@ -110,7 +110,10 @@ export default function Steuer({ settings, units, onNavigate }: Props) {
           </label>
           <div className="field" />
           <button className="btn secondary" onClick={print} disabled={!data}>🖨 Drucken / PDF</button>
+          {/* Dasselbe ZIP wie im Ordner der Seite Belege (BelegeOrdner.tsx); hier, wo man es für die Erklärung sucht. */}
+          <a className="btn secondary" href={withProperty(`/api/receipts/tax/${year}`, propertyId)} download>🧾 Belege für die Steuer (ZIP)</a>
         </div>
+        <p className="muted text-s">Das ZIP enthält alle Belege des Jahres nach den Gruppen der Anlage V, auch die nicht umlagefähigen, mit einer Übersicht.</p>
       </div>
 
       {data && (

@@ -750,6 +750,13 @@
       "when": 1795782494422,
       "tag": "0106_zweite_vorauszahlung_wasser",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "6",
+      "when": 1795810124334,
+      "tag": "0107_guthaben_auszug",
+      "breakpoints": true
     }
   ]
 }

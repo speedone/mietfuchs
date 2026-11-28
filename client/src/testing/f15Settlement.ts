@@ -1,6 +1,7 @@
 // Die Abrechnung des Golden F15 (Techem-Muster mit Vorwegabzug), wie der Server sie rechnet, ohne den Rechenweg
 // (`steps`). Eingefroren für die Kontrollansicht (#321); server/test/controlview-f15.test.ts hält sie gleich mit
-// der Berechnung. Nur Typen werden importiert, damit der Server die Datei laden kann.
+// der Berechnung. Nur Typen werden importiert, damit der Server die Datei laden kann. Neu erzeugt für #691
+// (`suggestionScaling`, beschreibt nur den Satz zum Vorschlag; keine Zahl hat sich geändert).
 import type { Settlement } from '../../../shared/types.ts'
 
 export const f15Settlement: Pick<Settlement, 'statements' | 'landlord'> = {
@@ -33,6 +34,7 @@ export const f15Settlement: Pick<Settlement, 'statements' | 'landlord'> = {
       "prepaymentCents": 0,
       "prepaymentOverridden": false,
       "suggestedMonthlyCents": 9200,
+      "suggestionScaling": "none",
       "balanceCents": -110327
     },
     {
@@ -63,6 +65,7 @@ export const f15Settlement: Pick<Settlement, 'statements' | 'landlord'> = {
       "prepaymentCents": 0,
       "prepaymentOverridden": false,
       "suggestedMonthlyCents": 8000,
+      "suggestionScaling": "none",
       "balanceCents": -95864
     },
     {
@@ -93,6 +96,7 @@ export const f15Settlement: Pick<Settlement, 'statements' | 'landlord'> = {
       "prepaymentCents": 0,
       "prepaymentOverridden": false,
       "suggestedMonthlyCents": 8500,
+      "suggestionScaling": "none",
       "balanceCents": -101485
     },
     {
@@ -123,6 +127,7 @@ export const f15Settlement: Pick<Settlement, 'statements' | 'landlord'> = {
       "prepaymentCents": 0,
       "prepaymentOverridden": false,
       "suggestedMonthlyCents": 6400,
+      "suggestionScaling": "none",
       "balanceCents": -76875
     }
   ],

@@ -426,6 +426,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Leistung, Gesamtbetrag, Lohnanteil, Ihr Anteil; Rechnungsbetrag und Lohnanteil aus `labor35a` des Anschreibens, fehlt
   es, nur Leistung und Ihr Anteil). **Informationsblock** (`infoRows`): Ansprechpartner, Kontakt (`contactRows` trennt das
   freie Feld an Umbruch und Semikolon, an einem Komma nur vor einer erkannten Telefonnummer oder E-Mail), „Ort, Datum“.
+  Eine E-Mail darf nach dem @ und vor jedem Punkt umbrechen (`breakAfterAt` in Letter.tsx, #691); `overflow-wrap:
+  anywhere` am Block bleibt die Notbremse für ein Stück, das allein nicht in die Zeile passt (#286).
   Vor #415 abgeschlossen bleibt alles wie damals (Kopfzeile, Liste zu § 35a, „Abgerechnet werden die Kosten …“).
 - **Anschreiben bearbeiten** ([LetterDrawer.tsx](src/components/LetterDrawer.tsx), Logik in
   [letterForm.ts](src/letterForm.ts)): ein Seitenfenster für drei Ebenen, die Vorlage aller Objekte
@@ -523,14 +525,28 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   [letterPaper.ts](src/letterPaper.ts), Seitenfenster [LetterDesignDrawer.tsx](src/components/LetterDesignDrawer.tsx) mit
   Logik in [letterDesignForm.ts](src/letterDesignForm.ts); Karte „Logo und Briefpapier“ in den Einstellungen, am Objekt
   über „Mehr“ in der Kopfzeile der Seite Abrechnung). Das Logo steht oben rechts im Briefkopf (im Anschreiben und im Kopf
-  ohne Anschreiben), immer als `<img>`, nie eingefügtes SVG. **Mit Briefpapier druckt die Seite ohne Seitenrand**
+  ohne Anschreiben), immer als `<img>`, nie eingefügtes SVG. **Auf Briefpapier steht es im freien Bereich** (#691):
+  ab dem Rand oben (nie höher als 15 mm) und nur so hoch, dass es 2 mm vor dem Informationsblock (50 mm) endet; vorher
+  stand es fest ab 15 mm über dem Kopf des Briefpapiers. Die Maße rechnet `logoBox` (letterDesignView.ts), dieselben
+  stehen in letter.css (Wächter in letterCss.test.ts). **Bleiben weniger als 10 mm Höhe (Rand oben über 38 mm), druckt
+  es nicht** (`printDesign` gibt dann kein Logo, `logoSpace: 'none'`; geschrumpft blieb ein Fleck), unter 15 mm gilt es
+  als klein (`small`). Ein Baustein sagt beides (`logoPrintNote`, mit dem Weg zum Fenster „Logo und Briefpapier“): im
+  Fenster „Drucken“ der Abrechnung (`page.logo-space`), in den Fenstern „Kaution“ und „Mieterhöhung“ und im Fenster
+  „Logo und Briefpapier“ selbst, dessen Vorschau das Logo zeichnet, wo und ob es druckt. **Mit Briefpapier druckt die Seite ohne Seitenrand**
   (`PAPER_PAGE_CSS`: `@page { margin: 0 }`, nur solange die Seite Abrechnung mit Briefpapier offen ist): Chromium schneidet ab, was in den Rand von 12 mm ragt (nachgemessen), ein Briefpapier bis zur Blattkante
   käme sonst mit weißem Rahmen heraus. Die Maße des Briefs gelten dann ab der Blattkante (`--page: 0mm`); die
   Aufstellung steht in einem Rahmen (`.print-pages-frame`), dessen Innenabstand oben und unten `box-decoration-break:
   clone` auf jeder Druckseite wiederholt, die Seiten hält die Zelle (`--paper-*` an der Karte). Kein Tabellenkopf oder
   -fuß hält einen Rand frei (Wächter in letterCss.test.ts). Das Papier der ersten Seite liegt als Bild im Kopf des
   Briefs, das der Folgeseiten ohne eigene Höhe im `thead` der Hülle (`follow`, Verzierung: Chromium und Firefox
-  wiederholen ihn); die Belegkopien stehen in einer eigenen Hülle ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten
+  wiederholen ihn). Nach dem Anschreiben beginnt der Rahmen ohne Abstand oben: Der Abstand zwischen den Teilen einer
+  Karte (12 px) bleibt nach einem erzwungenen Umbruch stehen und schob das Briefpapier dieser Seite 3,2 mm nach unten
+  (#691, gemessen in print-width-check.mjs). **Ohne Anschreiben** rückt der Rahmen um die Höhe des Kopfs an die
+  Blattkante zurück, dazu um 12 px (nachgemessen, nicht hergeleitet: Der Kopf steht bei 0 ohne Außenabstand, ohne sie lag das Papier
+  3,2 mm zu tief; die Ursache ist offen), und die Zelle hält beides einmal frei: Der Text steht, wo er stand, aber das Papier der
+  Folgeseiten liegt auch auf Seite 1 bei 0 bis 297 mm (vorher 59,5 bis 356,7 mm, mit einem transparenten Briefpapier
+  druckte dessen Fuß ein zweites Mal auf Seite 2). Ist es dasselbe Papier wie das der ersten Seite, zeichnet der Kopf es nicht noch einmal (`paperFromFollow`,
+  eine Ebene); ein anderes deckt das der ersten Seite zu (`print-color-adjust: exact` an `.letter-paper`). Die Belegkopien stehen in einer eigenen Hülle ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten
   Inhalt einer Zelle wirkte nicht). Deshalb hat die Karte im Druck keinen Grund. **Briefpapier nur, wo der Browser die
   Ränder je Seite wiederholen kann** (`canPagePaper`: `CSS.supports('box-decoration-break', 'clone')` und ausdrücklich
   Gecko oder Blink, also Chromium ab 130 und Firefox; Durchsicht S2 zu #735). WebKit nimmt die Ränder der ersten Seite für alle Seiten, auch die aus `@page :first`, wiederholt weder

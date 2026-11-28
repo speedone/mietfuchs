@@ -171,3 +171,13 @@ test('#712: zweite Vorauszahlung auch für Wasser/Abwasser: Feld, Satz zum Vorsc
   expect(text()).toContain('Bisher 170,00 € für Heizung, Warmwasser und Wasser/Abwasser.')
   expect(text()).toContain('Davon entfallen 190,00 € auf Heizung, Warmwasser und Wasser/Abwasser (bisher 170,00 €) und 120,00 € auf die übrigen Nebenkosten (bisher 130,00 €).')
 })
+
+// #691, Durchsicht: Ein eigener Text zum Guthaben in der Vorlage gilt nicht für ausgezogene Mieter; das Fenster sagt es am
+// Baustein „Guthaben nach dem Auszug“, bis dort ein eigener Text steht.
+test('#691: eigener Text zum Guthaben in der Vorlage: Satz am Baustein „Guthaben nach dem Auszug“', () => {
+  show({ own: { credit: 'Eigener Satz {Betrag}.' } })
+  const at = () => screen.getByLabelText('Guthaben nach dem Auszug').closest('.letter-edit')?.textContent ?? ''
+  expect(at()).toMatch(/Text für „Guthaben nach dem Auszug“ anpassen/)
+  fireEvent.change(screen.getByLabelText('Guthaben nach dem Auszug'), { target: { value: 'Auch nach dem Auszug {Betrag}.' } })
+  expect(at()).not.toMatch(/Text für „Guthaben nach dem Auszug“ anpassen/)
+})

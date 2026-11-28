@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { LetterTemplates } from '../types'
-import { DEFAULT_LETTER_TEXTS } from '../../../shared/letter.ts'
+import { DEFAULT_LETTER_TEXTS, LETTER_BLOCK_IDS } from '../../../shared/letter.ts'
 import { UIProvider } from './feedback'
 import LetterTemplateCard from './LetterTemplateCard'
 
@@ -27,7 +27,8 @@ afterEach(() => {
 test('Vorlage: Vorgabe der Anpassung, eigener Text, zurücksetzen und Vorschau mit Beispielwerten', async () => {
   const reload = vi.fn(async () => {})
   render(<UIProvider><LetterTemplateCard reload={reload} /></UIProvider>)
-  expect(await screen.findByText(/1 von 14 Bausteinen mit eigenem Text/, {}, SLOW)).toBeTruthy()
+  // Die Zahl aus der Liste der Bausteine, nicht fest (#691 brachte einen dazu)
+  expect(await screen.findByText(new RegExp(`1 von ${LETTER_BLOCK_IDS.length} Bausteinen mit eigenem Text`), {}, SLOW)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }))
   const dialog = await screen.findByRole('dialog', {}, SLOW)
   // Ohne eigenen Betrag: den gibt es nur je Mieter.
