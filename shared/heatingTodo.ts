@@ -82,6 +82,8 @@ export const HEATING_TODO_CODES: Readonly<Record<string, TodoCodeRule>> = {
   'heating.reading-dates-far': step('readings'),
   'heating.no-consumption': step('readings'),
   'heating.reading-estimate-over-25': step('readings'),
+  // #690 Punkt 2: Einer Wohnung fehlt das Gerät; behoben wird es auf „Zähler & Stände“ (Gerät anlegen, ggf. schätzen).
+  'heating.unit-without-device': step('readings'),
   'heating.device-cutoff': step('readings'),
   'heating.mixed-capture': step('readings'),
   'heating.hca-factor-missing': step('readings'),
