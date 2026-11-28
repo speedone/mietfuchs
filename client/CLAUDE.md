@@ -816,7 +816,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   `tenancyStamp`. Teilrümpfe (Beleg zuordnen, Betrag prüfen, Art einer Zahlung) schicken nichts mit, sie ändern nur, was
   sie nennen. Tests: gleichzeitigBearbeiten.test.tsx, kostenGleichzeitig.test.tsx.
 - **Ändern und Löschen nennen das gewählte Objekt** (#692): Jeder Aufruf von `PUT`/`DELETE /api/<Sammlung>/:id` (und
-  `…/split`) geht durch `withProperty(…, propertyId)`, ebenso jeder Aufruf an Heizanlage, Lieferung, CO₂-Erstattung,
+  `…/split`) geht durch `withProperty(…, propertyId)`, ebenso jedes Anlegen von Mietverhältnis, Zahlung, Ablesung,
+  Kautionsbuchung und CO₂-Erstattung (der Server prüft dann den Verweis im Rumpf), ebenso jeder Aufruf an Heizanlage, Lieferung, CO₂-Erstattung,
   Kautionsbuchung, Mieterhöhung und an `…/change`, `…/rent-increases`, `…/rent-increase/plan`, `…/interim-gaps` (dort
   auch die lesenden, der Wächter sieht die Methode nicht); der Server prüft beim Ändern, Löschen und Versenden, ob der
   Datensatz dazu gehört, und lehnt sonst ab. Dasselbe gilt für Adressen aus `settlementPaths` und `closedCheckPath`

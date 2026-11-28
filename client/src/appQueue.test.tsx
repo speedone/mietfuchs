@@ -272,8 +272,8 @@ test('Objektwechsel: in B kein Vorschlag aus A; zurück in A geht die Ablesung a
   const adopt = await screen.findByRole('button', { name: /Ablesung übernehmen/ }, { timeout: 5000 })
   await waitFor(() => expect(screen.getByDisplayValue(/Wasser DG/)).toBeTruthy())
   fireEvent.click(adopt)
-  await waitFor(() => expect(posted.filter((p) => p.url === '/api/readings')).toHaveLength(1))
-  expect(posted.find((p) => p.url === '/api/readings')?.body).toMatchObject({ meterId: 'm-a', value: 42 })
+  await waitFor(() => expect(posted.filter((p) => p.url === '/api/readings?property=objekt-1')).toHaveLength(1))
+  expect(posted.find((p) => p.url === '/api/readings?property=objekt-1')?.body).toMatchObject({ meterId: 'm-a', value: 42 })
 })
 
 // Testlücke: „Gespeichert, nicht ausgewertet“ überlebt Seiten- und Objektwechsel; „Erneut versuchen“ schickt danach

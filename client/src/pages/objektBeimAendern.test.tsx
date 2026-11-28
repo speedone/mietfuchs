@@ -128,3 +128,20 @@ test('auch Adressen aus settlementPaths und closedCheckPath gehen nur mit dem Ob
   expect(bareHelperCalls("await api(withProperty(paths.close, propertyId), { method: 'DELETE' })")).toBe(0)
   expect(bareHelperCalls('api<Settlement>(withProperty(paths.load, propertyId))')).toBe(0)
 })
+
+// Anlegen mit einem Verweis (#692, Integrationsdurchsicht): Der Server prüft Wohnung, Mietverhältnis oder Zähler im Rumpf
+// gegen `?property=`. Ohne die Angabe prüft er nichts, und eine Zahlung aus einem Fenster mit veraltetem Stand landete in
+// dem Objekt, in das ein anderes Fenster die Wohnung inzwischen verschoben hat. Deshalb nennt jedes Anlegen das Objekt.
+const CREATE_CALL = /\b(?:api|appFetch)(?:<[^>]*>)?\(\s*'\/api\/(?:payments|tenancies|readings|co2-refunds|deposit-entries)'\s*,/g
+const bareCreates = (raw: string): number => [...raw.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '').matchAll(CREATE_CALL)].length
+
+test('jedes Anlegen mit einem Verweis nennt das gewählte Objekt', () => {
+  const found = Object.entries(sources).filter(([, raw]) => bareCreates(raw) > 0).map(([file]) => file)
+  expect(found).toEqual([])
+  // Probe des Wächters
+  expect(bareCreates("await api('/api/payments', { method: 'POST', body })")).toBe(1)
+  expect(bareCreates("else await api('/api/tenancies', { method: 'POST', body })")).toBe(1)
+  expect(bareCreates("await api<{ id: string }>('/api/deposit-entries', { method: 'POST' })")).toBe(1)
+  expect(bareCreates("await api(withProperty('/api/readings', propertyId), { method: 'POST', body })")).toBe(0)
+  expect(bareCreates("api<Reading[]>(withProperty('/api/readings', propertyId))")).toBe(0)
+})

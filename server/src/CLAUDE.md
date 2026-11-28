@@ -451,9 +451,10 @@ vorverteilt (#95), die Flexibilität steckt in der Kostenposition (#94).
   `/api/fuel-deliveries/:id`, `/api/co2-refunds/:id`, `/api/deposit-entries/:id`, `…/from-payment/:paymentId` (Zahlung),
   `/api/rent-increases/:id` und unter `/api/tenancies/:id/…` (Mieterwechsel, Mieterhöhung) und `/api/units/:id/…`
   (Zwischenablesung); sie liest vor dem Schreiben in einem eigenen Vorgang. Das Objekt eines Datensatzes liest
-  `propertyOfRecord` mit einer Abfrage nach Kennung. **Beim Anlegen** prüfen `POST /api/tenancies` (Wohnung), `payments`
-  und `/api/deposit-entries`, `/api/co2-refunds` (Mietverhältnis) und `readings` (Zähler) den Verweis im Rumpf gegen
-  `?property=` (`requireReferenceInProperty`). Ohne Prüfung, mit Grund: `/api/properties/:id/…` (die Kennung ist das
+  `propertyOfRecord` mit einer Abfrage nach Kennung. **Beim Anlegen und Ändern** prüfen `/api/tenancies` (Wohnung), `payments`
+  und `/api/deposit-entries`, `/api/co2-refunds` (Mietverhältnis) und `readings` (Zähler) einen Verweis im Rumpf gegen
+  `?property=` (`requireReferencesInProperty`, `requireReferenceInProperty`); ein PUT hängt so nichts in ein anderes Objekt
+  um. Die Oberfläche nennt das Objekt auch beim Anlegen (dritter Wächter in client/src/pages/objektBeimAendern.test.tsx). Ohne Prüfung, mit Grund: `/api/properties/:id/…` (die Kennung ist das
   Objekt), Auswertungen (am Beleg, Objekt fest nach der ersten Buchung, `placeAssessment`), Belege, Kontoauszug, Rechtswerte, KI, Verlauf,
   Vorversionen, Geräte (installationsweit), `/api/settlement/:period/…` und `/api/rentledger/:year/…` (Objekt nur aus
   `?property=`), Anschreiben je Mietverhältnis (`letterTarget` prüft schon). Eine Ablehnung schreibt nichts und legt

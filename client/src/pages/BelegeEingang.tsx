@@ -306,7 +306,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     const r = readingOf(entry)
     const body = r ? readingBody(r) : null
     if (!body) return false
-    await api('/api/readings', { method: 'POST', body: JSON.stringify(body) })
+    await api(withProperty('/api/readings', propertyId), { method: 'POST', body: JSON.stringify(body) })
     return true
   }
 

@@ -220,7 +220,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     if (question && !(await confirm(question))) return
     try {
       if (editedReading) await api(withProperty(`/api/readings/${editedReading.id}`, propertyId), { method: 'PUT', body: JSON.stringify({ ...built.body, ...ifUnchanged(seenReading.current) }) })
-      else await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
+      else await api(withProperty('/api/readings', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
     } catch (e) {
       readingError.show(staleText(e, seenReading.current, READING_STALE_FIELDS) ?? errorText(e))
       // Abgelehnt, weil der Stand älter ist: Die Liste lädt neu, damit das erneut geöffnete Fenster den von jetzt zeigt.

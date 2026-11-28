@@ -935,7 +935,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
     adoptingReadingRef.current = true
     setAdoptingReading(true)
     try {
-      await api('/api/readings', { method: 'POST', body: JSON.stringify(body) })
+      await api(withProperty('/api/readings', propertyId), { method: 'POST', body: JSON.stringify(body) })
       patchEntry(entry.id, { status: 'übernommen' })
       setReadings(null)
     } catch (e) {

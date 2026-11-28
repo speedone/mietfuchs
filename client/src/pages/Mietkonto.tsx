@@ -94,7 +94,7 @@ export default function Mietkonto({ focus, onFocusDone, onNavigate }: FocusProps
     }
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
-      await api('/api/payments', {
+      await api(withProperty('/api/payments', propertyId), {
         method: 'POST',
         body: JSON.stringify(built.body),
       })
