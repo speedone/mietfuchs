@@ -68,6 +68,8 @@ export const HEATING_TODO_CODES: Readonly<Record<string, TodoCodeRule>> = {
   'heating.key-change': step('share'),
   // ---------- Warmwasseranteil ----------
   'heating.dhw-share-invalid': step('hotWater'),
+  // Nachtrag zu #749: Kein Mieter ist am Warmwasser angeschlossen; der Teil Warmwasser steht beim Vermieter.
+  'heating.water-unconnected': step('hotWater'),
   'heating.heat-pump-dhw-basis': step('hotWater'),
   'heating.dhw-share-estimated': step('hotWater'),
   'heating.dhw-not-metered': step('hotWater'),
