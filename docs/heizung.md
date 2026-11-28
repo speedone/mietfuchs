@@ -675,6 +675,14 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
   Rn. 35), **vorsorglich für die übrigen** (Rn. 23: „auch nur teilweise“), auch über der Grenze getrennt (Durchsicht S3).
   Das ist eine Auslegung zur sicheren Seite des Vermieters (er kennt den höchsten Betrag, den er verlieren kann). Mit
   vollständigen Geräten ändert sich keine Zahl.
+- **Ohne Anschluss an das Warmwasser** (`Unit.noConnection` mit `warmwasser`, Durchlauferhitzer; Integrationsdurchsicht
+  zu #690): Die Wohnung nimmt am Topf Warmwasser nicht teil, weder mit Fläche (`areaOf`, `potAreaOf`), noch mit Geräten
+  oder Schätzung (`metersOf`, `estimateOf` in planSelf), auch nicht bei reiner Flächenverteilung oder ganz ohne
+  Warmwasserzähler im Haus (das galt schon in v0.18.1 falsch: sie trug nach Fläche mit). Damit zählt sie nicht als Wohnung
+  ohne Gerät, nicht für die Grenze des § 9a Abs. 2, nicht für den Durchschnitt, und ihre Grenzen nennen für das Warmwasser
+  kein fehlendes Gerät; der Rechenweg nennt bei ihr nur die Heizung. `SelfUnit.noWater` trägt die Angabe aus calc.ts hinein.
+  Ohne Anschluss an die Wärme hängt sie wie bisher gar nicht an der Anlage (`servesUnit`). Die Formel für den
+  Warmwasseranteil rechnet schon mit der versorgten Fläche (`suppliedAreaOf` in dhw.ts). Tests: calc-hkv.test.ts.
 - **Einheitsskala**: Ablesewert × Bewertungsfaktor; **Produktskala**: wie abgelesen. Ohne Skala oder
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine
