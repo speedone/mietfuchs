@@ -497,7 +497,7 @@
  },
  {
   "code": "heating.water-unconnected",
-  "text": "Heizanlage, Heizperiode 2025: Keine Wohnung an dieser Anlage hat einen Anschluss an das Warmwasser (Stammdaten der Wohnung, „Weitere Angaben - Anschlüsse“), die Anlage ist aber mit Warmwasser eingerichtet. Mietfuchs verteilt die Heizung; den Teil Warmwasser von 1.032,00 € trägt kein Mieter, er steht bei Ihnen. Bereitet die Anlage kein Warmwasser für die Wohnungen, wählen Sie bei der Einrichtung der eigenen Heizkostenabrechnung (Stammdaten, Karte „Heizung“) auf „Bereitet diese Heizung auch das Warmwasser?“ die Antwort „Es gibt kein zentrales Warmwasser“; dann gehören diese Kosten zur Heizung. Beziehen die Wohnungen ihr Warmwasser doch von dieser Anlage, setzen Sie bei ihnen den Haken „Warmwasser“."
+  "text": "Heizanlage, Heizperiode 2025: Keine Wohnung an dieser Anlage hat einen Anschluss an das Warmwasser (Stammdaten der Wohnung, „Weitere Angaben - Anschlüsse“), die Anlage ist aber mit Warmwasser eingerichtet. Mietfuchs verteilt die Heizung; den Teil Warmwasser von 1.032,00 € trägt kein Mieter, er steht bei Ihnen (Festlegung von Mietfuchs). Bereitet die Anlage kein Warmwasser für die Wohnungen, wählen Sie bei der Einrichtung der eigenen Heizkostenabrechnung (Stammdaten, Karte „Heizung“) auf „Bereitet diese Heizung auch das Warmwasser?“ die Antwort „Es gibt kein zentrales Warmwasser“; dann gehören diese Kosten zur Heizung. Beziehen die Wohnungen ihr Warmwasser doch von dieser Anlage, setzen Sie bei ihnen den Haken „Warmwasser“."
  },
  {
   "code": "heating.no-interim-reading",

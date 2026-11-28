@@ -3518,6 +3518,9 @@ export type SelfUnitView = {
 }
 export type SelfHeatingStatement = {
   ok: boolean
+  // #690 (Nachprüfung S1): Hat keine versorgte Wohnung einen Anschluss an das Warmwasser, die Summe der Teile Warmwasser,
+  // die beim Vermieter stehen (Grund `noWaterConnection`); eine eigene Zeile neben den Nutzern. Fehlt sonst.
+  unconnectedWaterCents?: number
   // Die Erfassung der Heizperiode (Durchsicht von #242 Runde 3, N2-M1); fehlt in älteren Abrechnungen.
   capture?: CaptureMethod
   heatPump: 'applies' | 'notYet' | 'missing' | null

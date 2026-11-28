@@ -5804,6 +5804,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       ...(sp.alpha ? { dhw: sp.alpha.statement } : {}),
       shares: sp.shares ? { heating: sp.shares.heating, water: sp.shares.water, forced: sp.shares.forced, previous: sp.shares.previous, ...(sp.shares.above70Agreed ? { above70Agreed: true } : {}) } : null,
       ...(sp.agreedArea ? { agreedArea: true as const } : {}),
+      ...(sp.plan.totals.water?.unconnected ? { unconnectedWaterCents: potItems.reduce((a, c) => a + (selfUnconnectedCents.get(c.id) ?? 0), 0) } : {}),
       pots: sp.plan.pots.map((p): SelfPotView => {
         const t = sp.plan.totals[p]
         // § 9a Abs. 2 (Heizung PR 13): über der Grenze kein Anteil nach Verbrauch.
@@ -6244,6 +6245,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // seine Kostenzeile, sonst sein Teil der Zeilen des Vermieters. Daraus nennt der Block „Heizkostenabrechnung“ die
   // Beträge je Topf (`selfStatementOf`); Topf mal Gewicht einmal gerundet wich ab zwei Positionen um einen Cent ab.
   const selfBlockCents = new Map<string, Map<string, number>>()
+  // #690 (Nachprüfung S1): je Heizposition die Cent mit dem Grund `noWaterConnection`; sie gehören zu keinem Nutzer.
+  const selfUnconnectedCents = new Map<string, number>()
   // #258: je Mietverhältnis die Positionen, die es laut Mietvertrag nicht trägt, mit Betrag (Hinweis nach der Schleife).
   // `settled`: Wenigstens eine dieser Positionen rechnet das Mietverhältnis ab (weder Pauschale noch Inklusivmiete).
   const notAgreedByTenancy = new Map<string, { t: TenancyWithUnit, items: string[], settled: boolean }>()
@@ -7447,8 +7450,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // genau die Position ergeben.
       const own = (u: { key: string, target: number }): boolean => targets[u.target]?.t.id === u.key && lineOf.has(u.target)
       const rest = selfBlockUsers.filter((u) => !own(u))
+      // Der Teil Warmwasser ohne angeschlossene Wohnung bleibt außerhalb der Nutzer (Nachprüfung S1 zu #690).
+      const nw = recipients.findIndex((r) => r.key === 'noWaterConnection')
+      const unconnected = nw < 0 ? 0 : cents[nw] ?? 0
+      if (unconnected !== 0) selfUnconnectedCents.set(item.id, unconnected)
       const restCents = distributeCents(
-        item.amountCents - selfBlockUsers.reduce((a, u) => a + (own(u) ? shareOf(u.target) : 0), 0),
+        item.amountCents - unconnected - selfBlockUsers.reduce((a, u) => a + (own(u) ? shareOf(u.target) : 0), 0),
         rest.map((u) => ({ key: u.key, landlord: true, raw: u.raw })),
       )
       const byUser = new Map<string, number>()
@@ -9682,7 +9689,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (kw !== 0) {
         warn('heating.water-unconnected',
           `${where}: Keine Wohnung an dieser Anlage hat einen Anschluss an das Warmwasser (Stammdaten der Wohnung, „Weitere Angaben - Anschlüsse“), die Anlage ist aber mit Warmwasser eingerichtet. ` +
-            `Mietfuchs verteilt die Heizung; den Teil Warmwasser von ${fmtCents(kw)} trägt kein Mieter, er steht bei Ihnen. ` +
+            `Mietfuchs verteilt die Heizung; den Teil Warmwasser von ${fmtCents(kw)} trägt kein Mieter, er steht bei Ihnen (Festlegung von Mietfuchs). ` +
             'Bereitet die Anlage kein Warmwasser für die Wohnungen, wählen Sie bei der Einrichtung der eigenen Heizkostenabrechnung (Stammdaten, Karte „Heizung“) auf „Bereitet diese Heizung auch das Warmwasser?“ die Antwort „Es gibt kein zentrales Warmwasser“; dann gehören diese Kosten zur Heizung. ' +
             'Beziehen die Wohnungen ihr Warmwasser doch von dieser Anlage, setzen Sie bei ihnen den Haken „Warmwasser“.',
           subject)

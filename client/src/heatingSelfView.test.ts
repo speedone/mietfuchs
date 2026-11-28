@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, ESTIMATE_NEEDS_DEVICES, estimateIdleText, missingDevicesLines, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, ESTIMATE_NEEDS_DEVICES, unconnectedWaterLine, estimateIdleText, missingDevicesLines, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView } from './types'
 
@@ -541,5 +541,14 @@ describe('Ausweis zum Nachrechnen: Durchsicht', () => {
     expect(line).toContain('Warmwasser 0 m³,')
     const lines = potLines({ ...heat, costCents: -0, consumption: -0, baseCentsPerM2: -0, consumptionCentsPerUnit: -5.5e-17, estimatedConsumption: 0 }).join(' ')
     expect(lines).not.toMatch(/-0/)
+  })
+})
+
+// #690 (Nachprüfung S1): Ohne angeschlossene Wohnung steht der Teil Warmwasser als eigene Zeile beim Vermieter.
+describe('#690: Warmwasser ohne angeschlossene Wohnung im Block', () => {
+  it('eine Zeile mit dem Betrag, sonst keine', () => {
+    expect(unconnectedWaterLine({ unconnectedWaterCents: 104215 })).toBe(`Vermieter, Warmwasser ohne angeschlossene Wohnung: ${fmtEuro(104215)} (kein Mieter hat einen Anschluss an das Warmwasser)`)
+    expect(unconnectedWaterLine({})).toBeNull()
+    expect(unconnectedWaterLine({ unconnectedWaterCents: 0 })).toBeNull()
   })
 })

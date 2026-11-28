@@ -582,8 +582,32 @@ test('#690, Nachtrag: keine Wohnung mit Warmwasseranschluss: Heizung verteilt, W
   const n = s.notices.find((x) => x.code === 'heating.water-unconnected') ?? assert.fail(codes(s).join(', '))
   assert.equal(n.level, 'warning')
   assert.match(n.text, /Keine Wohnung an dieser Anlage hat einen Anschluss an das Warmwasser/)
+  assert.match(n.text, /steht bei Ihnen \(Festlegung von Mietfuchs\)\./)
   assert.ok(n.text.includes(`${(kw / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`), n.text)
   assert.match(n.text, /„Weitere Angaben - Anschlüsse“.*„Es gibt kein zentrales Warmwasser“.*Haken „Warmwasser“/s)
   assert.ok(!codes(s).includes('heating.no-consumption'), codes(s).join(', '))
   assert.equal(allRows(s), s.totalCostsCents)
+})
+
+// Nachprüfung S1: Der Block der Beträge je Nutzer (Karte „Verteilung“) legte den Teil `noWaterConnection` mit dem Rest auf
+// Leerstand und Eigennutzung um; Positionen nur für das Warmwasser fehlten. Jetzt steht er als eigene Zeile beim
+// Vermieter, und alle Nutzer zusammen mit ihr ergeben die Positionen.
+test('#690, Nachprüfung S1: Block ohne Warmwasseranschluss: Leerstand ohne Warmwasser, eigene Zeile, Summe = Positionen', () => {
+  const units = [selfUnit('a', 60, { noConnection: ['warmwasser'] }), selfUnit('b', 80, { noConnection: ['warmwasser'] }), selfUnit('c', 60, { noConnection: ['warmwasser'] })]
+  const base = selfSnapshot({ units })
+  const tenancies = base.tenancies.filter((t) => t.id !== 'C2')
+  const pick = (id: string, amountCents: number) => ({ ...(base.costItems.find((c) => c.id === id) ?? assert.fail(id)), amountCents })
+  const wartungWasser = { ...pick('wartung', 12001), heatingTarget: 'water' as const }
+  const s = computeSettlement({ ...base, tenancies, costItems: [pick('gas', 600000), wartungWasser, pick('wwz', 6001)] })
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+  const self = selfOf(s)
+  const users = self.units.flatMap((u) => u.users)
+  const vacancy = users.find((u) => u.role === 'vacancy') ?? assert.fail('kein Leerstand')
+  assert.equal(vacancy.waterCents, 0)
+  const sum = users.reduce((a, u) => a + (u.heatingCents ?? 0) + (u.waterCents ?? 0), 0) + (self.unconnectedWaterCents ?? 0)
+  assert.equal(sum, 600000 + 12001 + 6001)
+  // Der Teil Warmwasser des Gases (α) und beide Positionen nur für das Warmwasser.
+  const waterPot = self.pots.find((p) => p.pot === 'water')?.costCents ?? assert.fail('kein Topf Warmwasser')
+  assert.equal(self.unconnectedWaterCents, waterPot)
+  assert.equal(users.reduce((a, u) => a + (u.heatingCents ?? 0), 0), self.pots.find((p) => p.pot === 'heating')?.costCents)
 })
