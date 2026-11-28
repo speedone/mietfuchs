@@ -24,6 +24,7 @@ import AccessCard from '../components/AccessCard'
 import { networkBridge } from '../desktopNetwork'
 import { remoteBridge } from '../desktopRemote'
 import RemoteCard from '../components/RemoteCard'
+import BrowserCard from '../components/BrowserCard'
 import { useSectionJump, type FocusProps } from '../focus'
 import { ifUnchanged, sameRecord } from '../staleRecord'
 import { deadlineDays, LANDLORD_GROUPS, LANDLORD_KEYS, LANDLORD_LABELS, LANDLORD_STALE_FIELDS, mergeStale, sameLandlordInput, seenPart, settingsStaleText, staleCurrent, useFreshSettings, type LandlordKey } from '../settingsSeen'
@@ -379,6 +380,9 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
         Automatische Sicherungen und frühere Stände finden Sie{' '}
         <a href="#" onClick={(e) => { e.preventDefault(); onNavigate?.('verlauf') }}>im Verlauf</a>.
       </p>
+
+      {/* Womit sich Mietfuchs beim Start öffnet (#735): nur, wo Mietfuchs selbst einen Browser öffnet (`settings.browsers`) */}
+      <BrowserCard settings={settings} reload={reload} />
 
       {network && <NetworkCard bridge={network} />}
       {remote && <RemoteCard bridge={remote} />}

@@ -93,7 +93,8 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
 - **Verschachtelte Listen sind Tabellen** (Staffeln, Jahreskorrektur, vereinbarte Anteile …), damit
   sich Zusicherungen schreiben lassen. **Einstellungen haben echte Spalten** (#60; ein unbekanntes
   Feld hat keinen Ort); die KI-Plätze sind Zeilen in `ai_slots`. **Kein Feld für API-Schlüssel**,
-  die bleiben in `data/secrets.json`.
+  die bleiben in `data/secrets.json`. `settings.open_with` (#735, Schritt 0109) trägt die Kennung eines Browsers ohne
+  Bedingung (ein weiterer Browser braucht so keinen Neubau); read.ts liest eine unbekannte als „ohne Wert“.
 - **Kautionsbuchungen** (#228): `deposit_entries` in Schritt 0097 (mit `tenancies.deposit_form`), die Bedingung an
   `tenancies` in 0098 (Neubau, getrennt wie 0092/0093). Eine Buchung fällt mit ihrem Mietverhältnis und mit der
   Zahlung, auf die `payment_id` verweist (beide CASCADE). Keine Datenanweisung; ein Bestand von vorher hat keine

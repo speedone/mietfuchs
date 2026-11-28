@@ -29,6 +29,8 @@
 // Standardport ohne Lauf-Datei wird weiter nur einmal gefragt, sonst wartete jeder Start, wenn dort etwas schweigt.
 import fs from 'node:fs'
 import path from 'node:path'
+import { asBrowserId } from './browser.ts'
+import type { BrowserId } from '../../shared/types.ts'
 
 export const RUN_FILE = 'mietfuchs.laeuft.json'
 // Die Standardports: Programmdatei, Store bis 0.14 und Docker auf 3001, das Fenster auf 17517
@@ -39,7 +41,8 @@ export type RunFile = { version: 1, port: number, pid: number, startedAt: string
 // Wer dieser Start ist, für die Antwort von /healthz und den Vergleich zweier gleichzeitiger Starts
 export type Self = { dataDir: string, port: number, pid: number, boundAt: number }
 
-export type Twin = { port: number, url: string, version: string | null }
+// `openWith`: der Browser aus den Einstellungen des anderen (#735), damit ein zweiter Start dieselbe Wahl nimmt
+export type Twin = { port: number, url: string, version: string | null, openWith: BrowserId | null }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
 
@@ -162,7 +165,7 @@ function twinFrom(self: Self, port: number, health: unknown, platform: NodeJS.Pl
   if (health.status === 'starting' && typeof health.boundAt === 'number' && typeof health.pid === 'number') {
     if (!yieldsTo(self, { boundAt: health.boundAt, pid: health.pid, port })) return null
   }
-  return { port, url: `http://127.0.0.1:${port}`, version: typeof health.version === 'string' ? health.version : null }
+  return { port, url: `http://127.0.0.1:${port}`, version: typeof health.version === 'string' ? health.version : null, openWith: asBrowserId(health.openWith) }
 }
 
 /**

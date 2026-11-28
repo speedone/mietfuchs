@@ -439,6 +439,19 @@ dabei nicht. Beim ersten Start öffnet der Browser die Einrichtung eines Passwor
 eingetragen, wie bei der [Programmdatei](#bisherige-programmdatei-ohne-installation). Zum Beenden dient der Knopf **„Mietfuchs beenden"** unten in der Seitenleiste. Ein
 zweiter Klick im Menü holt einfach die laufende Oberfläche nach vorn.
 
+**Mit welchem Browser:** Ohne weitere Angabe öffnet sich Mietfuchs im Standardbrowser deines Systems.
+Soll es ein anderer sein, ohne den Standardbrowser zu ändern, wählst du ihn unter *Einstellungen →
+Beim Start → Mietfuchs öffnen mit*; zur Wahl stehen die Browser, die Mietfuchs auf dem Rechner findet
+(Firefox, Chromium, Google Chrome, Microsoft Edge, Brave, auch als Snap oder Flatpak). Die Wahl gilt ab
+dem nächsten Start, auch für den zweiten Klick im Menü. Alternativ beachtet Mietfuchs die übliche
+Umgebungsvariable `BROWSER` (siehe [Umgebungsvariablen](#umgebungsvariablen)). Vorrang hat die Wahl in
+den Einstellungen, dann `BROWSER`, dann der Standardbrowser. Ist der gewählte Browser nicht mehr da,
+nimmt Mietfuchs den nächsten in dieser Reihenfolge und sagt es in der Ausgabe. Festlegen lässt sich die
+Wahl nur am Rechner selbst, nicht vom Handy oder einem anderen Gerät im Heimnetz. Dasselbe gilt für die
+[Programmdatei](#bisherige-programmdatei-ohne-installation) unter Windows, macOS und Linux; im
+Programmfenster, im Docker-Container und beim Start aus dem Quellcode öffnet Mietfuchs keinen Browser,
+dort gibt es die Wahl nicht.
+
 Ohne grafische Oberfläche, etwa auf einem Server oder einem Raspberry Pi per SSH, funktioniert
 das Paket genauso: `mietfuchs` im Terminal starten und die Oberfläche von einem anderen Rechner
 unter `http://<ip-des-rechners>:3001` aufrufen. Dass sich dort kein Browser öffnet, ist normal;
@@ -520,6 +533,7 @@ Adresse und Anmeldung setzt das Fenster dort selbst.
 | `NKA_OLLAMA_URL` | Adresse von Ollama; gilt, solange Ollama der Anbieter ist und `NKA_AI_URL` fehlt. | `http://localhost:11434` |
 | `NKA_OLLAMA_MODEL` | Modell für Ollama; gilt, solange `NKA_AI_MODEL` fehlt. | wie in den Einstellungen |
 | `NKA_OLLAMA_NUM_CTX` | Kontextgröße für Ollama in Token. | `16384` |
+| `BROWSER` | Womit sich die Programmdatei und das Linux-Paket beim Start öffnen: ein Programmname oder Pfad, mehrere getrennt mit `:` (unter Windows `;`), der erste vorhandene gilt. `%s` steht für die Adresse, sonst kommt sie als letztes Argument dazu. Gestartet wird ohne Shell, unter Windows deshalb nur eine `.exe` (keine `.cmd` oder `.bat`). Ein Browser fürs Terminal (`w3m`, `lynx`) öffnet kein Fenster, weil Mietfuchs ohne Terminal startet. Eine Wahl unter *Einstellungen → Beim Start* geht vor. | der Standardbrowser |
 
 **Nicht Teil der Zusage** sind Variablen, die Mietfuchs für sich selbst setzt oder die nur Prüfläufe
 brauchen. Sie können sich jederzeit ändern oder wegfallen; setz sie nicht selbst:

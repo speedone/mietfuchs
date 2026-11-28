@@ -9,6 +9,7 @@ import { PAYMENT_KIND_LABELS } from './paymentForm'
 import { DEPOSIT_KIND_LABELS, DEPOSIT_PURPOSE_LABELS } from './depositForm'
 import { indexValueText, RENT_KIND_LABELS, RENT_REASON_LABELS } from './rentKindForm'
 import { STATES } from '../../shared/states.ts'
+import { BROWSER_LABELS } from '../../shared/browsers.ts'
 
 export type JournalGroup = {
   // Die jüngste Gruppe des Eintrags; schrieb eine Anfrage in mehrere Gruppen, ist `firstId` die älteste (#318, Schritt 4).
@@ -130,6 +131,7 @@ const FIELD_LABELS: Record<string, string> = {
   notes: 'Notizen',
   note: 'Notiz',
   desktop_hint_dismissed: 'Hinweis aufs Programmfenster ausgeblendet (Version)',
+  open_with: 'Mietfuchs öffnen mit',
   tenant_name: 'Mieter',
   persons: 'Personen',
   start: 'Einzug',
@@ -318,6 +320,7 @@ const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> 
   bank_accounts: { kind: { mixed: 'Mischkonto', rental: 'nur für die Vermietung' } },
   bank_transactions: { purpose: {}, set_aside: { transfer: 'Umbuchung zwischen eigenen Konten', notRental: 'gehört nicht zur Vermietung', other: 'anderer Grund' } },
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
+  settings: { open_with: BROWSER_LABELS },
   cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
   cost_items: { room_split: { area: 'Fläche', persons: 'Personentagen' } },
   assessments: { source: { ki: 'KI', 'e-rechnung': 'E-Rechnung' } },

@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm'
 import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
   UnitUsage,
+  BrowserId,
   AgreedOtherwise,
   AiJsonMode,
   AiProviderKind,
@@ -2042,6 +2043,10 @@ export const settings = sqliteTable(
     updateDismissed: text('update_dismissed'),
     // Der Hinweis auf das Programmfenster (#517) mit „Später“ weggeklickt: die installierte Version, bei der das geschah.
     desktopHintDismissed: text('desktop_hint_dismissed'),
+    // Womit sich Mietfuchs beim Start öffnet (#735): die Kennung eines Browsers (BROWSER_IDS in shared/browsers.ts), ohne Wert der
+    // Standardbrowser. Bewusst ohne Bedingung: Ein weiterer Browser bräuchte sonst einen Neubau der Tabelle; eine
+    // unbekannte Kennung (etwa aus einem Backup einer neueren Fassung) liest read.ts als „ohne Wert“.
+    openWith: text('open_with').$type<BrowserId>(),
     // Die Einstellungen der KI für Fortgeschrittene. Sie sind einzelne Werte mit einem
     // Wertebereich und gehören deshalb hierher; was es je Platz zweimal gibt, steht in
     // `ai_slots`.

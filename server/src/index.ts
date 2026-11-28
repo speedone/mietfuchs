@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
 import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
 import { BACKUP_TEMP_PREFIX, cleanBackupTempDirs, cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
-import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UpdateStatus, UploadEntry, UploadLinks } from '../../shared/types.ts'
+import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, BrowserChoice, BrowserId, Extraction, Settings, UpdateStatus, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, bookingTitle, parseDecisions } from './bookingPlan.ts'
 import { followInvoiceDate, forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
@@ -118,6 +118,7 @@ import { createUpdateChecker, forOtherDevice, mayAskGitHub, UPDATE_URL } from '.
 import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './version.ts'
 import { routePath } from './routePath.ts'
 import { ciSet } from './ci.ts'
+import { acceptOpenWith, asBrowserId, browserPlan, findBrowsers, launchBrowser, systemProbe, usableBrowserEnv } from './browser.ts'
 import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, SILENT_WAIT_MS, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy, originHostRefusal } from './requestGuard.ts'
 import { authSetting, fromThisComputer as fromThisComputerAt, readEnvPassword } from './access.ts'
@@ -479,14 +480,27 @@ function fixedByEnv(settings: Settings = storedSettings): string[] {
 // `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.ts), nie welcher.
 // `aiExternal` sagt je Platz, ob die Adresse aus dem Haus zeigt und die Belege deshalb erst nach
 // einer Bestätigung dorthin gehen. So entscheidet allein der Server, was als extern gilt.
-function settingsForClient(stored: Settings = storedSettings) {
+// `req`: für die Wahl des Browsers (#735), ob die Anfrage vom Rechner selbst kommt
+function settingsForClient(req: Request, stored: Settings = storedSettings) {
   // Name und Adresse gehören seit #92 zum Objekt. Die Spalten stehen noch da, weil der
   // eingefrorene Eingang sie schreibt und Migration 0001 sie abliest; ausgeliefert werden sie
   // nicht mehr, sonst zeigte die Oberfläche zwei Wahrheiten.
   const { houseName: _houseName, address: _address, ...settings } = effectiveSettings(stored)
   const aiExternal = { text: isExternalUrl(settings.ai.text.url), images: settings.ai.images ? isExternalUrl(settings.ai.images.url) : false }
-  return { ...settings, fixedByEnv: fixedByEnv(stored), aiKeys: keyInfo(), aiExternal }
+  return { ...settings, fixedByEnv: fixedByEnv(stored), aiKeys: keyInfo(), aiExternal, ...(OPENS_BROWSER ? { browsers: browserChoice(req) } : {}) }
 }
+
+// „Mietfuchs öffnen mit“ (#735): nur, wo Mietfuchs beim Start selbst einen Browser öffnet (Programmdatei, Linux-Paket,
+// Programmdatei aus dem Store), nicht im Programmfenster, in Docker oder bei `npm start`. Gesucht wird je Anfrage (ein paar
+// Dateiabfragen), damit ein eben installierter Browser ohne Neustart in der Liste steht.
+const OPENS_BROWSER = STANDALONE && !IN_WINDOW
+// Ändern nur am Rechner selbst (Durchsicht K7, wie die Update-Prüfung im Fenster): Womit sich Mietfuchs hier öffnet,
+// entscheidet, wer davor sitzt, nicht ein Handy im Heimnetz.
+function browserChoice(req: Request): BrowserChoice {
+  const probe = systemProbe()
+  return { found: findBrowsers(probe).map(({ id, label }) => ({ id, label })), fromEnv: usableBrowserEnv(probe), atThisComputer: fromThisComputer(req) }
+}
+const OPEN_WITH_HERE = 'Womit sich Mietfuchs beim Start öffnet, legen Sie nur am Rechner fest, auf dem Mietfuchs läuft.'
 
 // Im Fenster gehört einiges an den Rechner selbst, nicht ans Handy im Heimnetz (Durchsicht vor 0.15.0, K6): Beenden
 // (aus dem Heimnetz beendete es das Fenster mit), KI-Schlüssel und die Bestätigung externer Dienste, und die Zustimmung
@@ -521,7 +535,7 @@ const withShownDefaults = (x: Record<string, unknown>, missingToo = false): Reco
   return out
 }
 const SETTINGS_STALE = 'Die Einstellungen wurden inzwischen geändert. Gespeichert wurde nichts, damit diese Änderung nicht verloren geht.'
-app.get('/api/settings', (req, res) => res.json(settingsForClient()))
+app.get('/api/settings', (req, res) => res.json(settingsForClient(req)))
 app.put('/api/settings', async (req, res) => {
   const body = bodyObject(req)
   // Mitgeschickt, aber unverändert, geht durch: Ein Tab schickt die Einstellungen vielleicht ganz (K6, oben)
@@ -530,7 +544,8 @@ app.put('/api/settings', async (req, res) => {
   }
   // `houseName` und `address` schickt nur ein Tab von vor #92; sie gehören jetzt zum Objekt und
   // werden hier verworfen, statt eine Spalte zu beschreiben, die niemand mehr liest.
-  const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, houseName, address, ifUnchanged, ...changes } = body
+  // `browsers` liefert nur der Server (#735); `openWith` wird unten geprüft und eigens gesetzt
+  const { fixedByEnv, aiKeys, aiExternal, browsers, openWith, ai, ollamaUrl, ollamaModel, houseName, address, ifUnchanged, ...changes } = body
   // Zwei Fenster, eine Zeile (Systemprüfung): Die Karte schickt die Schlüssel mit, die sie schreibt, wie sie sie geladen
   // hat (`ifUnchanged`); gleicht einer dem Stand von jetzt nicht mehr, wird nichts gespeichert, und die Antwort nennt
   // diesen Stand. Verglichen wird mit dem, was `GET /api/settings` ausliefert (wirksame KI-Werte), denn das hat die
@@ -556,10 +571,20 @@ app.put('/api/settings', async (req, res) => {
       for (const [key, label] of [['printLetter', '„Anschreiben mitdrucken“'], ['printFooter', '„Fußzeile mit Kontakt und Bank“'], ['printPaymentQr', '„QR-Code zum Bezahlen bei Nachzahlung“']] as const) {
         if (Object.hasOwn(changes, key) && changes[key] !== null && typeof changes[key] !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
       }
+      // Womit sich Mietfuchs öffnet (#735): nur eine Kennung eines hier gefundenen Browsers, nie ein Pfad oder Befehl, und
+      // geändert nur am Rechner selbst; unverändert Mitgeschicktes geht auch von einem anderen Gerät durch
+      if (Object.hasOwn(body, 'openWith')) {
+        const same = (openWith ?? null) === (stored.openWith ?? null) || (openWith === '' && !stored.openWith)
+        if (!same && !fromThisComputer(req)) throw Object.assign(new Error(OPEN_WITH_HERE), { status: 403 })
+        const accepted = acceptOpenWith(openWith, { stored: stored.openWith ?? null, found: OPENS_BROWSER ? browserChoice(req).found.map((b) => b.id) : null })
+        if ('error' in accepted) throw new LetterInputError(accepted.error)
+        if (accepted.value === null) delete next.openWith
+        else next.openWith = accepted.value
+      }
       // `changes` trägt alles, was nicht KI ist. Unbekannte Schlüssel kommen hier zwar noch mit,
       // finden in den Spalten aber keinen Ort mehr und sind nach dem Zurücklesen verschwunden (#60).
       Object.assign(next, changes)
-      const current = settingsForClient(stored)
+      const current = settingsForClient(req, stored)
       if (isObject(ifUnchanged) && seenPartChanged(withShownDefaults(ifUnchanged), withShownDefaults(current, true)) && recordMark(next) !== recordMark(stored)) {
         throw new StaleRecordError(SETTINGS_STALE, current)
       }
@@ -570,7 +595,7 @@ app.put('/api/settings', async (req, res) => {
     return res.status(statusOf(err)).json({ error: messageOf(err) })
   }
   await refreshSettings()
-  res.json(settingsForClient())
+  res.json(settingsForClient(req))
 })
 
 // API-Schlüssel haben eigene Routen statt PUT /api/settings: Ein Schlüssel geht nur zum Server,
@@ -616,7 +641,7 @@ app.post('/api/ai/consent', async (req, res) => {
     await writeSettings(db, next)
   })
   await refreshSettings()
-  res.json(settingsForClient())
+  res.json(settingsForClient(req))
 })
 
 app.delete('/api/ai/consent/:slot', async (req, res) => {
@@ -630,7 +655,7 @@ app.delete('/api/ai/consent/:slot', async (req, res) => {
     await writeSettings(db, next)
   })
   await refreshSettings()
-  res.json(settingsForClient())
+  res.json(settingsForClient(req))
 })
 
 // ---------- Der Zugang zu den Daten ----------
@@ -5316,7 +5341,8 @@ app.get('/healthz', (req, res) => {
   // `dataDir`: Daran erkennt ein Mietfuchs auf einem anderen Port, ob es denselben Ordner nimmt (instanceGuard.ts)
   // `tls`: Antwortet derselbe Port auch über HTTPS (#528, Schritt 2)? Für die Prüfungen, das Fenster braucht es nicht
   // Ein umgezogener Ordner wird nur gelesen, auch keine Schreibprobe (Durchsicht Daten K7)
-  const report = { ...healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState(), readOnly: movedNow() }), dataDir: DATA_DIR, tls: TLS_PAIR !== null }
+  // `openWith` (#735): Ein zweiter Start öffnet diese Oberfläche mit dem hier gewählten Browser (nur die Kennung)
+  const report = { ...healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState(), readOnly: movedNow() }), dataDir: DATA_DIR, tls: TLS_PAIR !== null, ...(OPENS_BROWSER && storedSettings.openWith ? { openWith: storedSettings.openWith } : {}) }
   // Mit Anmeldung von außen ohne Sitzung nur Name und Zustand (#528): Version und Datenordner gehen niemanden im Netz an
   if (res.locals.shortHealth === true) return void res.status(report.status === 'ok' ? 200 : 503).json({ app: report.app, status: report.status })
   // Umgezogen (#517): Die Oberfläche sagt es oben auf jeder Seite (Database.tsx)
@@ -5533,34 +5559,26 @@ function spawnDetached(cmd: string, args: string[], options: import('node:child_
   return spawn(cmd, args, options)
 }
 
-// Standard-Browser mit der App öffnen (nur in der gepackten Binary - im Dev stört das).
-function openBrowser(url: string): void {
+// Die App im Browser öffnen (nur in der gepackten Binary - im Dev stört das). Womit (#735): die Wahl aus den
+// Einstellungen (`choice`), sonst die Umgebungsvariable BROWSER, sonst der Standardbrowser (browserPlan in browser.ts).
+// Gewählter Browser und BROWSER ohne Shell. Scheitert ihr Start, versucht Mietfuchs den Standardbrowser.
+function openBrowser(url: string, choice: BrowserId | null): void {
   // Im Bündel des Programmfensters nie gebraucht (das Fenster öffnet sich selbst, „Im Browser öffnen“ im Menü geht über
   // Electrons shell.openExternal). Mit IN_BUNDLE = true entfernt der Bündler den Rest samt child_process.
   if (IN_BUNDLE) return
-  const [cmd, args]: [string, string[]] =
-    process.platform === 'win32'
-      ? ['cmd', ['/c', 'start', '""', url]]
-      : process.platform === 'darwin'
-        ? ['open', [url]]
-        : ['xdg-open', [url]]
-  try {
-    // windowsHide (#500): Die Store-Fassung hat kein Konsolenfenster, ein Kindprozess cmd.exe
-    // bekäme sonst bei jedem Start ein eigenes, das kurz aufblitzt.
-    const child = spawnDetached(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
-    // Fehlt das Programm, wirft spawn nicht, sondern meldet 'error' asynchron auf dem
-    // Kindprozess - der try/catch greift dann nicht mehr. Ohne Zuhörer wird daraus ein
-    // unbehandelter Fehler, der den Server beendet, obwohl er schon lauscht. Auf einem
-    // Linux-Server ohne xdg-open (headless, Container, SSH) war die Binary damit nicht
-    // startbar.
-    child.on('error', () => {
-      console.log(`Kein Browser gestartet (${cmd} nicht verfügbar) - bitte ${url} von Hand öffnen.`)
-    })
-    child.unref()
-  } catch {
-    /* egal - die URL steht in der Meldung darüber */
-  }
+  const plan = browserPlan({ choice, url, probe: systemProbe() })
+  for (const note of plan.notes) console.log(note)
+  launchBrowser(plan, {
+    url,
+    platform: process.platform,
+    fallBack: plan.source !== 'default',
+    // windowsHide (#500): Die Store-Fassung hat kein Konsolenfenster, ein Kindprozess cmd.exe bekäme sonst bei jedem
+    // Start ein eigenes, das kurz aufblitzt.
+    spawn: (cmd, args) => spawnDetached(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true }),
+    log: (line) => console.log(line),
+  })
 }
+
 
 // Bewusst NKA_PORT statt PORT: generische PORT-Variablen (z. B. von Preview-Tools)
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
@@ -5762,16 +5780,17 @@ const { server } = dual
 const PROBE_ATTEMPT_MS = 2000
 const PROBE_TOTAL_MS = 30000
 
-async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
+// Ergibt die Antwort des laufenden Mietfuchs, sonst null. Seine Wahl des Browsers (#735) nimmt der zweite Start mit.
+async function mietfuchsAlreadyOn(url: string): Promise<{ openWith: BrowserId | null } | null> {
   const deadline = Date.now() + PROBE_TOTAL_MS
   for (let attempt = 1; ; attempt++) {
     try {
       const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(PROBE_ATTEMPT_MS) })
       const report: unknown = await res.json()
-      return isObject(report) && report.app === 'mietfuchs'
+      return isObject(report) && report.app === 'mietfuchs' ? { openWith: asBrowserId(report.openWith) } : null
     } catch (err) {
       const silent = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
-      if (!silent || Date.now() + PROBE_ATTEMPT_MS > deadline) return false
+      if (!silent || Date.now() + PROBE_ATTEMPT_MS > deadline) return null
       if (attempt === 1) console.log(`Auf ${url} antwortet noch nichts. Mietfuchs fragt bis zu ${PROBE_TOTAL_MS / 1000} Sekunden lang erneut nach.`)
     }
   }
@@ -5798,9 +5817,10 @@ async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
     const running = `http://127.0.0.1:${PORT}`
     // Ein zweiter Klick im Startmenü ist kein Fehler: Läuft dort schon Mietfuchs, gehört die
     // Oberfläche nach vorn (#45).
-    if (STANDALONE && await mietfuchsAlreadyOn(running)) {
+    const other = STANDALONE ? await mietfuchsAlreadyOn(running) : null
+    if (other) {
       console.log(`Mietfuchs läuft bereits auf ${running}. Die Oberfläche wird geöffnet.`)
-      if (!ciSet(process.env) && !IN_WINDOW) openBrowser(running)
+      if (!ciSet(process.env) && !IN_WINDOW) openBrowser(running, other.openWith)
       process.exit(0)
     }
     const message = `Port ${PORT} ist bereits belegt. Dort antwortet ein anderes Programm. Mit NKA_PORT lässt sich ein anderer Port setzen.`
@@ -5885,7 +5905,7 @@ if (STANDALONE && !MOVED_AWAY) {
     // Die Programmdatei öffnet die laufende Oberfläche, wie beim belegten Port (#45)
     console.log(`${message} Die Oberfläche wird geöffnet.`)
     notifyDesktop(message)
-    if (!ciSet(process.env)) openBrowser(twin.url)
+    if (!ciSet(process.env)) openBrowser(twin.url, twin.openWith)
     process.exit(0)
   }
   if (writeRunFile(DATA_DIR, { version: 1, port: self.port, pid: process.pid, startedAt: new Date().toISOString(), appVersion: APP_VERSION })) {
@@ -6119,7 +6139,7 @@ if (!MOVED_AWAY) {
       : 'Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
     // In der CI (GitHub setzt CI=true) prüft ein Skript die Programmdatei; ein Browserfenster
     // auf dem Runner nützt dort niemandem.
-    if (!ciSet(process.env)) openBrowser(ACCESS.browserUrl(url))
+    if (!ciSet(process.env)) openBrowser(ACCESS.browserUrl(url), storedSettings.openWith ?? null)
   }
 }
 startupDone = true

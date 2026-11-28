@@ -1123,6 +1123,9 @@ export type Settings = {
   updateCheck?: 'on' | 'off'
   updateDismissed?: string // Version, deren Hinweis mit „Später“ ausgeblendet wurde
   desktopHintDismissed?: string // installierte Version, bei der der Hinweis auf das Programmfenster (#517) „Später“ bekam
+  // Womit sich Mietfuchs beim Start öffnet (#735): ein auf dem Rechner gefundener Browser, ohne Angabe der Standardbrowser.
+  // Nur die Kennung, nie ein Pfad (server/src/browser.ts).
+  openWith?: BrowserId
   // KI-Belegauswertung (#18), siehe server/src/ai/settings.ts. ollamaUrl und ollamaModel oben
   // spiegeln Adresse und Modell, solange Ollama der Standard-Anbieter ist.
   ai?: AiSettings
@@ -1134,7 +1137,17 @@ export type Settings = {
   // Adresse aus dem Haus zeigt
   aiKeys?: Record<AiSlotName, AiKeyInfo>
   aiExternal?: Record<AiSlotName, boolean>
+  // Nur vom Server, nie gespeichert: die Browser, die Mietfuchs auf diesem Rechner gefunden hat, und ob BROWSER gesetzt
+  // ist. Fehlt, wo Mietfuchs beim Start keinen Browser öffnet (Programmfenster, Docker, npm).
+  browsers?: BrowserChoice
 }
+
+// ---------- Womit sich Mietfuchs öffnet (#735) ----------
+
+export type BrowserId = 'firefox' | 'chromium' | 'chrome' | 'edge' | 'brave'
+// `fromEnv`: BROWSER nennt ein Programm, das Mietfuchs findet. `atThisComputer`: Die Anfrage kommt vom Rechner selbst;
+// nur dort lässt sich die Wahl ändern.
+export type BrowserChoice = { found: { id: BrowserId, label: string }[], fromEnv: boolean, atThisComputer: boolean }
 
 // ---------- KI-Anbieter (#18) ----------
 

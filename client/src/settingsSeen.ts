@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { api } from './api'
 import { changedFields, isStale, sameRecord, type StaleFields } from './staleRecord'
 import { formatIban, sameIban } from '../../shared/iban.ts'
+import { asBrowserId, BROWSER_LABELS } from '../../shared/browsers.ts'
 
 // Zwei Fenster, dieselben Einstellungen (staleRecord.ts für Datensätze mit Kennung). Die Einstellungen sind eine Zeile,
 // in die mehrere Karten je ihren Teil schreiben, und ihre Antwort ist angereichert (`fixedByEnv`, `aiKeys`, wirksame
@@ -59,6 +60,12 @@ export const PRINT_STALE_FIELDS: StaleFields = {
   printAttachments: { label: 'Belegkopien', now: onOff },
   printFooter: { label: 'Fußzeile mit Kontakt und Bank', now: onOff },
   printPaymentQr: { label: 'QR-Code zum Bezahlen', now: onOff },
+}
+
+// „Mietfuchs öffnen mit“ (#735, Karte „Beim Start“): die Kennung eines Browsers, ohne Wert der Standardbrowser.
+export const BROWSER_KEYS = ['openWith'] as const
+export const BROWSER_STALE_FIELDS: StaleFields = {
+  openWith: { label: 'Mietfuchs öffnen mit', now: (v) => { const id = asBrowserId(v); return id ? BROWSER_LABELS[id] : 'Standardbrowser' } },
 }
 
 // Die KI-Belegauswertung: alles, was die Karte schreibt. `consent` ändert nur die eigene Route, die API-Schlüssel stehen

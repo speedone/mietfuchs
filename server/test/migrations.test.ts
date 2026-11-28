@@ -274,6 +274,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // (Neubau von `co2_statements` wegen der Bedingung an `method`). Eingetragen vor dem Merge; wird vor dem Merge ein
   // anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0108_messdienst_sammelbetrag': '4698a3a1257f0578f15e9cab867866dfef2824201c71250bdd0ff17bdb97b152',
+  // #735: womit sich Mietfuchs beim Start öffnet (`settings.open_with`). Eingetragen vor dem Merge; wird vor dem Merge
+  // ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0109_browser_waehlen': '2b2a0caa33240a8c8473e144bda2258d97bb1b2526336356960c7f31a6eda233',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

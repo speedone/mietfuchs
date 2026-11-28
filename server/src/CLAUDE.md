@@ -2028,3 +2028,21 @@ der Datenordner den Vermerk des Umzugs trägt (`movedAway`, je Anfrage `readMove
 auch ohne Zustimmung da, denn er braucht keine Anfrage. Die Karte im Cockpit (`DesktopHint`, Logik in client/src/update.ts)
 bildet ihre Links aus festen Adressen (Store-Seite mit der ID aus scripts/store-submit.mjs, `releases/latest`), nie
 aus der Antwort von GitHub; „Später“ speichert die installierte Version in `settings.desktopHintDismissed`.
+
+## Browser beim Start (#735)
+
+Nur wo Mietfuchs beim Start selbst einen Browser öffnet (`OPENS_BROWSER` in index.ts: `STANDALONE && !IN_WINDOW`, also
+`binary`, `package` und die Programmdatei aus dem Store); unter `CI` öffnet sich nie einer. Logik in
+[browser.ts](browser.ts), Plattform, Umgebung und Dateisystem hineingereicht (`BrowserProbe`, `systemProbe` nur in
+index.ts). **Vorrang** (`browserPlan`): `settings.openWith`, dann `BROWSER`, dann der Standardbrowser (`xdg-open`,
+`open`, `cmd /c start`); fehlt der gewählte, geht es mit dem Nächsten weiter, mit Satz in der Konsole, und scheitert
+sein Start (spawn wirft oder meldet `error`), versucht `launchBrowser` den Standardbrowser. **Sicherheit**: gespeichert wird nur eine Kennung
+aus `BROWSER_IDS` (shared/browsers.ts, Spalte `settings.open_with` in Schritt 0109 ohne Bedingung, damit ein weiterer Browser keinen
+Neubau braucht; read.ts liest eine unbekannte als „ohne Wert“). `PUT /api/settings` nimmt nur `null`, den gespeicherten
+Wert oder eine Kennung eines hier gefundenen Browsers (`acceptOpenWith`, 400 sonst, außerhalb von `OPENS_BROWSER` jede
+Kennung), eine Änderung nur vom Rechner selbst (`fromThisComputer`, sonst 403; Unverändertes geht durch). Gestartet wird nur, was `findBrowsers` unter festen Namen an festen Orten findet (absolute PATH-Ordner,
+`/snap/bin`, `/var/lib/snapd/snap/bin`, Flatpak; `/Applications`; Program Files, `%LOCALAPPDATA%`). Gewählter Browser und
+`BROWSER` starten ohne Shell, der Standardbrowser unter Windows weiter über `cmd /c start`. `BROWSER` setzt der Nutzer selbst;
+ein Eintrag mit Ordner muss absolut sein, ein Name wird nur in absoluten PATH-Ordnern gesucht, unter Windows nur eine `.exe`. `GET /api/settings` trägt
+`browsers` (gefunden, je Anfrage gesucht; `fromEnv` nur, wenn BROWSER etwas Auffindbares nennt; `atThisComputer`), `/healthz` (volle Antwort) `openWith`, damit ein zweiter Start
+(belegter Port, Zwilling in instanceGuard.ts) dieselbe Wahl nimmt, ohne die Datenbank zu öffnen.
