@@ -13,10 +13,11 @@ import { changeTenant, closeSettlement, createEntity, createProperty, removeEnti
 import { selfClosedEndsOf, snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { createHeatingPlant, heatingPlantViolations, updateHeatingPlant } from '../src/db/heating.ts'
-import { differsFromLine, removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from '../src/db/heatingSelf.ts'
+import { CaptureQuestion, differsFromLine, removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from '../src/db/heatingSelf.ts'
+import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { heatingPlantUnits } from '../src/db/schema.ts'
+import { heatingPeriods, heatingPlants, heatingPlantUnits } from '../src/db/schema.ts'
 import { computeSettlement } from '../src/calc.ts'
 import { eq } from 'drizzle-orm'
 
@@ -322,4 +323,141 @@ test('Kesseltausch: erstmals ein Warmwasser-Anteil weicht nicht von der Linie ab
   assert.equal(differsFromLine({ heatConsumptionPct: 60, waterConsumptionPct: null }, { heating: 60, water: 50 }), false)
   assert.equal(differsFromLine({ heatConsumptionPct: 60, waterConsumptionPct: 55 }, { heating: 60, water: 50 }), true)
   assert.equal(differsFromLine({ heatConsumptionPct: 60, waterConsumptionPct: null }, { heating: 65, water: 50 }), true)
+})
+
+// #690 Punkt 3: Die Erfassung ließ sich nur über „Niemand“ ändern, und das verwarf Anteile, Teil und Ziel jeder Position.
+test('#690: nur die Erfassung ändern (`captureOnly`): Anteile, Warmwasser, Maßstab, Teil und Ziel der Positionen bleiben', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
+    // Ohne eigene Abrechnung in dieser Heizperiode gibt es nichts, was bleiben könnte.
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'hca', captureOnly: true }, '2026-02-01', newId)), status(400, /nur bei einer eigenen Heizkostenabrechnung/))
+    await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, heatConsumptionPct: 60, waterConsumptionPct: 55, capture: 'hca', items }, '2026-02-01', newId))
+    await opened.write((db) => db.update(heatingPeriods).set({ dhwMethod: 'areaFormula' }).where(eq(heatingPeriods.plantId, 'hp')))
+    const before = await opened.read(readStock)
+    const metersBefore = before.meters.length
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'verdunster', captureOnly: true }, '2026-02-01', newId)), status(400, /Erfassung/))
+    // Mitten in der begonnenen Heizperiode: eine Tatsache, kein Maßstab nach § 6 Abs. 4.
+    const done = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'serviceValues', captureOnly: true }, '2026-02-01', newId))
+    assert.deepEqual([done?.plant.method, done?.plant.capture, done?.plant.hotWater, done?.converted], ['self', 'serviceValues', 'combined', 0])
+    const after = await opened.read(readStock)
+    assert.deepEqual(after.heatingPeriodRows, before.heatingPeriodRows, 'Anteile, Wärmeschutz und Verfahren des Warmwassers bleiben')
+    assert.deepEqual(after.costItems, before.costItems, 'Schlüssel, Teil und Ziel bleiben')
+    assert.equal(after.meters.length, metersBefore, 'beim Ablesedienst entsteht kein Zähler')
+    const plant = after.heatingPlants.find((p) => p.id === 'hp') ?? assert.fail('Anlage fehlt')
+    assert.deepEqual((plant.selfSpans ?? []).map((s) => [s.from, s.until, s.capture, s.hotWater]), [['2025-01', null, 'serviceValues', 'combined']])
+    assert.equal(plant.areaBasisHeat, before.heatingPlants.find((p) => p.id === 'hp')?.areaBasisHeat)
+    // Zurück zu Wärmezählern: die fehlenden Wärmezähler der Wohnungen entstehen, sonst nichts.
+    const back = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'heatMeter', captureOnly: true }, '2026-02-01', newId))
+    assert.deepEqual(back?.created.map((m) => [m.unitId, m.type]).sort(), [['a', 'waerme'], ['b', 'waerme'], ['c', 'waerme']])
+    assert.deepEqual((await opened.read(readStock)).heatingPeriodRows, before.heatingPeriodRows)
+  })
+})
+
+// #690, Durchsicht: Was nach dem Wechsel der Erfassung nicht mehr zählt, sagt der Server vorher (409 mit `question:
+// 'capture'`), statt es still liegen zu lassen. Gelöscht wird nichts; mit `confirmCapture` wird gewechselt.
+test('#690: Wechsel der Erfassung fragt nach, wenn Werte des Ablesedienstes oder Ablesungen nicht mehr zählen; gelöscht wird nichts', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
+    await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, capture: 'serviceValues', items }, '2026-02-01', newId))
+    await opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 900, heatUnit: 'units' }] }))
+    const before = await opened.read(readStock)
+    const frage = opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'hca', captureOnly: true }, '2026-02-01', newId))
+    await assert.rejects(frage, (e: unknown) => e instanceof CaptureQuestion && e.status === 409 &&
+      /Heizperiode 2025/.test(e.message) && /Werte des Ablesedienstes für 1 Wohnung/.test(e.message) && /Gelöscht wird nichts/.test(e.message))
+    assert.deepEqual((await opened.read(readStock)).heatingPlants, before.heatingPlants, 'ohne Bestätigung ändert sich nichts')
+    const done = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'hca', captureOnly: true, confirmCapture: true }, '2026-02-01', newId))
+    assert.equal(done?.plant.capture, 'hca')
+    assert.equal((await opened.read(readStock)).heatingServiceValues.length, 1, 'die Werte bleiben gespeichert')
+    // Zurück: Heizkostenverteiler ohne Ablesung, nichts wird unbrauchbar, also keine Frage.
+    const back = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'serviceValues', captureOnly: true }, '2026-02-01', newId))
+    assert.equal(back?.plant.capture, 'serviceValues')
+    // Ablesungen eines Heizkostenverteilers ab dem Beginn der Heizperiode zählen nach dem Wechsel nicht mehr.
+    await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'hca', captureOnly: true, confirmCapture: true }, '2026-02-01', newId))
+    await opened.write(async (db) => {
+      await createEntity(db, 'meters', 'hkv-a', { propertyId: 'objekt-1', unitId: 'a', name: 'HKV Bad', type: 'hkv', unit: 'Einheiten', hcaScale: 'product' })
+      await createEntity(db, 'readings', 'r1', { meterId: 'hkv-a', date: '2025-01-01', value: 0 })
+      await createEntity(db, 'readings', 'r2', { meterId: 'hkv-a', date: '2025-12-31', value: 400 })
+    })
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'heatMeter', captureOnly: true }, '2026-02-01', newId)),
+      (e: unknown) => e instanceof CaptureQuestion && /Ablesungen von 1 Heizkostenverteiler/.test(e.message) && !/Ablesedienst/.test(e.message))
+  })
+})
+
+// #690, Durchsicht: Eine Berichtigung zurück auf die Erfassung der Spanne davor ergab zwei aneinanderstoßende Spannen
+// mit derselben Einstellung; sie sind eine.
+test('#690: zurück zur Erfassung der vorigen Spanne führt die Spannen wieder zusammen', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
+    await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, capture: 'hca', items }, '2026-02-01', newId))
+    await opened.write((db) => setUpSelf(db, 'hp', { period: '2026-01', capture: 'serviceValues', captureOnly: true }, '2026-02-01', newId))
+    const back = await opened.write((db) => setUpSelf(db, 'hp', { period: '2026-01', capture: 'hca', captureOnly: true }, '2026-02-01', newId))
+    assert.deepEqual((back?.plant.selfSpans ?? []).map((s) => [s.from, s.until, s.capture]), [['2025-01', null, 'hca']])
+  })
+})
+
+// #690, Durchsicht S4 (Geld): Ein Wechsel ab 2026 lässt 2025 centgleich, und das Zurückwechseln ergibt 2026 centgleich
+// wie vorher. Gerechnet wird mit Heizkostenverteilern, die wirklich abgelesen sind.
+const geld = (s: ReturnType<typeof computeSettlement>) => ({
+  mieter: s.statements.map((st) => [st.tenancyId, st.totalShareCents, st.balanceCents]),
+  vermieter: s.landlord.rows.map((r) => [r.costItemId, r.shareCents]),
+})
+const jahr = async (opened: Opened, key: string) =>
+  computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', periodOfKey(CALENDAR_RULES, periodKey(key)) ?? assert.fail('kein Zeitraum')))
+async function hkvJeWohnung(opened: Opened, dates: readonly string[]): Promise<void> {
+  await opened.write(async (db) => {
+    for (const [u, step] of [['a', 300], ['b', 500], ['c', 200]] as const) {
+      await createEntity(db, 'meters', `hkv-${u}`, { propertyId: 'objekt-1', unitId: u, name: `HKV ${u}`, type: 'hkv', unit: 'Einheiten', hcaScale: 'product' })
+      for (const [i, date] of dates.entries()) await createEntity(db, 'readings', `r-${u}-${i}`, { meterId: `hkv-${u}`, date, value: i * step + (u === 'b' ? i * i * 40 : 0) })
+    }
+  })
+}
+const OHNE_WW = { ...SETUP, hotWater: 'none', waterConsumptionPct: null, dhwHeatMeter: false, capture: 'hca' }
+
+test('#690 S4: Geld vor dem Wechsel, nach dem Wechsel und nach dem Zurückwechseln', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', { ...OHNE_WW, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2026-02-01', newId))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas26', { propertyId: 'objekt-1', period: '2026-01', category: HEATING_CATEGORY, description: 'Gas 2026', amountCents: 540000, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'fuel', heatingTarget: 'heating' }))
+    await hkvJeWohnung(opened, ['2025-01-01', '2025-12-31', '2026-12-31'])
+    const vorher25 = geld(await jahr(opened, '2025-01'))
+    const vorher26 = geld(await jahr(opened, '2026-01'))
+    assert.ok(vorher26.mieter.every(([, cents]) => typeof cents === 'number' && cents > 0), 'nach Verbrauch verteilt')
+    const spansBefore = (await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.selfSpans
+    await opened.write((db) => setUpSelf(db, 'hp', { period: '2026-01', capture: 'serviceValues', captureOnly: true, confirmCapture: true }, '2026-02-01', newId))
+    assert.deepEqual(geld(await jahr(opened, '2025-01')), vorher25, '2025 centgleich')
+    assert.notDeepEqual(geld(await jahr(opened, '2026-01')), vorher26, '2026 rechnet ohne die Heizkostenverteiler')
+    await opened.write((db) => setUpSelf(db, 'hp', { period: '2026-01', capture: 'hca', captureOnly: true }, '2026-02-01', newId))
+    assert.deepEqual(geld(await jahr(opened, '2026-01')), vorher26, 'zurückgewechselt centgleich')
+    assert.deepEqual(geld(await jahr(opened, '2025-01')), vorher25)
+    assert.deepEqual((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.selfSpans, spansBefore)
+  })
+})
+
+// Heizperiode Juli bis Juni: Die Abrechnung 2026 enthält die Heizperiode 2025/2026 und ist abgeschlossen. Ein Wechsel in ihr
+// wird abgelehnt, ab 2026/2027 geht er, und die Rechnung des Jahres 2026 bleibt centgleich.
+test('#690 S4: Heizperiode Juli bis Juni mit abgeschlossener Abrechnung bleibt beim Wechsel centgleich', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      for (const [u, area] of [['a', 60], ['b', 80], ['c', 60]] as const) {
+        await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: area, participates: true })
+        await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, start: '2020-01-01' })
+      }
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await db.update(heatingPlants).set({ periodStartMonth: 7 }).where(eq(heatingPlants.id, 'hp'))
+    })
+    await opened.write((db) => setUpSelf(db, 'hp', { ...OHNE_WW, period: '2025-07' }, '2026-08-01', newId))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas26', { propertyId: 'objekt-1', period: '2025-07', category: HEATING_CATEGORY, description: 'Gas 2025/2026', amountCents: 480000, taxYear: 2026, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'fuel', heatingTarget: 'heating' }))
+    await hkvJeWohnung(opened, ['2025-07-01', '2026-06-30', '2027-06-30'])
+    const s26 = await jahr(opened, '2026-01')
+    const vorher = geld(s26)
+    assert.ok(vorher.mieter.every(([, cents]) => typeof cents === 'number' && cents > 0), 'nach Verbrauch verteilt')
+    await opened.write((db) => closeSettlement(db, { id: 'p2026', propertyId: 'objekt-1', period: periodKey('2026-01'), closedAt: '2027-01-15', sentAt: null, settlement: s26 }))
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { period: '2025-07', capture: 'serviceValues', captureOnly: true, confirmCapture: true }, '2026-08-01', newId)), status(409, /abgeschlossen/))
+    const done = await opened.write((db) => setUpSelf(db, 'hp', { period: '2026-07', capture: 'serviceValues', captureOnly: true, confirmCapture: true }, '2026-08-01', newId))
+    assert.deepEqual((done?.plant.selfSpans ?? []).map((s) => [s.from, s.until, s.capture]), [['2025-07', '2026-07', 'hca'], ['2026-07', null, 'serviceValues']])
+    assert.deepEqual(geld(await jahr(opened, '2026-01')), vorher, 'die Heizperiode 2025/2026 rechnet weiter mit Heizkostenverteilern')
+  })
 })

@@ -513,7 +513,7 @@ export const pinSelfSpans = (p: Pick<HeatingPlant, 'capture' | 'hotWater' | 'sel
   (p.selfSpans ?? []).map((s) => ({ ...s, capture: s.capture ?? p.capture ?? 'heatMeter', hotWater: s.hotWater ?? p.hotWater }))
 export const CAPTURE_VIA_SETUP =
   'Womit der Verbrauch erfasst wird, ändert sich nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
-  'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Eigene Heizkostenabrechnung einrichten“ ab der Heizperiode neu ein, in der die neuen Geräte zählen.'
+  'Ändern Sie es in den Stammdaten in der Karte „Heizung“ mit „Erfassung ändern“; Anteile, Teil und Ziel der Heizpositionen bleiben dabei, wie sie sind.'
 export const AREA_BASIS_VIA_SETUP =
   'Nach welchem Maßstab die Grundkosten der Heizung verteilt werden, legen Sie bei der eigenen Heizkostenabrechnung in „Heizkosten selbst abrechnen“ fest, ab einer Heizperiode (§ 6 Abs. 4 HeizkostenV). Gespeichert wurde nichts.'
 export const HOT_WATER_VIA_SETUP =

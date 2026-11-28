@@ -13,5 +13,12 @@ export async function lineRowsOf(db: Executor, plantId: string): Promise<{ merge
 }
 
 // Der Satz, wenn etwas vor dem Beginn der eigenen Abrechnung nach ihr gehen soll.
+const heatingPeriodName = (key: string): string =>
+  `${key.slice(0, 4)}${key.slice(5, 7) === '01' ? '' : `/${Number(key.slice(0, 4)) + 1} (ab ${key.slice(5, 7)}.${key.slice(0, 4)})`}`
 export const beforeBeginText = (begin: string): string =>
-  `Die eigene Heizkostenabrechnung dieser Anlage beginnt mit der Heizperiode ${begin.slice(0, 4)}${begin.slice(5, 7) === '01' ? '' : `/${Number(begin.slice(0, 4)) + 1} (ab ${begin.slice(5, 7)}.${begin.slice(0, 4)})`}. Davor gelten die bisherigen Schlüssel, denn der Anteil nach Verbrauch gilt nur für künftige Abrechnungszeiträume (§ 6 Abs. 4 HeizkostenV).`
+  `Die eigene Heizkostenabrechnung dieser Anlage beginnt mit der Heizperiode ${heatingPeriodName(begin)}. Davor gelten die bisherigen Schlüssel, denn der Anteil nach Verbrauch gilt nur für künftige Abrechnungszeiträume (§ 6 Abs. 4 HeizkostenV).`
+// #690, Durchsicht: Die Heizperiode liegt in einem früheren Zeitraum der eigenen Abrechnung (Erfassung oder
+// Warmwasserbereitung wurden für später geändert). Sie rechnet selbst ab; nur umgestellt wird sie hier nicht mehr.
+export const earlierSpanText = (period: string, laterFrom: string): string =>
+  `Die Heizperiode ${heatingPeriodName(period)} rechnet schon nach der eigenen Heizkostenabrechnung, mit der Erfassung und der Warmwasserbereitung, die für sie eingestellt waren; ab der Heizperiode ${heatingPeriodName(laterFrom)} gilt eine andere Einstellung. ` +
+  'Eine frühere Heizperiode lässt sich hier nicht nachträglich umstellen. Gespeichert wurde nichts. Wählen Sie den Zeitraum, ab dem die Änderung gelten soll, und ändern Sie die Erfassung dort.'

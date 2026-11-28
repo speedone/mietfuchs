@@ -12,13 +12,14 @@ import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { closeSettlement, createEntity } from '../src/db/repository.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
+import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { applySeparate, previewSeparate } from '../src/db/separateSettlement.ts'
 import { closeHeatingSettlement } from '../src/db/heatingSettlements.ts'
 import { readStock, type Stock } from '../src/db/read.ts'
 import { heatingPlants } from '../src/db/schema.ts'
 import { computeSettlement, rentLedger } from '../src/calc.ts'
 import { heatingSnapshotFor, snapshotFor } from '../src/snapshot.ts'
-import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { captureOf, plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { CALENDAR_RULES, calendarYearPeriod, periodContaining, periodKey, periodsBetween } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 
@@ -140,4 +141,96 @@ async function scenario(seed: number): Promise<void> {
 
 test('Invarianten 4 und 11: zufällige Abläufe mit Ein- und Ausschalten und Abschlüssen (Entwurf 12.3)', async () => {
   for (let seed = 1; seed <= 16; seed++) await scenario(seed)
+})
+
+// #690, Durchsicht S4: „Erfassung ändern“ (`captureOnly`) in zufälligen Abläufen mit Abschlüssen. Nach jedem Schritt
+// bleiben Heizperioden vor der gewählten und jede abgeschlossene Abrechnung centgleich; wird gleich danach zurückgewechselt,
+// rechnet jedes Jahr wie vor dem Schritt. Eine Ablehnung (abgeschlossen, frühere Spanne) ändert nichts.
+const CAPTURES = ['heatMeter', 'hca', 'serviceValues'] as const
+const SELF_YEARS = [2024, 2025, 2026, 2027]
+const money = (s: ReturnType<typeof computeSettlement>) => JSON.stringify({
+  mieter: s.statements.map((st) => [st.tenancyId, st.totalShareCents, st.balanceCents]),
+  vermieter: s.landlord.rows.map((row) => [row.costItemId, row.shareCents]),
+})
+async function captureScenario(seed: number): Promise<{ switched: number; reverted: number; changed: number }> {
+  const r = rng(seed * 7919)
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `mietfuchs-erfassung-${seed}-`))
+  const opened: OpenedDatabase = await openFreshDatabase(dataDir)
+  let ids = 0
+  const newId = () => `e${seed}-${++ids}`
+  try {
+    await opened.write(async (db) => {
+      for (const [u, area] of [['a', 60], ['b', 80], ['c', 50]] as const) {
+        await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: area, participates: true })
+        await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: u, persons: 1, start: '2020-01-01', prepayments: [{ from: '2020-01', monthlyCents: 15000 }] })
+      }
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+    })
+    const first = CAPTURES[pick(r, 3)] ?? 'hca'
+    await opened.write((db) => setUpSelf(db, 'hp', { period: '2024-01', heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'notApplies', hotWater: 'none', capture: first, dhwHeatMeter: false, totalHeatMeter: false }, '2027-02-01', newId))
+    await opened.write(async (db) => {
+      for (const y of SELF_YEARS) {
+        await createEntity(db, 'costItems', `gas${y}`, { propertyId: 'objekt-1', period: `${y}-01`, category: HEATING_CATEGORY, description: `Gas ${y}`, amountCents: 300000 + pick(r, 50) * 1000, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'fuel', heatingTarget: 'heating' })
+      }
+      for (const [u, type] of [['a', 'hkv'], ['b', 'hkv'], ['c', 'hkv'], ['a', 'waerme'], ['b', 'waerme'], ['c', 'waerme']] as const) {
+        const id = `${type}-${u}`
+        if (type === 'hkv') await createEntity(db, 'meters', id, { propertyId: 'objekt-1', unitId: u, name: id, type, unit: 'Einheiten', hcaScale: 'product' })
+        else if (!(await readStock(db)).meters.some((m) => m.unitId === u && m.type === 'waerme')) await createEntity(db, 'meters', id, { propertyId: 'objekt-1', unitId: u, name: id, type, unit: 'kWh' })
+        let value = 0
+        for (const y of [2023, ...SELF_YEARS]) {
+          await createEntity(db, 'readings', `${id}-${y}`, { meterId: (await readStock(db)).meters.find((m) => m.unitId === u && m.type === type)?.id ?? id, date: `${y}-12-31`, value })
+          value += 100 + pick(r, 900)
+        }
+      }
+    })
+    const closed = new Set<string>()
+    const count = { switched: 0, reverted: 0, changed: 0 }
+    const settlementOf = async (y: number) => money(computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', calendarYearPeriod(y))))
+    const all = async () => Object.fromEntries(await Promise.all(SELF_YEARS.map(async (y) => [y, await settlementOf(y)] as const)))
+    for (let step = 0; step < 5; step++) {
+      if (r() < 0.25) {
+        const y = SELF_YEARS.find((x) => !closed.has(`${x}-01`)) ?? 2027
+        if (!closed.has(`${y}-01`)) {
+          const stock = await opened.read(readStock)
+          await opened.write((db) => closeSettlement(db, { id: `p${y}`, propertyId: 'objekt-1', period: periodKey(`${y}-01`), closedAt: '2027-03-01', sentAt: null, settlement: computeSettlement(snapshotFor(stock, 'objekt-1', calendarYearPeriod(y))) }))
+          closed.add(`${y}-01`)
+        }
+        continue
+      }
+      const y = SELF_YEARS[pick(r, SELF_YEARS.length)] ?? 2026
+      const capture = CAPTURES[pick(r, 3)] ?? 'serviceValues'
+      const vorher = await all()
+      const plantBefore = (await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp') ?? assert.fail('keine Anlage')
+      const back = captureOf(plantBefore, `${y}-01`)
+      const ok = await opened.write((db) => setUpSelf(db, 'hp', { period: `${y}-01`, capture, captureOnly: true, confirmCapture: true }, '2027-02-01', newId)).then(() => true, () => false)
+      const nachher = await all()
+      if (ok) count.switched++
+      if (SELF_YEARS.some((x) => nachher[x] !== vorher[x])) count.changed++
+      for (const x of SELF_YEARS) {
+        if (!ok || x < y || closed.has(`${x}-01`)) assert.equal(nachher[x], vorher[x], `Fall ${seed}, Schritt ${step}: ${capture} ab ${y}${ok ? '' : ' (abgelehnt)'}, Jahr ${x}`)
+      }
+      if (ok && r() < 0.5) {
+        await opened.write((db) => setUpSelf(db, 'hp', { period: `${y}-01`, capture: back, captureOnly: true, confirmCapture: true }, '2027-02-01', newId))
+        assert.deepEqual(await all(), vorher, `Fall ${seed}, Schritt ${step}: zurück zu ${back} ab ${y}`)
+        count.reverted++
+        assert.deepEqual((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.selfSpans, plantBefore.selfSpans, `Fall ${seed}, Schritt ${step}: Spannen`)
+      }
+    }
+    return count
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+}
+
+test('#690: „Erfassung ändern“ in zufälligen Abläufen: frühere und abgeschlossene Heizperioden centgleich, zurück wie vorher', async () => {
+  const total = { switched: 0, reverted: 0, changed: 0 }
+  for (let seed = 1; seed <= 12; seed++) {
+    const c = await captureScenario(seed)
+    total.switched += c.switched
+    total.reverted += c.reverted
+    total.changed += c.changed
+  }
+  // Die Abläufe wechseln wirklich, wechseln zurück und bewegen Geld; sonst prüften sie nichts.
+  assert.ok(total.switched >= 10 && total.reverted >= 5 && total.changed >= 5, JSON.stringify(total))
 })

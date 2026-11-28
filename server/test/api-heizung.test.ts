@@ -712,6 +712,51 @@ test('Eigene Heizkostenabrechnung über die Routen: Einrichtung mit Liste, Antei
   }
 })
 
+// #690, Durchsicht: Nach einem Wechsel der Erfassung ab 2026 lehnte die Route die offene Heizperiode 2025 mit dem Satz
+// ab, die eigene Abrechnung beginne 2026. Sie beginnt 2025; abgelehnt wird, weil 2025 in einer früheren Spanne liegt.
+test('#690: nur die Erfassung ändern über die Route; eine frühere Heizperiode wird mit dem richtigen Grund abgelehnt und bleibt bearbeitbar', async () => {
+  const s = await startServer()
+  const send = (method: string, url: string, body?: unknown) =>
+    fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  try {
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('POST', '/api/heating-plants', { energy: 'gas', method: 'manual' }))
+    const self = `/api/heating-plants/${plant.id}/self`
+    assert.equal((await send('PUT', self, { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'hca', dhwHeatMeter: true, totalHeatMeter: false })).status, 200)
+    const item = await s.api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 600000, key: 'heatingSystem', heatingPlantId: plant.id, heatingPart: 'fuel', heatingTarget: 'both' }) })
+    const ab2026 = await send('PUT', self, { period: '2026-01', capture: 'serviceValues', captureOnly: true })
+    assert.equal(ab2026.status, 200)
+    const changed = await jsonOf<{ plant: HeatingPlant; converted: number }>(ab2026)
+    assert.deepEqual((changed.plant.selfSpans ?? []).map((x) => [x.from, x.until, x.capture]), [['2025-01', '2026-01', 'hca'], ['2026-01', null, 'serviceValues']])
+    // Durchsicht S1: Der Verlauf nennt den Wechsel, nicht eine Einrichtung.
+    assert.equal((await s.api<{ title: string }[]>('/api/journal?limit=1'))[0]?.title, 'Erfassung der Heizkostenabrechnung geändert')
+    const frueher = await send('PUT', self, { period: '2025-01', capture: 'heatMeter', captureOnly: true })
+    assert.equal(frueher.status, 400)
+    const text = await errorFrom(frueher)
+    assert.doesNotMatch(text, /beginnt mit der Heizperiode 2026/)
+    assert.match(text, /Heizperiode 2025 rechnet schon nach der eigenen Heizkostenabrechnung/)
+    assert.match(text, /ab der Heizperiode 2026/)
+    // Die offene Heizperiode 2025 bleibt bearbeitbar: Anteil, Position, Abrechnung.
+    assert.equal((await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/distribution`, { heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies' })).status, 200)
+    assert.equal((await send('PUT', `/api/costItems/${item.id}`, { amountCents: 610000 })).status, 200)
+    assert.equal((await send('GET', '/api/settlement/2025')).status, 200)
+    const stock = await s.api<{ id: string; key: string; heatingPart: string; heatingTarget: string }[]>('/api/costItems?period=2025')
+    assert.deepEqual(stock.map((c) => [c.key, c.heatingPart, c.heatingTarget]), [['heatingSystem', 'fuel', 'both']])
+    // Werte des Ablesedienstes für 2026: Der Wechsel weg davon fragt mit `question: 'capture'` und gilt erst bestätigt.
+    const units = await s.api<{ id: string }[]>('/api/units')
+    const unitId = units[0]?.id ?? assert.fail('Wohnung fehlt')
+    assert.equal((await send('PUT', `/api/heating-plants/${plant.id}/periods/2026-01/service-values`, { values: [{ unitId, from: '2026-01-01', to: '2026-12-31', heatValue: 500, heatUnit: 'units' }] })).status, 200)
+    const frage = await send('PUT', self, { period: '2026-01', capture: 'hca', captureOnly: true })
+    assert.equal(frage.status, 409)
+    const body = await jsonOf<{ error: string; question: string }>(frage)
+    assert.equal(body.question, 'capture')
+    assert.match(body.error, /Werte des Ablesedienstes für 1 Wohnung/)
+    assert.equal((await send('PUT', self, { period: '2026-01', capture: 'hca', captureOnly: true, confirmCapture: true })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Schätzung nach § 9a über die Routen (Heizung PR 13): speichern, in der Abrechnung, Satz bei Fehler, entfernen', async () => {
   const s = await startServer()
   const send = (method: string, url: string, body?: unknown) =>

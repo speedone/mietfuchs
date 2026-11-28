@@ -7,10 +7,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { readHeatingPlants, readMeters } from '../src/db/read.ts'
+import { readHeatingPlants, readMeters, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, createProperty, crossPropertyViolations, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
-import { saveDistribution, setUpSelf } from '../src/db/heatingSelf.ts'
+import { CaptureQuestion, saveDistribution, setUpSelf } from '../src/db/heatingSelf.ts'
 import { dropIfEmpty, heatingPeriodViews } from '../src/db/co2.ts'
 import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { heatingSelfSpans, heatingServiceValues, meters } from '../src/db/schema.ts'
@@ -412,5 +412,55 @@ test('#723: ein neuer Heizkostenverteiler braucht die Skala; ein ohne Skala gesp
     assert.deepEqual([(await read('alt')).name, (await read('alt')).hcaScale ?? null], ['Bad oben', null])
     await opened.write((db) => updateEntity(db, 'meters', 'alt', { hcaScale: 'unit', ratingFactor: 0.8 }))
     assert.deepEqual([(await read('alt')).hcaScale, (await read('alt')).ratingFactor], ['unit', 0.8])
+  })
+})
+
+// #690, Durchsicht S2: Nach einem Kesseltausch heizte in der Heizperiode des Tauschs noch die Vorgängerin mit ihrer
+// Erfassung. Ein Wechsel der Erfassung der neuen Anlage in dieser Heizperiode ergäbe zwei Erfassungen in einer
+// Heizperiode; abgelehnt, mit dem Weg (ab der nächsten Heizperiode).
+test('#690 S2: Erfassung ändern in der Heizperiode des Kesseltauschs wird mit dem Weg abgelehnt, ab der nächsten geht es', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca'), '2026-02-01', newId))
+    await opened.write((db) => replaceHeatingPlant(db, 'hp', 'hp2', { date: '2025-07-01', energy: 'districtHeating', name: 'Fernwärme', previousName: 'Gas' }))
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp2', { period: '2025-01', capture: 'serviceValues', captureOnly: true, confirmCapture: true }, '2026-02-01', newId)),
+      heatingError(400, /Heizperiode 2025.*vor dem Kesseltausch.*30\.06\.2025.*ab der Heizperiode 2026.*Gespeichert wurde nichts/s))
+    const done = await opened.write((db) => setUpSelf(db, 'hp2', { period: '2026-01', capture: 'serviceValues', captureOnly: true, confirmCapture: true }, '2026-02-01', newId))
+    assert.deepEqual((done?.plant.selfSpans ?? []).map((s) => [s.from, s.until, s.capture]), [['2025-01', '2026-01', 'hca'], ['2026-01', null, 'serviceValues']])
+  })
+})
+
+// #690, Durchsicht S3: Beginnt die eigene Abrechnung erst später, nennt die Ablehnung den Beginn, statt zur Einrichtung
+// zu raten, die es schon gibt.
+test('#690 S3: Erfassung ändern vor dem Beginn der eigenen Abrechnung nennt den Beginn', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca', '2026-01'), '2026-02-01', newId))
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'serviceValues', captureOnly: true }, '2026-02-01', newId)),
+      heatingError(400, /beginnt mit der Heizperiode 2026/))
+  })
+})
+
+// #690, Durchsicht K2 und K4: Werte des Ablesedienstes mit Warmwasser ersetzen die Warmwasserzähler; ihre Ablesungen zählen
+// nach dem Wechsel zum Ablesedienst nicht mehr. Ein Gerät an einer Einheit ohne Fläche zählt wie in der Berechnung mit.
+test('#690 K2/K4: die Rückfrage nennt Warmwasserzähler, die der Ablesedienst ersetzt, und Geräte an Einheiten ohne Fläche', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => createEntity(db, 'units', 'g', { propertyId: 'objekt-1', name: 'Hobbyraum', areaM2: 0, participates: true }))
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('serviceValues'), '2026-02-01', newId))
+    await opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [zeile('a', '2025-01-01', '2025-12-31', 700, 30), zeile('b', '2025-01-01', '2025-12-31', 800, 40)] }))
+    await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'hca', captureOnly: true, confirmCapture: true }, '2026-02-01', newId))
+    const stock = await opened.read(readStock)
+    const ww = stock.meters.filter((m) => m.type === 'warmwasser' && m.unitId === 'a')
+    assert.equal(ww.length, 1)
+    await opened.write(async (db) => {
+      await createEntity(db, 'readings', 'w1', { meterId: ww[0]?.id ?? assert.fail('kein Warmwasserzähler'), date: '2025-01-01', value: 0 })
+      await createEntity(db, 'readings', 'w2', { meterId: ww[0]?.id ?? assert.fail('kein Warmwasserzähler'), date: '2025-12-31', value: 25 })
+      await createEntity(db, 'meters', 'hg', { propertyId: 'objekt-1', unitId: 'g', name: 'HKV Hobbyraum', type: 'hkv', unit: 'Einheiten', hcaScale: 'product' })
+      await createEntity(db, 'readings', 'g1', { meterId: 'hg', date: '2025-01-01', value: 0 })
+      await createEntity(db, 'readings', 'g2', { meterId: 'hg', date: '2025-12-31', value: 50 })
+    })
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', capture: 'serviceValues', captureOnly: true }, '2026-02-01', newId)),
+      (e: unknown) => e instanceof CaptureQuestion && /Ablesungen von 1 Heizkostenverteiler/.test(e.message) && /Ablesungen von 1 Warmwasserzähler/.test(e.message))
   })
 })

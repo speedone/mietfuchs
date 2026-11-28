@@ -217,6 +217,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   der Mieterhöhung den Weg im Druckfenster von Safari. „Seite x von y“ beim Druck einer einzelnen Abrechnung bleibt in
   Chrome und Edge; Firefox und Safari kennen dafür keinen Weg in der Seite
   ([#735](https://github.com/speedone/mietfuchs/issues/735)).
+- Erfassung der eigenen Heizkostenabrechnung direkt ändern: Wechseln Sie etwa von Heizkostenverteilern zu den Werten
+  eines Ablesedienstes, ging das bisher nur über „Niemand“ und eine neue Einrichtung, und dabei gingen der Anteil nach
+  Verbrauch und Teil und Ziel jeder Heizposition verloren. In den Stammdaten steht in der Karte „Heizung“ jetzt
+  „Erfassung ändern“. Die neue Erfassung gilt ab dem Beginn der gewählten Heizperiode; Anteil nach Verbrauch,
+  Wärmeschutz, Warmwasserbereitung und Teil und Ziel der Heizpositionen bleiben, frühere Heizperioden rechnen mit ihrer
+  Erfassung weiter, und eine abgeschlossene Abrechnung ändert sich nicht. Zählen danach Ablesungen, Werte des
+  Ablesedienstes oder Schätzungen nach § 9a nicht mehr, nennt Mietfuchs sie vorher und fragt nach; gelöscht wird nichts,
+  und zurückgestellt zählen sie wieder. In der Heizperiode eines Kesseltauschs, in der noch die alte Anlage heizte, geht
+  der Wechsel erst ab der nächsten Heizperiode ([#690](https://github.com/speedone/mietfuchs/issues/690)).
 - Zweimal derselbe Datenordner: Startete Mietfuchs (Fenster, Programmdatei, Paket oder Store), während ein anderes
   Mietfuchs auf demselben Datenordner gerade seine Datenbank öffnete, etwa beim ersten Start oder nach einem Update auf
   einem langsamen Rechner, hielt der neue Start den anderen für abwesend, weil der länger als anderthalb Sekunden nicht
