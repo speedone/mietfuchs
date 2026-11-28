@@ -542,7 +542,8 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Blattkante zurück, dazu um 12 px (nachgemessen, nicht hergeleitet: Der Kopf steht bei 0 ohne Außenabstand, ohne sie lag das Papier
   3,2 mm zu tief; die Ursache ist offen), und die Zelle hält beides einmal frei: Der Text steht, wo er stand, aber das Papier der
   Folgeseiten liegt auch auf Seite 1 bei 0 bis 297 mm (vorher 59,5 bis 356,7 mm, mit einem transparenten Briefpapier
-  druckte dessen Fuß ein zweites Mal auf Seite 2). Die Belegkopien stehen in einer eigenen Hülle ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten
+  druckte dessen Fuß ein zweites Mal auf Seite 2). Ist es dasselbe Papier wie das der ersten Seite, zeichnet der Kopf es nicht noch einmal (`paperFromFollow`,
+  eine Ebene); ein anderes deckt das der ersten Seite zu (`print-color-adjust: exact` an `.letter-paper`). Die Belegkopien stehen in einer eigenen Hülle ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten
   Inhalt einer Zelle wirkte nicht). Deshalb hat die Karte im Druck keinen Grund. **Briefpapier nur, wo der Browser die
   Ränder je Seite wiederholen kann** (`canPagePaper`: `CSS.supports('box-decoration-break', 'clone')` und ausdrücklich
   Gecko oder Blink, also Chromium ab 130 und Firefox; Durchsicht S2 zu #735). WebKit nimmt die Ränder der ersten Seite für alle Seiten, auch die aus `@page :first`, wiederholt weder

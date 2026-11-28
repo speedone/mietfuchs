@@ -1171,7 +1171,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   )}
                 </>
               ) : head ? (
-                <StatementHead {...head} />
+                <StatementHead {...head} paperFromFollow={!!head.paper && !!design.follow && planned.follow?.file === planned.paper?.file} />
               ) : (
                 <LegacyHead sender={letterhead(landlord?.landlordName, property)} date={letterDate} recipient={formerRecipientLines(st.tenantName, st.unitName, tenancy, property)} />
               )}

@@ -23,6 +23,9 @@ export type HeadProps = {
   draftMark?: string | null // „Entwurf, nicht versenden“, nur im Druck
   logo?: string | null // Teil 2b: Adresse des Logos, oben rechts im Briefkopf
   paper?: string | null // Teil 2b: Briefpapier der ersten Seite (Adresse oder gerendertes Bild), nur im Druck
+  // #691 mit #735: Ohne Anschreiben liegt das Papier der Folgeseiten auch auf Seite 1; ist es dasselbe, zeichnet der Kopf
+  // es nicht noch einmal (eine Ebene). Der Absender bleibt weg, denn das Papier trägt ihn.
+  paperFromFollow?: boolean
 }
 
 type Props = HeadProps & {
@@ -53,12 +56,12 @@ export function breakAfterAt(text: string): ReactNode {
 
 const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'creditMovedOut', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
 
-export function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper }: HeadProps) {
+export function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper, paperFromFollow = false }: HeadProps) {
   return (
     <>
       {/* Das Briefpapier liegt unter allem auf der ganzen Seite; mit ihm entfällt der Absender von Mietfuchs (der Kopf
           des Briefpapiers nennt ihn). Die Rücksendeangabe im Fenster bleibt. Immer ein Bild (PNG, JPG, gerenderte PDF). */}
-      {paper && <img className="letter-paper" src={paper} alt="" aria-hidden="true" />}
+      {paper && !paperFromFollow && <img className="letter-paper" src={paper} alt="" aria-hidden="true" />}
       {logo && <img className="letter-logo" src={logo} alt="Logo" />}
       {foldMarks && (
         <>

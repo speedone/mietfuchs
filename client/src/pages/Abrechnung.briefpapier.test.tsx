@@ -241,3 +241,27 @@ test('meldet der Server eine fehlende Datei, nennt die Seite sie', async () => {
   await statementOf()
   await screen.findByText(/Logo: Die Datei fehlt im Datenordner/, undefined, SLOW)
 })
+
+// #691 mit #735, Durchsicht: Ohne Anschreiben liegt das Papier der Folgeseiten auch auf Seite 1 (Kopf der Hülle). Ist es
+// dasselbe wie das der ersten Seite, druckt Seite 1 es nur einmal (eine Ebene); ist es ein anderes, deckt das der ersten
+// Seite es zu (letter.css, `print-color-adjust`).
+test('Briefpapier ohne Anschreiben: gleiches Papier der Folgeseiten nur einmal auf Seite 1, ein anderes bleibt darunter', async () => {
+  templates = { ...templates, printLetter: false, propertyPrintLetter: null }
+  const card0 = async () => {
+    await waitFor(() => expect(document.querySelector('.card.statement .letter-top')).not.toBeNull(), SLOW)
+    return document.querySelector('.card.statement') ?? (() => { throw new Error('keine Mieterabrechnung') })()
+  }
+  designs = { installation: { ...DEFAULT_LETTER_DESIGN, paper: PAPER, paperNext: 'same', margins: { top: 30, right: 15, bottom: 30, left: 25 } }, property: null }
+  const first = show()
+  let card = await card0()
+  await waitFor(() => expect(card.querySelector('img.paper-follow')).not.toBeNull(), SLOW)
+  expect(card.querySelector('img.letter-paper')).toBeNull()
+  // Der Absender bleibt trotzdem weg: Das Papier trägt ihn
+  expect(card.querySelector('.letter-head')).toBeNull()
+  first.unmount()
+  designs = { installation: { ...DEFAULT_LETTER_DESIGN, paper: PAPER, paperNext: 'other', paperNextFile: NEXT, margins: { top: 30, right: 15, bottom: 30, left: 25 } }, property: null }
+  show()
+  card = await card0()
+  await waitFor(() => expect(card.querySelector('img.letter-paper')?.getAttribute('src')).toBe(url(PAPER)), SLOW)
+  expect(card.querySelector('img.paper-follow')?.getAttribute('src')).toBe(url(NEXT))
+})
