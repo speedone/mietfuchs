@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, missingDevicesLines, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, ESTIMATE_NEEDS_DEVICES, estimateIdleText, missingDevicesLines, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView } from './types'
 
@@ -52,6 +52,23 @@ describe('Ampel der Ablesungen (Heizung PR 10, Entwurf 3.5)', () => {
     expect(missingDevicesLines({ capture: 'hca', pots: [pot({})] })).toEqual([])
     // Eine ältere abgeschlossene Abrechnung kennt die Angabe nicht.
     expect(missingDevicesLines({ pots: [pot({})] })).toEqual([])
+  })
+  // #690: Einer Wohnung fehlt das Gerät, den übrigen nicht. Vorher sperrte das die Anlage; jetzt geht der Topf nur nach
+  // Fläche, und die Seite sagt, warum und was zu tun ist.
+  it('#690: Wohnung ohne Gerät neben Wohnungen mit Gerät: der Satz nennt sie, die Fläche und die Kürzung', () => {
+    const pot = (over: Partial<SelfHeatingStatement['pots'][number]>) => ({ pot: 'heating', byAreaOnly: true, ...over }) as SelfHeatingStatement['pots'][number]
+    expect(missingDevicesLines({ capture: 'hca', pots: [pot({ unequippedUnits: ['B'] })] })).toEqual([
+      'Heizung: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon; verteilt wird deshalb nur nach Fläche, und die Mieter dürfen ihren Anteil kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). Legen Sie das Gerät auf der Seite „Zähler & Stände“ an; war eines eingebaut und ist ausgefallen, legen Sie es dort an und schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.',
+    ])
+    // Bis zur Grenze des § 9a Abs. 2 trägt die Wohnung den Durchschnitt der abgelesenen.
+    expect(missingDevicesLines({ capture: 'hca', pots: [pot({ byAreaOnly: false, unequippedUnits: ['B'] })] })[0]).toMatch(/^Heizung: B hat keinen Heizkostenverteiler, die übrigen Wohnungen schon; angesetzt wird für sie der Durchschnitt der abgelesenen Wohnungen, und die Mieter/)
+    expect(missingDevicesLines({ capture: 'heatMeter', pots: [pot({ unequippedUnits: ['B', 'C'], basisUnit: 'm³' }), pot({ pot: 'water', byAreaOnly: false })] }).map((l) => l.split(';')[0])).toEqual([
+      'Heizung: B und C haben keinen Wärmezähler, die übrigen Wohnungen schon',
+    ])
+    expect(missingDevicesLines({ capture: 'heatMeter', pots: [pot({ unequippedUnits: ['B'], basisUnit: 'm³' })] })[0]).toMatch(/nur nach umbautem Raum,/)
+    // Die Karte „Schätzung (§ 9a)“ sagt nicht „Für keine Wohnung fehlt ein Wert“, wenn B das Gerät fehlt.
+    expect(estimateIdleText({ capture: 'hca', pots: [pot({ unequippedUnits: ['B'] })] })).toBe(ESTIMATE_NEEDS_DEVICES)
+    expect(estimateIdleText({ capture: 'hca', pots: [pot({ byAreaOnly: false })] })).toBe('Für keine Wohnung fehlt ein Wert.')
   })
   // Befund M7 aus #341: gemeint war der neue Warmwasserzähler, der Satz nannte ihn nicht.
   it('der Satz nennt den Zähler ohne Stand, mit Nummer', () => {
@@ -305,6 +322,15 @@ describe('#322, Durchsicht S2 und K4: Druckzeilen beim umbauten Raum', () => {
   })
   it('kein Verbrauch erfasst: nur nach umbautem Raum', () => {
     expect(potLines({ ...heat, byAreaOnly: true, consumptionCentsPerUnit: null })).toContain('Kein Verbrauch erfasst: nur nach umbautem Raum verteilt.')
+  })
+  it('#690: Wohnung ohne Gerät: nur nach umbautem Raum, mit der Wohnung', () => {
+    const lines = potLines({ ...heat, byAreaOnly: true, consumptionCentsPerUnit: null, unequippedUnits: ['B'] })
+    expect(lines).toContain('Ohne Gerät bei B ist der Verbrauch nicht für alle Wohnungen erfasst: nur nach umbautem Raum verteilt.')
+    expect(lines).not.toContain('Kein Verbrauch erfasst: nur nach umbautem Raum verteilt.')
+    expect(potLines({ ...heat, overThreshold: true, unequippedUnits: ['B'] })).toContain('Ohne Gerät bei B ist der Verbrauch nicht für alle Wohnungen erfasst: nur nach umbautem Raum verteilt.')
+    // Bis zur Grenze: nach Verbrauch, mit dem Teil der Wohnung ohne Gerät.
+    expect(potLines({ ...heat, costCents: 100000, consumption: 40000, consumptionCentsPerUnit: 1.75, unequippedUnits: ['B'], substitutedConsumption: 7000 })[2])
+      .toMatch(/für 40\.000 kWh \(davon für B ohne Gerät als Durchschnitt der abgelesenen Wohnungen: 7\.000 kWh\),/)
   })
 })
 

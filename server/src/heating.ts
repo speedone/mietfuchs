@@ -104,7 +104,8 @@ export type SelfUser = {
 // nach Verbrauch), der gemessene Verbrauch (bei einer Gruppe der rechnerische Teil) und ob der Nutzer
 // in einer Gruppe nach § 9b Abs. 3 steht. `estimated` (Heizung PR 13): Der Verbrauch dieses Nutzers in
 // diesem Topf kommt aus einer Schätzung nach § 9a; fehlt, wenn er abgelesen ist.
-export type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean; estimated?: boolean }
+// `substituted` (#690): Die Wohnung hat kein Gerät; `value` ist der Durchschnitt je m² der abgelesenen Wohnungen.
+export type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean; estimated?: boolean; substituted?: boolean }
 export type SelfUserPlan = SelfUser & { pots: Record<SelfPot, SelfUserPot> }
 // `missingMeters`: die Zähler aus `readingDates` ohne Stand an der Grenze (Befund M7 aus #341).
 export type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; missingMeters: { name: string; number?: string }[]; gap: InterimGapStatus | null; far: boolean }
@@ -149,7 +150,11 @@ export type SelfPlan = {
   // Grenze des § 9a Abs. 2, der Topf wird ausschließlich nach Fläche verteilt (Heizung PR 13).
   // `devices`: Für den Topf ist an mindestens einer Wohnung ein Gerät angelegt (bzw. ein Wert des Ablesedienstes
   // eingetragen). Ohne ist nichts abzulesen, und der Topf geht nur nach Fläche (Systemprüfung).
-  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean; devices: boolean; estimatedArea: number; overThreshold: boolean }>
+  // `unequipped` (#690): die Wohnungen mit Fläche ohne Gerät des Topfs (und ohne Schätzung), während andere eins haben.
+  // Ihr Verbrauch ist der Durchschnitt je m² der abgelesenen Wohnungen (`substitutePerM2`, wie der Vorschlag
+  // „Durchschnitt des Gebäudes“ des § 9a Abs. 1); ihre Fläche zählt mit der geschätzten für die Grenze des § 9a Abs. 2
+  // (`unequippedArea`). Ohne abgelesene Wohnung ist `substitutePerM2` null, und der Topf geht nur nach Fläche.
+  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean; devices: boolean; unequipped: string[]; unequippedArea: number; substitutePerM2: number | null; estimatedArea: number; overThreshold: boolean }>
   problems: SelfProblem[]
   findings: SelfFinding[]
 }
@@ -351,10 +356,12 @@ export function planSelf(input: SelfInput): SelfPlan {
   }))
 
   const totals = Object.fromEntries(pots.map((p) => [p, {
-    area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false, devices: false, estimatedArea: 0, overThreshold: false,
+    area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false, devices: false, unequipped: [] as string[], unequippedArea: 0, substitutePerM2: null, estimatedArea: 0, overThreshold: false,
   }])) as SelfPlan['totals']
-  // Ein Topf ohne einen einzigen Zähler ist nicht erfasst (nur nach Fläche, `heating.no-consumption`);
-  // ein Topf mit Zählern verlangt einen an jeder Wohnung mit Fläche.
+  // Ein Topf ohne einen einzigen Zähler ist nicht erfasst (nur nach Fläche, `heating.no-consumption`).
+  // Fehlt in einem Topf mit Zählern einer Wohnung mit Fläche das Gerät, steht sie in `unequipped` (#690) und trägt den
+  // Durchschnitt je m² der abgelesenen Wohnungen (unten); beim Ablesedienst bleibt es ein Fehler, denn dort fehlen Werte,
+  // die sich nach § 9a schätzen lassen.
   const potHasMeters = Object.fromEntries(pots.map((p) => [p, input.units.some((u) => metersOf(u.id, p).length > 0)])) as Record<SelfPot, boolean>
   // Eine Einheit ohne Fläche (Garage) braucht keinen Wert (Durchsicht S1).
   const noValue = input.areaBasisHeat === 'area' ? [] : input.units.filter((u) => (u.areaM2 || 0) > 0 && !((basisValueOf(u) ?? 0) > 0))
@@ -446,7 +453,10 @@ export function planSelf(input: SelfInput): SelfPlan {
       const meters = metersOf(unit.id, p)
       const estimated = estimateOf(unit.id, p)
       if (meters.length === 0 && estimated === undefined) {
-        if (potHasMeters[p] && areaOf(p, unit) > 0) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: null, reason: 'noMeter', meterName: null })
+        if (potHasMeters[p] && areaOf(p, unit) > 0) {
+          if (input.capture === 'serviceValues') problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: null, reason: 'noMeter', meterName: null })
+          else totals[p].unequipped.push(unit.id)
+        }
         continue
       }
       // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (Abweichung 22). An einer Grenze nur
@@ -591,19 +601,51 @@ export function planSelf(input: SelfInput): SelfPlan {
     return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, measured, estimated: estimatedPots, captured, estimateComplete, sameDayCovered, replacesMeasured }
   })
 
+  // #690: Der Verbrauch einer Wohnung ohne Gerät ist der Durchschnitt je m² der Wohnungen, deren Verbrauch ohne
+  // Schätzung und ohne Fehler erfasst ist (dieselbe Rechnung wie `estimateProposals`, „Durchschnitt des Gebäudes“), über
+  // die Heizperiode auf ihre Nutzer nach Gradtagen bzw. Tagen geteilt wie eine Schätzung. **Festlegung von Mietfuchs**, nicht
+  // entschieden: Die Verordnung kennt für eine nie ausgestattete Wohnung keinen eigenen Weg. Dafür: „grundsätzlich“ geht
+  // jede den Verbrauch einbeziehende Abrechnung der reinen Flächenabrechnung vor (VIII ZR 329/14, Rn. 17); VIII ZR 261/06,
+  // Rn. 15, lehnte § 9a bei fehlender Ausstattung nur mangels Schätzungsgrundlage ab; die 25-%-Grenze ist die Grenze der
+  // Ersatzkriterien (VIII ZR 264/19, Rn. 28). Dagegen: rein nach Fläche, wenn ein verbrauchsbezogener Anteil nicht ermittelt
+  // werden kann (VIII ZR 329/14, Rn. 18, mit Verweis auf VIII ZR 261/06); für eine einzelne Wohnung ohne Gerät neben
+  // ausgestatteten ist das nicht entschieden. Sind alle übrigen Wohnungen geschätzt, gibt es keinen Durchschnitt
+  // (`substitutePerM2` null), und der Topf geht nur nach Fläche.
+  for (const p of pots) {
+    if (totals[p].unequipped.length === 0) continue
+    const others = units.filter((u) => u.captured[p] && areaOf(p, u.unit) > 0)
+    const sumArea = others.reduce((a, u) => a + areaOf(p, u.unit), 0)
+    const sumUse = others.reduce((a, u) => a + u.consumption[p], 0)
+    totals[p].substitutePerM2 = sumArea > 0 && sumUse > 0 ? sumUse / sumArea : null
+    const perM2 = totals[p].substitutePerM2
+    for (const u of units.filter((x) => totals[p].unequipped.includes(x.unit.id))) {
+      totals[p].unequippedArea += areaOf(p, u.unit)
+      if (perM2 === null) continue
+      const v = perM2 * areaOf(p, u.unit)
+      const splitSum = u.users.reduce((a, x) => a + splitOf(p, x), 0)
+      for (const user of u.users) {
+        user.pots[p].value = splitSum > 0 ? (v * splitOf(p, user)) / splitSum : 0
+        user.pots[p].substituted = true
+      }
+      u.consumption[p] += v
+    }
+  }
+
   // Summe des Verbrauchs je Topf, dann die Bruchteile.
   for (const p of pots) {
     totals[p].consumption = units.reduce((a, u) => a + u.consumption[p], 0)
     totals[p].devices = potHasMeters[p]
-    totals[p].measured = potHasMeters[p] && totals[p].consumption > 0
+    totals[p].measured = potHasMeters[p] && totals[p].consumption > 0 && (totals[p].unequipped.length === 0 || totals[p].substitutePerM2 !== null)
     // § 9a Abs. 2 (Heizung PR 13): Überschreitet die geschätzte Fläche die Grenze der für die Verteilung
     // maßgeblichen Fläche dieses Topfs, wird er ausschließlich nach Fläche verteilt. „Überschreitet“:
     // streng größer, verglichen über Produkte, nie über einen gerundeten Anteil. Betroffen ist die Fläche
     // der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist (Festlegung, Abweichung 2 des Plans).
     totals[p].estimatedArea = units.filter((u) => u.estimated[p]).reduce((a, u) => a + areaOf(p, u.unit), 0)
-    if (totals[p].estimatedArea > 0) {
+    // #690: die Fläche der Wohnungen ohne Gerät zählt mit (ihr Verbrauch ist ebenso nicht erfasst).
+    const affected = totals[p].estimatedArea + totals[p].unequippedArea
+    if (affected > 0) {
       const limit = input.estimateThreshold?.()
-      totals[p].overThreshold = limit !== undefined && totals[p].estimatedArea * 100 > totals[p].area * limit
+      totals[p].overThreshold = limit !== undefined && affected * 100 > totals[p].area * limit
     }
     for (const u of units) {
       for (const user of u.users) {

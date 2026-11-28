@@ -480,6 +480,10 @@
   "text": "Heizanlage, Heizperiode 2025: Für Heizung und Warmwasser ist kein Verbrauch erfasst; Mietfuchs verteilt die Kosten nur nach Fläche. Die Heizkostenverordnung verlangt, 50 bis 70 % nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV), hier: Mieter A (A) 274,11 €, Mieter B (B) 365,48 €, Mieter C1 (C) 180,03 € und Mieter C2 (C) 94,08 €. Für Heizung und Warmwasser ist an keiner Wohnung ein Wärmezähler bzw. Warmwasserzähler angelegt. Legen Sie die Geräte auf der Seite „Zähler & Stände“ an und tragen Sie dort die Ablesungen zu Beginn und Ende der Heizperiode ein."
  },
  {
+  "code": "heating.unit-without-device",
+  "text": "Heizanlage, Heizperiode 2025: C hat keinen Heizkostenverteiler, die übrigen Wohnungen schon. Mietfuchs setzt für sie den Durchschnitt je m² der abgelesenen Wohnungen an (175 Einheiten je m²) und verteilt die Heizung weiter nach Verbrauch; das ist eine Festlegung von Mietfuchs, entschieden ist der Fall nicht (Begründung in der Anleitung „Heizkosten selbst abrechnen“). Die Mieter dieser Wohnung dürfen ihren Anteil an den Kosten der Heizung um 15 % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter C1 (C) 98,78 € und Mieter C2 (C) 55,56 €. Vorsorglich, weil nicht entschieden (Auslegung), auch die übrigen: Mieter A (A) 254,66 € und Mieter B (B) 362,70 €. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. Legen Sie das Gerät auf der Seite „Zähler & Stände“ an (§ 4 Abs. 1 und 2 HeizkostenV). War eines eingebaut und ist ausgefallen, legen Sie es dort an und schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“."
+ },
+ {
   "code": "heating.no-interim-reading",
   "text": "Heizanlage, Heizperiode 2025: Für den Wechsel in C zum 30.09.2025 gibt es keine Zwischenablesung (nicht möglich: Wohnung nicht zugänglich). Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV)."
  },
