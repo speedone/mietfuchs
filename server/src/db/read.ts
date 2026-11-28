@@ -21,6 +21,7 @@ import { isSpreadYears } from '../../../shared/spread.ts'
 import { asc, eq, sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, DepositEntry, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MeterRest, MeterRestTarget, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, RentEntry, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
+import { asBrowserId } from '../browser.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
@@ -754,6 +755,8 @@ export async function readSettings(db: Executor): Promise<MigratedSettings> {
     extraInstructions: row.aiExtraInstructions,
     consent,
   }
+  // Nur eine bekannte Kennung (#735); eine andere zählt als „Standardbrowser“
+  const openWith = asBrowserId(row.openWith)
   const stored: Settings = {
     houseName: row.houseName,
     address: row.address,
@@ -776,6 +779,7 @@ export async function readSettings(db: Executor): Promise<MigratedSettings> {
     ...(row.updateCheck == null ? {} : { updateCheck: row.updateCheck }),
     ...(row.updateDismissed == null ? {} : { updateDismissed: row.updateDismissed }),
     ...(row.desktopHintDismissed == null ? {} : { desktopHintDismissed: row.desktopHintDismissed }),
+    ...(openWith === null ? {} : { openWith }),
     ai,
   }
   return { ...stored, ai }

@@ -181,3 +181,20 @@ test('CI zählt nur mit 1 oder true: CI=false schaltet weder Ortsdatei noch Such
   assert.equal(shouldRecord({ packaged: true, runtime: 'binary', platform: 'win32', env: { CI: 'false' } }), true)
   assert.equal(shouldRecord({ packaged: true, runtime: 'binary', platform: 'win32', env: { CI: 'true' } }), false)
 })
+
+// #735: Öffnet ein zweiter Start die laufende Oberfläche, nimmt er den Browser, den der laufende in seinen Einstellungen
+// hat. Nur eine bekannte Kennung zählt; was sonst in der Antwort steht, ist der Standardbrowser.
+test('Zwilling: die Wahl des Browsers aus seiner Antwort, nur als bekannte Kennung', async () => {
+  const d = dir()
+  try {
+    const self: Self = { dataDir: d, port: 17517, pid: 1, boundAt: 5 }
+    const answering = (openWith: unknown) => async () => ({ app: 'mietfuchs', status: 'ok', dataDir: d, version: '0.18.1', openWith })
+    const hooks = { onSilent: () => {}, onGaveUp: () => {} }
+    assert.equal((await findTwin(self, { platform: 'linux', ports: [3001], fetchJson: answering('chromium'), ...hooks }))?.openWith, 'chromium')
+    for (const value of ['/bin/sh', null, undefined, 3]) {
+      assert.equal((await findTwin(self, { platform: 'linux', ports: [3001], fetchJson: answering(value), ...hooks }))?.openWith, null, String(value))
+    }
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true })
+  }
+})

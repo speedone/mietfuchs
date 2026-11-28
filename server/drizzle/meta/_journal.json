@@ -764,6 +764,13 @@
       "when": 1795855894966,
       "tag": "0108_messdienst_sammelbetrag",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "6",
+      "when": 1795860368221,
+      "tag": "0109_browser_waehlen",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Programmdatei und Linux-Paket: Womit sich Mietfuchs beim Start öffnet, lässt sich wählen, ohne den Standardbrowser
+  des Systems zu ändern ([#735](https://github.com/speedone/mietfuchs/issues/735)). Unter *Einstellungen → Beim Start*
+  stehen die Browser, die Mietfuchs auf dem Rechner findet (Firefox, Chromium, Google Chrome, Microsoft Edge, Brave,
+  unter Linux auch als Snap oder Flatpak); die Wahl gilt ab dem nächsten Start, auch für einen zweiten Klick im
+  Startmenü. Daneben beachtet Mietfuchs die Umgebungsvariable `BROWSER` (mehrere Einträge mit `:`, `%s` für die
+  Adresse). Vorrang hat die Einstellung, dann `BROWSER`, dann der Standardbrowser; fehlt der gewählte Browser, nimmt
+  Mietfuchs den nächsten und sagt es in der Ausgabe. Ein gewählter Browser und `BROWSER` starten ohne Shell (der
+  Standardbrowser unter Windows wie bisher über `cmd /c start`), gespeichert wird nur die Kennung eines gefundenen
+  Browsers, und festlegen lässt sich die Wahl nur am Rechner selbst. Im Programmfenster, in Docker und beim Start aus
+  dem Quellcode gibt es die Wahl nicht.
 - Seite Heizkosten bei eigener Heizkostenabrechnung: Je offener Heizperiode steht zuerst die Karte „Was fehlt noch“ mit
   den nötigen Schritten (Kosten, Anteil nach Verbrauch, Warmwasser, Ablesungen, Verteilung, CO₂, Angaben nach § 6a), je
   mit Stand als Wort und Farbe und einem Knopf zur Seite, auf der der Schritt erledigt wird. Die Liste folgt den

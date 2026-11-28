@@ -44,6 +44,7 @@ export function settingsRow(s: MigratedSettings) {
     updateCheck: orNull(s.updateCheck),
     updateDismissed: orNull(s.updateDismissed),
     desktopHintDismissed: orNull(s.desktopHintDismissed),
+    openWith: orNull(s.openWith),
     aiTimeoutSeconds: orNull(ai.timeoutSeconds),
     aiNumCtx: orNull(ai.numCtx),
     aiMaxOutputTokens: orNull(ai.maxOutputTokens),

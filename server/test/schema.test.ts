@@ -207,7 +207,8 @@ type _ClosedJson = Assert<Equals<ClosedRow['settlement'], unknown>>
 // Was hier nicht als Spalte auftaucht und warum:
 //   ai                              steht teils in `ai_slots`, teils als Spalte mit Präfix
 //   fixedByEnv, aiKeys, aiExternal  rechnet der Server bei jeder Antwort aus und speichert sie nie
-type SettingsColumns = Omit<Settings, 'ai' | 'fixedByEnv' | 'aiKeys' | 'aiExternal'> & {
+//   browsers                        ebenso (#735): die auf diesem Rechner gefundenen Browser
+type SettingsColumns = Omit<Settings, 'ai' | 'fixedByEnv' | 'aiKeys' | 'aiExternal' | 'browsers'> & {
   // Die eine Zeile. Eine Prüfbedingung hält sie bei 1.
   id: number
   // Die Einstellungen für Fortgeschrittene. Der Zugriff über `AiSettings['…']` ist Absicht:
