@@ -5,7 +5,7 @@ import { smokeDetectorKind, smokeDetectorText } from '../../shared/smokeDetector
 import type { BillingPeriod, CostItem, CostKey, SelfSpanRange, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterRest, MeterRestKey, MeterRestTarget, MeterType, PeriodKey, PropertyKind, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { STANDARD_ONLY, standardMisplaced } from '../../shared/meterRest.ts'
-import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
+import { BROAD_CATEGORIES, PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
 import { deductionReported, GENERAL_POWER_CATEGORY, OPERATING_PART_LABEL, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED } from '../../shared/operatingPower.ts'
@@ -96,6 +96,36 @@ export type ItemForm = {
   meterRestKept: Partial<Record<MeterType, MeterRest | null>>
   // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573); nur beim Schlüssel `meter` gesendet, `area` ist die Voreinstellung.
   roomSplit: RoomSplit
+  // Der ganze Stand des Formulars einer neuen Position direkt nach dem Vorschlag (`proposal`), für die späte Vorbelegung
+  // (`withLateContext`); `null` bei einer bestehenden Position, nach einer Wahl des Schlüssels und bei übernommenen
+  // Angaben. Wird nicht gesendet und zählt nicht als Änderung im Seitenfenster (`withoutProposed`).
+  proposed: ProposedForm | null
+}
+
+type ProposedForm = Omit<ItemForm, 'proposed'>
+// Was nach dem Vorschlag eingegeben werden darf, ohne die späte Vorbelegung zu beenden: Betrag, Rechnungssteller, Beleg,
+// Daten (Leistungszeitraum, bezahlt am, Jahr der Zahlung; das Jahr belegt die Seite bei einer Heizperiode über zwei
+// Jahre selbst vor) und die Beschreibung, die man üblich gleich nach der Kostenart tippt. Jede andere Eingabe beendet sie
+// (Durchsicht M1): Sonst setzte ein später geladenes Vorjahr „nach Wohnfläche“, und schon getippte Einzelbeträge wären
+// unsichtbar. Bei einer breiten Kostenart (`BROAD_CATEGORIES`) bestimmt die Beschreibung den Vorschlag; dort beendet
+// auch sie die späte Vorbelegung, sonst änderte Tippen den Schlüssel.
+const FREE_AFTER_PROPOSAL: ReadonlySet<string> = new Set<keyof ItemForm>(['amount', 'vendor', 'invoiceFile', 'serviceFrom', 'serviceTo', 'paidOn', 'taxYear', 'description', 'proposed'])
+const isFreeAfterProposal = (field: string, category: string): boolean =>
+  FREE_AFTER_PROPOSAL.has(field) && !(field === 'description' && BROAD_CATEGORIES.includes(category))
+export const withoutProposed = (form: ItemForm): ProposedForm => {
+  const { proposed: _proposed, ...rest } = form
+  return rest
+}
+// Gleich bis auf die freien Felder; verglichen wird jedes Feld beider Stände, nicht eine Liste.
+function sameApartFromFree(a: ProposedForm, b: ProposedForm): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  return [...keys].every((k) => isFreeAfterProposal(k, a.category)
+    || JSON.stringify((a as Record<string, unknown>)[k]) === JSON.stringify((b as Record<string, unknown>)[k]))
+}
+// Nach dem Vorschlag noch etwas Eigenes der Seite am Formular (etwa `keepMeterRest`, `keepSpread` beim Wechsel der
+// Kostenart)? Dann gilt der Stand danach als Vorschlag.
+export function markProposal(form: ItemForm): ItemForm {
+  return form.proposed ? { ...form, proposed: withoutProposed(form) } : form
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -132,6 +162,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   meterRest: null,
   meterRestKept: {},
   roomSplit: 'area',
+  proposed: null,
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -186,6 +217,7 @@ export function itemToForm(i: CostItem): ItemForm {
     meterRest: i.meterRest ?? null,
     meterRestKept: {},
     roomSplit: i.roomSplit === 'persons' ? 'persons' : 'area',
+    proposed: null,
   }
 }
 
@@ -401,7 +433,8 @@ export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[
   const [only, ...more] = unitMeterTypes
   const meterType = key === 'meter' && !form.meterType && only && more.length === 0 ? only : form.meterType
   const last = key === 'external' && ctx && !form.externalTotal.trim() ? lastExternalBasis(ctx.items) : null
-  return keepMeterRest(form, { ...form, key, meterType, ...(last ? externalFields(last) : {}) })
+  // Gewählt ist gewählt: Ein später geladener Vorschlag (`withLateContext`) ändert den Schlüssel danach nicht mehr.
+  return keepMeterRest(form, { ...form, key, meterType, ...(last ? externalFields(last) : {}), proposed: null })
 }
 
 // ---------- Schlüssel merken (#141) ----------
@@ -425,11 +458,21 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
   }
 }
 
+// Eingaben, die der Wechsel der Kostenart stehen lässt (`proposal`).
+const CARRIED_INPUTS = ['tenancyAmounts', 'selfAmounts', 'roomSplit', 'heatingTarget', 'heatingPart', 'notAgreed', 'named'] as const satisfies readonly (keyof ItemForm)[]
+
 // Der Vorschlag für eine neue Position: der Schlüssel derselben Kostenart im Vorjahr, sonst bei
 // einer Eigentumswohnung „laut Gemeinschaftsabrechnung“, sonst `suggestedKey`.
 // Die Angaben zum Schlüssel werden dabei zurückgesetzt: Sonst blieben die gemerkten Teilnehmer der
 // einen Kostenart an der nächsten hängen, ohne dass jemand sie gewählt hätte.
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
+  const next = proposalOf(previous, category, units, meters, ctx)
+  // Nachprüfung K1: Was der Wechsel der Kostenart stehen lässt (Einzelbeträge, Zimmer, Teil und Ziel, Angaben zum Vertrag),
+  // ist eine Eingabe des Nutzers. Steht davon etwas da, gilt der Vorschlag nicht als unberührt; geleert wird nichts.
+  const carried = CARRIED_INPUTS.some((f) => JSON.stringify(next[f]) !== JSON.stringify(EMPTY_ITEM_FORM[f]))
+  return { ...next, proposed: carried ? null : withoutProposed(next) }
+}
+function proposalOf(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   // Bezugszähler und Rest (#98) merkt sich der Vorschlag nicht: Sie gehören zu den Zählern, nicht zur Kostenart.
   const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null, meterRest: null, meterRestKept: {} }
   // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
@@ -443,6 +486,18 @@ function proposal(previous: ItemForm, category: string, units: Unit[], meters: M
   // Vorschlag ist „Einzelbeträge“, sonst verteilte eine unveränderte Position sie nach Wohnfläche (Bedienprüfung 27.11.2026).
   if (category === HEATING_CATEGORY && ctx?.serviceHeating === true) return { ...form, key: 'amounts', meterType: '' }
   return { ...form, ...suggestedKey(category, units, meters, ctx ? calendarYearPeriod(ctx.year) : undefined) }
+}
+
+// Der Vorschlag, wenn seine Grundlage erst nach der Wahl der Kostenart ankommt (Heizanlagen, Positionen, Zähler laden
+// nach dem Öffnen des Formulars). Vorher hing er allein am Wechsel der Kostenart: Kam die Messdienst-Anlage danach, blieb
+// „Heizung und Warmwasser“ für immer auf „nach Wohnfläche“, und die Heizkosten gingen nach Fläche (B19, #704). Neu
+// vorgeschlagen wird nur bei einer neuen Position, deren Formular seit dem Vorschlag unverändert ist, ausgenommen Betrag,
+// Rechnungssteller, Beleg und Daten (`FREE_AFTER_PROPOSAL`); jede andere Eingabe und eine bestehende Position bleiben, wie
+// sie sind. Ohne Änderung kommt dasselbe Formular zurück.
+export function withLateContext(form: ItemForm, units: Unit[], meters: Meter[], ctx: KeyContext): ItemForm {
+  if (form.id || !form.proposed || !sameApartFromFree(withoutProposed(form), form.proposed)) return form
+  const next = withCategory(form, form.category, units, meters, ctx)
+  return sameApartFromFree(withoutProposed(next), withoutProposed(form)) ? form : next
 }
 
 // Das Formular einer neuen Position, mit dem Vorschlag schon für die erste Kostenart.
@@ -640,7 +695,7 @@ export function notAgreedDroppedText(ids: readonly string[], tenancies: readonly
     `Nach dem Umstellen wird der Anteil ${one ? 'dieses Mietverhältnisses' : 'dieser Mietverhältnisse'} mit den Heizkosten nach der Heizkostenverordnung verteilt; bei „${HEATING_CATEGORY}“ gibt es die Angabe „nicht vereinbart“ nicht.`
 }
 export function toCentralHeating(form: ItemForm): ItemForm {
-  return { ...form, category: HEATING_CATEGORY, key: 'heatingSystem', heatingPart: 'operating', heatingTarget: '', directUnitId: '', meterType: '', participants: null, notAgreed: [], named: [], pendingWhy: [] }
+  return { ...form, category: HEATING_CATEGORY, key: 'heatingSystem', heatingPart: 'operating', heatingTarget: '', directUnitId: '', meterType: '', participants: null, notAgreed: [], named: [], pendingWhy: [], proposed: null }
 }
 
 // Kostenart wechseln. Eine neue Position bekommt den Vorschlag der Kostenart; eine bestehende
@@ -654,7 +709,7 @@ export function withCategory(form: ItemForm, category: string, units: Unit[], me
   // hieße sie „betrifft (für die Steuer)“, und ein alter Teilnehmer oder eine alte Direktzuordnung
   // würde still zu einer Steuerangabe (#163, Durchsicht).
   if (showsTaxUnitField(category) && !showsTaxUnitField(form.category)) {
-    return { ...form, category, key: 'area', directUnitId: '', participants: null }
+    return { ...form, category, key: 'area', directUnitId: '', participants: null, proposed: null }
   }
   return suggest ? proposal({ ...form, category }, category, units, meters, ctx) : { ...form, category }
 }

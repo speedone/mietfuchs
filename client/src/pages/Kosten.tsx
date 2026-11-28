@@ -49,6 +49,9 @@ import {
   meterRestDroppedText,
   keepMeterRest,
   withCategory,
+  withLateContext,
+  withoutProposed,
+  markProposal,
   keepPaidOnYear,
   droppedPaidOnText,
   sameCostOf,
@@ -496,6 +499,11 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
   // Mit dem Zeitraum der Abrechnung je Position: Eine Heizposition mit eigener Heizperiode zählt dort,
   // wo ihre Heizperiode endet, wie in der Übernahme aus dem Vorjahr.
   const keyCtx: KeyContext = useMemo(() => ({ items: filedItems, year, at, propertyKind: property?.kind ?? null, serviceHeating: plants.some((p) => p.method === 'service' && (p.endsOn ?? null) === null) }), [filedItems, year, at, property?.kind, plants])
+  // Kommen Heizanlagen, Positionen oder Zähler erst nach dem Öffnen an, folgt der Vorschlag einer neuen Position ihnen,
+  // solange der Nutzer den Schlüssel nicht angefasst hat (`withLateContext`, B19, #704).
+  useEffect(() => {
+    setForm((prev) => (prev ? withLateContext(prev, units, meters, keyCtx) : prev))
+  }, [keyCtx, units, meters])
   // Der Vorschlag zu einer Belegauswertung sieht in den Zeitraum, in den sie bucht (#208).
   const keyCtxOf = (v: AssessmentView): KeyContext => {
     const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))
@@ -1278,7 +1286,8 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
           busy={saving.busy}
           // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3), das Rechnungsdatum des
           // Belegs ebenso (#490 PR 3)
-          value={{ form, heatingPlantId, heatingPeriod, invoiceDate: dateDraft?.value ?? '' }}
+          // Ohne den gemerkten Vorschlag (`proposed`): Er ist keine Eingabe und darf nicht nach „Änderungen verwerfen?“ fragen.
+          value={{ form: withoutProposed(form), heatingPlantId, heatingPeriod, invoiceDate: dateDraft?.value ?? '' }}
           errors={formErrors}
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveItem)}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
         >
@@ -1298,7 +1307,7 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
                 erste Kostenart (angezeigt = gespeichert) */}
             <Field label={<>Kostenart{categorySuggested && <> <span className="badge amber">Vorschlag aus dem Dateinamen</span></>}</>}
               required={form.category === ''} {...formErrors.field('category')}>
-              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepMeterRest(form, keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period))))}>
+              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(markProposal(keepMeterRest(form, keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))))}>
                 {form.category === '' && <option value="">Bitte wählen</option>}
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
