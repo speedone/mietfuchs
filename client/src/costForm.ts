@@ -20,6 +20,9 @@ import { CREDIT_WITH_AMOUNTS, NEGATIVE_AMOUNT, costItemBody, euro, type CostItem
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { allowsIncludesWater, COMBINED_LINE_RISK, INCLUDES_WATER_LABEL, waterTwiceText } from '../../shared/includesWater.ts'
+import { WATER_CATEGORY } from '../../shared/heatingModel.ts'
+import { enclosedWay } from '../../shared/co2Probe.ts'
 import { partShare } from '../../shared/splitPart.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
@@ -96,6 +99,9 @@ export type ItemForm = {
   meterRestKept: Partial<Record<MeterType, MeterRest | null>>
   // Wie der Zähler einer Wohnung auf ihre Zimmer geht (#573); nur beim Schlüssel `meter` gesendet, `area` ist die Voreinstellung.
   roomSplit: RoomSplit
+  // Sammelbetrag des Messdienstes (#704): Die Einzelbeträge enthalten auch Kaltwasser und Abwasser. Gesendet wird die
+  // Angabe nur, wo `showsIncludesWater` gilt; sonst `false`, das eine gespeicherte entfernt.
+  includesWater: boolean
   // Der ganze Stand des Formulars einer neuen Position direkt nach dem Vorschlag (`proposal`), für die späte Vorbelegung
   // (`withLateContext`); `null` bei einer bestehenden Position, nach einer Wahl des Schlüssels und bei übernommenen
   // Angaben. Wird nicht gesendet und zählt nicht als Änderung im Seitenfenster (`withoutProposed`).
@@ -163,6 +169,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   meterRestKept: {},
   roomSplit: 'area',
   proposed: null,
+  includesWater: false,
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -218,6 +225,7 @@ export function itemToForm(i: CostItem): ItemForm {
     meterRestKept: {},
     roomSplit: i.roomSplit === 'persons' ? 'persons' : 'area',
     proposed: null,
+    includesWater: i.includesWater === true,
   }
 }
 
@@ -371,6 +379,39 @@ export function smokeDetectorHint(form: Pick<ItemForm, 'category' | 'description
   if (isNotAllocable(form.category)) return null
   const kind = smokeDetectorKind(form.description)
   return kind === null ? null : smokeDetectorText(kind, null)
+}
+
+// ---------- Sammelbetrag des Messdienstes (#704) ----------
+
+// Der Haken bei den Einzelbeträgen: nur an einer Position „Heizung und Warmwasser“ mit Einzelbeträgen (dieselbe Regel
+// wie der Server, `allowsIncludesWater`).
+export const showsIncludesWater = (form: Pick<ItemForm, 'category' | 'key'>): boolean => allowsIncludesWater(form)
+export { INCLUDES_WATER_LABEL }
+// Die Sätze am Haken (Durchsicht S8, Nachprüfung 7). Ohne Haken steht nur, wann er passt (`INCLUDES_WATER_WHEN`), mit dem
+// Lexikonlink; erst mit Haken folgen `INCLUDES_WATER_HELP`: was sich ändert, die Rechtslage (gelesen am 27.11.2026,
+// shared/includesWater.ts) vor der Aufforderung zur Beilage, und was daneben nicht steht.
+export const INCLUDES_WATER_WHEN = 'Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag für Heizung, Warmwasser, Kaltwasser und Abwasser nennt.'
+export const INCLUDES_WATER_HELP =
+  'Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters. ' +
+  `${COMBINED_LINE_RISK} ` +
+  'Legen Sie jedem Mieter die Einzelabrechnung des Messdienstes bei; sie schlüsselt die Kostenarten auf. ' +
+  `Eine eigene Position „${WATER_CATEGORY}“ für dieselben Kosten legen Sie dann nicht an.`
+// Die Folge für die Karte „CO₂-Kosten“, nur der Verweis dorthin (Durchsicht S8); Voraussetzung und Steuer stehen an der Karte.
+export const INCLUDES_WATER_CO2_HELP =
+  `CO₂-Kosten: Hat der Messdienst den CO₂-Anteil des Vermieters vor der Verteilung abgezogen, wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ ${enclosedWay()}. ` +
+  'Weist er ihn nur aus, erfassen Sie Heizung und Warmwasser und das Wasser als getrennte Positionen, damit Mietfuchs den Anteil abziehen kann.'
+
+// Doppelerfassung (#704): Steht im selben Zeitraum schon eine Position „Wasser/Abwasser“, sagt das Formular beim Haken
+// denselben Satz wie der Hinweis `amounts.water-twice` der Abrechnung. Das Formular kennt die Verteilung nicht; es
+// nennt deshalb jede umlagefähige Wasserposition des Zeitraums, die Abrechnung nur die, die dieselben Mieter trifft.
+// `items`: die Positionen des gewählten Zeitraums.
+export function waterTwiceHints(form: Pick<ItemForm, 'id' | 'category' | 'key' | 'includesWater' | 'description' | 'amount'>, items: readonly Pick<CostItem, 'id' | 'category' | 'description' | 'amountCents'>[]): string[] {
+  if (!form.includesWater || !showsIncludesWater(form)) return []
+  const cents = parseEuro(form.amount)
+  const own = { description: form.description.trim() || 'Diese Position', amount: cents === null ? 'Betrag noch offen' : fmtEuro(cents) }
+  return items
+    .filter((c) => c.category === WATER_CATEGORY && c.id !== form.id)
+    .map((c) => waterTwiceText(own, { description: c.description, amount: fmtEuro(c.amountCents) }))
 }
 
 export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], period?: number | BillingPeriod): string {
@@ -811,7 +852,7 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 // Belegbuchung und KI-Auswertung nie vorbelegen.
 // Dazu Bezugszähler und Rest (#98): die Angabe, wo das Formular sie zeigt (`showsMeterRest`), sonst `null`, das eine
 // gespeicherte entfernt.
-export type FormBody = CostItemBody & { spreadYears: SpreadYears | null; meterRest: MeterRest | null; roomSplit: RoomSplit | null }
+export type FormBody = CostItemBody & { spreadYears: SpreadYears | null; meterRest: MeterRest | null; roomSplit: RoomSplit | null; includesWater: boolean }
 export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): { error: string } | { body: FormBody } | { error: string, problems: Problem<'participants' | 'meterRest'>[] } {
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
@@ -825,7 +866,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
   if (rest.length > 0) return { error: rest.map((x) => x.text).join(' '), problems: rest }
   const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
   return 'body' in result
-    ? { body: { ...withSpread(withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p), form), meterRest: showsMeterRest(form) ? form.meterRest : null, roomSplit: form.key === 'meter' && form.roomSplit === 'persons' ? 'persons' : null } }
+    ? { body: { ...withSpread(withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p), form), meterRest: showsMeterRest(form) ? form.meterRest : null, roomSplit: form.key === 'meter' && form.roomSplit === 'persons' ? 'persons' : null, includesWater: showsIncludesWater(form) && form.includesWater } }
     : result
 }
 

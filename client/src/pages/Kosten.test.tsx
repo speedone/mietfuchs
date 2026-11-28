@@ -1478,3 +1478,72 @@ test('#724 Durchsicht S2: Umstellen mit „nicht vereinbart“: eine Zeile nennt
   expect(sent[0]?.body).toMatchObject({ category: 'Heizung und Warmwasser', key: 'heatingSystem' })
   expect(sent[0]?.body.notAgreedTenancyIds ?? null).toBeNull()
 })
+
+// #704: Sammelbetrag des Messdienstes. Der Haken steht nur bei „Heizung und Warmwasser“ mit Einzelbeträgen, zeigt den
+// gespeicherten Wert, und gespeichert wird, was er zeigt.
+const MIETER_704 = [
+  { id: 't1', unitId: 'u2', tenantName: 'Meier', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
+]
+const haken704 = (): HTMLInputElement => screen.getByRole('checkbox', { name: /Der Betrag enthält auch Kaltwasser und Abwasser/ }) as HTMLInputElement
+const show704 = () => render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} tenancies={MIETER_704} /></UIProvider></PropertyProvider></PeriodProvider>)
+
+test('Sammelbetrag (#704): der Haken erscheint nur bei Heizung und Warmwasser mit Einzelbeträgen; angehakt wird er gespeichert', async () => {
+  show704()
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition anlegen/i })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Abrechnung des Messdienstes' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '1.823,40' } })
+  // Andere Kostenart mit Einzelbeträgen: kein Haken.
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Wasser/Abwasser' } })
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
+  expect(screen.queryByRole('checkbox', { name: /Der Betrag enthält auch Kaltwasser und Abwasser/ })).toBeNull()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect([...select(/Umlageschlüssel/i).options].some((o) => o.value === 'amounts')).toBe(true))
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
+  expect(haken704().checked).toBe(false)
+  // Nachprüfung 7: Ohne Haken steht nur, wann er passt, mit dem Lexikonlink; der Rest erst mit Haken.
+  expect(screen.getByText(/^Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag/)).toBeTruthy()
+  expect(screen.getByText('Was ist eine Sammelzeile?')).toBeTruthy()
+  expect(screen.queryByText(/Eine solche Sammelzeile ist formell angreifbar/)).toBeNull()
+  expect(screen.queryByText(/Der Haken ändert keinen Betrag/)).toBeNull()
+  // Durchsicht S7: Der Haken steht über den Betragsfeldern, gleich unter dem Satz zu den Einzelbeträgen.
+  const satz = screen.getByText(/tragen Sie die Kosten ein, nicht diesen Saldo/)
+  const feld = screen.getByLabelText(/^Meier \(OG links\)$/)
+  expect(satz.compareDocumentPosition(haken704()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(haken704().compareDocumentPosition(feld) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.queryByText(/wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ nach „Ja, es gibt eine Abzugszeile“/)).toBeNull()
+  fireEvent.click(haken704())
+  expect(haken704().checked).toBe(true)
+  expect(screen.getByText(/^Nur, wenn die Abrechnung des Messdienstes je Mieter einen einzigen Betrag/)).toBeTruthy()
+  expect(screen.getByText(/^Der Haken ändert keinen Betrag, nur die Bezeichnung der Zeile in der Abrechnung des Mieters\. Eine solche Sammelzeile ist formell angreifbar: Ob die beiliegende Abrechnung des Messdienstes als Aufschlüsselung genügt, hat der Bundesgerichtshof nicht entschieden/)).toBeTruthy()
+  expect(screen.getByText(/wählen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ nach „Ja, es gibt eine Abzugszeile“ die Angabe „Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei“/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText(/^Meier \(OG links\)$/), { target: { value: '1.823,40' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ category: 'Heizung und Warmwasser', key: 'amounts', tenancyAmounts: { t1: 182340 }, includesWater: true })
+})
+
+test('Sammelbetrag (#704): eine gespeicherte Position zeigt den Haken; daneben eine Wasserposition im Zeitraum ergibt den Hinweis auf die Doppelerfassung; abgehakt wird false gespeichert', async () => {
+  const period = calendarPeriod(new Date().getFullYear() - 1)
+  costItems = [
+    { id: 'c1', propertyId: 'objekt-1', period, category: 'Heizung und Warmwasser', description: 'Abrechnung des Messdienstes', amountCents: 182340, key: 'amounts', tenancyAmounts: { t1: 182340 }, includesWater: true },
+    { id: 'c2', propertyId: 'objekt-1', period, category: 'Wasser/Abwasser', description: 'Stadtwerke Wasser', amountCents: 64000, key: 'persons' },
+  ]
+  show704()
+  const edit = await screen.findAllByRole('button', { name: 'Kostenposition bearbeiten' })
+  const first = edit[0]
+  if (!first) throw new Error('keine Position')
+  // Die Liste ist nach Kostenart gruppiert; geöffnet wird die Position mit dem Sammelbetrag.
+  const row = screen.getByText('Abrechnung des Messdienstes').closest('tr') ?? screen.getByText('Abrechnung des Messdienstes').closest('li')
+  fireEvent.click(row ? within(row as HTMLElement).getByRole('button', { name: 'Kostenposition bearbeiten' }) : first)
+  await waitFor(() => expect(haken704().checked).toBe(true))
+  expect(screen.getByText(/„Stadtwerke Wasser“ \(640,00\s€\)/)).toBeTruthy()
+  expect(screen.getByText(/Prüfen Sie, ob das dieselben Kosten sind/)).toBeTruthy()
+  fireEvent.click(haken704())
+  expect(haken704().checked).toBe(false)
+  expect(screen.queryByText(/Prüfen Sie, ob das dieselben Kosten sind/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/i }))
+  await waitFor(() => expect(sent.length).toBeGreaterThan(0))
+  expect(sent[0]?.url).toBe('/api/costItems/c1?property=objekt-1')
+  expect(sent[0]?.body).toMatchObject({ includesWater: false })
+})

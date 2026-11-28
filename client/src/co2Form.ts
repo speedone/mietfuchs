@@ -6,14 +6,24 @@
 // dem Papier, und eine Vorgabe wäre bei einem Teil der Messdienste falsch.
 import { fmtEuro, parseEuro } from './api'
 import { parseNumberDe } from './numbers'
-import { enteredCentsOf, serviceProbe } from '../../shared/co2Probe.ts'
+import { CO2_DEDUCTED_LABEL, CO2_EMISSIONS_FIELD, CO2_ENCLOSED_LABEL, CO2_ENCLOSED_LABEL_HOMEOWNERS, CO2_ENTER_LABEL, CO2_SHOWN_LABEL, ENCLOSED_SELF_USED, enclosedCondition, enteredCentsOf, includesWaterProbeText, serviceProbe } from '../../shared/co2Probe.ts'
+import { andList } from '../../shared/wording.ts'
+import { plantSpan, sameBuilding, sameLine } from '../../shared/heatingPeriod.ts'
+import { asksCo2Facts } from './fuelForm'
 import type { Co2Method, Co2Statement, HeatingPeriodView } from './types'
 import { KEY_LABELS } from './types'
 
 export type Co2Answer = '' | 'deducted' | 'shown' | 'unsplit'
-const METHOD_OF: Record<Exclude<Co2Answer, ''>, Co2Method> = { deducted: 'serviceDeducted', shown: 'serviceShown', unsplit: 'selfAfterService' }
+// Die zweite Wahl, nur nach „Ja, es gibt eine Abzugszeile“ (#704, Durchsicht M1): die Angaben eintragen (`serviceDeducted`,
+// Voreinstellung und bisheriges Verhalten) oder nicht eintragen, weil die Abrechnung des Messdienstes beiliegt
+// (`serviceEnclosed`). Bei „nur ausgewiesen“ gibt es sie nicht: Dort muss Mietfuchs den Anteil des Vermieters abziehen.
+export type Co2Entry = 'enter' | 'enclosed'
+const methodOf = (form: Pick<Co2Form, 'answer' | 'entry'>): Co2Method | null =>
+  form.answer === '' ? null : form.answer === 'shown' ? 'serviceShown' : form.answer === 'unsplit' ? 'selfAfterService' : form.entry === 'enclosed' ? 'serviceEnclosed' : 'serviceDeducted'
 const answerOf = (m: Co2Method): Co2Answer =>
-  m === 'serviceDeducted' ? 'deducted' : m === 'serviceShown' ? 'shown' : m === 'selfAfterService' ? 'unsplit' : ''
+  m === 'serviceDeducted' || m === 'serviceEnclosed' ? 'deducted' : m === 'serviceShown' ? 'shown' : m === 'selfAfterService' ? 'unsplit' : ''
+// Ob „liegt bei“ gewählt ist: nur zusammen mit der Antwort „Ja“.
+export const isEnclosed = (form: Pick<Co2Form, 'answer' | 'entry'>): boolean => form.answer === 'deducted' && form.entry === 'enclosed'
 
 // Gefragt wird nur nach der Zeile in der Kostenaufstellung, die den Anteil vor der Verteilung abzieht
 // (Durchsicht I1). „Vom Vermieter übernommen“ bei den einzelnen Nutzern weisen Messdienste auch ohne
@@ -24,13 +34,63 @@ export const CO2_NOT_A_SIGN = 'Ein Betrag „vom Vermieter übernommen“ bei de
 export const CO2_EXAMPLE = 'Beispiel aus einer Musterabrechnung: Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50'
 export const CO2_ANSWER_OPTIONS: readonly { value: Co2Answer; label: string }[] = [
   { value: '', label: 'Bitte wählen …' },
-  { value: 'deducted', label: 'Ja, es gibt eine Abzugszeile' },
-  { value: 'shown', label: 'Nein, die CO₂-Kosten sind nur ausgewiesen' },
+  { value: 'deducted', label: CO2_DEDUCTED_LABEL },
+  { value: 'shown', label: CO2_SHOWN_LABEL },
   { value: 'unsplit', label: 'Der Messdienst hat die CO₂-Kosten gar nicht aufgeteilt' },
 ]
+// Bei einer Eigentumswohnung rechnet die Gemeinschaft ab (Abdeckung V14); die Karte zeigt dann diese Beschriftungen.
+const HOMEOWNERS_LABELS: Partial<Record<Co2Answer, string>> = { unsplit: 'Die Abrechnung der Gemeinschaft teilt die CO₂-Kosten gar nicht auf' }
+export const co2AnswerLabel = (option: { value: Co2Answer; label: string }, homeowners: boolean): string => (homeowners ? HOMEOWNERS_LABELS[option.value] : undefined) ?? option.label
+
+// Die zweite Wahl unter der Antwort „Ja“.
+export const CO2_ENTRY_QUESTION = 'Tragen Sie die CO₂-Angaben der Abrechnung hier ein?'
+export const CO2_ENTRY_OPTIONS: readonly { value: Co2Entry; label: string }[] = [
+  { value: 'enter', label: CO2_ENTER_LABEL },
+  { value: 'enclosed', label: CO2_ENCLOSED_LABEL },
+]
+export const co2EntryLabel = (option: { value: Co2Entry; label: string }, homeowners: boolean): string => (homeowners && option.value === 'enclosed' ? CO2_ENCLOSED_LABEL_HOMEOWNERS : option.label)
+// Ob die Karte die zweite Wahl zeigt: nach „Ja“, und nur, wo es CO₂-Kosten aufzuteilen gibt (Durchsicht S11; bei
+// Pellets, Holz oder Wärmepumpe wäre „liegt bei“ ohne Wirkung). Ein gespeichertes „liegt bei“ bleibt immer sichtbar,
+// sonst zeigte die Karte etwas anderes, als gespeichert ist.
+export const showsEntry = (form: Pick<Co2Form, 'answer' | 'entry'>, ctx: Pick<Co2Context, 'offersEnclosed'>): boolean =>
+  form.answer === 'deducted' && (ctx.offersEnclosed !== false || form.entry === 'enclosed')
+
+// Der Hilfesatz unter „liegt bei“ (#704): zuerst die Voraussetzung (Durchsicht M1), dann was Mietfuchs tut, dann die
+// Pflicht des Vermieters mit dem Vorbehalt, dass nicht entschieden ist, ob der Verweis genügt (Durchsicht S6). Den
+// Kürzungssatz nennt der Hinweis der Abrechnung (er steht im Rechtsregister), hier steht er nicht.
+export const co2EnclosedHelp = (homeowners: boolean): string =>
+  `${enclosedCondition(homeowners)} Mietfuchs prüft und bucht dann keine CO₂-Aufteilung; die Abrechnung jedes Mieters verweist auf die beiliegende ${homeowners ? 'Einzelabrechnung der Heizkosten' : 'Heizkostenabrechnung des Messdienstes'}. ` +
+  'Nach § 7 Abs. 3 CO2KostAufG weisen Sie in der Heizkostenabrechnung den Anteil des Mieters an den CO₂-Kosten, die Einstufung des Gebäudes und die Berechnungsgrundlagen aus; fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 4 CO2KostAufG). ' +
+  `Ob der Verweis auf die beiliegende Abrechnung ${homeowners ? 'der Gemeinschaft' : 'des Messdienstes'} dafür genügt, ist nicht entschieden.`
+export const CO2_ENCLOSED_TAX = `Für die Steuer: Den CO₂-Anteil des Vermieters kennt Mietfuchs dann nicht als eigenen Posten. Wer ihn als Werbungskosten ansetzen will, nimmt als Betrag der Position die Summe aller Nutzer plus diesen Anteil. ${ENCLOSED_SELF_USED}`
+// Durchsicht S2: Heizt im selben Gebäude oder in derselben Linie eine zweite Anlage, braucht deren Einstufung den Ausstoß
+// dieser Anlage; nur dann zeigt die Karte bei „liegt bei“ dieses eine Feld. Die Fläche liest die Berechnung nicht.
+export const CO2_ENCLOSED_JOINT = 'Diese Anlage wird gemeinsam mit einer weiteren eingestuft. Tragen Sie deshalb den CO₂-Ausstoß dieser Anlage aus der Abrechnung ein; sonst stuft Mietfuchs die andere Anlage ohne ihn ein, und die Stufe kann falsch liegen.'
+// Ob die Anlage in der Heizperiode der Ansicht gemeinsam mit einer anderen eingestuft wird (Nachprüfung 3): eine Anlage
+// derselben Linie (Kesseltausch) oder desselben Gebäudes, die in dieser Heizperiode heizt (nach einem Tausch also nur in
+// der Heizperiode des Tauschs) und selbst eine CO₂-Einstufung braucht (`asksCo2Facts`, wie `co2Required` am Server).
+type JointPlant = Parameters<typeof plantSpan>[0] & Parameters<typeof sameBuilding>[0] & Parameters<typeof asksCo2Facts>[0]
+export const classifiedJointly = (plant: JointPlant, plants: readonly JointPlant[], view: { from: string; to: string }): boolean =>
+  plants.some((other) => {
+    if (!sameLine(plant, other, plants) && !sameBuilding(plant, other, plants)) return false
+    const span = plantSpan(other, plants)
+    return (span.to === null || span.to >= view.from) && (span.from === null || span.from <= view.to) && asksCo2Facts(other)
+  })
+export { CO2_EMISSIONS_FIELD }
+
+// Sammelbetrag des Messdienstes (#704): Steckt Wasser im Betrag einer Messdienstposition und ist eine Antwort mit Probe
+// gewählt, sagt die Karte, warum die Probe nicht aufgehen kann, nennt den Weg zu „liegt bei“ und sagt, dass der
+// Sammelbetrag bei „nur ausgewiesen“ nicht passt. Derselbe Satz wie in der Meldung `co2.sum-check` der Abrechnung.
+export function includesWaterNote(form: Pick<Co2Form, 'answer' | 'entry'>, ctx: Co2Context): string | null {
+  if ((form.answer !== 'deducted' && form.answer !== 'shown') || isEnclosed(form)) return null
+  const combined = serviceItemsOf(ctx).filter((i) => i.includesWater === true)
+  if (combined.length === 0) return null
+  return includesWaterProbeText(andList(combined.map((i) => `„${i.description}“`)), combined.length > 1, ctx.homeowners === true)
+}
 
 export type Co2Form = {
   answer: Co2Answer
+  entry: Co2Entry // die zweite Wahl nach „Ja“; ohne Bedeutung bei den anderen Antworten
   usersTotal: string // S, wie gedruckt
   usersTotalApprox: boolean // „Ich finde diese Zeile nicht“
   vacancyTotal: string // Beträge leerer oder nicht eingetragener Einheiten (nur ohne S)
@@ -51,7 +111,9 @@ export type Co2Form = {
 // eigenen Wohnung in der Hausgeldabrechnung nennt deren Heizkosten und den CO₂-Anteil des Vermieters für diese
 // Wohnung; gemeint ist dann der eigene Anteil, nicht die Summe des ganzen Hauses, und die Abrechnung betrifft eine
 // Nutzeinheit. Die Position trägt ja auch nur den eigenen Anteil.
-export type Co2Context = { items: HeatingPeriodView['items']; unitsCount: number; homeowners?: boolean }
+// `offersEnclosed`: `false`, wo es keine CO₂-Kosten aufzuteilen gibt (die Karte bietet „liegt bei“ dann nicht an).
+// `joint`: Im selben Gebäude oder in derselben Linie heizt eine weitere Anlage (gemeinsame Einstufung).
+export type Co2Context = { items: HeatingPeriodView['items']; unitsCount: number; homeowners?: boolean; offersEnclosed?: boolean; joint?: boolean }
 
 // Die Beschriftungen der Karte, je nachdem, wer abrechnet.
 export function co2Labels(homeowners: boolean): { usersTotal: string; usersTotalHelp: string; landlordCo2: string; unitsCount: string; unitsHelp: string } {
@@ -88,6 +150,7 @@ export function co2ToForm(st: Co2Statement | null, ctx: Co2Context): Co2Form {
   const S = st?.serviceUsersTotalCents ?? null
   return {
     answer: st ? answerOf(st.method) : '',
+    entry: st?.method === 'serviceEnclosed' ? 'enclosed' : 'enter',
     usersTotal: st?.serviceUsersTotalApprox ? '' : centsText(S),
     usersTotalApprox: st?.serviceUsersTotalApprox ?? false,
     vacancyTotal: st?.serviceUsersTotalApprox && S !== null ? centsText(Math.max(0, S - enteredCentsOf(serviceItemsOf(ctx)))) : '',
@@ -115,8 +178,17 @@ export function usersTotalOf(form: Co2Form, ctx: Co2Context): number | null {
 }
 
 export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, unknown> } | { error: string } {
-  if (form.answer === '') return { error: 'Bitte beantworten Sie zuerst die Frage nach der Abzugszeile.' }
-  const method = METHOD_OF[form.answer]
+  const method = methodOf(form)
+  if (method === null) return { error: 'Bitte beantworten Sie zuerst die Frage nach der Abzugszeile.' }
+  // #704: Mit „liegt bei“ ist nichts weiter nötig, und nichts weiter wird geschickt. Der Server ergänzt nach Anwesenheit
+  // eines Schlüssels: Was früher eingetragen war, bleibt gespeichert, und ein halb getipptes Feld hält das Speichern
+  // nicht auf. Nur bei gemeinsamer Einstufung mit einer zweiten Anlage geht der Ausstoß mit (Durchsicht S2).
+  if (method === 'serviceEnclosed') {
+    if (!ctx.joint) return { body: { method } }
+    const kg = form.emissionsKg.trim() === '' ? null : parseDecimal(form.emissionsKg)
+    if (form.emissionsKg.trim() !== '' && (kg === null || kg < 0)) return { error: `Bitte prüfen Sie „${CO2_EMISSIONS_FIELD}“: keine Zahl ab 0.` }
+    return { body: { method, serviceEmissionsKg: kg } }
+  }
   const errors: string[] = []
   const cents = (text: string, label: string): number | null => {
     if (text.trim() === '') return null
@@ -150,7 +222,7 @@ export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, 
     serviceLandlordCents: L,
     serviceUnitsCount: unitsCount,
     serviceKgPerM2: decimal(form.kgPerM2, 'CO₂-Ausstoß je m² und Jahr (kg)'),
-    serviceEmissionsKg: decimal(form.emissionsKg, 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)'),
+    serviceEmissionsKg: decimal(form.emissionsKg, CO2_EMISSIONS_FIELD),
     serviceAreaM2: area !== null && area > 0 ? area : null,
     serviceLandlordPermille: percent === null ? null : Math.round(percent * 10),
     serviceTotalCents: cents(form.totalCo2, 'CO₂-Kosten insgesamt'),
@@ -187,7 +259,7 @@ export function probeQuestion(probeText: string, advice: string): string {
 
 // Die Probe unter der Karte (Entwurf 11.3): „Ihre Positionen: 3.933,01 € · erwartet: 3.933,01 € ✓“.
 export function probeLine(form: Co2Form, ctx: Co2Context): { text: string; ok: boolean } | null {
-  if (form.answer !== 'deducted' && form.answer !== 'shown') return null
+  if ((form.answer !== 'deducted' && form.answer !== 'shown') || isEnclosed(form)) return null
   const S = usersTotalOf(form, ctx)
   const L = form.landlordCo2.trim() === '' ? null : parseEuro(form.landlordCo2)
   const units = Number(form.unitsCount)

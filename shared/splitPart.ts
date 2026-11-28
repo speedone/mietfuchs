@@ -65,6 +65,8 @@ export const SPLIT_FIELDS = {
   roomSplit: 'same',
   heatingPlantId: 'same', fuelDeliveryId: 'same', operatingPower: 'same', operatingPowerItemId: 'same',
   operatingPowerBasis: 'same', operatingPowerGeneralId: 'same', operatingPowerReported: 'same',
+  // Sammelbetrag des Messdienstes (#704): eine Angabe zur Rechnung, jeder Teil trägt sie.
+  includesWater: 'same',
   // Die Quelle (#455): Jeder Teil verweist auf dieselbe Rechnung.
   sourceId: 'same',
   // Die Verteilung nach § 82b EStDV (#262, E-11): eine Wahl je Rechnung, jeder Teil trägt sie.

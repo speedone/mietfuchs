@@ -247,3 +247,57 @@ test('ohne Heizanlage: „Heizung einrichten“ führt zur Karte „Heizung“ d
   fireEvent.click(await screen.findByRole('button', { name: 'Heizung einrichten' }, { timeout: 5000 }))
   expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'heatingPlant', id: '' })
 })
+
+// #704, Nachprüfung 3: die Karte „CO₂-Kosten“ auf der Seite. `offersEnclosed` hängt am Energieträger, `joint` nur an einer
+// Partneranlage, die in der Heizperiode der Ansicht heizt und selbst eine CO₂-Einstufung braucht.
+test('CO₂-Kosten bei „liegt bei“: die Wahl nur mit CO₂-Kosten; das Feld für den Ausstoß nur mit einer Partneranlage, die in dieser Heizperiode heizt und selbst eingestuft wird', async () => {
+  const enclosed = {
+    heatingPeriodId: 'h', plantId: 'hp1', period: periodKey('2025-01'), method: 'serviceEnclosed', areaM2: null, serviceEmissionsKg: null,
+    serviceAreaM2: null, serviceKgPerM2: null, serviceLandlordPermille: null, serviceTotalCents: null, serviceLandlordCents: null,
+    serviceUsersTotalCents: null, serviceUsersTotalApprox: false, serviceUnitsCount: null, serviceCostItemId: null, serviceSelfLandlordCents: null,
+    serviceFuelGrossCents: null, serviceFuelNetCents: null, reliefs: [],
+  }
+  const periodView: HeatingPeriodView = {
+    plantId: 'hp1', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
+    ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null },
+    hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: enclosed as HeatingPeriodView['co2'], stock: null, items: [],
+  }
+  const base = { ...PLANT, method: 'service', endsOn: null, replacesPlantId: null, buildingWith: null }
+  const show = async (plants: Record<string, unknown>[], co2: HeatingPeriodView['co2'] = periodView.co2) => {
+    cleanup()
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const path = url.split('?')[0]
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+      if ((init?.method ?? 'GET') !== 'GET') return json({})
+      if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+      if (path === '/api/heating-plants') return json(plants)
+      if (path === '/api/heating-plants/hp1/periods') return json([{ ...periodView, co2 }])
+      return json([])
+    })
+    render(<PeriodProvider><PropertyProvider><UIProvider><Heizkosten units={[]} tenancies={[]} /></UIProvider></PropertyProvider></PeriodProvider>)
+    await screen.findByLabelText('Abzugszeile', undefined, { timeout: 5000 })
+  }
+  const jointText = /Diese Anlage wird gemeinsam mit einer weiteren eingestuft/
+  // Allein im Gebäude: die Wahl ja, das Feld nein.
+  await show([base])
+  expect((screen.getByLabelText('CO₂-Angaben eintragen') as HTMLSelectElement).value).toBe('enclosed')
+  expect(screen.queryByText(jointText)).toBeNull()
+  // Eine zweite Gasanlage im selben Gebäude: das Feld.
+  await show([base, { ...base, id: 'hp2', name: 'Hinterhaus', buildingWith: 'hp1' }])
+  expect(screen.getByText(jointText)).toBeTruthy()
+  // Daneben nur eine Pelletanlage (keine CO₂-Kosten, keine Einstufung): kein Feld.
+  await show([base, { ...base, id: 'hp2', name: 'Hinterhaus', energy: 'pellets', buildingWith: 'hp1' }])
+  expect(screen.queryByText(jointText)).toBeNull()
+  // Kesseltausch: Die Vorgängerin heizte nur bis 2024, in der Heizperiode 2025 also nicht mehr: kein Feld.
+  await show([{ ...base, replacesPlantId: 'alt' }, { ...base, id: 'alt', name: 'Alt', endsOn: '2024-06-30' }])
+  expect(screen.queryByText(jointText)).toBeNull()
+  // Im Jahr des Tauschs heizen beide: das Feld.
+  await show([{ ...base, replacesPlantId: 'alt' }, { ...base, id: 'alt', name: 'Alt', endsOn: '2025-06-30' }])
+  expect(screen.getByText(jointText)).toBeTruthy()
+  // `offersEnclosed`: Bei Pellets bietet die Karte die Wahl nach „Ja“ nicht an, bei Gas schon.
+  const deducted = { ...enclosed, method: 'serviceDeducted', serviceUsersTotalCents: 100000, serviceLandlordCents: 0, serviceUnitsCount: 1 } as HeatingPeriodView['co2']
+  await show([{ ...base, energy: 'pellets' }], deducted)
+  expect(screen.queryByLabelText('CO₂-Angaben eintragen')).toBeNull()
+  await show([base], deducted)
+  expect((screen.getByLabelText('CO₂-Angaben eintragen') as HTMLSelectElement).value).toBe('enter')
+})

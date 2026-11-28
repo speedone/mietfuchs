@@ -1432,7 +1432,10 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
 - **Umlageschlüssel** (`item.key`): `area`, `persons` (personentagesgenau), `units`, `meter`
   (Verbrauch nach Zählertyp), `direct`, `custom` (vereinbarte Prozente absolut, was unter 100 %
   fehlt, trägt der Vermieter), `external` (laut Gemeinschaftsabrechnung) und `amounts`
-  (Einzelbeträge je Mietverhältnis).
+  (Einzelbeträge je Mietverhältnis). An einer Position „Heizung und Warmwasser“ mit `amounts` sagt `includesWater`
+  (#704), dass der Betrag auch Kaltwasser und Abwasser enthält: keine andere Zahl, nur die Bezeichnung der Zeile
+  (`categoryLabelOf`, shared/includesWater.ts) und die Hinweise `amounts.water-twice` und der Zusatz in `co2.sum-check`
+  (docs/heizung.md, „CO₂ beim Messdienst“).
 - **Nicht vereinbart** (#258): Ein Mietverhältnis in `notAgreedTenancyIds` bleibt in der Verteilbasis, sein Anteil
   geht als `notAgreed` an den Vermieter (`bookable`), bei jedem Schlüssel. Nicht bei Heizung, nicht Umlagefähigem und
   an Übertragszeilen (`contractTenancyIds`; das Wiederherstellen prüft die Kostenart nicht). Hinweise

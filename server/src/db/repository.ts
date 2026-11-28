@@ -43,6 +43,7 @@ import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { allowsIncludesWater } from '../../../shared/includesWater.ts'
 import { isNotAllocable, isReserveCategory, RESERVE_CONTRIBUTION_CATEGORY, RESERVE_WITHDRAWAL_CATEGORY } from '../../../shared/categories.ts'
 import { isFederalState } from '../../../shared/states.ts'
 import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
@@ -666,6 +667,10 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   // Angabe weg (geradegerückt statt abgelehnt: ein alter Tab schickt das Feld nicht mit).
   const reported = merged(body, 'operatingPowerReported', current.operatingPowerReported, (v) => (typeof v === 'boolean' ? v : undefined))
   const operatingPowerReported = operatingPower === 'deduction' && operatingPowerItemId === undefined ? reported : undefined
+  // #704: Sammelbetrag des Messdienstes, nur bei „Heizung und Warmwasser“ mit Einzelbeträgen. Wechselt Kostenart oder
+  // Schlüssel, fällt die Angabe weg (geradegerückt statt abgelehnt, wie beim Betriebsstrom: ein alter Tab schickt das
+  // Feld nicht mit, und der Haken wäre an der neuen Position ohne Bedeutung).
+  const includesWater = allowsIncludesWater({ category, key }) && merged(body, 'includesWater', current.includesWater, (v) => v === true) === true
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -723,6 +728,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
     operatingPowerGeneralId: merged(body, 'operatingPowerGeneralId', current.operatingPowerGeneralId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
     ...(operatingPowerReported !== undefined ? { operatingPowerReported } : {}),
+    ...(includesWater ? { includesWater: true } : {}),
     // Die Quelle (#455) kommt nie aus dem Rumpf: Gesetzt wird sie nur von den Schreibwegen der Teile
     // (`writeCostItemParts`), sonst hängte ein alter Tab eine Position an eine fremde Rechnung.
     ...(current.sourceId !== undefined ? { sourceId: current.sourceId } : {}),
@@ -2912,6 +2918,7 @@ const costItemRow = (c: CostItem) => ({
   sourceId: orNull(c.sourceId),
   spreadYears: orNull(c.spreadYears),
   roomSplit: c.key === 'meter' ? orNull(c.roomSplit) : null,
+  includesWater: c.includesWater === true && allowsIncludesWater(c) ? true : null,
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,

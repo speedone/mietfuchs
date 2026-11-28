@@ -18,11 +18,11 @@ import {
   itemToForm,
   meterTypeOptions,
   waterMeterHint,
-  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, smokeDetectorHint,
   chimneySweepPlants,
   chimneySweepQuestion,
   notAgreedDroppedText,
   toCentralHeating,
+  amountsSumText, AMOUNTS_FEE_HELP, AMOUNTS_HELP, showsAmountsFeeHelp, showsIncludesWater, INCLUDES_WATER_LABEL, INCLUDES_WATER_WHEN, INCLUDES_WATER_HELP, INCLUDES_WATER_CO2_HELP, waterTwiceHints, smokeDetectorHint,
   externalHint,
   externalMismatch,
   tenanciesForAmounts,
@@ -1567,6 +1567,22 @@ export default function Kosten({ units: allUnits, settings, tenancies = [], focu
               <div className="field-group">
                 <div className="field-group-label"><Term id="individualAmounts">Einzelbeträge</Term> je Mieter</div>
                 <div className="muted">{AMOUNTS_HELP}</div>
+                {/* Sammelbetrag des Messdienstes (#704): nur bei „Heizung und Warmwasser“. Der Haken ändert keine Zahl. Er steht über den
+                    Betragsfeldern, gleich unter dem Satz, der sonst nur die Zwischensumme verlangt (Durchsicht S7). */}
+                {showsIncludesWater(form) && (
+                  <>
+                    <label className="field checkline">
+                      <span>
+                        <input type="checkbox" checked={form.includesWater} onChange={(e) => setForm({ ...form, includesWater: e.target.checked })} />
+                        {INCLUDES_WATER_LABEL}
+                      </span>
+                    </label>
+                    <div className="muted">{INCLUDES_WATER_WHEN} <Term id="combinedLine">Was ist eine Sammelzeile?</Term></div>
+                    {form.includesWater && <div className="muted">{INCLUDES_WATER_HELP}</div>}
+                    {form.includesWater && <div className="muted">{INCLUDES_WATER_CO2_HELP}</div>}
+                    {waterTwiceHints(form, yearItems).map((text) => <NoticeBox key={text} level="warning" action={text} />)}
+                  </>
+                )}
                 {showsAmountsFeeHelp(form.category) && <div className="muted"><Term id="changeFee">Nutzerwechselgebühr</Term>: {AMOUNTS_FEE_HELP}</div>}
                 {tenanciesForAmounts(tenancies, units, period, form.participants).length === 0 ? (
                   <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>

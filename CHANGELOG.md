@@ -51,6 +51,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   eigene Heizkostenabrechnung je Heizperiode rechnet weiter nur Heizung und Warmwasser ab, und eine abgeschlossene
   Abrechnung behält ihren Wortlaut. Der Export der Abrechnung nennt die Angabe neben `heatingCents` als `coversWater`,
   nur wo sie gilt ([#712](https://github.com/speedone/mietfuchs/issues/712)).
+- Sammelbetrag des Messdienstes: Rechnet Ihr Messdienst Heizung, Warmwasser, Kaltwasser und Abwasser in einem Betrag je
+  Mieter ab, tragen Sie genau diesen Betrag ein, ohne etwas herauszurechnen. An einer Position „Heizung und Warmwasser“
+  mit Einzelbeträgen gibt es dafür den Haken „Der Betrag enthält auch Kaltwasser und Abwasser (der Messdienst rechnet sie
+  in einem Betrag je Nutzer ab)“. Er ändert keinen Betrag: Die Abrechnung des Mieters nennt die Zeile dann „Heizung und
+  Warmwasser einschließlich Kaltwasser und Abwasser (laut Abrechnung des Messdienstes)“, und eine Warnung meldet, wenn
+  daneben eine Position „Wasser/Abwasser“ auf dieselben Mieter umgelegt wird. In der Karte „CO₂-Kosten“ der Seite
+  Heizkosten gibt es nach der Antwort „Ja, es gibt eine Abzugszeile“ eine zweite Wahl: die Angaben der Abrechnung
+  eintragen wie bisher, oder „Nicht eintragen: Die Heizkostenabrechnung des Messdienstes liegt jeder Abrechnung bei“.
+  Mietfuchs prüft und bucht dann keine CO₂-Aufteilung, und die Abrechnung des Mieters verweist statt des Blocks
+  „CO₂-Kostenaufteilung“ auf die beiliegende Heizkostenabrechnung des Messdienstes; ein Hinweis nennt die Voraussetzung
+  (der Messdienst hat den Anteil des Vermieters vor der Verteilung abgezogen) und erinnert an die Beilage. Weist die
+  Abrechnung den Anteil nur aus, gibt es die Wahl nicht, und ein Sammelbetrag passt dort nicht: Heizung und Warmwasser
+  und das Wasser sind dann getrennt zu erfassen. Eine Sammelzeile aus Heizung und Wasser ist formell angreifbar: Mietfuchs
+  lässt sie zu, warnt aber in der Abrechnung, nennt je Mieter den Betrag, der im schlimmsten Fall nicht nachzufordern
+  wäre, und den sicheren Weg (getrennte Positionen); das Lexikon erklärt die „Sammelzeile“ mit den Fundstellen. Ohne
+  Haken und ohne die neue Wahl bleibt jede Abrechnung, wie sie war. Im JSON-Export der Abrechnung tragen solche Zeilen
+  das neue Feld `includesWater`, die CSV nennt die Kostenart mit dem Zusatz ([#704](https://github.com/speedone/mietfuchs/issues/704)).
 - Anpassung der Vorauszahlung je Teil: Führt ein Mietverhältnis die Vorauszahlung getrennt für Heizung und Warmwasser und
   für die übrigen Nebenkosten und rechnen Sie beides in einer Abrechnung ab, nennt das Anschreiben bei der Anpassung nach
   § 560 Abs. 4 BGB auch die beiden Teile mit ihrem bisherigen Betrag. Der Vorschlag teilt sich nach den Kosten dieser

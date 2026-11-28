@@ -9,6 +9,7 @@
 // deutsch (Komma, ohne Tausenderpunkt), weil Tabellenkalkulationen sie so lesen.
 import type { HeatingStatement, LetterAdjustmentMode, Notice, Settlement, SettlementPeriod, SettlementRow } from '../../shared/types.ts'
 import { blockingErrors } from '../../shared/notices.ts'
+import { categoryLabelOf } from '../../shared/includesWater.ts'
 import { csvField, euro, textField } from './taxReceipts.ts'
 
 // Was der Export vom Ergebnis braucht. Ein eingefrorener Stand kennt manches nicht (`closed`, ältere
@@ -27,6 +28,10 @@ export const EXPORT_VERSION = 1
 export type ExportRow = {
   costItemId: string
   category: string
+  // Sammelbetrag des Messdienstes (#704): Die Position enthält nach Angabe des Vermieters auch Kaltwasser und Abwasser;
+  // `category` bleibt „Heizung und Warmwasser“. Nur vorhanden, wenn gesetzt (neues Feld, die Form bleibt Version 1). Die
+  // CSV nennt die Kostenart dann mit dem Zusatz der gedruckten Abrechnung (`categoryLabelOf`).
+  includesWater?: true
   description: string
   totalCents: number
   // Art einer Zeile ohne Kostenposition (CO₂-Anteil, Übertrag, Netzentgelte, Erstattung), sonst null.
@@ -86,7 +91,7 @@ export type SettlementExport = {
 }
 
 const exportRow = (r: SettlementRow): ExportRow => ({
-  costItemId: r.costItemId, category: r.category, description: r.description, totalCents: r.totalCents,
+  costItemId: r.costItemId, category: r.category, ...(r.includesWater === true ? { includesWater: true as const } : {}), description: r.description, totalCents: r.totalCents,
   kind: r.kind ?? null, key: r.key ?? null, keyLabel: r.keyLabel, basisText: r.basisText ?? null, shareCents: r.shareCents, labor35aCents: r.labor35aCents ?? null,
 })
 
@@ -138,7 +143,7 @@ export function settlementExportCsv(s: ExportableSettlement): string {
     const line = (kind: string, rest: string[]) => rows.push([...head, kind, ...rest].join(';'))
     for (const r of st.rows) {
       line(r.kind ? KIND_LABELS[r.kind] : 'Position', [
-        textField(r.category), textField(r.description), csvField(euro(r.totalCents)), textField(r.keyLabel), textField(r.basisText ?? ''),
+        textField(categoryLabelOf(r)), textField(r.description), csvField(euro(r.totalCents)), textField(r.keyLabel), textField(r.basisText ?? ''),
         csvField(euro(r.shareCents)), r.labor35aCents ? csvField(euro(r.labor35aCents)) : '',
       ])
     }

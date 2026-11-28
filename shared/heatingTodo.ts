@@ -132,6 +132,8 @@ export const HEATING_TODO_CODES: Readonly<Record<string, TodoCodeRule>> = {
   'co2.half-split': step('co2'),
   'co2.half-split-two-family': step('co2'),
   'co2.half-split-missing': step('co2'),
+  // #704: Antwort „liegt bei“ der CO₂-Karte, nur bei Abrechnung durch den Messdienst; Stufe „Hinweis“, färbt nicht.
+  'co2.service-enclosed': step('co2'),
   'fuel.stock-missing': step('co2'),
   // ---------- Angaben zur Abrechnung (§ 6a) ----------
   'heating.info-incomplete': step('info'),

@@ -6,7 +6,7 @@ import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
-import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, probeQuestion, type Co2Form } from '../co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_EMISSIONS_FIELD, CO2_ENCLOSED_JOINT, CO2_ENCLOSED_TAX, CO2_ENTRY_OPTIONS, CO2_ENTRY_QUESTION, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2AnswerLabel, co2Body, co2EnclosedHelp, co2EntryLabel, co2Labels, co2ToForm, includesWaterNote, isEnclosed, probeLine, probeQuestion, showsEntry, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
@@ -17,9 +17,12 @@ type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serv
 // `hasSelfUsed` (Laienprobe B22): Nur wenn eine Wohnung des Objekts selbst bewohnt ist, gibt es das
 // Feld für ihren CO₂-Anteil; im ganz vermieteten Haus hielt man es sonst für den eigenen Anteil.
 // `homeowners` (Abdeckung V14): Bei einer Eigentumswohnung rechnet die Gemeinschaft ab; gefragt ist der eigene Anteil.
-export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = false, homeowners = false, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; hasSelfUsed?: boolean; homeowners?: boolean; onSaved: () => void }) {
+// `offersEnclosed` (#704, Durchsicht S11): Ohne CO₂-Kosten (Pellets, Holz, Wärmepumpe) gibt es die Wahl „liegt bei“ nicht.
+// `joint` (Durchsicht S2): Im selben Gebäude oder in derselben Linie heizt eine weitere Anlage; bei „liegt bei“ fragt die
+// Karte dann nach dem Ausstoß dieser Anlage, den die gemeinsame Einstufung braucht.
+export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = false, homeowners = false, offersEnclosed = true, joint = false, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; hasSelfUsed?: boolean; homeowners?: boolean; offersEnclosed?: boolean; joint?: boolean; onSaved: () => void }) {
   const propertyId = useOptionalProperty()?.property?.id
-  const ctx = { items: view.items, unitsCount, homeowners }
+  const ctx = { items: view.items, unitsCount, homeowners, offersEnclosed, joint }
   const labels = co2Labels(homeowners)
   const [form, setForm] = useState<Co2Form>(() => co2ToForm(view.co2, ctx))
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
@@ -32,9 +35,11 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
   const confirm = useConfirm()
   const set = <K extends keyof Co2Form>(key: K, value: Co2Form[K]) => setForm((f) => ({ ...f, [key]: value }))
   const probe = probeLine(form, ctx)
+  const waterNote = includesWaterNote(form, ctx)
   const serviceItems = view.items.filter((i) => i.key === 'amounts')
   const billed = tenancies.filter((t) => serviceItems.some((i) => (i.tenancyAmounts?.[t.id] ?? 0) > 0))
-  const service = form.answer === 'deducted' || form.answer === 'shown'
+  const enclosed = isEnclosed(form)
+  const service = (form.answer === 'deducted' || form.answer === 'shown') && !enclosed
   const url = withProperty(`/api/heating-plants/${view.plantId}/periods/${view.period}/co2`, propertyId)
 
   async function save() {
@@ -103,7 +108,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           disabled={view.closed}
           onChange={(e) => set('answer', CO2_ANSWER_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}
         >
-          {CO2_ANSWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{homeowners && o.value === 'unsplit' ? 'Die Abrechnung der Gemeinschaft teilt die CO₂-Kosten gar nicht auf' : o.label}</option>)}
+          {CO2_ANSWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{co2AnswerLabel(o, homeowners)}</option>)}
         </select>
       </label>
       <p className="muted">{CO2_EXAMPLE} · <Term id="co2Deducted">Was ist die Abzugszeile?</Term></p>
@@ -111,6 +116,33 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
       {form.answer === 'unsplit' && (
         <NoticeBox level="warning" action={<>Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie {homeowners ? 'die Verwaltung der Gemeinschaft' : 'den Messdienst'} um eine Abrechnung mit CO₂-Aufteilung.</>} />
       )}
+      {/* #704 (Durchsicht M1): Nur nach „Ja“ die zweite Wahl, eintragen oder nicht eintragen, weil die Abrechnung beiliegt. */}
+      {showsEntry(form, ctx) && (
+        <label className="field">
+          {CO2_ENTRY_QUESTION}
+          <select
+            aria-label="CO₂-Angaben eintragen"
+            value={form.entry}
+            disabled={view.closed}
+            onChange={(e) => set('entry', CO2_ENTRY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'enter')}
+          >
+            {CO2_ENTRY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{co2EntryLabel(o, homeowners)}</option>)}
+          </select>
+        </label>
+      )}
+      {enclosed && (
+        <>
+          <p className="muted">{co2EnclosedHelp(homeowners)}</p>
+          <p className="muted">{CO2_ENCLOSED_TAX}</p>
+          {joint && (
+            <>
+              <div className="row">{text('emissionsKg', CO2_EMISSIONS_FIELD)}</div>
+              <small className="muted">{CO2_ENCLOSED_JOINT}</small>
+            </>
+          )}
+        </>
+      )}
+      {waterNote && <NoticeBox level="warning" action={waterNote} />}
       {service && (
         <>
           {/* Sichtprüfung E38: der Hilfetext unmittelbar unter seinem Feld, das Kästchen neben seiner Beschriftung */}
@@ -135,7 +167,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           </small>
           <div className="row">
             {text('kgPerM2', <>CO₂-Ausstoß je m² und Jahr (kg) für die <Term id="co2Stage">Einstufung</Term></>)}
-            {text('emissionsKg', 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)')}
+            {text('emissionsKg', CO2_EMISSIONS_FIELD)}
             {text('serviceArea', <><Term id="co2Area">Wohnfläche</Term> laut Abrechnung (m²)</>)}
             {text('landlordPercent', 'Anteil des Vermieters (%)')}
             {text('totalCo2', 'CO₂-Kosten insgesamt (€)')}
