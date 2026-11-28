@@ -277,7 +277,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpe
                 )}
                 {plant.method === 'service' && (v.from >= first ? (
                   <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={units.filter((u) => servesUnit(plant, u)).length} hasSelfUsed={units.some((u) => selfUsedWithin(u, v.from, v.to))} homeowners={plant.source === 'homeowners'}
-                    offersEnclosed={asksCo2Facts(plant) || plant.energy === 'other'}
+                    offersEnclosed={asksCo2Facts(plant) || billingEnergy(plant) === 'other'}
                     joint={classifiedJointly(plant, data?.plants ?? [], v)}
                     onSaved={() => void load()} />
                 ) : (
