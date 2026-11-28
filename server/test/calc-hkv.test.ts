@@ -505,3 +505,59 @@ test('#690, Durchsicht S1: geschätzte Ablesungen und eine Wohnung ohne Gerät z
   assert.match(n.text, /betroffen sind 80 von 200 m² \(40 %\)/)
   assert.match(n.text, /C ohne Wärmezähler/)
 })
+
+// Integrationsdurchsicht vor dem Release (Geld), zu #690: Eine Wohnung ohne Anschluss an das Warmwasser (Durchlauferhitzer,
+// `noConnection: ['warmwasser']`) nimmt am Topf Warmwasser nicht teil, weder mit Verbrauch noch mit Fläche, mit Geräten
+// oder ohne, auch bei reiner Flächenverteilung. Vorher zählte sie als „Wohnung ohne Gerät“ (Durchschnitt oder Fläche) bzw.
+// trug ganz ohne Warmwasserzähler im Haus nach Fläche mit. Die Heizung bleibt, wie sie ist.
+const rowOf = (s: ComputedSettlement, t: string, id: string): number =>
+  s.statements.find((st) => st.tenancyId === t)?.rows.find((r) => r.costItemId === id)?.shareCents ?? 0
+const noWaterC = (sizes: [number, number, number], dropAllWater = false): Snapshot => {
+  const units = [selfUnit('a', sizes[0]), selfUnit('b', sizes[1]), selfUnit('c', sizes[2], { noConnection: ['warmwasser'] })]
+  const drop = (id: string) => id === 'xw-c' || (dropAllWater && id.startsWith('xw-'))
+  return selfSnapshot({ units, meters: selfMeters().filter((m) => !drop(m.id)), readings: selfReadings().filter((r) => !drop(r.meterId)) })
+}
+
+test('#690, Integrationsdurchsicht: C ohne Warmwasseranschluss (60 von 200 m²) zählt nicht als Wohnung ohne Gerät und trägt kein Warmwasser', () => {
+  const s = computeSettlement(noWaterC([60, 80, 60]))
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+  assert.ok(!codes(s).includes('heating.unit-without-device'), codes(s).join(', '))
+  // Miete Warmwasserzähler 60,00 €: 30 % nach Fläche (A 60, B 80 von 140 m²), 70 % nach Verbrauch (A 30, B 40 von 70 m³).
+  assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => rowOf(s, t, 'wwz')), [2571, 3429, 0, 0])
+  const water = selfOf(s).pots.find((p) => p.pot === 'water') ?? assert.fail('kein Topf Warmwasser')
+  assert.deepEqual([water.areaM2, water.unequippedUnits, water.byAreaOnly, water.overThreshold], [140, undefined, false, false])
+  // Die Heizung bleibt: Miete Wärmezähler wie mit Warmwasserzähler in C.
+  const voll = computeSettlement(selfSnapshot())
+  assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => rowOf(s, t, 'wz')), ['A', 'B', 'C1', 'C2'].map((t) => rowOf(voll, t, 'wz')))
+  // Die Grenzen von C nennen kein fehlendes Gerät für das Warmwasser.
+  assert.ok(selfOf(s).units.find((u) => u.unitId === 'c')?.boundaries.every((b) => !(b.noDevicePots ?? []).includes('water')))
+  // Der Rechenweg von C nennt kein Warmwasser.
+  const stepsC = s.statements.find((st) => st.tenancyId === 'C1')?.rows.flatMap((r) => r.steps ?? []) ?? []
+  assert.ok(stepsC.length > 0 && !stepsC.some((x) => /Warmwasser$/.test(x.label)), JSON.stringify(stepsC.map((x) => x.label)))
+  // Eine liegengebliebene Schätzung des Warmwassers von C rechnet nicht.
+  const mitSchaetzung = computeSettlement({ ...noWaterC([60, 80, 60]), heatingEstimates: [{ plantId: 'hp', period: periodKey('2025-01'), unitId: 'c', part: 'water', value: 30, method: 'buildingAverage', reason: 'alt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'm³' }] })
+  assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => rowOf(mitSchaetzung, t, 'wwz')), [2571, 3429, 0, 0])
+  assert.equal(allRows(s), s.totalCostsCents)
+})
+
+test('#690, Integrationsdurchsicht: C ohne Warmwasseranschluss unter der Grenze (30 von 210 m²) bekommt keinen Durchschnitt', () => {
+  const s = computeSettlement(noWaterC([80, 100, 30]))
+  assert.ok(!codes(s).includes('heating.unit-without-device'), codes(s).join(', '))
+  // 30 % nach Fläche (A 80, B 100 von 180 m²), 70 % nach Verbrauch (A 30, B 40 von 70 m³).
+  assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => rowOf(s, t, 'wwz')), [2600, 3400, 0, 0])
+  const water = selfOf(s).pots.find((p) => p.pot === 'water') ?? assert.fail('kein Topf Warmwasser')
+  assert.deepEqual([water.consumption, water.substitutedConsumption], [70, undefined])
+  assert.equal(allRows(s), s.totalCostsCents)
+})
+
+test('#690, Integrationsdurchsicht: ganz ohne Warmwasserzähler im Haus trägt C ohne Anschluss auch nach Fläche nichts', () => {
+  const s = computeSettlement(noWaterC([60, 80, 60], true))
+  // Nur nach Fläche: A 60, B 80 von 140 m².
+  assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => rowOf(s, t, 'wwz')), [2571, 3429, 0, 0])
+  const water = selfOf(s).pots.find((p) => p.pot === 'water') ?? assert.fail('kein Topf Warmwasser')
+  assert.deepEqual([water.areaM2, water.byAreaOnly], [140, true])
+  // Die Kürzung nennt C nicht beim Warmwasser.
+  const nc = s.notices.find((n) => n.code === 'heating.no-consumption')?.text ?? assert.fail(codes(s).join(', '))
+  assert.doesNotMatch(/vom Topf Warmwasser[^.]*/.exec(nc)?.[0] ?? '', /Mieter C1|Mieter C2/)
+  assert.equal(allRows(s), s.totalCostsCents)
+})

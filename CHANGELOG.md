@@ -270,6 +270,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Zähler), solange im Formular außer Beschreibung, Betrag, Rechnungssteller, Beleg und Daten nichts eingegeben ist; jede
   andere Eingabe und bestehende Positionen bleiben, wie sie sind
   ([#704](https://github.com/speedone/mietfuchs/issues/704)).
+- Eigene Heizkostenabrechnung, Wohnung ohne Anschluss an das Warmwasser (etwa mit Durchlauferhitzer, in den Stammdaten
+  unter „Weitere Angaben - Anschlüsse“): Sie zählte im Topf Warmwasser als Wohnung ohne Warmwasserzähler, bekam den
+  Durchschnitt der übrigen zugerechnet oder trug nach Fläche mit, mit einer Warnung und Kürzung, die nicht passten; ganz
+  ohne Warmwasserzähler im Haus trug sie schon bisher Warmwasser nach Fläche. Jetzt nimmt sie am Warmwasser nicht teil,
+  weder mit Verbrauch noch mit Fläche; die Heizung bleibt, wie sie ist. Abgeschlossene Abrechnungen bleiben, wie sie
+  zugestellt sind; der Vergleich mit der heutigen Berechnung kann dort eine Abweichung zeigen
+  ([#690](https://github.com/speedone/mietfuchs/issues/690)).
 - Eigene Heizkostenabrechnung, eine Wohnung ohne Gerät: Hatte eine Wohnung keinen Heizkostenverteiler (oder
   Wärme- bzw. Warmwasserzähler), die übrigen aber schon, verteilte Mietfuchs die ganze Anlage nicht; alle Heizkosten
   standen beim Vermieter, jeder Mieter bei 0,00 €, auch für ein Jahr, in dem das Gerät wirklich fehlte. Jetzt rechnet die

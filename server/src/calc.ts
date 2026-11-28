@@ -5160,6 +5160,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Abweichung 9: die Wechselgrenzen der Nachbarperioden und der eingefrorene Endstand der vorigen.
     const selfUnits: SelfUnit[] = served.map((u) => ({
       id: u.id, name: u.name, areaM2: u.areaM2 || 0,
+      // Integrationsdurchsicht zu #690: ohne Anschluss an das Warmwasser nicht im Topf Warmwasser.
+      ...((u.noConnection ?? []).includes('warmwasser') ? { noWater: true } : {}),
       // #322: mit Liste an deren Eintrag, ohne Liste aus `basisValues` (Durchsicht M1).
       // Zimmer (#573): ohne eigenen Wert der der Wohnung nach dem Verhältnis der Zimmerflächen (`unitBasisValue`).
       heatedAreaM2: unitBasisValue(plant, u.id, 'heatedAreaM2', snapshot.rooms),
@@ -5581,7 +5583,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const u = sp.userByKey.get(key)
     const unit = u ? sp.plan.units.find((x) => x.unit.id === u.unitId) : undefined
     if (!u || !unit || !sp.shares || !sp.weights) return []
-    const pots: SelfPot[] = target === 'both' ? ['heating', 'water'] : [target]
+    // Ohne Anschluss an das Warmwasser steht nur die Heizung im Rechenweg (Integrationsdurchsicht zu #690).
+    const pots: SelfPot[] = (target === 'both' ? ['heating', 'water'] as SelfPot[] : [target]).filter((p) => !(p === 'water' && unit.unit.noWater))
     const steps: CalcStep[] = []
     for (const p of pots) {
       const total = sp.plan.totals[p]
@@ -5827,7 +5830,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         boundaries: u.boundaries.map((b) => {
           // Nichts abzulesen heißt nicht „abgelesen“ (Systemprüfung, Durchsicht des Zweigs): die Töpfe, für die die Wohnung
           // kein Gerät hat. Eine Wohnung mit Schätzung zählt nicht, eine Einheit ohne Fläche (Garage) braucht keins.
-          const lacking = (u.unit.areaM2 || 0) > 0 ? sp.plan.pots.filter((p) => devicesDue(p) && !u.estimated[p] && !u.readings.some((r) => r.pot === p)) : []
+          // Ohne Anschluss an das Warmwasser fehlt dort kein Gerät (Integrationsdurchsicht zu #690).
+          const lacking = (u.unit.areaM2 || 0) > 0 ? sp.plan.pots.filter((p) => devicesDue(p) && !(p === 'water' && u.unit.noWater) && !u.estimated[p] && !u.readings.some((r) => r.pot === p)) : []
           const dated = b.readingDates.filter((d): d is string => d !== null)
           // Der Grund einer nicht möglichen Zwischenablesung (Durchsicht von #239, I3), nur wenn es ihn gibt.
           const reason = b.gap === 'impossible' ? ((snapshot.interimGaps ?? []).find((g) => g.unitId === u.unit.id && g.date === b.date)?.reason ?? '') : ''

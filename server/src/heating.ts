@@ -43,6 +43,10 @@ export type SelfUnit = {
   volumeM3?: number | null
   // Nutzungswechsel (#259): die Abschnitte gleicher Nutzung (shared/unitUsage.ts). Fehlt es, gilt `role` immer.
   usageSpans?: (from: string, to: string) => readonly { from: string; to: string; usage: UnitUsage }[]
+  // Kein Anschluss an das Warmwasser (`Unit.noConnection` mit 'warmwasser', etwa ein Durchlauferhitzer; Integrations-
+  // durchsicht zu #690): Die Wohnung nimmt am Topf Warmwasser nicht teil, weder mit Fläche noch mit Geräten. Ohne Anschluss
+  // an die Wärme hängt sie gar nicht an der Anlage (`servesUnit`).
+  noWater?: boolean
 }
 export type SelfTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null }
 // `factor` (Heizung PR 12): Die Differenz zweier Ablesungen zählt mal diesem Faktor; beim
@@ -333,16 +337,18 @@ export function planSelf(input: SelfInput): SelfPlan {
   // die Wohnfläche (Durchsicht M1: sonst trüge eine später angelegte Wohnung still einen anderen Maßstab).
   const basisValueOf = (u: SelfUnit): number | null => (input.areaBasisHeat === 'volume' ? (u.volumeM3 ?? null) : input.areaBasisHeat === 'heatedArea' ? u.heatedAreaM2 : u.areaM2)
   const heatAreaOf = (u: SelfUnit): number => basisValueOf(u) || 0
-  const areaOf = (pot: SelfPot, u: SelfUnit): number => (pot === 'heating' ? heatAreaOf(u) : u.areaM2 || 0)
+  const areaOf = (pot: SelfPot, u: SelfUnit): number => (pot === 'heating' ? heatAreaOf(u) : u.noWater ? 0 : u.areaM2 || 0)
   // Heizung PR 12: Der Gerätetyp der Heizung folgt der Erfassung.
   const meterTypeOf = (pot: SelfPot): MeterType => (pot === 'heating' && input.capture === 'hca' ? 'hkv' : POT_METER[pot])
-  const metersOf = (unitId: string, pot: SelfPot) => input.meters.filter((m) => m.unitId === unitId && m.type === meterTypeOf(pot))
+  // Eine Wohnung ohne Anschluss an das Warmwasser hat für diesen Topf keine Geräte, auch wenn welche angelegt sind.
+  const noWaterIds = new Set(input.units.filter((u) => u.noWater).map((u) => u.id))
+  const metersOf = (unitId: string, pot: SelfPot) => (pot === 'water' && noWaterIds.has(unitId) ? [] : input.meters.filter((m) => m.unitId === unitId && m.type === meterTypeOf(pot)))
   // Schätzung (Heizung PR 13): der geschätzte Verbrauch einer Wohnung in einem Topf für die ganze
   // Heizperiode. Er tritt nur an die Stelle des nicht erfassten Verbrauchs (§ 9a Abs. 1 Satz 1); die
   // Ablesungen der Wohnung bleiben deshalb in der Rechnung. Für Hinweise neben einem Wechsel und fehlende
   // Zwischenablesungen zählen die Geräte einer geschätzten Wohnung nicht mit (`liveMetersOf`): Ein Hinweis
   // auf eine Ablesung an einem ausgefallenen Gerät sagte nichts.
-  const estimateOf = (unitId: string, p: SelfPot): number | undefined => input.estimates?.get(estimateKey(unitId, p))
+  const estimateOf = (unitId: string, p: SelfPot): number | undefined => (p === 'water' && noWaterIds.has(unitId) ? undefined : input.estimates?.get(estimateKey(unitId, p)))
   const liveMetersOf = (unitId: string, p: SelfPot) => (estimateOf(unitId, p) === undefined ? metersOf(unitId, p) : [])
   const startBoundary = dayBefore(h.from)
   // Der eingefrorene Endstand der abgeschlossenen Vorperiode steht in der Liste, auch wenn die
@@ -701,7 +707,7 @@ export function weightsOf(plan: SelfPlan, shares: { heating: number; water: numb
 
 // Die Fläche einer Wohnung im Topf: beheizte Fläche nur beim Topf Heizung, wenn eingestellt (§ 7 Abs. 1
 // Satz 5), sonst Wohnfläche (§ 8 Abs. 1).
-const potAreaOf = (u: SelfUnitPlan, p: SelfPot): number => (p === 'heating' ? u.heatArea : u.unit.areaM2 || 0)
+const potAreaOf = (u: SelfUnitPlan, p: SelfPot): number => (p === 'heating' ? u.heatArea : u.unit.noWater ? 0 : u.unit.areaM2 || 0)
 
 // Die drei Wege des § 9a Abs. 1 als Vorschläge für eine Wohnung und einen Topf.
 // - Durchschnitt des Gebäudes (Vorgabe): Summe des erfassten Verbrauchs der übrigen Wohnungen ohne
