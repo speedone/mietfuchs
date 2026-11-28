@@ -10,7 +10,7 @@ import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
 import {
-  boundaryLight, boundaryText, distributionLines, missingDevicesLines, gapConsequence, INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained,
+  boundaryLight, boundaryText, distributionLines, missingDevicesLines, gapConsequence, unconnectedWaterLine, INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained,
   heatUnitOf, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine, type Light,
 } from '../heatingSelfView'
 import { forcedShare, shareBounds } from '../heatingSelfForm'
@@ -230,6 +230,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
         <Card title="Verteilung" level={3}>
           {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
           {self.units.flatMap((u) => u.users).map((u) => <p key={u.key}>{userLine(u, self)}</p>)}
+          {unconnectedWaterLine(self) && <p>{unconnectedWaterLine(self)}</p>}
           <HcaBlock self={self} unitName={(id) => self.units.find((u) => u.unitId === id)?.unitName ?? id} />
         </Card>
       )}

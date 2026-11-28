@@ -2,9 +2,10 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { BillingPeriod, CostItem, Meter, MeterType, Property, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
+import type { BillingPeriod, CostItem, HeatingPlant, Meter, MeterType, Property, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
 import { isNotAllocable, usageOf } from './types'
 import { calendarYearPeriod } from '../../shared/period.ts'
+import { servesUnit } from '../../shared/heatingPeriod.ts'
 import type { Problem } from './formProblems'
 import { andList } from '../../shared/wording.ts'
 
@@ -335,8 +336,10 @@ export function parentUnitOptions(
 // der Normalfall. Gespeichert wird unverändert nur die Ausnahme (`noConnection`, #117), damit
 // bestehende Daten ohne Umbau gelten.
 //
-// Angeboten werden nur Zählerarten, für die es im Objekt Zähler gibt: Ohne Zähler einer Art fragt
-// die Berechnung nie nach dem Anschluss, und die Frage verwirrte nur. Eine schon gesetzte
+// Angeboten werden nur Zählerarten, für die es im Objekt Zähler gibt, und Warmwasser außerdem, wenn eine selbst
+// abgerechnete Heizanlage mit Warmwasser die Einheit versorgt (`water`, aus `waterConnectionAsked`): Dort nimmt eine
+// Einheit ohne Warmwasseranschluss am Topf Warmwasser nicht teil, auch ohne Warmwasserzähler (#690, #749). Sonst fragt
+// die Berechnung nicht nach dem Anschluss, und die Frage verwirrte nur. Eine schon gesetzte
 // Ausnahme bleibt immer sichtbar, sonst stünde etwas Gespeichertes unsichtbar und unlöschbar im
 // Formular. Strom bietet das Formular nur an, wenn das Objekt einen Stromzähler an einer Einheit
 // hat oder er schon als Ausnahme gesetzt ist: Ein Stromzähler ohne Einheit ist der Allgemeinstrom
@@ -344,9 +347,19 @@ export function parentUnitOptions(
 // Heizkostenverteiler sind kein Anschluss: Sie hängen an Heizkörpern, und eine Einheit ohne Heizung
 // hat „kein Anschluss: Wärme“.
 const CONNECTION_ORDER: MeterType[] = ['kaltwasser', 'warmwasser', 'waerme', 'sonstig', 'strom']
-export function connectionTypes(objectMeters: Pick<Meter, 'type' | 'unitId'>[], noConnection: MeterType[]): MeterType[] {
+export function connectionTypes(objectMeters: Pick<Meter, 'type' | 'unitId'>[], noConnection: MeterType[], o: { water?: boolean } = {}): MeterType[] {
   const present = new Set<MeterType>(objectMeters.filter((m) => m.type !== 'strom' || m.unitId).map((m) => m.type))
+  if (o.water) present.add('warmwasser')
   return CONNECTION_ORDER.filter((t) => present.has(t) || noConnection.includes(t))
+}
+
+// Versorgt eine laufende Heizanlage mit eigener Heizkostenabrechnung und Warmwasser (in irgendeinem ihrer Zeiträume) diese
+// Einheit? Nur dann hat der Anschluss Warmwasser ohne Warmwasserzähler eine Wirkung (#690): beim Messdienst zählen dessen
+// Beträge, bei freien Schlüsseln nur die Zähler. Eine neue Einheit ohne Kennung versorgt eine Anlage ohne Liste.
+export function waterConnectionAsked(plants: readonly Pick<HeatingPlant, 'method' | 'hotWater' | 'selfSpans' | 'units' | 'endsOn'>[], unit: Pick<Unit, 'noConnection'> & { id?: string }): boolean {
+  return plants.some((p) => p.method === 'self' && p.endsOn === null &&
+    ((p.hotWater ?? 'combined') !== 'none' || (p.selfSpans ?? []).some((s) => (s.hotWater ?? p.hotWater ?? 'combined') !== 'none')) &&
+    (unit.id === undefined ? p.units === null && !(unit.noConnection ?? []).includes('waerme') : servesUnit(p, { id: unit.id, noConnection: unit.noConnection })))
 }
 
 export function setConnected(form: UnitForm, type: MeterType, connected: boolean): UnitForm {

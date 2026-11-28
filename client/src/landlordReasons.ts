@@ -27,6 +27,8 @@ const LABELS: Record<LandlordReason, string> = {
   // #258: Der Mietvertrag legt die Position nicht auf dieses Mietverhältnis um.
   notAgreed: 'nicht vereinbart (Mietvertrag)',
   rounding: 'Rundungsrest',
+  // #690: Keine versorgte Wohnung hat einen Anschluss an das Warmwasser.
+  noWaterConnection: 'Warmwasser ohne angeschlossene Wohnung',
 }
 
 // Die Beschriftung eines einzelnen Grundes; ein unbekannter (aus einer späteren Fassung) steht als Code da.

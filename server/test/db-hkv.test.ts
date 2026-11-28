@@ -169,6 +169,20 @@ test('Ablesedienst: Prüfungen je mit einem Satz, nichts geschrieben', async () 
   })
 })
 
+// #690 (Nachtrag der Integrationsdurchsicht zu #749): Eine Wohnung ohne Warmwasseranschluss braucht keinen Wert für das
+// Warmwasser und zählt für „alle Zeilen oder keine“ nicht mit; ein Wert bei ihr zählt in der Abrechnung nicht.
+test('#690: Ablesedienst: eine Wohnung ohne Warmwasseranschluss braucht keinen Warmwasserwert', async () => {
+  await withDatabase(async (opened) => {
+    await ablesedienst(opened)
+    await opened.write((db) => updateEntity(db, 'units', 'b', { noConnection: ['warmwasser'] }))
+    const speichern = (values: unknown[]) => opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values }))
+    assert.equal((await speichern([zeile('a', '2025-01-01', '2025-12-31', 1, 5), zeile('b', '2025-01-01', '2025-12-31', 1)]))?.length, 2)
+    // Für die angeschlossenen gilt die Regel weiter; der Satz sagt, wer keinen Wert braucht.
+    await opened.write((db) => updateEntity(db, 'units', 'b', { noConnection: [] }))
+    await assert.rejects(speichern([zeile('a', '2025-01-01', '2025-12-31', 1, 5), zeile('b', '2025-01-01', '2025-12-31', 1)]), heatingError(400, /für alle Zeilen ein oder für keine.*ohne Warmwasseranschluss braucht keinen/s))
+  })
+})
+
 test('Ablesedienst: nur bei eigener Abrechnung mit dieser Erfassung; nur angeschlossene Wohnungen; abgeschlossen gesperrt (409)', async () => {
   await withDatabase(async (opened) => {
     await ablesedienst(opened)

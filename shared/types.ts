@@ -1351,10 +1351,12 @@ export type SettlementRow = {
 //                   der Abrechnung verrechnet: die Gegenzeile zur Gutschrift beim Mieter, ohne Kostenposition
 //   `notAgreed`     der Mietvertrag legt diese Position nicht auf das Mietverhältnis um (#258)
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
+//   `noWaterConnection` eigene Heizkostenabrechnung: der Teil Warmwasser, wenn keine versorgte Wohnung einen Anschluss
+//                   an das Warmwasser hat (#690); er geht an niemanden
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
-  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'co2Refund' | 'notAgreed' | 'rounding'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'co2Refund' | 'notAgreed' | 'rounding' | 'noWaterConnection'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
@@ -3516,6 +3518,9 @@ export type SelfUnitView = {
 }
 export type SelfHeatingStatement = {
   ok: boolean
+  // #690 (Nachprüfung S1): Hat keine versorgte Wohnung einen Anschluss an das Warmwasser, die Summe der Teile Warmwasser,
+  // die beim Vermieter stehen (Grund `noWaterConnection`); eine eigene Zeile neben den Nutzern. Fehlt sonst.
+  unconnectedWaterCents?: number
   // Die Erfassung der Heizperiode (Durchsicht von #242 Runde 3, N2-M1); fehlt in älteren Abrechnungen.
   capture?: CaptureMethod
   heatPump: 'applies' | 'notYet' | 'missing' | null

@@ -249,6 +249,13 @@ function basisOf(
   return `${quantity(area, pot.baseCentsPerM2)} ${pot.pot === 'heating' ? (pot.basisUnit ?? 'm²') : 'm²'}${share}`
 }
 
+// #690 (Nachprüfung S1): Hat keine versorgte Wohnung einen Anschluss an das Warmwasser, steht dessen Teil beim Vermieter;
+// eine eigene Zeile, damit alle Zeilen des Blocks zusammen die Positionen ergeben. Ältere Stände kennen die Angabe nicht.
+export function unconnectedWaterLine(self: Pick<SelfHeatingStatement, 'unconnectedWaterCents'>): string | null {
+  const c = self.unconnectedWaterCents ?? 0
+  return c === 0 ? null : `Vermieter, Warmwasser ohne angeschlossene Wohnung: ${eur(c)} (kein Mieter hat einen Anschluss an das Warmwasser)`
+}
+
 export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots'> & Partial<Pick<SelfHeatingStatement, 'units' | 'changeSplit'>>): string {
   const heatUnit = heatUnitOf(self)
   const time = `${fmtDate(u.from)} bis ${fmtDate(u.to)} (${u.days} Tage, ${permille(u.degreeDayPermille)} ‰ der Gradtage)`
