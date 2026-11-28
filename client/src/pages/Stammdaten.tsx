@@ -508,7 +508,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     if (overlap && !(await confirm(overlap))) return
     try {
       if (editing) await api(withProperty(`/api/tenancies/${tenForm.id}`, propertyId), { method: 'PUT', body })
-      else await api('/api/tenancies', { method: 'POST', body })
+      else await api(withProperty('/api/tenancies', propertyId), { method: 'POST', body })
     } catch (e) {
       tenErrors.show(errorText(e))
       return

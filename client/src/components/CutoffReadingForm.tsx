@@ -6,8 +6,10 @@ import { api, errorText } from '../api'
 import { cutoffReadingBody, type CutoffForm } from '../hcaForm'
 import { useOpenWhenDiffers } from '../useDraft'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { useOptionalProperty, withProperty } from '../property'
 
 export default function CutoffReadingForm({ meterId, onSaved }: { meterId: string; onSaved: () => void }) {
+  const propertyId = useOptionalProperty()?.property?.id
   const [form, setForm] = useState<CutoffForm>({ date: '', value: '' })
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
@@ -21,7 +23,7 @@ export default function CutoffReadingForm({ meterId, onSaved }: { meterId: strin
       return
     }
     try {
-      await api('/api/readings', { method: 'POST', body: JSON.stringify(r.body) })
+      await api(withProperty('/api/readings', propertyId), { method: 'POST', body: JSON.stringify(r.body) })
       setError('')
       setForm({ date: '', value: '' })
       onSaved()

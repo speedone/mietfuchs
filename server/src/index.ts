@@ -838,6 +838,13 @@ async function requireInProperty(db: Database, req: Request, coll: CollectionNam
 async function requireReferenceInProperty(db: Database, req: Request, coll: CollectionName, ref: unknown): Promise<void> {
   if (typeof ref === 'string' && ref !== '') await requireInProperty(db, req, coll, ref)
 }
+// Die Verweise der Sammlungen, die ihr Objekt erben, beim Anlegen und Ändern. Wurzeln (Wohnung, Zähler, Kostenposition)
+// tragen ihr Objekt selbst; ihre Verweise prüfen `guardUnit` und die Wächter in db/repository.ts.
+async function requireReferencesInProperty(db: Database, req: Request, coll: CollectionName, body: Record<string, unknown>): Promise<void> {
+  if (coll === 'tenancies') await requireReferenceInProperty(db, req, 'units', body.unitId)
+  if (coll === 'payments') await requireReferenceInProperty(db, req, 'tenancies', body.tenancyId)
+  if (coll === 'readings') await requireReferenceInProperty(db, req, 'meters', body.meterId)
+}
 const isCollection = (x: CollectionName | OwnedKind): x is CollectionName => (COLLECTIONS as string[]).includes(x)
 // Dieselbe Prüfung für die übrigen Routen an einem Datensatz eines Objekts (#692): Heizanlage samt allem unter ihr
 // (Heizperioden, Lieferungen anlegen, eigene Abrechnung, Zeitraum, getrennte Heizkostenabrechnung), Lieferung,
@@ -915,9 +922,7 @@ for (const coll of COLLECTIONS) {
     const body = bodyObject(req)
     if (coll === 'costItems') requireInvoiceFile(body, undefined)
     res.status(201).json(await writeData(async (db) => {
-      if (coll === 'tenancies') await requireReferenceInProperty(db, req, 'units', body.unitId)
-      if (coll === 'payments') await requireReferenceInProperty(db, req, 'tenancies', body.tenancyId)
-      if (coll === 'readings') await requireReferenceInProperty(db, req, 'meters', body.meterId)
+      await requireReferencesInProperty(db, req, coll, body)
       const withProperty = ROOTS.includes(coll) ? { ...body, propertyId: await propertyOf(db, req, true) } : body
       return coll === 'readings' ? createReading(db, newId(), withProperty) : createEntity(db, coll, newId(), withProperty)
     }))
@@ -925,6 +930,8 @@ for (const coll of COLLECTIONS) {
   app.put(`/api/${coll}/:id`, async (req, res) => {
     const item = await writeData(async (db) => {
       await requireInProperty(db, req, coll, req.params.id)
+      // Ein neuer Verweis im Rumpf wie beim Anlegen (Integrationsdurchsicht): sonst hinge eine Zahlung still in ein anderes Objekt.
+      await requireReferencesInProperty(db, req, coll, bodyObject(req))
       if (coll === 'costItems') {
         const current = await findEntity(db, 'costItems', req.params.id)
         requireInvoiceFile(bodyObject(req), current && 'invoiceFile' in current ? current.invoiceFile : undefined)
@@ -1219,7 +1226,10 @@ app.post('/api/co2-refunds', async (req, res) => {
   }))
 })
 app.put('/api/co2-refunds/:id', async (req, res) => {
-  const r = await writeData((db) => updateRefund(db, req.params.id, bodyObject(req)))
+  const r = await writeData(async (db) => {
+    await requireReferenceInProperty(db, req, 'tenancies', bodyObject(req).tenancyId)
+    return updateRefund(db, req.params.id, bodyObject(req))
+  })
   if (!r) return res.status(404).json({ error: NO_REFUND })
   res.json(r)
 })
@@ -1491,7 +1501,10 @@ app.post('/api/deposit-entries/from-payment/:paymentId', async (req, res) => {
   res.status(201).json(entry)
 })
 app.put('/api/deposit-entries/:id', async (req, res) => {
-  const entry = await writeData((db) => updateDepositEntry(db, req.params.id, bodyObject(req), newId))
+  const entry = await writeData(async (db) => {
+    await requireReferenceInProperty(db, req, 'tenancies', bodyObject(req).tenancyId)
+    return updateDepositEntry(db, req.params.id, bodyObject(req), newId)
+  })
   if (!entry) return res.status(404).json({ error: NO_DEPOSIT_ENTRY })
   res.json(entry)
 })

@@ -360,7 +360,7 @@ test('Ablesung anlegen: POST /api/readings mit dem Rumpf wie bisher, danach ist 
   fireEvent.change(within(box).getByLabelText(/^Hinweis/), { target: { value: ' Zwischenablesung Auszug ' } })
   saveReadingIn(box)
   await waitFor(() => expect(calls).toHaveLength(1))
-  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 1234.5, note: 'Zwischenablesung Auszug' } })
+  expect(calls[0]).toEqual({ url: '/api/readings?property=objekt-1', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 1234.5, note: 'Zwischenablesung Auszug' } })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
 
@@ -373,7 +373,7 @@ test('Ablesung mit Zählerwechsel: Endstand alt und Startstand neu wie bisher', 
   fireEvent.change(within(box).getByLabelText(/^Endstand alter Zähler/), { target: { value: '980' } })
   saveReadingIn(box)
   await waitFor(() => expect(calls).toHaveLength(1))
-  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980 } })
+  expect(calls[0]).toEqual({ url: '/api/readings?property=objekt-1', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980 } })
 })
 
 // Geschätzte Ablesung (#98): Haken und Begründung gehen mit hinaus; der angezeigte Haken ist der gespeicherte.
@@ -392,7 +392,7 @@ test('Geschätzte Ablesung: Haken und Begründung im Rumpf, ohne Begründung ein
   fireEvent.change(within(box).getByLabelText(/^Begründung der Schätzung/), { target: { value: 'Zähler defekt' } })
   saveReadingIn(box)
   await waitFor(() => expect(calls).toHaveLength(1))
-  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-12-31', value: 180, estimated: true, estimateReason: 'Zähler defekt' } })
+  expect(calls[0]).toEqual({ url: '/api/readings?property=objekt-1', method: 'POST', body: { meterId: 'm1', date: '2025-12-31', value: 180, estimated: true, estimateReason: 'Zähler defekt' } })
 })
 
 // Browserprüfung 0.16.0 (S2): Der Hilfetext des Häkchens („Haken Sie das an, …“) stand unter der Begründung. Er
@@ -436,7 +436,7 @@ test('Zählerwechsel: Eichjahr des neuen Zählers geht mit der Ablesung hinaus, 
   fireEvent.change(within(box).getByLabelText(/Neuer Zähler geeicht bis Ende/), { target: { value: '2031' } })
   saveReadingIn(box)
   await waitFor(() => expect(calls).toHaveLength(1))
-  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980, newCalibratedUntil: 2031 } })
+  expect(calls[0]).toEqual({ url: '/api/readings?property=objekt-1', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980, newCalibratedUntil: 2031 } })
 })
 
 // Durchsicht: Ein Heizkostenverteiler ist nicht eichpflichtig; das Feld erscheint dort auch beim Wechsel nicht.
@@ -565,7 +565,7 @@ test('Stand unter dem vorigen Stand: Rückfrage; „Abbrechen“ speichert nicht
     saveReadingIn(box)
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Trotzdem anlegen' }))
     await waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2026-06-30', value: 12.5 } })
+    expect(calls[0]).toEqual({ url: '/api/readings?property=objekt-1', method: 'POST', body: { meterId: 'm1', date: '2026-06-30', value: 12.5 } })
   })
 })
 

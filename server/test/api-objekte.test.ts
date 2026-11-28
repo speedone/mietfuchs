@@ -388,6 +388,53 @@ test('Objekt: auch Heizanlage, Lieferung, Erstattung, Kaution, Mieterwechsel und
   })
 })
 
+// Ändern mit einem neuen Verweis (#692, Integrationsdurchsicht): Nennt die Anfrage Objekt A, darf der Rumpf die Zahlung
+// nicht an ein Mietverhältnis, die Ablesung nicht an einen Zähler und das Mietverhältnis nicht an eine Wohnung aus B
+// hängen. Vorher prüfte PUT nur das bisherige Objekt des Datensatzes, und die Zahlung wanderte still nach B.
+test('Objekt: Ändern mit einem Verweis in ein anderes Objekt wird abgelehnt und ändert nichts (#692)', async () => {
+  await withProperties(async (s, b) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const a = 'objekt-1'
+    const stock = async (p: string) => {
+      const unit = await post<Unit>(`/api/units?property=${p}`, { name: `EG ${p}`, areaM2: 50, participates: true })
+      const tenancy = await post<Tenancy>(`/api/tenancies?property=${p}`, {
+        unitId: unit.id, tenantName: 'Schulz', persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], heatingModel: 'selfSupply',
+      })
+      const meter = await post<Meter>(`/api/meters?property=${p}`, { name: 'KW', unitId: unit.id, type: 'kaltwasser', unit: 'm³' })
+      return { unit, tenancy, meter }
+    }
+    const inA = await stock(a)
+    const inB = await stock(b.id)
+    const unitA2 = await post<Unit>(`/api/units?property=${a}`, { name: 'OG', areaM2: 40, participates: true })
+    const payment = await post<Payment>(`/api/payments?property=${a}`, { tenancyId: inA.tenancy.id, date: '2025-01-03', amountCents: 65000 })
+    const reading = await post<Reading>(`/api/readings?property=${a}`, { meterId: inA.meter.id, date: '2025-01-01', value: 10 })
+    const deposit = await post<DepositEntry>(`/api/deposit-entries?property=${a}`, { tenancyId: inA.tenancy.id, date: '2025-01-02', kind: 'received', amountCents: 100000 })
+    const refund = await post<{ id: string }>(`/api/co2-refunds?property=${a}`, { tenancyId: inA.tenancy.id, supplierBilledAt: '2025-01-20', claimedAt: '2025-03-01', amountCents: 24000, settlePeriod: '2025-01' })
+
+    const lists = async () => Object.fromEntries(await Promise.all(['tenancies', 'payments', 'readings', 'deposit-entries', 'co2-refunds'].flatMap((route) =>
+      [a, b.id].map(async (p) => [`${route}@${p}`, await s.api<unknown[]>(`/api/${route}?property=${p}`)] as const))))
+    const before = await lists()
+    const stepsBefore = await journalSteps(s)
+    const calls: [string, unknown, RegExp][] = [
+      [`/api/payments/${payment.id}?property=${a}`, { tenancyId: inB.tenancy.id }, /^Dieses Mietverhältnis gehört zu „Gartenweg 3“, gewählt ist „[^“]+“\. Geändert wurde nichts\./],
+      [`/api/readings/${reading.id}?property=${a}`, { meterId: inB.meter.id }, /^Dieser Zähler gehört zu „Gartenweg 3“/],
+      [`/api/tenancies/${inA.tenancy.id}?property=${a}`, { unitId: inB.unit.id }, /^Diese Wohnung gehört zu „Gartenweg 3“/],
+      [`/api/deposit-entries/${deposit.id}?property=${a}`, { tenancyId: inB.tenancy.id }, /^Dieses Mietverhältnis gehört zu „Gartenweg 3“/],
+      [`/api/co2-refunds/${refund.id}?property=${a}`, { tenancyId: inB.tenancy.id }, /^Dieses Mietverhältnis gehört zu „Gartenweg 3“/],
+    ]
+    for (const [url, body, satz] of calls) {
+      const res = await sendJson(s, url, body)
+      assert.equal(res.status, 409, `PUT ${url}`)
+      assert.match(await errorFrom(res), satz, `PUT ${url}`)
+    }
+    assert.deepEqual(await lists(), before, 'nichts umgehängt')
+    assert.deepEqual(await journalSteps(s), stepsBefore, 'kein Schritt im Verlauf')
+    // Ein Verweis im selben Objekt geht wie bisher, ebenso ein Rumpf ohne Verweis.
+    assert.equal((await s.api<Tenancy>(`/api/tenancies/${inA.tenancy.id}?property=${a}`, { method: 'PUT', body: JSON.stringify({ unitId: unitA2.id }) })).unitId, unitA2.id)
+    assert.equal((await s.api<Payment>(`/api/payments/${payment.id}?property=${a}`, { method: 'PUT', body: JSON.stringify({ amountCents: 1 }) })).amountCents, 1)
+  })
+})
+
 test('Objekt: Teilnehmer und Einzelbeträge halten die Objektgrenze auch beim Umziehen (#94)', async () => {
   // Beides wurde mit #94 ergänzt, der Wächter kannte es nicht: Eine Wohnung mit Teilnahme oder
   // ein Mietverhältnis mit Einzelbetrag konnte über die API in ein anderes Objekt wechseln. Die
@@ -410,11 +457,18 @@ test('Objekt: Teilnehmer und Einzelbeträge halten die Objektgrenze auch beim Um
     })
     assert.equal(umzug.status, 400, 'die Wohnung ist Teilnehmerin einer Position im alten Objekt')
     assert.match((await jsonOf<{ error: string }>(umzug)).error, /Teilnahme/)
-    const wechsel = await fetch(`${s.base}/api/tenancies/${t.id}?property=objekt-1`, {
+    // Ohne Objekt in der Adresse greift der Wächter am Mietverhältnis; mit Objekt lehnt schon die Prüfung des Verweises ab
+    // (#692): Die Wohnung im Rumpf gehört nicht zum genannten Objekt.
+    const wechsel = await fetch(`${s.base}/api/tenancies/${t.id}`, {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ unitId: b1.id }),
     })
     assert.equal(wechsel.status, 400, 'das Mietverhältnis hat einen Einzelbetrag im alten Objekt')
     assert.match((await jsonOf<{ error: string }>(wechsel)).error, /Einzelbetr/)
+    const mitObjekt = await fetch(`${s.base}/api/tenancies/${t.id}?property=objekt-1`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ unitId: b1.id }),
+    })
+    assert.equal(mitObjekt.status, 409)
+    assert.match((await jsonOf<{ error: string }>(mitObjekt)).error, /^Diese Wohnung gehört zu „Gartenweg 3“/)
   })
 })
 

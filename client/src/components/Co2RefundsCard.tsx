@@ -56,7 +56,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
     }
     try {
       if (editing.id) await api(withProperty(`/api/co2-refunds/${editing.id}`, propertyId), { method: 'PUT', body: JSON.stringify(result.body) })
-      else await api('/api/co2-refunds', { method: 'POST', body: JSON.stringify(result.body) })
+      else await api(withProperty('/api/co2-refunds', propertyId), { method: 'POST', body: JSON.stringify(result.body) })
       setEditing(null)
       setError('')
       toast('Erstattung gespeichert.')

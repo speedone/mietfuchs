@@ -304,9 +304,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   als Mitteilung). Antwortet das andere Mietfuchs, öffnet es wie bisher dessen Oberfläche oder meldet es; schweigt der
   Port weiter, startet Mietfuchs selbst ([#694](https://github.com/speedone/mietfuchs/issues/694)).
 - Objekt beim Ändern prüfen: Der Server prüft beim Ändern, Löschen und Versenden, ob der Datensatz zum genannten Objekt
-  gehört, und beim Anlegen mit genanntem Objekt, ob die gewählte Wohnung, das Mietverhältnis oder der Zähler dazu gehört.
-  Bisher nahm er dafür allein die Kennung; in der Oberfläche fiel das nicht auf, weil sie nur Datensätze des gewählten
-  Objekts zeigt. Die Oberfläche nennt das gewählte Objekt jetzt bei jedem Ändern, Löschen und Versenden. Passt es nicht, lehnt der Server ab, etwa
+  gehört, und beim Anlegen und Ändern, ob die gewählte Wohnung, das Mietverhältnis oder der Zähler dazu gehört. Bisher
+  nahm er dafür allein die Kennung; in der Oberfläche fiel das nicht auf, weil sie nur Datensätze des gewählten Objekts
+  zeigt. Ausnahme waren zwei Fenster: Verschob das eine eine Wohnung in ein anderes Objekt, landete eine Zahlung, die das
+  andere danach anlegte, ohne Rückfrage dort. Die Oberfläche nennt das gewählte Objekt jetzt bei jedem Anlegen, Ändern,
+  Löschen und Versenden. Passt es nicht, lehnt der Server ab, etwa
   mit „Diese Zahlung gehört zu „Lindenstraße 7“, gewählt ist „Gartenweg 3“. Geändert wurde nichts. Wechseln Sie zu
   „Lindenstraße 7“ oder laden Sie die Seite neu.“; im Verlauf entsteht dabei kein Eintrag. Das gilt für Wohnungen,
   Mietverhältnisse, Kostenpositionen, Zähler, Ablesungen und Zahlungen, für Heizanlagen samt ihrer Heizperioden und
