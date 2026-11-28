@@ -50,10 +50,14 @@ function readRow(item: unknown, h: Span, propertyUnits: readonly Unit[], plant: 
 
 // Warmwasser für alle Zeilen oder für keine (Abweichung 3, Review Focus 3); je Wohnung kein Tag doppelt.
 // Lücken bleiben Lücken: Was fehlt, behandelt die Abrechnung wie eine fehlende Ablesung (Review Focus 2).
+// #690 (#749): Eine Wohnung ohne Warmwasseranschluss braucht keinen Wert und zählt hier nicht mit; ein Wert bei ihr zählt in
+// der Abrechnung nicht (planSelf, `noWater`).
 function checkRows(rows: readonly Row[], propertyUnits: readonly Unit[]): void {
-  const withWater = rows.filter((r) => r.waterValue !== null).length
-  if (withWater > 0 && withWater < rows.length) {
-    throw new HeatingError(400, 'Tragen Sie die Werte für das Warmwasser bitte für alle Zeilen ein oder für keine; sonst käme das Warmwasser teils vom Ablesedienst und teils von den Warmwasserzählern. Gespeichert wurde nichts.')
+  const noWater = new Set(propertyUnits.filter((u) => (u.noConnection ?? []).includes('warmwasser')).map((u) => u.id))
+  const connected = rows.filter((r) => !noWater.has(r.unitId))
+  const withWater = connected.filter((r) => r.waterValue !== null).length
+  if (withWater > 0 && withWater < connected.length) {
+    throw new HeatingError(400, 'Tragen Sie die Werte für das Warmwasser bitte für alle Zeilen ein oder für keine; sonst käme das Warmwasser teils vom Ablesedienst und teils von den Warmwasserzählern. Eine Wohnung ohne Warmwasseranschluss braucht keinen Wert; das stellen Sie in den Stammdaten der Wohnung unter „Weitere Angaben - Anschlüsse“ ein. Gespeichert wurde nichts.')
   }
   for (const unit of propertyUnits) {
     const own = rows.filter((r) => r.unitId === unit.id).sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))

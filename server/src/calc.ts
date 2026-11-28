@@ -491,6 +491,8 @@ const noticeKinds = {
   'heating.no-consumption': { level: 'warning', title: 'Kein Verbrauch erfasst', rule: 'heating-consumption', terms: ['consumptionCosts', 'heatMeter'] },
   // #690: Eine Wohnung ohne Gerät, die übrigen mit; der Topf geht nur nach Fläche, statt die Anlage zu sperren.
   'heating.unit-without-device': { level: 'warning', title: 'Wohnung ohne Gerät', rule: 'heating-consumption', terms: ['consumptionCosts', 'heatMeter'] },
+  // #690 (Nachtrag zu #749): Keine versorgte Wohnung hat einen Anschluss an das Warmwasser; die Heizung wird verteilt.
+  'heating.water-unconnected': { level: 'warning', title: 'Warmwasser ohne angeschlossene Wohnung', rule: 'heating-own-settlement', terms: ['hotWaterShare', 'noConnection'] },
   // Durchsicht von #239: „Weiß ich nicht“ beim Wärmeschutz und weniger als der Pflichtanteil (C1), die
   // Angaben nach § 6a Abs. 3 bis PR 14 (I1).
   'heating.share-forced-unsure': { level: 'warning', title: 'Pflichtanteil nach Verbrauch ungeklärt', rule: 'heating-own-settlement', terms: ['forcedConsumptionShare', 'consumptionCosts'] },
@@ -3761,7 +3763,7 @@ export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEG
 // Grund `co2Share` direkt hinter dem Eigenanteil; er gilt nur für die eine Position, in der L steckt.
 function landlordRecipients(
   item: SnapshotCostItem,
-  p: { selfRaw: number, co2ShareRaw: number | null, notBooked: { reason: LandlordReason | CostModel, raw: number }[], outsideRaw: number, customUnassignedRaw: number, mainRestRaw: number, bookedRaw: number },
+  p: { selfRaw: number, co2ShareRaw: number | null, notBooked: { reason: LandlordReason | CostModel, raw: number }[], outsideRaw: number, customUnassignedRaw: number, mainRestRaw: number, bookedRaw: number, noWaterRaw?: number },
 ): Recipient[] {
   const sign = item.amountCents < 0 ? -1 : 1
   const sum = (reason: string) => p.notBooked.filter((x) => x.reason === reason).reduce((a, x) => a + x.raw, 0)
@@ -3782,6 +3784,7 @@ function landlordRecipients(
   const outside = take(p.outsideRaw)
   const custom = take(p.customUnassignedRaw)
   const mainRest = take(p.mainRestRaw)
+  const noWater = take(p.noWaterRaw ?? 0)
   let rest = cleanRaw(left * sign)
   if (rest * sign < 0 && rest * sign > -0.5) rest = 0
   return [
@@ -3793,6 +3796,7 @@ function landlordRecipients(
     { key: 'outsideUnit', landlord: true, raw: sum('outsideUnit') + outside },
     { key: 'customRest', landlord: true, raw: custom },
     { key: 'mainMeterRest', landlord: true, raw: mainRest },
+    ...(noWater !== 0 ? [{ key: 'noWaterConnection', landlord: true, raw: noWater }] : []),
     { key: item.key === 'amounts' ? 'amountsRest' : 'vacancy', landlord: true, raw: rest },
   ]
 }
@@ -6317,6 +6321,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     let customUnassignedRaw = 0
     let outsideRaw = 0
     let mainRestRaw = 0
+    // #690: der Teil Warmwasser einer Heizposition, wenn keine versorgte Wohnung angeschlossen ist.
+    let noWaterRaw = 0
     // Der abziehbare CO₂-Anteil beim Vorwegabzug (Heizung PR 6); `null` bei jeder anderen Position.
     let co2ShareRaw: number | null = null
     const noBasis = (reason: string) => {
@@ -7309,6 +7315,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // Die Anlage ist nicht verteilbar; der Fehler steht einmal je Anlage (Plan oben).
         forced = 'noBasis'
       } else {
+        if (sp.plan.totals.water?.unconnected) noWaterRaw = item.amountCents * partOf(sp, item, 'water')
         for (const u of sp.plan.units.flatMap((x) => x.users)) {
           const raw = item.amountCents * (sp.weights.get(u.key)?.[target] ?? 0)
           selfBlockUsers.push({ key: u.key, raw, target: targets.length })
@@ -7422,6 +7429,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         outsideRaw,
         customUnassignedRaw,
         mainRestRaw,
+        noWaterRaw,
         bookedRaw: tenantLines.reduce((a, l) => a + l.raw, 0),
       }),
     ]
@@ -9601,7 +9609,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       return ps.length === sp.plan.pots.length ? `, hier: ${andList(list)}` : `, hier vom Topf ${POT_NAME[ps[0] ?? 'heating']} nach CO₂-Abzug laut Ausweis: ${andList(list)}`
     }
     // Ein Topf, dem nur an einzelnen Wohnungen das Gerät fehlt, steht im Hinweis darunter (#690).
-    const unmeasured = sp.plan.pots.filter((p) => !sp.plan.totals[p].measured && !sp.plan.totals[p].overThreshold && sp.plan.totals[p].unequipped.length === 0 && !exemptPot(plant.id, p, key))
+    const unmeasured = sp.plan.pots.filter((p) => !sp.plan.totals[p].measured && !sp.plan.totals[p].overThreshold && sp.plan.totals[p].unequipped.length === 0 && !sp.plan.totals[p].unconnected && !exemptPot(plant.id, p, key))
     if (unmeasured.length > 0 && !noCutPots(unmeasured)) {
       const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
       const share = law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
@@ -9661,6 +9669,22 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             (others.length > 0 ? `Vorsorglich, weil nicht entschieden (Auslegung), auch die übrigen: ${andList(others)}. ` : '') +
             'Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. ' +
             `Legen Sie ${one ? 'das Gerät' : 'die Geräte'} auf der Seite „Zähler & Stände“ an (§ 4 Abs. 1 und 2 HeizkostenV). War eines eingebaut und ist ausgefallen, legen Sie es dort an und schätzen Sie den Verbrauch unter „Schätzung (§ 9a)“.`,
+          subject)
+      }
+    }
+    // #690 (Nachtrag zu #749): Hat keine versorgte Wohnung einen Anschluss an das Warmwasser, sperrte vorher der fehlende
+    // Topf („keine Fläche“) die ganze Anlage. § 9 Abs. 1 HeizkostenV teilt die Kosten einer verbundenen Anlage auf Heizung
+    // und Warmwasser auf; den Teil Warmwasser trägt hier kein Nutzer, also bleibt er beim Vermieter (`noWaterConnection`),
+    // statt ihn still der Heizung zuzuschlagen (das ginge zu Lasten der Mieter) oder alles zu sperren. Die Heizung wird
+    // verteilt. Der Hinweis nennt den Betrag und die beiden Wege (Einstellung der Anlage oder Anschluss der Wohnungen).
+    if (sp.plan.totals.water?.unconnected) {
+      const kw = Math.round(potCostOf(sp, pot?.items ?? [], 'water'))
+      if (kw !== 0) {
+        warn('heating.water-unconnected',
+          `${where}: Keine Wohnung an dieser Anlage hat einen Anschluss an das Warmwasser (Stammdaten der Wohnung, „Weitere Angaben - Anschlüsse“), die Anlage ist aber mit Warmwasser eingerichtet. ` +
+            `Mietfuchs verteilt die Heizung; den Teil Warmwasser von ${fmtCents(kw)} trägt kein Mieter, er steht bei Ihnen. ` +
+            'Bereitet die Anlage kein Warmwasser für die Wohnungen, wählen Sie bei der Einrichtung der eigenen Heizkostenabrechnung (Stammdaten, Karte „Heizung“) auf „Bereitet diese Heizung auch das Warmwasser?“ die Antwort „Es gibt kein zentrales Warmwasser“; dann gehören diese Kosten zur Heizung. ' +
+            'Beziehen die Wohnungen ihr Warmwasser doch von dieser Anlage, setzen Sie bei ihnen den Haken „Warmwasser“.',
           subject)
       }
     }

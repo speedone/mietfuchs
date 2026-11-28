@@ -158,7 +158,8 @@ export type SelfPlan = {
   // Ihr Verbrauch ist der Durchschnitt je m² der abgelesenen Wohnungen (`substitutePerM2`, wie der Vorschlag
   // „Durchschnitt des Gebäudes“ des § 9a Abs. 1); ihre Fläche zählt mit der geschätzten für die Grenze des § 9a Abs. 2
   // (`unequippedArea`). Ohne abgelesene Wohnung ist `substitutePerM2` null, und der Topf geht nur nach Fläche.
-  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean; devices: boolean; unequipped: string[]; unequippedArea: number; substitutePerM2: number | null; estimatedArea: number; overThreshold: boolean }>
+  // `unconnected`: Keine Wohnung mit Fläche hat einen Anschluss an diesen Topf (nur Warmwasser); er geht an niemanden.
+  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean; devices: boolean; unequipped: string[]; unequippedArea: number; substitutePerM2: number | null; estimatedArea: number; overThreshold: boolean; unconnected?: boolean }>
   problems: SelfProblem[]
   findings: SelfFinding[]
 }
@@ -372,7 +373,15 @@ export function planSelf(input: SelfInput): SelfPlan {
   // Eine Einheit ohne Fläche (Garage) braucht keinen Wert (Durchsicht S1).
   const noValue = input.areaBasisHeat === 'area' ? [] : input.units.filter((u) => (u.areaM2 || 0) > 0 && !((basisValueOf(u) ?? 0) > 0))
   if (input.areaBasisHeat !== 'area' && noValue.length > 0) problems.push({ kind: 'noBasisValue', basis: input.areaBasisHeat, unitNames: noValue.map((u) => u.name) })
-  for (const p of pots) if (!(totals[p].area > 0) && !(p === 'heating' && noValue.length > 0)) problems.push({ kind: 'noArea', pot: p })
+  // Nachtrag der Integrationsdurchsicht zu #690: Hat keine Wohnung mit Fläche einen Anschluss an das Warmwasser, fehlt keine
+  // Fläche, sondern der Topf hat keine Teilnehmer (`unconnected`); die Heizung wird trotzdem verteilt, der Topf Warmwasser
+  // bleibt beim Vermieter (`heating.water-unconnected` in calc.ts).
+  const withArea = input.units.filter((u) => (u.areaM2 || 0) > 0)
+  const waterUnconnected = pots.includes('water') && withArea.length > 0 && withArea.every((u) => u.noWater)
+  for (const p of pots) {
+    if (p === 'water' && waterUnconnected) totals[p].unconnected = true
+    else if (!(totals[p].area > 0) && !(p === 'heating' && noValue.length > 0)) problems.push({ kind: 'noArea', pot: p })
+  }
 
   const units: SelfUnitPlan[] = input.units.map((unit) => {
     const users: SelfUserPlan[] = usersOf(unit, input.tenancies, h).map((u) => ({

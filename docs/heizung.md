@@ -683,6 +683,20 @@ bewerteten Einheiten ergeben dieselben Beträge, gleich woher (Test).
   kein fehlendes Gerät; der Rechenweg nennt bei ihr nur die Heizung. `SelfUnit.noWater` trägt die Angabe aus calc.ts hinein.
   Ohne Anschluss an die Wärme hängt sie wie bisher gar nicht an der Anlage (`servesUnit`). Die Formel für den
   Warmwasseranteil rechnet schon mit der versorgten Fläche (`suppliedAreaOf` in dhw.ts). Tests: calc-hkv.test.ts.
+  **Erreichbar** (Nachtrag): Das Formular der Wohnung bietet den Haken „Warmwasser“ auch ohne Warmwasserzähler im Objekt
+  an, wenn eine laufende Anlage mit eigener Abrechnung und Warmwasser (in irgendeinem ihrer Zeiträume) die Wohnung versorgt
+  (`waterConnectionAsked` in client/src/unitForm.ts); beim Messdienst und bei freien Schlüsseln nicht, dort wirkt der
+  Anschluss nur über die Zähler. Werte eines Ablesedienstes: Eine Wohnung ohne Warmwasseranschluss braucht keinen
+  Warmwasserwert und zählt für „alle Zeilen oder keine“ nicht mit (`checkRows` in db/serviceValues.ts).
+  **Keine Wohnung angeschlossen** (Nachtrag): Vorher `noArea` für den Topf Warmwasser, die ganze Anlage gesperrt. Jetzt
+  `totals.water.unconnected` (planSelf, nur wenn alle Wohnungen mit Fläche ohne Anschluss sind; ohne Fläche bleibt
+  `noArea`): Die Heizung wird verteilt, der Teil Warmwasser jeder Position (`partOf`) steht beim Vermieter mit dem Grund
+  `noWaterConnection`, und `heating.water-unconnected` (warning) nennt den Betrag und die zwei Wege (Einstellung
+  „Es gibt kein zentrales Warmwasser“ oder Haken bei den Wohnungen). **Festlegung nach § 9 Abs. 1 HeizkostenV**: Die Kosten
+  einer verbundenen Anlage sind auf Heizung und Warmwasser aufzuteilen; den Teil Warmwasser trägt hier kein Nutzer. Ihn der
+  Heizung zuzuschlagen ginge zu Lasten der Mieter, die Anlage zu sperren nähme die ganze Heizung; der Hinweis mit Betrag
+  lässt die Wahl beim Vermieter. Der Block der Beträge je Nutzer im Ausweis (`selfBlocksOf`) verteilt die Zeilen des
+  Vermieters weiter nach den Gewichten; der Teil Warmwasser hat dort keine Gewichte (offen, nur Ausweis).
 - **Einheitsskala**: Ablesewert × Bewertungsfaktor; **Produktskala**: wie abgelesen. Ohne Skala oder
   Faktor `heating.hca-factor-missing`, keine Verteilung. Skala und Faktor nur am Typ `hkv`; ein Gerät
   mit anderem Faktor ist ein neuer Zähler; gesperrt (409), sobald seine Ablesungen eine

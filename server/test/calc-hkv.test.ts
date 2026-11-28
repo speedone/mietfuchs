@@ -561,3 +561,29 @@ test('#690, Integrationsdurchsicht: ganz ohne Warmwasserzähler im Haus trägt C
   assert.doesNotMatch(/vom Topf Warmwasser[^.]*/.exec(nc)?.[0] ?? '', /Mieter C1|Mieter C2/)
   assert.equal(allRows(s), s.totalCostsCents)
 })
+
+// Nachtrag der Integrationsdurchsicht zu #749: Hat keine versorgte Wohnung einen Warmwasseranschluss, die Anlage steht aber
+// auf Warmwasser, sperrte das die ganze Anlage („keine Fläche hinterlegt“, alles beim Vermieter). Jetzt wird die Heizung
+// verteilt, der Teil Warmwasser bleibt beim Vermieter (eigener Grund), und eine Warnung nennt den Betrag und die Einstellung.
+test('#690, Nachtrag: keine Wohnung mit Warmwasseranschluss: Heizung verteilt, Warmwasser beim Vermieter mit Warnung', () => {
+  const units = [selfUnit('a', 60, { noConnection: ['warmwasser'] }), selfUnit('b', 80, { noConnection: ['warmwasser'] }), selfUnit('c', 60, { noConnection: ['warmwasser'] })]
+  const s = computeSettlement(selfSnapshot({ units }))
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => `${n.code}: ${n.text}`), [])
+  assert.equal(selfOf(s).ok, true)
+  assert.ok(s.statements.every((st) => st.totalShareCents > 0), 'die Heizung ist verteilt')
+  // Miete Warmwasserzähler (nur Warmwasser) ganz beim Vermieter, mit eigenem Grund.
+  assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => rowOf(s, t, 'wwz')), [0, 0, 0, 0])
+  assert.deepEqual(s.landlord.rows.find((r) => r.costItemId === 'wwz')?.landlordParts, [{ reason: 'noWaterConnection', cents: 6000 }])
+  // Die Heizung wie mit Anschluss: Miete Wärmezähler unverändert.
+  const voll = computeSettlement(selfSnapshot())
+  assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => rowOf(s, t, 'wz')), ['A', 'B', 'C1', 'C2'].map((t) => rowOf(voll, t, 'wz')))
+  const water = selfOf(s).pots.find((p) => p.pot === 'water')
+  const kw = water?.costCents ?? assert.fail('kein Topf Warmwasser')
+  const n = s.notices.find((x) => x.code === 'heating.water-unconnected') ?? assert.fail(codes(s).join(', '))
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /Keine Wohnung an dieser Anlage hat einen Anschluss an das Warmwasser/)
+  assert.ok(n.text.includes(`${(kw / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`), n.text)
+  assert.match(n.text, /„Weitere Angaben - Anschlüsse“.*„Es gibt kein zentrales Warmwasser“.*Haken „Warmwasser“/s)
+  assert.ok(!codes(s).includes('heating.no-consumption'), codes(s).join(', '))
+  assert.equal(allRows(s), s.totalCostsCents)
+})

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
-import type { CostItem, MeterType, Tenancy, Unit } from './types'
+import type { CostItem, HeatingPlant, MeterType, Tenancy, Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, flatIdsWithRooms, parentUnitOptions, roomCountOf, setConnected, unitDeleteBlocked, unitDeleteMessage, unitMoveLock, unitMoveQuestion, unitPropertyOptions, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, flatIdsWithRooms, parentUnitOptions, roomCountOf, setConnected, unitDeleteBlocked, unitDeleteMessage, unitMoveLock, unitMoveQuestion, unitPropertyOptions, unitToForm, waterConnectionAsked, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -238,6 +238,27 @@ describe('Anschlüsse einer Einheit', () => {
     const m = (type: MeterType, unitId: string | null = 'u1') => ({ type, unitId })
     expect(connectionTypes([m('warmwasser'), m('kaltwasser'), m('hkv')], [])).toEqual(['kaltwasser', 'warmwasser'])
     expect(connectionSummary(['warmwasser'])).toBe('ohne Warmwasseranschluss')
+  })
+
+  // Integrationsdurchsicht zu #690 (#749): Ohne Warmwasseranschluss nimmt eine Wohnung am Topf Warmwasser der eigenen
+  // Heizkostenabrechnung nicht teil, auch ohne Warmwasserzähler im Objekt. Dann muss der Haken erreichbar sein.
+  test('#690: Warmwasser wird angeboten, wenn eine selbst abgerechnete Anlage mit Warmwasser die Wohnung versorgt', () => {
+    const m = (type: MeterType, unitId: string | null = 'u1') => ({ type, unitId })
+    const plant = (over: Partial<Pick<HeatingPlant, 'method' | 'hotWater' | 'selfSpans' | 'units' | 'endsOn'>> = {}) =>
+      ({ method: 'self', hotWater: 'separate', selfSpans: [], units: null, endsOn: null, ...over }) as Pick<HeatingPlant, 'method' | 'hotWater' | 'selfSpans' | 'units' | 'endsOn'>
+    const unit = { id: 'u1', noConnection: [] }
+    expect(waterConnectionAsked([plant()], unit)).toBe(true)
+    expect(connectionTypes([m('kaltwasser'), m('waerme')], [], { water: waterConnectionAsked([plant()], unit) })).toEqual(['kaltwasser', 'warmwasser', 'waerme'])
+    // Ohne Warmwasser, beim Messdienst, bei einer beendeten Anlage oder einer, die die Wohnung nicht versorgt: keine Frage.
+    expect(waterConnectionAsked([plant({ hotWater: 'none' })], unit)).toBe(false)
+    expect(waterConnectionAsked([plant({ hotWater: 'none', selfSpans: [{ from: '2025-01', until: null, hotWater: 'combined' }] })], unit)).toBe(true)
+    expect(waterConnectionAsked([plant({ method: 'service' })], unit)).toBe(false)
+    expect(waterConnectionAsked([plant({ method: 'manual' })], unit)).toBe(false)
+    expect(waterConnectionAsked([plant({ endsOn: '2024-12-31' })], unit)).toBe(false)
+    expect(waterConnectionAsked([plant({ units: [{ unitId: 'u2' }] as HeatingPlant['units'] })], unit)).toBe(false)
+    // Eine neue Wohnung (ohne Kennung) versorgt eine Anlage ohne Liste.
+    expect(waterConnectionAsked([plant()], { noConnection: [] })).toBe(true)
+    expect(connectionTypes([m('kaltwasser')], [], { water: false })).toEqual(['kaltwasser'])
   })
 })
 

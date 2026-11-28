@@ -3,7 +3,7 @@ import type { CostItem, CostModel, HeatingModel, SelfSupplyKind, DepositEntry, D
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_FORM_LABELS, DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
-import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, unitMoveLock, unitMoveQuestion, unitPropertyOptions, type UnitField, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, flatIdsWithRooms, parentUnitOptions, roomCountOf, unitMoveLock, unitMoveQuestion, unitPropertyOptions, waterConnectionAsked, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { coversWaterNote } from '../heatingPeriodForm'
 import { prepaymentSplitHint, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
@@ -1221,8 +1221,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
             </Field>
             {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
-                Zählerarten des Objekts und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
-            {connectionTypes(objectMeters, unitForm.noConnection).length > 0 && (
+                Zählerarten des Objekts, Warmwasser auch an einer selbst abgerechneten Anlage mit Warmwasser (#690),
+                und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
+            {connectionTypes(objectMeters, unitForm.noConnection, { water: waterConnectionAsked(plants, unitForm) }).length > 0 && (
               <details className="extra-details">
                 <summary>
                   Weitere Angaben - Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
@@ -1230,7 +1231,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <fieldset className="field no-connection">
                   <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
                   <div className="checks">
-                    {connectionTypes(objectMeters, unitForm.noConnection).map((t) => (
+                    {connectionTypes(objectMeters, unitForm.noConnection, { water: waterConnectionAsked(plants, unitForm) }).map((t) => (
                       <label key={t} className="checkline">
                         <input
                           type="checkbox"

@@ -1351,10 +1351,12 @@ export type SettlementRow = {
 //                   der Abrechnung verrechnet: die Gegenzeile zur Gutschrift beim Mieter, ohne Kostenposition
 //   `notAgreed`     der Mietvertrag legt diese Position nicht auf das Mietverhältnis um (#258)
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
+//   `noWaterConnection` eigene Heizkostenabrechnung: der Teil Warmwasser, wenn keine versorgte Wohnung einen Anschluss
+//                   an das Warmwasser hat (#690); er geht an niemanden
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
-  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'co2Refund' | 'notAgreed' | 'rounding'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'co2Refund' | 'notAgreed' | 'rounding' | 'noWaterConnection'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
