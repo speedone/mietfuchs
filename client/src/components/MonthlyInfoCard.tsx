@@ -11,7 +11,7 @@ import { useDraft } from '../useDraft'
 import DraftActions from './DraftActions'
 import Card from './Card'
 import MonthlyInfoSheet from './MonthlyInfoSheet'
-import { monthStatus, periodReferenceText, rowBody, rowToForm, tempBody, type MonthlyRowForm } from '../monthlyInfoForm'
+import { monthlyReferenceHelp, monthStatus, periodReferenceText, rowBody, rowToForm, tempBody, type MonthlyRowForm } from '../monthlyInfoForm'
 import { monthName } from '../../../shared/monthlyInfo.ts'
 import type { MonthlyInfoMonth, MonthlyInfoRow, MonthlyInfoView } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
@@ -20,7 +20,8 @@ import { useOptionalProperty, withProperty } from '../property'
 // Die Farbe des Stands: grün mitgeteilt, gelb offen, rot unvollständig, grau ohne Pflicht in diesem Monat.
 const TONE_CHIP = { ok: 'gruen', open: 'gelb', warn: 'rot', none: '' } as const
 
-export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: { plantId: string; period: string; propertyName?: string }) {
+// `byService`: Die Heizperiode wird mit Werten eines Ablesedienstes erfasst (Durchsicht S4 von #690).
+export default function MonthlyInfoCard({ plantId, period, propertyName = '', byService = true }: { plantId: string; period: string; propertyName?: string; byService?: boolean }) {
   const propertyId = useOptionalProperty()?.property?.id
   const [view, setView] = useState<MonthlyInfoView | null>(null)
   const [printing, setPrinting] = useState<string | null>(null)
@@ -64,7 +65,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
   }, [printing])
 
   async function saveRow(month: string, form: MonthlyRowForm) {
-    const r = rowBody(form)
+    const r = rowBody(form, byService)
     if ('error' in r) throw new Error(r.error)
     await api<MonthlyInfoRow>(withProperty(`/api/heating-plants/${plantId}/monthly-info/${month}`, propertyId), { method: 'PUT', body: JSON.stringify(r.body) })
     toast('Gespeichert.')
@@ -91,8 +92,8 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
       <ErrorSummary errors={errors} />
       <p className="muted">
         Zähler Ihrer Mieter sind aus der Ferne ablesbar. Dann steht jedem Mieter jeden Monat seine Verbrauchsinformation zu. Mietfuchs erstellt sie aus
-        den Zählerständen genau am Monatsende; zukommen lassen müssen Sie sie selbst, als Brief oder E-Mail, und hier vermerken Sie, wann. Den
-        Vergleichswert eines Durchschnittsnutzers nennt Ihnen etwa Ihr Ablesedienst; ein Durchschnitt aus Ihrem eigenen Haus genügt nicht.
+        den Zählerständen genau am Monatsende; zukommen lassen müssen Sie sie selbst, als Brief oder E-Mail, und hier vermerken Sie, wann.
+        {' '}{monthlyReferenceHelp(byService)}
       </p>
       {reference && <p className="muted">{reference}</p>}
       {view.dhwTemp.here ? (

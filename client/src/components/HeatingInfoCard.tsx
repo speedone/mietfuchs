@@ -5,7 +5,10 @@ import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
-import { CONTRACT_HELP, CONTRACT_OPTIONS, contractBody, contractToForm, dwdHint, infoBody, infoToForm, type ContractForm, type InfoForm } from '../heatingInfoForm'
+import {
+  CONTRACT_HELP, CONTRACT_OPTIONS, contractBody, contractToForm, dwdHint, infoBody, infoToForm, REFERENCE_HELP, REFERENCE_HELP_NOT_COMPUTED, REFERENCE_HELP_SERVICE,
+  REFERENCE_SOURCE_PLACEHOLDER, REFERENCE_SOURCE_PLACEHOLDER_SERVICE, REFERENCE_WAY, REFERENCE_WAY_TITLE, type ContractForm, type InfoForm,
+} from '../heatingInfoForm'
 import { inheritedText } from '../heatingRulesForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { useOptionalProperty, withProperty } from '../property'
@@ -24,12 +27,17 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   const markSaved = useOpenWhenDiffers({ form, contract }, { form: infoToForm(view.info), contract: contractToForm(view.rules.consumerContract) })
   const self = plant.method === 'self'
+  // #690 Punkt 7: Wer ohne Ablesedienst selbst abrechnet, hat dessen Vergleichswerte nicht; die Hilfe nennt dann einen
+  // Weg ohne ihn.
+  const byService = view.capture === 'serviceValues'
   // Wo Mietfuchs den Vergleich nach Nr. 4 (bei freien Schlüsseln auch Nr. 5) nicht rechnet: Heizkostenverteiler,
   // Werte des Ablesedienstes, freie Schlüssel oder ausgenommene Wärme (Durchsicht von #243, R-W1).
   const attaches = !self || (view.capture ?? 'heatMeter') !== 'heatMeter' || view.rules.exemptionScope === 'heat'
+  // Durchsicht M2: Den Weg zum Vergleichswert nennt die Karte nur, wo Mietfuchs Nr. 4 selbst rechnet.
+  const computesComparison = self && !attaches
   const set = (k: keyof InfoForm) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value })
   async function save() {
-    const r = infoBody(form)
+    const r = infoBody(form, !self || byService)
     if ('error' in r) return setError(r.error)
     const c = contractBody(contract)
     if ('error' in c) return setError(c.error)
@@ -87,13 +95,16 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
             </label>
             <label className="field width-full">
               <span>Quelle des Vergleichswerts</span>
-              <input value={form.referenceSource} disabled={view.closed} onChange={set('referenceSource')} placeholder="z. B. Vergleichswerte Ihres Ablesedienstes" />
+              <input value={form.referenceSource} disabled={view.closed} onChange={set('referenceSource')} placeholder={byService ? REFERENCE_SOURCE_PLACEHOLDER_SERVICE : REFERENCE_SOURCE_PLACEHOLDER} />
             </label>
           </div>
-          <p className="muted">
-            Gemeint ist ein Wert für die ganze Heizperiode aus Vergleichsdaten, etwa vom Ablesedienst; Mietfuchs rechnet ihn auf Wohnfläche und Tage jedes Mieters um.
-            Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.
-          </p>
+          <p className="muted">{byService ? REFERENCE_HELP_SERVICE : computesComparison ? REFERENCE_HELP : REFERENCE_HELP_NOT_COMPUTED}</p>
+          {computesComparison && (
+            <details className="extra-details">
+              <summary>{REFERENCE_WAY_TITLE}</summary>
+              {REFERENCE_WAY.map((line) => <p key={line} className="muted">{line}</p>)}
+            </details>
+          )}
           <div className="row">
             <label className="field">
               <span><Term id="climateFactor">Klimafaktor</Term> dieser Heizperiode</span>

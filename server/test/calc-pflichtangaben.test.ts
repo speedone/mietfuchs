@@ -167,11 +167,23 @@ test('Review Focus 3: Vereinbarung nach § 2 wirkt nur im Zweifamilienhaus mit E
 })
 
 test('Review Focus 5: 80 % nach Verbrauch nur mit Vereinbarung; sonst nicht verteilbar', () => {
-  assert.ok(codes(computeSettlement(mitAngaben({ heatConsumptionPct: 80 }))).includes('heating.self-incomplete'))
+  // #690 (Durchsicht S): Der Anteil hat einen eigenen Code, damit „Was fehlt noch“ ihn ohne Wortlaut zuordnet.
+  assert.ok(codes(computeSettlement(mitAngaben({ heatConsumptionPct: 80 }))).includes('heating.share-invalid'))
   const mit = computeSettlement(mitAngaben({ heatConsumptionPct: 80, above70Agreed: true }))
-  assert.ok(!codes(mit).includes('heating.self-incomplete'))
+  assert.ok(!codes(mit).includes('heating.share-invalid'))
   assert.equal(mit.heating?.find((h) => h.self)?.self?.shares?.above70Agreed, true)
-  assert.ok(codes(computeSettlement(mitAngaben({ heatConsumptionPct: 101, above70Agreed: true }))).includes('heating.self-incomplete'))
+  assert.ok(codes(computeSettlement(mitAngaben({ heatConsumptionPct: 101, above70Agreed: true }))).includes('heating.share-invalid'))
+})
+
+test('#690: Anteil nach Verbrauch fehlt oder liegt außerhalb: Fehler „Anteil nach Verbrauch ungültig“, nicht „Heizkostenabrechnung unvollständig“', () => {
+  for (const row of [{ heatConsumptionPct: 80 }, { heatConsumptionPct: null }]) {
+    const s = computeSettlement(mitAngaben(row))
+    const n = notice(s, 'heating.share-invalid')
+    assert.equal(n.level, 'error')
+    assert.equal(n.title, 'Anteil nach Verbrauch ungültig')
+    assert.match(n.text, /Anteil nach Verbrauch/)
+    assert.ok(!s.notices.some((x) => x.code === 'heating.self-incomplete' && /Anteil nach Verbrauch/.test(x.text)))
+  }
 })
 
 test('Vor dem 01.12.2021 beginnende Heizperiode: keine Angaben nach § 6a', () => {

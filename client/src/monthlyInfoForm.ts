@@ -19,13 +19,22 @@ export function rowToForm(row: MonthlyInfoRow | null): MonthlyRowForm {
   }
 }
 
+// Der Satz zum Vergleichswert in der Karte „Monatliche Verbrauchsinformation“ (Durchsicht S4 von #690).
+export function monthlyReferenceHelp(byService: boolean): string {
+  return byService
+    ? 'Den Vergleichswert eines Durchschnittsnutzers nennt Ihnen etwa Ihr Ablesedienst; ein Durchschnitt aus Ihrem eigenen Haus genügt nicht.'
+    : 'Einen Vergleichswert eines Durchschnittsnutzers können Sie etwa bei Verbraucherorganisationen oder Energieagenturen erfragen (§ 6a Abs. 3 Satz 1 Nr. 2 HeizkostenV nennt sie als Stellen für Vergleichsprofile). Dass ein solcher Wert genügt, steht nicht ausdrücklich in der Verordnung (Auslegung von Mietfuchs); ein Durchschnitt aus Ihrem eigenen Haus genügt nicht.'
+}
+
 // Dieselben Sätze wie die Prüfung des Servers (db/monthlyInfo.ts).
-export function rowBody(form: MonthlyRowForm): { body: { referenceKwhPerM2: number | null; referenceSource: string | null; sentOn: string | null } } | { error: string } {
+// `byService`: Die Heizperiode wird mit Werten eines Ablesedienstes erfasst; sonst nennt die Meldung ihn nicht (Durchsicht
+// S4 von #690, dieselbe Weiche wie beim Vergleichswert der Abrechnung).
+export function rowBody(form: MonthlyRowForm, byService = true): { body: { referenceKwhPerM2: number | null; referenceSource: string | null; sentOn: string | null } } | { error: string } {
   const text = form.reference.trim()
   const ref = text === '' ? null : parseDecimal(text)
   if (text !== '' && (ref === null || !(ref > 0))) return { error: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche im Monat).' }
   const source = form.source.trim() || null
-  if (ref !== null && source === null) return { error: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes.' }
+  if (ref !== null && source === null) return { error: byService ? 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes.' : 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa Herausgeber, Titel und Jahr der Vergleichswerte.' }
   return { body: { referenceKwhPerM2: ref, referenceSource: source, sentOn: form.sentOn || null } }
 }
 

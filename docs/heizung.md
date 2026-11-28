@@ -458,6 +458,53 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   (S1): Eine Heizposition „Betrieb“, die dem Namen nach eine Rechnung des Schornsteinfegers ist (`chimneySweepLike` in
   server/src/operatingPower.ts: Schornstein, Kamin, Kehr-, Abgas, Immission, Feuerstätte, ohne „Strom“), beantwortet die
   Frage nach dem Betriebsstrom nicht; `heating.operating-power-missing` nennt sie dann.
+- **Seite Heizkosten bei eigener Abrechnung** (#690, [client/src/heatingPageView.ts](../client/src/heatingPageView.ts)):
+  je offener Heizperiode zuerst die Karte „Was fehlt noch“ (`selfTodos`, HeatingTodoCard): Kosten, Anteil nach Verbrauch,
+  Warmwasser (nur aus der Heizung), Ablesungen, Verteilung, CO₂, Angaben nach § 6a, je mit Stand als Wort und Farbe.
+  **Die Liste ist keine zweite Regel neben der Berechnung**: Eine Zeile ist nur grün, wenn die Abrechnung der
+  Heizperiode zu ihrem Thema keinen Fehler und keine Warnung trägt. Welcher Code zu welcher Zeile gehört, steht in
+  [shared/heatingTodo.ts](../shared/heatingTodo.ts) (Zeile, `other` = weiterer Hinweis ohne Zeile, oder `skip` mit
+  Grund); server/test/heating-todo-codes.test.ts verlangt das für jeden Code `heating.`, `co2.`, `fuel.`, `meter.` des
+  Katalogs, **wer einen solchen Hinweis anlegt, ordnet ihn dort zu**. Welche Hinweise zu Anlage und Heizperiode gehören,
+  entscheidet `noticesOf` (Bezug auf die Anlage oder eine Position der Heizperiode; bei einer einzigen Anlage jeder
+  Hinweis der Heizung; nennt der Text eine andere Heizperiode der Anlage, gehört er dorthin). Eigene Bedingungen nur, wo
+  die Berechnung schweigt (keine Kostenposition mit Betrag: eine Lieferung allein genügt nicht; kein Anteil; die
+  Grenzen der Karte „Ablesungen“), und solange die Abrechnung nicht verteilt (`self.ok`), gelten Warmwasser, CO₂ und
+  § 6a als nicht geprüft (gelb). `heating.info-open` färbt gelb wie die Warnung, außer er nennt allein Nr. 1 c (keine
+  Position „Messdienst, Ablesung, Geräte“: keine Kürzung, im rechtmäßigen Fall nicht abstellbar). „Alles erledigt“ steht
+  nur, wenn jede Zeile grün ist und die Abrechnung sonst keinen Fehler und keine Warnung zur Heizung meldet
+  (`extraNotices`). **Bekannte Grenze**: Eine getrennt abgerechnete Heizperiode (Weg d) steht nicht in der Abrechnung
+  des Zeitraums, aus der die Seite liest; die Liste sagt das und bleibt gelb. Danach das Nötige, dahinter „Ausnahmen und
+  Vereinbarungen“, das Blatt für den Messdienst und unter „Seltener gebraucht“ die Angaben je Anlage (Betriebsstrom,
+  § 43 GModG). **Beim Messdienst, bei freien Schlüsseln und bei der Etagenheizung bleibt die Reihenfolge**, der
+  Untertitel richtet sich nach der Lage (`heatingSituation`: `service`, `self`, `manual`, `perUnit`; `heatingSubtitle`).
+  **Je Lage erweiterbar** (#719): `todosFor(lage, …)` gibt die Zeilen einer Lage oder `null`; bisher hat nur `self`
+  eine Liste (`selfTodos`). Wer eine Lage ergänzt, trägt ihre Funktion in `TODOS` ein, mit denselben Zeilen (`TodoStep`)
+  und derselben Regel (nie grüner als die Hinweise). **Dieselben Codes wie die Berechnung**: shared/heatingTodo.ts
+  ordnet jeden Code der Heizung und der Zähler einer Zeile zu, als weiteren Hinweis oder mit Grund ausgenommen
+  (Wächter heating-todo-codes.test.ts gegen `NOTICE_KINDS`); client/src/heatingTodo.berechnung.test.ts rechnet
+  Bestände der eigenen Abrechnung mit `computeSettlement` und verlangt je färbendem Hinweis seine Zeile, nicht grün,
+  mit seinem Titel wortgleich. **Ab zwei Anlagen** (nebeneinander, Kesseltausch) ordnet `subjectPlants` Hinweise an
+  Zähler (über dessen Anlage oder Wohnung), Wohnung und Mieter der versorgenden Anlage zu; was keiner Anlage sicher
+  gehört, steht bei jeder als weiterer Hinweis (`loose`), nie „alles erledigt“ daneben. „Kosten erfasst“ ist auch ohne
+  eigene Position grün, wenn die Abrechnung Kosten verteilt (übernommener Vorrat). Zeilen mit Karte auf der Seite
+  (Warmwasser, Anteil, § 6a, Werte des Ablesedienstes) springen zur Karte, Ablesungen zur Seite „Zähler & Stände“. Eine
+  getrennt abgerechnete Heizperiode zeigt keine rote Zeile. Fehlt der Anteil nach Verbrauch oder liegt er außerhalb der
+  Grenzen, meldet die Berechnung `heating.share-invalid` („Anteil nach Verbrauch ungültig“, früher unter
+  `heating.self-incomplete`); die Zeile „Anteil“ folgt dem Code, die Zeile „Zählerstände“ im Cockpit nennt ihn weiter
+  (`selfHeatingReadings`). **Kesseltausch**: Ausweis und Hinweise nach § 6a hängt die Berechnung an die Anlage, die am
+  Ende der Heizperiode heizt (`host`); `lineOf` bildet die Linie (`lineRoot`), Hinweise an einer Partneranlage zählen
+  als weiterer Hinweis, und die übrigen Anlagen nennen bei § 6a diese Anlage mit Sprung dorthin. **Vergleichswert**: Weg und Hilfe nur, wo Mietfuchs Nr. 4 selbst
+  rechnet (Wärmezähler, Wärme nicht nach § 11 ausgenommen); mit Heizkostenverteilern oder für das Warmwasser allein ein
+  Satz, dass Mietfuchs ihn nicht erstellt. Der Weg sagt, dass der Wert nur Nr. 4 erfüllt; Nr. 5 bleibt im ersten Jahr
+  der eigenen Abrechnung meist offen (Vorjahresverbrauch unbekannt), mit dem Weg über die Abrechnung des früheren
+  Messdienstes und ohne Feld, das die Kürzung abstellt. Dieselbe Weiche gilt für die Quelle des Vergleichswerts der
+  monatlichen Verbrauchsinformation (`REFERENCE_SOURCE_TEXT_OWN` in db/monthlyInfo.ts, `monthlyReferenceHelp`). Die Hilfe am Vergleichswert der Karte „Angaben zur Abrechnung (§ 6a)“
+  nennt ohne Werte eines Ablesedienstes den Wortlaut der Nr. 4 und eingeklappt den Weg über die Stellen der Nr. 2
+  (Verbraucherorganisationen, Energieagenturen; BR-Drs. 643/21, S. 20), ausdrücklich als Auslegung
+  (`REFERENCE_WAY` in heatingInfoForm.ts). Hinweis `heating.info-incomplete` und die Ablehnung eines Vergleichswerts
+  ohne Quelle nennen die Vergleichsdaten des Ablesedienstes nur noch bei Werten eines Ablesedienstes bzw. außerhalb
+  der eigenen Abrechnung (dort wortgleich wie vorher); eingefrorene Hinweise bleiben, wie sie zugestellt wurden.
 - **Invarianten** (fuel-invariant.test.ts, fuel-stock-invariant.test.ts) mit Varianten für eigene
   Abrechnung, Warmwasser, Heizkostenverteiler, Ablesedienst, Kesseltausch, Schätzung und Ausnahmen:
   Gewichte verteilen jeden Topf ganz, jede Lieferung steht genau einmal in den Zeilen, α, Q und

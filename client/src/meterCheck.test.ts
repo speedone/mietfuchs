@@ -178,6 +178,10 @@ test('#721: fehlen Werte des Ablesedienstes oder der Anteil nach Verbrauch, füh
     .toMatchObject({ state: 'incomplete', target: 'heizkosten', lines: ['Heizanlage, Heizperiode 2025: Für OG fehlen die Werte des Ablesedienstes, die übrigen Wohnungen haben welche.'] })
   const anteil = 'Heizanlage, Heizperiode 2025: Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben. Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.'
   expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: false } })], notices: [unvollstaendig(anteil)] })).toMatchObject({ state: 'incomplete', target: 'heizkosten' })
+  // #690: Der Anteil hat seit der Durchsicht einen eigenen Code; die Zeile nennt ihn weiter.
+  const ungueltig: Notice = { ...unvollstaendig(anteil), code: 'heating.share-invalid', title: 'Anteil nach Verbrauch ungültig' }
+  expect(selfHeatingReadings({ heating: [selfStatement({ self: { ok: false } })], notices: [ungueltig] }))
+    .toMatchObject({ state: 'incomplete', target: 'heizkosten', lines: ['Heizanlage, Heizperiode 2025: Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt.'] })
   // Ein Hinweis zu einer Anlage ohne eigene Abrechnung in dieser Abrechnung zählt nicht.
   expect(selfHeatingReadings({ heating: [selfStatement()], notices: [unvollstaendig(anteil, 'andere')] })).toMatchObject({ state: 'complete' })
 })

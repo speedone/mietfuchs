@@ -16,6 +16,7 @@ import { readHeatingPlants, readStock } from './read.ts'
 import { has, HeatingError } from './repository.ts'
 import { heatingMonthlyInfo } from './schema.ts'
 import { roomView } from '../../../shared/rooms.ts'
+import { REFERENCE_SOURCE_TEXT, REFERENCE_SOURCE_TEXT_OWN } from './heatingInfo.ts'
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const isDay = (text: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(`${text}T00:00:00Z`).toISOString().slice(0, 10) === text
@@ -44,7 +45,8 @@ export async function saveMonthlyInfoRow(db: Executor, plantId: string, month: s
   }
   const source = typeof sourceRaw === 'string' ? sourceRaw.trim() || null : null
   if (ref !== null && source === null) {
-    throw new HeatingError(400, 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.')
+    // Durchsicht S4 von #690: Ohne Werte eines Ablesedienstes nennt der Satz ihn nicht (wie beim Vergleichswert der Abrechnung).
+    throw new HeatingError(400, plant.method === 'self' && captureOf(plant, month) !== 'serviceValues' ? REFERENCE_SOURCE_TEXT_OWN : REFERENCE_SOURCE_TEXT)
   }
   if (sent !== null) {
     if (typeof sent !== 'string' || !isDay(sent)) throw new HeatingError(400, 'Der Tag der Mitteilung ist kein Datum. Bitte wählen Sie ihn im Kalender.')

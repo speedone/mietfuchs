@@ -465,6 +465,9 @@ const noticeKinds = {
   // Heizung PR 10 (#99): eigene Heizkostenabrechnung (Entwurf 8, 10.1; Abweichungen 4 bis 6). Ein
   // Fehler heißt hier: Die Anlage wird nicht verteilt, ihre Positionen stehen beim Vermieter.
   'heating.self-incomplete': { level: 'error', title: 'Heizkostenabrechnung unvollständig', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
+  // #690: Anteil nach Verbrauch fehlt oder liegt außerhalb der Grenzen (§ 7 Abs. 1, § 8 Abs. 1, § 10 HeizkostenV); ein
+  // eigener Code, damit „Was fehlt noch“ ihn der Zeile „Anteil nach Verbrauch“ zuordnet, ohne den Wortlaut zu lesen.
+  'heating.share-invalid': { level: 'error', title: 'Anteil nach Verbrauch ungültig', rule: 'heating-own-settlement', terms: ['consumptionCosts', 'heatingSystem'] },
   'heating.dhw-share-invalid': { level: 'error', title: 'Warmwasseranteil nicht bestimmbar', rule: 'heating-dhw-split', terms: ['hotWaterShare'] },
   'heating.heat-pump-dhw-basis': { level: 'error', title: 'Wärmepumpe ohne Gesamtwärmezähler', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatMeter'] },
   'heating.target-invalid': { level: 'error', title: 'Ziel der Heizposition passt nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'hotWaterShare'] },
@@ -5040,7 +5043,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Was die Anlage nicht verteilbar macht, steht in `blocked`; dann gehen ihre Positionen an den
   // Vermieter (`noBasis`), und je Grund nennt ein Fehler, was zu tun ist (Abweichung 5).
   type SelfBlock = {
-    code: 'heating.self-incomplete' | 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis' | 'fuel.stock-missing-self' | 'fuel.stock-invalid'
+    code: 'heating.self-incomplete' | 'heating.share-invalid' | 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis' | 'fuel.stock-missing-self' | 'fuel.stock-invalid'
       | 'heating.mixed-capture' | 'heating.hca-factor-missing' | 'meter.units-mixed'
     text: string
   }
@@ -5396,16 +5399,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       blocked.push({ code: 'heating.self-incomplete', text: AGREED_FIXED_SELF_TEXT })
     }
     if (shares === null) {
-      blocked.push({ code: 'heating.self-incomplete', text: 'Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben.' })
+      blocked.push({ code: 'heating.share-invalid', text: 'Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben.' })
     } else {
       const { min, max } = law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
       // § 8 Abs. 1: beim Warmwasser eine eigene Wahl, nie still die der Heizung (Abweichung 14).
       if (hotWater !== 'none' && shares.water === null) {
-        blocked.push({ code: 'heating.self-incomplete', text: 'Für das Warmwasser ist kein Anteil nach Verbrauch festgelegt (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen. Tragen Sie ihn auf der Seite Heizkosten ein.' })
+        blocked.push({ code: 'heating.share-invalid', text: 'Für das Warmwasser ist kein Anteil nach Verbrauch festgelegt (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen. Tragen Sie ihn auf der Seite Heizkosten ein.' })
       }
       // § 10 (Heizung PR 14): über dem Höchstsatz nur mit Vereinbarung, nie über 100 %.
       if (!agreedArea && [shares.heating, ...(hotWater !== 'none' && shares.water !== null ? [shares.water] : [])].some((v) => v < min || v > 100 || (v > max && !shares.above70Agreed))) {
-        blocked.push({ code: 'heating.self-incomplete', text: `Der Anteil nach Verbrauch liegt außerhalb von ${hkvConsumptionShare.describe({ min, max })}. Mehr als ${max} % gehen nur mit einer Vereinbarung (§ 10 HeizkostenV). Korrigieren Sie ihn auf der Seite Heizkosten.` })
+        blocked.push({ code: 'heating.share-invalid', text: `Der Anteil nach Verbrauch liegt außerhalb von ${hkvConsumptionShare.describe({ min, max })}. Mehr als ${max} % gehen nur mit einer Vereinbarung (§ 10 HeizkostenV). Korrigieren Sie ihn auf der Seite Heizkosten.` })
       }
     }
     if (!alphaResult.ok && !agreedArea && swapMissing !== null && (alphaResult.problem === 'noDhwHeat' || alphaResult.problem === 'heatPumpBasis')) {
@@ -9971,8 +9974,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? 'Den Vergleich mit einem Durchschnittsnutzer (Nr. 4) rechnet Mietfuchs mit dem Wärmeverbrauch in kWh; für das Warmwasser allein kann es ihn nicht erstellen.'
         : 'Heizkostenverteiler zählen Einheiten, keine Kilowattstunden; den Vergleich mit einem Durchschnittsnutzer (Nr. 4) kann Mietfuchs deshalb nicht rechnen.'} ${attach}`)
     } else if (info.missing.includes('4')) {
+      // #690 Punkt 7: Ohne Werte eines Ablesedienstes hat der Vermieter dessen Vergleichsdaten nicht; der Weg steht in
+      // der Hilfe am Feld. Mit Werten eines Ablesedienstes bleibt der Satz wortgleich.
+      const byService = group.some((r) => selfPlans.get(r.plantId)?.capture === 'serviceValues')
       parts.push(info.reference === null
-        ? 'Für den Vergleich mit einem Durchschnittsnutzer (Nr. 4) tragen Sie einen Vergleichswert in kWh je m² Wohnfläche mit seiner Quelle ein, etwa aus den Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste (BR-Drs. 643/21, S. 19 und 21).'
+        ? `Für den Vergleich mit einem Durchschnittsnutzer (Nr. 4) tragen Sie einen Vergleichswert in kWh je m² Wohnfläche mit seiner Quelle ein${byService ? ', etwa aus den Vergleichsdaten Ihres Ablesedienstes.' : '. Rechnen Sie ohne Ablesedienst ab, nennt die Hilfe am Feld in der Karte „Angaben zur Abrechnung (§ 6a)“ einen Weg.'} Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste (BR-Drs. 643/21, S. 19 und 21).`
         : 'Für eine Wohnung ohne Wohnfläche lässt sich der Vergleichswert (Nr. 4) nicht umrechnen; tragen Sie die Wohnfläche in den Stammdaten ein.')
     }
     if (info.comparisons && info.missing.includes('5')) {

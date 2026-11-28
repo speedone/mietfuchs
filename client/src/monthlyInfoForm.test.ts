@@ -1,6 +1,6 @@
 // Formularlogik der Karte „Monatliche Verbrauchsinformation“ und das Blatt je Mieter (Heizung PR 22).
 import { expect, test } from 'vitest'
-import { gapText, monthStatus, periodReferenceText, rowBody, rowToForm, sheetLines, tempBody } from './monthlyInfoForm'
+import { gapText, monthlyReferenceHelp, monthStatus, periodReferenceText, rowBody, rowToForm, sheetLines, tempBody } from './monthlyInfoForm'
 import type { MonthlyInfoMonth, MonthlyInfoUser } from './types'
 
 const user: MonthlyInfoUser = {
@@ -71,4 +71,12 @@ test('Warmwassertemperatur: Zahl zwischen 0 und 100 °C wie in der Karte „Warm
   expect(tempBody('')).toEqual({ body: { dhwTempC: null } })
   expect(tempBody('120')).toEqual({ error: 'Die mittlere Temperatur des Warmwassers liegt zwischen 0 und 100 °C.' })
   expect(tempBody('warm')).toEqual({ error: 'Die mittlere Temperatur des Warmwassers liegt zwischen 0 und 100 °C.' })
+})
+
+// Durchsicht S4 (#690): Ohne Werte eines Ablesedienstes nennt die Meldung ihn nicht (dieselbe Weiche wie § 6a Abs. 3).
+test('Quelle fehlt, eigene Abrechnung ohne Ablesedienst: Herausgeber, Titel und Jahr statt Ablesedienst', () => {
+  expect(rowBody({ reference: '12,5', source: '', sentOn: '' }, false)).toEqual({ error: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa Herausgeber, Titel und Jahr der Vergleichswerte.' })
+  expect(monthlyReferenceHelp(false)).not.toMatch(/Ablesedienst/)
+  expect(monthlyReferenceHelp(false)).toMatch(/\(Auslegung von Mietfuchs\)/)
+  expect(monthlyReferenceHelp(true)).toMatch(/etwa Ihr Ablesedienst/)
 })

@@ -219,7 +219,7 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   interim_reading_gaps_date_valid: 'Das Datum der Grenze ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu.',
   // Pflichtangaben und Ausnahmen (Heizung PR 14)
   heating_periods_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche in der Heizperiode).',
-  heating_periods_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
+  heating_periods_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa Herausgeber, Titel und Jahr der Vergleichswerte oder die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
   heating_periods_climate_factor_positive: 'Der Klimafaktor ist eine Zahl größer als 0.',
   heating_periods_climate_factor_source_complete: 'Bitte nennen Sie die Quelle der Klimafaktoren, etwa „Deutscher Wetterdienst, Klimafaktoren“ mit Postleitzahl und Zeitraum.',
   heating_periods_exemption_scope_valid: 'Ob die Ausnahme auch das Warmwasser betrifft, fragt Mietfuchs nur bei einer Ausnahme nach § 11 HeizkostenV. Bitte laden Sie die Seite neu.',
@@ -287,7 +287,7 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   // Monatliche Verbrauchsinformation (Heizung PR 22); db/monthlyInfo.ts prüft vorher.
   heating_monthly_info_month_valid: 'Der Monat der Verbrauchsinformation ist kein Monat in der Form JJJJ-MM. Bitte laden Sie die Seite neu.',
   heating_monthly_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche im Monat).',
-  heating_monthly_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
+  heating_monthly_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa Herausgeber, Titel und Jahr der Vergleichswerte oder die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
   heating_monthly_info_sent_on_valid: 'Der Tag der Mitteilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
   // Anschreiben zur Abrechnung (#415); shared/letter.ts prüft vorher.
   tenancy_letter_texts_doc_complete: 'Zu welcher Abrechnung das Anschreiben gehört, fehlt. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',

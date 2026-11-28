@@ -18,7 +18,7 @@ import { readProperties, readTenancies, readUnits } from './read.ts'
 import { has, HeatingError, oneOfOrUndefined, raw } from './repository.ts'
 import { AGREED_OTHERWISE, EXEMPTION_SCOPES, HEATING_EXEMPTIONS, heatingPeriods, heatingPlants } from './schema.ts'
 import { heatingRulesOf, type RuleRow } from '../heatingInfo.ts'
-import { lineRoot } from '../../../shared/heatingPeriod.ts'
+import { captureOf, lineRoot } from '../../../shared/heatingPeriod.ts'
 
 type Inputs = Omit<HeatingInfoInputs, 'postalCode'>
 export type OwnRules = Pick<HeatingPeriodData, 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere' | 'consumerContract'>
@@ -26,6 +26,7 @@ export type OwnRules = Pick<HeatingPeriodData, 'exemption' | 'exemptionScope' | 
 // die Angabe gälte, die aber eingefroren bleiben (Durchsicht von #243, G-K1). Die nächste offene übernimmt sie.
 export type SavedRules = OwnRules & { later: { closed: string[] } }
 
+export const REFERENCE_SOURCE_TEXT_OWN = 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa Herausgeber, Titel und Jahr der Vergleichswerte. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.'
 export const REFERENCE_SOURCE_TEXT = 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.'
 export const CLIMATE_SOURCE_TEXT = 'Bitte nennen Sie die Quelle der Klimafaktoren, etwa „Deutscher Wetterdienst, Klimafaktoren“ mit Postleitzahl und Zeitraum.'
 
@@ -70,7 +71,9 @@ export async function saveHeatingInfo(db: Database, plantId: string, period: str
     const [before] = await tx.select().from(heatingPeriods).where(eq(heatingPeriods.id, id))
     // Geprüft wird der Stand nach dem Zusammenführen: Ein Rumpf kann nur die Quelle oder nur den Wert ändern.
     const after = <K extends keyof Inputs>(k: K): Inputs[K] | null => (next[k] !== undefined ? (next[k] as Inputs[K]) : ((before?.[k] ?? null) as Inputs[K] | null))
-    if (after('infoReferenceKwhPerM2') !== null && after('infoReferenceSource') === null) throw new HeatingError(400, REFERENCE_SOURCE_TEXT)
+    // #690 Punkt 7: Bei eigener Abrechnung ohne Werte eines Ablesedienstes nennt der Satz dessen Vergleichsdaten nicht.
+    const ownData = ctx.plant.method === 'self' && captureOf(ctx.plant, String(h.key)) !== 'serviceValues'
+    if (after('infoReferenceKwhPerM2') !== null && after('infoReferenceSource') === null) throw new HeatingError(400, ownData ? REFERENCE_SOURCE_TEXT_OWN : REFERENCE_SOURCE_TEXT)
     if ((after('climateFactor') !== null || after('climateFactorPrev') !== null) && after('climateFactorSource') === null) throw new HeatingError(400, CLIMATE_SOURCE_TEXT)
     if (Object.keys(next).length > 0) await tx.update(heatingPeriods).set(next).where(eq(heatingPeriods.id, id))
     const [r] = await tx.select().from(heatingPeriods).where(eq(heatingPeriods.id, id))
